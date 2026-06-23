@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<defs>
+<linearGradient id="brand" x1="0.05" y1="0" x2="0.95" y2="1">
+<stop offset="0%" stop-color="#9A86FF"/>
+<stop offset="52%" stop-color="#7C64F2"/>
+<stop offset="100%" stop-color="#C95CEF"/>
+</linearGradient>
+<linearGradient id="laneA" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#A493FF"/>
+<stop offset="100%" stop-color="#6F5AF0"/>
+</linearGradient>
+<linearGradient id="laneB" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#8E76F4"/>
+<stop offset="100%" stop-color="#C95CEF"/>
+</linearGradient>
+</defs>
+<g>
+<path d="M 168,168 C 168,252 256,246 256,320" fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
+<path d="M 344,168 C 344,252 256,246 256,320" fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round"/>
+</g>
+<circle cx="168" cy="168" r="27" fill="#FFFFFF"/>
+<circle cx="344" cy="168" r="27" fill="#FFFFFF"/>
+<circle cx="256" cy="330" r="34" fill="#FFFFFF"/>
+</svg>

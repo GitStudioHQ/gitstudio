@@ -1,8 +1,14 @@
+<p align="center">
+  <img alt="GitStudio" src="brand/gitstudio-icon.svg" width="116">
+</p>
+
 <h1 align="center">GitStudio</h1>
 
 <p align="center">
-  <b>A JetBrains-grade Git experience for VS Code & Cursor — the whole workflow, not just one piece.</b>
+  <b>A free, open-source, JetBrains-grade Git experience for VS Code & Cursor — the whole workflow, not just one piece.</b>
 </p>
+
+<p align="center"><sub>Logo & brand assets live in <a href="brand/">brand/</a>.</sub></p>
 
 ---
 
