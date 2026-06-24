@@ -21,11 +21,12 @@ import os, math
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # --- brand palette ---
-PURPLE  = "#6B5BE6"   # primary
-MAGENTA = "#C160EF"   # secondary
+PURPLE  = "#6B5BE6"   # primary (brand anchor, wordmark gradient)
+MAGENTA = "#C160EF"   # secondary (wordmark gradient tail)
+VIOLET  = "#A98CFF"   # the single tone for every merge-Y line + commit node
 INK     = "#1B1F2A"   # dark / one-color on light
 PAPER   = "#F5F3FF"   # node cores
-BG_TOP, BG_BOT = "#363D4C", "#171B23"
+BG_TOP, BG_BOT = "#1B1B27", "#0C0C16"   # squircle slate
 
 LANES = ('<linearGradient id="brand" x1="0.05" y1="0" x2="0.95" y2="1">'
   '<stop offset="0%" stop-color="#9A86FF"/><stop offset="52%" stop-color="#7C64F2"/>'
@@ -34,17 +35,18 @@ LANES = ('<linearGradient id="brand" x1="0.05" y1="0" x2="0.95" y2="1">'
   '<stop offset="0%" stop-color="#A493FF"/><stop offset="100%" stop-color="#6F5AF0"/></linearGradient>'
   '<linearGradient id="laneB" x1="0" y1="0" x2="0" y2="1">'
   '<stop offset="0%" stop-color="#8E76F4"/><stop offset="100%" stop-color="#C95CEF"/></linearGradient>')
-# cube face shading: top (light), left (deep purple), right (magenta)
+# cube face shading: a slate body (light / deep / mid faces) so the single-tone
+# violet merge-Y lines + commit nodes read clearly against it
 FACES = ('<linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">'
-  '<stop offset="0%" stop-color="#C3B5FF"/><stop offset="100%" stop-color="#9079F4"/></linearGradient>'
+  '<stop offset="0%" stop-color="#4E4C6A"/><stop offset="100%" stop-color="#383650"/></linearGradient>'
   '<linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">'
-  '<stop offset="0%" stop-color="#6B57E6"/><stop offset="100%" stop-color="#4A38BE"/></linearGradient>'
+  '<stop offset="0%" stop-color="#2C2A44"/><stop offset="100%" stop-color="#1C1A30"/></linearGradient>'
   '<linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">'
-  '<stop offset="0%" stop-color="#B45EF0"/><stop offset="100%" stop-color="#8E2ECC"/></linearGradient>')
+  '<stop offset="0%" stop-color="#3C3A58"/><stop offset="100%" stop-color="#282640"/></linearGradient>')
 BG = ('<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">'
   f'<stop offset="0%" stop-color="{BG_TOP}"/><stop offset="100%" stop-color="{BG_BOT}"/></linearGradient>'
   '<radialGradient id="bgglow" cx="0.30" cy="0.20" r="0.95">'
-  '<stop offset="0%" stop-color="#534B82" stop-opacity="0.55"/>'
+  '<stop offset="0%" stop-color="#403A66" stop-opacity="0.5"/>'
   '<stop offset="60%" stop-color="#2A2D3A" stop-opacity="0"/></radialGradient>')
 GLOW = ('<filter id="glow" x="-60%" y="-60%" width="220%" height="220%">'
   '<feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/>'
@@ -82,11 +84,11 @@ def commit_cube(cx=256, cy=250, R=152, mono=None, core=PAPER):
         faces = (f'<path d="M{_p(p["E"])} L{_p(p["F"])} L{_p(p["O"])} L{_p(p["G"])} Z" fill="url(#fTop)"/>'
                  f'<path d="M{_p(p["F"])} L{_p(p["B"])} L{_p(p["D"])} L{_p(p["O"])} Z" fill="url(#fRight)"/>'
                  f'<path d="M{_p(p["O"])} L{_p(p["D"])} L{_p(p["C"])} L{_p(p["G"])} Z" fill="url(#fLeft)"/>')
-        sa, sb, sm = "url(#fLeft)", "url(#fRight)", "url(#brand)"; nc = core; rim_op = 0.12
+        sa = sb = sm = VIOLET; nc = core; rim_op = 0.12
     rim = (f'<path d="M{_p(p["E"])} L{_p(p["F"])} L{_p(p["B"])} L{_p(p["D"])} L{_p(p["C"])} L{_p(p["G"])} Z" '
            f'fill="none" stroke="{mono or "#FFFFFF"}" stroke-opacity="{rim_op}" stroke-width="3" stroke-linejoin="round"/>')
-    sw = 16
-    op = '' if mono else ' stroke-opacity="0.9"'
+    sw = 17
+    op = ''
     spine = (f'<g filter="url(#glow)" fill="none" stroke-width="{sw}" stroke-linecap="round"{op}>'
              f'<path d="M{_p(p["O"])} L{_p(p["G"])}" stroke="{sa}"/>'
              f'<path d="M{_p(p["O"])} L{_p(p["F"])}" stroke="{sb}"/>'

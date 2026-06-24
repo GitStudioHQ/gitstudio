@@ -14,23 +14,23 @@
 <stop offset="100%" stop-color="#C95CEF"/>
 </linearGradient>
 <linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">
-<stop offset="0%" stop-color="#C3B5FF"/>
-<stop offset="100%" stop-color="#9079F4"/>
+<stop offset="0%" stop-color="#4E4C6A"/>
+<stop offset="100%" stop-color="#383650"/>
 </linearGradient>
 <linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0%" stop-color="#6B57E6"/>
-<stop offset="100%" stop-color="#4A38BE"/>
+<stop offset="0%" stop-color="#2C2A44"/>
+<stop offset="100%" stop-color="#1C1A30"/>
 </linearGradient>
 <linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">
-<stop offset="0%" stop-color="#B45EF0"/>
-<stop offset="100%" stop-color="#8E2ECC"/>
+<stop offset="0%" stop-color="#3C3A58"/>
+<stop offset="100%" stop-color="#282640"/>
 </linearGradient>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0%" stop-color="#363D4C"/>
-<stop offset="100%" stop-color="#171B23"/>
+<stop offset="0%" stop-color="#1B1B27"/>
+<stop offset="100%" stop-color="#0C0C16"/>
 </linearGradient>
 <radialGradient id="bgglow" cx="0.30" cy="0.20" r="0.95">
-<stop offset="0%" stop-color="#534B82" stop-opacity="0.55"/>
+<stop offset="0%" stop-color="#403A66" stop-opacity="0.5"/>
 <stop offset="60%" stop-color="#2A2D3A" stop-opacity="0"/>
 </radialGradient>
 <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
@@ -48,25 +48,25 @@
 <path d="M387.6,174.0 L387.6,326.0 L256.0,402.0 L256.0,250.0 Z" fill="url(#fRight)"/>
 <path d="M256.0,250.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="url(#fLeft)"/>
 <path d="M256.0,98.0 L387.6,174.0 L387.6,326.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="3" stroke-linejoin="round"/>
-<g filter="url(#glow)" fill="none" stroke-width="16" stroke-linecap="round" stroke-opacity="0.9">
-<path d="M256.0,250.0 L124.4,174.0" stroke="url(#fLeft)"/>
-<path d="M256.0,250.0 L387.6,174.0" stroke="url(#fRight)"/>
-<path d="M256.0,250.0 L256.0,402.0" stroke="url(#brand)"/>
+<g filter="url(#glow)" fill="none" stroke-width="17" stroke-linecap="round">
+<path d="M256.0,250.0 L124.4,174.0" stroke="#A98CFF"/>
+<path d="M256.0,250.0 L387.6,174.0" stroke="#A98CFF"/>
+<path d="M256.0,250.0 L256.0,402.0" stroke="#A98CFF"/>
 </g>
 <g filter="url(#glow)">
-<circle cx="124.4" cy="174.0" r="19" fill="url(#fLeft)"/>
+<circle cx="124.4" cy="174.0" r="19" fill="#A98CFF"/>
 <circle cx="124.4" cy="174.0" r="8.0" fill="#F5F3FF"/>
 </g>
 <g filter="url(#glow)">
-<circle cx="387.6" cy="174.0" r="19" fill="url(#fRight)"/>
+<circle cx="387.6" cy="174.0" r="19" fill="#A98CFF"/>
 <circle cx="387.6" cy="174.0" r="8.0" fill="#F5F3FF"/>
 </g>
 <g filter="url(#glow)">
-<circle cx="256.0" cy="402.0" r="19" fill="url(#brand)"/>
+<circle cx="256.0" cy="402.0" r="19" fill="#A98CFF"/>
 <circle cx="256.0" cy="402.0" r="8.0" fill="#F5F3FF"/>
 </g>
 <g filter="url(#glow)">
-<circle cx="256.0" cy="250.0" r="23" fill="url(#brand)"/>
+<circle cx="256.0" cy="250.0" r="23" fill="#A98CFF"/>
 <circle cx="256.0" cy="250.0" r="9.7" fill="#F5F3FF"/>
 </g>
 </svg>

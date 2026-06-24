@@ -14,11 +14,11 @@
 <stop offset="100%" stop-color="#C95CEF"/>
 </linearGradient>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0%" stop-color="#363D4C"/>
-<stop offset="100%" stop-color="#171B23"/>
+<stop offset="0%" stop-color="#1B1B27"/>
+<stop offset="100%" stop-color="#0C0C16"/>
 </linearGradient>
 <radialGradient id="bgglow" cx="0.30" cy="0.20" r="0.95">
-<stop offset="0%" stop-color="#534B82" stop-opacity="0.55"/>
+<stop offset="0%" stop-color="#403A66" stop-opacity="0.5"/>
 <stop offset="60%" stop-color="#2A2D3A" stop-opacity="0"/>
 </radialGradient>
 <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">

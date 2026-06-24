@@ -10,13 +10,17 @@ them as-is rather than redrawing or recoloring the mark.
 
 ## The mark
 
-An **isometric cube built from a commit graph**. Its three glowing front seams are
-a **merge-Y** — two branches converging into one commit — and its four corners are
-commit nodes; together they resolve into a single solid object. That's the brand
-promise made structural: every Git tool *merged* into one unified platform — a
-**studio**, not a single feature. The faces are shaded in the brand gradient
-(purple → magenta), a nod to the colored commit graphs that make GitKraken/GitLens
-history *legible* — the exact experience GitStudio brings to everyone for free.
+An **isometric cube built from a commit graph**. The cube is a **slate** solid —
+the unified GitStudio platform — and across its three front faces runs a single
+glowing **violet merge-Y**: two branches converging into one commit, with a commit
+node at every corner. Slate body, violet lines: the branch/merge graph and its
+commits stay unmistakably *git* and clearly legible against the body, while the
+whole thing still reads as one solid object — every Git tool *merged* into one
+platform, a **studio**, not a single feature.
+
+Every line and node is **one violet tone** (`#A98CFF`) on purpose — it reads as a
+real commit graph, the colored-history view that makes GitKraken/GitLens *legible*,
+which is the experience GitStudio brings to everyone for free.
 
 It builds on **Merge Studio**'s dark-squircle-and-purple identity but sits one level
 up as the umbrella brand — the merge that started it all, now a whole structure. An
@@ -28,12 +32,12 @@ commit node — is available for contexts that want a pure lettermark.
 
 | Token | Hex | Use |
 |---|---|---|
-| Purple (primary) | `#6B5BE6` | brand anchor, gradient start |
-| Magenta (secondary) | `#C160EF` | gradient end |
-| Gradient | `#9A86FF → #7C64F2 → #C95CEF` | cube faces & seams, "Studio" wordmark |
+| Violet (lines) | `#A98CFF` | **every merge-Y line + commit node** — the one git tone |
+| Slate body | `#4E4C6A → #1C1A30` | the three cube faces (light / deep / mid) |
+| Node core | `#FFFFFF` | the dot inside each commit node |
+| Wordmark gradient | `#A98CFF → #8E78F6 → #C36BF0` | "Studio" in the wordmark |
 | Ink | `#1B1F2A` | one-color mark on light; "Git" on light |
-| Paper | `#F5F3FF` | commit-node cores |
-| Tile gradient | `#363D4C → #171B23` | the squircle background |
+| Tile gradient | `#1B1B27 → #0C0C16` | the squircle background |
 
 ## Typeface
 
