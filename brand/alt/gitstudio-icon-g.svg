@@ -21,8 +21,8 @@
 <stop offset="0%" stop-color="#534B82" stop-opacity="0.55"/>
 <stop offset="60%" stop-color="#2A2D3A" stop-opacity="0"/>
 </radialGradient>
-<filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-<feGaussianBlur stdDeviation="9" result="b"/>
+<filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+<feGaussianBlur stdDeviation="6" result="b"/>
 <feMerge>
 <feMergeNode in="b"/>
 <feMergeNode in="SourceGraphic"/>

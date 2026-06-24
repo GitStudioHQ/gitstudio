@@ -10,15 +10,17 @@ them as-is rather than redrawing or recoloring the mark.
 
 ## The mark
 
-Two branches converging into one commit — a **merge**. It stands for the brand's
-core promise: the best of every Git tool brought together into one unified,
-open project. The lanes are two-toned (purple → magenta) as a nod to the colored
-commit graphs that make GitKraken/GitLens history *legible* — the exact
-experience GitStudio brings to everyone for free. Just three nodes, every one a
-real commit: two sources and the merge.
+An **isometric cube built from a commit graph**. Its three glowing front seams are
+a **merge-Y** — two branches converging into one commit — and its four corners are
+commit nodes; together they resolve into a single solid object. That's the brand
+promise made structural: every Git tool *merged* into one unified platform — a
+**studio**, not a single feature. The faces are shaded in the brand gradient
+(purple → magenta), a nod to the colored commit graphs that make GitKraken/GitLens
+history *legible* — the exact experience GitStudio brings to everyone for free.
 
-It builds on **Merge Studio**'s dark-squircle-and-purple identity but sits one
-level up as the umbrella brand. An alternate **G monogram**
+It builds on **Merge Studio**'s dark-squircle-and-purple identity but sits one level
+up as the umbrella brand — the merge that started it all, now a whole structure. An
+alternate **G monogram**
 ([`alt/gitstudio-icon-g.svg`](alt/gitstudio-icon-g.svg)) — a bold "G" carrying a
 commit node — is available for contexts that want a pure lettermark.
 
@@ -28,7 +30,7 @@ commit node — is available for contexts that want a pure lettermark.
 |---|---|---|
 | Purple (primary) | `#6B5BE6` | brand anchor, gradient start |
 | Magenta (secondary) | `#C160EF` | gradient end |
-| Gradient | `#9A86FF → #7C64F2 → #C95CEF` | mark lanes, "Studio" wordmark |
+| Gradient | `#9A86FF → #7C64F2 → #C95CEF` | cube faces & seams, "Studio" wordmark |
 | Ink | `#1B1F2A` | one-color mark on light; "Git" on light |
 | Paper | `#F5F3FF` | commit-node cores |
 | Tile gradient | `#363D4C → #171B23` | the squircle background |

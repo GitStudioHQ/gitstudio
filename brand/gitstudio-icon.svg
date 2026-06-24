@@ -13,6 +13,18 @@
 <stop offset="0%" stop-color="#8E76F4"/>
 <stop offset="100%" stop-color="#C95CEF"/>
 </linearGradient>
+<linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">
+<stop offset="0%" stop-color="#C3B5FF"/>
+<stop offset="100%" stop-color="#9079F4"/>
+</linearGradient>
+<linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#6B57E6"/>
+<stop offset="100%" stop-color="#4A38BE"/>
+</linearGradient>
+<linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">
+<stop offset="0%" stop-color="#B45EF0"/>
+<stop offset="100%" stop-color="#8E2ECC"/>
+</linearGradient>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0%" stop-color="#363D4C"/>
 <stop offset="100%" stop-color="#171B23"/>
@@ -21,8 +33,8 @@
 <stop offset="0%" stop-color="#534B82" stop-opacity="0.55"/>
 <stop offset="60%" stop-color="#2A2D3A" stop-opacity="0"/>
 </radialGradient>
-<filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-<feGaussianBlur stdDeviation="9" result="b"/>
+<filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+<feGaussianBlur stdDeviation="6" result="b"/>
 <feMerge>
 <feMergeNode in="b"/>
 <feMergeNode in="SourceGraphic"/>
@@ -32,14 +44,29 @@
 <rect width="512" height="512" rx="116" fill="url(#bg)"/>
 <rect width="512" height="512" rx="116" fill="url(#bgglow)"/>
 <rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#fff" stroke-opacity="0.06" stroke-width="3"/>
-<g filter="url(#glow)">
-<path d="M 168,168 C 168,252 256,246 256,320" fill="none" stroke="url(#laneA)" stroke-width="30" stroke-linecap="round"/>
-<path d="M 344,168 C 344,252 256,246 256,320" fill="none" stroke="url(#laneB)" stroke-width="30" stroke-linecap="round"/>
+<path d="M256.0,98.0 L387.6,174.0 L256.0,250.0 L124.4,174.0 Z" fill="url(#fTop)"/>
+<path d="M387.6,174.0 L387.6,326.0 L256.0,402.0 L256.0,250.0 Z" fill="url(#fRight)"/>
+<path d="M256.0,250.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="url(#fLeft)"/>
+<path d="M256.0,98.0 L387.6,174.0 L387.6,326.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="3" stroke-linejoin="round"/>
+<g filter="url(#glow)" fill="none" stroke-width="16" stroke-linecap="round" stroke-opacity="0.9">
+<path d="M256.0,250.0 L124.4,174.0" stroke="url(#fLeft)"/>
+<path d="M256.0,250.0 L387.6,174.0" stroke="url(#fRight)"/>
+<path d="M256.0,250.0 L256.0,402.0" stroke="url(#brand)"/>
 </g>
-<circle cx="168" cy="168" r="27" fill="url(#laneA)"/>
-<circle cx="168" cy="168" r="10.8" fill="#F5F3FF"/>
-<circle cx="344" cy="168" r="27" fill="url(#laneB)"/>
-<circle cx="344" cy="168" r="10.8" fill="#F5F3FF"/>
-<circle cx="256" cy="330" r="34" fill="url(#brand)"/>
-<circle cx="256" cy="330" r="13.6" fill="#F5F3FF"/>
+<g filter="url(#glow)">
+<circle cx="124.4" cy="174.0" r="19" fill="url(#fLeft)"/>
+<circle cx="124.4" cy="174.0" r="8.0" fill="#F5F3FF"/>
+</g>
+<g filter="url(#glow)">
+<circle cx="387.6" cy="174.0" r="19" fill="url(#fRight)"/>
+<circle cx="387.6" cy="174.0" r="8.0" fill="#F5F3FF"/>
+</g>
+<g filter="url(#glow)">
+<circle cx="256.0" cy="402.0" r="19" fill="url(#brand)"/>
+<circle cx="256.0" cy="402.0" r="8.0" fill="#F5F3FF"/>
+</g>
+<g filter="url(#glow)">
+<circle cx="256.0" cy="250.0" r="23" fill="url(#brand)"/>
+<circle cx="256.0" cy="250.0" r="9.7" fill="#F5F3FF"/>
+</g>
 </svg>
