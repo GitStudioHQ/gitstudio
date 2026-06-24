@@ -58,6 +58,13 @@ def squircle():
             '<rect x="2" y="2" width="508" height="508" rx="114" fill="none"'
             ' stroke="#fff" stroke-opacity="0.06" stroke-width="3"/>')
 
+def square():
+    """Sharp-cornered, full-bleed background: the same slate gradient + radial
+    glow as squircle() but rx=0, so the mark reads as a logo/tile rather than a
+    rounded app icon. No inset edge stroke — it would draw a ghost frame."""
+    return ('<rect width="512" height="512" fill="url(#bg)"/>'
+            '<rect width="512" height="512" fill="url(#bgglow)"/>')
+
 def _node(cx, cy, r, f, core=PAPER, glow=False):
     g = ' filter="url(#glow)"' if glow else ''
     return (f'<g{g}><circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{f}"/>'
@@ -122,6 +129,7 @@ def doc(inner, defs, w=512, h=512, vb="0 0 512 512"):
     return _pretty(body) + "\n"
 
 ICON   = doc(squircle() + commit_cube(),               LANES + FACES + BG + GLOW)
+LOGO   = doc(square() + commit_cube(),                 LANES + FACES + BG + GLOW)
 MARK   = doc(commit_cube(),                            LANES + FACES + GLOW)
 MONO_W = doc(commit_cube(mono="#FFFFFF"),              LANES + FACES + GLOW)
 MONO_K = doc(commit_cube(mono=INK),                   LANES + FACES + GLOW)
@@ -129,12 +137,14 @@ ALT    = doc(squircle() + g_mark(),                   LANES + BG + GLOW)
 
 OUT = {
     "gitstudio-icon.svg": ICON, "gitstudio-favicon.svg": ICON,
+    "gitstudio-logo.svg": LOGO,
     "gitstudio-mark.svg": MARK,
     "gitstudio-mark-mono-white.svg": MONO_W, "gitstudio-mark-mono-ink.svg": MONO_K,
     "alt/gitstudio-icon-g.svg": ALT,
 }
 PNGS = {
     "gitstudio-icon-1024.png": (ICON,1024), "gitstudio-avatar-1024.png": (ICON,1024),
+    "gitstudio-logo-1024.png": (LOGO,1024), "gitstudio-logo-512.png": (LOGO,512),
     "gitstudio-icon-512.png": (ICON,512), "gitstudio-icon-256.png": (ICON,256),
     "gitstudio-icon-128.png": (ICON,128), "gitstudio-favicon-32.png": (ICON,32),
     "gitstudio-favicon-16.png": (ICON,16), "gitstudio-mark-512.png": (MARK,512),
