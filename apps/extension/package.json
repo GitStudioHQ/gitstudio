@@ -119,6 +119,42 @@
         "title": "Show Commit Graph",
         "category": "GitStudio",
         "icon": "$(git-commit)"
+      },
+      {
+        "command": "gitstudio.showLineHistory",
+        "title": "Show Line History",
+        "category": "GitStudio",
+        "icon": "$(history)"
+      },
+      {
+        "command": "gitstudio.openChanges",
+        "title": "Open Changes (vs HEAD)",
+        "category": "GitStudio",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "gitstudio.openFileAtRevision",
+        "title": "Open File at Revision…",
+        "category": "GitStudio",
+        "icon": "$(history)"
+      },
+      {
+        "command": "gitstudio.revisionNavigateBack",
+        "title": "Revision: Step to Older",
+        "category": "GitStudio",
+        "icon": "$(arrow-left)"
+      },
+      {
+        "command": "gitstudio.revisionNavigateForward",
+        "title": "Revision: Step to Newer",
+        "category": "GitStudio",
+        "icon": "$(arrow-right)"
+      },
+      {
+        "command": "gitstudio.showReflog",
+        "title": "Show Reflog (Time Machine)",
+        "category": "GitStudio",
+        "icon": "$(history)"
       }
     ],
     "keybindings": [
@@ -127,6 +163,12 @@
         "key": "ctrl+shift+g b",
         "mac": "cmd+shift+g b",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "gitstudio.showLineHistory",
+        "key": "ctrl+shift+g h",
+        "mac": "cmd+shift+g h",
+        "when": "editorTextFocus && gitstudio.hasRepo"
       }
     ],
     "configuration": {
@@ -169,9 +211,26 @@
       ],
       "editor/title": [
         {
+          "command": "gitstudio.openChanges",
+          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "group": "navigation@-1"
+        },
+        {
           "command": "gitstudio.toggleFileBlame",
           "when": "editorTextFocus && gitstudio.hasRepo",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "gitstudio.showLineHistory",
+          "when": "editorTextFocus && gitstudio.hasRepo",
+          "group": "navigation@10"
+        },
+        {
+          "command": "gitstudio.openFileAtRevision",
+          "when": "editorTextFocus && gitstudio.hasRepo",
+          "group": "navigation@11"
         }
       ],
       "commandPalette": [
@@ -182,6 +241,30 @@
         {
           "command": "gitstudio.blame.showLineActions",
           "when": "editorTextFocus && gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.showLineHistory",
+          "when": "editorTextFocus && gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.openChanges",
+          "when": "gitstudio.hasRepo && resourceScheme == file"
+        },
+        {
+          "command": "gitstudio.openFileAtRevision",
+          "when": "editorTextFocus && gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.revisionNavigateBack",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.revisionNavigateForward",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.showReflog",
+          "when": "gitstudio.hasRepo"
         }
       ],
       "view/item/context": [

@@ -2,6 +2,7 @@ import { GitProcess } from "./GitProcess";
 import { LogProvider } from "./LogProvider";
 import { RefProvider } from "./RefProvider";
 import { BlameProvider } from "./BlameProvider";
+import { HistoryProvider } from "./HistoryProvider";
 
 export interface GitContextOptions {
   /** Absolute path to the repo root. */
@@ -14,7 +15,8 @@ export interface GitContextOptions {
 
 /**
  * Wires the data-layer pieces for a single repository: a bounded GitProcess
- * pool plus the streaming log, ref, and blame providers. One per open repo.
+ * pool plus the streaming log, ref, blame, and history providers. One per open
+ * repo.
  */
 export class GitContext {
   readonly root: string;
@@ -22,6 +24,7 @@ export class GitContext {
   readonly log: LogProvider;
   readonly refs: RefProvider;
   readonly blame: BlameProvider;
+  readonly history: HistoryProvider;
 
   constructor(opts: GitContextOptions) {
     this.root = opts.root;
@@ -33,6 +36,7 @@ export class GitContext {
     this.log = new LogProvider(this.process);
     this.refs = new RefProvider(this.process);
     this.blame = new BlameProvider(this.process);
+    this.history = new HistoryProvider(this.process);
   }
 
   dispose(): void {

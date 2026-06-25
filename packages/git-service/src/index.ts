@@ -22,6 +22,14 @@ export type { StreamCommitsOptions } from "./LogProvider";
 export { RefProvider } from "./RefProvider";
 export { BlameProvider } from "./BlameProvider";
 export type { BlameFileOptions } from "./BlameProvider";
+export { HistoryProvider } from "./HistoryProvider";
+export type {
+  FileHistoryEntry,
+  LineHistoryEntry,
+  FileHistoryOptions,
+  LineHistoryOptions,
+  FileAtRevisionOptions,
+} from "./HistoryProvider";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
 export { NodeGitAdapter } from "./NodeGitAdapter";

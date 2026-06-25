@@ -8,6 +8,15 @@ import {
 } from "./views/commitsView";
 import { RefsTreeProvider } from "./views/branchesView";
 import { CommitGraphPanel } from "./graph/graphPanel";
+import {
+  RevisionContentProvider,
+  REVISION_SCHEME,
+} from "./history/revisionContentProvider";
+import { FileTimelineProvider } from "./history/fileTimelineProvider";
+import { registerTimelineProvider } from "./history/timelineApi";
+import { showLineHistory } from "./history/lineHistory";
+import { RevisionNavigator } from "./history/revisionNavigation";
+import { showReflog } from "./history/reflog";
 
 // GitStudio extension entry point.
 //
@@ -52,9 +61,20 @@ export function activate(context: vscode.ExtensionContext): void {
       showCollapseAll: true,
     });
 
+    // File & line history + revision navigation (M5).
+    const revisionContent = new RevisionContentProvider(repos);
+    const timelineProvider = new FileTimelineProvider(repos);
+    const navigator = new RevisionNavigator(repos);
+    context.subscriptions.push(timelineProvider, navigator);
+
     context.subscriptions.push(
       commitsView,
       branchesView,
+      vscode.workspace.registerTextDocumentContentProvider(
+        REVISION_SCHEME,
+        revisionContent,
+      ),
+      registerTimelineProvider("file", timelineProvider),
       vscode.commands.registerCommand("gitstudio.refreshCommits", () => {
         commitsProvider.refresh();
       }),
@@ -67,6 +87,29 @@ export function activate(context: vscode.ExtensionContext): void {
       ),
       vscode.commands.registerCommand("gitstudio.showCommitGraph", () => {
         CommitGraphPanel.show(repos, context.extensionUri);
+      }),
+      vscode.commands.registerCommand("gitstudio.showLineHistory", () => {
+        void showLineHistory(repos);
+      }),
+      vscode.commands.registerCommand(
+        "gitstudio.openChanges",
+        (resource?: vscode.Uri) => void navigator.openChanges(resource),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.openFileAtRevision",
+        (resource?: vscode.Uri) =>
+          void navigator.openFileAtRevision(resource),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.revisionNavigateBack",
+        (resource?: vscode.Uri) => void navigator.navigateBack(resource),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.revisionNavigateForward",
+        (resource?: vscode.Uri) => void navigator.navigateForward(resource),
+      ),
+      vscode.commands.registerCommand("gitstudio.showReflog", () => {
+        void showReflog(repos);
       }),
     );
   });
