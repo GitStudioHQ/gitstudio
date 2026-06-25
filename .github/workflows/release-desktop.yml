@@ -1,0 +1,79 @@
+name: Release Desktop
+
+# Builds the GitStudio desktop (Electron) app for macOS, Windows, and Linux and
+# uploads the per-OS installers (.dmg / .exe / .AppImage) to the GitHub Release
+# when an `app-v*` tag is pushed.
+#
+# Cut a release:
+#   1. bump "version" in apps/desktop/package.json
+#   2. git tag app-v0.1.0 && git push origin app-v0.1.0
+#
+# Code-signing/notarization are OPTIONAL: the publish/sign steps below are
+# guarded so a missing secret SKIPS (not fails). With no secrets you still get
+# unsigned installers attached to the Release.
+
+on:
+  push:
+    tags:
+      - 'app-v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: 'apps/desktop/release/*.dmg'
+          - os: windows-latest
+            artifact: 'apps/desktop/release/*.exe'
+          - os: ubuntu-latest
+            artifact: 'apps/desktop/release/*.AppImage'
+    runs-on: ${{ matrix.os }}
+    env:
+      # electron-builder reads these; when absent it builds UNSIGNED (it does not
+      # fail). Provide them as repo secrets to enable signing/notarization.
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # electron-builder publishes to the GitHub Release of this tag.
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (workspace root)
+        run: npm ci
+
+      - name: Type-check
+        run: npm run check-types --workspaces --if-present
+
+      - name: Test
+        run: npm test
+
+      - name: Build bundles (main / preload / renderer)
+        run: npm run build --workspace apps/desktop
+
+      - name: Build installer (electron-builder)
+        working-directory: apps/desktop
+        run: npx electron-builder --publish never
+
+      - name: Attach installer to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --generate-notes \
+            || echo "Release already exists; uploading assets."
+          gh release upload "${GITHUB_REF_NAME}" ${{ matrix.artifact }} --clobber

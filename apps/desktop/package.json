@@ -1,0 +1,36 @@
+{
+  "name": "gitstudio-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "GitStudio — the native cross-platform desktop app (Electron). Reuses @gitstudio/engine, git-service, webview-ui, and host-bridge behind host-agnostic seams.",
+  "author": "GitStudio <hello@gitstudio.dev>",
+  "homepage": "https://gitstudio.dev",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "dev": "node esbuild.js && electron .",
+    "start": "electron .",
+    "package": "node esbuild.js --production && electron-builder --dir",
+    "dist": "node esbuild.js --production && electron-builder",
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "check-types": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json"
+  },
+  "dependencies": {
+    "@gitstudio/engine": "*",
+    "@gitstudio/git-service": "*",
+    "@gitstudio/host-bridge": "*",
+    "@gitstudio/webview-ui": "*",
+    "monaco-editor": "^0.55.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-updater": "^6.3.9",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,549 @@
+/* GitStudio desktop app theme + shell chrome.
+ *
+ * The `--vscode-*` custom properties below are the bridge that lets every
+ * shared component (the graph element, the Monaco theme bridge, the diff/merge
+ * CSS) render unchanged: they read these exact variable names. We define a clean
+ * dark and light app theme here; `body.vscode-dark` / `body.vscode-light` (set
+ * by desktopTheme) selects which one is live. */
+
+:root {
+  --gs-accent: #7c5cf0;
+  --gs-accent-2: #4aa5ff;
+  --titlebar-h: 38px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Dark theme tokens ─────────────────────────────────────────────────────── */
+body.vscode-dark {
+  --vscode-foreground: #d7dae0;
+  --vscode-descriptionForeground: #8b93a1;
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: "SF Mono", "JetBrains Mono", "Fira Code",
+    Menlo, Consolas, "Courier New", monospace;
+  --vscode-editor-font-size: 12.5px;
+  --vscode-editor-background: #12151c;
+  --vscode-editor-foreground: #d7dae0;
+  --vscode-editorLineNumber-foreground: #4b5363;
+  --vscode-editorLineNumber-activeForeground: #8b93a1;
+  --vscode-editorCursor-foreground: #d7dae0;
+  --vscode-editor-selectionBackground: #2a3a5a;
+  --vscode-editor-inactiveSelectionBackground: #27314a;
+  --vscode-editorWidget-background: #1a1e27;
+  --vscode-editorWidget-border: #2a3140;
+  --vscode-scrollbarSlider-background: #4b536355;
+  --vscode-scrollbarSlider-hoverBackground: #5c657888;
+  --vscode-scrollbarSlider-activeBackground: #6b7488aa;
+  --vscode-editorIndentGuide-background: #232a36;
+
+  --app-bg: #0d1016;
+  --app-panel: #12151c;
+  --app-elevated: #171b24;
+  --app-border: #232936;
+  --app-hover: #1d2330;
+  --app-active: #232c40;
+  --app-muted: #8b93a1;
+}
+
+/* ── Light theme tokens ────────────────────────────────────────────────────── */
+body.vscode-light {
+  --vscode-foreground: #2b2f36;
+  --vscode-descriptionForeground: #6a7280;
+  --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --vscode-font-size: 13px;
+  --vscode-editor-font-family: "SF Mono", "JetBrains Mono", "Fira Code",
+    Menlo, Consolas, "Courier New", monospace;
+  --vscode-editor-font-size: 12.5px;
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #2b2f36;
+  --vscode-editorLineNumber-foreground: #b3b9c2;
+  --vscode-editorLineNumber-activeForeground: #6a7280;
+  --vscode-editorCursor-foreground: #2b2f36;
+  --vscode-editor-selectionBackground: #cfe2ff;
+  --vscode-editor-inactiveSelectionBackground: #e2ecfb;
+  --vscode-editorWidget-background: #f3f5f8;
+  --vscode-editorWidget-border: #d8dde5;
+  --vscode-scrollbarSlider-background: #b3b9c255;
+  --vscode-scrollbarSlider-hoverBackground: #9aa1ad88;
+  --vscode-scrollbarSlider-activeBackground: #868e9caa;
+  --vscode-editorIndentGuide-background: #e7eaef;
+
+  --app-bg: #eef1f5;
+  --app-panel: #f7f9fb;
+  --app-elevated: #ffffff;
+  --app-border: #dde2ea;
+  --app-hover: #e9edf3;
+  --app-active: #dde8fb;
+  --app-muted: #6a7280;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--app-bg);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── Titlebar ──────────────────────────────────────────────────────────────── */
+.titlebar {
+  height: var(--titlebar-h);
+  flex: 0 0 var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px 0 80px; /* leave room for macOS traffic lights */
+  background: linear-gradient(180deg, var(--app-elevated), var(--app-panel));
+  border-bottom: 1px solid var(--app-border);
+  -webkit-app-region: drag;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--gs-accent), var(--gs-accent-2));
+  box-shadow: 0 0 10px rgba(124, 92, 240, 0.55);
+}
+
+.brand-name {
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.titlebar-repo {
+  -webkit-app-region: no-drag;
+  margin-left: auto;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  color: var(--vscode-foreground);
+  padding: 4px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titlebar-repo:hover {
+  background: var(--app-hover);
+}
+
+/* ── Body grid ─────────────────────────────────────────────────────────────── */
+.app-body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 260px;
+  flex: 0 0 260px;
+  background: var(--app-panel);
+  border-right: 1px solid var(--app-border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.repo-name {
+  font-weight: 650;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn {
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  color: var(--vscode-foreground);
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.btn:hover {
+  background: var(--app-hover);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--gs-accent), var(--gs-accent-2));
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.07);
+}
+
+.sidebar-section {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.section-title {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--app-muted);
+  padding: 2px 6px 8px;
+  font-weight: 600;
+}
+
+.refs-group-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--app-muted);
+  padding: 8px 6px 3px;
+}
+
+.ref-row,
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  padding: 5px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.ref-row:hover,
+.recent-row:hover {
+  background: var(--app-hover);
+}
+
+.ref-icon {
+  color: var(--app-muted);
+  width: 14px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.ref-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ref-current {
+  background: var(--app-active);
+}
+
+.ref-current .ref-name {
+  font-weight: 650;
+  color: var(--gs-accent-2);
+}
+
+.recent-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.recent-name {
+  font-weight: 550;
+}
+
+.recent-path {
+  font-size: 10.5px;
+  color: var(--app-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── Main area ─────────────────────────────────────────────────────────────── */
+.app-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.graph-host {
+  flex: 1 1 55%;
+  min-height: 140px;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--app-border);
+  overflow: hidden;
+}
+
+gitstudio-graph {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+.details-host {
+  flex: 1 1 45%;
+  min-height: 120px;
+  overflow: hidden;
+  display: flex;
+  background: var(--app-panel);
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.details-empty,
+.diff-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--app-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px;
+}
+
+.details-empty {
+  display: flex;
+}
+
+.details-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.details-subject {
+  font-size: 15px;
+  font-weight: 650;
+  margin-bottom: 8px;
+  user-select: text;
+}
+
+.details-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--app-elevated);
+  border: 1px solid var(--app-border);
+  color: var(--app-muted);
+  user-select: text;
+}
+
+.meta-sha {
+  font-family: var(--vscode-editor-font-family);
+  color: var(--gs-accent-2);
+}
+
+.details-body {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: var(--app-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 140px;
+  overflow: auto;
+  color: var(--vscode-foreground);
+  user-select: text;
+}
+
+.details-files-title {
+  padding: 10px 16px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--app-muted);
+  font-weight: 600;
+}
+
+.details-files {
+  overflow-y: auto;
+  max-height: 30%;
+  flex: 0 0 auto;
+  padding: 0 8px 6px;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.file-row:hover {
+  background: var(--app-hover);
+}
+
+.file-row.active {
+  background: var(--app-active);
+}
+
+.file-status {
+  font-family: var(--vscode-editor-font-family);
+  font-weight: 700;
+  width: 16px;
+  text-align: center;
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.status-A .file-status,
+.status-C .file-status {
+  color: #2ecf83;
+}
+.status-M .file-status,
+.status-R .file-status {
+  color: #4aa5ff;
+}
+.status-D .file-status {
+  color: #ef6191;
+}
+
+.file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+}
+
+.diff-surface {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  border-top: 1px solid var(--app-border);
+}
+
+.diff-empty {
+  display: flex;
+  height: 100%;
+}
+
+/* ── Context menu ──────────────────────────────────────────────────────────── */
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  background: var(--app-elevated);
+  border: 1px solid var(--app-border);
+  border-radius: 9px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+  overflow: hidden;
+}
+
+.ctx-menu-header {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  color: var(--app-muted);
+  padding: 5px 10px 7px;
+  border-bottom: 1px solid var(--app-border);
+  margin-bottom: 4px;
+}
+
+.ctx-menu-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ctx-menu-item:hover {
+  background: var(--app-hover);
+}
+
+.ctx-danger {
+  color: #ef6191;
+}
+
+.ctx-danger:hover {
+  background: rgba(239, 97, 145, 0.14);
+}
+
+/* Scrollbars — match the app, not the OS default. */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

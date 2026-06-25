@@ -8,6 +8,7 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
+    "test": "tsx --test \"test/**/*.test.ts\"",
     "check-types": "tsc --noEmit -p tsconfig.json"
   }
 }

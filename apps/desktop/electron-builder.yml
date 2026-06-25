@@ -1,0 +1,50 @@
+appId: dev.gitstudio.desktop
+productName: GitStudio
+copyright: Copyright © GitStudio. Licensed under Apache-2.0.
+
+# In an npm-workspaces repo `electron` is hoisted to the root node_modules, so
+# electron-builder can't infer the version from the local package tree; pin it
+# explicitly (kept in step with the devDependency in package.json).
+electronVersion: 33.4.11
+
+# Only the built bundles + the page shell ship; sources stay out of the app.
+files:
+  - dist/**
+  - package.json
+
+directories:
+  output: release
+  buildResources: build
+
+# Auto-update feed (no-op until the first app-v* release publishes installers).
+publish:
+  provider: github
+  owner: GitStudioHQ
+  repo: gitstudio
+
+# A single ≥512px PNG in buildResources (build/icon.png); electron-builder
+# converts it to .icns / .ico per platform automatically.
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  title: GitStudio ${version}
+
+win:
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  category: Development
+  target:
+    - AppImage
+  maintainer: GitStudio <hello@gitstudio.dev>

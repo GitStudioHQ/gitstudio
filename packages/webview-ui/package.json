@@ -5,6 +5,7 @@
   "license": "Apache-2.0",
   "description": "GitStudio shared webview UI: Monaco merge/diff views, SVG ribbons, theme bridge, decorations, and (added incrementally) Lit components for graph/history/staging.",
   "exports": {
+    "./styles/*.css": "./src/styles/*.css",
     "./*": "./src/*.ts"
   },
   "scripts": {

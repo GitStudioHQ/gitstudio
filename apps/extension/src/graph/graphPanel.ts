@@ -5,9 +5,9 @@ import type { CommitRecord, GitRef } from "@gitstudio/git-service/index";
 import type {
   GraphHostMessage,
   GraphWebviewMessage,
-  WireRef,
   WireRow,
 } from "@gitstudio/host-bridge/graphProtocol";
+import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { commitActionItems, runCommitAction } from "./commitActions";
@@ -273,52 +273,22 @@ export class CommitGraphPanel {
     }
   }
 
-  /** Lays the DAG out and decorates each row into a WireRow. */
+  /**
+   * Lays the DAG out and decorates each row into a WireRow. The metadata/ref
+   * denormalization is the shared, host-agnostic `buildWireRows` — the same
+   * transformation the desktop main process reuses.
+   */
   private buildRows(commits: GraphInputCommit[]): {
     rows: WireRow[];
     totalColumns: number;
   } {
     const layout = computeGraphLayout(commits, { colorCount: 8 });
-    const rows: WireRow[] = layout.rows.map((row) => {
-      const record = this.records.get(row.sha);
-      return {
-        sha: row.sha,
-        shortSha: row.sha.slice(0, 7),
-        column: row.column,
-        color: row.color,
-        isMerge: row.isMerge,
-        segments: row.segments,
-        subject: record?.subject ?? "",
-        author: record?.author ?? "",
-        authorEmail: record?.authorEmail ?? "",
-        authorDate: record?.authorDate ?? 0,
-        refs: this.wireRefs(row.sha),
-      };
+    const rows = buildWireRows({
+      rows: layout.rows,
+      records: this.records,
+      refsBySha: this.refsBySha,
     });
     return { rows, totalColumns: layout.totalColumns };
-  }
-
-  /** Ref chips for a sha, current HEAD first, then locals, remotes, tags. */
-  private wireRefs(sha: string): WireRef[] {
-    const refs = this.refsBySha.get(sha);
-    if (!refs) {
-      return [];
-    }
-    const out: WireRef[] = [];
-    for (const ref of refs) {
-      if (ref.type === "head") {
-        out.push({
-          name: ref.name,
-          kind: ref.isCurrent ? "currentHead" : "head",
-        });
-      } else if (ref.type === "remote") {
-        out.push({ name: ref.name, kind: "remoteHead" });
-      } else if (ref.type === "tag") {
-        out.push({ name: ref.name, kind: "tag" });
-      }
-    }
-    out.sort((a, b) => kindRank(a.kind) - kindRank(b.kind));
-    return out;
   }
 
   // ── Commit interactions ────────────────────────────────────────────────────
@@ -401,18 +371,5 @@ export class CommitGraphPanel {
     this.records.clear();
     this.refsBySha.clear();
     this.loaded = [];
-  }
-}
-
-function kindRank(kind: WireRef["kind"]): number {
-  switch (kind) {
-    case "currentHead":
-      return 0;
-    case "head":
-      return 1;
-    case "remoteHead":
-      return 2;
-    case "tag":
-      return 3;
   }
 }
