@@ -520,6 +520,9 @@ export class CommitViewProvider
       font-size: 13px;
       line-height: 1.4;
       background: var(--gs-bg);
+      /* The sidebar never scrolls sideways — clip any incidental overflow so a
+         long branch name or path can't widen the whole view. */
+      overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
     }
 
@@ -536,7 +539,7 @@ export class CommitViewProvider
       align-items: center;
       gap: 6px;
       min-width: 0;
-      max-width: 100%;
+      flex: 0 1 auto;
       height: 22px;
       padding: 0 9px 0 8px;
       border-radius: var(--gs-radius-pill);
@@ -554,7 +557,7 @@ export class CommitViewProvider
       white-space: nowrap;
       letter-spacing: 0.005em;
     }
-    .sync { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
+    .sync { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex: 0 0 auto; }
     .sync.hidden { display: none; }
     .sync-pill {
       display: none;
@@ -809,20 +812,18 @@ export class CommitViewProvider
 
     /* ---- Keyboard hint ------------------------------------------------- */
     .hint {
-      display: flex;
-      align-items: center;
-      gap: 5px;
       margin: 8px 4px 0;
       font-size: 10.5px;
+      line-height: 1.7;
       color: var(--gs-fg-subtle);
     }
     .hint kbd {
+      display: inline-block;
       font-family: var(--gs-font-mono);
       font-size: 10px;
-      line-height: 15px;
-      min-width: 15px;
-      text-align: center;
+      line-height: 14px;
       padding: 0 4px;
+      vertical-align: 1px;
       border-radius: 4px;
       border: 1px solid var(--gs-border);
       border-bottom-width: 2px;
