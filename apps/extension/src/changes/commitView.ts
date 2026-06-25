@@ -642,19 +642,12 @@ export class CommitViewProvider
     .changes-toolbar {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 2px;
       margin: 12px 2px 2px;
       padding: 2px 2px 4px;
       border-top: 1px solid var(--vscode-panel-border, transparent);
       padding-top: 8px;
-    }
-    .changes-toolbar .title {
-      flex: 1;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      font-weight: 600;
-      color: var(--gs-fg-muted);
     }
     .icon-btn {
       display: inline-flex;
@@ -901,7 +894,6 @@ export class CommitViewProvider
   </div>
 
   <div class="changes-toolbar">
-    <span class="title" id="changes-title">Changes</span>
     <button class="icon-btn layout" id="layout-toggle" type="button"
       title="Toggle tree / list view" aria-label="Toggle tree / list view">
       <svg class="to-tree" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -957,7 +949,6 @@ export class CommitViewProvider
     const generateBtn = $("generate");
     const commitLabel = $("commit-label");
     const authorToggle = $("author-toggle");
-    const changesTitle = $("changes-title");
     const groupsEl = $("groups");
     const emptyEl = $("empty-state");
     const layoutToggle = $("layout-toggle");
@@ -1011,16 +1002,9 @@ export class CommitViewProvider
     }
 
     function renderCount() {
-      const files = (n) => n + " staged " + (n === 1 ? "file" : "files");
-      if (amend.checked) {
-        commitLabel.textContent = "Amend";
-        changesTitle.textContent = stagedCount > 0
-          ? "Amend · " + files(stagedCount) : "Changes";
-      } else {
-        commitLabel.textContent = "Commit";
-        changesTitle.textContent = stagedCount > 0
-          ? "Commit " + files(stagedCount) : "Changes";
-      }
+      // Staged count lives on the Commit button itself — no redundant title.
+      const verb = amend.checked ? "Amend" : "Commit";
+      commitLabel.textContent = stagedCount > 0 ? verb + " " + stagedCount : verb;
     }
 
     function doCommit(push) {
@@ -1131,9 +1115,9 @@ export class CommitViewProvider
 
     // ---- Rendering -------------------------------------------------------
     const GROUP_DEFS = [
-      { kind: "merge", label: "Merge Changes", staged: false },
-      { kind: "staged", label: "Staged Changes", staged: true },
-      { kind: "unstaged", label: "Changes", staged: false },
+      { kind: "merge", label: "Merge Conflicts", staged: false },
+      { kind: "staged", label: "Staged", staged: true },
+      { kind: "unstaged", label: "Unstaged", staged: false },
     ];
 
     function render() {
