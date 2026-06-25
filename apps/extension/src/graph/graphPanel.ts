@@ -68,6 +68,16 @@ export class CommitGraphPanel {
     );
   }
 
+  /** Open (or focus) the graph, then select + reveal a commit and its details. */
+  static revealCommit(
+    repos: RepoManager,
+    extensionUri: vscode.Uri,
+    sha: string,
+  ): void {
+    CommitGraphPanel.show(repos, extensionUri);
+    CommitGraphPanel.current?.reveal(sha);
+  }
+
   private readonly disposables: vscode.Disposable[] = [];
   private loadController: AbortController | undefined;
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -83,6 +93,8 @@ export class CommitGraphPanel {
   private hasMore = false;
   private ready = false;
   private repoRoot: string | undefined;
+  /** A sha to reveal once the first page is loaded (from the Commits view). */
+  private pendingReveal: string | undefined;
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -201,6 +213,13 @@ export class CommitGraphPanel {
         totalColumns,
         hasMore: this.hasMore,
       });
+      // Flush a queued reveal (e.g. from a Commits-view click) now that rows
+      // exist in the webview.
+      if (this.pendingReveal) {
+        const sha = this.pendingReveal;
+        this.pendingReveal = undefined;
+        this.reveal(sha);
+      }
     } catch (err) {
       if (!controller.signal.aborted) {
         // Empty/fresh repo or a transient git error: show the empty state.
@@ -398,6 +417,11 @@ export class CommitGraphPanel {
 
   /** Public: select + reveal a commit and show its details (from another view). */
   reveal(sha: string): void {
+    if (!this.ready) {
+      // The webview hasn't booted / loaded its first page yet — queue it.
+      this.pendingReveal = sha;
+      return;
+    }
     this.post({ type: "revealCommit", sha });
     void this.pushCommitDetails(sha);
   }

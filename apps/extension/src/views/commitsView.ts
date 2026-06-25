@@ -32,6 +32,13 @@ export class CommitNode extends vscode.TreeItem {
     }
     this.contextValue = "gitstudio.commit";
     this.tooltip = buildCommitTooltip(commit, isHead);
+    // Clicking a commit opens the graph and reveals it — the flat list becomes
+    // a launchpad into the full graph + details surface.
+    this.command = {
+      command: "gitstudio.openCommitInGraph",
+      title: "Open in Commit Graph",
+      arguments: [commit.sha],
+    };
   }
 }
 

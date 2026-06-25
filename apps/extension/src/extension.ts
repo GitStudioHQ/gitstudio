@@ -181,6 +181,14 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand("gitstudio.showCommitGraph", () => {
         CommitGraphPanel.show(repos, context.extensionUri);
       }),
+      vscode.commands.registerCommand(
+        "gitstudio.openCommitInGraph",
+        (sha?: string) => {
+          if (typeof sha === "string" && sha) {
+            CommitGraphPanel.revealCommit(repos, context.extensionUri, sha);
+          }
+        },
+      ),
       vscode.commands.registerCommand("gitstudio.showLineHistory", () => {
         void showLineHistory(repos);
       }),
