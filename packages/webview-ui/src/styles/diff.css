@@ -205,15 +205,23 @@ body.vscode-high-contrast-light {
   background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.16)));
 }
 .jb-toolbar-btn.jb-primary {
-  background: var(--vscode-button-background);
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--vscode-button-background) 88%, white 12%),
+      var(--vscode-button-background));
   color: var(--vscode-button-foreground);
   border-color: var(--vscode-button-border, transparent);
   font-weight: 600;
   padding: 0 14px;
+  box-shadow: var(--gs-shadow-1),
+    inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
 }
 .jb-toolbar-btn.jb-primary:not([disabled]):hover {
   background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+  box-shadow: var(--gs-shadow-2),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 }
+.jb-toolbar-btn.jb-primary:not([disabled]):active { transform: translateY(0.5px); }
 .jb-toolbar-btn.jb-primary.jb-warn {
   background: var(--vscode-statusBarItem-warningBackground, #a1260d);
   color: var(--vscode-statusBarItem-warningForeground, #ffffff);

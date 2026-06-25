@@ -84,15 +84,18 @@ export class RebaseView extends LitElement {
     :host {
       --gs-fg: var(--vscode-foreground);
       --gs-fg-muted: var(--vscode-descriptionForeground);
-      --gs-border: var(--vscode-panel-border, var(--vscode-widget-border));
+      --gs-border: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
       --gs-hover: var(--vscode-list-hoverBackground);
       --gs-accent: var(--vscode-focusBorder);
+      --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+      --gs-surface: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
       --gs-font-ui: var(--vscode-font-family);
       --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
-      --gs-radius: 4px;
-      --gs-radius-sm: 3px;
-      --gs-motion: 150ms;
-      --gs-motion-fast: 120ms;
+      --gs-radius: 7px;
+      --gs-radius-sm: 5px;
+      --gs-motion: 170ms;
+      --gs-motion-fast: 110ms;
+      --gs-ease: cubic-bezier(0.2, 0, 0, 1);
 
       display: flex;
       flex-direction: column;
@@ -105,21 +108,23 @@ export class RebaseView extends LitElement {
 
     header {
       flex: 0 0 auto;
-      padding: 12px 16px 10px;
+      padding: 14px 18px 12px;
       border-bottom: 1px solid var(--gs-border);
+      background: color-mix(in srgb, var(--vscode-foreground) 2.5%, var(--vscode-editor-background));
     }
     .eyebrow {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--gs-fg-muted);
-      margin: 0 0 4px;
+      letter-spacing: 0.06em;
+      color: var(--gs-accent-text);
+      margin: 0 0 5px;
     }
     .title {
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
       line-height: 1.3;
+      letter-spacing: -0.005em;
     }
     .title .mono {
       font-family: var(--gs-font-mono);
@@ -169,15 +174,17 @@ export class RebaseView extends LitElement {
       grid-template-columns: 3px 18px 96px 64px 1fr auto;
       align-items: center;
       gap: 8px;
-      min-height: 24px;
+      min-height: 26px;
       padding: 4px 8px 4px 4px;
       border-radius: var(--gs-radius);
-      border: 1px solid transparent;
+      border: 1px solid var(--gs-border);
       border-left: 2px solid transparent;
-      background: var(--vscode-editorWidget-background, color-mix(in srgb, var(--gs-fg-muted) 6%, transparent));
+      background: var(--gs-surface);
       cursor: default;
-      transition: background var(--gs-motion-fast) ease,
-        border-color var(--gs-motion-fast) ease, opacity var(--gs-motion-fast) ease;
+      transition: background var(--gs-motion-fast) var(--gs-ease),
+        border-color var(--gs-motion-fast) var(--gs-ease),
+        box-shadow var(--gs-motion-fast) var(--gs-ease),
+        opacity var(--gs-motion-fast) var(--gs-ease);
     }
     .row:hover {
       background: var(--gs-hover);
@@ -246,13 +253,15 @@ export class RebaseView extends LitElement {
     select.action {
       grid-column: 3;
       font-family: inherit;
-      font-size: 11.5px;
-      font-weight: 600;
-      padding: 2px 6px;
-      border-radius: var(--gs-radius);
-      background: var(--vscode-dropdown-background);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 3px 6px;
+      border-radius: var(--gs-radius-sm);
+      background: color-mix(in srgb, var(--action-accent) 14%, transparent);
       color: var(--action-accent);
-      border: 1px solid color-mix(in srgb, var(--action-accent) 45%, transparent);
+      border: 1px solid color-mix(in srgb, var(--action-accent) 40%, transparent);
       cursor: pointer;
     }
     select.action:hover {
@@ -334,25 +343,37 @@ export class RebaseView extends LitElement {
     button.cta {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
       font-family: inherit;
       font-size: 13px;
-      height: 28px;
-      padding: 0 14px;
+      font-weight: 600;
+      height: 30px;
+      padding: 0 16px;
       border-radius: var(--gs-radius);
       border: 1px solid transparent;
       cursor: pointer;
+      transition: background var(--gs-motion) var(--gs-ease),
+        box-shadow var(--gs-motion) var(--gs-ease),
+        transform var(--gs-motion-fast) var(--gs-ease);
     }
     button.cta svg {
       width: 14px;
       height: 14px;
     }
+    button.cta:active:not(:disabled) { transform: translateY(0.5px); }
     button.primary {
-      background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
+      background:
+        linear-gradient(180deg,
+          color-mix(in srgb, var(--vscode-button-background) 88%, white 12%),
+          var(--vscode-button-background));
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16),
+        inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
     }
     button.primary:hover:not(:disabled) {
       background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16),
+        inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
     }
     button.primary:disabled {
       opacity: 0.45;
