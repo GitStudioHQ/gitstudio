@@ -1633,6 +1633,7 @@
   "devDependencies": {
     "@types/node": "^20.19.42",
     "@types/vscode": "1.74.0",
+    "@vscode/codicons": "^0.0.45",
     "esbuild": "^0.28.1",
     "monaco-editor": "^0.55.1",
     "tsx": "^4.22.4",

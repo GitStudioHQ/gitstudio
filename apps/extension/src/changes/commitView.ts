@@ -95,6 +95,8 @@ export class CommitViewProvider
   private busy = false;
 
   constructor(
+    /** The extension root URI, for loading bundled assets (the codicon font). */
+    private readonly extensionUri: vscode.Uri,
     private readonly repos: RepoManager,
     private readonly onCommitted: () => void,
     /** Persists the tree/list layout choice across reloads. */
@@ -107,7 +109,10 @@ export class CommitViewProvider
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
-    view.webview.options = { enableScripts: true };
+    view.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist")],
+    };
     view.webview.html = this.html(view.webview);
 
     this.disposables.push(
@@ -464,9 +469,15 @@ export class CommitViewProvider
 
   private html(webview: vscode.Webview): string {
     const nonce = getNonce();
+    const codiconUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, "dist", "codicons", "codicon.css"),
+    );
     const csp = [
       `default-src 'none'`,
-      `style-src 'nonce-${nonce}'`,
+      // cspSource: the codicon stylesheet; nonce: our own inline <style>.
+      `style-src 'nonce-${nonce}' ${webview.cspSource}`,
+      // cspSource: the codicon.ttf the stylesheet @font-face references.
+      `font-src ${webview.cspSource}`,
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
 
@@ -476,6 +487,7 @@ export class CommitViewProvider
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="${codiconUri}" rel="stylesheet" />
   <style nonce="${nonce}">
     :root {
       color-scheme: light dark;
@@ -525,6 +537,19 @@ export class CommitViewProvider
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
     }
+
+    /* ---- Codicons (the real VS Code icon font) ------------------------- */
+    .codicon { font-size: 16px; line-height: 1; color: inherit; display: inline-block; }
+    .branch .codicon,
+    .sync-pill .codicon,
+    .sync-clean .codicon { font-size: 13px; }
+    .sparkle .codicon { font-size: 15px; }
+    .gs-commit .codicon { font-size: 14px; }
+    .twisty .codicon { font-size: 14px; }
+    .file-icon .codicon { font-size: 15px; }
+    .empty-state .badge .codicon { font-size: 20px; }
+    .codicon-modifier-spin { animation: codicon-spin 1s steps(12) infinite; }
+    @keyframes codicon-spin { 100% { transform: rotate(360deg); } }
 
     /* ---- Branch / repo context header --------------------------------- */
     .repo-bar {
@@ -1112,28 +1137,20 @@ export class CommitViewProvider
 <body class="layout-list">
   <header class="repo-bar">
     <span class="branch" id="branch-pill" title="Current branch">
-      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M5 3.5a1.5 1.5 0 1 0-2 1.41V11a1.5 1.5 0 1 0 1 0V8.9c.6.4 1.3.6 2 .6h1A2.5 2.5 0 0 0 10.45 8 1.5 1.5 0 1 0 9.4 7H8a1.5 1.5 0 0 1-1.5-1.5V4.9A1.5 1.5 0 0 0 5 3.5z"/>
-      </svg>
+      <i class="codicon codicon-git-branch" aria-hidden="true"></i>
       <span class="branch-name" id="branch-name">—</span>
     </span>
     <span class="sync hidden" id="sync">
       <span class="sync-pill ahead" id="ahead" title="Commits to push">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M8 12.5V4M4.5 7.5L8 4l3.5 3.5"/></svg>
+        <i class="codicon codicon-arrow-up" aria-hidden="true"></i>
         <span id="ahead-n">0</span>
       </span>
       <span class="sync-pill behind" id="behind" title="Commits to pull">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M8 3.5V12M4.5 8.5L8 12l3.5-3.5"/></svg>
+        <i class="codicon codicon-arrow-down" aria-hidden="true"></i>
         <span id="behind-n">0</span>
       </span>
       <span class="sync-clean" id="sync-clean" title="Up to date with upstream">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3.5 8.5l3 3 6-7"/></svg>
+        <i class="codicon codicon-check" aria-hidden="true"></i>
         <span>up to date</span>
       </span>
     </span>
@@ -1146,15 +1163,8 @@ export class CommitViewProvider
     <button class="sparkle" id="generate" type="button"
       title="Generate commit message with GitBrain"
       aria-label="Generate commit message">
-      <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-        stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M8 1.6l1.5 3.9 3.9 1.5-3.9 1.5L8 12.4 6.5 8.5 2.6 7l3.9-1.5z"/>
-        <path d="M12.8 11.2l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z"/>
-      </svg>
-      <svg class="spinner" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-        stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-        <path d="M8 1.8a6.2 6.2 0 1 1-4.4 1.8" opacity="0.9"/>
-      </svg>
+      <i class="codicon codicon-sparkle glyph" aria-hidden="true"></i>
+      <i class="codicon codicon-loading spinner" aria-hidden="true"></i>
     </button>
     <div class="composer-foot">
       <span class="counter" id="counter" aria-hidden="true"></span>
@@ -1167,10 +1177,7 @@ export class CommitViewProvider
     <button class="link" id="author-toggle" type="button" aria-expanded="false"
       aria-controls="author-row">
       Author
-      <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M4 6l4 4 4-4"/>
-      </svg>
+      <i class="codicon codicon-chevron-down chev" aria-hidden="true"></i>
     </button>
   </div>
 
@@ -1182,19 +1189,12 @@ export class CommitViewProvider
 
   <div class="actions">
     <button class="gs-commit primary" id="commit" type="button">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="8" cy="8" r="2.4"/>
-        <path d="M8 1.4v4.2M8 10.4v4.2"/>
-      </svg>
+      <i class="codicon codicon-git-commit" aria-hidden="true"></i>
       <span id="commit-label">Commit</span>
     </button>
     <button class="gs-commit split" id="commit-push" type="button"
       title="Commit &amp; Push" aria-label="Commit and Push">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M8 13.5V4.5M4.5 8L8 4.5 11.5 8"/>
-      </svg>
+      <i class="codicon codicon-arrow-up" aria-hidden="true"></i>
       <span>Push</span>
     </button>
   </div>
@@ -1208,34 +1208,20 @@ export class CommitViewProvider
     <span class="toolbar-actions">
       <button class="icon-btn layout" id="layout-toggle" type="button"
         title="Toggle tree / list view" aria-label="Toggle tree / list view">
-        <svg class="to-tree" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <path d="M2 3h12v1.5H2zM4.5 7.25h9.5v1.5H4.5zM4.5 11.5h9.5V13H4.5zM2.5 7.25v4.25h1.2"
-            fill="none" stroke="currentColor" stroke-width="1.2"/>
-          <circle cx="2.75" cy="3.75" r="0"/>
-        </svg>
-        <svg class="to-list" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <path d="M5 3h9v1.4H5zM5 7.3h9v1.4H5zM5 11.6h9V13H5z"/>
-          <circle cx="2.4" cy="3.7" r="1"/>
-          <circle cx="2.4" cy="8" r="1"/>
-          <circle cx="2.4" cy="12.3" r="1"/>
-        </svg>
+        <i class="codicon codicon-list-tree to-tree" aria-hidden="true"></i>
+        <i class="codicon codicon-list-flat to-list" aria-hidden="true"></i>
       </button>
       <button class="icon-btn stage-all-top" id="stage-all-top" type="button"
         title="Stage All Changes" aria-label="Stage All Changes">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
-          stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+        <i class="codicon codicon-add" aria-hidden="true"></i>
       </button>
       <button class="icon-btn collapse-all" id="collapse-all" type="button"
         title="Collapse All Folders" aria-label="Collapse All Folders">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M5 4l3 3 3-3M5 12l3-3 3 3"/></svg>
+        <i class="codicon codicon-collapse-all" aria-hidden="true"></i>
       </button>
       <button class="icon-btn refresh" id="refresh" type="button"
         title="Refresh" aria-label="Refresh">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
-          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M13 8a5 5 0 1 1-1.46-3.54M13 2.5V5h-2.5"/></svg>
+        <i class="codicon codicon-refresh" aria-hidden="true"></i>
       </button>
     </span>
   </div>
@@ -1244,9 +1230,7 @@ export class CommitViewProvider
 
   <div class="empty-state" id="empty-state">
     <span class="badge">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="8" cy="8" r="6"/><path d="M5.4 8.2l1.8 1.8L11 6"/></svg>
+      <i class="codicon codicon-check" aria-hidden="true"></i>
     </span>
     <span class="et">Working tree clean</span>
     <span class="es">No changes to commit.</span>
@@ -1290,19 +1274,13 @@ export class CommitViewProvider
     const collapsed = Object.create(null);
     let lastState = { merge: [], staged: [], unstaged: [] };
 
-    // ---- SVG glyphs (status + folder + file) -----------------------------
-    const ICON_FILE =
-      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" aria-hidden="true"><path d="M4 1.5h5l3 3v10H4z"/><path d="M9 1.5V4.5h3"/></svg>';
-    const ICON_FOLDER =
-      '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M1.5 3.5h4l1.2 1.4H14.5v8H1.5z"/></svg>';
-    const ICON_CHEVRON =
-      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5L10 8l-4.5 4.5"/></svg>';
-    const ICON_STAGE =
-      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>';
-    const ICON_UNSTAGE =
-      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3.5 8h9"/></svg>';
-    const ICON_DISCARD =
-      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 5.5A5 5 0 1 0 13 9M12.5 2.5v3h-3"/></svg>';
+    // ---- Icon glyphs: the real VS Code codicon font ----------------------
+    const ICON_FILE = '<i class="codicon codicon-file" aria-hidden="true"></i>';
+    const ICON_FOLDER = '<i class="codicon codicon-folder" aria-hidden="true"></i>';
+    const ICON_CHEVRON = '<i class="codicon codicon-chevron-right" aria-hidden="true"></i>';
+    const ICON_STAGE = '<i class="codicon codicon-add" aria-hidden="true"></i>';
+    const ICON_UNSTAGE = '<i class="codicon codicon-dash" aria-hidden="true"></i>';
+    const ICON_DISCARD = '<i class="codicon codicon-discard" aria-hidden="true"></i>';
 
     const CONFLICT_LETTERS = new Set(["!", "U"]);
     function statusClass(letter) {

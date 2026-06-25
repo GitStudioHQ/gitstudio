@@ -291,6 +291,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // RepoManager.onDidChange; a shared `refresh` also invalidates open
     // index/HEAD diffs after a staging op.
     const commitProvider = new CommitViewProvider(
+      context.extensionUri,
       repos,
       () => {
         revisionContent.notifyChanged();

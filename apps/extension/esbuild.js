@@ -1,8 +1,23 @@
 const esbuild = require("esbuild");
 const path = require("path");
+const fs = require("fs");
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
+
+/**
+ * Copy the real VS Code icon font (@vscode/codicons) into dist/ so the webviews
+ * can load it via asWebviewUri. node_modules is excluded from the VSIX (see
+ * .vscodeignore) but dist/ ships, so the font must live there.
+ */
+function copyCodicons() {
+  const srcDir = path.dirname(require.resolve("@vscode/codicons/dist/codicon.css"));
+  const outDir = path.resolve(__dirname, "dist/codicons");
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const file of ["codicon.css", "codicon.ttf"]) {
+    fs.copyFileSync(path.join(srcDir, file), path.join(outDir, file));
+  }
+}
 
 const repoRoot = path.resolve(__dirname, "../..");
 const webviewUiSrc = path.resolve(repoRoot, "packages/webview-ui/src");
@@ -57,6 +72,8 @@ const base = {
 };
 
 async function main() {
+  copyCodicons();
+
   // Extension host (Node / CommonJS). `vscode` is provided by the runtime.
   const extensionCtx = await esbuild.context({
     ...base,
