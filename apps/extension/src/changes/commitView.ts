@@ -32,6 +32,14 @@ interface StatePayload {
   unstaged: FileEntry[];
   stagedCount: number;
   branch?: string;
+  /** Upstream tracking ref (e.g. "origin/main"), when the branch tracks one. */
+  upstream?: string;
+  /** Commits the local branch is ahead of its upstream. */
+  ahead?: number;
+  /** Commits the local branch is behind its upstream. */
+  behind?: number;
+  /** Short repo/workspace name shown in the header. */
+  repoName?: string;
   lastMessage?: string;
   signoffDefault: boolean;
   aiEnabled: boolean;
@@ -392,7 +400,16 @@ export class CommitViewProvider
     const staged = entry ? toEntries(state?.indexChanges) : [];
     const unstaged = entry ? toEntries(state?.workingTreeChanges) : [];
     const stagedCount = entry ? await this.countStaged(entry) : 0;
-    const branch = state?.HEAD?.name;
+    const head = state?.HEAD;
+    const branch = head?.name;
+    const upstream = head?.upstream
+      ? `${head.upstream.remote}/${head.upstream.name}`
+      : undefined;
+    const ahead = head?.ahead;
+    const behind = head?.behind;
+    const repoName = entry
+      ? entry.root.split(/[\\/]/).filter(Boolean).pop()
+      : undefined;
     const lastMessage =
       amend && entry ? await this.lastMessage(entry) : undefined;
     const signoffDefault = vscode.workspace
@@ -411,6 +428,10 @@ export class CommitViewProvider
       unstaged,
       stagedCount,
       branch,
+      upstream,
+      ahead,
+      behind,
+      repoName,
       lastMessage,
       signoffDefault,
       aiEnabled,
@@ -462,10 +483,26 @@ export class CommitViewProvider
       --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
       --gs-fg: var(--vscode-foreground);
       --gs-fg-muted: var(--vscode-descriptionForeground);
+      --gs-fg-subtle: color-mix(in srgb, var(--gs-fg) 50%, transparent);
       --gs-accent: var(--vscode-focusBorder);
-      --gs-hover: var(--vscode-list-hoverBackground);
-      --gs-radius: 4px;
-      --gs-motion: 150ms;
+      --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+      --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      /* Theme-native elevation: lift surfaces off the base in light AND dark
+         by mixing in a little foreground — no hardcoded chrome colors. */
+      --gs-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));
+      --gs-surface-2: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
+      --gs-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--gs-fg) 7%, transparent));
+      --gs-border: color-mix(in srgb, var(--gs-fg) 13%, transparent);
+      --gs-border-soft: color-mix(in srgb, var(--gs-fg) 8%, transparent);
+      --gs-radius: 7px;
+      --gs-radius-sm: 5px;
+      --gs-radius-pill: 999px;
+      --gs-motion-fast: 110ms;
+      --gs-motion: 170ms;
+      --gs-ease: cubic-bezier(0.2, 0, 0, 1);
+      --gs-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.16);
+      --gs-shadow-2: 0 2px 6px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.14);
+      --gs-glow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 24%, transparent);
       --gs-status-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
       --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
       --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
@@ -477,53 +514,151 @@ export class CommitViewProvider
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 8px 6px 10px;
+      padding: 10px 10px 14px;
       color: var(--gs-fg);
       font-family: var(--gs-font-ui);
       font-size: 13px;
       line-height: 1.4;
-      background: var(--vscode-sideBar-background, transparent);
+      background: var(--gs-bg);
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* ---- Message field ------------------------------------------------- */
-    .message-wrap { position: relative; margin: 0 2px; }
+    /* ---- Branch / repo context header --------------------------------- */
+    .repo-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 2px 10px;
+      min-height: 22px;
+    }
+    .branch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      max-width: 100%;
+      height: 22px;
+      padding: 0 9px 0 8px;
+      border-radius: var(--gs-radius-pill);
+      background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
+      border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, transparent);
+      color: var(--gs-accent-text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .branch svg { width: 13px; height: 13px; flex: 0 0 auto; opacity: 0.95; }
+    .branch .branch-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      letter-spacing: 0.005em;
+    }
+    .sync { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
+    .sync.hidden { display: none; }
+    .sync-pill {
+      display: none;
+      align-items: center;
+      gap: 3px;
+      height: 19px;
+      padding: 0 7px 0 5px;
+      border-radius: var(--gs-radius-pill);
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--gs-fg-muted);
+      background: color-mix(in srgb, var(--gs-fg) 9%, transparent);
+      white-space: nowrap;
+    }
+    .sync-pill.visible { display: inline-flex; }
+    .sync-pill svg { width: 11px; height: 11px; }
+    .sync-pill.ahead.visible { color: var(--gs-status-added); background: color-mix(in srgb, var(--gs-status-added) 14%, transparent); }
+    .sync-pill.behind.visible { color: var(--gs-status-modified); background: color-mix(in srgb, var(--gs-status-modified) 16%, transparent); }
+    .sync-clean {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--gs-fg-subtle);
+    }
+    .sync-clean.visible { display: inline-flex; }
+    .sync-clean svg { width: 12px; height: 12px; }
+
+    /* ---- Message composer (elevated card) ----------------------------- */
+    .message-wrap {
+      position: relative;
+      margin: 0 2px;
+      background: var(--vscode-input-background, var(--gs-surface));
+      border: 1px solid var(--gs-border);
+      border-radius: var(--gs-radius);
+      box-shadow: var(--gs-shadow-1);
+      transition: border-color var(--gs-motion) var(--gs-ease),
+                  box-shadow var(--gs-motion) var(--gs-ease);
+    }
+    .message-wrap:focus-within {
+      border-color: var(--gs-accent);
+      box-shadow: var(--gs-glow);
+    }
     textarea {
+      display: block;
       width: 100%;
       resize: none;
-      min-height: 54px;
+      min-height: 56px;
       max-height: 320px;
-      padding: 7px 9px;
-      padding-right: 34px;
+      padding: 9px 36px 5px 11px;
       color: var(--vscode-input-foreground);
-      background: var(--vscode-input-background);
-      border: 1px solid var(--vscode-input-border, transparent);
+      background: transparent;
+      border: none;
       border-radius: var(--gs-radius);
       font-family: var(--gs-font-ui);
       font-size: 13px;
-      line-height: 1.45;
+      line-height: 1.5;
       outline: none;
-      transition: border-color var(--gs-motion) ease;
     }
-    textarea:focus { border-color: var(--gs-accent); }
     textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
+    /* Footer strip inside the card: live subject-length counter, right-aligned. */
+    .composer-foot {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      height: 0;
+      overflow: hidden;
+      padding: 0 11px;
+      opacity: 0;
+      transition: height var(--gs-motion) var(--gs-ease),
+                  opacity var(--gs-motion) var(--gs-ease);
+    }
+    .message-wrap.has-text .composer-foot { height: 22px; opacity: 1; }
+    .counter {
+      font-family: var(--gs-font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 10.5px;
+      letter-spacing: 0.02em;
+      color: var(--gs-fg-subtle);
+      transition: color var(--gs-motion) var(--gs-ease);
+    }
+    .counter.warn { color: var(--gs-status-modified); }
+    .counter.over { color: var(--gs-status-deleted); }
 
     /* ---- Sparkle / generate button (crisp SVG, never emoji) ----------- */
     .sparkle {
       position: absolute;
-      top: 5px;
-      right: 5px;
+      top: 7px;
+      right: 7px;
       display: none;
       align-items: center;
       justify-content: center;
       width: 24px;
       height: 24px;
       padding: 0;
-      border: none;
-      border-radius: var(--gs-radius);
+      border: 1px solid transparent;
+      border-radius: var(--gs-radius-sm);
       background: transparent;
       color: var(--gs-fg-muted);
       cursor: pointer;
-      transition: color var(--gs-motion) ease, background var(--gs-motion) ease;
+      transition: color var(--gs-motion-fast) var(--gs-ease),
+                  background var(--gs-motion-fast) var(--gs-ease),
+                  border-color var(--gs-motion-fast) var(--gs-ease);
     }
     .sparkle.visible { display: inline-flex; }
     .sparkle svg { width: 15px; height: 15px; display: block; }
@@ -531,8 +666,9 @@ export class CommitViewProvider
     .sparkle.loading .glyph { display: none; }
     .sparkle.loading .spinner { display: block; }
     .sparkle:hover {
-      color: var(--vscode-textLink-foreground, var(--gs-fg));
-      background: var(--vscode-toolbar-hoverBackground, var(--gs-hover));
+      color: var(--gs-accent-text);
+      background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+      border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
     }
     .sparkle:disabled { cursor: default; }
     .sparkle:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
@@ -543,131 +679,212 @@ export class CommitViewProvider
     .toggles {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px 14px;
+      gap: 4px 6px;
       align-items: center;
-      margin: 9px 4px 7px;
+      margin: 9px 2px 8px;
       font-size: 12px;
     }
     .toggles label {
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      padding: 3px 9px 3px 7px;
+      border-radius: var(--gs-radius-pill);
       cursor: pointer;
-      color: var(--gs-fg);
+      color: var(--gs-fg-muted);
+      transition: background var(--gs-motion-fast) var(--gs-ease),
+                  color var(--gs-motion-fast) var(--gs-ease);
     }
-    .toggles input[type="checkbox"] { accent-color: var(--gs-accent); margin: 0; }
+    .toggles label:hover { background: var(--gs-hover); color: var(--gs-fg); }
+    .toggles label:has(input:checked) {
+      color: var(--gs-accent-text);
+      background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+    }
+    .toggles input[type="checkbox"] {
+      accent-color: var(--gs-accent);
+      width: 13px; height: 13px;
+      margin: 0;
+    }
 
     /* ---- Author override row ------------------------------------------ */
-    .author-row { margin: 0 4px 7px; }
+    .author-row { margin: 0 2px 8px; }
     .author-row.hidden { display: none; }
     .author-row input {
       width: 100%;
-      padding: 5px 9px;
+      padding: 6px 10px;
       color: var(--vscode-input-foreground);
-      background: var(--vscode-input-background);
-      border: 1px solid var(--vscode-input-border, transparent);
-      border-radius: var(--gs-radius);
+      background: var(--vscode-input-background, var(--gs-surface));
+      border: 1px solid var(--gs-border);
+      border-radius: var(--gs-radius-sm);
       font-family: var(--gs-font-ui);
       font-size: 12px;
       outline: none;
-      transition: border-color var(--gs-motion) ease;
+      transition: border-color var(--gs-motion) var(--gs-ease),
+                  box-shadow var(--gs-motion) var(--gs-ease);
     }
-    .author-row input:focus { border-color: var(--gs-accent); }
+    .author-row input:focus { border-color: var(--gs-accent); box-shadow: var(--gs-glow); }
 
     /* ---- Inline link button (Author…) --------------------------------- */
     .link {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      background: none; border: none; padding: 2px 2px;
-      color: var(--vscode-textLink-foreground);
-      cursor: pointer; font-size: 11.5px;
-      border-radius: var(--gs-radius);
+      gap: 5px;
+      background: none; border: none;
+      padding: 3px 9px 3px 8px;
+      border-radius: var(--gs-radius-pill);
+      color: var(--gs-fg-muted);
+      cursor: pointer; font-size: 12px;
+      transition: background var(--gs-motion-fast) var(--gs-ease),
+                  color var(--gs-motion-fast) var(--gs-ease);
+    }
+    .link:hover { background: var(--gs-hover); color: var(--gs-fg); }
+    .link[aria-expanded="true"] {
+      color: var(--gs-accent-text);
+      background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
     }
     .link svg { width: 12px; height: 12px; }
     .link[aria-expanded="true"] .chev { transform: rotate(180deg); }
     .link .chev { transition: transform var(--gs-motion) ease; }
 
     /* ---- Action buttons ----------------------------------------------- */
-    .actions { display: flex; gap: 6px; margin: 0 4px; }
+    .actions { display: flex; gap: 6px; margin: 0 2px; }
     button.gs-commit {
+      position: relative;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 7px;
+      height: 32px;
       border: 1px solid transparent;
       border-radius: var(--gs-radius);
-      padding: 6px 10px;
+      padding: 0 14px;
       cursor: pointer;
       font-family: var(--gs-font-ui);
       font-size: 13px;
       line-height: 1.2;
-      transition: background var(--gs-motion) ease, opacity var(--gs-motion) ease;
+      overflow: hidden;
+      transition: background var(--gs-motion) var(--gs-ease),
+                  box-shadow var(--gs-motion) var(--gs-ease),
+                  transform var(--gs-motion-fast) var(--gs-ease),
+                  opacity var(--gs-motion) var(--gs-ease);
     }
     button.gs-commit svg { width: 14px; height: 14px; flex: 0 0 auto; }
     button.primary {
       flex: 1;
       color: var(--vscode-button-foreground);
-      background: var(--vscode-button-background);
+      /* Subtle vertical sheen over the theme accent — reads as a real,
+         tactile primary action without leaving the theme palette. */
+      background:
+        linear-gradient(180deg,
+          color-mix(in srgb, var(--vscode-button-background) 88%, white 12%),
+          var(--vscode-button-background));
       font-weight: 600;
+      letter-spacing: 0.01em;
+      box-shadow: var(--gs-shadow-1),
+        inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
     }
-    button.primary:hover { background: var(--vscode-button-hoverBackground); }
+    button.primary:hover {
+      background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+      box-shadow: var(--gs-shadow-2),
+        inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+    }
+    button.gs-commit:active { transform: translateY(0.5px); }
     button.split {
-      color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
-      background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+      color: var(--vscode-button-secondaryForeground, var(--gs-fg));
+      background: var(--vscode-button-secondaryBackground, var(--gs-surface-2));
+      border-color: var(--gs-border);
     }
     button.split:hover {
-      background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+      background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover));
+      border-color: var(--gs-border-soft);
     }
-    button.gs-commit:disabled { opacity: 0.45; cursor: default; }
+    button.gs-commit:disabled {
+      opacity: 0.4;
+      cursor: default;
+      box-shadow: none;
+      transform: none;
+    }
     button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 2px; }
     .link:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
 
     /* ---- Keyboard hint ------------------------------------------------- */
     .hint {
-      margin: 7px 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin: 8px 4px 0;
       font-size: 10.5px;
-      color: var(--gs-fg-muted);
+      color: var(--gs-fg-subtle);
     }
     .hint kbd {
       font-family: var(--gs-font-mono);
       font-size: 10px;
-      padding: 0 3px;
-      border-radius: 3px;
-      background: color-mix(in srgb, var(--gs-fg-muted) 16%, transparent);
-      color: var(--gs-fg);
+      line-height: 15px;
+      min-width: 15px;
+      text-align: center;
+      padding: 0 4px;
+      border-radius: 4px;
+      border: 1px solid var(--gs-border);
+      border-bottom-width: 2px;
+      background: var(--gs-surface-2);
+      color: var(--gs-fg-muted);
     }
 
-    /* ---- Changes toolbar ---------------------------------------------- */
+    /* ---- Changes section header --------------------------------------- */
     .changes-toolbar {
       display: flex;
       align-items: center;
-      justify-content: flex-end;
-      gap: 2px;
-      margin: 12px 2px 2px;
-      padding: 2px 2px 4px;
-      border-top: 1px solid var(--vscode-panel-border, transparent);
-      padding-top: 8px;
+      gap: 8px;
+      margin: 16px 2px 4px;
+      padding: 9px 2px 5px;
+      border-top: 1px solid var(--gs-border-soft);
     }
+    .changes-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--gs-fg-muted);
+    }
+    .changes-total {
+      display: none;
+      min-width: 18px;
+      height: 17px;
+      padding: 0 6px;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--gs-radius-pill);
+      font-family: var(--gs-font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 10.5px;
+      font-weight: 600;
+      color: var(--gs-fg-muted);
+      background: color-mix(in srgb, var(--gs-fg) 11%, transparent);
+    }
+    .changes-total.visible { display: inline-flex; }
+    .changes-toolbar .toolbar-spacer { flex: 1 1 auto; }
+    .changes-toolbar .toolbar-actions { display: inline-flex; align-items: center; gap: 1px; }
     .icon-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       padding: 0;
       border: none;
-      border-radius: var(--gs-radius);
+      border-radius: var(--gs-radius-sm);
       background: transparent;
       color: var(--gs-fg-muted);
       cursor: pointer;
-      transition: color var(--gs-motion) ease, background var(--gs-motion) ease;
+      transition: color var(--gs-motion-fast) var(--gs-ease),
+                  background var(--gs-motion-fast) var(--gs-ease);
     }
     .icon-btn svg { width: 16px; height: 16px; display: block; }
     .icon-btn:hover {
       color: var(--gs-fg);
       background: var(--vscode-toolbar-hoverBackground, var(--gs-hover));
     }
+    .icon-btn:active { background: color-mix(in srgb, var(--gs-fg) 12%, transparent); }
     .icon-btn:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
     .icon-btn.collapse-all { display: none; }
     body.layout-tree .icon-btn.collapse-all { display: inline-flex; }
@@ -680,50 +897,72 @@ export class CommitViewProvider
 
     /* ---- Groups -------------------------------------------------------- */
     .groups { margin: 0 0 2px; }
-    .group { margin-top: 2px; }
+    .group { margin-top: 4px; }
     .group.empty { display: none; }
     .group-header {
       display: flex;
       align-items: center;
-      gap: 4px;
-      height: 24px;
-      padding: 0 4px 0 2px;
+      gap: 5px;
+      height: 26px;
+      padding: 0 6px 0 4px;
       cursor: pointer;
-      border-radius: var(--gs-radius);
+      border-radius: var(--gs-radius-sm);
       user-select: none;
     }
     .group-header:hover { background: var(--gs-hover); }
     .group-header .twisty {
       width: 16px; height: 16px;
       display: inline-flex; align-items: center; justify-content: center;
-      color: var(--gs-fg-muted);
+      color: var(--gs-fg-subtle);
       flex: 0 0 auto;
-      transition: transform var(--gs-motion) ease;
+      transition: transform var(--gs-motion) var(--gs-ease);
     }
     .group.collapsed .group-header .twisty { transform: rotate(-90deg); }
     .group-header .twisty svg { width: 12px; height: 12px; }
+    /* Per-group identity dot (staged = green, unstaged = amber, merge = red). */
+    .group-header .gdot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      background: var(--gs-fg-subtle);
+    }
+    .group--staged .gdot { background: var(--gs-status-added); }
+    .group--unstaged .gdot { background: var(--gs-status-modified); }
+    .group--merge .gdot { background: var(--gs-status-conflict); }
     .group-header .glabel {
       flex: 1;
       font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.055em;
       font-weight: 600;
       color: var(--gs-fg-muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .group--staged .glabel { color: var(--gs-fg); }
     .group-header .gcount {
       font-family: var(--gs-font-mono);
       font-variant-numeric: tabular-nums;
-      font-size: 11px;
+      font-size: 10.5px;
+      font-weight: 600;
       min-width: 18px;
       text-align: center;
-      padding: 0 5px;
-      border-radius: 9px;
-      background: var(--vscode-badge-background);
-      color: var(--vscode-badge-foreground);
+      padding: 0 6px;
+      height: 16px;
+      line-height: 16px;
+      border-radius: var(--gs-radius-pill);
+      background: color-mix(in srgb, var(--gs-fg) 11%, transparent);
+      color: var(--gs-fg-muted);
       flex: 0 0 auto;
+    }
+    .group--staged .gcount {
+      background: color-mix(in srgb, var(--gs-status-added) 18%, transparent);
+      color: var(--gs-status-added);
+    }
+    .group--merge .gcount {
+      background: color-mix(in srgb, var(--gs-status-conflict) 18%, transparent);
+      color: var(--gs-status-conflict);
     }
     .group-actions {
       display: inline-flex;
@@ -737,15 +976,27 @@ export class CommitViewProvider
 
     /* ---- File / folder rows ------------------------------------------- */
     .row {
+      position: relative;
       display: flex;
       align-items: center;
-      gap: 6px;
-      height: 22px;
-      padding: 0 4px 0 0;
-      border-radius: var(--gs-radius);
+      gap: 7px;
+      height: 24px;
+      padding: 0 4px 0 2px;
+      border-radius: var(--gs-radius-sm);
       cursor: pointer;
       user-select: none;
     }
+    /* Status accent rail, revealed on hover/focus for a tactile pointer. */
+    .row::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 3px; bottom: 3px;
+      width: 2px;
+      border-radius: 2px;
+      background: transparent;
+      transition: background var(--gs-motion-fast) var(--gs-ease);
+    }
+    .row.is-file:hover::before { background: var(--gs-row-accent, var(--gs-accent)); }
     .row:hover { background: var(--gs-hover); }
     .row:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
     .row .indent { flex: 0 0 auto; }
@@ -762,9 +1013,12 @@ export class CommitViewProvider
       width: 16px; height: 16px;
       display: inline-flex; align-items: center; justify-content: center;
       flex: 0 0 auto;
+      color: var(--gs-fg-subtle);
     }
     .row .file-icon svg { width: 15px; height: 15px; }
-    .row .folder-icon { color: var(--vscode-symbolIcon-folderForeground, var(--gs-fg-muted)); }
+    /* Tint the file glyph by status for an instant visual cue. */
+    .row.is-file .file-icon { color: var(--gs-row-accent, var(--gs-fg-subtle)); opacity: 0.9; }
+    .row .folder-icon { color: var(--vscode-symbolIcon-folderForeground, var(--gs-fg-muted)); opacity: 0.85; }
     .row .name {
       flex: 0 1 auto;
       white-space: nowrap;
@@ -794,37 +1048,56 @@ export class CommitViewProvider
     .row:hover .row-actions,
     .row:focus-within .row-actions { opacity: 1; }
     .row .status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       font-family: var(--gs-font-mono);
-      font-size: 11px;
-      font-weight: 600;
-      width: 14px;
+      font-size: 10px;
+      font-weight: 700;
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
       text-align: center;
       flex: 0 0 auto;
+      color: var(--gs-row-accent, var(--gs-fg-muted));
+      background: color-mix(in srgb, var(--gs-row-accent, var(--gs-fg-muted)) 15%, transparent);
     }
-    .st-M { color: var(--gs-status-modified); }
-    .st-A { color: var(--gs-status-added); }
-    .st-U { color: var(--gs-status-untracked); }
-    .st-D { color: var(--gs-status-deleted); }
-    .st-R { color: var(--gs-status-renamed); }
-    .st-C { color: var(--gs-status-renamed); }
-    .st-T { color: var(--gs-status-modified); }
-    .st-I { color: var(--gs-status-ignored); }
-    .row.is-conflict .status { color: var(--gs-status-conflict); }
+    .st-M { --gs-row-accent: var(--gs-status-modified); }
+    .st-A { --gs-row-accent: var(--gs-status-added); }
+    .st-U { --gs-row-accent: var(--gs-status-untracked); }
+    .st-D { --gs-row-accent: var(--gs-status-deleted); }
+    .st-R { --gs-row-accent: var(--gs-status-renamed); }
+    .st-C { --gs-row-accent: var(--gs-status-renamed); }
+    .st-T { --gs-row-accent: var(--gs-status-modified); }
+    .st-I { --gs-row-accent: var(--gs-status-ignored); }
+    .row.is-conflict { --gs-row-accent: var(--gs-status-conflict); }
 
     /* ---- Empty state --------------------------------------------------- */
     .empty-state {
       display: none;
+      flex-direction: column;
       align-items: center;
-      gap: 8px;
-      margin: 8px 6px;
-      padding: 14px 10px;
+      gap: 3px;
+      margin: 10px 6px 4px;
+      padding: 22px 10px 18px;
       color: var(--gs-fg-muted);
-      font-size: 12px;
-      justify-content: center;
       text-align: center;
     }
     .empty-state.visible { display: flex; }
-    .empty-state svg { width: 16px; height: 16px; opacity: 0.8; flex: 0 0 auto; }
+    .empty-state .badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      margin-bottom: 7px;
+      border-radius: 50%;
+      color: var(--gs-status-added);
+      background: color-mix(in srgb, var(--gs-status-added) 14%, transparent);
+    }
+    .empty-state .badge svg { width: 20px; height: 20px; }
+    .empty-state .et { font-size: 12.5px; font-weight: 600; color: var(--gs-fg); }
+    .empty-state .es { font-size: 11px; color: var(--gs-fg-subtle); }
 
     @media (prefers-reduced-motion: reduce) {
       textarea, .author-row input, .sparkle, button.gs-commit, .link .chev,
@@ -836,9 +1109,38 @@ export class CommitViewProvider
   </style>
 </head>
 <body class="layout-list">
+  <header class="repo-bar">
+    <span class="branch" id="branch-pill" title="Current branch">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M5 3.5a1.5 1.5 0 1 0-2 1.41V11a1.5 1.5 0 1 0 1 0V8.9c.6.4 1.3.6 2 .6h1A2.5 2.5 0 0 0 10.45 8 1.5 1.5 0 1 0 9.4 7H8a1.5 1.5 0 0 1-1.5-1.5V4.9A1.5 1.5 0 0 0 5 3.5z"/>
+      </svg>
+      <span class="branch-name" id="branch-name">—</span>
+    </span>
+    <span class="sync hidden" id="sync">
+      <span class="sync-pill ahead" id="ahead" title="Commits to push">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 12.5V4M4.5 7.5L8 4l3.5 3.5"/></svg>
+        <span id="ahead-n">0</span>
+      </span>
+      <span class="sync-pill behind" id="behind" title="Commits to pull">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3.5V12M4.5 8.5L8 12l3.5-3.5"/></svg>
+        <span id="behind-n">0</span>
+      </span>
+      <span class="sync-clean" id="sync-clean" title="Up to date with upstream">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3.5 8.5l3 3 6-7"/></svg>
+        <span>up to date</span>
+      </span>
+    </span>
+  </header>
+
   <div class="message-wrap">
     <textarea id="message" rows="3"
-      placeholder="Commit message"
+      placeholder="Message (what & why)…"
       aria-label="Commit message"></textarea>
     <button class="sparkle" id="generate" type="button"
       title="Generate commit message with GitBrain"
@@ -853,6 +1155,9 @@ export class CommitViewProvider
         <path d="M8 1.8a6.2 6.2 0 1 1-4.4 1.8" opacity="0.9"/>
       </svg>
     </button>
+    <div class="composer-foot">
+      <span class="counter" id="counter" aria-hidden="true"></span>
+    </div>
   </div>
 
   <div class="toggles">
@@ -893,47 +1198,57 @@ export class CommitViewProvider
     </button>
   </div>
 
+  <div class="hint">Stage changes, then <kbd>Commit</kbd> — your message is the headline.</div>
+
   <div class="changes-toolbar">
-    <button class="icon-btn layout" id="layout-toggle" type="button"
-      title="Toggle tree / list view" aria-label="Toggle tree / list view">
-      <svg class="to-tree" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M2 3h12v1.5H2zM4.5 7.25h9.5v1.5H4.5zM4.5 11.5h9.5V13H4.5zM2.5 7.25v4.25h1.2"
-          fill="none" stroke="currentColor" stroke-width="1.2"/>
-        <circle cx="2.75" cy="3.75" r="0"/>
-      </svg>
-      <svg class="to-list" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-        <path d="M5 3h9v1.4H5zM5 7.3h9v1.4H5zM5 11.6h9V13H5z"/>
-        <circle cx="2.4" cy="3.7" r="1"/>
-        <circle cx="2.4" cy="8" r="1"/>
-        <circle cx="2.4" cy="12.3" r="1"/>
-      </svg>
-    </button>
-    <button class="icon-btn stage-all-top" id="stage-all-top" type="button"
-      title="Stage All Changes" aria-label="Stage All Changes">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
-        stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
-    </button>
-    <button class="icon-btn collapse-all" id="collapse-all" type="button"
-      title="Collapse All Folders" aria-label="Collapse All Folders">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M5 4l3 3 3-3M5 12l3-3 3 3"/></svg>
-    </button>
-    <button class="icon-btn refresh" id="refresh" type="button"
-      title="Refresh" aria-label="Refresh">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M13 8a5 5 0 1 1-1.46-3.54M13 2.5V5h-2.5"/></svg>
-    </button>
+    <span class="changes-title">Changes</span>
+    <span class="changes-total" id="changes-total">0</span>
+    <span class="toolbar-spacer"></span>
+    <span class="toolbar-actions">
+      <button class="icon-btn layout" id="layout-toggle" type="button"
+        title="Toggle tree / list view" aria-label="Toggle tree / list view">
+        <svg class="to-tree" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M2 3h12v1.5H2zM4.5 7.25h9.5v1.5H4.5zM4.5 11.5h9.5V13H4.5zM2.5 7.25v4.25h1.2"
+            fill="none" stroke="currentColor" stroke-width="1.2"/>
+          <circle cx="2.75" cy="3.75" r="0"/>
+        </svg>
+        <svg class="to-list" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M5 3h9v1.4H5zM5 7.3h9v1.4H5zM5 11.6h9V13H5z"/>
+          <circle cx="2.4" cy="3.7" r="1"/>
+          <circle cx="2.4" cy="8" r="1"/>
+          <circle cx="2.4" cy="12.3" r="1"/>
+        </svg>
+      </button>
+      <button class="icon-btn stage-all-top" id="stage-all-top" type="button"
+        title="Stage All Changes" aria-label="Stage All Changes">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
+          stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+      </button>
+      <button class="icon-btn collapse-all" id="collapse-all" type="button"
+        title="Collapse All Folders" aria-label="Collapse All Folders">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 4l3 3 3-3M5 12l3-3 3 3"/></svg>
+      </button>
+      <button class="icon-btn refresh" id="refresh" type="button"
+        title="Refresh" aria-label="Refresh">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M13 8a5 5 0 1 1-1.46-3.54M13 2.5V5h-2.5"/></svg>
+      </button>
+    </span>
   </div>
 
   <div class="groups" id="groups"></div>
 
   <div class="empty-state" id="empty-state">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
-      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <circle cx="8" cy="8" r="6"/><path d="M5.5 8.2l1.7 1.7L10.8 6"/></svg>
-    <span>No changes</span>
+    <span class="badge">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="8" cy="8" r="6"/><path d="M5.4 8.2l1.8 1.8L11 6"/></svg>
+    </span>
+    <span class="et">Working tree clean</span>
+    <span class="es">No changes to commit.</span>
   </div>
 
   <script nonce="${nonce}">
@@ -955,6 +1270,17 @@ export class CommitViewProvider
     const collapseAllBtn = $("collapse-all");
     const stageAllTopBtn = $("stage-all-top");
     const refreshBtn = $("refresh");
+    const branchPill = $("branch-pill");
+    const branchName = $("branch-name");
+    const syncEl = $("sync");
+    const aheadEl = $("ahead");
+    const behindEl = $("behind");
+    const aheadN = $("ahead-n");
+    const behindN = $("behind-n");
+    const syncClean = $("sync-clean");
+    const counterEl = $("counter");
+    const messageWrap = message.closest(".message-wrap");
+    const changesTotal = $("changes-total");
 
     let stagedCount = 0;
     let generating = false;
@@ -989,22 +1315,51 @@ export class CommitViewProvider
       return node;
     }
 
-    // ---- Auto-grow message ----------------------------------------------
+    // ---- Auto-grow message + live subject counter -----------------------
     function autoGrow() {
       message.style.height = "auto";
       message.style.height = Math.min(message.scrollHeight, 320) + "px";
     }
-    message.addEventListener("input", autoGrow);
+    // Show a subject-length counter; nudge toward the 50/72 convention without
+    // ever enforcing it. The counter only appears once there's text.
+    function updateComposer() {
+      const text = message.value;
+      const hasText = text.trim().length > 0;
+      messageWrap.classList.toggle("has-text", hasText);
+      const subject = text.split("\\n", 1)[0].length;
+      counterEl.textContent = String(subject);
+      counterEl.classList.toggle("warn", subject > 50 && subject <= 72);
+      counterEl.classList.toggle("over", subject > 72);
+    }
+    message.addEventListener("input", () => { autoGrow(); updateComposer(); });
 
     function setBusy(busy) {
       commitBtn.disabled = busy;
       pushBtn.disabled = busy;
+      branchPill.style.opacity = busy ? "0.6" : "";
     }
 
     function renderCount() {
       // Staged count lives on the Commit button itself — no redundant title.
       const verb = amend.checked ? "Amend" : "Commit";
       commitLabel.textContent = stagedCount > 0 ? verb + " " + stagedCount : verb;
+    }
+
+    // ---- Branch / sync header -------------------------------------------
+    function renderHeader(state) {
+      branchName.textContent = state.branch || "(no branch)";
+      branchPill.title = (state.repoName ? state.repoName + " · " : "") +
+        (state.branch || "detached HEAD") +
+        (state.upstream ? "  ↔ " + state.upstream : "");
+      const ahead = state.ahead || 0;
+      const behind = state.behind || 0;
+      const hasUpstream = !!state.upstream;
+      aheadN.textContent = String(ahead);
+      behindN.textContent = String(behind);
+      aheadEl.classList.toggle("visible", ahead > 0);
+      behindEl.classList.toggle("visible", behind > 0);
+      syncClean.classList.toggle("visible", hasUpstream && ahead === 0 && behind === 0);
+      syncEl.classList.toggle("hidden", !state.branch);
     }
 
     function doCommit(push) {
@@ -1131,6 +1486,8 @@ export class CommitViewProvider
       const total =
         data.merge.length + data.staged.length + data.unstaged.length;
       emptyEl.classList.toggle("visible", total === 0);
+      changesTotal.textContent = String(total);
+      changesTotal.classList.toggle("visible", total > 0);
 
       for (const def of GROUP_DEFS) {
         const list = data[def.kind];
@@ -1142,13 +1499,15 @@ export class CommitViewProvider
     function renderGroup(def, list) {
       const collapseKey = "group:" + def.kind;
       const isCollapsed = collapsed[collapseKey] === true;
-      const group = el("div", "group" + (list.length === 0 ? " empty" : "") +
+      const group = el("div", "group group--" + def.kind +
+        (list.length === 0 ? " empty" : "") +
         (isCollapsed ? " collapsed" : ""));
 
       const header = el("div", "group-header");
       header.tabIndex = 0;
       header.setAttribute("role", "button");
       const twisty = el("span", "twisty", ICON_CHEVRON);
+      const gdot = el("span", "gdot");
       const glabel = el("span", "glabel");
       glabel.textContent = def.label;
       const gcount = el("span", "gcount");
@@ -1173,7 +1532,7 @@ export class CommitViewProvider
         }
       }
 
-      header.append(twisty, glabel, actions, gcount);
+      header.append(twisty, gdot, glabel, actions, gcount);
       const toggleGroup = () => {
         collapsed[collapseKey] = !(collapsed[collapseKey] === true);
         render();
@@ -1248,7 +1607,7 @@ export class CommitViewProvider
     function makeFileRow(def, e, fileName, dir) {
       const letter = e.status;
       const conflict = CONFLICT_LETTERS.has(letter);
-      const row = el("div", "row" +
+      const row = el("div", "row is-file " + statusClass(letter) +
         (letter === "D" ? " is-deleted" : "") +
         (conflict ? " is-conflict" : ""));
       row.tabIndex = 0;
@@ -1320,6 +1679,7 @@ export class CommitViewProvider
       if (msg.type === "state") {
         stagedCount = msg.stagedCount || 0;
         setBusy(!!msg.busy);
+        renderHeader(msg);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
         if (msg.layout && msg.layout !== layout) {
           layout = msg.layout;
@@ -1334,6 +1694,7 @@ export class CommitViewProvider
             message.value.trim() === "") {
           message.value = msg.lastMessage;
           autoGrow();
+          updateComposer();
         }
         if (msg.signoffDefault && !signoff.dataset.touched) {
           signoff.checked = true;
@@ -1341,7 +1702,9 @@ export class CommitViewProvider
         renderCount();
         render();
       } else if (msg.type === "setMessage") {
-        if (typeof msg.text === "string") { message.value = msg.text; autoGrow(); }
+        if (typeof msg.text === "string") {
+          message.value = msg.text; autoGrow(); updateComposer();
+        }
       } else if (msg.type === "generateDone") {
         setGenerating(false);
       } else if (msg.type === "clear") {
@@ -1351,12 +1714,14 @@ export class CommitViewProvider
         authorRow.classList.add("hidden");
         authorToggle.setAttribute("aria-expanded", "false");
         autoGrow();
+        updateComposer();
         renderCount();
       }
     });
 
     applyLayoutClass();
     renderCount();
+    updateComposer();
     render();
     vscode.postMessage({ type: "ready" });
   </script>

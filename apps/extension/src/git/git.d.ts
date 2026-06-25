@@ -58,6 +58,10 @@ export interface Branch {
   readonly name?: string;
   readonly commit?: string;
   readonly upstream?: { name: string; remote: string };
+  /** Commits ahead of the upstream (provided by the built-in Git API). */
+  readonly ahead?: number;
+  /** Commits behind the upstream (provided by the built-in Git API). */
+  readonly behind?: number;
 }
 
 export interface RepositoryState {
