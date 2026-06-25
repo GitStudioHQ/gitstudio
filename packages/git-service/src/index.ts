@@ -42,6 +42,8 @@ export type {
   CommitOptions,
   CommitResult,
 } from "./StagingProvider";
+export { SnapshotProvider } from "./SnapshotProvider";
+export type { Snapshot } from "./SnapshotProvider";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
 export { NodeGitAdapter } from "./NodeGitAdapter";

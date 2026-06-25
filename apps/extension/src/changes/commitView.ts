@@ -95,11 +95,21 @@ export class CommitViewProvider
     this.busy = true;
     void this.pushState();
     try {
-      const result = await entry.ctx.staging.commit(message, {
-        amend: msg.amend,
-        signoff: msg.signoff,
-        author: msg.author?.trim() || undefined,
-      });
+      // An amend rewrites HEAD — wrap it in the Undo envelope so the prior
+      // commit is one keystroke from restorable. A plain commit only adds a new
+      // commit (already reachable via the normal Undo / reflog), so it runs
+      // directly.
+      const doCommit = () =>
+        entry.ctx.staging.commit(message, {
+          amend: msg.amend,
+          signoff: msg.signoff,
+          author: msg.author?.trim() || undefined,
+        });
+      const ledger = this.repos.getUndoLedger();
+      const result =
+        msg.amend && ledger
+          ? await ledger.runWithUndo(entry, "Amend commit", doCommit)
+          : await doCommit();
       if (!result.ok) {
         void vscode.window.showErrorMessage(
           `GitStudio: commit failed — ${result.stderr.trim() || "unknown error"}`,

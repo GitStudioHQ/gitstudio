@@ -7,8 +7,10 @@ import type { GitContext } from "@gitstudio/git-service/index";
  * git's stderr on failure. Returns true when the repo state likely changed
  * (so the caller can refresh the graph).
  *
- * The universal Undo envelope lands in M8; until then destructive actions
- * (reset --hard, checkout into detached HEAD) get an explicit confirmation.
+ * The universal Undo envelope (M8) wraps the destructive actions: callers pass
+ * an `undo` runner that snapshots the repo before the op and records an entry
+ * for one-keystroke reversal (with a pushed-history → Revert safeguard). The
+ * non-destructive actions (branch, tag, copy) run unwrapped.
  */
 
 interface CommitContext {
@@ -16,6 +18,21 @@ interface CommitContext {
   readonly sha: string;
   /** Commit subject, for friendlier prompts/messages. */
   readonly subject: string;
+}
+
+/**
+ * Wraps a destructive op so the Undo envelope can snapshot before / record
+ * after. When no runner is supplied the op runs directly (so existing tests and
+ * any caller without an UndoLedger keep working).
+ */
+export type UndoRunner = <T>(label: string, fn: () => Promise<T>) => Promise<T>;
+
+function withUndo<T>(
+  undo: UndoRunner | undefined,
+  label: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return undo ? undo(label, fn) : fn();
 }
 
 export interface CommitActionItem extends vscode.QuickPickItem {
@@ -34,6 +51,10 @@ export function commitActionItems(): CommitActionItem[] {
       id: "reset",
       label: "$(discard) Reset Current Branch to Here…",
     },
+    {
+      id: "interactiveRebase",
+      label: "$(git-merge) Start Interactive Rebase Here…",
+    },
     { id: "", label: "", kind: vscode.QuickPickItemKind.Separator },
     { id: "copySha", label: "$(copy) Copy SHA" },
     { id: "copyMessage", label: "$(copy) Copy Message" },
@@ -48,20 +69,21 @@ export async function runCommitAction(
   id: string,
   ctx: GitContext,
   commit: CommitContext,
+  undo?: UndoRunner,
 ): Promise<boolean> {
   switch (id) {
     case "checkout":
-      return checkout(ctx, commit);
+      return checkout(ctx, commit, undo);
     case "branch":
       return createBranch(ctx, commit);
     case "tag":
       return createTag(ctx, commit);
     case "cherryPick":
-      return cherryPick(ctx, commit);
+      return cherryPick(ctx, commit, undo);
     case "revert":
-      return revert(ctx, commit);
+      return revert(ctx, commit, undo);
     case "reset":
-      return resetTo(ctx, commit);
+      return resetTo(ctx, commit, undo);
     case "copySha":
       await vscode.env.clipboard.writeText(commit.sha);
       flash(`Copied ${short(commit.sha)}`);
@@ -80,6 +102,7 @@ export async function runCommitAction(
 async function checkout(
   ctx: GitContext,
   commit: CommitContext,
+  undo?: UndoRunner,
 ): Promise<boolean> {
   const ok = await confirm(
     `Checkout ${short(commit.sha)}? This leaves your working tree in a ` +
@@ -89,7 +112,9 @@ async function checkout(
   if (!ok) {
     return false;
   }
-  return runGit(ctx, ["checkout", commit.sha], "Checked out");
+  return withUndo(undo, `Checkout ${short(commit.sha)}`, () =>
+    runGit(ctx, ["checkout", commit.sha], "Checked out"),
+  );
 }
 
 async function createBranch(
@@ -127,53 +152,56 @@ async function createTag(
 async function cherryPick(
   ctx: GitContext,
   commit: CommitContext,
+  undo?: UndoRunner,
 ): Promise<boolean> {
-  const result = await ctx.process.run(["cherry-pick", commit.sha]);
-  if (result.code === 0) {
-    flash(`Cherry-picked ${short(commit.sha)}`);
+  return withUndo(undo, `Cherry-pick ${short(commit.sha)}`, async () => {
+    const result = await ctx.process.run(["cherry-pick", commit.sha]);
+    if (result.code === 0) {
+      flash(`Cherry-picked ${short(commit.sha)}`);
+      return true;
+    }
+    // Conflicts leave the cherry-pick in progress; tell the user how to proceed.
+    const stderr = result.stderr.trim();
+    if (/conflict/i.test(stderr) || /after resolving/i.test(stderr)) {
+      void vscode.window.showWarningMessage(
+        `Cherry-pick of ${short(commit.sha)} hit conflicts. Resolve them, ` +
+          `then continue or abort the cherry-pick.`,
+      );
+    } else {
+      showGitError("Cherry-pick failed", stderr);
+    }
     return true;
-  }
-  // Conflicts leave the cherry-pick in progress; tell the user how to proceed.
-  const stderr = result.stderr.trim();
-  if (/conflict/i.test(stderr) || /after resolving/i.test(stderr)) {
-    void vscode.window.showWarningMessage(
-      `Cherry-pick of ${short(commit.sha)} hit conflicts. Resolve them, then ` +
-        `continue or abort the cherry-pick.`,
-    );
-  } else {
-    showGitError("Cherry-pick failed", stderr);
-  }
-  return true;
+  });
 }
 
 async function revert(
   ctx: GitContext,
   commit: CommitContext,
+  undo?: UndoRunner,
 ): Promise<boolean> {
-  const result = await ctx.process.run([
-    "revert",
-    "--no-edit",
-    commit.sha,
-  ]);
-  if (result.code === 0) {
-    flash(`Reverted ${short(commit.sha)}`);
+  return withUndo(undo, `Revert ${short(commit.sha)}`, async () => {
+    const result = await ctx.process.run(["revert", "--no-edit", commit.sha]);
+    if (result.code === 0) {
+      flash(`Reverted ${short(commit.sha)}`);
+      return true;
+    }
+    const stderr = result.stderr.trim();
+    if (/conflict/i.test(stderr) || /after resolving/i.test(stderr)) {
+      void vscode.window.showWarningMessage(
+        `Revert of ${short(commit.sha)} hit conflicts. Resolve them, then ` +
+          `continue or abort the revert.`,
+      );
+    } else {
+      showGitError("Revert failed", stderr);
+    }
     return true;
-  }
-  const stderr = result.stderr.trim();
-  if (/conflict/i.test(stderr) || /after resolving/i.test(stderr)) {
-    void vscode.window.showWarningMessage(
-      `Revert of ${short(commit.sha)} hit conflicts. Resolve them, then ` +
-        `continue or abort the revert.`,
-    );
-  } else {
-    showGitError("Revert failed", stderr);
-  }
-  return true;
+  });
 }
 
 async function resetTo(
   ctx: GitContext,
   commit: CommitContext,
+  undo?: UndoRunner,
 ): Promise<boolean> {
   const mode = await vscode.window.showQuickPick(
     [
@@ -221,10 +249,12 @@ async function resetTo(
       return false;
     }
   }
-  return runGit(
-    ctx,
-    ["reset", mode.value, commit.sha],
-    `Reset to ${short(commit.sha)}`,
+  return withUndo(undo, `Reset to ${short(commit.sha)} (${mode.value})`, () =>
+    runGit(
+      ctx,
+      ["reset", mode.value, commit.sha],
+      `Reset to ${short(commit.sha)}`,
+    ),
   );
 }
 

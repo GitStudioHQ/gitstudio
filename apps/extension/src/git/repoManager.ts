@@ -8,6 +8,19 @@ import { getBuiltInGitApi } from "./builtInGit";
 // switch or commit.
 const REFRESH_DEBOUNCE_MS = 400;
 
+/**
+ * The minimal Undo surface the RepoManager exposes to destructive-op sites,
+ * kept structural so RepoManager never imports the concrete UndoLedger (which
+ * imports RepoManager).
+ */
+export interface UndoLedgerLike {
+  runWithUndo<T>(
+    repo: RepoEntry,
+    label: string,
+    fn: () => Promise<T>,
+  ): Promise<T>;
+}
+
 /** A live repository: its root, the vscode.git handle, and our data context. */
 export interface RepoEntry {
   /** Absolute repo root (fsPath of `repo.rootUri`). */
@@ -182,6 +195,21 @@ export class RepoManager implements vscode.Disposable {
   /** All open repositories, in insertion order. */
   getAll(): RepoEntry[] {
     return Array.from(this.bindings.values(), (b) => b.entry);
+  }
+
+  /**
+   * The universal Undo envelope, wired in at activation (M8). Surfaced here so
+   * any destructive-op site (the graph context menu, the merge editor) can route
+   * through `runWithUndo` without threading the ledger through every call site.
+   */
+  private undoLedger: UndoLedgerLike | undefined;
+
+  setUndoLedger(ledger: UndoLedgerLike): void {
+    this.undoLedger = ledger;
+  }
+
+  getUndoLedger(): UndoLedgerLike | undefined {
+    return this.undoLedger;
   }
 
   private updateHasRepoContext(): void {

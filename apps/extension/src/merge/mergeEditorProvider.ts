@@ -156,6 +156,25 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     webview: vscode.Webview,
     text: string,
   ): Promise<void> {
+    // Snapshot before we overwrite the conflicted file + stage it, so the
+    // resolution can be undone in one keystroke (the snapshot captures the
+    // pre-resolution working tree). The actual apply runs inside the envelope.
+    const ledger = this.repos.getUndoLedger();
+    const target0 = this.resolveTarget(document.uri);
+    if (ledger && target0) {
+      await ledger.runWithUndo(target0.entry, "Apply merge resolution", () =>
+        this.applyMergeInner(document, webview, text),
+      );
+      return;
+    }
+    await this.applyMergeInner(document, webview, text);
+  }
+
+  private async applyMergeInner(
+    document: vscode.TextDocument,
+    webview: vscode.Webview,
+    text: string,
+  ): Promise<void> {
     try {
       await this.syncDocument(document, text);
       await document.save();

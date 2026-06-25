@@ -38,6 +38,13 @@ import {
   unstageHunk,
   type StagingRefresh,
 } from "./changes/lineStaging";
+import { runCommitAction } from "./graph/commitActions";
+import { UndoLedger } from "./undo/undoLedger";
+import { RebaseTodoEditorProvider } from "./rebase/rebaseTodoEditor";
+import {
+  startInteractiveRebase,
+  abortRebase,
+} from "./rebase/rebaseCommands";
 
 // GitStudio extension entry point.
 //
@@ -300,6 +307,58 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand("gitstudio.commit.requestState", () => {
         commitProvider.requestState();
       }),
+    );
+
+    // Interactive rebase + the universal Undo envelope (M8). The UndoLedger
+    // snapshots before every destructive op and offers one-keystroke reversal
+    // (with a pushed-history → Revert safeguard); the rebase editor renders any
+    // `git-rebase-todo` as the reorderable webview.
+    const undo = new UndoLedger(repos, context);
+    repos.setUndoLedger(undo);
+
+    context.subscriptions.push(
+      RebaseTodoEditorProvider.register(context),
+      vscode.commands.registerCommand(
+        "gitstudio.startInteractiveRebase",
+        (arg?: string | { commit?: { sha?: string } }) => {
+          const sha =
+            typeof arg === "string" ? arg : arg?.commit?.sha;
+          void startInteractiveRebase(repos, undo, sha);
+        },
+      ),
+      vscode.commands.registerCommand("gitstudio.abortRebase", () =>
+        abortRebase(repos),
+      ),
+      vscode.commands.registerCommand("gitstudio.undo", () =>
+        undo.undoLast(),
+      ),
+      vscode.commands.registerCommand("gitstudio.showUndoHistory", () =>
+        undo.showHistory(),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.resetToCommit",
+        async (arg?: string | { commit?: { sha?: string; subject?: string } }) => {
+          const active = repos.getActive();
+          if (!active) {
+            return;
+          }
+          const sha = typeof arg === "string" ? arg : arg?.commit?.sha;
+          if (!sha) {
+            return;
+          }
+          const subject =
+            typeof arg === "string" ? "" : arg?.commit?.subject ?? "";
+          const changed = await runCommitAction(
+            "reset",
+            active.ctx,
+            { sha, subject },
+            (label, fn) => undo.runWithUndo(active, label, fn),
+          );
+          if (changed) {
+            commitsProvider.refresh();
+          }
+        },
+      ),
     );
   });
 }

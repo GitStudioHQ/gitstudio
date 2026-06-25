@@ -98,6 +98,16 @@
           }
         ],
         "priority": "option"
+      },
+      {
+        "viewType": "gitstudio.rebaseTodoEditor",
+        "displayName": "GitStudio Interactive Rebase",
+        "selector": [
+          {
+            "filenamePattern": "**/git-rebase-todo"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "commands": [
@@ -254,6 +264,36 @@
         "title": "Unstage Hunk",
         "category": "GitStudio",
         "icon": "$(remove)"
+      },
+      {
+        "command": "gitstudio.startInteractiveRebase",
+        "title": "Start Interactive Rebase…",
+        "category": "GitStudio",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "gitstudio.abortRebase",
+        "title": "Abort Rebase",
+        "category": "GitStudio",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "gitstudio.undo",
+        "title": "Undo Last Git Operation",
+        "category": "GitStudio",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "gitstudio.showUndoHistory",
+        "title": "Show Undo History",
+        "category": "GitStudio",
+        "icon": "$(history)"
+      },
+      {
+        "command": "gitstudio.resetToCommit",
+        "title": "Reset Current Branch to Here…",
+        "category": "GitStudio",
+        "icon": "$(discard)"
       }
     ],
     "keybindings": [
@@ -280,6 +320,12 @@
         "key": "ctrl+k ctrl+u",
         "mac": "cmd+k cmd+u",
         "when": "editorTextFocus && gitstudio.hasRepo"
+      },
+      {
+        "command": "gitstudio.undo",
+        "key": "ctrl+alt+z",
+        "mac": "cmd+alt+z",
+        "when": "gitstudio.hasRepo && !editorTextFocus"
       }
     ],
     "configuration": {
@@ -496,6 +542,26 @@
         {
           "command": "gitstudio.changes.discardAll",
           "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.startInteractiveRebase",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.abortRebase",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.undo",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.showUndoHistory",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.resetToCommit",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -508,6 +574,16 @@
           "command": "gitstudio.copyCommitSha",
           "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
           "group": "9_gitstudio@1"
+        },
+        {
+          "command": "gitstudio.startInteractiveRebase",
+          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
+          "group": "1_gitstudio@1"
+        },
+        {
+          "command": "gitstudio.resetToCommit",
+          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
+          "group": "1_gitstudio@2"
         },
         {
           "command": "gitstudio.changes.stageFile",

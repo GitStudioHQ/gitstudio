@@ -98,7 +98,18 @@ async function main() {
     loader: { ".ttf": "dataurl" },
   });
 
-  const contexts = [extensionCtx, webviewCtx, workerCtx, graphCtx];
+  // The interactive-rebase webview (Lit). Its .css import emits
+  // dist/webview/rebase.css alongside the bundle.
+  const rebaseCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "rebase/main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/rebase.js"),
+    platform: "browser",
+    format: "iife",
+    loader: { ".ttf": "dataurl" },
+  });
+
+  const contexts = [extensionCtx, webviewCtx, workerCtx, graphCtx, rebaseCtx];
 
   if (watch) {
     await Promise.all(contexts.map((c) => c.watch()));

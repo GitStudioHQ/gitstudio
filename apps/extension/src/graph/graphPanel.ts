@@ -357,10 +357,30 @@ export class CommitGraphPanel {
     if (!picked || !picked.id) {
       return;
     }
-    const changed = await runCommitAction(picked.id, active.ctx, {
-      sha,
-      subject: record?.subject ?? "",
-    });
+
+    // "Start interactive rebase here" is its own flow (it spawns a terminal +
+    // opens the rebase webview), not a runCommitAction case.
+    if (picked.id === "interactiveRebase") {
+      await vscode.commands.executeCommand(
+        "gitstudio.startInteractiveRebase",
+        sha,
+      );
+      return;
+    }
+
+    // Route destructive ops through the Undo envelope when it's available.
+    const ledger = this.repos.getUndoLedger();
+    const undo = ledger
+      ? <T>(label: string, fn: () => Promise<T>) =>
+          ledger.runWithUndo(active, label, fn)
+      : undefined;
+
+    const changed = await runCommitAction(
+      picked.id,
+      active.ctx,
+      { sha, subject: record?.subject ?? "" },
+      undo,
+    );
     if (changed) {
       this.scheduleRefresh();
     }
