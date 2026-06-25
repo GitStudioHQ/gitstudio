@@ -845,7 +845,7 @@ export class CommitViewProvider
 <body class="layout-list">
   <div class="message-wrap">
     <textarea id="message" rows="3"
-      placeholder="Message (Enter to commit)"
+      placeholder="Commit message"
       aria-label="Commit message"></textarea>
     <button class="sparkle" id="generate" type="button"
       title="Generate commit message with GitBrain"
@@ -898,9 +898,6 @@ export class CommitViewProvider
       </svg>
       <span>Push</span>
     </button>
-  </div>
-  <div class="hint">
-    <kbd>Enter</kbd> to commit · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
   </div>
 
   <div class="changes-toolbar">
@@ -1064,10 +1061,7 @@ export class CommitViewProvider
       if (open) author.focus();
     });
 
-    message.addEventListener("keydown", (e) => {
-      const commit = e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey);
-      if (commit) { e.preventDefault(); doCommit(false); }
-    });
+    // Enter is just a newline — committing is button-only, by design.
     signoff.addEventListener("change", () => { signoff.dataset.touched = "1"; });
 
     // ---- Layout / toolbar -----------------------------------------------
