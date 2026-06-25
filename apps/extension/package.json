@@ -1,0 +1,94 @@
+{
+  "name": "gitstudio",
+  "displayName": "GitStudio",
+  "description": "A free, open-source, JetBrains-grade Git suite for VS Code & Cursor — commit graph, inline blame, file & line history, hunk/line staging, side-by-side diff, 3-pane merge, interactive rebase with a universal Undo safety net, and optional bring-your-own-key AI.",
+  "version": "0.1.0",
+  "publisher": "gitstudio",
+  "license": "Apache-2.0",
+  "icon": "media/icon.png",
+  "homepage": "https://gitstudio.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GitStudioHQ/gitstudio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/GitStudioHQ/gitstudio/issues"
+  },
+  "galleryBanner": {
+    "color": "#1E222A",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "gitlens",
+    "git graph",
+    "commit graph",
+    "blame",
+    "git history",
+    "git blame",
+    "merge",
+    "diff",
+    "rebase",
+    "interactive rebase",
+    "staging",
+    "cherry-pick",
+    "vscode",
+    "cursor",
+    "source control"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitstudio.showWelcome",
+        "title": "Welcome",
+        "category": "GitStudio"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production",
+    "check-types": "tsc --noEmit",
+    "vscode:prepublish": "npm run package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.42",
+    "@types/vscode": "1.74.0",
+    "esbuild": "^0.28.1",
+    "monaco-editor": "^0.55.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vscode-diff": "^3.0.1"
+  },
+  "dependencies": {
+    "@gitstudio/engine": "*",
+    "@gitstudio/git-service": "*",
+    "@gitstudio/host-bridge": "*",
+    "@gitstudio/webview-ui": "*"
+  },
+  "pricing": "Free",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "GitStudio requires a local git repository on disk."
+    }
+  }
+}

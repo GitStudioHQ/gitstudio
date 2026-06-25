@@ -1,0 +1,73 @@
+name: Release Extension
+
+# Publishes the GitStudio extension to the VS Code Marketplace and Open VSX when
+# an `ext-vX.Y.Z` tag is pushed, then attaches the .vsix to the GitHub Release.
+# (The desktop app has its own channel: `app-v*` tags -> .github/workflows/release-desktop.yml.)
+#
+# One-time setup — add two repo secrets:
+#   VSCE_PAT  Azure DevOps PAT, scope "Marketplace > Manage", for publisher `gitstudio`
+#   OVSX_PAT  Open VSX access token
+#
+# Cut a release:
+#   1. bump "version" in apps/extension/package.json (+ a CHANGELOG entry)
+#   2. git tag ext-v0.1.0 && git push origin ext-v0.1.0
+# The publish steps SKIP (not fail) if a secret is missing.
+
+on:
+  push:
+    tags:
+      - 'ext-v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/extension
+    env:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (workspace root)
+        run: npm ci
+        working-directory: .
+
+      - name: Type-check
+        run: npm run check-types --workspaces --if-present
+        working-directory: .
+
+      - name: Test
+        run: npm test
+        working-directory: .
+
+      - name: Package
+        run: |
+          npm run package
+          npx @vscode/vsce package -o gitstudio.vsix --no-dependencies
+
+      - name: Publish to VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        run: npx @vscode/vsce publish --packagePath gitstudio.vsix
+
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        run: npx ovsx publish gitstudio.vsix
+
+      - name: Attach .vsix to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" gitstudio.vsix --generate-notes \
+            || gh release upload "${GITHUB_REF_NAME}" gitstudio.vsix --clobber

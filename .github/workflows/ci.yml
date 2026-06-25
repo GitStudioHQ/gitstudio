@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Engine purity guard
+        run: npm run check-purity
+
+      - name: Type-check
+        run: npm run check-types
+
+      - name: Test
+        run: npm test
+
+      - name: Package extension (smoke-test the build)
+        run: |
+          npm run package --workspace apps/extension
+          npx @vscode/vsce package -o gitstudio.vsix --no-dependencies
+        working-directory: apps/extension
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitstudio-vsix
+          path: apps/extension/gitstudio.vsix

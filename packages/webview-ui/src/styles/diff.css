@@ -1,0 +1,368 @@
+/* JetBrains two-intensity diff palette — the genuine IntelliJ scheme colors.
+ * Dark = Darcula, light = Classic. The whole changed line gets the muted "line"
+ * color; the changed characters get the stronger "inner" color. */
+
+:root {
+  /* Dark theme: light pastel hues at low alpha — the wash tints the line and
+   * the inner marking tints the changed characters, but syntax colors keep
+   * their contrast. The gutter ribbons (same vars) blend the same way so the
+   * stripe still reads as continuous. */
+  --jb-line-inserted: rgba(125, 195, 135, 0.13);
+  --jb-inner-inserted: rgba(125, 195, 135, 0.27);
+  --jb-line-deleted: rgba(170, 178, 188, 0.10);
+  --jb-inner-deleted: rgba(170, 178, 188, 0.22);
+  --jb-line-modified: rgba(115, 165, 220, 0.13);
+  --jb-inner-modified: rgba(115, 165, 220, 0.27);
+  --jb-line-conflict: rgba(236, 134, 108, 0.12);
+  --jb-inner-conflict: rgba(236, 134, 108, 0.26);
+  /* Conflict boundary lines stay near-opaque so the frame reads crisply. */
+  --jb-edge-conflict: rgba(236, 134, 108, 0.8);
+  /* Already-processed (applied/ignored) changes in the side panes. */
+  --jb-line-resolved: rgba(128, 128, 128, 0.13);
+  --jb-edge-resolved: rgba(128, 128, 128, 0.35);
+}
+
+body.vscode-light,
+body.vscode-high-contrast-light {
+  /* Light theme: darker pigments, even lower alpha — tints on white. */
+  --jb-line-inserted: rgba(64, 146, 75, 0.11);
+  --jb-inner-inserted: rgba(64, 146, 75, 0.25);
+  --jb-line-deleted: rgba(90, 98, 108, 0.09);
+  --jb-inner-deleted: rgba(90, 98, 108, 0.19);
+  --jb-line-modified: rgba(58, 112, 196, 0.10);
+  --jb-inner-modified: rgba(58, 112, 196, 0.23);
+  --jb-line-conflict: rgba(217, 80, 52, 0.10);
+  --jb-inner-conflict: rgba(217, 80, 52, 0.24);
+  --jb-edge-conflict: rgba(217, 80, 52, 0.75);
+  --jb-line-resolved: rgba(125, 125, 125, 0.2);
+  --jb-edge-resolved: rgba(95, 95, 95, 0.5);
+}
+
+/* Whole-line washes (Monaco isWholeLine decorations). */
+.jb-line-inserted { background-color: var(--jb-line-inserted); }
+.jb-line-deleted { background-color: var(--jb-line-deleted); }
+.jb-line-modified { background-color: var(--jb-line-modified); }
+.jb-line-conflict { background-color: var(--jb-line-conflict); }
+
+/* Applied/ignored changes stay visible in the side panes, but muted —
+ * IntelliJ's "already processed" look. */
+.jb-line-resolved {
+  background-color: var(--jb-line-resolved);
+  border-left: 2px solid var(--jb-edge-resolved);
+}
+
+/* Conflict frame lines are single SVG polylines drawn by the gutter ribbon
+ * overlays, extended across the neighboring panes (see ribbons.ts) — one
+ * renderer, one path, so the line is pixel-continuous end to end. */
+
+/* Character-level overlays (Monaco inlineClassName decorations). */
+.jb-inner-inserted { background-color: var(--jb-inner-inserted); border-radius: 2px; }
+.jb-inner-deleted { background-color: var(--jb-inner-deleted); border-radius: 2px; }
+.jb-inner-modified { background-color: var(--jb-inner-modified); border-radius: 2px; }
+.jb-inner-conflict { background-color: var(--jb-inner-conflict); border-radius: 2px; }
+
+/* Flat connector bands drawn in the gutter strips (below the action icons).
+ * No outline: the band must read as a continuation of the line highlight. */
+/* One full-width drawing stage per merge/diff grid: bands, icon strips and
+ * the conflict frame lines are all drawn here in absolute stage coordinates.
+ * It spans the editor-row area only (top = the 28px pane-header row), so its
+ * own viewport does the vertical clipping; z-index 1 paints above the panes'
+ * content while the gutter button layers (z-index 2) stay above the lines. */
+.jb-ribbon-stage {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  /* Explicit size: SVG is a replaced element, so left/right insets alone
+   * leave it at its 300x150 intrinsic size, silently clipping everything
+   * beyond — set the real dimensions. */
+  width: 100%;
+  height: calc(100% - 28px);
+  pointer-events: none;
+  z-index: 1;
+}
+.jb-ribbon { stroke: none; }
+.jb-ribbon-inserted { fill: var(--jb-line-inserted); }
+.jb-ribbon-deleted { fill: var(--jb-line-deleted); }
+.jb-ribbon-modified { fill: var(--jb-line-modified); }
+.jb-ribbon-conflict { fill: var(--jb-line-conflict); }
+.jb-ribbon-edge {
+  fill: none;
+  stroke: var(--jb-edge-conflict);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* Point markers for pure insertions/deletions (empty spans). */
+.jb-marker-inserted { border-top: 2px solid var(--jb-inner-inserted); }
+.jb-marker-deleted { border-top: 2px solid var(--jb-inner-deleted); }
+.jb-marker-modified { border-top: 2px solid var(--jb-inner-modified); }
+.jb-marker-conflict { border-top: 2px solid var(--jb-inner-conflict); }
+.jb-marker-resolved { border-top: 2px solid var(--jb-edge-resolved); }
+
+/* ---- App shell + toolbar ---- */
+.jb-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.jb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  height: 34px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, transparent));
+  font-size: 12px;
+  scrollbar-width: none;
+}
+.jb-toolbar::-webkit-scrollbar { height: 0; }
+.jb-toolbar .jb-spacer,
+.jb-bottom-bar .jb-spacer { flex: 1 1 auto; }
+.jb-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--vscode-panel-border);
+  opacity: 0.7;
+}
+.jb-toolbar-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  opacity: 0.75;
+  padding: 0 4px 0 2px;
+}
+.jb-counter {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  opacity: 0.85;
+  padding: 0 4px;
+}
+.jb-counter.jb-done { color: var(--vscode-testing-iconPassed, #4a8c4a); }
+
+/* SVG icon plumbing (toolbar + gutter). */
+.jb-svg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  flex: 0 0 auto;
+}
+
+.jb-toolbar-btn {
+  cursor: pointer;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  height: 24px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-foreground);
+  user-select: none;
+  font-size: 12px;
+  font-family: inherit;
+}
+.jb-toolbar-btn:not([disabled]):hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.16));
+}
+.jb-toolbar-btn.jb-icon {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+}
+.jb-toolbar-btn.jb-toggled {
+  background: var(--vscode-inputOption-activeBackground, rgba(90, 130, 200, 0.25));
+  border-color: var(--vscode-inputOption-activeBorder, transparent);
+  color: var(--vscode-inputOption-activeForeground, var(--vscode-foreground));
+}
+.jb-toolbar-btn.jb-bordered {
+  border-color: var(--vscode-button-border, var(--vscode-panel-border));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  padding: 0 12px;
+}
+.jb-toolbar-btn.jb-bordered:not([disabled]):hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.16)));
+}
+.jb-toolbar-btn.jb-primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-border, transparent);
+  font-weight: 600;
+  padding: 0 14px;
+}
+.jb-toolbar-btn.jb-primary:not([disabled]):hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+}
+.jb-toolbar-btn.jb-primary.jb-warn {
+  background: var(--vscode-statusBarItem-warningBackground, #a1260d);
+  color: var(--vscode-statusBarItem-warningForeground, #ffffff);
+}
+.jb-toolbar-btn[disabled] { opacity: 0.4; cursor: default; }
+/* Confirmation state: the Accept Left/Right button that settled the merge. */
+.jb-toolbar-btn.jb-confirmed[disabled] {
+  opacity: 1;
+  border-color: var(--vscode-testing-iconPassed, #4a8c4a);
+  color: var(--vscode-testing-iconPassed, #4a8c4a);
+  background: transparent;
+}
+.jb-toolbar-btn.jb-confirmed::before {
+  content: "✓";
+  margin-right: 5px;
+}
+
+.jb-toolbar-select {
+  flex: 0 0 auto;
+  height: 24px;
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  background: var(--vscode-dropdown-background, transparent);
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+}
+.jb-note {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  opacity: 0.85;
+  font-style: italic;
+  color: var(--vscode-editorWarning-foreground, var(--vscode-foreground));
+}
+
+/* ---- Undo/redo action-history dropdown ---- */
+.jb-history-wrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+.jb-history-pop {
+  /* Fixed, not absolute: the toolbar scrolls horizontally (overflow-x:auto),
+   * which would clip an absolutely-positioned popup. Coordinates are set
+   * from the button's rect when opened. */
+  position: fixed;
+  z-index: 1000; /* above Monaco hover widgets (z-index 50) */
+  min-width: 230px;
+  max-width: 340px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.jb-history-pop[hidden] { display: none; }
+.jb-history-item {
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+}
+.jb-history-item:hover { background: var(--vscode-list-hoverBackground); }
+.jb-history-redo { opacity: 0.55; font-style: italic; }
+.jb-history-empty { padding: 4px 10px; opacity: 0.6; font-size: 12px; }
+
+/* "Open in <IDE>" escape hatch: quiet, and kept clear of Cancel/Apply. */
+.jb-external { opacity: 0.85; margin-right: 22px; }
+.jb-external:not([disabled]):hover { opacity: 1; }
+.jb-merge-content { flex: 1 1 auto; min-height: 0; position: relative; }
+
+/* ---- Bottom action bar (the IntelliJ dialog footer) ---- */
+.jb-bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 10px;
+  border-top: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, transparent));
+}
+
+/* ---- Gutter accept / ignore controls ---- */
+.jb-button-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+.jb-change-actions {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+/* IntelliJ anchors the action icons against the pane they act on: the left
+ * strip's ✕≫ hug the left pane, the right strip's ≪✕ hug the right pane.
+ * The 2+20+2+20+2 row fills the band's 46px rectangular icon strip
+ * (MERGE_ICON_STRIP in ribbons.ts), so the icons sit inside the color. */
+.jb-gutter-a .jb-change-actions {
+  left: 2px;
+  transform: none;
+}
+.jb-gutter-b .jb-change-actions {
+  left: auto;
+  right: 2px;
+  transform: none;
+}
+/* The diff's single transfer arrow hugs the left pane the same way. */
+.jb-diff-grid .jb-change-actions {
+  left: 2px;
+  transform: none;
+}
+.jb-gutter-btn {
+  pointer-events: auto;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 16px tall = fits inside one code line with clearance above and below
+   * (never touches the conflict frame); width gives the bigger target. */
+  width: 20px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--vscode-editorLineNumber-foreground, #858585);
+  user-select: none;
+  transition: color 0.1s ease, background 0.1s ease;
+}
+.jb-gutter-btn .jb-svg svg {
+  width: 14px;
+  height: 14px;
+}
+.jb-gutter-btn:hover {
+  color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-foreground));
+  background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.22));
+}
+.jb-btn-accept.jb-role-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
+.jb-btn-accept.jb-role-conflict:hover { background: var(--jb-inner-conflict); color: var(--vscode-foreground); }
+
+/* ---- Responsive toolbar: collapse gracefully in narrow editor groups ---- */
+@media (max-width: 1000px) {
+  .jb-toolbar .jb-toolbar-label { display: none; }
+}
+@media (max-width: 800px) {
+  .jb-toolbar { padding: 0 4px; gap: 1px; }
+  .jb-sep { margin: 0 2px; }
+  .jb-toolbar-btn { padding: 0 6px; }
+  .jb-toolbar-btn.jb-bordered,
+  .jb-toolbar-btn.jb-primary { padding: 0 9px; }
+  .jb-bottom-bar { padding: 0 6px; }
+}
