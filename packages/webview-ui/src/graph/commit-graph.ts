@@ -69,7 +69,8 @@ export class CommitGraph extends LitElement {
 
   static styles = css`
     :host {
-      display: block;
+      display: flex;
+      flex-direction: column;
       height: 100%;
       width: 100%;
       overflow: hidden;
@@ -77,13 +78,75 @@ export class CommitGraph extends LitElement {
          Falls through to the editor bg; hover/selected rows override it so the
          node hole tracks the row tint. */
       --gs-graph-node-hole: var(--vscode-editor-background, #1e1e1e);
+      --gs-accent: var(--vscode-focusBorder);
+      --gs-fg-muted: var(--vscode-descriptionForeground, #9aa0a6);
       color: var(--vscode-foreground);
       font-family: var(--vscode-font-family);
       font-size: var(--vscode-font-size, 13px);
     }
 
+    /* ── Header bar: current branch + loaded count + nav hints ──────────── */
+    .gheader {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 0 0 auto;
+      height: 36px;
+      padding: 0 12px;
+      border-bottom: 1px solid color-mix(in srgb,
+        var(--vscode-foreground) 12%, transparent);
+      background: color-mix(in srgb,
+        var(--vscode-foreground) 3%, var(--vscode-editor-background));
+      user-select: none;
+    }
+    .gh-branch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 46%;
+      height: 22px;
+      padding: 0 10px 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--vscode-textLink-foreground, var(--gs-accent));
+      background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
+      border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, transparent);
+    }
+    .gh-branch svg { width: 13px; height: 13px; flex: 0 0 auto; }
+    .gh-branch .nm {
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .gh-count {
+      font-size: 11.5px;
+      color: var(--gs-fg-muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .gh-spacer { flex: 1 1 auto; }
+    .gh-hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: color-mix(in srgb, var(--vscode-foreground) 45%, transparent);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .gh-hint kbd {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 10px;
+      line-height: 15px;
+      padding: 0 4px;
+      border-radius: 4px;
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
+      color: var(--gs-fg-muted);
+    }
+    @media (max-width: 620px) { .gh-hint { display: none; } }
+    @media (max-width: 420px) { .gh-count { display: none; } }
+
     .scroller {
-      height: 100%;
+      flex: 1 1 auto;
       width: 100%;
       overflow: auto;
       contain: strict;
@@ -317,10 +380,10 @@ export class CommitGraph extends LitElement {
 
     .placeholder {
       display: flex;
+      flex: 1 1 auto;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100%;
       gap: 10px;
       color: var(--vscode-descriptionForeground, #9aa0a6);
       font-size: 13px;
@@ -708,33 +771,73 @@ export class CommitGraph extends LitElement {
     this.renderRows();
   }
 
+  /** Current branch name, derived from the HEAD row's currentHead ref. */
+  private currentBranchName(): string {
+    for (const row of this.rows) {
+      const ref = row.refs.find((r) => r.kind === "currentHead");
+      if (ref) {
+        return ref.name;
+      }
+    }
+    return "";
+  }
+
+  private headerHtml() {
+    const branch = this.currentBranchName();
+    const n = this.rows.length;
+    const count =
+      n === 0
+        ? ""
+        : `${n.toLocaleString()}${this.hasMore ? "+" : ""} commit${n === 1 ? "" : "s"}`;
+    return html`<div class="gheader">
+      <span
+        class="gh-branch"
+        title=${branch ? `${branch} (current branch)` : "Detached HEAD"}
+      >
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path
+            d="M5 3.5a1.5 1.5 0 1 0-2 1.41V11a1.5 1.5 0 1 0 1 0V8.9c.6.4 1.3.6 2 .6h1A2.5 2.5 0 0 0 10.45 8 1.5 1.5 0 1 0 9.4 7H8a1.5 1.5 0 0 1-1.5-1.5V4.9A1.5 1.5 0 0 0 5 3.5z"
+          />
+        </svg>
+        <span class="nm">${branch || "detached HEAD"}</span>
+      </span>
+      ${count ? html`<span class="gh-count">${count}</span>` : nothing}
+      <span class="gh-spacer"></span>
+      <span class="gh-hint">
+        <kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>↵</kbd> open · right-click for
+        actions
+      </span>
+    </div>`;
+  }
+
   render() {
+    const header = this.headerHtml();
     if (this.status === "empty") {
-      return html`<div class="placeholder">
-        <div>No commits yet</div>
-      </div>`;
+      return html`${header}<div class="placeholder">
+          <div>No commits yet</div>
+        </div>${nothing}`;
     }
     if (this.status === "loading" && this.rows.length === 0) {
-      return html`<div class="placeholder">
-        <div class="spinner"></div>
-        <div>Loading history…</div>
-      </div>`;
+      return html`${header}<div class="placeholder">
+          <div class="spinner"></div>
+          <div>Loading history…</div>
+        </div>${nothing}`;
     }
-    return html`<div
-      class="scroller"
-      tabindex="0"
-      role="grid"
-      aria-label="Commit graph"
-      @click=${this.onClick}
-      @dblclick=${this.onDblClick}
-      @contextmenu=${this.onContextMenu}
-      @keydown=${this.onKeyDown}
-      @pointermove=${this.onPointerMove}
-      @pointerleave=${this.onPointerLeave}
-      @error=${this.onImgErrorOptions}
-    >
-      <div class="sizer"></div>
-    </div>${nothing}`;
+    return html`${header}<div
+        class="scroller"
+        tabindex="0"
+        role="grid"
+        aria-label="Commit graph"
+        @click=${this.onClick}
+        @dblclick=${this.onDblClick}
+        @contextmenu=${this.onContextMenu}
+        @keydown=${this.onKeyDown}
+        @pointermove=${this.onPointerMove}
+        @pointerleave=${this.onPointerLeave}
+        @error=${this.onImgErrorOptions}
+      >
+        <div class="sizer"></div>
+      </div>${nothing}`;
   }
 }
 
