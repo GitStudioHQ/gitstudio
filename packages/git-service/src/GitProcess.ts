@@ -18,6 +18,14 @@ export interface GitRunOptions {
   signal?: AbortSignal;
 }
 
+export interface GitRunWithInputOptions extends GitRunOptions {
+  /**
+   * Optional utf8 payload to write to the child's stdin (then end it). Used by
+   * the BlameProvider to feed a dirty editor buffer via `git blame --contents -`.
+   */
+  input?: string;
+}
+
 /** Hardened config flags prepended to every invocation. */
 const HARDENED_ARGS: readonly string[] = [
   "-c",
@@ -91,8 +99,15 @@ export class GitProcess {
    * exit code even when non-zero (the caller decides). Rejects if the process
    * fails to spawn, or — when `opts.signal` aborts — kills the child (SIGTERM)
    * and rejects with an AbortError (`err.name === "AbortError"`).
+   *
+   * When `opts.input` is set, that utf8 payload is written to the child's
+   * stdin which is then ended — used to feed dirty buffers to
+   * `git blame --contents -`.
    */
-  async run(args: string[], opts?: GitRunOptions): Promise<GitRunResult> {
+  async run(
+    args: string[],
+    opts?: GitRunWithInputOptions,
+  ): Promise<GitRunResult> {
     const signal = opts?.signal;
     if (signal?.aborted) {
       throw makeAbortError();
@@ -105,6 +120,13 @@ export class GitProcess {
       return await new Promise<GitRunResult>((resolve, reject) => {
         const spawned = this.spawnChild(args);
         child = spawned;
+
+        // Feed a dirty buffer via stdin when requested, then close it so git
+        // sees EOF. A broken pipe (git exits before draining) is harmless here.
+        if (opts?.input !== undefined) {
+          spawned.stdin.on("error", () => {});
+          spawned.stdin.end(opts.input);
+        }
 
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];

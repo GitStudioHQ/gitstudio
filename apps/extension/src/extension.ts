@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { RepoManager } from "./git/repoManager";
+import { BlameController } from "./blame/blameController";
 import {
   CommitsTreeProvider,
   copyCommitSha,
@@ -33,6 +34,10 @@ export function activate(context: vscode.ExtensionContext): void {
   void RepoManager.create().then((repos) => {
     context.subscriptions.push(repos);
 
+    // Inline blame, status bar, rich hover, and full-file annotations.
+    const blame = new BlameController(repos, context);
+    context.subscriptions.push(blame);
+
     const commitsProvider = new CommitsTreeProvider(repos);
     const refsProvider = new RefsTreeProvider(repos);
     context.subscriptions.push(commitsProvider, refsProvider);
@@ -57,7 +62,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }),
       vscode.commands.registerCommand(
         "gitstudio.copyCommitSha",
-        (node?: CommitNode) => void copyCommitSha(node),
+        (arg?: CommitNode | string) => void copyCommitSha(arg),
       ),
     );
   });

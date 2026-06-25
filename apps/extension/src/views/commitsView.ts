@@ -125,14 +125,21 @@ export class CommitsTreeProvider
   }
 }
 
-/** Copies a commit's full SHA to the clipboard (item context-menu action). */
-export async function copyCommitSha(node?: CommitNode): Promise<void> {
-  if (!node) {
+/**
+ * Copies a commit's full SHA to the clipboard. Accepts either a CommitNode
+ * (tree item context-menu action) or a raw sha string (the blame hover's
+ * command link).
+ */
+export async function copyCommitSha(
+  arg?: CommitNode | string,
+): Promise<void> {
+  const sha = typeof arg === "string" ? arg : arg?.commit.sha;
+  if (!sha) {
     return;
   }
-  await vscode.env.clipboard.writeText(node.commit.sha);
+  await vscode.env.clipboard.writeText(sha);
   void vscode.window.setStatusBarMessage(
-    `$(check) Copied ${node.commit.sha.slice(0, 7)}`,
+    `$(check) Copied ${sha.slice(0, 7)}`,
     2000,
   );
 }

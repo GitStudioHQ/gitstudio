@@ -102,8 +102,47 @@
         "title": "Copy Commit SHA",
         "category": "GitStudio",
         "icon": "$(copy)"
+      },
+      {
+        "command": "gitstudio.toggleFileBlame",
+        "title": "Toggle File Blame",
+        "category": "GitStudio",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "gitstudio.blame.showLineActions",
+        "title": "Line Blame Actions",
+        "category": "GitStudio"
       }
     ],
+    "keybindings": [
+      {
+        "command": "gitstudio.toggleFileBlame",
+        "key": "ctrl+shift+g b",
+        "mac": "cmd+shift+g b",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "GitStudio",
+      "properties": {
+        "gitstudio.blame.inlineEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline blame for the current line (author, relative time, and summary) at the end of the line."
+        },
+        "gitstudio.blame.statusBarEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the current line's commit author and age in the status bar."
+        },
+        "gitstudio.blame.heatmap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Tint full-file blame annotations with a code-age heatmap (recent changes warmer, older changes cooler)."
+        }
+      }
+    },
     "menus": {
       "view/title": [
         {
@@ -115,6 +154,23 @@
           "command": "gitstudio.refreshBranches",
           "when": "view == gitstudio.branches",
           "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "gitstudio.toggleFileBlame",
+          "when": "editorTextFocus && gitstudio.hasRepo",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gitstudio.toggleFileBlame",
+          "when": "editorTextFocus && gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.blame.showLineActions",
+          "when": "editorTextFocus && gitstudio.hasRepo"
         }
       ],
       "view/item/context": [

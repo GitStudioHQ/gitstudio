@@ -15,10 +15,13 @@ export type {
   GitProcessOptions,
   GitRunResult,
   GitRunOptions,
+  GitRunWithInputOptions,
 } from "./GitProcess";
 export { LogProvider } from "./LogProvider";
 export type { StreamCommitsOptions } from "./LogProvider";
 export { RefProvider } from "./RefProvider";
+export { BlameProvider } from "./BlameProvider";
+export type { BlameFileOptions } from "./BlameProvider";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
 export { NodeGitAdapter } from "./NodeGitAdapter";
@@ -32,3 +35,9 @@ export type {
   RepoHead,
   HostGitAdapter,
 } from "@gitstudio/host-bridge/git";
+export type {
+  BlameCommit,
+  BlameLine,
+  BlameResult,
+} from "@gitstudio/host-bridge/blame";
+export { UNCOMMITTED_SHA } from "@gitstudio/host-bridge/blame";

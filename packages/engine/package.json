@@ -12,6 +12,7 @@
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@gitstudio/host-bridge": "*",
     "vscode-diff": "^3.0.1"
   }
 }
