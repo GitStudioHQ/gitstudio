@@ -7,6 +7,7 @@ import {
   type CommitNode,
 } from "./views/commitsView";
 import { RefsTreeProvider } from "./views/branchesView";
+import { CommitGraphPanel } from "./graph/graphPanel";
 
 // GitStudio extension entry point.
 //
@@ -64,6 +65,9 @@ export function activate(context: vscode.ExtensionContext): void {
         "gitstudio.copyCommitSha",
         (arg?: CommitNode | string) => void copyCommitSha(arg),
       ),
+      vscode.commands.registerCommand("gitstudio.showCommitGraph", () => {
+        CommitGraphPanel.show(repos, context.extensionUri);
+      }),
     );
   });
 }

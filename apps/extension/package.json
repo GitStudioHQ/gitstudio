@@ -113,6 +113,12 @@
         "command": "gitstudio.blame.showLineActions",
         "title": "Line Blame Actions",
         "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.showCommitGraph",
+        "title": "Show Commit Graph",
+        "category": "GitStudio",
+        "icon": "$(git-commit)"
       }
     ],
     "keybindings": [
@@ -146,9 +152,14 @@
     "menus": {
       "view/title": [
         {
+          "command": "gitstudio.showCommitGraph",
+          "when": "view == gitstudio.commits",
+          "group": "navigation@1"
+        },
+        {
           "command": "gitstudio.refreshCommits",
           "when": "view == gitstudio.commits",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "gitstudio.refreshBranches",

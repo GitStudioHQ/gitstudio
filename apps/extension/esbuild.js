@@ -87,7 +87,18 @@ async function main() {
     format: "iife",
   });
 
-  const contexts = [extensionCtx, webviewCtx, workerCtx];
+  // The virtualized commit-graph webview (Lit + @tanstack/virtual-core). Its
+  // .css import emits dist/webview/graph.css alongside the bundle.
+  const graphCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "graph/main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/graph.js"),
+    platform: "browser",
+    format: "iife",
+    loader: { ".ttf": "dataurl" },
+  });
+
+  const contexts = [extensionCtx, webviewCtx, workerCtx, graphCtx];
 
   if (watch) {
     await Promise.all(contexts.map((c) => c.watch()));

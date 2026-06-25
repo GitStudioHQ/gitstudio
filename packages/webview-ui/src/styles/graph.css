@@ -1,0 +1,40 @@
+/* Host-page chrome for the commit-graph webview. The <gitstudio-graph> Lit
+ * element carries all of its own (shadow-DOM) styling; this file only frames
+ * the page so the element fills the panel and inherits the VS Code theme. */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+gitstudio-graph {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+/* Pre-mount placeholder shown before the element upgrades / first paint. */
+#boot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  color: var(--vscode-descriptionForeground, #9aa0a6);
+  font-size: 13px;
+}
