@@ -48,7 +48,11 @@ export class PrDescriptionPanel {
       "gitstudio.prDescription",
       `PR #${pr.number}`,
       vscode.ViewColumn.Active,
-      { enableScripts: true, retainContextWhenHidden: true },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist")],
+      },
     );
     const instance = new PrDescriptionPanel(key, panel, deps, pr);
     PrDescriptionPanel.panels.set(key, instance);
@@ -116,7 +120,13 @@ export class PrDescriptionPanel {
   }
 
   private render(): void {
-    this.panel.webview.html = renderHtml(this.panel.webview, this.pr, this.files, this.status);
+    this.panel.webview.html = renderHtml(
+      this.panel.webview,
+      this.deps.extensionUri,
+      this.pr,
+      this.files,
+      this.status,
+    );
   }
 
   private async onMessage(m: WebviewMessage): Promise<void> {
@@ -171,15 +181,20 @@ export class PrDescriptionPanel {
 
 function renderHtml(
   webview: vscode.Webview,
+  extensionUri: vscode.Uri,
   pr: PullRequest,
   files: PrFile[],
   status: CombinedStatus | undefined,
 ): string {
   const nonce = getNonce();
+  const codiconUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "codicons", "codicon.css"),
+  );
   const csp = [
     `default-src 'none'`,
     `img-src ${webview.cspSource} https: data:`,
-    `style-src 'nonce-${nonce}'`,
+    `style-src 'nonce-${nonce}' ${webview.cspSource}`,
+    `font-src ${webview.cspSource}`,
     `script-src 'nonce-${nonce}'`,
   ].join("; ");
 
@@ -243,6 +258,7 @@ function renderHtml(
 <meta charset="UTF-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link href="${codiconUri}" rel="stylesheet" />
 <style nonce="${nonce}">
   :root {
     --gs-fg: var(--vscode-foreground);
@@ -275,6 +291,17 @@ function renderHtml(
   }
   .gs-mono { font-family: var(--gs-font-mono); font-variant-numeric: tabular-nums; }
   svg { flex: none; }
+
+  /* ── Codicons (the real VS Code icon font) ──────────────── */
+  .codicon { font-size: 14px; line-height: 1; color: inherit; flex: none; vertical-align: -0.12em; }
+  .badge .codicon { font-size: 13px; }
+  .branch .codicon { font-size: 13px; opacity: 0.85; }
+  .merge-arrow .codicon { font-size: 14px; }
+  .toolbar button .codicon { font-size: 14px; }
+  .reviewer .codicon { font-size: 12px; }
+  .checks .codicon { font-size: 15px; }
+  .fstatus .codicon { font-size: 13px; }
+  .avatar--fallback .codicon { font-size: 13px; }
 
   /* ── Header ─────────────────────────────────────────────── */
   .header { padding-top: 18px; }
@@ -543,68 +570,30 @@ function fileStatusGlyph(status: string): string {
  * decorative unicode glyph (the old check / cross / dot / arrow) in this
  * surface.
  */
+/**
+ * The real VS Code icon font (codicons). Each entry is an <i> the webview styles
+ * via the linked codicon stylesheet — no more bespoke hand-drawn SVGs.
+ */
 const ICON = {
-  pass: svg(
-    `<circle cx="8" cy="8" r="6.5"/><path d="M5.2 8.2l1.9 1.9 3.7-4.2"/>`,
-    { stroke: true },
-  ),
-  fail: svg(
-    `<circle cx="8" cy="8" r="6.5"/><path d="M6 6l4 4M10 6l-4 4"/>`,
-    { stroke: true },
-  ),
-  pending: svg(
-    `<circle cx="8" cy="8" r="6.5"/><path d="M8 5v3.2l2 1.3"/>`,
-    { stroke: true },
-  ),
-  prOpen: svg(
-    `<circle cx="5" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="11" cy="12" r="1.6"/><path d="M5 5.6v4.8M11 10.4V8.2a2 2 0 0 0-2-2H6.6"/>`,
-    { stroke: true },
-  ),
-  merged: svg(
-    `<circle cx="5" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="11" cy="6" r="1.6"/><path d="M5 5.6v4.8M9.4 6H8a3 3 0 0 0-3 3"/>`,
-    { stroke: true },
-  ),
-  draft: svg(
-    `<circle cx="5" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="11" cy="12" r="1.6" stroke-dasharray="1.4 1.4"/><path d="M5 5.6v4.8"/>`,
-    { stroke: true },
-  ),
-  gitBranch: svg(
-    `<circle cx="5" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="11" cy="5" r="1.6"/><path d="M5 5.6v4.8M9.6 5.4 H8a3 3 0 0 0-3 3"/>`,
-    { stroke: true },
-  ),
-  arrowLeft: svg(`<path d="M11 8H4M7 4.5 3.5 8 7 11.5"/>`, { stroke: true }),
-  person: svg(
-    `<circle cx="8" cy="5.5" r="2.6"/><path d="M3.5 13c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4"/>`,
-    { stroke: true },
-  ),
-  checkout: svg(
-    `<path d="M8 2v8M5 7l3 3 3-3M3.5 13.5h9"/>`,
-    { stroke: true },
-  ),
-  review: svg(
-    `<path d="M8 4.5C5 4.5 3 8 3 8s2 3.5 5 3.5S13 8 13 8 11 4.5 8 4.5Z"/><circle cx="8" cy="8" r="1.6"/>`,
-    { stroke: true },
-  ),
-  merge: svg(
-    `<circle cx="5" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="11" cy="6" r="1.6"/><path d="M5 5.6v4.8M9.4 6H8a3 3 0 0 0-3 3"/>`,
-    { stroke: true },
-  ),
-  external: svg(
-    `<path d="M9.5 3.5H12.5V6.5M12.5 3.5 8 8M11 9v2.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h2.5"/>`,
-    { stroke: true },
-  ),
-  refresh: svg(
-    `<path d="M12.5 8a4.5 4.5 0 1 1-1.3-3.2M12.5 2.5V5H10"/>`,
-    { stroke: true },
-  ),
+  pass: codicon("pass"),
+  fail: codicon("error"),
+  pending: codicon("clock"),
+  prOpen: codicon("git-pull-request"),
+  merged: codicon("git-merge"),
+  draft: codicon("git-pull-request-draft"),
+  gitBranch: codicon("git-branch"),
+  arrowLeft: codicon("arrow-left"),
+  person: codicon("account"),
+  checkout: codicon("arrow-down"),
+  review: codicon("comment-discussion"),
+  merge: codicon("git-merge"),
+  external: codicon("link-external"),
+  refresh: codicon("refresh"),
 } as const;
 
-/** Wrap a set of SVG path/shape children into a 16×16 currentColor icon. */
-function svg(children: string, opts: { stroke?: boolean } = {}): string {
-  const paint = opts.stroke
-    ? `fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"`
-    : `fill="currentColor"`;
-  return `<svg viewBox="0 0 16 16" ${paint} aria-hidden="true" focusable="false">${children}</svg>`;
+/** A codicon glyph element by name (e.g. "git-merge"). */
+function codicon(name: string): string {
+  return `<i class="codicon codicon-${name}" aria-hidden="true"></i>`;
 }
 
 /** Only allow a 3- or 6-hex-digit color; otherwise fall back to a neutral. */

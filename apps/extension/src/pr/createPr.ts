@@ -19,6 +19,7 @@ export async function createPullRequest(
   repos: RepoManager,
   brain: GitBrain,
   api: GitHubApi,
+  extensionUri: vscode.Uri,
   onCreated?: () => void,
 ): Promise<void> {
   const ctx = await resolveGitHubContext(repos);
@@ -122,7 +123,7 @@ export async function createPullRequest(
         const pr = await api.createPull(ctx.owner, ctx.repo, input);
         onCreated?.();
         const panel = await PrDescriptionPanel.show(
-          { api, ctx, extensionUri: vscode.Uri.file(entry.root) },
+          { api, ctx, extensionUri },
           pr,
         );
         void panel;

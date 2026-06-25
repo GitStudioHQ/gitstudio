@@ -123,7 +123,9 @@ export function registerPrFeature(
       }
     }),
     vscode.commands.registerCommand("gitstudio.pr.create", () =>
-      createPullRequest(repos, brain, api, () => tree.refresh()),
+      createPullRequest(repos, brain, api, context.extensionUri, () =>
+        tree.refresh(),
+      ),
     ),
 
     // ── Item actions ─────────────────────────────────────────────────────────────
