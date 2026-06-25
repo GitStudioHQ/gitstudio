@@ -51,13 +51,6 @@ import {
   AutoOpenConflicts,
   resolveInMergeEditor,
 } from "./merge/autoOpenConflicts";
-import {
-  ChangesTreeProvider,
-  openChangeDiff,
-  type ChangeFileNode,
-  type ChangeGroupNode,
-  relativePath,
-} from "./changes/changesView";
 import { CommitViewProvider } from "./changes/commitView";
 import {
   stageSelectedLines,
@@ -291,140 +284,41 @@ export function activate(context: vscode.ExtensionContext): void {
     // PR body.
     registerPrFeature(context, repos, brain);
 
-    // Hunk/line staging + Changes view + commit box (M7). The Changes tree and
-    // the commit webview both refresh on RepoManager.onDidChange; a shared
-    // `refresh` also invalidates open index/HEAD diffs after a staging op.
-    const changesProvider = new ChangesTreeProvider(repos);
+    // Hunk/line staging + the unified Commit window (M7). The Commit webview now
+    // renders BOTH the message box AND the working-tree changes inline (SCM-style
+    // groups with a tree/list toggle), so it owns the changes surface; the old
+    // standalone "Changes" tree view is gone. It refreshes on
+    // RepoManager.onDidChange; a shared `refresh` also invalidates open
+    // index/HEAD diffs after a staging op.
     const commitProvider = new CommitViewProvider(
       repos,
       () => {
-        changesProvider.refresh();
         revisionContent.notifyChanged();
       },
+      context.globalState,
       {
         isEnabled: () => brain.isEnabled(),
         draft: (entry) => draftCommitMessage(brain, entry),
       },
     );
-    context.subscriptions.push(changesProvider, commitProvider, revisionContent);
+    context.subscriptions.push(commitProvider, revisionContent);
 
-    const changesView = vscode.window.createTreeView("gitstudio.changes", {
-      treeDataProvider: changesProvider,
-      showCollapseAll: false,
-    });
-
-    // After any staging op: refresh the tree, the commit count, and open diffs.
+    // After any staging op (line/hunk staging): re-push the commit webview's
+    // state and invalidate open diffs. The webview owns the change lists now.
     const stagingRefresh: StagingRefresh = {
       refresh() {
-        changesProvider.refresh();
         revisionContent.notifyChanged();
-        void vscode.commands.executeCommand("gitstudio.commit.requestState");
+        commitProvider.requestState();
         // Nudge vscode.git to re-scan so the groups update promptly.
         const active = repos.getActive();
         void active?.repo.status?.();
       },
     };
 
-    /** Resolve a repo + relative path from a Changes tree node or its uri. */
-    const relOf = (node: ChangeFileNode): string =>
-      relativePath(node.root, node.change.uri.fsPath);
-
     context.subscriptions.push(
-      changesView,
       vscode.window.registerWebviewViewProvider(
         CommitViewProvider.viewId,
         commitProvider,
-      ),
-      vscode.commands.registerCommand("gitstudio.changes.refresh", () => {
-        changesProvider.refresh();
-      }),
-      vscode.commands.registerCommand(
-        "gitstudio.changes.openDiff",
-        (node: ChangeFileNode) => void openChangeDiff(node),
-      ),
-      // Per-file actions (inline + context menu).
-      vscode.commands.registerCommand(
-        "gitstudio.changes.stageFile",
-        async (node: ChangeFileNode) => {
-          const active = repos.getActive();
-          if (!active) return;
-          await active.ctx.staging.stageFile(relOf(node));
-          stagingRefresh.refresh();
-        },
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.changes.unstageFile",
-        async (node: ChangeFileNode) => {
-          const active = repos.getActive();
-          if (!active) return;
-          await active.ctx.staging.unstageFile(relOf(node));
-          stagingRefresh.refresh();
-        },
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.changes.discardFile",
-        async (node: ChangeFileNode) => {
-          const active = repos.getActive();
-          if (!active) return;
-          const choice = await vscode.window.showWarningMessage(
-            `Discard changes in ${relOf(node)}? This cannot be undone.`,
-            { modal: true },
-            "Discard",
-          );
-          if (choice !== "Discard") return;
-          await active.ctx.staging.discardChanges(relOf(node));
-          stagingRefresh.refresh();
-        },
-      ),
-      // Group-level bulk actions.
-      vscode.commands.registerCommand(
-        "gitstudio.changes.stageAll",
-        async (group?: ChangeGroupNode) => {
-          const active = repos.getActive();
-          if (!active) return;
-          const changes = group?.changes ?? active.repo.state.workingTreeChanges;
-          for (const c of changes) {
-            await active.ctx.staging.stageFile(
-              relativePath(active.root, c.uri.fsPath),
-            );
-          }
-          stagingRefresh.refresh();
-        },
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.changes.unstageAll",
-        async (group?: ChangeGroupNode) => {
-          const active = repos.getActive();
-          if (!active) return;
-          const changes = group?.changes ?? active.repo.state.indexChanges;
-          for (const c of changes) {
-            await active.ctx.staging.unstageFile(
-              relativePath(active.root, c.uri.fsPath),
-            );
-          }
-          stagingRefresh.refresh();
-        },
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.changes.discardAll",
-        async (group?: ChangeGroupNode) => {
-          const active = repos.getActive();
-          if (!active) return;
-          const changes = group?.changes ?? active.repo.state.workingTreeChanges;
-          if (changes.length === 0) return;
-          const choice = await vscode.window.showWarningMessage(
-            `Discard all ${changes.length} working-tree changes? This cannot be undone.`,
-            { modal: true },
-            "Discard All",
-          );
-          if (choice !== "Discard All") return;
-          for (const c of changes) {
-            await active.ctx.staging.discardChanges(
-              relativePath(active.root, c.uri.fsPath),
-            );
-          }
-          stagingRefresh.refresh();
-        },
       ),
       // Line / hunk staging in any file or diff editor.
       vscode.commands.registerCommand("gitstudio.stageSelectedLines", () =>

@@ -76,10 +76,6 @@
           "type": "webview"
         },
         {
-          "id": "gitstudio.changes",
-          "name": "Changes"
-        },
-        {
           "id": "gitstudio.commits",
           "name": "Commits"
         },
@@ -115,11 +111,6 @@
         "view": "gitstudio.commits",
         "when": "gitstudio.hasRepo",
         "contents": "Browse your history visually.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\n[Take the Tour](command:gitstudio.openWalkthrough)"
-      },
-      {
-        "view": "gitstudio.changes",
-        "when": "!gitstudio.hasRepo",
-        "contents": "Open a Git repository to stage and commit changes here."
       },
       {
         "view": "gitstudio.stashes",
@@ -176,12 +167,6 @@
         "title": "Get Started",
         "category": "GitStudio",
         "icon": "$(rocket)"
-      },
-      {
-        "command": "gitstudio.changes.openDiff",
-        "title": "Open Changes",
-        "category": "GitStudio",
-        "icon": "$(go-to-file)"
       },
       {
         "command": "gitstudio.refreshCommits",
@@ -266,48 +251,6 @@
         "title": "Compare File…",
         "category": "GitStudio",
         "icon": "$(git-compare)"
-      },
-      {
-        "command": "gitstudio.changes.refresh",
-        "title": "Refresh Changes",
-        "category": "GitStudio",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitstudio.changes.stageFile",
-        "title": "Stage",
-        "category": "GitStudio",
-        "icon": "$(add)"
-      },
-      {
-        "command": "gitstudio.changes.unstageFile",
-        "title": "Unstage",
-        "category": "GitStudio",
-        "icon": "$(remove)"
-      },
-      {
-        "command": "gitstudio.changes.discardFile",
-        "title": "Discard Changes",
-        "category": "GitStudio",
-        "icon": "$(discard)"
-      },
-      {
-        "command": "gitstudio.changes.stageAll",
-        "title": "Stage All",
-        "category": "GitStudio",
-        "icon": "$(add)"
-      },
-      {
-        "command": "gitstudio.changes.unstageAll",
-        "title": "Unstage All",
-        "category": "GitStudio",
-        "icon": "$(remove)"
-      },
-      {
-        "command": "gitstudio.changes.discardAll",
-        "title": "Discard All",
-        "category": "GitStudio",
-        "icon": "$(discard)"
       },
       {
         "command": "gitstudio.stageSelectedLines",
@@ -1014,21 +957,6 @@
           "group": "navigation@2"
         },
         {
-          "command": "gitstudio.changes.stageAll",
-          "when": "view == gitstudio.changes",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitstudio.changes.unstageAll",
-          "when": "view == gitstudio.changes",
-          "group": "navigation@2"
-        },
-        {
-          "command": "gitstudio.changes.refresh",
-          "when": "view == gitstudio.changes",
-          "group": "navigation@3"
-        },
-        {
           "command": "gitstudio.pr.create",
           "when": "view == gitstudio.pullRequests && gitstudio.github.connected",
           "group": "navigation@1"
@@ -1211,38 +1139,6 @@
         {
           "command": "gitstudio.unstageHunk",
           "when": "editorTextFocus && gitstudio.hasRepo"
-        },
-        {
-          "command": "gitstudio.changes.refresh",
-          "when": "gitstudio.hasRepo"
-        },
-        {
-          "command": "gitstudio.changes.stageFile",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.changes.unstageFile",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.changes.discardFile",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.changes.openDiff",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.changes.stageAll",
-          "when": "gitstudio.hasRepo"
-        },
-        {
-          "command": "gitstudio.changes.unstageAll",
-          "when": "gitstudio.hasRepo"
-        },
-        {
-          "command": "gitstudio.changes.discardAll",
-          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.startInteractiveRebase",
@@ -1481,51 +1377,6 @@
           "command": "gitstudio.resetToCommit",
           "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
           "group": "1_gitstudio@2"
-        },
-        {
-          "command": "gitstudio.changes.stageFile",
-          "when": "view == gitstudio.changes && (viewItem == gitstudio.change.unstaged || viewItem == gitstudio.change.merge)",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.changes.discardFile",
-          "when": "view == gitstudio.changes && viewItem == gitstudio.change.unstaged",
-          "group": "inline@2"
-        },
-        {
-          "command": "gitstudio.changes.unstageFile",
-          "when": "view == gitstudio.changes && viewItem == gitstudio.change.staged",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.changes.stageFile",
-          "when": "view == gitstudio.changes && (viewItem == gitstudio.change.unstaged || viewItem == gitstudio.change.merge)",
-          "group": "1_gitstudio@1"
-        },
-        {
-          "command": "gitstudio.changes.unstageFile",
-          "when": "view == gitstudio.changes && viewItem == gitstudio.change.staged",
-          "group": "1_gitstudio@1"
-        },
-        {
-          "command": "gitstudio.changes.discardFile",
-          "when": "view == gitstudio.changes && viewItem == gitstudio.change.unstaged",
-          "group": "1_gitstudio@2"
-        },
-        {
-          "command": "gitstudio.changes.stageAll",
-          "when": "view == gitstudio.changes && (viewItem == gitstudio.changeGroup.unstaged || viewItem == gitstudio.changeGroup.merge)",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.changes.discardAll",
-          "when": "view == gitstudio.changes && viewItem == gitstudio.changeGroup.unstaged",
-          "group": "inline@2"
-        },
-        {
-          "command": "gitstudio.changes.unstageAll",
-          "when": "view == gitstudio.changes && viewItem == gitstudio.changeGroup.staged",
-          "group": "inline@1"
         },
         {
           "command": "gitstudio.stash.apply",
