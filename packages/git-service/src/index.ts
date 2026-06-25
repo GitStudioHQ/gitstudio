@@ -30,6 +30,12 @@ export type {
   LineHistoryOptions,
   FileAtRevisionOptions,
 } from "./HistoryProvider";
+export { ConflictProvider, parseUnmergedPaths } from "./ConflictProvider";
+export type {
+  ConflictVersions,
+  GetConflictVersionsOptions,
+  ConflictReadOptions,
+} from "./ConflictProvider";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
 export { NodeGitAdapter } from "./NodeGitAdapter";

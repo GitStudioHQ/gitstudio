@@ -79,6 +79,18 @@
         "contents": "Open a folder with a Git repository to get started.\nGitStudio shows your commits, branches, remotes, and tags here once a repository is detected.\n[Open Folder](command:vscode.openFolder)"
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "gitstudio.mergeEditor",
+        "displayName": "GitStudio 3-Pane Merge",
+        "selector": [
+          {
+            "filenamePattern": "*"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "gitstudio.showWelcome",
@@ -155,6 +167,18 @@
         "title": "Show Reflog (Time Machine)",
         "category": "GitStudio",
         "icon": "$(history)"
+      },
+      {
+        "command": "gitstudio.resolveInMergeEditor",
+        "title": "Resolve in Merge Editor",
+        "category": "GitStudio",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "gitstudio.compare",
+        "title": "Compare File…",
+        "category": "GitStudio",
+        "icon": "$(git-compare)"
       }
     ],
     "keybindings": [
@@ -188,6 +212,11 @@
           "type": "boolean",
           "default": true,
           "description": "Tint full-file blame annotations with a code-age heatmap (recent changes warmer, older changes cooler)."
+        },
+        "gitstudio.merge.autoOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a file becomes conflicted (during a merge, rebase, or cherry-pick), automatically open it in the GitStudio 3-pane merge editor."
         }
       }
     },
@@ -216,9 +245,28 @@
           "group": "navigation@-1"
         },
         {
+          "command": "gitstudio.resolveInMergeEditor",
+          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "group": "navigation@-2"
+        },
+        {
           "command": "gitstudio.toggleFileBlame",
           "when": "editorTextFocus && gitstudio.hasRepo",
           "group": "navigation"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "gitstudio.resolveInMergeEditor",
+          "when": "scmProvider == git && scmResourceGroup == merge",
+          "group": "navigation@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "gitstudio.compare",
+          "when": "gitstudio.hasRepo && resourceScheme == file && !explorerResourceIsFolder",
+          "group": "3_compare@10"
         }
       ],
       "editor/context": [
@@ -265,6 +313,14 @@
         {
           "command": "gitstudio.showReflog",
           "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.resolveInMergeEditor",
+          "when": "gitstudio.hasRepo && resourceScheme == file"
+        },
+        {
+          "command": "gitstudio.compare",
+          "when": "gitstudio.hasRepo && resourceScheme == file"
         }
       ],
       "view/item/context": [

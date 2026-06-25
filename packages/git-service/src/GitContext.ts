@@ -3,6 +3,7 @@ import { LogProvider } from "./LogProvider";
 import { RefProvider } from "./RefProvider";
 import { BlameProvider } from "./BlameProvider";
 import { HistoryProvider } from "./HistoryProvider";
+import { ConflictProvider } from "./ConflictProvider";
 
 export interface GitContextOptions {
   /** Absolute path to the repo root. */
@@ -25,6 +26,7 @@ export class GitContext {
   readonly refs: RefProvider;
   readonly blame: BlameProvider;
   readonly history: HistoryProvider;
+  readonly conflict: ConflictProvider;
 
   constructor(opts: GitContextOptions) {
     this.root = opts.root;
@@ -37,6 +39,7 @@ export class GitContext {
     this.refs = new RefProvider(this.process);
     this.blame = new BlameProvider(this.process);
     this.history = new HistoryProvider(this.process);
+    this.conflict = new ConflictProvider(this.process);
   }
 
   dispose(): void {

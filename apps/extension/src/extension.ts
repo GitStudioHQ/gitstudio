@@ -17,6 +17,12 @@ import { registerTimelineProvider } from "./history/timelineApi";
 import { showLineHistory } from "./history/lineHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
 import { showReflog } from "./history/reflog";
+import { MergeEditorProvider } from "./merge/mergeEditorProvider";
+import { DiffPanel, compareCommand } from "./merge/diffPanel";
+import {
+  AutoOpenConflicts,
+  resolveInMergeEditor,
+} from "./merge/autoOpenConflicts";
 
 // GitStudio extension entry point.
 //
@@ -111,6 +117,27 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand("gitstudio.showReflog", () => {
         void showReflog(repos);
       }),
+    );
+
+    // Rich 3-pane merge + side-by-side diff (M6). The custom editor and the
+    // diff-panel serializer must be registered for the webview tabs to resolve;
+    // auto-open routes new conflicts into the merge editor (respecting the
+    // gitstudio.merge.autoOpen setting).
+    const autoOpen = new AutoOpenConflicts(context, repos);
+    context.subscriptions.push(
+      MergeEditorProvider.register(context, repos),
+      DiffPanel.register(context, repos),
+      autoOpen,
+      vscode.commands.registerCommand(
+        "gitstudio.resolveInMergeEditor",
+        (arg?: vscode.Uri | { resourceUri?: vscode.Uri }) =>
+          void resolveInMergeEditor(repos, arg),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.compare",
+        (resource?: vscode.Uri) =>
+          void compareCommand(context, repos, resource),
+      ),
     );
   });
 }
