@@ -5,6 +5,8 @@
 // of any `vscode`/`node`/`monaco` import — the webview (browser context) imports
 // it too, and the engine/host-bridge purity guard depends on it staying pure.
 
+import type { CommitDetailsPayload } from "./commitDetailsProtocol";
+
 /** A ref decoration attached to a commit (a branch tip, remote, or tag). */
 export interface WireRef {
   /** Display name, e.g. "main", "origin/main", "v1.2.0". */
@@ -84,10 +86,38 @@ export interface GraphConfigMessage {
   lanePalette: string[];
 }
 
+/** The selected commit's full details for the docked inspect panel. */
+export interface GraphCommitDetailsMessage {
+  type: "commitDetails";
+  details: CommitDetailsPayload | null;
+}
+
+/** Per-row change stats for the CHANGES column (lazy, for visible rows). */
+export interface GraphRowStatsMessage {
+  type: "rowStats";
+  stats: RowStat[];
+}
+
+export interface RowStat {
+  sha: string;
+  files: number;
+  additions: number;
+  deletions: number;
+}
+
+/** Host asks the webview to select + scroll a commit into view. */
+export interface GraphRevealMessage {
+  type: "revealCommit";
+  sha: string;
+}
+
 export type GraphHostMessage =
   | GraphInitMessage
   | GraphAppendMessage
-  | GraphConfigMessage;
+  | GraphConfigMessage
+  | GraphCommitDetailsMessage
+  | GraphRowStatsMessage
+  | GraphRevealMessage;
 
 // ── Webview → host ──────────────────────────────────────────────────────────
 
@@ -102,4 +132,12 @@ export type GraphWebviewMessage =
   /** A direct action request (used by keyboard menu / fallbacks). */
   | { type: "action"; action: string; sha: string }
   /** Near the bottom of the loaded rows: please page in more. */
-  | { type: "loadMore" };
+  | { type: "loadMore" }
+  /** Open a changed file from the details panel as a diff. */
+  | { type: "openFile"; sha: string; path: string; wip?: boolean }
+  /** A commit action from the details panel's toolbar. */
+  | { type: "commitAction"; action: string; sha: string }
+  /** Copy text to the clipboard (host-side, CSP-safe). */
+  | { type: "copyText"; text: string }
+  /** Request CHANGES-column stats for these (visible) shas. */
+  | { type: "requestStats"; shas: string[] };

@@ -31,8 +31,63 @@ body {
   width: 100%;
 }
 
+/* The graph + docked details split (GitKraken/GitLens layout). */
+.gs-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  --gs-details-h: 42%;
+}
+.gs-graph-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+/* NB: do NOT set `display` here — the element's shadow `:host` uses
+ * `display:flex; flex-direction:column` so its header/columns/scroller lay out
+ * as a column. A light-DOM `display:block` would override `:host` and collapse
+ * the flex:1 scroller to zero height. Only size the host. */
+.gs-graph-pane gitstudio-graph {
+  height: 100%;
+  width: 100%;
+}
+.gs-divider {
+  display: none;
+  flex: 0 0 auto;
+  height: 7px;
+  cursor: row-resize;
+  background: var(--vscode-editor-background);
+  border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  position: relative;
+}
+.gs-divider::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 2px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
+}
+.gs-divider:hover::after {
+  background: color-mix(in srgb, var(--vscode-foreground) 40%, transparent);
+}
+.gs-details-pane {
+  display: none;
+  flex: 0 0 auto;
+  height: var(--gs-details-h);
+  min-height: 140px;
+  overflow: hidden;
+}
+.gs-shell[data-details-open="true"] .gs-divider { display: block; }
+.gs-shell[data-details-open="true"] .gs-details-pane { display: block; }
+
+/* Bare usage (e.g. the desktop app mounts <gitstudio-graph> directly). Size
+ * only — `:host` owns `display:flex` (see note above). */
 gitstudio-graph {
-  display: block;
   height: 100%;
   width: 100%;
 }

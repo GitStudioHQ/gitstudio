@@ -6,11 +6,32 @@ import type {
   GraphHostMessage,
   GraphWebviewMessage,
   WireRow,
+  WireRef,
+  RowStat,
 } from "@gitstudio/host-bridge/graphProtocol";
+import type {
+  CommitDetailsPayload,
+  CommitFileChange,
+} from "@gitstudio/host-bridge/commitDetailsProtocol";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { commitActionItems, runCommitAction } from "./commitActions";
+import { openRevisionDiff } from "../history/revisionContentProvider";
+
+/** git's canonical empty-tree object — the "parent" of a root commit's diff. */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/** Map the details-panel action ids to runCommitAction's ids. */
+const ACTION_ID_MAP: Record<string, string> = {
+  "checkout": "checkout",
+  "branch": "branch",
+  "tag": "tag",
+  "cherry-pick": "cherryPick",
+  "revert": "revert",
+  "reset": "reset",
+  "copy-sha": "copySha",
+};
 
 /** Commits per page. The first page lands fast; more stream in on scroll. */
 const PAGE_SIZE = 500;
@@ -56,6 +77,7 @@ export class CommitGraphPanel {
   /** All loaded input commits (for incremental relayout on append). */
   private loaded: GraphInputCommit[] = [];
   private refsBySha = new Map<string, GitRef[]>();
+  private hasAnyRemote = false;
   private currentHeadSha = "";
   private nextSkip = 0;
   private hasMore = false;
@@ -91,14 +113,26 @@ export class CommitGraphPanel {
         void this.loadMore();
         break;
       case "selectCommit":
-        // Selection is a UI affordance for now; a details panel lands in M5.
+        void this.pushCommitDetails(msg.sha);
         break;
       case "openCommit":
-        void this.openCommit(msg.sha);
+        void this.pushCommitDetails(msg.sha);
         break;
       case "contextMenu":
       case "action":
         void this.showCommitMenu(msg.sha);
+        break;
+      case "openFile":
+        void this.doOpenFile(msg.sha, msg.path, !!msg.wip);
+        break;
+      case "commitAction":
+        void this.doCommitAction(msg.action, msg.sha);
+        break;
+      case "copyText":
+        void this.doCopy(msg.text);
+        break;
+      case "requestStats":
+        void this.pushRowStats(msg.shas);
         break;
     }
   }
@@ -251,6 +285,7 @@ export class CommitGraphPanel {
   private async loadRefs(active: RepoEntry): Promise<void> {
     this.refsBySha.clear();
     this.currentHeadSha = "";
+    this.hasAnyRemote = false;
     let refs: GitRef[] = [];
     try {
       refs = await active.ctx.refs.listRefs();
@@ -260,6 +295,9 @@ export class CommitGraphPanel {
     for (const ref of refs) {
       if (ref.type === "stash") {
         continue;
+      }
+      if (ref.type === "remote") {
+        this.hasAnyRemote = true;
       }
       const list = this.refsBySha.get(ref.sha);
       if (list) {
@@ -354,6 +392,198 @@ export class CommitGraphPanel {
     if (changed) {
       this.scheduleRefresh();
     }
+  }
+
+  // ── Commit details panel (docked under the graph) ──────────────────────────
+
+  /** Public: select + reveal a commit and show its details (from another view). */
+  reveal(sha: string): void {
+    this.post({ type: "revealCommit", sha });
+    void this.pushCommitDetails(sha);
+  }
+
+  /** Build the selected commit's full details payload and post it. */
+  private async pushCommitDetails(sha: string): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    const record = await this.getRecord(active, sha);
+    if (!record) {
+      this.post({ type: "commitDetails", details: null });
+      return;
+    }
+    let files: CommitFileChange[];
+    try {
+      files = await active.ctx.commitDetails.getCommitFiles(
+        sha,
+        record.parents[0],
+      );
+    } catch {
+      files = [];
+    }
+    const payload: CommitDetailsPayload = {
+      kind: "commit",
+      sha: record.sha,
+      shortSha: record.sha.slice(0, 7),
+      parents: record.parents,
+      author: record.author,
+      authorEmail: record.authorEmail,
+      authorDate: record.authorDate,
+      committer: record.committer,
+      committerEmail: record.committerEmail,
+      committerDate: record.committerDate,
+      subject: record.subject,
+      body: record.body,
+      refs: this.refsToWire(sha),
+      files,
+      hasRemote: this.hasAnyRemote,
+    };
+    this.post({ type: "commitDetails", details: payload });
+  }
+
+  /** Open a changed file as a diff (commit vs first parent, or WIP vs HEAD). */
+  private async doOpenFile(
+    sha: string,
+    path: string,
+    wip: boolean,
+  ): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    if (wip) {
+      // Working-tree file: HEAD ↔ the live file on disk.
+      await openRevisionDiff(active.root, path, "HEAD");
+      return;
+    }
+    const record = this.records.get(sha);
+    const parent = record?.parents[0] ?? EMPTY_TREE;
+    const fileName = path.split("/").pop() || path;
+    await openRevisionDiff(
+      active.root,
+      path,
+      parent,
+      sha,
+      `${fileName} (${sha.slice(0, 7)})`,
+    );
+  }
+
+  /** Run a details-panel toolbar action against the target commit. */
+  private async doCommitAction(action: string, sha: string): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    if (action === "open-remote") {
+      await this.doCopy(sha);
+      void vscode.window.setStatusBarMessage(
+        "$(check) Copied SHA (open-on-remote coming soon)",
+        2500,
+      );
+      return;
+    }
+    const mapped = ACTION_ID_MAP[action];
+    if (!mapped) {
+      return;
+    }
+    const record = this.records.get(sha);
+    const ledger = this.repos.getUndoLedger();
+    const undo = ledger
+      ? <T>(label: string, fn: () => Promise<T>) =>
+          ledger.runWithUndo(active, label, fn)
+      : undefined;
+    const changed = await runCommitAction(
+      mapped,
+      active.ctx,
+      { sha, subject: record?.subject ?? "" },
+      undo,
+    );
+    if (changed) {
+      this.scheduleRefresh();
+    }
+  }
+
+  private async doCopy(text: string): Promise<void> {
+    await vscode.env.clipboard.writeText(text);
+    void vscode.window.setStatusBarMessage(
+      `$(check) Copied ${text.length > 12 ? text.slice(0, 7) : text}`,
+      2000,
+    );
+  }
+
+  /** Compute + post CHANGES-column stats for the requested (visible) shas. */
+  private async pushRowStats(shas: string[]): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    const stats: RowStat[] = [];
+    // Bounded concurrency: a handful at a time keeps the process pool happy.
+    const queue = shas.slice(0, 60);
+    await Promise.all(
+      queue.map(async (sha) => {
+        const record = await this.getRecord(active, sha);
+        if (!record) {
+          return;
+        }
+        try {
+          const files = await active.ctx.commitDetails.getCommitFiles(
+            sha,
+            record.parents[0],
+          );
+          let add = 0,
+            del = 0;
+          for (const f of files) {
+            if (f.additions > 0) add += f.additions;
+            if (f.deletions > 0) del += f.deletions;
+          }
+          stats.push({ sha, files: files.length, additions: add, deletions: del });
+        } catch {
+          stats.push({ sha, files: 0, additions: 0, deletions: 0 });
+        }
+      }),
+    );
+    if (stats.length) {
+      this.post({ type: "rowStats", stats });
+    }
+  }
+
+  /** A CommitRecord from the cache, or streamed on demand if not yet loaded. */
+  private async getRecord(
+    active: RepoEntry,
+    sha: string,
+  ): Promise<CommitRecord | undefined> {
+    const cached = this.records.get(sha);
+    if (cached) {
+      return cached;
+    }
+    try {
+      for await (const commit of active.ctx.log.streamCommits({
+        revRange: sha,
+        maxCount: 1,
+      })) {
+        this.records.set(commit.sha, commit);
+        return commit;
+      }
+    } catch {
+      // fall through
+    }
+    return undefined;
+  }
+
+  /** Map the GitRefs at a sha to the webview's WireRef chips. */
+  private refsToWire(sha: string): WireRef[] {
+    const refs = this.refsBySha.get(sha) ?? [];
+    return refs
+      .filter((r) => r.type !== "stash")
+      .map((r): WireRef => {
+        if (r.type === "tag") return { kind: "tag", name: r.name };
+        if (r.type === "remote") return { kind: "remoteHead", name: r.name };
+        return r.isCurrent
+          ? { kind: "currentHead", name: r.name }
+          : { kind: "head", name: r.name };
+      });
   }
 
   dispose(): void {

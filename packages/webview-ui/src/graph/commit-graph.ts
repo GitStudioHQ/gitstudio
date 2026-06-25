@@ -20,6 +20,7 @@ import {
 import type {
   WireRow,
   WireRef,
+  RowStat,
 } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG } from "./gutter";
 import {
@@ -52,7 +53,8 @@ export type GraphAction =
   | { type: "select"; sha: string }
   | { type: "open"; sha: string }
   | { type: "context"; sha: string; x: number; y: number }
-  | { type: "loadMore" };
+  | { type: "loadMore" }
+  | { type: "requestStats"; shas: string[] };
 
 export class CommitGraph extends LitElement {
   // Declared imperatively (no decorators) so the build is independent of the
@@ -146,6 +148,40 @@ export class CommitGraph extends LitElement {
     @media (max-width: 620px) { .gh-hint { display: none; } }
     @media (max-width: 420px) { .gh-count { display: none; } }
 
+    /* ── Column header row (aligned to the row grid) ──────────────────── */
+    .colhead {
+      flex: 0 0 auto;
+      display: grid;
+      grid-template-columns:
+        26px
+        var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+        auto
+        minmax(0, 1fr)
+        108px
+        132px
+        56px
+        62px;
+      align-items: center;
+      height: 24px;
+      padding-right: 12px;
+      border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+      background: color-mix(in srgb, var(--vscode-foreground) 2%, var(--vscode-editor-background));
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--vscode-foreground) 50%, transparent);
+      user-select: none;
+    }
+    .colhead > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding-left: 2px;
+    }
+    .colhead .ch-graph { padding-left: 4px; }
+    .colhead .ch-sha { text-align: right; padding-right: 0; }
+
     .scroller {
       flex: 1 1 auto;
       width: 100%;
@@ -177,6 +213,7 @@ export class CommitGraph extends LitElement {
         var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
         auto
         minmax(0, 1fr)
+        108px
         132px
         56px
         62px;
@@ -350,6 +387,42 @@ export class CommitGraph extends LitElement {
       white-space: nowrap;
       font-size: 11.5px;
     }
+    /* ── CHANGES column: file count + add/del proportion bar ──────────── */
+    .changes {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding-right: 12px;
+      overflow: hidden;
+      color: var(--vscode-descriptionForeground, #9aa0a6);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      transition: opacity 150ms ease;
+    }
+    .changes .ch-count {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      flex: 0 0 auto;
+    }
+    .changes .ch-count .codicon { font-size: 12px; opacity: 0.75; }
+    .changes .ch-bar {
+      display: inline-flex;
+      gap: 1.5px;
+      flex: 0 0 auto;
+    }
+    .changes .ch-bar i {
+      width: 9px;
+      height: 8px;
+      border-radius: 1.5px;
+      background: color-mix(in srgb, currentColor 22%, transparent);
+    }
+    .changes .ch-bar i.a {
+      background: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #89d185));
+    }
+    .changes .ch-bar i.d {
+      background: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, #f14c4c));
+    }
     .author {
       padding-right: 10px;
     }
@@ -374,6 +447,7 @@ export class CommitGraph extends LitElement {
     .scroller.focusing .row:not(.focus-on) .subject,
     .scroller.focusing .row:not(.focus-on) .refs,
     .scroller.focusing .row:not(.focus-on) .avatar,
+    .scroller.focusing .row:not(.focus-on) .changes,
     .scroller.focusing .row:not(.focus-on) .meta {
       opacity: 0.5;
     }
@@ -447,6 +521,10 @@ export class CommitGraph extends LitElement {
   private cleanupVirtualizer: (() => void) | undefined;
   private disposeTheme: (() => void) | undefined;
   private shaToIndex = new Map<string, number>();
+  /** CHANGES-column stats by sha (lazily fetched for visible rows). */
+  private rowStats = new Map<string, RowStat>();
+  /** Shas whose stats have been requested but not yet returned. */
+  private pendingStats = new Set<string>();
   private loadMoreArmed = true;
   /** lane color the pointer is hovering, for the focus-dim affordance. */
   private focusColor: number | undefined;
@@ -572,11 +650,22 @@ export class CommitGraph extends LitElement {
     const gutterW = this.gutterWidth();
     let lastIndex = -1;
     let htmlOut = "";
+    const needStats: string[] = [];
     for (const item of items) {
       lastIndex = Math.max(lastIndex, item.index);
+      const row = this.rows[item.index];
+      if (row && !this.rowStats.has(row.sha) && !this.pendingStats.has(row.sha)) {
+        needStats.push(row.sha);
+      }
       htmlOut += this.rowHtml(item, gutterW);
     }
     sizer.innerHTML = htmlOut;
+
+    // Lazily request CHANGES-column stats for the just-rendered visible rows.
+    if (needStats.length) {
+      for (const sha of needStats) this.pendingStats.add(sha);
+      this.onAction({ type: "requestStats", shas: needStats });
+    }
 
     // Infinite scroll: when the rendered window reaches near the tail, ask the
     // host for more — once per page until a new page resets the arm.
@@ -588,6 +677,38 @@ export class CommitGraph extends LitElement {
       this.loadMoreArmed = false;
       this.onAction({ type: "loadMore" });
     }
+  }
+
+  /** Merge in CHANGES-column stats and repaint the visible rows. */
+  setRowStats(stats: RowStat[]): void {
+    for (const s of stats) {
+      this.rowStats.set(s.sha, s);
+      this.pendingStats.delete(s.sha);
+    }
+    this.renderRows();
+  }
+
+  /** The CHANGES cell: file count + a green/red add/del proportion bar. */
+  private changesHtml(sha: string): string {
+    const s = this.rowStats.get(sha);
+    if (!s || s.files === 0) {
+      return "";
+    }
+    const total = s.additions + s.deletions;
+    const cells = 5;
+    let greens = total === 0 ? 0 : Math.round((s.additions / total) * cells);
+    if (s.additions > 0 && greens === 0) greens = 1;
+    if (s.deletions > 0 && greens === cells) greens = cells - 1;
+    let bar = "";
+    for (let i = 0; i < cells; i++) {
+      const c = total === 0 ? "n" : i < greens ? "a" : "d";
+      bar += `<i class="${c}"></i>`;
+    }
+    return (
+      `<span class="ch-count" title="${s.files} file${s.files === 1 ? "" : "s"} changed">` +
+      `<span class="codicon codicon-file"></span>${s.files}</span>` +
+      `<span class="ch-bar" title="+${Math.max(0, s.additions)} -${Math.max(0, s.deletions)}">${bar}</span>`
+    );
   }
 
   private rowHtml(item: VirtualItem, gutterW: number): string {
@@ -626,6 +747,7 @@ export class CommitGraph extends LitElement {
       `<div class="gutter">${gutter}</div>` +
       `<div class="refs">${refs}</div>` +
       `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
+      `<div class="changes">${this.changesHtml(row.sha)}</div>` +
       `<div class="meta author" title="${esc(row.author)} <${esc(row.authorEmail)}>">${esc(row.author)}</div>` +
       `<div class="meta date" title="${esc(absTime(row.authorDate))}">${esc(relTime(row.authorDate))}</div>` +
       `<div class="meta sha">${esc(row.shortSha)}</div>` +
@@ -819,7 +941,7 @@ export class CommitGraph extends LitElement {
           <div>Loading history…</div>
         </div>${nothing}`;
     }
-    return html`${header}<div
+    return html`${header}${this.colHeadHtml()}<div
         class="scroller"
         tabindex="0"
         role="grid"
@@ -834,6 +956,20 @@ export class CommitGraph extends LitElement {
       >
         <div class="sizer"></div>
       </div>${nothing}`;
+  }
+
+  /** GitLens-style column headers, aligned to the row grid. */
+  private colHeadHtml() {
+    return html`<div class="colhead" aria-hidden="true">
+      <span></span>
+      <span class="ch-graph">Graph</span>
+      <span>Branch / Tag</span>
+      <span>Commit message</span>
+      <span>Changes</span>
+      <span>Author</span>
+      <span>Date</span>
+      <span class="ch-sha">SHA</span>
+    </div>`;
   }
 }
 

@@ -1,11 +1,14 @@
 // Graph webview entry point (browser context). Boots the <gitstudio-graph>
-// element, signals readiness to the host, feeds it the streamed graph pages,
-// and forwards user intents (select / open / context menu / loadMore) back to
-// the extension host.
+// element with a docked <gitstudio-commit-details> panel below it — the
+// GitKraken/GitLens "graph + inspect" layout. Selecting a commit shows its
+// details; the details panel's file-open / action / copy events and the
+// graph's select/open/context/loadMore intents are forwarded to the host.
 
 import "../styles/graph.css";
 import "./commit-graph";
+import "../commit-details";
 import type { CommitGraph, GraphAction } from "./commit-graph";
+import type { CommitDetails } from "../commit-details";
 import type {
   GraphHostMessage,
   GraphWebviewMessage,
@@ -26,15 +29,38 @@ if (root) {
 }
 
 function start(root: HTMLElement): void {
+  // Layout shell: graph pane (flex) + drag divider + details pane.
+  const shell = document.createElement("div");
+  shell.className = "gs-shell";
+
+  const graphPane = document.createElement("div");
+  graphPane.className = "gs-graph-pane";
   const graph = document.createElement("gitstudio-graph") as CommitGraph;
   graph.status = "loading";
+  graphPane.appendChild(graph);
+
+  const divider = document.createElement("div");
+  divider.className = "gs-divider";
+  divider.setAttribute("role", "separator");
+  divider.setAttribute("aria-orientation", "horizontal");
+
+  const details = document.createElement("gitstudio-commit-details") as CommitDetails;
+  details.className = "gs-details-pane";
+
+  shell.append(graphPane, divider, details);
+  shell.dataset.detailsOpen = "false";
+  root.replaceChildren(shell);
+
+  // ── Graph intents → host ──────────────────────────────────────────────────
   graph.onAction = (action: GraphAction) => {
     switch (action.type) {
       case "select":
         vscode.postMessage({ type: "selectCommit", sha: action.sha });
+        openDetails();
         break;
       case "open":
-        vscode.postMessage({ type: "openCommit", sha: action.sha });
+        vscode.postMessage({ type: "selectCommit", sha: action.sha });
+        openDetails();
         break;
       case "context":
         vscode.postMessage({
@@ -49,16 +75,63 @@ function start(root: HTMLElement): void {
         break;
     }
   };
-  root.replaceChildren(graph);
 
+  // ── Details panel events → host ───────────────────────────────────────────
+  details.addEventListener("gs-file-open", (e) => {
+    const d = (e as CustomEvent).detail as { path: string; wip?: boolean };
+    const sha = details.details?.sha ?? "";
+    vscode.postMessage({ type: "openFile", sha, path: d.path, wip: d.wip });
+  });
+  details.addEventListener("gs-action", (e) => {
+    const d = (e as CustomEvent).detail as { id: string; sha: string };
+    vscode.postMessage({ type: "commitAction", action: d.id, sha: d.sha });
+  });
+  details.addEventListener("gs-copy", (e) => {
+    const d = (e as CustomEvent).detail as { text: string };
+    vscode.postMessage({ type: "copyText", text: d.text });
+  });
+
+  // ── Resizable divider ─────────────────────────────────────────────────────
+  let dragging = false;
+  divider.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    divider.setPointerCapture(e.pointerId);
+    document.body.style.cursor = "row-resize";
+  });
+  divider.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const rect = shell.getBoundingClientRect();
+    const fromBottom = rect.bottom - e.clientY;
+    const h = Math.max(140, Math.min(rect.height - 120, fromBottom));
+    shell.style.setProperty("--gs-details-h", `${h}px`);
+  });
+  const endDrag = (e: PointerEvent) => {
+    if (!dragging) return;
+    dragging = false;
+    try { divider.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    document.body.style.cursor = "";
+  };
+  divider.addEventListener("pointerup", endDrag);
+  divider.addEventListener("pointercancel", endDrag);
+
+  function openDetails(): void {
+    shell.dataset.detailsOpen = "true";
+  }
+
+  // ── Host → webview ────────────────────────────────────────────────────────
   window.addEventListener("message", (event: MessageEvent) => {
-    handle(graph, event.data as GraphHostMessage);
+    handle(graph, details, shell, event.data as GraphHostMessage);
   });
 
   vscode.postMessage({ type: "ready" });
 }
 
-function handle(graph: CommitGraph, message: GraphHostMessage): void {
+function handle(
+  graph: CommitGraph,
+  details: CommitDetails,
+  shell: HTMLElement,
+  message: GraphHostMessage,
+): void {
   switch (message?.type) {
     case "graphInit": {
       graph.head = message.head;
@@ -69,8 +142,6 @@ function handle(graph: CommitGraph, message: GraphHostMessage): void {
       break;
     }
     case "graphAppend": {
-      // Replace the array reference so Lit's property change fires; the
-      // virtualizer keeps the scroll offset stable across the append.
       graph.rows = graph.rows.concat(message.rows);
       graph.totalColumns = Math.max(graph.totalColumns, message.totalColumns);
       graph.hasMore = message.hasMore;
@@ -79,9 +150,23 @@ function handle(graph: CommitGraph, message: GraphHostMessage): void {
       }
       break;
     }
+    case "commitDetails": {
+      details.details = message.details;
+      if (message.details) {
+        shell.dataset.detailsOpen = "true";
+      }
+      break;
+    }
+    case "rowStats": {
+      graph.setRowStats(message.stats);
+      break;
+    }
+    case "revealCommit": {
+      graph.reveal(message.sha);
+      shell.dataset.detailsOpen = "true";
+      break;
+    }
     case "graphConfig":
-      // Reserved: host-pushed palette override. The element derives its palette
-      // from the theme today, so this is a no-op hook for now.
       break;
   }
 }
