@@ -51,19 +51,92 @@
     "vscode.git"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitstudio",
+          "title": "GitStudio",
+          "icon": "media/activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitstudio": [
+        {
+          "id": "gitstudio.commits",
+          "name": "Commits"
+        },
+        {
+          "id": "gitstudio.branches",
+          "name": "Branches"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "gitstudio.commits",
+        "when": "!gitstudio.hasRepo",
+        "contents": "Open a folder with a Git repository to get started.\nGitStudio shows your commits, branches, remotes, and tags here once a repository is detected.\n[Open Folder](command:vscode.openFolder)"
+      }
+    ],
     "commands": [
       {
         "command": "gitstudio.showWelcome",
         "title": "Welcome",
         "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.refreshCommits",
+        "title": "Refresh Commits",
+        "category": "GitStudio",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitstudio.refreshBranches",
+        "title": "Refresh Branches",
+        "category": "GitStudio",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitstudio.copyCommitSha",
+        "title": "Copy Commit SHA",
+        "category": "GitStudio",
+        "icon": "$(copy)"
       }
-    ]
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitstudio.refreshCommits",
+          "when": "view == gitstudio.commits",
+          "group": "navigation"
+        },
+        {
+          "command": "gitstudio.refreshBranches",
+          "when": "view == gitstudio.branches",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitstudio.copyCommitSha",
+          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
+          "group": "inline"
+        },
+        {
+          "command": "gitstudio.copyCommitSha",
+          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
+          "group": "9_gitstudio@1"
+        }
+      ]
+    }
   },
   "scripts": {
     "compile": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "node esbuild.js --production",
     "check-types": "tsc --noEmit",
+    "test": "tsx --test \"test/**/*.test.ts\"",
     "vscode:prepublish": "npm run package"
   },
   "devDependencies": {

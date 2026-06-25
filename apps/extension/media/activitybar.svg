@@ -1,0 +1,19 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <!-- GitStudio activity-bar mark: a commit node on a vertical graph line.
+       Monochrome with currentColor so VS Code themes it per the active theme. -->
+  <path
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    d="M12 2v6 M12 16v6"
+  />
+  <circle
+    cx="12"
+    cy="12"
+    r="3.5"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+  />
+</svg>
