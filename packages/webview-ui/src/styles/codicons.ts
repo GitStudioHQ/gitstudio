@@ -35,4 +35,12 @@ export const codiconStyles = css`
   .codicon-gripper::before { content: "\\eb04"; }
   .codicon-check::before { content: "\\eab2"; }
   .codicon-circle-filled::before { content: "\\ea71"; }
+  .codicon-copy::before { content: "\\ebcc"; }
+  .codicon-link-external::before { content: "\\eb14"; }
+  .codicon-history::before { content: "\\ea82"; }
+  .codicon-discard::before { content: "\\eae2"; }
+  .codicon-add::before { content: "\\ea60"; }
+  .codicon-dash::before { content: "\\eacc"; }
+  .codicon-edit::before { content: "\\ea73"; }
+  .codicon-archive::before { content: "\\ea98"; }
 `;

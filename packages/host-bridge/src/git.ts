@@ -20,6 +20,23 @@ export interface CommitRecord {
   body: string;
 }
 
+/**
+ * One file changed by a commit (diffed against its first parent, or the empty
+ * tree for a root commit). `additions`/`deletions` are -1 for binary files.
+ */
+export interface CommitFileChange {
+  /** Current (new) repo-relative path. */
+  path: string;
+  /** Previous path, when the change is a rename or copy. */
+  oldPath?: string;
+  /** Single-letter status: A M D R C T (renames/copies normalized to R/C). */
+  status: string;
+  /** Lines added, or -1 for a binary file. */
+  additions: number;
+  /** Lines removed, or -1 for a binary file. */
+  deletions: number;
+}
+
 export type GitRefType = "head" | "remote" | "tag" | "stash";
 
 export interface GitRef {

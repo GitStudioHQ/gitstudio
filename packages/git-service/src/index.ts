@@ -19,6 +19,12 @@ export type {
 } from "./GitProcess";
 export { LogProvider } from "./LogProvider";
 export type { StreamCommitsOptions } from "./LogProvider";
+export {
+  CommitDetailsProvider,
+  parseNumstatZ,
+  parseNameStatusZ,
+  mergeCommitFiles,
+} from "./CommitDetailsProvider";
 export { RefProvider } from "./RefProvider";
 export { BlameProvider } from "./BlameProvider";
 export type { BlameFileOptions } from "./BlameProvider";

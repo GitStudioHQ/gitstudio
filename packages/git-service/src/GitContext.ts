@@ -1,5 +1,6 @@
 import { GitProcess } from "./GitProcess";
 import { LogProvider } from "./LogProvider";
+import { CommitDetailsProvider } from "./CommitDetailsProvider";
 import { RefProvider } from "./RefProvider";
 import { BlameProvider } from "./BlameProvider";
 import { HistoryProvider } from "./HistoryProvider";
@@ -31,6 +32,7 @@ export class GitContext {
   readonly root: string;
   readonly process: GitProcess;
   readonly log: LogProvider;
+  readonly commitDetails: CommitDetailsProvider;
   readonly refs: RefProvider;
   readonly blame: BlameProvider;
   readonly history: HistoryProvider;
@@ -52,6 +54,7 @@ export class GitContext {
       maxConcurrent: opts.maxConcurrent,
     });
     this.log = new LogProvider(this.process);
+    this.commitDetails = new CommitDetailsProvider(this.process);
     this.refs = new RefProvider(this.process);
     this.blame = new BlameProvider(this.process);
     this.history = new HistoryProvider(this.process);
