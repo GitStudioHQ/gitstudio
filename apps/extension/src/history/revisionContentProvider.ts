@@ -44,9 +44,37 @@ export function fromRevisionUri(uri: vscode.Uri): {
  * `git show <rev>:<path>`, so `vscode.diff` can render historical versions.
  */
 export class RevisionContentProvider
-  implements vscode.TextDocumentContentProvider
+  implements vscode.TextDocumentContentProvider, vscode.Disposable
 {
+  // Most revisions (a commit sha) are immutable, but the index (rev "") and
+  // HEAD shift as the user stages/unstages/commits. Firing this event tells
+  // VS Code to re-read those diff sides after a staging op.
+  private readonly changeEmitter = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this.changeEmitter.event;
+
   constructor(private readonly repos: RepoManager) {}
+
+  /**
+   * Invalidates every cached mutable revision (the index and HEAD) so open
+   * diffs against them re-render. Called after a stage/unstage/discard/commit.
+   */
+  notifyChanged(): void {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    // VS Code only re-reads URIs it currently has open; firing for each open
+    // document's URI is the documented way to invalidate. Since we can't
+    // enumerate them cheaply, fire a wildcard by re-emitting for tracked docs.
+    for (const doc of vscode.workspace.textDocuments) {
+      if (doc.uri.scheme === REVISION_SCHEME) {
+        const { rev } = fromRevisionUri(doc.uri);
+        if (rev === "" || rev === "HEAD") {
+          this.changeEmitter.fire(doc.uri);
+        }
+      }
+    }
+  }
 
   async provideTextDocumentContent(
     uri: vscode.Uri,
@@ -71,6 +99,10 @@ export class RevisionContentProvider
       // error toast — the diff just shows nothing on that side.
       return "";
     }
+  }
+
+  dispose(): void {
+    this.changeEmitter.dispose();
   }
 }
 

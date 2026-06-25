@@ -36,6 +36,12 @@ export type {
   GetConflictVersionsOptions,
   ConflictReadOptions,
 } from "./ConflictProvider";
+export { StagingProvider } from "./StagingProvider";
+export type {
+  StagingOptions,
+  CommitOptions,
+  CommitResult,
+} from "./StagingProvider";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
 export { NodeGitAdapter } from "./NodeGitAdapter";
