@@ -253,18 +253,24 @@ function renderHtml(
     --gs-link: var(--vscode-textLink-foreground);
     --gs-font-ui: var(--vscode-font-family);
     --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
-    --gs-radius: 4px;
+    --gs-radius: 6px;
+    --gs-radius-sm: 5px;
     --gs-green: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
     --gs-red: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, var(--vscode-errorForeground)));
     --gs-amber: var(--vscode-charts-yellow);
-    --gs-motion: 150ms;
+    --gs-motion: 170ms;
+    --gs-ease: cubic-bezier(0.2, 0, 0, 1);
   }
   * { box-sizing: border-box; }
   body {
     color: var(--gs-fg);
     font-family: var(--gs-font-ui);
     font-size: 13px;
-    padding: 0 20px 28px;
+    /* Constrain to a comfortable reading measure and center it, so the PR reads
+       like a document rather than stretching across a wide editor panel. */
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 24px 32px;
     line-height: 1.5;
   }
   .gs-mono { font-family: var(--gs-font-mono); font-variant-numeric: tabular-nums; }
@@ -310,17 +316,27 @@ function renderHtml(
   .toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin: 16px 0 4px; }
   button { font-family: inherit; font-size: inherit; cursor: pointer; }
   .toolbar button {
-    display: inline-flex; align-items: center; gap: 5px;
-    height: 26px; padding: 0 11px; border-radius: var(--gs-radius);
-    border: 1px solid transparent;
-    background: var(--vscode-button-background); color: var(--vscode-button-foreground);
-    transition: background var(--gs-motion) ease;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 13px; border-radius: var(--gs-radius);
+    border: 1px solid transparent; font-weight: 600;
+    background:
+      linear-gradient(180deg,
+        color-mix(in srgb, var(--vscode-button-background) 88%, white 12%),
+        var(--vscode-button-background));
+    color: var(--vscode-button-foreground);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16),
+      inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
+    transition: background var(--gs-motion) var(--gs-ease),
+      box-shadow var(--gs-motion) var(--gs-ease),
+      transform var(--gs-motion) var(--gs-ease);
   }
+  .toolbar button:active { transform: translateY(0.5px); }
   .toolbar button svg { width: 14px; height: 14px; }
   .toolbar button.secondary {
     background: var(--vscode-button-secondaryBackground, transparent);
     color: var(--vscode-button-secondaryForeground, var(--gs-fg));
     border-color: var(--vscode-button-border, var(--gs-border));
+    box-shadow: none;
   }
   .toolbar button:hover { background: var(--vscode-button-hoverBackground); }
   .toolbar button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover)); }
