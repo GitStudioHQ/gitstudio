@@ -514,6 +514,36 @@
         "title": "Manage Remotes…",
         "category": "GitStudio",
         "icon": "$(cloud)"
+      },
+      {
+        "command": "gitstudio.ai.setApiKey",
+        "title": "Set AI API Key…",
+        "category": "GitStudio",
+        "icon": "$(key)"
+      },
+      {
+        "command": "gitstudio.ai.clearApiKey",
+        "title": "Clear AI API Key",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.ai.generateCommitMessage",
+        "title": "Generate Commit Message (AI)",
+        "category": "GitStudio",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "gitstudio.ai.explainDiff",
+        "title": "Explain Diff (AI)",
+        "category": "GitStudio",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "gitstudio.ai.summarizeChanges",
+        "title": "Summarize Changes (AI)",
+        "category": "GitStudio",
+        "icon": "$(sparkle)"
       }
     ],
     "keybindings": [
@@ -580,6 +610,44 @@
           "type": "boolean",
           "default": true,
           "description": "When force-pushing from GitStudio, use the safer --force-with-lease (which refuses to overwrite remote work you haven't seen) instead of a raw --force."
+        },
+        "gitstudio.ai.provider": {
+          "type": "string",
+          "enum": ["auto", "anthropic", "vscode-lm", "off"],
+          "enumDescriptions": [
+            "Prefer the zero-key VS Code Language Model (GitHub Copilot) when available; otherwise use Anthropic if an API key is set.",
+            "Use Anthropic directly (requires an API key set via GitStudio: Set AI API Key).",
+            "Use the VS Code Language Model API (GitHub Copilot). Requires Copilot.",
+            "Disable all GitBrain AI features."
+          ],
+          "default": "auto",
+          "markdownDescription": "Which provider GitBrain uses for optional AI features. AI is off until a provider is available; it never gates or breaks Git operations."
+        },
+        "gitstudio.ai.anthropicModelFast": {
+          "type": "string",
+          "default": "claude-haiku-4-5",
+          "description": "Anthropic model ID for fast/cheap tasks (commit messages)."
+        },
+        "gitstudio.ai.anthropicModelMid": {
+          "type": "string",
+          "default": "claude-sonnet-4-6",
+          "description": "Anthropic model ID for mid-tier tasks (explain diff, summaries)."
+        },
+        "gitstudio.ai.anthropicModelDeep": {
+          "type": "string",
+          "default": "claude-opus-4-8",
+          "description": "Anthropic model ID for opt-in deep reasoning."
+        },
+        "gitstudio.ai.commitStyle": {
+          "type": "string",
+          "enum": ["conventional", "concise", "descriptive"],
+          "enumDescriptions": [
+            "Conventional Commits (type(scope): summary), optional body.",
+            "A single concise subject line, no body.",
+            "Imperative subject plus a short explanatory body."
+          ],
+          "default": "conventional",
+          "description": "How GitBrain styles generated commit messages."
         }
       }
     },
@@ -735,6 +803,22 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "gitstudio.ai.clearApiKey",
+          "when": "gitstudio.ai.enabled"
+        },
+        {
+          "command": "gitstudio.ai.generateCommitMessage",
+          "when": "gitstudio.ai.enabled && gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.ai.explainDiff",
+          "when": "gitstudio.ai.enabled && gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.ai.summarizeChanges",
+          "when": "gitstudio.ai.enabled && gitstudio.hasRepo"
+        },
         {
           "command": "gitstudio.toggleFileBlame",
           "when": "editorTextFocus && gitstudio.hasRepo"

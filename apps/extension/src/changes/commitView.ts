@@ -10,7 +10,7 @@ import { getNonce } from "../webview/html";
 // in the HTML (no separate esbuild entry needed for this small view).
 
 interface FromWebview {
-  type: "commit" | "requestState" | "amendToggled";
+  type: "commit" | "requestState" | "amendToggled" | "generateMessage";
   message?: string;
   amend?: boolean;
   signoff?: boolean;
@@ -24,6 +24,19 @@ interface ToWebview {
   lastMessage?: string;
   signoffDefault: boolean;
   busy?: boolean;
+  /** Whether the GitBrain ✨ "Generate message" affordance should be shown. */
+  aiEnabled?: boolean;
+}
+
+/**
+ * The host-side hook the commit box uses to draft a message from the staged
+ * diff. Injected (not imported) so this view stays decoupled from GitBrain and
+ * the key stays 100% host-side — the webview only ever receives the result text.
+ * Returns null when AI is unavailable or nothing is staged.
+ */
+export interface CommitMessageGenerator {
+  isEnabled(): Promise<boolean>;
+  draft(entry: RepoEntry): Promise<string | null>;
 }
 
 export class CommitViewProvider
@@ -38,6 +51,8 @@ export class CommitViewProvider
   constructor(
     private readonly repos: RepoManager,
     private readonly onCommitted: () => void,
+    /** Optional GitBrain hook for the ✨ "Generate message" button. */
+    private readonly generator?: CommitMessageGenerator,
   ) {
     this.disposables.push(this.repos.onDidChange(() => void this.pushState()));
   }
@@ -70,8 +85,41 @@ export class CommitViewProvider
       await this.pushState(msg.type === "amendToggled" ? msg.amend : false);
       return;
     }
+    if (msg.type === "generateMessage") {
+      await this.doGenerate();
+      return;
+    }
     if (msg.type === "commit") {
       await this.doCommit(msg);
+    }
+  }
+
+  /**
+   * Draft a commit message from the staged diff via GitBrain and fill the box.
+   * AI is optional: when there's no provider (or nothing staged), we toast a
+   * friendly note and clear the button's loading state — never an error, and
+   * never anything that touches the commit flow itself.
+   */
+  private async doGenerate(): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry || !this.generator) {
+      this.view?.webview.postMessage({ type: "generateDone" });
+      return;
+    }
+    try {
+      const text = await this.generator.draft(entry);
+      if (text && text.trim().length > 0) {
+        this.view?.webview.postMessage({ type: "setMessage", text });
+      } else {
+        void vscode.window.setStatusBarMessage(
+          "$(sparkle) GitBrain: nothing to draft (stage changes first)",
+          3000,
+        );
+      }
+    } catch {
+      // Stay silent — AI must never break the commit box.
+    } finally {
+      this.view?.webview.postMessage({ type: "generateDone" });
     }
   }
 
@@ -155,6 +203,9 @@ export class CommitViewProvider
     const signoffDefault = vscode.workspace
       .getConfiguration("gitstudio")
       .get<boolean>("commit.signoffByDefault", false);
+    const aiEnabled = this.generator
+      ? await this.generator.isEnabled().catch(() => false)
+      : false;
 
     const state: ToWebview = {
       type: "state",
@@ -162,6 +213,7 @@ export class CommitViewProvider
       lastMessage,
       signoffDefault,
       busy: this.busy,
+      aiEnabled,
     };
     void this.view.webview.postMessage(state);
   }
@@ -234,6 +286,33 @@ export class CommitViewProvider
     }
     textarea:focus { border-color: var(--vscode-focusBorder); }
     textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
+    .message-wrap { position: relative; }
+    .sparkle {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--vscode-descriptionForeground);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .sparkle.visible { display: inline-flex; }
+    .sparkle:hover {
+      color: var(--vscode-foreground);
+      background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.18));
+    }
+    .sparkle:disabled { cursor: default; opacity: 0.7; }
+    .sparkle.loading { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .toggles {
       display: flex;
       flex-wrap: wrap;
@@ -288,9 +367,14 @@ export class CommitViewProvider
 </head>
 <body>
   <div class="count" id="count">No staged changes</div>
-  <textarea id="message" rows="3"
-    placeholder="Message (Enter to commit, summary + description)"
-    aria-label="Commit message"></textarea>
+  <div class="message-wrap">
+    <textarea id="message" rows="3"
+      placeholder="Message (Enter to commit, summary + description)"
+      aria-label="Commit message"></textarea>
+    <button class="sparkle" id="generate" type="button"
+      title="Generate commit message with GitBrain"
+      aria-label="Generate commit message">&#x2728;</button>
+  </div>
 
   <div class="toggles">
     <label><input type="checkbox" id="amend" /> Amend</label>
@@ -322,8 +406,10 @@ export class CommitViewProvider
     const author = $("author");
     const commitBtn = $("commit");
     const pushBtn = $("commit-push");
+    const generateBtn = $("generate");
     const count = $("count");
     let stagedCount = 0;
+    let generating = false;
 
     function autoGrow() {
       message.style.height = "auto";
@@ -363,6 +449,19 @@ export class CommitViewProvider
     commitBtn.addEventListener("click", () => doCommit(false));
     pushBtn.addEventListener("click", () => doCommit(true));
 
+    function setGenerating(on) {
+      generating = on;
+      generateBtn.disabled = on;
+      generateBtn.classList.toggle("loading", on);
+      generateBtn.innerHTML = on ? "&#x21BB;" : "&#x2728;";
+    }
+
+    generateBtn.addEventListener("click", () => {
+      if (generating) return;
+      setGenerating(true);
+      vscode.postMessage({ type: "generateMessage" });
+    });
+
     amend.addEventListener("change", () => {
       renderCount();
       // Ask the host for the last message to prefill (or to clear on un-toggle).
@@ -388,6 +487,7 @@ export class CommitViewProvider
       if (msg.type === "state") {
         stagedCount = msg.stagedCount || 0;
         setBusy(!!msg.busy);
+        generateBtn.classList.toggle("visible", !!msg.aiEnabled);
         if (typeof msg.lastMessage === "string" && amend.checked && message.value.trim() === "") {
           message.value = msg.lastMessage;
           autoGrow();
@@ -396,6 +496,13 @@ export class CommitViewProvider
           signoff.checked = true;
         }
         renderCount();
+      } else if (msg.type === "setMessage") {
+        if (typeof msg.text === "string") {
+          message.value = msg.text;
+          autoGrow();
+        }
+      } else if (msg.type === "generateDone") {
+        setGenerating(false);
       } else if (msg.type === "clear") {
         message.value = "";
         amend.checked = false;

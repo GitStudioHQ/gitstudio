@@ -73,6 +73,15 @@ import {
   startInteractiveRebase,
   abortRebase,
 } from "./rebase/rebaseCommands";
+import { GitBrain } from "./ai/gitBrain";
+import {
+  setApiKey,
+  clearApiKey,
+  draftCommitMessage,
+  generateCommitMessageCommand,
+  explainDiffCommand,
+  summarizeChangesCommand,
+} from "./ai/aiCommands";
 
 // GitStudio extension entry point.
 //
@@ -190,14 +199,47 @@ export function activate(context: vscode.ExtensionContext): void {
       ),
     );
 
+    // GitBrain — the optional bring-your-own-key AI layer (M10). It is OFF until
+    // configured: with no provider, `gitstudio.ai.enabled` stays false, the ✨
+    // affordance and palette commands stay hidden, and every call returns null.
+    // AI never gates or breaks a git op. The API key lives in SecretStorage and
+    // never leaves the host (the commit box only receives the result text).
+    const brain = new GitBrain(context);
+    context.subscriptions.push(brain);
+    void brain.refreshEnabled();
+    context.subscriptions.push(
+      vscode.commands.registerCommand("gitstudio.ai.setApiKey", () =>
+        setApiKey(context, brain),
+      ),
+      vscode.commands.registerCommand("gitstudio.ai.clearApiKey", () =>
+        clearApiKey(context, brain),
+      ),
+      vscode.commands.registerCommand("gitstudio.ai.generateCommitMessage", () =>
+        generateCommitMessageCommand(brain, repos),
+      ),
+      vscode.commands.registerCommand("gitstudio.ai.explainDiff", () =>
+        explainDiffCommand(brain, repos),
+      ),
+      vscode.commands.registerCommand("gitstudio.ai.summarizeChanges", () =>
+        summarizeChangesCommand(brain, repos),
+      ),
+    );
+
     // Hunk/line staging + Changes view + commit box (M7). The Changes tree and
     // the commit webview both refresh on RepoManager.onDidChange; a shared
     // `refresh` also invalidates open index/HEAD diffs after a staging op.
     const changesProvider = new ChangesTreeProvider(repos);
-    const commitProvider = new CommitViewProvider(repos, () => {
-      changesProvider.refresh();
-      revisionContent.notifyChanged();
-    });
+    const commitProvider = new CommitViewProvider(
+      repos,
+      () => {
+        changesProvider.refresh();
+        revisionContent.notifyChanged();
+      },
+      {
+        isEnabled: () => brain.isEnabled(),
+        draft: (entry) => draftCommitMessage(brain, entry),
+      },
+    );
     context.subscriptions.push(changesProvider, commitProvider, revisionContent);
 
     const changesView = vscode.window.createTreeView("gitstudio.changes", {
