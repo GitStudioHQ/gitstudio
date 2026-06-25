@@ -72,7 +72,7 @@
       "gitstudio": [
         {
           "id": "gitstudio.commit",
-          "name": "Commit",
+          "name": "Changes",
           "type": "webview"
         },
         {
