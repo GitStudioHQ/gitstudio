@@ -204,6 +204,16 @@ export class RebaseView extends LitElement {
       color: var(--action-accent);
       border-color: color-mix(in srgb, var(--action-accent) 50%, transparent);
     }
+    select.action:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #3794ff);
+      outline-offset: 1px;
+    }
+    /* Respect the OS "reduce motion" setting: keep the layout, drop the easing. */
+    @media (prefers-reduced-motion: reduce) {
+      .row {
+        transition: none;
+      }
+    }
 
     .sha {
       font-family: var(--vscode-editor-font-family, monospace);
@@ -243,6 +253,10 @@ export class RebaseView extends LitElement {
     button.icon:disabled {
       opacity: 0.3;
       cursor: default;
+    }
+    button:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder, #3794ff);
+      outline-offset: 1px;
     }
 
     footer {

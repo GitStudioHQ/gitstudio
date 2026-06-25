@@ -82,6 +82,12 @@ export class CommitGraph extends LitElement {
       contain: strict;
       outline: none;
     }
+    /* Keyboard focus must stay visible even though we suppress the default
+       outline (the scroller is the roving-focus container for arrow-key nav). */
+    .scroller:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: -1px;
+    }
 
     .sizer {
       position: relative;
@@ -469,8 +475,12 @@ export class CommitGraph extends LitElement {
       gutterW,
     );
     const refs = row.refs.length ? this.refsHtml(row.refs) : "";
+    const label = esc(
+      `${row.shortSha}: ${row.subject} — ${row.author}, ${relTime(row.authorDate)}`,
+    );
     return (
       `<div class="${cls}" role="row" data-sha="${row.sha}" ` +
+      `aria-selected="${selected ? "true" : "false"}" aria-label="${label}" ` +
       `style="transform:translateY(${item.start}px)">` +
       `<div class="gutter">${gutter}</div>` +
       `<div class="refs">${refs}</div>` +

@@ -96,13 +96,33 @@ import { registerPrFeature } from "./pr/prFeature";
 // first resolved (TreeDataProvider.getChildren). Stable VS Code APIs only, so
 // the same build ships identically to the Marketplace and Open VSX (Cursor).
 export function activate(context: vscode.ExtensionContext): void {
+  const WALKTHROUGH_ID = "gitstudio.gitstudio#gitstudio.gettingStarted";
   context.subscriptions.push(
     vscode.commands.registerCommand("gitstudio.showWelcome", () => {
       void vscode.window.showInformationMessage(
         "GitStudio is installed. The full Git suite is coming online.",
       );
     }),
+    vscode.commands.registerCommand("gitstudio.openWalkthrough", () => {
+      void vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        WALKTHROUGH_ID,
+        false,
+      );
+    }),
   );
+
+  // First-run nudge: auto-open the Getting Started walkthrough once, guarded by
+  // globalState so it never reappears. Never blocks activation or git work.
+  const SEEN_KEY = "gitstudio.walkthroughShown";
+  if (!context.globalState.get<boolean>(SEEN_KEY)) {
+    void context.globalState.update(SEEN_KEY, true);
+    void vscode.commands.executeCommand(
+      "workbench.action.openWalkthrough",
+      WALKTHROUGH_ID,
+      false,
+    );
+  }
 
   // RepoManager.create activates vscode.git; do it off the activation path so a
   // slow git extension never blocks startup. The views attach as soon as it

@@ -208,6 +208,11 @@ body.vscode-high-contrast-light {
   color: var(--vscode-statusBarItem-warningForeground, #ffffff);
 }
 .jb-toolbar-btn[disabled] { opacity: 0.4; cursor: default; }
+.jb-toolbar-btn:focus-visible,
+.jb-toolbar-select:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
 /* Confirmation state: the Accept Left/Right button that settled the merge. */
 .jb-toolbar-btn.jb-confirmed[disabled] {
   opacity: 1;
@@ -349,6 +354,11 @@ body.vscode-high-contrast-light {
   color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-foreground));
   background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.22));
 }
+.jb-gutter-btn:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+  color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-foreground));
+}
 .jb-btn-accept.jb-role-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
 .jb-btn-accept.jb-role-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
 .jb-btn-accept.jb-role-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
@@ -365,4 +375,9 @@ body.vscode-high-contrast-light {
   .jb-toolbar-btn.jb-bordered,
   .jb-toolbar-btn.jb-primary { padding: 0 9px; }
   .jb-bottom-bar { padding: 0 6px; }
+}
+
+/* Honor the OS "reduce motion" preference: drop hover/state easing. */
+@media (prefers-reduced-motion: reduce) {
+  .jb-gutter-btn { transition: none; }
 }

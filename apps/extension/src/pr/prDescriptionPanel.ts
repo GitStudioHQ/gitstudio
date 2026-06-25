@@ -243,7 +243,7 @@ function renderHtml(
   .branches { margin: 10px 0; font-family: var(--vscode-editor-font-family, monospace); }
   .branch { background: var(--vscode-textCodeBlock-background); padding: 2px 6px; border-radius: 4px; }
   .badge { padding: 2px 8px; border-radius: 10px; font-size: 0.85em; border: 1px solid var(--vscode-panel-border); }
-  .badge-open { background: #2da44e; color: #fff; border: none; }
+  .badge-open { background: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #2da44e)); color: var(--vscode-editor-background, #fff); border: none; }
   .badge-draft { background: var(--vscode-descriptionForeground); color: var(--vscode-editor-background); border: none; }
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
   button { font-family: inherit; font-size: inherit; cursor: pointer; }
@@ -257,12 +257,13 @@ function renderHtml(
     color: var(--vscode-button-secondaryForeground);
   }
   .toolbar button:hover { background: var(--vscode-button-hoverBackground); }
+  button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   .section { margin-top: 18px; }
   .section h2 { font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--vscode-descriptionForeground); border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; }
   .label { border: 1px solid; border-radius: 10px; padding: 1px 8px; font-size: 0.85em; }
   .reviewer { color: var(--vscode-textLink-foreground); }
   .checks { display: inline-block; padding: 4px 10px; border-radius: 4px; }
-  .checks.ok { color: #2da44e; }
+  .checks.ok { color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #2da44e)); }
   .checks.fail { color: var(--vscode-errorForeground); }
   .checks.pending { color: var(--vscode-descriptionForeground); }
   .body { background: var(--vscode-textCodeBlock-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 12px 16px; }
@@ -273,8 +274,9 @@ function renderHtml(
   ul.files { list-style: none; padding: 0; }
   .filerow { display: flex; justify-content: space-between; width: 100%; text-align: left; background: transparent; color: var(--vscode-foreground); border: none; border-bottom: 1px solid var(--vscode-panel-border); padding: 6px 4px; }
   .filerow:hover { background: var(--vscode-list-hoverBackground); }
+  .filerow:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   .fname { font-family: var(--vscode-editor-font-family, monospace); }
-  .add { color: #2da44e; } .del { color: var(--vscode-errorForeground); }
+  .add { color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #2da44e)); } .del { color: var(--vscode-errorForeground); }
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
 </style>
 </head>

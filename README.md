@@ -5,10 +5,10 @@
 <h1 align="center">GitStudio</h1>
 
 <p align="center">
-  <b>A free, open-source, JetBrains-grade Git experience for VS Code & Cursor — the whole workflow, not just one piece.</b>
+  <b>A free, open-source, JetBrains-grade Git experience for VS Code &amp; Cursor — the whole workflow, not just one piece.</b>
 </p>
 
-<p align="center"><sub>Logo & brand assets live in <a href="brand/">brand/</a>.</sub></p>
+<p align="center"><sub>Logo &amp; brand assets live in <a href="brand/">brand/</a>.</sub></p>
 
 ---
 
@@ -16,52 +16,72 @@
 
 VS Code's built-in Git is functional but flat. GitLens is great at *information* (blame, history, lenses) but doesn't own the *interaction* (merging, staging, resolving). JetBrains IDEs nail the interaction — three-pane merges, a real commit graph, hunk-level staging, inline blame that feels native — but you only get them if you live in IntelliJ.
 
-**GitStudio brings the JetBrains-grade Git *workflow* into VS Code and Cursor, and adds an intelligence layer on top.** Think "GitLens on steroids" meets "GitBrain": the polish of a native IDE, the depth of a power-user tool, and AI that actually understands your history.
+**GitStudio brings the JetBrains-grade Git *workflow* into VS Code and Cursor, and adds an intelligence layer on top.** Think "GitLens on steroids" meets "GitBrain": the polish of a native IDE, the depth of a power-user tool, and AI that actually understands your history — all free, on public *and* private repos.
 
-It ships as a **family of focused tools under one brand**, starting with the one that's already live.
+## Status — the suite is built
 
-## Status
+The flagship extension `gitstudio.gitstudio` is **feature-complete at `0.1.0`** and ready for release. All six pillars are implemented and shipping in one extension:
+
+| Pillar | What's in |
+|---|---|
+| **Visualize** | Virtualized commit graph; inline + full-file blame with code-age heatmap; file & line history; revision navigation; reflog time-machine. |
+| **Change** | Hunk- & line-level staging; guided commit box (amend, sign-off, author, Commit & Push); side-by-side / unified diff; 3-pane merge editor with accept ribbons. |
+| **Rewrite** | Drag-to-reorder interactive rebase; a universal, reflog-powered **Undo** safety net (never hijacks `Ctrl/Cmd+Z`). |
+| **Manage** | Branches, remotes, tags, stashes, worktrees views + operations; search & compare; status-bar sync. |
+| **Collaborate** | In-editor GitHub pull-request review (list, check out, comment, submit, merge, create). |
+| **Assist** | GitBrain — optional, bring-your-own-key (Anthropic) or zero-key (Copilot) commit messages, explain-diff, summaries. Off by default. |
 
 | | |
 |---|---|
-| **Brand / publisher** | `gitstudio` (display **"GitStudio"**) — live on the VS Code Marketplace **and** Open VSX |
-| **Domain** | `gitstudio.dev` (owned — for the verified-publisher badge + landing page) |
-| **First product** | ✅ **[Merge Studio](https://marketplace.visualstudio.com/items?itemName=gitstudio.merge-studio)** — `gitstudio.merge-studio`, a JetBrains-style 3-pane merge + diff editor. Shipped, in active use. |
-| **Release pipeline** | Token-free GitHub Actions: tag `vX.Y.Z` → auto-publishes to both registries (see [vscode-extension-starter](../vscode-extension-starter)) |
-| **This repo** | Vision + scaffold for the broader suite. See [HANDOFF.md](HANDOFF.md) to start building. |
+| **Brand / publisher** | `gitstudio` (display **"GitStudio"**) — VS Code Marketplace **and** Open VSX |
+| **Extension id** | `gitstudio.gitstudio`, version `0.1.0`, license **Apache-2.0** |
+| **Domain** | `gitstudio.dev` |
+| **Sibling product** | [Merge Studio](https://marketplace.visualstudio.com/items?itemName=gitstudio.merge-studio) — `gitstudio.merge-studio`, the original 3-pane merge editor. Shares an engine, not a listing. |
 
-## Product pillars
+## Monorepo layout
 
-Merge Studio proved the model (custom webview editors, JetBrains-faithful ribbons, a pure tested diff/merge engine). GitStudio extends that into the full workflow:
+npm workspaces (`packages/*` + `apps/*`):
 
-1. **Merge & Diff** — *shipped as Merge Studio.* Three-pane merge with ribbons, precise side-by-side diff, optional hand-off to a real JetBrains IDE. The seed engine for everything else.
-2. **Blame & authorship lens** — inline, native-feeling blame; hover for the commit, author, message, and PR; "who last touched this line and why."
-3. **History & timeline** — per-file and per-line history, a repo timeline, "step through how this file evolved."
-4. **Commit graph** — a real branch/commit graph (JetBrains Log-style), not a flat list.
-5. **Staging that respects intent** — hunk- and line-level staging, partial commits, an interactive-rebase UI that isn't terrifying.
-6. **GitBrain (the intelligence layer)** — AI commit messages, PR/changeset summaries, "explain this diff," and conflict-resolution *suggestions* in the merge editor. This is the "but better" — context-aware help grounded in the actual repo.
+```
+packages/
+  engine/        Pure, unit-tested diff/merge model (no VS Code imports).
+  git-service/   Thin git layer: log, blame, staging, refs, stashes, worktrees, sync…
+  host-bridge/   Protocols shared between the extension host and webviews.
+  webview-ui/    Shared webview front-ends: commit graph, diff/merge (Monaco), rebase.
+apps/
+  extension/     The VS Code / Cursor extension — the shipping product.
+  desktop/       Reserved for a future native desktop app (placeholder).
+```
 
-> The pillars are a starting map, not a contract. The next builder should sequence them by leverage — blame + history are the highest-value, lowest-risk next steps after merge.
+`engine` and `host-bridge` are kept **pure** (no `vscode` imports) so they stay portable and testable — enforced by `npm run check-purity`.
 
-## Architecture sketch
+## Build & test
 
-- **One flagship extension** (`gitstudio.gitstudio`) that grows feature-by-feature — the GitLens model — rather than many tiny extensions. Merge Studio stays its own focused product; GitStudio is the suite. They share an engine, not a listing.
-- **Reuse Merge Studio's core.** Its `src/engine/` (pure, unit-tested diff/merge model) and the Monaco webview ribbon/decoration layer are the reusable heart. The cleanest path is to **extract that engine into a shared package** (`@gitstudio/engine`) consumed by both extensions.
-- **Webview custom editors** for rich UI (merge, graph, history), **providers + decorations** for the ambient stuff (blame, lenses), **a thin git service** over the built-in `vscode.git` API plus direct `.git` reads where speed matters (Merge Studio already does this for conflict detection).
-- **GitBrain** calls the Anthropic Claude API. Default to the latest models (Opus 4.8 / Sonnet 4.6 / Haiku 4.5; Fable 5) — see the `claude-api` reference. Keep AI optional and bring-your-own-key friendly.
+Requires **Node 22+**.
 
-## Why this can win
+```bash
+npm install          # install all workspaces
+npm test             # run every workspace's tests (tsx --test)
+npm run check-types  # tsc --noEmit across all workspaces
+npm run check-purity # assert engine/host-bridge stay vscode-free
+npm run package      # build the extension production bundle
+```
 
-- **Distribution already exists.** GitStudio is a live, verified-ish publisher with a shipped product pulling real installs. The suite launches to a warm audience, not from zero.
-- **Cursor is the wedge.** Cursor users live on Open VSX and want power tooling — GitStudio is already there.
-- **The hard part is done once.** Merge Studio solved the "render a JetBrains-grade Git UI inside a webview" problem. Every pillar reuses that muscle.
+Package a sideloadable VSIX:
 
-## Repos
+```bash
+cd apps/extension
+node esbuild.js --production
+npx @vscode/vsce package -o gitstudio.vsix --no-dependencies
+```
 
-- **`../merge-studio`** — the shipped flagship; source of the reusable engine.
-- **`../vscode-extension-starter`** — the token-free publish pipeline + the full "zero → published" guide, distilled from shipping Merge Studio. Fork it to bootstrap.
-- **this repo** — vision + where the suite gets built.
+## Architecture notes
+
+- **One flagship extension, not a swarm** (the GitLens model). It grows pillar by pillar; Merge Studio stays a separate, focused product.
+- **Webview custom editors** for rich UI (merge, graph, rebase), **providers + decorations** for ambient features (blame, history), and a **thin git service** over the built-in `vscode.git` API plus direct `.git` reads where speed matters (e.g. instant conflict detection by watching operation-state files).
+- **Strict CSP + per-load nonces** on every webview; AI keys live in SecretStorage and never reach a webview.
+- **GitBrain** calls Anthropic Claude (or the VS Code Language Model API). Optional and bring-your-own-key — it never gates a Git operation.
 
 ## License
 
-TBD (Merge Studio is MIT). Pick before first publish.
+**Apache-2.0** (see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)). Brand assets in [`brand/`](brand/) identify the project; don't use the GitStudio name/logo in a way that implies official endorsement.

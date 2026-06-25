@@ -311,8 +311,12 @@ export class CommitViewProvider
       background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.18));
     }
     .sparkle:disabled { cursor: default; opacity: 0.7; }
+    .sparkle:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
     .sparkle.loading { animation: spin 0.9s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .sparkle.loading { animation: none; }
+    }
     .toggles {
       display: flex;
       flex-wrap: wrap;
@@ -352,6 +356,8 @@ export class CommitViewProvider
     }
     button.primary:hover { background: var(--vscode-button-hoverBackground); }
     button.primary:disabled { opacity: 0.5; cursor: default; }
+    button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+    .link:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
     button.split {
       padding: 6px 10px;
       color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));

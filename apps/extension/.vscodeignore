@@ -10,5 +10,6 @@ tsconfig.json
 .gitignore
 .vscodeignore
 **/.DS_Store
+*.vsix
 media/*.svg
 !media/activitybar.svg

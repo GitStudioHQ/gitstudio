@@ -18,16 +18,20 @@
     "color": "#1E222A",
     "theme": "dark"
   },
+  "qna": "marketplace",
+  "badges": [],
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
     "SCM Providers",
+    "Visualization",
     "Other"
   ],
   "keywords": [
     "git",
     "gitlens",
+    "gitkraken",
     "git graph",
     "commit graph",
     "blame",
@@ -39,6 +43,10 @@
     "interactive rebase",
     "staging",
     "cherry-pick",
+    "stash",
+    "worktree",
+    "pull request",
+    "github",
     "vscode",
     "cursor",
     "source control"
@@ -101,7 +109,32 @@
       {
         "view": "gitstudio.commits",
         "when": "!gitstudio.hasRepo",
-        "contents": "Open a folder with a Git repository to get started.\nGitStudio shows your commits, branches, remotes, and tags here once a repository is detected.\n[Open Folder](command:vscode.openFolder)"
+        "contents": "Open a folder with a Git repository to get started.\nGitStudio shows your commits, branches, remotes, and tags here once a repository is detected.\n[Open Folder](command:vscode.openFolder)\n[Take the Tour](command:gitstudio.openWalkthrough)"
+      },
+      {
+        "view": "gitstudio.commits",
+        "when": "gitstudio.hasRepo",
+        "contents": "Browse your history visually.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\n[Take the Tour](command:gitstudio.openWalkthrough)"
+      },
+      {
+        "view": "gitstudio.changes",
+        "when": "!gitstudio.hasRepo",
+        "contents": "Open a Git repository to stage and commit changes here."
+      },
+      {
+        "view": "gitstudio.stashes",
+        "when": "gitstudio.hasRepo",
+        "contents": "No stashes yet.\nStash your working-tree changes to set them aside without committing.\n[Stash Changes](command:gitstudio.stash.save)"
+      },
+      {
+        "view": "gitstudio.worktrees",
+        "when": "gitstudio.hasRepo",
+        "contents": "Work on multiple branches at once with linked worktrees.\n[New Worktree](command:gitstudio.worktree.add)"
+      },
+      {
+        "view": "gitstudio.searchCompare",
+        "when": "gitstudio.hasRepo",
+        "contents": "Search commits or compare two refs; results show up here.\n[Search Commits](command:gitstudio.search)\n[Compare Branches/Tags](command:gitstudio.compareRefs)"
       },
       {
         "view": "gitstudio.pullRequests",
@@ -136,6 +169,18 @@
         "command": "gitstudio.showWelcome",
         "title": "Welcome",
         "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.openWalkthrough",
+        "title": "Get Started",
+        "category": "GitStudio",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "gitstudio.changes.openDiff",
+        "title": "Open Changes",
+        "category": "GitStudio",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "gitstudio.refreshCommits",
@@ -641,33 +686,39 @@
     "keybindings": [
       {
         "command": "gitstudio.toggleFileBlame",
-        "key": "ctrl+shift+g b",
-        "mac": "cmd+shift+g b",
-        "when": "editorTextFocus"
+        "key": "ctrl+alt+g b",
+        "mac": "cmd+alt+g b",
+        "when": "editorTextFocus && gitstudio.hasRepo"
       },
       {
         "command": "gitstudio.showLineHistory",
-        "key": "ctrl+shift+g h",
-        "mac": "cmd+shift+g h",
+        "key": "ctrl+alt+g h",
+        "mac": "cmd+alt+g h",
         "when": "editorTextFocus && gitstudio.hasRepo"
+      },
+      {
+        "command": "gitstudio.openChanges",
+        "key": "ctrl+alt+g d",
+        "mac": "cmd+alt+g d",
+        "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file"
       },
       {
         "command": "gitstudio.stageSelectedLines",
-        "key": "ctrl+k ctrl+s",
-        "mac": "cmd+k cmd+s",
-        "when": "editorTextFocus && gitstudio.hasRepo"
+        "key": "ctrl+alt+g s",
+        "mac": "cmd+alt+g s",
+        "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file"
       },
       {
         "command": "gitstudio.unstageSelectedLines",
-        "key": "ctrl+k ctrl+u",
-        "mac": "cmd+k cmd+u",
-        "when": "editorTextFocus && gitstudio.hasRepo"
+        "key": "ctrl+alt+g u",
+        "mac": "cmd+alt+g u",
+        "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file"
       },
       {
         "command": "gitstudio.undo",
-        "key": "ctrl+alt+z",
-        "mac": "cmd+alt+z",
-        "when": "gitstudio.hasRepo && !editorTextFocus"
+        "key": "ctrl+alt+g z",
+        "mac": "cmd+alt+g z",
+        "when": "gitstudio.hasRepo"
       }
     ],
     "configuration": {
@@ -754,6 +805,92 @@
         }
       }
     },
+    "walkthroughs": [
+      {
+        "id": "gitstudio.gettingStarted",
+        "title": "Get Started with GitStudio",
+        "description": "A free, JetBrains-grade Git suite — commit graph, blame, history, hunk staging, 3-pane merge, interactive rebase with Undo, and optional BYO-key AI. Take the tour.",
+        "when": "true",
+        "steps": [
+          {
+            "id": "gitstudio.walkthrough.graph",
+            "title": "Open the Commit Graph",
+            "description": "See your history as a real, virtualized branch/commit graph — fast even at tens of thousands of commits. Colored lanes, refs, and authorship, not a flat list.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\nTip: it also lives at the top of the GitStudio sidebar.",
+            "media": {
+              "image": "media/walkthrough-hero.png",
+              "altText": "GitStudio commit graph"
+            },
+            "completionEvents": [
+              "onCommand:gitstudio.showCommitGraph"
+            ]
+          },
+          {
+            "id": "gitstudio.walkthrough.blame",
+            "title": "Turn on inline blame",
+            "description": "Ambient, native-feeling authorship: who last changed the current line and when, inline and in the status bar. Toggle full-file annotations with a code-age heatmap.\n[Toggle File Blame](command:gitstudio.toggleFileBlame)\nShortcut: __Ctrl/Cmd+Alt+G B__ in any editor.",
+            "media": {
+              "image": "media/gitstudio-mark.png",
+              "altText": "GitStudio mark"
+            },
+            "completionEvents": [
+              "onCommand:gitstudio.toggleFileBlame"
+            ]
+          },
+          {
+            "id": "gitstudio.walkthrough.stage",
+            "title": "Stage a hunk & commit",
+            "description": "Stage by hunk or even by line, then commit from the GitStudio commit box (Amend, Sign-off, author override, Commit & Push). When AI is on, the ✨ button drafts a message from your staged diff.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nShortcut: select lines and press __Ctrl/Cmd+Alt+G S__ to stage them.",
+            "media": {
+              "image": "media/gitstudio-mark.png",
+              "altText": "GitStudio mark"
+            },
+            "completionEvents": [
+              "onCommand:gitstudio.stageHunk",
+              "onCommand:gitstudio.stageSelectedLines"
+            ]
+          },
+          {
+            "id": "gitstudio.walkthrough.history",
+            "title": "Explore file & line history",
+            "description": "Step through how a file — or a single line — evolved over time, with revision navigation and a reflog time-machine for recovery.\n[Show Line History](command:gitstudio.showLineHistory)\nShortcut: __Ctrl/Cmd+Alt+G H__ on the current line.",
+            "media": {
+              "image": "media/gitstudio-mark.png",
+              "altText": "GitStudio mark"
+            },
+            "completionEvents": [
+              "onCommand:gitstudio.showLineHistory",
+              "onCommand:gitstudio.showReflog"
+            ]
+          },
+          {
+            "id": "gitstudio.walkthrough.merge",
+            "title": "Resolve conflicts in the 3-pane editor",
+            "description": "When a merge, rebase, or cherry-pick conflicts, GitStudio opens a JetBrains-style three-pane editor — yours, the result, and theirs — with one-click accept ribbons. Interactive rebase gets the same care, wrapped in a universal, reflog-powered Undo.\n[Start Interactive Rebase](command:gitstudio.startInteractiveRebase)\nMade a mistake? __Undo Last Git Operation__ (Ctrl/Cmd+Alt+G Z) reverses it.",
+            "media": {
+              "image": "media/gitstudio-mark.png",
+              "altText": "GitStudio mark"
+            },
+            "completionEvents": [
+              "onCommand:gitstudio.startInteractiveRebase",
+              "onCommand:gitstudio.resolveInMergeEditor"
+            ]
+          },
+          {
+            "id": "gitstudio.walkthrough.connect",
+            "title": "Connect GitHub & set up GitBrain (optional)",
+            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional and bring-your-own-key — set an Anthropic key (or use Copilot's model) for commit messages, explain-this-diff, and summaries. It's off until you turn it on and never gates a Git operation.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Set AI API Key](command:gitstudio.ai.setApiKey)",
+            "media": {
+              "image": "media/walkthrough-hero.png",
+              "altText": "GitStudio"
+            },
+            "completionEvents": [
+              "onCommand:gitstudio.pr.signIn",
+              "onCommand:gitstudio.ai.setApiKey"
+            ]
+          }
+        ]
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -765,6 +902,11 @@
           "command": "gitstudio.refreshCommits",
           "when": "view == gitstudio.commits",
           "group": "navigation@2"
+        },
+        {
+          "command": "gitstudio.openWalkthrough",
+          "when": "view == gitstudio.commits",
+          "group": "9_help@1"
         },
         {
           "command": "gitstudio.branch.new",
@@ -926,6 +1068,14 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "gitstudio.openWalkthrough",
+          "when": "true"
+        },
+        {
+          "command": "gitstudio.ai.setApiKey",
+          "when": "true"
+        },
         {
           "command": "gitstudio.ai.clearApiKey",
           "when": "gitstudio.ai.enabled"
