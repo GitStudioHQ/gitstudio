@@ -1,11 +1,34 @@
 // @gitstudio/git-service — host-agnostic Git data layer.
 //
-// Filled in at M1: GitProcess (bounded spawned-git-CLI pool with AbortSignal
-// cancellation + NUL-framed streaming parse), GitContext, RepoWatcher, and the
-// LogProvider / BlameProvider / ObjectProvider / RefProvider streaming readers.
+// M1: GitProcess (bounded spawned-git-CLI pool with AbortSignal cancellation +
+// %x1f/%x1e-framed streaming parse), GitContext, and the LogProvider /
+// RefProvider streaming readers. Blame / Object providers and RepoWatcher land
+// in later milestones.
 //
-// This package must never import `vscode` — the few host-git touchpoints
-// (repo discovery, index/stage reads) go through a HostGitAdapter injected by
-// the shell (the VS Code extension or the desktop app), so the same data layer
-// powers both front-ends.
-export {};
+// This package must never import `vscode` — the few host-git touchpoints (repo
+// discovery, index/stage reads) go through a HostGitAdapter injected by the
+// shell (the VS Code extension or the desktop app), so the same data layer
+// powers both front-ends. NodeGitAdapter is the default Node implementation the
+// desktop app reuses.
+export { GitProcess } from "./GitProcess";
+export type {
+  GitProcessOptions,
+  GitRunResult,
+  GitRunOptions,
+} from "./GitProcess";
+export { LogProvider } from "./LogProvider";
+export type { StreamCommitsOptions } from "./LogProvider";
+export { RefProvider } from "./RefProvider";
+export { GitContext } from "./GitContext";
+export type { GitContextOptions } from "./GitContext";
+export { NodeGitAdapter } from "./NodeGitAdapter";
+export type { NodeGitAdapterOptions } from "./NodeGitAdapter";
+
+// Re-export the shared host-agnostic git types for convenience.
+export type {
+  CommitRecord,
+  GitRef,
+  GitRefType,
+  RepoHead,
+  HostGitAdapter,
+} from "@gitstudio/host-bridge/git";

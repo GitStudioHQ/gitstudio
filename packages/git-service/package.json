@@ -8,9 +8,11 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
+    "test": "tsx --test \"test/**/*.test.ts\"",
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@gitstudio/engine": "*"
+    "@gitstudio/engine": "*",
+    "@gitstudio/host-bridge": "*"
   }
 }
