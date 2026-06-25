@@ -9,6 +9,7 @@
 // thousands of nodes — only the ~visible window is touched per frame.
 
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
+import { codiconStyles } from "../styles/codicons";
 import {
   Virtualizer,
   observeElementRect,
@@ -67,7 +68,7 @@ export class CommitGraph extends LitElement {
     selectedSha: { state: true },
   };
 
-  static styles = css`
+  static styles = [codiconStyles, css`
     :host {
       display: flex;
       flex-direction: column;
@@ -113,7 +114,7 @@ export class CommitGraph extends LitElement {
       background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
       border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, transparent);
     }
-    .gh-branch svg { width: 13px; height: 13px; flex: 0 0 auto; }
+    .gh-branch .codicon { font-size: 13px; flex: 0 0 auto; }
     .gh-branch .nm {
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
@@ -278,8 +279,7 @@ export class CommitGraph extends LitElement {
       flex: 0 0 auto;
     }
     .chip .ico {
-      width: 10px;
-      height: 10px;
+      font-size: 11px;
       flex: 0 0 auto;
       opacity: 0.95;
     }
@@ -413,7 +413,7 @@ export class CommitGraph extends LitElement {
         transition: none;
       }
     }
-  `;
+  `];
 
   // Reactive properties are `declare`d (no field initializer) so they never
   // shadow Lit's generated accessors under ES2022 `[[Define]]` field semantics;
@@ -794,11 +794,7 @@ export class CommitGraph extends LitElement {
         class="gh-branch"
         title=${branch ? `${branch} (current branch)` : "Detached HEAD"}
       >
-        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-          <path
-            d="M5 3.5a1.5 1.5 0 1 0-2 1.41V11a1.5 1.5 0 1 0 1 0V8.9c.6.4 1.3.6 2 .6h1A2.5 2.5 0 0 0 10.45 8 1.5 1.5 0 1 0 9.4 7H8a1.5 1.5 0 0 1-1.5-1.5V4.9A1.5 1.5 0 0 0 5 3.5z"
-          />
-        </svg>
+        <span class="codicon codicon-git-branch" aria-hidden="true"></span>
         <span class="nm">${branch || "detached HEAD"}</span>
       </span>
       ${count ? html`<span class="gh-count">${count}</span>` : nothing}
@@ -843,17 +839,11 @@ export class CommitGraph extends LitElement {
 
 // ── Small pure helpers (self-contained so the bundle has no extra deps) ───────
 
-// Inline ref glyphs (currentColor, crisp at 10px). No emoji anywhere.
-const TAG_ICON =
-  '<svg class="ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
-  '<path d="M2 2h6l6 6-6 6-6-6V2zm2.6 1.6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>';
-const REMOTE_ICON =
-  '<svg class="ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
-  '<path d="M4.5 11a3.5 3.5 0 0 1-.3-6.98A4 4 0 0 1 12 5.2 3 3 0 0 1 11.5 11h-7z"/></svg>';
-const BRANCH_ICON =
-  '<svg class="ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
-  '<path d="M5 3.5a1.5 1.5 0 1 0-2 1.41V11a1.5 1.5 0 1 0 1 0V8.9c.6.4 1.3.6 2 .6h1A2.5 2.5 0 0 0 ' +
-  '10.45 8 1.5 1.5 0 1 0 9.4 7H8a1.5 1.5 0 0 1-1.5-1.5V4.9A1.5 1.5 0 0 0 5 3.5z"/></svg>';
+// Ref glyphs: the real VS Code codicon font (registered document-wide via the
+// page stylesheet's @font-face; class rules live in codiconStyles).
+const TAG_ICON = '<span class="ico codicon codicon-tag" aria-hidden="true"></span>';
+const REMOTE_ICON = '<span class="ico codicon codicon-cloud" aria-hidden="true"></span>';
+const BRANCH_ICON = '<span class="ico codicon codicon-git-branch" aria-hidden="true"></span>';
 /** "You are here" target dot for the current HEAD chip. */
 const CURRENT_DOT = '<span class="dot" aria-hidden="true"></span>';
 
