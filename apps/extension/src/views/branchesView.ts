@@ -3,8 +3,8 @@ import type { GitRef } from "@gitstudio/host-bridge/git";
 import type { RepoManager } from "../git/repoManager";
 
 // The tree has two levels: fixed category roots (Local / Remotes / Tags) and
-// the refs grouped under them. Stashes are deferred to M9, so there's no
-// Stashes category here.
+// the refs grouped under them. Stashes get their own dedicated view
+// (gitstudio.stashes), so they're intentionally not a category here.
 type RefCategory = "local" | "remotes" | "tags";
 
 const CATEGORY_LABELS: Record<RefCategory, string> = {

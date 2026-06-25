@@ -78,6 +78,18 @@
         {
           "id": "gitstudio.branches",
           "name": "Branches"
+        },
+        {
+          "id": "gitstudio.stashes",
+          "name": "Stashes"
+        },
+        {
+          "id": "gitstudio.worktrees",
+          "name": "Worktrees"
+        },
+        {
+          "id": "gitstudio.searchCompare",
+          "name": "Search & Compare"
         }
       ]
     },
@@ -294,6 +306,214 @@
         "title": "Reset Current Branch to Here…",
         "category": "GitStudio",
         "icon": "$(discard)"
+      },
+      {
+        "command": "gitstudio.stashes.refresh",
+        "title": "Refresh Stashes",
+        "category": "GitStudio",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitstudio.stash.save",
+        "title": "Stash Changes…",
+        "category": "GitStudio",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.stash.show",
+        "title": "Show Stash Diff",
+        "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.stash.apply",
+        "title": "Apply Stash",
+        "category": "GitStudio",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "gitstudio.stash.pop",
+        "title": "Pop Stash",
+        "category": "GitStudio",
+        "icon": "$(inbox)"
+      },
+      {
+        "command": "gitstudio.stash.drop",
+        "title": "Drop Stash",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.stash.branch",
+        "title": "Create Branch from Stash…",
+        "category": "GitStudio",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "gitstudio.worktrees.refresh",
+        "title": "Refresh Worktrees",
+        "category": "GitStudio",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitstudio.worktree.open",
+        "title": "Open Worktree",
+        "category": "GitStudio",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "gitstudio.worktree.add",
+        "title": "New Worktree…",
+        "category": "GitStudio",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.worktree.remove",
+        "title": "Remove Worktree",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.worktree.lock",
+        "title": "Lock Worktree",
+        "category": "GitStudio",
+        "icon": "$(lock)"
+      },
+      {
+        "command": "gitstudio.worktree.unlock",
+        "title": "Unlock Worktree",
+        "category": "GitStudio",
+        "icon": "$(unlock)"
+      },
+      {
+        "command": "gitstudio.worktree.prune",
+        "title": "Prune Worktrees",
+        "category": "GitStudio",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "gitstudio.search",
+        "title": "Search Commits…",
+        "category": "GitStudio",
+        "icon": "$(search)"
+      },
+      {
+        "command": "gitstudio.compareRefs",
+        "title": "Compare Branches/Tags…",
+        "category": "GitStudio",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "gitstudio.searchCompare.openCommit",
+        "title": "Open Commit",
+        "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.branch.checkout",
+        "title": "Checkout",
+        "category": "GitStudio",
+        "icon": "$(check)"
+      },
+      {
+        "command": "gitstudio.branch.merge",
+        "title": "Merge into Current",
+        "category": "GitStudio",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "gitstudio.branch.rebase",
+        "title": "Rebase Current onto This",
+        "category": "GitStudio",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "gitstudio.branch.rename",
+        "title": "Rename Branch…",
+        "category": "GitStudio",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "gitstudio.branch.delete",
+        "title": "Delete Branch",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.branch.push",
+        "title": "Push / Publish Branch",
+        "category": "GitStudio",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "gitstudio.branch.setUpstream",
+        "title": "Set Upstream…",
+        "category": "GitStudio",
+        "icon": "$(cloud)"
+      },
+      {
+        "command": "gitstudio.branch.new",
+        "title": "New Branch from Here…",
+        "category": "GitStudio",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.branch.createWorktree",
+        "title": "Create Worktree for This Branch…",
+        "category": "GitStudio",
+        "icon": "$(repo-clone)"
+      },
+      {
+        "command": "gitstudio.branch.compare",
+        "title": "Compare with Current",
+        "category": "GitStudio",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "gitstudio.remoteBranch.checkout",
+        "title": "Checkout (Create Local Tracking)…",
+        "category": "GitStudio",
+        "icon": "$(check)"
+      },
+      {
+        "command": "gitstudio.remoteBranch.delete",
+        "title": "Delete Remote Branch",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.tag.checkout",
+        "title": "Checkout Tag",
+        "category": "GitStudio",
+        "icon": "$(check)"
+      },
+      {
+        "command": "gitstudio.tag.delete",
+        "title": "Delete Tag",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.tag.push",
+        "title": "Push Tag…",
+        "category": "GitStudio",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "gitstudio.fetch",
+        "title": "Fetch",
+        "category": "GitStudio",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "gitstudio.addRemote",
+        "title": "Add Remote…",
+        "category": "GitStudio",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.manageRemotes",
+        "title": "Manage Remotes…",
+        "category": "GitStudio",
+        "icon": "$(cloud)"
       }
     ],
     "keybindings": [
@@ -355,6 +575,11 @@
           "type": "boolean",
           "default": false,
           "description": "Enable the Sign-off toggle by default in the GitStudio commit box (adds a Signed-off-by trailer)."
+        },
+        "gitstudio.push.forceWithLease": {
+          "type": "boolean",
+          "default": true,
+          "description": "When force-pushing from GitStudio, use the safer --force-with-lease (which refuses to overwrite remote work you haven't seen) instead of a raw --force."
         }
       }
     },
@@ -371,9 +596,64 @@
           "group": "navigation@2"
         },
         {
+          "command": "gitstudio.branch.new",
+          "when": "view == gitstudio.branches",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.fetch",
+          "when": "view == gitstudio.branches",
+          "group": "navigation@2"
+        },
+        {
           "command": "gitstudio.refreshBranches",
           "when": "view == gitstudio.branches",
-          "group": "navigation"
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitstudio.manageRemotes",
+          "when": "view == gitstudio.branches",
+          "group": "1_remotes@1"
+        },
+        {
+          "command": "gitstudio.addRemote",
+          "when": "view == gitstudio.branches",
+          "group": "1_remotes@2"
+        },
+        {
+          "command": "gitstudio.stash.save",
+          "when": "view == gitstudio.stashes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.stashes.refresh",
+          "when": "view == gitstudio.stashes",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitstudio.worktree.add",
+          "when": "view == gitstudio.worktrees",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.worktree.prune",
+          "when": "view == gitstudio.worktrees",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitstudio.worktrees.refresh",
+          "when": "view == gitstudio.worktrees",
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitstudio.search",
+          "when": "view == gitstudio.searchCompare",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.compareRefs",
+          "when": "view == gitstudio.searchCompare",
+          "group": "navigation@2"
         },
         {
           "command": "gitstudio.changes.stageAll",
@@ -562,6 +842,146 @@
         {
           "command": "gitstudio.resetToCommit",
           "when": "false"
+        },
+        {
+          "command": "gitstudio.stash.save",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stashes.refresh",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stash.show",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.stash.apply",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.stash.pop",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.stash.drop",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.stash.branch",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.worktree.add",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.worktree.prune",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.worktrees.refresh",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.worktree.open",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.worktree.remove",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.worktree.lock",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.worktree.unlock",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.search",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.compareRefs",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.searchCompare.openCommit",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.fetch",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.addRemote",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.manageRemotes",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.branch.new",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.branch.checkout",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.merge",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.rebase",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.rename",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.delete",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.push",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.setUpstream",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.createWorktree",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.branch.compare",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.remoteBranch.checkout",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.remoteBranch.delete",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.tag.checkout",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.tag.delete",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.tag.push",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -629,6 +1049,181 @@
           "command": "gitstudio.changes.unstageAll",
           "when": "view == gitstudio.changes && viewItem == gitstudio.changeGroup.staged",
           "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.stash.apply",
+          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.stash.pop",
+          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
+          "group": "inline@2"
+        },
+        {
+          "command": "gitstudio.stash.drop",
+          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
+          "group": "inline@3"
+        },
+        {
+          "command": "gitstudio.stash.apply",
+          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
+          "group": "1_stash@1"
+        },
+        {
+          "command": "gitstudio.stash.pop",
+          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
+          "group": "1_stash@2"
+        },
+        {
+          "command": "gitstudio.stash.branch",
+          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
+          "group": "1_stash@3"
+        },
+        {
+          "command": "gitstudio.stash.drop",
+          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
+          "group": "2_stash@1"
+        },
+        {
+          "command": "gitstudio.worktree.open",
+          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.worktree.remove",
+          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
+          "group": "inline@2"
+        },
+        {
+          "command": "gitstudio.worktree.open",
+          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
+          "group": "1_worktree@1"
+        },
+        {
+          "command": "gitstudio.worktree.lock",
+          "when": "view == gitstudio.worktrees && viewItem == gitstudio.worktree",
+          "group": "1_worktree@2"
+        },
+        {
+          "command": "gitstudio.worktree.unlock",
+          "when": "view == gitstudio.worktrees && viewItem == gitstudio.worktree.locked",
+          "group": "1_worktree@2"
+        },
+        {
+          "command": "gitstudio.worktree.remove",
+          "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
+          "group": "2_worktree@1"
+        },
+        {
+          "command": "gitstudio.branch.checkout",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.branch.checkout",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "1_branch@1"
+        },
+        {
+          "command": "gitstudio.branch.merge",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "1_branch@2"
+        },
+        {
+          "command": "gitstudio.branch.rebase",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "1_branch@3"
+        },
+        {
+          "command": "gitstudio.branch.compare",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "1_branch@4"
+        },
+        {
+          "command": "gitstudio.branch.new",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "2_branch@1"
+        },
+        {
+          "command": "gitstudio.branch.createWorktree",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "2_branch@2"
+        },
+        {
+          "command": "gitstudio.branch.push",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "3_branch@1"
+        },
+        {
+          "command": "gitstudio.branch.setUpstream",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "3_branch@2"
+        },
+        {
+          "command": "gitstudio.branch.rename",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "4_branch@1"
+        },
+        {
+          "command": "gitstudio.branch.delete",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
+          "group": "4_branch@2"
+        },
+        {
+          "command": "gitstudio.remoteBranch.checkout",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.remoteBranch.checkout",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
+          "group": "1_remoteBranch@1"
+        },
+        {
+          "command": "gitstudio.branch.compare",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
+          "group": "1_remoteBranch@2"
+        },
+        {
+          "command": "gitstudio.remoteBranch.delete",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
+          "group": "2_remoteBranch@1"
+        },
+        {
+          "command": "gitstudio.tag.checkout",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.tag.checkout",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
+          "group": "1_tag@1"
+        },
+        {
+          "command": "gitstudio.tag.push",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
+          "group": "1_tag@2"
+        },
+        {
+          "command": "gitstudio.tag.delete",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
+          "group": "2_tag@1"
+        },
+        {
+          "command": "gitstudio.fetch",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.category.remotes",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.manageRemotes",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.category.remotes",
+          "group": "1_remotes@1"
+        },
+        {
+          "command": "gitstudio.addRemote",
+          "when": "view == gitstudio.branches && viewItem == gitstudio.category.remotes",
+          "group": "1_remotes@2"
         }
       ]
     }

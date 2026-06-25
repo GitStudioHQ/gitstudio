@@ -7,6 +7,34 @@ import {
   type CommitNode,
 } from "./views/commitsView";
 import { RefsTreeProvider } from "./views/branchesView";
+import {
+  StashesTreeProvider,
+  StashDiffContentProvider,
+  showStash,
+  saveStash,
+  applyStash,
+  popStash,
+  dropStash,
+  branchFromStash,
+  type StashNode,
+} from "./views/stashesView";
+import {
+  WorktreesTreeProvider,
+  openWorktree,
+  addWorktree,
+  removeWorktree,
+  lockWorktree,
+  pruneWorktrees,
+  type WorktreeNode,
+} from "./views/worktreesView";
+import {
+  SearchCompareTreeProvider,
+  runSearch,
+  compareRefs,
+  openSearchCommit,
+} from "./search/searchCompareView";
+import { SyncStatusItem } from "./statusBar/syncStatus";
+import * as branchActions from "./views/branchActions";
 import { CommitGraphPanel } from "./graph/graphPanel";
 import {
   RevisionContentProvider,
@@ -358,6 +386,204 @@ export function activate(context: vscode.ExtensionContext): void {
             commitsProvider.refresh();
           }
         },
+      ),
+    );
+
+    // M9 — the remaining sidebar pillars + operations: Stashes, Worktrees,
+    // Search & Compare views; branch / remote / tag context actions; and the
+    // status-bar sync segment. Destructive ops (pop/drop, merge/rebase, branch
+    // delete) route through the universal Undo envelope via the RepoManager's
+    // wired-in ledger.
+    const stashesProvider = new StashesTreeProvider(repos);
+    const worktreesProvider = new WorktreesTreeProvider(repos);
+    const searchCompareProvider = new SearchCompareTreeProvider(repos);
+    const stashDiffContent = new StashDiffContentProvider(repos);
+    context.subscriptions.push(
+      stashesProvider,
+      worktreesProvider,
+      searchCompareProvider,
+    );
+
+    const stashesView = vscode.window.createTreeView("gitstudio.stashes", {
+      treeDataProvider: stashesProvider,
+      showCollapseAll: false,
+    });
+    const worktreesView = vscode.window.createTreeView("gitstudio.worktrees", {
+      treeDataProvider: worktreesProvider,
+      showCollapseAll: false,
+    });
+    const searchCompareView = vscode.window.createTreeView(
+      "gitstudio.searchCompare",
+      { treeDataProvider: searchCompareProvider, showCollapseAll: true },
+    );
+
+    const refreshStashes = () => stashesProvider.refresh();
+    const refreshWorktrees = () => worktreesProvider.refresh();
+    const refreshBranches = () => refsProvider.refresh();
+    const revealSearchCompare = () => {
+      void vscode.commands.executeCommand("gitstudio.searchCompare.focus");
+    };
+
+    // The status-bar sync segment.
+    const syncStatus = new SyncStatusItem(repos);
+    context.subscriptions.push(syncStatus);
+
+    context.subscriptions.push(
+      stashesView,
+      worktreesView,
+      searchCompareView,
+      vscode.workspace.registerTextDocumentContentProvider(
+        StashDiffContentProvider.scheme,
+        stashDiffContent,
+      ),
+
+      // ── Stashes ────────────────────────────────────────────────────────────
+      vscode.commands.registerCommand("gitstudio.stashes.refresh", () =>
+        stashesProvider.refresh(),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.stash.show",
+        (node: StashNode) => void showStash(repos, node),
+      ),
+      vscode.commands.registerCommand("gitstudio.stash.save", () =>
+        saveStash(repos, refreshStashes),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.stash.apply",
+        (node: StashNode) => applyStash(repos, node, refreshStashes),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.stash.pop",
+        (node: StashNode) => popStash(repos, node, refreshStashes),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.stash.drop",
+        (node: StashNode) => dropStash(repos, node, refreshStashes),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.stash.branch",
+        (node: StashNode) => branchFromStash(repos, node, refreshStashes),
+      ),
+
+      // ── Worktrees ──────────────────────────────────────────────────────────
+      vscode.commands.registerCommand("gitstudio.worktrees.refresh", () =>
+        worktreesProvider.refresh(),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.open",
+        (node: WorktreeNode) => void openWorktree(node),
+      ),
+      vscode.commands.registerCommand("gitstudio.worktree.add", () =>
+        addWorktree(repos, refreshWorktrees),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.remove",
+        (node: WorktreeNode) => removeWorktree(repos, node, refreshWorktrees),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.lock",
+        (node: WorktreeNode) =>
+          lockWorktree(repos, node, true, refreshWorktrees),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.worktree.unlock",
+        (node: WorktreeNode) =>
+          lockWorktree(repos, node, false, refreshWorktrees),
+      ),
+      vscode.commands.registerCommand("gitstudio.worktree.prune", () =>
+        pruneWorktrees(repos, refreshWorktrees),
+      ),
+
+      // ── Search & Compare ───────────────────────────────────────────────────
+      vscode.commands.registerCommand("gitstudio.search", () =>
+        runSearch(repos, searchCompareProvider, revealSearchCompare),
+      ),
+      vscode.commands.registerCommand("gitstudio.compareRefs", () =>
+        compareRefs(repos, searchCompareProvider, revealSearchCompare),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.searchCompare.openCommit",
+        (node) => void openSearchCommit(node),
+      ),
+
+      // ── Branch / remote / tag context actions ──────────────────────────────
+      vscode.commands.registerCommand(
+        "gitstudio.branch.checkout",
+        (arg) => branchActions.checkoutBranch(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.merge",
+        (arg) =>
+          branchActions.mergeBranchIntoCurrent(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.rebase",
+        (arg) => branchActions.rebaseCurrentOnto(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.rename",
+        (arg) => branchActions.renameBranch(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.delete",
+        (arg) => branchActions.deleteBranch(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.push",
+        (arg) => branchActions.pushBranch(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.setUpstream",
+        (arg) => branchActions.setUpstream(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.new",
+        (arg) => branchActions.newBranchFrom(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.createWorktree",
+        (arg) =>
+          branchActions.createWorktreeForBranch(repos, arg, refreshWorktrees),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.branch.compare",
+        (arg) =>
+          branchActions.compareRefWithCurrent(
+            repos,
+            searchCompareProvider,
+            revealSearchCompare,
+            arg,
+          ),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.remoteBranch.checkout",
+        (arg) =>
+          branchActions.checkoutRemoteBranch(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.remoteBranch.delete",
+        (arg) => branchActions.deleteRemoteBranch(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.tag.checkout",
+        (arg) => branchActions.checkoutTag(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.tag.delete",
+        (arg) => branchActions.deleteTag(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.tag.push",
+        (arg) => branchActions.pushTag(repos, arg, refreshBranches),
+      ),
+      vscode.commands.registerCommand("gitstudio.fetch", () =>
+        branchActions.fetchAll(repos, refreshBranches),
+      ),
+      vscode.commands.registerCommand("gitstudio.addRemote", () =>
+        branchActions.addRemote(repos, refreshBranches),
+      ),
+      vscode.commands.registerCommand("gitstudio.manageRemotes", () =>
+        branchActions.manageRemotes(repos, refreshBranches),
       ),
     );
   });

@@ -44,6 +44,42 @@ export type {
 } from "./StagingProvider";
 export { SnapshotProvider } from "./SnapshotProvider";
 export type { Snapshot } from "./SnapshotProvider";
+export { StashProvider } from "./StashProvider";
+export type {
+  StashEntry,
+  StashSaveOptions,
+  StashOpResult,
+} from "./StashProvider";
+export { WorktreeProvider, parseWorktreePorcelain } from "./WorktreeProvider";
+export type {
+  WorktreeEntry,
+  WorktreeAddOptions,
+  WorktreeRemoveOptions,
+  WorktreeOpResult,
+} from "./WorktreeProvider";
+export { BranchOps } from "./BranchOps";
+export type {
+  BranchOpResult,
+  CheckoutOptions,
+  DeleteBranchOptions,
+  MergeOptions,
+} from "./BranchOps";
+export { RemoteOps, parseRemoteVerbose } from "./RemoteOps";
+export type {
+  RemoteEntry,
+  RemoteOpResult,
+  RemoteFetchOptions,
+} from "./RemoteOps";
+export { SyncOps } from "./SyncOps";
+export type {
+  AheadBehind,
+  SyncOpResult,
+  PushOptions,
+  PullOptions,
+  FetchOptions,
+} from "./SyncOps";
+export { TagOps } from "./TagOps";
+export type { TagOpResult, CreateTagOptions } from "./TagOps";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
 export { NodeGitAdapter } from "./NodeGitAdapter";
