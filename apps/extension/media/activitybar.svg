@@ -1,19 +1,10 @@
-<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <!-- GitStudio activity-bar mark: a commit node on a vertical graph line.
-       Monochrome with currentColor so VS Code themes it per the active theme. -->
-  <path
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    d="M12 2v6 M12 16v6"
-  />
-  <circle
-    cx="12"
-    cy="12"
-    r="3.5"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-  />
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- GitStudio activity-bar mark: the commit-cube silhouette + a graph node/lane,
+       derived from the brand mark. currentColor so VS Code themes it on dark,
+       light, and high-contrast (the activity bar masks the icon to the fg color). -->
+  <path d="M12 3 L19.5 7.3 V15.7 L12 20 L4.5 15.7 V7.3 Z"
+        stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+  <path d="M12 6.6 V9.4 M12 14.6 V17.4"
+        stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+  <circle cx="12" cy="12" r="2.15" fill="currentColor" />
 </svg>

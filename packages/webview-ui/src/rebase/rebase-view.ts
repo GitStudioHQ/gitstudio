@@ -52,61 +52,113 @@ export class RebaseView extends LitElement {
   private dragIndex: number | null = null;
   private overIndex: number | null = null;
 
+  // Chevron glyphs (replace the bare up/down arrow characters in the reorder
+  // hint) — crisp inline SVGs that inherit currentColor.
+  private static readonly chevronUp = html`<svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 10l4-4 4 4" />
+  </svg>`;
+  private static readonly chevronDown = html`<svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 6l4 4 4-4" />
+  </svg>`;
+
   static styles = css`
+    /* Theme-native primitives — mirror packages/webview-ui/src/styles/tokens.css.
+     * This element renders into a shadow root, so it re-declares the same
+     * --vscode-* derived tokens locally rather than importing the stylesheet. */
     :host {
+      --gs-fg: var(--vscode-foreground);
+      --gs-fg-muted: var(--vscode-descriptionForeground);
+      --gs-border: var(--vscode-panel-border, var(--vscode-widget-border));
+      --gs-hover: var(--vscode-list-hoverBackground);
+      --gs-accent: var(--vscode-focusBorder);
+      --gs-font-ui: var(--vscode-font-family);
+      --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+      --gs-radius: 4px;
+      --gs-radius-sm: 3px;
+      --gs-motion: 150ms;
+      --gs-motion-fast: 120ms;
+
       display: flex;
       flex-direction: column;
       height: 100%;
-      color: var(--vscode-foreground);
-      font-family: var(--vscode-font-family);
+      color: var(--gs-fg);
+      font-family: var(--gs-font-ui);
       font-size: var(--vscode-font-size, 13px);
       background: var(--vscode-editor-background);
     }
 
     header {
       flex: 0 0 auto;
-      padding: 14px 18px 12px;
-      border-bottom: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--gs-border);
+    }
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--gs-fg-muted);
+      margin: 0 0 4px;
     }
     .title {
-      font-size: 1.05em;
+      font-size: 14px;
       font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      line-height: 1.3;
     }
-    .title .glyph {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--vscode-charts-blue, var(--vscode-textLink-foreground));
-      box-shadow: 0 0 0 3px
-        color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 25%, transparent);
-    }
-    .subtitle {
-      margin-top: 4px;
-      color: var(--vscode-descriptionForeground);
-      font-size: 0.92em;
+    .title .mono {
+      font-family: var(--gs-font-mono);
+      font-variant-numeric: tabular-nums;
+      color: var(--gs-accent);
     }
     .hint {
       margin-top: 8px;
-      color: var(--vscode-descriptionForeground);
-      font-size: 0.85em;
-      opacity: 0.85;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px;
+      color: var(--gs-fg-muted);
+      font-size: 11.5px;
+      line-height: 1.5;
     }
     kbd {
-      font-family: var(--vscode-editor-font-family, monospace);
-      font-size: 0.85em;
-      padding: 1px 5px;
-      border-radius: 4px;
-      border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.4));
-      background: var(--vscode-keybindingLabel-background, rgba(128, 128, 128, 0.12));
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      font-family: var(--gs-font-mono);
+      font-size: 10.5px;
+      padding: 0 4px;
+      border-radius: var(--gs-radius-sm);
+      border: 1px solid var(--gs-border);
+      background: var(--vscode-keybindingLabel-background, color-mix(in srgb, var(--gs-fg-muted) 12%, transparent));
+      color: var(--vscode-keybindingLabel-foreground, var(--gs-fg));
+    }
+    kbd svg {
+      width: 11px;
+      height: 11px;
     }
 
     .list {
       flex: 1 1 auto;
       overflow-y: auto;
-      padding: 10px 12px;
+      padding: 8px;
       display: flex;
       flex-direction: column;
       gap: 4px;
@@ -114,64 +166,55 @@ export class RebaseView extends LitElement {
 
     .row {
       display: grid;
-      grid-template-columns: 22px 110px 70px 1fr auto;
+      grid-template-columns: 3px 18px 96px 64px 1fr auto;
       align-items: center;
-      gap: 10px;
-      padding: 6px 10px;
-      border-radius: 7px;
+      gap: 8px;
+      min-height: 24px;
+      padding: 4px 8px 4px 4px;
+      border-radius: var(--gs-radius);
       border: 1px solid transparent;
-      background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.06));
+      border-left: 2px solid transparent;
+      background: var(--vscode-editorWidget-background, color-mix(in srgb, var(--gs-fg-muted) 6%, transparent));
       cursor: default;
-      transition: background 0.08s ease, border-color 0.08s ease,
-        transform 0.08s ease, opacity 0.08s ease;
+      transition: background var(--gs-motion-fast) ease,
+        border-color var(--gs-motion-fast) ease, opacity var(--gs-motion-fast) ease;
     }
     .row:hover {
-      border-color: var(--vscode-focusBorder, rgba(128, 128, 128, 0.35));
+      background: var(--gs-hover);
     }
     .row:focus-visible {
-      outline: none;
-      border-color: var(--vscode-focusBorder, #3794ff);
-      box-shadow: 0 0 0 1px var(--vscode-focusBorder, #3794ff);
+      outline: 1px solid var(--gs-accent);
+      outline-offset: -1px;
     }
     .row.dragging {
       opacity: 0.5;
     }
     .row.over {
-      border-color: var(--vscode-focusBorder, #3794ff);
-      box-shadow: inset 0 2px 0 var(--vscode-focusBorder, #3794ff);
+      border-color: var(--gs-accent);
+      box-shadow: inset 0 2px 0 var(--gs-accent);
     }
     .row.drop {
-      opacity: 0.45;
-      filter: grayscale(0.4);
+      opacity: 0.55;
     }
 
     .grip {
+      grid-column: 2;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       cursor: grab;
-      color: var(--vscode-descriptionForeground);
-      text-align: center;
+      color: var(--gs-fg-muted);
       user-select: none;
       line-height: 1;
-      font-size: 14px;
     }
     .grip:active {
       cursor: grabbing;
     }
 
-    select.action {
-      font-family: inherit;
-      font-size: 0.9em;
-      font-weight: 600;
-      padding: 3px 6px;
-      border-radius: 5px;
-      border: 1px solid var(--vscode-dropdown-border, rgba(128, 128, 128, 0.4));
-      background: var(--vscode-dropdown-background);
-      color: var(--action-fg, var(--vscode-dropdown-foreground));
-      cursor: pointer;
-    }
-    /* Distinct accent per action — a colored left border + tinted text. */
+    /* Distinct theme-tinted color per action — drives the left accent bar,
+     * the select foreground, and a subtle border tint. */
     .row {
-      --action-fg: var(--vscode-foreground);
-      --action-accent: var(--vscode-descriptionForeground);
+      --action-accent: var(--gs-fg-muted);
     }
     .row[data-action="pick"] {
       --action-accent: var(--vscode-charts-green, #89d185);
@@ -192,22 +235,34 @@ export class RebaseView extends LitElement {
       --action-accent: var(--vscode-charts-red, #f14c4c);
     }
     .accent {
-      width: 4px;
-      align-self: stretch;
-      border-radius: 3px;
-      background: var(--action-accent);
       grid-column: 1;
-      justify-self: start;
-      min-height: 18px;
+      align-self: stretch;
+      justify-self: stretch;
+      border-radius: var(--gs-radius-sm);
+      background: var(--action-accent);
+      min-height: 16px;
     }
+
     select.action {
+      grid-column: 3;
+      font-family: inherit;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: var(--gs-radius);
+      background: var(--vscode-dropdown-background);
       color: var(--action-accent);
-      border-color: color-mix(in srgb, var(--action-accent) 50%, transparent);
+      border: 1px solid color-mix(in srgb, var(--action-accent) 45%, transparent);
+      cursor: pointer;
+    }
+    select.action:hover {
+      border-color: color-mix(in srgb, var(--action-accent) 70%, transparent);
     }
     select.action:focus-visible {
-      outline: 1px solid var(--vscode-focusBorder, #3794ff);
+      outline: 1px solid var(--gs-accent);
       outline-offset: 1px;
     }
+
     /* Respect the OS "reduce motion" setting: keep the layout, drop the easing. */
     @media (prefers-reduced-motion: reduce) {
       .row {
@@ -216,91 +271,116 @@ export class RebaseView extends LitElement {
     }
 
     .sha {
-      font-family: var(--vscode-editor-font-family, monospace);
-      font-size: 0.88em;
-      color: var(--vscode-descriptionForeground);
+      grid-column: 4;
+      font-family: var(--gs-font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: var(--gs-fg-muted);
     }
     .subject {
+      grid-column: 5;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      font-size: 13px;
     }
     .row[data-action="drop"] .subject {
       text-decoration: line-through;
-      opacity: 0.6;
+      color: var(--gs-fg-muted);
     }
 
     .move {
+      grid-column: 6;
       display: inline-flex;
       gap: 2px;
     }
     button.icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       background: transparent;
       border: 1px solid transparent;
-      border-radius: 4px;
-      color: var(--vscode-descriptionForeground);
+      border-radius: var(--gs-radius);
+      color: var(--gs-fg-muted);
       cursor: pointer;
-      width: 22px;
-      height: 22px;
-      font-size: 12px;
-      line-height: 1;
+      width: 20px;
+      height: 20px;
       padding: 0;
     }
-    button.icon:hover {
-      background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.15));
-      color: var(--vscode-foreground);
+    button.icon:hover:not(:disabled) {
+      background: var(--vscode-toolbar-hoverBackground, var(--gs-hover));
+      color: var(--gs-fg);
     }
     button.icon:disabled {
       opacity: 0.3;
       cursor: default;
     }
     button:focus-visible {
-      outline: 1px solid var(--vscode-focusBorder, #3794ff);
+      outline: 1px solid var(--gs-accent);
       outline-offset: 1px;
     }
 
     footer {
       flex: 0 0 auto;
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
-      padding: 12px 18px;
-      border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+      padding: 10px 16px;
+      border-top: 1px solid var(--gs-border);
     }
     .spacer {
       flex: 1 1 auto;
     }
     button.cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       font-family: inherit;
-      font-size: 0.95em;
-      padding: 6px 16px;
-      border-radius: 6px;
+      font-size: 13px;
+      height: 28px;
+      padding: 0 14px;
+      border-radius: var(--gs-radius);
       border: 1px solid transparent;
       cursor: pointer;
+    }
+    button.cta svg {
+      width: 14px;
+      height: 14px;
     }
     button.primary {
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
     }
-    button.primary:hover {
+    button.primary:hover:not(:disabled) {
       background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
     }
+    button.primary:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
     button.danger {
-      background: transparent;
-      color: var(--vscode-errorForeground, #f14c4c);
-      border-color: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 45%, transparent);
+      background: var(--vscode-button-secondaryBackground, transparent);
+      color: var(--vscode-button-secondaryForeground, var(--vscode-errorForeground));
+      border-color: color-mix(in srgb, var(--vscode-errorForeground) 40%, transparent);
     }
     button.danger:hover {
-      background: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 12%, transparent);
+      background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent);
+      color: var(--vscode-errorForeground);
     }
     .count {
-      color: var(--vscode-descriptionForeground);
-      font-size: 0.9em;
+      color: var(--gs-fg-muted);
+      font-size: 11.5px;
+    }
+    .count .mono {
+      font-family: var(--gs-font-mono);
+      font-variant-numeric: tabular-nums;
+      color: var(--gs-fg);
     }
     .empty {
       padding: 40px;
       text-align: center;
-      color: var(--vscode-descriptionForeground);
+      color: var(--gs-fg-muted);
+      font-size: 13px;
     }
   `;
 
@@ -309,17 +389,23 @@ export class RebaseView extends LitElement {
     const kept = this.rows.filter((r) => r.action !== "drop").length;
     return html`
       <header>
+        <p class="eyebrow">Interactive Rebase</p>
         <div class="title">
-          <span class="glyph"></span>
-          Interactive Rebase
-        </div>
-        <div class="subtitle">
-          ${this.headerComment ??
-          `Rebasing ${total} commit${total === 1 ? "" : "s"}`}
+          ${this.headerComment
+            ? this.headerComment
+            : html`Rebasing
+                <span class="mono">${total}</span> commit${total === 1
+                  ? ""
+                  : "s"}`}
         </div>
         <div class="hint">
-          Drag rows or use <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> to reorder.
-          Topmost runs first. Set each commit's action below.
+          <span>Drag rows or press</span>
+          <kbd>Alt</kbd>
+          <span aria-hidden="true">+</span>
+          <kbd aria-label="Up arrow">${RebaseView.chevronUp}</kbd>
+          <span aria-hidden="true">/</span>
+          <kbd aria-label="Down arrow">${RebaseView.chevronDown}</kbd>
+          <span>to reorder. Topmost runs first; set each commit's action.</span>
         </div>
       </header>
 
@@ -330,8 +416,9 @@ export class RebaseView extends LitElement {
       </div>
 
       <footer>
-        <span class="count">
-          ${kept} of ${total} commit${total === 1 ? "" : "s"} kept
+        <span class="count" aria-live="polite">
+          <span class="mono">${kept}</span> of
+          <span class="mono">${total}</span> commit${total === 1 ? "" : "s"} kept
         </span>
         <span class="spacer"></span>
         <button class="cta danger" @click=${this.abort}>Abort</button>
@@ -397,7 +484,11 @@ export class RebaseView extends LitElement {
             ?disabled=${index === 0}
             @click=${() => this.move(index, index - 1)}
           >
-            ↑
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none"
+              stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 10l4-4 4 4" />
+            </svg>
           </button>
           <button
             class="icon"
@@ -406,10 +497,21 @@ export class RebaseView extends LitElement {
             ?disabled=${index === total - 1}
             @click=${() => this.move(index, index + 1)}
           >
-            ↓
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none"
+              stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 6l4 4 4-4" />
+            </svg>
           </button>
         </span>
-        <span class="grip" aria-hidden="true">⠿</span>
+        <span class="grip" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"
+            aria-hidden="true">
+            <circle cx="6" cy="4" r="1.1" /><circle cx="10" cy="4" r="1.1" />
+            <circle cx="6" cy="8" r="1.1" /><circle cx="10" cy="8" r="1.1" />
+            <circle cx="6" cy="12" r="1.1" /><circle cx="10" cy="12" r="1.1" />
+          </svg>
+        </span>
       </div>
     `;
   }

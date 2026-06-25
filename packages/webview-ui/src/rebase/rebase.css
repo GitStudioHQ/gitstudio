@@ -35,6 +35,6 @@ gitstudio-rebase {
   justify-content: center;
   height: 100%;
   gap: 10px;
-  color: var(--vscode-descriptionForeground, #9aa0a6);
+  color: var(--vscode-descriptionForeground);
   font-size: 13px;
 }

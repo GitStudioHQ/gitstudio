@@ -70,7 +70,7 @@ export async function createPullRequest(
     const choice = await vscode.window.showQuickPick(
       [
         { label: "$(list-unordered) Use commit list", value: "commits" },
-        { label: "$(sparkle) ✨ AI draft", value: "ai" },
+        { label: "$(sparkle) AI draft", value: "ai" },
         { label: "$(edit) Empty / write my own", value: "empty" },
       ],
       { placeHolder: "How should we fill the description?" },

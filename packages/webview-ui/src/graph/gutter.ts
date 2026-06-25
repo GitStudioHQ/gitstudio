@@ -24,9 +24,9 @@ export interface GutterOptions {
 }
 
 /** Lane stroke width — thin enough to feel native, thick enough to read. */
-const STROKE_WIDTH = 1.5;
+const STROKE_WIDTH = 1.6;
 /** Dimmed opacity for unrelated lanes when a lane is focused. */
-const DIM_OPACITY = 0.25;
+const DIM_OPACITY = 0.22;
 
 /** Center x of a lane column. Half-pixel aligned so verticals stay crisp. */
 function laneCenterX(column: number, colWidth: number): number {
@@ -92,17 +92,21 @@ export function renderRowGutterSVG(
   const nodeOpacity = nodeDim ? ` opacity="${DIM_OPACITY}"` : "";
   let node: string;
   if (row.isMerge) {
-    // Hollow ring: a slightly larger circle stroked in the lane color with a
-    // punched-out center, so merge commits stand apart from regular nodes.
-    const r = nodeRadius + 0.5;
+    // Hollow ring: a circle stroked in the lane color over a punched-out hole,
+    // so merge commits read as junctions and stand apart from ordinary nodes.
+    // A faint hole-colored halo first keeps crossing lanes from fusing into it.
+    const r = nodeRadius + 0.6;
     node =
+      `<circle cx="${cx}" cy="${cy}" r="${r + 1}" ` +
+      `fill="var(--gs-graph-node-hole)"${nodeOpacity}/>` +
       `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--gs-graph-node-hole)" ` +
       `stroke="${nodeColor}" stroke-width="2"${nodeOpacity}/>`;
   } else {
-    // Filled dot with a faint same-background ring so adjacent lane lines never
-    // visually fuse into the node.
+    // Filled dot with a faint same-background halo so adjacent lane lines never
+    // visually fuse into the node, then a hairline lane-colored ring for crisp
+    // edge definition against the hole.
     node =
-      `<circle cx="${cx}" cy="${cy}" r="${nodeRadius + 1}" ` +
+      `<circle cx="${cx}" cy="${cy}" r="${nodeRadius + 1.4}" ` +
       `fill="var(--gs-graph-node-hole)"${nodeOpacity}/>` +
       `<circle cx="${cx}" cy="${cy}" r="${nodeRadius}" fill="${nodeColor}"${nodeOpacity}/>`;
   }

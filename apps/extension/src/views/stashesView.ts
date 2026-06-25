@@ -17,7 +17,8 @@ export class StashNode extends vscode.TreeItem {
       entry.message || entry.ref,
       vscode.TreeItemCollapsibleState.None,
     );
-    this.description = `${entry.ref} · ${relativeTime(entry.time)}`;
+    // Muted metadata: stash selector · relative time · short sha.
+    this.description = `${entry.ref} · ${relativeTime(entry.time)} · ${entry.sha.slice(0, 7)}`;
     this.iconPath = new vscode.ThemeIcon("git-stash");
     this.contextValue = "gitstudio.stash";
     this.tooltip = buildTooltip(entry);
@@ -32,9 +33,12 @@ export class StashNode extends vscode.TreeItem {
 function buildTooltip(entry: StashEntry): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   md.supportThemeIcons = true;
-  md.appendMarkdown(`**${escapeMarkdown(entry.message || entry.ref)}**\n\n`);
+  md.appendMarkdown(`$(git-stash) **${escapeMarkdown(entry.message || entry.ref)}**\n\n`);
   md.appendMarkdown(`$(git-stash) \`${entry.ref}\`\n\n`);
-  md.appendMarkdown(`$(git-commit) \`${entry.sha.slice(0, 7)}\``);
+  md.appendMarkdown(`$(git-commit) \`${entry.sha.slice(0, 7)}\`\n\n`);
+  md.appendMarkdown(
+    `$(calendar) ${new Date(entry.time * 1000).toLocaleString()}`,
+  );
   return md;
 }
 

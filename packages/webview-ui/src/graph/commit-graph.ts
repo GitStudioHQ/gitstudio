@@ -25,12 +25,19 @@ import {
   paletteForTheme,
   observeGraphTheme,
 } from "./lanePalette";
+import {
+  gravatarUrl,
+  avatarHue,
+  authorInitials,
+} from "./avatar";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
 const ROW_HEIGHT = 24;
 const COL_WIDTH = 14;
 const NODE_RADIUS = 3.5;
 const OVERSCAN = 12;
+/** Author avatar diameter, px (rendered @2× via gravatar s=40 for crispness). */
+const AVATAR_SIZE = 18;
 /** Min gutter width so even a linear history reserves a tidy lane column. */
 const MIN_GUTTER_WIDTH = 28;
 /** Cap the *rendered* gutter width so a pathological fan-out can't eat the row. */
@@ -102,13 +109,15 @@ export class CommitGraph extends LitElement {
       height: ${ROW_HEIGHT}px;
       display: grid;
       grid-template-columns:
+        26px
         var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
         auto
         minmax(0, 1fr)
-        140px
-        64px
-        64px;
+        132px
+        56px
+        62px;
       align-items: center;
+      column-gap: 0;
       box-sizing: border-box;
       padding-right: 12px;
       cursor: default;
@@ -134,6 +143,42 @@ export class CommitGraph extends LitElement {
       background: var(--vscode-list-activeSelectionBackground);
     }
 
+    /* ── Author avatar ──────────────────────────────────────────────────── */
+    .avatar {
+      width: ${AVATAR_SIZE}px;
+      height: ${AVATAR_SIZE}px;
+      margin: 0 auto;
+      border-radius: 50%;
+      overflow: hidden;
+      position: relative;
+      flex: 0 0 auto;
+      box-shadow: 0 0 0 1px color-mix(in srgb,
+        var(--vscode-foreground) 14%, transparent);
+    }
+    .avatar img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      /* The img sits over the initials fallback; if it fails to load the host
+         hides it (onerror) revealing the disc underneath. */
+      background: transparent;
+    }
+    .avatar .fallback {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #fff;
+      font-family: var(--vscode-font-family);
+      /* hue set inline per author; lightness fixed for legible white text. */
+      background: hsl(var(--gs-av-hue, 210) 48% 42%);
+    }
+
     .gutter {
       height: ${ROW_HEIGHT}px;
       overflow: hidden;
@@ -147,21 +192,22 @@ export class CommitGraph extends LitElement {
       display: flex;
       align-items: center;
       gap: 4px;
-      padding: 0 8px 0 4px;
+      padding: 0 8px 0 6px;
       max-width: 320px;
       overflow: hidden;
       white-space: nowrap;
     }
+    /* Ref chips — radius 4px, 11px, subtle tinted bg, per the design system. */
     .chip {
       display: inline-flex;
       align-items: center;
-      gap: 3px;
-      height: 15px;
+      gap: 4px;
+      height: 16px;
       padding: 0 6px;
-      border-radius: 8px;
+      border-radius: 4px;
       font-size: 11px;
-      line-height: 15px;
-      max-width: 140px;
+      line-height: 16px;
+      max-width: 150px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -169,41 +215,55 @@ export class CommitGraph extends LitElement {
       flex: 0 0 auto;
     }
     .chip .ico {
-      width: 9px;
-      height: 9px;
+      width: 10px;
+      height: 10px;
       flex: 0 0 auto;
-      opacity: 0.9;
+      opacity: 0.95;
     }
+    /* current HEAD = filled accent with a leading "you are here" dot. */
     .chip-current {
-      background: var(--vscode-gitDecoration-modifiedResourceForeground,
-        var(--vscode-charts-blue, #4aa5ff));
-      color: var(--vscode-editor-background, #1e1e1e);
+      color: var(--vscode-button-foreground);
+      background: var(--vscode-button-background,
+        var(--vscode-focusBorder));
+      border-color: var(--vscode-button-background, var(--vscode-focusBorder));
       font-weight: 600;
-      border-color: transparent;
     }
+    .chip-current .dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      background: currentColor;
+      box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
+    }
+    /* local branch = accent-tinted. */
     .chip-head {
-      color: var(--vscode-charts-blue, #4aa5ff);
+      color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
       border-color: color-mix(in srgb,
-        var(--vscode-charts-blue, #4aa5ff) 55%, transparent);
+        var(--vscode-focusBorder) 38%, transparent);
       background: color-mix(in srgb,
-        var(--vscode-charts-blue, #4aa5ff) 12%, transparent);
+        var(--vscode-focusBorder) 14%, transparent);
     }
+    /* remote = muted with a cloud glyph. */
     .chip-remote {
       color: var(--vscode-descriptionForeground, #9aa0a6);
-      border-color: var(--vscode-widget-border,
-        color-mix(in srgb, currentColor 35%, transparent));
-      background: color-mix(in srgb, currentColor 8%, transparent);
+      border-color: color-mix(in srgb, currentColor 26%, transparent);
+      background: color-mix(in srgb, currentColor 10%, transparent);
     }
+    /* tag = amber / charts-yellow tinted with a tag glyph. */
     .chip-tag {
       color: var(--vscode-charts-yellow, #e5a73c);
       border-color: color-mix(in srgb,
-        var(--vscode-charts-yellow, #e5a73c) 55%, transparent);
+        var(--vscode-charts-yellow, #e5a73c) 34%, transparent);
       background: color-mix(in srgb,
         var(--vscode-charts-yellow, #e5a73c) 14%, transparent);
     }
     .chip-overflow {
       color: var(--vscode-descriptionForeground, #9aa0a6);
-      border-color: var(--vscode-widget-border, transparent);
+      background: color-mix(in srgb, currentColor 10%, transparent);
+      border-color: color-mix(in srgb, currentColor 22%, transparent);
+      padding: 0 5px;
+      font-variant-numeric: tabular-nums;
     }
 
     .subject {
@@ -212,13 +272,20 @@ export class CommitGraph extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
       padding-right: 12px;
+      font-size: 13px;
+      transition: opacity 150ms ease;
+    }
+    .refs,
+    .avatar,
+    .meta {
+      transition: opacity 150ms ease;
     }
     .meta {
       color: var(--vscode-descriptionForeground, #9aa0a6);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 12px;
+      font-size: 11.5px;
     }
     .author {
       padding-right: 10px;
@@ -226,12 +293,14 @@ export class CommitGraph extends LitElement {
     .date {
       text-align: right;
       padding-right: 12px;
+      font-variant-numeric: tabular-nums;
     }
     .sha {
       text-align: right;
       font-family: var(--vscode-editor-font-family, monospace);
+      font-variant-numeric: tabular-nums;
       font-size: 11px;
-      opacity: 0.85;
+      opacity: 0.8;
     }
     .row.selected .meta {
       color: inherit;
@@ -241,6 +310,7 @@ export class CommitGraph extends LitElement {
     /* Reduce the visual weight of unrelated rows on hover-focus. */
     .scroller.focusing .row:not(.focus-on) .subject,
     .scroller.focusing .row:not(.focus-on) .refs,
+    .scroller.focusing .row:not(.focus-on) .avatar,
     .scroller.focusing .row:not(.focus-on) .meta {
       opacity: 0.5;
     }
@@ -272,6 +342,12 @@ export class CommitGraph extends LitElement {
       .spinner {
         animation: none;
         border-top-color: color-mix(in srgb, currentColor 30%, transparent);
+      }
+      .subject,
+      .refs,
+      .avatar,
+      .meta {
+        transition: none;
       }
     }
   `;
@@ -475,6 +551,7 @@ export class CommitGraph extends LitElement {
       gutterW,
     );
     const refs = row.refs.length ? this.refsHtml(row.refs) : "";
+    const avatar = avatarHtml(row.author, row.authorEmail);
     const label = esc(
       `${row.shortSha}: ${row.subject} — ${row.author}, ${relTime(row.authorDate)}`,
     );
@@ -482,11 +559,12 @@ export class CommitGraph extends LitElement {
       `<div class="${cls}" role="row" data-sha="${row.sha}" ` +
       `aria-selected="${selected ? "true" : "false"}" aria-label="${label}" ` +
       `style="transform:translateY(${item.start}px)">` +
+      `${avatar}` +
       `<div class="gutter">${gutter}</div>` +
       `<div class="refs">${refs}</div>` +
       `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
-      `<div class="meta author" title="${esc(row.author)}">${esc(row.author)}</div>` +
-      `<div class="meta date">${esc(relTime(row.authorDate))}</div>` +
+      `<div class="meta author" title="${esc(row.author)} <${esc(row.authorEmail)}>">${esc(row.author)}</div>` +
+      `<div class="meta date" title="${esc(absTime(row.authorDate))}">${esc(relTime(row.authorDate))}</div>` +
       `<div class="meta sha">${esc(row.shortSha)}</div>` +
       `</div>`
     );
@@ -553,6 +631,21 @@ export class CommitGraph extends LitElement {
       this.scroller?.classList.toggle("focusing", next !== undefined);
       this.renderRows();
     }
+  };
+
+  // Delegated, capture-phase avatar load-failure handler. `error` events from
+  // <img> don't bubble, so we listen in the capture phase (Lit accepts an
+  // object listener with `capture`). A failed Gravatar image is hidden so the
+  // colored initials disc behind it shows through.
+  private onImgError = (e: Event): void => {
+    const t = e.target as HTMLElement | null;
+    if (t && t instanceof HTMLImageElement && t.classList.contains("av-img")) {
+      t.style.display = "none";
+    }
+  };
+  private onImgErrorOptions = {
+    handleEvent: (e: Event) => this.onImgError(e),
+    capture: true,
   };
 
   private onPointerLeave = (): void => {
@@ -638,6 +731,7 @@ export class CommitGraph extends LitElement {
       @keydown=${this.onKeyDown}
       @pointermove=${this.onPointerMove}
       @pointerleave=${this.onPointerLeave}
+      @error=${this.onImgErrorOptions}
     >
       <div class="sizer"></div>
     </div>${nothing}`;
@@ -646,6 +740,7 @@ export class CommitGraph extends LitElement {
 
 // ── Small pure helpers (self-contained so the bundle has no extra deps) ───────
 
+// Inline ref glyphs (currentColor, crisp at 10px). No emoji anywhere.
 const TAG_ICON =
   '<svg class="ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
   '<path d="M2 2h6l6 6-6 6-6-6V2zm2.6 1.6a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg>';
@@ -656,11 +751,13 @@ const BRANCH_ICON =
   '<svg class="ico" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
   '<path d="M5 3.5a1.5 1.5 0 1 0-2 1.41V11a1.5 1.5 0 1 0 1 0V8.9c.6.4 1.3.6 2 .6h1A2.5 2.5 0 0 0 ' +
   '10.45 8 1.5 1.5 0 1 0 9.4 7H8a1.5 1.5 0 0 1-1.5-1.5V4.9A1.5 1.5 0 0 0 5 3.5z"/></svg>';
+/** "You are here" target dot for the current HEAD chip. */
+const CURRENT_DOT = '<span class="dot" aria-hidden="true"></span>';
 
 function chipHtml(ref: WireRef): string {
   switch (ref.kind) {
     case "currentHead":
-      return `<span class="chip chip-current" title="${esc(ref.name)} (HEAD)">${BRANCH_ICON}${esc(ref.name)}</span>`;
+      return `<span class="chip chip-current" title="${esc(ref.name)} (HEAD)">${CURRENT_DOT}${esc(ref.name)}</span>`;
     case "head":
       return `<span class="chip chip-head" title="${esc(ref.name)}">${BRANCH_ICON}${esc(ref.name)}</span>`;
     case "remoteHead":
@@ -668,6 +765,27 @@ function chipHtml(ref: WireRef): string {
     case "tag":
       return `<span class="chip chip-tag" title="${esc(ref.name)}">${TAG_ICON}${esc(ref.name)}</span>`;
   }
+}
+
+/**
+ * One author avatar cell: a Gravatar image layered over a deterministic
+ * initials disc. If the remote image fails (offline / blocked / no Gravatar),
+ * a delegated capture-phase `error` listener on the scroller hides the <img>,
+ * revealing the colored fallback underneath. (Inline `onerror` would violate
+ * the page CSP; a single delegated listener is also cheaper than per-row JS on
+ * the virtualized hot path.) Alt is intentionally empty so a broken image never
+ * flashes alt text over the disc.
+ */
+function avatarHtml(author: string, email: string): string {
+  const hue = avatarHue(email);
+  const initials = esc(authorInitials(author, email));
+  const url = esc(gravatarUrl(email, 40));
+  return (
+    `<span class="avatar" style="--gs-av-hue:${hue}" aria-hidden="true">` +
+    `<span class="fallback">${initials}</span>` +
+    `<img class="av-img" src="${url}" alt="" loading="lazy" decoding="async" />` +
+    `</span>`
+  );
 }
 
 /** HTML-escape user-controlled text before splicing into innerHTML. */
@@ -704,6 +822,15 @@ function relTime(epochSeconds: number, now = Date.now() / 1000): string {
     return `${Math.floor(delta / MONTH)}mo`;
   }
   return `${Math.floor(delta / YEAR)}y`;
+}
+
+/** Full local timestamp for the date column's hover tooltip. */
+function absTime(epochSeconds: number): string {
+  try {
+    return new Date(epochSeconds * 1000).toLocaleString();
+  } catch {
+    return "";
+  }
 }
 
 if (!customElements.get("gitstudio-graph")) {

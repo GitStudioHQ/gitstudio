@@ -297,3 +297,133 @@ export interface AnthropicMessageResponse {
     cache_creation_input_tokens?: number;
   };
 }
+
+// ── OpenAI-compatible parsing ────────────────────────────────────────────────
+//
+// One shape covers OpenAI, Codex, OpenRouter, Ollama, LM Studio, and any
+// `/chat/completions` server — they all return the same `choices[].message`
+// (non-streaming) and `choices[].delta` (streaming SSE) envelopes. These helpers
+// stay pure so the provider that touches `fetch` can be unit-tested without a
+// network: feed sample bytes/JSON and assert the assembled text.
+
+/**
+ * Extract the assistant text from a non-streaming OpenAI-compatible
+ * `/chat/completions` response body: `choices[0].message.content`.
+ *
+ * Returns `null` when there's no usable text (empty/missing choices, a
+ * non-string content, or a content that trims to nothing) so callers can treat
+ * "no output" uniformly. Pure: takes the already-parsed JSON.
+ */
+export function extractOpenAiText(
+  body: OpenAiChatResponse,
+): string | null {
+  const choices = body.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return null;
+  }
+  const content = choices[0]?.message?.content;
+  if (typeof content !== "string") {
+    return null;
+  }
+  const trimmed = content.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export interface OpenAiChatResponse {
+  choices?: Array<{
+    message?: { role?: string; content?: string };
+    finish_reason?: string;
+  }>;
+}
+
+/**
+ * A tiny, push-driven state machine for the OpenAI-compatible `/chat/completions`
+ * SSE stream (`stream: true`).
+ *
+ * Feed it raw decoded byte-chunks via `push(chunk)`; it buffers across chunk
+ * boundaries, parses complete `data:` blocks (separated by a blank line), and
+ * returns the assembled `choices[0].delta.content` strings in order. The literal
+ * `data: [DONE]` sentinel flips `done` (and is never parsed as JSON).
+ *
+ * Kept dependency-free and synchronous so it unit-tests with a hand-written byte
+ * sequence and no network. The provider drives it; this class never touches I/O.
+ */
+export class OpenAiSseParser {
+  private buffer = "";
+  private _done = false;
+
+  /** True once a `data: [DONE]` sentinel has been seen. */
+  get done(): boolean {
+    return this._done;
+  }
+
+  /**
+   * Feed one decoded chunk; returns any newly-assembled content-delta strings
+   * (in order). Concatenate them to build the streamed message text.
+   */
+  push(chunk: string): string[] {
+    this.buffer += chunk;
+    const out: string[] = [];
+
+    let sep = this.indexOfBlankLine();
+    while (sep !== -1) {
+      const block = this.buffer.slice(0, sep.index);
+      this.buffer = this.buffer.slice(sep.index + sep.length);
+      this.handleBlock(block, out);
+      sep = this.indexOfBlankLine();
+    }
+    return out;
+  }
+
+  /** Find the next blank-line separator, tolerating both \n\n and \r\n\r\n. */
+  private indexOfBlankLine(): { index: number; length: number } | -1 {
+    const lf = this.buffer.indexOf("\n\n");
+    const crlf = this.buffer.indexOf("\r\n\r\n");
+    if (lf === -1 && crlf === -1) {
+      return -1;
+    }
+    if (crlf === -1 || (lf !== -1 && lf < crlf)) {
+      return { index: lf, length: 2 };
+    }
+    return { index: crlf, length: 4 };
+  }
+
+  private handleBlock(block: string, out: string[]): void {
+    // A block may carry comment lines (`:`) and one or more `data:` lines.
+    const dataLines: string[] = [];
+    for (const rawLine of block.split("\n")) {
+      const line = rawLine.replace(/\r$/, "");
+      if (line.startsWith("data:")) {
+        // Per SSE, a single leading space after the colon is stripped.
+        dataLines.push(line.slice(5).replace(/^ /, ""));
+      }
+    }
+    if (dataLines.length === 0) {
+      return;
+    }
+
+    const payload = dataLines.join("\n");
+    if (payload === "[DONE]") {
+      this._done = true;
+      return;
+    }
+
+    let json: OpenAiStreamChunk;
+    try {
+      json = JSON.parse(payload) as OpenAiStreamChunk;
+    } catch {
+      // A malformed/partial data payload — skip it rather than throw into a
+      // stream consumer. (A truly split JSON would have buffered above.)
+      return;
+    }
+
+    const delta = json.choices?.[0]?.delta?.content;
+    if (typeof delta === "string" && delta.length > 0) {
+      out.push(delta);
+    }
+  }
+}
+
+interface OpenAiStreamChunk {
+  choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
+}

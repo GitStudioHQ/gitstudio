@@ -46,9 +46,20 @@ export class GitHubAuth implements vscode.Disposable {
         createIfNone: interactive,
         silent: !interactive ? true : undefined,
       });
+      const wasConnected = this.session !== undefined;
       this.session = session ?? undefined;
-      await this.refreshConnected();
-      this.changeEmitter.fire();
+      const nowConnected = this.session !== undefined;
+      // Fire ONLY on a real connectivity change. Firing on every token read
+      // makes any view that reads the token during its refresh loop forever
+      // (refresh → getToken → onDidChange → refresh → …).
+      if (nowConnected !== wasConnected) {
+        await vscode.commands.executeCommand(
+          "setContext",
+          "gitstudio.github.connected",
+          nowConnected,
+        );
+        this.changeEmitter.fire();
+      }
       return session?.accessToken;
     } catch {
       // User dismissed the auth prompt, or the provider is unavailable.

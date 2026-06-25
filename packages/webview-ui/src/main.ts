@@ -492,8 +492,8 @@ function startMerge(root: HTMLElement, first: MergeInitPayload & { type: "init" 
       view.render(message);
     } else if (message?.type === "applied") {
       counter.textContent = message.staged
-        ? "Merge applied and staged ✓"
-        : "Merge applied ✓";
+        ? "Merge applied and staged"
+        : "Merge applied";
       counter.classList.add("jb-done");
       applyBtn.disabled = true;
     }

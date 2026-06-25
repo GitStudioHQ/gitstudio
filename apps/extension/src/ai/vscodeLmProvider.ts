@@ -4,16 +4,19 @@ import type {
   CompleteRequest,
 } from "./gitBrain";
 
-// The zero-key path: route GitBrain through vscode.lm (GitHub Copilot's
-// Language Model API) when the host exposes it. This API does NOT exist on the
-// extension's `^1.74.0` baseline (@types/vscode@1.74.0 has no `lm` namespace),
-// so everything here is FEATURE-DETECTED at runtime and accessed through a
-// locally-declared structural shim — never `vscode.LanguageModelChatMessage`,
-// which wouldn't compile against the pinned types.
+// The zero-key path: route GitBrain through vscode.lm (the VS Code Language Model
+// API) when the host exposes it. This covers GitHub Copilot's models AND any
+// other LM provider the editor surfaces — Cursor exposes its own models through
+// the same API — so we select with NO vendor filter and let every available
+// chat model show up. This API does NOT exist on the extension's `^1.74.0`
+// baseline (@types/vscode@1.74.0 has no `lm` namespace), so everything here is
+// FEATURE-DETECTED at runtime and accessed through a locally-declared structural
+// shim — never `vscode.LanguageModelChatMessage`, which wouldn't compile against
+// the pinned types.
 //
-// If the user hasn't granted Copilot LM access, sendRequest may throw (or the
-// consent prompt appears on first use); we catch and return null gracefully so
-// AI features simply stay hidden rather than erroring into a git flow.
+// If the user hasn't granted LM access, sendRequest may throw (or the consent
+// prompt appears on first use); we catch and return null gracefully so AI
+// features simply stay hidden rather than erroring into a git flow.
 
 /** The slice of the vscode.lm surface we use, declared locally to compile on 1.74. */
 interface LmShim {
@@ -23,6 +26,11 @@ interface LmShim {
 }
 
 interface LmChatModel {
+  /** Stable identifier for the model (used to remember the user's pick). */
+  readonly id?: string;
+  readonly vendor?: string;
+  readonly family?: string;
+  readonly name?: string;
   sendRequest: (
     messages: unknown[],
     options: Record<string, unknown>,
@@ -47,31 +55,89 @@ function getMessageCtor(): LmMessageCtor | undefined {
   return ctor && typeof ctor.User === "function" ? ctor : undefined;
 }
 
+/** Public shape of an available chat model, for the model picker. */
+export interface LmModelInfo {
+  id: string;
+  vendor: string;
+  family: string;
+  name: string;
+}
+
+export interface VsCodeLmProviderOptions {
+  /**
+   * Returns the model id the user picked via the model picker (or undefined to
+   * use the first available). Injected so the provider stays decoupled from the
+   * globalState store.
+   */
+  getPreferredModelId?: () => string | undefined;
+}
+
 export class VsCodeLmProvider implements GitBrainProvider {
   readonly id = "vscode-lm";
 
-  /** Available iff the host exposes vscode.lm AND a Copilot model is selectable. */
+  constructor(private readonly opts: VsCodeLmProviderOptions = {}) {}
+
+  /** Available iff the host exposes vscode.lm AND a chat model is selectable. */
   async isAvailable(): Promise<boolean> {
     const lm = getLm();
     if (!lm || !getMessageCtor()) {
       return false;
     }
     try {
-      const models = await lm.selectChatModels!({ vendor: "copilot" });
+      // No vendor filter: Copilot's and Cursor's models both qualify.
+      const models = await lm.selectChatModels!();
       return Array.isArray(models) && models.length > 0;
     } catch {
       return false;
     }
   }
 
+  /** List every available chat model (no vendor filter), for the picker. */
+  async listModels(): Promise<LmModelInfo[]> {
+    const lm = getLm();
+    if (!lm || !getMessageCtor()) {
+      return [];
+    }
+    try {
+      const models = await lm.selectChatModels!();
+      if (!Array.isArray(models)) {
+        return [];
+      }
+      return models
+        .filter((m) => typeof m.id === "string" && m.id.length > 0)
+        .map((m) => ({
+          id: m.id as string,
+          vendor: m.vendor ?? "",
+          family: m.family ?? "",
+          name: m.name ?? m.family ?? m.id ?? "",
+        }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Pick the model to use: the remembered id when it's still available, else the
+   * first available model (so a stale/removed pick degrades gracefully).
+   */
   private async selectModel(): Promise<LmChatModel | undefined> {
     const lm = getLm();
     if (!lm) {
       return undefined;
     }
     try {
-      const models = await lm.selectChatModels!({ vendor: "copilot" });
-      return Array.isArray(models) && models.length > 0 ? models[0] : undefined;
+      const models = await lm.selectChatModels!();
+      if (!Array.isArray(models) || models.length === 0) {
+        return undefined;
+      }
+      const preferred = this.opts.getPreferredModelId?.();
+      if (preferred) {
+        const match = models.find((m) => m.id === preferred);
+        if (match) {
+          return match;
+        }
+      }
+      return models[0];
     } catch {
       return undefined;
     }

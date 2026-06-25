@@ -381,6 +381,7 @@ export class DiffView {
     accept.className = `jb-gutter-btn jb-btn-accept jb-role-${block.role}`;
     accept.appendChild(iconElement(chevronDoubleRight));
     accept.title = "Replace with the left side's text";
+    accept.setAttribute("aria-label", "Replace with the left side's text");
     accept.addEventListener("mousedown", (event) => {
       event.preventDefault();
       this.transferBlock(block);

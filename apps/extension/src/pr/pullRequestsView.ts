@@ -24,6 +24,12 @@ const GROUP_LABELS: Record<GroupKind, string> = {
   open: "All open",
 };
 
+const GROUP_ICONS: Record<GroupKind, string> = {
+  review: "eye",
+  mine: "account",
+  open: "git-pull-request",
+};
+
 /** A collapsible group header. */
 class GroupNode extends vscode.TreeItem {
   readonly kind = "group" as const;
@@ -38,6 +44,10 @@ class GroupNode extends vscode.TreeItem {
         : vscode.TreeItemCollapsibleState.Collapsed,
     );
     this.description = String(prs.length);
+    this.iconPath = new vscode.ThemeIcon(GROUP_ICONS[group]);
+    this.tooltip = `${GROUP_LABELS[group]} — ${prs.length} pull request${
+      prs.length === 1 ? "" : "s"
+    }`;
     this.contextValue = `gitstudio.prGroup.${group}`;
   }
 }
@@ -54,20 +64,21 @@ export class PrNode extends vscode.TreeItem {
 
     const author = pr.user?.login ?? "unknown";
     const age = relativeTime(Date.parse(pr.createdAt) / 1000);
-    this.description = `${author} · ${age}`;
 
-    const icon = pr.draft
+    // The PR icon carries CI status as a themed color so the row stays a clean
+    // single line; draft PRs read muted regardless of CI.
+    const ciColor = statusColor(statusGlyph);
+    this.iconPath = pr.draft
       ? new vscode.ThemeIcon("git-pull-request-draft")
-      : new vscode.ThemeIcon("git-pull-request");
-    this.iconPath = icon;
+      : new vscode.ThemeIcon("git-pull-request", ciColor);
 
-    if (statusGlyph) {
-      // Fold the CI glyph into the label suffix so it reads without a column.
-      this.description = `${statusGlyph} ${this.description}`;
-    }
+    // CI glyph (when known) leads the muted metadata: status · author · age.
+    this.description = statusGlyph
+      ? `${statusGlyph} ${author} · ${age}`
+      : `${author} · ${age}`;
 
     this.contextValue = "gitstudio.pr";
-    this.tooltip = buildTooltip(pr);
+    this.tooltip = buildTooltip(pr, statusGlyph);
     this.command = {
       command: "gitstudio.pr.openDescription",
       title: "Open Description",
@@ -86,12 +97,54 @@ class MessageNode extends vscode.TreeItem {
   }
 }
 
-function buildTooltip(pr: PullRequest): vscode.MarkdownString {
+/** Map a CI glyph to a themed status color for the row icon. */
+function statusColor(glyph?: string): vscode.ThemeColor | undefined {
+  switch (glyph) {
+    case "$(check)":
+      return new vscode.ThemeColor("charts.green");
+    case "$(x)":
+      return new vscode.ThemeColor("charts.red");
+    case "$(circle-filled)":
+      return new vscode.ThemeColor("charts.yellow");
+    default:
+      return undefined;
+  }
+}
+
+/** Human-readable CI label for the tooltip. */
+function statusLabel(glyph?: string): string | undefined {
+  switch (glyph) {
+    case "$(check)":
+      return "$(check) Checks passing";
+    case "$(x)":
+      return "$(x) Checks failing";
+    case "$(circle-filled)":
+      return "$(circle-filled) Checks running";
+    default:
+      return undefined;
+  }
+}
+
+function buildTooltip(
+  pr: PullRequest,
+  statusGlyph?: string,
+): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   md.supportThemeIcons = true;
-  md.appendMarkdown(`**#${pr.number} ${escapeMd(pr.title)}**\n\n`);
+  const headIcon = pr.draft
+    ? "$(git-pull-request-draft)"
+    : "$(git-pull-request)";
+  md.appendMarkdown(`${headIcon} **#${pr.number} ${escapeMd(pr.title)}**\n\n`);
+  const author = pr.user?.login;
+  if (author) {
+    md.appendMarkdown(`$(account) ${escapeMd(author)}\n\n`);
+  }
   if (pr.draft) {
     md.appendMarkdown(`$(git-pull-request-draft) Draft\n\n`);
+  }
+  const ci = statusLabel(statusGlyph);
+  if (ci) {
+    md.appendMarkdown(`${ci}\n\n`);
   }
   md.appendMarkdown(
     `$(git-branch) \`${escapeMd(pr.base.ref)}\` ← \`${escapeMd(pr.head.label)}\`\n\n`,

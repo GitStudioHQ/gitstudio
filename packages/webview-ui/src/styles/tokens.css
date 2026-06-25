@@ -1,0 +1,236 @@
+/* ============================================================================
+ * GitStudio webview design tokens
+ * ----------------------------------------------------------------------------
+ * Theme-native primitives + a few utility classes, built ENTIRELY on
+ * --vscode-* variables so every surface looks correct in dark, light, and
+ * high-contrast themes. The only non-theme colors anywhere in the suite are
+ * the existing commit-graph lane palette (graph.css) — never add hardcoded
+ * chrome colors here.
+ *
+ * Surfaces opt in with either:
+ *     @import "./tokens.css";            (from a sibling stylesheet)
+ * or by importing a bundle whose entry already pulls tokens in (diff.css does).
+ *
+ * Utility classes exported for surface agents:
+ *   .gs-section-header   11px uppercase muted section label
+ *   .gs-chip             pill / badge (modifiers below)
+ *     .gs-chip--branch     local branch  (accent-tinted)
+ *     .gs-chip--tag        tag           (amber / charts-yellow tinted)
+ *     .gs-chip--remote     remote ref    (muted)
+ *     .gs-chip--head       current HEAD  (filled accent)
+ *   .gs-btn              secondary button   (+ .gs-btn--primary)
+ *   .gs-row              list row (22–24px) with .is-hover / .is-selected
+ *   .gs-focusable        applies the standard :focus-visible ring
+ *   .gs-muted            descriptionForeground secondary text
+ *   .gs-mono             tabular monospace (sha / counts)
+ *
+ * Icon masks (use as `-webkit-mask`/`mask` on a currentColor box):
+ *   --gs-icon-check, --gs-icon-error, --gs-icon-chevron-up,
+ *   --gs-icon-chevron-down
+ * ========================================================================== */
+
+:root {
+  /* ---- Typography ------------------------------------------------------- */
+  --gs-font-ui: var(--vscode-font-family);
+  --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+  --gs-text-base: 13px;
+  --gs-text-secondary: 11.5px;
+  --gs-text-micro: 11px;
+  --gs-weight-emphasis: 600;
+
+  /* ---- Spacing (4px grid) ---------------------------------------------- */
+  --gs-space-1: 4px;
+  --gs-space-2: 8px;
+  --gs-space-3: 12px;
+  --gs-space-4: 16px;
+  --gs-row-height: 24px;
+  --gs-pad-row: 6px;
+
+  /* ---- Radii ------------------------------------------------------------ */
+  --gs-radius: 4px;
+  --gs-radius-sm: 3px;
+
+  /* ---- Color (theme-native; never hardcode chrome) ---------------------- */
+  --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --gs-fg: var(--vscode-foreground);
+  --gs-fg-muted: var(--vscode-descriptionForeground);
+  --gs-border: var(--vscode-panel-border, var(--vscode-widget-border));
+  --gs-hover: var(--vscode-list-hoverBackground);
+  --gs-selection-bg: var(--vscode-list-activeSelectionBackground);
+  --gs-selection-fg: var(--vscode-list-activeSelectionForeground);
+  --gs-accent: var(--vscode-focusBorder);
+  --gs-link: var(--vscode-textLink-foreground);
+
+  --gs-chip-bg: var(--vscode-badge-background);
+  --gs-chip-fg: var(--vscode-badge-foreground);
+
+  --gs-status-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
+  --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
+  --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
+  --gs-amber: var(--vscode-charts-yellow);
+
+  /* ---- Motion ----------------------------------------------------------- */
+  --gs-motion-fast: 120ms;
+  --gs-motion: 150ms;
+  --gs-ease: ease;
+
+  /* ---- Inline icon masks (currentColor via mask) ------------------------ */
+  --gs-icon-check: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg>');
+  --gs-icon-error: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/></svg>');
+  --gs-icon-chevron-up: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg>');
+  --gs-icon-chevron-down: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>');
+}
+
+/* ---- Section header ----------------------------------------------------- */
+.gs-section-header {
+  font: var(--gs-weight-emphasis) var(--gs-text-micro) / 1.4 var(--gs-font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gs-fg-muted);
+  padding: var(--gs-space-2) var(--gs-pad-row) var(--gs-space-1);
+  margin: 0;
+}
+
+/* ---- Secondary / muted text & mono -------------------------------------- */
+.gs-muted {
+  color: var(--gs-fg-muted);
+  font-size: var(--gs-text-secondary);
+}
+.gs-mono {
+  font-family: var(--gs-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Chips / pills ------------------------------------------------------ */
+.gs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gs-space-1);
+  height: 17px;
+  padding: 0 6px;
+  border-radius: var(--gs-radius);
+  font: var(--gs-text-micro) / 1 var(--gs-font-ui);
+  color: var(--gs-chip-fg);
+  background: var(--gs-chip-bg);
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.gs-chip--branch {
+  color: var(--gs-accent);
+  background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--gs-accent) 34%, transparent);
+}
+.gs-chip--tag {
+  color: var(--gs-amber);
+  background: color-mix(in srgb, var(--gs-amber) 14%, transparent);
+  border-color: color-mix(in srgb, var(--gs-amber) 32%, transparent);
+}
+.gs-chip--remote {
+  color: var(--gs-fg-muted);
+  background: color-mix(in srgb, var(--gs-fg-muted) 12%, transparent);
+  border-color: color-mix(in srgb, var(--gs-fg-muted) 24%, transparent);
+}
+.gs-chip--head {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+  font-weight: var(--gs-weight-emphasis);
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+.gs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gs-space-1);
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--gs-radius);
+  font: var(--gs-text-base) var(--gs-font-ui);
+  color: var(--vscode-button-secondaryForeground, var(--gs-fg));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  cursor: pointer;
+  transition: background var(--gs-motion) var(--gs-ease);
+}
+.gs-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover));
+}
+.gs-btn--primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+.gs-btn--primary:hover {
+  background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+}
+.gs-btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- List rows ---------------------------------------------------------- */
+.gs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gs-space-2);
+  min-height: var(--gs-row-height);
+  padding: 0 var(--gs-pad-row);
+  border-left: 2px solid transparent;
+  color: var(--gs-fg);
+  font: var(--gs-text-base) var(--gs-font-ui);
+  cursor: pointer;
+  transition: background var(--gs-motion-fast) var(--gs-ease);
+}
+.gs-row:hover,
+.gs-row.is-hover {
+  background: var(--gs-hover);
+}
+.gs-row.is-selected,
+.gs-row[aria-selected="true"] {
+  background: var(--gs-selection-bg);
+  color: var(--gs-selection-fg);
+  border-left-color: var(--gs-accent);
+}
+
+/* ---- Focus ring --------------------------------------------------------- */
+.gs-focusable:focus-visible,
+.gs-row:focus-visible,
+.gs-btn:focus-visible,
+.gs-chip:focus-visible {
+  outline: 1px solid var(--gs-accent);
+  outline-offset: -1px;
+  border-radius: var(--gs-radius);
+}
+
+/* ---- Inline status glyphs (currentColor via mask) ----------------------- */
+.gs-glyph {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+  background-color: currentColor;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.gs-glyph--check {
+  -webkit-mask-image: var(--gs-icon-check);
+  mask-image: var(--gs-icon-check);
+  color: var(--gs-status-added);
+}
+.gs-glyph--error {
+  -webkit-mask-image: var(--gs-icon-error);
+  mask-image: var(--gs-icon-error);
+  color: var(--gs-status-deleted);
+}
+
+/* ---- Motion: respect reduced-motion ------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .gs-btn,
+  .gs-row {
+    transition: none;
+  }
+}

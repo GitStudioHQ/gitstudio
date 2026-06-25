@@ -54,6 +54,7 @@ export class BlameController implements vscode.Disposable {
   constructor(
     private readonly repos: RepoManager,
     private readonly context: vscode.ExtensionContext,
+    private readonly log?: (m: string) => void,
   ) {
     this.statusBar = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
@@ -351,7 +352,13 @@ export class BlameController implements vscode.Disposable {
             contentText: annotationGutter(commit),
             color: new vscode.ThemeColor("editorCodeLens.foreground"),
             backgroundColor: ramp,
-            width: "13em",
+            // Fixed-width monospace column with a thin right rule — the
+            // JetBrains "Annotate" gutter. The border is injected via the
+            // textDecoration escape hatch (decoration CSS can't set it directly).
+            width: "21ch",
+            margin: "0 0.8em 0 0",
+            textDecoration:
+              "none; border-right: 1px solid var(--vscode-panel-border); padding-right: 0.6em; white-space: pre",
           },
         },
       });
@@ -401,7 +408,14 @@ export class BlameController implements vscode.Disposable {
 
     const promise = ctx.ctx.blame
       .blameFile(relPath, { contents, signal: controller.signal })
-      .catch(() => undefined);
+      .catch((e: unknown) => {
+        if (!controller.signal.aborted) {
+          const msg = e instanceof Error ? e.message : String(e);
+          this.log?.(`blame failed for ${relPath}: ${msg}`);
+          console.error("[GitStudio] blame failed", e);
+        }
+        return undefined;
+      });
     this.blameCache.set(key, { version: document.version, result: promise });
     return promise;
   }
@@ -525,15 +539,14 @@ function statusBarTooltip(commit: BlameCommit): vscode.MarkdownString {
   return md;
 }
 
-/** Gutter annotation: `<short-sha> <author short> <date>`. */
+/** JetBrains-style gutter annotation: `<YYYY-MM-DD>  <author>`, padded to align. */
 function annotationGutter(commit: BlameCommit): string {
   if (commit.sha === UNCOMMITTED_SHA) {
-    return "0000000 You             now";
+    return pad("Uncommitted", 21);
   }
-  const sha = short(commit.sha);
-  const author = pad(authorShort(commit.author), 12);
-  const date = isoDate(commit.authorTime);
-  return `${sha} ${author} ${date}`;
+  const date = isoDate(commit.authorTime); // 2024-06-20
+  const author = authorShort(commit.author, 9);
+  return pad(`${date}  ${author}`, 21);
 }
 
 function hoverMarkdown(commit: BlameCommit): vscode.MarkdownString {
@@ -611,8 +624,11 @@ function truncate(text: string, max: number): string {
   return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
 }
 
-function authorShort(author: string): string {
-  return author.length > 12 ? `${author.slice(0, 11)}…` : author;
+function authorShort(author: string, max = 12): string {
+  // First name keeps the column tidy when the full name is long.
+  const first = author.split(/\s+/)[0] ?? author;
+  const base = first.length <= max ? author : first;
+  return base.length > max ? `${base.slice(0, max - 1)}…` : base;
 }
 
 function pad(text: string, width: number): string {

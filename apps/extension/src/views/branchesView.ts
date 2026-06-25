@@ -32,6 +32,14 @@ class CategoryNode extends vscode.TreeItem {
     this.iconPath = new vscode.ThemeIcon(
       category === "remotes" ? "cloud" : category === "tags" ? "tag" : "git-branch",
     );
+    const noun =
+      category === "remotes"
+        ? "remote-tracking branch"
+        : category === "tags"
+          ? "tag"
+          : "local branch";
+    const plural = noun.endsWith("h") ? `${noun}es` : `${noun}s`;
+    this.tooltip = `${count} ${count === 1 ? noun : plural}`;
   }
 }
 
@@ -41,19 +49,39 @@ class RefNode extends vscode.TreeItem {
   constructor(readonly ref: GitRef) {
     super(ref.name, vscode.TreeItemCollapsibleState.None);
 
+    const shortSha = ref.sha.slice(0, 7);
+
     if (ref.type === "head") {
+      // The current branch is the focal point: filled accent check + bold-ish
+      // "current" lead, upstream as muted trailing metadata.
       this.iconPath = ref.isCurrent
-        ? new vscode.ThemeIcon("target")
+        ? new vscode.ThemeIcon(
+            "check",
+            new vscode.ThemeColor("gitDecoration.modifiedResourceForeground"),
+          )
         : new vscode.ThemeIcon("git-branch");
+      const meta: string[] = [];
       if (ref.isCurrent) {
-        this.description = "current";
+        meta.push("current");
       }
+      if (ref.upstream) {
+        meta.push(ref.upstream);
+      }
+      meta.push(shortSha);
+      this.description = meta.join(" · ");
       this.contextValue = "gitstudio.branch";
     } else if (ref.type === "remote") {
       this.iconPath = new vscode.ThemeIcon("cloud");
+      this.description = shortSha;
       this.contextValue = "gitstudio.remoteBranch";
     } else {
-      this.iconPath = new vscode.ThemeIcon("tag");
+      // Tags read in the theme's "yellow/amber" accent, matching the chip
+      // language in the webviews.
+      this.iconPath = new vscode.ThemeIcon(
+        "tag",
+        new vscode.ThemeColor("charts.yellow"),
+      );
+      this.description = shortSha;
       this.contextValue = "gitstudio.tag";
     }
 
@@ -64,10 +92,20 @@ class RefNode extends vscode.TreeItem {
 function buildRefTooltip(ref: GitRef): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   md.supportThemeIcons = true;
-  md.appendMarkdown(`**${escapeMarkdown(ref.name)}**\n\n`);
+  const icon =
+    ref.type === "head"
+      ? "$(git-branch)"
+      : ref.type === "remote"
+        ? "$(cloud)"
+        : "$(tag)";
+  md.appendMarkdown(`${icon} **${escapeMarkdown(ref.name)}**`);
+  if (ref.type === "head" && ref.isCurrent) {
+    md.appendMarkdown(` · $(check) current`);
+  }
+  md.appendMarkdown(`\n\n`);
   md.appendMarkdown(`$(git-commit) \`${ref.sha.slice(0, 7)}\``);
   if (ref.upstream) {
-    md.appendMarkdown(`\n\n$(cloud) ${escapeMarkdown(ref.upstream)}`);
+    md.appendMarkdown(`\n\n$(cloud) tracking \`${escapeMarkdown(ref.upstream)}\``);
   }
   return md;
 }

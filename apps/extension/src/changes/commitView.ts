@@ -24,7 +24,7 @@ interface ToWebview {
   lastMessage?: string;
   signoffDefault: boolean;
   busy?: boolean;
-  /** Whether the GitBrain ✨ "Generate message" affordance should be shown. */
+  /** Whether the GitBrain "Generate message" sparkle affordance should be shown. */
   aiEnabled?: boolean;
 }
 
@@ -51,7 +51,7 @@ export class CommitViewProvider
   constructor(
     private readonly repos: RepoManager,
     private readonly onCommitted: () => void,
-    /** Optional GitBrain hook for the ✨ "Generate message" button. */
+    /** Optional GitBrain hook for the "Generate message" sparkle button. */
     private readonly generator?: CommitMessageGenerator,
   ) {
     this.disposables.push(this.repos.onDidChange(() => void this.pushState()));
@@ -254,138 +254,250 @@ export class CommitViewProvider
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style nonce="${nonce}">
-    :root { color-scheme: light dark; }
+    :root {
+      color-scheme: light dark;
+      --gs-font-ui: var(--vscode-font-family);
+      --gs-fg: var(--vscode-foreground);
+      --gs-fg-muted: var(--vscode-descriptionForeground);
+      --gs-accent: var(--vscode-focusBorder);
+      --gs-radius: 4px;
+      --gs-motion: 150ms;
+    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 8px;
-      color: var(--vscode-foreground);
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
+      padding: 10px 8px 8px;
+      color: var(--gs-fg);
+      font-family: var(--gs-font-ui);
+      font-size: 13px;
+      line-height: 1.4;
       background: var(--vscode-sideBar-background, transparent);
     }
+
+    /* ---- Staged count strip ------------------------------------------- */
     .count {
-      font-size: 11px;
-      color: var(--vscode-descriptionForeground);
-      margin: 0 2px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: var(--gs-fg-muted);
+      margin: 0 2px 8px;
     }
+    .count .dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--gs-fg-muted);
+      flex: 0 0 auto;
+    }
+    .count.is-staged .dot {
+      background: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
+    }
+    .count .num {
+      font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      color: var(--gs-fg);
+    }
+
+    /* ---- Message field ------------------------------------------------- */
+    .message-wrap { position: relative; }
     textarea {
       width: 100%;
-      box-sizing: border-box;
       resize: none;
-      min-height: 54px;
+      min-height: 56px;
       max-height: 320px;
-      padding: 6px 8px;
+      padding: 7px 9px;
+      padding-right: 34px;
       color: var(--vscode-input-foreground);
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-input-border, transparent);
-      border-radius: 4px;
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-      line-height: 1.4;
+      border-radius: var(--gs-radius);
+      font-family: var(--gs-font-ui);
+      font-size: 13px;
+      line-height: 1.45;
       outline: none;
+      transition: border-color var(--gs-motion) ease;
     }
-    textarea:focus { border-color: var(--vscode-focusBorder); }
+    textarea:focus { border-color: var(--gs-accent); }
     textarea::placeholder { color: var(--vscode-input-placeholderForeground); }
-    .message-wrap { position: relative; }
+
+    /* ---- Sparkle / generate button (crisp SVG, never emoji) ----------- */
     .sparkle {
       position: absolute;
-      top: 4px;
-      right: 4px;
+      top: 5px;
+      right: 5px;
       display: none;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      width: 24px;
+      height: 24px;
       padding: 0;
       border: none;
-      border-radius: 4px;
+      border-radius: var(--gs-radius);
       background: transparent;
-      color: var(--vscode-descriptionForeground);
+      color: var(--gs-fg-muted);
       cursor: pointer;
-      font-size: 13px;
-      line-height: 1;
+      transition: color var(--gs-motion) ease, background var(--gs-motion) ease;
     }
     .sparkle.visible { display: inline-flex; }
+    .sparkle svg { width: 15px; height: 15px; display: block; }
+    .sparkle .spinner { display: none; }
+    .sparkle.loading .glyph { display: none; }
+    .sparkle.loading .spinner { display: block; }
     .sparkle:hover {
-      color: var(--vscode-foreground);
-      background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.18));
+      color: var(--vscode-textLink-foreground, var(--gs-fg));
+      background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
     }
-    .sparkle:disabled { cursor: default; opacity: 0.7; }
-    .sparkle:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-    .sparkle.loading { animation: spin 0.9s linear infinite; }
+    .sparkle:disabled { cursor: default; }
+    .sparkle:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+    .sparkle.loading .spinner { animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) {
-      .sparkle.loading { animation: none; }
-    }
+
+    /* ---- Toggles row --------------------------------------------------- */
     .toggles {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px 12px;
+      gap: 6px 14px;
       align-items: center;
-      margin: 8px 2px 6px;
+      margin: 10px 2px 8px;
       font-size: 12px;
     }
-    .toggles label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+    .toggles label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      color: var(--gs-fg);
+    }
+    .toggles input[type="checkbox"] { accent-color: var(--gs-accent); margin: 0; }
+    .toggles label:focus-within { outline: none; }
+
+    /* ---- Author override row ------------------------------------------ */
     .author-row { margin: 0 0 8px; }
     .author-row.hidden { display: none; }
     .author-row input {
       width: 100%;
-      box-sizing: border-box;
-      padding: 4px 8px;
+      padding: 5px 9px;
       color: var(--vscode-input-foreground);
       background: var(--vscode-input-background);
       border: 1px solid var(--vscode-input-border, transparent);
-      border-radius: 4px;
+      border-radius: var(--gs-radius);
+      font-family: var(--gs-font-ui);
       font-size: 12px;
       outline: none;
+      transition: border-color var(--gs-motion) ease;
     }
-    .author-row input:focus { border-color: var(--vscode-focusBorder); }
+    .author-row input:focus { border-color: var(--gs-accent); }
+
+    /* ---- Inline link button (Author…) --------------------------------- */
     .link {
-      background: none; border: none; padding: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: none; border: none; padding: 2px 2px;
       color: var(--vscode-textLink-foreground);
-      cursor: pointer; font-size: 11px;
+      cursor: pointer; font-size: 11.5px;
+      border-radius: var(--gs-radius);
     }
+    .link svg { width: 12px; height: 12px; }
+    .link[aria-expanded="true"] .chev { transform: rotate(180deg); }
+    .link .chev { transition: transform var(--gs-motion) ease; }
+
+    /* ---- Action buttons ------------------------------------------------ */
     .actions { display: flex; gap: 6px; }
+    button.gs-commit {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 1px solid transparent;
+      border-radius: var(--gs-radius);
+      padding: 6px 10px;
+      cursor: pointer;
+      font-family: var(--gs-font-ui);
+      font-size: 13px;
+      line-height: 1.2;
+      transition: background var(--gs-motion) ease, opacity var(--gs-motion) ease;
+    }
+    button.gs-commit svg { width: 14px; height: 14px; flex: 0 0 auto; }
     button.primary {
       flex: 1;
-      padding: 6px 10px;
       color: var(--vscode-button-foreground);
       background: var(--vscode-button-background);
-      border: none; border-radius: 4px;
-      cursor: pointer; font-size: 13px; font-weight: 600;
+      font-weight: 600;
     }
     button.primary:hover { background: var(--vscode-button-hoverBackground); }
-    button.primary:disabled { opacity: 0.5; cursor: default; }
-    button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
-    .link:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
     button.split {
-      padding: 6px 10px;
       color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
       background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
-      border: none; border-radius: 4px; cursor: pointer; font-size: 13px;
     }
     button.split:hover {
       background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
     }
-    button.split:disabled { opacity: 0.5; cursor: default; }
-    .hint { margin: 6px 2px 0; font-size: 10px; color: var(--vscode-descriptionForeground); }
+    button.gs-commit:disabled { opacity: 0.45; cursor: default; }
+    button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 2px; }
+    .link:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+
+    /* ---- Keyboard hint ------------------------------------------------- */
+    .hint {
+      margin: 8px 2px 0;
+      font-size: 10.5px;
+      color: var(--gs-fg-muted);
+    }
+    .hint kbd {
+      font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+      font-size: 10px;
+      padding: 0 3px;
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--gs-fg-muted) 16%, transparent);
+      color: var(--gs-fg);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      textarea, .author-row input, .sparkle, button.gs-commit, .link .chev {
+        transition: none;
+      }
+      .sparkle.loading .spinner { animation: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="count" id="count">No staged changes</div>
+  <div class="count" id="count">
+    <span class="dot" aria-hidden="true"></span>
+    <span id="count-text">No staged changes</span>
+  </div>
   <div class="message-wrap">
     <textarea id="message" rows="3"
       placeholder="Message (Enter to commit, summary + description)"
       aria-label="Commit message"></textarea>
     <button class="sparkle" id="generate" type="button"
       title="Generate commit message with GitBrain"
-      aria-label="Generate commit message">&#x2728;</button>
+      aria-label="Generate commit message">
+      <svg class="glyph" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+        stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 1.6l1.5 3.9 3.9 1.5-3.9 1.5L8 12.4 6.5 8.5 2.6 7l3.9-1.5z"/>
+        <path d="M12.8 11.2l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z"/>
+      </svg>
+      <svg class="spinner" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+        stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+        <path d="M8 1.8a6.2 6.2 0 1 1-4.4 1.8" opacity="0.9"/>
+      </svg>
+    </button>
   </div>
 
   <div class="toggles">
     <label><input type="checkbox" id="amend" /> Amend</label>
     <label><input type="checkbox" id="signoff" /> Sign-off</label>
-    <button class="link" id="author-toggle" type="button">Author…</button>
+    <button class="link" id="author-toggle" type="button" aria-expanded="false"
+      aria-controls="author-row">
+      Author
+      <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+        stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 6l4 4 4-4"/>
+      </svg>
+    </button>
   </div>
 
   <div class="author-row hidden" id="author-row">
@@ -395,12 +507,26 @@ export class CommitViewProvider
   </div>
 
   <div class="actions">
-    <button class="primary" id="commit" type="button">Commit</button>
-    <button class="split" id="commit-push" type="button" title="Commit &amp; Push">
-      Commit &amp; Push
+    <button class="gs-commit primary" id="commit" type="button">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="8" cy="8" r="2.4"/>
+        <path d="M8 1.4v4.2M8 10.4v4.2"/>
+      </svg>
+      <span id="commit-label">Commit</span>
+    </button>
+    <button class="gs-commit split" id="commit-push" type="button"
+      title="Commit &amp; Push" aria-label="Commit and Push">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M8 13.5V4.5M4.5 8L8 4.5 11.5 8"/>
+      </svg>
+      <span>Push</span>
     </button>
   </div>
-  <div class="hint">Cmd/Ctrl+Enter to commit · Enter on the message commits</div>
+  <div class="hint">
+    <kbd>Enter</kbd> to commit · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
+  </div>
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
@@ -414,6 +540,9 @@ export class CommitViewProvider
     const pushBtn = $("commit-push");
     const generateBtn = $("generate");
     const count = $("count");
+    const countText = $("count-text");
+    const commitLabel = $("commit-label");
+    const authorToggle = $("author-toggle");
     let stagedCount = 0;
     let generating = false;
 
@@ -429,16 +558,20 @@ export class CommitViewProvider
     }
 
     function renderCount() {
+      const files = (n) => n + " staged " + (n === 1 ? "file" : "files");
       if (amend.checked) {
-        count.textContent = stagedCount > 0
-          ? "Amend · " + stagedCount + " staged " + (stagedCount === 1 ? "file" : "files")
+        countText.textContent = stagedCount > 0
+          ? "Amend · " + files(stagedCount)
           : "Amend last commit";
+        count.classList.toggle("is-staged", stagedCount > 0);
       } else if (stagedCount === 0) {
-        count.textContent = "No staged changes";
+        countText.textContent = "No staged changes";
+        count.classList.remove("is-staged");
       } else {
-        count.textContent = "Commit " + stagedCount + " staged " + (stagedCount === 1 ? "file" : "files");
+        countText.textContent = "Commit " + files(stagedCount);
+        count.classList.add("is-staged");
       }
-      commitBtn.textContent = amend.checked ? "Amend" : "Commit";
+      commitLabel.textContent = amend.checked ? "Amend" : "Commit";
     }
 
     function doCommit(push) {
@@ -459,7 +592,10 @@ export class CommitViewProvider
       generating = on;
       generateBtn.disabled = on;
       generateBtn.classList.toggle("loading", on);
-      generateBtn.innerHTML = on ? "&#x21BB;" : "&#x2728;";
+      generateBtn.setAttribute(
+        "aria-label",
+        on ? "Generating commit message…" : "Generate commit message",
+      );
     }
 
     generateBtn.addEventListener("click", () => {
@@ -474,9 +610,11 @@ export class CommitViewProvider
       vscode.postMessage({ type: "amendToggled", amend: amend.checked });
     });
 
-    $("author-toggle").addEventListener("click", () => {
+    authorToggle.addEventListener("click", () => {
       authorRow.classList.toggle("hidden");
-      if (!authorRow.classList.contains("hidden")) author.focus();
+      const open = !authorRow.classList.contains("hidden");
+      authorToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) author.focus();
     });
 
     message.addEventListener("keydown", (e) => {
@@ -513,6 +651,8 @@ export class CommitViewProvider
         message.value = "";
         amend.checked = false;
         author.value = "";
+        authorRow.classList.add("hidden");
+        authorToggle.setAttribute("aria-expanded", "false");
         autoGrow();
         renderCount();
       }

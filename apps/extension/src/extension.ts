@@ -77,6 +77,9 @@ import { GitBrain } from "./ai/gitBrain";
 import {
   setApiKey,
   clearApiKey,
+  setOpenAIKey,
+  clearOpenAIKey,
+  selectModelCommand,
   draftCommitMessage,
   generateCommitMessageCommand,
   explainDiffCommand,
@@ -96,6 +99,12 @@ import { registerPrFeature } from "./pr/prFeature";
 // first resolved (TreeDataProvider.getChildren). Stable VS Code APIs only, so
 // the same build ships identically to the Marketplace and Open VSX (Cursor).
 export function activate(context: vscode.ExtensionContext): void {
+  const out = vscode.window.createOutputChannel("GitStudio");
+  context.subscriptions.push(out);
+  const log = (m: string): void =>
+    out.appendLine(`[${new Date().toISOString().slice(11, 23)}] ${m}`);
+  log("activate() called");
+
   const WALKTHROUGH_ID = "gitstudio.gitstudio#gitstudio.gettingStarted";
   context.subscriptions.push(
     vscode.commands.registerCommand("gitstudio.showWelcome", () => {
@@ -128,10 +137,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // slow git extension never blocks startup. The views attach as soon as it
   // resolves and render empty (or the no-repo welcome) until repos arrive.
   void RepoManager.create().then((repos) => {
+    try {
     context.subscriptions.push(repos);
+    log(
+      `RepoManager ready — repos=${repos.getAll().length}, active=${
+        repos.getActive()?.root ?? "none"
+      }`,
+    );
 
     // Inline blame, status bar, rich hover, and full-file annotations.
-    const blame = new BlameController(repos, context);
+    const blame = new BlameController(repos, context, log);
     context.subscriptions.push(blame);
 
     const commitsProvider = new CommitsTreeProvider(repos);
@@ -160,7 +175,6 @@ export function activate(context: vscode.ExtensionContext): void {
         REVISION_SCHEME,
         revisionContent,
       ),
-      registerTimelineProvider("file", timelineProvider),
       vscode.commands.registerCommand("gitstudio.refreshCommits", () => {
         commitsProvider.refresh();
       }),
@@ -199,6 +213,19 @@ export function activate(context: vscode.ExtensionContext): void {
       }),
     );
 
+    // File history in the native Timeline relies on the `timeline` PROPOSED API,
+    // which published extensions cannot use in stable VS Code / Cursor — calling
+    // it throws. Guard it so it lights up the Timeline where available (Insiders
+    // / dev host) and is silently skipped otherwise. File & line history remain
+    // available via the GitStudio commands regardless.
+    try {
+      context.subscriptions.push(
+        registerTimelineProvider("file", timelineProvider),
+      );
+    } catch {
+      log("native Timeline integration skipped (proposed API unavailable)");
+    }
+
     // Rich 3-pane merge + side-by-side diff (M6). The custom editor and the
     // diff-panel serializer must be registered for the webview tabs to resolve;
     // auto-open routes new conflicts into the merge editor (respecting the
@@ -235,8 +262,18 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand("gitstudio.ai.clearApiKey", () =>
         clearApiKey(context, brain),
       ),
-      vscode.commands.registerCommand("gitstudio.ai.generateCommitMessage", () =>
-        generateCommitMessageCommand(brain, repos),
+      vscode.commands.registerCommand("gitstudio.ai.setOpenAIKey", () =>
+        setOpenAIKey(context, brain),
+      ),
+      vscode.commands.registerCommand("gitstudio.ai.clearOpenAIKey", () =>
+        clearOpenAIKey(context, brain),
+      ),
+      vscode.commands.registerCommand("gitstudio.ai.selectModel", () =>
+        selectModelCommand(context, brain),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.ai.generateCommitMessage",
+        (arg?: unknown) => generateCommitMessageCommand(brain, repos, arg),
       ),
       vscode.commands.registerCommand("gitstudio.ai.explainDiff", () =>
         explainDiffCommand(brain, repos),
@@ -657,6 +694,21 @@ export function activate(context: vscode.ExtensionContext): void {
         branchActions.manageRemotes(repos, refreshBranches),
       ),
     );
+    log("registration complete — every section wired with no errors");
+    } catch (e) {
+      const detail = e instanceof Error ? (e.stack ?? e.message) : String(e);
+      log("ACTIVATION ERROR (everything after this line failed to register):");
+      log(detail);
+      console.error("[GitStudio] activation error:", e);
+      out.show(true);
+      void vscode.window.showErrorMessage(
+        "GitStudio failed to finish loading — see the GitStudio Output channel for the error.",
+      );
+    }
+  }).catch((e) => {
+    const detail = e instanceof Error ? (e.stack ?? e.message) : String(e);
+    log("RepoManager.create() rejected — nothing registered: " + detail);
+    out.show(true);
   });
 }
 

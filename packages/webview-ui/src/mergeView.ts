@@ -869,6 +869,10 @@ export class MergeView {
       side === "left"
         ? "Accept left change (Ctrl/⌘-click to append)"
         : "Accept right change (Ctrl/⌘-click to append)";
+    accept.setAttribute(
+      "aria-label",
+      side === "left" ? "Accept left change" : "Accept right change",
+    );
     accept.addEventListener("mousedown", (event) => {
       event.preventDefault();
       const mode: AcceptMode =
@@ -881,6 +885,7 @@ export class MergeView {
     ignore.className = "jb-gutter-btn jb-btn-ignore";
     ignore.appendChild(iconElement(cross));
     ignore.title = "Ignore this change";
+    ignore.setAttribute("aria-label", "Ignore this change");
     ignore.addEventListener("mousedown", (event) => {
       event.preventDefault();
       this.ignoreSide(block, side);

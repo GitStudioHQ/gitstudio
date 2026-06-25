@@ -9,24 +9,49 @@ const COMMIT_PAGE_SIZE = 150;
 
 /** A commit row in the Commits tree. Carries the full record for actions. */
 export class CommitNode extends vscode.TreeItem {
-  constructor(readonly commit: CommitRecord) {
+  constructor(
+    readonly commit: CommitRecord,
+    isHead = false,
+  ) {
     super(commit.subject || "(no commit message)", vscode.TreeItemCollapsibleState.None);
 
     const shortSha = commit.sha.slice(0, 7);
-    this.description = `${shortSha} · ${relativeTime(commit.authorDate)}`;
-    this.iconPath = new vscode.ThemeIcon("git-commit");
+    // Muted metadata, GitLens-style: author · relative date · short sha.
+    this.description = `${commit.author} · ${relativeTime(commit.authorDate)} · ${shortSha}`;
+    // The tip of HEAD reads as a merge commit when it has 2+ parents; otherwise
+    // the branch tip gets an accent so the newest commit stands out.
+    if (commit.parents.length > 1) {
+      this.iconPath = new vscode.ThemeIcon("git-merge");
+    } else if (isHead) {
+      this.iconPath = new vscode.ThemeIcon(
+        "git-commit",
+        new vscode.ThemeColor("gitDecoration.modifiedResourceForeground"),
+      );
+    } else {
+      this.iconPath = new vscode.ThemeIcon("git-commit");
+    }
     this.contextValue = "gitstudio.commit";
-    this.tooltip = buildCommitTooltip(commit);
+    this.tooltip = buildCommitTooltip(commit, isHead);
   }
 }
 
-function buildCommitTooltip(commit: CommitRecord): vscode.MarkdownString {
+function buildCommitTooltip(
+  commit: CommitRecord,
+  isHead: boolean,
+): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
   md.supportThemeIcons = true;
   const date = new Date(commit.authorDate * 1000);
 
   md.appendMarkdown(`**${escapeMarkdown(commit.subject)}**\n\n`);
-  md.appendMarkdown(`$(git-commit) \`${commit.sha.slice(0, 12)}\`\n\n`);
+  if (isHead) {
+    md.appendMarkdown(`$(git-commit) HEAD\n\n`);
+  }
+  md.appendMarkdown(`$(git-commit) \`${commit.sha.slice(0, 12)}\``);
+  if (commit.parents.length > 1) {
+    md.appendMarkdown(` · $(git-merge) merge`);
+  }
+  md.appendMarkdown(`\n\n`);
   md.appendMarkdown(
     `$(account) ${escapeMarkdown(commit.author)} <${escapeMarkdown(commit.authorEmail)}>\n\n`,
   );
@@ -97,7 +122,9 @@ export class CommitsTreeProvider
         if (controller.signal.aborted) {
           return [];
         }
-        nodes.push(new CommitNode(commit));
+        // The first streamed commit (newest, HEAD-side of `HEAD` rev) is the
+        // branch tip; flag it so the row reads as current.
+        nodes.push(new CommitNode(commit, nodes.length === 0));
       }
     } catch (err) {
       if (controller.signal.aborted) {

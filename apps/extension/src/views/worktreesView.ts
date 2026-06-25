@@ -18,10 +18,32 @@ export class WorktreeNode extends vscode.TreeItem {
       : entry.branch ?? `${entry.head.slice(0, 7)} (detached)`;
     super(label, vscode.TreeItemCollapsibleState.None);
 
-    this.description = tildify(entry.path) + (isCurrent ? " · current" : "");
-    this.iconPath = new vscode.ThemeIcon(
-      isCurrent ? "target" : entry.branch ? "git-branch" : "folder",
-    );
+    // Description leads with status flags (current first), then the path.
+    const flags: string[] = [];
+    if (isCurrent) flags.push("current");
+    if (entry.locked) flags.push("locked");
+    if (entry.bare) flags.push("bare");
+    if (entry.prunable) flags.push("prunable");
+    const path = tildify(entry.path);
+    this.description = flags.length > 0 ? `${flags.join(" · ")} · ${path}` : path;
+
+    // Icon conveys status: current worktree gets an accent, prunable warns,
+    // locked shows a lock, otherwise branch / detached folder.
+    if (isCurrent) {
+      this.iconPath = new vscode.ThemeIcon(
+        "check",
+        new vscode.ThemeColor("gitDecoration.modifiedResourceForeground"),
+      );
+    } else if (entry.prunable) {
+      this.iconPath = new vscode.ThemeIcon(
+        "warning",
+        new vscode.ThemeColor("charts.yellow"),
+      );
+    } else if (entry.locked) {
+      this.iconPath = new vscode.ThemeIcon("lock");
+    } else {
+      this.iconPath = new vscode.ThemeIcon(entry.branch ? "git-branch" : "folder");
+    }
     this.resourceUri = vscode.Uri.file(entry.path);
     this.contextValue = entry.locked
       ? "gitstudio.worktree.locked"
@@ -42,7 +64,12 @@ function buildTooltip(
   const md = new vscode.MarkdownString(undefined, true);
   md.supportThemeIcons = true;
   const head = entry.branch ?? `${entry.head.slice(0, 7)} (detached)`;
-  md.appendMarkdown(`**${escapeMarkdown(head)}**\n\n`);
+  const headIcon = entry.bare
+    ? "$(archive)"
+    : entry.branch
+      ? "$(git-branch)"
+      : "$(git-commit)";
+  md.appendMarkdown(`${headIcon} **${escapeMarkdown(head)}**\n\n`);
   md.appendMarkdown(`$(folder) \`${escapeMarkdown(entry.path)}\``);
   if (entry.head) {
     md.appendMarkdown(`\n\n$(git-commit) \`${entry.head.slice(0, 7)}\``);

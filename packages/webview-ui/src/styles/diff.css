@@ -2,6 +2,8 @@
  * Dark = Darcula, light = Classic. The whole changed line gets the muted "line"
  * color; the changed characters get the stronger "inner" color. */
 
+@import "./tokens.css";
+
 :root {
   /* Dark theme: light pastel hues at low alpha — the wash tints the line and
    * the inner marking tints the changed characters, but syntax colors keep
@@ -114,10 +116,11 @@ body.vscode-high-contrast-light {
   flex-wrap: nowrap;
   overflow-x: auto;
   height: 34px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  padding: 0 var(--gs-space-2);
+  border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-widget-border));
   background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background, transparent));
-  font-size: 12px;
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary);
   scrollbar-width: none;
 }
 .jb-toolbar::-webkit-scrollbar { height: 0; }
@@ -127,23 +130,29 @@ body.vscode-high-contrast-light {
   flex: 0 0 auto;
   width: 1px;
   height: 18px;
-  margin: 0 6px;
-  background: var(--vscode-panel-border);
+  margin: 0 var(--gs-space-2);
+  background: var(--vscode-panel-border, var(--vscode-widget-border));
   opacity: 0.7;
 }
+/* Section caption preceding a toolbar group — muted, like an inline header. */
 .jb-toolbar-label {
   flex: 0 0 auto;
   white-space: nowrap;
-  opacity: 0.75;
-  padding: 0 4px 0 2px;
+  color: var(--gs-fg-muted);
+  padding: 0 var(--gs-space-1) 0 2px;
 }
+/* Resolved/pending tally — tabular mono so the digits don't jitter. */
 .jb-counter {
   flex: 0 0 auto;
   white-space: nowrap;
-  opacity: 0.85;
-  padding: 0 4px;
+  color: var(--gs-fg-muted);
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--gs-space-1);
 }
-.jb-counter.jb-done { color: var(--vscode-testing-iconPassed, #4a8c4a); }
+.jb-counter.jb-done {
+  color: var(--gs-status-added);
+  font-weight: var(--gs-weight-emphasis);
+}
 
 /* SVG icon plumbing (toolbar + gutter). */
 .jb-svg {
@@ -163,13 +172,15 @@ body.vscode-high-contrast-light {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border-radius: 4px;
+  border-radius: var(--gs-radius);
   border: 1px solid transparent;
   background: transparent;
   color: var(--vscode-foreground);
   user-select: none;
-  font-size: 12px;
-  font-family: inherit;
+  font-size: var(--gs-text-secondary);
+  font-family: var(--gs-font-ui);
+  transition: background var(--gs-motion-fast) var(--gs-ease),
+    border-color var(--gs-motion-fast) var(--gs-ease);
 }
 .jb-toolbar-btn:not([disabled]):hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.16));
@@ -213,24 +224,33 @@ body.vscode-high-contrast-light {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
-/* Confirmation state: the Accept Left/Right button that settled the merge. */
+/* Confirmation state: the Accept Left/Right button that settled the merge.
+ * Reads as a settled "done" pill in the status-added (green) tint. */
 .jb-toolbar-btn.jb-confirmed[disabled] {
   opacity: 1;
-  border-color: var(--vscode-testing-iconPassed, #4a8c4a);
-  color: var(--vscode-testing-iconPassed, #4a8c4a);
+  border-color: var(--gs-status-added);
+  color: var(--gs-status-added);
   background: transparent;
 }
 .jb-toolbar-btn.jb-confirmed::before {
-  content: "✓";
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
   margin-right: 5px;
+  vertical-align: -1px;
+  background-color: currentColor;
+  -webkit-mask: var(--gs-icon-check) center / contain no-repeat;
+  mask: var(--gs-icon-check) center / contain no-repeat;
 }
 
 .jb-toolbar-select {
   flex: 0 0 auto;
   height: 24px;
-  font-size: 12px;
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary);
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--gs-radius);
   border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
   background: var(--vscode-dropdown-background, transparent);
   color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
@@ -256,10 +276,10 @@ body.vscode-high-contrast-light {
   max-height: 260px;
   overflow-y: auto;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--gs-radius);
   border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
   background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
 }
 .jb-history-pop[hidden] { display: none; }
 .jb-history-item {
@@ -339,12 +359,14 @@ body.vscode-high-contrast-light {
   width: 20px;
   height: 16px;
   padding: 0;
-  border: none;
-  border-radius: 2px;
+  border: 1px solid transparent;
+  border-radius: var(--gs-radius-sm);
   background: transparent;
   color: var(--vscode-editorLineNumber-foreground, #858585);
   user-select: none;
-  transition: color 0.1s ease, background 0.1s ease;
+  transition: color var(--gs-motion-fast) var(--gs-ease),
+    background var(--gs-motion-fast) var(--gs-ease),
+    border-color var(--gs-motion-fast) var(--gs-ease);
 }
 .jb-gutter-btn .jb-svg svg {
   width: 14px;
@@ -359,10 +381,18 @@ body.vscode-high-contrast-light {
   outline-offset: -1px;
   color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-foreground));
 }
+/* Accept (the apply chevron): hover tints to the change's own role color so the
+ * target reads as "this is the change you're taking". */
 .jb-btn-accept.jb-role-inserted:hover { background: var(--jb-inner-inserted); color: var(--vscode-foreground); }
 .jb-btn-accept.jb-role-deleted:hover { background: var(--jb-inner-deleted); color: var(--vscode-foreground); }
 .jb-btn-accept.jb-role-modified:hover { background: var(--jb-inner-modified); color: var(--vscode-foreground); }
 .jb-btn-accept.jb-role-conflict:hover { background: var(--jb-inner-conflict); color: var(--vscode-foreground); }
+/* Ignore (the ✕): a dismiss action, so it picks up the deleted/red status tint
+ * on hover — distinct from the directional accept control beside it. */
+.jb-btn-ignore:hover {
+  color: var(--gs-status-deleted);
+  background: color-mix(in srgb, var(--gs-status-deleted) 16%, transparent);
+}
 
 /* ---- Responsive toolbar: collapse gracefully in narrow editor groups ---- */
 @media (max-width: 1000px) {
@@ -379,5 +409,6 @@ body.vscode-high-contrast-light {
 
 /* Honor the OS "reduce motion" preference: drop hover/state easing. */
 @media (prefers-reduced-motion: reduce) {
-  .jb-gutter-btn { transition: none; }
+  .jb-gutter-btn,
+  .jb-toolbar-btn { transition: none; }
 }

@@ -1,13 +1,18 @@
 import * as vscode from "vscode";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
-import { GitBrain, ANTHROPIC_KEY_SECRET } from "./gitBrain";
+import {
+  GitBrain,
+  ANTHROPIC_KEY_SECRET,
+  OPENAI_KEY_SECRET,
+} from "./gitBrain";
 import { getNonce } from "../webview/html";
 
-// Command implementations for the GitBrain AI layer (M10): key management
-// (SecretStorage — never sent to a webview), and the explain / summarize
-// palette commands that render their Markdown result in a webview panel.
-// The commit-box ✨ lives in commitView.ts; the staged-diff drafting helper it
-// calls is exported here so both share one code path.
+// Command implementations for the GitBrain AI layer: key management
+// (SecretStorage — never sent to a webview), the seamless model picker, and the
+// explain / summarize palette commands that render their Markdown result in a
+// webview panel. The commit-box ✨ lives in commitView.ts and the native SCM
+// input; the staged-diff drafting helper they share is exported here so every
+// surface uses one code path.
 
 /** Store the Anthropic key (password input) in SecretStorage. */
 export async function setApiKey(
@@ -45,6 +50,54 @@ export async function clearApiKey(
   await brain.refreshEnabled();
   void vscode.window.showInformationMessage(
     "GitStudio: Anthropic API key cleared.",
+  );
+}
+
+/**
+ * Store the OpenAI-compatible key (password input) in SecretStorage. The key is
+ * OPTIONAL — local servers (Ollama / LM Studio) need none — so an empty entry
+ * clears it rather than warning.
+ */
+export async function setOpenAIKey(
+  context: vscode.ExtensionContext,
+  brain: GitBrain,
+): Promise<void> {
+  const key = await vscode.window.showInputBox({
+    title: "GitStudio: Set OpenAI API Key",
+    prompt:
+      "For OpenAI / Codex / OpenRouter. Leave blank for a local server (Ollama / LM Studio). Stored in your OS keychain; never sent to a webview.",
+    password: true,
+    ignoreFocusOut: true,
+    placeHolder: "sk-… (blank for a local, keyless server)",
+  });
+  if (key === undefined) {
+    return; // cancelled
+  }
+  const trimmed = key.trim();
+  if (trimmed.length === 0) {
+    await context.secrets.delete(OPENAI_KEY_SECRET);
+    await brain.refreshEnabled();
+    void vscode.window.showInformationMessage(
+      "GitStudio: OpenAI API key cleared (keyless / local mode).",
+    );
+    return;
+  }
+  await context.secrets.store(OPENAI_KEY_SECRET, trimmed);
+  await brain.refreshEnabled();
+  void vscode.window.showInformationMessage(
+    "GitStudio: OpenAI API key saved.",
+  );
+}
+
+/** Clear the stored OpenAI-compatible key. */
+export async function clearOpenAIKey(
+  context: vscode.ExtensionContext,
+  brain: GitBrain,
+): Promise<void> {
+  await context.secrets.delete(OPENAI_KEY_SECRET);
+  await brain.refreshEnabled();
+  void vscode.window.showInformationMessage(
+    "GitStudio: OpenAI API key cleared.",
   );
 }
 
@@ -92,16 +145,77 @@ export async function draftCommitMessage(
   });
 }
 
-/** Palette command: generate a commit message and offer to copy it. */
+/**
+ * Draft from the staged diff, falling back to the full working-tree diff when
+ * nothing is staged. Returns the message plus whether the source was unstaged
+ * (so the SCM ✨ can tell the user). Null when AI is unavailable or there's no
+ * diff at all.
+ */
+async function draftCommitMessageWithFallback(
+  brain: GitBrain,
+  entry: RepoEntry,
+  signal?: AbortSignal,
+): Promise<{ message: string; unstaged: boolean } | null> {
+  let diff = await stagedDiff(entry);
+  let unstaged = false;
+  if (diff.trim().length === 0) {
+    diff = await workingDiff(entry);
+    unstaged = true;
+  }
+  if (diff.trim().length === 0) {
+    return null;
+  }
+  const subjects = await recentSubjects(entry);
+  const message = await brain.generateCommitMessage(diff, {
+    recentSubjects: subjects,
+    signal,
+  });
+  return message ? { message, unstaged } : null;
+}
+
+/** The working-tree diff (`git diff`), or "" on any failure. */
+async function workingDiff(entry: RepoEntry): Promise<string> {
+  try {
+    const res = await entry.ctx.process.run(["diff"]);
+    return res.code === 0 ? res.stdout : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Generate a commit message.
+ *
+ * Two surfaces, one handler:
+ *  - From the NATIVE Source Control input box, VS Code passes a
+ *    `vscode.SourceControl` (with `.inputBox.value` and `.rootUri`). We resolve
+ *    that repo, draft from its staged diff (falling back to the working diff,
+ *    noting it's unstaged), and set the input box value directly.
+ *  - From the command palette (no arg), we draft for the active repo and offer
+ *    to copy the result.
+ *
+ * If no provider is set up, we offer a one-click "Select AI Model…" path.
+ */
 export async function generateCommitMessageCommand(
   brain: GitBrain,
   repos: RepoManager,
+  arg?: unknown,
 ): Promise<void> {
+  const sourceControl = asSourceControl(arg);
+  if (sourceControl) {
+    await generateForSourceControl(brain, repos, sourceControl);
+    return;
+  }
+
   const entry = repos.getActive();
   if (!entry) {
     void vscode.window.showInformationMessage(
       "GitStudio: no Git repository is active.",
     );
+    return;
+  }
+  if (!(await brain.isEnabled())) {
+    await offerAiSetup();
     return;
   }
   const message = await vscode.window.withProgress(
@@ -123,6 +237,231 @@ export async function generateCommitMessageCommand(
     await vscode.env.clipboard.writeText(message);
     void vscode.window.setStatusBarMessage("$(check) Commit message copied", 2000);
   }
+}
+
+/** Draft into the native SCM input box for the given SourceControl. */
+async function generateForSourceControl(
+  brain: GitBrain,
+  repos: RepoManager,
+  sourceControl: SourceControlLike,
+): Promise<void> {
+  const entry = resolveRepoForSourceControl(repos, sourceControl);
+  if (!entry) {
+    void vscode.window.showInformationMessage(
+      "GitStudio: couldn't match this Source Control repository.",
+    );
+    return;
+  }
+  if (!(await brain.isEnabled())) {
+    await offerAiSetup();
+    return;
+  }
+  const drafted = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.SourceControl, title: "GitBrain: drafting commit message…" },
+    () => draftCommitMessageWithFallback(brain, entry),
+  );
+  if (!drafted) {
+    void vscode.window.showInformationMessage(
+      "GitStudio: nothing to draft (stage changes first), or AI is unavailable.",
+    );
+    return;
+  }
+  if (sourceControl.inputBox) {
+    sourceControl.inputBox.value = drafted.message;
+  }
+  if (drafted.unstaged) {
+    void vscode.window.setStatusBarMessage(
+      "$(sparkle) GitBrain drafted from unstaged changes (nothing was staged)",
+      4000,
+    );
+  }
+}
+
+/** Resolve the repo for a SourceControl by its rootUri, else the active repo. */
+function resolveRepoForSourceControl(
+  repos: RepoManager,
+  sourceControl: SourceControlLike,
+): RepoEntry | undefined {
+  const rootFsPath = sourceControl.rootUri?.fsPath;
+  if (rootFsPath) {
+    const match = repos
+      .getAll()
+      .find((e) => e.root === rootFsPath);
+    if (match) {
+      return match;
+    }
+  }
+  return repos.getActive();
+}
+
+/** The minimal SourceControl surface we touch (declared for the 1.74 baseline). */
+interface SourceControlLike {
+  inputBox?: { value: string };
+  rootUri?: vscode.Uri;
+}
+
+/** True when the command arg is a vscode.SourceControl (from the SCM input box). */
+function asSourceControl(arg: unknown): SourceControlLike | undefined {
+  if (
+    arg &&
+    typeof arg === "object" &&
+    "inputBox" in arg &&
+    (arg as SourceControlLike).inputBox !== undefined
+  ) {
+    return arg as SourceControlLike;
+  }
+  return undefined;
+}
+
+/** Offer a one-click path into the model picker when no provider is set up. */
+async function offerAiSetup(): Promise<void> {
+  const choice = await vscode.window.showInformationMessage(
+    "Set up GitStudio AI to draft commit messages.",
+    "Select AI Model…",
+  );
+  if (choice === "Select AI Model…") {
+    await vscode.commands.executeCommand("gitstudio.ai.selectModel");
+  }
+}
+
+/**
+ * The seamless model picker (gitstudio.ai.selectModel). Lists what's actually
+ * available — every vscode.lm chat model (Copilot's AND Cursor's, no vendor
+ * filter), plus Anthropic and an OpenAI-compatible/local entry — and wires the
+ * pick straight into `gitstudio.ai.provider` (+ the remembered model id / keys).
+ */
+export async function selectModelCommand(
+  context: vscode.ExtensionContext,
+  brain: GitBrain,
+): Promise<void> {
+  interface ModelItem extends vscode.QuickPickItem {
+    target: "lm" | "anthropic" | "openai";
+    modelId?: string;
+  }
+
+  const items: ModelItem[] = [];
+
+  const lmModels = await brain.listLmModels();
+  for (const m of lmModels) {
+    const vendor = m.vendor || "Language Model";
+    const family = m.family || m.name || m.id;
+    items.push({
+      target: "lm",
+      modelId: m.id,
+      label: `$(sparkle) ${vendor} · ${family}`,
+      description: m.name && m.name !== family ? m.name : undefined,
+      detail: "VS Code Language Model (zero-key) — Copilot / Cursor",
+    });
+  }
+
+  items.push({
+    target: "anthropic",
+    label: "$(key) Claude (Anthropic) — set key…",
+    detail: "Use Anthropic directly with your API key.",
+  });
+
+  const baseUrl = vscode.workspace
+    .getConfiguration("gitstudio.ai")
+    .get<string>("openai.baseUrl", "https://api.openai.com/v1");
+  items.push({
+    target: "openai",
+    label: `$(server) OpenAI / local (OpenAI-compatible) — ${baseUrl}`,
+    detail:
+      "OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Base URL / model / key.",
+  });
+
+  const pick = await vscode.window.showQuickPick(items, {
+    title: "GitStudio: Select AI Model",
+    placeHolder: "Pick the model GitBrain should use",
+    ignoreFocusOut: true,
+  });
+  if (!pick) {
+    return;
+  }
+
+  const cfg = vscode.workspace.getConfiguration("gitstudio.ai");
+  if (pick.target === "lm") {
+    await brain.setPreferredLmModelId(pick.modelId);
+    await cfg.update("provider", "copilot", vscode.ConfigurationTarget.Global);
+    await brain.refreshEnabled();
+    void vscode.window.showInformationMessage(
+      `GitStudio: using ${pick.label.replace(/^\$\([^)]*\)\s*/, "")}.`,
+    );
+    return;
+  }
+
+  if (pick.target === "anthropic") {
+    await cfg.update("provider", "anthropic", vscode.ConfigurationTarget.Global);
+    const hasKey = await context.secrets.get(ANTHROPIC_KEY_SECRET);
+    if (!hasKey) {
+      await setApiKey(context, brain);
+    } else {
+      await brain.refreshEnabled();
+      void vscode.window.showInformationMessage(
+        "GitStudio: using Claude (Anthropic).",
+      );
+    }
+    return;
+  }
+
+  // OpenAI-compatible: offer to set base URL, model, and (optional) key.
+  await cfg.update("provider", "openai", vscode.ConfigurationTarget.Global);
+  await configureOpenAi(context, brain, cfg);
+}
+
+/** Prompt through the OpenAI-compatible base URL, model, and optional key. */
+async function configureOpenAi(
+  context: vscode.ExtensionContext,
+  brain: GitBrain,
+  cfg: vscode.WorkspaceConfiguration,
+): Promise<void> {
+  const baseUrl = await vscode.window.showInputBox({
+    title: "GitStudio: OpenAI-compatible Base URL",
+    prompt:
+      "e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · http://localhost:1234/v1 (LM Studio)",
+    value: cfg.get<string>("openai.baseUrl", "https://api.openai.com/v1"),
+    ignoreFocusOut: true,
+  });
+  if (baseUrl === undefined) {
+    return; // cancelled
+  }
+  if (baseUrl.trim().length > 0) {
+    await cfg.update(
+      "openai.baseUrl",
+      baseUrl.trim(),
+      vscode.ConfigurationTarget.Global,
+    );
+  }
+
+  const model = await vscode.window.showInputBox({
+    title: "GitStudio: OpenAI-compatible Model",
+    prompt:
+      "Model ID for commit messages / explain (e.g. gpt-4o-mini, llama3.1, qwen2.5-coder).",
+    value: cfg.get<string>("openai.modelFast", ""),
+    ignoreFocusOut: true,
+  });
+  if (model === undefined) {
+    return; // cancelled
+  }
+  if (model.trim().length > 0) {
+    // Set the fast tier (used for commit messages) at minimum; mirror to mid so
+    // explain/summaries also work out of the box if the user only sets one.
+    await cfg.update(
+      "openai.modelFast",
+      model.trim(),
+      vscode.ConfigurationTarget.Global,
+    );
+    if (!cfg.get<string>("openai.modelMid", "")) {
+      await cfg.update(
+        "openai.modelMid",
+        model.trim(),
+        vscode.ConfigurationTarget.Global,
+      );
+    }
+  }
+
+  await setOpenAIKey(context, brain);
+  await brain.refreshEnabled();
 }
 
 /** Combined diff for explain/summarize: prefer staged, fall back to working tree. */

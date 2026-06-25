@@ -9,7 +9,8 @@ import {
   type CommitStyle,
 } from "@gitstudio/engine/ai/gitBrainCore";
 import { AnthropicProvider } from "./anthropicProvider";
-import { VsCodeLmProvider } from "./vscodeLmProvider";
+import { VsCodeLmProvider, type LmModelInfo } from "./vscodeLmProvider";
+import { OpenAiProvider, type OpenAiConfig } from "./openAiProvider";
 
 // GitBrain — the optional, bring-your-own-key AI layer (M10).
 //
@@ -46,11 +47,21 @@ export interface CompleteRequest {
   signal?: AbortSignal;
 }
 
-/** The user's provider choice (gitstudio.ai.provider). */
-type ProviderChoice = "auto" | "anthropic" | "vscode-lm" | "off";
+/**
+ * The user's provider choice (gitstudio.ai.provider).
+ * `copilot` selects the VS Code Language Model API (Copilot / Cursor models).
+ * `openai` selects any OpenAI-compatible endpoint (incl. local Ollama/LM Studio).
+ */
+type ProviderChoice = "auto" | "copilot" | "anthropic" | "openai" | "off";
 
 /** Storage key for the Anthropic API key in SecretStorage. */
 export const ANTHROPIC_KEY_SECRET = "gitstudio.ai.anthropicApiKey";
+
+/** Storage key for the OpenAI-compatible API key in SecretStorage (optional). */
+export const OPENAI_KEY_SECRET = "gitstudio.ai.openaiApiKey";
+
+/** globalState key remembering the user's chosen vscode.lm model id. */
+export const LM_MODEL_STATE_KEY = "gitstudio.ai.lmModelId";
 
 export interface CommitMessageOptions {
   style?: CommitStyle;
@@ -62,22 +73,31 @@ export interface CommitMessageOptions {
 export class GitBrain implements vscode.Disposable {
   private readonly anthropic: AnthropicProvider;
   private readonly vscodeLm: VsCodeLmProvider;
+  private readonly openai: OpenAiProvider;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly context: vscode.ExtensionContext) {
+    const onError = (message: string) => {
+      void vscode.window.showWarningMessage(message);
+    };
     this.anthropic = new AnthropicProvider({
       getKey: () => this.context.secrets.get(ANTHROPIC_KEY_SECRET),
-      onError: (message) => {
-        void vscode.window.showWarningMessage(message);
-      },
+      onError,
       models: this.readModelOverrides(),
     });
-    this.vscodeLm = new VsCodeLmProvider();
+    this.vscodeLm = new VsCodeLmProvider({
+      getPreferredModelId: () => this.preferredLmModelId(),
+    });
+    this.openai = new OpenAiProvider({
+      getKey: () => this.context.secrets.get(OPENAI_KEY_SECRET),
+      config: () => this.openAiConfig(),
+      onError,
+    });
 
-    // Re-evaluate availability when the key changes or the provider setting flips.
+    // Re-evaluate availability when a key changes or a relevant setting flips.
     this.disposables.push(
       this.context.secrets.onDidChange((e) => {
-        if (e.key === ANTHROPIC_KEY_SECRET) {
+        if (e.key === ANTHROPIC_KEY_SECRET || e.key === OPENAI_KEY_SECRET) {
           void this.refreshEnabled();
         }
       }),
@@ -86,7 +106,11 @@ export class GitBrain implements vscode.Disposable {
           e.affectsConfiguration("gitstudio.ai.provider") ||
           e.affectsConfiguration("gitstudio.ai.anthropicModelFast") ||
           e.affectsConfiguration("gitstudio.ai.anthropicModelMid") ||
-          e.affectsConfiguration("gitstudio.ai.anthropicModelDeep")
+          e.affectsConfiguration("gitstudio.ai.anthropicModelDeep") ||
+          e.affectsConfiguration("gitstudio.ai.openai.baseUrl") ||
+          e.affectsConfiguration("gitstudio.ai.openai.modelFast") ||
+          e.affectsConfiguration("gitstudio.ai.openai.modelMid") ||
+          e.affectsConfiguration("gitstudio.ai.openai.modelDeep")
         ) {
           void this.refreshEnabled();
         }
@@ -120,6 +144,35 @@ export class GitBrain implements vscode.Disposable {
     return overrides;
   }
 
+  /** Read the OpenAI-compatible base URL + per-tier model IDs from settings. */
+  private openAiConfig(): OpenAiConfig {
+    const cfg = this.config();
+    return {
+      baseUrl: cfg.get<string>("openai.baseUrl", "https://api.openai.com/v1"),
+      models: {
+        fast: cfg.get<string>("openai.modelFast", ""),
+        mid: cfg.get<string>("openai.modelMid", ""),
+        deep: cfg.get<string>("openai.modelDeep", ""),
+      },
+    };
+  }
+
+  /** The remembered vscode.lm model id (from the model picker), if any. */
+  private preferredLmModelId(): string | undefined {
+    const id = this.context.globalState.get<string>(LM_MODEL_STATE_KEY);
+    return id && id.length > 0 ? id : undefined;
+  }
+
+  /** Remember the user's vscode.lm model pick (used by the model picker). */
+  async setPreferredLmModelId(id: string | undefined): Promise<void> {
+    await this.context.globalState.update(LM_MODEL_STATE_KEY, id);
+  }
+
+  /** List available vscode.lm chat models (Copilot + Cursor), for the picker. */
+  listLmModels(): Promise<LmModelInfo[]> {
+    return this.vscodeLm.listModels();
+  }
+
   private providerChoice(): ProviderChoice {
     return this.config().get<ProviderChoice>("provider", "auto");
   }
@@ -130,9 +183,11 @@ export class GitBrain implements vscode.Disposable {
 
   /**
    * Resolve the active provider per the `provider` setting:
-   *   auto       → vscode.lm (zero-key) if available, else Anthropic if keyed.
+   *   auto       → vscode.lm (zero-key Copilot/Cursor) → Anthropic (if keyed) →
+   *                OpenAI-compatible (if a model is configured) → none.
+   *   copilot    → vscode.lm iff available.
    *   anthropic  → Anthropic iff a key is set.
-   *   vscode-lm  → vscode.lm iff available.
+   *   openai     → OpenAI-compatible iff a model is configured.
    *   off        → none.
    * Returns undefined when nothing is usable (features hidden).
    */
@@ -141,18 +196,25 @@ export class GitBrain implements vscode.Disposable {
     if (choice === "off") {
       return undefined;
     }
+    if (choice === "copilot") {
+      return (await this.vscodeLm.isAvailable()) ? this.vscodeLm : undefined;
+    }
     if (choice === "anthropic") {
       return (await this.anthropic.isAvailable()) ? this.anthropic : undefined;
     }
-    if (choice === "vscode-lm") {
-      return (await this.vscodeLm.isAvailable()) ? this.vscodeLm : undefined;
+    if (choice === "openai") {
+      return this.openai.isAvailable() ? this.openai : undefined;
     }
-    // auto: prefer the zero-key Copilot path, then a configured Anthropic key.
+    // auto: prefer the zero-key vscode.lm path, then a keyed Anthropic, then a
+    // configured OpenAI-compatible endpoint (incl. a local model server).
     if (await this.vscodeLm.isAvailable()) {
       return this.vscodeLm;
     }
     if (await this.anthropic.isAvailable()) {
       return this.anthropic;
+    }
+    if (this.openai.isAvailable()) {
+      return this.openai;
     }
     return undefined;
   }

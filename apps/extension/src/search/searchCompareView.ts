@@ -45,6 +45,10 @@ class RootNode extends vscode.TreeItem {
     this.iconPath = new vscode.ThemeIcon(
       root === "search" ? "search" : "git-compare",
     );
+    this.tooltip =
+      root === "search"
+        ? "Results of the last commit search"
+        : "Commits in the last A..B comparison";
     this.contextValue = `gitstudio.searchCompare.${root}`;
   }
 }
@@ -56,10 +60,13 @@ class CommitItemNode extends vscode.TreeItem {
       commit.subject || "(no commit message)",
       vscode.TreeItemCollapsibleState.None,
     );
-    this.description = `${commit.sha.slice(0, 7)} · ${relativeTime(
+    this.description = `${commit.author} · ${relativeTime(
       commit.authorDate,
-    )}`;
-    this.iconPath = new vscode.ThemeIcon("git-commit");
+    )} · ${commit.sha.slice(0, 7)}`;
+    this.iconPath =
+      commit.parents.length > 1
+        ? new vscode.ThemeIcon("git-merge")
+        : new vscode.ThemeIcon("git-commit");
     this.contextValue = "gitstudio.searchCompare.commit";
     this.tooltip = buildCommitTooltip(commit);
     this.command = {
@@ -75,7 +82,11 @@ function buildCommitTooltip(commit: CommitRecord): vscode.MarkdownString {
   md.supportThemeIcons = true;
   const date = new Date(commit.authorDate * 1000);
   md.appendMarkdown(`**${escapeMarkdown(commit.subject)}**\n\n`);
-  md.appendMarkdown(`$(git-commit) \`${commit.sha.slice(0, 12)}\`\n\n`);
+  md.appendMarkdown(`$(git-commit) \`${commit.sha.slice(0, 12)}\``);
+  if (commit.parents.length > 1) {
+    md.appendMarkdown(` · $(git-merge) merge`);
+  }
+  md.appendMarkdown(`\n\n`);
   md.appendMarkdown(
     `$(account) ${escapeMarkdown(commit.author)} <${escapeMarkdown(
       commit.authorEmail,

@@ -45,6 +45,13 @@ const GROUP_LABEL: Record<GroupKind, string> = {
   unstaged: "Changes",
 };
 
+/** A codicon per group, themed to read like GitLens / the SCM view. */
+const GROUP_ICON: Record<GroupKind, string> = {
+  merge: "git-merge",
+  staged: "check-all",
+  unstaged: "request-changes",
+};
+
 const GROUP_CONTEXT: Record<GroupKind, string> = {
   merge: "gitstudio.changeGroup.merge",
   staged: "gitstudio.changeGroup.staged",
@@ -66,7 +73,11 @@ export class ChangeGroupNode extends vscode.TreeItem {
   ) {
     super(GROUP_LABEL[kind], vscode.TreeItemCollapsibleState.Expanded);
     this.contextValue = GROUP_CONTEXT[kind];
+    // The count reads as a quiet trailing badge, matching VS Code's SCM groups.
     this.description = String(changes.length);
+    this.iconPath = new vscode.ThemeIcon(GROUP_ICON[kind]);
+    const noun = changes.length === 1 ? "file" : "files";
+    this.tooltip = `${GROUP_LABEL[kind]} · ${changes.length} ${noun}`;
     this.id = `group:${kind}:${root}`;
   }
 }
@@ -84,11 +95,13 @@ export class ChangeFileNode extends vscode.TreeItem {
     const rel = relativePath(root, uri.fsPath);
     const dir = parentDir(rel);
     this.label = baseName(rel);
-    this.description = dir || undefined;
     this.resourceUri = uri;
     this.contextValue = FILE_CONTEXT[kind];
 
     const { icon, color, letter, word } = decorate(change.status);
+    // Description = relative dir + a trailing one-letter status code, so the row
+    // stays scannable even when the icon color is hard to tell apart (HC themes).
+    this.description = dir ? `${dir} · ${letter}` : letter;
     this.iconPath = new vscode.ThemeIcon(
       icon,
       color ? new vscode.ThemeColor(color) : undefined,
@@ -115,8 +128,36 @@ export class ChangesTreeProvider
   readonly onDidChangeTreeData = this.emitter.event;
   private readonly disposables: vscode.Disposable[] = [];
 
+  /**
+   * Display mode for the file rows. "list" (the default) renders the flat
+   * file rows we ship today; "tree" is reserved for folder-nested rendering.
+   * Kept here as a clean hook so a toggle command can flip it + a setContext
+   * key ("gitstudio.changes.viewMode") drives a when-clause inversion icon,
+   * without disturbing the current behavior.
+   */
+  private viewMode: "list" | "tree" = "list";
+
   constructor(private readonly repos: RepoManager) {
     this.disposables.push(this.repos.onDidChange(() => this.refresh()));
+    void vscode.commands.executeCommand(
+      "setContext",
+      "gitstudio.changes.viewMode",
+      this.viewMode,
+    );
+  }
+
+  /** Flip list / tree display (re-render + sync the when-clause context key). */
+  setViewMode(mode: "list" | "tree"): void {
+    if (mode === this.viewMode) {
+      return;
+    }
+    this.viewMode = mode;
+    void vscode.commands.executeCommand(
+      "setContext",
+      "gitstudio.changes.viewMode",
+      mode,
+    );
+    this.refresh();
   }
 
   refresh(): void {
@@ -194,7 +235,7 @@ export async function openChangeDiff(node: ChangeFileNode): Promise<void> {
   const baseRev = node.kind === "merge" ? "HEAD" : "";
   const left = toRevisionUri(root, baseRev, rel);
   const right = change.uri; // live working-tree file
-  const label = node.kind === "merge" ? "Working Tree ↔ HEAD" : "Working Tree";
+  const label = node.kind === "merge" ? "Working Tree vs HEAD" : "Working Tree";
   await vscode.commands.executeCommand(
     "vscode.diff",
     left,
