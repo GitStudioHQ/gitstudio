@@ -12,6 +12,7 @@
 // the engine and writes the todo — this element only models intent.
 
 import { LitElement, html, css } from "lit";
+import { codiconStyles } from "../styles/codicons";
 import type {
   WireRebaseAction,
   WireRebaseRow,
@@ -52,32 +53,17 @@ export class RebaseView extends LitElement {
   private dragIndex: number | null = null;
   private overIndex: number | null = null;
 
-  // Chevron glyphs (replace the bare up/down arrow characters in the reorder
-  // hint) — crisp inline SVGs that inherit currentColor.
-  private static readonly chevronUp = html`<svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.6"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+  // Chevron glyphs for the reorder hint — the real VS Code codicon font.
+  private static readonly chevronUp = html`<span
+    class="codicon codicon-chevron-up"
     aria-hidden="true"
-  >
-    <path d="M4 10l4-4 4 4" />
-  </svg>`;
-  private static readonly chevronDown = html`<svg
-    viewBox="0 0 16 16"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.6"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+  ></span>`;
+  private static readonly chevronDown = html`<span
+    class="codicon codicon-chevron-down"
     aria-hidden="true"
-  >
-    <path d="M4 6l4 4 4-4" />
-  </svg>`;
+  ></span>`;
 
-  static styles = css`
+  static styles = [codiconStyles, css`
     /* Theme-native primitives — mirror packages/webview-ui/src/styles/tokens.css.
      * This element renders into a shadow root, so it re-declares the same
      * --vscode-* derived tokens locally rather than importing the stylesheet. */
@@ -403,7 +389,11 @@ export class RebaseView extends LitElement {
       color: var(--gs-fg-muted);
       font-size: 13px;
     }
-  `;
+    /* Codicon sizing per context (the font is registered via rebase.css). */
+    kbd .codicon { font-size: 11px; vertical-align: -1px; }
+    button.icon .codicon { font-size: 14px; }
+    .grip .codicon { font-size: 16px; }
+  `];
 
   render() {
     const total = this.rows.length;
@@ -505,11 +495,7 @@ export class RebaseView extends LitElement {
             ?disabled=${index === 0}
             @click=${() => this.move(index, index - 1)}
           >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none"
-              stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
-              stroke-linejoin="round" aria-hidden="true">
-              <path d="M4 10l4-4 4 4" />
-            </svg>
+            <span class="codicon codicon-chevron-up" aria-hidden="true"></span>
           </button>
           <button
             class="icon"
@@ -518,20 +504,11 @@ export class RebaseView extends LitElement {
             ?disabled=${index === total - 1}
             @click=${() => this.move(index, index + 1)}
           >
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none"
-              stroke="currentColor" stroke-width="1.4" stroke-linecap="round"
-              stroke-linejoin="round" aria-hidden="true">
-              <path d="M4 6l4 4 4-4" />
-            </svg>
+            <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
           </button>
         </span>
         <span class="grip" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"
-            aria-hidden="true">
-            <circle cx="6" cy="4" r="1.1" /><circle cx="10" cy="4" r="1.1" />
-            <circle cx="6" cy="8" r="1.1" /><circle cx="10" cy="8" r="1.1" />
-            <circle cx="6" cy="12" r="1.1" /><circle cx="10" cy="12" r="1.1" />
-          </svg>
+          <span class="codicon codicon-gripper"></span>
         </span>
       </div>
     `;

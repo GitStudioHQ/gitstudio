@@ -2,6 +2,14 @@
  * Lit element carries all of its own (shadow-DOM) styling; this file only frames
  * the page so the element fills the panel and inherits the VS Code theme. */
 
+/* The real VS Code icon font, declared at document scope (esbuild inlines the
+ * .ttf) so the <gitstudio-rebase> shadow root can use it — see codiconStyles. */
+@font-face {
+  font-family: "codicon";
+  font-display: block;
+  src: url("@vscode/codicons/dist/codicon.ttf") format("truetype");
+}
+
 html,
 body {
   height: 100%;
