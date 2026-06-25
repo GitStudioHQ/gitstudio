@@ -82,6 +82,7 @@ import {
   explainDiffCommand,
   summarizeChangesCommand,
 } from "./ai/aiCommands";
+import { registerPrFeature } from "./pr/prFeature";
 
 // GitStudio extension entry point.
 //
@@ -224,6 +225,14 @@ export function activate(context: vscode.ExtensionContext): void {
         summarizeChangesCommand(brain, repos),
       ),
     );
+
+    // In-editor Pull Request review — GitHub first (M11). Connect once via VS
+    // Code's built-in GitHub auth, then list / check out / review / merge /
+    // create PRs without leaving the editor. Everything degrades gracefully:
+    // not a GitHub repo or not signed in → the view is empty + a connect-prompt
+    // shows, and no command throws. Reuses GitBrain for the optional AI-drafted
+    // PR body.
+    registerPrFeature(context, repos, brain);
 
     // Hunk/line staging + Changes view + commit box (M7). The Changes tree and
     // the commit webview both refresh on RepoManager.onDidChange; a shared

@@ -90,6 +90,10 @@
         {
           "id": "gitstudio.searchCompare",
           "name": "Search & Compare"
+        },
+        {
+          "id": "gitstudio.pullRequests",
+          "name": "Pull Requests"
         }
       ]
     },
@@ -98,6 +102,11 @@
         "view": "gitstudio.commits",
         "when": "!gitstudio.hasRepo",
         "contents": "Open a folder with a Git repository to get started.\nGitStudio shows your commits, branches, remotes, and tags here once a repository is detected.\n[Open Folder](command:vscode.openFolder)"
+      },
+      {
+        "view": "gitstudio.pullRequests",
+        "when": "gitstudio.hasRepo && !gitstudio.github.connected",
+        "contents": "Connect GitHub to review pull requests.\nSign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests without leaving the editor.\n[Sign in to GitHub](command:gitstudio.pr.signIn)"
       }
     ],
     "customEditors": [
@@ -544,6 +553,89 @@
         "title": "Summarize Changes (AI)",
         "category": "GitStudio",
         "icon": "$(sparkle)"
+      },
+      {
+        "command": "gitstudio.pr.create",
+        "title": "Create Pull Request",
+        "category": "GitStudio",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.pr.refresh",
+        "title": "Refresh Pull Requests",
+        "category": "GitStudio",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitstudio.pr.signIn",
+        "title": "Sign in to GitHub",
+        "category": "GitStudio",
+        "icon": "$(github)"
+      },
+      {
+        "command": "gitstudio.pr.openDescription",
+        "title": "Open Pull Request Description",
+        "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.pr.checkout",
+        "title": "Checkout Pull Request",
+        "category": "GitStudio",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "gitstudio.pr.startReview",
+        "title": "Start Review",
+        "category": "GitStudio",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "gitstudio.pr.submitReview",
+        "title": "Submit Review",
+        "category": "GitStudio",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "gitstudio.pr.cancelReview",
+        "title": "Cancel Review",
+        "category": "GitStudio",
+        "icon": "$(close)"
+      },
+      {
+        "command": "gitstudio.pr.addReviewComment",
+        "title": "Add to Review",
+        "category": "GitStudio",
+        "icon": "$(add)"
+      },
+      {
+        "command": "gitstudio.pr.addSingleComment",
+        "title": "Add Single Comment",
+        "category": "GitStudio",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "gitstudio.pr.deleteReviewComment",
+        "title": "Delete Comment",
+        "category": "GitStudio",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "gitstudio.pr.merge",
+        "title": "Merge Pull Request",
+        "category": "GitStudio",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "gitstudio.pr.openOnGitHub",
+        "title": "Open on GitHub",
+        "category": "GitStudio",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "gitstudio.pr.copyUrl",
+        "title": "Copy Pull Request URL",
+        "category": "GitStudio",
+        "icon": "$(copy)"
       }
     ],
     "keybindings": [
@@ -648,6 +740,17 @@
           ],
           "default": "conventional",
           "description": "How GitBrain styles generated commit messages."
+        },
+        "gitstudio.pr.defaultMergeMethod": {
+          "type": "string",
+          "enum": ["merge", "squash", "rebase"],
+          "enumDescriptions": [
+            "Create a merge commit.",
+            "Squash the PR's commits into one and merge.",
+            "Rebase the PR's commits onto the base and merge."
+          ],
+          "default": "squash",
+          "description": "Default method offered first when merging a pull request."
         }
       }
     },
@@ -737,6 +840,26 @@
           "command": "gitstudio.changes.refresh",
           "when": "view == gitstudio.changes",
           "group": "navigation@3"
+        },
+        {
+          "command": "gitstudio.pr.create",
+          "when": "view == gitstudio.pullRequests && gitstudio.github.connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.pr.submitReview",
+          "when": "view == gitstudio.pullRequests && gitstudio.pr.reviewing",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitstudio.pr.signIn",
+          "when": "view == gitstudio.pullRequests && !gitstudio.github.connected",
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitstudio.pr.refresh",
+          "when": "view == gitstudio.pullRequests",
+          "group": "navigation@4"
         }
       ],
       "editor/title": [
@@ -1066,6 +1189,62 @@
         {
           "command": "gitstudio.tag.push",
           "when": "false"
+        },
+        {
+          "command": "gitstudio.pr.create",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.refresh",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.signIn",
+          "when": "true"
+        },
+        {
+          "command": "gitstudio.pr.checkout",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.startReview",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.submitReview",
+          "when": "gitstudio.pr.reviewing"
+        },
+        {
+          "command": "gitstudio.pr.cancelReview",
+          "when": "gitstudio.pr.reviewing"
+        },
+        {
+          "command": "gitstudio.pr.merge",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.openDescription",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.openOnGitHub",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.copyUrl",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.pr.addReviewComment",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.pr.addSingleComment",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.pr.deleteReviewComment",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -1308,6 +1487,72 @@
           "command": "gitstudio.addRemote",
           "when": "view == gitstudio.branches && viewItem == gitstudio.category.remotes",
           "group": "1_remotes@2"
+        },
+        {
+          "command": "gitstudio.pr.checkout",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.pr.openOnGitHub",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "inline@2"
+        },
+        {
+          "command": "gitstudio.pr.checkout",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "1_pr@1"
+        },
+        {
+          "command": "gitstudio.pr.openDescription",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "1_pr@2"
+        },
+        {
+          "command": "gitstudio.pr.startReview",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "1_pr@3"
+        },
+        {
+          "command": "gitstudio.pr.merge",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "1_pr@4"
+        },
+        {
+          "command": "gitstudio.pr.openOnGitHub",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "2_pr@1"
+        },
+        {
+          "command": "gitstudio.pr.copyUrl",
+          "when": "view == gitstudio.pullRequests && viewItem == gitstudio.pr",
+          "group": "2_pr@2"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "gitstudio.pr.addReviewComment",
+          "when": "commentController == gitstudio.prReview && gitstudio.pr.reviewing",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitstudio.pr.addSingleComment",
+          "when": "commentController == gitstudio.prReview && gitstudio.pr.reviewing",
+          "group": "inline@2"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "gitstudio.pr.submitReview",
+          "when": "commentController == gitstudio.prReview && gitstudio.pr.reviewing",
+          "group": "navigation@1"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "gitstudio.pr.deleteReviewComment",
+          "when": "commentController == gitstudio.prReview && comment == gitstudio.prReviewComment",
+          "group": "group@1"
         }
       ]
     }
