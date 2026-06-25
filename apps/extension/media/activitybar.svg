@@ -1,10 +1,14 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- GitStudio activity-bar mark: the commit-cube silhouette + a graph node/lane,
-       derived from the brand mark. currentColor so VS Code themes it on dark,
-       light, and high-contrast (the activity bar masks the icon to the fg color). -->
-  <path d="M12 3 L19.5 7.3 V15.7 L12 20 L4.5 15.7 V7.3 Z"
-        stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-  <path d="M12 6.6 V9.4 M12 14.6 V17.4"
-        stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-  <circle cx="12" cy="12" r="2.15" fill="currentColor" />
+  <!-- GitStudio mark: the brand's isometric commit-cube whose inner edges ARE
+       the graph lanes, with nodes at the centre and the three alternating
+       vertices. Faithful monochrome reduction of brand/gitstudio-mark.svg —
+       all currentColor so the activity bar tints it on dark, light, and HC. -->
+  <path d="M12 2.8 L19.95 7.4 L19.95 16.6 L12 21.2 L4.05 16.6 L4.05 7.4 Z"
+        stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.55"/>
+  <path d="M12 12 L4.05 7.4 M12 12 L19.95 7.4 M12 12 L12 21.2"
+        stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="12" cy="12" r="2.05" fill="currentColor"/>
+  <circle cx="4.05" cy="7.4" r="1.55" fill="currentColor"/>
+  <circle cx="19.95" cy="7.4" r="1.55" fill="currentColor"/>
+  <circle cx="12" cy="21.2" r="1.55" fill="currentColor"/>
 </svg>
