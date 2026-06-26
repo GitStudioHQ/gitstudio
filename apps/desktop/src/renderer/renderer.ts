@@ -11,15 +11,17 @@
 // the same look as the extension because it ships the same CSS.
 import "@gitstudio/webview-ui/styles/diff.css";
 import "@gitstudio/webview-ui/styles/graph.css";
+import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
 import { host } from "./bridge";
 import { applyTheme, followSystemTheme, preferredTheme } from "./desktopTheme";
 import { GraphMount } from "./graphMount";
 import { DiffPanel } from "./diffPanel";
 import { CommitContextMenu } from "./contextMenu";
+import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
 import type {
   ChangedFile,
-  CommitDetails,
+  CommitDetailsPayload,
   HeadInfo,
   RefInfo,
   RepoInfo,
@@ -277,58 +279,66 @@ class App {
     this.renderDetails(details);
   }
 
-  private renderDetails(d: CommitDetails): void {
-    const wrap = el("div", "details");
+  /**
+   * Mount the shared <gitstudio-commit-details> inspect panel (identical to the
+   * extension) above a diff surface. Clicking a file in the panel reveals the
+   * inline Monaco diff below it.
+   */
+  private renderDetails(d: CommitDetailsPayload): void {
+    const wrap = el("div", "details-split");
 
-    const head = el("div", "details-head");
-    const subject = el("div", "details-subject");
-    subject.textContent = d.subject;
-    const metaRow = el("div", "details-meta");
-    metaRow.append(
-      tag("sha", d.shortSha),
-      tag("author", d.author),
-      tag("date", formatDate(d.authorDate)),
-    );
-    head.append(subject, metaRow);
-    if (d.body.trim()) {
-      const body = el("pre", "details-body");
-      body.textContent = d.body.trim();
-      head.appendChild(body);
-    }
-
-    const filesTitle = el("div", "details-files-title");
-    filesTitle.textContent = `${d.files.length} changed file${d.files.length === 1 ? "" : "s"}`;
-    const files = el("div", "details-files");
-    for (const f of d.files) {
-      files.appendChild(this.fileRow(f, d.sha));
-    }
-
-    wrap.append(head, filesTitle, files);
+    const panel = document.createElement(
+      "gitstudio-commit-details",
+    ) as CommitDetailsEl;
+    panel.className = "details-panel";
+    panel.details = d;
+    panel.addEventListener("gs-file-open", (e) => {
+      const detail = (e as CustomEvent).detail as { path: string };
+      const f = d.files.find((x) => x.path === detail.path);
+      if (f) {
+        void this.openFile(
+          { path: f.path, status: f.status },
+          d.kind === "wip" ? undefined : d.sha,
+        );
+      }
+    });
+    panel.addEventListener("gs-copy", (e) => {
+      const detail = (e as CustomEvent).detail as { text: string };
+      void navigator.clipboard?.writeText(detail.text).catch(() => {});
+    });
+    panel.addEventListener("gs-action", (e) => {
+      const detail = (e as CustomEvent).detail as { id: string; sha: string };
+      void this.runDetailsAction(detail.id, detail.sha);
+    });
 
     const surface = el("div", "diff-surface");
     this.diffSurfaceEl = surface;
-    wrap.appendChild(surface);
+    wrap.append(panel, surface);
 
     this.detailsEl.replaceChildren(wrap);
     this.diffPanel = new DiffPanel(surface);
     this.diffPanel.showEmpty("Select a file to view its diff.");
   }
 
-  private fileRow(file: ChangedFile, sha: string): HTMLElement {
-    const row = el("button", `file-row status-${file.status}`);
-    const badge = el("span", "file-status");
-    badge.textContent = file.status;
-    const path = el("span", "file-path");
-    path.textContent = file.path;
-    row.append(badge, path);
-    row.addEventListener("click", () => void this.openFile(file, sha));
-    return row;
+  /** Route a details-panel toolbar action to the existing git context menu. */
+  private async runDetailsAction(id: string, sha: string): Promise<void> {
+    const map: Record<string, string> = {
+      checkout: "checkout",
+      branch: "branch",
+      tag: "tag",
+      "cherry-pick": "cherry-pick",
+      revert: "revert",
+      reset: "reset-mixed",
+      "copy-sha": "copy-sha",
+    };
+    const action = map[id];
+    if (action) {
+      await this.runAction({ action, sha } as Parameters<App["runAction"]>[0]);
+    }
   }
 
   private async openFile(file: ChangedFile, sha?: string): Promise<void> {
-    this.detailsEl
-      .querySelectorAll(".file-row.active")
-      .forEach((n) => n.classList.remove("active"));
+    this.detailsSplitEl()?.classList.add("diff-open");
     const diff = await host.invoke("file:diff", { path: file.path, sha });
     if (!diff) {
       this.diffPanel.showEmpty("No diff available.");
@@ -342,6 +352,10 @@ class App {
       }
     }
     this.diffPanel.showDiff(diff);
+  }
+
+  private detailsSplitEl(): HTMLElement | null {
+    return this.detailsEl.querySelector(".details-split");
   }
 
   private showDetailsPlaceholder(): void {

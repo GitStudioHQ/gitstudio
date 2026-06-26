@@ -6,8 +6,9 @@
 // host-specific, so the renderer (browser) and main (Node) bundles both carry it.
 
 import type { WireRow, RowStat } from "@gitstudio/host-bridge/graphProtocol";
+import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
 
-export type { RowStat };
+export type { RowStat, CommitDetailsPayload };
 
 /** A repo the user has opened, surfaced in the "recent" list + sidebar header. */
 export interface RepoInfo {
@@ -130,7 +131,7 @@ export interface IpcChannels {
   "refs:list": [void, RefInfo[]];
   "head:get": [void, HeadInfo | undefined];
   "status": [void, ChangedFile[]];
-  "commit:details": [string, CommitDetails | undefined];
+  "commit:details": [string, CommitDetailsPayload | undefined];
   "commit:rowStats": [string[], RowStat[]];
   "diff:files": [void, ChangedFile[]];
   "file:diff": [{ path: string; sha?: string }, FileDiff | undefined];

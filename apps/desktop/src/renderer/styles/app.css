@@ -479,6 +479,28 @@ gitstudio-graph {
   border-top: 1px solid var(--app-border);
 }
 
+/* The shared <gitstudio-commit-details> inspect panel + the inline diff below
+ * it. The diff surface stays hidden until a file is opened, then splits. */
+.details-split {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.details-split .details-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: block;
+}
+.details-split .diff-surface {
+  display: none;
+  flex: 1 1 55%;
+}
+.details-split.diff-open .diff-surface { display: block; }
+.details-split.diff-open .details-panel { flex: 1 1 45%; min-height: 120px; }
+
 .diff-empty {
   display: flex;
   height: 100%;

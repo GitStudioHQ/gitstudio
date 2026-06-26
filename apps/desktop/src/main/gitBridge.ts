@@ -20,7 +20,7 @@ import type {
   ChangedFile,
   CommitActionRequest,
   CommitActionResult,
-  CommitDetails,
+  CommitDetailsPayload,
   ConflictModel,
   FileDiff,
   GraphPage,
@@ -28,6 +28,8 @@ import type {
   RefInfo,
   RowStat,
 } from "../shared/ipc";
+import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import type { CommitFileChange } from "@gitstudio/host-bridge/git";
 import type { RepoStore } from "./repoStore";
 
 /** Commits per graph page — matches the extension's PAGE_SIZE. */
@@ -176,7 +178,7 @@ export class GitBridge {
 
   // ── Commit details ─────────────────────────────────────────────────────────
 
-  async commitDetails(sha: string): Promise<CommitDetails | undefined> {
+  async commitDetails(sha: string): Promise<CommitDetailsPayload | undefined> {
     const ctx = this.ctx();
     if (!ctx) {
       return undefined;
@@ -191,7 +193,26 @@ export class GitBridge {
     if (!record) {
       return undefined;
     }
+    let files: CommitFileChange[];
+    try {
+      files = await ctx.commitDetails.getCommitFiles(sha, record.parents[0]);
+    } catch {
+      files = [];
+    }
+    const refs: WireRef[] = (this.refsBySha.get(sha) ?? [])
+      .filter((r) => r.type !== "stash")
+      .map((r): WireRef => {
+        if (r.type === "tag") return { kind: "tag", name: r.name };
+        if (r.type === "remote") return { kind: "remoteHead", name: r.name };
+        return r.isCurrent
+          ? { kind: "currentHead", name: r.name }
+          : { kind: "head", name: r.name };
+      });
+    const hasRemote = [...this.refsBySha.values()].some((list) =>
+      list.some((r) => r.type === "remote"),
+    );
     return {
+      kind: "commit",
       sha: record.sha,
       shortSha: record.sha.slice(0, 7),
       parents: record.parents,
@@ -203,7 +224,9 @@ export class GitBridge {
       committerDate: record.committerDate,
       subject: record.subject,
       body: record.body,
-      files: await this.commitFiles(ctx, record),
+      refs,
+      files,
+      hasRemote,
     };
   }
 
