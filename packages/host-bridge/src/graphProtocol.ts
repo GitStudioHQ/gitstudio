@@ -133,6 +133,8 @@ export type GraphWebviewMessage =
   | { type: "action"; action: string; sha: string }
   /** Near the bottom of the loaded rows: please page in more. */
   | { type: "loadMore" }
+  /** Toolbar refresh — reload the graph from the first page. */
+  | { type: "refresh" }
   /** Open a changed file from the details panel as a diff. */
   | { type: "openFile"; sha: string; path: string; wip?: boolean }
   /** A commit action from the details panel's toolbar. */

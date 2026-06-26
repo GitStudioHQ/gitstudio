@@ -124,6 +124,9 @@ export class CommitGraphPanel {
       case "loadMore":
         void this.loadMore();
         break;
+      case "refresh":
+        void this.loadInitial();
+        break;
       case "selectCommit":
         void this.pushCommitDetails(msg.sha);
         break;

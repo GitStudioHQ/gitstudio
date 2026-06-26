@@ -36,6 +36,9 @@ export class GraphMount {
         case "loadMore":
           void this.adapter.loadMore();
           break;
+        case "refresh":
+          void this.reload();
+          break;
         case "requestStats":
           void host
             .invoke("commit:rowStats", action.shas)

@@ -56,6 +56,7 @@ export type GraphAction =
   | { type: "open"; sha: string }
   | { type: "context"; sha: string; x: number; y: number }
   | { type: "loadMore" }
+  | { type: "refresh" }
   | { type: "requestStats"; shas: string[] };
 
 export class CommitGraph extends LitElement {
@@ -70,6 +71,7 @@ export class CommitGraph extends LitElement {
     head: { attribute: false },
     palette: { state: true },
     selectedSha: { state: true },
+    searchQuery: { state: true },
   };
 
   static styles = [codiconStyles, css`
@@ -129,25 +131,82 @@ export class CommitGraph extends LitElement {
       white-space: nowrap;
     }
     .gh-spacer { flex: 1 1 auto; }
-    .gh-hint {
+
+    /* ── Search box + match nav ──────────────────────────────────────────── */
+    .gh-search {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      color: color-mix(in srgb, var(--vscode-foreground) 45%, transparent);
-      white-space: nowrap;
-      overflow: hidden;
+      gap: 4px;
+      height: 26px;
+      min-width: 200px;
+      max-width: 460px;
+      flex: 0 1 360px;
+      padding: 0 4px 0 9px;
+      border-radius: 6px;
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+      background: color-mix(in srgb, var(--vscode-foreground) 5%, var(--vscode-editor-background));
+      transition: border-color 140ms ease;
     }
-    .gh-hint kbd {
-      font-family: var(--vscode-editor-font-family, monospace);
-      font-size: 10px;
-      line-height: 15px;
-      padding: 0 4px;
-      border-radius: 4px;
-      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
+    .gh-search:focus-within {
+      border-color: var(--vscode-focusBorder);
+    }
+    .gh-search > .codicon-search {
+      font-size: 13px;
       color: var(--gs-fg-muted);
+      flex: 0 0 auto;
     }
-    @media (max-width: 620px) { .gh-hint { display: none; } }
+    .gh-input {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 100%;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--vscode-foreground);
+      font-family: var(--vscode-font-family);
+      font-size: 12px;
+    }
+    .gh-input::placeholder { color: color-mix(in srgb, var(--vscode-foreground) 42%, transparent); }
+    .gh-results {
+      flex: 0 0 auto;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--gs-fg-muted);
+      padding: 0 2px;
+      white-space: nowrap;
+    }
+    .gh-results.none { color: var(--vscode-charts-red, #f14c4c); }
+    .gh-iconbtn {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--gs-fg-muted);
+      cursor: pointer;
+      transition: background 120ms ease, color 120ms ease;
+    }
+    .gh-iconbtn:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+    .gh-iconbtn .codicon { font-size: 14px; }
+    .gh-refresh { margin-left: 2px; }
+
+    /* Search highlight: matches glow, the rest recede. */
+    .row.is-match {
+      background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 12%, transparent);
+      box-shadow: inset 2px 0 0 var(--vscode-charts-yellow, #e2c08d);
+    }
+    .row.is-nomatch .subject,
+    .row.is-nomatch .refs,
+    .row.is-nomatch .changes,
+    .row.is-nomatch .meta { opacity: 0.4; }
+    .row.is-nomatch .avatar { opacity: 0.45; }
+
+    @media (max-width: 560px) { .gh-search { min-width: 130px; flex-basis: 200px; } }
     @media (max-width: 420px) { .gh-count { display: none; } }
 
     /* ── Column header row (aligned to the row grid) ──────────────────── */
@@ -514,6 +573,11 @@ export class CommitGraph extends LitElement {
 
   private declare palette: readonly string[];
   private declare selectedSha: string | undefined;
+  private declare searchQuery: string;
+  /** Row indices matching the current search, and the cursor into them. */
+  private searchMatches: number[] = [];
+  private matchSet = new Set<number>();
+  private matchIdx = -1;
 
   /** Emits user intents the host should act on. */
   onAction: (action: GraphAction) => void = () => {};
@@ -547,6 +611,7 @@ export class CommitGraph extends LitElement {
     this.head = "";
     this.palette = paletteForTheme();
     this.selectedSha = undefined;
+    this.searchQuery = "";
   }
 
   connectedCallback(): void {
@@ -731,10 +796,13 @@ export class CommitGraph extends LitElement {
     const selected = row.sha === this.selectedSha;
     const focusOn =
       this.focusColor === undefined || row.color === this.focusColor;
+    const searching = this.searchQuery.trim().length > 0;
+    const isMatch = searching && this.matchSet.has(item.index);
     const cls =
       "row" +
       (selected ? " selected" : "") +
-      (focusOn ? " focus-on" : "");
+      (focusOn ? " focus-on" : "") +
+      (searching ? (isMatch ? " is-match" : " is-nomatch") : "");
     const gutter = renderRowGutterSVG(
       row,
       {
@@ -909,6 +977,74 @@ export class CommitGraph extends LitElement {
     this.renderRows();
   }
 
+  // ── Search (highlight + navigate matches across loaded rows) ───────────────
+
+  private onSearchInput = (e: Event): void => {
+    this.searchQuery = (e.target as HTMLInputElement).value;
+    this.computeMatches();
+    this.renderRows();
+  };
+
+  private onSearchKey = (e: KeyboardEvent): void => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      this.gotoMatch(e.shiftKey ? -1 : 1);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      this.clearSearch();
+    }
+  };
+
+  private clearSearch(): void {
+    this.searchQuery = "";
+    this.computeMatches();
+    this.renderRows();
+  }
+
+  private computeMatches(): void {
+    const q = this.searchQuery.trim().toLowerCase();
+    this.searchMatches = [];
+    this.matchSet.clear();
+    this.matchIdx = -1;
+    if (!q) {
+      return;
+    }
+    for (let i = 0; i < this.rows.length; i++) {
+      const r = this.rows[i];
+      if (
+        r.subject.toLowerCase().includes(q) ||
+        r.author.toLowerCase().includes(q) ||
+        r.authorEmail.toLowerCase().includes(q) ||
+        r.sha.toLowerCase().startsWith(q) ||
+        r.refs.some((ref) => ref.name.toLowerCase().includes(q))
+      ) {
+        this.searchMatches.push(i);
+        this.matchSet.add(i);
+      }
+    }
+    if (this.searchMatches.length) {
+      this.matchIdx = 0;
+      this.scrollToMatch();
+    }
+  }
+
+  private gotoMatch(delta: number): void {
+    if (!this.searchMatches.length) {
+      return;
+    }
+    this.matchIdx =
+      (this.matchIdx + delta + this.searchMatches.length) % this.searchMatches.length;
+    this.scrollToMatch();
+  }
+
+  private scrollToMatch(): void {
+    const idx = this.searchMatches[this.matchIdx];
+    const row = this.rows[idx];
+    if (row) {
+      this.select(row.sha, true);
+    }
+  }
+
   /** Current branch name, derived from the HEAD row's currentHead ref. */
   private currentBranchName(): string {
     for (const row of this.rows) {
@@ -927,6 +1063,12 @@ export class CommitGraph extends LitElement {
       n === 0
         ? ""
         : `${n.toLocaleString()}${this.hasMore ? "+" : ""} commit${n === 1 ? "" : "s"}`;
+    const q = this.searchQuery.trim();
+    const results = q
+      ? this.searchMatches.length
+        ? `${this.matchIdx + 1}/${this.searchMatches.length}`
+        : "No results"
+      : "";
     return html`<div class="gheader">
       <span
         class="gh-branch"
@@ -937,10 +1079,49 @@ export class CommitGraph extends LitElement {
       </span>
       ${count ? html`<span class="gh-count">${count}</span>` : nothing}
       <span class="gh-spacer"></span>
-      <span class="gh-hint">
-        <kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>↵</kbd> open · right-click for
-        actions
+      <span class="gh-search ${q ? "active" : ""}">
+        <span class="codicon codicon-search" aria-hidden="true"></span>
+        <input
+          class="gh-input"
+          type="text"
+          placeholder="Search commits, authors, refs…"
+          aria-label="Search commits"
+          .value=${this.searchQuery}
+          @input=${this.onSearchInput}
+          @keydown=${this.onSearchKey}
+        />
+        ${q
+          ? html`<span class="gh-results ${this.searchMatches.length ? "" : "none"}"
+                >${results}</span
+              >
+              <button
+                class="gh-iconbtn"
+                title="Previous match (Shift+Enter)"
+                @click=${() => this.gotoMatch(-1)}
+              >
+                <span class="codicon codicon-chevron-up"></span></button
+              ><button
+                class="gh-iconbtn"
+                title="Next match (Enter)"
+                @click=${() => this.gotoMatch(1)}
+              >
+                <span class="codicon codicon-chevron-down"></span></button
+              ><button
+                class="gh-iconbtn"
+                title="Clear search (Esc)"
+                @click=${() => this.clearSearch()}
+              >
+                <span class="codicon codicon-close"></span>
+              </button>`
+          : nothing}
       </span>
+      <button
+        class="gh-iconbtn gh-refresh"
+        title="Refresh"
+        @click=${() => this.onAction({ type: "refresh" })}
+      >
+        <span class="codicon codicon-refresh"></span>
+      </button>
     </div>`;
   }
 

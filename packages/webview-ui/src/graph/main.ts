@@ -73,6 +73,12 @@ function start(root: HTMLElement): void {
       case "loadMore":
         vscode.postMessage({ type: "loadMore" });
         break;
+      case "refresh":
+        vscode.postMessage({ type: "refresh" });
+        break;
+      case "requestStats":
+        vscode.postMessage({ type: "requestStats", shas: action.shas });
+        break;
     }
   };
 

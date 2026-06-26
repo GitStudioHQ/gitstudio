@@ -43,4 +43,7 @@ export const codiconStyles = css`
   .codicon-dash::before { content: "\\eacc"; }
   .codicon-edit::before { content: "\\ea73"; }
   .codicon-archive::before { content: "\\ea98"; }
+  .codicon-search::before { content: "\\ea6d"; }
+  .codicon-close::before { content: "\\ea76"; }
+  .codicon-refresh::before { content: "\\eb37"; }
 `;
