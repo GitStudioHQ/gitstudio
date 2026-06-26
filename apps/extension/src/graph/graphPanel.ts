@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import type { CommitRecord, GitRef } from "@gitstudio/git-service/index";
+import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type {
   GraphHostMessage,
   GraphWebviewMessage,
@@ -18,6 +19,8 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { commitActionItems, runCommitAction } from "./commitActions";
 import { openRevisionDiff } from "../history/revisionContentProvider";
+import { relativePath, statusLetter } from "../changes/changesView";
+import type { Change } from "../git/git";
 
 /** git's canonical empty-tree object — the "parent" of a root commit's diff. */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -208,7 +211,12 @@ export class CommitGraphPanel {
       this.nextSkip = page.length;
       this.hasMore = page.length === PAGE_SIZE;
 
-      const { rows, totalColumns } = this.buildRows(page);
+      // GitKraken-style WIP node: when the working tree is dirty, prepend a
+      // synthetic "Uncommitted changes" commit parented on HEAD so it sits at
+      // the top of the graph with a lane down to HEAD.
+      this.injectWipNode(active);
+
+      const { rows, totalColumns } = this.buildRows(this.loaded);
       this.post({
         type: "graphInit",
         rows,
@@ -429,10 +437,47 @@ export class CommitGraphPanel {
     void this.pushCommitDetails(sha);
   }
 
+  /** Prepend a synthetic "Uncommitted changes" node when the tree is dirty. */
+  private injectWipNode(active: RepoEntry): void {
+    if (!this.currentHeadSha) {
+      return;
+    }
+    const st = active.repo.state;
+    const dirty =
+      (st.indexChanges?.length ?? 0) +
+        (st.workingTreeChanges?.length ?? 0) +
+        (st.mergeChanges?.length ?? 0) >
+      0;
+    if (!dirty) {
+      return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    this.records.set(UNCOMMITTED_SHA, {
+      sha: UNCOMMITTED_SHA,
+      parents: [this.currentHeadSha],
+      author: "Uncommitted changes",
+      authorEmail: "",
+      authorDate: now,
+      committer: "Uncommitted changes",
+      committerEmail: "",
+      committerDate: now,
+      subject: "Uncommitted changes",
+      body: "",
+    });
+    this.loaded.unshift({
+      sha: UNCOMMITTED_SHA,
+      parents: [this.currentHeadSha],
+    });
+  }
+
   /** Build the selected commit's full details payload and post it. */
   private async pushCommitDetails(sha: string): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
+      return;
+    }
+    if (sha === UNCOMMITTED_SHA) {
+      this.pushWipDetails(active);
       return;
     }
     const record = await this.getRecord(active, sha);
@@ -469,6 +514,45 @@ export class CommitGraphPanel {
     this.post({ type: "commitDetails", details: payload });
   }
 
+  /** Build the working-tree (WIP) details payload from the repo state. */
+  private pushWipDetails(active: RepoEntry): void {
+    const st = active.repo.state;
+    const now = Math.floor(Date.now() / 1000);
+    const toFiles = (changes: Change[] | undefined) =>
+      (changes ?? []).map((c) => ({
+        path: relativePath(active.root, c.uri.fsPath),
+        status: statusLetter(c.status),
+        additions: 0,
+        deletions: 0,
+      }));
+    const staged = toFiles(st.indexChanges);
+    const unstaged = [
+      ...toFiles(st.mergeChanges),
+      ...toFiles(st.workingTreeChanges),
+    ];
+    this.post({
+      type: "commitDetails",
+      details: {
+        kind: "wip",
+        sha: UNCOMMITTED_SHA,
+        shortSha: "WIP",
+        parents: [this.currentHeadSha],
+        author: "Uncommitted changes",
+        authorEmail: "",
+        authorDate: now,
+        committer: "",
+        committerEmail: "",
+        committerDate: now,
+        subject: "",
+        body: "",
+        refs: [],
+        files: [...staged, ...unstaged],
+        stagedCount: staged.length,
+        hasRemote: this.hasAnyRemote,
+      },
+    });
+  }
+
   /** Open a changed file as a diff (commit vs first parent, or WIP vs HEAD). */
   private async doOpenFile(
     sha: string,
@@ -500,6 +584,17 @@ export class CommitGraphPanel {
   private async doCommitAction(action: string, sha: string): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
+      return;
+    }
+    // WIP actions route to the existing Changes view (where staging/commit live).
+    if (sha === UNCOMMITTED_SHA) {
+      if (action === "stash") {
+        await vscode.commands.executeCommand("gitstudio.stash.save");
+      } else {
+        // Reveal the Changes view (auto-generated focus command) where staging,
+        // commit, and discard live.
+        await vscode.commands.executeCommand("gitstudio.commit.focus");
+      }
       return;
     }
     if (action === "open-remote") {
@@ -547,7 +642,8 @@ export class CommitGraphPanel {
     }
     const stats: RowStat[] = [];
     // Bounded concurrency: a handful at a time keeps the process pool happy.
-    const queue = shas.slice(0, 60);
+    // The synthetic WIP node has no real commit to stat.
+    const queue = shas.filter((s) => s !== UNCOMMITTED_SHA).slice(0, 60);
     await Promise.all(
       queue.map(async (sha) => {
         const record = await this.getRecord(active, sha);

@@ -50,6 +50,8 @@ const MAX_GUTTER_COLUMNS = 16;
 const LOAD_MORE_THRESHOLD = 60;
 /** Cap ref chips shown inline before collapsing into a "+N" overflow pill. */
 const MAX_VISIBLE_REFS = 4;
+/** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) node. */
+const ZERO_SHA_RE = /^0{40}$/;
 
 export type GraphAction =
   | { type: "select"; sha: string }
@@ -346,6 +348,19 @@ export class CommitGraph extends LitElement {
       font-family: var(--vscode-font-family);
       background: hsl(var(--gs-av-hue, 210) 48% 42%);
     }
+    /* WIP node: a pencil glyph in a dashed lane-colored ring. */
+    .avatar.wip-node {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--vscode-editor-background);
+      color: var(--gs-av-ring, var(--vscode-charts-yellow, #e2c08d));
+      box-shadow:
+        0 0 0 1.5px var(--gs-av-ring, var(--vscode-charts-yellow, #e2c08d)),
+        0 0 0 3px var(--gs-graph-node-hole);
+    }
+    .avatar.wip-node .codicon { font-size: 11px; }
+    .row.is-wip .subject { font-style: italic; color: var(--gs-fg-muted); }
 
     .gutter {
       position: relative;
@@ -798,10 +813,12 @@ export class CommitGraph extends LitElement {
       this.focusColor === undefined || row.color === this.focusColor;
     const searching = this.searchQuery.trim().length > 0;
     const isMatch = searching && this.matchSet.has(item.index);
+    const isWip = ZERO_SHA_RE.test(row.sha);
     const cls =
       "row" +
       (selected ? " selected" : "") +
       (focusOn ? " focus-on" : "") +
+      (isWip ? " is-wip" : "") +
       (searching ? (isMatch ? " is-match" : " is-nomatch") : "");
     const gutter = renderRowGutterSVG(
       row,
@@ -817,12 +834,17 @@ export class CommitGraph extends LitElement {
     );
     const refs = row.refs.length ? this.refsHtml(row.refs) : "";
     // The avatar sits ON the commit node (GitKraken-style), positioned at the
-    // node's lane x and ringed in the lane color.
+    // node's lane x and ringed in the lane color. The WIP node gets a distinct
+    // pencil glyph instead of an author avatar.
     const cx = Math.round(row.column * COL_WIDTH + COL_WIDTH / 2 + NODE_INSET);
     const ring = this.palette[row.color % this.palette.length] ?? "#888";
-    const avatar = avatarHtml(row.author, row.authorEmail, cx, ring);
+    const avatar = isWip
+      ? `<span class="avatar wip-node" style="--gs-av-x:${cx}px;--gs-av-ring:${esc(ring)}" aria-hidden="true"><span class="codicon codicon-edit"></span></span>`
+      : avatarHtml(row.author, row.authorEmail, cx, ring);
     const label = esc(
-      `${row.shortSha}: ${row.subject} — ${row.author}, ${relTime(row.authorDate)}`,
+      isWip
+        ? "Uncommitted changes"
+        : `${row.shortSha}: ${row.subject} — ${row.author}, ${relTime(row.authorDate)}`,
     );
     return (
       `<div class="${cls}" role="row" data-sha="${row.sha}" ` +
@@ -831,10 +853,10 @@ export class CommitGraph extends LitElement {
       `<div class="gutter">${gutter}${avatar}</div>` +
       `<div class="refs">${refs}</div>` +
       `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
-      `<div class="changes">${this.changesHtml(row.sha)}</div>` +
-      `<div class="meta author" title="${esc(row.author)} <${esc(row.authorEmail)}>">${esc(row.author)}</div>` +
-      `<div class="meta date" title="${esc(absTime(row.authorDate))}">${esc(relTime(row.authorDate))}</div>` +
-      `<div class="meta sha">${esc(row.shortSha)}</div>` +
+      `<div class="changes">${isWip ? "" : this.changesHtml(row.sha)}</div>` +
+      `<div class="meta author" title="${esc(row.author)} <${esc(row.authorEmail)}>">${isWip ? "" : esc(row.author)}</div>` +
+      `<div class="meta date" title="${esc(absTime(row.authorDate))}">${isWip ? "now" : esc(relTime(row.authorDate))}</div>` +
+      `<div class="meta sha">${isWip ? "" : esc(row.shortSha)}</div>` +
       `</div>`
     );
   }
