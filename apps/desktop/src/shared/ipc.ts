@@ -5,7 +5,9 @@
 // them through `window.gitstudio`). It is TYPE-ONLY and imports nothing
 // host-specific, so the renderer (browser) and main (Node) bundles both carry it.
 
-import type { WireRow } from "@gitstudio/host-bridge/graphProtocol";
+import type { WireRow, RowStat } from "@gitstudio/host-bridge/graphProtocol";
+
+export type { RowStat };
 
 /** A repo the user has opened, surfaced in the "recent" list + sidebar header. */
 export interface RepoInfo {
@@ -129,6 +131,7 @@ export interface IpcChannels {
   "head:get": [void, HeadInfo | undefined];
   "status": [void, ChangedFile[]];
   "commit:details": [string, CommitDetails | undefined];
+  "commit:rowStats": [string[], RowStat[]];
   "diff:files": [void, ChangedFile[]];
   "file:diff": [{ path: string; sha?: string }, FileDiff | undefined];
   "conflict:model": [string, ConflictModel | undefined];

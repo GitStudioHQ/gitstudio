@@ -273,6 +273,7 @@ function registerIpc(): void {
   handle("head:get", () => bridge.head());
   handle("status", () => bridge.status());
   handle("commit:details", (sha) => bridge.commitDetails(sha));
+  handle("commit:rowStats", (shas) => bridge.rowStats(shas));
   handle("diff:files", () => bridge.diffFiles());
   handle("file:diff", (req) => bridge.fileDiff(req));
   handle("conflict:model", (path) => bridge.conflictModel(path));

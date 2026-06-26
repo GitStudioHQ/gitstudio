@@ -7,7 +7,7 @@
 
 import "@gitstudio/webview-ui/graph/commit-graph";
 import type { CommitGraph, GraphAction } from "@gitstudio/webview-ui/graph/commit-graph";
-import { GraphHostAdapter } from "./bridge";
+import { GraphHostAdapter, host } from "./bridge";
 
 export interface GraphCallbacks {
   onSelect(sha: string): void;
@@ -35,6 +35,12 @@ export class GraphMount {
           break;
         case "loadMore":
           void this.adapter.loadMore();
+          break;
+        case "requestStats":
+          void host
+            .invoke("commit:rowStats", action.shas)
+            .then((stats) => this.element.setRowStats(stats))
+            .catch(() => {});
           break;
       }
     };

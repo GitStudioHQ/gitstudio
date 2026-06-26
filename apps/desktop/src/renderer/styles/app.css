@@ -319,7 +319,9 @@ body {
 }
 
 gitstudio-graph {
-  display: block;
+  /* Size only — the element's shadow `:host` uses `display:flex;
+   * flex-direction:column`. A light-DOM `display:block` here would override it
+   * and collapse the flex:1 row scroller to zero height (no rows render). */
   height: 100%;
   width: 100%;
 }

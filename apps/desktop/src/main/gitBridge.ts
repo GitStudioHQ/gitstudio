@@ -26,6 +26,7 @@ import type {
   GraphPage,
   HeadInfo,
   RefInfo,
+  RowStat,
 } from "../shared/ipc";
 import type { RepoStore } from "./repoStore";
 
@@ -204,6 +205,48 @@ export class GitBridge {
       body: record.body,
       files: await this.commitFiles(ctx, record),
     };
+  }
+
+  /** CHANGES-column stats (file count + add/del) for the given (visible) shas. */
+  async rowStats(shas: string[]): Promise<RowStat[]> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return [];
+    }
+    const out: RowStat[] = [];
+    await Promise.all(
+      shas.slice(0, 60).map(async (sha) => {
+        let record = this.records.get(sha);
+        if (!record) {
+          for await (const c of ctx.log.streamCommits({
+            revRange: sha,
+            maxCount: 1,
+          })) {
+            record = c;
+            break;
+          }
+        }
+        if (!record) {
+          return;
+        }
+        try {
+          const files = await ctx.commitDetails.getCommitFiles(
+            sha,
+            record.parents[0],
+          );
+          let add = 0,
+            del = 0;
+          for (const f of files) {
+            if (f.additions > 0) add += f.additions;
+            if (f.deletions > 0) del += f.deletions;
+          }
+          out.push({ sha, files: files.length, additions: add, deletions: del });
+        } catch {
+          out.push({ sha, files: 0, additions: 0, deletions: 0 });
+        }
+      }),
+    );
+    return out;
   }
 
   /** Changed files for a commit via `git show --name-status` (or root-diff). */
