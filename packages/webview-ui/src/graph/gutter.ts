@@ -13,6 +13,8 @@ export interface GutterOptions {
   rowHeight: number;
   /** Commit node radius, px. */
   nodeRadius: number;
+  /** Left inset (px) added to every lane x — leaves room for node avatars. */
+  nodeInset?: number;
   /** Lane palette; `segment.color` / `row.color` index into it. */
   palette: readonly string[];
   /**
@@ -29,8 +31,12 @@ const STROKE_WIDTH = 1.6;
 const DIM_OPACITY = 0.22;
 
 /** Center x of a lane column. Half-pixel aligned so verticals stay crisp. */
-function laneCenterX(column: number, colWidth: number): number {
-  return Math.round(column * colWidth + colWidth / 2) + 0.5;
+export function laneCenterX(
+  column: number,
+  colWidth: number,
+  inset = 0,
+): number {
+  return Math.round(column * colWidth + colWidth / 2 + inset) + 0.5;
 }
 
 function color(palette: readonly string[], index: number): string {
@@ -47,9 +53,10 @@ export function segmentPath(
   seg: WireSegment,
   colWidth: number,
   rowHeight: number,
+  inset = 0,
 ): string {
-  const x0 = laneCenterX(seg.fromColumn, colWidth);
-  const x1 = laneCenterX(seg.toColumn, colWidth);
+  const x0 = laneCenterX(seg.fromColumn, colWidth, inset);
+  const x1 = laneCenterX(seg.toColumn, colWidth, inset);
   const y0 = 0;
   const y1 = rowHeight;
   if (seg.fromColumn === seg.toColumn) {
@@ -74,7 +81,8 @@ export function renderRowGutterSVG(
   width: number,
 ): string {
   const { colWidth, rowHeight, nodeRadius, palette, focusColor } = opts;
-  const cx = laneCenterX(row.column, colWidth);
+  const inset = opts.nodeInset ?? 0;
+  const cx = laneCenterX(row.column, colWidth, inset);
   const cy = Math.round(rowHeight / 2) + 0.5;
 
   let paths = "";
@@ -82,7 +90,7 @@ export function renderRowGutterSVG(
     const dim = focusColor !== undefined && seg.color !== focusColor;
     const opacity = dim ? ` opacity="${DIM_OPACITY}"` : "";
     paths +=
-      `<path d="${segmentPath(seg, colWidth, rowHeight)}" ` +
+      `<path d="${segmentPath(seg, colWidth, rowHeight, inset)}" ` +
       `fill="none" stroke="${color(palette, seg.color)}" ` +
       `stroke-width="${STROKE_WIDTH}" stroke-linecap="round"${opacity}/>`;
   }

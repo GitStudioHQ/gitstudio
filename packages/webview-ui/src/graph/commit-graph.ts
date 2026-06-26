@@ -38,10 +38,12 @@ const ROW_HEIGHT = 24;
 const COL_WIDTH = 14;
 const NODE_RADIUS = 3.5;
 const OVERSCAN = 12;
-/** Author avatar diameter, px (rendered @2× via gravatar s=40 for crispness). */
+/** Author avatar diameter, px — sits ON the commit node, GitKraken-style. */
 const AVATAR_SIZE = 18;
-/** Min gutter width so even a linear history reserves a tidy lane column. */
-const MIN_GUTTER_WIDTH = 28;
+/** Left inset added to every lane so a node avatar at lane 0 isn't clipped. */
+const NODE_INSET = 12;
+/** Min gutter width so even a linear history reserves room for the avatar. */
+const MIN_GUTTER_WIDTH = 34;
 /** Cap the *rendered* gutter width so a pathological fan-out can't eat the row. */
 const MAX_GUTTER_COLUMNS = 16;
 /** Trigger a loadMore when within this many rows of the bottom. */
@@ -153,7 +155,6 @@ export class CommitGraph extends LitElement {
       flex: 0 0 auto;
       display: grid;
       grid-template-columns:
-        26px
         var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
         auto
         minmax(0, 1fr)
@@ -209,7 +210,6 @@ export class CommitGraph extends LitElement {
       height: ${ROW_HEIGHT}px;
       display: grid;
       grid-template-columns:
-        26px
         var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
         auto
         minmax(0, 1fr)
@@ -244,25 +244,34 @@ export class CommitGraph extends LitElement {
       background: var(--vscode-list-activeSelectionBackground);
     }
 
-    /* ── Author avatar ──────────────────────────────────────────────────── */
+    /* ── Author avatar — sits ON the commit node (GitKraken-style) ──────── */
     .avatar {
+      position: absolute;
+      left: var(--gs-av-x, 12px);
+      top: 50%;
       width: ${AVATAR_SIZE}px;
       height: ${AVATAR_SIZE}px;
-      margin: 0 auto;
+      transform: translate(-50%, -50%);
       border-radius: 50%;
       overflow: hidden;
-      position: relative;
-      flex: 0 0 auto;
-      box-shadow: 0 0 0 1px color-mix(in srgb,
-        var(--vscode-foreground) 14%, transparent);
+      /* A lane-colored ring, then a hole-colored ring so crossing lanes never
+         visually fuse into the avatar. */
+      box-shadow:
+        0 0 0 1.5px var(--gs-av-ring, var(--vscode-focusBorder)),
+        0 0 0 3px var(--gs-graph-node-hole);
+      pointer-events: none;
+      z-index: 1;
+    }
+    .row.selected .avatar {
+      box-shadow:
+        0 0 0 1.5px var(--gs-av-ring, var(--vscode-focusBorder)),
+        0 0 0 3px var(--vscode-list-activeSelectionBackground, var(--gs-graph-node-hole));
     }
     .avatar img {
       width: 100%;
       height: 100%;
       display: block;
       object-fit: cover;
-      /* The img sits over the initials fallback; if it fails to load the host
-         hides it (onerror) revealing the disc underneath. */
       background: transparent;
     }
     .avatar .fallback {
@@ -276,11 +285,11 @@ export class CommitGraph extends LitElement {
       letter-spacing: 0.02em;
       color: #fff;
       font-family: var(--vscode-font-family);
-      /* hue set inline per author; lightness fixed for legible white text. */
       background: hsl(var(--gs-av-hue, 210) 48% 42%);
     }
 
     .gutter {
+      position: relative;
       height: ${ROW_HEIGHT}px;
       overflow: hidden;
       align-self: stretch;
@@ -621,13 +630,16 @@ export class CommitGraph extends LitElement {
     }
   }
 
-  /** Gutter render width: capped columns × pitch, with a sensible minimum. */
+  /** Gutter render width: capped columns × pitch + inset + avatar half-width. */
   private gutterWidth(): number {
     const cols = Math.min(
       Math.max(this.totalColumns, 1),
       MAX_GUTTER_COLUMNS,
     );
-    return Math.max(MIN_GUTTER_WIDTH, cols * COL_WIDTH + COL_WIDTH / 2);
+    return Math.max(
+      MIN_GUTTER_WIDTH,
+      NODE_INSET + cols * COL_WIDTH + COL_WIDTH / 2 + AVATAR_SIZE / 2 + 2,
+    );
   }
 
   private applyGutterWidth(): void {
@@ -729,13 +741,18 @@ export class CommitGraph extends LitElement {
         colWidth: COL_WIDTH,
         rowHeight: ROW_HEIGHT,
         nodeRadius: NODE_RADIUS,
+        nodeInset: NODE_INSET,
         palette: this.palette,
         focusColor: this.focusColor,
       },
       gutterW,
     );
     const refs = row.refs.length ? this.refsHtml(row.refs) : "";
-    const avatar = avatarHtml(row.author, row.authorEmail);
+    // The avatar sits ON the commit node (GitKraken-style), positioned at the
+    // node's lane x and ringed in the lane color.
+    const cx = Math.round(row.column * COL_WIDTH + COL_WIDTH / 2 + NODE_INSET);
+    const ring = this.palette[row.color % this.palette.length] ?? "#888";
+    const avatar = avatarHtml(row.author, row.authorEmail, cx, ring);
     const label = esc(
       `${row.shortSha}: ${row.subject} — ${row.author}, ${relTime(row.authorDate)}`,
     );
@@ -743,8 +760,7 @@ export class CommitGraph extends LitElement {
       `<div class="${cls}" role="row" data-sha="${row.sha}" ` +
       `aria-selected="${selected ? "true" : "false"}" aria-label="${label}" ` +
       `style="transform:translateY(${item.start}px)">` +
-      `${avatar}` +
-      `<div class="gutter">${gutter}</div>` +
+      `<div class="gutter">${gutter}${avatar}</div>` +
       `<div class="refs">${refs}</div>` +
       `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
       `<div class="changes">${this.changesHtml(row.sha)}</div>` +
@@ -961,7 +977,6 @@ export class CommitGraph extends LitElement {
   /** GitLens-style column headers, aligned to the row grid. */
   private colHeadHtml() {
     return html`<div class="colhead" aria-hidden="true">
-      <span></span>
       <span class="ch-graph">Graph</span>
       <span>Branch / Tag</span>
       <span>Commit message</span>
@@ -1005,12 +1020,18 @@ function chipHtml(ref: WireRef): string {
  * the virtualized hot path.) Alt is intentionally empty so a broken image never
  * flashes alt text over the disc.
  */
-function avatarHtml(author: string, email: string): string {
+function avatarHtml(
+  author: string,
+  email: string,
+  cx: number,
+  ring: string,
+): string {
   const hue = avatarHue(email);
   const initials = esc(authorInitials(author, email));
   const url = esc(gravatarUrl(email, 40));
   return (
-    `<span class="avatar" style="--gs-av-hue:${hue}" aria-hidden="true">` +
+    `<span class="avatar" style="--gs-av-hue:${hue};--gs-av-x:${cx}px;` +
+    `--gs-av-ring:${esc(ring)}" aria-hidden="true">` +
     `<span class="fallback">${initials}</span>` +
     `<img class="av-img" src="${url}" alt="" loading="lazy" decoding="async" />` +
     `</span>`
