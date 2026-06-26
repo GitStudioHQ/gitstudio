@@ -21,6 +21,11 @@ import type {
   RepoInfo,
 } from "../shared/ipc";
 
+// Set the product name BEFORE the app is ready so the macOS app menu, the dock
+// label, and userData path all read "GitStudio" instead of "Electron" (which is
+// the default for an unpackaged dev build).
+app.setName("GitStudio");
+
 let mainWindow: BrowserWindow | undefined;
 let repos: RepoStore;
 let bridge: GitBridge;
@@ -294,6 +299,12 @@ async function boot(): Promise<void> {
 
   registerIpc();
   buildMenu();
+  // Dev builds show Electron's dock icon; force the GitStudio brand mark.
+  try {
+    app.dock?.setIcon(appIcon());
+  } catch {
+    /* non-macOS or icon missing — harmless */
+  }
   await createWindow();
   initAutoUpdate({ isDev: !app.isPackaged });
 

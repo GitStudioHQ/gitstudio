@@ -78,10 +78,20 @@ function copyStaticAssets() {
     path.join(rendererDir, "index.html"),
     path.join(distDir, "renderer/index.html"),
   );
-  // The window/dev icon (electron-builder embeds the packaged icon separately).
-  const icon = path.join(repoRoot, "brand/gitstudio-icon-512.png");
-  if (fs.existsSync(icon)) {
-    fs.copyFileSync(icon, path.join(distDir, "renderer/icon.png"));
+  // The window/dev icon (electron-builder embeds the packaged icon separately)
+  // plus the in-app brand assets (welcome logo + top-bar mark).
+  const brand = {
+    "brand/gitstudio-icon-512.png": "icon.png",
+    "brand/gitstudio-logo.svg": "brand-logo.svg",
+    "brand/gitstudio-mark.svg": "brand-mark.svg",
+    "brand/gitstudio-wordmark-light.svg": "brand-wordmark-light.svg",
+    "brand/gitstudio-wordmark-dark.svg": "brand-wordmark-dark.svg",
+  };
+  for (const [src, dest] of Object.entries(brand)) {
+    const abs = path.join(repoRoot, src);
+    if (fs.existsSync(abs)) {
+      fs.copyFileSync(abs, path.join(distDir, "renderer", dest));
+    }
   }
 }
 

@@ -88,4 +88,9 @@ export class GraphMount {
     this.element.rows = [];
     this.element.status = "empty";
   }
+
+  /** Select + scroll a commit (e.g. a branch tip) into view. */
+  reveal(sha: string): void {
+    this.element.reveal(sha);
+  }
 }
