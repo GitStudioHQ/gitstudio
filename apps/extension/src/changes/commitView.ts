@@ -25,13 +25,32 @@ interface FileEntry {
   status: string;
 }
 
+/** A local branch row for the branch menu (folds in the old Branches view). */
+interface BranchRefPayload {
+  name: string;
+  current: boolean;
+  upstream?: string;
+  favorite: boolean;
+}
+
+/** Everything the branch menu needs: local branches (with favorites), remotes, recents. */
+interface BranchesPayload {
+  local: BranchRefPayload[];
+  remote: string[];
+  recent: string[];
+}
+
 interface StatePayload {
   type: "state";
+  /** Whether a repository is open — drives the no-repo onboarding state. */
+  hasRepo: boolean;
   merge: FileEntry[];
   staged: FileEntry[];
   unstaged: FileEntry[];
   stagedCount: number;
   branch?: string;
+  /** Branch + remote lists driving the in-header branch/actions menu. */
+  branches?: BranchesPayload;
   /** Upstream tracking ref (e.g. "origin/main"), when the branch tracks one. */
   upstream?: string;
   /** Commits the local branch is ahead of its upstream. */
@@ -60,7 +79,11 @@ interface FromWebview {
     | "unstageAll"
     | "discardAll"
     | "setLayout"
-    | "amendToggled";
+    | "amendToggled"
+    | "branchAction"
+    | "branchRefCommand"
+    | "openFolder"
+    | "openGraph";
   path?: string;
   staged?: boolean;
   group?: GroupKind;
@@ -70,6 +93,14 @@ interface FromWebview {
   signoff?: boolean;
   author?: string;
   push?: boolean;
+  /** Branch-menu sub-action: checkout | checkoutRemote | new | checkoutRef | pull | pullRebase | push | fetch | favorite. */
+  action?: string;
+  /** The ref a branch action targets (branch name or "remote/branch"). */
+  ref?: string;
+  /** A `gitstudio.*` command id to run with a synthetic `{ ref }` arg (branch action submenu). */
+  command?: string;
+  /** The kind of ref the submenu command targets: "head" (local) | "remote" | "tag". */
+  refType?: "head" | "remote" | "tag";
 }
 
 /**
@@ -140,6 +171,18 @@ export class CommitViewProvider
         return;
       case "amendToggled":
         await this.pushState(!!msg.amend);
+        return;
+      case "branchAction":
+        await this.handleBranchAction(msg);
+        return;
+      case "branchRefCommand":
+        await this.handleBranchRefCommand(msg);
+        return;
+      case "openFolder":
+        await vscode.commands.executeCommand("vscode.openFolder");
+        return;
+      case "openGraph":
+        await vscode.commands.executeCommand("gitstudio.showCommitGraph");
         return;
       case "generateMessage":
         await this.doGenerate();
@@ -383,6 +426,160 @@ export class CommitViewProvider
     }
   }
 
+  // ── Branch menu (folds the old Branches view into the Changes header) ──────
+
+  private favKey(entry: RepoEntry): string {
+    return `gitstudio.commit.favorites:${entry.root}`;
+  }
+  private recentKey(entry: RepoEntry): string {
+    return `gitstudio.commit.recentBranches:${entry.root}`;
+  }
+  private favorites(entry: RepoEntry): string[] {
+    return this.memento.get<string[]>(this.favKey(entry), []);
+  }
+  private async toggleFavorite(entry: RepoEntry, name: string): Promise<void> {
+    const cur = new Set(this.favorites(entry));
+    if (cur.has(name)) {
+      cur.delete(name);
+    } else {
+      cur.add(name);
+    }
+    await this.memento.update(this.favKey(entry), [...cur]);
+  }
+  private async noteRecentBranch(entry: RepoEntry, name: string): Promise<void> {
+    const prev = this.memento.get<string[]>(this.recentKey(entry), []);
+    const next = [name, ...prev.filter((n) => n !== name)].slice(0, 8);
+    await this.memento.update(this.recentKey(entry), next);
+  }
+
+  /** Local branches (with favorites), remotes, and recents for the branch menu. */
+  private async collectBranches(entry: RepoEntry): Promise<BranchesPayload> {
+    let refs: Awaited<ReturnType<typeof entry.ctx.refs.listRefs>> = [];
+    try {
+      refs = await entry.ctx.refs.listRefs();
+    } catch {
+      refs = [];
+    }
+    const favs = new Set(this.favorites(entry));
+    const local: BranchRefPayload[] = refs
+      .filter((r) => r.type === "head")
+      .map((r) => ({
+        name: r.name,
+        current: r.isCurrent,
+        upstream: r.upstream,
+        favorite: favs.has(r.name),
+      }));
+    const remote = refs
+      .filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"))
+      .map((r) => r.name);
+    const recent = this.memento.get<string[]>(this.recentKey(entry), []);
+    return { local, remote, recent };
+  }
+
+  /** Run a branch-menu action against the active repo, then refresh state. */
+  private async handleBranchAction(msg: FromWebview): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    const ref = msg.ref ?? "";
+    // Favorite is a pure UI toggle — no git op, just re-push so the star updates.
+    if (msg.action === "favorite") {
+      await this.toggleFavorite(entry, ref);
+      await this.pushState();
+      return;
+    }
+    let result: { ok: boolean; stderr?: string } = { ok: true };
+    try {
+      switch (msg.action) {
+        case "checkout":
+          result = await entry.ctx.branches.checkout(ref);
+          if (result.ok) await this.noteRecentBranch(entry, ref);
+          break;
+        case "checkoutRemote": {
+          // origin/feature → local "feature" tracking the remote (git DWIM).
+          const local = ref.split("/").slice(1).join("/") || ref;
+          result = await entry.ctx.branches.checkout(local);
+          if (result.ok) await this.noteRecentBranch(entry, local);
+          break;
+        }
+        case "new": {
+          const name = await vscode.window.showInputBox({
+            title: "New Branch",
+            prompt: "Create and switch to a new branch from HEAD",
+            placeHolder: "feature/my-change",
+            validateInput: (v) =>
+              v && /\s/.test(v) ? "Branch names can't contain spaces" : undefined,
+          });
+          if (!name) return;
+          result = await entry.ctx.branches.checkoutNew(name.trim());
+          if (result.ok) await this.noteRecentBranch(entry, name.trim());
+          break;
+        }
+        case "checkoutRef": {
+          const r = await vscode.window.showInputBox({
+            title: "Checkout Tag or Revision",
+            prompt: "Check out a tag, commit, or revision (detached HEAD)",
+            placeHolder: "v1.2.0   ·   a1b2c3d   ·   origin/main~3",
+          });
+          if (!r) return;
+          result = await entry.ctx.branches.checkout(r.trim(), { detach: true });
+          break;
+        }
+        case "pull":
+          result = await entry.ctx.sync.pull();
+          break;
+        case "pullRebase":
+          result = await entry.ctx.sync.pull({ rebase: true });
+          break;
+        case "push":
+          result = await entry.ctx.sync.push();
+          break;
+        case "fetch":
+          result = await entry.ctx.sync.fetch();
+          break;
+        default:
+          return;
+      }
+    } catch (err) {
+      result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
+    }
+    if (!result.ok) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
+      );
+    }
+    void entry.repo.status?.();
+    this.onCommitted();
+    await this.pushState();
+  }
+
+  /**
+   * Run a JetBrains-style branch action from the branch menu's per-branch
+   * submenu. These reuse the tested `gitstudio.branch.*` / `gitstudio.remoteBranch.*`
+   * commands (which carry their own confirm dialogs + Undo envelope) by handing
+   * them a synthetic `{ ref }` node, then refresh the commit view.
+   */
+  private async handleBranchRefCommand(msg: FromWebview): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry || !msg.command) {
+      return;
+    }
+    const arg = {
+      ref: { name: msg.ref ?? "", type: msg.refType ?? "head", sha: "" },
+    };
+    try {
+      await vscode.commands.executeCommand(msg.command, arg);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    void entry.repo.status?.();
+    this.onCommitted();
+    await this.pushState();
+  }
+
   /**
    * Pushes the full state to the webview: branch, staged count, the merge /
    * staged / unstaged change lists, AI availability, and — when `amend` is
@@ -425,14 +622,17 @@ export class CommitViewProvider
       : false;
     const layout =
       this.memento.get<"tree" | "list">(LAYOUT_KEY) === "tree" ? "tree" : "list";
+    const branches = entry ? await this.collectBranches(entry) : undefined;
 
     const payload: StatePayload = {
       type: "state",
+      hasRepo: !!entry,
       merge,
       staged,
       unstaged,
       stagedCount,
       branch,
+      branches,
       upstream,
       ahead,
       behind,
@@ -526,7 +726,7 @@ export class CommitViewProvider
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      padding: 10px 10px 14px;
+      padding: 8px 10px 12px;
       color: var(--gs-fg);
       font-family: var(--gs-font-ui);
       font-size: 13px;
@@ -556,24 +756,36 @@ export class CommitViewProvider
       display: flex;
       align-items: center;
       gap: 8px;
-      margin: 0 2px 10px;
+      margin: 0 2px 8px;
       min-height: 22px;
     }
+    /* The branch is a button: click opens the branch + actions menu (JetBrains-
+       style). It folds in everything the old Branches view did. */
     .branch {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       min-width: 0;
+      max-width: 100%;
       flex: 0 1 auto;
       height: 22px;
-      padding: 0 9px 0 8px;
+      padding: 0 6px 0 8px;
       border-radius: var(--gs-radius-pill);
       background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
       border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, transparent);
       color: var(--gs-accent-text);
+      font-family: var(--gs-font-ui);
       font-size: 12px;
       font-weight: 600;
+      cursor: pointer;
+      transition: background var(--gs-motion-fast) var(--gs-ease),
+                  border-color var(--gs-motion-fast) var(--gs-ease);
     }
+    .branch:hover {
+      background: color-mix(in srgb, var(--gs-accent) 20%, transparent);
+      border-color: color-mix(in srgb, var(--gs-accent) 45%, transparent);
+    }
+    .branch:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
     .branch svg { width: 13px; height: 13px; flex: 0 0 auto; opacity: 0.95; }
     .branch .branch-name {
       min-width: 0;
@@ -581,6 +793,11 @@ export class CommitViewProvider
       text-overflow: ellipsis;
       white-space: nowrap;
       letter-spacing: 0.005em;
+    }
+    .branch .branch-caret { font-size: 12px; opacity: 0.8; margin-left: -1px; }
+    .branch[aria-expanded="true"] {
+      background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+      border-color: color-mix(in srgb, var(--gs-accent) 55%, transparent);
     }
     .sync { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex: 0 0 auto; }
     .sync.hidden { display: none; }
@@ -612,6 +829,146 @@ export class CommitViewProvider
     .sync-clean.visible { display: inline-flex; }
     .sync-clean svg { width: 12px; height: 12px; }
 
+    /* ---- Branch + actions menu (popover; folds in the Branches view) ---- */
+    .branch-menu {
+      position: fixed;
+      z-index: 50;
+      min-width: 248px;
+      max-width: 288px;
+      max-height: 72vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--vscode-menu-background, var(--gs-surface));
+      border: 1px solid var(--vscode-menu-border, var(--gs-border));
+      border-radius: var(--gs-radius);
+      box-shadow: var(--gs-shadow-2);
+      overflow: hidden;
+    }
+    .bm-search { padding: 7px 7px 5px; }
+    .bm-search input {
+      width: 100%;
+      height: 26px;
+      padding: 0 8px;
+      color: var(--vscode-input-foreground);
+      background: var(--vscode-input-background, var(--gs-surface));
+      border: 1px solid var(--gs-border);
+      border-radius: var(--gs-radius-sm);
+      font-family: var(--gs-font-ui);
+      font-size: 12px;
+      outline: none;
+    }
+    .bm-search input:focus { border-color: var(--gs-accent); box-shadow: var(--gs-glow); }
+    .bm-list { overflow-y: auto; padding: 3px; }
+    .bm-action, .bm-branch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 5px 8px;
+      border: none;
+      background: transparent;
+      color: var(--gs-fg);
+      font-family: var(--gs-font-ui);
+      font-size: 12.5px;
+      text-align: left;
+      border-radius: var(--gs-radius-sm);
+      cursor: pointer;
+    }
+    .bm-action .codicon, .bm-bicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
+    .bm-action:hover, .bm-branch:hover { background: var(--gs-hover); }
+    /* A collapsible category header: chevron + label + count, full-width button. */
+    .bm-sep {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      margin: 4px 0 1px;
+      padding: 4px 8px;
+      border: none;
+      background: transparent;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--gs-fg-muted);
+      cursor: pointer;
+      text-align: left;
+    }
+    .bm-sep:hover { color: var(--gs-fg); }
+    .bm-sep .codicon { font-size: 13px; transition: transform 120ms var(--gs-ease); }
+    .bm-sep.collapsed .codicon { transform: rotate(-90deg); }
+    .bm-sep-label { flex: 1 1 auto; }
+    .bm-sep-count {
+      flex: 0 0 auto;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0;
+      color: var(--gs-fg-subtle);
+    }
+    .bm-hl { background: color-mix(in srgb, var(--gs-accent) 34%, transparent); color: inherit; border-radius: 2px; }
+    .bm-branch { padding: 4px 8px 4px 4px; }
+    .bm-branch.is-current .bm-bname { color: var(--gs-accent-text); font-weight: 600; }
+    .bm-branch.is-current .bm-bicon { color: var(--gs-accent-text); }
+    .bm-bname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bm-bup { flex: 0 1 auto; font-size: 10.5px; color: var(--gs-fg-subtle); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-subtle); opacity: 0; transition: opacity 100ms; }
+    .bm-branch:hover .bm-bmore { opacity: 0.8; }
+
+    /* Per-branch action submenu (flyout). */
+    .branch-submenu {
+      position: fixed;
+      z-index: 60;
+      min-width: 210px;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      padding: 4px;
+      background: var(--vscode-menu-background, var(--gs-surface));
+      border: 1px solid var(--vscode-menu-border, var(--gs-border));
+      border-radius: var(--gs-radius);
+      box-shadow: var(--gs-shadow-2);
+    }
+    .bm-subhead {
+      display: flex; align-items: center; gap: 7px;
+      padding: 5px 8px 7px;
+      margin-bottom: 3px;
+      border-bottom: 1px solid var(--gs-border);
+      color: var(--gs-fg-muted);
+    }
+    .bm-subhead .codicon { font-size: 13px; }
+    .bm-subhead-name { font-size: 12px; font-weight: 600; color: var(--gs-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bm-sublist { display: flex; flex-direction: column; }
+    .bm-subaction {
+      display: flex; align-items: center; gap: 9px;
+      width: 100%;
+      padding: 6px 8px;
+      border: none;
+      background: transparent;
+      color: var(--gs-fg);
+      font-family: var(--gs-font-ui);
+      font-size: 12.5px;
+      text-align: left;
+      border-radius: var(--gs-radius-sm);
+      cursor: pointer;
+    }
+    .bm-subaction .codicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
+    .bm-subaction span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bm-subaction:hover { background: var(--gs-hover); }
+    .bm-subaction.danger { color: var(--vscode-errorForeground, #e15a5a); }
+    .bm-subaction.danger .codicon { color: var(--vscode-errorForeground, #e15a5a); }
+    .bm-subaction.danger:hover { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
+    .bm-subsep { height: 1px; margin: 4px 6px; background: var(--gs-border); }
+    .bm-star, .bm-star-spacer {
+      flex: 0 0 auto;
+      width: 22px; height: 22px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: none; background: transparent; border-radius: var(--gs-radius-sm);
+      color: var(--gs-fg-subtle); cursor: pointer; padding: 0;
+    }
+    .bm-star:hover { background: color-mix(in srgb, var(--gs-fg) 10%, transparent); color: var(--gs-fg); }
+    .bm-star.on { color: var(--vscode-charts-yellow, #d7ba00); }
+    .bm-star .codicon { font-size: 13px; }
+    .bm-empty { padding: 10px 8px; color: var(--gs-fg-muted); font-size: 12px; text-align: center; }
+
     /* ---- Message composer (elevated card) ----------------------------- */
     .message-wrap {
       position: relative;
@@ -631,9 +988,9 @@ export class CommitViewProvider
       display: block;
       width: 100%;
       resize: none;
-      min-height: 56px;
+      min-height: 34px;
       max-height: 320px;
-      padding: 9px 36px 5px 11px;
+      padding: 7px 34px 6px 11px;
       color: var(--vscode-input-foreground);
       background: transparent;
       border: none;
@@ -707,16 +1064,16 @@ export class CommitViewProvider
     .toggles {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px 6px;
+      gap: 3px 4px;
       align-items: center;
-      margin: 9px 2px 8px;
-      font-size: 12px;
+      margin: 6px 2px 6px;
+      font-size: 11.5px;
     }
     .toggles label {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 3px 9px 3px 7px;
+      gap: 5px;
+      padding: 2px 8px 2px 6px;
       border-radius: var(--gs-radius-pill);
       cursor: pointer;
       color: var(--gs-fg-muted);
@@ -781,14 +1138,14 @@ export class CommitViewProvider
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 7px;
-      height: 32px;
+      gap: 6px;
+      height: 26px;
       border: 1px solid transparent;
-      border-radius: var(--gs-radius);
-      padding: 0 14px;
+      border-radius: var(--gs-radius-sm);
+      padding: 0 12px;
       cursor: pointer;
       font-family: var(--gs-font-ui);
-      font-size: 13px;
+      font-size: 12.5px;
       line-height: 1.2;
       overflow: hidden;
       transition: background var(--gs-motion) var(--gs-ease),
@@ -835,26 +1192,7 @@ export class CommitViewProvider
     button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 2px; }
     .link:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
 
-    /* ---- Keyboard hint ------------------------------------------------- */
-    .hint {
-      margin: 8px 4px 0;
-      font-size: 10.5px;
-      line-height: 1.7;
-      color: var(--gs-fg-subtle);
-    }
-    .hint kbd {
-      display: inline-block;
-      font-family: var(--gs-font-mono);
-      font-size: 10px;
-      line-height: 14px;
-      padding: 0 4px;
-      vertical-align: 1px;
-      border-radius: 4px;
-      border: 1px solid var(--gs-border);
-      border-bottom-width: 2px;
-      background: var(--gs-surface-2);
-      color: var(--gs-fg-muted);
-    }
+    /* ---- (keyboard hint removed — the composer is self-evident) -------- */
 
     /* ---- Changes section header --------------------------------------- */
     .changes-toolbar {
@@ -1125,6 +1463,41 @@ export class CommitViewProvider
     .empty-state .et { font-size: 12.5px; font-weight: 600; color: var(--gs-fg); }
     .empty-state .es { font-size: 11px; color: var(--gs-fg-subtle); }
 
+    /* ---- No-repository onboarding (re-homed from the old Commits view) --
+       Scoped by #id, not .class: the BODY also carries a no-repo state class,
+       so a bare .no-repo display:none would hide the whole view. */
+    #no-repo {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      margin: 26px 14px 4px;
+      text-align: center;
+    }
+    #no-repo .badge {
+      display: flex; align-items: center; justify-content: center;
+      width: 44px; height: 44px; margin-bottom: 9px;
+      border-radius: var(--gs-radius);
+      color: var(--gs-accent-text);
+      background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
+      border: 1px solid color-mix(in srgb, var(--gs-accent) 28%, transparent);
+    }
+    #no-repo .badge .codicon { font-size: 22px; }
+    #no-repo .et { font-size: 14px; font-weight: 600; color: var(--gs-fg); }
+    #no-repo .es { font-size: 12px; line-height: 1.5; color: var(--gs-fg-muted); max-width: 260px; }
+    #no-repo .no-repo-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
+    /* When no repo is open, the composer + change list are irrelevant — show
+       only the onboarding. */
+    body.no-repo .repo-bar,
+    body.no-repo .message-wrap,
+    body.no-repo .toggles,
+    body.no-repo .author-row,
+    body.no-repo .actions,
+    body.no-repo .changes-toolbar,
+    body.no-repo .groups,
+    body.no-repo #empty-state { display: none !important; }
+    body.no-repo #no-repo { display: flex; }
+
     @media (prefers-reduced-motion: reduce) {
       textarea, .author-row input, .sparkle, button.gs-commit, .link .chev,
       .icon-btn, .group-actions, .row-actions, .twisty {
@@ -1136,10 +1509,12 @@ export class CommitViewProvider
 </head>
 <body class="layout-list">
   <header class="repo-bar">
-    <span class="branch" id="branch-pill" title="Current branch">
+    <button class="branch" id="branch-pill" type="button" title="Branch &amp; actions"
+      aria-haspopup="true" aria-expanded="false">
       <i class="codicon codicon-git-branch" aria-hidden="true"></i>
       <span class="branch-name" id="branch-name">—</span>
-    </span>
+      <i class="codicon codicon-chevron-down branch-caret" aria-hidden="true"></i>
+    </button>
     <span class="sync hidden" id="sync">
       <span class="sync-pill ahead" id="ahead" title="Commits to push">
         <i class="codicon codicon-arrow-up" aria-hidden="true"></i>
@@ -1157,7 +1532,7 @@ export class CommitViewProvider
   </header>
 
   <div class="message-wrap">
-    <textarea id="message" rows="3"
+    <textarea id="message" rows="1"
       placeholder="Message (what & why)…"
       aria-label="Commit message"></textarea>
     <button class="sparkle" id="generate" type="button"
@@ -1199,10 +1574,8 @@ export class CommitViewProvider
     </button>
   </div>
 
-  <div class="hint">Stage changes, then <kbd>Commit</kbd> — your message is the headline.</div>
-
   <div class="changes-toolbar">
-    <span class="changes-title">Changes</span>
+    <span class="changes-title">Changed Files</span>
     <span class="changes-total" id="changes-total">0</span>
     <span class="toolbar-spacer"></span>
     <span class="toolbar-actions">
@@ -1234,6 +1607,24 @@ export class CommitViewProvider
     </span>
     <span class="et">Working tree clean</span>
     <span class="es">No changes to commit.</span>
+  </div>
+
+  <div class="no-repo" id="no-repo">
+    <span class="badge">
+      <i class="codicon codicon-source-control" aria-hidden="true"></i>
+    </span>
+    <span class="et">No repository open</span>
+    <span class="es">Open a folder that's under Git to see your changes, branches, and history.</span>
+    <div class="no-repo-actions">
+      <button class="gs-commit primary" id="open-folder" type="button">
+        <i class="codicon codicon-folder-opened" aria-hidden="true"></i>
+        <span>Open Folder…</span>
+      </button>
+      <button class="gs-commit split" id="open-graph" type="button">
+        <i class="codicon codicon-git-commit" aria-hidden="true"></i>
+        <span>Commit Graph</span>
+      </button>
+    </div>
   </div>
 
   <script nonce="${nonce}">
@@ -1273,6 +1664,7 @@ export class CommitViewProvider
     // Persisted-in-DOM collapse memory, keyed by group + folder path.
     const collapsed = Object.create(null);
     let lastState = { merge: [], staged: [], unstaged: [] };
+    let branchData = { local: [], remote: [], recent: [] };
 
     // ---- Icon glyphs: the real VS Code codicon font ----------------------
     const ICON_FILE = '<i class="codicon codicon-file" aria-hidden="true"></i>';
@@ -1406,6 +1798,274 @@ export class CommitViewProvider
     refreshBtn.addEventListener("click", () => {
       vscode.postMessage({ type: "ready" });
     });
+
+    // ---- Branch + actions menu (folds in the old Branches view) ----------
+    let branchMenu = null;
+    let branchFilter = "";
+    let branchSubmenu = null;
+    // Per-category collapse memory (Favorites / Recent / Local / Remote).
+    const collapsedCats = Object.create(null);
+
+    function closeBranchMenu() {
+      closeBranchSubmenu();
+      if (!branchMenu) return;
+      branchMenu.remove();
+      branchMenu = null;
+      branchPill.setAttribute("aria-expanded", "false");
+      document.removeEventListener("mousedown", onBranchDocDown, true);
+      document.removeEventListener("keydown", onBranchKey, true);
+    }
+    function closeBranchSubmenu() {
+      if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
+    }
+    function onBranchDocDown(e) {
+      const inMenu = branchMenu && branchMenu.contains(e.target);
+      const inSub = branchSubmenu && branchSubmenu.contains(e.target);
+      const onPill = branchPill.contains(e.target);
+      if (inSub || inMenu || onPill) return;
+      closeBranchMenu();
+    }
+    function onBranchKey(e) {
+      if (e.key === "Escape") {
+        if (branchSubmenu) { closeBranchSubmenu(); return; }
+        closeBranchMenu(); branchPill.focus();
+      }
+    }
+    function branchAct(action, ref) {
+      vscode.postMessage({ type: "branchAction", action: action, ref: ref });
+      if (action !== "favorite") closeBranchMenu();
+    }
+    function matchF(s) { return !branchFilter || s.toLowerCase().indexOf(branchFilter) !== -1; }
+
+    function bIcon(name) {
+      return '<i class="codicon codicon-' + name + '" aria-hidden="true"></i>';
+    }
+    // HTML-escape, then wrap the matched search substring in a highlight mark.
+    function esc(s) {
+      return s.replace(/[&<>"]/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+    function hl(text) {
+      if (!branchFilter) return esc(text);
+      const i = text.toLowerCase().indexOf(branchFilter);
+      if (i < 0) return esc(text);
+      return esc(text.slice(0, i)) +
+        '<mark class="bm-hl">' + esc(text.slice(i, i + branchFilter.length)) + '</mark>' +
+        esc(text.slice(i + branchFilter.length));
+    }
+    function currentBranchName() {
+      const cur = (branchData.local || []).find((b) => b.current);
+      return cur ? cur.name : "current branch";
+    }
+
+    function branchRow(name, kind, up, fav, current) {
+      const row = el("div", "bm-branch" + (current ? " is-current" : ""));
+      if (kind === "local") {
+        const star = el("button", "bm-star" + (fav ? " on" : ""),
+          bIcon(fav ? "star-full" : "star-empty"));
+        star.title = fav ? "Remove from favorites" : "Add to favorites";
+        star.addEventListener("click", (e) => { e.stopPropagation(); branchAct("favorite", name); });
+        row.appendChild(star);
+      } else {
+        row.appendChild(el("span", "bm-star-spacer"));
+      }
+      row.appendChild(el("i", "codicon codicon-" +
+        (kind === "remote" ? "cloud" : (current ? "check" : "git-branch")) + " bm-bicon"));
+      const nm = el("span", "bm-bname", hl(name)); row.appendChild(nm);
+      if (up) { const u = el("span", "bm-bup"); u.textContent = up; row.appendChild(u); }
+      row.appendChild(el("i", "codicon codicon-chevron-right bm-bmore"));
+      row.title = "Branch actions";
+      row.addEventListener("click", () => openBranchActions(name, kind, current, row));
+      return row;
+    }
+
+    // ── Per-branch action submenu (JetBrains-style) ──────────────────────────
+    function subAct(command, refName, refType) {
+      vscode.postMessage({ type: "branchRefCommand", command: command, ref: refName, refType: refType });
+      closeBranchMenu();
+    }
+    function plainAct(action, refName) {
+      vscode.postMessage({ type: "branchAction", action: action, ref: refName });
+      closeBranchMenu();
+    }
+    function subItem(list, icon, label, fn, danger) {
+      const b = el("button", "bm-subaction" + (danger ? " danger" : ""), bIcon(icon) + "<span></span>");
+      b.querySelector("span").textContent = label;
+      b.title = label; // full text on hover when the label ellipsis-clips a long branch name
+      b.addEventListener("click", fn);
+      list.appendChild(b);
+    }
+    function subSep(list) { list.appendChild(el("div", "bm-subsep")); }
+
+    function openBranchActions(name, kind, current, anchor) {
+      closeBranchSubmenu();
+      const cur = currentBranchName();
+      const refType = kind === "remote" ? "remote" : "head";
+      const menu = el("div", "branch-submenu");
+      const head = el("div", "bm-subhead");
+      head.appendChild(el("i", "codicon codicon-" + (kind === "remote" ? "cloud" : "git-branch")));
+      head.appendChild(el("span", "bm-subhead-name", esc(name)));
+      menu.appendChild(head);
+      const list = el("div", "bm-sublist");
+      menu.appendChild(list);
+
+      if (current) {
+        subItem(list, "arrow-down", "Pull using Rebase", () => plainAct("pullRebase", name));
+        subItem(list, "arrow-down", "Pull using Merge", () => plainAct("pull", name));
+        subItem(list, "arrow-up", "Push", () => plainAct("push", name));
+        subSep(list);
+        subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
+        subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
+        subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
+      } else {
+        subItem(list, kind === "remote" ? "cloud-download" : "check", "Checkout", () =>
+          subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType));
+        subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
+        subSep(list);
+        subItem(list, "git-compare", "Compare with '" + cur + "'", () => subAct("gitstudio.branch.compare", name, refType));
+        subSep(list);
+        subItem(list, "git-merge", "Merge '" + name + "' into '" + cur + "'", () => subAct("gitstudio.branch.merge", name, refType));
+        subItem(list, "git-pull-request", "Rebase '" + cur + "' onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType));
+        subSep(list);
+        subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
+        if (kind === "local") subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
+        subSep(list);
+        subItem(list, "trash", "Delete", () =>
+          subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true);
+      }
+
+      document.body.appendChild(menu);
+      branchSubmenu = menu;
+      // Cascade as a secondary popup off the RIGHT edge of the main branch menu,
+      // vertically aligned to the clicked row. Flip to the LEFT only if it would
+      // overflow the (narrow) panel. SEAM = small overlap so it reads as a child.
+      const SEAM = 2;
+      const PAD = 6;
+      const sub = menu.getBoundingClientRect();
+      const subW = sub.width;
+      const subH = sub.height;
+      const menuRect = branchMenu
+        ? branchMenu.getBoundingClientRect()
+        : anchor.getBoundingClientRect();
+      const rowRect = anchor.getBoundingClientRect();
+
+      // Horizontal: hang off the menu's right edge; flip to its left on overflow.
+      let left = menuRect.right - SEAM;
+      if (left + subW > window.innerWidth - PAD) {
+        left = menuRect.left - subW + SEAM;
+      }
+      left = Math.max(PAD, Math.min(left, window.innerWidth - subW - PAD));
+
+      // Vertical: align the submenu's top to the clicked row's top, clamped.
+      let top = rowRect.top;
+      if (top + subH > window.innerHeight - PAD) {
+        top = window.innerHeight - subH - PAD;
+      }
+      top = Math.max(PAD, top);
+
+      menu.style.left = Math.round(left) + "px";
+      menu.style.top = Math.round(top) + "px";
+    }
+
+    function renderBranchMenu() {
+      if (!branchMenu) return;
+      closeBranchSubmenu();
+      const list = branchMenu.querySelector(".bm-list");
+      list.replaceChildren();
+
+      const actions = [
+        { a: "pull", icon: "arrow-down", label: "Update (pull)" },
+        { a: "push", icon: "arrow-up", label: "Push" },
+        { a: "fetch", icon: "sync", label: "Fetch" },
+        { a: "new", icon: "add", label: "New Branch…" },
+        { a: "checkoutRef", icon: "tag", label: "Checkout Tag or Revision…" },
+      ];
+      let anyAction = false;
+      for (const it of actions) {
+        if (!matchF(it.label)) continue;
+        anyAction = true;
+        const b = el("button", "bm-action", bIcon(it.icon) + "<span></span>");
+        b.querySelector("span").innerHTML = hl(it.label);
+        b.addEventListener("click", () => branchAct(it.a));
+        list.appendChild(b);
+      }
+
+      const locals = branchData.local || [];
+      const recentNames = branchData.recent || [];
+      const favs = locals.filter((b) => b.favorite && matchF(b.name));
+      const recents = recentNames
+        .map((n) => locals.find((b) => b.name === n))
+        .filter((b) => b && !b.favorite && matchF(b.name));
+      const others = locals.filter((b) =>
+        !b.favorite && recentNames.indexOf(b.name) === -1 && matchF(b.name));
+      const remotes = (branchData.remote || []).filter((n) => matchF(n));
+
+      // A collapsible category: a clickable header (chevron + count) over its rows.
+      // While searching, force-expand so matches are always visible.
+      function group(label, rows, build) {
+        if (!rows.length) return;
+        const collapsed = !branchFilter && !!collapsedCats[label];
+        const head = el("button", "bm-sep" + (collapsed ? " collapsed" : ""),
+          bIcon("chevron-down") + '<span class="bm-sep-label"></span><span class="bm-sep-count"></span>');
+        head.querySelector(".bm-sep-label").textContent = label;
+        head.querySelector(".bm-sep-count").textContent = String(rows.length);
+        const body = el("div", "bm-group-body");
+        if (collapsed) body.style.display = "none";
+        rows.forEach((r) => body.appendChild(build(r)));
+        head.addEventListener("click", () => {
+          collapsedCats[label] = !collapsedCats[label];
+          const c = !!collapsedCats[label];
+          head.classList.toggle("collapsed", c);
+          body.style.display = c ? "none" : "";
+        });
+        list.appendChild(head);
+        list.appendChild(body);
+      }
+
+      group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current));
+      group("Recent", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current));
+      group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current));
+      group("Remote", remotes, (n) => branchRow(n, "remote", "", false, false));
+
+      if (!anyAction && !favs.length && !recents.length && !others.length && !remotes.length) {
+        list.appendChild(el("div", "bm-empty", "No matches"));
+      }
+    }
+
+    function openBranchMenu() {
+      if (branchMenu) { closeBranchMenu(); return; }
+      branchFilter = "";
+      branchMenu = el("div", "branch-menu");
+      const search = el("div", "bm-search");
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Search for branches and actions";
+      input.setAttribute("aria-label", "Search branches and actions");
+      input.addEventListener("input", () => { branchFilter = input.value.trim().toLowerCase(); renderBranchMenu(); });
+      search.appendChild(input);
+      branchMenu.appendChild(search);
+      branchMenu.appendChild(el("div", "bm-list"));
+      document.body.appendChild(branchMenu);
+      renderBranchMenu();
+      branchPill.setAttribute("aria-expanded", "true");
+      const r = branchPill.getBoundingClientRect();
+      branchMenu.style.left = Math.round(r.left) + "px";
+      branchMenu.style.top = Math.round(r.bottom + 4) + "px";
+      const mr = branchMenu.getBoundingClientRect();
+      if (mr.right > window.innerWidth - 6) {
+        branchMenu.style.left = Math.max(6, window.innerWidth - mr.width - 6) + "px";
+      }
+      input.focus();
+      setTimeout(() => {
+        document.addEventListener("mousedown", onBranchDocDown, true);
+        document.addEventListener("keydown", onBranchKey, true);
+      }, 0);
+    }
+    branchPill.addEventListener("click", openBranchMenu);
+
+    // ---- No-repository onboarding actions --------------------------------
+    $("open-folder").addEventListener("click", () => vscode.postMessage({ type: "openFolder" }));
+    $("open-graph").addEventListener("click", () => vscode.postMessage({ type: "openGraph" }));
 
     // ---- Tree building (client-side from repo-relative paths) -----------
     // Build a nested folder tree, compacting single-child folder chains the way
@@ -1658,6 +2318,7 @@ export class CommitViewProvider
       if (msg.type === "state") {
         stagedCount = msg.stagedCount || 0;
         setBusy(!!msg.busy);
+        document.body.classList.toggle("no-repo", !msg.hasRepo);
         renderHeader(msg);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
         if (msg.layout && msg.layout !== layout) {
@@ -1669,6 +2330,8 @@ export class CommitViewProvider
           staged: msg.staged || [],
           unstaged: msg.unstaged || [],
         };
+        branchData = msg.branches || { local: [], remote: [], recent: [] };
+        if (branchMenu) renderBranchMenu();
         if (typeof msg.lastMessage === "string" && amend.checked &&
             message.value.trim() === "") {
           message.value = msg.lastMessage;

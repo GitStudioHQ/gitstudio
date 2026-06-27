@@ -4,6 +4,41 @@
 
 @import "./tokens.css";
 
+/* The real VS Code icon font for the diff/merge toolbar + gutter. esbuild
+ * inlines the .ttf as a data URL, so the font is available wherever this
+ * stylesheet loads — the extension's diff/merge webview AND the desktop
+ * renderer (which imports this file). The toolbar/gutter icons (icons.ts) are
+ * codicons, so they read identically to every other GitStudio surface. */
+@font-face {
+  font-family: "codicon";
+  font-display: block;
+  src: url("@vscode/codicons/dist/codicon.ttf") format("truetype");
+}
+.codicon {
+  font: normal normal normal 16px/1 "codicon";
+  display: inline-block;
+  text-rendering: auto;
+  text-align: center;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+.jb-svg .codicon { font-size: 14px; }
+.codicon-arrow-right::before { content: "\ea9c"; }
+.codicon-arrow-left::before { content: "\ea9b"; }
+.codicon-arrow-up::before { content: "\eaa1"; }
+.codicon-arrow-down::before { content: "\ea9a"; }
+.codicon-close::before { content: "\ea76"; }
+.codicon-merge::before { content: "\ebab"; }
+.codicon-wand::before { content: "\ebcf"; }
+.codicon-sync::before { content: "\ea77"; }
+.codicon-debug-restart::before { content: "\ead2"; }
+.codicon-lock::before { content: "\ea75"; }
+.codicon-discard::before { content: "\eae2"; }
+.codicon-redo::before { content: "\ebb0"; }
+.codicon-history::before { content: "\ea82"; }
+.codicon-link-external::before { content: "\eb14"; }
+
 :root {
   /* Dark theme: light pastel hues at low alpha — the wash tints the line and
    * the inner marking tints the changed characters, but syntax colors keep
@@ -153,6 +188,60 @@ body.vscode-high-contrast-light {
   color: var(--gs-status-added);
   font-weight: var(--gs-weight-emphasis);
 }
+
+/* ── Diff layout — the 2-pane grid the DiffView builds (`jb-diff-grid`) ────────
+ * left pane | transfer gutter | right pane, with a header row + a body row the
+ * Monaco editors fill. Without this the panes (which set grid-column/row inline)
+ * collapse to stacked blocks and the editors get zero height → a blank diff. */
+.jb-diff-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  width: 100%;
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+}
+/* The 3-pane merge: ours | gutter | result | gutter | theirs. */
+.jb-merge-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr) 40px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  width: 100%;
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+}
+.jb-pane-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  font-family: var(--gs-font-ui);
+  color: var(--vscode-descriptionForeground, #8b8b8b);
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-editor-background));
+  border-bottom: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.2));
+  white-space: nowrap;
+  overflow: hidden;
+}
+.jb-pane-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jb-pane-title .jb-svg { flex: 0 0 auto; opacity: 0.7; }
+.jb-pane-body {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.jb-gutter {
+  position: relative;
+  min-height: 0;
+  background: var(--vscode-editor-background);
+  border-left: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.16));
+  border-right: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.16));
+}
+.jb-button-layer { position: absolute; inset: 0; pointer-events: none; }
 
 /* SVG icon plumbing (toolbar + gutter). */
 .jb-svg {
@@ -370,7 +459,9 @@ body.vscode-high-contrast-light {
   border: 1px solid transparent;
   border-radius: var(--gs-radius-sm);
   background: transparent;
-  color: var(--vscode-editorLineNumber-foreground, #858585);
+  /* Icon-grade foreground so the accept/ignore glyphs clear 3:1 on the conflict
+   * ribbon at rest (line-number grey was unreadable until hover). */
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
   user-select: none;
   transition: color var(--gs-motion-fast) var(--gs-ease),
     background var(--gs-motion-fast) var(--gs-ease),

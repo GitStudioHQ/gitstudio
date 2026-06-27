@@ -32,6 +32,7 @@ import {
   runSearch,
   compareRefs,
   openSearchCommit,
+  openCompareFileDiff,
 } from "./search/searchCompareView";
 import { SyncStatusItem } from "./statusBar/syncStatus";
 import * as branchActions from "./views/branchActions";
@@ -142,18 +143,14 @@ export function activate(context: vscode.ExtensionContext): void {
     const blame = new BlameController(repos, context, log);
     context.subscriptions.push(blame);
 
+    // The Commits and Branches views were retired: the commit graph supersedes
+    // the flat Commits list, and all branch actions now live in the Changes
+    // view's branch menu. The providers stay (the branch-action commands +
+    // copyCommitSha's CommitNode type still use them), they're just no longer
+    // mounted as sidebar tree views.
     const commitsProvider = new CommitsTreeProvider(repos);
     const refsProvider = new RefsTreeProvider(repos);
     context.subscriptions.push(commitsProvider, refsProvider);
-
-    const commitsView = vscode.window.createTreeView("gitstudio.commits", {
-      treeDataProvider: commitsProvider,
-      showCollapseAll: false,
-    });
-    const branchesView = vscode.window.createTreeView("gitstudio.branches", {
-      treeDataProvider: refsProvider,
-      showCollapseAll: true,
-    });
 
     // File & line history + revision navigation (M5).
     const revisionContent = new RevisionContentProvider(repos);
@@ -162,8 +159,6 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(timelineProvider, navigator);
 
     context.subscriptions.push(
-      commitsView,
-      branchesView,
       vscode.workspace.registerTextDocumentContentProvider(
         REVISION_SCHEME,
         revisionContent,
@@ -515,6 +510,10 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand(
         "gitstudio.searchCompare.openCommit",
         (node) => void openSearchCommit(node),
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.searchCompare.openFileDiff",
+        (arg) => void openCompareFileDiff(arg),
       ),
 
       // ── Branch / remote / tag context actions ──────────────────────────────

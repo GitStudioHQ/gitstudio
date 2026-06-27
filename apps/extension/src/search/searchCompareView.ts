@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { CommitRecord, GitRef } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
+import { toRevisionUri } from "../history/revisionContentProvider";
 
 // The Search & Compare pillar — one TreeView with two pinned roots:
 //   Search  — results of the last `gitstudio.search` (by message/author/file/
@@ -20,12 +21,23 @@ interface SearchState {
   commits: CommitRecord[];
 }
 
+/** A file changed between the two compared refs. */
+interface CompareFile {
+  path: string;
+  /** Single-letter git status (A/M/D/R…). */
+  status: string;
+}
+
 interface CompareState {
   label: string; // "A..B"
   commits: CommitRecord[];
+  files: CompareFile[];
+  refA: string;
+  refB: string;
+  root: string;
 }
 
-type Node = RootNode | CommitItemNode;
+type Node = RootNode | GroupNode | CommitItemNode | FileItemNode;
 
 class RootNode extends vscode.TreeItem {
   readonly kind = "root" as const;
@@ -73,6 +85,50 @@ class CommitItemNode extends vscode.TreeItem {
       command: "gitstudio.searchCompare.openCommit",
       title: "Open Commit",
       arguments: [this],
+    };
+  }
+}
+
+/** A sub-group under the Compare root: "Commits" or "Files changed". */
+class GroupNode extends vscode.TreeItem {
+  readonly kind = "group" as const;
+  constructor(
+    readonly group: "commits" | "files",
+    count: number,
+  ) {
+    super(
+      group === "commits" ? "Commits" : "Files changed",
+      count > 0
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.None,
+    );
+    this.description = String(count);
+    this.iconPath = new vscode.ThemeIcon(group === "commits" ? "git-commit" : "files");
+    this.contextValue = `gitstudio.searchCompare.group.${group}`;
+  }
+}
+
+/** A changed-file row under the Compare → Files group; click opens an A↔B diff. */
+class FileItemNode extends vscode.TreeItem {
+  readonly kind = "file" as const;
+  constructor(
+    readonly file: CompareFile,
+    root: string,
+    refA: string,
+    refB: string,
+  ) {
+    super(file.path.split("/").pop() ?? file.path, vscode.TreeItemCollapsibleState.None);
+    const dir = file.path.includes("/")
+      ? file.path.slice(0, file.path.lastIndexOf("/"))
+      : "";
+    this.description = `${file.status}${dir ? "  " + dir : ""}`;
+    this.iconPath = vscode.ThemeIcon.File;
+    this.tooltip = `${file.status}  ${file.path}`;
+    this.contextValue = "gitstudio.searchCompare.file";
+    this.command = {
+      command: "gitstudio.searchCompare.openFileDiff",
+      title: "Open Diff",
+      arguments: [{ root, refA, refB, path: file.path }],
     };
   }
 }
@@ -149,15 +205,35 @@ export class SearchCompareTreeProvider
           "compare",
           "Compare",
           this.compare
-            ? `${this.compare.label} · ${this.compare.commits.length}`
+            ? `${this.compare.label} · ${this.compare.commits.length} commits, ${this.compare.files.length} files`
             : "no comparison yet",
-          !!this.compare && this.compare.commits.length > 0,
+          !!this.compare &&
+            this.compare.commits.length + this.compare.files.length > 0,
         ),
       ];
     }
     if (element.kind === "root") {
-      const state = element.root === "search" ? this.search : this.compare;
-      return (state?.commits ?? []).map((c) => new CommitItemNode(c));
+      if (element.root === "search") {
+        return (this.search?.commits ?? []).map((c) => new CommitItemNode(c));
+      }
+      // The Compare root splits into Commits + Files-changed groups.
+      const c = this.compare;
+      if (!c) {
+        return [];
+      }
+      return [
+        new GroupNode("commits", c.commits.length),
+        new GroupNode("files", c.files.length),
+      ];
+    }
+    if (element.kind === "group") {
+      const c = this.compare;
+      if (!c) {
+        return [];
+      }
+      return element.group === "commits"
+        ? c.commits.map((x) => new CommitItemNode(x))
+        : c.files.map((f) => new FileItemNode(f, c.root, c.refA, c.refB));
     }
     return [];
   }
@@ -351,16 +427,72 @@ export async function compareRefs(
   }
 
   const commits = await collectCommits(a, [`${refA}..${refB}`], []);
+  const files = await collectCompareFiles(a, refA, refB);
   provider.setCompare({
     label: `${refA}..${refB}`,
     commits,
+    files,
+    refA,
+    refB,
+    root: a.root,
   });
   reveal();
-  if (commits.length === 0) {
+  if (commits.length === 0 && files.length === 0) {
     void vscode.window.showInformationMessage(
-      `GitStudio: ${refB} has no commits beyond ${refA}.`,
+      `GitStudio: ${refB} has no commits or changes beyond ${refA}.`,
     );
   }
+}
+
+/** Files changed between A and B (3-dot, GitHub-style "what B introduced"). */
+async function collectCompareFiles(
+  repo: RepoEntry,
+  refA: string,
+  refB: string,
+): Promise<CompareFile[]> {
+  const r = await repo.ctx.process.run([
+    "diff",
+    "--name-status",
+    "-M",
+    `${refA}...${refB}`,
+  ]);
+  if (r.code !== 0) {
+    return [];
+  }
+  const files: CompareFile[] = [];
+  for (const line of r.stdout.split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+    const parts = line.split("\t");
+    const status = (parts[0] ?? "").charAt(0);
+    const path = parts.length >= 3 ? parts[2] : parts[1] ?? "";
+    if (path) {
+      files.push({ path, status });
+    }
+  }
+  return files;
+}
+
+/** `gitstudio.searchCompare.openFileDiff` — diff a file between the two refs. */
+export async function openCompareFileDiff(arg: {
+  root: string;
+  refA: string;
+  refB: string;
+  path: string;
+}): Promise<void> {
+  if (!arg) {
+    return;
+  }
+  const left = toRevisionUri(arg.root, arg.refA, arg.path);
+  const right = toRevisionUri(arg.root, arg.refB, arg.path);
+  const name = arg.path.split("/").pop() ?? arg.path;
+  await vscode.commands.executeCommand(
+    "vscode.diff",
+    left,
+    right,
+    `${name} (${arg.refA} ↔ ${arg.refB})`,
+  );
 }
 
 async function pickRef(

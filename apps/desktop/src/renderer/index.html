@@ -16,7 +16,17 @@
     <link rel="stylesheet" href="./renderer.css" />
     <title>GitStudio</title>
   </head>
-  <body class="vscode-dark">
+  <body>
+    <script>
+      // Pick the theme class before first paint so a light-OS launch doesn't
+      // flash the dark canvas. desktopTheme re-affirms this and tracks live
+      // OS theme changes once the renderer boots.
+      document.body.className =
+        window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: light)").matches
+          ? "vscode-light"
+          : "vscode-dark";
+    </script>
     <div id="root">
       <div id="boot">Loading GitStudio…</div>
     </div>

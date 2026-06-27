@@ -194,6 +194,13 @@ export class CommitGraph extends LitElement {
       transition: background 120ms ease, color 120ms ease;
     }
     .gh-iconbtn:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+    .gh-iconbtn:active { background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent); }
+    .gh-iconbtn:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: -1px;
+      background: var(--vscode-list-hoverBackground);
+      color: var(--vscode-foreground);
+    }
     .gh-iconbtn .codicon { font-size: 14px; }
     .gh-refresh { margin-left: 2px; }
 
@@ -419,32 +426,36 @@ export class CommitGraph extends LitElement {
       background: currentColor;
       box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
     }
+    /* Every chip composites its tint over the opaque editor background, not
+     * transparent — otherwise the fill rides the live row colour and the
+     * label contrast collapses on a selected (accent-filled) row. */
     /* local branch = accent-tinted. */
     .chip-head {
       color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
       border-color: color-mix(in srgb,
         var(--vscode-focusBorder) 38%, transparent);
       background: color-mix(in srgb,
-        var(--vscode-focusBorder) 14%, transparent);
+        var(--vscode-focusBorder) 14%, var(--vscode-editor-background));
     }
-    /* remote = muted with a cloud glyph. */
+    /* remote = neutral label + a muted cloud glyph. */
     .chip-remote {
-      color: var(--vscode-descriptionForeground, #9aa0a6);
-      border-color: color-mix(in srgb, currentColor 26%, transparent);
-      background: color-mix(in srgb, currentColor 10%, transparent);
+      color: var(--vscode-foreground);
+      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 28%, transparent);
+      background: color-mix(in srgb, var(--vscode-descriptionForeground) 12%, var(--vscode-editor-background));
     }
+    .chip-remote .ico { color: var(--vscode-descriptionForeground); }
     /* tag = amber / charts-yellow tinted with a tag glyph. */
     .chip-tag {
       color: var(--vscode-charts-yellow, #e5a73c);
       border-color: color-mix(in srgb,
         var(--vscode-charts-yellow, #e5a73c) 34%, transparent);
       background: color-mix(in srgb,
-        var(--vscode-charts-yellow, #e5a73c) 14%, transparent);
+        var(--vscode-charts-yellow, #e5a73c) 14%, var(--vscode-editor-background));
     }
     .chip-overflow {
-      color: var(--vscode-descriptionForeground, #9aa0a6);
-      background: color-mix(in srgb, currentColor 10%, transparent);
-      border-color: color-mix(in srgb, currentColor 22%, transparent);
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-descriptionForeground) 10%, var(--vscode-editor-background));
+      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 22%, transparent);
       padding: 0 5px;
       font-variant-numeric: tabular-nums;
     }

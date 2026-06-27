@@ -18,8 +18,10 @@ export interface GraphCallbacks {
 export class GraphMount {
   private readonly element: CommitGraph;
   private readonly adapter: GraphHostAdapter;
+  private readonly container: HTMLElement;
 
   constructor(container: HTMLElement, cb: GraphCallbacks) {
+    this.container = container;
     this.element = document.createElement("gitstudio-graph") as CommitGraph;
     this.element.status = "loading";
     this.element.onAction = (action: GraphAction) => {
@@ -34,7 +36,9 @@ export class GraphMount {
           cb.onContext(action.sha, action.x, action.y);
           break;
         case "loadMore":
-          void this.adapter.loadMore();
+          this.adapter.loadMore().catch(() => {
+            /* a paging failure is non-fatal; keep what's already shown */
+          });
           break;
         case "refresh":
           void this.reload();
@@ -75,11 +79,44 @@ export class GraphMount {
     });
   }
 
-  /** (Re)load the graph from the first page — call on open + on repo change. */
+  /** (Re)load the graph from the first page — call on open + on repo change.
+   *  On failure, render an in-view error + Retry instead of spinning forever. */
   async reload(): Promise<void> {
+    this.container.replaceChildren(this.element);
     this.element.status = "loading";
     this.element.rows = [];
-    await this.adapter.loadInitial();
+    try {
+      await this.adapter.loadInitial();
+    } catch (err) {
+      this.renderError(err);
+    }
+  }
+
+  /** Replace the graph with a centered "couldn't load history" + Retry panel. */
+  private renderError(err: unknown): void {
+    const wrap = document.createElement("div");
+    wrap.className = "list-empty list-error";
+    const badge = document.createElement("div");
+    badge.className = "list-empty-badge";
+    const icon = document.createElement("span");
+    icon.className = "glyph codicon codicon-warning";
+    badge.appendChild(icon);
+    const title = document.createElement("div");
+    title.className = "list-empty-title";
+    title.textContent = "Couldn't load history";
+    const desc = document.createElement("div");
+    desc.className = "list-empty-desc";
+    desc.textContent =
+      (err instanceof Error ? err.message : String(err ?? "")).replace(
+        /^Error invoking remote method '[^']*':\s*/i,
+        "",
+      ) || "The git log couldn't be read for this repository.";
+    const retry = document.createElement("button");
+    retry.className = "mini-btn list-empty-action";
+    retry.innerHTML = '<span class="glyph codicon codicon-refresh"></span><span>Retry</span>';
+    retry.addEventListener("click", () => void this.reload());
+    wrap.append(badge, title, desc, retry);
+    this.container.replaceChildren(wrap);
   }
 
   /** Clear to the empty state (no repo open). */
@@ -92,5 +129,11 @@ export class GraphMount {
   /** Select + scroll a commit (e.g. a branch tip) into view. */
   reveal(sha: string): void {
     this.element.reveal(sha);
+  }
+
+  /** Detach the Lit element so its disconnectedCallback tears down listeners. */
+  dispose(): void {
+    this.adapter.reset();
+    this.element.remove();
   }
 }

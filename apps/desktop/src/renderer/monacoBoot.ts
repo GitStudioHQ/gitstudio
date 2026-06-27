@@ -26,4 +26,10 @@ export function bootMonaco(): void {
   const url = new URL("./editor.worker.js", document.baseURI).toString();
   window.__JBMERGE__ = { workerUri: url };
   configureMonacoWorkers();
+  // NOTE: we bundle only the base editor worker (highlighting + diff), not the
+  // TS/JS language workers, so Monaco's language services reject methods like
+  // getSyntacticDiagnostics / getNavigationTree / provideInlayHints. Those are
+  // harmless noise; the per-editor options below (inlayHints/codeLens/etc. off)
+  // cut most of them, and the renderer's error boundary filters the rest
+  // (isBenignError). Nothing is lost — we never offered IntelliSense.
 }

@@ -6,8 +6,9 @@
 // graphPanel performs (now factored into @gitstudio/host-bridge/graphWire and
 // shared by both hosts).
 
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
@@ -17,16 +18,27 @@ import type {
   GitRef,
 } from "@gitstudio/git-service/index";
 import type {
+  BranchInfo,
   ChangedFile,
   CommitActionRequest,
   CommitActionResult,
   CommitDetailsPayload,
+  CompareCommit,
+  CompareMode,
+  CompareResult,
   ConflictModel,
   FileDiff,
+  GitIdentity,
   GraphPage,
   HeadInfo,
   RefInfo,
+  RepoFile,
   RowStat,
+  SshKey,
+  StashInfo,
+  SyncStatus,
+  TreeEntry,
+  WorktreeInfo,
 } from "../shared/ipc";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitFileChange } from "@gitstudio/host-bridge/git";
@@ -34,6 +46,9 @@ import type { RepoStore } from "./repoStore";
 
 /** Commits per graph page — matches the extension's PAGE_SIZE. */
 const PAGE_SIZE = 500;
+
+/** Max blob size the read-only file viewer / README will load (512 KiB). */
+const FILE_CAP_BYTES = 512 * 1024;
 
 export class GitBridge {
   /** sha → record, accumulated as the graph pages stream in (for details). */
@@ -377,6 +392,421 @@ export class GitBridge {
     }
   }
 
+  // ── Working-tree staging + commit (Changes view) ────────────────────────────
+
+  async stage(path: string): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.staging.stageFile(path));
+  }
+  async unstage(path: string): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.staging.unstageFile(path));
+  }
+  async discard(path: string): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.staging.discardChanges(path));
+  }
+  async stageAll(): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.process.run(["add", "-A"]));
+  }
+  async unstageAll(): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.process.run(["reset"]));
+  }
+  async commit(req: { message: string; amend?: boolean }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { ok: false, changed: false, message: "No repository open." };
+    }
+    if (!req.message.trim() && !req.amend) {
+      return { ok: false, changed: false, message: "A commit message is required." };
+    }
+    const r = await ctx.staging.commit(req.message, { amend: req.amend });
+    return { ok: r.ok, changed: r.ok, message: r.ok ? undefined : r.stderr };
+  }
+
+  // ── Stashes ─────────────────────────────────────────────────────────────────
+
+  async stashList(): Promise<StashInfo[]> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return [];
+    }
+    try {
+      return (await ctx.stashes.list()).map((s) => ({
+        sha: s.sha,
+        ref: s.ref,
+        message: s.message,
+        time: s.time,
+      }));
+    } catch {
+      return [];
+    }
+  }
+  async stashApply(ref: string): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.stashes.apply(ref));
+  }
+  async stashPop(ref: string): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.stashes.pop(ref));
+  }
+  async stashDrop(ref: string): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.stashes.drop(ref));
+  }
+  async stashSave(opts: { message?: string; includeUntracked?: boolean }): Promise<CommitActionResult> {
+    return this.staged(async (ctx) =>
+      ctx.stashes.save({ message: opts.message, includeUntracked: opts.includeUntracked }),
+    );
+  }
+
+  // ── Worktrees ─────────────────────────────────────────────────────────────────
+
+  async worktreeList(): Promise<WorktreeInfo[]> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return [];
+    }
+    try {
+      return (await ctx.worktrees.list()).map((w) => ({
+        path: w.path,
+        head: w.head,
+        branch: w.branch,
+        bare: w.bare,
+        locked: w.locked,
+        prunable: w.prunable,
+        current: w.path === ctx.root,
+      }));
+    } catch {
+      return [];
+    }
+  }
+  async worktreeAdd(path: string, ref: string, newBranch?: boolean): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.worktrees.add(path, ref, { newBranch }));
+  }
+  async worktreeRemove(opts: { path: string; force?: boolean }): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => ctx.worktrees.remove(opts.path, { force: opts.force }));
+  }
+
+  // ── Compare (base…head) ───────────────────────────────────────────────────────
+
+  async compareRefs(req: {
+    base: string;
+    head: string;
+    mode?: CompareMode;
+  }): Promise<CompareResult | undefined> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return undefined;
+    }
+    const { base, head } = req;
+    const threeDot = req.mode !== "two-dot"; // default: GitHub-style 3-dot
+    const commits: CompareCommit[] = [];
+    try {
+      for await (const c of ctx.log.streamCommits({ revRange: `${base}..${head}`, maxCount: 400 })) {
+        commits.push({
+          sha: c.sha,
+          shortSha: c.sha.slice(0, 7),
+          subject: c.subject,
+          author: c.author,
+          date: c.authorDate,
+        });
+      }
+    } catch {
+      // leave commits empty
+    }
+    let files: ChangedFile[] = [];
+    try {
+      // 3-dot (base...head) = "what head introduced since the merge-base";
+      // 2-dot (base head)   = the literal difference between the two tips.
+      const range = threeDot ? [`${base}...${head}`] : [base, head];
+      const r = await ctx.process.run(["diff", "--name-status", "-M", ...range]);
+      files = parseNameStatus(r.stdout);
+    } catch {
+      files = [];
+    }
+    const behind = await this.revCount(ctx, `${head}..${base}`);
+    return { commits, files, ahead: commits.length, behind };
+  }
+
+  async compareFileDiff(req: {
+    base: string;
+    head: string;
+    path: string;
+    mode?: CompareMode;
+  }): Promise<FileDiff | undefined> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return undefined;
+    }
+    const threeDot = req.mode !== "two-dot";
+    // 3-dot diffs the merge-base of (base, head) against head.
+    let leftRef = req.base;
+    if (threeDot) {
+      try {
+        const mb = await ctx.process.run(["merge-base", req.base, req.head]);
+        if (mb.code === 0 && mb.stdout.trim()) leftRef = mb.stdout.trim();
+      } catch {
+        leftRef = req.base;
+      }
+    }
+    const left = await showAt(ctx, leftRef, req.path);
+    const right = await showAt(ctx, req.head, req.path);
+    return {
+      path: req.path,
+      leftLabel: `${threeDot ? req.base + " (merge-base)" : req.base} ${req.path}`,
+      rightLabel: `${req.head} ${req.path}`,
+      leftText: left,
+      rightText: right,
+      conflicted: false,
+    };
+  }
+
+  // ── Code browser (GitHub-style file tree at HEAD) ───────────────────────────
+
+  /**
+   * Lists the immediate children of a directory at HEAD via
+   * `git ls-tree --long -z HEAD -- <dir>/`. The trailing slash + non-recursive
+   * ls-tree gives exactly one level (folders + files); -z is NUL-delimited so
+   * paths with spaces parse cleanly. Sorted folders-first then alphabetical —
+   * github.com's order. An empty `path` lists the repo root.
+   */
+  async treeList(req: { path: string }): Promise<TreeEntry[]> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return [];
+    }
+    const dir = req.path.replace(/^\/+|\/+$/g, "");
+    const spec = dir ? `${dir}/` : "";
+    try {
+      const args = ["ls-tree", "--long", "-z", "HEAD", "--", ...(spec ? [spec] : [])];
+      const r = await ctx.process.run(args);
+      if (r.code !== 0) {
+        return [];
+      }
+      const entries = parseLsTree(r.stdout);
+      entries.sort((a, b) => {
+        if (a.type !== b.type) {
+          return a.type === "tree" ? -1 : 1; // folders first
+        }
+        return a.name.localeCompare(b.name);
+      });
+      return entries;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Reads a blob's text at HEAD via `git show HEAD:<path>`. Probes the size
+   * first (so huge files never hit the buffer) and flags binary content (a NUL
+   * byte) — mirroring the empty-string fallbacks used by showAt elsewhere.
+   */
+  async fileText(req: { path: string }): Promise<RepoFile | undefined> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return undefined;
+    }
+    const rel = req.path.replace(/^\/+/, "");
+    if (!rel) {
+      return undefined;
+    }
+    try {
+      const probe = await ctx.process.run(["ls-tree", "--long", "-z", "HEAD", "--", rel]);
+      if (probe.code !== 0 || !probe.stdout.trim()) {
+        return undefined; // not a tracked path at HEAD
+      }
+      const probed = parseLsTree(probe.stdout)[0];
+      if (probed && probed.type !== "blob") {
+        return undefined; // it's a directory, not a file
+      }
+      if (probed && typeof probed.size === "number" && probed.size > FILE_CAP_BYTES) {
+        return { path: rel, text: "", truncated: true };
+      }
+      const r = await ctx.process.run(["show", `HEAD:${rel}`]);
+      if (r.code !== 0) {
+        return undefined;
+      }
+      // Binary: a NUL byte, OR a high density of U+FFFD replacement chars — git's
+      // stdout is decoded utf8, so a non-UTF-8 / NUL-free binary surfaces as FFFD.
+      if (r.stdout.includes("\0") || replacementRatio(r.stdout) > 0.3) {
+        return { path: rel, text: "", binary: true };
+      }
+      if (r.stdout.length > FILE_CAP_BYTES) {
+        return { path: rel, text: "", truncated: true };
+      }
+      return { path: rel, text: r.stdout };
+    } catch {
+      return undefined;
+    }
+  }
+
+  // ── Settings: git identity + local SSH keys ─────────────────────────────────
+
+  /** The global git author identity (`git config --global user.name/email`). */
+  async gitIdentity(): Promise<GitIdentity> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { name: "", email: "" };
+    }
+    const read = async (key: string): Promise<string> => {
+      try {
+        const r = await ctx.process.run(["config", "--global", key]);
+        return r.code === 0 ? r.stdout.trim() : "";
+      } catch {
+        return "";
+      }
+    };
+    return { name: await read("user.name"), email: await read("user.email") };
+  }
+
+  /** Set the global git author identity. */
+  async setGitIdentity(req: GitIdentity): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { ok: false, changed: false, message: "No repository open." };
+    }
+    try {
+      if (req.name.trim()) {
+        await ctx.process.run(["config", "--global", "user.name", req.name.trim()]);
+      }
+      if (req.email.trim()) {
+        await ctx.process.run(["config", "--global", "user.email", req.email.trim()]);
+      }
+      return { ok: true, changed: true };
+    } catch (err) {
+      return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** List the local SSH public keys under ~/.ssh (read-only). */
+  async sshKeys(): Promise<SshKey[]> {
+    try {
+      const dir = join(homedir(), ".ssh");
+      const files = await readdir(dir);
+      const out: SshKey[] = [];
+      for (const f of files) {
+        if (!f.endsWith(".pub")) {
+          continue;
+        }
+        try {
+          const content = (await readFile(join(dir, f), "utf8")).trim();
+          const parts = content.split(/\s+/);
+          out.push({ file: f, type: parts[0] || "", comment: parts.slice(2).join(" ") });
+        } catch {
+          // unreadable key file — skip
+        }
+      }
+      out.sort((a, b) => a.file.localeCompare(b.file));
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
+  // ── Sync (control remote changes) ───────────────────────────────────────────
+
+  async syncStatus(): Promise<SyncStatus> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { ahead: 0, behind: 0, noUpstream: true };
+    }
+    let branch: string | undefined;
+    try {
+      const h = await ctx.refs.getHead();
+      branch = h.detached ? undefined : h.branch;
+    } catch {
+      branch = undefined;
+    }
+    const upstream = (await ctx.sync.currentUpstream().catch(() => null)) ?? undefined;
+    if (!upstream) {
+      return { branch, ahead: 0, behind: 0, noUpstream: true };
+    }
+    const ab = await ctx.sync.aheadBehind().catch(() => ({ ahead: 0, behind: 0 }));
+    return { branch, upstream, ahead: ab.ahead, behind: ab.behind, noUpstream: false };
+  }
+
+  async syncFetch(): Promise<CommitActionResult> {
+    return this.staged((ctx) => ctx.sync.fetch());
+  }
+  async syncPull(): Promise<CommitActionResult> {
+    return this.staged((ctx) => ctx.sync.pull());
+  }
+  async syncPush(opts: { setUpstream?: boolean } | undefined): Promise<CommitActionResult> {
+    return this.staged((ctx) => ctx.sync.push({ setUpstream: opts?.setUpstream }));
+  }
+
+  // ── Branch management ───────────────────────────────────────────────────────
+
+  /** One `for-each-ref` gives every local branch with upstream + ahead/behind. */
+  async branchesList(): Promise<BranchInfo[]> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return [];
+    }
+    const SEP = "\x1f";
+    const fmt =
+      `%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
+      `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(contents:subject)`;
+    let out = "";
+    try {
+      const r = await ctx.process.run([
+        "for-each-ref",
+        `--format=${fmt}`,
+        "--sort=-committerdate",
+        "refs/heads",
+      ]);
+      out = r.stdout;
+    } catch {
+      return [];
+    }
+    const branches: BranchInfo[] = [];
+    for (const line of out.split("\n")) {
+      if (!line.trim()) continue;
+      const [name, head, upstream, track, date, subject] = line.split(SEP);
+      const { ahead, behind } = parseTrack(track ?? "");
+      branches.push({
+        name,
+        current: head === "*",
+        upstream: upstream || undefined,
+        ahead,
+        behind,
+        subject: subject ?? "",
+        date: Number(date) || 0,
+      });
+    }
+    return branches;
+  }
+
+  async branchCreate(req: { name: string; checkout?: boolean }): Promise<CommitActionResult> {
+    return this.staged((ctx) =>
+      req.checkout ? ctx.branches.checkoutNew(req.name) : ctx.branches.create(req.name),
+    );
+  }
+  async branchDelete(req: { name: string; force?: boolean }): Promise<CommitActionResult> {
+    return this.staged((ctx) => ctx.branches.delete(req.name, { force: req.force }));
+  }
+
+  private async revCount(ctx: GitContext, range: string): Promise<number> {
+    try {
+      const r = await ctx.process.run(["rev-list", "--count", range]);
+      return Number(r.stdout.trim()) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Run a working-tree mutation, mapping the git-service result to the IPC shape. */
+  private async staged(
+    op: (ctx: GitContext) => Promise<{ ok?: boolean; code?: number; stderr?: string }>,
+  ): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { ok: false, changed: false, message: "No repository open." };
+    }
+    try {
+      const r = await op(ctx);
+      const ok = r.ok ?? r.code === 0;
+      return { ok, changed: ok, message: ok ? undefined : r.stderr?.trim() };
+    } catch (err) {
+      return { ok: false, changed: false, message: String(err) };
+    }
+  }
+
   // ── Commit actions (graph context menu) ─────────────────────────────────────
 
   /**
@@ -436,6 +866,58 @@ async function showAt(ctx: GitContext, sha: string, rel: string): Promise<string
   return r.code === 0 ? r.stdout : "";
 }
 
+/**
+ * Fraction of U+FFFD replacement chars in a utf8-decoded string. A non-UTF-8 or
+ * NUL-free binary blob surfaces as a high density of these; legit text (even
+ * Latin-1 prose with occasional accents) stays well below the 0.3 cutoff.
+ */
+function replacementRatio(s: string): number {
+  if (!s.length) {
+    return 0;
+  }
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) === 0xfffd) {
+      n++;
+    }
+  }
+  return n / s.length;
+}
+
+/**
+ * Parses `git ls-tree --long -z HEAD` output. Records are NUL-separated; each is
+ *   `<mode> SP <type> SP <oid> SP+ <size|-> TAB <path>`
+ * e.g. "100644 blob a1b2c3…  1234\tsrc/main.ts" or "040000 tree d4e5…  -\tsrc".
+ * `--long` adds the right-aligned size column ("-" for trees). The path is
+ * everything after the TAB (so spaces are preserved). Submodules (type
+ * "commit") are skipped.
+ */
+export function parseLsTree(stdout: string): TreeEntry[] {
+  const out: TreeEntry[] = [];
+  for (const rec of stdout.split("\0")) {
+    if (!rec) {
+      continue;
+    }
+    const tab = rec.indexOf("\t");
+    if (tab < 0) {
+      continue;
+    }
+    const meta = rec.slice(0, tab).trim().split(/\s+/); // [mode, type, oid, size]
+    const path = rec.slice(tab + 1);
+    const rawType = meta[1];
+    if (rawType !== "tree" && rawType !== "blob") {
+      continue; // skip submodules / anything unexpected
+    }
+    const sizeField = meta[3];
+    const size =
+      rawType === "blob" && sizeField && sizeField !== "-" ? Number(sizeField) : undefined;
+    const slash = path.lastIndexOf("/");
+    const name = slash >= 0 ? path.slice(slash + 1) : path;
+    out.push({ name, path, type: rawType, ...(size !== undefined ? { size } : {}) });
+  }
+  return out;
+}
+
 async function parentOf(ctx: GitContext, sha: string): Promise<string | undefined> {
   const r = await ctx.process.run(["rev-parse", `${sha}^`]);
   const parent = r.stdout.trim();
@@ -458,6 +940,13 @@ async function readWorking(ctx: GitContext, rel: string): Promise<string> {
 }
 
 // ── parse helpers ────────────────────────────────────────────────────────────
+
+/** Parses git's `%(upstream:track)` field, e.g. "[ahead 2, behind 1]" / "[gone]". */
+export function parseTrack(track: string): { ahead: number; behind: number } {
+  const a = track.match(/ahead (\d+)/);
+  const b = track.match(/behind (\d+)/);
+  return { ahead: a ? Number(a[1]) : 0, behind: b ? Number(b[1]) : 0 };
+}
 
 /** Parses `git diff --name-status` (tab-separated, newline-delimited). */
 export function parseNameStatus(stdout: string): ChangedFile[] {

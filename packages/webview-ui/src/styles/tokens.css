@@ -75,7 +75,10 @@
   --gs-status-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
   --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
   --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
-  --gs-amber: var(--vscode-charts-yellow);
+  /* Raw charts-yellow as small text fails AA on light themes (≈3:1); the
+     gitDecoration "modified" foreground is the legibility-tuned equivalent and
+     keeps every amber consumer (tag chips, modified "M") readable on both. */
+  --gs-amber: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
 
   /* ---- Elevation -------------------------------------------------------- */
   --gs-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.16);

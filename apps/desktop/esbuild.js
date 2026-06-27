@@ -79,11 +79,15 @@ function copyStaticAssets() {
     path.join(distDir, "renderer/index.html"),
   );
   // The window/dev icon (electron-builder embeds the packaged icon separately)
-  // plus the in-app brand assets (welcome logo + top-bar mark).
+  // plus the in-app brand assets. The welcome hero is the squircle app-icon
+  // mark, theme-swapped (a light-tile sibling so it sits on the light welcome
+  // screen instead of floating as a dark square); the wordmark is theme-swapped
+  // text. The top-bar mark is an inline currentColor SVG in the renderer, so it
+  // needs no asset here.
   const brand = {
     "brand/gitstudio-icon-512.png": "icon.png",
-    "brand/gitstudio-logo.svg": "brand-logo.svg",
-    "brand/gitstudio-mark.svg": "brand-mark.svg",
+    "brand/gitstudio-icon.svg": "brand-icon.svg",
+    "brand/gitstudio-icon-light.svg": "brand-icon-light.svg",
     "brand/gitstudio-wordmark-light.svg": "brand-wordmark-light.svg",
     "brand/gitstudio-wordmark-dark.svg": "brand-wordmark-dark.svg",
   };

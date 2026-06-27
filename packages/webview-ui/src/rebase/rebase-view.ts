@@ -245,17 +245,29 @@ export class RebaseView extends LitElement {
       letter-spacing: 0.03em;
       padding: 3px 6px;
       border-radius: var(--gs-radius-sm);
-      background: color-mix(in srgb, var(--action-accent) 14%, transparent);
-      color: var(--action-accent);
-      border: 1px solid color-mix(in srgb, var(--action-accent) 40%, transparent);
+      /* Neutral, always-legible label; the action's hue rides the tinted fill
+       * and the border (composited over an opaque surface, never transparent),
+       * so the chip clears AA on both light and dark instead of painting
+       * colored text on a same-hue wash. */
+      background: color-mix(in srgb, var(--action-accent) 14%, var(--gs-surface));
+      color: var(--gs-fg);
+      border: 1px solid color-mix(in srgb, var(--action-accent) 45%, transparent);
       cursor: pointer;
     }
     select.action:hover {
-      border-color: color-mix(in srgb, var(--action-accent) 70%, transparent);
+      border-color: color-mix(in srgb, var(--action-accent) 75%, transparent);
+      background: color-mix(in srgb, var(--action-accent) 20%, var(--gs-surface));
     }
     select.action:focus-visible {
       outline: 1px solid var(--gs-accent);
       outline-offset: 1px;
+    }
+    /* The native option popup inherits the select's color but not its tinted
+     * background — pin both to the dropdown tokens so the list never renders
+     * colored text on the system-default white menu. */
+    select.action option {
+      color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+      background: var(--vscode-dropdown-background, var(--vscode-editor-background));
     }
 
     /* Respect the OS "reduce motion" setting: keep the layout, drop the easing. */
@@ -365,13 +377,17 @@ export class RebaseView extends LitElement {
       opacity: 0.45;
       cursor: default;
     }
+    /* A true ghost-danger button: the error hue is the text + border at rest,
+     * and the hover tint composites over an opaque surface so it's visible on
+     * light themes (12%-over-transparent washed out to nothing there). */
     button.danger {
-      background: var(--vscode-button-secondaryBackground, transparent);
-      color: var(--vscode-button-secondaryForeground, var(--vscode-errorForeground));
-      border-color: color-mix(in srgb, var(--vscode-errorForeground) 40%, transparent);
+      background: transparent;
+      color: var(--vscode-errorForeground);
+      border-color: color-mix(in srgb, var(--vscode-errorForeground) 45%, transparent);
     }
     button.danger:hover {
-      background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent);
+      background: color-mix(in srgb, var(--vscode-errorForeground) 16%, var(--vscode-editor-background));
+      border-color: var(--vscode-errorForeground);
       color: var(--vscode-errorForeground);
     }
     .count {

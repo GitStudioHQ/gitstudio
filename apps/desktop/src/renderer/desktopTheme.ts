@@ -10,6 +10,8 @@
 // We honor `prefers-color-scheme` and react to OS theme changes live.
 
 export type AppTheme = "dark" | "light";
+/** The user's choice: follow the OS, or pin light/dark. */
+export type ThemeMode = "system" | "light" | "dark";
 
 /** Apply the theme: set the body class the shared code reads and let CSS vars resolve. */
 export function applyTheme(theme: AppTheme): void {
@@ -19,24 +21,25 @@ export function applyTheme(theme: AppTheme): void {
   body.dataset.theme = theme;
 }
 
-/** Resolve the initial theme from the OS preference. */
+/** Resolve the current OS color-scheme preference. */
 export function preferredTheme(): AppTheme {
   return window.matchMedia?.("(prefers-color-scheme: light)").matches
     ? "light"
     : "dark";
 }
 
-/** Track OS theme changes and reapply; returns a disposer. */
-export function followSystemTheme(onChange?: (theme: AppTheme) => void): () => void {
+/** Resolve a mode to a concrete theme ("system" → the live OS preference). */
+export function resolveTheme(mode: ThemeMode): AppTheme {
+  return mode === "system" ? preferredTheme() : mode;
+}
+
+/** Notify on OS theme changes (does NOT auto-apply — the caller honors the mode). */
+export function followSystemTheme(onChange: (osTheme: AppTheme) => void): () => void {
   const mq = window.matchMedia?.("(prefers-color-scheme: light)");
   if (!mq) {
     return () => {};
   }
-  const listener = () => {
-    const theme = preferredTheme();
-    applyTheme(theme);
-    onChange?.(theme);
-  };
+  const listener = (): void => onChange(preferredTheme());
   mq.addEventListener("change", listener);
   return () => mq.removeEventListener("change", listener);
 }

@@ -2,7 +2,7 @@
   "name": "gitstudio",
   "displayName": "GitStudio",
   "description": "A free, open-source, JetBrains-grade Git suite for VS Code & Cursor — commit graph, inline blame, file & line history, hunk/line staging, side-by-side diff, 3-pane merge, interactive rebase with a universal Undo safety net, and optional bring-your-own-key AI.",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -76,14 +76,6 @@
           "type": "webview"
         },
         {
-          "id": "gitstudio.commits",
-          "name": "Commits"
-        },
-        {
-          "id": "gitstudio.branches",
-          "name": "Branches"
-        },
-        {
           "id": "gitstudio.stashes",
           "name": "Stashes"
         },
@@ -102,16 +94,6 @@
       ]
     },
     "viewsWelcome": [
-      {
-        "view": "gitstudio.commits",
-        "when": "!gitstudio.hasRepo",
-        "contents": "A JetBrains-grade Git workflow, right inside your editor.\nOpen a folder with a Git repository and your commit graph, inline blame, history, hunk-level staging, and 3-pane merge come to life.\n[Open Folder](command:vscode.openFolder)\n[Take the Tour](command:gitstudio.openWalkthrough)"
-      },
-      {
-        "view": "gitstudio.commits",
-        "when": "gitstudio.hasRepo",
-        "contents": "See your history as a real, virtualized branch graph — fast even at tens of thousands of commits.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\n[Take the Tour](command:gitstudio.openWalkthrough)"
-      },
       {
         "view": "gitstudio.stashes",
         "when": "gitstudio.hasRepo",

@@ -28,8 +28,13 @@ export const codiconStyles = css`
   .codicon-git-merge::before { content: "\\eafe"; }
   .codicon-cloud::before { content: "\\ebaa"; }
   .codicon-tag::before { content: "\\ea66"; }
+  .codicon-repo::before { content: "\\ea62"; }
+  .codicon-home::before { content: "\\eb06"; }
+  .codicon-folder-opened::before { content: "\\eaf7"; }
   .codicon-chevron-up::before { content: "\\eab7"; }
   .codicon-chevron-down::before { content: "\\eab4"; }
+  .codicon-chevron-left::before { content: "\\eab5"; }
+  .codicon-chevron-right::before { content: "\\eab6"; }
   .codicon-arrow-up::before { content: "\\eaa1"; }
   .codicon-arrow-down::before { content: "\\ea9a"; }
   .codicon-gripper::before { content: "\\eb04"; }
@@ -39,6 +44,10 @@ export const codiconStyles = css`
   .codicon-link-external::before { content: "\\eb14"; }
   .codicon-history::before { content: "\\ea82"; }
   .codicon-discard::before { content: "\\eae2"; }
+  .codicon-redo::before { content: "\\ebb0"; }
+  .codicon-sync::before { content: "\\ea77"; }
+  .codicon-lock::before { content: "\\ea75"; }
+  .codicon-wand::before { content: "\\ebcf"; }
   .codicon-add::before { content: "\\ea60"; }
   .codicon-dash::before { content: "\\eacc"; }
   .codicon-edit::before { content: "\\ea73"; }
