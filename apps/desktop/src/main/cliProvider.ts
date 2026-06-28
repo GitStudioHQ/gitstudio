@@ -155,7 +155,7 @@ export class CliProvider implements Provider {
     if (!spec) {
       return Promise.reject(new AiError(`Unknown local CLI: ${this.opts.preset}.`));
     }
-    const prompt = flatten(messages);
+    const prompt = withThinking(flatten(messages), opts.thinking);
     const model = this.opts.resolveModel(opts.model);
     // Stream token-by-token when the CLI supports a JSON event stream; otherwise
     // fall back to forwarding raw stdout (which most CLIs buffer to the end).
@@ -238,6 +238,22 @@ export class CliProvider implements Provider {
       });
     });
   }
+}
+
+/**
+ * Nudge the CLI's reasoning depth via the prompt. Claude Code (and most agent
+ * CLIs) take their thinking budget from the request, so a short directive is the
+ * portable lever: "extended" asks it to think hard; "off" asks for a direct,
+ * concise reply; "auto" leaves its default behavior alone.
+ */
+function withThinking(prompt: string, thinking?: "off" | "auto" | "extended"): string {
+  if (thinking === "extended") {
+    return `${prompt}\n\nThink hard and reason carefully before you answer.`;
+  }
+  if (thinking === "off") {
+    return `${prompt}\n\nAnswer directly and concisely, without extended reasoning.`;
+  }
+  return prompt;
 }
 
 /** Flatten the chat messages into a single prompt for a non-interactive CLI. */

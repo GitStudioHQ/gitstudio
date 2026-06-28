@@ -507,6 +507,7 @@ function registerIpc(): void {
   handle("ai:removeConnection", (req) => ai.removeConnection(req.id));
   handle("ai:setDefault", (req) => ai.setDefault(req.id));
   handle("ai:setKey", (req) => ai.setKey(req.id, req.key));
+  handle("ai:setAgentConfig", (patch) => ai.setAgentConfig(patch));
   handle("ai:test", (req) => ai.test(req.id));
   handle("ai:task", (req) => ai.runTask(req.requestId, req.task, req.input));
   handle("ai:agentRun", (req) => ai.runAgentTask(req));

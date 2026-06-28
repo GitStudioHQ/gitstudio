@@ -87,6 +87,8 @@ export interface ChatOptions {
   toolChoice?: "auto" | "required" | "none";
   /** Mark the leading system text as cacheable (Anthropic prompt caching). */
   systemCacheable?: boolean;
+  /** Reasoning depth: "off" minimizes it, "extended" asks for deeper thinking. */
+  thinking?: "off" | "auto" | "extended";
   signal?: AbortSignal;
 }
 

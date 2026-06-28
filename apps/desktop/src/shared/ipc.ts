@@ -847,6 +847,7 @@ export interface IpcChannels {
   "ai:removeConnection": [{ id: string }, AiSettingsView];
   "ai:setDefault": [{ id: string }, AiSettingsView];
   "ai:setKey": [{ id: string; key: string }, AiSettingsView];
+  "ai:setAgentConfig": [Partial<AgentConfig>, AiSettingsView];
   "ai:test": [{ id: string }, AiTestResult];
   // One-shot tasks: the invoke resolves with the final text; deltas stream via ai:delta.
   "ai:task": [{ requestId: string; task: AiTaskName; input: AiTaskInput }, AiDone];
@@ -944,11 +945,23 @@ export interface AiPresetView {
   models: { fast: string; mid: string; deep: string };
 }
 
+/** Configurable behavior of the in-app Assistant agent (persisted). */
+export interface AgentConfig {
+  /** Default model tier the Assistant uses (maps to the connection's models). */
+  model: "fast" | "mid" | "deep";
+  /** How much the model should reason before answering. */
+  thinking: "off" | "auto" | "extended";
+  /** Default repo-access level for new conversations. */
+  permission: "read" | "write" | "destructive";
+}
+
 export interface AiSettingsView {
   connections: AiConnectionView[];
   defaultId?: string;
   /** True when at least one connection is usable (gates the ✨ + Assistant). */
   enabled: boolean;
+  /** The Assistant agent's configured defaults. */
+  agent: AgentConfig;
 }
 
 export interface AiConnectionPatch {
@@ -996,8 +1009,10 @@ export interface AgentRunRequest {
   allowWrite: boolean;
   allowDestructive: boolean;
   connectionId?: string;
-  /** Which model tier to use (fast = snappiest). Defaults to "mid". */
+  /** Which model tier to use (fast = snappiest). Defaults to the agent config. */
   model?: "fast" | "mid" | "deep";
+  /** Reasoning depth for this run. Defaults to the agent config. */
+  thinking?: "off" | "auto" | "extended";
 }
 
 /** A structured step emitted by a running agent, streamed to the Assistant view. */

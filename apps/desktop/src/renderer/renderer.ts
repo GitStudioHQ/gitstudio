@@ -26,7 +26,7 @@ import { CompareDiff } from "./compareDiff";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant } from "./assistant";
-import { aiModelsCard, agentAccessCard } from "./aiSettings";
+import { aiModelsCard, assistantCard, agentAccessCard } from "./aiSettings";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
@@ -1167,6 +1167,7 @@ class App {
       this.settingsAppearanceCard(),
       this.settingsAccountCard(),
       aiModelsCard(),
+      assistantCard(),
       agentAccessCard(),
       this.settingsIdentityCard(),
       this.settingsSshCard(),

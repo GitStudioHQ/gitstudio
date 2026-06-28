@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
+  DEFAULT_AGENT_CONFIG,
   EMPTY_AI_SETTINGS,
   PROVIDER_PRESETS,
   connectionFromPreset,
@@ -42,6 +43,7 @@ import { mcpInfo, installMcp } from "./mcpConfig";
 import { CliProvider, cliSpecFor, detectCli } from "./cliProvider";
 import type { RepoStore } from "./repoStore";
 import type {
+  AgentConfig,
   AgentConfirmAnswer,
   AgentRunRequest,
   AiConnectionPatch,
@@ -193,13 +195,25 @@ export class AiBridge {
     );
   }
 
+  private agentConfig() {
+    return { ...DEFAULT_AGENT_CONFIG, ...(this.settings.agent ?? {}) };
+  }
+
   private view(): AiSettingsView {
     const connections = this.settings.connections.map((c) => this.connView(c));
     return {
       connections,
       defaultId: this.settings.defaultId,
       enabled: connections.some((c) => c.usable),
+      agent: this.agentConfig(),
     };
+  }
+
+  async setAgentConfig(patch: Partial<AgentConfig>): Promise<AiSettingsView> {
+    await this.ensureLoaded();
+    this.settings.agent = { ...this.agentConfig(), ...patch };
+    await this.persist();
+    return this.view();
   }
 
   async getSettings(): Promise<AiSettingsView> {
@@ -490,11 +504,13 @@ export class AiBridge {
     this.aborts.set(requestId, abort);
 
     try {
+      const cfg = this.agentConfig();
       const result = await runAgent(req.goal, {
         provider: resolved.provider,
         host,
         tools,
-        model: req.model ?? "mid",
+        model: req.model ?? cfg.model,
+        thinking: req.thinking ?? cfg.thinking,
         signal: abort.signal,
         onTextDelta: (delta) => this.send("ai:delta", { requestId, delta }),
         onEvent: (e) => {

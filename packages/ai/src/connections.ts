@@ -28,6 +28,22 @@ export interface Connection {
   local?: boolean;
 }
 
+/** Configurable behavior of the in-app Assistant agent. */
+export interface AiAgentConfig {
+  /** Default model tier the Assistant uses (maps to the connection's models). */
+  model: "fast" | "mid" | "deep";
+  /** How much the model should reason before answering. */
+  thinking: "off" | "auto" | "extended";
+  /** Default repo-access level for new conversations. */
+  permission: "read" | "write" | "destructive";
+}
+
+export const DEFAULT_AGENT_CONFIG: AiAgentConfig = {
+  model: "mid",
+  thinking: "auto",
+  permission: "read",
+};
+
 /** The persisted AI settings: the connection list + which id is the default. */
 export interface AiSettings {
   connections: Connection[];
@@ -35,6 +51,8 @@ export interface AiSettings {
   defaultId?: string;
   /** Per-feature overrides (optional) → connection id. */
   taskDefaults?: Partial<Record<string, string>>;
+  /** The Assistant agent's configured defaults. */
+  agent?: AiAgentConfig;
 }
 
 export const EMPTY_AI_SETTINGS: AiSettings = { connections: [] };

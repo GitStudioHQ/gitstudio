@@ -18,6 +18,8 @@ import type { AgentConfirmRequest, AgentEventWire, AiSettingsView } from "../sha
 let permission: "read" | "write" | "destructive" = "read";
 /** Which model tier the Assistant uses — "fast" is the snappiest. */
 let speed: "fast" | "mid" | "deep" = "mid";
+/** Reasoning depth for the Assistant — seeded from the saved agent config. */
+let thinkLevel: "off" | "auto" | "extended" = "auto";
 
 const QUICK_ACTIONS: Array<{ icon: string; label: string; goal: string }> = [
   { icon: "git-commit", label: "Draft a commit", goal: "Draft a commit message for my staged changes and show it to me. Don't commit unless I confirm." },
@@ -137,6 +139,12 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     } else {
       const def = settings.connections.find((c) => c.id === settings!.defaultId) ?? settings.connections.find((c) => c.usable);
       modelTag.textContent = def ? `via ${def.label}` : "";
+      // Seed the per-conversation toggles from the saved agent config.
+      permission = settings.agent.permission;
+      speed = settings.agent.model;
+      thinkLevel = settings.agent.thinking;
+      permBtns.forEach((b, i) => b.classList.toggle("active", perms[i].id === permission));
+      speedBtns.forEach((b, i) => b.classList.toggle("active", speeds[i].id === speed));
     }
   })();
 
@@ -149,21 +157,26 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
 
     addBubble(transcript, "user", goal);
     const turn = el("div", "assistant-turn");
+    // An animated "thinking" indicator: three pulsing dots + a shimmering label +
+    // a live elapsed time, so a multi-second model start-up (a local CLI boots
+    // its whole agent before the first token) clearly reads as active thinking.
     const thinking = el("div", "assistant-thinking");
-    const thinkLabel = span("Thinking…");
-    thinking.append(glyph("loading"), thinkLabel);
+    const dots = el("span", "ai-think-dots");
+    dots.append(el("i"), el("i"), el("i"));
+    const thinkLabel = span("Thinking", "ai-think-label");
+    const thinkMeta = span("", "ai-think-meta");
+    thinking.append(dots, thinkLabel, thinkMeta);
     turn.append(thinking);
     transcript.append(turn);
     scrollDown(transcript);
 
     const state: TurnState = { turn, thinking, stream: null };
-    // A live elapsed counter so a multi-second model start-up reads as "working",
-    // not "frozen" (Claude Code's first token can take a few seconds).
     const t0 = Date.now();
     const ticker = window.setInterval(() => {
       const s = Math.max(1, Math.round((Date.now() - t0) / 1000));
-      thinkLabel.textContent = state.stream ? `Responding… ${s}s` : `Thinking… ${s}s`;
-    }, 500);
+      thinkLabel.textContent = state.stream ? "Responding" : "Thinking";
+      thinkMeta.textContent = `${s}s`;
+    }, 250);
     const requestId = crypto.randomUUID();
     const offDelta = host.on("ai:delta", (e) => {
       if (e.requestId === requestId) onDelta(state, e.delta);
@@ -185,6 +198,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         allowWrite: permission !== "read",
         allowDestructive: permission === "destructive",
         model: speed,
+        thinking: thinkLevel,
       });
       finalizeStream(state);
       thinking.remove();

@@ -36,6 +36,8 @@ export interface AgentOptions {
   /** Extra system guidance appended to the built-in agent system prompt. */
   system?: string;
   model?: ModelTier;
+  /** Reasoning depth passed through to the provider for every turn. */
+  thinking?: "off" | "auto" | "extended";
   /** Hard cap on model turns (default 12). */
   maxSteps?: number;
   signal?: AbortSignal;
@@ -106,6 +108,7 @@ export async function runAgent(goal: string, opts: AgentOptions): Promise<AgentR
         maxTokens: 2048,
         signal: opts.signal,
         systemCacheable: true,
+        thinking: opts.thinking,
       };
       const onText = (d: string) => opts.onTextDelta?.(d);
       if (opts.provider.streamChat) {
