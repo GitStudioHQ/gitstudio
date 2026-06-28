@@ -1,0 +1,42 @@
+apps/desktop/test/terminalCommands.test.ts
+  s_3fc28b9b39c0aa::t_65ba405bca8149 1-138
+apps/desktop/src/renderer/terminalPanel.ts
+  s_3fc28b9b39c0aa::t_9f2f1ca7e23f7d 38-47
+  s_3fc28b9b39c0aa::t_86830a1257b94e 19-20
+  s_3fc28b9b39c0aa::t_1e486716315efb 145-146,162-232
+  s_3fc28b9b39c0aa::t_22a99b12ce2ae2 275-279
+apps/desktop/src/renderer/styles/app.css
+  s_3fc28b9b39c0aa::t_4d9e1f37a53e08 3390-3391,3397,3402-3498
+  s_3fc28b9b39c0aa::t_4fdd941daace4d 3499
+apps/desktop/src/main/shellIntegration.ts
+  s_3fc28b9b39c0aa::t_a88e67b6a6041d 1-28,34,36-41,43-60,62-67,70-71,73-75,77-78,80-96,99-100,102-162
+  s_3fc28b9b39c0aa::t_546b61c7123a1b 29-33,35,42,61,68-69,72,76,79,97-98,101
+apps/desktop/src/main/terminalBridge.ts
+  s_3fc28b9b39c0aa::t_2e61d39d0d154f 63-70,73-74,78
+  s_3fc28b9b39c0aa::t_8a1c63ba5bc0e1 13
+apps/desktop/src/renderer/terminalCommands.ts
+  s_3fc28b9b39c0aa::t_6fab725e98b587 64-67
+  s_3fc28b9b39c0aa::t_65f92a40860909 184-188
+  s_3fc28b9b39c0aa::t_a66adbac687418 1-63,68-183,189-245
+apps/desktop/src/renderer/terminalDock.ts
+  s_3fc28b9b39c0aa::t_78404db5016446 23-24
+  s_3fc28b9b39c0aa::t_cdb335336cf023 115-122
+  s_3fc28b9b39c0aa::t_070f1d7742c80f 260-287
+  s_3fc28b9b39c0aa::t_0e6416f36593cd 232-234,236-239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "71e68e3275dcc808e61452ed3dc63c9deadcb8d5",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
