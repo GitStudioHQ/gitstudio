@@ -2422,7 +2422,9 @@ gitstudio-graph {
  * it. The diff surface stays hidden until a file is opened, then splits. */
 /* The commit-details surface inside the bottom dock fills the dock body; its
    child (the details split, or the empty-state placeholder) fills + centers. */
-.dock-details-surface { height: 100%; min-height: 0; display: flex; }
+/* Fill the dock body (a flex row) like .term-surface does — otherwise it shrinks
+   to content width and the commit details ignore the available space. */
+.dock-details-surface { flex: 1 1 auto; width: 100%; min-width: 0; height: 100%; min-height: 0; display: flex; }
 .dock-details-surface > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
 
 /* Docked commit details = a wide, short split: the metadata/file panel on the
@@ -2435,18 +2437,22 @@ gitstudio-graph {
   height: 100%;
   overflow: hidden;
 }
-/* Stable two-pane: the commit metadata/file panel on the LEFT at a readable
-   fixed width, the diff filling the rest on the RIGHT — the diff shows its
-   "Select a file" placeholder until a file is opened, so there's never an empty
-   gap and the layout doesn't jump when you click a file. */
+/* Commit details fill the dock by default (no diff pane). The metadata/file
+   panel scrolls ITSELF (<gitstudio-commit-details> has :host{overflow:hidden} +
+   an internal .scroll) — so NO overflow here, or you get a double scrollbar.
+   Opening a file (.diff-open) docks the panel to a fixed left column and reveals
+   the diff filling the rest. */
 .details-split .details-panel {
-  flex: 0 0 400px;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+}
+.details-split .diff-surface { display: none; min-width: 0; min-height: 0; }
+.details-split.diff-open .details-panel {
+  flex: 0 0 420px;
   border-right: 1px solid var(--app-border);
 }
-.details-split .diff-surface { display: block; flex: 1 1 auto; min-width: 0; min-height: 0; }
+.details-split.diff-open .diff-surface { display: block; flex: 1 1 auto; }
 
 .diff-empty {
   display: flex;
@@ -3268,38 +3274,46 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .dock-icon-btn .codicon { font-size: 14px; }
 .dock-chevron .codicon { font-size: 13px; }
 
-/* ── Terminal tabs (Output + one-per-shell) — compact chips in the footer ───── */
-.term-tabs { display: inline-flex; align-items: center; gap: 1px; min-width: 0; }
+/* ── Footer tabs (Commit details / Output / one-per-shell) — flat, VS-Code-panel
+   style: no boxes, just text that brightens on hover/active, with a thin accent
+   line on the active tab's top edge (connecting it to the panel above). ─────── */
+.dock-tabs { display: flex; align-self: stretch; min-width: 0; }
+.term-tabs { display: inline-flex; align-items: stretch; gap: 1px; min-width: 0; }
 .term-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: 152px;
-  height: 19px;
-  padding: 0 7px;
+  gap: 6px;
+  max-width: 168px;
+  height: 100%;
+  padding: 0 11px;
   border: none;
-  border-radius: 5px;
+  border-radius: 0;
   background: transparent;
   color: var(--app-muted);
   font-family: inherit;
   font-size: var(--text-2xs);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: color var(--dur-1) var(--ease);
 }
-.term-tab:hover { background: var(--app-hover); color: var(--vscode-foreground); }
-/* Active chip reads as connected to the body above it (accent edge on top). */
-.term-tab.active {
-  background: var(--vscode-editor-background);
-  color: var(--vscode-foreground);
-  box-shadow: inset 0 1.5px 0 var(--gs-accent), inset 0 0 0 1px var(--app-border);
+.term-tab:hover { color: var(--vscode-foreground); }
+.term-tab.active { color: var(--vscode-foreground); }
+/* The only chrome on an active tab: a thin accent line along its top edge. */
+.term-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  top: 0;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--gs-accent);
 }
 .term-tab .glyph { flex: 0 0 auto; }
-.term-tab .glyph .codicon { font-size: 12px; }
-.term-tab.active .glyph,
-.term-tab.is-output .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.term-tab .glyph .codicon { font-size: 13px; }
+.term-tab.active .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .term-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-tab-close {
   display: inline-flex;

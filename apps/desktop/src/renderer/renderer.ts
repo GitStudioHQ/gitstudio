@@ -90,7 +90,7 @@ import type {
 
 class App {
   private graph?: GraphMount;
-  private diffPanel!: DiffPanel;
+  private diffPanel?: DiffPanel;
   private contextMenu = new CommitContextMenu((req) => this.runAction(req));
 
   private detailsEl?: HTMLElement;
@@ -2316,6 +2316,13 @@ class App {
    * inline Monaco diff below it.
    */
   private renderDetails(d: CommitDetailsPayload): void {
+    // Tear down the previous commit's diff editor — it's lazily re-created only
+    // when a file is opened (creating Monaco on every commit click is what made
+    // this panel lag).
+    this.diffPanel?.dispose();
+    this.diffPanel = undefined;
+    this.activeMonacoView = undefined;
+
     const wrap = el("div", "details-split");
 
     const panel = document.createElement(
@@ -2348,10 +2355,8 @@ class App {
 
     if (!this.detailsEl) return;
     this.detailsEl.replaceChildren(wrap);
-    this.diffPanel = new DiffPanel(surface);
-    this.activeMonacoView = this.diffPanel;
-    this.diffPanel.showEmpty("Select a file to view its diff.");
-    // Pop the commit-details dock open on the selected commit.
+    // No diff editor yet — the split stays collapsed (details only) until the
+    // user opens a file. Pop the commit-details dock open on the selected commit.
     this.terminalDock?.openDetails();
   }
 
@@ -2374,6 +2379,12 @@ class App {
 
   private async openFile(file: ChangedFile, sha?: string): Promise<void> {
     this.detailsSplitEl()?.classList.add("diff-open");
+    // Lazily spin up the Monaco diff the first time a file is opened.
+    if (!this.diffPanel && this.diffSurfaceEl) {
+      this.diffPanel = new DiffPanel(this.diffSurfaceEl);
+      this.activeMonacoView = this.diffPanel;
+    }
+    if (!this.diffPanel) return;
     const diff = await host.invoke("file:diff", { path: file.path, sha });
     if (!diff) {
       this.diffPanel.showEmpty("No diff available.");
