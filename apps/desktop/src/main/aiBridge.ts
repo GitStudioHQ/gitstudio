@@ -1,0 +1,544 @@
+// The desktop's AI layer: owns the user's model connections, runs the inline ✨
+// tasks and the Assistant agent, and brokers the MCP "Agent Access" config.
+//
+// It is the ONLY place API keys live: each connection's key is encrypted at rest
+// with Electron safeStorage (userData/ai-keys/<id>.bin) and never crosses to the
+// renderer — the renderer only ever sees a redacted AiConnectionView. All model
+// traffic runs here in the main process (Node fetch), so there's no CORS and no
+// secret in a web context. Everything degrades silently: with no usable
+// connection the ✨ affordances and the Assistant simply stay hidden; git is
+// never gated or blocked by AI.
+
+import { app, safeStorage } from "electron";
+import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import {
+  EMPTY_AI_SETTINGS,
+  PROVIDER_PRESETS,
+  connectionFromPreset,
+  generateChangelog,
+  generateCommitMessage,
+  generatePrDescription,
+  explainConflict,
+  explainDiff,
+  isConnectionUsable,
+  makeProvider,
+  pickConnection,
+  resolveModelId,
+  reviewDiff,
+  runAgent,
+  selectTools,
+  suggestBranchNames,
+  summarizeChanges,
+  type AiSettings,
+  type Connection,
+  type GitTool,
+  type Provider,
+} from "@gitstudio/ai/index";
+import { createGitToolHost } from "@gitstudio/git-service/index";
+import { mcpInfo, installMcp } from "./mcpConfig";
+import type { RepoStore } from "./repoStore";
+import type {
+  AgentConfirmAnswer,
+  AgentRunRequest,
+  AiConnectionPatch,
+  AiConnectionView,
+  AiDone,
+  AiPresetView,
+  AiSettingsView,
+  AiTaskInput,
+  AiTaskName,
+  AiTestResult,
+  IpcEvents,
+  McpInfo,
+  McpInstallRequest,
+} from "../shared/ipc";
+
+type Send = <E extends keyof IpcEvents>(event: E, data: IpcEvents[E]) => void;
+
+/** How long the agent waits for the user to approve a write before giving up. */
+const CONFIRM_TIMEOUT_MS = 120_000;
+
+export class AiBridge {
+  private settings: AiSettings = { ...EMPTY_AI_SETTINGS };
+  private loaded = false;
+  /** In-memory decrypted key cache, keyed by connection id. */
+  private readonly keyCache = new Map<string, string>();
+  /** In-flight requests → their AbortController (for ai:cancel). */
+  private readonly aborts = new Map<string, AbortController>();
+  /** Pending agent write-confirmations → their resolver. */
+  private readonly confirms = new Map<string, (approved: boolean) => void>();
+
+  constructor(
+    private readonly repos: RepoStore,
+    private readonly send: Send,
+  ) {}
+
+  // ── persistence ────────────────────────────────────────────────────────────
+
+  private settingsPath(): string {
+    return join(app.getPath("userData"), "ai-settings.json");
+  }
+  private keyPath(id: string): string {
+    return join(app.getPath("userData"), "ai-keys", `${id}.bin`);
+  }
+
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) {
+      return;
+    }
+    this.loaded = true;
+    try {
+      const raw = await readFile(this.settingsPath(), "utf8");
+      const parsed = JSON.parse(raw) as AiSettings;
+      if (parsed && Array.isArray(parsed.connections)) {
+        this.settings = parsed;
+      }
+    } catch {
+      // No settings yet — start empty.
+    }
+  }
+
+  private async persist(): Promise<void> {
+    try {
+      await mkdir(app.getPath("userData"), { recursive: true });
+      await writeFile(this.settingsPath(), JSON.stringify(this.settings, null, 2));
+    } catch {
+      // Best-effort; never block a UI action on persistence.
+    }
+  }
+
+  // ── keys (encrypted at rest) ─────────────────────────────────────────────────
+
+  private hasKeyFile(id: string): boolean {
+    return existsSync(this.keyPath(id));
+  }
+
+  private async loadKey(id: string): Promise<string | undefined> {
+    if (this.keyCache.has(id)) {
+      return this.keyCache.get(id);
+    }
+    try {
+      const buf = await readFile(this.keyPath(id));
+      const key = safeStorage.isEncryptionAvailable()
+        ? safeStorage.decryptString(buf)
+        : buf.toString("utf8");
+      this.keyCache.set(id, key);
+      return key;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async storeKey(id: string, key: string): Promise<void> {
+    await mkdir(join(app.getPath("userData"), "ai-keys"), { recursive: true });
+    const data = safeStorage.isEncryptionAvailable()
+      ? safeStorage.encryptString(key)
+      : Buffer.from(key, "utf8");
+    await writeFile(this.keyPath(id), data);
+    this.keyCache.set(id, key);
+  }
+
+  private async deleteKey(id: string): Promise<void> {
+    this.keyCache.delete(id);
+    try {
+      await unlink(this.keyPath(id));
+    } catch {
+      // already gone
+    }
+  }
+
+  // ── views ────────────────────────────────────────────────────────────────────
+
+  private connView(conn: Connection): AiConnectionView {
+    const hasKey = this.hasKeyFile(conn.id);
+    return {
+      id: conn.id,
+      label: conn.label,
+      preset: conn.preset,
+      wire: conn.wire,
+      baseUrl: conn.baseUrl,
+      models: { ...conn.models },
+      needsKey: conn.needsKey,
+      local: conn.local === true,
+      hasKey,
+      usable: isConnectionUsable(conn, hasKey),
+    };
+  }
+
+  private view(): AiSettingsView {
+    const connections = this.settings.connections.map((c) => this.connView(c));
+    return {
+      connections,
+      defaultId: this.settings.defaultId,
+      enabled: connections.some((c) => c.usable),
+    };
+  }
+
+  async getSettings(): Promise<AiSettingsView> {
+    await this.ensureLoaded();
+    return this.view();
+  }
+
+  catalog(): AiPresetView[] {
+    return PROVIDER_PRESETS.map((p) => ({
+      id: p.id,
+      label: p.label,
+      blurb: p.blurb,
+      wire: p.wire,
+      baseUrl: p.baseUrl,
+      needsKey: p.needsKey,
+      local: p.local === true,
+      keyUrl: p.keyUrl,
+      icon: p.icon,
+      note: p.note,
+      models: { ...p.models },
+    }));
+  }
+
+  // ── connection CRUD ──────────────────────────────────────────────────────────
+
+  async addConnection(presetId: string): Promise<AiSettingsView> {
+    await this.ensureLoaded();
+    const conn = connectionFromPreset(presetId, randomUUID());
+    this.settings.connections.push(conn);
+    if (!this.settings.defaultId) {
+      this.settings.defaultId = conn.id;
+    }
+    await this.persist();
+    return this.view();
+  }
+
+  async updateConnection(patch: AiConnectionPatch): Promise<AiSettingsView> {
+    await this.ensureLoaded();
+    const conn = this.settings.connections.find((c) => c.id === patch.id);
+    if (conn) {
+      if (typeof patch.label === "string") conn.label = patch.label;
+      if (typeof patch.baseUrl === "string") conn.baseUrl = patch.baseUrl;
+      if (patch.models) conn.models = { ...patch.models };
+      await this.persist();
+    }
+    return this.view();
+  }
+
+  async removeConnection(id: string): Promise<AiSettingsView> {
+    await this.ensureLoaded();
+    this.settings.connections = this.settings.connections.filter((c) => c.id !== id);
+    if (this.settings.defaultId === id) {
+      this.settings.defaultId = this.settings.connections[0]?.id;
+    }
+    await this.deleteKey(id);
+    await this.persist();
+    return this.view();
+  }
+
+  async setDefault(id: string): Promise<AiSettingsView> {
+    await this.ensureLoaded();
+    if (this.settings.connections.some((c) => c.id === id)) {
+      this.settings.defaultId = id;
+      await this.persist();
+    }
+    return this.view();
+  }
+
+  async setKey(id: string, key: string): Promise<AiSettingsView> {
+    await this.ensureLoaded();
+    if (key.trim().length === 0) {
+      await this.deleteKey(id);
+    } else {
+      await this.storeKey(id, key.trim());
+    }
+    return this.view();
+  }
+
+  async test(id: string): Promise<AiTestResult> {
+    await this.ensureLoaded();
+    const conn = this.settings.connections.find((c) => c.id === id);
+    if (!conn) {
+      return { ok: false, message: "Connection not found." };
+    }
+    const provider = this.providerFor(conn);
+    try {
+      const r = await provider.chat(
+        [{ role: "user", content: "Reply with exactly: OK" }],
+        { model: "fast", maxTokens: 16 },
+      );
+      const model = resolveModelId(conn, "fast") ?? "model";
+      if (r.text.trim().length > 0 || r.stopReason === "stop") {
+        return { ok: true, message: `Connected — ${model} responded.`, model };
+      }
+      return { ok: false, message: "The model returned an empty response." };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // ── provider resolution ──────────────────────────────────────────────────────
+
+  private providerFor(conn: Connection): Provider {
+    return makeProvider(conn, () => this.loadKey(conn.id));
+  }
+
+  private async resolveProvider(connectionId?: string, task?: string): Promise<{ provider: Provider; conn: Connection } | undefined> {
+    await this.ensureLoaded();
+    let conn: Connection | undefined;
+    if (connectionId) {
+      conn = this.settings.connections.find((c) => c.id === connectionId);
+    }
+    conn ??= pickConnection(this.settings, task);
+    if (!conn) {
+      return undefined;
+    }
+    if (!isConnectionUsable(conn, this.hasKeyFile(conn.id))) {
+      return undefined;
+    }
+    return { provider: this.providerFor(conn), conn };
+  }
+
+  // ── one-shot tasks ───────────────────────────────────────────────────────────
+
+  async runTask(requestId: string, task: AiTaskName, input: AiTaskInput): Promise<AiDone> {
+    const resolved = await this.resolveProvider(input.connectionId, task);
+    if (!resolved) {
+      return { requestId, ok: false, message: "No AI model is connected. Add one in Settings ▸ AI." };
+    }
+    const ctx = this.repos.getContext();
+    if (!ctx) {
+      return { requestId, ok: false, message: "No repository is open." };
+    }
+    const host = createGitToolHost(ctx);
+    const abort = new AbortController();
+    this.aborts.set(requestId, abort);
+    const onDelta = (delta: string) => this.send("ai:delta", { requestId, delta });
+    const taskCtx = { signal: abort.signal, onDelta };
+
+    try {
+      const { provider } = resolved;
+      let text: string | null = null;
+      switch (task) {
+        case "commitMessage": {
+          const diff = input.diff ?? (await host.diff({ staged: true }));
+          if (!diff.trim()) {
+            return { requestId, ok: false, message: "Nothing is staged to summarize." };
+          }
+          const recent = input.commits ?? (await host.log({ limit: 10 })).map((c) => c.subject);
+          text = await generateCommitMessage(provider, diff, { recentSubjects: recent, ctx: taskCtx });
+          break;
+        }
+        case "explainDiff": {
+          const diff = input.diff ?? (await this.gatherDiff(host, input));
+          text = await explainDiff(provider, diff, taskCtx);
+          break;
+        }
+        case "summarizeChanges": {
+          const diff = input.diff ?? (await this.gatherDiff(host, input));
+          text = await summarizeChanges(provider, diff, taskCtx);
+          break;
+        }
+        case "prDescription": {
+          const base = input.base ?? "main";
+          const cmp = input.commits ? undefined : await host.compare(base, "HEAD");
+          const commits = input.commits ?? (cmp?.commits ?? []).map((c) => c.subject);
+          const diff = input.diff ?? (await host.diff({ base, head: "HEAD" }));
+          text = await generatePrDescription(provider, commits, diff, taskCtx);
+          break;
+        }
+        case "reviewDiff": {
+          const diff = input.diff ?? (await this.gatherDiff(host, input));
+          text = await reviewDiff(provider, diff, taskCtx);
+          break;
+        }
+        case "explainConflict": {
+          const conflict = input.conflict ?? (await this.gatherConflict(input.path));
+          if (!conflict) {
+            return { requestId, ok: false, message: "Couldn't read the conflict." };
+          }
+          text = await explainConflict(provider, conflict, taskCtx);
+          break;
+        }
+        case "changelog": {
+          const base = input.base;
+          const range = base ? `${base}..HEAD` : "HEAD";
+          const commits = input.commits ?? (await host.log({ ref: range, limit: 200 })).map((c) => c.subject);
+          text = await generateChangelog(provider, commits, { ctx: taskCtx });
+          break;
+        }
+        case "branchName": {
+          text = await suggestBranchNames(provider, input.description ?? "", taskCtx);
+          break;
+        }
+        default:
+          return { requestId, ok: false, message: `Unknown task: ${task}` };
+      }
+      if (text === null) {
+        return { requestId, ok: false, message: "The model returned nothing." };
+      }
+      return { requestId, ok: true, text };
+    } catch (err) {
+      return { requestId, ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+      this.aborts.delete(requestId);
+    }
+  }
+
+  private async gatherDiff(host: ReturnType<typeof createGitToolHost>, input: AiTaskInput): Promise<string> {
+    if (input.sha) {
+      // The commit's diff vs its first parent.
+      return host.diff({ base: `${input.sha}^`, head: input.sha, path: input.path });
+    }
+    if (input.base) {
+      return host.diff({ base: input.base, head: "HEAD", path: input.path });
+    }
+    // Default: the unstaged working-tree diff (fall back to staged if empty).
+    const working = await host.diff({ path: input.path });
+    return working.trim() ? working : host.diff({ staged: true, path: input.path });
+  }
+
+  private async gatherConflict(path?: string): Promise<{ path: string; base?: string; ours: string; theirs: string } | undefined> {
+    const ctx = this.repos.getContext();
+    if (!ctx || !path) {
+      return undefined;
+    }
+    const read = async (stage: number): Promise<string> => {
+      const r = await ctx.process.run(["show", `:${stage}:${path}`]).catch(() => null);
+      return r && r.code === 0 ? r.stdout : "";
+    };
+    const ours = await read(2);
+    const theirs = await read(3);
+    if (!ours && !theirs) {
+      return undefined;
+    }
+    const base = await read(1);
+    return { path, base: base || undefined, ours, theirs };
+  }
+
+  cancel(requestId: string): void {
+    this.aborts.get(requestId)?.abort();
+    this.aborts.delete(requestId);
+    // Deny any pending confirmations for this request so the agent unwinds.
+    for (const [callId, resolve] of this.confirms) {
+      if (callId.startsWith(requestId)) {
+        resolve(false);
+        this.confirms.delete(callId);
+      }
+    }
+  }
+
+  // ── agent ────────────────────────────────────────────────────────────────────
+
+  async runAgentTask(req: AgentRunRequest): Promise<AiDone> {
+    const { requestId } = req;
+    const resolved = await this.resolveProvider(req.connectionId, "agent");
+    if (!resolved) {
+      return { requestId, ok: false, message: "No AI model is connected. Add one in Settings ▸ AI." };
+    }
+    const ctx = this.repos.getContext();
+    if (!ctx) {
+      return { requestId, ok: false, message: "Open a repository first." };
+    }
+    const host = createGitToolHost(ctx);
+    const tools = selectTools({ write: req.allowWrite, destructive: req.allowDestructive });
+    const abort = new AbortController();
+    this.aborts.set(requestId, abort);
+
+    try {
+      const result = await runAgent(req.goal, {
+        provider: resolved.provider,
+        host,
+        tools,
+        model: "deep",
+        signal: abort.signal,
+        onEvent: (e) => {
+          this.send("ai:agentEvent", {
+            requestId,
+            kind: e.type,
+            text: "text" in e ? e.text : undefined,
+            tool: "name" in e ? e.name : undefined,
+            args: e.type === "tool_call" ? e.args : undefined,
+            isError: e.type === "tool_result" ? e.isError : undefined,
+            callId: "id" in e ? e.id : undefined,
+          });
+        },
+        confirm: (tool, args) => this.awaitConfirm(requestId, tool, args),
+      });
+      return { requestId, ok: result.stopped !== "error", text: result.text };
+    } catch (err) {
+      return { requestId, ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+      this.aborts.delete(requestId);
+    }
+  }
+
+  /** Ask the renderer to approve a write/destructive tool, resolving on its answer. */
+  private awaitConfirm(requestId: string, tool: GitTool, args: Record<string, unknown>): Promise<boolean> {
+    const callId = `${requestId}:${randomUUID()}`;
+    this.send("ai:confirmRequest", {
+      requestId,
+      callId,
+      tool: tool.name,
+      title: tool.title,
+      summary: summarizeArgs(tool, args),
+      mode: tool.mode === "destructive" ? "destructive" : "write",
+    });
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        this.confirms.delete(callId);
+        resolve(false);
+      }, CONFIRM_TIMEOUT_MS);
+      this.confirms.set(callId, (approved) => {
+        clearTimeout(timer);
+        resolve(approved);
+      });
+    });
+  }
+
+  confirmAnswer(answer: AgentConfirmAnswer): void {
+    const resolve = this.confirms.get(answer.callId);
+    if (resolve) {
+      this.confirms.delete(answer.callId);
+      resolve(answer.approved);
+    }
+  }
+
+  // ── MCP "Agent Access" ───────────────────────────────────────────────────────
+
+  mcpInfo(): McpInfo {
+    return mcpInfo(this.repos.current()?.root);
+  }
+
+  mcpInstall(req: McpInstallRequest): { ok: boolean; message: string } {
+    return installMcp(this.repos.current()?.root, req);
+  }
+}
+
+/** A short, human-readable summary of what a tool call will do, for the confirm UI. */
+function summarizeArgs(tool: GitTool, args: Record<string, unknown>): string {
+  switch (tool.name) {
+    case "git_commit":
+      return `Commit staged changes:\n“${String(args.message ?? "").split("\n")[0]}”`;
+    case "git_stage":
+      return args.all ? "Stage all changes." : `Stage: ${asList(args.paths)}`;
+    case "git_unstage":
+      return args.all ? "Unstage everything." : `Unstage: ${asList(args.paths)}`;
+    case "git_create_branch":
+      return `Create branch “${String(args.name ?? "")}”${args.checkout ? " and switch to it" : ""}.`;
+    case "git_checkout":
+      return `Switch to “${String(args.ref ?? "")}”.`;
+    case "git_stash_save":
+      return `Stash working-tree changes${args.message ? ` (“${String(args.message)}”)` : ""}.`;
+    case "git_discard":
+      return `Permanently discard changes to: ${asList(args.paths)}`;
+    case "git_delete_branch":
+      return `Delete branch “${String(args.name ?? "")}”${args.force ? " (force)" : ""}.`;
+    case "git_reset":
+      return `Reset (${String(args.mode ?? "")}) to ${String(args.ref ?? "")}.`;
+    default:
+      return `${tool.title}: ${JSON.stringify(args)}`;
+  }
+}
+
+function asList(v: unknown): string {
+  return Array.isArray(v) ? v.map(String).join(", ") : String(v ?? "");
+}

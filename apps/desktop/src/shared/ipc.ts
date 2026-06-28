@@ -839,6 +839,24 @@ export interface IpcChannels {
   "clone:pickDir": [void, string | undefined];
   "clone:start": [CloneRequest, CloneResult];
   "github:repos": [{ search?: string } | void, GhRepoBrief[]];
+  // ── AI / Agent / MCP (optional, off until a model connection is configured) ──
+  "ai:settings": [void, AiSettingsView];
+  "ai:catalog": [void, AiPresetView[]];
+  "ai:addConnection": [{ preset: string }, AiSettingsView];
+  "ai:updateConnection": [AiConnectionPatch, AiSettingsView];
+  "ai:removeConnection": [{ id: string }, AiSettingsView];
+  "ai:setDefault": [{ id: string }, AiSettingsView];
+  "ai:setKey": [{ id: string; key: string }, AiSettingsView];
+  "ai:test": [{ id: string }, AiTestResult];
+  // One-shot tasks: the invoke resolves with the final text; deltas stream via ai:delta.
+  "ai:task": [{ requestId: string; task: AiTaskName; input: AiTaskInput }, AiDone];
+  // Agent: streams ai:agentEvent; resolves on done. Writes round-trip via ai:confirmRequest.
+  "ai:agentRun": [AgentRunRequest, AiDone];
+  "ai:agentConfirm": [AgentConfirmAnswer, void];
+  "ai:cancel": [{ requestId: string }, void];
+  // MCP "Agent Access": the bundled server's config + one-click install into a client.
+  "ai:mcpInfo": [void, McpInfo];
+  "ai:mcpInstall": [McpInstallRequest, { ok: boolean; message: string }];
 }
 
 export type IpcChannel = keyof IpcChannels;
@@ -859,6 +877,12 @@ export interface IpcEvents {
   "clone:progress": CloneProgress;
   /** A git command the app ran — streamed to the terminal dock's Output tab. */
   "git:log": GitLogEntry;
+  /** Streamed assistant-text deltas for an in-flight ai:task / ai:agentRun. */
+  "ai:delta": AiDelta;
+  /** A structured step from a running agent (assistant text, tool call/result). */
+  "ai:agentEvent": AgentEventWire;
+  /** The agent wants the user to approve a write/destructive action before it runs. */
+  "ai:confirmRequest": AgentConfirmRequest;
 }
 
 export type IpcEvent = keyof IpcEvents;
@@ -870,4 +894,162 @@ export interface GitStudioBridge {
     payload: IpcRequest<C>,
   ): Promise<IpcResponse<C>>;
   on<E extends IpcEvent>(event: E, listener: (data: IpcEvents[E]) => void): () => void;
+}
+
+// ── AI / Agent / MCP wire types ───────────────────────────────────────────────
+//
+// The renderer never sees API keys: a connection is surfaced as a redacted
+// "view" (hasKey/usable booleans only). The main-process AiBridge owns the keys
+// (encrypted at rest via Electron safeStorage) and all model traffic.
+
+/** The inline ✨ task a one-shot AI call performs. */
+export type AiTaskName =
+  | "commitMessage"
+  | "explainDiff"
+  | "summarizeChanges"
+  | "prDescription"
+  | "reviewDiff"
+  | "explainConflict"
+  | "changelog"
+  | "branchName";
+
+/** A configured model connection, redacted for the renderer (no key material). */
+export interface AiConnectionView {
+  id: string;
+  label: string;
+  preset: string;
+  wire: "anthropic" | "openai-compat";
+  baseUrl: string;
+  models: { fast: string; mid: string; deep: string };
+  needsKey: boolean;
+  local: boolean;
+  /** True when a key is stored for this connection (value never sent). */
+  hasKey: boolean;
+  /** True when the connection is ready to use (base URL + model + key/local). */
+  usable: boolean;
+}
+
+/** A catalog entry for the "connect a provider" gallery. */
+export interface AiPresetView {
+  id: string;
+  label: string;
+  blurb: string;
+  wire: string;
+  baseUrl: string;
+  needsKey: boolean;
+  local: boolean;
+  keyUrl?: string;
+  icon: string;
+  note?: string;
+  models: { fast: string; mid: string; deep: string };
+}
+
+export interface AiSettingsView {
+  connections: AiConnectionView[];
+  defaultId?: string;
+  /** True when at least one connection is usable (gates the ✨ + Assistant). */
+  enabled: boolean;
+}
+
+export interface AiConnectionPatch {
+  id: string;
+  label?: string;
+  baseUrl?: string;
+  models?: { fast: string; mid: string; deep: string };
+}
+
+export interface AiTestResult {
+  ok: boolean;
+  message: string;
+  /** The model that answered, on success. */
+  model?: string;
+}
+
+/** The input for a one-shot AI task (only the relevant fields are set per task). */
+export interface AiTaskInput {
+  diff?: string;
+  sha?: string;
+  path?: string;
+  base?: string;
+  description?: string;
+  commits?: string[];
+  conflict?: { path: string; base?: string; ours: string; theirs: string };
+  /** Override the connection for this call (else the default/per-task default). */
+  connectionId?: string;
+}
+
+export interface AiDelta {
+  requestId: string;
+  delta: string;
+}
+
+export interface AiDone {
+  requestId: string;
+  ok: boolean;
+  text?: string;
+  message?: string;
+}
+
+export interface AgentRunRequest {
+  requestId: string;
+  goal: string;
+  allowWrite: boolean;
+  allowDestructive: boolean;
+  connectionId?: string;
+}
+
+/** A structured step emitted by a running agent, streamed to the Assistant view. */
+export interface AgentEventWire {
+  requestId: string;
+  kind: "assistant" | "tool_call" | "tool_result" | "tool_denied" | "status" | "done" | "error";
+  text?: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  isError?: boolean;
+  callId?: string;
+}
+
+export interface AgentConfirmRequest {
+  requestId: string;
+  callId: string;
+  tool: string;
+  title: string;
+  /** A short human summary of exactly what will happen (e.g. the commit message). */
+  summary: string;
+  mode: "write" | "destructive";
+}
+
+export interface AgentConfirmAnswer {
+  requestId: string;
+  callId: string;
+  approved: boolean;
+}
+
+export interface McpClientInfo {
+  id: string;
+  label: string;
+  /** True when GitStudio's MCP server is already in this client's config. */
+  installed: boolean;
+  /** Absolute path of the client's config file (for display). */
+  configPath?: string;
+}
+
+export interface McpInfo {
+  /** Absolute path to the bundled gitstudio-mcp entry. */
+  binPath: string;
+  /** The command + args to launch it (for a config snippet). */
+  command: string;
+  args: string[];
+  /** A ready-to-paste JSON snippet for a generic MCP client. */
+  configSnippet: string;
+  clients: McpClientInfo[];
+  repoRoot?: string;
+  /** Whether the bundled server file exists (built) yet. */
+  available: boolean;
+}
+
+export interface McpInstallRequest {
+  client: string;
+  write: boolean;
+  destructive: boolean;
 }

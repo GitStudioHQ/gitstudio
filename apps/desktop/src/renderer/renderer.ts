@@ -25,6 +25,8 @@ import { DiffPanel } from "./diffPanel";
 import { CompareDiff } from "./compareDiff";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
+import { renderAssistant } from "./assistant";
+import { aiModelsCard, agentAccessCard } from "./aiSettings";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
@@ -377,6 +379,7 @@ class App {
     { id: "graph", label: "Commits", icon: "git-commit" },
     { id: "branches", label: "Branches", icon: "git-branch" },
     { id: "compare", label: "Compare", icon: "git-compare" },
+    { id: "assistant", label: "Assistant", icon: "sparkle", divider: true },
     { id: "prs", label: "Pull Requests", icon: "git-pull-request", divider: true },
     { id: "issues", label: "Issues", icon: "issue-opened" },
     { id: "actions", label: "Actions", icon: "play" },
@@ -591,6 +594,8 @@ class App {
       void this.showChangesView();
     } else if (id === "compare") {
       void this.showCompareView();
+    } else if (id === "assistant") {
+      this.mountSection(renderAssistant);
     } else if (id === "prs") {
       this.mountSection(renderPrs);
     } else if (id === "issues") {
@@ -1110,6 +1115,8 @@ class App {
     scroll.append(
       this.settingsAppearanceCard(),
       this.settingsAccountCard(),
+      aiModelsCard(),
+      agentAccessCard(),
       this.settingsIdentityCard(),
       this.settingsSshCard(),
       this.settingsAboutCard(),

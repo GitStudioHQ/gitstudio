@@ -21,6 +21,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { RepoStore } from "./repoStore";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
+import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
 import { pickCloneDir, startClone, listGhRepos } from "./cloneBridge";
 import { initAutoUpdate } from "./autoUpdate";
@@ -50,6 +51,7 @@ let mainWindow: BrowserWindow | undefined;
 let repos: RepoStore;
 let bridge: GitBridge;
 let github: GitHubBridge;
+let ai: AiBridge;
 let terminal: TerminalBridge;
 
 /** Where the recent-repos list is persisted between sessions. */
@@ -450,6 +452,26 @@ function registerIpc(): void {
   handle("gist:create", (req) => github.withClient((c) => gistsApi.createGist(c, req)));
   handle("gist:update", (req) => github.withClient((c) => gistsApi.updateGist(c, req)));
   handle("gist:delete", (id) => github.withClient((c) => gistsApi.deleteGist(c, id)));
+
+  // ── AI / Agent / MCP (optional; degrades to "no connection" when unset) ──
+  handle("ai:settings", () => ai.getSettings());
+  handle("ai:catalog", async () => ai.catalog());
+  handle("ai:addConnection", (req) => ai.addConnection(req.preset));
+  handle("ai:updateConnection", (patch) => ai.updateConnection(patch));
+  handle("ai:removeConnection", (req) => ai.removeConnection(req.id));
+  handle("ai:setDefault", (req) => ai.setDefault(req.id));
+  handle("ai:setKey", (req) => ai.setKey(req.id, req.key));
+  handle("ai:test", (req) => ai.test(req.id));
+  handle("ai:task", (req) => ai.runTask(req.requestId, req.task, req.input));
+  handle("ai:agentRun", (req) => ai.runAgentTask(req));
+  handle("ai:agentConfirm", async (ans) => {
+    ai.confirmAnswer(ans);
+  });
+  handle("ai:cancel", async (req) => {
+    ai.cancel(req.requestId);
+  });
+  handle("ai:mcpInfo", async () => ai.mcpInfo());
+  handle("ai:mcpInstall", async (req) => ai.mcpInstall(req));
 }
 
 /** Picks (or creates) a folder, then adds a worktree there for `ref`. */
@@ -478,6 +500,7 @@ async function boot(): Promise<void> {
   repos = new RepoStore(state.recent);
   bridge = new GitBridge(repos);
   github = new GitHubBridge(repos);
+  ai = new AiBridge(repos, send);
   repos.onChange((info) => {
     send("repo:changed", info);
     buildMenu();
