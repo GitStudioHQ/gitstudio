@@ -200,7 +200,11 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
   editor.append(actions);
 }
 
-/** The "connect a provider" gallery — a grid of catalog presets. */
+/**
+ * The "connect a provider" gallery — grouped into clearly-separated sections so
+ * the no-key local options (your CLI login / a local model server) are distinct
+ * from the cloud providers that need an API key.
+ */
 async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Promise<void> {
   let presets: AiPresetView[] = [];
   try {
@@ -209,45 +213,75 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
     presets = [];
   }
   const overlay = el("div", "ai-gallery-pop");
-  const grid = el("div", "ai-gallery");
-  for (const p of presets) {
-    const tile = el("button", "ai-prov-card");
-    tile.append(providerLogo(p.id) ?? glyph(p.icon));
+
+  const choose = async (p: AiPresetView): Promise<void> => {
+    overlay.remove();
+    await host.invoke("ai:addConnection", { preset: p.id });
+    const ready = !p.needsKey;
+    toast(`Added ${p.label}. ${ready ? "Ready to use." : "Add your API key to finish."}`, "success");
+    await refresh();
+    // Auto-open the new connection's editor (to paste a key / pick a model).
+    const editors = body.querySelectorAll<HTMLElement>(".ai-conn");
+    const gear = editors[editors.length - 1]?.querySelector<HTMLButtonElement>(
+      '.ai-conn-actions [title="Configure"]',
+    );
+    gear?.click();
+  };
+
+  const tile = (p: AiPresetView): HTMLElement => {
+    const card = el("button", "ai-prov-card");
+    card.append(providerLogo(p.id) ?? glyph(p.icon));
     const t = el("div", "ai-prov-meta");
     const name = el("div", "ai-prov-name");
-    name.append(span(p.label));
-    if (p.local) name.append(pill("Local", "is-local"));
+    name.append(span(p.label.replace(/\s*\(local\)$/i, "")));
+    if (p.wire === "cli") name.append(pill("Your login", "is-local"));
+    else if (p.local) name.append(pill("On-device", "is-local"));
     else if (!p.needsKey) name.append(pill("No key", "is-ready"));
     const blurb = el("div", "ai-prov-blurb");
     blurb.textContent = p.blurb;
     t.append(name, blurb);
-    tile.append(t);
-    tile.addEventListener("click", async () => {
-      overlay.remove();
-      const before = await host.invoke("ai:addConnection", { preset: p.id });
-      const added = before.connections[before.connections.length - 1];
-      toast(`Added ${p.label}. ${p.needsKey ? "Add your API key to finish." : "Ready to use."}`, "success");
-      await refresh();
-      // Auto-open the new connection's editor so the user can paste a key.
-      if (added) {
-        const editors = body.querySelectorAll<HTMLElement>(".ai-conn");
-        const last = editors[editors.length - 1];
-        const gear = last?.querySelector<HTMLButtonElement>('.ai-conn-actions [title="Configure"]');
-        gear?.click();
-      }
-    });
-    grid.append(tile);
-  }
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
+    card.append(t);
+    card.addEventListener("click", () => void choose(p));
+    return card;
+  };
+
+  const section = (title: string, sub: string, items: AiPresetView[]): HTMLElement | null => {
+    if (items.length === 0) return null;
+    const wrap = el("div", "ai-gallery-section");
+    const head = el("div", "ai-gallery-section-head");
+    const h = el("div", "ai-gallery-section-title");
+    h.textContent = title;
+    const s = el("div", "ai-gallery-section-sub");
+    s.textContent = sub;
+    head.append(h, s);
+    const grid = el("div", "ai-gallery");
+    for (const p of items) grid.append(tile(p));
+    wrap.append(head, grid);
+    return wrap;
+  };
+
+  const agents = presets.filter((p) => p.wire === "cli");
+  const localModels = presets.filter((p) => p.local && p.wire !== "cli");
+  const cloud = presets.filter((p) => !p.local && p.wire !== "cli");
+
   const panel = el("div", "ai-gallery-panel");
   const ph = el("div", "ai-gallery-head");
   ph.append(span("Connect a model"));
   const close = iconBtn("close", "Close");
   close.addEventListener("click", () => overlay.remove());
   ph.append(close);
-  panel.append(ph, grid);
+  panel.append(ph);
+
+  const sections = [
+    section("Use a local agent", "Drive a CLI you've already signed in to — no API key, your own subscription.", agents),
+    section("Run a model locally", "Open models on your own machine — fully private, no key.", localModels),
+    section("Connect with an API key", "Bring your own key from a cloud provider.", cloud),
+  ].filter((x): x is HTMLElement => x !== null);
+  for (const s of sections) panel.append(s);
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
   overlay.append(panel);
   document.body.append(overlay);
 }

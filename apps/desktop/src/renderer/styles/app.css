@@ -4190,7 +4190,11 @@ body.vscode-light .gh-label-chip {
   border-radius: 14px; box-shadow: var(--shadow-lg, 0 18px 50px rgba(0,0,0,0.4));
 }
 .ai-gallery-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--app-border); font-weight: 650; font-size: 14px; }
-.ai-gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px; }
+.ai-gallery-section + .ai-gallery-section { border-top: 1px solid var(--app-border); }
+.ai-gallery-section-head { padding: 14px 16px 2px; }
+.ai-gallery-section-title { font-size: 12px; font-weight: 680; color: var(--vscode-foreground); text-transform: uppercase; letter-spacing: 0.04em; }
+.ai-gallery-section-sub { font-size: 11.5px; color: var(--app-muted); margin-top: 2px; line-height: 1.4; }
+.ai-gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px 16px; }
 .ai-prov-card {
   display: flex; align-items: flex-start; gap: 10px; text-align: left;
   padding: 12px; border: 1px solid var(--app-border); border-radius: 11px;
