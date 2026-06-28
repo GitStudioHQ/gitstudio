@@ -1,0 +1,38 @@
+packages/ai/src/agent.ts
+  s_20eb6d3d7f74cc::t_7b4c65c38d5ca1 43-44
+  s_20eb6d3d7f74cc::t_e1da8e08924683 63-65,68-73
+  s_20eb6d3d7f74cc::t_cfa1b6f5f796f0 103,109-120
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_cd3c1770c5389c 499
+apps/desktop/src/renderer/styles/app.css
+  s_20eb6d3d7f74cc::t_c64fba37c1eb8e 4257-4265
+packages/ai/src/types.ts
+  s_20eb6d3d7f74cc::t_7eb57de29a0e84 116-127
+packages/ai/src/providers/anthropic.ts
+  s_20eb6d3d7f74cc::t_9417f6e098afa5 266-370
+packages/ai/src/providers/openaiCompat.ts
+  s_20eb6d3d7f74cc::t_1f9b5e5019cd53 226-337
+packages/ai/test/providers.test.ts
+  s_20eb6d3d7f74cc::t_95f1602d186050 159-207
+apps/desktop/src/renderer/assistant.ts
+  s_20eb6d3d7f74cc::t_b9cb15966a0fbd 208
+  s_20eb6d3d7f74cc::t_0476e54b83782c 205-207
+  s_20eb6d3d7f74cc::t_510709acb95d0c 209-211
+  s_20eb6d3d7f74cc::t_537f093bae9564 130,132-134,136,152,163,181-204,214-221,225,239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "d94b275f96b63d5dc90e79dc9ad259fea6a90757",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
