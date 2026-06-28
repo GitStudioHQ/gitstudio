@@ -184,18 +184,49 @@ export function comboField(opts: {
   input.setAttribute("aria-autocomplete", "list");
   input.setAttribute("aria-expanded", "false");
 
+  row.append(lab, combo);
+  combo.appendChild(input);
+
+  // The dropdown is appended to <body> as a fixed-position popover (NOT nested in
+  // the field) so it floats above everything and is never clipped by a scrolling
+  // container — and it flips above the input when there's no room below.
   const menu = el("div", "gh-combo-menu");
   menu.setAttribute("role", "listbox");
-  menu.hidden = true;
-  combo.append(input, menu);
-  row.append(lab, combo);
 
   let shown: string[] = [];
   let active = -1;
+  let isOpen = false;
 
+  const position = (): void => {
+    const r = input.getBoundingClientRect();
+    menu.style.left = `${Math.round(r.left)}px`;
+    menu.style.width = `${Math.round(r.width)}px`;
+    const wanted = Math.min(menu.scrollHeight, 244);
+    const below = window.innerHeight - r.bottom - 8;
+    const above = r.top - 8;
+    if (below < wanted && above > below) {
+      const h = Math.min(wanted, above);
+      menu.style.top = `${Math.round(r.top - h - 4)}px`;
+      menu.style.maxHeight = `${Math.round(h)}px`;
+    } else {
+      menu.style.top = `${Math.round(r.bottom + 4)}px`;
+      menu.style.maxHeight = `${Math.round(Math.min(244, Math.max(96, below)))}px`;
+    }
+  };
+
+  const onDoc = (e: MouseEvent): void => {
+    if (e.target !== input && !menu.contains(e.target as Node)) close();
+  };
+  const onScroll = (e: Event): void => {
+    if (!menu.contains(e.target as Node)) position(); // ignore the menu's own scroll
+  };
   const close = (): void => {
-    if (menu.hidden) return;
-    menu.hidden = true;
+    if (!isOpen) return;
+    isOpen = false;
+    menu.remove();
+    document.removeEventListener("mousedown", onDoc, true);
+    window.removeEventListener("scroll", onScroll, true);
+    window.removeEventListener("resize", close);
     input.setAttribute("aria-expanded", "false");
     active = -1;
   };
@@ -233,8 +264,15 @@ export function comboField(opts: {
       });
       menu.appendChild(item);
     }
-    menu.hidden = false;
+    if (!isOpen) {
+      document.body.appendChild(menu);
+      isOpen = true;
+      document.addEventListener("mousedown", onDoc, true);
+      window.addEventListener("scroll", onScroll, true);
+      window.addEventListener("resize", close);
+    }
     input.setAttribute("aria-expanded", "true");
+    position();
     setActive(0);
   };
 
@@ -243,7 +281,7 @@ export function comboField(opts: {
   input.addEventListener("click", open);
   input.addEventListener("input", open);
   input.addEventListener("keydown", (e) => {
-    if (menu.hidden) {
+    if (!isOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         open();
