@@ -1,0 +1,27 @@
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_4a3ef168e378ab 497
+apps/desktop/src/renderer/assistant.ts
+  s_20eb6d3d7f74cc::t_b599da2d89dbb5 187
+  s_20eb6d3d7f74cc::t_d57373e89261b7 153-154,160-166
+  s_20eb6d3d7f74cc::t_1fef4cb23f7ba8 200
+  s_20eb6d3d7f74cc::t_dea427974598d8 19-20
+  s_20eb6d3d7f74cc::t_6c0e6d8083e85e 62-87
+apps/desktop/src/shared/ipc.ts
+  s_20eb6d3d7f74cc::t_6840409d25e4b0 999-1000
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "3feddca80e74df256e8490be91ecca5e1320f4d8",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
