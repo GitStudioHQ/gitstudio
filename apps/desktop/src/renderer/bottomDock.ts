@@ -11,9 +11,11 @@
 // it.
 //
 // Layout contract: the host must be a `display:flex; flex-direction:column`
-// container whose other child(ren) carry `flex: 1` and `min-height: 0`. The dock
-// itself is `flex: 0 0 auto`, so it sizes to its content (just the footer when
-// collapsed; resizer + body + footer when expanded).
+// container whose other child(ren) carry `flex: 1` and `min-height: 0`. Only the
+// footer sits in the flex flow (the dock-mount stays footer-height always); when
+// expanded, the resizer + body float in an absolutely-positioned overlay ABOVE
+// the footer (anchored to the position:relative dock-mount), ON TOP of the
+// content — so opening the dock never shrinks the view above it.
 
 import { el, glyph, wireResizerKeys } from "./ui";
 
@@ -98,11 +100,14 @@ export class BottomDock {
       if (this.collapsed && !target.closest("button, .term-tab")) this.toggle();
     });
 
-    this.panel = el("div", "bottom-dock");
-    this.panel.append(this.bodyEl, footer);
+    // The resizer + body live in an overlay that floats UP over the view content
+    // when expanded; only the footer sits in the flex layout, so opening the dock
+    // never shrinks (reflows) the content above it — the panel sits ON TOP.
+    this.panel = el("div", "dock-overlay");
+    this.panel.append(this.resizer, this.bodyEl);
 
     this.root = el("div", "dock-mount" + (this.collapsed ? " collapsed" : ""));
-    this.root.append(this.resizer, this.panel);
+    this.root.append(this.panel, footer);
     host.appendChild(this.root);
   }
 

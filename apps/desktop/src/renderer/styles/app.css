@@ -3229,9 +3229,8 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 
 /* ── Reusable collapsible bottom dock (BottomDock) ─────────────────────────── */
 .dock-mount {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
+  flex: 0 0 auto; /* only the footer takes layout height; the body overlays */
+  position: relative;
   min-height: 0;
 }
 /* Top resizer — drag the dock's top edge to resize the body height. */
@@ -3249,19 +3248,23 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; }
 .dock-mount.collapsed .dock-resizer { display: none; }
 
-.bottom-dock {
-  flex: 0 0 auto;
+/* The expanded body floats ON TOP of the view content — anchored just above the
+   footer (bottom:100% of the footer-height dock-mount), so opening the dock never
+   pushes/reflows the content above it. Lifted off the view with a top hairline +
+   soft shadow. Collapsed: nothing but the tiny footer. */
+.dock-overlay {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   background: var(--vscode-editor-background);
-}
-/* Expanded: the body has popped up above the footer — lift it off the view with
-   a soft top shadow + a hairline. Collapsed: nothing but the tiny footer. */
-.dock-mount:not(.collapsed) .bottom-dock {
   border-top: 1px solid var(--app-border);
-  box-shadow: 0 -12px 28px -20px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 -12px 30px -16px rgba(0, 0, 0, 0.5);
 }
+.dock-mount.collapsed .dock-overlay { display: none; }
 
 /* The content area — pops UP above the footer; hidden when collapsed. */
 .dock-body {
