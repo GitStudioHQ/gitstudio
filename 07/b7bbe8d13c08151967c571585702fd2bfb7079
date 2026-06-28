@@ -1,0 +1,84 @@
+brand/alt/gitstudio-icon-g.svg
+  s_1d474f6d03bce6::t_c8babed753ce7a 1-43
+apps/desktop/src/renderer/ui.ts
+  s_1d474f6d03bce6::t_cf609c903254d3 413-416,420-424
+  s_298e4b30567f5d::t_63f04dfc7cab70 551-553
+  s_1d474f6d03bce6::t_da92852f8477a4 402-406,410-412,417-418,425
+  s_298e4b30567f5d::t_4c51c9190e98a0 434-435,442-447,449
+  s_298e4b30567f5d::t_eaa94ca8f78958 530
+apps/extension/media/activitybar.svg
+  s_1d474f6d03bce6::t_2d01155f018725 3-18,21-27
+  s_1d474f6d03bce6::t_0049a3b57dd52e 19-20
+brand/gitstudio-mark-mono-white.svg
+  s_1d474f6d03bce6::t_c8babed753ce7a 16-23,28,33-36
+apps/desktop/src/renderer/views/notifications.ts
+  s_298e4b30567f5d::t_62860b9d95444a 120-205
+  s_298e4b30567f5d::t_4cf06ee53c138a 31-33
+brand/gitstudio-wordmark-dark.svg
+  s_1d474f6d03bce6::t_33ef7c7ce79817 1
+apps/desktop/src/renderer/views/common.ts
+  s_298e4b30567f5d::t_6587701a160c91 108-134
+  s_298e4b30567f5d::t_8bef60ed2bc33e 107
+brand/gitstudio-mark.svg
+  s_1d474f6d03bce6::t_c8babed753ce7a 16-23,28,33-36
+brand/generate.py
+  s_1d474f6d03bce6::t_8faeac0cfde0e9 141-145
+  s_1d474f6d03bce6::t_fb4d125f271d2d 81-85
+  s_1d474f6d03bce6::t_4b6b337373d467 77-80,91,96,99-112
+  s_1d474f6d03bce6::t_afbdc6d534c784 113-115
+brand/gitstudio-logo.svg
+  s_1d474f6d03bce6::t_c8babed753ce7a 26-33,38,43-46
+apps/desktop/src/renderer/views/orgs.ts
+  s_298e4b30567f5d::t_2008d83b7ac90b 96-100,103,109,118,126-146,150-151
+  s_298e4b30567f5d::t_87f2528f6eee37 1-4,24,28,30
+apps/desktop/src/renderer/renderer.ts
+  s_298e4b30567f5d::t_e6d491b6efca54 67
+  s_1d474f6d03bce6::t_741f6ab481fc08 2087
+  s_298e4b30567f5d::t_6cc8e31eb4a4db 100
+  s_298e4b30567f5d::t_48f2a599df36b6 2090-2091,2093
+  s_298e4b30567f5d::t_24595a9c2c842a 2099-2140
+brand/gitstudio-mark-mono-ink.svg
+  s_1d474f6d03bce6::t_c8babed753ce7a 16-23,28,33-36
+brand/gitstudio-wordmark-light.svg
+  s_1d474f6d03bce6::t_33ef7c7ce79817 1
+brand/README.md
+  s_1d474f6d03bce6::t_58d0341e701032 37
+  s_1d474f6d03bce6::t_355fae71eef442 15
+apps/desktop/src/renderer/views/projects.ts
+  s_298e4b30567f5d::t_1ba20fbca6982d 1-4,6-10,28,48-50,53,58,64,67,75,77-78,81-97,99-101
+apps/desktop/src/renderer/styles/app.css
+  s_298e4b30567f5d::t_c95d76d2a08a24 4056-4099,4102,4104-4108
+  s_298e4b30567f5d::t_80f276ec82b5b6 3919
+  s_298e4b30567f5d::t_b0ec88313ddaa1 3886-3918,3920-3927
+  s_298e4b30567f5d::t_3d93f25bdab4a5 4100-4101,4103
+brand/gitstudio-favicon.svg
+  s_1d474f6d03bce6::t_c8babed753ce7a 27-34,39,44-47
+brand/gitstudio-icon.svg
+  s_1d474f6d03bce6::t_c8babed753ce7a 27-34,39,44-47
+brand/gitstudio-icon-light.svg
+  s_1d474f6d03bce6::t_c3535344b58695 38-45,50,55-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "07b7bbe8d13c08151967c571585702fd2bfb7079",
+  "prompts": {},
+  "sessions": {
+    "s_1d474f6d03bce6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41dfe9dc-710c-438a-8a7f-148a867a0cb5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_298e4b30567f5d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "18f88724-d9b8-48db-aea1-3cc3f3ffbfa6",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
