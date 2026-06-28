@@ -1,0 +1,21 @@
+apps/desktop/src/main/cliProvider.ts
+  s_20eb6d3d7f74cc::t_2b3ff4763488e1 23-31,40-78,92-97
+  s_20eb6d3d7f74cc::t_30fb99e14fa5c7 160-163,168,189-227
+  s_20eb6d3d7f74cc::t_5fe4574e509d3b 98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "bd2c9123f823806e6013b0ae6948266f22aacf84",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
