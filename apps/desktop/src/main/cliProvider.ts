@@ -20,6 +20,15 @@ interface CliSpec {
   args(prompt: string, model?: string): string[];
   /** A friendly install hint surfaced when the binary is missing. */
   install: string;
+  /**
+   * Optional streaming mode: argv that makes the CLI emit newline-delimited JSON
+   * events, plus a parser that turns ONE such line into an incremental text
+   * delta (`text`) and/or the complete answer (`final`, used as a fallback when
+   * the CLI doesn't emit token deltas). When present, the provider streams the
+   * response live instead of waiting for the whole thing.
+   */
+  streamArgs?(prompt: string, model?: string): string[];
+  parseStream?(line: string): { text?: string; final?: string };
 }
 
 /** preset id → CLI spec. Keep model flags conservative + widely supported. */
@@ -28,6 +37,45 @@ export const CLI_SPECS: Record<string, CliSpec> = {
     command: "claude",
     args: (prompt, model) => ["-p", ...(model ? ["--model", model] : []), prompt],
     install: "Install Claude Code and run `claude login` (docs.anthropic.com/claude-code).",
+    // Claude Code's stream-json + partial messages emits token-level text deltas.
+    streamArgs: (prompt, model) => [
+      "-p",
+      ...(model ? ["--model", model] : []),
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--include-partial-messages",
+      prompt,
+    ],
+    parseStream: (line) => {
+      let o: ClaudeStreamLine;
+      try {
+        o = JSON.parse(line) as ClaudeStreamLine;
+      } catch {
+        return {};
+      }
+      // Token-level deltas (the responsive path).
+      if (o.type === "stream_event" && o.event?.type === "content_block_delta") {
+        const d = o.event.delta;
+        if (d?.type === "text_delta" && typeof d.text === "string") {
+          return { text: d.text };
+        }
+        return {};
+      }
+      // Fallbacks (used only if no token deltas arrive): the final result, or a
+      // completed assistant message's text.
+      if (o.type === "result" && typeof o.result === "string") {
+        return { final: o.result };
+      }
+      if (o.type === "assistant" && Array.isArray(o.message?.content)) {
+        const t = o.message!.content
+          .filter((b) => b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text as string)
+          .join("");
+        if (t) return { final: t };
+      }
+      return {};
+    },
   },
   codex: {
     command: "codex",
@@ -40,6 +88,13 @@ export const CLI_SPECS: Record<string, CliSpec> = {
     install: "Install the Gemini CLI and sign in (github.com/google-gemini/gemini-cli).",
   },
 };
+
+interface ClaudeStreamLine {
+  type?: string;
+  result?: string;
+  event?: { type?: string; delta?: { type?: string; text?: string } };
+  message?: { content?: Array<{ type?: string; text?: string }> };
+}
 
 export function cliSpecFor(preset: string): CliSpec | undefined {
   return CLI_SPECS[preset];
@@ -102,11 +157,15 @@ export class CliProvider implements Provider {
     }
     const prompt = flatten(messages);
     const model = this.opts.resolveModel(opts.model);
+    // Stream token-by-token when the CLI supports a JSON event stream; otherwise
+    // fall back to forwarding raw stdout (which most CLIs buffer to the end).
+    const streaming = !!(spec.streamArgs && spec.parseStream);
+    const argv = streaming ? spec.streamArgs!(prompt, model) : spec.args(prompt, model);
 
     return new Promise<void>((resolve, reject) => {
       let child;
       try {
-        child = spawn(spec.command, spec.args(prompt, model), {
+        child = spawn(spec.command, argv, {
           cwd: this.opts.cwd,
           env: process.env,
           stdio: ["ignore", "pipe", "pipe"],
@@ -127,7 +186,45 @@ export class CliProvider implements Provider {
       }
 
       child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (d: string) => onChunk(d.replace(ANSI, "")));
+      if (streaming) {
+        // Parse newline-delimited JSON events: emit text deltas live; remember a
+        // `final` answer as a fallback for when no token deltas were emitted.
+        let buffer = "";
+        let streamedAny = false;
+        let final = "";
+        child.stdout.on("data", (d: string) => {
+          buffer += d;
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line) continue;
+            const { text, final: f } = spec.parseStream!(line);
+            if (text) {
+              streamedAny = true;
+              onChunk(text);
+            }
+            if (f) final = f;
+          }
+        });
+        child.on("close", (code: number | null) => {
+          opts.signal?.removeEventListener("abort", onAbort);
+          if (opts.signal?.aborted) return resolve();
+          if (!streamedAny && final) onChunk(final.replace(ANSI, ""));
+          if (code === 0 || streamedAny || final) return resolve();
+          const detail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
+          reject(new AiError(`\`${spec.command}\` exited with code ${code}${detail ? `: ${detail}` : "."}`));
+        });
+      } else {
+        child.stdout.on("data", (d: string) => onChunk(d.replace(ANSI, "")));
+        child.on("close", (code: number | null) => {
+          opts.signal?.removeEventListener("abort", onAbort);
+          if (opts.signal?.aborted) return resolve();
+          if (code === 0) return resolve();
+          const detail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
+          reject(new AiError(`\`${spec.command}\` exited with code ${code}${detail ? `: ${detail}` : "."}`));
+        });
+      }
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (d: string) => (stderr += d));
 
@@ -137,20 +234,6 @@ export class CliProvider implements Provider {
           reject(new AiError(`The \`${spec.command}\` CLI isn't installed or not on PATH. ${spec.install}`));
         } else {
           reject(new AiError(`\`${spec.command}\` failed to start: ${err.message}`));
-        }
-      });
-
-      child.on("close", (code: number | null) => {
-        opts.signal?.removeEventListener("abort", onAbort);
-        if (opts.signal?.aborted) {
-          resolve(); // cancelled — return whatever streamed so far
-          return;
-        }
-        if (code === 0) {
-          resolve();
-        } else {
-          const detail = stderr.trim().split("\n").slice(-3).join(" ").slice(0, 300);
-          reject(new AiError(`\`${spec.command}\` exited with code ${code}${detail ? `: ${detail}` : "."}`));
         }
       });
     });
