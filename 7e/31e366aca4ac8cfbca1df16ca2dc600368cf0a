@@ -1,0 +1,86 @@
+packages/ai/src/types.ts
+  s_20eb6d3d7f74cc::t_26e097f589d954 1-151
+apps/mcp/src/prompts.ts
+  s_20eb6d3d7f74cc::t_969456731f83bc 1-128
+packages/ai/src/catalog.ts
+  s_20eb6d3d7f74cc::t_83c2e59f9d26ed 1-213
+packages/ai/test/providers.test.ts
+  s_20eb6d3d7f74cc::t_fc86a4c8c15eb4 1-158
+packages/git-service/package.json
+  s_20eb6d3d7f74cc::t_c6a1917b807a02 15
+  s_24172531187d77::t_40e213497e7a61 11
+apps/mcp/src/index.ts
+  s_20eb6d3d7f74cc::t_1bd50ce7bb4063 1-108,114-126,128-131,135-138,143-149
+  s_20eb6d3d7f74cc::t_69b414ebf524f7 109-113,127,132-134,139-142
+packages/ai/src/agent.ts
+  s_20eb6d3d7f74cc::t_5e9fe06640b879 1-187
+packages/ai/src/connections.ts
+  s_20eb6d3d7f74cc::t_bb9e7f1904c62b 1-118
+packages/ai/src/index.ts
+  s_20eb6d3d7f74cc::t_50ca013bd99172 1-15
+apps/mcp/esbuild.js
+  s_20eb6d3d7f74cc::t_b34c782b2062c3 1-29
+apps/mcp/test/server.test.ts
+  s_20eb6d3d7f74cc::t_6ec19a48e3ace5 1-53,60-167
+  s_20eb6d3d7f74cc::t_bc7e87e25e1608 54-59
+apps/mcp/src/protocol.ts
+  s_20eb6d3d7f74cc::t_6541e59901b8a2 1-76
+apps/mcp/package.json
+  s_20eb6d3d7f74cc::t_f6be68a3f032b6 1-27
+packages/ai/src/tasks.ts
+  s_20eb6d3d7f74cc::t_8c06af5a534cb9 1-171
+packages/git-service/src/GitToolHost.ts
+  s_20eb6d3d7f74cc::t_42303a5907bc4d 1-376
+apps/mcp/src/resources.ts
+  s_20eb6d3d7f74cc::t_76613ac7f2bcc0 1-121
+packages/ai/package.json
+  s_20eb6d3d7f74cc::t_1a14a99a603771 1-17
+packages/git-service/test/gitToolHost.test.ts
+  s_20eb6d3d7f74cc::t_d1b46470052065 1-100
+packages/ai/src/providers/index.ts
+  s_20eb6d3d7f74cc::t_7e832391c31323 1-44
+packages/ai/src/gitTools.ts
+  s_20eb6d3d7f74cc::t_3dd40077c7ddef 1-548
+packages/ai/src/providers/openaiCompat.ts
+  s_20eb6d3d7f74cc::t_0473977cb9f092 1-291
+packages/ai/src/providers/anthropic.ts
+  s_20eb6d3d7f74cc::t_633ee996cd345c 1-309
+packages/git-service/src/index.ts
+  s_20eb6d3d7f74cc::t_12c6140ba3a340 93
+packages/ai/test/connections.test.ts
+  s_20eb6d3d7f74cc::t_851ee298d3fdbf 1-76
+apps/mcp/tsconfig.json
+  s_20eb6d3d7f74cc::t_6b82b824216891 1-8
+packages/ai/test/agent.test.ts
+  s_20eb6d3d7f74cc::t_5497ce19913729 1-128
+packages/ai/tsconfig.json
+  s_20eb6d3d7f74cc::t_4f2987737186fe 1-8
+apps/mcp/src/server.ts
+  s_20eb6d3d7f74cc::t_e7dd083762b56f 1-194
+package-lock.json
+  s_20eb6d3d7f74cc::t_0bcfd20fa64345 27,30-32,37,44,83-110,946-949,1403,1410,3611-3614,6196-6203,6218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "7e31e366aca4ac8cfbca1df16ca2dc600368cf0a",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_24172531187d77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fba1607a-e9af-4727-ad14-f1c259917fec",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
