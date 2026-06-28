@@ -1,0 +1,44 @@
+packages/ai/src/tasks.ts
+  s_20eb6d3d7f74cc::t_517b8574a16062 172-181
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_f19cd50bdbbb2d 490
+  s_20eb6d3d7f74cc::t_cdf08fd82a525b 513-516
+  s_20eb6d3d7f74cc::t_ebd6d9a99aa925 21
+  s_20eb6d3d7f74cc::t_cc129e1dd2be46 470,476
+apps/desktop/src/renderer/renderer.ts
+  s_20eb6d3d7f74cc::t_535ca21821e87d 1639-1650
+  s_20eb6d3d7f74cc::t_6cdc76a37423e1 1660
+  s_20eb6d3d7f74cc::t_4bb6f649048401 949-958
+  s_20eb6d3d7f74cc::t_df88d51e29bfe2 30
+  s_20eb6d3d7f74cc::t_2012dae889e04b 2160,2166-2174
+  s_20eb6d3d7f74cc::t_37a8f6df25def3 2175-2176
+apps/desktop/src/renderer/styles/app.css
+  s_20eb6d3d7f74cc::t_531c55e3c7b724 4464-4509
+apps/desktop/src/renderer/views/prs.ts
+  s_20eb6d3d7f74cc::t_04772d41299ce7 38
+  s_20eb6d3d7f74cc::t_90fa77d2f4ee34 346-370,376
+apps/desktop/src/shared/ipc.ts
+  s_20eb6d3d7f74cc::t_44758d6c79b9c8 925-926
+apps/desktop/src/renderer/views/issues.ts
+  s_20eb6d3d7f74cc::t_60aff52353fb8b 292-310
+  s_20eb6d3d7f74cc::t_3c9eabb07ae93c 348-359
+  s_20eb6d3d7f74cc::t_122959b133f049 34
+apps/desktop/src/renderer/aiAssist.ts
+  s_20eb6d3d7f74cc::t_9d99971252b747 1-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "4b4c47e287d527a73f774b9df4af7e2ccaca4b8f",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
