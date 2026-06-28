@@ -1,23 +1,19 @@
-// The integrated terminal panel that lives in the permanent bottom dock. It owns
-// a tab strip with:
-//   • a pinned "Output" tab — the live git-command log (never closeable), and
-//   • any number of terminal tabs — each its own xterm + PTY session.
+// The bottom dock's content: three top-level tabs in the bar — "Commit details"
+// (only on the commits view), "Output" (the live git-command log), and a single
+// "Terminal" view. The Terminal is ONE tab (VS-Code style): its multiple shells
+// are managed by a side list (right of the terminal) with a "New terminal" button
+// and a per-terminal kill button — not by extra top tabs.
 //
-// Tabs are remembered for the whole repo session: collapsing the dock or routing
-// to another view keeps every PTY alive (the surfaces are hidden, not disposed),
-// so you return to exactly the shells you left. They are only torn down when the
-// user closes a tab, switches repo, or quits the app.
-//
-// A terminal's PTY is opened lazily — only when its tab first becomes visible —
-// so a session that never opens the panel never spawns a shell.
+// Sessions persist for the whole repo session: collapsing the dock or switching
+// the top tab keeps every PTY alive (surfaces are hidden, not disposed). A PTY is
+// opened lazily — only when its terminal first becomes visible.
 
 import { BottomDock } from "./bottomDock";
 import { TerminalPanel } from "./terminalPanel";
 import { OutputsPanel } from "./outputsPanel";
 import { el, span, glyph } from "./ui";
 
-interface TermTab {
-  kind: "term";
+interface TermSession {
   id: string;
   label: string;
   surface: HTMLElement;
@@ -26,24 +22,7 @@ interface TermTab {
   opened: boolean;
 }
 
-interface OutTab {
-  kind: "out";
-  id: "output";
-  label: string;
-  surface: HTMLElement;
-  panel: OutputsPanel;
-}
-
-/** The "Commit details" tab — only present on the commits/graph view. Its surface
- *  is owned by the renderer (it mounts the shared commit-details panel + diff). */
-interface DetailsTab {
-  kind: "details";
-  id: "commit-details";
-  label: string;
-  surface: HTMLElement;
-}
-
-type Tab = TermTab | OutTab | DetailsTab;
+type TopTab = "commit-details" | "output" | "terminal";
 
 export interface TerminalDockOptions {
   /** Start expanded vs collapsed-to-footer. */
@@ -58,17 +37,29 @@ export class TerminalDock {
   private readonly dock: BottomDock;
   private readonly outputs: OutputsPanel;
   private readonly tabStrip: HTMLElement;
-  private tabs: Tab[] = [];
-  private activeId = "output";
+
+  /** The active TOP tab. */
+  private active: TopTab = "terminal";
+
+  // Commit-details (added only on the commits view; surface owned by renderer).
+  private detailsVisible = false;
+  private detailsEl?: HTMLElement;
+
+  // The single Terminal view: a stage (the shell surfaces) + a side tab list.
+  private readonly termGroup: HTMLElement;
+  private readonly termStage: HTMLElement;
+  private readonly termEmpty: HTMLElement;
+  private readonly termSide: HTMLElement;
+  private terminals: TermSession[] = [];
+  private activeTermId = "";
   private termSeq = 0;
-  private detailsTab?: DetailsTab;
 
   constructor(host: HTMLElement, private readonly opts: TerminalDockOptions) {
     this.dock = new BottomDock(host, {
       collapsed: !opts.expanded,
       height: opts.height,
       minHeight: 120,
-      label: "Terminal panel",
+      label: "Panel",
       onResize: () => this.layoutActive(),
       onToggle: (collapsed) => {
         if (!collapsed) this.revealActive();
@@ -77,226 +68,243 @@ export class TerminalDock {
       onHeightChange: () => this.persist(),
     });
 
-    // The tab strip fills the dock header's left region.
+    // Top tab strip (Commit details · Output · Terminal).
     this.tabStrip = el("div", "term-tabs");
     this.dock.tabsEl.appendChild(this.tabStrip);
 
-    // "New terminal" action button (right side of the header).
-    const addBtn = el("button", "dock-icon-btn");
-    addBtn.title = "New terminal";
-    addBtn.setAttribute("aria-label", "New terminal");
-    addBtn.append(glyph("add"));
-    addBtn.addEventListener("click", () => this.newTerminal());
-    this.dock.actionsEl.appendChild(addBtn);
-
-    // The pinned Output tab — subscribes to git:log immediately so it captures
-    // commands even while the dock stays collapsed.
+    // ── Output surface (subscribes to git:log immediately, even while collapsed). ──
     this.outputs = new OutputsPanel();
-    this.tabs.push({
-      kind: "out",
-      id: "output",
-      label: "Output",
-      surface: this.outputs.el,
-      panel: this.outputs,
-    });
+    this.outputs.el.style.display = "none";
     this.dock.bodyEl.appendChild(this.outputs.el);
 
-    // One terminal to start, made active so expanding lands on a shell.
+    // ── Terminal group: stage (surfaces) + side list. ──
+    this.termGroup = el("div", "term-group");
+    this.termStage = el("div", "term-stage");
+    this.termEmpty = el("div", "term-empty");
+    this.termEmpty.append(glyph("terminal"), span("No terminals — start one from the list.", "term-empty-text"));
+    this.termSide = el("div", "term-side");
+    this.termStage.appendChild(this.termEmpty);
+    this.termGroup.append(this.termStage, this.termSide);
+    this.termGroup.style.display = "none";
+    this.dock.bodyEl.appendChild(this.termGroup);
+
+    // One terminal to start, made active so opening the Terminal lands on a shell.
     const first = this.createTerminal();
-    this.activeId = first.id;
+    this.activeTermId = first.id;
 
     this.renderTabs();
+    this.renderSide();
     this.showActive();
   }
 
-  // ── Tab model ──────────────────────────────────────────────────────────────
+  // ── Terminal sessions ───────────────────────────────────────────────────────
 
-  /** Build a terminal tab (surface + panel), append its surface, return it. */
-  private createTerminal(): TermTab {
+  /** Build a terminal session (surface + panel) into the stage; return it. */
+  private createTerminal(): TermSession {
     const n = ++this.termSeq;
     const surface = el("div", "term-surface");
     surface.style.display = "none";
-    const tab: TermTab = {
-      kind: "term",
+    const t: TermSession = {
       id: `term-${n}`,
       label: `Terminal ${n}`,
       surface,
       panel: new TerminalPanel(surface),
       opened: false,
     };
-    this.tabs.push(tab);
-    this.dock.bodyEl.appendChild(surface);
-    return tab;
+    this.terminals.push(t);
+    this.termStage.appendChild(surface);
+    return t;
   }
 
-  /** Public: add a terminal tab, focus it, and expand the dock. */
+  /** Public: add a terminal, focus it, switch to the Terminal tab + expand. */
   newTerminal(): void {
-    const tab = this.createTerminal();
-    this.renderTabs();
-    this.setActive(tab.id);
+    const t = this.createTerminal();
+    this.activeTermId = t.id;
+    this.active = "terminal";
     this.expand();
+    this.renderTabs();
+    this.renderSide();
+    this.showActive();
   }
 
   private closeTerminal(id: string): void {
-    const idx = this.tabs.findIndex((t) => t.id === id);
+    const idx = this.terminals.findIndex((t) => t.id === id);
     if (idx < 0) return;
-    const tab = this.tabs[idx];
-    if (tab.kind !== "term") return;
-    tab.panel.dispose();
-    tab.surface.remove();
-    this.tabs.splice(idx, 1);
-
-    if (this.activeId === id) {
-      // Activate the tab that slid into this slot (or the one before it) — the
-      // Output tab at index 0 is the ultimate fallback, so there's always one.
-      const next = this.tabs[Math.min(idx, this.tabs.length - 1)] ?? this.tabs[0];
-      this.activeId = next ? next.id : "output";
-      this.showActive();
+    this.terminals[idx].panel.dispose();
+    this.terminals[idx].surface.remove();
+    this.terminals.splice(idx, 1);
+    if (this.activeTermId === id) {
+      const next = this.terminals[Math.min(idx, this.terminals.length - 1)];
+      this.activeTermId = next ? next.id : "";
     }
-    this.renderTabs();
+    this.renderSide();
+    this.showActive();
   }
 
-  private setActive(id: string): void {
-    if (this.activeId === id) return;
-    this.activeId = id;
+  private setActiveTerm(id: string): void {
+    this.activeTermId = id;
+    this.expand();
+    this.renderSide();
+    this.showActive();
+  }
+
+  // ── Top tabs ────────────────────────────────────────────────────────────────
+
+  private topTabs(): { id: TopTab; label: string; icon: string }[] {
+    const tabs: { id: TopTab; label: string; icon: string }[] = [];
+    if (this.detailsVisible) tabs.push({ id: "commit-details", label: "Commit details", icon: "git-commit" });
+    tabs.push({ id: "output", label: "Output", icon: "output" });
+    tabs.push({ id: "terminal", label: "Terminal", icon: "terminal" });
+    return tabs;
+  }
+
+  private setActiveTab(id: TopTab): void {
+    this.active = id;
+    this.expand();
     this.renderTabs();
     this.showActive();
   }
 
-  // ── Rendering ───────────────────────────────────────────────────────────────
-
   private renderTabs(): void {
     this.tabStrip.replaceChildren();
     this.tabStrip.setAttribute("role", "tablist");
-    this.tabStrip.setAttribute("aria-label", "Terminal tabs");
-    for (const t of this.tabs) {
-      const btn = el(
-        "button",
-        "term-tab" + (t.id === this.activeId ? " active" : "") + (t.kind === "out" ? " is-output" : ""),
-      );
-      const icon = t.kind === "out" ? "output" : t.kind === "details" ? "git-commit" : "terminal";
-      btn.append(glyph(icon), span(t.label, "term-tab-label"));
+    this.tabStrip.setAttribute("aria-label", "Panel tabs");
+    for (const t of this.topTabs()) {
+      const sel = t.id === this.active;
+      const btn = el("button", "term-tab" + (sel ? " active" : "") + (t.id === "output" ? " is-output" : ""));
+      btn.append(glyph(t.icon), span(t.label, "term-tab-label"));
       btn.title = t.label;
       btn.setAttribute("role", "tab");
       btn.setAttribute("aria-label", t.label);
-      btn.setAttribute("aria-selected", t.id === this.activeId ? "true" : "false");
-      // Roving tabindex: only the active tab is in the Tab order; arrows move within.
-      btn.tabIndex = t.id === this.activeId ? 0 : -1;
-      btn.addEventListener("click", () => {
-        this.setActive(t.id);
-        this.expand();
-      });
+      btn.setAttribute("aria-selected", sel ? "true" : "false");
+      btn.tabIndex = sel ? 0 : -1;
+      btn.addEventListener("click", () => this.setActiveTab(t.id));
       btn.addEventListener("keydown", (e) => this.onTabKey(e, t.id));
-      if (t.kind === "term") {
-        const close = el("span", "term-tab-close");
-        close.append(glyph("close"));
-        close.title = "Close terminal";
-        close.setAttribute("role", "button");
-        close.setAttribute("aria-label", `Close ${t.label}`);
-        close.tabIndex = -1;
-        const doClose = (e: Event): void => {
-          e.stopPropagation();
-          this.closeTerminal(t.id);
-        };
-        close.addEventListener("click", doClose);
-        close.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") doClose(e);
-        });
-        btn.appendChild(close);
-      }
       this.tabStrip.appendChild(btn);
     }
   }
 
-  /** Arrow-key navigation across the terminal tab strip (roving focus). */
-  private onTabKey(e: KeyboardEvent, id: string): void {
-    const idx = this.tabs.findIndex((t) => t.id === id);
-    if (idx < 0) return;
+  /** Left/right roving navigation across the top tabs. */
+  private onTabKey(e: KeyboardEvent, id: TopTab): void {
+    const order = this.topTabs().map((t) => t.id);
+    const idx = order.indexOf(id);
     let next = -1;
-    if (e.key === "ArrowRight") next = (idx + 1) % this.tabs.length;
-    else if (e.key === "ArrowLeft") next = (idx - 1 + this.tabs.length) % this.tabs.length;
+    if (e.key === "ArrowRight") next = (idx + 1) % order.length;
+    else if (e.key === "ArrowLeft") next = (idx - 1 + order.length) % order.length;
     else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = this.tabs.length - 1;
-    else if ((e.key === "Delete" || e.key === "Backspace") && this.tabs[idx]?.kind === "term") {
-      e.preventDefault();
-      this.closeTerminal(id);
-      // closeTerminal re-renders the strip (destroying the focused button), so
-      // move focus to whatever tab now sits where the closed one was.
-      const fallback = Math.min(idx, this.tabs.length - 1);
-      (this.tabStrip.children[fallback] as HTMLElement | undefined)?.focus();
-      return;
-    } else return;
+    else if (e.key === "End") next = order.length - 1;
+    else return;
     e.preventDefault();
-    const target = this.tabs[next];
-    if (!target) return;
-    this.setActive(target.id);
-    this.expand();
+    this.setActiveTab(order[next]);
     (this.tabStrip.children[next] as HTMLElement | undefined)?.focus();
   }
 
-  /** Show only the active tab's surface. While the dock is expanded, lazily open
-   *  the active terminal's PTY (so switching to a never-opened tab spawns it). */
-  private showActive(): void {
-    for (const t of this.tabs) {
-      t.surface.style.display = t.id === this.activeId ? "" : "none";
+  // ── Terminal side list (VS-Code-style tabs on the right) ─────────────────────
+
+  private renderSide(): void {
+    this.termSide.replaceChildren();
+    const addBtn = el("button", "term-side-add");
+    addBtn.append(glyph("add"), span("New terminal"));
+    addBtn.title = "New terminal";
+    addBtn.setAttribute("aria-label", "New terminal");
+    addBtn.addEventListener("click", () => this.newTerminal());
+    this.termSide.appendChild(addBtn);
+
+    const list = el("div", "term-side-list");
+    list.setAttribute("role", "tablist");
+    list.setAttribute("aria-orientation", "vertical");
+    list.setAttribute("aria-label", "Terminals");
+    for (const t of this.terminals) {
+      const sel = t.id === this.activeTermId;
+      const row = el("button", "term-side-row" + (sel ? " active" : ""));
+      row.setAttribute("role", "tab");
+      row.setAttribute("aria-selected", sel ? "true" : "false");
+      row.append(glyph("terminal"), span(t.label, "term-side-label"));
+      row.title = t.label;
+      row.addEventListener("click", () => this.setActiveTerm(t.id));
+      const kill = el("span", "term-side-close");
+      kill.append(glyph("trash"));
+      kill.title = `Kill ${t.label}`;
+      kill.setAttribute("role", "button");
+      kill.setAttribute("aria-label", `Kill ${t.label}`);
+      kill.tabIndex = -1;
+      const doKill = (e: Event): void => {
+        e.stopPropagation();
+        this.closeTerminal(t.id);
+      };
+      kill.addEventListener("click", doKill);
+      kill.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") doKill(e);
+      });
+      row.appendChild(kill);
+      list.appendChild(row);
     }
-    if (this.dock.isCollapsed()) {
-      this.layoutActive();
-    } else {
-      this.revealActive();
-    }
+    this.termSide.appendChild(list);
   }
 
-  /** Open the active terminal's PTY (lazily) and re-fit it once laid out. */
+  // ── Visibility / layout ──────────────────────────────────────────────────────
+
+  /** Show the active top surface; within the Terminal, the active shell. */
+  private showActive(): void {
+    this.outputs.el.style.display = this.active === "output" ? "" : "none";
+    if (this.detailsEl) this.detailsEl.style.display = this.active === "commit-details" ? "" : "none";
+    this.termGroup.style.display = this.active === "terminal" ? "" : "none";
+
+    for (const t of this.terminals) {
+      t.surface.style.display = t.id === this.activeTermId ? "" : "none";
+    }
+    this.termEmpty.style.display = this.terminals.length === 0 ? "" : "none";
+
+    if (this.dock.isCollapsed()) this.layoutActive();
+    else this.revealActive();
+  }
+
+  /** Open the active shell's PTY (lazily) and re-fit it once laid out. */
   private revealActive(): void {
-    const tab = this.tabs.find((t) => t.id === this.activeId);
-    if (tab && tab.kind === "term") this.openTerm(tab);
-    // Defer the fit until the body has its expanded height.
+    if (this.active === "terminal") {
+      const t = this.terminals.find((x) => x.id === this.activeTermId);
+      if (t) this.openTerm(t);
+    }
     requestAnimationFrame(() => this.layoutActive());
   }
 
-  private openTerm(tab: TermTab): void {
-    if (tab.opened) {
-      tab.panel.focus();
+  private openTerm(t: TermSession): void {
+    if (t.opened) {
+      t.panel.focus();
       return;
     }
-    tab.opened = true;
-    void tab.panel.open().then(() => {
-      tab.panel.layout();
-      tab.panel.focus();
+    t.opened = true;
+    void t.panel.open().then(() => {
+      t.panel.layout();
+      t.panel.focus();
     });
   }
 
   private layoutActive(): void {
-    if (this.dock.isCollapsed()) return;
-    const tab = this.tabs.find((t) => t.id === this.activeId);
-    if (tab && tab.kind === "term" && tab.opened) tab.panel.layout();
-    // The commit-details diff (DiffView) relayouts itself via its own
-    // ResizeObserver, so the details tab needs no explicit layout here.
+    if (this.dock.isCollapsed() || this.active !== "terminal") return;
+    const t = this.terminals.find((x) => x.id === this.activeTermId);
+    if (t && t.opened) t.panel.layout();
+    // The commit-details diff (DiffView) relayouts via its own ResizeObserver.
   }
 
   // ── Commit-details tab (present only on the commits/graph view) ──────────────
 
-  /** Add or remove the "Commit details" tab. The renderer mounts its content
-   *  into `detailsSurface()` and calls `openDetails()` when a commit is clicked. */
   setDetailsVisible(visible: boolean): void {
     if (visible) {
-      if (this.detailsTab) return;
-      const surface = el("div", "dock-details-surface");
-      surface.style.display = "none";
-      this.detailsTab = { kind: "details", id: "commit-details", label: "Commit details", surface };
-      this.tabs.unshift(this.detailsTab); // pin it first
-      this.dock.bodyEl.appendChild(surface);
+      if (this.detailsVisible) return;
+      this.detailsVisible = true;
+      this.detailsEl = el("div", "dock-details-surface");
+      this.detailsEl.style.display = "none";
+      this.dock.bodyEl.appendChild(this.detailsEl);
       this.renderTabs();
       return;
     }
-    if (!this.detailsTab) return;
-    const id = this.detailsTab.id;
-    this.detailsTab.surface.remove();
-    this.tabs = this.tabs.filter((t) => t.id !== id);
-    this.detailsTab = undefined;
-    if (this.activeId === id) {
-      this.activeId = "output";
+    if (!this.detailsVisible) return;
+    this.detailsVisible = false;
+    this.detailsEl?.remove();
+    this.detailsEl = undefined;
+    if (this.active === "commit-details") {
+      this.active = "terminal";
       this.showActive();
     }
     this.renderTabs();
@@ -304,14 +312,13 @@ export class TerminalDock {
 
   /** The element the renderer renders commit details into (when the tab exists). */
   detailsSurface(): HTMLElement | undefined {
-    return this.detailsTab?.surface;
+    return this.detailsEl;
   }
 
   /** Activate the commit-details tab and expand the dock (on commit click). */
   openDetails(): void {
-    if (!this.detailsTab) return;
-    this.setActive(this.detailsTab.id);
-    this.expand();
+    if (!this.detailsVisible) return;
+    this.setActiveTab("commit-details");
   }
 
   private persist(): void {
@@ -320,7 +327,6 @@ export class TerminalDock {
 
   // ── Public controls (driven by the nav button / shortcut / host) ────────────
 
-  /** Expand ⇄ collapse the dock (used by the Terminal nav button + Cmd/Ctrl+`). */
   toggle(): void {
     this.dock.toggle();
   }
@@ -344,16 +350,13 @@ export class TerminalDock {
 
   /** Re-read the CSS-token theme for every terminal (on light/dark flips). */
   applyTheme(): void {
-    for (const t of this.tabs) {
-      if (t.kind === "term") t.panel.applyTheme();
-    }
+    for (const t of this.terminals) t.panel.applyTheme();
   }
 
   dispose(): void {
-    for (const t of this.tabs) {
-      if (t.kind !== "details") t.panel.dispose();
-    }
-    this.tabs = [];
+    for (const t of this.terminals) t.panel.dispose();
+    this.terminals = [];
+    this.outputs.dispose();
     this.dock.dispose();
   }
 }

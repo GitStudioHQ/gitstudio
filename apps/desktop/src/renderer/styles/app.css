@@ -3362,6 +3362,9 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   border-radius: 2px 2px 0 0;
   background: var(--gs-accent);
 }
+/* Collapsed (just the status bar): no active indicator — nothing is "open". */
+.dock-mount.collapsed .term-tab.active::after { display: none; }
+.dock-mount.collapsed .term-tab.active { color: var(--app-muted); }
 /* Icons are small + grayed — no accent; the label + underline carry the state. */
 .term-tab .glyph { flex: 0 0 auto; color: var(--app-muted); }
 .term-tab .glyph .codicon { font-size: 12px; }
@@ -3394,6 +3397,104 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   overflow: hidden;
 }
 .term-surface .xterm { height: 100%; }
+
+/* The single Terminal view: the shell stage (left) + a VS-Code-style side list
+   of terminals (right) with a "New terminal" button and per-shell kill button. */
+.term-group { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.term-stage { flex: 1 1 auto; min-width: 0; min-height: 0; position: relative; display: flex; }
+.term-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--app-muted);
+  font-size: 12.5px;
+}
+.term-empty .codicon { font-size: 15px; }
+.term-side {
+  flex: 0 0 196px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-panel);
+  overflow-y: auto;
+}
+.term-side-add {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.term-side-add:hover { background: var(--app-hover); border-color: var(--accent-line); }
+.term-side-add .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.term-side-add .codicon { font-size: 13px; }
+.term-side-list { display: flex; flex-direction: column; gap: 1px; }
+.term-side-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 7px 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.term-side-row:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+.term-side-row.active {
+  background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+  color: var(--vscode-foreground);
+}
+.term-side-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--gs-accent);
+}
+.term-side-row .codicon { font-size: 13px; }
+.term-side-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-side-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--app-muted);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.term-side-row:hover .term-side-close,
+.term-side-row.active .term-side-close { opacity: 0.7; }
+.term-side-close:hover { opacity: 1; background: var(--app-hover); color: var(--vscode-errorForeground, #e15a5a); }
+.term-side-close .codicon { font-size: 12px; }
 .term-unavailable { padding: 16px; color: var(--app-muted); font-size: var(--text-sm); }
 
 /* ── Output tab — the live git-command log ─────────────────────────────────── */
