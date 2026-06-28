@@ -1,0 +1,50 @@
+apps/desktop/src/renderer/terminalCompletion.ts
+  s_3fc28b9b39c0aa::t_3a3859d3740226 69
+  s_3fc28b9b39c0aa::t_3f7fe1c33c5faf 1-68,70-189
+apps/desktop/test/terminalCompletion.test.ts
+  s_3fc28b9b39c0aa::t_b31155a720e3c3 1-156
+apps/desktop/src/main/main.ts
+  s_3fc28b9b39c0aa::t_75a2068280776d 418-421
+  s_3fc28b9b39c0aa::t_0f322dfb982392 26
+apps/desktop/src/renderer/fuzzyMatch.ts
+  s_3fc28b9b39c0aa::t_f7cef404bf531a 1-74
+apps/desktop/src/renderer/terminalPanel.ts
+  s_3fc28b9b39c0aa::t_2fdcfd53df592a 20
+  s_3fc28b9b39c0aa::t_97ba306a7a5cf5 41-42
+  s_3fc28b9b39c0aa::t_aee52f7f741e60 166-169,172,174,177-180,184-195
+  s_3fc28b9b39c0aa::t_415f4cd93c7e9c 286-287
+apps/desktop/src/shared/ipc.ts
+  s_3fc28b9b39c0aa::t_b63b46bcc213b2 584-589
+  s_3fc28b9b39c0aa::t_17f467c1f5ce54 844-846
+apps/desktop/src/renderer/styles/app.css
+  s_3fc28b9b39c0aa::t_60184a0dde7975 3500-3538
+apps/desktop/src/main/completionBridge.ts
+  s_3fc28b9b39c0aa::t_51d6bbac4deb38 1-82
+apps/desktop/src/renderer/terminalCommands.ts
+  s_3fc28b9b39c0aa::t_92e94b73461e4f 35-37
+  s_3fc28b9b39c0aa::t_c278f56062057b 116-118,123-157
+  s_3fc28b9b39c0aa::t_7ce3688fbeb973 46-47
+  s_3fc28b9b39c0aa::t_f71934a19075b5 81,84
+  s_3fc28b9b39c0aa::t_ca3aea71d2f9ac 158
+apps/desktop/src/renderer/terminalAutocomplete.ts
+  s_3fc28b9b39c0aa::t_0e3d96b4a048f9 19
+  s_3fc28b9b39c0aa::t_39a820b17cc749 1-14,16-18,20-229,231-312
+  s_3fc28b9b39c0aa::t_2187ff6ceefbb3 230
+  s_3fc28b9b39c0aa::t_c8350058597ffb 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "8d8c00ff02925c989c7a68f27aa441627b9fd083",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
