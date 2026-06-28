@@ -11,16 +11,22 @@
 
 import { host } from "../bridge";
 import {
+  avatar,
   cleanErr,
   el,
   emptyState,
   errorState,
+  ghRow,
   glyph,
+  labelChip,
   loadingState,
   openMenu,
   pill,
   relTimeISO,
+  skeletonList,
   span,
+  statBit,
+  stateLead,
 } from "../ui";
 import { confirmDialog, promptInline, toast } from "../dialogs";
 import { renderMarkdown } from "../markdown";
@@ -31,15 +37,6 @@ import type { IssueDetail, IssueInfo, RepoLabel } from "../../shared/ipc";
 let issueState: "open" | "closed" = "open";
 
 // ── Small DOM builders ───────────────────────────────────────────────────────
-
-/** A label chip tinted from the GitHub 6-hex label color (translucent fill). */
-function labelChip(name: string, color: string): HTMLElement {
-  const c = el("span", "gh-label-chip");
-  c.textContent = name;
-  const bg = /^[0-9a-f]{6}$/i.test(color) ? color : "888888";
-  c.style.setProperty("--chip", `#${bg}`);
-  return c;
-}
 
 /** One timeline card: the issue body (first) or a comment. Markdown body. */
 function commentCard(author: string, action: string, body: string, createdAt: string): HTMLElement {
@@ -104,12 +101,22 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   body.append(listEl, detail);
   view.appendChild(body);
   wrap.replaceChildren(view);
-  detail.replaceChildren(
-    emptyState("Select an issue", "Pick an issue to read it, comment, label, or close it."),
-  );
+  const idleEmpty = (): void => {
+    detail.replaceChildren(
+      emptyState(
+        "Issues",
+        "Select an issue to read its description, comment, manage labels and assignees, or close it.",
+        {
+          icon: "issue-opened",
+          hint: "Tip: use the Open / Closed toggle to switch which issues you're browsing.",
+        },
+      ),
+    );
+  };
+  idleEmpty();
 
   // Load the list (the API filters by state — the Open/Closed toggle drives it).
-  listEl.replaceChildren(loadingState());
+  listEl.replaceChildren(skeletonList(5));
   let issues: IssueInfo[];
   try {
     issues = await host.invoke("issue:list", { state: issueState });
@@ -120,41 +127,56 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     return;
   }
 
-  const shown = issues;
+  header.setCount?.(issues.length);
   listEl.replaceChildren();
-  if (shown.length === 0) {
+  if (issues.length === 0) {
+    idleEmpty();
     listEl.appendChild(
       emptyState(
         issueState === "open" ? "No open issues" : "No closed issues",
         issueState === "open"
-          ? "All clear — or open a new one."
+          ? "You're all caught up — there's nothing open to triage right now."
           : "Closed issues will show here once you close some.",
+        issueState === "open"
+          ? {
+              icon: "issue-opened",
+              action: { label: "New issue", icon: "add", onClick: () => void newIssue(wrap, nav) },
+            }
+          : { icon: "issue-closed" },
       ),
     );
     return;
   }
 
-  for (const it of shown) {
-    const row = el("button", "gh-row");
-    const top = el("div", "gh-row-title");
-    top.textContent = it.title;
-    const sub = el("div", "gh-row-sub");
-    sub.textContent = `#${it.number} · ${it.user?.login ?? "unknown"} · ${it.comments} comment${
-      it.comments === 1 ? "" : "s"
-    }`;
-    row.append(top, sub);
-    if (it.labels.length) {
-      const chips = el("div", "gh-row-labels");
-      for (const l of it.labels.slice(0, 4)) chips.appendChild(labelChip(l.name, l.color));
-      row.appendChild(chips);
+  const select = (it: IssueInfo, row: HTMLElement): void => {
+    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
+    row.classList.add("active");
+    void showDetail(detail, it.number, wrap, nav);
+  };
+
+  issues.forEach((it, i) => {
+    const chips = it.labels.map((l) => labelChip(l.name, l.color));
+    const stats: HTMLElement[] = [];
+    if (it.comments > 0) stats.push(statBit("comment", it.comments));
+    // A small trailing avatar cluster for up to three assignees.
+    if (it.assignees.length) {
+      const cluster = el("span", "gh-row-assignees");
+      for (const a of it.assignees.slice(0, 3)) cluster.appendChild(avatar(a.login, a.avatarUrl, 18));
+      stats.push(cluster);
     }
-    row.addEventListener("click", () => {
-      listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-      row.classList.add("active");
-      void showDetail(detail, it.number, wrap, nav);
+    const author = it.user?.login ?? "unknown";
+    const row = ghRow({
+      lead: stateLead(it.state === "closed" ? "closed" : "open"),
+      title: it.title,
+      meta: `#${it.number} · ${author} · opened ${relTimeISO(it.createdAt)}`,
+      chips,
+      stats,
+      ariaLabel: `Issue #${it.number}: ${it.title}`,
     });
+    row.addEventListener("click", () => select(it, row));
     listEl.appendChild(row);
-  }
+    if (i === 0) select(it, row); // auto-select the first issue so the detail isn't a void
+  });
 }
 
 // ── Detail pane ──────────────────────────────────────────────────────────────

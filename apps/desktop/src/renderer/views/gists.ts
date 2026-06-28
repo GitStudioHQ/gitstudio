@@ -16,11 +16,14 @@ import {
   el,
   emptyState,
   errorState,
+  ghRow,
   glyph,
   loadingState,
-  pill,
   relTimeISO,
+  skeletonList,
   span,
+  statBit,
+  statePill,
 } from "../ui";
 import { confirmDialog, toast } from "../dialogs";
 import { ghGate, ghHeader, type SectionRender } from "./common";
@@ -62,8 +65,16 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   view.appendChild(body);
   wrap.replaceChildren(view);
 
-  detail.replaceChildren(emptyState("Select a gist", "Pick a gist to see its files and content."));
-  listEl.replaceChildren(loadingState("Loading gists…"));
+  const idleEmpty = (): void => {
+    detail.replaceChildren(
+      emptyState("Gists", "Select a gist to read its files and content.", {
+        icon: "code",
+        hint: "Tip: open one to edit, copy its raw URL, or delete it.",
+      }),
+    );
+  };
+  idleEmpty();
+  listEl.replaceChildren(skeletonList(5));
 
   let gists: GistInfo[];
   try {
@@ -75,11 +86,15 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     return;
   }
 
+  header.setCount?.(gists.length);
   listEl.replaceChildren();
   if (gists.length === 0) {
     openGistId = null;
     listEl.appendChild(
-      emptyState("No gists yet", "Create your first snippet with “New gist”."),
+      emptyState("No gists yet", "Create your first snippet with a new gist.", {
+        icon: "code",
+        action: { label: "New gist", icon: "add", onClick: () => void newGist(refresh) },
+      }),
     );
     return;
   }
@@ -87,9 +102,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   // If the previously open gist is gone (deleted elsewhere), drop the selection.
   if (openGistId && !gists.some((g) => g.id === openGistId)) {
     openGistId = null;
-    detail.replaceChildren(
-      emptyState("Select a gist", "Pick a gist to see its files and content."),
-    );
+    idleEmpty();
   }
 
   const rows = new Map<string, HTMLElement>();
@@ -98,22 +111,28 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   };
 
   for (const g of gists) {
-    const row = el("button", "gh-row");
-    rows.set(g.id, row);
-
-    const top = el("div", "gh-row-title");
     // A gist has no real title — use the description or the first filename.
-    top.textContent = g.description || g.files[0]?.filename || "(no description)";
-
-    const sub = el("div", "gh-row-sub");
-    const primary = g.files[0]?.filename ?? "";
-    const more = g.fileCount > 1 ? ` +${g.fileCount - 1}` : "";
+    const title = g.description || g.files[0]?.filename || "Untitled gist";
     const rel = relTimeISO(g.updatedAt);
-    sub.textContent =
-      `${primary}${more} · ${g.public ? "public" : "secret"}` + (rel ? ` · ${rel}` : "");
+    const stats: HTMLElement[] = [];
+    if (typeof g.comments === "number" && g.comments > 0) stats.push(statBit("comment", g.comments));
 
-    row.append(top, sub);
-    if (!g.public) row.appendChild(pill("Secret", "warn"));
+    // An accent-tinted code glyph as the leading icon (gists have no state).
+    const lead = span("", "gh-lead-icon");
+    lead.style.color = "var(--gs-accent-ink, var(--gs-accent))";
+    lead.appendChild(glyph("code"));
+
+    const row = ghRow({
+      lead,
+      title,
+      titleSuffix: [statePill(g.public ? "Public" : "Secret", g.public ? "open" : "draft")],
+      meta:
+        `${g.fileCount} file${g.fileCount === 1 ? "" : "s"}` +
+        (rel ? ` · updated ${rel}` : ""),
+      stats,
+      ariaLabel: `Gist: ${title}`,
+    });
+    rows.set(g.id, row);
 
     row.addEventListener("click", () => {
       selectRow(g.id);
@@ -124,9 +143,12 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     listEl.appendChild(row);
   }
 
-  // Re-open the previously selected gist on refresh (e.g. after an edit).
-  const reopen = openGistId ? gists.find((g) => g.id === openGistId) : undefined;
+  // Re-open the previously selected gist on refresh (e.g. after an edit),
+  // otherwise auto-select the first gist so the detail pane isn't a void.
+  const reopen = openGistId ? gists.find((g) => g.id === openGistId) : gists[0];
   if (reopen) {
+    if (openGistId !== reopen.id) openFileIdx = 0;
+    openGistId = reopen.id;
     selectRow(reopen.id);
     void showDetail(detail, reopen, refresh);
   }

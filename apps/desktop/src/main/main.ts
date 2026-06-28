@@ -21,6 +21,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { RepoStore } from "./repoStore";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
+import { TerminalBridge } from "./terminalBridge";
+import { pickCloneDir, startClone, listGhRepos } from "./cloneBridge";
 import { initAutoUpdate } from "./autoUpdate";
 import * as issuesApi from "./github/issues";
 import * as prsApi from "./github/prs";
@@ -48,6 +50,7 @@ let mainWindow: BrowserWindow | undefined;
 let repos: RepoStore;
 let bridge: GitBridge;
 let github: GitHubBridge;
+let terminal: TerminalBridge;
 
 /** Where the recent-repos list is persisted between sessions. */
 function statePath(): string {
@@ -99,8 +102,16 @@ async function createWindow(): Promise<void> {
     },
   });
 
+  // The integrated terminal's PTY manager streams output to this window.
+  terminal = new TerminalBridge((channel, payload) =>
+    mainWindow?.webContents.send(channel, payload),
+  );
+
   mainWindow.once("ready-to-show", () => mainWindow?.show());
-  mainWindow.on("closed", () => (mainWindow = undefined));
+  mainWindow.on("closed", () => {
+    terminal?.killAll();
+    mainWindow = undefined;
+  });
 
   // Keep external links out of the app window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -345,6 +356,22 @@ function registerIpc(): void {
   // Code browser (GitHub-style file tree at HEAD).
   handle("repo:tree", (req) => bridge.treeList(req));
   handle("repo:file", (req) => bridge.fileText(req));
+  handle("repo:headCommit", () => bridge.headCommit());
+
+  // Integrated terminal (PTY) — launches in the active repo's directory.
+  handle("terminal:create", async (opts) =>
+    terminal.create(opts, repos.current()?.root),
+  );
+  handle("terminal:write", async (req) => terminal.write(req.id, req.data));
+  handle("terminal:resize", async (req) => terminal.resize(req.id, req.cols, req.rows));
+  handle("terminal:kill", async (req) => terminal.kill(req.id));
+
+  // Clone / browse repos.
+  handle("clone:pickDir", () => pickCloneDir());
+  handle("clone:start", (req) => startClone(req, (p) => send("clone:progress", p)));
+  handle("github:repos", (req) =>
+    github.withClient((c) => listGhRepos(c, req?.search)),
+  );
 
   // GitHub (PRs / Issues / Projects).
   handle("github:status", () => github.status());
@@ -455,6 +482,18 @@ async function boot(): Promise<void> {
     send("repo:changed", info);
     buildMenu();
   });
+  // Stream every git command the open repo runs to the renderer's Output tab.
+  let gitLogId = 0;
+  repos.onGitRun = (e) =>
+    send("git:log", {
+      id: ++gitLogId,
+      args: e.args,
+      command: `git ${e.args.join(" ")}`,
+      durationMs: e.durationMs,
+      exitCode: e.exitCode,
+      failed: e.failed,
+      at: Date.now(),
+    });
 
   registerIpc();
   buildMenu();

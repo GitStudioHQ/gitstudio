@@ -13,17 +13,20 @@
 
 import { host } from "../bridge";
 import {
+  avatar,
   cleanErr,
   copyText,
   el,
   emptyState,
   errorState,
+  ghRow,
   glyph,
   loadingState,
   relTimeISO,
+  skeletonList,
   span,
 } from "../ui";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { ghGate, ghHeader, ghTwoPane, type SectionRender } from "./common";
 import type { OrgInfo, OrgMember, OrgRepo, OrgTeam } from "../../shared/ipc";
 
 // ── In-session state (in-memory only, like prSubTab — not persisted) ──────────
@@ -88,22 +91,22 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 
   const gen = ++renderGen;
 
-  const view = el("div", "gh-view");
-  view.appendChild(ghHeader("Organizations", gate.login, refresh));
-  const body = el("div", "gh-body");
-  const listEl = el("div", "gh-list");
-  const detail = el("div", "gh-detail");
-  body.append(listEl, detail);
-  view.appendChild(body);
+  const header = ghHeader("Organizations", gate.login, refresh);
+  const { view, listEl, detailEl: detail } = ghTwoPane();
+  view.insertBefore(header, view.firstChild);
   wrap.replaceChildren(view);
-  detail.replaceChildren(
-    emptyState(
-      "Select an organization",
-      "Pick an org to see its repositories, teams, and members.",
-    ),
-  );
+  const idleEmpty = (): void => {
+    detail.replaceChildren(
+      emptyState(
+        "Organizations",
+        "Select an organization to browse its repositories, teams, and members.",
+        { icon: "organization", hint: "Tip: open a repo, team, or member on GitHub from the detail pane." },
+      ),
+    );
+  };
+  idleEmpty();
 
-  listEl.replaceChildren(loadingState());
+  listEl.replaceChildren(skeletonList(5));
   let orgs: OrgInfo[];
   try {
     orgs = await host.invoke("orgs:list", undefined);
@@ -116,22 +119,25 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   }
   if (gen !== renderGen) return;
 
+  header.setCount?.(orgs.length);
   listEl.replaceChildren();
   if (orgs.length === 0) {
     listEl.appendChild(
-      emptyState("No organizations", "You're not a member of any GitHub organizations."),
+      emptyState("No organizations", "You're not a member of any GitHub organizations.", {
+        icon: "organization",
+      }),
     );
     return;
   }
 
   const rowFor = new Map<string, HTMLElement>();
   for (const org of orgs) {
-    const row = el("button", "gh-row gh-org-row");
-    const top = el("div", "gh-row-title");
-    top.append(orgAvatar(org.avatarUrl, org.login), span(org.name || org.login, "gh-org-name"));
-    const sub = el("div", "gh-row-sub");
-    sub.textContent = org.description || `@${org.login}`;
-    row.append(top, sub);
+    const row = ghRow({
+      lead: avatar(org.login, org.avatarUrl, 30),
+      title: org.name || org.login,
+      meta: org.description || `@${org.login}`,
+      ariaLabel: `Organization ${org.name || org.login}`,
+    });
     row.addEventListener("click", () => {
       for (const n of listEl.querySelectorAll(".gh-row.active")) n.classList.remove("active");
       row.classList.add("active");

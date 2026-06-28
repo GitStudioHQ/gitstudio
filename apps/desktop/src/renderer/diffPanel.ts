@@ -57,12 +57,18 @@ export class DiffPanel {
     this.merge.render(payload);
   }
 
-  /** Shows a centered placeholder when nothing is selected. */
+  /** Shows a composed placeholder (icon badge + text) when nothing is selected. */
   showEmpty(text: string): void {
     this.teardown();
     const empty = document.createElement("div");
-    empty.className = "diff-empty";
-    empty.textContent = text;
+    empty.className = "diff-empty list-empty";
+    const badge = document.createElement("div");
+    badge.className = "list-empty-badge";
+    badge.innerHTML = '<span class="glyph codicon codicon-git-compare"></span>';
+    const t = document.createElement("div");
+    t.className = "list-empty-desc";
+    t.textContent = text;
+    empty.append(badge, t);
     this.container.replaceChildren(empty);
   }
 

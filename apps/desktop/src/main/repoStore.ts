@@ -6,6 +6,7 @@
 
 import { basename } from "node:path";
 import { GitContext, NodeGitAdapter } from "@gitstudio/git-service/index";
+import type { GitRunHook } from "@gitstudio/git-service/index";
 import type { RepoInfo } from "../shared/ipc";
 
 const MAX_RECENT = 12;
@@ -15,6 +16,9 @@ export class RepoStore {
   private context: GitContext | undefined;
   private currentRoot: string | undefined;
   private recent: string[] = [];
+  /** Observer wired by main.ts: fires for every git command the open repo runs,
+   *  so the renderer's Output tab can show a live git-command log. */
+  onGitRun?: GitRunHook;
 
   /** Listeners fired when the active repo changes (the main process re-emits). */
   private readonly listeners = new Set<(info: RepoInfo | undefined) => void>();
@@ -60,7 +64,11 @@ export class RepoStore {
       return toInfo(root);
     }
     this.context?.dispose();
-    this.context = new GitContext({ root, gitPath: this.adapter.gitPath() });
+    this.context = new GitContext({
+      root,
+      gitPath: this.adapter.gitPath(),
+      onRun: (e) => this.onGitRun?.(e),
+    });
     this.currentRoot = root;
     this.promoteRecent(root);
     const info = toInfo(root);

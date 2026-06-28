@@ -30,6 +30,7 @@ import type {
   FileDiff,
   GitIdentity,
   GraphPage,
+  HeadCommit,
   HeadInfo,
   RefInfo,
   RepoFile,
@@ -565,6 +566,50 @@ export class GitBridge {
    * paths with spaces parse cleanly. Sorted folders-first then alphabetical —
    * github.com's order. An empty `path` lists the repo root.
    */
+  /**
+   * The tip commit of HEAD plus the total commit count — backs the Code
+   * browser's "latest commit" bar. Two cheap calls (`log -1` + `rev-list
+   * --count`); failures degrade to `undefined` (the bar is simply omitted).
+   */
+  async headCommit(): Promise<HeadCommit | undefined> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return undefined;
+    }
+    const SEP = "\x00";
+    try {
+      const r = await ctx.process.run([
+        "log",
+        "-1",
+        "--no-color",
+        `--format=%H${SEP}%h${SEP}%an${SEP}%ae${SEP}%at${SEP}%s`,
+        "HEAD",
+      ]);
+      if (r.code !== 0 || !r.stdout.trim()) {
+        return undefined;
+      }
+      const [sha, shortSha, author, authorEmail, at, subject] = r.stdout
+        .replace(/\n$/, "")
+        .split(SEP);
+      let total = 0;
+      const c = await ctx.process.run(["rev-list", "--count", "HEAD"]);
+      if (c.code === 0) {
+        total = parseInt(c.stdout.trim(), 10) || 0;
+      }
+      return {
+        sha: sha ?? "",
+        shortSha: shortSha ?? "",
+        author: author ?? "",
+        authorEmail: authorEmail ?? "",
+        date: parseInt(at ?? "", 10) || 0,
+        subject: subject ?? "",
+        total,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
   async treeList(req: { path: string }): Promise<TreeEntry[]> {
     const ctx = this.ctx();
     if (!ctx) {

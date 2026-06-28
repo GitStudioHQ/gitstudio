@@ -1,4 +1,4 @@
-import { GitProcess } from "./GitProcess";
+import { GitProcess, type GitRunHook } from "./GitProcess";
 import { LogProvider } from "./LogProvider";
 import { CommitDetailsProvider } from "./CommitDetailsProvider";
 import { RefProvider } from "./RefProvider";
@@ -21,6 +21,8 @@ export interface GitContextOptions {
   gitPath?: string;
   /** Maximum number of concurrent git processes; defaults to 5. */
   maxConcurrent?: number;
+  /** Optional observer fired once per completed git invocation (see GitProcess). */
+  onRun?: GitRunHook;
 }
 
 /**
@@ -52,6 +54,7 @@ export class GitContext {
       cwd: opts.root,
       gitPath: opts.gitPath,
       maxConcurrent: opts.maxConcurrent,
+      onRun: opts.onRun,
     });
     this.log = new LogProvider(this.process);
     this.commitDetails = new CommitDetailsProvider(this.process);

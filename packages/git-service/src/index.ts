@@ -16,6 +16,8 @@ export type {
   GitRunResult,
   GitRunOptions,
   GitRunWithInputOptions,
+  GitRunEvent,
+  GitRunHook,
 } from "./GitProcess";
 export { LogProvider } from "./LogProvider";
 export type { StreamCommitsOptions } from "./LogProvider";

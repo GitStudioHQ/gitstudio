@@ -61,12 +61,18 @@ export class CompareDiff {
     this.editor.setModel({ original, modified });
   }
 
-  /** Centered placeholder when no file is selected. */
+  /** Composed placeholder (icon badge + text) when no file is selected. */
   showEmpty(text: string): void {
     this.teardown();
     const empty = document.createElement("div");
-    empty.className = "diff-empty";
-    empty.textContent = text;
+    empty.className = "diff-empty list-empty";
+    const badge = document.createElement("div");
+    badge.className = "list-empty-badge";
+    badge.innerHTML = '<span class="glyph codicon codicon-git-compare"></span>';
+    const t = document.createElement("div");
+    t.className = "list-empty-desc";
+    t.textContent = text;
+    empty.append(badge, t);
     this.container.replaceChildren(empty);
   }
 

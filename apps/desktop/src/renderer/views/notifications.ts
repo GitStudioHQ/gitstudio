@@ -12,12 +12,13 @@ import {
   glyph,
   pill,
   relTimeISO,
-  loadingState,
+  skeletonList,
   errorState,
   emptyState,
   cleanErr,
   openMenu,
   textBtn,
+  ghRow,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
 import { ghGate, ghHeader, type SectionRender } from "./common";
@@ -70,7 +71,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   wrap.replaceChildren(view);
 
   // Load.
-  body.replaceChildren(loadingState("Loading notifications…"));
+  body.replaceChildren(skeletonList(6));
   let threads: NotificationThread[];
   try {
     threads = await host.invoke("notifications:list", { all: notifAll, participating: false });
@@ -87,20 +88,25 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   if (!body.isConnected) return;
 
   // Keep the "Mark all read" affordance honest: nothing unread → nothing to do.
-  (markAllBtn as HTMLButtonElement).disabled = !threads.some((t) => t.unread);
+  const unreadCount = threads.filter((t) => t.unread).length;
+  (markAllBtn as HTMLButtonElement).disabled = unreadCount === 0;
+  // The header count reflects what's actionable: unread threads.
+  header.setCount?.(unreadCount);
 
   if (threads.length === 0) {
     body.replaceChildren(
       emptyState(
-        notifAll ? "Inbox zero" : "No unread notifications",
-        notifAll ? "You have no notifications." : "You're all caught up.",
+        notifAll ? "Inbox zero" : "You're all caught up",
+        notifAll
+          ? "You have no notifications."
+          : "No unread notifications right now — nothing needs your attention.",
+        { icon: "bell" },
       ),
     );
     return;
   }
 
   body.replaceChildren();
-  const unreadCount = threads.filter((t) => t.unread).length;
   body.appendChild(notifSummary(threads.length, unreadCount));
   for (const t of threads) {
     body.appendChild(notificationRow(t, body, refresh));
@@ -116,38 +122,43 @@ function notifSummary(total: number, unread: number): HTMLElement {
   return row;
 }
 
-/** One inbox row: unread dot + subject-type icon, title, repo · reason · time,
- *  a subject-type pill, and a hover-revealed Open / Mark-read action cluster. */
+/** One inbox row in the rich `ghRow` shape: an accent-wrapped subject-type icon
+ *  (prefixed by an unread dot), a bold/muted title, a `repo · reason · time` meta
+ *  line, a subject-type pill, and a hover-revealed Open / Mark-read cluster.
+ *  Unread rows lead with the accent dot + a foreground title; read rows recede. */
 function notificationRow(
   t: NotificationThread,
   body: HTMLElement,
   refresh: () => void,
 ): HTMLElement {
-  const row = el("div", "list-row notif-row");
-  if (!t.unread) row.classList.add("notif-read");
-
-  // Leading: unread dot (when unread) + the subject-type glyph.
+  // Leading: unread dot (when unread) + the subject-type glyph. We reuse the
+  // existing .notif-lead/.notif-dot styling so unread emphasis + the read-state
+  // icon dimming keep working inside the gh-row lead slot.
   const lead = el("span", "notif-lead");
   if (t.unread) lead.appendChild(el("span", "notif-dot"));
   lead.appendChild(glyph(notifIcon(t.type)));
-  row.appendChild(lead);
 
-  const meta = el("div", "row-meta");
-  const title = el("div", "row-meta-title");
-  title.textContent = t.title || "(untitled)";
-  const sub = el("div", "row-meta-sub");
   const when = relTimeISO(t.updatedAt);
-  sub.textContent =
+  const meta =
     `${t.repo}` +
     (t.reason ? ` · ${notifReasonLabel(t.reason)}` : "") +
     (when ? ` · ${when}` : "");
-  meta.append(title, sub);
-  row.appendChild(meta);
 
-  // Subject-type pill (PR / Issue / Release / …).
-  if (t.type) {
-    const p = pill(notifTypeLabel(t.type), "notif-type");
-    row.appendChild(p);
+  const row = ghRow({
+    lead,
+    title: t.title || "(untitled)",
+    titleSuffix: t.type ? [pill(notifTypeLabel(t.type), "notif-type")] : [],
+    meta,
+    ariaLabel: `${notifTypeLabel(t.type)} notification: ${t.title || "(untitled)"}${t.unread ? " (unread)" : ""}`,
+  });
+  // ghRow returns a <div> here (no onClick passed). Tag it as an inbox row so the
+  // read/unread emphasis CSS applies, and as a .list-row so the existing
+  // `.list-row:hover .row-actions` reveal lights up the Open / Mark-read cluster
+  // (gh-row-rich's later layout rules still win on padding/radius/alignment).
+  row.classList.add("notif-row", "list-row");
+  if (!t.unread) {
+    row.classList.add("notif-read");
+    row.style.opacity = "0.72";
   }
 
   const open = (): void => {
@@ -204,8 +215,10 @@ async function markRead(
       row.remove();
       if (body.querySelectorAll(".notif-row").length === 0) refresh();
     } else {
-      // "Show all" → flip the row to its read style in place.
+      // "Show all" → flip the row to its read style in place: recede it, drop
+      // the unread dot, and remove the now-irrelevant "Mark read" action.
       row.classList.add("notif-read");
+      row.style.opacity = "0.72";
       row.querySelector(".notif-dot")?.remove();
       row.querySelectorAll<HTMLElement>(".row-actions .row-btn").forEach((b) => {
         if (b.textContent === "Mark read") b.remove();
@@ -221,6 +234,12 @@ async function markRead(
     }
     const markAll = document.querySelector<HTMLButtonElement>(".notif-markall");
     if (markAll) markAll.disabled = unread === 0;
+    // Keep the header's unread count pill honest after the in-place change.
+    const countPill = document.querySelector<HTMLElement>(".gh-head-count");
+    if (countPill) {
+      countPill.textContent = String(unread);
+      countPill.hidden = false;
+    }
     toast("Marked as read.", "success");
   } catch (e) {
     toast(cleanErr(e) || "Couldn't mark the notification read.", "error");

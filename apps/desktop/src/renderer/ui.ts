@@ -23,9 +23,9 @@ export function span(textContent: string, className = ""): HTMLElement {
 /**
  * Glyphs — the real VS Code codicon font. The imported graph.css registers the
  * `codicon` @font-face at document scope; `.glyph` carries the box + color
- * rules. NOTE: the desktop ships a CURATED codicon subset (each `.codicon-NAME`
- * codepoint is hand-defined in app.css) — a name not in that list renders BLANK,
- * so add the codepoint to app.css before using a new glyph.
+ * rules. The COMPLETE @vscode/codicons codepoint map ships in
+ * styles/codicons-full.css (generated verbatim from the library), so any real
+ * codicon name resolves — pass the exact name from the codicon gallery.
  */
 export function glyph(name: string): HTMLElement {
   const s = el("span", `glyph codicon codicon-${name}`);
@@ -43,6 +43,44 @@ export function relTime(epochSec: number): string {
   if (d < 86400 * 30) return `${Math.floor(d / 86400)}d ago`;
   if (d < 86400 * 365) return `${Math.floor(d / 86400 / 30)}mo ago`;
   return `${Math.floor(d / 86400 / 365)}y ago`;
+}
+
+/** A codicon name for a file/folder, picked from the curated desktop subset by
+ *  extension so the repo browser + changes lists read like a real file tree. */
+export function fileIcon(name: string, isDir = false): string {
+  if (isDir) return "folder";
+  const n = name.toLowerCase();
+  if (/^(readme|changelog|contributing|authors|notice)\b/.test(n) || /\.(md|markdown|mdx)$/.test(n)) return "markdown";
+  if (/^license/.test(n)) return "book";
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|json|css|scss|less|html|htm|vue|svelte|py|go|rs|rb|java|kt|swift|c|h|cpp|cc|cs|php|sh|bash|zsh|yml|yaml|toml|sql|graphql|lua|dart)$/.test(n)) return "file-code";
+  return "file";
+}
+
+/** Human-readable byte size, e.g. 2480 → "2.4 KB". */
+export function formatBytes(n?: number): string {
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "";
+  if (n < 1024) return `${n} B`;
+  const u = ["KB", "MB", "GB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${u[i]}`;
+}
+
+/** Up to two uppercase initials from a display name, for avatar fallbacks. */
+export function initials(name: string): string {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** A stable, pleasant avatar hue from a seed (email/name) — `hsl(...)` string.
+ *  Deterministic so the same author always gets the same colour. */
+export function avatarHue(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 52% 52%)`;
 }
 
 /** Relative time from an ISO-8601 string; "" when missing or unparseable. */
@@ -84,14 +122,157 @@ export function pill(text: string, className = ""): HTMLElement {
 }
 
 /** A centered title + description empty state for list views. */
-export function emptyState(title: string, desc: string): HTMLElement {
+export interface EmptyOpts {
+  /** Codicon name for the badge (defaults to a neutral inbox). */
+  icon?: string;
+  /** A primary call-to-action button. */
+  action?: { label: string; icon?: string; onClick: () => void };
+  /** A muted hint line under the action (e.g. a keyboard shortcut). */
+  hint?: string;
+}
+
+/** A composed, premium empty state: an accent-tinted icon badge, a title, a
+ *  description, and an optional CTA + hint. Used for empty lists AND for the
+ *  detail pane when nothing is selected, so no surface is ever a bare void. */
+export function emptyState(title: string, desc: string, opts: EmptyOpts = {}): HTMLElement {
   const wrap = el("div", "list-empty");
+  const badge = el("div", "list-empty-badge");
+  badge.appendChild(glyph(opts.icon ?? "inbox"));
   const t = el("div", "list-empty-title");
   t.textContent = title;
   const d = el("div", "list-empty-desc");
   d.textContent = desc;
-  wrap.append(t, d);
+  wrap.append(badge, t, d);
+  if (opts.action) {
+    const btn = el("button", "btn btn-primary list-empty-action");
+    if (opts.action.icon) btn.appendChild(glyph(opts.action.icon));
+    btn.appendChild(span(opts.action.label));
+    btn.addEventListener("click", opts.action.onClick);
+    wrap.appendChild(btn);
+  }
+  if (opts.hint) {
+    const h = el("div", "list-empty-hint");
+    h.textContent = opts.hint;
+    wrap.appendChild(h);
+  }
   return wrap;
+}
+
+/** An avatar: the real image when available, else a deterministic initials tile.
+ *  Works fully offline (the stub/real null avatars fall back gracefully). */
+export function avatar(login: string, url: string | null | undefined, size = 22): HTMLElement {
+  const fallback = (): HTMLElement => {
+    const s = el("span", "av av-fallback");
+    s.textContent = initials(login || "?");
+    s.style.setProperty("--av", avatarHue(login || "?"));
+    s.style.width = s.style.height = `${size}px`;
+    s.style.fontSize = `${Math.round(size * 0.42)}px`;
+    return s;
+  };
+  if (url) {
+    const img = document.createElement("img");
+    img.className = "av av-img";
+    img.src = url;
+    img.alt = login;
+    img.referrerPolicy = "no-referrer";
+    img.style.width = img.style.height = `${size}px`;
+    // If the avatar can't load (offline / 404), swap in the initials tile so the
+    // chip never shows a broken-image glyph.
+    img.addEventListener("error", () => img.replaceWith(fallback()));
+    return img;
+  }
+  return fallback();
+}
+
+/** A GitHub label chip tinted from its hex color (works on both themes). */
+export function labelChip(name: string, hexColor: string): HTMLElement {
+  const chip = el("span", "gh-label-chip");
+  const hex = (hexColor || "888888").replace(/^#/, "");
+  chip.style.setProperty("--chip", `#${hex}`);
+  chip.textContent = name;
+  return chip;
+}
+
+/** A small trailing-stat bit: an optional icon + a number/label (comments,
+ *  files, +/- lines). Pass an empty icon to render text-only (e.g. "+612"). */
+export function statBit(icon: string, text: string | number, cls = ""): HTMLElement {
+  const s = el("span", `gh-stat ${cls}`.trim());
+  if (icon) s.appendChild(glyph(icon));
+  s.appendChild(span(String(text)));
+  return s;
+}
+
+/** A colored state pill (open / closed / merged / draft) for list rows + meta. */
+export function statePill(label: string, kind: string): HTMLElement {
+  const p = el("span", `gh-state-pill gh-state-${kind}`);
+  p.append(glyph(stateIconName(kind)), span(label));
+  return p;
+}
+
+/** A colored leading state icon for a list row (open=green, closed=red, …). */
+export function stateLead(kind: string): HTMLElement {
+  const s = el("span", `gh-lead-icon gh-lead-${kind}`);
+  s.appendChild(glyph(stateIconName(kind)));
+  return s;
+}
+
+/** Codicon name for a PR/issue state. */
+export function stateIconName(kind: string): string {
+  switch (kind) {
+    case "merged": return "git-merge";
+    case "closed": return "issue-closed";
+    case "draft": return "git-pull-request-draft";
+    case "open-pr": return "git-pull-request";
+    default: return "issue-opened";
+  }
+}
+
+/** A structured GitHub list row: leading icon/avatar, title (+ inline suffix),
+ *  a muted meta line, label chips, and a trailing stat cluster. One consistent,
+ *  rich row shape across PRs / Issues / Releases / Notifications / Gists / Orgs. */
+export interface GhRowOpts {
+  lead?: HTMLElement;
+  title: string;
+  titleSuffix?: HTMLElement[];
+  meta?: string;
+  chips?: HTMLElement[];
+  stats?: HTMLElement[];
+  onClick?: () => void;
+  ariaLabel?: string;
+}
+export function ghRow(o: GhRowOpts): HTMLElement {
+  const row = el(o.onClick ? "button" : "div", "gh-row gh-row-rich");
+  if (o.ariaLabel) row.setAttribute("aria-label", o.ariaLabel);
+  if (o.lead) {
+    const lead = el("span", "gh-row-lead");
+    lead.appendChild(o.lead);
+    row.appendChild(lead);
+  }
+  const body = el("div", "gh-row-body");
+  const head = el("div", "gh-row-head");
+  const title = el("span", "gh-row-title");
+  title.textContent = o.title;
+  head.appendChild(title);
+  for (const s of o.titleSuffix ?? []) head.appendChild(s);
+  body.appendChild(head);
+  if (o.meta) {
+    const sub = el("div", "gh-row-sub");
+    sub.textContent = o.meta;
+    body.appendChild(sub);
+  }
+  if (o.chips && o.chips.length) {
+    const chips = el("div", "gh-row-chips");
+    for (const c of o.chips) chips.appendChild(c);
+    body.appendChild(chips);
+  }
+  row.appendChild(body);
+  if (o.stats && o.stats.length) {
+    const stats = el("div", "gh-row-stats");
+    for (const s of o.stats) stats.appendChild(s);
+    row.appendChild(stats);
+  }
+  if (o.onClick) row.addEventListener("click", o.onClick);
+  return row;
 }
 
 /** A centered spinner + label, shown while a view's data is in flight. */
@@ -101,6 +282,23 @@ export function loadingState(text = "Loading…"): HTMLElement {
   const t = el("div", "list-loading-label");
   t.textContent = text;
   wrap.appendChild(t);
+  return wrap;
+}
+
+/** A content-shaped skeleton for a list view — N shimmering rows (an avatar dot
+ *  + two text lines). Reads as the real content while data loads, which feels
+ *  far faster than a centered spinner. `avatar=false` drops the leading dot. */
+export function skeletonList(rows = 7, avatar = true): HTMLElement {
+  const wrap = el("div", "sk-list");
+  wrap.setAttribute("aria-hidden", "true");
+  for (let i = 0; i < rows; i++) {
+    const row = el("div", "sk-row");
+    if (avatar) row.append(el("div", "sk sk-dot"));
+    const lines = el("div", "sk-lines");
+    lines.append(el("div", "sk sk-line mid"), el("div", "sk sk-line short"));
+    row.appendChild(lines);
+    wrap.appendChild(row);
+  }
   return wrap;
 }
 
@@ -222,6 +420,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
   anchor.setAttribute("aria-expanded", "true");
 
   const rows: HTMLElement[] = [];
+  const seps: HTMLElement[] = [];
 
   const close = (restoreFocus = true): void => {
     menu.remove();
@@ -233,13 +432,17 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
   const onDoc = (e: MouseEvent): void => {
     if (!menu.contains(e.target as Node)) close(false);
   };
+  /** Currently visible (not filtered-out) menuitem rows. */
+  const visible = (): HTMLElement[] => rows.filter((r) => !r.hidden);
   const focusAt = (i: number): void => {
-    if (!rows.length) return;
-    const idx = ((i % rows.length) + rows.length) % rows.length;
-    rows[idx].focus();
+    const vis = visible();
+    if (!vis.length) return;
+    const idx = ((i % vis.length) + vis.length) % vis.length;
+    vis[idx].focus();
   };
   const onKey = (e: KeyboardEvent): void => {
-    const cur = rows.indexOf(document.activeElement as HTMLElement);
+    const vis = visible();
+    const cur = vis.indexOf(document.activeElement as HTMLElement);
     if (e.key === "Escape") {
       e.preventDefault();
       close();
@@ -248,16 +451,22 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
       focusAt(cur < 0 ? 0 : cur + 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      focusAt(cur < 0 ? rows.length - 1 : cur - 1);
+      focusAt(cur < 0 ? vis.length - 1 : cur - 1);
     } else if (e.key === "Home") {
       e.preventDefault();
       focusAt(0);
     } else if (e.key === "End") {
       e.preventDefault();
-      focusAt(rows.length - 1);
-    } else if ((e.key === "Enter" || e.key === " ") && cur >= 0) {
-      e.preventDefault();
-      rows[cur].click();
+      focusAt(vis.length - 1);
+    } else if ((e.key === "Enter" || (e.key === " " && cur >= 0))) {
+      // Enter from the search field activates the first match.
+      if (cur >= 0) {
+        e.preventDefault();
+        vis[cur].click();
+      } else if (e.key === "Enter" && vis.length) {
+        e.preventDefault();
+        vis[0].click();
+      }
     } else if (e.key === "Tab") {
       close(false);
     }
@@ -269,6 +478,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
       sep.setAttribute("role", "separator");
       if (it.label) sep.textContent = it.label;
       menu.appendChild(sep);
+      seps.push(sep);
       continue;
     }
     const row = el(
@@ -299,6 +509,30 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
     menu.appendChild(row);
   }
 
+  // For long menus (e.g. the branch switcher), add a live filter at the top so
+  // the user can type to narrow instead of scrolling a wall of branches.
+  const searchable = rows.length > 9;
+  let search: HTMLInputElement | undefined;
+  if (searchable) {
+    const wrap = el("div", "dropdown-search-wrap");
+    search = document.createElement("input");
+    search.className = "dropdown-search";
+    search.type = "text";
+    search.placeholder = "Filter…";
+    search.setAttribute("aria-label", "Filter menu");
+    search.spellcheck = false;
+    const labelOf = (r: HTMLElement): string =>
+      (r.querySelector(".dropdown-label")?.textContent ?? "").toLowerCase();
+    search.addEventListener("input", () => {
+      const q = search!.value.trim().toLowerCase();
+      for (const r of rows) r.hidden = !!q && !labelOf(r).includes(q);
+      // Hide section separators while filtering (they'd float without context).
+      for (const s of seps) s.hidden = !!q;
+    });
+    wrap.appendChild(search);
+    menu.insertBefore(wrap, menu.firstChild);
+  }
+
   document.body.appendChild(menu);
   const mr = menu.getBoundingClientRect();
   if (mr.right > window.innerWidth - 8) {
@@ -310,6 +544,8 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
   document.addEventListener("keydown", onKey, true);
   setTimeout(() => {
     document.addEventListener("mousedown", onDoc, true);
-    focusAt(Math.max(0, rows.findIndex((r) => r.classList.contains("is-current"))));
+    // Searchable menus focus the filter (type-to-narrow); others land on current.
+    if (search) search.focus();
+    else focusAt(Math.max(0, rows.findIndex((r) => r.classList.contains("is-current"))));
   }, 0);
 }

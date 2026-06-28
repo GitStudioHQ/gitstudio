@@ -8,28 +8,32 @@
   "homepage": "https://gitstudio.dev",
   "main": "dist/main/main.js",
   "scripts": {
+    "postinstall": "node scripts/fix-pty-perms.js",
     "build": "node esbuild.js --production",
     "watch": "node esbuild.js --watch",
     "dev": "node esbuild.js && electron .",
-    "start": "electron .",
+    "start": "node esbuild.js && electron .",
     "package": "node esbuild.js --production && electron-builder --dir",
     "dist": "node esbuild.js --production && electron-builder",
     "test": "tsx --test \"test/**/*.test.ts\"",
     "check-types": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.renderer.json"
   },
   "dependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
     "@gitstudio/engine": "*",
     "@gitstudio/git-service": "*",
     "@gitstudio/host-bridge": "*",
     "@gitstudio/webview-ui": "*",
-    "monaco-editor": "^0.55.1"
-  },
-  "devDependencies": {
     "@types/node": "^22.0.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
     "electron-updater": "^6.3.9",
     "esbuild": "^0.28.1",
+    "monaco-editor": "^0.55.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }

@@ -6,7 +6,29 @@ export interface GitProcessOptions {
   gitPath?: string;
   /** Maximum number of concurrent git processes; defaults to 5. */
   maxConcurrent?: number;
+  /**
+   * Optional observer fired once per completed git invocation. Used by hosts to
+   * surface a live "git command" output log. Never invoked for aborted runs, and
+   * any throw from it is swallowed so an observer can't break git execution.
+   */
+  onRun?: GitRunHook;
 }
+
+/** A completed git invocation, surfaced to {@link GitProcessOptions.onRun}. The
+ *  reported `args` exclude the internal hardened `-c` flags. */
+export interface GitRunEvent {
+  /** The meaningful git arguments, e.g. ["status", "--porcelain"]. */
+  args: string[];
+  /** Wall-clock duration in milliseconds. */
+  durationMs: number;
+  /** Process exit code, or null when it failed to spawn / was killed. */
+  exitCode: number | null;
+  /** True when the process exited non-zero or failed to run. */
+  failed: boolean;
+}
+
+/** Observer invoked once per completed (non-aborted) git invocation. */
+export type GitRunHook = (event: GitRunEvent) => void;
 
 export interface GitRunResult {
   stdout: string;
@@ -51,6 +73,7 @@ export class GitProcess {
   private readonly cwd: string;
   private readonly gitPath: string;
   private readonly maxConcurrent: number;
+  private readonly onRun?: GitRunHook;
 
   private active = 0;
   private readonly waiters: Array<() => void> = [];
@@ -61,6 +84,25 @@ export class GitProcess {
     this.cwd = opts.cwd;
     this.gitPath = opts.gitPath ?? "git";
     this.maxConcurrent = opts.maxConcurrent ?? 5;
+    this.onRun = opts.onRun;
+  }
+
+  /** Fire the onRun observer for a completed invocation (best-effort). */
+  private report(
+    args: string[],
+    exitCode: number | null,
+    failed: boolean,
+    startedAt: number,
+  ): void {
+    const hook = this.onRun;
+    if (!hook) {
+      return;
+    }
+    try {
+      hook({ args, exitCode, failed, durationMs: Date.now() - startedAt });
+    } catch {
+      // An observer must never break git execution.
+    }
   }
 
   /** Acquire a concurrency slot, awaiting a free one when at the limit. */
@@ -118,6 +160,7 @@ export class GitProcess {
     let child: ChildProcessWithoutNullStreams | undefined;
     try {
       return await new Promise<GitRunResult>((resolve, reject) => {
+        const startedAt = Date.now();
         const spawned = this.spawnChild(args);
         child = spawned;
 
@@ -162,6 +205,7 @@ export class GitProcess {
           }
           settled = true;
           cleanup();
+          this.report(args, null, true, startedAt);
           reject(err);
         });
 
@@ -171,6 +215,7 @@ export class GitProcess {
           }
           settled = true;
           cleanup();
+          this.report(args, code ?? 0, (code ?? 0) !== 0, startedAt);
           resolve({
             stdout: Buffer.concat(stdout).toString("utf8"),
             stderr: Buffer.concat(stderr).toString("utf8"),
@@ -200,6 +245,7 @@ export class GitProcess {
 
     await this.acquire();
 
+    const startedAt = Date.now();
     const spawned = this.spawnChild(args);
     const decoder = new TextDecoder("utf8");
 
@@ -298,6 +344,16 @@ export class GitProcess {
       }
       this.children.delete(spawned);
       this.release();
+      // Report completed streams to the observer, but skip aborts (a superseded
+      // load — e.g. the user navigated away — isn't a meaningful "git command").
+      if (!(failure && failure.name === "AbortError")) {
+        this.report(
+          args,
+          exitCode,
+          !!failure || (exitCode !== null && exitCode !== 0),
+          startedAt,
+        );
+      }
     }
   }
 

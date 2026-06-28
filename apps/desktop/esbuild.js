@@ -73,11 +73,14 @@ const base = {
 
 function copyStaticAssets() {
   fs.mkdirSync(path.join(distDir, "renderer"), { recursive: true });
-  // The page shell.
-  fs.copyFileSync(
-    path.join(rendererDir, "index.html"),
-    path.join(distDir, "renderer/index.html"),
-  );
+  // The page shell — cache-bust the bundle refs so a reload after a rebuild can
+  // NEVER serve Chromium's stale cached renderer.css / renderer.js.
+  const stamp = Date.now().toString(36);
+  const html = fs
+    .readFileSync(path.join(rendererDir, "index.html"), "utf8")
+    .replace('href="./renderer.css"', `href="./renderer.css?v=${stamp}"`)
+    .replace('src="./renderer.js"', `src="./renderer.js?v=${stamp}"`);
+  fs.writeFileSync(path.join(distDir, "renderer/index.html"), html);
   // The window/dev icon (electron-builder embeds the packaged icon separately)
   // plus the in-app brand assets. The welcome hero is the squircle app-icon
   // mark, theme-swapped (a light-tile sibling so it sits on the light welcome
@@ -115,7 +118,10 @@ async function main() {
     platform: "node",
     format: "cjs",
     target: "node20",
-    external: ["electron", "electron-updater"],
+    // node-pty is a native module (loaded lazily by the terminal bridge); it
+    // can't be bundled — keep it external so `require("node-pty")` resolves from
+    // node_modules at runtime (packaged builds asar-unpack it).
+    external: ["electron", "electron-updater", "node-pty"],
   });
 
   const preloadCtx = await esbuild.context({

@@ -19,11 +19,18 @@ import {
   pill,
   relTimeISO,
   loadingState,
+  skeletonList,
   errorState,
   emptyState,
   copyText,
   cleanErr,
   openMenu,
+  ghRow,
+  avatar,
+  labelChip,
+  statBit,
+  statePill,
+  stateLead,
 } from "../ui";
 import { toast, confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
@@ -63,11 +70,18 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 
   const { view, listEl, detailEl } = ghTwoPane();
   wrap.replaceChildren(header, view);
-  detailEl.replaceChildren(
-    emptyState("Select a pull request", "Pick a PR to see its description, files, and checks."),
-  );
+  const idleEmpty = (): void => {
+    detailEl.replaceChildren(
+      emptyState(
+        "Pull requests",
+        "Select a pull request to read its description, review the diff, and check CI.",
+        { icon: "git-pull-request", hint: "Tip: open one to approve, merge, or check out the branch." },
+      ),
+    );
+  };
+  idleEmpty();
 
-  listEl.replaceChildren(loadingState());
+  listEl.replaceChildren(skeletonList(5));
   let prs: PullRequest[];
   try {
     prs = await host.invoke("pr:list", undefined);
@@ -77,29 +91,45 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     );
     return;
   }
+  header.setCount?.(prs.length);
   listEl.replaceChildren();
   if (prs.length === 0) {
-    listEl.appendChild(emptyState("No open pull requests", "Nothing to review right now."));
+    listEl.appendChild(
+      emptyState("No open pull requests", "You're all caught up — nothing to review right now.", {
+        icon: "git-pull-request",
+        action: { label: "New pull request", icon: "git-pull-request", onClick: () => void openCreatePr(refresh) },
+      }),
+    );
     return;
   }
-  for (const pr of prs) {
-    const row = el("button", "gh-row");
-    const top = el("div", "gh-row-title");
-    top.textContent = pr.title;
-    const sub = el("div", "gh-row-sub");
+
+  const select = (pr: PullRequest, row: HTMLElement): void => {
+    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
+    row.classList.add("active");
+    void showDetail(detailEl, pr, refresh);
+  };
+
+  prs.forEach((pr, i) => {
+    const kind = pr.draft ? "draft" : "open-pr";
+    const chips = pr.labels.map((l) => labelChip(l.name, l.color));
+    const stats: HTMLElement[] = [];
+    if (typeof pr.comments === "number" && pr.comments > 0) stats.push(statBit("comment", pr.comments));
+    if (typeof pr.additions === "number") stats.push(statBit("", `+${pr.additions}`, "add"));
+    if (typeof pr.deletions === "number") stats.push(statBit("", `−${pr.deletions}`, "del"));
     const updated = relTimeISO(pr.updatedAt);
-    sub.textContent =
-      `#${pr.number} · ${pr.user?.login ?? "unknown"} · ${pr.head.ref} → ${pr.base.ref}` +
-      (updated ? ` · ${updated}` : "");
-    row.append(top, sub);
-    if (pr.draft) row.appendChild(pill("Draft", "gh-pill-draft"));
-    row.addEventListener("click", () => {
-      listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-      row.classList.add("active");
-      void showDetail(detailEl, pr, refresh);
+    const row = ghRow({
+      lead: stateLead(kind),
+      title: pr.title,
+      titleSuffix: pr.draft ? [statePill("Draft", "draft")] : [],
+      meta: `#${pr.number} ${pr.head.ref} → ${pr.base.ref} · ${pr.user?.login ?? "unknown"}${updated ? ` · ${updated}` : ""}`,
+      chips,
+      stats,
+      ariaLabel: `Pull request #${pr.number}: ${pr.title}`,
     });
+    row.addEventListener("click", () => select(pr, row));
     listEl.appendChild(row);
-  }
+    if (i === 0) select(pr, row); // auto-select the first PR so the detail isn't a void
+  });
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────

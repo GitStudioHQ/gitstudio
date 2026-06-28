@@ -18,10 +18,13 @@ import {
   pill,
   relTimeISO,
   loadingState,
+  skeletonList,
   errorState,
   emptyState,
   cleanErr,
   openMenu,
+  ghRow,
+  statBit,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
 import { ghGate, ghHeader, type SectionRender } from "./common";
@@ -43,7 +46,11 @@ const btn = (className = ""): HTMLButtonElement =>
 
 const emptyDetail = (detail: HTMLElement): void => {
   detail.replaceChildren(
-    emptyState("Select a run", "Pick a workflow run to see its jobs, status, and logs."),
+    emptyState(
+      "Workflow runs",
+      "Select a run to inspect its jobs, steps, and status — or re-run, cancel, and open it on GitHub.",
+      { icon: "play", hint: "Tip: use “Run workflow” to dispatch one manually." },
+    ),
   );
 };
 
@@ -84,7 +91,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   runBtn.addEventListener("click", () => void openDispatch(view, detail));
 
   // ── Runs list ──
-  listEl.replaceChildren(loadingState());
+  listEl.replaceChildren(skeletonList(5));
   let runs: WorkflowRun[];
   try {
     runs = await host.invoke("actions:runs", undefined);
@@ -94,39 +101,77 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     );
     return;
   }
+  header.setCount?.(runs.length);
   listEl.replaceChildren();
   if (runs.length === 0) {
     listEl.appendChild(
-      emptyState("No workflow runs", "No GitHub Actions runs found for this repository."),
+      emptyState("No workflow runs", "No GitHub Actions runs found for this repository.", {
+        icon: "play",
+        action: {
+          label: "Run workflow",
+          icon: "play",
+          onClick: () => void openDispatch(view, detail),
+        },
+      }),
     );
     return;
   }
-  for (const r of runs) {
-    listEl.appendChild(runRow(r, listEl, detail));
-  }
-}
 
-/** One run row: status dot + name, then branch · event · state · when. */
-function runRow(r: WorkflowRun, listEl: HTMLElement, detail: HTMLElement): HTMLElement {
-  const row = el("button", "gh-row");
-  const state = r.conclusion || r.status || "";
-  const top = el("div", "gh-row-title");
-  const dot = el("span", `gh-check-dot gh-checks-${state}`);
-  const name = el("span", "gh-row-name");
-  name.textContent = r.name;
-  top.append(dot, name);
-  const sub = el("div", "gh-row-sub");
-  const when = relTimeISO(r.createdAt);
-  const parts = [r.branch, r.event, prettyState(state)].filter(Boolean);
-  if (when) parts.push(when);
-  sub.textContent = parts.join(" · ");
-  row.append(top, sub);
-  row.addEventListener("click", () => {
+  const select = (r: WorkflowRun, row: HTMLElement): void => {
     listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
     row.classList.add("active");
     void showRunDetail(detail, r);
+  };
+
+  runs.forEach((r, i) => {
+    const row = runRow(r);
+    row.addEventListener("click", () => select(r, row));
+    listEl.appendChild(row);
+    if (i === 0) select(r, row); // auto-select the first run so the jobs panel shows
   });
-  return row;
+}
+
+/** One rich run row: a colored status lead icon, the run name + #id, then a
+ *  muted branch · event · when line. */
+function runRow(r: WorkflowRun): HTMLElement {
+  const state = r.conclusion || r.status || "";
+  const when = relTimeISO(r.createdAt);
+  const meta = [r.branch, r.event].filter(Boolean).join(" · ") + (when ? ` · ${when}` : "");
+  return ghRow({
+    lead: runLead(state),
+    title: `${r.name} #${r.id}`,
+    stats: [statBit("", prettyState(state) || "—")],
+    meta,
+    ariaLabel: `Workflow run ${r.name} #${r.id}: ${prettyState(state) || "unknown"}`,
+  });
+}
+
+/** A colored leading status icon for a run, keyed off its conclusion/status. */
+function runLead(state: string): HTMLElement {
+  let icon = "sync";
+  let color = "var(--status-mod)"; // in_progress / queued / pending → blue/amber
+  if (state === "success") {
+    icon = "pass-filled";
+    color = "var(--status-add)";
+  } else if (
+    state === "failure" ||
+    state === "error" ||
+    state === "cancelled" ||
+    state === "timed_out" ||
+    state === "startup_failure" ||
+    state === "action_required" ||
+    state === "stale"
+  ) {
+    icon = "error";
+    color = "var(--status-del)";
+  } else if (state === "skipped" || state === "neutral") {
+    icon = "circle-slash";
+    color = "var(--app-muted)";
+  }
+  const s = el("span", "gh-lead-icon");
+  s.style.color = color;
+  s.appendChild(glyph(icon));
+  return s;
 }
 
 // ── Run detail ────────────────────────────────────────────────────────────────

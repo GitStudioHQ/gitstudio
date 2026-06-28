@@ -17,10 +17,15 @@ import {
   pill,
   relTimeISO,
   loadingState,
+  skeletonList,
   errorState,
   emptyState,
   cleanErr,
   groupLabel,
+  ghRow,
+  statBit,
+  statePill,
+  labelChip,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
 import { renderMarkdown } from "../markdown";
@@ -93,13 +98,14 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       emptyState(
         "Tags",
         "Every git tag in this repository. Cut a release from one with “New release”.",
+        { icon: "tag", hint: "Tip: click a tag to draft a release from it." },
       ),
     );
-    await loadTags(listEl, refresh, nav);
+    await loadTags(listEl, header, refresh, nav);
     return;
   }
 
-  await loadReleases(listEl, detail, refresh, nav);
+  await loadReleases(listEl, detail, header, refresh, nav);
 }
 
 // ── The Releases list (left pane) ──
@@ -107,13 +113,17 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 async function loadReleases(
   listEl: HTMLElement,
   detail: HTMLElement,
+  header: HTMLElement & { setCount?: (n: number) => void },
   refresh: () => void,
   nav: (view: string) => void,
 ): Promise<void> {
   detail.replaceChildren(
-    emptyState("Select a release", "Pick a release to read its notes, assets, and tag."),
+    emptyState("Releases", "Select a release to read its notes, browse assets, and inspect the tag.", {
+      icon: "tag",
+      hint: "Tip: open one to edit, delete, or download its assets.",
+    }),
   );
-  listEl.replaceChildren(loadingState());
+  listEl.replaceChildren(skeletonList(5));
 
   let releases: ReleaseInfo[];
   try {
@@ -125,34 +135,57 @@ async function loadReleases(
     return;
   }
 
+  header.setCount?.(releases.length);
   listEl.replaceChildren();
   if (releases.length === 0) {
     listEl.appendChild(
-      emptyState("No releases yet", "Publish your first release with “New release”."),
+      emptyState("No releases yet", "Publish your first release to share builds and notes.", {
+        icon: "tag",
+        action: { label: "New release", icon: "plus", onClick: () => void createRelease(refresh, "") },
+      }),
     );
     return;
   }
 
-  for (const rel of releases) {
-    const row = el("button", "gh-row");
-    const top = el("div", "gh-row-title");
-    top.textContent = rel.name || rel.tagName;
-    const sub = el("div", "gh-row-sub");
-    const when = rel.publishedAt ? relTimeISO(rel.publishedAt) : "draft";
-    const assetCount = rel.assets.length
-      ? ` · ${rel.assets.length} asset${rel.assets.length === 1 ? "" : "s"}`
-      : "";
-    sub.textContent = `${rel.tagName}${when ? " · " + when : ""}${assetCount}`;
-    row.append(top, sub);
-    if (rel.draft) row.appendChild(pill("Draft"));
-    if (rel.prerelease) row.appendChild(pill("Pre-release"));
-    row.addEventListener("click", () => {
-      listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-      row.classList.add("active");
-      void showReleaseDetail(detail, rel, refresh);
+  const select = (rel: ReleaseInfo, row: HTMLElement): void => {
+    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
+    row.classList.add("active");
+    void showReleaseDetail(detail, rel, refresh);
+  };
+
+  // "Latest" marks the first non-draft (published) release, mirroring github.com.
+  let latestMarked = false;
+  releases.forEach((rel, i) => {
+    const lead = el("span", "gh-lead-icon gh-lead-merged");
+    lead.appendChild(glyph("tag"));
+
+    const suffix: HTMLElement[] = [];
+    if (rel.prerelease) suffix.push(statePill("Pre-release", "draft"));
+    if (!rel.draft && !latestMarked) {
+      suffix.push(labelChip("Latest", "1f883d"));
+      latestMarked = true;
+    }
+
+    const when = rel.publishedAt ? `published ${relTimeISO(rel.publishedAt)}` : "draft";
+    const author = rel.author?.login ? ` · ${rel.author.login}` : "";
+
+    const stats: HTMLElement[] = [];
+    if (rel.assets.length) stats.push(statBit("file", rel.assets.length));
+    const downloads = rel.assets.reduce((sum, a) => sum + (a.downloadCount || 0), 0);
+    if (downloads > 0) stats.push(statBit("cloud-download", downloads));
+
+    const row = ghRow({
+      lead,
+      title: rel.name || rel.tagName,
+      titleSuffix: suffix,
+      meta: `${rel.tagName} · ${when}${author}`,
+      stats,
+      ariaLabel: `Release ${rel.name || rel.tagName}`,
     });
+    row.addEventListener("click", () => select(rel, row));
     listEl.appendChild(row);
-  }
+    if (i === 0) select(rel, row); // auto-select the first release so the detail isn't a void
+  });
   void nav; // nav reserved for symmetry with the tags loader
 }
 
@@ -160,10 +193,11 @@ async function loadReleases(
 
 async function loadTags(
   listEl: HTMLElement,
+  header: HTMLElement & { setCount?: (n: number) => void },
   refresh: () => void,
   nav: (view: string) => void,
 ): Promise<void> {
-  listEl.replaceChildren(loadingState());
+  listEl.replaceChildren(skeletonList(5));
 
   let tags: TagInfo[];
   try {
@@ -175,9 +209,12 @@ async function loadTags(
     return;
   }
 
+  header.setCount?.(tags.length);
   listEl.replaceChildren();
   if (tags.length === 0) {
-    listEl.appendChild(emptyState("No tags", "This repository has no git tags."));
+    listEl.appendChild(
+      emptyState("No tags", "This repository has no git tags yet.", { icon: "tag" }),
+    );
     return;
   }
 

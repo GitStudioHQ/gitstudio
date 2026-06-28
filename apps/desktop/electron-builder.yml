@@ -7,10 +7,20 @@ copyright: Copyright © GitStudio. Licensed under Apache-2.0.
 # explicitly (kept in step with the devDependency in package.json).
 electronVersion: 33.4.11
 
+# node-pty ships N-API prebuilds that already load in Electron's ABI, so DON'T
+# let electron-builder rebuild native modules from source (node-gyp needs Python
+# distutils, removed in 3.12, and the rebuild fails the whole package).
+npmRebuild: false
+
 # Only the built bundles + the page shell ship; sources stay out of the app.
 files:
   - dist/**
   - package.json
+
+# node-pty is a native module (the integrated terminal's PTY). Its prebuilt
+# `.node` binary CANNOT load from inside the asar, so unpack it.
+asarUnpack:
+  - "**/node_modules/node-pty/**"
 
 directories:
   output: release

@@ -14,6 +14,9 @@ import "@gitstudio/webview-ui/styles/diff.css";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
+// The COMPLETE codicon codepoint map from the real @vscode/codicons library —
+// imported last so its correct codepoints override any legacy hand-typed one.
+import "./styles/codicons-full.css";
 import { host } from "./bridge";
 import { applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
 import type { ThemeMode } from "./desktopTheme";
@@ -23,17 +26,26 @@ import { CompareDiff } from "./compareDiff";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { toast, confirmDialog, promptInline } from "./dialogs";
+import { TerminalDock } from "./terminalDock";
+import { openCloneDialog } from "./cloneDialog";
+import { gget, peek, bust } from "./cache";
 import {
   el,
   span,
   glyph,
   relTime,
   relTimeISO,
+  initials,
+  avatarHue,
+  avatar,
+  fileIcon,
+  formatBytes,
   textBtn,
   groupLabel,
   pill,
   emptyState,
   loadingState,
+  skeletonList,
   errorState,
   settingsCard,
   settingsField,
@@ -61,12 +73,14 @@ import type {
   CommitDetailsPayload,
   CompareMode,
   CompareResult,
+  HeadCommit,
   IssueInfo,
   MergeMethod,
   PrDetail,
   ProjectInfo,
   PullRequest,
   RefInfo,
+  GitHubStatus,
   RepoInfo,
   SshKey,
   SyncStatus,
@@ -116,6 +130,20 @@ class App {
   private syncing = false;
   /** Theme preference: follow the OS, or pin light/dark. */
   private themeMode: ThemeMode = "system";
+  /** Sidebar rail: persisted width (px) + collapsed-to-icons state. */
+  private railWidth = 188;
+  private railCollapsed = false;
+  /** Changes view: persisted width (px) of the file list pane. */
+  private changesListW = 340;
+  private railEl?: HTMLElement;
+  private railToggleEl?: HTMLElement;
+  private mainStackEl?: HTMLElement;
+  /** The permanent bottom terminal dock (a footer bar that expands/collapses,
+   *  with the Output log + multiple terminal tabs). Lives for the repo session. */
+  private terminalDock?: TerminalDock;
+  /** Whether the dock is expanded vs collapsed to its footer bar. */
+  private terminalExpanded = false;
+  private terminalHeight = 280;
 
   async start(): Promise<void> {
     // Catch-all error boundary: a rejected promise or thrown render should never
@@ -147,6 +175,9 @@ class App {
       } else if (e.key === ",") {
         e.preventDefault();
         this.routeView("settings");
+      } else if (e.key === "`") {
+        e.preventDefault();
+        this.toggleTerminal();
       }
     });
 
@@ -167,6 +198,17 @@ class App {
     if (prefs.themeMode === "system" || prefs.themeMode === "light" || prefs.themeMode === "dark") {
       this.themeMode = prefs.themeMode;
     }
+    if (typeof prefs.railWidth === "number" && prefs.railWidth >= 168 && prefs.railWidth <= 360) {
+      this.railWidth = prefs.railWidth;
+    }
+    if (typeof prefs.railCollapsed === "boolean") this.railCollapsed = prefs.railCollapsed;
+    if (typeof prefs.changesListW === "number" && prefs.changesListW >= 220) {
+      this.changesListW = prefs.changesListW;
+    }
+    if (typeof prefs.terminalOpen === "boolean") this.terminalExpanded = prefs.terminalOpen;
+    if (typeof prefs.terminalHeight === "number" && prefs.terminalHeight >= 120) {
+      this.terminalHeight = prefs.terminalHeight;
+    }
 
     applyTheme(resolveTheme(this.themeMode));
     // Re-apply on OS theme flips ONLY when following the system.
@@ -174,6 +216,7 @@ class App {
       if (this.themeMode === "system") {
         applyTheme(osTheme);
         this.rerenderForTheme();
+        this.terminalDock?.applyTheme();
       }
     });
     this.wireHostEvents();
@@ -211,28 +254,36 @@ class App {
 
     const dark = document.body.classList.contains("vscode-dark");
 
+    const hero = el("div", "welcome-hero");
     const logo = document.createElement("img");
     logo.className = "welcome-logo";
     // The squircle app-icon mark, theme-swapped so its tile matches the page
     // (a light-tile sibling on light theme — never a dark square on a light page).
     logo.src = dark ? "./brand-icon.svg" : "./brand-icon-light.svg";
     logo.alt = "GitStudio";
+    hero.appendChild(logo);
 
-    const wordmark = document.createElement("img");
-    wordmark.className = "welcome-wordmark";
-    // dark theme → the light-text lockup; light theme → the ink-text lockup.
-    wordmark.src = dark ? "./brand-wordmark-dark.svg" : "./brand-wordmark-light.svg";
-    wordmark.alt = "GitStudio";
+    // Wordmark as crafted text (not the brand SVG, which carries its own cube and
+    // would double the mark) — tracks the theme via CSS with no asset swap.
+    const wordmark = el("div", "welcome-wordmark");
+    wordmark.append(span("Git", "wm-git"), span("Studio", "wm-studio"));
 
     const tagline = el("div", "welcome-tagline");
     tagline.textContent =
       "A JetBrains-grade Git client — your whole workflow, beautifully.";
 
+    const actions = el("div", "welcome-actions");
     const open = el("button", "btn btn-primary welcome-open");
     open.append(glyph("folder-opened"), span("Open Repository…"));
     open.addEventListener("click", () => void this.openRepo());
+    const clone = el("button", "btn btn-soft welcome-clone");
+    clone.append(glyph("cloud-download"), span("Clone…"));
+    clone.addEventListener("click", () =>
+      openCloneDialog((root) => void this.openPath(root)),
+    );
+    actions.append(open, clone);
 
-    card.append(logo, wordmark, tagline, open);
+    card.append(hero, wordmark, tagline, actions);
 
     const recentWrap = el("div", "welcome-recent");
     const title = el("div", "welcome-recent-title");
@@ -259,6 +310,17 @@ class App {
     }
     recentWrap.append(title, list);
     card.appendChild(recentWrap);
+
+    const footer = el("div", "welcome-footer");
+    footer.append(
+      span("Open source", "welcome-footer-tag"),
+      span("·"),
+      span("Free forever", "welcome-footer-tag"),
+      span("·"),
+      span("Desktop & VS Code", "welcome-footer-tag"),
+    );
+    card.appendChild(footer);
+
     screen.appendChild(card);
     document.getElementById("root")!.replaceChildren(screen);
   }
@@ -270,20 +332,32 @@ class App {
     this.selectedSha = undefined;
     this.codePath = "";
     this.routeGen++; // a repo switch supersedes the previous repo's in-flight work
+    // Tear down the previous repo's terminal sessions — a new repo means a new
+    // working directory, so its shells start fresh.
+    this.terminalDock?.dispose();
+    this.terminalDock = undefined;
     // Each repo starts Compare from its own current/main defaults — don't carry
     // the previous repo's (possibly non-existent) refs over.
     this.compareBase = undefined;
     this.compareHead = undefined;
     const screen = el("div", "screen repo");
     screen.appendChild(this.topbar(info));
-    // A left sidebar rail routes the main area between the repo's surfaces.
+    // A left sidebar rail routes the main area; a vertical stack holds the routed
+    // view above the permanent bottom terminal dock.
     const main = el("div", "repo-main");
+    const stack = el("div", "main-stack");
+    this.mainStackEl = stack;
     const viewHost = el("div", "view-host");
     this.viewHost = viewHost;
-    main.append(this.buildNav(), viewHost);
+    stack.append(viewHost);
+    main.append(this.buildNav(), this.buildRailResizer(), stack);
     screen.appendChild(main);
 
     document.getElementById("root")!.replaceChildren(screen);
+    // The terminal dock is a permanent footer bar — always mounted (after the
+    // screen is in the DOM so xterm measures cleanly), starting collapsed or
+    // expanded per the saved preference.
+    this.mountTerminalDock();
     this.routeView(this.currentView);
     void this.refreshRefs();
     void this.updateSync();
@@ -314,10 +388,12 @@ class App {
   ];
 
   private buildNav(): HTMLElement {
-    const nav = el("nav", "nav-rail");
+    const nav = el("nav", "nav-rail" + (this.railCollapsed ? " collapsed" : ""));
     nav.setAttribute("role", "tablist");
     nav.setAttribute("aria-orientation", "vertical");
     nav.setAttribute("aria-label", "Repository views");
+    nav.style.width = this.railCollapsed ? "" : `${this.railWidth}px`;
+    this.railEl = nav;
     this.navButtons = [];
     const mod = navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl+";
 
@@ -358,10 +434,111 @@ class App {
       }
       nav.appendChild(mkItem(it.id, it.label, it.icon, i < 8 ? `${mod}${i + 1}` : undefined));
     });
-    // Settings is pinned to the bottom of the rail (app-level, not a repo view).
+    // Footer: just Settings, pinned to the bottom of the rail. The terminal lives
+    // permanently in the bottom footer dock; the sidebar toggle lives in the top
+    // bar — neither clutters the rail.
     nav.appendChild(el("div", "nav-spacer"));
     nav.appendChild(mkItem("settings", "Settings", "gear", `${mod},`));
     return nav;
+  }
+
+  /** The rail's right-edge divider: a pure drag-to-resize handle (the collapse
+   *  toggle lives in the top bar). Dragging the rail narrow enough collapses it
+   *  by hand — the "collapse by hand" the user asked for. */
+  private buildRailResizer(): HTMLElement {
+    /** Below this drag width the rail snaps shut. */
+    const SNAP = 150;
+    const grip = el("div", "rail-resizer");
+    grip.setAttribute("aria-hidden", "true");
+    grip.append(el("div", "rail-resizer-grip"));
+
+    const onDown = (e: PointerEvent): void => {
+      if (this.railCollapsed) return;
+      e.preventDefault();
+      document.body.classList.add("resizing-h");
+      const startX = e.clientX;
+      const startW = this.railWidth;
+      let collapsedDuringDrag = false;
+      const move = (ev: PointerEvent): void => {
+        const raw = startW + (ev.clientX - startX);
+        // Drag narrow enough → collapse by hand, and end the drag.
+        if (raw < SNAP) {
+          collapsedDuringDrag = true;
+          up();
+          this.toggleRail();
+          return;
+        }
+        const w = Math.max(168, Math.min(360, raw));
+        this.railWidth = w;
+        if (this.railEl) this.railEl.style.width = `${w}px`;
+      };
+      const up = (): void => {
+        document.body.classList.remove("resizing-h");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        if (!collapsedDuringDrag) this.persist();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    };
+    grip.addEventListener("pointerdown", onDown);
+    grip.addEventListener("dblclick", () => {
+      if (this.railCollapsed) return;
+      this.railWidth = 188;
+      if (this.railEl) this.railEl.style.width = "188px";
+      this.persist();
+    });
+    return grip;
+  }
+
+  /** Update the top-bar sidebar toggle's icon + tooltip (VS Code's layout icon). */
+  private syncRailToggle(): void {
+    const t = this.railToggleEl;
+    if (!t) return;
+    t.title = this.railCollapsed ? "Show sidebar" : "Hide sidebar";
+    t.setAttribute("aria-label", t.title);
+    t.classList.toggle("is-collapsed", this.railCollapsed);
+    t.replaceChildren(glyph(this.railCollapsed ? "layout-sidebar-left-off" : "layout-sidebar-left"));
+  }
+
+  /** Collapse the rail to an icon-only strip (or expand it back). */
+  private toggleRail(): void {
+    this.railCollapsed = !this.railCollapsed;
+    this.persist();
+    if (this.railEl) {
+      this.railEl.classList.toggle("collapsed", this.railCollapsed);
+      this.railEl.style.width = this.railCollapsed ? "" : `${this.railWidth}px`;
+    }
+    this.syncRailToggle();
+    // The graph/diff Monaco + terminal surfaces need a relayout after the width change.
+    this.terminalDock?.layout();
+  }
+
+  // ── Integrated terminal (permanent bottom dock) ─────────────────────────────
+
+  /** Expand/collapse the terminal dock (Terminal nav button + Cmd/Ctrl+`). */
+  private toggleTerminal(): void {
+    if (this.terminalDock) {
+      this.terminalDock.toggle();
+      return;
+    }
+    // Safety net: the dock is normally mounted with the repo screen.
+    this.mountTerminalDock()?.expand();
+  }
+
+  /** Mount the permanent terminal dock (footer bar) into the main stack. */
+  private mountTerminalDock(): TerminalDock | undefined {
+    if (!this.mainStackEl || this.terminalDock) return this.terminalDock;
+    this.terminalDock = new TerminalDock(this.mainStackEl, {
+      expanded: this.terminalExpanded,
+      height: this.terminalHeight,
+      onStateChange: ({ expanded, height }) => {
+        this.terminalExpanded = expanded;
+        this.terminalHeight = height;
+        this.persist();
+      },
+    });
+    return this.terminalDock;
   }
 
   /** Persist the UI preferences worth restoring on next launch. */
@@ -372,6 +549,11 @@ class App {
       compareView: this.compareView,
       branchCatsCollapsed: this.branchCatsCollapsed,
       themeMode: this.themeMode,
+      railWidth: this.railWidth,
+      railCollapsed: this.railCollapsed,
+      changesListW: this.changesListW,
+      terminalOpen: this.terminalExpanded,
+      terminalHeight: this.terminalHeight,
     });
   }
 
@@ -380,6 +562,7 @@ class App {
     this.themeMode = mode;
     applyTheme(resolveTheme(mode));
     this.rerenderForTheme();
+    this.terminalDock?.applyTheme();
     this.persist();
   }
 
@@ -455,11 +638,15 @@ class App {
     newBtn.addEventListener("click", () => void this.newBranch());
     headRow.append(filterInput, newBtn);
     const body = el("div", "list-body");
+    // Content-shaped skeleton paints immediately; replaced once data lands.
+    body.appendChild(skeletonList(8));
     wrap.append(headRow, body);
     this.viewHost.replaceChildren(wrap);
 
+    const gen = this.routeGen;
     await this.refreshRefs();
-    const locals = await host.invoke("branches:list", undefined);
+    const locals = await gget("branches:list", undefined);
+    if (gen !== this.routeGen) return;
     const remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
     const tags = this.refs.filter((r) => r.type === "tag");
 
@@ -573,6 +760,7 @@ class App {
     if (!name) return;
     const r = await host.invoke("branch:create", { name, checkout: true });
     if (!r.ok && r.message) toast(r.message, "error");
+    bust();
     await this.refreshRefs();
     await this.updateSync();
     if (this.currentView === "branches") void this.showBranchesView();
@@ -591,6 +779,7 @@ class App {
       r = await host.invoke("branch:delete", { name, force: true });
     }
     if (!r.ok && r.message) toast(r.message, "error");
+    bust();
     if (this.currentView === "branches") void this.showBranchesView();
   }
 
@@ -603,6 +792,7 @@ class App {
     if (!result.ok && result.message) {
       toast(result.message, "error");
     }
+    bust(); // checkout moves HEAD: refs/branches/status/graph/tree all change
     await this.refreshRefs();
     if (this.currentView === "branches") {
       void this.showBranchesView();
@@ -788,7 +978,9 @@ class App {
     body.replaceChildren();
     if (!res || !res.files.length) {
       body.appendChild(
-        emptyState("No file changes", "Nothing differs between these refs in this direction."),
+        emptyState("No file changes", "Nothing differs between these refs in this direction.", {
+          icon: "git-compare",
+        }),
       );
       return;
     }
@@ -1135,18 +1327,20 @@ class App {
     const head = el("div", "code-head");
     head.append(crumbs, el("div", "topbar-spacer"), refreshBtn);
 
+    // The "latest commit" bar (filled at the repo root only, GitHub-style).
+    const latest = el("div", "code-latest-slot");
     const listing = el("div", "code-listing");
     const readme = el("div", "code-readme");
     const scroll = el("div", "code-scroll");
-    scroll.append(listing, readme);
-    listing.appendChild(loadingState());
+    scroll.append(latest, listing, readme);
+    listing.appendChild(skeletonList(8, false));
     wrap.append(head, scroll);
     this.viewHost.replaceChildren(wrap);
 
     const gen = this.routeGen;
     let entries;
     try {
-      entries = await host.invoke("repo:tree", { path: this.codePath });
+      entries = await gget("repo:tree", { path: this.codePath });
     } catch (e) {
       if (gen !== this.routeGen) return;
       listing.replaceChildren(
@@ -1175,13 +1369,16 @@ class App {
     }
 
     for (const e of entries) {
-      const row = el("button", "file-row code-row");
-      row.append(
-        glyph(e.type === "tree" ? "folder" : "file"),
-        span(e.name, "file-path"),
-      );
+      const isDir = e.type === "tree";
+      const row = el("button", "file-row code-row" + (isDir ? " is-dir" : ""));
+      row.append(glyph(fileIcon(e.name, isDir)), span(e.name, "file-path"));
+      if (!isDir) {
+        const size = el("span", "code-row-size");
+        size.textContent = formatBytes(e.size);
+        row.appendChild(size);
+      }
       row.addEventListener("click", () => {
-        if (e.type === "tree") {
+        if (isDir) {
           this.codePath = e.path;
           void this.showCodeView();
         } else {
@@ -1189,6 +1386,18 @@ class App {
         }
       });
       listing.appendChild(row);
+    }
+
+    // The latest-commit bar — repo root only, mirroring github.com's repo page.
+    // Best-effort: if it can't be read, the bar is simply omitted.
+    if (!this.codePath) {
+      void host
+        .invoke("repo:headCommit", undefined)
+        .then((hc) => {
+          if (gen !== this.routeGen || !hc) return;
+          latest.replaceChildren(this.codeLatestBar(hc));
+        })
+        .catch(() => {});
     }
 
     // README: case-insensitive readme / readme.md among THIS dir's blobs.
@@ -1221,6 +1430,37 @@ class App {
         bodyEl.textContent = text;
       }
     }
+  }
+
+  /** The GitHub-style "latest commit" header bar above the repo-root listing:
+   *  author chip · subject · short-sha (copy) · relative time · commit count. */
+  private codeLatestBar(hc: HeadCommit): HTMLElement {
+    const bar = el("div", "code-latest");
+
+    const av = el("span", "code-latest-av");
+    av.textContent = initials(hc.author);
+    av.style.setProperty("--av", avatarHue(hc.authorEmail || hc.author));
+
+    const meta = el("div", "code-latest-meta");
+    const who = el("span", "code-latest-author");
+    who.textContent = hc.author || "Unknown";
+    const subj = el("span", "code-latest-subject");
+    subj.textContent = hc.subject || "(no commit message)";
+    meta.append(who, subj);
+
+    const sha = el("button", "code-latest-sha");
+    sha.title = "Copy full SHA";
+    sha.append(glyph("git-commit"), span(hc.shortSha));
+    sha.addEventListener("click", () => void copyText(hc.sha, "Commit SHA copied"));
+
+    const when = el("span", "code-latest-when");
+    if (hc.date) when.textContent = relTime(hc.date);
+
+    const count = el("span", "code-latest-count");
+    count.append(glyph("history"), span(`${hc.total.toLocaleString()} commit${hc.total === 1 ? "" : "s"}`));
+
+    bar.append(av, meta, sha, when, count);
+    return bar;
   }
 
   /** Opens a tracked file read-only over the listing (Back restores the browser). */
@@ -1261,14 +1501,19 @@ class App {
     const composer = el("div", "dc-composer");
     const curBranch = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
     const branchLine = el("div", "dc-branch");
-    branchLine.append(glyph("git-branch"), span(curBranch ? `Commit to ${curBranch}` : "Commit"));
+    const branchSummary = span("", "dc-branch-sum");
+    branchLine.append(
+      glyph("git-branch"),
+      span(curBranch ?? "detached HEAD", "dc-branch-name"),
+      branchSummary,
+    );
     const textarea = document.createElement("textarea");
     textarea.className = "dc-message";
     textarea.placeholder = "Message (what & why)…";
     textarea.rows = 2;
     const commitRow = el("div", "dc-commit-row");
     const commitBtn = el("button", "btn btn-primary dc-commit");
-    const commitLabel = span("Commit");
+    const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit");
     commitBtn.append(glyph("git-commit"), commitLabel);
     commitBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, commitBtn, false));
     const pushBtn = el("button", "btn dc-commit dc-push");
@@ -1292,8 +1537,32 @@ class App {
 
     const body = el("div", "dc-body");
     const lists = el("div", "dc-lists");
+    lists.style.flex = `0 0 ${this.changesListW}px`;
+    lists.appendChild(skeletonList(6));
+    // A draggable divider between the file list and the diff (persisted width).
+    const divider = el("div", "cmp-vsplit dc-vsplit");
+    divider.append(el("div", "cmp-vsplit-grip"));
     const surface = el("div", "diff-surface");
-    body.append(lists, surface);
+    divider.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      document.body.classList.add("resizing-h");
+      const startX = e.clientX;
+      const startW = this.changesListW;
+      const move = (ev: PointerEvent): void => {
+        const w = Math.max(220, Math.min(640, startW + (ev.clientX - startX)));
+        this.changesListW = w;
+        lists.style.flex = `0 0 ${w}px`;
+      };
+      const up = (): void => {
+        document.body.classList.remove("resizing-h");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        this.persist();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+    body.append(lists, divider, surface);
     wrap.append(composer, toolbar, body);
     this.viewHost.replaceChildren(wrap);
 
@@ -1301,18 +1570,30 @@ class App {
     this.activeMonacoView = diffPanel;
     diffPanel.showEmpty("Select a file to view its diff.");
 
-    const files = await host.invoke("status", undefined);
+    const files = await gget("status", undefined, 3000);
     const staged = files.filter((f) => f.staged);
     const unstaged = files.filter((f) => !f.staged);
-    commitLabel.textContent = staged.length ? `Commit ${staged.length}` : "Commit";
+    commitLabel.textContent = curBranch ? `Commit to ${curBranch}` : "Commit";
+    // A quiet context line: how many changes are staged vs. still to stage.
+    const sumBits: string[] = [];
+    sumBits.push(staged.length ? `${staged.length} staged` : "nothing staged");
+    if (unstaged.length) sumBits.push(`${unstaged.length} to stage`);
+    branchSummary.textContent = `· ${sumBits.join(" · ")}`;
 
     const fileRow = (f: ChangedFile, kind: "staged" | "unstaged"): HTMLElement => {
-      const row = el("button", `file-row status-${f.status}`);
+      const row = el("button", `file-row dc-file status-${f.status}`);
+      const slash = f.path.lastIndexOf("/");
+      const base = slash >= 0 ? f.path.slice(slash + 1) : f.path;
+      const dir = slash >= 0 ? f.path.slice(0, slash) : "";
+      row.appendChild(glyph(fileIcon(base)));
+      const meta = el("div", "dc-file-meta");
+      meta.appendChild(span(base, "dc-file-name"));
+      if (dir) meta.appendChild(span(dir, "dc-file-dir"));
+      row.appendChild(meta);
       const st = el("span", "file-status");
       st.textContent = f.status;
-      const path = el("span", "file-path");
-      path.textContent = f.path;
-      row.append(st, path);
+      row.appendChild(st);
+      row.title = f.path;
       const actions = el("div", "row-actions");
       if (kind === "staged") {
         actions.appendChild(
@@ -1391,6 +1672,8 @@ class App {
     } catch (e) {
       toast(cleanErr(e) || "The operation failed.", "error");
     }
+    bust("status");
+    bust("diff");
     if (this.currentView === "changes") void this.showChangesView();
   }
 
@@ -1426,6 +1709,7 @@ class App {
         toast("Changes committed.", "success");
       }
       textarea.value = "";
+      bust(); // a commit (± push) touches refs/branches/status/sync/graph
       await this.refreshRefs();
       await this.updateSync();
       if (this.currentView === "changes") void this.showChangesView();
@@ -1669,7 +1953,13 @@ class App {
   }
 
   private async updateSync(): Promise<void> {
-    this.syncStatus = await host.invoke("sync:status", undefined);
+    // Paint instantly from the last-known sync state, then refresh.
+    const cached = peek("sync:status", undefined);
+    if (cached) {
+      this.syncStatus = cached;
+      this.renderSyncWidget?.(cached);
+    }
+    this.syncStatus = await gget("sync:status", undefined, 4000);
     this.renderSyncWidget?.(this.syncStatus);
   }
 
@@ -1694,6 +1984,7 @@ class App {
       const verb =
         action === "fetch" ? "Fetched" : action === "pull" ? "Pulled" : action === "publish" ? "Published branch" : "Pushed";
       toast(`${verb} successfully.`, "success");
+      bust(); // a fetch/pull/push changes sync/refs/branches/graph
       await this.updateSync();
       await this.refreshAll();
       // Refresh the active data view so its content reflects the sync.
@@ -1723,6 +2014,12 @@ class App {
   private topbar(info: RepoInfo): HTMLElement {
     const bar = el("header", "topbar");
 
+    // Sidebar toggle — a flat icon at the far left (above the rail), the way
+    // VS Code / Linear do it. Seamless, no floating handle on the divider.
+    const sidebarToggle = el("button", "topbar-icon topbar-sidebar");
+    sidebarToggle.addEventListener("click", () => this.toggleRail());
+    this.railToggleEl = sidebarToggle;
+
     const home = el("button", "topbar-home");
     home.title = "Back to main menu";
     home.setAttribute("aria-label", "Back to main menu");
@@ -1733,28 +2030,62 @@ class App {
     const repoName = el("span", "switch-name");
     repoName.textContent = info.name;
     this.repoSwitchName = repoName;
-    repoSwitch.append(repoName, glyph("chevron-down"));
+    repoSwitch.append(glyph("folder"), repoName, glyph("chevron-down"));
     repoSwitch.title = info.root;
     repoSwitch.addEventListener("click", () => void this.openRepoMenu(repoSwitch));
 
-    const spacer = el("div", "topbar-spacer");
-
-    const branchSwitch = el("button", "topbar-switch");
+    const branchSwitch = el("button", "topbar-switch topbar-branch");
     const branchName = el("span", "switch-name");
     branchName.textContent = "…";
     this.branchSwitchName = branchName;
     branchSwitch.append(glyph("git-branch"), branchName, glyph("chevron-down"));
     branchSwitch.addEventListener("click", () => this.openBranchMenu(branchSwitch));
 
-    const sync = this.buildSyncWidget();
+    // Left cluster: brand + repo + branch, with the sync (fetch/pull/push)
+    // widget sitting right next to the branch switcher.
+    const left = el("div", "topbar-left");
+    left.append(sidebarToggle, home, repoSwitch, branchSwitch, this.buildSyncWidget());
+    this.syncRailToggle();
 
-    const refresh = el("button", "topbar-icon");
-    refresh.title = "Refresh";
-    refresh.appendChild(glyph("refresh"));
-    refresh.addEventListener("click", () => void this.refreshAll());
+    // Right edge: the GitHub account (one place, not repeated in every section
+    // view), pinned to the far right of the bar.
+    const right = el("div", "topbar-right");
+    right.append(this.buildAccountChip());
 
-    bar.append(home, repoSwitch, spacer, branchSwitch, sync, refresh);
+    bar.append(left, right);
     return bar;
+  }
+
+  /** The single GitHub-account affordance, pinned to the right edge of the top
+   *  bar. Shows the signed-in user (avatar + login, no "@"), or a Sign-in prompt
+   *  when not connected. Replaces the per-view account chips that used to clutter
+   *  every GitHub section header. */
+  private buildAccountChip(): HTMLElement {
+    const chip = el("button", "topbar-acct");
+    chip.append(glyph("github"), span("…", "topbar-acct-name"));
+    chip.addEventListener("click", () => this.routeView("settings"));
+    void (async () => {
+      let status: GitHubStatus = { connected: false };
+      try {
+        status = await host.invoke("github:status", undefined);
+      } catch {
+        /* offline / not connected — show the sign-in state */
+      }
+      if (!chip.isConnected) return;
+      if (status.connected && status.login) {
+        chip.classList.add("is-connected");
+        chip.title = `Signed in to GitHub as ${status.login}`;
+        chip.replaceChildren(
+          avatar(status.login, `https://github.com/${status.login}.png`, 22),
+          span(status.login, "topbar-acct-name"),
+        );
+      } else {
+        chip.classList.remove("is-connected");
+        chip.title = "Sign in to GitHub";
+        chip.replaceChildren(glyph("github"), span("Sign in", "topbar-acct-name"));
+      }
+    })();
+    return chip;
   }
 
   // ── Host events ──────────────────────────────────────────────────────────────
@@ -1771,6 +2102,8 @@ class App {
       if (msg.command === "openRepo") void this.openRepo();
       else if (msg.command === "refresh") void this.refreshAll();
       else if (msg.command === "closeRepo") void this.backToMenu();
+      else if (msg.command === "toggleTerminal") this.toggleTerminal();
+      else if (msg.command === "cloneRepo") openCloneDialog((root) => void this.openPath(root));
     });
   }
 
@@ -1803,6 +2136,11 @@ class App {
         label: "Open Repository…",
         icon: "folder-opened",
         onClick: () => void this.openRepo(),
+      },
+      {
+        label: "Clone Repository…",
+        icon: "cloud-download",
+        onClick: () => openCloneDialog((root) => void this.openPath(root)),
       },
     ];
     const others = recent
@@ -1873,9 +2211,11 @@ class App {
   // ── Refs / HEAD (drives the branch switcher) ────────────────────────────────
 
   private async refreshRefs(): Promise<void> {
+    // Cached: refs/head change rarely between view switches, so reuse a recent
+    // result instead of re-running git on every navigation.
     const [refs, head] = await Promise.all([
-      host.invoke("refs:list", undefined),
-      host.invoke("head:get", undefined),
+      gget("refs:list", undefined),
+      gget("head:get", undefined),
     ]);
     this.refs = refs;
     if (this.branchSwitchName) {
@@ -1980,11 +2320,15 @@ class App {
 
   private showDetailsPlaceholder(): void {
     const wrap = el("div", "details details-empty");
-    const msg = el("div", "details-empty-msg");
-    msg.textContent = this.currentRepo
-      ? "Select a commit to see its details and changes."
-      : "Open a repository to start exploring its history.";
-    wrap.appendChild(msg);
+    wrap.appendChild(
+      this.currentRepo
+        ? emptyState("Commit details", "Select a commit in the graph to inspect its message, author, and changed files.", {
+            icon: "git-commit",
+          })
+        : emptyState("No repository open", "Open a repository to start exploring its history.", {
+            icon: "repo",
+          }),
+    );
     this.detailsEl.replaceChildren(wrap);
   }
 
@@ -2013,6 +2357,7 @@ class App {
       };
       toast(`${verbs[req.action] ?? "Done"}.`, "success");
       if (result.changed) {
+        bust();
         await this.refreshAll();
       }
     } catch (e) {

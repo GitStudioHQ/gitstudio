@@ -18,10 +18,13 @@ import {
   pill,
   relTimeISO,
   loadingState,
+  skeletonList,
   errorState,
   emptyState,
   openMenu,
   cleanErr,
+  ghRow,
+  statePill,
   type MenuItem,
 } from "../ui";
 import { toast } from "../dialogs";
@@ -42,19 +45,27 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
 
   const refresh = (): void => renderProjects(wrap, nav);
 
+  const header = ghHeader("Projects", gate.login, refresh);
   const view = el("div", "gh-view");
-  view.appendChild(ghHeader("Projects", gate.login, refresh));
+  view.appendChild(header);
   const body = el("div", "gh-body");
   const listEl = el("div", "gh-list");
   const detail = el("div", "gh-detail gh-board-detail");
   body.append(listEl, detail);
   view.appendChild(body);
   wrap.replaceChildren(view);
-  detail.replaceChildren(
-    emptyState("Select a project", "Pick a project to see its board, grouped by Status."),
-  );
+  const idleEmpty = (): void => {
+    detail.replaceChildren(
+      emptyState(
+        "Projects",
+        "Select a project to see its board, with cards grouped by Status.",
+        { icon: "project", hint: "Tip: open one to move cards between columns or jump to an item on GitHub." },
+      ),
+    );
+  };
+  idleEmpty();
 
-  listEl.replaceChildren(loadingState());
+  listEl.replaceChildren(skeletonList(5));
   let projects: ProjectInfo[];
   try {
     projects = await host.invoke("project:list", undefined);
@@ -64,43 +75,49 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
     );
     return;
   }
+  header.setCount?.(projects.length);
   listEl.replaceChildren();
   if (projects.length === 0) {
-    listEl.appendChild(
-      emptyState("No projects", "No GitHub Projects (v2) are linked to this repository."),
-    );
     selectedProjectId = undefined;
+    listEl.appendChild(
+      emptyState("No projects", "No GitHub Projects (v2) are linked to this repository.", {
+        icon: "project",
+      }),
+    );
     return;
   }
 
-  let toReselect: HTMLElement | undefined;
-  for (const p of projects) {
-    const row = el("button", "gh-row");
-    const top = el("div", "gh-row-title");
-    top.textContent = p.title;
-    const sub = el("div", "gh-row-sub");
+  const select = (p: ProjectInfo, row: HTMLElement): void => {
+    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
+    row.classList.add("active");
+    selectedProjectId = p.id;
+    void showProjectBoard(detail, p, refresh);
+  };
+
+  let toReselect: { p: ProjectInfo; row: HTMLElement } | undefined;
+  projects.forEach((p, i) => {
+    const lead = el("span", "gh-lead-icon gh-lead-merged");
+    lead.appendChild(glyph("project"));
     const when = relTimeISO(p.updatedAt);
-    sub.textContent =
-      `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
-      `${p.closed ? " · closed" : ""}${when ? " · updated " + when : ""}`;
-    row.append(top, sub);
-    if (p.shortDescription) {
-      const desc = el("div", "gh-row-sub");
-      desc.textContent = p.shortDescription;
-      row.appendChild(desc);
-    }
-    if (p.closed) row.appendChild(pill("Closed"));
-    row.addEventListener("click", () => {
-      listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-      row.classList.add("active");
-      selectedProjectId = p.id;
-      void showProjectBoard(detail, p, refresh);
+    const row = ghRow({
+      lead,
+      title: p.title,
+      titleSuffix: p.closed ? [statePill("Closed", "closed")] : [],
+      meta:
+        `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
+        (when ? ` · updated ${when}` : ""),
+      ariaLabel: `Project #${p.number}: ${p.title}`,
     });
-    if (p.id === selectedProjectId) toReselect = row;
+    row.addEventListener("click", () => select(p, row));
     listEl.appendChild(row);
-  }
+    if (p.id === selectedProjectId) toReselect = { p, row };
+    else if (i === 0 && !toReselect && selectedProjectId === undefined) {
+      // Auto-select the first project so the board isn't a void on first load.
+      select(p, row);
+    }
+  });
   // After a mutation-driven re-render, reopen the project the user was on.
-  if (toReselect) toReselect.click();
+  if (toReselect) select(toReselect.p, toReselect.row);
 }
 
 /**

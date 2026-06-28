@@ -77,6 +77,19 @@ export interface RepoFile {
   binary?: boolean;
 }
 
+/** The tip commit of HEAD, for the Code browser's "latest commit" bar. */
+export interface HeadCommit {
+  sha: string;
+  shortSha: string;
+  author: string;
+  authorEmail: string;
+  /** Authored timestamp, epoch seconds. */
+  date: number;
+  subject: string;
+  /** Total commits reachable from HEAD. */
+  total: number;
+}
+
 /** A commit's full details for the right-hand details panel. */
 export interface CommitDetails {
   sha: string;
@@ -559,6 +572,95 @@ export interface SshKey {
   comment: string;
 }
 
+// ── Integrated terminal ──────────────────────────────────────────────────────
+
+/** A spawned PTY session handle. */
+export interface TerminalSession {
+  id: string;
+  /** The shell that was launched (e.g. /bin/zsh, powershell.exe). */
+  shell: string;
+}
+
+/** A chunk of PTY output streamed to the renderer. */
+export interface TerminalData {
+  id: string;
+  data: string;
+}
+
+/** A PTY session ended. */
+export interface TerminalExit {
+  id: string;
+  exitCode: number;
+}
+
+/**
+ * One completed git invocation the app ran, streamed to the renderer's "Output"
+ * tab so the user can see every git command GitStudio executes on their behalf.
+ */
+export interface GitLogEntry {
+  /** Monotonic id (per app session). */
+  id: number;
+  /** The meaningful git arguments, e.g. ["status", "--porcelain"]. */
+  args: string[];
+  /** The full command line for display, e.g. "git status --porcelain". */
+  command: string;
+  /** Wall-clock duration in milliseconds. */
+  durationMs: number;
+  /** Process exit code, or null when it failed to spawn / was killed. */
+  exitCode: number | null;
+  /** True when the process exited non-zero or failed to run. */
+  failed: boolean;
+  /** Epoch milliseconds when the command finished. */
+  at: number;
+}
+
+// ── Clone / browse GitHub repos ──────────────────────────────────────────────
+
+/** A repository the signed-in user can clone (from GET /user/repos etc.). */
+export interface GhRepoBrief {
+  /** "owner/name". */
+  fullName: string;
+  name: string;
+  owner: string;
+  description: string | null;
+  private: boolean;
+  fork: boolean;
+  cloneUrl: string;
+  sshUrl: string;
+  defaultBranch: string;
+  stars: number;
+  language: string | null;
+  /** ISO timestamp of last push, for sorting/recency. */
+  updatedAt: string;
+}
+
+/** A clone request: a git URL + the parent directory to clone into. */
+export interface CloneRequest {
+  url: string;
+  /** Absolute parent directory; the repo lands in `parent/<name>`. */
+  parentDir: string;
+  /** Optional override for the target folder name. */
+  name?: string;
+}
+
+/** Progress emitted during a clone (parsed from `git clone --progress`). */
+export interface CloneProgress {
+  /** e.g. "Receiving objects", "Resolving deltas". */
+  phase: string;
+  /** 0..100 when git reports a percentage. */
+  percent?: number;
+  /** The raw progress line, for a verbose log. */
+  raw: string;
+}
+
+/** The terminal outcome of a clone. */
+export interface CloneResult {
+  ok: boolean;
+  /** Absolute path of the cloned repo on success. */
+  root?: string;
+  message?: string;
+}
+
 /** A commit in a PR's Commits tab. */
 export interface PrCommitInfo {
   sha: string;
@@ -653,6 +755,7 @@ export interface IpcChannels {
   // ── Code browser (GitHub-style file tree at HEAD) ──
   "repo:tree": [{ path: string }, TreeEntry[]];
   "repo:file": [{ path: string }, RepoFile | undefined];
+  "repo:headCommit": [void, HeadCommit | undefined];
   // ── GitHub (PRs / Issues / Projects) ──
   "github:status": [void, GitHubStatus];
   "github:connect": [string, { ok: boolean; login?: string; message?: string }];
@@ -727,6 +830,15 @@ export interface IpcChannels {
   "gist:create": [GistCreate, CommitActionResult];
   "gist:update": [GistUpdate, CommitActionResult];
   "gist:delete": [string, CommitActionResult];
+  // Integrated terminal (PTY). Output streams back via the terminal:* events.
+  "terminal:create": [{ cols: number; rows: number }, TerminalSession | undefined];
+  "terminal:write": [{ id: string; data: string }, void];
+  "terminal:resize": [{ id: string; cols: number; rows: number }, void];
+  "terminal:kill": [{ id: string }, void];
+  // Clone / browse repos. Clone progress streams via the clone:progress event.
+  "clone:pickDir": [void, string | undefined];
+  "clone:start": [CloneRequest, CloneResult];
+  "github:repos": [{ search?: string } | void, GhRepoBrief[]];
 }
 
 export type IpcChannel = keyof IpcChannels;
@@ -738,7 +850,15 @@ export interface IpcEvents {
   /** The active repo changed (opened/closed) — the renderer reloads. */
   "repo:changed": RepoInfo | undefined;
   /** A menu item asks the renderer to do something it owns. */
-  "menu:command": { command: "openRepo" | "refresh" | "closeRepo" };
+  "menu:command": { command: "openRepo" | "refresh" | "closeRepo" | "toggleTerminal" | "cloneRepo" };
+  /** A chunk of PTY output for a terminal session. */
+  "terminal:data": TerminalData;
+  /** A PTY session ended. */
+  "terminal:exit": TerminalExit;
+  /** Progress during an in-flight clone. */
+  "clone:progress": CloneProgress;
+  /** A git command the app ran — streamed to the terminal dock's Output tab. */
+  "git:log": GitLogEntry;
 }
 
 export type IpcEvent = keyof IpcEvents;
