@@ -3387,16 +3387,115 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .term-tab-close:hover { opacity: 1; background: var(--app-hover); color: var(--vscode-foreground); }
 .term-tab-close .codicon { font-size: 10px; }
 
-/* The xterm surface that fills a terminal tab. */
+/* The xterm surface that fills a terminal tab. The wider left padding is the
+   gutter the per-command status dots live in (see .term-cmd-dot). */
 .term-surface {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
   position: relative;
-  padding: 6px 6px 6px 10px;
+  padding: 6px 6px 6px 20px;
   overflow: hidden;
 }
 .term-surface .xterm { height: 100%; }
+
+/* ── Command blocks ──────────────────────────────────────────────────────────
+   A status dot per command, drawn in the left gutter via an xterm decoration
+   anchored to the command's prompt line. Colour encodes state. */
+.term-cmd-dot {
+  display: flex;
+  align-items: center;
+  color: var(--app-muted);
+  transform: translateX(-13px);
+  pointer-events: auto;
+}
+.term-cmd-dot::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
+}
+.term-cmd-dot.is-ok { color: var(--status-add); }
+.term-cmd-dot.is-error { color: var(--status-del); }
+.term-cmd-dot.is-running { color: var(--gs-accent-ink, var(--gs-accent)); }
+.term-cmd-dot.is-running::before { animation: term-cmd-pulse 1.2s var(--ease) infinite; }
+.term-cmd-dot.is-selected::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 28%, transparent);
+}
+@keyframes term-cmd-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Floating command toolbar — appears on hover, top-right of the surface. */
+.term-overlay {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--app-elevated) 86%, transparent);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--shadow-md), var(--sheen);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+  pointer-events: none;
+}
+.term-surface:hover .term-overlay,
+.term-overlay:focus-within {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.term-overlay-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.term-overlay-btn:hover:not(:disabled) {
+  background: var(--app-hover);
+  color: var(--vscode-foreground);
+}
+.term-overlay-btn:disabled { opacity: 0.4; cursor: default; }
+.term-overlay-btn .codicon { font-size: 13px; }
+.term-overlay-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--app-border);
+  margin: 0 3px;
+}
+
+/* Inline rename field for a terminal in the side list. */
+.term-side-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--accent-line, var(--gs-accent));
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
 
 /* The single Terminal view: the shell stage (left) + a VS-Code-style side list
    of terminals (right) with a "New terminal" button and per-shell kill button. */

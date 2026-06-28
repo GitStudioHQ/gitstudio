@@ -16,6 +16,8 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { host } from "./bridge";
+import { CommandTracking } from "./terminalCommands";
+import { el, glyph } from "./ui";
 
 /** Read a CSS custom property off <body>, falling back to `fallback`. */
 function token(styles: CSSStyleDeclaration, name: string, fallback: string): string {
@@ -33,6 +35,16 @@ export class TerminalPanel {
   private offExit: (() => void) | null = null;
   /** Set by dispose() so an in-flight open() can bail out (and not leak the PTY). */
   private disposed = false;
+  /** Command-block tracking (OSC 133/633), once the shell is open. */
+  private tracking: CommandTracking | null = null;
+  /** The floating command toolbar overlaid on the surface. */
+  private overlay: HTMLElement | null = null;
+  /** Buttons whose enabled state depends on the current selection. */
+  private cmdButtons: HTMLButtonElement[] = [];
+  /** The basename of the launched shell (e.g. "zsh"), for session labels. */
+  shellName = "";
+  /** Fired once the shell session is open, with its basename. */
+  onShell?: (shell: string) => void;
 
   constructor(private readonly container: HTMLElement) {}
 
@@ -130,6 +142,8 @@ export class TerminalPanel {
       return;
     }
     this.id = session.id;
+    this.shellName = session.shell.split(/[\\/]/).pop() || "shell";
+    this.onShell?.(this.shellName);
 
     this.offData = host.on("terminal:data", (m) => {
       if (m.id === this.id) {
@@ -145,6 +159,77 @@ export class TerminalPanel {
     term.onData((d) => {
       void host.invoke("terminal:write", { id: this.id!, data: d });
     });
+
+    // Command blocks: parse the shell's OSC markers and overlay the toolbar.
+    this.tracking = new CommandTracking(term, {
+      write: (data) => {
+        if (this.id) void host.invoke("terminal:write", { id: this.id, data });
+      },
+      onChange: () => this.syncOverlay(),
+    });
+    this.tracking.attach();
+    this.buildOverlay();
+
+    // Cmd/Ctrl + ↑/↓ jumps between command blocks instead of reaching the PTY.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) {
+        return true;
+      }
+      if (e.key === "ArrowUp") {
+        this.tracking?.selectPrev();
+        return false;
+      }
+      if (e.key === "ArrowDown") {
+        this.tracking?.selectNext();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  // ── Command toolbar overlay ───────────────────────────────────────────────────
+
+  /** Build the floating toolbar (prev/next + copy/rerun/clear) over the surface. */
+  private buildOverlay(): void {
+    const bar = el("div", "term-overlay");
+    const mk = (
+      icon: string,
+      label: string,
+      onClick: () => void,
+      needsSel = false,
+    ): HTMLButtonElement => {
+      const b = el("button", "term-overlay-btn") as HTMLButtonElement;
+      b.append(glyph(icon));
+      b.title = label;
+      b.setAttribute("aria-label", label);
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        onClick();
+        this.term?.focus();
+      });
+      if (needsSel) this.cmdButtons.push(b);
+      return b;
+    };
+    bar.append(
+      mk("chevron-up", "Previous command (⌘↑)", () => this.tracking?.selectPrev()),
+      mk("chevron-down", "Next command (⌘↓)", () => this.tracking?.selectNext()),
+      el("span", "term-overlay-sep"),
+      mk("copy", "Copy command", () => void this.tracking?.copyCommand(), true),
+      mk("list-selection", "Copy output", () => void this.tracking?.copyOutput(), true),
+      mk("debug-restart", "Re-run command", () => this.tracking?.rerun(), true),
+      el("span", "term-overlay-sep"),
+      mk("clear-all", "Clear terminal", () => this.term?.clear()),
+    );
+    this.overlay = bar;
+    this.container.appendChild(bar);
+    this.syncOverlay();
+  }
+
+  /** Enable selection-dependent buttons; reflect whether blocks are available. */
+  private syncOverlay(): void {
+    const hasSel = !!this.tracking?.selected();
+    for (const b of this.cmdButtons) b.disabled = !hasSel;
+    this.overlay?.classList.toggle("has-blocks", !!this.tracking?.hasCommands());
   }
 
   /** Re-fit to the container and tell the PTY about the new grid. */
@@ -187,6 +272,11 @@ export class TerminalPanel {
     this.offExit?.();
     this.offData = null;
     this.offExit = null;
+    this.tracking?.dispose();
+    this.tracking = null;
+    this.overlay?.remove();
+    this.overlay = null;
+    this.cmdButtons = [];
     if (this.id) {
       void host.invoke("terminal:kill", { id: this.id });
     }

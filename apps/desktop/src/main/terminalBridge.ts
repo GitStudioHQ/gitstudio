@@ -10,6 +10,7 @@
 
 import type { IPty } from "node-pty";
 import type { TerminalSession } from "../shared/ipc";
+import { buildShellSpawn } from "./shellIntegration";
 
 /** Forwards a host→renderer IPC event (bound to the window's webContents). */
 export type SendEvent = (channel: string, payload: unknown) => void;
@@ -59,14 +60,22 @@ export class TerminalBridge {
 
     const id = `t${++counter}`;
 
+    // Inject command-block shell integration (OSC 133/633) when we recognise the
+    // shell; otherwise spawn it exactly as before. Either way the terminal works.
+    const baseEnv: NodeJS.ProcessEnv = { ...process.env, TERM_PROGRAM: "GitStudio" };
+    const integrated = buildShellSpawn(shell, baseEnv);
+    const file = integrated?.file ?? shell;
+    const args = integrated?.args ?? [];
+    const env = integrated?.env ?? baseEnv;
+
     let p: IPty;
     try {
-      p = pty.spawn(shell, [], {
-        name: "xterm-color",
+      p = pty.spawn(file, args, {
+        name: "xterm-256color",
         cols: opts.cols,
         rows: opts.rows,
         cwd: cwd || process.env.HOME || process.cwd(),
-        env: process.env,
+        env,
       });
     } catch {
       return undefined;

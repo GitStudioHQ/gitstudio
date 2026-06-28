@@ -20,6 +20,8 @@ interface TermSession {
   panel: TerminalPanel;
   /** True once the PTY has been opened (lazy). */
   opened: boolean;
+  /** True once the user has explicitly renamed it (suppresses shell auto-name). */
+  renamed: boolean;
 }
 
 type TopTab = "commit-details" | "output" | "terminal";
@@ -110,6 +112,14 @@ export class TerminalDock {
       surface,
       panel: new TerminalPanel(surface),
       opened: false,
+      renamed: false,
+    };
+    // Auto-name from the launched shell (e.g. "zsh"), unless the user renamed it.
+    t.panel.onShell = (shell) => {
+      if (!t.renamed) {
+        t.label = shell;
+        this.renderSide();
+      }
     };
     this.terminals.push(t);
     this.termStage.appendChild(surface);
@@ -219,9 +229,14 @@ export class TerminalDock {
       const row = el("button", "term-side-row" + (sel ? " active" : ""));
       row.setAttribute("role", "tab");
       row.setAttribute("aria-selected", sel ? "true" : "false");
-      row.append(glyph("terminal"), span(t.label, "term-side-label"));
-      row.title = t.label;
+      const label = span(t.label, "term-side-label");
+      row.append(glyph("terminal"), label);
+      row.title = `${t.label} — double-click to rename`;
       row.addEventListener("click", () => this.setActiveTerm(t.id));
+      label.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        this.beginRename(t, label);
+      });
       const kill = el("span", "term-side-close");
       kill.append(glyph("trash"));
       kill.title = `Kill ${t.label}`;
@@ -240,6 +255,34 @@ export class TerminalDock {
       list.appendChild(row);
     }
     this.termSide.appendChild(list);
+  }
+
+  /** Inline-edit a terminal's label (double-click). Enter commits, Esc cancels. */
+  private beginRename(t: TermSession, label: HTMLElement): void {
+    const input = el("input", "term-side-rename") as HTMLInputElement;
+    input.value = t.label;
+    input.setAttribute("aria-label", "Rename terminal");
+    label.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = (save: boolean): void => {
+      if (done) return;
+      done = true;
+      const next = input.value.trim();
+      if (save && next) {
+        t.label = next;
+        t.renamed = true;
+      }
+      this.renderSide();
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") commit(true);
+      else if (e.key === "Escape") commit(false);
+      e.stopPropagation();
+    });
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("blur", () => commit(true));
   }
 
   // ── Visibility / layout ──────────────────────────────────────────────────────
