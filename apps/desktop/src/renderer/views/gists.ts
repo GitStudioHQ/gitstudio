@@ -20,6 +20,7 @@ import {
   glyph,
   loadingState,
   relTimeISO,
+  absTimeISO,
   skeletonList,
   span,
   statBit,
@@ -129,6 +130,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       meta:
         `${g.fileCount} file${g.fileCount === 1 ? "" : "s"}` +
         (rel ? ` · updated ${rel}` : ""),
+      metaTitle: g.updatedAt ? `Updated ${absTimeISO(g.updatedAt)}` : undefined,
       stats,
       ariaLabel: `Gist: ${title}`,
     });

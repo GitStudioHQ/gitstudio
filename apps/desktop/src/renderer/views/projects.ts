@@ -17,6 +17,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   loadingState,
   skeletonList,
   errorState,
@@ -106,6 +107,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
       meta:
         `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
         (when ? ` · updated ${when}` : ""),
+      metaTitle: p.updatedAt ? `Updated ${absTimeISO(p.updatedAt)}` : undefined,
       ariaLabel: `Project #${p.number}: ${p.title}`,
     });
     row.addEventListener("click", () => select(p, row));

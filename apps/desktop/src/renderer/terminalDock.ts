@@ -157,6 +157,8 @@ export class TerminalDock {
 
   private renderTabs(): void {
     this.tabStrip.replaceChildren();
+    this.tabStrip.setAttribute("role", "tablist");
+    this.tabStrip.setAttribute("aria-label", "Terminal tabs");
     for (const t of this.tabs) {
       const btn = el(
         "button",
@@ -164,22 +166,57 @@ export class TerminalDock {
       );
       btn.append(glyph(t.kind === "out" ? "output" : "terminal"), span(t.label, "term-tab-label"));
       btn.title = t.label;
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-label", t.label);
+      btn.setAttribute("aria-selected", t.id === this.activeId ? "true" : "false");
+      // Roving tabindex: only the active tab is in the Tab order; arrows move within.
+      btn.tabIndex = t.id === this.activeId ? 0 : -1;
       btn.addEventListener("click", () => {
         this.setActive(t.id);
         this.expand();
       });
+      btn.addEventListener("keydown", (e) => this.onTabKey(e, t.id));
       if (t.kind === "term") {
         const close = el("span", "term-tab-close");
         close.append(glyph("close"));
         close.title = "Close terminal";
-        close.addEventListener("click", (e) => {
+        close.setAttribute("role", "button");
+        close.setAttribute("aria-label", `Close ${t.label}`);
+        close.tabIndex = -1;
+        const doClose = (e: Event): void => {
           e.stopPropagation();
           this.closeTerminal(t.id);
+        };
+        close.addEventListener("click", doClose);
+        close.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") doClose(e);
         });
         btn.appendChild(close);
       }
       this.tabStrip.appendChild(btn);
     }
+  }
+
+  /** Arrow-key navigation across the terminal tab strip (roving focus). */
+  private onTabKey(e: KeyboardEvent, id: string): void {
+    const idx = this.tabs.findIndex((t) => t.id === id);
+    if (idx < 0) return;
+    let next = -1;
+    if (e.key === "ArrowRight") next = (idx + 1) % this.tabs.length;
+    else if (e.key === "ArrowLeft") next = (idx - 1 + this.tabs.length) % this.tabs.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = this.tabs.length - 1;
+    else if ((e.key === "Delete" || e.key === "Backspace") && this.tabs[idx]?.kind === "term") {
+      e.preventDefault();
+      this.closeTerminal(id);
+      return;
+    } else return;
+    e.preventDefault();
+    const target = this.tabs[next];
+    if (!target) return;
+    this.setActive(target.id);
+    this.expand();
+    (this.tabStrip.children[next] as HTMLElement | undefined)?.focus();
   }
 
   /** Show only the active tab's surface. While the dock is expanded, lazily open

@@ -12,6 +12,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   skeletonList,
   errorState,
   emptyState,
@@ -149,6 +150,7 @@ function notificationRow(
     title: t.title || "(untitled)",
     titleSuffix: t.type ? [pill(notifTypeLabel(t.type), "notif-type")] : [],
     meta,
+    metaTitle: t.updatedAt ? `Updated ${absTimeISO(t.updatedAt)}` : undefined,
     ariaLabel: `${notifTypeLabel(t.type)} notification: ${t.title || "(untitled)"}${t.unread ? " (unread)" : ""}`,
   });
   // ghRow returns a <div> here (no onClick passed). Tag it as an inbox row so the

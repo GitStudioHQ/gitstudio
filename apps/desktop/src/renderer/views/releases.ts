@@ -16,6 +16,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   loadingState,
   skeletonList,
   errorState,
@@ -179,6 +180,7 @@ async function loadReleases(
       title: rel.name || rel.tagName,
       titleSuffix: suffix,
       meta: `${rel.tagName} · ${when}${author}`,
+      metaTitle: rel.publishedAt ? `Published ${absTimeISO(rel.publishedAt)}` : undefined,
       stats,
       ariaLabel: `Release ${rel.name || rel.tagName}`,
     });

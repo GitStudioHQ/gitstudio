@@ -17,6 +17,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   loadingState,
   skeletonList,
   errorState,
@@ -142,6 +143,7 @@ function runRow(r: WorkflowRun): HTMLElement {
     title: `${r.name} #${r.id}`,
     stats: [statBit("", prettyState(state) || "—")],
     meta,
+    metaTitle: r.createdAt ? `Created ${absTimeISO(r.createdAt)}` : undefined,
     ariaLabel: `Workflow run ${r.name} #${r.id}: ${prettyState(state) || "unknown"}`,
   });
 }

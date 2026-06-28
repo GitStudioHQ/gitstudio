@@ -23,6 +23,7 @@ import {
   glyph,
   loadingState,
   relTimeISO,
+  absTimeISO,
   skeletonList,
   span,
 } from "../ui";
@@ -315,6 +316,7 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   const when = relTimeISO(r.pushedAt);
   if (when) bits.push(`updated ${when}`);
   sub.textContent = bits.join(" · ");
+  if (r.pushedAt) sub.title = `Last pushed ${absTimeISO(r.pushedAt)}`;
   m.append(t, sub);
   row.appendChild(m);
   if (r.description) row.title = r.description;
