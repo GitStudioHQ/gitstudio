@@ -1,0 +1,56 @@
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_58939f08e1a206 28
+  s_20eb6d3d7f74cc::t_40e3a173cdff9e 53
+  s_20eb6d3d7f74cc::t_8ab4d8a9e1d0a0 277-280
+  s_20eb6d3d7f74cc::t_719e5e8739097a 221-276,281-289
+  s_20eb6d3d7f74cc::t_deab64b0067875 584
+apps/desktop/src/main/main.ts
+  s_20eb6d3d7f74cc::t_ed7a7cc0b78cd8 511
+packages/ai/src/providers/openaiCompat.ts
+  s_20eb6d3d7f74cc::t_ee82a7b9cd136b 124,169,232
+packages/ai/src/connections.ts
+  s_20eb6d3d7f74cc::t_3639d690dedb12 35-36
+packages/ai/src/agent.ts
+  s_20eb6d3d7f74cc::t_3e424037aa2bdc 110
+  s_20eb6d3d7f74cc::t_05b44d93e02434 39-40
+packages/ai/src/types.ts
+  s_20eb6d3d7f74cc::t_67138f0596a553 79,81-82
+apps/desktop/src/renderer/renderer.ts
+  s_20eb6d3d7f74cc::t_3986445fb4834c 29
+apps/desktop/src/renderer/styles/app.css
+  s_20eb6d3d7f74cc::t_9e4a95b4659a18 4248-4263
+packages/ai/src/providers/anthropic.ts
+  s_20eb6d3d7f74cc::t_ee82a7b9cd136b 153,206,272
+apps/desktop/src/main/cliProvider.ts
+  s_20eb6d3d7f74cc::t_ee82a7b9cd136b 159
+packages/ai/src/catalog.ts
+  s_20eb6d3d7f74cc::t_384679c25bd104 260-285
+apps/desktop/src/shared/ipc.ts
+  s_20eb6d3d7f74cc::t_31c0355fa1e74c 954-955,962-967
+  s_20eb6d3d7f74cc::t_0b4c79d69868ee 1026-1027
+  s_20eb6d3d7f74cc::t_e71eee956b98e2 851-852
+  s_20eb6d3d7f74cc::t_68ebca18ff9c67 968-969
+apps/desktop/src/renderer/assistant.ts
+  s_20eb6d3d7f74cc::t_0ee73d04dbf153 11,16,20-21,25-38
+  s_20eb6d3d7f74cc::t_1090d0547f3e9a 231
+  s_20eb6d3d7f74cc::t_bba8cadba8e138 12
+  s_20eb6d3d7f74cc::t_b0166a315bfb3c 53-109
+  s_20eb6d3d7f74cc::t_6ad90e81d78884 159,162-163,166-178
+  s_20eb6d3d7f74cc::t_a2ae5b0a4727c9 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "eb9b89a81bddb225dd19ed79e95494b10f1b2b5d",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
