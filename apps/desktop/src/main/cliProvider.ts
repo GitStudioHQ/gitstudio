@@ -35,11 +35,16 @@ interface CliSpec {
 export const CLI_SPECS: Record<string, CliSpec> = {
   "claude-code": {
     command: "claude",
-    args: (prompt, model) => ["-p", ...(model ? ["--model", model] : []), prompt],
+    // `--strict-mcp-config` (with no --mcp-config) skips loading the user's global
+    // MCP servers — the Assistant only needs Claude Code's built-in tools, and
+    // connecting to a dozen remote MCP servers on every call is a big, variable
+    // chunk of the cold-start latency. Claude Code's own Bash/Read/etc. stay.
+    args: (prompt, model) => ["-p", "--strict-mcp-config", ...(model ? ["--model", model] : []), prompt],
     install: "Install Claude Code and run `claude login` (docs.anthropic.com/claude-code).",
     // Claude Code's stream-json + partial messages emits token-level text deltas.
     streamArgs: (prompt, model) => [
       "-p",
+      "--strict-mcp-config",
       ...(model ? ["--model", model] : []),
       "--output-format",
       "stream-json",
