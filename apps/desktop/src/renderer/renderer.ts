@@ -2273,8 +2273,17 @@ class App {
       return;
     }
     this.routeView("graph");
-    // Give the freshly-mounted graph a frame to lay out before scrolling to it.
-    requestAnimationFrame(() => this.graph?.reveal(sha));
+    // The graph mounts and loads its first page asynchronously; reveal once it's
+    // had a frame, and retry briefly so the scroll lands even if the page is
+    // still streaming in (reveal is a no-op until the row exists).
+    let tries = 0;
+    const tryReveal = (): void => {
+      this.graph?.reveal(sha);
+      if (++tries < 6 && this.currentView === "graph") {
+        window.setTimeout(tryReveal, 120);
+      }
+    };
+    requestAnimationFrame(tryReveal);
   }
 
   private openBranchMenu(anchor: HTMLElement): void {

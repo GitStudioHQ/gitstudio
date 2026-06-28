@@ -209,6 +209,10 @@ export class TerminalDock {
     else if ((e.key === "Delete" || e.key === "Backspace") && this.tabs[idx]?.kind === "term") {
       e.preventDefault();
       this.closeTerminal(id);
+      // closeTerminal re-renders the strip (destroying the focused button), so
+      // move focus to whatever tab now sits where the closed one was.
+      const fallback = Math.min(idx, this.tabs.length - 1);
+      (this.tabStrip.children[fallback] as HTMLElement | undefined)?.focus();
       return;
     } else return;
     e.preventDefault();

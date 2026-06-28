@@ -10,6 +10,7 @@ test("validateCloneUrl accepts normal repo URLs", () => {
     "git://example.com/x/y.git",
     "ssh://git@github.com/owner/repo.git",
     "git@github.com:owner/repo.git",
+    "github.com:owner/repo.git",
     "file:///home/me/repo",
     "/home/me/repo",
   ]) {

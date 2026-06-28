@@ -35,8 +35,10 @@ export function validateCloneUrl(raw: string): string | null {
     }
     return null;
   }
-  // SCP-like (git@host:path) and bare absolute local paths are fine.
-  if (/^[^\s/]+@[^\s/:]+:.+/.test(url) || url.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(url)) {
+  // SCP-like ([user@]host:path — the user is optional in git's syntax) and bare
+  // absolute local paths are fine. (ext::/scheme:: and leading "-" are already
+  // rejected above, so this can't re-admit them.)
+  if (/^([^\s/]+@)?[^\s/:]+:.+/.test(url) || url.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(url)) {
     return null;
   }
   return "That doesn't look like a valid repository URL.";
