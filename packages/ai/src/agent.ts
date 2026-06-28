@@ -40,6 +40,8 @@ export interface AgentOptions {
   maxSteps?: number;
   signal?: AbortSignal;
   onEvent?: (e: AgentEvent) => void;
+  /** Streamed assistant-text deltas as the model generates them (responsiveness). */
+  onTextDelta?: (text: string) => void;
   /**
    * Gate a write/destructive tool before it runs. Return false to deny (the model
    * is told the user declined and can adapt). Read-only tools never call this.
@@ -58,16 +60,17 @@ export interface AgentResult {
 const DEFAULT_MAX_STEPS = 12;
 
 const AGENT_SYSTEM = [
-  "You are the GitStudio Assistant, an agent embedded in the GitStudio Git client.",
-  "You help the user accomplish Git and development workflow tasks in their open repository by calling the provided tools.",
+  "You are the GitStudio Assistant, an AI agent embedded in the GitStudio Git client, working in the user's currently-open repository.",
+  "",
+  "What you can do: inspect the repo (status, diffs, commit history, branches, stashes, file contents, compare branches), and — with the user's approval — stage, commit, create/switch branches, and stash. You help with everyday Git and dev-workflow tasks: drafting commits, summarizing or reviewing changes, explaining what a branch does, writing release notes, tidying branches, and answering questions about the project's history.",
   "",
   "Operating rules:",
-  "- Investigate before acting: read status/diffs/log with the read tools to ground every decision in the real repository state. Never assume.",
-  "- Prefer the smallest set of actions that accomplishes the goal. Make focused, logical commits.",
-  "- Write commit messages in the imperative mood, matching the conventions you observe in recent history.",
-  "- Treat write and destructive tools with care. The user must approve them; if an approval is declined, do not retry it — adapt or stop and explain.",
-  "- Never invent file contents, SHAs, or history. If a tool fails or returns nothing, say so plainly.",
-  "- When the task is complete, give a short, concrete summary of exactly what you did (or what you found).",
+  "- For greetings, small talk, or questions about yourself or your capabilities, answer directly and concisely. Do NOT call tools for these — just reply.",
+  "- For tasks about the repository, investigate first: read status/diffs/log with the read tools to ground your work in real state. Never assume or invent file contents, SHAs, or history.",
+  "- Use the fewest tool calls that get the job done; don't run read tools you don't need.",
+  "- Prefer focused, logical commits, with messages in the imperative mood that match the conventions you see in recent history.",
+  "- Write and destructive tools require the user's approval. If an approval is declined, don't retry it — adapt or stop and explain.",
+  "- Be concise. When a task is done, give a short, concrete summary of exactly what you did or found. If a tool fails or returns nothing, say so plainly.",
 ].join("\n");
 
 function toSpec(tool: GitTool): ToolSpec {
@@ -97,13 +100,24 @@ export async function runAgent(goal: string, opts: AgentOptions): Promise<AgentR
 
     let result;
     try {
-      result = await opts.provider.chat(messages, {
+      const chatOpts = {
         tools: specs,
         model: opts.model ?? "deep",
         maxTokens: 2048,
         signal: opts.signal,
         systemCacheable: true,
-      });
+      };
+      const onText = (d: string) => opts.onTextDelta?.(d);
+      if (opts.provider.streamChat) {
+        // Responsive path: stream the assistant's text as it's generated.
+        result = await opts.provider.streamChat(messages, onText, chatOpts);
+      } else if (!opts.provider.supportsTools) {
+        // A text-only provider (e.g. a local CLI): stream its text; no tool calls.
+        const text = await opts.provider.streamText(messages, onText, chatOpts);
+        result = { text: text ?? "", toolCalls: [], stopReason: "stop" as const };
+      } else {
+        result = await opts.provider.chat(messages, chatOpts);
+      }
     } catch (err) {
       const text = err instanceof AiError ? err.message : "The model request failed.";
       emit({ type: "error", text });

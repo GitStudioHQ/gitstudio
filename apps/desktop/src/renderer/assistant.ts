@@ -127,9 +127,13 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     transcript.append(turn);
     scrollDown(transcript);
 
+    const state: TurnState = { turn, thinking, stream: null };
     const requestId = crypto.randomUUID();
+    const offDelta = host.on("ai:delta", (e) => {
+      if (e.requestId === requestId) onDelta(state, e.delta);
+    });
     const offEvent = host.on("ai:agentEvent", (e) => {
-      if (e.requestId === requestId) onEvent(turn, thinking, e);
+      if (e.requestId === requestId) onEvent(state, e);
     });
     const offConfirm = host.on("ai:confirmRequest", (c) => {
       if (c.requestId === requestId) void onConfirm(requestId, c);
@@ -145,6 +149,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         allowWrite: permission !== "read",
         allowDestructive: permission === "destructive",
       });
+      finalizeStream(state);
       thinking.remove();
       if (!done.ok && done.message) {
         turn.append(errorBlock(done.message));
@@ -155,6 +160,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       thinking.remove();
       turn.append(errorBlock(e instanceof Error ? e.message : String(e)));
     } finally {
+      offDelta();
       offEvent();
       offConfirm();
       cancel.restore();
@@ -172,19 +178,51 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   });
 };
 
-/** Apply one streamed agent event to the active turn. */
-function onEvent(turn: HTMLElement, thinking: HTMLElement, e: AgentEventWire): void {
+/** Per-run rendering state for the active assistant turn. */
+interface TurnState {
+  turn: HTMLElement;
+  thinking: HTMLElement;
+  /** The live, plain-text streaming block for the current step (null between steps). */
+  stream: HTMLElement | null;
+}
+
+/** Append a streamed text delta, creating the live block on first token. */
+function onDelta(state: TurnState, delta: string): void {
+  if (!state.stream) {
+    state.stream = el("div", "assistant-msg is-streaming");
+    state.turn.insertBefore(state.stream, state.thinking);
+  }
+  state.stream.textContent = (state.stream.textContent ?? "") + delta;
+  scrollDown(state.turn.parentElement as HTMLElement);
+}
+
+/** Re-render the live streaming block as Markdown once its step completes. */
+function finalizeStream(state: TurnState): void {
+  if (state.stream) {
+    const text = state.stream.textContent ?? "";
+    state.stream.classList.remove("is-streaming");
+    if (text.trim()) state.stream.innerHTML = renderMarkdown(text);
+    state.stream = null;
+  }
+}
+
+/** Apply one structured agent event to the active turn. */
+function onEvent(state: TurnState, e: AgentEventWire): void {
+  const { turn, thinking } = state;
   switch (e.kind) {
     case "assistant":
-      if (e.text && e.text.trim()) {
-        // Replace any previous (intermediate) assistant block with the latest.
-        const block = markdownBlock(e.text);
-        const prev = turn.querySelector(".assistant-msg:last-of-type");
-        if (prev && prev === turn.lastElementChild) prev.replaceWith(block);
-        else turn.insertBefore(block, thinking);
+      // The step's text finished. If we streamed it, render that block as
+      // Markdown; otherwise (a non-streaming fallback) insert a fresh block.
+      if (state.stream) {
+        if (e.text && e.text.trim()) state.stream.innerHTML = renderMarkdown(e.text);
+        state.stream.classList.remove("is-streaming");
+        state.stream = null;
+      } else if (e.text && e.text.trim()) {
+        turn.insertBefore(markdownBlock(e.text), thinking);
       }
       break;
     case "tool_call":
+      finalizeStream(state); // close any open text block before the tool step
       turn.insertBefore(toolStep(e), thinking);
       break;
     case "tool_result": {
@@ -198,6 +236,7 @@ function onEvent(turn: HTMLElement, thinking: HTMLElement, e: AgentEventWire): v
       break;
     }
     case "error":
+      finalizeStream(state);
       turn.insertBefore(errorBlock(e.text ?? "The agent hit an error."), thinking);
       break;
     default:

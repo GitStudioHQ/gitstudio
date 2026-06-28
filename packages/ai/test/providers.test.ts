@@ -156,3 +156,52 @@ test("anthropic throws a clear error when no key is set", async () => {
   });
   await assert.rejects(() => provider.chat(msgs), /No Anthropic API key/);
 });
+
+test("openai-compat streamChat streams text + assembles tool_calls from SSE", async () => {
+  const provider = new OpenAiCompatProvider({
+    baseUrl: "https://api.example.com/v1",
+    resolveModel: () => "gpt-test",
+    getKey: () => "k",
+    label: "X",
+    fetchImpl: sseFetch([
+      'data: {"choices":[{"delta":{"content":"Let me "}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"check."}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"git_status","arguments":"{\\"al"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"l\\":true}"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+      "data: [DONE]\n\n",
+    ]),
+  });
+  const out: string[] = [];
+  const r = await provider.streamChat(msgs, (d) => out.push(d));
+  assert.equal(out.join(""), "Let me check.");
+  assert.equal(r.text, "Let me check.");
+  assert.equal(r.stopReason, "tool_calls");
+  assert.equal(r.toolCalls.length, 1);
+  assert.equal(r.toolCalls[0].name, "git_status");
+  assert.deepEqual(r.toolCalls[0].arguments, { all: true });
+});
+
+test("anthropic streamChat streams text + assembles tool_use from SSE", async () => {
+  const provider = new AnthropicProvider({
+    baseUrl: "https://api.anthropic.com",
+    resolveModel: () => "claude-test",
+    getKey: () => "sk-ant",
+    label: "claude",
+    fetchImpl: sseFetch([
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Checking"}}\n\n',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_1","name":"git_log"}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"limit\\":5}"}}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"tool_use"}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ]),
+  });
+  const out: string[] = [];
+  const r = await provider.streamChat(msgs, (d) => out.push(d));
+  assert.equal(out.join(""), "Checking");
+  assert.equal(r.text, "Checking");
+  assert.equal(r.stopReason, "tool_calls");
+  assert.equal(r.toolCalls[0].name, "git_log");
+  assert.deepEqual(r.toolCalls[0].arguments, { limit: 5 });
+});

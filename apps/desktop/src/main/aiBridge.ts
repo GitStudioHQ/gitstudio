@@ -496,6 +496,7 @@ export class AiBridge {
         tools,
         model: "deep",
         signal: abort.signal,
+        onTextDelta: (delta) => this.send("ai:delta", { requestId, delta }),
         onEvent: (e) => {
           this.send("ai:agentEvent", {
             requestId,

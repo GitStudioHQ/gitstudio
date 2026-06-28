@@ -113,6 +113,18 @@ export interface Provider {
     onDelta: (text: string) => void,
     opts?: ChatOptions,
   ): Promise<string | null>;
+  /**
+   * A streaming chat turn WITH tool support (the agent's responsive path): the
+   * assistant's text is delivered incrementally via `onTextDelta` as it's
+   * generated, and the fully-assembled result (text + any tool calls) is
+   * returned. Optional — the agent falls back to `chat` (or `streamText`) when a
+   * provider doesn't implement it.
+   */
+  streamChat?(
+    messages: ChatMessage[],
+    onTextDelta: (text: string) => void,
+    opts?: ChatOptions,
+  ): Promise<ChatResult>;
 }
 
 /** Raised by providers for surfaced, user-meaningful failures (never secrets). */

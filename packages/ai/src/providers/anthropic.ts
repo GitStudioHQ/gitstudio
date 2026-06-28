@@ -263,6 +263,111 @@ export class AnthropicProvider implements Provider {
     const trimmed = assembled.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+
+  async streamChat(
+    messages: ChatMessage[],
+    onTextDelta: (text: string) => void,
+    opts: ChatOptions = {},
+  ): Promise<ChatResult> {
+    const model = this.opts.resolveModel(opts.model);
+    if (!model) {
+      throw new AiError("No model configured for this connection.");
+    }
+    const fetchImpl = this.opts.fetchImpl ?? fetch;
+    let res: Response;
+    try {
+      res = await fetchImpl(this.endpoint(), {
+        method: "POST",
+        headers: await this.headers(),
+        body: JSON.stringify(this.body(messages, opts, model, true)),
+        signal: opts.signal,
+      });
+    } catch (err) {
+      if (err instanceof AiError) throw err;
+      if (isAbort(err)) return { text: "", toolCalls: [], stopReason: "stop" };
+      throw new AiError("Couldn't reach Anthropic (network error).", undefined, true);
+    }
+    if (!res.ok) {
+      throw httpError(res.status);
+    }
+    const reader = res.body?.getReader();
+    if (!reader) {
+      return this.chat(messages, opts);
+    }
+
+    const decoder = new TextDecoder("utf8");
+    let buffer = "";
+    let text = "";
+    let stop: string | undefined;
+    // tool_use blocks assemble across content_block_start/delta/stop, by index.
+    const blocks = new Map<number, { id: string; name: string; json: string }>();
+
+    const handle = (payload: string): void => {
+      let ev: AnthropicStreamEvent;
+      try {
+        ev = JSON.parse(payload) as AnthropicStreamEvent;
+      } catch {
+        return;
+      }
+      if (ev.type === "content_block_start" && ev.content_block?.type === "tool_use") {
+        blocks.set(ev.index ?? 0, { id: ev.content_block.id ?? "", name: ev.content_block.name ?? "", json: "" });
+      } else if (ev.type === "content_block_delta" && ev.delta) {
+        if (ev.delta.type === "text_delta" && typeof ev.delta.text === "string") {
+          text += ev.delta.text;
+          onTextDelta(ev.delta.text);
+        } else if (ev.delta.type === "input_json_delta" && typeof ev.delta.partial_json === "string") {
+          const b = blocks.get(ev.index ?? 0);
+          if (b) b.json += ev.delta.partial_json;
+        }
+      } else if (ev.type === "message_delta" && ev.delta?.stop_reason) {
+        stop = ev.delta.stop_reason;
+      }
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, nl).replace(/\r$/, "");
+          buffer = buffer.slice(nl + 1);
+          if (line.startsWith("data:")) {
+            handle(line.slice(5).replace(/^ /, ""));
+          }
+        }
+      }
+    } catch (err) {
+      if (!isAbort(err)) {
+        throw new AiError("Stream from Anthropic failed.", undefined, true);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    const toolCalls: ToolCall[] = [...blocks.values()]
+      .filter((b) => b.name)
+      .map((b) => ({ id: b.id, name: b.name, arguments: safeJson(b.json) }));
+    return { text, toolCalls, stopReason: mapStop(stop ?? (toolCalls.length ? "tool_use" : "end_turn")) };
+  }
+}
+
+interface AnthropicStreamEvent {
+  type?: string;
+  index?: number;
+  content_block?: { type?: string; id?: string; name?: string };
+  delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string };
+}
+
+function safeJson(s: string): Record<string, unknown> {
+  if (!s.trim()) return {};
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 interface AnthropicResponse {

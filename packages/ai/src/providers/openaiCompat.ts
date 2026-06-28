@@ -223,6 +223,118 @@ export class OpenAiCompatProvider implements Provider {
     const trimmed = assembled.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+
+  async streamChat(
+    messages: ChatMessage[],
+    onTextDelta: (text: string) => void,
+    opts: ChatOptions = {},
+  ): Promise<ChatResult> {
+    const model = this.opts.resolveModel(opts.model);
+    if (!model) {
+      throw new AiError("No model configured for this connection.");
+    }
+    const fetchImpl = this.opts.fetchImpl ?? fetch;
+    let res: Response;
+    try {
+      res = await fetchImpl(this.endpoint(), {
+        method: "POST",
+        headers: await this.headers(),
+        body: JSON.stringify(this.body(messages, opts, model, true)),
+        signal: opts.signal,
+      });
+    } catch (err) {
+      if (isAbort(err)) {
+        return { text: "", toolCalls: [], stopReason: "stop" };
+      }
+      throw new AiError(`Couldn't reach ${hostOf(this.opts.baseUrl)} — is the endpoint reachable?`, undefined, true);
+    }
+    if (!res.ok) {
+      throw httpError(res.status, hostOf(this.opts.baseUrl));
+    }
+    const reader = res.body?.getReader();
+    if (!reader) {
+      // No stream — fall back to a single non-streaming turn.
+      return this.chat(messages, opts);
+    }
+
+    const decoder = new TextDecoder("utf8");
+    let buffer = "";
+    let text = "";
+    let finish: string | undefined;
+    // tool_calls assemble incrementally, keyed by their array index.
+    const partials = new Map<number, { id: string; name: string; args: string }>();
+
+    const handleData = (payload: string): void => {
+      if (payload === "[DONE]") {
+        return;
+      }
+      let json: OpenAiStreamChunk;
+      try {
+        json = JSON.parse(payload) as OpenAiStreamChunk;
+      } catch {
+        return;
+      }
+      const choice = json.choices?.[0];
+      const delta = choice?.delta;
+      if (typeof delta?.content === "string" && delta.content.length > 0) {
+        text += delta.content;
+        onTextDelta(delta.content);
+      }
+      for (const tc of delta?.tool_calls ?? []) {
+        const idx = tc.index ?? 0;
+        const cur = partials.get(idx) ?? { id: "", name: "", args: "" };
+        if (tc.id) cur.id = tc.id;
+        if (tc.function?.name) cur.name = tc.function.name;
+        if (tc.function?.arguments) cur.args += tc.function.arguments;
+        partials.set(idx, cur);
+      }
+      if (choice?.finish_reason) {
+        finish = choice.finish_reason;
+      }
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl: number;
+        // SSE: data lines are newline-delimited; a blank line ends an event.
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, nl).replace(/\r$/, "");
+          buffer = buffer.slice(nl + 1);
+          if (line.startsWith("data:")) {
+            handleData(line.slice(5).replace(/^ /, ""));
+          }
+        }
+      }
+    } catch (err) {
+      if (!isAbort(err)) {
+        throw new AiError(`Stream from ${hostOf(this.opts.baseUrl)} failed.`, undefined, true);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    const toolCalls: ToolCall[] = [...partials.values()]
+      .filter((p) => p.name)
+      .map((p) => ({ id: p.id, name: p.name, arguments: safeParse(p.args) }));
+    return {
+      text,
+      toolCalls,
+      stopReason: mapFinish(finish, toolCalls.length > 0),
+    };
+  }
+}
+
+interface OpenAiStreamChunk {
+  choices?: Array<{
+    delta?: {
+      content?: string;
+      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+    };
+    finish_reason?: string;
+  }>;
 }
 
 interface OpenAiResponse {
