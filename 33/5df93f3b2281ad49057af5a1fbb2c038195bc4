@@ -1,0 +1,23 @@
+apps/desktop/src/renderer/bottomDock.ts
+  s_24172531187d77::t_975a3f3788346c 1-5
+  s_24172531187d77::t_83e89c21542d84 103-107,109,112
+apps/desktop/src/renderer/styles/app.css
+  s_24172531187d77::t_93e54e73f23475 3255-3258,3261,3268-3271,3275-3278
+  s_24172531187d77::t_f6a15631340287 3232-3236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "335df93f3b2281ad49057af5a1fbb2c038195bc4",
+  "prompts": {},
+  "sessions": {
+    "s_24172531187d77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fba1607a-e9af-4727-ad14-f1c259917fec",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
