@@ -1,0 +1,58 @@
+apps/desktop/src/renderer/styles/app.css
+  s_24172531187d77::t_c3e20798169979 2576-2588
+  s_24172531187d77::t_564c002211ba7f 3899,3901
+  s_24172531187d77::t_7925ecf6d232eb 496,499-501,505-507
+  s_24172531187d77::t_3469e8b3021423 904-907
+  s_24172531187d77::t_325f456b1761f1 543
+  s_24172531187d77::t_fb13aa1f7c1abc 2590-2608,2613-2640
+  s_24172531187d77::t_97ca30944a3b86 513-514
+  s_24172531187d77::t_64960f99a470f8 593
+  s_24172531187d77::t_4bf03181914d7c 2609-2612
+  s_24172531187d77::t_542bea274dccca 574-575
+  s_24172531187d77::t_7dc4f3c5e7275a 2589
+apps/desktop/src/renderer/views/releases.ts
+  s_24172531187d77::t_c7cb041262a04a 221-222,224-233
+  s_24172531187d77::t_6af541054d65eb 33
+  s_24172531187d77::t_ea8c36637aa3fa 158-161,169
+  s_24172531187d77::t_0e1cf88f4ac4f2 162-163,191-220,223,234-235
+apps/desktop/src/renderer/theme-boot.js
+  s_24172531187d77::t_6b852491060d06 11-24
+apps/desktop/src/renderer/views/issues.ts
+  s_24172531187d77::t_023d8ba836b37c 34
+  s_24172531187d77::t_d1720f93b41ebb 85
+  s_24172531187d77::t_555c0d81022785 158,179-219
+apps/desktop/src/main/main.ts
+  s_24172531187d77::t_d8bd0a63ad1ea0 138-141
+apps/desktop/src/renderer/views/actions.ts
+  s_24172531187d77::t_37f0ea60c678c9 31
+  s_24172531187d77::t_c7ba39c73047a6 127,130-168
+apps/desktop/src/renderer/views/gists.ts
+  s_24172531187d77::t_4f750ef58cb9d1 30
+  s_24172531187d77::t_023f4799d8df7f 114,145-146,148-193
+apps/desktop/src/renderer/views/prs.ts
+  s_24172531187d77::t_0b52a0e99ca61d 113,132-171
+  s_24172531187d77::t_1ade3ea1bfec54 38
+apps/desktop/src/renderer/views/common.ts
+  s_24172531187d77::t_5917884f7de56b 108-155
+  s_24172531187d77::t_fe411db774ba8a 107
+apps/desktop/src/renderer/views/projects.ts
+  s_24172531187d77::t_2b7abd0e48da75 32
+  s_24172531187d77::t_a4fee0b61931b8 98,113-129,134,136-137,151-162
+  s_24172531187d77::t_c3e1a78b0edf5b 131-133,135,138-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "7132527cd675a476a9588e7702f94a7c7890260e",
+  "prompts": {},
+  "sessions": {
+    "s_24172531187d77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fba1607a-e9af-4727-ad14-f1c259917fec",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
