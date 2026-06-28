@@ -28,7 +28,7 @@ import {
   statBit,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
-import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
+import { comboField, ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type {
   WorkflowRun,
   WorkflowRunDetail,
@@ -534,8 +534,15 @@ async function showDispatchForm(detail: HTMLElement, w: WorkflowInfo): Promise<v
 
   const form = el("div", "gh-dispatch-form");
 
-  // Ref field — defaults to the current branch (best-effort), else "main".
-  const refField = dispatchField("Branch or tag (ref)", "main", await currentBranchName());
+  // Ref field — a searchable picker over the repo's branches + tags, defaulting
+  // to the current branch (best-effort). The user can still type any ref.
+  const [refOptions, currentRef] = await Promise.all([loadRefOptions(), currentBranchName()]);
+  const refField = comboField({
+    label: "Branch or tag (ref)",
+    placeholder: "Search branches and tags…",
+    value: currentRef,
+    options: refOptions,
+  });
   form.appendChild(refField.row);
 
   const getters: { name: string; get: () => string }[] = [];
@@ -644,6 +651,28 @@ async function currentBranchName(): Promise<string> {
     /* not a repo / not loaded — fall through */
   }
   return "main";
+}
+
+/** Branch + tag names for the dispatch ref picker — local branches, remote
+ *  branches (stripped of their "origin/" prefix), then tags, each deduped and
+ *  sorted, branches before tags. Empty on failure (the field still accepts free text). */
+async function loadRefOptions(): Promise<string[]> {
+  try {
+    const refs = await host.invoke("refs:list", undefined);
+    const branches = new Set<string>();
+    const tags = new Set<string>();
+    for (const r of refs) {
+      if (r.type === "head") branches.add(r.name);
+      else if (r.type === "remote") {
+        const short = r.name.replace(/^[^/]+\//, ""); // "origin/feat" → "feat"
+        if (short && short !== "HEAD") branches.add(short);
+      } else if (r.type === "tag") tags.add(r.name);
+    }
+    const cmp = (a: string, b: string): number => a.localeCompare(b);
+    return [...[...branches].sort(cmp), ...[...tags].sort(cmp)];
+  } catch {
+    return [];
+  }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

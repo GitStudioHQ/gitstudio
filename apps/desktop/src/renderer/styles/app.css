@@ -2778,6 +2778,45 @@ gitstudio-graph {
 .gh-dispatch-input:focus-visible { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); }
 select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .gh-dispatch-note { font-size: 12.5px; color: var(--app-muted); line-height: 1.5; }
+
+/* Searchable combobox (comboField): an input + a filtered suggestion dropdown. */
+.gh-combo { position: relative; width: 100%; }
+.gh-combo-input { width: 100%; }
+.gh-combo-input:focus-within,
+.gh-combo-input:focus { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); }
+.gh-combo-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  max-height: 244px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 9px;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  box-shadow: var(--sheen), var(--shadow-pop);
+  animation: gs-card-in 110ms var(--ease-out) both;
+}
+.gh-combo-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.gh-combo-item.active { background: color-mix(in srgb, var(--gs-accent) 18%, transparent); }
+.gh-combo-item:hover { background: var(--app-hover); }
 .gh-dispatch-form .gh-detail-actions { margin-top: 4px; }
 .gh-meta-text { white-space: nowrap; }
 

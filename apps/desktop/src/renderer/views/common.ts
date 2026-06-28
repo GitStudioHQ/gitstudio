@@ -154,6 +154,122 @@ export function searchField(opts: {
 }
 
 /**
+ * A labeled combobox: a free-text input backed by a searchable dropdown of
+ * suggestions that filters as you type (↑/↓ to move, Enter to pick, Esc to
+ * close, click to pick). The user can still type any value — the list is just
+ * an autocomplete. Returns the same `{ row, input }` shape as a plain field so
+ * callers read `input.value`.
+ */
+export function comboField(opts: {
+  label: string;
+  placeholder: string;
+  value?: string;
+  options: string[];
+  labelClass?: string;
+  inputClass?: string;
+  rowClass?: string;
+}): { row: HTMLElement; input: HTMLInputElement } {
+  const row = el("div", opts.rowClass ?? "gh-dispatch-row");
+  const lab = el("label", opts.labelClass ?? "gh-dispatch-label");
+  lab.textContent = opts.label;
+
+  const combo = el("div", "gh-combo");
+  const input = document.createElement("input");
+  input.className = `${opts.inputClass ?? "gh-dispatch-input"} gh-combo-input`;
+  input.placeholder = opts.placeholder;
+  input.value = opts.value ?? "";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-expanded", "false");
+
+  const menu = el("div", "gh-combo-menu");
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  combo.append(input, menu);
+  row.append(lab, combo);
+
+  let shown: string[] = [];
+  let active = -1;
+
+  const close = (): void => {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    active = -1;
+  };
+  const setActive = (i: number): void => {
+    active = i;
+    const items = Array.from(menu.children) as HTMLElement[];
+    items.forEach((it, idx) => it.classList.toggle("active", idx === i));
+    items[i]?.scrollIntoView({ block: "nearest" });
+  };
+  const choose = (v: string): void => {
+    input.value = v;
+    close();
+    input.dispatchEvent(new Event("change"));
+  };
+  const open = (): void => {
+    const needle = input.value.trim().toLowerCase();
+    shown = (needle
+      ? opts.options.filter((o) => o.toLowerCase().includes(needle))
+      : opts.options
+    ).slice(0, 60);
+    menu.replaceChildren();
+    if (!shown.length) {
+      close();
+      return;
+    }
+    for (const o of shown) {
+      const item = el("button", "gh-combo-item");
+      (item as HTMLButtonElement).type = "button";
+      item.textContent = o;
+      item.setAttribute("role", "option");
+      // mousedown (not click) + preventDefault so the input doesn't blur first.
+      item.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        choose(o);
+      });
+      menu.appendChild(item);
+    }
+    menu.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    setActive(0);
+  };
+
+  // Open on click / type / ArrowDown — NOT on focus, so programmatic focus
+  // (the form auto-focuses this field) doesn't pop the menu over the form.
+  input.addEventListener("click", open);
+  input.addEventListener("input", open);
+  input.addEventListener("keydown", (e) => {
+    if (menu.hidden) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        open();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive(Math.min(active + 1, shown.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive(Math.max(active - 1, 0));
+    } else if (e.key === "Enter" && shown[active]) {
+      e.preventDefault();
+      choose(shown[active]);
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
+  });
+  input.addEventListener("blur", () => window.setTimeout(close, 120));
+
+  return { row, input };
+}
+
+/**
  * Keep keyboard focus inside a modal `card` while it's open. Call from the
  * dialog's keydown handler on a Tab press; wraps focus from the last focusable
  * element back to the first (and vice-versa with Shift). A no-op for other keys.
