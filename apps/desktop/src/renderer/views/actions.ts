@@ -28,7 +28,7 @@ import {
   statBit,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type {
   WorkflowRun,
   WorkflowRunDetail,
@@ -124,12 +124,48 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     void showRunDetail(detail, r);
   };
 
-  runs.forEach((r, i) => {
+  const buildRow = (r: WorkflowRun): HTMLElement => {
     const row = runRow(r);
     row.addEventListener("click", () => select(r, row));
-    listEl.appendChild(row);
-    if (i === 0) select(r, row); // auto-select the first run so the jobs panel shows
-  });
+    return row;
+  };
+
+  // Case-insensitive match over the fields a user would search by.
+  const matches = (r: WorkflowRun, q: string): boolean => {
+    const hay = `${r.name} ${r.branch} ${r.event} #${r.id}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  let autoSelected = false;
+  const renderList = (items: WorkflowRun[], q = ""): void => {
+    listEl.replaceChildren();
+    if (items.length === 0) {
+      listEl.appendChild(
+        emptyState("No matching runs", `Nothing matches “${q}”.`, { icon: "search" }),
+      );
+      return;
+    }
+    for (const r of items) listEl.appendChild(buildRow(r));
+    // Auto-select the first run once (initial render) so the jobs panel shows;
+    // don't hijack the selection on every keystroke while filtering.
+    if (!autoSelected) {
+      autoSelected = true;
+      const first = items[0];
+      const firstRow = listEl.firstElementChild as HTMLElement | null;
+      if (first && firstRow) select(first, firstRow);
+    }
+  };
+
+  // A header search/filter over the loaded list (client-side, instant).
+  tools.insertBefore(
+    searchField({
+      placeholder: "Search runs…",
+      onInput: (q) => renderList(q ? runs.filter((r) => matches(r, q.toLowerCase())) : runs, q),
+    }),
+    tools.firstChild,
+  );
+
+  renderList(runs);
 }
 
 /** One rich run row: a colored status lead icon, the run name + #id, then a

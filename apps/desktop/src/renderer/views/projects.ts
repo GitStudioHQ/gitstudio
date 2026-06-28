@@ -29,7 +29,7 @@ import {
   type MenuItem,
 } from "../ui";
 import { toast } from "../dialogs";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
 
 // Which project the user last opened. Survives a re-render so a move (or refresh)
@@ -95,8 +95,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
     void showProjectBoard(detail, p, refresh);
   };
 
-  let toReselect: { p: ProjectInfo; row: HTMLElement } | undefined;
-  projects.forEach((p, i) => {
+  const buildRow = (p: ProjectInfo): HTMLElement => {
     const lead = el("span", "gh-lead-icon gh-lead-merged");
     lead.appendChild(glyph("project"));
     const when = relTimeISO(p.updatedAt);
@@ -111,15 +110,56 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
       ariaLabel: `Project #${p.number}: ${p.title}`,
     });
     row.addEventListener("click", () => select(p, row));
-    listEl.appendChild(row);
-    if (p.id === selectedProjectId) toReselect = { p, row };
-    else if (i === 0 && !toReselect && selectedProjectId === undefined) {
-      // Auto-select the first project so the board isn't a void on first load.
-      select(p, row);
+    return row;
+  };
+
+  // Case-insensitive match over the fields a user would search by.
+  const matches = (p: ProjectInfo, q: string): boolean => {
+    const hay = `${p.title} #${p.number}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  let autoSelected = false;
+  const renderList = (items: ProjectInfo[], q = ""): void => {
+    listEl.replaceChildren();
+    if (items.length === 0) {
+      listEl.appendChild(
+        emptyState("No matching projects", `Nothing matches “${q}”.`, { icon: "search" }),
+      );
+      return;
     }
-  });
-  // After a mutation-driven re-render, reopen the project the user was on.
-  if (toReselect) select(toReselect.p, toReselect.row);
+    // Build rows; highlight the currently-open project without re-opening it (so
+    // filtering keystrokes never refetch the board).
+    items.forEach((p) => {
+      const row = buildRow(p);
+      if (p.id === selectedProjectId) row.classList.add("active");
+      listEl.appendChild(row);
+    });
+    // Open a project (fetching its board) ONCE per render cycle — the initial
+    // render or a mutation-driven re-render (each gets a fresh closure). Reopen
+    // the project the user was on, else auto-open the first so the board isn't a void.
+    if (!autoSelected) {
+      autoSelected = true;
+      const reopen =
+        items.find((p) => p.id === selectedProjectId) ??
+        (selectedProjectId === undefined ? items[0] : undefined);
+      if (reopen) {
+        const row = listEl.children[items.indexOf(reopen)] as HTMLElement | undefined;
+        if (row) select(reopen, row);
+      }
+    }
+  };
+
+  // A header search/filter over the loaded list (client-side, instant).
+  header.querySelector(".gh-acct")?.before(
+    searchField({
+      placeholder: "Search projects…",
+      onInput: (q) =>
+        renderList(q ? projects.filter((p) => matches(p, q.toLowerCase())) : projects, q),
+    }),
+  );
+
+  renderList(projects);
 }
 
 /**

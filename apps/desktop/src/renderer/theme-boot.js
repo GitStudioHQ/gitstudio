@@ -8,4 +8,18 @@
     window.matchMedia &&
     window.matchMedia("(prefers-color-scheme: light)").matches;
   document.body.className = light ? "vscode-light" : "vscode-dark";
+
+  // Tag the OS on <html> so the topbar can reserve room for the macOS traffic
+  // lights ONLY on macOS (Windows/Linux draw their window controls elsewhere).
+  // Kept on documentElement so the renderer's body theme-class swaps never clobber it.
+  var ua = navigator.userAgent || "";
+  var plat =
+    (navigator.userAgentData && navigator.userAgentData.platform) ||
+    navigator.platform ||
+    "";
+  var isMac = /Mac/i.test(plat) || /Mac OS X/i.test(ua);
+  var isWin = /Win/i.test(plat) || /Windows/i.test(ua);
+  document.documentElement.classList.add(
+    isMac ? "is-mac" : isWin ? "is-win" : "is-linux",
+  );
 })();

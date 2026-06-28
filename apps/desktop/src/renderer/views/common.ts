@@ -105,6 +105,55 @@ export function ghHeader(
 }
 
 /**
+ * A compact header search/filter field: a leading magnifier, a text input, and
+ * a clear (×) button that appears once there's text. Input is debounced and
+ * trimmed before `onInput` fires; Escape clears. Views own the actual filtering
+ * (they know their fields) — this primitive just owns the consistent UI. Drop it
+ * into a section header's action cluster.
+ */
+export function searchField(opts: {
+  placeholder: string;
+  onInput: (query: string) => void;
+  initial?: string;
+}): HTMLElement {
+  const wrap = el("div", "gh-search");
+  const icon = glyph("search");
+  icon.classList.add("gh-search-icon");
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "gh-search-input";
+  input.placeholder = opts.placeholder;
+  input.setAttribute("aria-label", opts.placeholder);
+  input.spellcheck = false;
+  if (opts.initial) input.value = opts.initial;
+  const clear = el("button", "gh-search-clear");
+  clear.setAttribute("aria-label", "Clear search");
+  clear.appendChild(glyph("close"));
+  clear.hidden = !input.value;
+  let timer = 0;
+  const fire = (): void => {
+    clear.hidden = !input.value;
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => opts.onInput(input.value.trim()), 110);
+  };
+  input.addEventListener("input", fire);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && input.value) {
+      e.stopPropagation();
+      input.value = "";
+      fire();
+    }
+  });
+  clear.addEventListener("click", () => {
+    input.value = "";
+    fire();
+    input.focus();
+  });
+  wrap.append(icon, input, clear);
+  return wrap;
+}
+
+/**
  * Keep keyboard focus inside a modal `card` while it's open. Call from the
  * dialog's keydown handler on a Tab press; wraps focus from the last focusable
  * element back to the first (and vice-versa with Shift). A no-op for other keys.

@@ -31,7 +31,7 @@ import {
 } from "../ui";
 import { confirmDialog, promptInline, toast } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type { IssueDetail, IssueInfo, RepoLabel } from "../../shared/ipc";
 
 /** The open/closed filter, persisted across re-renders within the section. */
@@ -82,7 +82,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 
   // Right-side cluster in the header: state filter + New Issue.
   const tools = el("div", "gh-head-tools");
-  const filter = el("button", "row-btn");
+  const filter = el("button", "mini-btn");
   filter.textContent = issueState === "open" ? "Open" : "Closed";
   filter.title = "Toggle open / closed issues";
   filter.addEventListener("click", () => {
@@ -155,7 +155,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     void showDetail(detail, it.number, wrap, nav);
   };
 
-  issues.forEach((it, i) => {
+  const buildRow = (it: IssueInfo): HTMLElement => {
     const chips = it.labels.map((l) => labelChip(l.name, l.color));
     const stats: HTMLElement[] = [];
     if (it.comments > 0) stats.push(statBit("comment", it.comments));
@@ -176,9 +176,47 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       ariaLabel: `Issue #${it.number}: ${it.title}`,
     });
     row.addEventListener("click", () => select(it, row));
-    listEl.appendChild(row);
-    if (i === 0) select(it, row); // auto-select the first issue so the detail isn't a void
-  });
+    return row;
+  };
+
+  // Case-insensitive match over the fields a user would search by.
+  const matches = (it: IssueInfo, q: string): boolean => {
+    const hay = `${it.title} #${it.number} ${it.user?.login ?? ""} ${it.labels
+      .map((l) => l.name)
+      .join(" ")}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  let autoSelected = false;
+  const renderList = (items: IssueInfo[], q = ""): void => {
+    listEl.replaceChildren();
+    if (items.length === 0) {
+      listEl.appendChild(
+        emptyState("No matching issues", `Nothing matches “${q}”.`, { icon: "search" }),
+      );
+      return;
+    }
+    for (const it of items) listEl.appendChild(buildRow(it));
+    // Auto-select the first issue once (initial render) so the detail isn't a
+    // void; don't hijack the selection on every keystroke while filtering.
+    if (!autoSelected) {
+      autoSelected = true;
+      const first = items[0];
+      const firstRow = listEl.firstElementChild as HTMLElement | null;
+      if (first && firstRow) select(first, firstRow);
+    }
+  };
+
+  // A header search/filter over the loaded list (client-side, instant).
+  tools.insertBefore(
+    searchField({
+      placeholder: "Search issues…",
+      onInput: (q) => renderList(q ? issues.filter((it) => matches(it, q.toLowerCase())) : issues, q),
+    }),
+    tools.firstChild,
+  );
+
+  renderList(issues);
 }
 
 // ── Detail pane ──────────────────────────────────────────────────────────────

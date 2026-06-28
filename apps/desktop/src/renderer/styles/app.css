@@ -493,27 +493,25 @@ button:disabled:hover { filter: grayscale(0.25); }
   position: relative;
   z-index: 5;
   flex: 0 0 auto;
-  height: 48px;
+  height: 40px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 84px; /* room for macOS traffic lights */
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--app-elevated) 92%, var(--gs-accent) 3%),
-    var(--app-panel));
+  gap: 7px;
+  padding: 0 10px;
+  background: var(--app-panel);
   border-bottom: 1px solid var(--app-border);
-  /* Lift the bar so the routed content scrolls under a defined edge. */
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 5%, transparent),
-    0 6px 16px -8px rgba(0, 0, 0, 0.45);
   -webkit-app-region: drag;
 }
+/* Reserve room for the macOS traffic lights only — Windows/Linux draw their
+   window controls in the native frame, so the bar starts flush there. */
+html.is-mac .topbar { padding-left: 78px; }
 .topbar > * { -webkit-app-region: no-drag; }
 .topbar-home {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   margin-right: 2px;
   padding: 0;
   border: 1px solid transparent;
@@ -542,7 +540,7 @@ button:disabled:hover { filter: grayscale(0.25); }
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 30px;
+  height: 28px;
   padding: 0 10px;
   max-width: 340px;
   border-radius: 8px;
@@ -573,8 +571,8 @@ button:disabled:hover { filter: grayscale(0.25); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: 8px;
@@ -592,7 +590,7 @@ button:disabled:hover { filter: grayscale(0.25); }
 .topbar-sync {
   display: inline-flex;
   align-items: stretch;
-  height: 30px;
+  height: 28px;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--app-border);
@@ -903,12 +901,15 @@ button:disabled:hover { filter: grayscale(0.25); }
 }
 .list-empty {
   flex: 1 1 auto;
+  /* Fill the pane so the empty state is vertically centered regardless of whether
+     the parent is a flex container — keeps the list-pane and detail-pane empties
+     aligned across every section view (e.g. Projects' list vs its board detail). */
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 0;
   padding: 48px 24px;
   text-align: center;
 }
@@ -2572,7 +2573,71 @@ gitstudio-graph {
 /* ── issues ── */
 /* ── Issues: header tools, label/assignee chips, composer ───────────────────── */
 .gh-head-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.gh-new-btn { height: 28px; padding: 0 12px; }
+/* Header action buttons (primary CTAs in a section header) are slim — the same
+   28px height as the secondary mini-btn beside them, so a header never mixes a
+   gigantic 40px .btn with a slim button. The .btn-primary fill/sheen is kept. */
+.gh-new-btn,
+.gh-run-btn,
+.gh-head-primary {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  gap: 6px;
+}
+
+/* Shared header search/filter field (see common.ts searchField). */
+.gh-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 9px;
+  min-width: 150px;
+  max-width: 240px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.gh-search:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: var(--sheen), 0 0 0 2px color-mix(in srgb, var(--gs-accent) 18%, transparent);
+}
+/* When the search sits directly in the space-between header (not inside a
+   right-aligned action cluster), pull it — and anything after it — to the right
+   so every section's search lines up on the right edge. */
+.list-head-row > .gh-search { margin-left: auto; }
+.gh-search-icon { color: var(--app-muted); font-size: 14px; flex: 0 0 auto; }
+.gh-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.gh-search-input::placeholder { color: var(--app-muted); }
+.gh-search-input::-webkit-search-cancel-button { display: none; }
+.gh-search-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+.gh-search-clear .codicon { font-size: 12px; }
+.gh-search-clear:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 
 /* State pills in the detail meta. */
 .gh-issue-open { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
@@ -3831,9 +3896,9 @@ body.vscode-light .gh-label-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: 28px;
   max-width: 240px;
-  padding: 0 13px 0 11px;
+  padding: 0 12px 0 10px;
   border-radius: 999px;
   border: 1px solid var(--app-border);
   background: var(--app-elevated);

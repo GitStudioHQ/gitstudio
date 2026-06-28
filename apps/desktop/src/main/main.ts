@@ -135,6 +135,10 @@ async function createWindow(): Promise<void> {
     // doesn't flash the wrong shade before the page paints.
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d1016" : "#eef1f5",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Vertically center the traffic lights in the slim 40px topbar (macOS).
+    ...(process.platform === "darwin"
+      ? { trafficLightPosition: { x: 18, y: 13 } }
+      : {}),
     title: "GitStudio",
     icon: appIcon(),
     webPreferences: {
