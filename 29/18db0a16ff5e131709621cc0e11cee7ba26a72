@@ -1,0 +1,40 @@
+apps/desktop/src/renderer/views/actions.ts
+  s_24172531187d77::t_51ca9ee75c0092 146
+  s_24172531187d77::t_35e8de94a70429 20
+apps/desktop/src/renderer/views/gists.ts
+  s_24172531187d77::t_35e8de94a70429 23
+  s_24172531187d77::t_bbe66f1827b382 133
+apps/desktop/src/renderer/styles/app.css
+  s_24172531187d77::t_e8b1d930637897 1995-1996
+apps/desktop/src/renderer/views/notifications.ts
+  s_24172531187d77::t_35e8de94a70429 15
+  s_24172531187d77::t_be610a655a2402 153
+apps/desktop/src/renderer/views/releases.ts
+  s_24172531187d77::t_8598878e2a2531 183
+  s_24172531187d77::t_35e8de94a70429 19
+apps/desktop/src/renderer/views/projects.ts
+  s_24172531187d77::t_2a35415f234e07 110
+  s_24172531187d77::t_35e8de94a70429 20
+apps/desktop/src/renderer/terminalDock.ts
+  s_24172531187d77::t_5f78ae58131d0d 160-161,169-173,178,183-186,189-192,200-219
+  s_24172531187d77::t_8398343d2fc2ad 220-221
+apps/desktop/src/renderer/views/orgs.ts
+  s_24172531187d77::t_57fa8ba8a8fffd 319
+  s_24172531187d77::t_7a787fba5a9213 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "2918db0a16ff5e131709621cc0e11cee7ba26a72",
+  "prompts": {},
+  "sessions": {
+    "s_24172531187d77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fba1607a-e9af-4727-ad14-f1c259917fec",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
