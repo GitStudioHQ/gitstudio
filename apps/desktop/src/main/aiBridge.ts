@@ -726,6 +726,11 @@ export class AiBridge {
       if (resolved.conn.wire === "cli") {
         const model = req.modelId ?? resolveModelId(resolved.conn, cfg.model);
         const warm = this.chats.warmFor(chatId, { cwd: ctx.root, model, resumeId: session.cliSessionId });
+        // Cold start (the agent process needs booting) reads as "Loading", not
+        // a silent spinner; a warm session goes straight to "Thinking".
+        if (!warm.warm) {
+          this.send("ai:agentEvent", { requestId, kind: "status", text: "Loading the agent" });
+        }
         const prompt = withThinking(req.goal, req.thinking ?? cfg.thinking);
         let acc = "";
         const text = await warm.send(prompt, {

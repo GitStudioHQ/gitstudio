@@ -131,6 +131,23 @@ class App {
   /** Bumped whenever the visible surface changes; async work captures it and
    *  bails if superseded, so a slow IPC reply can't clobber a newer view. */
   private routeGen = 0;
+  /** Keep-alive cache of rendered (non-Monaco) view containers, so navigating
+   *  back to a view restores it instantly instead of rebuilding from scratch.
+   *  Cleared on a repo switch; busted per-view on an explicit refresh. */
+  private viewCache = new Map<string, HTMLElement>();
+  /** Views safe to keep alive (no Monaco surface / dispose lifecycle of their own). */
+  private static readonly KEEPALIVE = new Set([
+    "branches",
+    "settings",
+    "assistant",
+    "prs",
+    "issues",
+    "actions",
+    "releases",
+    "orgs",
+    "projects",
+    "gists",
+  ]);
   /** True while a fetch/pull/push is in flight — locks the sync trigger. */
   private syncing = false;
   /** Theme preference: follow the OS, or pin light/dark. */
@@ -337,6 +354,8 @@ class App {
     this.selectedSha = undefined;
     this.codePath = "";
     this.routeGen++; // a repo switch supersedes the previous repo's in-flight work
+    // A new repo invalidates every kept-alive view (they hold the old repo's DOM).
+    this.viewCache.clear();
     // Namespace (and wipe) the SWR cache so the previous repo's branches/status/
     // graph can never bleed into this one.
     setCacheScope(info.root);
@@ -591,7 +610,21 @@ class App {
   }
 
   /** Swap the main area to the chosen view's surface. */
-  private routeView(id: string): void {
+  private routeView(id: string, force = false): void {
+    // Re-clicking the section you're already on (or navigating to it) should do
+    // nothing — the view is already there. Only an explicit refresh rebuilds.
+    if (!force && id === this.currentView && this.viewHost.firstChild) {
+      return;
+    }
+    // Stash the OUTGOING view if it's keep-alive-able, so returning to it later
+    // restores the rendered DOM (scroll, expanded state) instead of refetching.
+    const prev = this.currentView;
+    if (!force && App.KEEPALIVE.has(prev) && this.viewHost.firstElementChild) {
+      this.viewCache.set(prev, this.viewHost.firstElementChild as HTMLElement);
+    }
+    if (force) {
+      this.viewCache.delete(id); // a refresh must rebuild with fresh data
+    }
     this.currentView = id;
     this.persist();
     this.routeGen++; // supersede any in-flight async work from the prior view
@@ -609,6 +642,12 @@ class App {
       btn.setAttribute("aria-selected", active ? "true" : "false");
       // Roving tabindex: only the active tab is in the Tab order.
       btn.tabIndex = active ? 0 : -1;
+    }
+    // Restore a kept-alive view instantly, skipping the rebuild + refetch.
+    const cached = App.KEEPALIVE.has(id) ? this.viewCache.get(id) : undefined;
+    if (cached) {
+      this.viewHost.replaceChildren(cached);
+      return;
     }
     if (id === "code") {
       void this.showCodeView();
@@ -2035,7 +2074,7 @@ class App {
       await this.updateSync();
       await this.refreshAll();
       // Refresh the active data view so its content reflects the sync.
-      this.routeView(this.currentView);
+      this.routeView(this.currentView, true);
     } catch (e) {
       toast(cleanErr(e) || `${action} failed.`, "error");
     } finally {
@@ -2220,7 +2259,7 @@ class App {
     if (this.currentView === "graph" && this.graph) {
       await this.graph.reload();
     } else {
-      this.routeView(this.currentView);
+      this.routeView(this.currentView, true);
     }
   }
 

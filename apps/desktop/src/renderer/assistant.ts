@@ -292,11 +292,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     transcript.append(turn);
     scrollDown(transcript);
 
-    const state: TurnState = { turn, thinking, stream: null };
+    const state: TurnState = { turn, thinking, stream: null, raw: "", pending: false, status: "Thinking" };
     const t0 = Date.now();
     const ticker = window.setInterval(() => {
       const s = Math.max(1, Math.round((Date.now() - t0) / 1000));
-      thinkLabel.textContent = state.stream ? "Responding" : "Thinking";
+      thinkLabel.textContent = state.stream ? "Responding" : state.status;
       thinkMeta.textContent = `${s}s`;
     }, 250);
     const requestId = crypto.randomUUID();
@@ -357,27 +357,45 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
 interface TurnState {
   turn: HTMLElement;
   thinking: HTMLElement;
-  /** The live, plain-text streaming block for the current step (null between steps). */
+  /** The live streaming block for the current step (null between steps). */
   stream: HTMLElement | null;
+  /** Accumulated raw text for the streaming block (rendered as Markdown live). */
+  raw: string;
+  /** Whether a Markdown re-render is already scheduled this frame. */
+  pending: boolean;
+  /** The label shown while waiting (e.g. "Loading the agent" on a cold start). */
+  status: string;
 }
 
-/** Append a streamed text delta, creating the live block on first token. */
+/** Append a streamed text delta and re-render the block as Markdown (live). */
 function onDelta(state: TurnState, delta: string): void {
   if (!state.stream) {
     state.stream = el("div", "assistant-msg is-streaming");
     state.turn.insertBefore(state.stream, state.thinking);
+    state.raw = "";
   }
-  state.stream.textContent = (state.stream.textContent ?? "") + delta;
+  state.raw += delta;
+  scheduleStreamRender(state);
   scrollDown(state.turn.parentElement as HTMLElement);
 }
 
-/** Re-render the live streaming block as Markdown once its step completes. */
+/** Re-render the live block as Markdown, at most once per animation frame. */
+function scheduleStreamRender(state: TurnState): void {
+  if (state.pending || !state.stream) return;
+  state.pending = true;
+  requestAnimationFrame(() => {
+    state.pending = false;
+    if (state.stream) state.stream.innerHTML = renderMarkdown(state.raw);
+  });
+}
+
+/** Settle the live streaming block when its step completes. */
 function finalizeStream(state: TurnState): void {
   if (state.stream) {
-    const text = state.stream.textContent ?? "";
     state.stream.classList.remove("is-streaming");
-    if (text.trim()) state.stream.innerHTML = renderMarkdown(text);
+    if (state.raw.trim()) state.stream.innerHTML = renderMarkdown(state.raw);
     state.stream = null;
+    state.raw = "";
   }
 }
 
@@ -385,13 +403,18 @@ function finalizeStream(state: TurnState): void {
 function onEvent(state: TurnState, e: AgentEventWire): void {
   const { turn, thinking } = state;
   switch (e.kind) {
+    case "status":
+      // A pre-token status (e.g. "Loading the agent…" on a cold start).
+      if (e.text && e.text.trim()) state.status = e.text.trim();
+      break;
     case "assistant":
-      // The step's text finished. If we streamed it, render that block as
-      // Markdown; otherwise (a non-streaming fallback) insert a fresh block.
+      // The step's text finished — render the final Markdown.
       if (state.stream) {
-        if (e.text && e.text.trim()) state.stream.innerHTML = renderMarkdown(e.text);
+        const text = e.text && e.text.trim() ? e.text : state.raw;
+        state.stream.innerHTML = renderMarkdown(text);
         state.stream.classList.remove("is-streaming");
         state.stream = null;
+        state.raw = "";
       } else if (e.text && e.text.trim()) {
         turn.insertBefore(markdownBlock(e.text), thinking);
       }
