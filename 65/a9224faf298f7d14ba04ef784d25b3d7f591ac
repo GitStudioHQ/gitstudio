@@ -1,0 +1,30 @@
+apps/desktop/src/renderer/styles/app.css
+  s_20eb6d3d7f74cc::t_66284f6a5b2b8f 4380-4383,4385
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_f541908a51257c 729-733
+apps/desktop/src/renderer/renderer.ts
+  s_20eb6d3d7f74cc::t_b99675d7fd037b 613-627,646-651
+  s_20eb6d3d7f74cc::t_cac49d85844e72 2077
+  s_20eb6d3d7f74cc::t_a2dd5c7db35e1f 357-358
+  s_20eb6d3d7f74cc::t_5d03f8c24374ad 2262
+  s_20eb6d3d7f74cc::t_82bff6f1bbeb0b 134-150
+apps/desktop/src/renderer/assistant.ts
+  s_20eb6d3d7f74cc::t_39d7826a3085fe 295,299
+  s_20eb6d3d7f74cc::t_ea5ee6ad37bc64 360,362-367,370,375,377-378,382-392,396,398,406-409,411,413-414,417
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "65a9224faf298f7d14ba04ef784d25b3d7f591ac",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
