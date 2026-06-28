@@ -1,0 +1,52 @@
+apps/desktop/src/renderer/aiSettings.ts
+  s_20eb6d3d7f74cc::t_df90eb60a264b7 13
+  s_20eb6d3d7f74cc::t_ff42fd591c86fc 215
+  s_20eb6d3d7f74cc::t_429677072a679c 125,128-129,131-141
+  s_20eb6d3d7f74cc::t_0381e79a75e75a 62
+packages/ai/src/catalog.ts
+  s_20eb6d3d7f74cc::t_6b08c11a60e9ad 75-113
+  s_20eb6d3d7f74cc::t_13da4951ec63b4 12-20
+packages/ai/test/connections.test.ts
+  s_20eb6d3d7f74cc::t_5b7bd78b0b45f3 16
+  s_20eb6d3d7f74cc::t_c095ee3695d89c 54-63
+packages/ai/src/connections.ts
+  s_20eb6d3d7f74cc::t_632170ca1e146c 66-70
+apps/desktop/src/shared/ipc.ts
+  s_20eb6d3d7f74cc::t_fc6da5c8dd74e6 921
+packages/ai/src/providers/index.ts
+  s_20eb6d3d7f74cc::t_5567ff27ad4de9 40-44
+apps/desktop/src/main/cliProvider.ts
+  s_20eb6d3d7f74cc::t_246da43cfd988f 1-212
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_167971ad00cbde 42
+  s_20eb6d3d7f74cc::t_79318907c75c59 160-165,176,180-193
+  s_20eb6d3d7f74cc::t_f3a615bf034215 74-75
+  s_20eb6d3d7f74cc::t_27b97350f4d1e1 207
+  s_20eb6d3d7f74cc::t_94c9fc585815c0 319-326
+  s_20eb6d3d7f74cc::t_0e3fa257bce511 288-299
+  s_20eb6d3d7f74cc::t_e74da42fdff371 194-195
+apps/desktop/src/renderer/providerLogos.ts
+  s_20eb6d3d7f74cc::t_6cd111f7e9a745 25,32-40
+  s_20eb6d3d7f74cc::t_fa9248f63c1a8e 22-24
+  s_20eb6d3d7f74cc::t_b8644688d750c7 26-31
+  s_20eb6d3d7f74cc::t_c3e353927910ab 41-43
+  s_20eb6d3d7f74cc::t_8928bf3a3dc475 1-21,44-59
+apps/desktop/src/renderer/styles/app.css
+  s_20eb6d3d7f74cc::t_1fcc95dfe756d2 4202-4205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "8d0a2cb20de90c335f69638c5fa3923080a475cd",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
