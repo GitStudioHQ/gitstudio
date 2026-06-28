@@ -4199,6 +4199,10 @@ body.vscode-light .gh-label-chip {
 }
 .ai-prov-card:hover { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); background: var(--app-hover); transform: translateY(-1px); }
 .ai-prov-card .glyph .codicon, .ai-prov-card > .glyph { font-size: 18px; color: var(--gs-accent-ink, var(--gs-accent)); }
+/* Real brand marks render neutral (like the actual logos), not accent-tinted. */
+.ai-logo { flex: 0 0 auto; color: var(--vscode-foreground); }
+.ai-conn-head > .ai-logo { width: 17px; height: 17px; }
+.ai-prov-card > .ai-logo { width: 20px; height: 20px; margin-top: 1px; }
 .ai-prov-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .ai-prov-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 650; color: var(--vscode-foreground); }
 .ai-prov-blurb { font-size: 11.5px; color: var(--app-muted); line-height: 1.4; }

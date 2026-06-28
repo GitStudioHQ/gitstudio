@@ -10,6 +10,7 @@
 
 import { host } from "./bridge";
 import { el, span, glyph, settingsCard, settingsField, copyText, pill, cleanErr } from "./ui";
+import { providerLogo } from "./providerLogos";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import type { AiConnectionView, AiPresetView, AiSettingsView, McpInfo } from "../shared/ipc";
 
@@ -58,7 +59,7 @@ export function aiModelsCard(): HTMLElement {
 function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => Promise<void>): HTMLElement {
   const row = el("div", "ai-conn");
   const head = el("div", "ai-conn-head");
-  head.append(glyph(iconForWire(c)));
+  head.append(providerLogo(c.preset) ?? glyph(iconForWire(c)));
 
   const meta = el("div", "ai-conn-meta");
   const top = el("div", "ai-conn-name");
@@ -121,13 +122,23 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
 
 function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Promise<void>): void {
   editor.replaceChildren();
+  const isCli = c.wire === "cli";
 
   const labelF = settingsField("Name", c.label, "My Claude");
+  // CLI connections have no base URL or API key — they use the local binary's own
+  // login. They just take optional model overrides (mapped to `--model`).
   const urlF = settingsField("API base URL", c.baseUrl, "https://api.example.com/v1");
-  const fastF = settingsField("Fast model", c.models.fast, "for quick tasks");
-  const midF = settingsField("Standard model", c.models.mid, "for explain / summarize");
-  const deepF = settingsField("Deep model", c.models.deep, "for review / agent");
-  editor.append(labelF.row, urlF.row, fastF.row, midF.row, deepF.row);
+  const fastF = settingsField(isCli ? "Quick model (optional)" : "Fast model", c.models.fast, "e.g. haiku");
+  const midF = settingsField(isCli ? "Default model (optional)" : "Standard model", c.models.mid, "e.g. sonnet");
+  const deepF = settingsField(isCli ? "Deep model (optional)" : "Deep model", c.models.deep, "e.g. opus");
+  editor.append(labelF.row);
+  if (isCli) {
+    const note = el("div", "settings-sub");
+    note.textContent = "Runs your local CLI with its own login — no API key. Model names map to the CLI's --model flag (leave blank to use its default).";
+    editor.append(note, fastF.row, midF.row, deepF.row);
+  } else {
+    editor.append(urlF.row, fastF.row, midF.row, deepF.row);
+  }
 
   if (c.needsKey) {
     const keyRow = el("div", "settings-field");
@@ -201,7 +212,7 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   const grid = el("div", "ai-gallery");
   for (const p of presets) {
     const tile = el("button", "ai-prov-card");
-    tile.append(glyph(p.icon));
+    tile.append(providerLogo(p.id) ?? glyph(p.icon));
     const t = el("div", "ai-prov-meta");
     const name = el("div", "ai-prov-name");
     name.append(span(p.label));

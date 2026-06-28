@@ -9,8 +9,15 @@
 
 import type { ModelTier } from "./types";
 
-/** Which wire protocol a connection talks. */
-export type Wire = "anthropic" | "openai-compat";
+/**
+ * How a connection reaches its model:
+ *  - "anthropic"     — the Anthropic Messages HTTP API (BYO key).
+ *  - "openai-compat" — any OpenAI-compatible `/chat/completions` endpoint.
+ *  - "cli"           — a locally-installed agent CLI (Claude Code, Codex, Gemini
+ *                      CLI) invoked in non-interactive mode, using ITS OWN login/
+ *                      subscription. No API key; the host process spawns it.
+ */
+export type Wire = "anthropic" | "openai-compat" | "cli";
 
 export interface ProviderPreset {
   /** Stable catalog key, also the default connection `preset`. */
@@ -64,6 +71,45 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     needsKey: true,
     keyUrl: "https://platform.openai.com/api-keys",
     icon: "sparkle",
+  },
+  {
+    id: "claude-code",
+    label: "Claude Code (local)",
+    blurb: "Drive your installed `claude` CLI with its own login — no API key.",
+    wire: "cli",
+    baseUrl: "",
+    models: { fast: "haiku", mid: "sonnet", deep: "opus" },
+    needsKey: false,
+    local: true,
+    keyUrl: "https://docs.anthropic.com/en/docs/claude-code",
+    icon: "terminal",
+    note: "Needs the `claude` CLI on your PATH and signed in. Model names map to `claude --model`.",
+  },
+  {
+    id: "codex",
+    label: "Codex (local)",
+    blurb: "Drive your installed `codex` CLI with its ChatGPT/OpenAI login — no API key.",
+    wire: "cli",
+    baseUrl: "",
+    models: { fast: "", mid: "", deep: "" },
+    needsKey: false,
+    local: true,
+    keyUrl: "https://github.com/openai/codex",
+    icon: "terminal",
+    note: "Needs the `codex` CLI on your PATH and signed in.",
+  },
+  {
+    id: "gemini-cli",
+    label: "Gemini CLI (local)",
+    blurb: "Drive your installed `gemini` CLI with its Google login — no API key.",
+    wire: "cli",
+    baseUrl: "",
+    models: { fast: "gemini-2.5-flash", mid: "gemini-2.5-flash", deep: "gemini-2.5-pro" },
+    needsKey: false,
+    local: true,
+    keyUrl: "https://github.com/google-gemini/gemini-cli",
+    icon: "terminal",
+    note: "Needs the `gemini` CLI on your PATH and signed in.",
   },
   {
     id: "openrouter",

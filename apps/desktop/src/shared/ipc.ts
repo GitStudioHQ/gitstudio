@@ -918,7 +918,7 @@ export interface AiConnectionView {
   id: string;
   label: string;
   preset: string;
-  wire: "anthropic" | "openai-compat";
+  wire: "anthropic" | "openai-compat" | "cli";
   baseUrl: string;
   models: { fast: string; mid: string; deep: string };
   needsKey: boolean;

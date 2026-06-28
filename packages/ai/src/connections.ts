@@ -63,6 +63,11 @@ export function connectionFromPreset(presetId: string, id: string): Connection {
  * Local servers are usable with no key.
  */
 export function isConnectionUsable(conn: Connection, hasKey: boolean): boolean {
+  // A local CLI needs no base URL, model, or key here — its real availability
+  // (is the binary installed + signed in?) is determined by the host at runtime.
+  if (conn.wire === "cli") {
+    return true;
+  }
   if (!conn.baseUrl.trim()) {
     return false;
   }

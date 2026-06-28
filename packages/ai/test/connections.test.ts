@@ -13,7 +13,7 @@ import {
 test("every preset has a wire, base config, and three model tiers", () => {
   for (const p of PROVIDER_PRESETS) {
     assert.ok(p.id && p.label, `${p.id} has id+label`);
-    assert.ok(p.wire === "anthropic" || p.wire === "openai-compat", `${p.id} wire`);
+    assert.ok(p.wire === "anthropic" || p.wire === "openai-compat" || p.wire === "cli", `${p.id} wire`);
     assert.ok("fast" in p.models && "mid" in p.models && "deep" in p.models, `${p.id} tiers`);
     // Local presets never require a key; remote presets do (custom is the exception).
     if (p.local) assert.equal(p.needsKey, false, `${p.id} local => no key`);
@@ -49,6 +49,16 @@ test("isConnectionUsable requires base URL, a model, and (for remote) a key", ()
 
   const noUrl: Connection = { ...remote, baseUrl: "  " };
   assert.equal(isConnectionUsable(noUrl, true), false, "no base url => unusable");
+});
+
+test("CLI connections are usable without a base URL, model, or key", () => {
+  const cli = connectionFromPreset("claude-code", "c");
+  assert.equal(cli.wire, "cli");
+  assert.equal(cli.needsKey, false);
+  // No key, no base URL, no model required — the host verifies the binary exists.
+  assert.equal(isConnectionUsable(cli, false), true);
+  const bare: Connection = { ...cli, baseUrl: "", models: { fast: "", mid: "", deep: "" } };
+  assert.equal(isConnectionUsable(bare, false), true);
 });
 
 test("resolveModelId falls back across tiers", () => {

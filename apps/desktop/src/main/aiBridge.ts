@@ -39,6 +39,7 @@ import {
 } from "@gitstudio/ai/index";
 import { createGitToolHost } from "@gitstudio/git-service/index";
 import { mcpInfo, installMcp } from "./mcpConfig";
+import { CliProvider, cliSpecFor, detectCli } from "./cliProvider";
 import type { RepoStore } from "./repoStore";
 import type {
   AgentConfirmAnswer,
@@ -70,6 +71,8 @@ export class AiBridge {
   private readonly aborts = new Map<string, AbortController>();
   /** Pending agent write-confirmations → their resolver. */
   private readonly confirms = new Map<string, (approved: boolean) => void>();
+  /** Cached CLI-availability per preset (is `claude`/`codex`/`gemini` installed?). */
+  private readonly cliDetect = new Map<string, boolean>();
 
   constructor(
     private readonly repos: RepoStore,
@@ -154,6 +157,12 @@ export class AiBridge {
 
   private connView(conn: Connection): AiConnectionView {
     const hasKey = this.hasKeyFile(conn.id);
+    // For a CLI connection, "usable" means the binary was detected on PATH
+    // (defaults to optimistic `true` until the first detection completes).
+    const usable =
+      conn.wire === "cli"
+        ? this.cliDetect.get(conn.preset) ?? true
+        : isConnectionUsable(conn, hasKey);
     return {
       id: conn.id,
       label: conn.label,
@@ -164,8 +173,24 @@ export class AiBridge {
       needsKey: conn.needsKey,
       local: conn.local === true,
       hasKey,
-      usable: isConnectionUsable(conn, hasKey),
+      usable,
     };
+  }
+
+  /** Probe each distinct CLI preset in use so the settings view shows real status. */
+  private async refreshCliDetection(): Promise<void> {
+    const presets = new Set(
+      this.settings.connections.filter((c) => c.wire === "cli").map((c) => c.preset),
+    );
+    await Promise.all(
+      [...presets].map(async (preset) => {
+        const spec = cliSpecFor(preset);
+        if (spec) {
+          const { ok } = await detectCli(spec.command);
+          this.cliDetect.set(preset, ok);
+        }
+      }),
+    );
   }
 
   private view(): AiSettingsView {
@@ -179,6 +204,7 @@ export class AiBridge {
 
   async getSettings(): Promise<AiSettingsView> {
     await this.ensureLoaded();
+    await this.refreshCliDetection();
     return this.view();
   }
 
@@ -259,6 +285,18 @@ export class AiBridge {
     if (!conn) {
       return { ok: false, message: "Connection not found." };
     }
+    // CLI connections: just confirm the binary is installed (don't spend quota).
+    if (conn.wire === "cli") {
+      const spec = cliSpecFor(conn.preset);
+      if (!spec) {
+        return { ok: false, message: "Unknown local CLI." };
+      }
+      const { ok, version } = await detectCli(spec.command);
+      this.cliDetect.set(conn.preset, ok);
+      return ok
+        ? { ok: true, message: `Found \`${spec.command}\`${version ? ` (${version})` : ""}.` }
+        : { ok: false, message: `\`${spec.command}\` isn't installed or not on PATH. ${spec.install}` };
+    }
     const provider = this.providerFor(conn);
     try {
       const r = await provider.chat(
@@ -278,6 +316,14 @@ export class AiBridge {
   // ── provider resolution ──────────────────────────────────────────────────────
 
   private providerFor(conn: Connection): Provider {
+    if (conn.wire === "cli") {
+      return new CliProvider({
+        preset: conn.preset,
+        cwd: this.repos.current()?.root,
+        resolveModel: (tier) => resolveModelId(conn, tier ?? "mid"),
+        label: `${conn.label}${conn.models.mid ? ` · ${conn.models.mid}` : ""}`,
+      });
+    }
     return makeProvider(conn, () => this.loadKey(conn.id));
   }
 

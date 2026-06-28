@@ -37,6 +37,11 @@ export function makeProvider(
     label: providerLabel(conn),
     fetchImpl,
   };
+  if (conn.wire === "cli") {
+    // CLI providers spawn a local process, so they're constructed by the host
+    // (the desktop main process), not here in the fetch-only core.
+    throw new Error("CLI connections must be built by the host, not makeProvider().");
+  }
   if (conn.wire === "anthropic") {
     return new AnthropicProvider(common);
   }
