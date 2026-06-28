@@ -83,7 +83,10 @@ export class CommitDetails extends LitElement {
         font-size: 13px;
         background: var(--gs-bg);
       }
-      .scroll { height: 100%; overflow-y: auto; padding: 12px 14px 18px; }
+      /* border-box so height:100% + padding fits the host (shadow DOM doesn't
+         inherit the document's global box-sizing) — otherwise the padding pushes
+         the scroller past :host{overflow:hidden} and the bottom can't be reached. */
+      .scroll { box-sizing: border-box; height: 100%; overflow-y: auto; padding: 12px 14px 18px; }
 
       .empty {
         height: 100%;
