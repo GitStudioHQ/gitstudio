@@ -8,10 +8,11 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "test": "tsx --test \"test/**/*.test.ts\"",
+    "test": "tsx --import ./test/hermetic.ts --test \"test/**/*.test.ts\"",
     "check-types": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@gitstudio/ai": "*",
     "@gitstudio/engine": "*",
     "@gitstudio/host-bridge": "*"
   }

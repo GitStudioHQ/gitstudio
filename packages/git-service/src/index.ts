@@ -90,6 +90,7 @@ export { TagOps } from "./TagOps";
 export type { TagOpResult, CreateTagOptions } from "./TagOps";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
+export { createGitToolHost } from "./GitToolHost";
 export { NodeGitAdapter } from "./NodeGitAdapter";
 export type { NodeGitAdapterOptions } from "./NodeGitAdapter";
 

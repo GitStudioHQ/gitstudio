@@ -1,0 +1,27 @@
+{
+  "name": "gitstudio-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "GitStudio MCP server — exposes a repository's Git capabilities to any MCP-compatible agent (Claude Desktop, Cursor, Copilot, Windsurf) over stdio. Read tools are always available; write/destructive tools are opt-in via env. Hand-rolled JSON-RPC, no SDK dependency.",
+  "bin": {
+    "gitstudio-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "node esbuild.js",
+    "start": "node dist/index.js",
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@gitstudio/ai": "*",
+    "@gitstudio/git-service": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

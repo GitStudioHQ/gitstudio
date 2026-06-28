@@ -1,0 +1,17 @@
+{
+  "name": "@gitstudio/ai",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Host-agnostic AI layer for GitStudio: a multi-provider model registry (Anthropic + any OpenAI-compatible endpoint, incl. local Ollama/LM Studio), high-level git AI tasks, a tool-calling agent loop, and a shared git tool catalog that also backs the MCP server. fetch-only — no vscode/electron/fs imports.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@gitstudio/engine": "*"
+  }
+}
