@@ -1,0 +1,55 @@
+apps/desktop/src/main/cliProvider.ts
+  s_20eb6d3d7f74cc::t_6d28de1bad7e93 158
+  s_20eb6d3d7f74cc::t_31ae3c47156694 243-258
+apps/desktop/src/renderer/styles/app.css
+  s_20eb6d3d7f74cc::t_5909acbf96b697 4294-4296
+  s_20eb6d3d7f74cc::t_32d65c7473ee76 4272-4292
+  s_20eb6d3d7f74cc::t_8b646f96e3286b 4293
+apps/desktop/src/renderer/assistant.ts
+  s_20eb6d3d7f74cc::t_2cf172139cff16 160-162,164-168,177-179
+  s_20eb6d3d7f74cc::t_e9bf0b6b5e6a33 22
+  s_20eb6d3d7f74cc::t_dcfb205d1fe89b 142-144,146-147
+  s_20eb6d3d7f74cc::t_b595ecaae7a6b0 201
+  s_20eb6d3d7f74cc::t_94543836ccaa17 145
+  s_20eb6d3d7f74cc::t_296923bd75c7d3 21
+packages/ai/src/connections.ts
+  s_20eb6d3d7f74cc::t_155d228e49eeef 31-46,54-55
+apps/desktop/src/renderer/aiSettings.ts
+  s_20eb6d3d7f74cc::t_1873cf41c2e428 289-371
+apps/desktop/src/main/main.ts
+  s_20eb6d3d7f74cc::t_28ef8a16ddf021 510
+apps/desktop/src/shared/ipc.ts
+  s_20eb6d3d7f74cc::t_fd148810ed394c 948-957,963-964
+  s_20eb6d3d7f74cc::t_14768cbcec6daf 850
+  s_20eb6d3d7f74cc::t_532a679dbf636e 1012,1014-1015
+packages/ai/src/agent.ts
+  s_20eb6d3d7f74cc::t_c9514fb34b8295 111
+  s_20eb6d3d7f74cc::t_0c0430a411cdd7 39-40
+packages/ai/src/types.ts
+  s_20eb6d3d7f74cc::t_e395c593ce78be 90-91
+apps/desktop/src/renderer/renderer.ts
+  s_20eb6d3d7f74cc::t_975e76a5f10a79 29
+  s_20eb6d3d7f74cc::t_1ac8410bf9a29c 1170
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_8dadb1bc33613d 18
+  s_20eb6d3d7f74cc::t_a00932b85c7629 198-201,208,212-217
+  s_20eb6d3d7f74cc::t_ee47303562c144 507,512-513
+  s_20eb6d3d7f74cc::t_edb4b823008b46 46
+  s_20eb6d3d7f74cc::t_bc0fac4e6cabbc 218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "4336759210ae58e0f06bf145e0a758081d499d77",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
