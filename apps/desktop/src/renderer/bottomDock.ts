@@ -1,8 +1,8 @@
-// A reusable collapsible bottom panel that splits its host into two horizontal
-// parts. A tiny, status-bar-like footer is pinned permanently to the very bottom;
-// the body pops UP above it when expanded (and the host's existing content fills
-// whatever's left above). Collapsed, only the footer remains — so the panel can
-// always be re-opened, VS-Code-panel style.
+// A reusable collapsible bottom panel, VS-Code-panel style. Collapsed, only a
+// tiny status-bar-like tab BAR sits at the very bottom. Expanded, the whole panel
+// floats UP and ON TOP of the view content (never reflowing it): the bar rises to
+// sit above the body (tabs-on-top), and the body fills beneath it down to the
+// window bottom. Closing drops the bar back down to the base.
 //
 // The terminal dock is the first consumer, but the component is deliberately
 // content-agnostic: a caller fills `tabsEl` (the footer's left side) + `actionsEl`
@@ -100,14 +100,16 @@ export class BottomDock {
       if (this.collapsed && !target.closest("button, .term-tab")) this.toggle();
     });
 
-    // The resizer + body live in an overlay that floats UP over the view content
-    // when expanded; only the footer sits in the flex layout, so opening the dock
-    // never shrinks (reflows) the content above it — the panel sits ON TOP.
+    // The whole panel floats in an overlay anchored to the window bottom, so
+    // opening it never reflows the content above (the dock-mount always reserves
+    // just the bar height). Order top→bottom: resizer · BAR · body. When open the
+    // bar sits ON TOP of the body (VS-Code-panel style); when collapsed only the
+    // bar remains, dropped to the base.
     this.panel = el("div", "dock-overlay");
-    this.panel.append(this.resizer, this.bodyEl);
+    this.panel.append(this.resizer, footer, this.bodyEl);
 
     this.root = el("div", "dock-mount" + (this.collapsed ? " collapsed" : ""));
-    this.root.append(this.panel, footer);
+    this.root.append(this.panel);
     host.appendChild(this.root);
   }
 

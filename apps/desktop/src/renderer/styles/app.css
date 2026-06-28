@@ -3229,7 +3229,11 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 
 /* ── Reusable collapsible bottom dock (BottomDock) ─────────────────────────── */
 .dock-mount {
-  flex: 0 0 auto; /* only the footer takes layout height; the body overlays */
+  /* Reserve ONLY the bar height in the layout — the whole panel floats in
+     .dock-overlay, so opening it never reflows the view above. */
+  --dock-bar-h: 23px;
+  flex: 0 0 var(--dock-bar-h);
+  height: var(--dock-bar-h);
   position: relative;
   min-height: 0;
 }
@@ -3248,23 +3252,30 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; }
 .dock-mount.collapsed .dock-resizer { display: none; }
 
-/* The expanded body floats ON TOP of the view content — anchored just above the
-   footer (bottom:100% of the footer-height dock-mount), so opening the dock never
-   pushes/reflows the content above it. Lifted off the view with a top hairline +
-   soft shadow. Collapsed: nothing but the tiny footer. */
+/* The whole panel floats anchored to the window bottom; children stack
+   resizer · BAR · body, so when open the bar sits ON TOP of the body and the
+   body fills beneath it down to the bottom. Collapsed, only the bar shows and
+   it sits exactly in the reserved bar slot at the base. */
 .dock-overlay {
   position: absolute;
-  bottom: 100%;
+  bottom: 0;
   left: 0;
   right: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
   background: var(--vscode-editor-background);
+}
+/* Expanded: lift the floating panel off the view (top hairline + soft shadow)
+   and separate the bar from the body with a hairline beneath it. */
+.dock-mount:not(.collapsed) .dock-overlay {
   border-top: 1px solid var(--app-border);
   box-shadow: 0 -12px 30px -16px rgba(0, 0, 0, 0.5);
 }
-.dock-mount.collapsed .dock-overlay { display: none; }
+.dock-mount:not(.collapsed) .dock-footer {
+  border-top: none;
+  border-bottom: 1px solid var(--app-border);
+}
 
 /* The content area — pops UP above the footer; hidden when collapsed. */
 .dock-body {
