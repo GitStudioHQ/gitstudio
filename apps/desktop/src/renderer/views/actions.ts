@@ -156,13 +156,12 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     }
   };
 
-  // A header search/filter over the loaded list (client-side, instant).
-  tools.insertBefore(
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search runs…",
       onInput: (q) => renderList(q ? runs.filter((r) => matches(r, q.toLowerCase())) : runs, q),
     }),
-    tools.firstChild,
   );
 
   renderList(runs);

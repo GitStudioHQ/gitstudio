@@ -181,14 +181,13 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     }
   };
 
-  // A header search/filter over the loaded list (client-side, instant).
-  const acctCluster = header.querySelector(".gh-acct");
-  const search = searchField({
-    placeholder: "Search gists…",
-    onInput: (q) => renderList(q ? gists.filter((g) => matches(g, q.toLowerCase())) : gists, q),
-  });
-  if (acctCluster) acctCluster.insertBefore(search, acctCluster.firstChild);
-  else header.appendChild(search);
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: "Search gists…",
+      onInput: (q) => renderList(q ? gists.filter((g) => matches(g, q.toLowerCase())) : gists, q),
+    }),
+  );
 
   renderList(gists);
 }

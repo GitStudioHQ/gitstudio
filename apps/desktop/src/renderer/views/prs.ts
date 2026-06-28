@@ -160,8 +160,8 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     }
   };
 
-  // A header search/filter over the loaded list (client-side, instant).
-  newBtn.before(
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search pull requests…",
       onInput: (q) => renderList(q ? prs.filter((pr) => matches(pr, q.toLowerCase())) : prs, q),

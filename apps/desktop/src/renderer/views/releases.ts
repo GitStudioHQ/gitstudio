@@ -220,17 +220,14 @@ async function loadReleases(
   // A header search/filter over the loaded list (client-side, instant). Inserted
   // at the front of the action cluster (the .gh-acct that already holds the
   // Releases|Tags segment and the New-release button), mirroring the Issues view.
-  const acct = header.querySelector(".gh-acct");
-  if (acct instanceof HTMLElement) {
-    acct.insertBefore(
-      searchField({
-        placeholder: "Search releases…",
-        onInput: (q) =>
-          renderList(q ? releases.filter((rel) => matches(rel, q.toLowerCase())) : releases, q),
-      }),
-      acct.firstChild,
-    );
-  }
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: "Search releases…",
+      onInput: (q) =>
+        renderList(q ? releases.filter((rel) => matches(rel, q.toLowerCase())) : releases, q),
+    }),
+  );
 
   renderList(releases);
   void nav; // nav reserved for symmetry with the tags loader

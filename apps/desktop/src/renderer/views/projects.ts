@@ -150,8 +150,8 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
     }
   };
 
-  // A header search/filter over the loaded list (client-side, instant).
-  header.querySelector(".gh-acct")?.before(
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search projects…",
       onInput: (q) =>

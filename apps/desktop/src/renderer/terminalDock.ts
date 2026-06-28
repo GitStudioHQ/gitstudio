@@ -34,7 +34,16 @@ interface OutTab {
   panel: OutputsPanel;
 }
 
-type Tab = TermTab | OutTab;
+/** The "Commit details" tab — only present on the commits/graph view. Its surface
+ *  is owned by the renderer (it mounts the shared commit-details panel + diff). */
+interface DetailsTab {
+  kind: "details";
+  id: "commit-details";
+  label: string;
+  surface: HTMLElement;
+}
+
+type Tab = TermTab | OutTab | DetailsTab;
 
 export interface TerminalDockOptions {
   /** Start expanded vs collapsed-to-footer. */
@@ -52,6 +61,7 @@ export class TerminalDock {
   private tabs: Tab[] = [];
   private activeId = "output";
   private termSeq = 0;
+  private detailsTab?: DetailsTab;
 
   constructor(host: HTMLElement, private readonly opts: TerminalDockOptions) {
     this.dock = new BottomDock(host, {
@@ -164,7 +174,8 @@ export class TerminalDock {
         "button",
         "term-tab" + (t.id === this.activeId ? " active" : "") + (t.kind === "out" ? " is-output" : ""),
       );
-      btn.append(glyph(t.kind === "out" ? "output" : "terminal"), span(t.label, "term-tab-label"));
+      const icon = t.kind === "out" ? "output" : t.kind === "details" ? "git-commit" : "terminal";
+      btn.append(glyph(icon), span(t.label, "term-tab-label"));
       btn.title = t.label;
       btn.setAttribute("role", "tab");
       btn.setAttribute("aria-label", t.label);
@@ -260,6 +271,47 @@ export class TerminalDock {
     if (this.dock.isCollapsed()) return;
     const tab = this.tabs.find((t) => t.id === this.activeId);
     if (tab && tab.kind === "term" && tab.opened) tab.panel.layout();
+    // The commit-details diff (DiffView) relayouts itself via its own
+    // ResizeObserver, so the details tab needs no explicit layout here.
+  }
+
+  // ── Commit-details tab (present only on the commits/graph view) ──────────────
+
+  /** Add or remove the "Commit details" tab. The renderer mounts its content
+   *  into `detailsSurface()` and calls `openDetails()` when a commit is clicked. */
+  setDetailsVisible(visible: boolean): void {
+    if (visible) {
+      if (this.detailsTab) return;
+      const surface = el("div", "dock-details-surface");
+      surface.style.display = "none";
+      this.detailsTab = { kind: "details", id: "commit-details", label: "Commit details", surface };
+      this.tabs.unshift(this.detailsTab); // pin it first
+      this.dock.bodyEl.appendChild(surface);
+      this.renderTabs();
+      return;
+    }
+    if (!this.detailsTab) return;
+    const id = this.detailsTab.id;
+    this.detailsTab.surface.remove();
+    this.tabs = this.tabs.filter((t) => t.id !== id);
+    this.detailsTab = undefined;
+    if (this.activeId === id) {
+      this.activeId = "output";
+      this.showActive();
+    }
+    this.renderTabs();
+  }
+
+  /** The element the renderer renders commit details into (when the tab exists). */
+  detailsSurface(): HTMLElement | undefined {
+    return this.detailsTab?.surface;
+  }
+
+  /** Activate the commit-details tab and expand the dock (on commit click). */
+  openDetails(): void {
+    if (!this.detailsTab) return;
+    this.setActive(this.detailsTab.id);
+    this.expand();
   }
 
   private persist(): void {
@@ -298,7 +350,9 @@ export class TerminalDock {
   }
 
   dispose(): void {
-    for (const t of this.tabs) t.panel.dispose();
+    for (const t of this.tabs) {
+      if (t.kind !== "details") t.panel.dispose();
+    }
     this.tabs = [];
     this.dock.dispose();
   }

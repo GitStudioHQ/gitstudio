@@ -93,7 +93,7 @@ class App {
   private diffPanel!: DiffPanel;
   private contextMenu = new CommitContextMenu((req) => this.runAction(req));
 
-  private detailsEl!: HTMLElement;
+  private detailsEl?: HTMLElement;
   private diffSurfaceEl?: HTMLElement;
   private repoSwitchName?: HTMLElement;
   private branchSwitchName?: HTMLElement;
@@ -595,6 +595,11 @@ class App {
     // Free the previous view's Monaco surface before swapping the DOM under it.
     this.activeMonacoView?.dispose();
     this.activeMonacoView = undefined;
+    // The "Commit details" dock tab only exists on the commits/graph view. Toggle
+    // it AFTER disposing the Monaco diff (which lives in its surface) so we never
+    // remove a surface with a live editor in it.
+    this.terminalDock?.setDetailsVisible(id === "graph");
+    if (id !== "graph") this.detailsEl = undefined;
     for (const btn of this.navButtons) {
       const active = btn.dataset.view === id;
       btn.classList.toggle("active", active);
@@ -1903,19 +1908,15 @@ class App {
 
   /** The commit graph + a collapsible / drag-resizable commit-details panel. */
   private showGraphView(): void {
+    // The graph fills the view; commit details live in the bottom dock (the
+    // "Commit details" tab is added by routeView when entering this view).
     const wrap = el("div", "graph-view");
-    const graphHost = el("div", "graph-host");
-    const resizer = el("div", "graph-resizer");
-    const grip = el("div", "graph-grip");
-    const collapseBtn = el("button", "graph-collapse");
-    collapseBtn.title = "Collapse / expand the details panel";
-    collapseBtn.appendChild(glyph("chevron-down"));
-    resizer.append(grip, collapseBtn);
-    const detailsHost = el("div", "details-host");
-    this.detailsEl = detailsHost;
-    wrap.append(graphHost, resizer, detailsHost);
+    const graphHost = el("div", "graph-host graph-host-full");
+    wrap.append(graphHost);
     this.viewHost.replaceChildren(wrap);
-    this.wireGraphResizer(wrap, resizer, detailsHost, collapseBtn);
+
+    this.detailsEl = this.terminalDock?.detailsSurface();
+    this.showDetailsPlaceholder();
 
     this.graph?.dispose(); // tear down a prior mount before replacing it
     const graph = new GraphMount(graphHost, {
@@ -1924,64 +1925,7 @@ class App {
       onContext: (sha, x, y) => this.contextMenu.open(sha, x, y),
     });
     this.graph = graph;
-    this.showDetailsPlaceholder();
     void graph.reload();
-  }
-
-  /** Drag the splitter to resize the details panel; click the chevron to collapse it. */
-  private wireGraphResizer(
-    wrap: HTMLElement,
-    resizer: HTMLElement,
-    details: HTMLElement,
-    collapseBtn: HTMLElement,
-  ): void {
-    let collapsed = false;
-    let lastHeight = 0;
-    const setHeight = (h: number): void => {
-      details.style.flex = `0 0 ${Math.round(h)}px`;
-    };
-    wireResizerKeys(resizer, {
-      orientation: "horizontal",
-      label: "Resize commit details panel",
-      min: 90,
-      max: () => Math.max(120, wrap.getBoundingClientRect().height - 140),
-      get: () => details.getBoundingClientRect().height,
-      set: (h) => setHeight(h),
-      disabled: () => collapsed,
-    });
-    collapseBtn.setAttribute("aria-expanded", "true");
-    resizer.addEventListener("mousedown", (e) => {
-      if ((e.target as HTMLElement).closest(".graph-collapse")) return;
-      if (collapsed) return;
-      e.preventDefault();
-      const rect = wrap.getBoundingClientRect();
-      const onMove = (ev: MouseEvent): void => {
-        const h = Math.max(90, Math.min(rect.bottom - ev.clientY, rect.height - 140));
-        setHeight(h);
-      };
-      const onUp = (): void => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    });
-    collapseBtn.addEventListener("click", () => {
-      collapsed = !collapsed;
-      collapseBtn.classList.toggle("collapsed", collapsed);
-      collapseBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      if (collapsed) {
-        lastHeight = details.getBoundingClientRect().height;
-        details.style.display = "none";
-      } else {
-        details.style.display = "";
-        if (lastHeight) setHeight(lastHeight);
-      }
-    });
   }
 
   /** A branded "coming next" panel for views still being built out. */
@@ -2402,10 +2346,13 @@ class App {
     this.diffSurfaceEl = surface;
     wrap.append(panel, surface);
 
+    if (!this.detailsEl) return;
     this.detailsEl.replaceChildren(wrap);
     this.diffPanel = new DiffPanel(surface);
     this.activeMonacoView = this.diffPanel;
     this.diffPanel.showEmpty("Select a file to view its diff.");
+    // Pop the commit-details dock open on the selected commit.
+    this.terminalDock?.openDetails();
   }
 
   /** Route a details-panel toolbar action to the existing git context menu. */
@@ -2443,10 +2390,11 @@ class App {
   }
 
   private detailsSplitEl(): HTMLElement | null {
-    return this.detailsEl.querySelector(".details-split");
+    return this.detailsEl?.querySelector(".details-split") ?? null;
   }
 
   private showDetailsPlaceholder(): void {
+    if (!this.detailsEl) return;
     const wrap = el("div", "details details-empty");
     wrap.appendChild(
       this.currentRepo

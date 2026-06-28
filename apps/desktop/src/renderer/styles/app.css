@@ -407,14 +407,12 @@ button:disabled:hover { filter: grayscale(0.25); }
    keyboard focus obvious by lighting up the otherwise-thin handle. */
 .rail-resizer:focus-visible,
 .cmp-vsplit:focus-visible,
-.graph-resizer:focus-visible,
 .dock-resizer:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
   outline-offset: -1px;
 }
 .rail-resizer:focus-visible .rail-resizer-grip,
 .cmp-vsplit:focus-visible .cmp-vsplit-grip { background: var(--gs-accent); width: 2px; }
-.graph-resizer:focus-visible .graph-grip,
 .dock-resizer:focus-visible .dock-resizer-grip { background: var(--gs-accent); }
 
 /* Respect the OS "reduce motion" setting across the whole app. */
@@ -2267,64 +2265,12 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   overflow: hidden;
 }
 
-/* Draggable splitter between the graph and the details panel, with a collapse
- * chevron. The whole bar is a row-resize handle; the chevron toggles collapse. */
-.graph-resizer {
-  flex: 0 0 12px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 8px;
-  cursor: row-resize;
-  background: var(--app-panel);
-  border-top: 1px solid var(--app-border);
-  border-bottom: 1px solid var(--app-border);
-}
-.graph-grip {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 36px;
-  height: 3px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
-  transition: background 120ms;
-}
-.graph-resizer:hover .graph-grip { background: color-mix(in srgb, var(--gs-accent) 55%, transparent); }
-.graph-collapse {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 18px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--app-muted);
-  cursor: pointer;
-}
-.graph-collapse:hover { background: var(--app-hover); color: var(--vscode-foreground); }
-.graph-collapse .codicon { font-size: 13px; transition: transform 150ms; }
-.graph-collapse.collapsed .codicon { transform: rotate(180deg); }
-
 gitstudio-graph {
   /* Size only — the element's shadow `:host` uses `display:flex;
    * flex-direction:column`. A light-DOM `display:block` here would override it
    * and collapse the flex:1 row scroller to zero height (no rows render). */
   height: 100%;
   width: 100%;
-}
-
-.details-host {
-  flex: 1 1 45%;
-  min-height: 120px;
-  overflow: hidden;
-  display: flex;
-  background: var(--app-panel);
 }
 
 .details {
@@ -2474,25 +2420,33 @@ gitstudio-graph {
 
 /* The shared <gitstudio-commit-details> inspect panel + the inline diff below
  * it. The diff surface stays hidden until a file is opened, then splits. */
+/* The commit-details surface inside the bottom dock fills the dock body; its
+   child (the details split, or the empty-state placeholder) fills + centers. */
+.dock-details-surface { height: 100%; min-height: 0; display: flex; }
+.dock-details-surface > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+
+/* Docked commit details = a wide, short split: the metadata/file panel on the
+   LEFT, the file diff on the RIGHT (uses the wide footer space, both visible). */
 .details-split {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   width: 100%;
   min-width: 0;
   height: 100%;
   overflow: hidden;
 }
+/* Stable two-pane: the commit metadata/file panel on the LEFT at a readable
+   fixed width, the diff filling the rest on the RIGHT — the diff shows its
+   "Select a file" placeholder until a file is opened, so there's never an empty
+   gap and the layout doesn't jump when you click a file. */
 .details-split .details-panel {
-  flex: 1 1 auto;
+  flex: 0 0 400px;
+  min-width: 0;
   min-height: 0;
-  display: block;
+  overflow: auto;
+  border-right: 1px solid var(--app-border);
 }
-.details-split .diff-surface {
-  display: none;
-  flex: 1 1 55%;
-}
-.details-split.diff-open .diff-surface { display: block; }
-.details-split.diff-open .details-panel { flex: 1 1 45%; min-height: 120px; }
+.details-split .diff-surface { display: block; flex: 1 1 auto; min-width: 0; min-height: 0; }
 
 .diff-empty {
   display: flex;
@@ -2606,10 +2560,9 @@ gitstudio-graph {
   border-color: var(--accent-line);
   box-shadow: var(--sheen), 0 0 0 2px color-mix(in srgb, var(--gs-accent) 18%, transparent);
 }
-/* When the search sits directly in the space-between header (not inside a
-   right-aligned action cluster), pull it — and anything after it — to the right
-   so every section's search lines up on the right edge. */
-.list-head-row > .gh-search { margin-left: auto; }
+/* The search sits on the LEFT, inside the title cluster (.gh-head-titlewrap),
+   right after the page name + count. Keep it from shrinking below its min width. */
+.gh-head-titlewrap > .gh-search { flex: 0 0 auto; margin-left: 2px; }
 .gh-search-icon { color: var(--app-muted); font-size: 14px; flex: 0 0 auto; }
 .gh-search-input {
   flex: 1 1 auto;
@@ -3283,10 +3236,11 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 28px;
+  gap: 2px;
+  height: 23px;
   padding: 0 4px 0 6px;
-  background: linear-gradient(180deg, var(--app-panel), var(--app-elevated));
+  /* Flat, minimal status-bar look (VS Code) — no gradient. */
+  background: var(--app-panel);
   border-top: 1px solid var(--app-border);
   user-select: none;
 }
@@ -3298,10 +3252,10 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 19px;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--app-muted);
   cursor: pointer;
@@ -3322,10 +3276,10 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   align-items: center;
   gap: 5px;
   max-width: 152px;
-  height: 22px;
-  padding: 0 8px;
+  height: 19px;
+  padding: 0 7px;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--app-muted);
   font-family: inherit;
