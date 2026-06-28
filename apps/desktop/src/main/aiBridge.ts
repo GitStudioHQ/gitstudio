@@ -494,7 +494,7 @@ export class AiBridge {
         provider: resolved.provider,
         host,
         tools,
-        model: "deep",
+        model: req.model ?? "mid",
         signal: abort.signal,
         onTextDelta: (delta) => this.send("ai:delta", { requestId, delta }),
         onEvent: (e) => {

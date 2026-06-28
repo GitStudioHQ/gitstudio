@@ -16,6 +16,8 @@ import type { AgentConfirmRequest, AgentEventWire, AiSettingsView } from "../sha
 
 /** Agent write permission, remembered across navigations within a session. */
 let permission: "read" | "write" | "destructive" = "read";
+/** Which model tier the Assistant uses — "fast" is the snappiest. */
+let speed: "fast" | "mid" | "deep" = "mid";
 
 const QUICK_ACTIONS: Array<{ icon: string; label: string; goal: string }> = [
   { icon: "git-commit", label: "Draft a commit", goal: "Draft a commit message for my staged changes and show it to me. Don't commit unless I confirm." },
@@ -56,6 +58,32 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   }
   permBar.append(permLabel, seg);
   header.append(permBar);
+
+  // Speed selector: lets the user trade quality for a snappier first token
+  // (maps to the connection's fast/mid/deep model — e.g. sonnet vs opus).
+  const speedBar = el("div", "assistant-perm");
+  const speedLabel = el("span", "assistant-perm-label");
+  speedLabel.textContent = "Speed";
+  const speedSeg = el("div", "settings-seg assistant-perm-seg");
+  const speeds: Array<{ id: typeof speed; label: string; title: string }> = [
+    { id: "fast", label: "Fast", title: "Use the connection's fast model — snappiest replies." },
+    { id: "mid", label: "Balanced", title: "Use the standard model." },
+    { id: "deep", label: "Deep", title: "Use the most capable model — best quality, slowest to start." },
+  ];
+  const speedBtns: HTMLElement[] = [];
+  for (const sp of speeds) {
+    const b = el("button", "settings-seg-btn" + (speed === sp.id ? " active" : ""));
+    b.title = sp.title;
+    b.append(span(sp.label));
+    b.addEventListener("click", () => {
+      speed = sp.id;
+      speedBtns.forEach((x) => x.classList.toggle("active", x === b));
+    });
+    speedBtns.push(b);
+    speedSeg.append(b);
+  }
+  speedBar.append(speedLabel, speedSeg);
+  header.append(speedBar);
 
   const transcript = el("div", "assistant-transcript");
   const composer = el("div", "assistant-composer");
@@ -122,12 +150,20 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     addBubble(transcript, "user", goal);
     const turn = el("div", "assistant-turn");
     const thinking = el("div", "assistant-thinking");
-    thinking.append(glyph("loading"), span("Working…"));
+    const thinkLabel = span("Thinking…");
+    thinking.append(glyph("loading"), thinkLabel);
     turn.append(thinking);
     transcript.append(turn);
     scrollDown(transcript);
 
     const state: TurnState = { turn, thinking, stream: null };
+    // A live elapsed counter so a multi-second model start-up reads as "working",
+    // not "frozen" (Claude Code's first token can take a few seconds).
+    const t0 = Date.now();
+    const ticker = window.setInterval(() => {
+      const s = Math.max(1, Math.round((Date.now() - t0) / 1000));
+      thinkLabel.textContent = state.stream ? `Responding… ${s}s` : `Thinking… ${s}s`;
+    }, 500);
     const requestId = crypto.randomUUID();
     const offDelta = host.on("ai:delta", (e) => {
       if (e.requestId === requestId) onDelta(state, e.delta);
@@ -148,6 +184,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         goal,
         allowWrite: permission !== "read",
         allowDestructive: permission === "destructive",
+        model: speed,
       });
       finalizeStream(state);
       thinking.remove();
@@ -160,6 +197,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       thinking.remove();
       turn.append(errorBlock(e instanceof Error ? e.message : String(e)));
     } finally {
+      window.clearInterval(ticker);
       offDelta();
       offEvent();
       offConfirm();

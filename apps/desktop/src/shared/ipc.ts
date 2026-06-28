@@ -996,6 +996,8 @@ export interface AgentRunRequest {
   allowWrite: boolean;
   allowDestructive: boolean;
   connectionId?: string;
+  /** Which model tier to use (fast = snappiest). Defaults to "mid". */
+  model?: "fast" | "mid" | "deep";
 }
 
 /** A structured step emitted by a running agent, streamed to the Assistant view. */
