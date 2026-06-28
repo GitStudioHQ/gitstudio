@@ -31,6 +31,7 @@ import {
 } from "../ui";
 import { confirmDialog, promptInline, toast } from "../dialogs";
 import { renderMarkdown } from "../markdown";
+import { aiChip, aiSheet, streamInto, aiEnabled } from "../aiAssist";
 import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type { IssueDetail, IssueInfo, RepoLabel } from "../../shared/ipc";
 
@@ -288,7 +289,25 @@ async function showDetail(
   openBtn.append(glyph("link-external"), span("Open on GitHub"));
   openBtn.addEventListener("click", () => window.open(it.htmlUrl, "_blank"));
 
-  actions.append(editBtn, labelsBtn, assignBtn, stateBtn, openBtn);
+  // ✨ AI: analyze the issue (problem / cause / suggested approach). The same
+  // issue context powers the "Draft a reply" chip on the composer below.
+  const aiCtx = (): string => {
+    const comments = d.comments.map((c) => `${c.author?.login ?? "?"}: ${c.body}`).join("\n\n");
+    return `Issue: ${it.title}\n\n${it.body ?? ""}${comments ? `\n\nComments:\n${comments}` : ""}`;
+  };
+  const analyzeBtn = el("button", "mini-btn ai-mini");
+  analyzeBtn.hidden = true;
+  analyzeBtn.append(glyph("sparkle"), span("Analyze"));
+  analyzeBtn.addEventListener("click", () =>
+    aiSheet({
+      title: `Analyze #${it.number}`,
+      task: "assist",
+      input: { description: `Analyze this GitHub issue. Summarize the problem, the likely root cause, and a concrete suggested approach. Be concise and use Markdown.\n\n${aiCtx()}` },
+    }),
+  );
+  void aiEnabled().then((ok) => (analyzeBtn.hidden = !ok));
+
+  actions.append(editBtn, labelsBtn, assignBtn, analyzeBtn, stateBtn, openBtn);
   head.append(h, meta, actions);
   detail.appendChild(head);
 
@@ -326,7 +345,18 @@ async function showDetail(
   const send = el("button", "btn btn-primary");
   send.append(glyph("comment"), span("Comment"));
   send.addEventListener("click", () => void postComment(detail, it.number, ta, send, wrap, nav));
-  crow.appendChild(send);
+  // ✨ Draft a reply straight into the composer.
+  const draftChip = aiChip("Draft a reply", () =>
+    void streamInto(
+      "assist",
+      { description: `Draft a concise, helpful reply comment for this GitHub issue. Output only the comment text.\n\n${aiCtx()}` },
+      ta,
+      draftChip as HTMLButtonElement,
+    ),
+  );
+  draftChip.hidden = true;
+  void aiEnabled().then((ok) => (draftChip.hidden = !ok));
+  crow.append(draftChip, send);
   composer.append(ta, crow);
   detail.appendChild(composer);
 }

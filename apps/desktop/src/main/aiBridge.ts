@@ -18,6 +18,7 @@ import {
   DEFAULT_AGENT_CONFIG,
   EMPTY_AI_SETTINGS,
   PROVIDER_PRESETS,
+  assist,
   connectionFromPreset,
   generateChangelog,
   generateCommitMessage,
@@ -466,11 +467,13 @@ export class AiBridge {
         }
         case "explainDiff": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
+          if (!diff.trim()) return { requestId, ok: false, message: "No changes to explain." };
           text = await explainDiff(provider, diff, taskCtx);
           break;
         }
         case "summarizeChanges": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
+          if (!diff.trim()) return { requestId, ok: false, message: "No changes to summarize." };
           text = await summarizeChanges(provider, diff, taskCtx);
           break;
         }
@@ -484,6 +487,7 @@ export class AiBridge {
         }
         case "reviewDiff": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
+          if (!diff.trim()) return { requestId, ok: false, message: "No changes to review." };
           text = await reviewDiff(provider, diff, taskCtx);
           break;
         }
@@ -504,6 +508,10 @@ export class AiBridge {
         }
         case "branchName": {
           text = await suggestBranchNames(provider, input.description ?? "", taskCtx);
+          break;
+        }
+        case "assist": {
+          text = await assist(provider, input.description ?? "", taskCtx);
           break;
         }
         default:

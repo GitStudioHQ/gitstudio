@@ -922,7 +922,8 @@ export type AiTaskName =
   | "reviewDiff"
   | "explainConflict"
   | "changelog"
-  | "branchName";
+  | "branchName"
+  | "assist";
 
 /** A configured model connection, redacted for the renderer (no key material). */
 export interface AiConnectionView {

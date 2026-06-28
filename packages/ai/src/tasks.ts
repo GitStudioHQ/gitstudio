@@ -169,3 +169,13 @@ export function suggestBranchNames(
     `Task: ${description}`;
   return oneShot(provider, [userMsg(prompt)], { model: "fast", maxTokens: 120, ctx });
 }
+
+/**
+ * A general-purpose inline assist: the caller hands a fully-formed prompt (e.g.
+ * "Analyze this issue…", "Draft a reply…", with the context embedded) and gets a
+ * Markdown answer. Powers the ✨ affordances that aren't diff-shaped (issue
+ * analysis, comment drafting).
+ */
+export function assist(provider: Provider, prompt: string, ctx?: TaskContext): Promise<string | null> {
+  return oneShot(provider, [userMsg(prompt)], { model: "mid", maxTokens: 1400, ctx });
+}

@@ -27,6 +27,7 @@ import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant } from "./assistant";
 import { aiModelsCard, agentAccessCard } from "./aiSettings";
+import { aiChip, aiSheet, streamInto, aiEnabled } from "./aiAssist";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
@@ -408,7 +409,6 @@ class App {
     { id: "graph", label: "Commits", icon: "git-commit" },
     { id: "branches", label: "Branches", icon: "git-branch" },
     { id: "compare", label: "Compare", icon: "git-compare" },
-    { id: "assistant", label: "Assistant", icon: "sparkle", divider: true },
     { id: "prs", label: "Pull Requests", icon: "git-pull-request", divider: true },
     { id: "issues", label: "Issues", icon: "issue-opened" },
     { id: "actions", label: "Actions", icon: "play" },
@@ -946,7 +946,16 @@ class App {
       void runCompare();
     });
     modeWrap.append(dot2, dot3);
-    bar.append(baseLbl, baseBtn, swap, headLbl, headBtn, modeWrap);
+    // ✨ AI: explain or review what this comparison changes.
+    const aiWrap = el("div", "cmp-ai");
+    aiWrap.hidden = true;
+    const aiInput = (): { base: string; head: string } => ({ base: this.compareBase!, head: this.compareHead! });
+    aiWrap.append(
+      aiChip("Explain", () => aiSheet({ title: `Explain ${this.compareBase}…${this.compareHead}`, task: "explainDiff", input: aiInput() }), "comment"),
+      aiChip("Review", () => aiSheet({ title: `Review ${this.compareBase}…${this.compareHead}`, task: "reviewDiff", input: aiInput() }), "search"),
+    );
+    void aiEnabled().then((ok) => (aiWrap.hidden = !ok));
+    bar.append(baseLbl, baseBtn, swap, headLbl, headBtn, modeWrap, aiWrap);
     syncMode();
 
     // ── View toggle: Commits | Changed files, with live counts + a summary. ───
@@ -1627,6 +1636,18 @@ class App {
     textarea.className = "dc-message";
     textarea.placeholder = "Message (what & why)…";
     textarea.rows = 2;
+    // ✨ AI actions — write a commit message from the staged diff, or review the
+    // working changes. Hidden until a model is connected.
+    const aiRow = el("div", "dc-ai");
+    aiRow.hidden = true;
+    const writeBtn = aiChip("Write commit message", () =>
+      void streamInto("commitMessage", {}, textarea, writeBtn as HTMLButtonElement),
+    );
+    aiRow.append(
+      writeBtn,
+      aiChip("Review changes", () => aiSheet({ title: "Review changes", task: "reviewDiff", input: {} }), "search"),
+    );
+    void aiEnabled().then((ok) => (aiRow.hidden = !ok));
     const commitRow = el("div", "dc-commit-row");
     const commitBtn = el("button", "btn btn-primary dc-commit");
     const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit");
@@ -1636,7 +1657,7 @@ class App {
     pushBtn.append(glyph("arrow-up"), span("Commit & Push"));
     pushBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, pushBtn, true));
     commitRow.append(commitBtn, pushBtn);
-    composer.append(branchLine, textarea, commitRow);
+    composer.append(branchLine, textarea, aiRow, commitRow);
 
     const toolbar = el("div", "dc-toolbar");
     const tTitle = el("span", "dc-toolbar-title");
@@ -2136,10 +2157,21 @@ class App {
     // Right edge: the notifications center (bell + unread badge) sitting right
     // next to the GitHub account chip — both pinned to the far right of the bar.
     const right = el("div", "topbar-right");
-    right.append(this.buildNotifBell(), this.buildAccountChip());
+    right.append(this.buildAssistantLauncher(), this.buildNotifBell(), this.buildAccountChip());
 
     bar.append(left, right);
     return bar;
+  }
+
+  /** The Assistant launcher — a sparkle button in the top bar, reachable from any
+   *  view. Opens the full Assistant (its chats persist + stay warm). */
+  private buildAssistantLauncher(): HTMLElement {
+    const b = el("button", "topbar-icon topbar-assistant");
+    b.title = "Assistant";
+    b.setAttribute("aria-label", "Open the AI Assistant");
+    b.append(glyph("sparkle"), span("Assistant", "topbar-assistant-label"));
+    b.addEventListener("click", () => this.routeView("assistant"));
+    return b;
   }
 
   /** The notifications center: a bell in the top bar (next to the account chip)

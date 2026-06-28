@@ -4461,3 +4461,49 @@ body.vscode-light .gh-label-chip {
 .assistant-send { flex: 0 0 auto; height: 40px; width: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .assistant-send.is-cancel { background: var(--gs-danger, #e15a5a); }
 .assistant-send .codicon { font-size: 16px; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Inline AI affordances (✨ chips, the streaming result sheet, header launcher).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* The header Assistant launcher. */
+.topbar-assistant { width: auto; gap: 6px; padding: 0 11px; }
+.topbar-assistant .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+.topbar-assistant-label { font-size: 12.5px; font-weight: 600; }
+@media (max-width: 1040px) { .topbar-assistant-label { display: none; } .topbar-assistant { padding: 0; width: 30px; justify-content: center; } }
+
+/* ✨ chips + the AI variant of mini-btn. */
+.ai-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, var(--app-border));
+  border-radius: 999px; background: color-mix(in srgb, var(--gs-accent) 8%, var(--app-elevated));
+  color: var(--vscode-foreground); font-family: inherit; font-size: 12px; cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ai-chip:hover { background: color-mix(in srgb, var(--gs-accent) 16%, var(--app-elevated)); border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); }
+.ai-chip:disabled { opacity: 0.6; cursor: default; }
+.ai-chip .codicon { font-size: 13px; color: var(--gs-accent-ink, var(--gs-accent)); }
+.ai-mini .codicon:first-child { color: var(--gs-accent-ink, var(--gs-accent)); }
+.dc-ai, .cmp-ai { display: flex; flex-wrap: wrap; gap: 7px; }
+.dc-ai { margin: 2px 0 2px; }
+.cmp-ai { margin-left: auto; }
+
+/* The streaming result sheet (Explain / Review / Analyze). */
+.ai-sheet-overlay {
+  position: fixed; inset: 0; z-index: 70;
+  background: color-mix(in srgb, #000 44%, transparent);
+  display: flex; align-items: center; justify-content: center; animation: ai-fade 0.12s ease;
+}
+.ai-sheet {
+  width: min(720px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+  background: var(--app-panel); border: 1px solid var(--app-border); border-radius: 14px;
+  box-shadow: var(--shadow-lg, 0 18px 50px rgba(0,0,0,0.45)); overflow: hidden;
+}
+.ai-sheet-head { display: flex; align-items: center; gap: 9px; padding: 13px 16px; border-bottom: 1px solid var(--app-border); }
+.ai-sheet-head > .codicon:first-child { color: var(--gs-accent-ink, var(--gs-accent)); font-size: 16px; }
+.ai-sheet-title { flex: 1 1 auto; font-size: 14px; font-weight: 650; color: var(--vscode-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-sheet-spin { color: var(--gs-accent-ink, var(--gs-accent)); }
+.ai-sheet-body { padding: 16px 18px; overflow-y: auto; font-size: 13px; line-height: 1.6; color: var(--vscode-foreground); }
+.ai-sheet-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 11px 16px; border-top: 1px solid var(--app-border); min-height: 14px; }
+.ai-sheet-foot:empty { display: none; }
+.ai-sheet-error { display: flex; align-items: flex-start; gap: 8px; color: var(--gs-danger, #e15a5a); font-size: 12.5px; }

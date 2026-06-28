@@ -35,6 +35,7 @@ import {
 } from "../ui";
 import { toast, confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
+import { aiSheet, aiEnabled } from "../aiAssist";
 import { ghGate, ghHeader, ghTwoPane, searchField, trapTab, type SectionRender } from "./common";
 import type {
   BranchRef,
@@ -342,11 +343,37 @@ function buildActions(
     ]),
   );
 
+  // ✨ AI: explain / review the PR's diff, or draft a comment. Hidden until a
+  // model is connected. The diff is gathered from base…head by the main process.
+  const aiBtn = el("button", "mini-btn ai-mini");
+  aiBtn.hidden = true;
+  aiBtn.append(glyph("sparkle"), span("AI"), glyph("chevron-down"));
+  const range = { base: full.base.ref, head: full.head.ref };
+  aiBtn.addEventListener("click", () =>
+    openMenu(aiBtn, [
+      { label: "Explain this PR", icon: "comment", onClick: () => aiSheet({ title: `Explain PR #${full.number}`, task: "explainDiff", input: range }) },
+      { label: "Review this PR", icon: "search", onClick: () => aiSheet({ title: `Review PR #${full.number}`, task: "reviewDiff", input: range }) },
+      { separator: true },
+      {
+        label: "Draft a comment",
+        icon: "comment",
+        onClick: () =>
+          aiSheet({
+            title: "Draft a comment",
+            task: "assist",
+            input: { description: `Draft a concise, constructive review comment for this pull request. Output only the comment.\n\nTitle: ${full.title}\n\n${full.body ?? ""}` },
+          }),
+      },
+    ]),
+  );
+  void aiEnabled().then((ok) => (aiBtn.hidden = !ok));
+
   actions.append(
     checkoutBtn,
     approveBtn,
     reviewBtn,
     ...(readyBtn ? [readyBtn] : []),
+    aiBtn,
     mergeBtn,
     openBtn,
     moreBtn,
