@@ -1,7 +1,7 @@
-// The Organizations section view (read-only). A two-pane gh-view: the org list
-// on the left, and on the right an org detail pane with Repositories / Teams /
-// Members sub-tabs, each lazy-loaded on demand. Modeled on the PR & Issue views
-// so the whole GitHub surface feels like one product.
+// The Organizations section view (read-only). Pick an org from a searchable
+// dropdown (with avatars) in the title bar, and its detail pane — Repositories /
+// Teams / Members sub-tabs, each lazy-loaded on demand — fills the whole pane
+// below. No left list pane, so the detail gets the full width.
 //
 // Read-only by design (the "Mostly read v1" bar): the only interactions are
 // open-on-GitHub (window.open) and copy-to-clipboard. There is no create/update/
@@ -19,15 +19,15 @@ import {
   el,
   emptyState,
   errorState,
-  ghRow,
   glyph,
   loadingState,
+  openMenu,
   relTimeISO,
   absTimeISO,
-  skeletonList,
   span,
+  type MenuItem,
 } from "../ui";
-import { ghGate, ghHeader, ghTwoPane, type SectionRender } from "./common";
+import { ghGate, ghHeader, headerPicker, type SectionRender } from "./common";
 import type { OrgInfo, OrgMember, OrgRepo, OrgTeam } from "../../shared/ipc";
 
 // ── In-session state (in-memory only, like prSubTab — not persisted) ──────────
@@ -93,27 +93,20 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const gen = ++renderGen;
 
   const header = ghHeader("Organizations", gate.login, refresh);
-  const { view, listEl, detailEl: detail } = ghTwoPane();
-  view.insertBefore(header, view.firstChild);
+  const view = el("div", "gh-view");
+  view.appendChild(header);
+  // One full-width pane: the selected org's detail (head + sub-tabs) lives here.
+  const detail = el("div", "gh-detail gh-solo");
+  view.appendChild(detail);
   wrap.replaceChildren(view);
-  const idleEmpty = (): void => {
-    detail.replaceChildren(
-      emptyState(
-        "Organizations",
-        "Select an organization to browse its repositories, teams, and members.",
-        { icon: "organization", hint: "Tip: open a repo, team, or member on GitHub from the detail pane." },
-      ),
-    );
-  };
-  idleEmpty();
 
-  listEl.replaceChildren(skeletonList(5));
+  detail.replaceChildren(loadingState());
   let orgs: OrgInfo[];
   try {
     orgs = await host.invoke("orgs:list", undefined);
   } catch (e) {
     if (gen !== renderGen) return;
-    listEl.replaceChildren(
+    detail.replaceChildren(
       errorState("Couldn't load organizations", cleanErr(e) || "GitHub request failed.", refresh),
     );
     return;
@@ -121,9 +114,8 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   if (gen !== renderGen) return;
 
   header.setCount?.(orgs.length);
-  listEl.replaceChildren();
   if (orgs.length === 0) {
-    listEl.appendChild(
+    detail.replaceChildren(
       emptyState("No organizations", "You're not a member of any GitHub organizations.", {
         icon: "organization",
       }),
@@ -131,33 +123,32 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     return;
   }
 
-  const rowFor = new Map<string, HTMLElement>();
-  for (const org of orgs) {
-    const row = ghRow({
-      lead: avatar(org.login, org.avatarUrl, 30),
-      title: org.name || org.login,
-      meta: org.description || `@${org.login}`,
-      ariaLabel: `Organization ${org.name || org.login}`,
-    });
-    row.addEventListener("click", () => {
-      for (const n of listEl.querySelectorAll(".gh-row.active")) n.classList.remove("active");
-      row.classList.add("active");
-      selectedOrg = org.login;
-      showOrgDetail(detail, org, gen);
-    });
-    rowFor.set(org.login, row);
-    listEl.appendChild(row);
-  }
+  const select = (org: OrgInfo): void => {
+    selectedOrg = org.login;
+    picker.set(orgAvatar(org.avatarUrl, org.login, 20), org.name || org.login);
+    showOrgDetail(detail, org, gen);
+  };
+
+  // The bar-level picker: a searchable dropdown of every org (with avatars).
+  // Choosing one fills its detail full-width below.
+  const picker = headerPicker({
+    onOpen: (anchor) => {
+      const items: MenuItem[] = orgs.map((o) => ({
+        label: o.name || o.login,
+        sub: `@${o.login}`,
+        iconEl: avatar(o.login, o.avatarUrl, 18),
+        current: o.login === selectedOrg,
+        onClick: () => select(o),
+      }));
+      openMenu(anchor, items, { searchable: true });
+    },
+  });
+  header.querySelector(".gh-head-titlewrap")?.appendChild(picker.el);
 
   // Auto-select the previously chosen org (or the first) so the detail pane is
   // never empty on entry — selectedOrg persists in-memory across re-renders.
-  const initial =
-    (selectedOrg && orgs.find((o) => o.login === selectedOrg)) || orgs[0];
-  if (initial) {
-    rowFor.get(initial.login)?.classList.add("active");
-    selectedOrg = initial.login;
-    showOrgDetail(detail, initial, gen);
-  }
+  const initial = (selectedOrg && orgs.find((o) => o.login === selectedOrg)) || orgs[0];
+  select(initial);
 }
 
 // ── Detail pane (header + Repos/Teams/Members sub-tabs) ───────────────────────

@@ -65,11 +65,6 @@ def square():
     return ('<rect width="512" height="512" fill="url(#bg)"/>'
             '<rect width="512" height="512" fill="url(#bgglow)"/>')
 
-def _node(cx, cy, r, f, core=PAPER, glow=False):
-    g = ' filter="url(#glow)"' if glow else ''
-    return (f'<g{g}><circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{f}"/>'
-            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r*0.42:.1f}" fill="{core}"/></g>')
-
 def _cube_pts(cx, cy, R):
     """Isometric cube vertices. E=top, F=upper-right, B=lower-right,
     D=bottom, C=lower-left, G=upper-left, O=front-center (where 3 faces meet)."""
@@ -79,30 +74,45 @@ def _cube_pts(cx, cy, R):
 
 def _p(pt): return f"{pt[0]:.1f},{pt[1]:.1f}"
 
-def commit_cube(cx=256, cy=250, R=152, mono=None, core=PAPER):
-    """Primary mark: isometric cube; front seams form the merge-Y, corners are commits."""
+def commit_cube(cx=256, cy=250, R=152, mono=None):
+    """Primary mark: isometric cube; front seams form the merge-Y, corners are commits.
+
+    Every commit node is a **big, blunt, equal** violet disc punched with a real
+    centre hole — a clean eyelet that lets the tile/background show through,
+    instead of a painted-on white core (no shine) — and the whole graph is drawn
+    flat, with no glow halo (no fade). One mask cuts the hole through the *entire*
+    cube — faces, rim, lanes and disc alike — so the eyelet reveals only the clean
+    backdrop, never a cube edge or face seam crossing the circle."""
     p = _cube_pts(cx, cy, R)
     if mono:
         faces = (f'<path d="M{_p(p["E"])} L{_p(p["F"])} L{_p(p["O"])} L{_p(p["G"])} Z" fill="{mono}" fill-opacity="0.30"/>'
                  f'<path d="M{_p(p["F"])} L{_p(p["B"])} L{_p(p["D"])} L{_p(p["O"])} Z" fill="{mono}" fill-opacity="0.62"/>'
                  f'<path d="M{_p(p["O"])} L{_p(p["D"])} L{_p(p["C"])} L{_p(p["G"])} Z" fill="{mono}" fill-opacity="0.46"/>')
-        sa = sb = sm = mono; nc = mono; rim_op = 0.0
+        ink = mono; rim_op = 0.0
     else:
         faces = (f'<path d="M{_p(p["E"])} L{_p(p["F"])} L{_p(p["O"])} L{_p(p["G"])} Z" fill="url(#fTop)"/>'
                  f'<path d="M{_p(p["F"])} L{_p(p["B"])} L{_p(p["D"])} L{_p(p["O"])} Z" fill="url(#fRight)"/>'
                  f'<path d="M{_p(p["O"])} L{_p(p["D"])} L{_p(p["C"])} L{_p(p["G"])} Z" fill="url(#fLeft)"/>')
-        sa = sb = sm = VIOLET; nc = core; rim_op = 0.12
+        ink = VIOLET; rim_op = 0.12
     rim = (f'<path d="M{_p(p["E"])} L{_p(p["F"])} L{_p(p["B"])} L{_p(p["D"])} L{_p(p["C"])} L{_p(p["G"])} Z" '
            f'fill="none" stroke="{mono or "#FFFFFF"}" stroke-opacity="{rim_op}" stroke-width="3" stroke-linejoin="round"/>')
-    sw = 17
-    op = ''
-    spine = (f'<g filter="url(#glow)" fill="none" stroke-width="{sw}" stroke-linecap="round"{op}>'
-             f'<path d="M{_p(p["O"])} L{_p(p["G"])}" stroke="{sa}"/>'
-             f'<path d="M{_p(p["O"])} L{_p(p["F"])}" stroke="{sb}"/>'
-             f'<path d="M{_p(p["O"])} L{_p(p["D"])}" stroke="{sm}"/></g>')
-    nodes = (_node(*p["G"],19,sa,nc,glow=True) + _node(*p["F"],19,sb,nc,glow=True)
-             + _node(*p["D"],19,sm,nc,glow=True) + _node(*p["O"],23,sm,nc,glow=True))
-    return faces + rim + spine + nodes
+    # Big, blunt, near-equal nodes: ends grow to the old hub size, the hub a hair
+    # larger so the merge still anchors. Holes ~40% of the disc — a clean eyelet.
+    rEnd, rHub, hf = 23, 26, 0.40
+    ends = (p["G"], p["F"], p["D"])
+    holes = "".join(f'<circle cx="{c[0]:.1f}" cy="{c[1]:.1f}" r="{rEnd*hf:.1f}" fill="#000"/>' for c in ends)
+    holes += f'<circle cx="{p["O"][0]:.1f}" cy="{p["O"][1]:.1f}" r="{rHub*hf:.1f}" fill="#000"/>'
+    mask = (f'<mask id="cubeHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">'
+            f'<rect width="512" height="512" fill="#fff"/>{holes}</mask>')
+    spine = (f'<g fill="none" stroke-width="18" stroke-linecap="round">'
+             f'<path d="M{_p(p["O"])} L{_p(p["G"])}" stroke="{ink}"/>'
+             f'<path d="M{_p(p["O"])} L{_p(p["F"])}" stroke="{ink}"/>'
+             f'<path d="M{_p(p["O"])} L{_p(p["D"])}" stroke="{ink}"/></g>')
+    discs = "".join(f'<circle cx="{c[0]:.1f}" cy="{c[1]:.1f}" r="{rEnd}" fill="{ink}"/>' for c in ends)
+    discs += f'<circle cx="{p["O"][0]:.1f}" cy="{p["O"][1]:.1f}" r="{rHub}" fill="{ink}"/>'
+    # Mask the whole cube — faces + rim + lanes + discs — so the eyelets punch
+    # clean through to the backdrop and no edge/seam ever shows inside a circle.
+    return f'{mask}<g mask="url(#cubeHoles)">{faces}{rim}{spine}{discs}</g>'
 
 def g_mark(mono=None, glow=True, core=PAPER):
     """Alternate mark: a 'G' monogram whose spur ends in a commit node."""
@@ -128,11 +138,11 @@ def doc(inner, defs, w=512, h=512, vb="0 0 512 512"):
             f'viewBox="{vb}"><defs>{defs}</defs>{inner}</svg>')
     return _pretty(body) + "\n"
 
-ICON   = doc(squircle() + commit_cube(),               LANES + FACES + BG + GLOW)
-LOGO   = doc(square() + commit_cube(),                 LANES + FACES + BG + GLOW)
-MARK   = doc(commit_cube(),                            LANES + FACES + GLOW)
-MONO_W = doc(commit_cube(mono="#FFFFFF"),              LANES + FACES + GLOW)
-MONO_K = doc(commit_cube(mono=INK),                   LANES + FACES + GLOW)
+ICON   = doc(squircle() + commit_cube(),               FACES + BG)
+LOGO   = doc(square() + commit_cube(),                 FACES + BG)
+MARK   = doc(commit_cube(),                            FACES)
+MONO_W = doc(commit_cube(mono="#FFFFFF"),              FACES)
+MONO_K = doc(commit_cube(mono=INK),                   FACES)
 ALT    = doc(squircle() + g_mark(),                   LANES + BG + GLOW)
 
 OUT = {

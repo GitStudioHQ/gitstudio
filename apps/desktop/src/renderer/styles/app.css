@@ -3883,6 +3883,48 @@ body.vscode-light .gh-label-chip {
 }
 .gh-acct .gh-who .codicon { font-size: 14px; color: var(--app-muted); }
 
+/* ── Bar-level selector chip (Projects / Orgs header picker) ─────────────────── */
+.gh-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  max-width: 360px;
+  padding: 0 9px 0 8px;
+  border-radius: 9px;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.gh-picker:hover { background: var(--app-hover); border-color: var(--accent-line); }
+.gh-picker[aria-expanded="true"] { background: var(--app-active); border-color: var(--accent-line); }
+.gh-picker:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline-offset: 2px;
+}
+.gh-picker-lead {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.gh-picker-lead .glyph,
+.gh-picker-lead .codicon { color: var(--gs-accent-ink, var(--gs-accent)); font-size: 16px; }
+.gh-picker-lead .av,
+.gh-picker-lead .gh-avatar { width: 20px; height: 20px; }
+.gh-picker-lead .av-fallback { font-size: 9px; }
+.gh-picker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gh-picker-chev { color: var(--app-muted); opacity: 0.7; flex: 0 0 auto; margin-left: 1px; }
+.gh-picker-chev .codicon { font-size: 14px; }
+
+/* Single full-width pane (no left list): the picked project/org board+data. */
+.gh-solo { flex: 1 1 auto; min-width: 0; border-left: none; }
+
 /* Wider list pane so the detail isn't a 60% void; lift the detail surface. */
 .gh-list { flex: 0 0 42%; min-width: 300px; max-width: 600px; }
 .gh-detail { background: var(--app-bg); }
@@ -4010,6 +4052,59 @@ body.vscode-light .gh-label-chip {
 .topbar-branch { max-width: 260px; }
 /* the repo glyph leads the repo switch in the brand accent (like the branch one) */
 .topbar-switch .glyph:first-child { color: var(--gs-accent-ink, var(--gs-accent)); }
+
+/* ── Notifications center: the bell + unread badge, next to the account chip ─── */
+.topbar-bell { position: relative; flex: 0 0 auto; }
+.topbar-bell .codicon { font-size: 16px; }
+.topbar-bell.has-unread { color: var(--vscode-foreground); }
+.topbar-bell[aria-expanded="true"] {
+  background: var(--app-active);
+  color: var(--vscode-foreground);
+}
+.topbar-bell-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--gs-accent);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  border: 1.5px solid var(--app-panel);
+  box-shadow: 0 1px 3px -1px color-mix(in srgb, var(--gs-accent) 60%, transparent);
+  pointer-events: none;
+}
+
+/* ── Notifications center popover (the bell's floating inbox panel) ──────────── */
+.notif-pop {
+  position: fixed;
+  z-index: 1000;
+  width: 408px;
+  max-width: calc(100vw - 24px);
+  max-height: min(560px, calc(100vh - 80px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground));
+  border: 1px solid var(--app-border);
+  box-shadow: var(--sheen), var(--shadow-pop);
+  transform-origin: top right;
+  animation: menu-pop 140ms var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) { .notif-pop { animation: none; } }
+.notif-pop-inner { flex: 1 1 auto; min-height: 0; display: flex; }
+.notif-pop .notif-view { background: transparent; }
+.notif-pop .list-head { padding: 12px 13px 10px; }
+.notif-pop .list-body { padding: 7px; }
 
 /* The single account chip, pinned to the right edge of the bar. */
 .topbar-acct {

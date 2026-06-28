@@ -105,6 +105,34 @@ export function ghHeader(
 }
 
 /**
+ * A header "selector" chip — the bar-level picker the Projects/Orgs views use to
+ * choose which project/org fills the pane below. Shows a leading element (icon or
+ * avatar), the current selection's name, and a chevron; clicking calls `onOpen`
+ * with the button as the anchor (the view opens an `openMenu` of choices there).
+ * `set(lead, name)` swaps the displayed lead + label when the selection changes.
+ */
+export function headerPicker(opts: {
+  onOpen: (anchor: HTMLElement) => void;
+}): { el: HTMLElement; set: (lead: HTMLElement, name: string) => void } {
+  const btn = el("button", "gh-picker");
+  btn.setAttribute("aria-haspopup", "menu");
+  const leadSlot = el("span", "gh-picker-lead");
+  const nameEl = el("span", "gh-picker-name");
+  const chev = glyph("chevron-down");
+  chev.classList.add("gh-picker-chev");
+  btn.append(leadSlot, nameEl, chev);
+  btn.addEventListener("click", () => opts.onOpen(btn));
+  return {
+    el: btn,
+    set: (lead: HTMLElement, name: string): void => {
+      leadSlot.replaceChildren(lead);
+      nameEl.textContent = name;
+      btn.title = name;
+    },
+  };
+}
+
+/**
  * A compact header search/filter field: a leading magnifier, a text input, and
  * a clear (×) button that appears once there's text. Input is debounced and
  * trimmed before `onInput` fires; Escape clears. Views own the actual filtering

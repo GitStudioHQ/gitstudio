@@ -64,7 +64,7 @@ import { renderIssues } from "./views/issues";
 import { renderPrs } from "./views/prs";
 import { renderActions } from "./views/actions";
 import { renderReleases } from "./views/releases";
-import { renderNotifications } from "./views/notifications";
+import { openNotificationsPanel, fetchUnreadCount } from "./views/notifications";
 import { renderOrgs } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
@@ -97,6 +97,7 @@ class App {
   private diffSurfaceEl?: HTMLElement;
   private repoSwitchName?: HTMLElement;
   private branchSwitchName?: HTMLElement;
+  private notifBellBadge?: HTMLElement;
   private selectedSha?: string;
   private currentRepo?: RepoInfo;
   private refs: RefInfo[] = [];
@@ -391,7 +392,6 @@ class App {
     { id: "actions", label: "Actions", icon: "play" },
     { id: "releases", label: "Releases", icon: "tag" },
     { id: "projects", label: "Projects", icon: "project" },
-    { id: "notifications", label: "Notifications", icon: "bell" },
     { id: "orgs", label: "Organizations", icon: "organization" },
     { id: "gists", label: "Gists", icon: "code" },
   ];
@@ -625,8 +625,6 @@ class App {
       this.mountSection(renderActions);
     } else if (id === "releases") {
       this.mountSection(renderReleases);
-    } else if (id === "notifications") {
-      this.mountSection(renderNotifications);
     } else if (id === "orgs") {
       this.mountSection(renderOrgs);
     } else if (id === "projects") {
@@ -2086,16 +2084,58 @@ class App {
     // Left cluster: brand + repo + branch, with the sync (fetch/pull/push)
     // widget sitting right next to the branch switcher.
     const left = el("div", "topbar-left");
-    left.append(sidebarToggle, home, repoSwitch, branchSwitch, this.buildSyncWidget());
+    left.append(home, sidebarToggle, repoSwitch, branchSwitch, this.buildSyncWidget());
     this.syncRailToggle();
 
-    // Right edge: the GitHub account (one place, not repeated in every section
-    // view), pinned to the far right of the bar.
+    // Right edge: the notifications center (bell + unread badge) sitting right
+    // next to the GitHub account chip — both pinned to the far right of the bar.
     const right = el("div", "topbar-right");
-    right.append(this.buildAccountChip());
+    right.append(this.buildNotifBell(), this.buildAccountChip());
 
     bar.append(left, right);
     return bar;
+  }
+
+  /** The notifications center: a bell in the top bar (next to the account chip)
+   *  with an unread-count badge, opening the inbox as a floating panel. Replaces
+   *  the old sidebar "Notifications" section — the bell IS the center now. */
+  private buildNotifBell(): HTMLElement {
+    const bell = el("button", "topbar-icon topbar-bell");
+    bell.title = "Notifications";
+    bell.setAttribute("aria-label", "Notifications");
+    bell.appendChild(glyph("bell"));
+    const badge = el("span", "topbar-bell-badge");
+    badge.hidden = true;
+    bell.appendChild(badge);
+    this.notifBellBadge = badge;
+    bell.addEventListener("click", () =>
+      openNotificationsPanel(
+        bell,
+        (v) => this.routeView(v),
+        () => void this.refreshNotifBadge(),
+      ),
+    );
+    void this.refreshNotifBadge();
+    return bell;
+  }
+
+  /** Pull the unread count and reflect it on the bell badge (hidden at zero). */
+  private async refreshNotifBadge(): Promise<void> {
+    const badge = this.notifBellBadge;
+    if (!badge) return;
+    const count = await fetchUnreadCount();
+    if (!badge.isConnected) return;
+    const bell = badge.parentElement;
+    if (count > 0) {
+      badge.textContent = count > 99 ? "99+" : String(count);
+      badge.hidden = false;
+      bell?.classList.add("has-unread");
+      bell?.setAttribute("title", `Notifications · ${count} unread`);
+    } else {
+      badge.hidden = true;
+      bell?.classList.remove("has-unread");
+      bell?.setAttribute("title", "Notifications");
+    }
   }
 
   /** The single GitHub-account affordance, pinned to the right edge of the top

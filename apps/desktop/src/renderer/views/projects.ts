@@ -1,14 +1,13 @@
-// The GitHub "Projects" section: a two-pane view — a master list of the repo's
-// Projects (v2) on the left, and the selected project's board (columns grouped
-// by its Status field, with movable cards) on the right.
+// The GitHub "Projects" section: pick a project from a searchable dropdown in the
+// title bar, and its board (columns grouped by the Status field, with movable
+// cards) fills the whole pane below — no left list pane, so the board gets the
+// full width.
 //
-// It mirrors the PR/Issue section exactly (gh-view / gh-list / gh-detail / gh-row
-// / gh-detail-*), then adds the board (gh-board / gh-col / gh-card). Reads throw →
-// errorState + Retry; the move mutation toasts + re-renders. The whole view
-// re-renders by calling renderProjects again; module-local `selectedProjectId`
-// makes the list auto-reselect the project the user was on, so a move reloads its
-// board with the card in its new column — the same refresh-after-mutation UX the
-// PR view gets from re-running showPullRequestsView.
+// The board is gh-board / gh-col / gh-card. Reads throw → errorState + Retry; the
+// move mutation toasts + re-renders. The whole view re-renders by calling
+// renderProjects again; module-local `selectedProjectId` makes the picker
+// re-select the project the user was on, so a move reloads its board with the
+// card in its new column — the same refresh-after-mutation UX the PR view gets.
 
 import { host } from "../bridge";
 import {
@@ -19,17 +18,14 @@ import {
   relTimeISO,
   absTimeISO,
   loadingState,
-  skeletonList,
   errorState,
   emptyState,
   openMenu,
   cleanErr,
-  ghRow,
-  statePill,
   type MenuItem,
 } from "../ui";
 import { toast } from "../dialogs";
-import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
+import { ghGate, ghHeader, headerPicker, type SectionRender } from "./common";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
 
 // Which project the user last opened. Survives a re-render so a move (or refresh)
@@ -49,38 +45,26 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
   const header = ghHeader("Projects", gate.login, refresh);
   const view = el("div", "gh-view");
   view.appendChild(header);
-  const body = el("div", "gh-body");
-  const listEl = el("div", "gh-list");
-  const detail = el("div", "gh-detail gh-board-detail");
-  body.append(listEl, detail);
-  view.appendChild(body);
+  // One full-width pane: the selected project's board lives here.
+  const board = el("div", "gh-detail gh-board-detail gh-solo");
+  view.appendChild(board);
   wrap.replaceChildren(view);
-  const idleEmpty = (): void => {
-    detail.replaceChildren(
-      emptyState(
-        "Projects",
-        "Select a project to see its board, with cards grouped by Status.",
-        { icon: "project", hint: "Tip: open one to move cards between columns or jump to an item on GitHub." },
-      ),
-    );
-  };
-  idleEmpty();
 
-  listEl.replaceChildren(skeletonList(5));
+  board.replaceChildren(loadingState());
   let projects: ProjectInfo[];
   try {
     projects = await host.invoke("project:list", undefined);
   } catch (e) {
-    listEl.replaceChildren(
+    board.replaceChildren(
       errorState("Couldn't load projects", cleanErr(e) || "GitHub request failed.", refresh),
     );
     return;
   }
   header.setCount?.(projects.length);
-  listEl.replaceChildren();
+
   if (projects.length === 0) {
     selectedProjectId = undefined;
-    listEl.appendChild(
+    board.replaceChildren(
       emptyState("No projects", "No GitHub Projects (v2) are linked to this repository.", {
         icon: "project",
       }),
@@ -88,78 +72,33 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
     return;
   }
 
-  const select = (p: ProjectInfo, row: HTMLElement): void => {
-    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-    row.classList.add("active");
+  const select = (p: ProjectInfo): void => {
     selectedProjectId = p.id;
-    void showProjectBoard(detail, p, refresh);
+    picker.set(glyph("project"), p.title);
+    void showProjectBoard(board, p, refresh);
   };
 
-  const buildRow = (p: ProjectInfo): HTMLElement => {
-    const lead = el("span", "gh-lead-icon gh-lead-merged");
-    lead.appendChild(glyph("project"));
-    const when = relTimeISO(p.updatedAt);
-    const row = ghRow({
-      lead,
-      title: p.title,
-      titleSuffix: p.closed ? [statePill("Closed", "closed")] : [],
-      meta:
-        `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
-        (when ? ` · updated ${when}` : ""),
-      metaTitle: p.updatedAt ? `Updated ${absTimeISO(p.updatedAt)}` : undefined,
-      ariaLabel: `Project #${p.number}: ${p.title}`,
-    });
-    row.addEventListener("click", () => select(p, row));
-    return row;
-  };
+  // The bar-level picker: a searchable dropdown of every project. Choosing one
+  // loads its board full-width below.
+  const picker = headerPicker({
+    onOpen: (anchor) => {
+      const items: MenuItem[] = projects.map((p) => ({
+        label: p.title,
+        sub:
+          `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
+          (p.closed ? " · closed" : ""),
+        icon: "project",
+        current: p.id === selectedProjectId,
+        onClick: () => select(p),
+      }));
+      openMenu(anchor, items, { searchable: true });
+    },
+  });
+  header.querySelector(".gh-head-titlewrap")?.appendChild(picker.el);
 
-  // Case-insensitive match over the fields a user would search by.
-  const matches = (p: ProjectInfo, q: string): boolean => {
-    const hay = `${p.title} #${p.number}`.toLowerCase();
-    return hay.includes(q);
-  };
-
-  let autoSelected = false;
-  const renderList = (items: ProjectInfo[], q = ""): void => {
-    listEl.replaceChildren();
-    if (items.length === 0) {
-      listEl.appendChild(
-        emptyState("No matching projects", `Nothing matches “${q}”.`, { icon: "search" }),
-      );
-      return;
-    }
-    // Build rows; highlight the currently-open project without re-opening it (so
-    // filtering keystrokes never refetch the board).
-    items.forEach((p) => {
-      const row = buildRow(p);
-      if (p.id === selectedProjectId) row.classList.add("active");
-      listEl.appendChild(row);
-    });
-    // Open a project (fetching its board) ONCE per render cycle — the initial
-    // render or a mutation-driven re-render (each gets a fresh closure). Reopen
-    // the project the user was on, else auto-open the first so the board isn't a void.
-    if (!autoSelected) {
-      autoSelected = true;
-      const reopen =
-        items.find((p) => p.id === selectedProjectId) ??
-        (selectedProjectId === undefined ? items[0] : undefined);
-      if (reopen) {
-        const row = listEl.children[items.indexOf(reopen)] as HTMLElement | undefined;
-        if (row) select(reopen, row);
-      }
-    }
-  };
-
-  // A header search/filter — on the LEFT, next to the title (client-side, instant).
-  header.querySelector(".gh-head-titlewrap")?.appendChild(
-    searchField({
-      placeholder: "Search projects…",
-      onInput: (q) =>
-        renderList(q ? projects.filter((p) => matches(p, q.toLowerCase())) : projects, q),
-    }),
-  );
-
-  renderList(projects);
+  // Reopen the project the user was on (else the first) so the board is never a void.
+  const initial = projects.find((p) => p.id === selectedProjectId) ?? projects[0];
+  select(initial);
 }
 
 /**
