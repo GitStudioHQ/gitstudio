@@ -18,6 +18,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   loadingState,
   skeletonList,
   errorState,
@@ -34,7 +35,7 @@ import {
 } from "../ui";
 import { toast, confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { ghGate, ghHeader, ghTwoPane, type SectionRender } from "./common";
+import { ghGate, ghHeader, ghTwoPane, trapTab, type SectionRender } from "./common";
 import type {
   BranchRef,
   PrComment,
@@ -122,6 +123,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       title: pr.title,
       titleSuffix: pr.draft ? [statePill("Draft", "draft")] : [],
       meta: `#${pr.number} ${pr.head.ref} → ${pr.base.ref} · ${pr.user?.login ?? "unknown"}${updated ? ` · ${updated}` : ""}`,
+      metaTitle: pr.updatedAt ? `Updated ${absTimeISO(pr.updatedAt)}` : undefined,
       chips,
       stats,
       ariaLabel: `Pull request #${pr.number}: ${pr.title}`,
@@ -705,6 +707,7 @@ function createPrModal(opts: {
     const overlay = el("div", "modal-overlay");
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "New pull request");
     const card = el("div", "modal-card gh-pr-form");
     const h = el("div", "modal-title");
     h.textContent = "New pull request";
@@ -766,7 +769,9 @@ function createPrModal(opts: {
       if (e.key === "Escape") {
         e.preventDefault();
         finish(null);
+        return;
       }
+      trapTab(e, card);
     };
     cancel.addEventListener("click", () => finish(null));
     ok.addEventListener("click", () =>
@@ -794,6 +799,7 @@ function reviewerPickerModal(people: RepoCollaborator[]): Promise<string[] | nul
     const overlay = el("div", "modal-overlay");
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Request reviewers");
     const card = el("div", "modal-card gh-pr-form");
     const h = el("div", "modal-title");
     h.textContent = "Request reviewers";
@@ -825,7 +831,9 @@ function reviewerPickerModal(people: RepoCollaborator[]): Promise<string[] | nul
       if (e.key === "Escape") {
         e.preventDefault();
         finish(null);
+        return;
       }
+      trapTab(e, card);
     };
     cancel.addEventListener("click", () => finish(null));
     ok.addEventListener("click", () => finish(boxes.filter((b) => b.cb.checked).map((b) => b.login)));

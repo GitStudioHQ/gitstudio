@@ -104,6 +104,31 @@ export function ghHeader(
   return headRow;
 }
 
+/**
+ * Keep keyboard focus inside a modal `card` while it's open. Call from the
+ * dialog's keydown handler on a Tab press; wraps focus from the last focusable
+ * element back to the first (and vice-versa with Shift). A no-op for other keys.
+ */
+export function trapTab(e: KeyboardEvent, card: HTMLElement): void {
+  if (e.key !== "Tab") return;
+  const focusables = Array.from(
+    card.querySelectorAll<HTMLElement>(
+      "button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])",
+    ),
+  ).filter((n) => !n.hasAttribute("disabled") && n.offsetParent !== null);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement as HTMLElement | null;
+  if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 /** A list-left / detail-right scaffold matching the PR & Issue views. */
 export function ghTwoPane(): { view: HTMLElement; listEl: HTMLElement; detailEl: HTMLElement } {
   const view = el("div", "gh-view");

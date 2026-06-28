@@ -71,7 +71,7 @@ before(() => {
 after(() => {
   ctx?.dispose();
   if (repo) {
-    rmSync(repo, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

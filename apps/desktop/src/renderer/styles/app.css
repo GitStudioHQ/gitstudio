@@ -403,6 +403,20 @@ button:disabled:hover { filter: grayscale(0.25); }
   outline-offset: 2px;
 }
 
+/* Resizable dividers are keyboard-operable (role="separator", arrow keys). Make
+   keyboard focus obvious by lighting up the otherwise-thin handle. */
+.rail-resizer:focus-visible,
+.cmp-vsplit:focus-visible,
+.graph-resizer:focus-visible,
+.dock-resizer:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline-offset: -1px;
+}
+.rail-resizer:focus-visible .rail-resizer-grip,
+.cmp-vsplit:focus-visible .cmp-vsplit-grip { background: var(--gs-accent); width: 2px; }
+.graph-resizer:focus-visible .graph-grip,
+.dock-resizer:focus-visible .dock-resizer-grip { background: var(--gs-accent); }
+
 /* Respect the OS "reduce motion" setting across the whole app. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1040,6 +1054,11 @@ button:disabled:hover { filter: grayscale(0.25); }
   background: color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground));
   border: 1px solid var(--app-border);
   box-shadow: var(--sheen), var(--shadow-pop);
+  animation: gs-card-in 160ms var(--ease-out) both;
+}
+@keyframes gs-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .modal-title { font-size: 15px; font-weight: 650; color: var(--vscode-foreground); }
 .modal-input {
@@ -1847,6 +1866,9 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   padding: 16px;
 }
 .settings-sub { font-size: 12.5px; line-height: 1.5; color: var(--app-muted); }
+.settings-warn {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, #c89b3c);
+}
 .settings-empty { font-size: 12.5px; color: var(--app-muted); padding: 4px 0; }
 
 /* Segmented theme control */
@@ -2792,7 +2814,7 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .rel-assets .gh-adds .codicon { font-size: 14px; color: var(--gs-accent-ink, var(--gs-accent)); }
 
 /* Multi-field release form (reuses .modal-overlay / .modal-input / .modal-actions). */
-.modal-form { display: flex; flex-direction: column; gap: 12px; }
+.modal-form { width: min(520px, 92vw); display: flex; flex-direction: column; gap: 12px; }
 .modal-field { display: flex; flex-direction: column; gap: 5px; }
 .modal-field-label { font-size: 11.5px; font-weight: 600; color: var(--app-muted); }
 .modal-textarea { resize: vertical; min-height: 96px; font-family: var(--vscode-editor-font-family); line-height: 1.5; }

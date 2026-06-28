@@ -13,8 +13,12 @@ electronVersion: 33.4.11
 npmRebuild: false
 
 # Only the built bundles + the page shell ship; sources stay out of the app.
+# Sourcemaps are dev-only — never ship them (they bloat the app by ~20MB and
+# leak source). A production esbuild run doesn't emit them, but exclude defensively
+# so a stale dev `.map` left in dist/ can never end up in a shipped build.
 files:
   - dist/**
+  - "!dist/**/*.map"
   - package.json
 
 # node-pty is a native module (the integrated terminal's PTY). Its prebuilt
@@ -36,8 +40,11 @@ publish:
 # converts it to .icns / .ico per platform automatically.
 mac:
   category: public.app-category.developer-tools
+  # dmg is the human download; zip is REQUIRED for electron-updater to deliver
+  # macOS auto-updates (it can't update from a .dmg).
   target:
     - dmg
+    - zip
   hardenedRuntime: true
   gatekeeperAssess: false
 

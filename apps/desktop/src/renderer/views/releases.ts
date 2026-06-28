@@ -440,7 +440,7 @@ function releaseFormDialog(title: string, init: ReleaseInput): Promise<ReleaseIn
       resolve(value);
     };
 
-    const card = mkDialogEl("div", "modal-form");
+    const card = mkDialogEl("div", "modal-card modal-form");
     const h = mkDialogEl("div", "modal-title");
     h.textContent = title;
 

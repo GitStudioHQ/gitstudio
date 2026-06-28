@@ -90,6 +90,20 @@ export function relTimeISO(iso?: string): string {
   return Number.isNaN(ms) ? "" : relTime(ms / 1000);
 }
 
+/** The full, localized absolute date+time for a unix-seconds timestamp — used as
+ *  a `title` tooltip alongside a relative time (what JetBrains/GitKraken show). */
+export function absTime(epochSec: number): string {
+  if (!Number.isFinite(epochSec) || epochSec <= 0) return "";
+  return new Date(epochSec * 1000).toLocaleString();
+}
+
+/** As {@link absTime}, from an ISO-8601 string. "" when missing/unparseable. */
+export function absTimeISO(iso?: string): string {
+  if (!iso) return "";
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? "" : new Date(ms).toLocaleString();
+}
+
 /** A small inline text-button used in list-row action clusters. */
 export function textBtn(
   label: string,
@@ -235,6 +249,8 @@ export interface GhRowOpts {
   title: string;
   titleSuffix?: HTMLElement[];
   meta?: string;
+  /** Tooltip for the meta line (e.g. an absolute date behind a relative time). */
+  metaTitle?: string;
   chips?: HTMLElement[];
   stats?: HTMLElement[];
   onClick?: () => void;
@@ -258,6 +274,7 @@ export function ghRow(o: GhRowOpts): HTMLElement {
   if (o.meta) {
     const sub = el("div", "gh-row-sub");
     sub.textContent = o.meta;
+    if (o.metaTitle) sub.title = o.metaTitle;
     body.appendChild(sub);
   }
   if (o.chips && o.chips.length) {
@@ -548,4 +565,63 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
     if (search) search.focus();
     else focusAt(Math.max(0, rows.findIndex((r) => r.classList.contains("is-current"))));
   }, 0);
+}
+
+/**
+ * Make a drag-to-resize divider operable by keyboard and legible to assistive
+ * tech. Adds role="separator", the orientation, an accessible label, and a live
+ * aria-valuenow, and wires arrow keys (Home/End jump to the min/max) to nudge
+ * the size. The element keeps its existing pointer-drag behaviour; this only
+ * adds the keyboard + ARIA layer.
+ *
+ * `orientation` is the orientation of the divider line itself: "vertical" for a
+ * left/right splitter (Right grows the left pane), "horizontal" for a bottom-
+ * anchored top/bottom splitter (Up grows the lower pane). Shift = larger step;
+ * Home/End jump to the min/max.
+ */
+export function wireResizerKeys(
+  handle: HTMLElement,
+  opts: {
+    orientation: "vertical" | "horizontal";
+    label: string;
+    min: number;
+    max: () => number;
+    get: () => number;
+    set: (v: number) => void;
+    step?: number;
+    onCommit?: () => void;
+    disabled?: () => boolean;
+  },
+): void {
+  const step = opts.step ?? 16;
+  handle.removeAttribute("aria-hidden");
+  handle.setAttribute("role", "separator");
+  handle.setAttribute("aria-orientation", opts.orientation);
+  handle.setAttribute("aria-label", opts.label);
+  handle.tabIndex = 0;
+  const sync = (): void => {
+    handle.setAttribute("aria-valuemin", String(Math.round(opts.min)));
+    handle.setAttribute("aria-valuemax", String(Math.round(opts.max())));
+    handle.setAttribute("aria-valuenow", String(Math.round(opts.get())));
+  };
+  sync();
+  handle.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (opts.disabled?.()) return;
+    // vertical divider: Right grows the left pane. horizontal divider (bottom-
+    // anchored): Up grows the lower pane.
+    const dec = opts.orientation === "vertical" ? "ArrowLeft" : "ArrowDown";
+    const inc = opts.orientation === "vertical" ? "ArrowRight" : "ArrowUp";
+    let next: number | undefined;
+    if (e.key === dec) next = opts.get() - (e.shiftKey ? step * 3 : step);
+    else if (e.key === inc) next = opts.get() + (e.shiftKey ? step * 3 : step);
+    else if (e.key === "Home") next = opts.min;
+    else if (e.key === "End") next = opts.max();
+    if (next === undefined) return;
+    e.preventDefault();
+    opts.set(Math.max(opts.min, Math.min(opts.max(), next)));
+    sync();
+    opts.onCommit?.();
+  });
+  // Keep aria-valuenow honest after a pointer drag, too.
+  handle.addEventListener("pointerup", () => sync());
 }

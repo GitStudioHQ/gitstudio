@@ -79,8 +79,15 @@ function copyStaticAssets() {
   const html = fs
     .readFileSync(path.join(rendererDir, "index.html"), "utf8")
     .replace('href="./renderer.css"', `href="./renderer.css?v=${stamp}"`)
+    .replace('src="./theme-boot.js"', `src="./theme-boot.js?v=${stamp}"`)
     .replace('src="./renderer.js"', `src="./renderer.js?v=${stamp}"`);
   fs.writeFileSync(path.join(distDir, "renderer/index.html"), html);
+  // The pre-paint theme bootstrap — a same-origin file so the CSP can forbid
+  // inline scripts. Copied verbatim (esbuild does not process it).
+  fs.copyFileSync(
+    path.join(rendererDir, "theme-boot.js"),
+    path.join(distDir, "renderer/theme-boot.js"),
+  );
   // The window/dev icon (electron-builder embeds the packaged icon separately)
   // plus the in-app brand assets. The welcome hero is the squircle app-icon
   // mark, theme-swapped (a light-tile sibling so it sits on the light welcome

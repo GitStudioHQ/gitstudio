@@ -15,7 +15,7 @@
 // itself is `flex: 0 0 auto`, so it sizes to its content (just the footer when
 // collapsed; resizer + body + footer when expanded).
 
-import { el, glyph } from "./ui";
+import { el, glyph, wireResizerKeys } from "./ui";
 
 export interface BottomDockOptions {
   /** Start collapsed (just the footer bar) vs expanded (footer + body). */
@@ -61,9 +61,22 @@ export class BottomDock {
     // (drag the body's top edge) and the body sit ABOVE the footer; the footer
     // bar is the bottom-most, always-visible element — like a status bar.
     this.resizer = el("div", "dock-resizer");
-    this.resizer.setAttribute("aria-hidden", "true");
     this.resizer.append(el("div", "dock-resizer-grip"));
     this.resizer.addEventListener("pointerdown", (e) => this.startResize(e));
+    wireResizerKeys(this.resizer, {
+      orientation: "horizontal",
+      label: opts.label ? `Resize ${opts.label}` : "Resize panel",
+      min: opts.minHeight ?? 120,
+      max: () => Math.max(opts.minHeight ?? 120, window.innerHeight - 220),
+      get: () => this.heightPx,
+      set: (h) => {
+        this.heightPx = h;
+        this.bodyEl.style.height = `${h}px`;
+        this.opts.onResize?.();
+      },
+      onCommit: () => this.opts.onHeightChange?.(this.heightPx),
+      disabled: () => this.collapsed,
+    });
 
     this.bodyEl = el("div", "dock-body");
     this.bodyEl.style.height = `${this.heightPx}px`;

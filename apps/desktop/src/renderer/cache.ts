@@ -27,8 +27,26 @@ const store = new Map<string, Entry>();
 /** Default freshness window (ms) — within this, `gget` skips the network. */
 const DEFAULT_TTL = 8000;
 
+/** The active repo root. Every cache key is namespaced by it so a fast repo
+ *  switch can never resolve repo A's (cached or in-flight) data into repo B's
+ *  view — switching repos wipes the cache outright. */
+let scope = "";
+
+/**
+ * Point the cache at a repo. Changing the active repo clears all cached entries
+ * (a different repo's branches/status/graph must never bleed through). Call this
+ * on every `repo:changed` before re-rendering.
+ */
+export function setCacheScope(repoRoot: string | undefined): void {
+  const next = repoRoot ?? "";
+  if (next !== scope) {
+    scope = next;
+    store.clear();
+  }
+}
+
 function keyFor(channel: string, payload: unknown): string {
-  return channel + "|" + (payload === undefined ? "" : JSON.stringify(payload));
+  return scope + " " + channel + "|" + (payload === undefined ? "" : JSON.stringify(payload));
 }
 
 /** The cached value if present and (optionally) younger than `maxAgeMs`. */
@@ -80,14 +98,16 @@ export async function gget<C extends IpcChannel>(
 }
 
 /** Force the next `gget`/`peek(maxAge)` for matching channels to refetch.
- *  No prefix → clear everything; a prefix clears channels that start with it. */
+ *  No prefix → clear everything; a prefix clears the current repo's channels
+ *  that start with it (keys are namespaced by repo scope, so match within it). */
 export function bust(prefix?: string): void {
   if (!prefix) {
     store.clear();
     return;
   }
+  const scoped = scope + " " + prefix;
   for (const k of store.keys()) {
-    if (k.startsWith(prefix)) store.delete(k);
+    if (k.startsWith(scoped)) store.delete(k);
   }
 }
 

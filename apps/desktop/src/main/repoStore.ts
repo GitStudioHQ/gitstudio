@@ -15,6 +15,8 @@ export class RepoStore {
   private readonly adapter = new NodeGitAdapter();
   private context: GitContext | undefined;
   private currentRoot: string | undefined;
+  /** Monotonic token so an out-of-order `open()` can't clobber a newer one. */
+  private openSeq = 0;
   private recent: string[] = [];
   /** Observer wired by main.ts: fires for every git command the open repo runs,
    *  so the renderer's Output tab can show a live git-command log. */
@@ -55,7 +57,14 @@ export class RepoStore {
    * the opened RepoInfo, or undefined when `cwd` is not inside a git repo.
    */
   async open(cwd: string): Promise<RepoInfo | undefined> {
+    const seq = ++this.openSeq;
     const root = await this.adapter.discoverRepoRoot(cwd);
+    // A newer open() began while we were discovering the root — let it win, and
+    // touch no shared state here (otherwise we'd leave the UI on one repo and the
+    // active context on another).
+    if (seq !== this.openSeq) {
+      return root ? toInfo(root) : undefined;
+    }
     if (!root) {
       return undefined;
     }
@@ -77,6 +86,7 @@ export class RepoStore {
   }
 
   close(): void {
+    this.openSeq++; // supersede any in-flight open() so it can't re-open after close
     if (!this.context && !this.currentRoot) {
       return;
     }

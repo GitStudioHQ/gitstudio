@@ -416,7 +416,7 @@ function gistDialog(opts: {
       resolve(v);
     };
 
-    const card = el("div", "gist-modal");
+    const card = el("div", "modal-card gist-modal");
 
     const heading = el("div", "modal-title");
     heading.textContent = opts.title;

@@ -54,6 +54,8 @@ export function toast(message: string, kind: ToastKind = "info", timeoutMs?: num
 interface ModalSpec {
   card: HTMLElement;
   focusEl: HTMLElement;
+  /** Accessible name for the dialog (announced by screen readers). */
+  label?: string;
   /** Called on ANY close (button or dismiss) — resolve a default if needed. */
   onClose: () => void;
 }
@@ -96,6 +98,7 @@ function modal(build: (close: () => void) => ModalSpec): void {
     }
   };
   spec = build(close);
+  if (spec.label) overlay.setAttribute("aria-label", spec.label);
   overlay.appendChild(spec.card);
   document.body.appendChild(overlay);
   overlay.addEventListener("mousedown", (e) => {
@@ -115,7 +118,7 @@ export function confirmDialog(opts: {
   return new Promise((resolve) => {
     let settled = false;
     modal((close) => {
-      const card = mk("div");
+      const card = mk("div", "modal-card");
       const h = mk("div", "modal-title");
       h.textContent = opts.title;
       const body = mk("div", "modal-message");
@@ -142,6 +145,7 @@ export function confirmDialog(opts: {
       return {
         card,
         focusEl: ok,
+        label: opts.title,
         onClose: () => {
           if (!settled) resolve(false);
         },
@@ -169,7 +173,7 @@ export function promptInline(
     };
     const submit = (raw: string): string | null => (allowEmpty ? raw.trim() : raw.trim() || null);
     modal((close) => {
-      const card = mk("div");
+      const card = mk("div", "modal-card");
       const h = mk("div", "modal-title");
       h.textContent = title;
       const input = document.createElement("input");
@@ -196,6 +200,7 @@ export function promptInline(
       return {
         card,
         focusEl: input,
+        label: title,
         onClose: () => {
           if (!settled) resolve(null);
         },

@@ -14,6 +14,19 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import type { CloneProgress, CloneRequest, CloneResult, GhRepoBrief } from "../shared/ipc";
 import type { GitHubClient } from "./githubClient";
+import { ALLOWED_PROTOCOLS, validateCloneUrl } from "./cloneUrl";
+
+/** In-flight `git clone` children, so they can be killed on app/window teardown
+ *  rather than orphaned (a long clone would otherwise keep running after quit). */
+const activeClones = new Set<ReturnType<typeof spawn>>();
+
+/** Terminate any running clone — called when the window closes / app quits. */
+export function killActiveClones(): void {
+  for (const child of activeClones) {
+    child.kill("SIGTERM");
+  }
+  activeClones.clear();
+}
 
 /** Native "choose a folder" dialog; returns the absolute path or undefined. */
 export async function pickCloneDir(): Promise<string | undefined> {
@@ -34,6 +47,7 @@ function targetName(req: CloneRequest): string {
   return seg.replace(/\.git$/i, "");
 }
 
+
 /** A progress line looks like "Receiving objects:  42% (…)" — sometimes "remote: " prefixed. */
 const PERCENT_RE = /^(?:remote: )?([A-Za-z ]+):\s+(\d+)%/;
 
@@ -46,6 +60,10 @@ export async function startClone(
   if (!url) {
     return { ok: false, message: "No repository URL was provided." };
   }
+  const urlError = validateCloneUrl(url);
+  if (urlError) {
+    return { ok: false, message: urlError };
+  }
   if (!req.parentDir) {
     return { ok: false, message: "No destination folder was chosen." };
   }
@@ -53,21 +71,40 @@ export async function startClone(
   if (!name) {
     return { ok: false, message: "Couldn't derive a folder name from the URL." };
   }
+  // A target dir starting with "-" would be read by git as an option, not a path.
+  if (name.startsWith("-")) {
+    return { ok: false, message: "Couldn't derive a safe folder name from the URL." };
+  }
 
   return new Promise<CloneResult>((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn("git", ["clone", "--progress", url, name], { cwd: req.parentDir });
+      child = spawn(
+        "git",
+        ["-c", "protocol.ext.allow=never", "-c", "protocol.fd.allow=never", "clone", "--progress", "--", url, name],
+        {
+          cwd: req.parentDir,
+          // Never block the clone waiting on an interactive credential prompt
+          // (it would hang the UI), and constrain the transports git may use.
+          env: {
+            ...process.env,
+            GIT_TERMINAL_PROMPT: "0",
+            GIT_ALLOW_PROTOCOL: ALLOWED_PROTOCOLS,
+          },
+        },
+      );
     } catch (err) {
       resolve({ ok: false, message: messageOf(err) });
       return;
     }
 
+    activeClones.add(child);
     let lastStderr = "";
     let settled = false;
     const finish = (r: CloneResult) => {
       if (settled) return;
       settled = true;
+      activeClones.delete(child);
       resolve(r);
     };
 

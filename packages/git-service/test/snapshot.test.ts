@@ -51,7 +51,7 @@ before(() => {
 
 after(() => {
   ctx?.dispose();
-  rmSync(repo, { recursive: true, force: true });
+  rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 test("capture records HEAD and the current branch on a clean tree", async () => {
@@ -117,7 +117,7 @@ test("isPushed is true once a commit is on a remote-tracking branch", async () =
     const sha = head();
     assert.equal(await ctx.snapshot.isPushed(sha), true);
   } finally {
-    rmSync(remote, { recursive: true, force: true });
+    rmSync(remote, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 

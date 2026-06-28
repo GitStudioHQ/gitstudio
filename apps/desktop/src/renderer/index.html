@@ -11,22 +11,13 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; worker-src 'self' blob:; connect-src 'self'"
+      content="default-src 'none'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https://avatars.githubusercontent.com https://*.githubusercontent.com https://github.com; worker-src 'self' blob:; connect-src 'self'"
     />
     <link rel="stylesheet" href="./renderer.css" />
     <title>GitStudio</title>
   </head>
   <body>
-    <script>
-      // Pick the theme class before first paint so a light-OS launch doesn't
-      // flash the dark canvas. desktopTheme re-affirms this and tracks live
-      // OS theme changes once the renderer boots.
-      document.body.className =
-        window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: light)").matches
-          ? "vscode-light"
-          : "vscode-dark";
-    </script>
+    <script src="./theme-boot.js"></script>
     <div id="root">
       <div id="boot">Loading GitStudio…</div>
     </div>
