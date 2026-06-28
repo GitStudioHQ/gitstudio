@@ -51,6 +51,24 @@ const PAGE_SIZE = 500;
 /** Max blob size the read-only file viewer / README will load (512 KiB). */
 const FILE_CAP_BYTES = 512 * 1024;
 
+/**
+ * True when a renderer-supplied ref / branch name / SHA can't be mistaken by
+ * git for a command-line option (it doesn't begin with "-"). Without this a
+ * value like `--upload-pack=…` reaches git as a flag rather than a positional
+ * (option injection). Git itself forbids ref names that start with "-", so this
+ * never rejects a legitimate value.
+ */
+export function safeArg(v: unknown): v is string {
+  return typeof v === "string" && v.length > 0 && !v.startsWith("-");
+}
+
+/** Standard rejection for an unsafe ref/name reaching a mutation. */
+const UNSAFE_REF_RESULT: CommitActionResult = {
+  ok: false,
+  changed: false,
+  message: "That value isn't a valid git reference.",
+};
+
 export class GitBridge {
   /** sha → record, accumulated as the graph pages stream in (for details). */
   private records = new Map<string, CommitRecord>();
@@ -310,8 +328,15 @@ export class GitBridge {
     if (!ctx) {
       return [];
     }
-    const result = await ctx.process.run(["status", "--porcelain=v1", "-z"]);
-    return parsePorcelainStatus(result.stdout);
+    try {
+      const result = await ctx.process.run(["status", "--porcelain=v1", "-z"]);
+      return parsePorcelainStatus(result.stdout);
+    } catch {
+      // A held index.lock, a repo deleted under us, a corrupt index — return an
+      // empty working tree rather than rejecting into the renderer (which would
+      // leave the Changes view stuck on its skeleton).
+      return [];
+    }
   }
 
   async diffFiles(): Promise<ChangedFile[]> {
@@ -418,8 +443,10 @@ export class GitBridge {
     if (!req.message.trim() && !req.amend) {
       return { ok: false, changed: false, message: "A commit message is required." };
     }
-    const r = await ctx.staging.commit(req.message, { amend: req.amend });
-    return { ok: r.ok, changed: r.ok, message: r.ok ? undefined : r.stderr };
+    return this.serialize(async () => {
+      const r = await ctx.staging.commit(req.message, { amend: req.amend });
+      return { ok: r.ok, changed: r.ok, message: r.ok ? undefined : r.stderr };
+    });
   }
 
   // ── Stashes ─────────────────────────────────────────────────────────────────
@@ -441,12 +468,15 @@ export class GitBridge {
     }
   }
   async stashApply(ref: string): Promise<CommitActionResult> {
+    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.stashes.apply(ref));
   }
   async stashPop(ref: string): Promise<CommitActionResult> {
+    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.stashes.pop(ref));
   }
   async stashDrop(ref: string): Promise<CommitActionResult> {
+    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.stashes.drop(ref));
   }
   async stashSave(opts: { message?: string; includeUntracked?: boolean }): Promise<CommitActionResult> {
@@ -477,6 +507,7 @@ export class GitBridge {
     }
   }
   async worktreeAdd(path: string, ref: string, newBranch?: boolean): Promise<CommitActionResult> {
+    if (!safeArg(ref)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.worktrees.add(path, ref, { newBranch }));
   }
   async worktreeRemove(opts: { path: string; force?: boolean }): Promise<CommitActionResult> {
@@ -495,6 +526,9 @@ export class GitBridge {
       return undefined;
     }
     const { base, head } = req;
+    if (!safeArg(base) || !safeArg(head)) {
+      return undefined;
+    }
     const threeDot = req.mode !== "two-dot"; // default: GitHub-style 3-dot
     const commits: CompareCommit[] = [];
     try {
@@ -532,6 +566,9 @@ export class GitBridge {
   }): Promise<FileDiff | undefined> {
     const ctx = this.ctx();
     if (!ctx) {
+      return undefined;
+    }
+    if (!safeArg(req.base) || !safeArg(req.head)) {
       return undefined;
     }
     const threeDot = req.mode !== "two-dot";
@@ -705,12 +742,18 @@ export class GitBridge {
     if (!ctx) {
       return { ok: false, changed: false, message: "No repository open." };
     }
+    const name = req.name.trim();
+    const email = req.email.trim();
+    // A value starting with "-" would be read by `git config` as an option.
+    if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
+      return { ok: false, changed: false, message: "Name and email can't start with “-”." };
+    }
     try {
-      if (req.name.trim()) {
-        await ctx.process.run(["config", "--global", "user.name", req.name.trim()]);
+      if (name) {
+        await ctx.process.run(["config", "--global", "user.name", name]);
       }
-      if (req.email.trim()) {
-        await ctx.process.run(["config", "--global", "user.email", req.email.trim()]);
+      if (email) {
+        await ctx.process.run(["config", "--global", "user.email", email]);
       }
       return { ok: true, changed: true };
     } catch (err) {
@@ -818,11 +861,13 @@ export class GitBridge {
   }
 
   async branchCreate(req: { name: string; checkout?: boolean }): Promise<CommitActionResult> {
+    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
     return this.staged((ctx) =>
       req.checkout ? ctx.branches.checkoutNew(req.name) : ctx.branches.create(req.name),
     );
   }
   async branchDelete(req: { name: string; force?: boolean }): Promise<CommitActionResult> {
+    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
     return this.staged((ctx) => ctx.branches.delete(req.name, { force: req.force }));
   }
 
@@ -835,6 +880,26 @@ export class GitBridge {
     }
   }
 
+  /**
+   * Serialize working-tree / index / ref mutations. A fast double-action (a
+   * double-clicked Stage, or a checkout fired while a stage is mid-flight) would
+   * otherwise run two `git` processes against the same index at once and hit
+   * `index.lock`, or leave a half-applied state. Every mutation runs through this
+   * single chain; reads stay concurrent.
+   */
+  private mutationChain: Promise<unknown> = Promise.resolve();
+  private serialize<T>(op: () => Promise<T>): Promise<T> {
+    const result = this.mutationChain.then(op, op);
+    // Keep the chain alive whatever this op does; swallow on the chain copy so a
+    // failed mutation can't surface as an unhandled rejection (the caller still
+    // receives the real outcome via `result`).
+    this.mutationChain = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   /** Run a working-tree mutation, mapping the git-service result to the IPC shape. */
   private async staged(
     op: (ctx: GitContext) => Promise<{ ok?: boolean; code?: number; stderr?: string }>,
@@ -843,13 +908,15 @@ export class GitBridge {
     if (!ctx) {
       return { ok: false, changed: false, message: "No repository open." };
     }
-    try {
-      const r = await op(ctx);
-      const ok = r.ok ?? r.code === 0;
-      return { ok, changed: ok, message: ok ? undefined : r.stderr?.trim() };
-    } catch (err) {
-      return { ok: false, changed: false, message: String(err) };
-    }
+    return this.serialize(async () => {
+      try {
+        const r = await op(ctx);
+        const ok = r.ok ?? r.code === 0;
+        return { ok, changed: ok, message: ok ? undefined : r.stderr?.trim() };
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
   }
 
   // ── Commit actions (graph context menu) ─────────────────────────────────────
@@ -863,20 +930,28 @@ export class GitBridge {
     if (!ctx) {
       return { ok: false, changed: false, message: "No repository open." };
     }
+    if (req.action !== "copy-sha" && !safeArg(req.sha)) {
+      return UNSAFE_REF_RESULT;
+    }
+    if ((req.action === "branch" || req.action === "tag") && !safeArg(req.name)) {
+      return UNSAFE_REF_RESULT;
+    }
     const args = actionArgs(req);
     if (!args) {
       // copy-sha is handled entirely in the renderer; nothing to run here.
       return { ok: true, changed: false };
     }
-    try {
-      const result = await ctx.process.run(args);
-      if (result.code !== 0) {
-        return { ok: false, changed: false, message: result.stderr.trim() };
+    return this.serialize(async () => {
+      try {
+        const result = await ctx.process.run(args);
+        if (result.code !== 0) {
+          return { ok: false, changed: false, message: result.stderr.trim() };
+        }
+        return { ok: true, changed: true };
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
       }
-      return { ok: true, changed: true };
-    } catch (err) {
-      return { ok: false, changed: false, message: String(err) };
-    }
+    });
   }
 }
 

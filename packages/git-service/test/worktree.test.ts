@@ -37,7 +37,7 @@ before(() => {
 after(() => {
   ctx?.dispose();
   if (repo) {
-    rmSync(repo, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -51,7 +51,7 @@ test("list reports the main worktree", async () => {
 
 test("add creates a linked worktree on a new branch, then list shows both", async () => {
   const wtPath = mkdtempSync(join(tmpdir(), "gitstudio-wt-linked-"));
-  rmSync(wtPath, { recursive: true, force: true }); // git wants a non-existent path
+  rmSync(wtPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); // git wants a non-existent path
 
   const added = await ctx.worktrees.add(wtPath, "feature", {
     newBranch: true,
@@ -80,7 +80,7 @@ test("remove deletes the linked worktree", async () => {
   assert.equal(after.length, 1);
   assert.equal(after[0].branch, "main");
 
-  rmSync(linked!.path, { recursive: true, force: true });
+  rmSync(linked!.path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 test("parseWorktreePorcelain handles bare, detached, locked, and prunable", () => {

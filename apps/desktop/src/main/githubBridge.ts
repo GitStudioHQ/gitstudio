@@ -45,13 +45,16 @@ export class GitHubBridge {
       return;
     }
     this.loaded = true;
+    // Only ever read a token back when the OS can decrypt it. We never persist
+    // a plaintext token (see persistToken), so a non-decryptable file is junk.
+    if (!safeStorage.isEncryptionAvailable()) {
+      return;
+    }
     try {
       const buf = await readFile(this.tokenPath());
-      this.token = safeStorage.isEncryptionAvailable()
-        ? safeStorage.decryptString(buf)
-        : buf.toString("utf8");
+      this.token = safeStorage.decryptString(buf);
     } catch {
-      // no stored token
+      // no stored token, or it can't be decrypted on this machine
     }
   }
 
@@ -103,11 +106,15 @@ export class GitHubBridge {
 
   /** Encrypt + persist the user token at rest (best-effort). */
   private async persistToken(token: string): Promise<void> {
+    // No OS-level encryption (e.g. a headless Linux box with no keyring)? Never
+    // write the token in cleartext — keep it in memory for this session only.
+    if (!safeStorage.isEncryptionAvailable()) {
+      return;
+    }
     try {
-      const data = safeStorage.isEncryptionAvailable()
-        ? safeStorage.encryptString(token)
-        : Buffer.from(token, "utf8");
-      await writeFile(this.tokenPath(), data);
+      const data = safeStorage.encryptString(token);
+      // Owner-only perms on the (encrypted) blob as a second layer.
+      await writeFile(this.tokenPath(), data, { mode: 0o600 });
     } catch {
       // best-effort persistence; the in-memory token still works this session
     }

@@ -15,7 +15,7 @@ import {
   nativeTheme,
   shell,
 } from "electron";
-import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from "electron";
+import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from "electron";
 import { join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { RepoStore } from "./repoStore";
@@ -23,7 +23,7 @@ import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
 import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
-import { pickCloneDir, startClone, listGhRepos } from "./cloneBridge";
+import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
 import { initAutoUpdate } from "./autoUpdate";
 import * as issuesApi from "./github/issues";
 import * as prsApi from "./github/prs";
@@ -79,7 +79,51 @@ async function saveState(): Promise<void> {
 }
 
 function send<E extends keyof IpcEvents>(event: E, data: IpcEvents[E]): void {
-  mainWindow?.webContents.send(event, data);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(event, data);
+  }
+}
+
+/**
+ * Only ever hand http(s)/mailto URLs to the OS. The renderer routes every
+ * `window.open` through here, and many of those URLs come straight from the
+ * GitHub API (PR/check `details_url`, release asset `download_url`, …) — i.e.
+ * attacker-influenced. `shell.openExternal` will otherwise happily launch
+ * `file://`, `smb://`, and registered custom-protocol handlers.
+ */
+function openExternalSafely(rawUrl: string): void {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol === "http:" || u.protocol === "https:" || u.protocol === "mailto:") {
+      void shell.openExternal(rawUrl);
+    }
+  } catch {
+    // Not a parseable URL — ignore.
+  }
+}
+
+/**
+ * Lock a webContents down: external links open in the OS browser (allowlisted),
+ * top-level navigation away from the bundled app is blocked (an XSS or a stray
+ * `location =` must never be able to load a remote origin into a window whose
+ * preload exposes the full IPC surface), child webviews are forbidden, and all
+ * device-permission requests are denied (the app needs none).
+ */
+function hardenWebContents(contents: WebContents): void {
+  contents.setWindowOpenHandler(({ url }) => {
+    openExternalSafely(url);
+    return { action: "deny" };
+  });
+  contents.on("will-navigate", (event, url) => {
+    if (url !== contents.getURL()) {
+      event.preventDefault();
+      openExternalSafely(url);
+    }
+  });
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+  contents.session.setPermissionRequestHandler((_wc, _permission, callback) =>
+    callback(false),
+  );
 }
 
 async function createWindow(): Promise<void> {
@@ -93,13 +137,19 @@ async function createWindow(): Promise<void> {
     // doesn't flash the wrong shade before the page paints.
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0d1016" : "#eef1f5",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Vertically center the traffic lights in the slim 40px topbar (macOS).
+    ...(process.platform === "darwin"
+      ? { trafficLightPosition: { x: 18, y: 13 } }
+      : {}),
     title: "GitStudio",
     icon: appIcon(),
     webPreferences: {
       preload: join(__dirname, "../preload/preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // The preload only touches contextBridge + ipcRenderer, both available in
+      // a sandboxed preload, so we keep the renderer fully sandboxed.
+      sandbox: true,
       spellcheck: false,
     },
   });
@@ -112,14 +162,12 @@ async function createWindow(): Promise<void> {
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => {
     terminal?.killAll();
+    killActiveClones();
     mainWindow = undefined;
   });
 
-  // Keep external links out of the app window.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
-    return { action: "deny" };
-  });
+  // External links / navigation lockdown is applied to every webContents via the
+  // app-level "web-contents-created" handler registered in boot().
 
   await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
 }
@@ -234,14 +282,12 @@ function buildMenu(): void {
       submenu: [
         {
           label: "GitStudio Website",
-          click: () => void shell.openExternal("https://gitstudio.dev"),
+          click: () => openExternalSafely("https://gitstudio.dev"),
         },
         {
           label: "Report an Issue",
           click: () =>
-            void shell.openExternal(
-              "https://github.com/GitStudioHQ/gitstudio/issues",
-            ),
+            openExternalSafely("https://github.com/GitStudioHQ/gitstudio/issues"),
         },
       ],
     },
@@ -496,6 +542,10 @@ async function worktreeAddDialog(req: {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
+  // Belt-and-suspenders navigation lockdown: any webContents that ever gets
+  // created (not just the main window) inherits the same hardening.
+  app.on("web-contents-created", (_e, contents) => hardenWebContents(contents));
+
   const state = await loadState();
   repos = new RepoStore(state.recent);
   bridge = new GitBridge(repos);
@@ -535,6 +585,17 @@ async function boot(): Promise<void> {
     buildMenu();
   }
 }
+
+// A single git call or GitHub request must never take the whole app down. Log
+// and keep running — the renderer surfaces user-facing failures itself.
+process.on("uncaughtException", (err) => {
+  // eslint-disable-next-line no-console
+  console.error("GitStudio main: uncaught exception:", err);
+});
+process.on("unhandledRejection", (reason) => {
+  // eslint-disable-next-line no-console
+  console.error("GitStudio main: unhandled rejection:", reason);
+});
 
 app.whenReady().then(boot).catch((err) => {
   // eslint-disable-next-line no-console

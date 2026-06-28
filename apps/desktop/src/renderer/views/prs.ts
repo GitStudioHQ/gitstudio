@@ -18,6 +18,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   loadingState,
   skeletonList,
   errorState,
@@ -34,7 +35,7 @@ import {
 } from "../ui";
 import { toast, confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { ghGate, ghHeader, ghTwoPane, type SectionRender } from "./common";
+import { ghGate, ghHeader, ghTwoPane, searchField, trapTab, type SectionRender } from "./common";
 import type {
   BranchRef,
   PrComment,
@@ -109,7 +110,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     void showDetail(detailEl, pr, refresh);
   };
 
-  prs.forEach((pr, i) => {
+  const buildRow = (pr: PullRequest): HTMLElement => {
     const kind = pr.draft ? "draft" : "open-pr";
     const chips = pr.labels.map((l) => labelChip(l.name, l.color));
     const stats: HTMLElement[] = [];
@@ -122,14 +123,52 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       title: pr.title,
       titleSuffix: pr.draft ? [statePill("Draft", "draft")] : [],
       meta: `#${pr.number} ${pr.head.ref} → ${pr.base.ref} · ${pr.user?.login ?? "unknown"}${updated ? ` · ${updated}` : ""}`,
+      metaTitle: pr.updatedAt ? `Updated ${absTimeISO(pr.updatedAt)}` : undefined,
       chips,
       stats,
       ariaLabel: `Pull request #${pr.number}: ${pr.title}`,
     });
     row.addEventListener("click", () => select(pr, row));
-    listEl.appendChild(row);
-    if (i === 0) select(pr, row); // auto-select the first PR so the detail isn't a void
-  });
+    return row;
+  };
+
+  // Case-insensitive match over the fields a user would search by.
+  const matches = (pr: PullRequest, q: string): boolean => {
+    const hay = `${pr.title} #${pr.number} ${pr.head.ref} ${pr.base.ref} ${pr.user?.login ?? ""} ${pr.labels
+      .map((l) => l.name)
+      .join(" ")}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  let autoSelected = false;
+  const renderList = (items: PullRequest[], q = ""): void => {
+    listEl.replaceChildren();
+    if (items.length === 0) {
+      listEl.appendChild(
+        emptyState("No matching pull requests", `Nothing matches “${q}”.`, { icon: "search" }),
+      );
+      return;
+    }
+    for (const pr of items) listEl.appendChild(buildRow(pr));
+    // Auto-select the first PR once (initial render) so the detail isn't a void;
+    // don't hijack the selection on every keystroke while filtering.
+    if (!autoSelected) {
+      autoSelected = true;
+      const first = items[0];
+      const firstRow = listEl.firstElementChild as HTMLElement | null;
+      if (first && firstRow) select(first, firstRow);
+    }
+  };
+
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: "Search pull requests…",
+      onInput: (q) => renderList(q ? prs.filter((pr) => matches(pr, q.toLowerCase())) : prs, q),
+    }),
+  );
+
+  renderList(prs);
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
@@ -705,6 +744,7 @@ function createPrModal(opts: {
     const overlay = el("div", "modal-overlay");
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "New pull request");
     const card = el("div", "modal-card gh-pr-form");
     const h = el("div", "modal-title");
     h.textContent = "New pull request";
@@ -766,7 +806,9 @@ function createPrModal(opts: {
       if (e.key === "Escape") {
         e.preventDefault();
         finish(null);
+        return;
       }
+      trapTab(e, card);
     };
     cancel.addEventListener("click", () => finish(null));
     ok.addEventListener("click", () =>
@@ -794,6 +836,7 @@ function reviewerPickerModal(people: RepoCollaborator[]): Promise<string[] | nul
     const overlay = el("div", "modal-overlay");
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Request reviewers");
     const card = el("div", "modal-card gh-pr-form");
     const h = el("div", "modal-title");
     h.textContent = "Request reviewers";
@@ -825,7 +868,9 @@ function reviewerPickerModal(people: RepoCollaborator[]): Promise<string[] | nul
       if (e.key === "Escape") {
         e.preventDefault();
         finish(null);
+        return;
       }
+      trapTab(e, card);
     };
     cancel.addEventListener("click", () => finish(null));
     ok.addEventListener("click", () => finish(boxes.filter((b) => b.cb.checked).map((b) => b.login)));

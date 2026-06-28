@@ -1,8 +1,8 @@
-// A reusable collapsible bottom panel that splits its host into two horizontal
-// parts. A tiny, status-bar-like footer is pinned permanently to the very bottom;
-// the body pops UP above it when expanded (and the host's existing content fills
-// whatever's left above). Collapsed, only the footer remains — so the panel can
-// always be re-opened, VS-Code-panel style.
+// A reusable collapsible bottom panel, VS-Code-panel style. Collapsed, only a
+// tiny status-bar-like tab BAR sits at the very bottom. Expanded, the whole panel
+// floats UP and ON TOP of the view content (never reflowing it): the bar rises to
+// sit above the body (tabs-on-top), and the body fills beneath it down to the
+// window bottom. Closing drops the bar back down to the base.
 //
 // The terminal dock is the first consumer, but the component is deliberately
 // content-agnostic: a caller fills `tabsEl` (the footer's left side) + `actionsEl`
@@ -11,11 +11,13 @@
 // it.
 //
 // Layout contract: the host must be a `display:flex; flex-direction:column`
-// container whose other child(ren) carry `flex: 1` and `min-height: 0`. The dock
-// itself is `flex: 0 0 auto`, so it sizes to its content (just the footer when
-// collapsed; resizer + body + footer when expanded).
+// container whose other child(ren) carry `flex: 1` and `min-height: 0`. Only the
+// footer sits in the flex flow (the dock-mount stays footer-height always); when
+// expanded, the resizer + body float in an absolutely-positioned overlay ABOVE
+// the footer (anchored to the position:relative dock-mount), ON TOP of the
+// content — so opening the dock never shrinks the view above it.
 
-import { el, glyph } from "./ui";
+import { el, glyph, wireResizerKeys } from "./ui";
 
 export interface BottomDockOptions {
   /** Start collapsed (just the footer bar) vs expanded (footer + body). */
@@ -61,9 +63,22 @@ export class BottomDock {
     // (drag the body's top edge) and the body sit ABOVE the footer; the footer
     // bar is the bottom-most, always-visible element — like a status bar.
     this.resizer = el("div", "dock-resizer");
-    this.resizer.setAttribute("aria-hidden", "true");
     this.resizer.append(el("div", "dock-resizer-grip"));
     this.resizer.addEventListener("pointerdown", (e) => this.startResize(e));
+    wireResizerKeys(this.resizer, {
+      orientation: "horizontal",
+      label: opts.label ? `Resize ${opts.label}` : "Resize panel",
+      min: opts.minHeight ?? 120,
+      max: () => Math.max(opts.minHeight ?? 120, window.innerHeight - 220),
+      get: () => this.heightPx,
+      set: (h) => {
+        this.heightPx = h;
+        this.bodyEl.style.height = `${h}px`;
+        this.opts.onResize?.();
+      },
+      onCommit: () => this.opts.onHeightChange?.(this.heightPx),
+      disabled: () => this.collapsed,
+    });
 
     this.bodyEl = el("div", "dock-body");
     this.bodyEl.style.height = `${this.heightPx}px`;
@@ -85,11 +100,16 @@ export class BottomDock {
       if (this.collapsed && !target.closest("button, .term-tab")) this.toggle();
     });
 
-    this.panel = el("div", "bottom-dock");
-    this.panel.append(this.bodyEl, footer);
+    // The whole panel floats in an overlay anchored to the window bottom, so
+    // opening it never reflows the content above (the dock-mount always reserves
+    // just the bar height). Order top→bottom: resizer · BAR · body. When open the
+    // bar sits ON TOP of the body (VS-Code-panel style); when collapsed only the
+    // bar remains, dropped to the base.
+    this.panel = el("div", "dock-overlay");
+    this.panel.append(this.resizer, footer, this.bodyEl);
 
     this.root = el("div", "dock-mount" + (this.collapsed ? " collapsed" : ""));
-    this.root.append(this.resizer, this.panel);
+    this.root.append(this.panel);
     host.appendChild(this.root);
   }
 

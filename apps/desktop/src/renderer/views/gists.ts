@@ -20,13 +20,14 @@ import {
   glyph,
   loadingState,
   relTimeISO,
+  absTimeISO,
   skeletonList,
   span,
   statBit,
   statePill,
 } from "../ui";
 import { confirmDialog, toast } from "../dialogs";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type { GistInfo } from "../../shared/ipc";
 
 // Remember the open gist + selected file across refreshes so the view feels
@@ -110,7 +111,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     for (const [rid, r] of rows) r.classList.toggle("active", rid === id);
   };
 
-  for (const g of gists) {
+  const buildRow = (g: GistInfo): HTMLElement => {
     // A gist has no real title — use the description or the first filename.
     const title = g.description || g.files[0]?.filename || "Untitled gist";
     const rel = relTimeISO(g.updatedAt);
@@ -129,6 +130,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       meta:
         `${g.fileCount} file${g.fileCount === 1 ? "" : "s"}` +
         (rel ? ` · updated ${rel}` : ""),
+      metaTitle: g.updatedAt ? `Updated ${absTimeISO(g.updatedAt)}` : undefined,
       stats,
       ariaLabel: `Gist: ${title}`,
     });
@@ -140,18 +142,54 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       openGistId = g.id;
       void showDetail(detail, g, refresh);
     });
-    listEl.appendChild(row);
-  }
+    return row;
+  };
 
-  // Re-open the previously selected gist on refresh (e.g. after an edit),
-  // otherwise auto-select the first gist so the detail pane isn't a void.
-  const reopen = openGistId ? gists.find((g) => g.id === openGistId) : gists[0];
-  if (reopen) {
-    if (openGistId !== reopen.id) openFileIdx = 0;
-    openGistId = reopen.id;
-    selectRow(reopen.id);
-    void showDetail(detail, reopen, refresh);
-  }
+  // Case-insensitive match over the fields a user would search by: the gist
+  // description and every filename it contains.
+  const matches = (g: GistInfo, q: string): boolean => {
+    const hay = `${g.description} ${g.files.map((f) => f.filename).join(" ")}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  let autoSelected = false;
+  const renderList = (items: GistInfo[], q = ""): void => {
+    rows.clear();
+    listEl.replaceChildren();
+    if (items.length === 0) {
+      listEl.appendChild(
+        emptyState("No matching gists", `Nothing matches “${q}”.`, { icon: "search" }),
+      );
+      return;
+    }
+    for (const g of items) listEl.appendChild(buildRow(g));
+    // On the initial render only, re-open the previously selected gist (e.g.
+    // after an edit), otherwise auto-select the first gist so the detail pane
+    // isn't a void. Filtering keystrokes never hijack the current selection.
+    if (!autoSelected) {
+      autoSelected = true;
+      const reopen = openGistId ? items.find((g) => g.id === openGistId) : items[0];
+      if (reopen) {
+        if (openGistId !== reopen.id) openFileIdx = 0;
+        openGistId = reopen.id;
+        selectRow(reopen.id);
+        void showDetail(detail, reopen, refresh);
+      }
+    } else {
+      // Keep the active highlight in sync with the current selection.
+      if (openGistId) selectRow(openGistId);
+    }
+  };
+
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: "Search gists…",
+      onInput: (q) => renderList(q ? gists.filter((g) => matches(g, q.toLowerCase())) : gists, q),
+    }),
+  );
+
+  renderList(gists);
 }
 
 // ── Detail pane ──────────────────────────────────────────────────────────────
@@ -416,7 +454,7 @@ function gistDialog(opts: {
       resolve(v);
     };
 
-    const card = el("div", "gist-modal");
+    const card = el("div", "modal-card gist-modal");
 
     const heading = el("div", "modal-title");
     heading.textContent = opts.title;

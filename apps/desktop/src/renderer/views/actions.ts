@@ -17,6 +17,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   loadingState,
   skeletonList,
   errorState,
@@ -27,7 +28,7 @@ import {
   statBit,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { comboField, ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type {
   WorkflowRun,
   WorkflowRunDetail,
@@ -123,12 +124,47 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     void showRunDetail(detail, r);
   };
 
-  runs.forEach((r, i) => {
+  const buildRow = (r: WorkflowRun): HTMLElement => {
     const row = runRow(r);
     row.addEventListener("click", () => select(r, row));
-    listEl.appendChild(row);
-    if (i === 0) select(r, row); // auto-select the first run so the jobs panel shows
-  });
+    return row;
+  };
+
+  // Case-insensitive match over the fields a user would search by.
+  const matches = (r: WorkflowRun, q: string): boolean => {
+    const hay = `${r.name} ${r.branch} ${r.event} #${r.id}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  let autoSelected = false;
+  const renderList = (items: WorkflowRun[], q = ""): void => {
+    listEl.replaceChildren();
+    if (items.length === 0) {
+      listEl.appendChild(
+        emptyState("No matching runs", `Nothing matches “${q}”.`, { icon: "search" }),
+      );
+      return;
+    }
+    for (const r of items) listEl.appendChild(buildRow(r));
+    // Auto-select the first run once (initial render) so the jobs panel shows;
+    // don't hijack the selection on every keystroke while filtering.
+    if (!autoSelected) {
+      autoSelected = true;
+      const first = items[0];
+      const firstRow = listEl.firstElementChild as HTMLElement | null;
+      if (first && firstRow) select(first, firstRow);
+    }
+  };
+
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: "Search runs…",
+      onInput: (q) => renderList(q ? runs.filter((r) => matches(r, q.toLowerCase())) : runs, q),
+    }),
+  );
+
+  renderList(runs);
 }
 
 /** One rich run row: a colored status lead icon, the run name + #id, then a
@@ -142,6 +178,7 @@ function runRow(r: WorkflowRun): HTMLElement {
     title: `${r.name} #${r.id}`,
     stats: [statBit("", prettyState(state) || "—")],
     meta,
+    metaTitle: r.createdAt ? `Created ${absTimeISO(r.createdAt)}` : undefined,
     ariaLabel: `Workflow run ${r.name} #${r.id}: ${prettyState(state) || "unknown"}`,
   });
 }
@@ -497,8 +534,15 @@ async function showDispatchForm(detail: HTMLElement, w: WorkflowInfo): Promise<v
 
   const form = el("div", "gh-dispatch-form");
 
-  // Ref field — defaults to the current branch (best-effort), else "main".
-  const refField = dispatchField("Branch or tag (ref)", "main", await currentBranchName());
+  // Ref field — a searchable picker over the repo's branches + tags, defaulting
+  // to the current branch (best-effort). The user can still type any ref.
+  const [refOptions, currentRef] = await Promise.all([loadRefOptions(), currentBranchName()]);
+  const refField = comboField({
+    label: "Branch or tag (ref)",
+    placeholder: "Search branches and tags…",
+    value: currentRef,
+    options: refOptions,
+  });
   form.appendChild(refField.row);
 
   const getters: { name: string; get: () => string }[] = [];
@@ -607,6 +651,28 @@ async function currentBranchName(): Promise<string> {
     /* not a repo / not loaded — fall through */
   }
   return "main";
+}
+
+/** Branch + tag names for the dispatch ref picker — local branches, remote
+ *  branches (stripped of their "origin/" prefix), then tags, each deduped and
+ *  sorted, branches before tags. Empty on failure (the field still accepts free text). */
+async function loadRefOptions(): Promise<string[]> {
+  try {
+    const refs = await host.invoke("refs:list", undefined);
+    const branches = new Set<string>();
+    const tags = new Set<string>();
+    for (const r of refs) {
+      if (r.type === "head") branches.add(r.name);
+      else if (r.type === "remote") {
+        const short = r.name.replace(/^[^/]+\//, ""); // "origin/feat" → "feat"
+        if (short && short !== "HEAD") branches.add(short);
+      } else if (r.type === "tag") tags.add(r.name);
+    }
+    const cmp = (a: string, b: string): number => a.localeCompare(b);
+    return [...[...branches].sort(cmp), ...[...tags].sort(cmp)];
+  } catch {
+    return [];
+  }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

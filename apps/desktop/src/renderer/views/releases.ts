@@ -16,6 +16,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   loadingState,
   skeletonList,
   errorState,
@@ -29,7 +30,7 @@ import {
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
 import type { ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
 
 /** Which sub-list the left pane is showing. Module-scoped so it survives a re-render. */
@@ -154,16 +155,19 @@ async function loadReleases(
   };
 
   // "Latest" marks the first non-draft (published) release, mirroring github.com.
-  let latestMarked = false;
-  releases.forEach((rel, i) => {
+  // Anchored to the unique id of the true latest published release (computed over
+  // the whole loaded list), so the badge renders correctly on every filtered
+  // render too — no cross-render latch.
+  const latestId = releases.find((r) => !r.draft)?.id;
+
+  const buildRow = (rel: ReleaseInfo): HTMLElement => {
     const lead = el("span", "gh-lead-icon gh-lead-merged");
     lead.appendChild(glyph("tag"));
 
     const suffix: HTMLElement[] = [];
     if (rel.prerelease) suffix.push(statePill("Pre-release", "draft"));
-    if (!rel.draft && !latestMarked) {
+    if (!rel.draft && rel.id === latestId) {
       suffix.push(labelChip("Latest", "1f883d"));
-      latestMarked = true;
     }
 
     const when = rel.publishedAt ? `published ${relTimeISO(rel.publishedAt)}` : "draft";
@@ -179,13 +183,53 @@ async function loadReleases(
       title: rel.name || rel.tagName,
       titleSuffix: suffix,
       meta: `${rel.tagName} · ${when}${author}`,
+      metaTitle: rel.publishedAt ? `Published ${absTimeISO(rel.publishedAt)}` : undefined,
       stats,
       ariaLabel: `Release ${rel.name || rel.tagName}`,
     });
     row.addEventListener("click", () => select(rel, row));
-    listEl.appendChild(row);
-    if (i === 0) select(rel, row); // auto-select the first release so the detail isn't a void
-  });
+    return row;
+  };
+
+  // Case-insensitive match over the fields a user would search by.
+  const matches = (rel: ReleaseInfo, q: string): boolean => {
+    const hay = `${rel.name} ${rel.tagName}`.toLowerCase();
+    return hay.includes(q);
+  };
+
+  let autoSelected = false;
+  const renderList = (items: ReleaseInfo[], q = ""): void => {
+    listEl.replaceChildren();
+    if (items.length === 0) {
+      listEl.appendChild(
+        emptyState("No matching releases", `Nothing matches “${q}”.`, { icon: "search" }),
+      );
+      return;
+    }
+    for (const rel of items) listEl.appendChild(buildRow(rel));
+    // Auto-select the first release once (initial render) so the detail isn't a
+    // void; don't hijack the selection on every keystroke while filtering.
+    if (!autoSelected) {
+      autoSelected = true;
+      const first = items[0];
+      const firstRow = listEl.firstElementChild as HTMLElement | null;
+      if (first && firstRow) select(first, firstRow);
+    }
+  };
+
+  // A header search/filter over the loaded list (client-side, instant). Inserted
+  // at the front of the action cluster (the .gh-acct that already holds the
+  // Releases|Tags segment and the New-release button), mirroring the Issues view.
+  // A header search/filter — on the LEFT, next to the title (client-side, instant).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: "Search releases…",
+      onInput: (q) =>
+        renderList(q ? releases.filter((rel) => matches(rel, q.toLowerCase())) : releases, q),
+    }),
+  );
+
+  renderList(releases);
   void nav; // nav reserved for symmetry with the tags loader
 }
 
@@ -440,7 +484,7 @@ function releaseFormDialog(title: string, init: ReleaseInput): Promise<ReleaseIn
       resolve(value);
     };
 
-    const card = mkDialogEl("div", "modal-form");
+    const card = mkDialogEl("div", "modal-card modal-form");
     const h = mkDialogEl("div", "modal-title");
     h.textContent = title;
 

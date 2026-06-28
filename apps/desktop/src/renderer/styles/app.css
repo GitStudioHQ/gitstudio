@@ -403,6 +403,18 @@ button:disabled:hover { filter: grayscale(0.25); }
   outline-offset: 2px;
 }
 
+/* Resizable dividers are keyboard-operable (role="separator", arrow keys). Make
+   keyboard focus obvious by lighting up the otherwise-thin handle. */
+.rail-resizer:focus-visible,
+.cmp-vsplit:focus-visible,
+.dock-resizer:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline-offset: -1px;
+}
+.rail-resizer:focus-visible .rail-resizer-grip,
+.cmp-vsplit:focus-visible .cmp-vsplit-grip { background: var(--gs-accent); width: 2px; }
+.dock-resizer:focus-visible .dock-resizer-grip { background: var(--gs-accent); }
+
 /* Respect the OS "reduce motion" setting across the whole app. */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -479,31 +491,29 @@ button:disabled:hover { filter: grayscale(0.25); }
   position: relative;
   z-index: 5;
   flex: 0 0 auto;
-  height: 48px;
+  height: 40px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 84px; /* room for macOS traffic lights */
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--app-elevated) 92%, var(--gs-accent) 3%),
-    var(--app-panel));
+  gap: 7px;
+  padding: 0 10px;
+  background: var(--app-panel);
   border-bottom: 1px solid var(--app-border);
-  /* Lift the bar so the routed content scrolls under a defined edge. */
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--vscode-foreground) 5%, transparent),
-    0 6px 16px -8px rgba(0, 0, 0, 0.45);
   -webkit-app-region: drag;
 }
+/* Reserve room for the macOS traffic lights only — Windows/Linux draw their
+   window controls in the native frame, so the bar starts flush there. */
+html.is-mac .topbar { padding-left: 78px; }
 .topbar > * { -webkit-app-region: no-drag; }
 .topbar-home {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  margin-right: 2px;
+  width: 34px;
+  height: 34px;
+  margin-right: 4px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 11px;
   background: transparent;
   cursor: pointer;
   transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
@@ -518,17 +528,16 @@ button:disabled:hover { filter: grayscale(0.25); }
 }
 /* The inline brand mark: cube hull tracks the foreground (subtle on both
  * themes); the merge-Y lanes + nodes are the violet accent (legible on both). */
-.topbar-mark { width: 22px; height: 22px; display: block; color: var(--vscode-foreground); }
+.topbar-mark { width: 26px; height: 26px; display: block; color: var(--vscode-foreground); }
 .topbar-mark svg { display: block; }
 .topbar-mark .bm-cube { stroke: currentColor; stroke-opacity: 0.42; }
 .topbar-mark .bm-lane { stroke: var(--gs-accent-ink, var(--gs-accent)); }
 .topbar-mark .bm-node { fill: var(--gs-accent-ink, var(--gs-accent)); }
-.topbar-mark .bm-core { fill: #fff; }
 .topbar-switch {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 30px;
+  height: 28px;
   padding: 0 10px;
   max-width: 340px;
   border-radius: 8px;
@@ -559,8 +568,8 @@ button:disabled:hover { filter: grayscale(0.25); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: 8px;
@@ -578,7 +587,7 @@ button:disabled:hover { filter: grayscale(0.25); }
 .topbar-sync {
   display: inline-flex;
   align-items: stretch;
-  height: 30px;
+  height: 28px;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--app-border);
@@ -889,12 +898,15 @@ button:disabled:hover { filter: grayscale(0.25); }
 }
 .list-empty {
   flex: 1 1 auto;
+  /* Fill the pane so the empty state is vertically centered regardless of whether
+     the parent is a flex container — keeps the list-pane and detail-pane empties
+     aligned across every section view (e.g. Projects' list vs its board detail). */
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 0;
   padding: 48px 24px;
   text-align: center;
 }
@@ -1040,6 +1052,11 @@ button:disabled:hover { filter: grayscale(0.25); }
   background: color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground));
   border: 1px solid var(--app-border);
   box-shadow: var(--sheen), var(--shadow-pop);
+  animation: gs-card-in 160ms var(--ease-out) both;
+}
+@keyframes gs-card-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .modal-title { font-size: 15px; font-weight: 650; color: var(--vscode-foreground); }
 .modal-input {
@@ -1847,6 +1864,9 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   padding: 16px;
 }
 .settings-sub { font-size: 12.5px; line-height: 1.5; color: var(--app-muted); }
+.settings-warn {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, #c89b3c);
+}
 .settings-empty { font-size: 12.5px; color: var(--app-muted); padding: 4px 0; }
 
 /* Segmented theme control */
@@ -1970,7 +1990,8 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-detail-head { display: flex; flex-direction: column; gap: 7px; padding-bottom: 12px; border-bottom: 1px solid var(--app-border); }
 .gh-detail-title { font-size: 18px; font-weight: 650; color: var(--vscode-foreground); }
 .gh-detail-meta { font-size: 12px; color: var(--app-muted); display: flex; align-items: center; flex-wrap: wrap; }
-.gh-detail-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.gh-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; row-gap: 8px; margin-top: 6px; }
+.gh-detail-actions > * { flex-shrink: 0; }
 .gh-merge-btn { height: 30px; padding: 0 14px; }
 .gh-checks-success { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .gh-checks-failure, .gh-checks-error { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
@@ -2243,64 +2264,12 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   overflow: hidden;
 }
 
-/* Draggable splitter between the graph and the details panel, with a collapse
- * chevron. The whole bar is a row-resize handle; the chevron toggles collapse. */
-.graph-resizer {
-  flex: 0 0 12px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 8px;
-  cursor: row-resize;
-  background: var(--app-panel);
-  border-top: 1px solid var(--app-border);
-  border-bottom: 1px solid var(--app-border);
-}
-.graph-grip {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 36px;
-  height: 3px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
-  transition: background 120ms;
-}
-.graph-resizer:hover .graph-grip { background: color-mix(in srgb, var(--gs-accent) 55%, transparent); }
-.graph-collapse {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 18px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--app-muted);
-  cursor: pointer;
-}
-.graph-collapse:hover { background: var(--app-hover); color: var(--vscode-foreground); }
-.graph-collapse .codicon { font-size: 13px; transition: transform 150ms; }
-.graph-collapse.collapsed .codicon { transform: rotate(180deg); }
-
 gitstudio-graph {
   /* Size only — the element's shadow `:host` uses `display:flex;
    * flex-direction:column`. A light-DOM `display:block` here would override it
    * and collapse the flex:1 row scroller to zero height (no rows render). */
   height: 100%;
   width: 100%;
-}
-
-.details-host {
-  flex: 1 1 45%;
-  min-height: 120px;
-  overflow: hidden;
-  display: flex;
-  background: var(--app-panel);
 }
 
 .details {
@@ -2450,25 +2419,39 @@ gitstudio-graph {
 
 /* The shared <gitstudio-commit-details> inspect panel + the inline diff below
  * it. The diff surface stays hidden until a file is opened, then splits. */
+/* The commit-details surface inside the bottom dock fills the dock body; its
+   child (the details split, or the empty-state placeholder) fills + centers. */
+/* Fill the dock body (a flex row) like .term-surface does — otherwise it shrinks
+   to content width and the commit details ignore the available space. */
+.dock-details-surface { flex: 1 1 auto; width: 100%; min-width: 0; height: 100%; min-height: 0; display: flex; }
+.dock-details-surface > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+
+/* Docked commit details = a wide, short split: the metadata/file panel on the
+   LEFT, the file diff on the RIGHT (uses the wide footer space, both visible). */
 .details-split {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   width: 100%;
   min-width: 0;
   height: 100%;
   overflow: hidden;
 }
+/* Commit details fill the dock by default (no diff pane). The metadata/file
+   panel scrolls ITSELF (<gitstudio-commit-details> has :host{overflow:hidden} +
+   an internal .scroll) — so NO overflow here, or you get a double scrollbar.
+   Opening a file (.diff-open) docks the panel to a fixed left column and reveals
+   the diff filling the rest. */
 .details-split .details-panel {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
-  display: block;
 }
-.details-split .diff-surface {
-  display: none;
-  flex: 1 1 55%;
+.details-split .diff-surface { display: none; min-width: 0; min-height: 0; }
+.details-split.diff-open .details-panel {
+  flex: 0 0 420px;
+  border-right: 1px solid var(--app-border);
 }
-.details-split.diff-open .diff-surface { display: block; }
-.details-split.diff-open .details-panel { flex: 1 1 45%; min-height: 120px; }
+.details-split.diff-open .diff-surface { display: block; flex: 1 1 auto; }
 
 .diff-empty {
   display: flex;
@@ -2549,7 +2532,70 @@ gitstudio-graph {
 /* ── issues ── */
 /* ── Issues: header tools, label/assignee chips, composer ───────────────────── */
 .gh-head-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.gh-new-btn { height: 28px; padding: 0 12px; }
+/* Header action buttons (primary CTAs in a section header) are slim — the same
+   28px height as the secondary mini-btn beside them, so a header never mixes a
+   gigantic 40px .btn with a slim button. The .btn-primary fill/sheen is kept. */
+.gh-new-btn,
+.gh-run-btn,
+.gh-head-primary {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  gap: 6px;
+}
+
+/* Shared header search/filter field (see common.ts searchField). */
+.gh-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 9px;
+  min-width: 150px;
+  max-width: 240px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.gh-search:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: var(--sheen), 0 0 0 2px color-mix(in srgb, var(--gs-accent) 18%, transparent);
+}
+/* The search sits on the LEFT, inside the title cluster (.gh-head-titlewrap),
+   right after the page name + count. Keep it from shrinking below its min width. */
+.gh-head-titlewrap > .gh-search { flex: 0 0 auto; margin-left: 2px; }
+.gh-search-icon { color: var(--app-muted); font-size: 14px; flex: 0 0 auto; }
+.gh-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.gh-search-input::placeholder { color: var(--app-muted); }
+.gh-search-input::-webkit-search-cancel-button { display: none; }
+.gh-search-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+.gh-search-clear .codicon { font-size: 12px; }
+.gh-search-clear:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 
 /* State pills in the detail meta. */
 .gh-issue-open { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
@@ -2731,6 +2777,44 @@ gitstudio-graph {
 .gh-dispatch-input:focus-visible { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); }
 select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .gh-dispatch-note { font-size: 12.5px; color: var(--app-muted); line-height: 1.5; }
+
+/* Searchable combobox (comboField): an input + a filtered suggestion dropdown. */
+.gh-combo { position: relative; width: 100%; }
+.gh-combo-input { width: 100%; }
+.gh-combo-input:focus-within,
+.gh-combo-input:focus { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); }
+/* Body-appended floating popover (position + size set in JS) — never clipped by
+   a scrolling container, flips above the field when there's no room below. */
+.gh-combo-menu {
+  position: fixed;
+  z-index: 2200;
+  max-height: 244px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 9px;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  box-shadow: var(--sheen), var(--shadow-pop);
+  animation: gs-card-in 100ms var(--ease-out) both;
+}
+.gh-combo-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, var(--vscode-font-family));
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.gh-combo-item.active { background: color-mix(in srgb, var(--gs-accent) 18%, transparent); }
+.gh-combo-item:hover { background: var(--app-hover); }
 .gh-dispatch-form .gh-detail-actions { margin-top: 4px; }
 .gh-meta-text { white-space: nowrap; }
 
@@ -2792,7 +2876,7 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .rel-assets .gh-adds .codicon { font-size: 14px; color: var(--gs-accent-ink, var(--gs-accent)); }
 
 /* Multi-field release form (reuses .modal-overlay / .modal-input / .modal-actions). */
-.modal-form { display: flex; flex-direction: column; gap: 12px; }
+.modal-form { width: min(520px, 92vw); display: flex; flex-direction: column; gap: 12px; }
 .modal-field { display: flex; flex-direction: column; gap: 5px; }
 .modal-field-label { font-size: 11.5px; font-weight: 600; color: var(--app-muted); }
 .modal-textarea { resize: vertical; min-height: 96px; font-family: var(--vscode-editor-font-family); line-height: 1.5; }
@@ -3145,9 +3229,12 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 
 /* ── Reusable collapsible bottom dock (BottomDock) ─────────────────────────── */
 .dock-mount {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
+  /* Reserve ONLY the bar height in the layout — the whole panel floats in
+     .dock-overlay, so opening it never reflows the view above. */
+  --dock-bar-h: 23px;
+  flex: 0 0 var(--dock-bar-h);
+  height: var(--dock-bar-h);
+  position: relative;
   min-height: 0;
 }
 /* Top resizer — drag the dock's top edge to resize the body height. */
@@ -3165,18 +3252,29 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; }
 .dock-mount.collapsed .dock-resizer { display: none; }
 
-.bottom-dock {
-  flex: 0 0 auto;
+/* The whole panel floats anchored to the window bottom; children stack
+   resizer · BAR · body, so when open the bar sits ON TOP of the body and the
+   body fills beneath it down to the bottom. Collapsed, only the bar shows and
+   it sits exactly in the reserved bar slot at the base. */
+.dock-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   background: var(--vscode-editor-background);
 }
-/* Expanded: the body has popped up above the footer — lift it off the view with
-   a soft top shadow + a hairline. Collapsed: nothing but the tiny footer. */
-.dock-mount:not(.collapsed) .bottom-dock {
+/* Expanded: lift the floating panel off the view (top hairline + soft shadow)
+   and separate the bar from the body with a hairline beneath it. */
+.dock-mount:not(.collapsed) .dock-overlay {
   border-top: 1px solid var(--app-border);
-  box-shadow: 0 -12px 28px -20px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 -12px 30px -16px rgba(0, 0, 0, 0.5);
+}
+.dock-mount:not(.collapsed) .dock-footer {
+  border-top: none;
+  border-bottom: 1px solid var(--app-border);
 }
 
 /* The content area — pops UP above the footer; hidden when collapsed. */
@@ -3195,10 +3293,11 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 28px;
+  gap: 2px;
+  height: 23px;
   padding: 0 4px 0 6px;
-  background: linear-gradient(180deg, var(--app-panel), var(--app-elevated));
+  /* Flat, minimal status-bar look (VS Code) — no gradient. */
+  background: var(--app-panel);
   border-top: 1px solid var(--app-border);
   user-select: none;
 }
@@ -3210,10 +3309,10 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 19px;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--app-muted);
   cursor: pointer;
@@ -3226,38 +3325,49 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .dock-icon-btn .codicon { font-size: 14px; }
 .dock-chevron .codicon { font-size: 13px; }
 
-/* ── Terminal tabs (Output + one-per-shell) — compact chips in the footer ───── */
-.term-tabs { display: inline-flex; align-items: center; gap: 1px; min-width: 0; }
+/* ── Footer tabs (Commit details / Output / one-per-shell) — flat, VS-Code-panel
+   style: no boxes, just text that brightens on hover/active, with a thin accent
+   line on the active tab's top edge (connecting it to the panel above). ─────── */
+.dock-tabs { display: flex; align-self: stretch; min-width: 0; }
+.term-tabs { display: inline-flex; align-items: stretch; gap: 1px; min-width: 0; }
 .term-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  max-width: 152px;
-  height: 22px;
-  padding: 0 8px;
+  gap: 6px;
+  max-width: 168px;
+  height: 100%;
+  padding: 0 11px;
   border: none;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--app-muted);
   font-family: inherit;
   font-size: var(--text-2xs);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  transition: color var(--dur-1) var(--ease);
 }
-.term-tab:hover { background: var(--app-hover); color: var(--vscode-foreground); }
-/* Active chip reads as connected to the body above it (accent edge on top). */
-.term-tab.active {
-  background: var(--vscode-editor-background);
-  color: var(--vscode-foreground);
-  box-shadow: inset 0 1.5px 0 var(--gs-accent), inset 0 0 0 1px var(--app-border);
+.term-tab:hover { color: var(--vscode-foreground); }
+.term-tab.active { color: var(--vscode-foreground); }
+/* The only chrome on an active tab: a thin accent underline along its bottom edge. */
+.term-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--gs-accent);
 }
-.term-tab .glyph { flex: 0 0 auto; }
+/* Collapsed (just the status bar): no active indicator — nothing is "open". */
+.dock-mount.collapsed .term-tab.active::after { display: none; }
+.dock-mount.collapsed .term-tab.active { color: var(--app-muted); }
+/* Icons are small + grayed — no accent; the label + underline carry the state. */
+.term-tab .glyph { flex: 0 0 auto; color: var(--app-muted); }
 .term-tab .glyph .codicon { font-size: 12px; }
-.term-tab.active .glyph,
-.term-tab.is-output .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .term-tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-tab-close {
   display: inline-flex;
@@ -3287,6 +3397,104 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   overflow: hidden;
 }
 .term-surface .xterm { height: 100%; }
+
+/* The single Terminal view: the shell stage (left) + a VS-Code-style side list
+   of terminals (right) with a "New terminal" button and per-shell kill button. */
+.term-group { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.term-stage { flex: 1 1 auto; min-width: 0; min-height: 0; position: relative; display: flex; }
+.term-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--app-muted);
+  font-size: 12.5px;
+}
+.term-empty .codicon { font-size: 15px; }
+.term-side {
+  flex: 0 0 196px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-panel);
+  overflow-y: auto;
+}
+.term-side-add {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.term-side-add:hover { background: var(--app-hover); border-color: var(--accent-line); }
+.term-side-add .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.term-side-add .codicon { font-size: 13px; }
+.term-side-list { display: flex; flex-direction: column; gap: 1px; }
+.term-side-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 7px 0 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.term-side-row:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+.term-side-row.active {
+  background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+  color: var(--vscode-foreground);
+}
+.term-side-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--gs-accent);
+}
+.term-side-row .codicon { font-size: 13px; }
+.term-side-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-side-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--app-muted);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.term-side-row:hover .term-side-close,
+.term-side-row.active .term-side-close { opacity: 0.7; }
+.term-side-close:hover { opacity: 1; background: var(--app-hover); color: var(--vscode-errorForeground, #e15a5a); }
+.term-side-close .codicon { font-size: 12px; }
 .term-unavailable { padding: 16px; color: var(--app-muted); font-size: var(--text-sm); }
 
 /* ── Output tab — the live git-command log ─────────────────────────────────── */
@@ -3675,6 +3883,48 @@ body.vscode-light .gh-label-chip {
 }
 .gh-acct .gh-who .codicon { font-size: 14px; color: var(--app-muted); }
 
+/* ── Bar-level selector chip (Projects / Orgs header picker) ─────────────────── */
+.gh-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  max-width: 360px;
+  padding: 0 9px 0 8px;
+  border-radius: 9px;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.gh-picker:hover { background: var(--app-hover); border-color: var(--accent-line); }
+.gh-picker[aria-expanded="true"] { background: var(--app-active); border-color: var(--accent-line); }
+.gh-picker:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline-offset: 2px;
+}
+.gh-picker-lead {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.gh-picker-lead .glyph,
+.gh-picker-lead .codicon { color: var(--gs-accent-ink, var(--gs-accent)); font-size: 16px; }
+.gh-picker-lead .av,
+.gh-picker-lead .gh-avatar { width: 20px; height: 20px; }
+.gh-picker-lead .av-fallback { font-size: 9px; }
+.gh-picker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gh-picker-chev { color: var(--app-muted); opacity: 0.7; flex: 0 0 auto; margin-left: 1px; }
+.gh-picker-chev .codicon { font-size: 14px; }
+
+/* Single full-width pane (no left list): the picked project/org board+data. */
+.gh-solo { flex: 1 1 auto; min-width: 0; border-left: none; }
+
 /* Wider list pane so the detail isn't a 60% void; lift the detail surface. */
 .gh-list { flex: 0 0 42%; min-width: 300px; max-width: 600px; }
 .gh-detail { background: var(--app-bg); }
@@ -3803,14 +4053,67 @@ body.vscode-light .gh-label-chip {
 /* the repo glyph leads the repo switch in the brand accent (like the branch one) */
 .topbar-switch .glyph:first-child { color: var(--gs-accent-ink, var(--gs-accent)); }
 
+/* ── Notifications center: the bell + unread badge, next to the account chip ─── */
+.topbar-bell { position: relative; flex: 0 0 auto; }
+.topbar-bell .codicon { font-size: 16px; }
+.topbar-bell.has-unread { color: var(--vscode-foreground); }
+.topbar-bell[aria-expanded="true"] {
+  background: var(--app-active);
+  color: var(--vscode-foreground);
+}
+.topbar-bell-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--gs-accent);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  border: 1.5px solid var(--app-panel);
+  box-shadow: 0 1px 3px -1px color-mix(in srgb, var(--gs-accent) 60%, transparent);
+  pointer-events: none;
+}
+
+/* ── Notifications center popover (the bell's floating inbox panel) ──────────── */
+.notif-pop {
+  position: fixed;
+  z-index: 1000;
+  width: 408px;
+  max-width: calc(100vw - 24px);
+  max-height: min(560px, calc(100vh - 80px));
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground));
+  border: 1px solid var(--app-border);
+  box-shadow: var(--sheen), var(--shadow-pop);
+  transform-origin: top right;
+  animation: menu-pop 140ms var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) { .notif-pop { animation: none; } }
+.notif-pop-inner { flex: 1 1 auto; min-height: 0; display: flex; }
+.notif-pop .notif-view { background: transparent; }
+.notif-pop .list-head { padding: 12px 13px 10px; }
+.notif-pop .list-body { padding: 7px; }
+
 /* The single account chip, pinned to the right edge of the bar. */
 .topbar-acct {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 30px;
+  height: 28px;
   max-width: 240px;
-  padding: 0 13px 0 11px;
+  padding: 0 12px 0 10px;
   border-radius: 999px;
   border: 1px solid var(--app-border);
   background: var(--app-elevated);

@@ -12,7 +12,7 @@ them as-is rather than redrawing or recoloring the mark.
 
 An **isometric cube built from a commit graph**. The cube is a **slate** solid —
 the unified GitStudio platform — and across its three front faces runs a single
-glowing **violet merge-Y**: two branches converging into one commit, with a commit
+flat **violet merge-Y**: two branches converging into one commit, with a commit
 node at every corner. Slate body, violet lines: the branch/merge graph and its
 commits stay unmistakably *git* and clearly legible against the body, while the
 whole thing still reads as one solid object — every Git tool *merged* into one
@@ -34,7 +34,7 @@ commit node — is available for contexts that want a pure lettermark.
 |---|---|---|
 | Violet (lines) | `#A98CFF` | **every merge-Y line + commit node** — the one git tone |
 | Slate body | `#4E4C6A → #1C1A30` | the three cube faces (light / deep / mid) |
-| Node core | `#FFFFFF` | the dot inside each commit node |
+| Node eyelet | *(body shows through)* | each commit node is a big, blunt disc punched with a clean hole — no painted core, no glow |
 | Wordmark gradient | `#A98CFF → #8E78F6 → #C36BF0` | "Studio" in the wordmark |
 | Ink | `#1B1F2A` | one-color mark on light; "Git" on light |
 | Tile gradient | `#1B1B27 → #0C0C16` | the squircle background |

@@ -35,29 +35,26 @@
 <rect width="512" height="512" rx="116" fill="url(#bg)"/>
 <rect width="512" height="512" rx="116" fill="url(#bgglow)"/>
 <rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#1B1A2E" stroke-opacity="0.10" stroke-width="3"/>
+<mask id="cubeHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+<rect width="512" height="512" fill="#fff"/>
+<circle cx="124.4" cy="174.0" r="9.2" fill="#000"/>
+<circle cx="387.6" cy="174.0" r="9.2" fill="#000"/>
+<circle cx="256.0" cy="402.0" r="9.2" fill="#000"/>
+<circle cx="256.0" cy="250.0" r="10.4" fill="#000"/>
+</mask>
+<g mask="url(#cubeHoles)">
 <path d="M256.0,98.0 L387.6,174.0 L256.0,250.0 L124.4,174.0 Z" fill="url(#fTop)"/>
 <path d="M387.6,174.0 L387.6,326.0 L256.0,402.0 L256.0,250.0 Z" fill="url(#fRight)"/>
 <path d="M256.0,250.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="url(#fLeft)"/>
 <path d="M256.0,98.0 L387.6,174.0 L387.6,326.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="3" stroke-linejoin="round"/>
-<g filter="url(#glow)" fill="none" stroke-width="17" stroke-linecap="round">
+<g fill="none" stroke-width="18" stroke-linecap="round">
 <path d="M256.0,250.0 L124.4,174.0" stroke="#A98CFF"/>
 <path d="M256.0,250.0 L387.6,174.0" stroke="#A98CFF"/>
 <path d="M256.0,250.0 L256.0,402.0" stroke="#A98CFF"/>
 </g>
-<g filter="url(#glow)">
-<circle cx="124.4" cy="174.0" r="19" fill="#A98CFF"/>
-<circle cx="124.4" cy="174.0" r="8.0" fill="#F5F3FF"/>
-</g>
-<g filter="url(#glow)">
-<circle cx="387.6" cy="174.0" r="19" fill="#A98CFF"/>
-<circle cx="387.6" cy="174.0" r="8.0" fill="#F5F3FF"/>
-</g>
-<g filter="url(#glow)">
-<circle cx="256.0" cy="402.0" r="19" fill="#A98CFF"/>
-<circle cx="256.0" cy="402.0" r="8.0" fill="#F5F3FF"/>
-</g>
-<g filter="url(#glow)">
-<circle cx="256.0" cy="250.0" r="23" fill="#A98CFF"/>
-<circle cx="256.0" cy="250.0" r="9.7" fill="#F5F3FF"/>
+<circle cx="124.4" cy="174.0" r="23" fill="#A98CFF"/>
+<circle cx="387.6" cy="174.0" r="23" fill="#A98CFF"/>
+<circle cx="256.0" cy="402.0" r="23" fill="#A98CFF"/>
+<circle cx="256.0" cy="250.0" r="26" fill="#A98CFF"/>
 </g>
 </svg>

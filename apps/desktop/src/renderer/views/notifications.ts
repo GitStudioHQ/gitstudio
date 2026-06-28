@@ -12,6 +12,7 @@ import {
   glyph,
   pill,
   relTimeISO,
+  absTimeISO,
   skeletonList,
   errorState,
   emptyState,
@@ -26,6 +27,9 @@ import type { NotificationThread } from "../../shared/ipc";
 
 /** Persisted across re-renders of this view: include already-read threads? */
 let notifAll = false;
+
+/** The dismiss handle for the open notifications popover (so the bell toggles). */
+let closePanel: (() => void) | null = null;
 
 export const renderNotifications: SectionRender = (wrap, nav) => {
   void mount(wrap, nav);
@@ -113,6 +117,92 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   }
 }
 
+// ── Top-bar notification center (the bell popover, next to the profile) ────────
+
+/**
+ * The unread-thread count for the bell badge in the top bar. Returns 0 when not
+ * connected or on any error — the badge simply stays hidden, never a broken state.
+ */
+export async function fetchUnreadCount(): Promise<number> {
+  try {
+    const threads = await host.invoke("notifications:list", { all: false, participating: false });
+    return threads.filter((t) => t.unread).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Open (or, if already open, close) the notifications center as a floating panel
+ * anchored to the bell in the top bar. Reuses the full inbox renderer — list,
+ * per-row + inbox-wide mark-read, the show-all toggle — inside a popover, so the
+ * bell IS the notification center. `nav` routes the connect prompt to Settings;
+ * `onClose` lets the caller refresh the bell's unread badge after a dismiss.
+ */
+export function openNotificationsPanel(
+  anchor: HTMLElement,
+  nav: (view: string) => void,
+  onClose?: () => void,
+): void {
+  // Toggle: a second click on the bell (or while open) closes the panel.
+  if (closePanel) {
+    closePanel();
+    return;
+  }
+
+  const panel = el("div", "notif-pop");
+  const inner = el("div", "notif-pop-inner");
+  panel.appendChild(inner);
+  document.body.appendChild(panel);
+
+  const position = (): void => {
+    const r = anchor.getBoundingClientRect();
+    const w = panel.offsetWidth || 408;
+    const left = Math.max(12, Math.min(r.right - w, window.innerWidth - w - 12));
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(r.bottom + 6)}px`;
+  };
+
+  const onDoc = (e: MouseEvent): void => {
+    const t = e.target as Node;
+    if (!panel.contains(t) && t !== anchor && !anchor.contains(t)) close();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    }
+  };
+  const close = (): void => {
+    panel.remove();
+    document.removeEventListener("mousedown", onDoc, true);
+    document.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("resize", position);
+    anchor.setAttribute("aria-expanded", "false");
+    closePanel = null;
+    onClose?.();
+  };
+  closePanel = close;
+
+  anchor.setAttribute("aria-haspopup", "dialog");
+  anchor.setAttribute("aria-expanded", "true");
+
+  // Render the inbox into the panel; the connect prompt's "Sign in" closes the
+  // panel before routing to Settings so we don't leave a popover floating.
+  renderNotifications(inner, (v) => {
+    close();
+    nav(v);
+  });
+
+  position();
+  setTimeout(() => {
+    position();
+    document.addEventListener("mousedown", onDoc, true);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", position);
+  }, 0);
+}
+
 /** A small count summary above the list (e.g. "12 threads · 3 unread"). */
 function notifSummary(total: number, unread: number): HTMLElement {
   const row = el("div", "notif-summary");
@@ -149,6 +239,7 @@ function notificationRow(
     title: t.title || "(untitled)",
     titleSuffix: t.type ? [pill(notifTypeLabel(t.type), "notif-type")] : [],
     meta,
+    metaTitle: t.updatedAt ? `Updated ${absTimeISO(t.updatedAt)}` : undefined,
     ariaLabel: `${notifTypeLabel(t.type)} notification: ${t.title || "(untitled)"}${t.unread ? " (unread)" : ""}`,
   });
   // ghRow returns a <div> here (no onClick passed). Tag it as an inbox row so the

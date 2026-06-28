@@ -30,12 +30,13 @@ import { aiModelsCard, agentAccessCard } from "./aiSettings";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
-import { gget, peek, bust } from "./cache";
+import { gget, peek, bust, setCacheScope } from "./cache";
 import {
   el,
   span,
   glyph,
   relTime,
+  absTime,
   relTimeISO,
   initials,
   avatarHue,
@@ -56,6 +57,7 @@ import {
   isBenignError,
   brandMark,
   openMenu,
+  wireResizerKeys,
 } from "./ui";
 import type { MenuItem } from "./ui";
 import { CommitContextMenu } from "./contextMenu";
@@ -64,7 +66,7 @@ import { renderIssues } from "./views/issues";
 import { renderPrs } from "./views/prs";
 import { renderActions } from "./views/actions";
 import { renderReleases } from "./views/releases";
-import { renderNotifications } from "./views/notifications";
+import { openNotificationsPanel, fetchUnreadCount } from "./views/notifications";
 import { renderOrgs } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
@@ -89,14 +91,15 @@ import type {
 } from "../shared/ipc";
 
 class App {
-  private graph!: GraphMount;
-  private diffPanel!: DiffPanel;
+  private graph?: GraphMount;
+  private diffPanel?: DiffPanel;
   private contextMenu = new CommitContextMenu((req) => this.runAction(req));
 
-  private detailsEl!: HTMLElement;
+  private detailsEl?: HTMLElement;
   private diffSurfaceEl?: HTMLElement;
   private repoSwitchName?: HTMLElement;
   private branchSwitchName?: HTMLElement;
+  private notifBellBadge?: HTMLElement;
   private selectedSha?: string;
   private currentRepo?: RepoInfo;
   private refs: RefInfo[] = [];
@@ -334,6 +337,13 @@ class App {
     this.selectedSha = undefined;
     this.codePath = "";
     this.routeGen++; // a repo switch supersedes the previous repo's in-flight work
+    // Namespace (and wipe) the SWR cache so the previous repo's branches/status/
+    // graph can never bleed into this one.
+    setCacheScope(info.root);
+    // Drop the previous repo's graph mount so a refresh from a non-graph view
+    // never reloads stale history.
+    this.graph?.dispose();
+    this.graph = undefined;
     // Tear down the previous repo's terminal sessions — a new repo means a new
     // working directory, so its shells start fresh.
     this.terminalDock?.dispose();
@@ -385,7 +395,6 @@ class App {
     { id: "actions", label: "Actions", icon: "play" },
     { id: "releases", label: "Releases", icon: "tag" },
     { id: "projects", label: "Projects", icon: "project" },
-    { id: "notifications", label: "Notifications", icon: "bell" },
     { id: "orgs", label: "Organizations", icon: "organization" },
     { id: "gists", label: "Gists", icon: "code" },
   ];
@@ -452,8 +461,20 @@ class App {
     /** Below this drag width the rail snaps shut. */
     const SNAP = 150;
     const grip = el("div", "rail-resizer");
-    grip.setAttribute("aria-hidden", "true");
     grip.append(el("div", "rail-resizer-grip"));
+    wireResizerKeys(grip, {
+      orientation: "vertical",
+      label: "Resize sidebar",
+      min: 168,
+      max: () => 360,
+      get: () => this.railWidth,
+      set: (w) => {
+        this.railWidth = w;
+        if (this.railEl) this.railEl.style.width = `${w}px`;
+      },
+      onCommit: () => this.persist(),
+      disabled: () => this.railCollapsed,
+    });
 
     const onDown = (e: PointerEvent): void => {
       if (this.railCollapsed) return;
@@ -577,6 +598,11 @@ class App {
     // Free the previous view's Monaco surface before swapping the DOM under it.
     this.activeMonacoView?.dispose();
     this.activeMonacoView = undefined;
+    // The "Commit details" dock tab only exists on the commits/graph view. Toggle
+    // it AFTER disposing the Monaco diff (which lives in its surface) so we never
+    // remove a surface with a live editor in it.
+    this.terminalDock?.setDetailsVisible(id === "graph");
+    if (id !== "graph") this.detailsEl = undefined;
     for (const btn of this.navButtons) {
       const active = btn.dataset.view === id;
       btn.classList.toggle("active", active);
@@ -604,8 +630,6 @@ class App {
       this.mountSection(renderActions);
     } else if (id === "releases") {
       this.mountSection(renderReleases);
-    } else if (id === "notifications") {
-      this.mountSection(renderNotifications);
     } else if (id === "orgs") {
       this.mountSection(renderOrgs);
     } else if (id === "projects") {
@@ -714,7 +738,11 @@ class App {
       refSection("Tags", tags, "tag", (r) => void this.checkoutRef(r.name));
 
       if (!body.children.length) {
-        body.appendChild(emptyState(q ? "No matches" : "No branches yet", q ? "Try a different filter." : ""));
+        body.appendChild(
+          emptyState(q ? "No matches" : "No branches yet", q ? "Try a different filter." : "", {
+            icon: "git-branch",
+          }),
+        );
       }
     };
     filterInput.addEventListener("input", render);
@@ -746,6 +774,7 @@ class App {
     if (b.subject) bits.push(b.subject);
     const sub = el("div", "row-meta-sub");
     sub.textContent = bits.join("  ·  ");
+    if (b.date) sub.title = absTime(b.date);
     meta.appendChild(sub);
     row.appendChild(meta);
     const actions = el("div", "row-actions");
@@ -848,6 +877,7 @@ class App {
     headLbl.textContent = "compare";
     const swap = el("button", "topbar-icon");
     swap.title = "Swap base and compare";
+    swap.setAttribute("aria-label", "Swap base and compare");
     swap.appendChild(glyph("git-compare"));
     swap.addEventListener("click", () => {
       [this.compareBase, this.compareHead] = [this.compareHead, this.compareBase];
@@ -960,7 +990,9 @@ class App {
     body.replaceChildren();
     if (!res || !res.commits.length) {
       body.appendChild(
-        emptyState("No commits", "These refs share the same history in this direction."),
+        emptyState("No commits", "These refs share the same history in this direction.", {
+          icon: "git-commit",
+        }),
       );
       return;
     }
@@ -971,6 +1003,7 @@ class App {
       subj.textContent = c.subject;
       const meta = el("div", "cc-meta");
       meta.textContent = `${c.author} · ${c.shortSha} · ${relTime(c.date)}`;
+      if (c.date) meta.title = absTime(c.date);
       row.append(subj, meta);
       list.appendChild(row);
     }
@@ -998,6 +1031,8 @@ class App {
     ltitle.textContent = `${res.files.length} file${res.files.length === 1 ? "" : "s"}`;
     const collapseBtn = el("button", "cmp-collapse");
     collapseBtn.title = "Hide file list";
+    collapseBtn.setAttribute("aria-label", "Hide file list");
+    collapseBtn.setAttribute("aria-expanded", "true");
     collapseBtn.appendChild(glyph("chevron-left"));
     lhead.append(ltitle, collapseBtn);
     const fileScroll = el("div", "cmp-file-scroll");
@@ -1009,6 +1044,7 @@ class App {
     const right = el("div", "cmp-diffpane");
     const restore = el("button", "cmp-restore");
     restore.title = "Show file list";
+    restore.setAttribute("aria-label", "Show file list");
     restore.appendChild(glyph("chevron-right"));
 
     split.append(left, divider, right, restore);
@@ -1041,6 +1077,7 @@ class App {
     const setCollapsed = (c: boolean): void => {
       this.compareFilesCollapsed = c;
       split.classList.toggle("files-collapsed", c);
+      collapseBtn.setAttribute("aria-expanded", c ? "false" : "true");
       requestAnimationFrame(() => diff.layout());
     };
     collapseBtn.addEventListener("click", () => setCollapsed(true));
@@ -1050,6 +1087,20 @@ class App {
 
   /** Drag the vertical divider to resize the file list; relayout the diff live. */
   private wireCompareResizer(divider: HTMLElement, left: HTMLElement, diff: CompareDiff): void {
+    wireResizerKeys(divider, {
+      orientation: "vertical",
+      label: "Resize file list",
+      min: 180,
+      max: () => 580,
+      get: () => this.compareFileListW,
+      set: (w) => {
+        this.compareFileListW = w;
+        left.style.flex = `0 0 ${w}px`;
+        diff.layout();
+      },
+      onCommit: () => this.persist(),
+      disabled: () => this.compareFilesCollapsed,
+    });
     divider.addEventListener("mousedown", (e: MouseEvent) => {
       e.preventDefault();
       const startX = e.clientX;
@@ -1205,14 +1256,21 @@ class App {
     body.appendChild(loadingState());
     void (async () => {
       let id;
+      let failed = false;
       try {
         id = await host.invoke("git:identity", undefined);
       } catch {
         id = { name: "", email: "" };
+        failed = true;
       }
       body.replaceChildren();
       const sub = el("div", "settings-sub");
       sub.textContent = "The author name and email stamped on your commits (git config --global).";
+      if (failed) {
+        const warn = el("div", "settings-sub settings-warn");
+        warn.textContent = "Couldn't read your current git identity — you can still set it below.";
+        body.appendChild(warn);
+      }
       const nameF = settingsField("Name", id.name, "Your Name");
       const emailF = settingsField("Email", id.email, "you@example.com");
       const save = el("button", "mini-btn settings-save");
@@ -1242,16 +1300,22 @@ class App {
     body.appendChild(loadingState());
     void (async () => {
       let keys: SshKey[] = [];
+      let failed = false;
       try {
         keys = await host.invoke("ssh:keys", undefined);
       } catch {
         keys = [];
+        failed = true;
       }
       body.replaceChildren();
       const sub = el("div", "settings-sub");
       sub.textContent = "Public keys found in ~/.ssh on this machine.";
       body.appendChild(sub);
-      if (!keys.length) {
+      if (failed) {
+        const none = el("div", "settings-empty");
+        none.textContent = "Couldn't read ~/.ssh on this machine.";
+        body.appendChild(none);
+      } else if (!keys.length) {
         const none = el("div", "settings-empty");
         none.textContent = "No SSH keys found in ~/.ssh.";
         body.appendChild(none);
@@ -1269,6 +1333,7 @@ class App {
           row.appendChild(meta);
           const copyBtn = el("button", "icon-btn");
           copyBtn.title = "Copy public key path";
+          copyBtn.setAttribute("aria-label", "Copy public key path");
           copyBtn.appendChild(glyph("copy"));
           copyBtn.addEventListener("click", () => void copyText(`~/.ssh/${k.file}`, "Path copied."));
           row.appendChild(copyBtn);
@@ -1329,6 +1394,7 @@ class App {
 
     const refreshBtn = el("button", "topbar-icon");
     refreshBtn.title = "Refresh";
+    refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showCodeView());
     const head = el("div", "code-head");
@@ -1457,11 +1523,15 @@ class App {
 
     const sha = el("button", "code-latest-sha");
     sha.title = "Copy full SHA";
+    sha.setAttribute("aria-label", "Copy full SHA");
     sha.append(glyph("git-commit"), span(hc.shortSha));
     sha.addEventListener("click", () => void copyText(hc.sha, "Commit SHA copied"));
 
     const when = el("span", "code-latest-when");
-    if (hc.date) when.textContent = relTime(hc.date);
+    if (hc.date) {
+      when.textContent = relTime(hc.date);
+      when.title = absTime(hc.date);
+    }
 
     const count = el("span", "code-latest-count");
     count.append(glyph("history"), span(`${hc.total.toLocaleString()} commit${hc.total === 1 ? "" : "s"}`));
@@ -1538,6 +1608,7 @@ class App {
     stageAllBtn.addEventListener("click", () => void this.changesAction("stageAll", undefined));
     const refreshBtn = el("button", "topbar-icon");
     refreshBtn.title = "Refresh";
+    refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showChangesView());
     toolbar.append(tTitle, tSpacer, stageAllBtn, refreshBtn);
@@ -1550,6 +1621,18 @@ class App {
     const divider = el("div", "cmp-vsplit dc-vsplit");
     divider.append(el("div", "cmp-vsplit-grip"));
     const surface = el("div", "diff-surface");
+    wireResizerKeys(divider, {
+      orientation: "vertical",
+      label: "Resize file list",
+      min: 220,
+      max: () => 640,
+      get: () => this.changesListW,
+      set: (w) => {
+        this.changesListW = w;
+        lists.style.flex = `0 0 ${w}px`;
+      },
+      onCommit: () => this.persist(),
+    });
     divider.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       document.body.classList.add("resizing-h");
@@ -1634,7 +1717,9 @@ class App {
 
     lists.replaceChildren();
     if (files.length === 0) {
-      lists.appendChild(emptyState("Working tree clean", "No changes to commit."));
+      lists.appendChild(
+        emptyState("Working tree clean", "No changes to commit.", { icon: "check-all" }),
+      );
       return;
     }
     if (staged.length) {
@@ -1761,6 +1846,7 @@ class App {
     code.textContent = dc.userCode;
     const copyBtn = el("button", "icon-btn gh-device-copy");
     copyBtn.title = "Copy code";
+    copyBtn.setAttribute("aria-label", "Copy code");
     copyBtn.appendChild(glyph("copy"));
     copyBtn.addEventListener("click", () => void copyText(dc.userCode!, "Code copied."));
     codeRow.append(code, copyBtn);
@@ -1768,6 +1854,8 @@ class App {
     openBtn.append(glyph("link-external"), span("Open GitHub to authorize"));
     openBtn.addEventListener("click", () => window.open(openUrl, "_blank"));
     const status = el("div", "gh-device-status");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
     status.append(el("div", "spinner"), span("Waiting for you to authorize…"));
     card.append(step, codeRow, openBtn, status);
     flow.replaceChildren(card);
@@ -1825,73 +1913,24 @@ class App {
 
   /** The commit graph + a collapsible / drag-resizable commit-details panel. */
   private showGraphView(): void {
+    // The graph fills the view; commit details live in the bottom dock (the
+    // "Commit details" tab is added by routeView when entering this view).
     const wrap = el("div", "graph-view");
-    const graphHost = el("div", "graph-host");
-    const resizer = el("div", "graph-resizer");
-    const grip = el("div", "graph-grip");
-    const collapseBtn = el("button", "graph-collapse");
-    collapseBtn.title = "Collapse / expand the details panel";
-    collapseBtn.appendChild(glyph("chevron-down"));
-    resizer.append(grip, collapseBtn);
-    const detailsHost = el("div", "details-host");
-    this.detailsEl = detailsHost;
-    wrap.append(graphHost, resizer, detailsHost);
+    const graphHost = el("div", "graph-host graph-host-full");
+    wrap.append(graphHost);
     this.viewHost.replaceChildren(wrap);
-    this.wireGraphResizer(wrap, resizer, detailsHost, collapseBtn);
+
+    this.detailsEl = this.terminalDock?.detailsSurface();
+    this.showDetailsPlaceholder();
 
     this.graph?.dispose(); // tear down a prior mount before replacing it
-    this.graph = new GraphMount(graphHost, {
+    const graph = new GraphMount(graphHost, {
       onSelect: (sha) => void this.selectCommit(sha),
       onOpen: (sha) => void this.selectCommit(sha),
       onContext: (sha, x, y) => this.contextMenu.open(sha, x, y),
     });
-    this.showDetailsPlaceholder();
-    void this.graph.reload();
-  }
-
-  /** Drag the splitter to resize the details panel; click the chevron to collapse it. */
-  private wireGraphResizer(
-    wrap: HTMLElement,
-    resizer: HTMLElement,
-    details: HTMLElement,
-    collapseBtn: HTMLElement,
-  ): void {
-    let collapsed = false;
-    let lastHeight = 0;
-    const setHeight = (h: number): void => {
-      details.style.flex = `0 0 ${Math.round(h)}px`;
-    };
-    resizer.addEventListener("mousedown", (e) => {
-      if ((e.target as HTMLElement).closest(".graph-collapse")) return;
-      if (collapsed) return;
-      e.preventDefault();
-      const rect = wrap.getBoundingClientRect();
-      const onMove = (ev: MouseEvent): void => {
-        const h = Math.max(90, Math.min(rect.bottom - ev.clientY, rect.height - 140));
-        setHeight(h);
-      };
-      const onUp = (): void => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      document.body.style.cursor = "row-resize";
-      document.body.style.userSelect = "none";
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    });
-    collapseBtn.addEventListener("click", () => {
-      collapsed = !collapsed;
-      collapseBtn.classList.toggle("collapsed", collapsed);
-      if (collapsed) {
-        lastHeight = details.getBoundingClientRect().height;
-        details.style.display = "none";
-      } else {
-        details.style.display = "";
-        if (lastHeight) setHeight(lastHeight);
-      }
-    });
+    this.graph = graph;
+    void graph.reload();
   }
 
   /** A branded "coming next" panel for views still being built out. */
@@ -1925,6 +1964,7 @@ class App {
     const main = el("button", "sync-main");
     const caret = el("button", "sync-caret");
     caret.title = "Sync options";
+    caret.setAttribute("aria-label", "Sync options");
     caret.appendChild(glyph("chevron-down"));
     caret.addEventListener("click", () => this.openSyncMenu(caret));
     wrap.append(main, caret);
@@ -2051,16 +2091,58 @@ class App {
     // Left cluster: brand + repo + branch, with the sync (fetch/pull/push)
     // widget sitting right next to the branch switcher.
     const left = el("div", "topbar-left");
-    left.append(sidebarToggle, home, repoSwitch, branchSwitch, this.buildSyncWidget());
+    left.append(home, sidebarToggle, repoSwitch, branchSwitch, this.buildSyncWidget());
     this.syncRailToggle();
 
-    // Right edge: the GitHub account (one place, not repeated in every section
-    // view), pinned to the far right of the bar.
+    // Right edge: the notifications center (bell + unread badge) sitting right
+    // next to the GitHub account chip — both pinned to the far right of the bar.
     const right = el("div", "topbar-right");
-    right.append(this.buildAccountChip());
+    right.append(this.buildNotifBell(), this.buildAccountChip());
 
     bar.append(left, right);
     return bar;
+  }
+
+  /** The notifications center: a bell in the top bar (next to the account chip)
+   *  with an unread-count badge, opening the inbox as a floating panel. Replaces
+   *  the old sidebar "Notifications" section — the bell IS the center now. */
+  private buildNotifBell(): HTMLElement {
+    const bell = el("button", "topbar-icon topbar-bell");
+    bell.title = "Notifications";
+    bell.setAttribute("aria-label", "Notifications");
+    bell.appendChild(glyph("bell"));
+    const badge = el("span", "topbar-bell-badge");
+    badge.hidden = true;
+    bell.appendChild(badge);
+    this.notifBellBadge = badge;
+    bell.addEventListener("click", () =>
+      openNotificationsPanel(
+        bell,
+        (v) => this.routeView(v),
+        () => void this.refreshNotifBadge(),
+      ),
+    );
+    void this.refreshNotifBadge();
+    return bell;
+  }
+
+  /** Pull the unread count and reflect it on the bell badge (hidden at zero). */
+  private async refreshNotifBadge(): Promise<void> {
+    const badge = this.notifBellBadge;
+    if (!badge) return;
+    const count = await fetchUnreadCount();
+    if (!badge.isConnected) return;
+    const bell = badge.parentElement;
+    if (count > 0) {
+      badge.textContent = count > 99 ? "99+" : String(count);
+      badge.hidden = false;
+      bell?.classList.add("has-unread");
+      bell?.setAttribute("title", `Notifications · ${count} unread`);
+    } else {
+      badge.hidden = true;
+      bell?.classList.remove("has-unread");
+      bell?.setAttribute("title", "Notifications");
+    }
   }
 
   /** The single GitHub-account affordance, pinned to the right edge of the top
@@ -2130,8 +2212,16 @@ class App {
     if (!this.currentRepo) {
       return;
     }
+    bust(); // drop the SWR cache so the re-render pulls fresh data
     await this.refreshRefs();
-    await this.graph.reload();
+    // The graph is only mounted while the graph view is showing; otherwise just
+    // re-render whatever view is active (guards against `this.graph` being unset
+    // on a refresh fired from a non-graph screen — Cmd+R, sync, commit).
+    if (this.currentView === "graph" && this.graph) {
+      await this.graph.reload();
+    } else {
+      this.routeView(this.currentView);
+    }
   }
 
   // ── Top-bar dropdowns (repo switcher + branch switcher) ─────────────────────
@@ -2173,6 +2263,28 @@ class App {
     openMenu(anchor, items);
   }
 
+  /** Jump to a commit in the graph, switching to the graph view first if the
+   *  graph isn't currently mounted (the branch switcher is available on every
+   *  screen, so `this.graph` may not exist yet). */
+  private revealInGraph(sha: string): void {
+    if (this.currentView === "graph" && this.graph) {
+      this.graph.reveal(sha);
+      return;
+    }
+    this.routeView("graph");
+    // The graph mounts and loads its first page asynchronously; reveal once it's
+    // had a frame, and retry briefly so the scroll lands even if the page is
+    // still streaming in (reveal is a no-op until the row exists).
+    let tries = 0;
+    const tryReveal = (): void => {
+      this.graph?.reveal(sha);
+      if (++tries < 6 && this.currentView === "graph") {
+        window.setTimeout(tryReveal, 120);
+      }
+    };
+    requestAnimationFrame(tryReveal);
+  }
+
   private openBranchMenu(anchor: HTMLElement): void {
     const locals = this.refs.filter((r) => r.type === "head");
     const remotes = this.refs.filter((r) => r.type === "remote");
@@ -2185,7 +2297,7 @@ class App {
           label: b.name,
           icon: "git-branch",
           current: b.isCurrent,
-          onClick: () => this.graph.reveal(b.sha),
+          onClick: () => this.revealInGraph(b.sha),
         });
       }
     }
@@ -2195,7 +2307,7 @@ class App {
         items.push({
           label: b.name,
           icon: "cloud",
-          onClick: () => this.graph.reveal(b.sha),
+          onClick: () => this.revealInGraph(b.sha),
         });
       }
     }
@@ -2205,7 +2317,7 @@ class App {
         items.push({
           label: t.name,
           icon: "tag",
-          onClick: () => this.graph.reveal(t.sha),
+          onClick: () => this.revealInGraph(t.sha),
         });
       }
     }
@@ -2251,6 +2363,13 @@ class App {
    * inline Monaco diff below it.
    */
   private renderDetails(d: CommitDetailsPayload): void {
+    // Tear down the previous commit's diff editor — it's lazily re-created only
+    // when a file is opened (creating Monaco on every commit click is what made
+    // this panel lag).
+    this.diffPanel?.dispose();
+    this.diffPanel = undefined;
+    this.activeMonacoView = undefined;
+
     const wrap = el("div", "details-split");
 
     const panel = document.createElement(
@@ -2281,10 +2400,11 @@ class App {
     this.diffSurfaceEl = surface;
     wrap.append(panel, surface);
 
+    if (!this.detailsEl) return;
     this.detailsEl.replaceChildren(wrap);
-    this.diffPanel = new DiffPanel(surface);
-    this.activeMonacoView = this.diffPanel;
-    this.diffPanel.showEmpty("Select a file to view its diff.");
+    // No diff editor yet — the split stays collapsed (details only) until the
+    // user opens a file. Pop the commit-details dock open on the selected commit.
+    this.terminalDock?.openDetails();
   }
 
   /** Route a details-panel toolbar action to the existing git context menu. */
@@ -2306,6 +2426,12 @@ class App {
 
   private async openFile(file: ChangedFile, sha?: string): Promise<void> {
     this.detailsSplitEl()?.classList.add("diff-open");
+    // Lazily spin up the Monaco diff the first time a file is opened.
+    if (!this.diffPanel && this.diffSurfaceEl) {
+      this.diffPanel = new DiffPanel(this.diffSurfaceEl);
+      this.activeMonacoView = this.diffPanel;
+    }
+    if (!this.diffPanel) return;
     const diff = await host.invoke("file:diff", { path: file.path, sha });
     if (!diff) {
       this.diffPanel.showEmpty("No diff available.");
@@ -2322,10 +2448,11 @@ class App {
   }
 
   private detailsSplitEl(): HTMLElement | null {
-    return this.detailsEl.querySelector(".details-split");
+    return this.detailsEl?.querySelector(".details-split") ?? null;
   }
 
   private showDetailsPlaceholder(): void {
+    if (!this.detailsEl) return;
     const wrap = el("div", "details details-empty");
     wrap.appendChild(
       this.currentRepo

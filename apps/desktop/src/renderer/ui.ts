@@ -90,6 +90,20 @@ export function relTimeISO(iso?: string): string {
   return Number.isNaN(ms) ? "" : relTime(ms / 1000);
 }
 
+/** The full, localized absolute date+time for a unix-seconds timestamp — used as
+ *  a `title` tooltip alongside a relative time (what JetBrains/GitKraken show). */
+export function absTime(epochSec: number): string {
+  if (!Number.isFinite(epochSec) || epochSec <= 0) return "";
+  return new Date(epochSec * 1000).toLocaleString();
+}
+
+/** As {@link absTime}, from an ISO-8601 string. "" when missing/unparseable. */
+export function absTimeISO(iso?: string): string {
+  if (!iso) return "";
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? "" : new Date(ms).toLocaleString();
+}
+
 /** A small inline text-button used in list-row action clusters. */
 export function textBtn(
   label: string,
@@ -235,6 +249,8 @@ export interface GhRowOpts {
   title: string;
   titleSuffix?: HTMLElement[];
   meta?: string;
+  /** Tooltip for the meta line (e.g. an absolute date behind a relative time). */
+  metaTitle?: string;
   chips?: HTMLElement[];
   stats?: HTMLElement[];
   onClick?: () => void;
@@ -258,6 +274,7 @@ export function ghRow(o: GhRowOpts): HTMLElement {
   if (o.meta) {
     const sub = el("div", "gh-row-sub");
     sub.textContent = o.meta;
+    if (o.metaTitle) sub.title = o.metaTitle;
     body.appendChild(sub);
   }
   if (o.chips && o.chips.length) {
@@ -382,18 +399,30 @@ export function isBenignError(message: string, source?: string): boolean {
   return false;
 }
 
-/** The GitStudio brand mark, inline so it tracks the theme with no asset swap. */
+/** The GitStudio brand mark, inline so it tracks the theme with no asset swap.
+ *  The merge-Y lanes terminate in ringed nodes: each node — the three ends and
+ *  the centre — is punched with a real hole (an SVG mask cuts through both the
+ *  node and the lane beneath, so the bar background shows through on any theme),
+ *  giving the lines that "open eyelet" look at every tip, not just the centre. */
 export function brandMark(): HTMLElement {
   const s = el("span", "topbar-mark");
   s.innerHTML =
-    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">' +
+    '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" aria-hidden="true">' +
+    "<defs><mask id=\"bm-holes\">" +
+    '<rect x="0" y="0" width="24" height="24" fill="#fff"/>' +
+    '<circle cx="4.05" cy="7.4" r="0.88" fill="#000"/>' +
+    '<circle cx="19.95" cy="7.4" r="0.88" fill="#000"/>' +
+    '<circle cx="12" cy="21.2" r="0.88" fill="#000"/>' +
+    '<circle cx="12" cy="12" r="1" fill="#000"/>' +
+    "</mask></defs>" +
+    '<g mask="url(#bm-holes)">' +
     '<path class="bm-cube" d="M12 2.8 L19.95 7.4 L19.95 16.6 L12 21.2 L4.05 16.6 L4.05 7.4 Z" stroke-width="1.4" stroke-linejoin="round"/>' +
-    '<path class="bm-lane" d="M12 12 L4.05 7.4 M12 12 L19.95 7.4 M12 12 L12 21.2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<circle class="bm-node" cx="4.05" cy="7.4" r="1.5"/>' +
-    '<circle class="bm-node" cx="19.95" cy="7.4" r="1.5"/>' +
-    '<circle class="bm-node" cx="12" cy="21.2" r="1.5"/>' +
-    '<circle class="bm-node" cx="12" cy="12" r="2.1"/>' +
-    '<circle class="bm-core" cx="12" cy="12" r="0.85"/>' +
+    '<path class="bm-lane" d="M12 12 L4.05 7.4 M12 12 L19.95 7.4 M12 12 L12 21.2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<circle class="bm-node" cx="4.05" cy="7.4" r="2.2"/>' +
+    '<circle class="bm-node" cx="19.95" cy="7.4" r="2.2"/>' +
+    '<circle class="bm-node" cx="12" cy="21.2" r="2.2"/>' +
+    '<circle class="bm-node" cx="12" cy="12" r="2.5"/>' +
+    "</g>" +
     "</svg>";
   return s;
 }
@@ -402,14 +431,22 @@ export interface MenuItem {
   label?: string;
   sub?: string;
   icon?: string;
+  /** A pre-built leading element (e.g. an avatar) used when `icon` is absent. */
+  iconEl?: HTMLElement;
   current?: boolean;
   disabled?: boolean;
   separator?: boolean;
   onClick?: () => void;
 }
 
+/** Tuning for `openMenu`. `searchable` forces the type-to-filter field on (it
+ *  otherwise appears only for long menus). */
+export interface MenuOpts {
+  searchable?: boolean;
+}
+
 /** A lightweight popover menu anchored below `anchor`; full keyboard support. */
-export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
+export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts = {}): void {
   document.querySelectorAll(".dropdown").forEach((n) => n.remove());
   const menu = el("div", "dropdown");
   menu.setAttribute("role", "menu");
@@ -490,6 +527,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
     if (it.disabled) row.setAttribute("aria-disabled", "true");
     if (it.current) row.setAttribute("aria-current", "true");
     if (it.icon) row.appendChild(glyph(it.icon));
+    else if (it.iconEl) row.appendChild(it.iconEl);
     const label = el("span", "dropdown-label");
     label.textContent = it.label ?? "";
     row.appendChild(label);
@@ -510,8 +548,9 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
   }
 
   // For long menus (e.g. the branch switcher), add a live filter at the top so
-  // the user can type to narrow instead of scrolling a wall of branches.
-  const searchable = rows.length > 9;
+  // the user can type to narrow instead of scrolling a wall of branches. Callers
+  // (the Projects/Orgs header pickers) can force it on for any length.
+  const searchable = opts.searchable ?? rows.length > 9;
   let search: HTMLInputElement | undefined;
   if (searchable) {
     const wrap = el("div", "dropdown-search-wrap");
@@ -548,4 +587,63 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
     if (search) search.focus();
     else focusAt(Math.max(0, rows.findIndex((r) => r.classList.contains("is-current"))));
   }, 0);
+}
+
+/**
+ * Make a drag-to-resize divider operable by keyboard and legible to assistive
+ * tech. Adds role="separator", the orientation, an accessible label, and a live
+ * aria-valuenow, and wires arrow keys (Home/End jump to the min/max) to nudge
+ * the size. The element keeps its existing pointer-drag behaviour; this only
+ * adds the keyboard + ARIA layer.
+ *
+ * `orientation` is the orientation of the divider line itself: "vertical" for a
+ * left/right splitter (Right grows the left pane), "horizontal" for a bottom-
+ * anchored top/bottom splitter (Up grows the lower pane). Shift = larger step;
+ * Home/End jump to the min/max.
+ */
+export function wireResizerKeys(
+  handle: HTMLElement,
+  opts: {
+    orientation: "vertical" | "horizontal";
+    label: string;
+    min: number;
+    max: () => number;
+    get: () => number;
+    set: (v: number) => void;
+    step?: number;
+    onCommit?: () => void;
+    disabled?: () => boolean;
+  },
+): void {
+  const step = opts.step ?? 16;
+  handle.removeAttribute("aria-hidden");
+  handle.setAttribute("role", "separator");
+  handle.setAttribute("aria-orientation", opts.orientation);
+  handle.setAttribute("aria-label", opts.label);
+  handle.tabIndex = 0;
+  const sync = (): void => {
+    handle.setAttribute("aria-valuemin", String(Math.round(opts.min)));
+    handle.setAttribute("aria-valuemax", String(Math.round(opts.max())));
+    handle.setAttribute("aria-valuenow", String(Math.round(opts.get())));
+  };
+  sync();
+  handle.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (opts.disabled?.()) return;
+    // vertical divider: Right grows the left pane. horizontal divider (bottom-
+    // anchored): Up grows the lower pane.
+    const dec = opts.orientation === "vertical" ? "ArrowLeft" : "ArrowDown";
+    const inc = opts.orientation === "vertical" ? "ArrowRight" : "ArrowUp";
+    let next: number | undefined;
+    if (e.key === dec) next = opts.get() - (e.shiftKey ? step * 3 : step);
+    else if (e.key === inc) next = opts.get() + (e.shiftKey ? step * 3 : step);
+    else if (e.key === "Home") next = opts.min;
+    else if (e.key === "End") next = opts.max();
+    if (next === undefined) return;
+    e.preventDefault();
+    opts.set(Math.max(opts.min, Math.min(opts.max(), next)));
+    sync();
+    opts.onCommit?.();
+  });
+  // Keep aria-valuenow honest after a pointer drag, too.
+  handle.addEventListener("pointerup", () => sync());
 }

@@ -60,7 +60,7 @@ before(() => {
 after(() => {
   ctx?.dispose();
   if (repo) {
-    rmSync(repo, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
@@ -202,6 +202,6 @@ test("unstageFile on an initial commit (no HEAD) falls back to rm --cached", asy
       freshCtx.dispose();
     }
   } finally {
-    rmSync(fresh, { recursive: true, force: true });
+    rmSync(fresh, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
