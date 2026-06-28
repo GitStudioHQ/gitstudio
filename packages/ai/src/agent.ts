@@ -36,6 +36,8 @@ export interface AgentOptions {
   /** Extra system guidance appended to the built-in agent system prompt. */
   system?: string;
   model?: ModelTier;
+  /** An explicit model id (overrides the tier). */
+  modelId?: string;
   /** Reasoning depth passed through to the provider for every turn. */
   thinking?: "off" | "auto" | "extended";
   /** Hard cap on model turns (default 12). */
@@ -105,6 +107,7 @@ export async function runAgent(goal: string, opts: AgentOptions): Promise<AgentR
       const chatOpts = {
         tools: specs,
         model: opts.model ?? "deep",
+        modelId: opts.modelId,
         maxTokens: 2048,
         signal: opts.signal,
         systemCacheable: true,

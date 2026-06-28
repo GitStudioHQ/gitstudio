@@ -25,6 +25,7 @@ import {
   explainConflict,
   explainDiff,
   isConnectionUsable,
+  knownModels,
   makeProvider,
   pickConnection,
   resolveModelId,
@@ -49,6 +50,7 @@ import type {
   AiConnectionPatch,
   AiConnectionView,
   AiDone,
+  AiModelOption,
   AiPresetView,
   AiSettingsView,
   AiTaskInput,
@@ -214,6 +216,75 @@ export class AiBridge {
     this.settings.agent = { ...this.agentConfig(), ...patch };
     await this.persist();
     return this.view();
+  }
+
+  /**
+   * The models the connection's provider offers — propagated to the in-app
+   * picker so the user picks a real model directly (no manual setup). HTTP
+   * providers are queried live (`/models`); CLIs and any failures fall back to a
+   * known catalog. The connection's own configured models are always included.
+   */
+  async listModels(connectionId?: string): Promise<AiModelOption[]> {
+    await this.ensureLoaded();
+    const conn =
+      (connectionId ? this.settings.connections.find((c) => c.id === connectionId) : undefined) ??
+      pickConnection(this.settings);
+    if (!conn) {
+      return [];
+    }
+    const ids: string[] = [];
+    // Always offer whatever the connection already has configured.
+    for (const t of ["mid", "deep", "fast"] as const) {
+      const m = conn.models[t]?.trim();
+      if (m) ids.push(m);
+    }
+    if (conn.wire !== "cli") {
+      const live = await this.fetchModels(conn).catch(() => []);
+      ids.push(...live);
+    }
+    ids.push(...knownModels(conn.preset));
+    // Dedupe, preserving order (configured + live first, then known).
+    const seen = new Set<string>();
+    const out: AiModelOption[] = [];
+    for (const id of ids) {
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        out.push({ id });
+      }
+    }
+    return out;
+  }
+
+  /** Live-query a HTTP provider's model list (best-effort, short timeout). */
+  private async fetchModels(conn: Connection): Promise<string[]> {
+    const base = conn.baseUrl.replace(/\/+$/, "");
+    const isAnthropic = conn.wire === "anthropic";
+    const url = isAnthropic ? `${base}/v1/models` : `${base}/models`;
+    const headers: Record<string, string> = {};
+    const key = await this.loadKey(conn.id);
+    if (isAnthropic) {
+      if (!key) return [];
+      headers["x-api-key"] = key;
+      headers["anthropic-version"] = "2023-06-01";
+    } else if (key) {
+      headers["Authorization"] = `Bearer ${key}`;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    try {
+      const res = await fetch(url, { headers, signal: ctrl.signal });
+      if (!res.ok) return [];
+      const json = (await res.json()) as {
+        data?: Array<{ id?: string; name?: string }>;
+        models?: Array<{ id?: string; name?: string }>;
+      };
+      const list = json.data ?? json.models ?? [];
+      return list.map((m) => m.id ?? m.name ?? "").filter((s): s is string => s.length > 0);
+    } catch {
+      return [];
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async getSettings(): Promise<AiSettingsView> {
@@ -510,6 +581,7 @@ export class AiBridge {
         host,
         tools,
         model: req.model ?? cfg.model,
+        modelId: req.modelId ?? cfg.modelId,
         thinking: req.thinking ?? cfg.thinking,
         signal: abort.signal,
         onTextDelta: (delta) => this.send("ai:delta", { requestId, delta }),

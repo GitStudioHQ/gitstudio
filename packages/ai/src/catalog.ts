@@ -257,3 +257,29 @@ export function presetById(id: string): ProviderPreset {
     PROVIDER_PRESETS.find((p) => p.id === "custom")!
   );
 }
+
+/**
+ * Well-known model ids per preset — used directly for the local CLIs (which
+ * accept these as `--model`) and as a fallback for HTTP providers when a live
+ * `/models` query isn't available. The settings/Assistant UI uses these to show
+ * "your options propagated from the provider" without forcing manual setup.
+ */
+export const KNOWN_MODELS: Record<string, string[]> = {
+  anthropic: ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"],
+  "claude-code": ["opus", "sonnet", "haiku"],
+  openai: ["gpt-4o", "gpt-4o-mini", "o3", "o3-mini"],
+  codex: ["gpt-5-codex", "o3", "o4-mini"],
+  openrouter: ["anthropic/claude-sonnet-4-6", "anthropic/claude-opus-4-8", "openai/gpt-4o"],
+  google: ["gemini-2.5-pro", "gemini-2.5-flash"],
+  "gemini-cli": ["gemini-2.5-pro", "gemini-2.5-flash"],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
+  xai: ["grok-4", "grok-3", "grok-3-mini"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  together: ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3"],
+  lmstudio: ["local-model"],
+};
+
+export function knownModels(preset: string): string[] {
+  return KNOWN_MODELS[preset] ?? [];
+}

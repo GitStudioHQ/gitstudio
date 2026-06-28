@@ -32,6 +32,8 @@ export interface Connection {
 export interface AiAgentConfig {
   /** Default model tier the Assistant uses (maps to the connection's models). */
   model: "fast" | "mid" | "deep";
+  /** An explicit model id chosen in the Assistant (overrides the tier). */
+  modelId?: string;
   /** How much the model should reason before answering. */
   thinking: "off" | "auto" | "extended";
   /** Default repo-access level for new conversations. */

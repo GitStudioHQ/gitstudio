@@ -848,6 +848,8 @@ export interface IpcChannels {
   "ai:setDefault": [{ id: string }, AiSettingsView];
   "ai:setKey": [{ id: string; key: string }, AiSettingsView];
   "ai:setAgentConfig": [Partial<AgentConfig>, AiSettingsView];
+  /** The models the active (or given) connection's provider offers. */
+  "ai:models": [{ connectionId?: string } | void, AiModelOption[]];
   "ai:test": [{ id: string }, AiTestResult];
   // One-shot tasks: the invoke resolves with the final text; deltas stream via ai:delta.
   "ai:task": [{ requestId: string; task: AiTaskName; input: AiTaskInput }, AiDone];
@@ -949,10 +951,20 @@ export interface AiPresetView {
 export interface AgentConfig {
   /** Default model tier the Assistant uses (maps to the connection's models). */
   model: "fast" | "mid" | "deep";
+  /** An explicit model id chosen in the Assistant (overrides the tier). */
+  modelId?: string;
   /** How much the model should reason before answering. */
   thinking: "off" | "auto" | "extended";
   /** Default repo-access level for new conversations. */
   permission: "read" | "write" | "destructive";
+}
+
+/** One model the active connection's provider offers, for the in-app picker. */
+export interface AiModelOption {
+  /** The model id to send (e.g. "claude-sonnet-4-6", "opus", "gpt-4o"). */
+  id: string;
+  /** A friendlier display label, if different from the id. */
+  label?: string;
 }
 
 export interface AiSettingsView {
@@ -1011,6 +1023,8 @@ export interface AgentRunRequest {
   connectionId?: string;
   /** Which model tier to use (fast = snappiest). Defaults to the agent config. */
   model?: "fast" | "mid" | "deep";
+  /** An explicit model id to use (overrides the tier). */
+  modelId?: string;
   /** Reasoning depth for this run. Defaults to the agent config. */
   thinking?: "off" | "auto" | "extended";
 }

@@ -121,7 +121,7 @@ export class OpenAiCompatProvider implements Provider {
   }
 
   async chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<ChatResult> {
-    const model = this.opts.resolveModel(opts.model);
+    const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
     if (!model) {
       throw new AiError("No model configured for this connection.");
     }
@@ -166,7 +166,7 @@ export class OpenAiCompatProvider implements Provider {
     onDelta: (text: string) => void,
     opts: ChatOptions = {},
   ): Promise<string | null> {
-    const model = this.opts.resolveModel(opts.model);
+    const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
     if (!model) {
       throw new AiError("No model configured for this connection.");
     }
@@ -229,7 +229,7 @@ export class OpenAiCompatProvider implements Provider {
     onTextDelta: (text: string) => void,
     opts: ChatOptions = {},
   ): Promise<ChatResult> {
-    const model = this.opts.resolveModel(opts.model);
+    const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
     if (!model) {
       throw new AiError("No model configured for this connection.");
     }

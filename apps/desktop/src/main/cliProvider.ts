@@ -156,7 +156,7 @@ export class CliProvider implements Provider {
       return Promise.reject(new AiError(`Unknown local CLI: ${this.opts.preset}.`));
     }
     const prompt = withThinking(flatten(messages), opts.thinking);
-    const model = this.opts.resolveModel(opts.model);
+    const model = (opts.modelId ?? this.opts.resolveModel(opts.model));
     // Stream token-by-token when the CLI supports a JSON event stream; otherwise
     // fall back to forwarding raw stdout (which most CLIs buffer to the end).
     const streaming = !!(spec.streamArgs && spec.parseStream);

@@ -76,8 +76,10 @@ export interface ChatResult {
 }
 
 export interface ChatOptions {
-  /** Tier (mapped to a model id by the connection) OR an explicit model id. */
+  /** Tier (mapped to a model id by the connection). */
   model?: ModelTier;
+  /** An explicit model id; when set it's used directly, overriding the tier. */
+  modelId?: string;
   /** Hard cap on response tokens. */
   maxTokens?: number;
   temperature?: number;

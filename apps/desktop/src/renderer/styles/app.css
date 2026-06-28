@@ -4245,6 +4245,22 @@ body.vscode-light .gh-label-chip {
 .assistant-perm-label { font-size: 11.5px; color: var(--app-muted); }
 .assistant-perm-seg .settings-seg-btn { padding: 5px 11px; font-size: 11.5px; }
 
+/* The agent's options shown directly in the header as dropdown "chips",
+   populated live from the connected provider. */
+.assistant-controls { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; flex-wrap: wrap; }
+.assistant-controls.is-disabled { opacity: 0.5; pointer-events: none; }
+.assistant-chip-ctl {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 9px; border-radius: 8px;
+  border: 1px solid var(--app-border); background: var(--app-elevated);
+  color: var(--vscode-foreground); font-family: inherit; font-size: 12px; cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.assistant-chip-ctl:hover { background: var(--app-hover); border-color: color-mix(in srgb, var(--gs-accent) 50%, var(--app-border)); }
+.assistant-chip-ctl > .glyph .codicon, .assistant-chip-ctl > .glyph:first-child { font-size: 13px; color: var(--gs-accent-ink, var(--gs-accent)); }
+.assistant-chip-label { font-weight: 550; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-chip-caret .codicon { font-size: 11px; color: var(--app-muted); }
+
 .assistant-transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .assistant-bubble {
   align-self: flex-end; max-width: min(680px, 86%);

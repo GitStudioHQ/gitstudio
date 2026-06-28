@@ -8,18 +8,34 @@
 // run and torn down when it ends, so navigating away never leaks.
 
 import { host } from "./bridge";
-import { el, span, glyph } from "./ui";
+import { el, span, glyph, openMenu } from "./ui";
+import type { MenuItem } from "./ui";
 import { renderMarkdown } from "./markdown";
 import { confirmDialog, toast } from "./dialogs";
 import type { SectionRender } from "./views/common";
-import type { AgentConfirmRequest, AgentEventWire, AiSettingsView } from "../shared/ipc";
+import type { AgentConfirmRequest, AgentEventWire, AiModelOption, AiSettingsView } from "../shared/ipc";
 
 /** Agent write permission, remembered across navigations within a session. */
 let permission: "read" | "write" | "destructive" = "read";
-/** Which model tier the Assistant uses — "fast" is the snappiest. */
-let speed: "fast" | "mid" | "deep" = "mid";
+/** The explicit model id the user picked (from the provider's models). */
+let selectedModelId: string | undefined;
 /** Reasoning depth for the Assistant — seeded from the saved agent config. */
 let thinkLevel: "off" | "auto" | "extended" = "auto";
+
+const THINK_OPTS: Array<{ id: "off" | "auto" | "extended"; label: string }> = [
+  { id: "off", label: "No thinking" },
+  { id: "auto", label: "Auto thinking" },
+  { id: "extended", label: "Extended thinking" },
+];
+const ACCESS_OPTS: Array<{ id: "read" | "write" | "destructive"; label: string }> = [
+  { id: "read", label: "Read-only" },
+  { id: "write", label: "Allow commits" },
+  { id: "destructive", label: "Allow everything" },
+];
+const thinkText = (id: string): string => THINK_OPTS.find((o) => o.id === id)?.label ?? "Thinking";
+const accessText = (id: string): string => ACCESS_OPTS.find((o) => o.id === id)?.label ?? "Access";
+/** Trim a long model id for the chip ("anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6"). */
+const shortModel = (id: string): string => id.split("/").pop() ?? id;
 
 const QUICK_ACTIONS: Array<{ icon: string; label: string; goal: string }> = [
   { icon: "git-commit", label: "Draft a commit", goal: "Draft a commit message for my staged changes and show it to me. Don't commit unless I confirm." },
@@ -34,58 +50,63 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const header = el("div", "assistant-head");
   const title = el("div", "assistant-title");
   title.append(glyph("sparkle"), span("Assistant"));
-  const modelTag = el("span", "assistant-model");
-  header.append(title, modelTag);
+  const connTag = el("span", "assistant-model");
+  header.append(title, connTag);
 
-  const permBar = el("div", "assistant-perm");
-  const permLabel = el("span", "assistant-perm-label");
-  permLabel.textContent = "Permissions";
-  const seg = el("div", "settings-seg assistant-perm-seg");
-  const perms: Array<{ id: typeof permission; label: string; title: string }> = [
-    { id: "read", label: "Read-only", title: "The agent can inspect but not modify the repo." },
-    { id: "write", label: "Allow commits", title: "The agent may stage, commit, branch and stash — each needs your approval." },
-    { id: "destructive", label: "Allow all", title: "Also allow discard / reset / delete — each needs your approval." },
-  ];
-  const permBtns: HTMLElement[] = [];
-  for (const p of perms) {
-    const b = el("button", "settings-seg-btn" + (permission === p.id ? " active" : ""));
-    b.title = p.title;
-    b.append(span(p.label));
-    b.addEventListener("click", () => {
-      permission = p.id;
-      permBtns.forEach((x) => x.classList.toggle("active", x === b));
-    });
-    permBtns.push(b);
-    seg.append(b);
-  }
-  permBar.append(permLabel, seg);
-  header.append(permBar);
+  // Three compact dropdown "chips" — the agent's options shown directly here and
+  // propagated from the connected provider (no Settings setup needed). Each pick
+  // is remembered (persisted to the agent config).
+  const controls = el("div", "assistant-controls");
 
-  // Speed selector: lets the user trade quality for a snappier first token
-  // (maps to the connection's fast/mid/deep model — e.g. sonnet vs opus).
-  const speedBar = el("div", "assistant-perm");
-  const speedLabel = el("span", "assistant-perm-label");
-  speedLabel.textContent = "Speed";
-  const speedSeg = el("div", "settings-seg assistant-perm-seg");
-  const speeds: Array<{ id: typeof speed; label: string; title: string }> = [
-    { id: "fast", label: "Fast", title: "Use the connection's fast model — snappiest replies." },
-    { id: "mid", label: "Balanced", title: "Use the standard model." },
-    { id: "deep", label: "Deep", title: "Use the most capable model — best quality, slowest to start." },
-  ];
-  const speedBtns: HTMLElement[] = [];
-  for (const sp of speeds) {
-    const b = el("button", "settings-seg-btn" + (speed === sp.id ? " active" : ""));
-    b.title = sp.title;
-    b.append(span(sp.label));
-    b.addEventListener("click", () => {
-      speed = sp.id;
-      speedBtns.forEach((x) => x.classList.toggle("active", x === b));
-    });
-    speedBtns.push(b);
-    speedSeg.append(b);
-  }
-  speedBar.append(speedLabel, speedSeg);
-  header.append(speedBar);
+  /** Build a chip whose menu items are produced fresh each open. */
+  const makeChip = (icon: string, initial: string, items: () => MenuItem[]): { el: HTMLElement; set: (t: string) => void } => {
+    const b = el("button", "assistant-chip-ctl");
+    const ic = glyph(icon);
+    const lab = span(initial, "assistant-chip-label");
+    const car = glyph("chevron-down");
+    car.classList.add("assistant-chip-caret");
+    b.append(ic, lab, car);
+    b.addEventListener("click", () => openMenu(b, items()));
+    return { el: b, set: (t: string) => (lab.textContent = t) };
+  };
+
+  let modelOptions: AiModelOption[] = [];
+  const modelChip = makeChip("sparkle", "Model", () => {
+    if (modelOptions.length === 0) return [{ label: "No models available", disabled: true }];
+    return modelOptions.map((m) => ({
+      label: m.label ?? shortModel(m.id),
+      current: m.id === selectedModelId,
+      onClick: () => {
+        selectedModelId = m.id;
+        modelChip.set(shortModel(m.id));
+        void host.invoke("ai:setAgentConfig", { modelId: m.id });
+      },
+    }));
+  });
+  const thinkChip = makeChip("lightbulb", thinkText(thinkLevel), () =>
+    THINK_OPTS.map((o) => ({
+      label: o.label,
+      current: o.id === thinkLevel,
+      onClick: () => {
+        thinkLevel = o.id;
+        thinkChip.set(o.label);
+        void host.invoke("ai:setAgentConfig", { thinking: o.id });
+      },
+    })),
+  );
+  const accessChip = makeChip("shield", accessText(permission), () =>
+    ACCESS_OPTS.map((o) => ({
+      label: o.label,
+      current: o.id === permission,
+      onClick: () => {
+        permission = o.id;
+        accessChip.set(o.label);
+        void host.invoke("ai:setAgentConfig", { permission: o.id });
+      },
+    })),
+  );
+  controls.append(modelChip.el, thinkChip.el, accessChip.el);
+  header.append(controls);
 
   const transcript = el("div", "assistant-transcript");
   const composer = el("div", "assistant-composer");
@@ -135,16 +156,26 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       transcript.replaceChildren(connectPrompt(nav));
       input.disabled = true;
       (send as HTMLButtonElement).disabled = true;
-      permBtns.forEach((b) => ((b as HTMLButtonElement).disabled = true));
+      controls.classList.add("is-disabled");
     } else {
       const def = settings.connections.find((c) => c.id === settings!.defaultId) ?? settings.connections.find((c) => c.usable);
-      modelTag.textContent = def ? `via ${def.label}` : "";
-      // Seed the per-conversation toggles from the saved agent config.
+      connTag.textContent = def ? `· ${def.label}` : "";
+      // Seed the controls from the saved agent config.
       permission = settings.agent.permission;
-      speed = settings.agent.model;
       thinkLevel = settings.agent.thinking;
-      permBtns.forEach((b, i) => b.classList.toggle("active", perms[i].id === permission));
-      speedBtns.forEach((b, i) => b.classList.toggle("active", speeds[i].id === speed));
+      selectedModelId = settings.agent.modelId;
+      thinkChip.set(thinkText(thinkLevel));
+      accessChip.set(accessText(permission));
+      // Propagate the provider's models into the picker.
+      try {
+        modelOptions = await host.invoke("ai:models", undefined);
+      } catch {
+        modelOptions = [];
+      }
+      if (!selectedModelId && modelOptions[0]) {
+        selectedModelId = modelOptions[0].id;
+      }
+      modelChip.set(selectedModelId ? shortModel(selectedModelId) : "Model");
     }
   })();
 
@@ -197,7 +228,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         goal,
         allowWrite: permission !== "read",
         allowDestructive: permission === "destructive",
-        model: speed,
+        modelId: selectedModelId,
         thinking: thinkLevel,
       });
       finalizeStream(state);
