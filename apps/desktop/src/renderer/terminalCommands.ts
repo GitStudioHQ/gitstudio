@@ -32,6 +32,9 @@ export interface CommandTrackingOptions {
   write: (data: string) => void;
   /** Fired whenever the command list or selection changes (drives the toolbar). */
   onChange?: () => void;
+  /** Fired when the shell enters (true) or leaves (false) a prompt — i.e. when
+   *  it is safe to show input affordances (autocomplete) vs a program running. */
+  onPrompt?: (atPrompt: boolean) => void;
 }
 
 export class CommandTracking {
@@ -40,6 +43,8 @@ export class CommandTracking {
   private pending?: TermCommand;
   private seq = 0;
   private selectedId = -1;
+  private _atPrompt = false;
+  private _cwd = "";
   private readonly disposables: IDisposable[] = [];
 
   constructor(
@@ -73,8 +78,10 @@ export class CommandTracking {
         startedAt: Date.now(),
         promptMarker: this.term.registerMarker(0) ?? undefined,
       };
+      this.setAtPrompt(true);
     } else if (kind === "C") {
       // Output begins — mark it and surface the command as running.
+      this.setAtPrompt(false);
       const c = this.pending;
       if (c) {
         c.outputMarker = this.term.registerMarker(0) ?? undefined;
@@ -106,9 +113,47 @@ export class CommandTracking {
     if (data.startsWith("E;")) {
       if (this.pending) this.pending.commandLine = data.slice(2);
     } else if (data.startsWith("P;Cwd=")) {
-      if (this.pending) this.pending.cwd = data.slice(6);
+      const cwd = data.slice(6);
+      this._cwd = cwd;
+      if (this.pending) this.pending.cwd = cwd;
     }
     return true;
+  }
+
+  private setAtPrompt(v: boolean): void {
+    if (this._atPrompt === v) return;
+    this._atPrompt = v;
+    this.opts.onPrompt?.(v);
+  }
+
+  /** True while the shell is sitting at a prompt (safe to show autocomplete). */
+  atPrompt(): boolean {
+    return this._atPrompt;
+  }
+
+  /** The most recent working directory reported by the shell (OSC 633;P). */
+  currentCwd(): string {
+    return this._cwd;
+  }
+
+  /**
+   * Distinct past commands, most-recent-first, deduped by text with run counts —
+   * the source for history autocomplete and the command menu.
+   */
+  history(): { command: string; count: number; lastIndex: number }[] {
+    const seen = new Map<string, { command: string; count: number; lastIndex: number }>();
+    for (let i = 0; i < this.cmds.length; i++) {
+      const cmd = this.cmds[i].commandLine.trim();
+      if (!cmd) continue;
+      const prev = seen.get(cmd);
+      if (prev) {
+        prev.count++;
+        prev.lastIndex = i;
+      } else {
+        seen.set(cmd, { command: cmd, count: 1, lastIndex: i });
+      }
+    }
+    return [...seen.values()].sort((a, b) => b.lastIndex - a.lastIndex);
   }
 
   // ── Gutter decorations ───────────────────────────────────────────────────────

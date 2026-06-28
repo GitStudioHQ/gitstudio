@@ -23,6 +23,7 @@ import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
 import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
+import { pathCommands, listDir } from "./completionBridge";
 import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
 import { initAutoUpdate } from "./autoUpdate";
 import * as issuesApi from "./github/issues";
@@ -413,6 +414,10 @@ function registerIpc(): void {
   handle("terminal:write", async (req) => terminal.write(req.id, req.data));
   handle("terminal:resize", async (req) => terminal.resize(req.id, req.cols, req.rows));
   handle("terminal:kill", async (req) => terminal.kill(req.id));
+
+  // Terminal autocomplete backing data (read-only filesystem queries).
+  handle("terminal:pathCommands", async () => pathCommands());
+  handle("terminal:listDir", async (req) => listDir(req.cwd, req.dir));
 
   // Clone / browse repos.
   handle("clone:pickDir", () => pickCloneDir());

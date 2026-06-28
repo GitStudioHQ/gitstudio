@@ -17,6 +17,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { host } from "./bridge";
 import { CommandTracking } from "./terminalCommands";
+import { TerminalAutocomplete } from "./terminalAutocomplete";
 import { el, glyph } from "./ui";
 
 /** Read a CSS custom property off <body>, falling back to `fallback`. */
@@ -37,6 +38,8 @@ export class TerminalPanel {
   private disposed = false;
   /** Command-block tracking (OSC 133/633), once the shell is open. */
   private tracking: CommandTracking | null = null;
+  /** Autocomplete controller (dropdown over the prompt), once the shell is open. */
+  private autocomplete: TerminalAutocomplete | null = null;
   /** The floating command toolbar overlaid on the surface. */
   private overlay: HTMLElement | null = null;
   /** Buttons whose enabled state depends on the current selection. */
@@ -160,28 +163,36 @@ export class TerminalPanel {
       void host.invoke("terminal:write", { id: this.id!, data: d });
     });
 
+    const writePty = (data: string): void => {
+      if (this.id) void host.invoke("terminal:write", { id: this.id, data });
+    };
+
     // Command blocks: parse the shell's OSC markers and overlay the toolbar.
     this.tracking = new CommandTracking(term, {
-      write: (data) => {
-        if (this.id) void host.invoke("terminal:write", { id: this.id, data });
-      },
+      write: writePty,
       onChange: () => this.syncOverlay(),
+      onPrompt: (atPrompt) => this.autocomplete?.onPromptChange(atPrompt),
     });
     this.tracking.attach();
+
+    // Autocomplete dropdown over the prompt (additive — see terminalAutocomplete).
+    this.autocomplete = new TerminalAutocomplete(term, this.tracking, { write: writePty }, this.container);
+    this.autocomplete.attach();
     this.buildOverlay();
 
-    // Cmd/Ctrl + ↑/↓ jumps between command blocks instead of reaching the PTY.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== "keydown" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) {
-        return true;
-      }
-      if (e.key === "ArrowUp") {
-        this.tracking?.selectPrev();
-        return false;
-      }
-      if (e.key === "ArrowDown") {
-        this.tracking?.selectNext();
-        return false;
+      // Autocomplete claims plain ↑/↓/Tab/Enter/Esc while its menu is open.
+      if (this.autocomplete?.handleKey(e)) return false;
+      // Cmd/Ctrl + ↑/↓ jumps between command blocks instead of reaching the PTY.
+      if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        if (e.key === "ArrowUp") {
+          this.tracking?.selectPrev();
+          return false;
+        }
+        if (e.key === "ArrowDown") {
+          this.tracking?.selectNext();
+          return false;
+        }
       }
       return true;
     });
@@ -272,6 +283,8 @@ export class TerminalPanel {
     this.offExit?.();
     this.offData = null;
     this.offExit = null;
+    this.autocomplete?.dispose();
+    this.autocomplete = null;
     this.tracking?.dispose();
     this.tracking = null;
     this.overlay?.remove();

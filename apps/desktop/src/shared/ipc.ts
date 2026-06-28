@@ -581,6 +581,12 @@ export interface TerminalSession {
   shell: string;
 }
 
+/** One filesystem entry returned for terminal path autocomplete. */
+export interface TerminalDirEntry {
+  name: string;
+  isDir: boolean;
+}
+
 /** A chunk of PTY output streamed to the renderer. */
 export interface TerminalData {
   id: string;
@@ -835,6 +841,9 @@ export interface IpcChannels {
   "terminal:write": [{ id: string; data: string }, void];
   "terminal:resize": [{ id: string; cols: number; rows: number }, void];
   "terminal:kill": [{ id: string }, void];
+  // Autocomplete backing data (read-only filesystem queries).
+  "terminal:pathCommands": [void, string[]];
+  "terminal:listDir": [{ cwd: string; dir: string }, TerminalDirEntry[]];
   // Clone / browse repos. Clone progress streams via the clone:progress event.
   "clone:pickDir": [void, string | undefined];
   "clone:start": [CloneRequest, CloneResult];
