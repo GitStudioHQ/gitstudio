@@ -730,7 +730,11 @@ class App {
       refSection("Tags", tags, "tag", (r) => void this.checkoutRef(r.name));
 
       if (!body.children.length) {
-        body.appendChild(emptyState(q ? "No matches" : "No branches yet", q ? "Try a different filter." : ""));
+        body.appendChild(
+          emptyState(q ? "No matches" : "No branches yet", q ? "Try a different filter." : "", {
+            icon: "git-branch",
+          }),
+        );
       }
     };
     filterInput.addEventListener("input", render);
@@ -978,7 +982,9 @@ class App {
     body.replaceChildren();
     if (!res || !res.commits.length) {
       body.appendChild(
-        emptyState("No commits", "These refs share the same history in this direction."),
+        emptyState("No commits", "These refs share the same history in this direction.", {
+          icon: "git-commit",
+        }),
       );
       return;
     }
@@ -1701,7 +1707,9 @@ class App {
 
     lists.replaceChildren();
     if (files.length === 0) {
-      lists.appendChild(emptyState("Working tree clean", "No changes to commit."));
+      lists.appendChild(
+        emptyState("Working tree clean", "No changes to commit.", { icon: "check-all" }),
+      );
       return;
     }
     if (staged.length) {
