@@ -18,6 +18,8 @@ import "@xterm/xterm/css/xterm.css";
 import { host } from "./bridge";
 import { CommandTracking } from "./terminalCommands";
 import { TerminalAutocomplete } from "./terminalAutocomplete";
+import { TerminalCommandMenu } from "./terminalCommandMenu";
+import { TerminalAgent } from "./terminalAgent";
 import { el, glyph } from "./ui";
 
 /** Read a CSS custom property off <body>, falling back to `fallback`. */
@@ -40,6 +42,10 @@ export class TerminalPanel {
   private tracking: CommandTracking | null = null;
   /** Autocomplete controller (dropdown over the prompt), once the shell is open. */
   private autocomplete: TerminalAutocomplete | null = null;
+  /** Command/history menu (launcher popup), once the shell is open. */
+  private menu: TerminalCommandMenu | null = null;
+  /** In-terminal AI agent panel, once the shell is open. */
+  private agent: TerminalAgent | null = null;
   /** The floating command toolbar overlaid on the surface. */
   private overlay: HTMLElement | null = null;
   /** Buttons whose enabled state depends on the current selection. */
@@ -178,13 +184,33 @@ export class TerminalPanel {
     // Autocomplete dropdown over the prompt (additive — see terminalAutocomplete).
     this.autocomplete = new TerminalAutocomplete(term, this.tracking, { write: writePty }, this.container);
     this.autocomplete.attach();
+
+    // In-terminal AI agent panel (reuses the existing AI bridge over IPC).
+    this.agent = new TerminalAgent(this.container, {
+      write: writePty,
+      atPrompt: () => this.tracking?.atPrompt() ?? false,
+    });
+
+    // Command / history menu (launcher popup).
+    this.menu = new TerminalCommandMenu(this.container, {
+      history: () => this.tracking?.history() ?? [],
+      atPrompt: () => this.tracking?.atPrompt() ?? false,
+      actions: [
+        { id: "agent", label: "Ask the AI agent", icon: "sparkle", hint: "⌘I" },
+        { id: "clear", label: "Clear terminal", icon: "clear-all" },
+        { id: "copy-output", label: "Copy last command output", icon: "list-selection" },
+      ],
+      onAction: (id) => this.onMenuAction(id),
+      onInsertCommand: (cmd) => writePty("\x01\x0b" + cmd),
+    });
+
     this.buildOverlay();
 
     term.attachCustomKeyEventHandler((e) => {
       // Autocomplete claims plain ↑/↓/Tab/Enter/Esc while its menu is open.
       if (this.autocomplete?.handleKey(e)) return false;
-      // Cmd/Ctrl + ↑/↓ jumps between command blocks instead of reaching the PTY.
       if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        // Cmd/Ctrl + ↑/↓ jumps between command blocks.
         if (e.key === "ArrowUp") {
           this.tracking?.selectPrev();
           return false;
@@ -193,9 +219,28 @@ export class TerminalPanel {
           this.tracking?.selectNext();
           return false;
         }
+        // Cmd/Ctrl+P opens the command menu; Cmd/Ctrl+I opens the agent.
+        if (e.key === "p" || e.key === "P") {
+          this.menu?.toggle();
+          return false;
+        }
+        if (e.key === "i" || e.key === "I") {
+          this.agent?.toggle();
+          return false;
+        }
       }
       return true;
     });
+  }
+
+  /** Handle a command-menu action. */
+  private onMenuAction(id: string): void {
+    if (id === "agent") void this.agent?.show();
+    else if (id === "clear") this.term?.clear();
+    else if (id === "copy-output") {
+      const last = this.tracking?.commands().at(-1);
+      if (last) void this.tracking?.copyOutput(last);
+    }
   }
 
   // ── Command toolbar overlay ───────────────────────────────────────────────────
@@ -229,6 +274,8 @@ export class TerminalPanel {
       mk("list-selection", "Copy output", () => void this.tracking?.copyOutput(), true),
       mk("debug-restart", "Re-run command", () => this.tracking?.rerun(), true),
       el("span", "term-overlay-sep"),
+      mk("list-unordered", "Command menu (⌘P)", () => this.menu?.toggle()),
+      mk("sparkle", "Agent (⌘I)", () => void this.agent?.show()),
       mk("clear-all", "Clear terminal", () => this.term?.clear()),
     );
     this.overlay = bar;
@@ -285,6 +332,10 @@ export class TerminalPanel {
     this.offExit = null;
     this.autocomplete?.dispose();
     this.autocomplete = null;
+    this.menu?.dispose();
+    this.menu = null;
+    this.agent?.dispose();
+    this.agent = null;
     this.tracking?.dispose();
     this.tracking = null;
     this.overlay?.remove();
