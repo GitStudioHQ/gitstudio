@@ -860,6 +860,14 @@ export interface IpcChannels {
   // MCP "Agent Access": the bundled server's config + one-click install into a client.
   "ai:mcpInfo": [void, McpInfo];
   "ai:mcpInstall": [McpInstallRequest, { ok: boolean; message: string }];
+  // ── Assistant chats (persisted; survive refresh + restart) ──
+  "ai:chatList": [void, ChatSummary[]];
+  "ai:chatCurrent": [void, ChatView | undefined];
+  "ai:chatGet": [{ id: string }, ChatView | undefined];
+  "ai:chatNew": [void, ChatView | undefined];
+  "ai:chatSetCurrent": [{ id: string }, void];
+  "ai:chatSend": [ChatSendRequest, AiDone];
+  "ai:chatDelete": [{ id: string }, void];
 }
 
 export type IpcChannel = keyof IpcChannels;
@@ -1083,4 +1091,32 @@ export interface McpInstallRequest {
   client: string;
   write: boolean;
   destructive: boolean;
+}
+
+// ── Assistant chats (persisted sessions) ──────────────────────────────────────
+
+export interface ChatTurnView {
+  role: "user" | "assistant";
+  text: string;
+}
+export interface ChatSummary {
+  id: string;
+  title: string;
+  updatedAt: number;
+}
+export interface ChatView {
+  id: string;
+  title: string;
+  connectionId: string;
+  turns: ChatTurnView[];
+}
+export interface ChatSendRequest {
+  chatId: string;
+  /** Correlates the streaming ai:delta / ai:agentEvent / ai:confirmRequest events. */
+  requestId: string;
+  goal: string;
+  allowWrite: boolean;
+  allowDestructive: boolean;
+  modelId?: string;
+  thinking?: "off" | "auto" | "extended";
 }

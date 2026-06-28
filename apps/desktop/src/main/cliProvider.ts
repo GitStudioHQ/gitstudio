@@ -251,7 +251,7 @@ export class CliProvider implements Provider {
  * portable lever: "extended" asks it to think hard; "off" asks for a direct,
  * concise reply; "auto" leaves its default behavior alone.
  */
-function withThinking(prompt: string, thinking?: "off" | "auto" | "extended"): string {
+export function withThinking(prompt: string, thinking?: "off" | "auto" | "extended"): string {
   if (thinking === "extended") {
     return `${prompt}\n\nThink hard and reason carefully before you answer.`;
   }

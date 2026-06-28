@@ -520,6 +520,18 @@ function registerIpc(): void {
   });
   handle("ai:mcpInfo", async () => ai.mcpInfo());
   handle("ai:mcpInstall", async (req) => ai.mcpInstall(req));
+  // Assistant chats (persisted sessions; warm CLI processes live in main).
+  handle("ai:chatList", () => ai.chatList());
+  handle("ai:chatCurrent", () => ai.chatCurrent());
+  handle("ai:chatGet", (req) => ai.chatGet(req.id));
+  handle("ai:chatNew", () => ai.chatNew());
+  handle("ai:chatSetCurrent", async (req) => {
+    await ai.chatSetCurrent(req.id);
+  });
+  handle("ai:chatSend", (req) => ai.chatSend(req));
+  handle("ai:chatDelete", async (req) => {
+    await ai.chatDelete(req.id);
+  });
 }
 
 /** Picks (or creates) a folder, then adds a worktree there for `ref`. */
@@ -619,5 +631,6 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   void saveState();
+  ai?.dispose();
   repos?.dispose();
 });

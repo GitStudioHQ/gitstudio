@@ -38,6 +38,8 @@ export interface AgentOptions {
   model?: ModelTier;
   /** An explicit model id (overrides the tier). */
   modelId?: string;
+  /** Prior conversation turns (for a multi-turn chat with a stateless provider). */
+  history?: ChatMessage[];
   /** Reasoning depth passed through to the provider for every turn. */
   thinking?: "off" | "auto" | "extended";
   /** Hard cap on model turns (default 12). */
@@ -90,6 +92,7 @@ export async function runAgent(goal: string, opts: AgentOptions): Promise<AgentR
 
   const messages: ChatMessage[] = [
     { role: "system", content: opts.system ? `${AGENT_SYSTEM}\n\n${opts.system}` : AGENT_SYSTEM },
+    ...(opts.history ?? []),
     { role: "user", content: goal },
   ];
 

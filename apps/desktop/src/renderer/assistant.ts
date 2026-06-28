@@ -8,12 +8,12 @@
 // run and torn down when it ends, so navigating away never leaks.
 
 import { host } from "./bridge";
-import { el, span, glyph, openMenu } from "./ui";
+import { el, span, glyph, openMenu, relTimeISO } from "./ui";
 import type { MenuItem } from "./ui";
 import { renderMarkdown } from "./markdown";
 import { confirmDialog, toast } from "./dialogs";
 import type { SectionRender } from "./views/common";
-import type { AgentConfirmRequest, AgentEventWire, AiModelOption, AiSettingsView } from "../shared/ipc";
+import type { AgentConfirmRequest, AgentEventWire, AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
 
 /** Agent write permission, remembered across navigations within a session. */
 let permission: "read" | "write" | "destructive" = "read";
@@ -47,11 +47,22 @@ const QUICK_ACTIONS: Array<{ icon: string; label: string; goal: string }> = [
 export const renderAssistant: SectionRender = (wrap, nav) => {
   wrap.classList.add("assistant-view");
 
+  let currentChatId: string | undefined;
+
   const header = el("div", "assistant-head");
   const title = el("div", "assistant-title");
   title.append(glyph("sparkle"), span("Assistant"));
   const connTag = el("span", "assistant-model");
-  header.append(title, connTag);
+  // New-chat + chat-history controls — sessions persist across refresh/restart.
+  const newBtn = el("button", "assistant-iconbtn");
+  newBtn.title = "New chat";
+  newBtn.append(glyph("add"));
+  newBtn.addEventListener("click", () => void newChat());
+  const histBtn = el("button", "assistant-iconbtn");
+  histBtn.title = "Chat history";
+  histBtn.append(glyph("history"));
+  histBtn.addEventListener("click", () => void openHistory());
+  header.append(title, connTag, newBtn, histBtn);
 
   // Three compact dropdown "chips" — the agent's options shown directly here and
   // propagated from the connected provider (no Settings setup needed). Each pick
@@ -176,8 +187,71 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         selectedModelId = modelOptions[0].id;
       }
       modelChip.set(selectedModelId ? shortModel(selectedModelId) : "Model");
+      // Restore the chat the user last had open in this repo (survives refresh).
+      try {
+        const cur = await host.invoke("ai:chatCurrent", undefined);
+        if (cur) {
+          currentChatId = cur.id;
+          if (cur.turns.length > 0) restoreChat(cur);
+        }
+      } catch {
+        /* no prior chat */
+      }
     }
   })();
+
+  function restoreChat(chat: ChatView): void {
+    empty.remove();
+    transcript.replaceChildren();
+    for (const t of chat.turns) {
+      if (t.role === "user") addBubble(transcript, "user", t.text);
+      else transcript.append(markdownBlock(t.text));
+    }
+    scrollDown(transcript);
+  }
+
+  async function newChat(): Promise<void> {
+    try {
+      const chat = await host.invoke("ai:chatNew", undefined);
+      currentChatId = chat?.id;
+    } catch {
+      currentChatId = undefined;
+    }
+    transcript.replaceChildren(empty);
+  }
+
+  async function openHistory(): Promise<void> {
+    let chats: { id: string; title: string; updatedAt: number }[] = [];
+    try {
+      chats = await host.invoke("ai:chatList", undefined);
+    } catch {
+      chats = [];
+    }
+    const items: MenuItem[] = [{ label: "New chat", icon: "add", onClick: () => void newChat() }];
+    if (chats.length) items.push({ separator: true });
+    for (const c of chats) {
+      items.push({
+        label: c.title || "Untitled chat",
+        sub: relTimeISO(new Date(c.updatedAt).toISOString()),
+        current: c.id === currentChatId,
+        onClick: () => void switchChat(c.id),
+      });
+    }
+    openMenu(histBtn, items);
+  }
+
+  async function switchChat(id: string): Promise<void> {
+    try {
+      const chat = await host.invoke("ai:chatGet", { id });
+      if (!chat) return;
+      await host.invoke("ai:chatSetCurrent", { id });
+      currentChatId = id;
+      if (chat.turns.length > 0) restoreChat(chat);
+      else transcript.replaceChildren(empty);
+    } catch {
+      /* ignore */
+    }
+  }
 
   async function runGoal(goal: string): Promise<void> {
     if (running || !goal.trim()) return;
@@ -185,6 +259,23 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     input.value = "";
     empty.remove();
     setBusy(send, true);
+
+    // Ensure this conversation has a persisted chat (created lazily on first send).
+    if (!currentChatId) {
+      try {
+        const chat = await host.invoke("ai:chatNew", undefined);
+        currentChatId = chat?.id;
+      } catch {
+        currentChatId = undefined;
+      }
+    }
+    if (!currentChatId) {
+      addBubble(transcript, "user", goal);
+      transcript.append(errorBlock("Couldn't start a chat — open a repository and connect a model."));
+      running = false;
+      setBusy(send, false);
+      return;
+    }
 
     addBubble(transcript, "user", goal);
     const turn = el("div", "assistant-turn");
@@ -223,7 +314,8 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     const cancel = swapToCancel(send, () => void host.invoke("ai:cancel", { requestId }));
 
     try {
-      const done = await host.invoke("ai:agentRun", {
+      const done = await host.invoke("ai:chatSend", {
+        chatId: currentChatId,
         requestId,
         goal,
         allowWrite: permission !== "read",

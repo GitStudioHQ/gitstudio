@@ -41,7 +41,8 @@ import {
 } from "@gitstudio/ai/index";
 import { createGitToolHost } from "@gitstudio/git-service/index";
 import { mcpInfo, installMcp } from "./mcpConfig";
-import { CliProvider, cliSpecFor, detectCli } from "./cliProvider";
+import { CliProvider, cliSpecFor, detectCli, withThinking } from "./cliProvider";
+import { ConversationStore, type ChatSession } from "./assistantSessions";
 import type { RepoStore } from "./repoStore";
 import type {
   AgentConfig,
@@ -56,6 +57,9 @@ import type {
   AiTaskInput,
   AiTaskName,
   AiTestResult,
+  ChatSendRequest,
+  ChatSummary,
+  ChatView,
   IpcEvents,
   McpInfo,
   McpInstallRequest,
@@ -77,6 +81,8 @@ export class AiBridge {
   private readonly confirms = new Map<string, (approved: boolean) => void>();
   /** Cached CLI-availability per preset (is `claude`/`codex`/`gemini` installed?). */
   private readonly cliDetect = new Map<string, boolean>();
+  /** Persisted Assistant chats + their warm CLI processes (survive refresh). */
+  private readonly chats = new ConversationStore();
 
   constructor(
     private readonly repos: RepoStore,
@@ -645,6 +651,133 @@ export class AiBridge {
 
   mcpInstall(req: McpInstallRequest): { ok: boolean; message: string } {
     return installMcp(this.repos.current()?.root, req);
+  }
+
+  // ── Assistant chats (persisted sessions) ─────────────────────────────────────
+
+  private static chatView(s: ChatSession): ChatView {
+    return {
+      id: s.id,
+      title: s.title,
+      connectionId: s.connectionId,
+      turns: s.turns.map((t) => ({ role: t.role, text: t.text })),
+    };
+  }
+
+  async chatList(): Promise<ChatSummary[]> {
+    const root = this.repos.current()?.root;
+    if (!root) return [];
+    return (await this.chats.list(root)).map((s) => ({ id: s.id, title: s.title, updatedAt: s.updatedAt }));
+  }
+
+  async chatGet(id: string): Promise<ChatView | undefined> {
+    const s = await this.chats.get(id);
+    return s ? AiBridge.chatView(s) : undefined;
+  }
+
+  async chatCurrent(): Promise<ChatView | undefined> {
+    const root = this.repos.current()?.root;
+    if (!root) return undefined;
+    const s = await this.chats.current(root);
+    return s ? AiBridge.chatView(s) : undefined;
+  }
+
+  async chatNew(): Promise<ChatView | undefined> {
+    await this.ensureLoaded();
+    const root = this.repos.current()?.root;
+    const conn = pickConnection(this.settings);
+    if (!root || !conn) return undefined;
+    const s = await this.chats.create(root, conn.id, randomUUID());
+    return AiBridge.chatView(s);
+  }
+
+  async chatSetCurrent(id: string): Promise<void> {
+    const root = this.repos.current()?.root;
+    if (root) await this.chats.setCurrent(root, id);
+  }
+
+  async chatDelete(id: string): Promise<void> {
+    await this.chats.delete(id);
+  }
+
+  /** Send a message in a chat — warm CLI session for a CLI provider, multi-turn agent for HTTP. */
+  async chatSend(req: ChatSendRequest): Promise<AiDone> {
+    const { chatId, requestId } = req;
+    const session = await this.chats.get(chatId);
+    if (!session) {
+      return { requestId, ok: false, message: "This chat no longer exists." };
+    }
+    const resolved = await this.resolveProvider(session.connectionId, "agent");
+    if (!resolved) {
+      return { requestId, ok: false, message: "No AI model is connected. Add one in Settings ▸ AI." };
+    }
+    const ctx = this.repos.getContext();
+    if (!ctx) {
+      return { requestId, ok: false, message: "Open a repository first." };
+    }
+    const cfg = this.agentConfig();
+    const abort = new AbortController();
+    this.aborts.set(requestId, abort);
+    // History (prior turns) is captured BEFORE we append this user message.
+    const history = session.turns.map((t) => ({ role: t.role, content: t.text }));
+    await this.chats.appendTurn(chatId, { role: "user", text: req.goal, at: Date.now() });
+
+    try {
+      if (resolved.conn.wire === "cli") {
+        const model = req.modelId ?? resolveModelId(resolved.conn, cfg.model);
+        const warm = this.chats.warmFor(chatId, { cwd: ctx.root, model, resumeId: session.cliSessionId });
+        const prompt = withThinking(req.goal, req.thinking ?? cfg.thinking);
+        let acc = "";
+        const text = await warm.send(prompt, {
+          onDelta: (d) => {
+            acc += d;
+            this.send("ai:delta", { requestId, delta: d });
+          },
+          signal: abort.signal,
+        });
+        await this.chats.setCliSessionId(chatId, warm.id);
+        const final = (text || acc).trim();
+        await this.chats.appendTurn(chatId, { role: "assistant", text: final, at: Date.now() });
+        return { requestId, ok: true, text: final };
+      }
+
+      const host = createGitToolHost(ctx);
+      const tools = selectTools({ write: req.allowWrite, destructive: req.allowDestructive });
+      const result = await runAgent(req.goal, {
+        provider: resolved.provider,
+        host,
+        tools,
+        model: cfg.model,
+        modelId: req.modelId ?? cfg.modelId,
+        thinking: req.thinking ?? cfg.thinking,
+        history,
+        signal: abort.signal,
+        onTextDelta: (delta) => this.send("ai:delta", { requestId, delta }),
+        onEvent: (e) => {
+          this.send("ai:agentEvent", {
+            requestId,
+            kind: e.type,
+            text: "text" in e ? e.text : undefined,
+            tool: "name" in e ? e.name : undefined,
+            args: e.type === "tool_call" ? e.args : undefined,
+            isError: e.type === "tool_result" ? e.isError : undefined,
+            callId: "id" in e ? e.id : undefined,
+          });
+        },
+        confirm: (tool, args) => this.awaitConfirm(requestId, tool, args),
+      });
+      await this.chats.appendTurn(chatId, { role: "assistant", text: result.text, at: Date.now() });
+      return { requestId, ok: result.stopped !== "error", text: result.text };
+    } catch (err) {
+      return { requestId, ok: false, message: err instanceof Error ? err.message : String(err) };
+    } finally {
+      this.aborts.delete(requestId);
+    }
+  }
+
+  /** Kill warm CLI processes (called on app quit). */
+  dispose(): void {
+    this.chats.disposeAll();
   }
 }
 

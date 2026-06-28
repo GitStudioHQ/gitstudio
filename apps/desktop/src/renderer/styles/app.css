@@ -4340,6 +4340,14 @@ body.vscode-light .gh-label-chip {
 .assistant-title { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 680; color: var(--vscode-foreground); }
 .assistant-title .codicon { font-size: 17px; color: var(--gs-accent-ink, var(--gs-accent)); }
 .assistant-model { font-size: 11.5px; color: var(--app-muted); }
+.assistant-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 7px;
+  border: 1px solid transparent; background: transparent;
+  color: var(--app-muted); cursor: pointer; transition: background 0.12s ease, color 0.12s ease;
+}
+.assistant-iconbtn:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+.assistant-iconbtn .codicon { font-size: 15px; }
 .assistant-perm { display: flex; align-items: center; gap: 9px; margin-left: auto; }
 .assistant-perm-label { font-size: 11.5px; color: var(--app-muted); }
 .assistant-perm-seg .settings-seg-btn { padding: 5px 11px; font-size: 11.5px; }
