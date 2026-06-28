@@ -1,0 +1,54 @@
+apps/desktop/src/main/assistantSessions.ts
+  s_20eb6d3d7f74cc::t_db291f7c71f3bf 1-193
+apps/desktop/src/main/aiBridge.ts
+  s_20eb6d3d7f74cc::t_5b9058054eb7e8 44-45
+  s_20eb6d3d7f74cc::t_a16bdce300cd05 60-62
+  s_20eb6d3d7f74cc::t_e0f8af4310d78f 655-781
+  s_20eb6d3d7f74cc::t_2a51ea7bbf4572 84-85
+apps/desktop/src/main/cliProvider.ts
+  s_20eb6d3d7f74cc::t_9f83480382e18e 254
+packages/ai/src/agent.ts
+  s_20eb6d3d7f74cc::t_d812854754b732 41-42
+  s_20eb6d3d7f74cc::t_3ce8cffc661241 95
+apps/desktop/src/main/main.ts
+  s_20eb6d3d7f74cc::t_361fb7af494943 523-534
+  s_20eb6d3d7f74cc::t_1783f76f85c1af 634
+apps/desktop/src/renderer/assistant.ts
+  s_20eb6d3d7f74cc::t_dc97daa68f2ee2 263-279
+  s_20eb6d3d7f74cc::t_86cf000a179a07 317-318
+  s_20eb6d3d7f74cc::t_ad9796f237d186 50-51,56-65
+  s_20eb6d3d7f74cc::t_88b8153c30e168 11,16
+  s_20eb6d3d7f74cc::t_4343de09c650a0 190-199,203-254
+  s_20eb6d3d7f74cc::t_349ef0c450f1df 255
+apps/desktop/src/shared/ipc.ts
+  s_20eb6d3d7f74cc::t_c544aabd4ac84e 1095-1122
+  s_20eb6d3d7f74cc::t_33f92d9dd1ee13 863-870
+apps/desktop/src/renderer/styles/app.css
+  s_20eb6d3d7f74cc::t_8d68fe627701a7 4343-4350
+apps/desktop/src/main/warmCliSession.ts
+  s_3fc28b9b39c0aa::t_57c4649e23aa10 1-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "f33f67072113b7679c65fca013aafff0c6e700b4",
+  "prompts": {},
+  "sessions": {
+    "s_20eb6d3d7f74cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "16a66d6e-e85c-4ce1-b96d-604a12912833",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
