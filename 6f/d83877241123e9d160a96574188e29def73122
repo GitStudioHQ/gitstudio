@@ -1,0 +1,45 @@
+apps/desktop/src/renderer/terminalCommandMenu.ts
+  s_3fc28b9b39c0aa::t_a9a0751b828c1a 29-30
+  s_3fc28b9b39c0aa::t_0c21ae822cdd82 120,123
+apps/desktop/src/renderer/terminalAgent.ts
+  s_3fc28b9b39c0aa::t_36e21a4ed4d8d0 316-317
+  s_3fc28b9b39c0aa::t_66455c989460a5 22-25
+  s_3fc28b9b39c0aa::t_cd9ed7e53d56bd 97,100
+  s_3fc28b9b39c0aa::t_12891faaaa1095 318
+apps/desktop/src/renderer/terminalPanel.ts
+  s_3fc28b9b39c0aa::t_da50f4666051f7 191-192,205-206,213-217,219-222,224-227,229-230,239-242
+  s_3fc28b9b39c0aa::t_d937160dd696a0 277-280,284-287
+apps/desktop/src/renderer/terminalCommands.ts
+  s_3fc28b9b39c0aa::t_13d262a20d8a19 94-99
+apps/desktop/src/main/completionBridge.ts
+  s_3fc28b9b39c0aa::t_da88c471d15639 5-6,10,12-23,26-28,30,32,34-36
+apps/desktop/src/renderer/terminalAutocomplete.ts
+  s_3fc28b9b39c0aa::t_7a7d1b3ac1c84b 120-123,127-128,130,133-134,141-144
+  s_3fc28b9b39c0aa::t_db21b1939eeabe 81,88-93
+  s_3fc28b9b39c0aa::t_03ed3c32570b76 45-47
+  s_3fc28b9b39c0aa::t_d15c82ce3f2636 94,145,231-257,259
+  s_3fc28b9b39c0aa::t_fd067e3efa17a6 214-223
+  s_3fc28b9b39c0aa::t_58e50c119bb10c 103-105
+  s_3fc28b9b39c0aa::t_9e91baf8815a18 13
+  s_3fc28b9b39c0aa::t_4009d43d8121df 159-160
+  s_3fc28b9b39c0aa::t_cc7a638b5dff7c 289
+  s_3fc28b9b39c0aa::t_95d2823111c8c4 326
+  s_3fc28b9b39c0aa::t_166f2ba10ef437 95
+  s_3fc28b9b39c0aa::t_9c9a66088500cf 146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "6fd83877241123e9d160a96574188e29def73122",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
