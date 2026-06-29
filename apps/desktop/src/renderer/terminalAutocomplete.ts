@@ -152,7 +152,7 @@ export class TerminalAutocomplete {
     const parsed = parseInput(line);
     const reqId = ++this.reqSeq;
     let dirEntries: { name: string; isDir: boolean }[] = [];
-    if (!parsed.isCommandPos || looksLikePath(parsed.token)) {
+    if (!parsed.isFlag && (!parsed.isCommandPos || looksLikePath(parsed.token))) {
       dirEntries = await host
         .invoke("terminal:listDir", { cwd: this.tracking.currentCwd(), dir: parsed.dirPart })
         .catch(() => []);

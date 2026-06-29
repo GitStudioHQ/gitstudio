@@ -7,8 +7,6 @@
 // history. Kept side-effect-free so it is exhaustively unit-tested; the
 // controller (terminalAutocomplete.ts) does the IO and rendering.
 
-import { fuzzyMatch, matchKind } from "./fuzzyMatch";
-
 export type SuggestionType = "history" | "command" | "builtin" | "dir" | "file";
 
 export interface Suggestion {
@@ -45,6 +43,10 @@ export interface ParsedInput {
   token: string;
   /** True when the token is in command position (line start or after | && ; etc). */
   isCommandPos: boolean;
+  /** The command being invoked (first token of the line) — drives arg context. */
+  command: string;
+  /** True when the token is a flag (starts with "-"). */
+  isFlag: boolean;
   /** For path tokens: the dir portion ("src/") and the basename ("comp"). */
   dirPart: string;
   basePart: string;
@@ -62,7 +64,9 @@ export function parseInput(line: string): ParsedInput {
   const slash = token.lastIndexOf("/");
   const dirPart = slash >= 0 ? token.slice(0, slash + 1) : "";
   const basePart = slash >= 0 ? token.slice(slash + 1) : token;
-  return { line, token, isCommandPos, dirPart, basePart };
+  const command = line.trimStart().split(/\s+/)[0] ?? "";
+  const isFlag = token.startsWith("-");
+  return { line, token, isCommandPos, command, isFlag, dirPart, basePart };
 }
 
 /** True when the token clearly refers to a filesystem path. */
@@ -78,85 +82,78 @@ export interface CompletionSources {
   dirEntries: DirEntry[];
 }
 
-const TIER = { exact: 1000, prefix: 500, fuzzy: 0 } as const;
-const SOURCE_PRIORITY: Record<SuggestionType, number> = {
-  history: 120,
-  command: 80,
-  builtin: 70,
-  dir: 45,
-  file: 30,
-};
-
-/** Score one candidate against a query; null if it does not match. */
-function scoreCandidate(query: string, candidate: string): { score: number; indices: number[] } | null {
-  const kind = matchKind(query, candidate);
-  if (kind === "none") return null;
-  if (kind === "exact") return { score: TIER.exact, indices: range(query.length) };
-  if (kind === "prefix") return { score: TIER.prefix, indices: range(query.length) };
-  const fm = fuzzyMatch(query, candidate);
-  return fm ? { score: TIER.fuzzy + fm.score, indices: fm.indices } : null;
-}
+/** Commands whose argument is a directory — complete dirs only. */
+const DIR_ONLY_COMMANDS = new Set(["cd", "pushd", "rmdir"]);
 
 function range(n: number): number[] {
   return Array.from({ length: n }, (_, i) => i);
 }
 
+function startsWithCI(candidate: string, prefix: string): boolean {
+  return candidate.toLowerCase().startsWith(prefix.toLowerCase());
+}
+
 /**
- * Compute ranked suggestions for the current input. `max` caps the result count.
+ * Compute high-signal suggestions for the current input.
+ *
+ * Deliberately PREFIX-based, not fuzzy — typing "cd" must not surface
+ * "config_data" or "cpuwalk.d", and "--" must not surface a file with dashes.
+ * Context-aware: PATH commands + builtins in command position; directories only
+ * for cd/pushd/rmdir; files & dirs for other arguments; and for flag tokens
+ * ("-"/"--") nothing but matching history (we have no flag specs). History always
+ * contributes whole-line prefix matches — which is how subcommands like
+ * "git status" get completed from what you've run before. `max` caps the list.
  */
 export function computeSuggestions(
   parsed: ParsedInput,
   sources: CompletionSources,
-  max = 50,
+  max = 10,
 ): Suggestion[] {
+  const { line, token, isCommandPos, isFlag, command, dirPart, basePart } = parsed;
+  if (line.trim() === "") return [];
   const out: Suggestion[] = [];
-  const { token, line, isCommandPos, dirPart, basePart } = parsed;
 
-  // History matches the whole line (you recall a past command), unless the line
-  // is empty (then the dropdown stays closed — the command menu shows recents).
-  if (line.trim() !== "") {
-    for (const h of sources.history) {
-      if (h.command === line) continue; // don't suggest exactly what's typed
-      const sc = scoreCandidate(line, h.command);
-      if (!sc) continue;
-      const recency = Math.min(60, h.lastIndex * 0.5) + Math.min(40, (h.count - 1) * 6);
-      out.push({
-        type: "history",
-        label: h.command,
-        replacement: h.command,
-        scope: "line",
-        detail: h.count > 1 ? `${h.count}×` : undefined,
-        score: sc.score + SOURCE_PRIORITY.history + recency,
-        indices: sc.indices,
-      });
-    }
+  // Whole-line history prefix matches — useful in every context.
+  for (const h of sources.history) {
+    if (h.command === line || !startsWithCI(h.command, line)) continue;
+    const recency = Math.min(80, h.lastIndex * 0.6) + Math.min(40, (h.count - 1) * 6);
+    out.push({
+      type: "history",
+      label: h.command,
+      replacement: h.command,
+      scope: "line",
+      detail: h.count > 1 ? `${h.count}×` : undefined,
+      score: 1000 + recency,
+      indices: range(line.length),
+    });
   }
 
-  // Commands (PATH + builtins) when at command position.
   if (isCommandPos && !looksLikePath(token)) {
-    for (const cmd of sources.builtins) pushCmd(out, "builtin", token, cmd);
-    for (const cmd of sources.pathCommands) pushCmd(out, "command", token, cmd);
-  }
-
-  // Files/dirs: when the token looks like a path, or as plain arguments.
-  if (!isCommandPos || looksLikePath(token)) {
+    const seen = new Set<string>();
+    const addCmd = (name: string, type: "command" | "builtin", base: number): void => {
+      if (name === token || seen.has(name) || !startsWithCI(name, token)) return;
+      seen.add(name);
+      out.push({ type, label: name, replacement: name, scope: "token", score: base, indices: range(token.length) });
+    };
+    for (const b of sources.builtins) addCmd(b, "builtin", 190);
+    for (const c of sources.pathCommands) addCmd(c, "command", 200);
+  } else if (!isFlag) {
+    // Argument position: complete paths (directories only for cd/pushd/rmdir).
+    const dirsOnly = DIR_ONLY_COMMANDS.has(command);
     for (const e of sources.dirEntries) {
-      const sc = scoreCandidate(basePart, e.name);
-      if (!sc) continue;
-      const replacement = dirPart + e.name + (e.isDir ? "/" : "");
+      if ((dirsOnly && !e.isDir) || !startsWithCI(e.name, basePart)) continue;
       out.push({
         type: e.isDir ? "dir" : "file",
         label: e.name + (e.isDir ? "/" : ""),
-        replacement,
+        replacement: dirPart + e.name + (e.isDir ? "/" : ""),
         scope: "token",
-        detail: e.isDir ? undefined : undefined,
-        score: sc.score + (e.isDir ? SOURCE_PRIORITY.dir : SOURCE_PRIORITY.file),
-        indices: sc.indices,
+        score: e.isDir ? 300 : 250,
+        indices: range(basePart.length),
       });
     }
   }
+  // (A flag token with no spec falls through to history-only, already added.)
 
-  // Dedup by replacement (keep the highest-scoring), then sort.
   const best = new Map<string, Suggestion>();
   for (const s of out) {
     const key = s.scope + "\0" + s.replacement;
@@ -166,19 +163,6 @@ export function computeSuggestions(
   return [...best.values()]
     .sort((a, b) => b.score - a.score || a.label.length - b.label.length || a.label.localeCompare(b.label))
     .slice(0, max);
-}
-
-function pushCmd(out: Suggestion[], type: "command" | "builtin", token: string, cmd: string): void {
-  const sc = scoreCandidate(token, cmd);
-  if (!sc) return;
-  out.push({
-    type,
-    label: cmd,
-    replacement: cmd,
-    scope: "token",
-    score: sc.score + SOURCE_PRIORITY[type],
-    indices: sc.indices,
-  });
 }
 
 /** A small, conventional set of POSIX shell builtins for command completion. */
