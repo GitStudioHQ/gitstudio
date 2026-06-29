@@ -1,0 +1,37 @@
+apps/desktop/src/renderer/terminalPanel.ts
+  s_3fc28b9b39c0aa::t_93d054137c5ea5 177,180,196-208
+  s_3fc28b9b39c0aa::t_f36712375789c6 263,265-266,269
+  s_3fc28b9b39c0aa::t_9eb74e98ad7848 50,52-53
+  s_3fc28b9b39c0aa::t_c8b0c3b7ff58ee 342-343
+  s_3fc28b9b39c0aa::t_c91ec89a6bf535 23
+  s_3fc28b9b39c0aa::t_7c9e160e6b11d2 209
+apps/desktop/src/renderer/terminalCommands.ts
+  s_3fc28b9b39c0aa::t_b26b2d8f675323 27-28
+  s_3fc28b9b39c0aa::t_b561f53e4084c9 10
+  s_3fc28b9b39c0aa::t_5a4eb362d8542e 245
+  s_3fc28b9b39c0aa::t_c170939d0b5329 158-163,166-168,171-183
+apps/desktop/src/renderer/terminalAgent.ts
+  s_3fc28b9b39c0aa::t_0770c9db823055 96-105
+apps/desktop/src/renderer/terminalBlocks.ts
+  s_3fc28b9b39c0aa::t_2253b66a48a81b 1-332
+apps/desktop/src/renderer/styles/app.css
+  s_3fc28b9b39c0aa::t_2bca5c04088dd3 3408-3464
+apps/desktop/test/terminalCommands.test.ts
+  s_3fc28b9b39c0aa::t_42683e713bc94a 83,90-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "2e8f4bb9034fb3cca9d50741356430e548ff742a",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
