@@ -91,14 +91,15 @@ export class CommandTracking {
         this.emit();
       }
     } else if (kind === "D") {
-      // Command finished with an exit code.
-      const code = data.length > 2 ? Number.parseInt(data.slice(2), 10) : 0;
-      const c = this.pending ?? this.cmds[this.cmds.length - 1];
-      if (c) {
+      // Command finished. Only finalize a command that actually ran (its output
+      // marker was set by C). This ignores a D from an empty Enter or a spurious
+      // precmd, so we never overwrite a previous command's exit code/status.
+      const c = this.pending;
+      if (c && c.outputMarker) {
+        const code = data.length > 2 ? Number.parseInt(data.slice(2), 10) : 0;
         c.exitCode = Number.isFinite(code) ? code : 0;
         c.state = "done";
         c.endedAt = Date.now();
-        if (!this.cmds.includes(c)) this.cmds.push(c);
         this.decorate(c);
         this.applyDotState(c);
         this.emit();

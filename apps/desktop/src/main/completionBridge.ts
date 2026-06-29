@@ -2,39 +2,38 @@
 // directory listings for path completion. Both are cheap, read-only filesystem
 // queries exposed over IPC; nothing here can affect a running command.
 
-import { readdir, readdirSync, statSync } from "node:fs";
+import { readdir as readdirAsync } from "node:fs/promises";
+import { readdir, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-let pathCommandsCache: string[] | null = null;
+let pathCommandsPromise: Promise<string[]> | null = null;
 
-/** Executables found on $PATH, sorted & de-duplicated. Computed once, then cached. */
-export function pathCommands(): string[] {
-  if (pathCommandsCache) return pathCommandsCache;
+/**
+ * Names of executables found on $PATH, sorted & de-duplicated. Computed once
+ * (asynchronously, so the main process never blocks) and then cached. We list
+ * names without stat-ing each one — PATH dirs are overwhelmingly executables and
+ * this keeps it fast; over-inclusion is harmless for completion.
+ */
+export function pathCommands(): Promise<string[]> {
+  if (!pathCommandsPromise) pathCommandsPromise = computePathCommands();
+  return pathCommandsPromise;
+}
+
+async function computePathCommands(): Promise<string[]> {
   const dirs = (process.env.PATH || "").split(process.platform === "win32" ? ";" : ":");
   const seen = new Set<string>();
-  for (const dir of dirs) {
-    if (!dir) continue;
-    let entries: string[];
-    try {
-      entries = readdirSync(dir);
-    } catch {
-      continue; // unreadable PATH entry — skip
-    }
-    for (const name of entries) {
-      if (seen.has(name)) continue;
+  await Promise.all(
+    dirs.map(async (dir) => {
+      if (!dir) return;
       try {
-        const st = statSync(join(dir, name));
-        if (st.isFile() && (process.platform === "win32" || (st.mode & 0o111) !== 0)) {
-          seen.add(name);
-        }
+        for (const name of await readdirAsync(dir)) seen.add(name);
       } catch {
-        // broken symlink / race — ignore
+        // unreadable PATH entry — skip
       }
-    }
-  }
-  pathCommandsCache = [...seen].sort();
-  return pathCommandsCache;
+    }),
+  );
+  return [...seen].sort();
 }
 
 /** Expand a leading `~` to the user's home directory. */

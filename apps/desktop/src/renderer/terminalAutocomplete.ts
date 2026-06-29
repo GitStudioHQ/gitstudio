@@ -10,7 +10,7 @@
 //    then types the chosen text — additive, and the user still presses Enter.
 //  • Plain Enter is never hijacked unless you've actively arrowed into the list.
 
-import type { IDisposable, Terminal } from "@xterm/xterm";
+import type { IDisposable, IMarker, Terminal } from "@xterm/xterm";
 import { host } from "./bridge";
 import { el, glyph, span } from "./ui";
 import type { CommandTracking } from "./terminalCommands";
@@ -42,8 +42,9 @@ export class TerminalAutocomplete {
   private selected = -1;
   private open = false;
 
-  /** Absolute buffer position where the current prompt's input begins. */
-  private inputStart: { x: number; y: number } | null = null;
+  /** Anchor (marker + column) where the current prompt's input begins. A marker
+   *  is used so it survives scrollback trimming, reflow, and clears. */
+  private inputStart: { marker: IMarker; x: number } | null = null;
   private awaitFirstKey = false;
   private atPrompt = false;
   private pathCmds: string[] = [];
@@ -77,10 +78,19 @@ export class TerminalAutocomplete {
     this.atPrompt = atPrompt;
     if (atPrompt) {
       this.awaitFirstKey = true;
+      this.inputStart?.marker.dispose();
       this.inputStart = null;
     } else {
       this.close();
     }
+  }
+
+  /** Forget the current input anchor (e.g. after term.clear()). */
+  reset(): void {
+    this.inputStart?.marker.dispose();
+    this.inputStart = null;
+    this.awaitFirstKey = this.atPrompt;
+    this.close();
   }
 
   // ── Input tracking ────────────────────────────────────────────────────────────
@@ -90,7 +100,9 @@ export class TerminalAutocomplete {
     // prompt, the cursor sits exactly at the input start (echo hasn't happened).
     if (this.awaitFirstKey && this.atPrompt && isPrintable(d)) {
       const buf = this.term.buffer.active;
-      this.inputStart = { x: buf.cursorX, y: buf.baseY + buf.cursorY };
+      this.inputStart?.marker.dispose();
+      const marker = this.term.registerMarker(0);
+      this.inputStart = marker ? { marker, x: buf.cursorX } : null;
       this.awaitFirstKey = false;
     }
   }
@@ -105,23 +117,31 @@ export class TerminalAutocomplete {
 
   /** Read the typed text between the input start and the cursor, or null. */
   private readTyped(): string | null {
-    if (!this.inputStart) return null;
+    const start = this.inputStart;
+    if (!start) return null;
+    const sy = start.marker.line;
+    if (sy < 0) return null; // anchor trimmed from scrollback / cleared → bail
     const buf = this.term.buffer.active;
     const curY = buf.baseY + buf.cursorY;
     const curX = buf.cursorX;
-    const start = this.inputStart;
-    if (curY < start.y) return null; // cursor moved above the prompt → bail
-    if (curY === start.y) {
+    if (curY < sy) return null; // cursor moved above the prompt → bail
+    if (curY === sy) {
       if (curX < start.x) return null; // deleted into the prompt → bail
-      return buf.getLine(curY)?.translateToString(false, start.x, curX) ?? null;
+      return buf.getLine(sy)?.translateToString(false, start.x, curX) ?? null;
     }
     // Multi-line input (wrapped or continuation): concatenate the rows.
-    let s = buf.getLine(start.y)?.translateToString(false, start.x) ?? "";
-    for (let y = start.y + 1; y < curY; y++) {
+    let s = buf.getLine(sy)?.translateToString(false, start.x) ?? "";
+    for (let y = sy + 1; y < curY; y++) {
       s += buf.getLine(y)?.translateToString(false) ?? "";
     }
     s += buf.getLine(curY)?.translateToString(false, 0, curX) ?? "";
     return s;
+  }
+
+  /** Text on the cursor's row after the cursor — empty ⇒ cursor at line end. */
+  private textAfterCursor(): string {
+    const buf = this.term.buffer.active;
+    return buf.getLine(buf.baseY + buf.cursorY)?.translateToString(true, buf.cursorX) ?? "";
   }
 
   private async refresh(): Promise<void> {
@@ -136,7 +156,8 @@ export class TerminalAutocomplete {
       dirEntries = await host
         .invoke("terminal:listDir", { cwd: this.tracking.currentCwd(), dir: parsed.dirPart })
         .catch(() => []);
-      if (reqId !== this.reqSeq) return; // superseded by newer keystrokes
+      // Discard if superseded, or if we left the prompt while awaiting the listing.
+      if (reqId !== this.reqSeq || !this.atPrompt || !this.inputStart) return this.close();
     }
 
     const items = computeSuggestions(parsed, {
@@ -190,7 +211,16 @@ export class TerminalAutocomplete {
     const n = this.items.length;
     if (!n) return;
     this.selected = this.selected < 0 ? (dir > 0 ? 0 : n - 1) : (this.selected + dir + n) % n;
-    this.render();
+    this.syncActive();
+  }
+
+  private syncActive(): void {
+    const rows = this.menu.children;
+    for (let i = 0; i < rows.length; i++) {
+      const on = i === this.selected;
+      (rows[i] as HTMLElement).classList.toggle("is-active", on);
+      if (on) (rows[i] as HTMLElement).scrollIntoView({ block: "nearest" });
+    }
   }
 
   private accept(s: Suggestion | undefined): void {
@@ -198,14 +228,35 @@ export class TerminalAutocomplete {
     const line = this.readTyped();
     if (line === null) return this.close();
     const parsed = parseInput(line);
-    const finalLine =
-      s.scope === "line"
-        ? s.replacement
-        : line.slice(0, line.length - parsed.token.length) + s.replacement;
-    // Ctrl+A (line start), Ctrl+K (kill to end), then the rewritten line. This
-    // replaces only the current prompt line; the user still presses Enter to run.
-    this.opts.write("\x01\x0b" + finalLine);
+    const typed = s.scope === "line" ? line : parsed.token;
+    const rep = s.replacement;
+    // Prefer a purely additive completion (append the missing suffix) — safe in
+    // any shell keymap and with the cursor anywhere. Only when the match isn't a
+    // prefix do we delete, and only if the cursor is at the end of the input so
+    // nothing to the right is lost. Otherwise we don't touch the line.
+    let seq: string | null = null;
+    if (rep.toLowerCase().startsWith(typed.toLowerCase())) {
+      seq = rep.slice(typed.length);
+    } else if (this.textAfterCursor() === "") {
+      seq = "\x7f".repeat(typed.length) + rep;
+    }
     this.close();
+    if (seq) {
+      this.opts.write(seq);
+      this.term.focus();
+    }
+  }
+
+  /**
+   * Replace the current prompt line with `text` (command menu / agent insert /
+   * re-run). Deletes only the typed characters with backspaces, then types the
+   * text — never auto-runs. Caller ensures the shell is at a prompt.
+   */
+  replaceCurrentLine(text: string): void {
+    const line = this.readTyped();
+    this.opts.write(line !== null ? "\x7f".repeat(line.length) + text : text);
+    this.close();
+    this.term.focus();
   }
 
   private close(): void {
@@ -235,7 +286,7 @@ export class TerminalAutocomplete {
       });
       row.addEventListener("mouseenter", () => {
         this.selected = i;
-        this.render();
+        this.syncActive();
       });
       this.menu.appendChild(row);
     });
@@ -272,6 +323,7 @@ export class TerminalAutocomplete {
 
   dispose(): void {
     if (this.rafPending) cancelAnimationFrame(this.rafPending);
+    this.inputStart?.marker.dispose();
     for (const d of this.disposables) d.dispose();
     this.menu.remove();
   }

@@ -26,6 +26,8 @@ export interface CommandMenuOptions {
   onAction: (id: string) => void;
   /** Rewrite the current prompt line to `cmd` (caller guarantees at-prompt). */
   onInsertCommand: (cmd: string) => void;
+  /** Called after the menu closes (e.g. to restore terminal focus). */
+  onClose?: () => void;
 }
 
 export type Row =
@@ -115,8 +117,10 @@ export class TerminalCommandMenu {
   }
 
   close(): void {
+    if (!this.open) return;
     this.open = false;
     this.scrim.style.display = "none";
+    this.opts.onClose?.();
   }
 
   isOpen(): boolean {

@@ -187,8 +187,9 @@ export class TerminalPanel {
 
     // In-terminal AI agent panel (reuses the existing AI bridge over IPC).
     this.agent = new TerminalAgent(this.container, {
-      write: writePty,
       atPrompt: () => this.tracking?.atPrompt() ?? false,
+      insertCommand: (cmd) => this.autocomplete?.replaceCurrentLine(cmd),
+      onClose: () => this.term?.focus(),
     });
 
     // Command / history menu (launcher popup).
@@ -201,33 +202,32 @@ export class TerminalPanel {
         { id: "copy-output", label: "Copy last command output", icon: "list-selection" },
       ],
       onAction: (id) => this.onMenuAction(id),
-      onInsertCommand: (cmd) => writePty("\x01\x0b" + cmd),
+      onInsertCommand: (cmd) => this.autocomplete?.replaceCurrentLine(cmd),
+      onClose: () => this.term?.focus(),
     });
 
     this.buildOverlay();
 
     term.attachCustomKeyEventHandler((e) => {
       // Autocomplete claims plain ↑/↓/Tab/Enter/Esc while its menu is open.
-      if (this.autocomplete?.handleKey(e)) return false;
+      if (this.autocomplete?.handleKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
       if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        const consume = (fn: () => void): boolean => {
+          fn();
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        };
         // Cmd/Ctrl + ↑/↓ jumps between command blocks.
-        if (e.key === "ArrowUp") {
-          this.tracking?.selectPrev();
-          return false;
-        }
-        if (e.key === "ArrowDown") {
-          this.tracking?.selectNext();
-          return false;
-        }
+        if (e.key === "ArrowUp") return consume(() => this.tracking?.selectPrev());
+        if (e.key === "ArrowDown") return consume(() => this.tracking?.selectNext());
         // Cmd/Ctrl+P opens the command menu; Cmd/Ctrl+I opens the agent.
-        if (e.key === "p" || e.key === "P") {
-          this.menu?.toggle();
-          return false;
-        }
-        if (e.key === "i" || e.key === "I") {
-          this.agent?.toggle();
-          return false;
-        }
+        if (e.key === "p" || e.key === "P") return consume(() => this.menu?.toggle());
+        if (e.key === "i" || e.key === "I") return consume(() => void this.agent?.toggle());
       }
       return true;
     });
@@ -236,8 +236,10 @@ export class TerminalPanel {
   /** Handle a command-menu action. */
   private onMenuAction(id: string): void {
     if (id === "agent") void this.agent?.show();
-    else if (id === "clear") this.term?.clear();
-    else if (id === "copy-output") {
+    else if (id === "clear") {
+      this.term?.clear();
+      this.autocomplete?.reset();
+    } else if (id === "copy-output") {
       const last = this.tracking?.commands().at(-1);
       if (last) void this.tracking?.copyOutput(last);
     }
@@ -272,11 +274,17 @@ export class TerminalPanel {
       el("span", "term-overlay-sep"),
       mk("copy", "Copy command", () => void this.tracking?.copyCommand(), true),
       mk("list-selection", "Copy output", () => void this.tracking?.copyOutput(), true),
-      mk("debug-restart", "Re-run command", () => this.tracking?.rerun(), true),
+      mk("debug-restart", "Put command on the prompt to re-run", () => {
+        const c = this.tracking?.selected();
+        if (c?.commandLine) this.autocomplete?.replaceCurrentLine(c.commandLine);
+      }, true),
       el("span", "term-overlay-sep"),
       mk("list-unordered", "Command menu (⌘P)", () => this.menu?.toggle()),
       mk("sparkle", "Agent (⌘I)", () => void this.agent?.show()),
-      mk("clear-all", "Clear terminal", () => this.term?.clear()),
+      mk("clear-all", "Clear terminal", () => {
+        this.term?.clear();
+        this.autocomplete?.reset();
+      }),
     );
     this.overlay = bar;
     this.container.appendChild(bar);

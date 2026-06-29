@@ -17,10 +17,12 @@ import type { AgentEventWire } from "../shared/ipc";
 type Permission = "read" | "write" | "destructive";
 
 export interface TerminalAgentOptions {
-  /** Write to the PTY (used by "Insert in terminal"). */
-  write: (data: string) => void;
   /** Whether the shell is at a prompt (gates "Insert in terminal"). */
   atPrompt: () => boolean;
+  /** Put `cmd` on the prompt line for the user to run (never auto-runs). */
+  insertCommand: (cmd: string) => void;
+  /** Called after the panel closes (e.g. to restore terminal focus). */
+  onClose?: () => void;
 }
 
 interface TurnState {
@@ -92,8 +94,10 @@ export class TerminalAgent {
   }
 
   close(): void {
+    if (!this.open) return;
     this.open = false;
     this.root.style.display = "none";
+    this.opts.onClose?.();
   }
 
   isOpen(): boolean {
@@ -309,8 +313,9 @@ export class TerminalAgent {
         btn.append(glyph("terminal"), span("Insert in terminal"));
         btn.addEventListener("click", () => {
           if (!this.opts.atPrompt()) return;
-          // Rewrite the current prompt line; the user reviews and presses Enter.
-          this.opts.write("\x01\x0b" + code.trim());
+          // Put it on the prompt line; the user reviews and presses Enter.
+          this.opts.insertCommand(code.trim());
+          this.close();
         });
       } else {
         btn.append(glyph("copy"), span("Copy"));
