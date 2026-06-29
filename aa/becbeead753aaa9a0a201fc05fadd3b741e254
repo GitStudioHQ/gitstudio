@@ -1,0 +1,17 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "aabecbeead753aaa9a0a201fc05fadd3b741e254",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
