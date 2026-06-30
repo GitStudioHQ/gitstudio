@@ -180,9 +180,10 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
     detail.appendChild(d);
   }
 
-  // Sub-tabs: Repositories · Teams · Members.
+  // Sub-tabs: Repositories · Teams · Members. The content is a responsive card
+  // grid so it fills the full-width pane instead of a narrow column of rows.
   const subBar = el("div", "gh-subtabs");
-  const content = el("div", "gh-subcontent");
+  const content = el("div", "gh-subcontent gh-org-grid");
   const subDefs: ReadonlyArray<{ id: SubTabId; label: string; icon: string }> = [
     { id: "repos", label: "Repositories", icon: "repo" },
     { id: "teams", label: "Teams", icon: "organization" },

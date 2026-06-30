@@ -310,6 +310,20 @@ export interface IssueDetail {
   comments: IssueComment[];
   assignees: string[];
 }
+/** A unified, read-only issue/PR snapshot from ANY repo — for viewing a
+ *  cross-repo notification subject in-app rather than opening github.com. */
+export interface ExternalItemDetail {
+  kind: "issue" | "pull";
+  number: number;
+  repo: string;
+  title: string;
+  state: string;
+  body: string | null;
+  htmlUrl: string;
+  author: string | null;
+  createdAt: string;
+  comments: { author: string | null; body: string; createdAt: string }[];
+}
 
 // ── Pull Requests (CRUD) ──
 export interface RepoCollaborator {
@@ -809,6 +823,12 @@ export interface IpcChannels {
   "issue:labels": [void, RepoLabel[]];
   "issue:setLabels": [{ number: number; labels: string[] }, CommitActionResult];
   "issue:setAssignees": [{ number: number; assignees: string[] }, CommitActionResult];
+  // Read-only fetch of an issue/PR from ANY repo (used to open notifications for
+  // OTHER repositories in-app instead of bouncing to github.com).
+  "github:externalItem": [
+    { owner: string; repo: string; number: number; kind: "issue" | "pull" },
+    ExternalItemDetail | undefined,
+  ];
   // Projects v2.
   "project:list": [void, ProjectInfo[]];
   "project:board": [string, ProjectBoard];
@@ -873,7 +893,9 @@ export interface IpcChannels {
   "ai:chatList": [void, ChatSummary[]];
   "ai:chatCurrent": [void, ChatView | undefined];
   "ai:chatGet": [{ id: string }, ChatView | undefined];
-  "ai:chatNew": [void, ChatView | undefined];
+  // `setCurrent: false` creates a chat WITHOUT making it the repo's current one —
+  // used by the footer AI tabs so they don't hijack the full Assistant's session.
+  "ai:chatNew": [{ setCurrent?: boolean } | undefined, ChatView | undefined];
   "ai:chatSetCurrent": [{ id: string }, void];
   "ai:chatSend": [ChatSendRequest, AiDone];
   "ai:chatDelete": [{ id: string }, void];
@@ -1014,6 +1036,8 @@ export interface AiTaskInput {
   sha?: string;
   path?: string;
   base?: string;
+  /** The right-hand side of a base…head comparison (PR / Compare). Defaults to HEAD. */
+  head?: string;
   description?: string;
   commits?: string[];
   conflict?: { path: string; base?: string; ours: string; theirs: string };

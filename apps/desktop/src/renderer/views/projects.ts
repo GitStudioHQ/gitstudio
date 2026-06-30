@@ -25,7 +25,7 @@ import {
   type MenuItem,
 } from "../ui";
 import { toast } from "../dialogs";
-import { ghGate, ghHeader, headerPicker, type SectionRender } from "./common";
+import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
 
 // Which project the user last opened. Survives a re-render so a move (or refresh)
@@ -36,7 +36,7 @@ export const renderProjects: SectionRender = (wrap, nav) => {
   void renderProjectsAsync(wrap, nav);
 };
 
-async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => void): Promise<void> {
+async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   const gate = await ghGate(wrap, nav, true);
   if (!gate) return;
 
@@ -75,7 +75,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: (view: string) => voi
   const select = (p: ProjectInfo): void => {
     selectedProjectId = p.id;
     picker.set(glyph("project"), p.title);
-    void showProjectBoard(board, p, refresh);
+    void showProjectBoard(board, p, refresh, nav);
   };
 
   // The bar-level picker: a searchable dropdown of every project. Choosing one
@@ -111,6 +111,7 @@ async function showProjectBoard(
   detail: HTMLElement,
   p: ProjectInfo,
   refresh: () => void,
+  nav: SectionNav,
 ): Promise<void> {
   detail.replaceChildren(loadingState());
   let board: ProjectBoard;
@@ -119,7 +120,7 @@ async function showProjectBoard(
   } catch (e) {
     detail.replaceChildren(
       errorState("Couldn't load board", cleanErr(e) || "GitHub request failed.", () =>
-        void showProjectBoard(detail, p, refresh),
+        void showProjectBoard(detail, p, refresh, nav),
       ),
     );
     return;
@@ -163,7 +164,7 @@ async function showProjectBoard(
       colBody.appendChild(el("div", "gh-col-empty"));
     }
     for (const it of items) {
-      colBody.appendChild(projectCard(p, board, it, refresh));
+      colBody.appendChild(projectCard(p, board, it, refresh, nav));
     }
     colEl.appendChild(colBody);
     boardEl.appendChild(colEl);
@@ -178,6 +179,7 @@ function projectCard(
   board: ProjectBoard,
   it: ProjectItem,
   refresh: () => void,
+  nav: SectionNav,
 ): HTMLElement {
   const card = el("div", "gh-card");
 
@@ -210,17 +212,23 @@ function projectCard(
   );
   card.appendChild(typePill);
 
-  // Whole-card click opens the underlying issue/PR (drafts have no url).
-  if (it.url) {
-    const url = it.url;
+  // Whole-card click opens the underlying issue/PR IN-APP — the project board is
+  // part of our ecosystem; you never have to bounce to github.com to read an item.
+  // (Draft items live only in the project and have no number, so they stay inert.)
+  const canOpen =
+    it.number != null && (it.type === "ISSUE" || it.type === "PULL_REQUEST");
+  if (canOpen) {
+    const dest = it.type === "PULL_REQUEST" ? "prs" : "issues";
+    const open = (): void => nav(dest, { number: it.number as number });
     card.classList.add("clickable");
     card.tabIndex = 0;
-    card.setAttribute("role", "link");
-    card.addEventListener("click", () => window.open(url, "_blank"));
+    card.setAttribute("role", "button");
+    card.title = `Open ${it.type === "PULL_REQUEST" ? "pull request" : "issue"} #${it.number}`;
+    card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        window.open(url, "_blank");
+        open();
       }
     });
   }
@@ -240,6 +248,7 @@ function projectItemMenu(
     const url = it.url;
     items.push({ label: "Open on GitHub", icon: "link-external", onClick: () => window.open(url, "_blank") });
   }
+  const card = anchor.closest(".gh-card") as HTMLElement | null;
   const field = board.field;
   if (field) {
     if (items.length) items.push({ separator: true, label: "Move to" });
@@ -247,13 +256,13 @@ function projectItemMenu(
     items.push({
       label: "No Status",
       current: it.statusOptionId === null,
-      onClick: () => void projectMoveItem(p, field.id, it, null, refresh),
+      onClick: () => void projectMoveItem(p, field.id, it, null, refresh, card),
     });
     for (const opt of field.options) {
       items.push({
         label: opt.name,
         current: it.statusOptionId === opt.id,
-        onClick: () => void projectMoveItem(p, field.id, it, opt.id, refresh),
+        onClick: () => void projectMoveItem(p, field.id, it, opt.id, refresh, card),
       });
     }
   }
@@ -270,8 +279,11 @@ async function projectMoveItem(
   it: ProjectItem,
   optionId: string | null,
   refresh: () => void,
+  card?: HTMLElement | null,
 ): Promise<void> {
   if (it.statusOptionId === optionId) return; // no-op
+  // Lock + dim the card while the move is in flight so it's clear it's working.
+  card?.classList.add("is-moving");
   try {
     const r = await host.invoke("project:moveItem", {
       projectId: p.id,
@@ -280,14 +292,16 @@ async function projectMoveItem(
       optionId,
     });
     if (!r.ok) {
+      card?.classList.remove("is-moving");
       toast(r.message ?? "Couldn't move the item.", "error");
       return;
     }
     toast("Moved item.", "success");
     // Re-render the whole section; selectedProjectId reselects this project,
-    // reloading its board with the new Status in place.
+    // reloading its board with the new Status in place (which replaces the card).
     refresh();
   } catch (e) {
+    card?.classList.remove("is-moving");
     toast(cleanErr(e) || "Couldn't move the item.", "error");
   }
 }

@@ -35,8 +35,8 @@ import {
 } from "../ui";
 import { toast, confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { aiSheet, aiEnabled } from "../aiAssist";
-import { ghGate, ghHeader, ghTwoPane, searchField, trapTab, type SectionRender } from "./common";
+import { openAssistantTab, aiEnabled } from "../aiAssist";
+import { ghGate, ghHeader, ghTwoPane, peoplePickerModal, searchField, trapTab, type SectionRender, type SectionNav, type SectionTarget } from "./common";
 import type {
   BranchRef,
   PrComment,
@@ -49,13 +49,13 @@ import type {
 // the user on the tab they were reading.
 let activeSubTab = "conversation";
 
-export const renderPrs: SectionRender = (wrap, nav) => {
-  void mount(wrap, nav);
+export const renderPrs: SectionRender = (wrap, nav, target) => {
+  void mount(wrap, nav, target);
 };
 
-const refresher = (wrap: HTMLElement, nav: (view: string) => void) => () => renderPrs(wrap, nav);
+const refresher = (wrap: HTMLElement, nav: SectionNav) => () => renderPrs(wrap, nav);
 
-async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<void> {
+async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
   const gate = await ghGate(wrap, nav, true);
   if (!gate) return;
   const refresh = refresher(wrap, nav);
@@ -129,6 +129,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       stats,
       ariaLabel: `Pull request #${pr.number}: ${pr.title}`,
     });
+    row.dataset.num = String(pr.number);
     row.addEventListener("click", () => select(pr, row));
     return row;
   };
@@ -169,7 +170,29 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     }),
   );
 
+  // Deep-link: open a specific PR on entry (e.g. from the project board) rather
+  // than the auto-selected first — keep it in-app, never open GitHub.
+  if (target?.number != null) autoSelected = true;
   renderList(prs);
+  if (target?.number != null) {
+    const n = target.number;
+    const inList = prs.find((pr) => pr.number === n);
+    const row = listEl.querySelector(`[data-num="${n}"]`) as HTMLElement | null;
+    if (inList && row) {
+      select(inList, row);
+      row.scrollIntoView({ block: "nearest" });
+    } else {
+      // Not in the current list (e.g. a closed PR) — fetch it and open its detail.
+      void (async () => {
+        try {
+          const d = await host.invoke("pr:detail", n);
+          if (d) void showDetail(detailEl, d.pr, refresh);
+        } catch {
+          /* leave the idle empty state if the PR can't be loaded */
+        }
+      })();
+    }
+  }
 }
 
 // ── Detail panel ──────────────────────────────────────────────────────────────
@@ -299,17 +322,23 @@ function buildActions(
 
   const mergeBtn = el("button", "btn btn-primary gh-merge-btn");
   mergeBtn.append(glyph("git-merge"), span("Merge"), glyph("chevron-down"));
-  mergeBtn.addEventListener("click", () =>
+  // A closed/merged PR can't be merged — disable rather than letting the user
+  // open the menu and hit a confusing error toast.
+  const mergeable = full.state === "open" && !full.draft;
+  (mergeBtn as HTMLButtonElement).disabled = !mergeable;
+  mergeBtn.title = mergeable
+    ? "Merge this pull request"
+    : full.draft
+      ? "Mark the draft ready before merging"
+      : "This pull request is closed";
+  mergeBtn.addEventListener("click", () => {
+    if (!mergeable) return;
     openMenu(mergeBtn, [
       { label: "Create a merge commit", icon: "git-merge", onClick: () => void doMerge(full.number, "merge", refreshList) },
       { label: "Squash and merge", icon: "git-commit", onClick: () => void doMerge(full.number, "squash", refreshList) },
       { label: "Rebase and merge", icon: "git-compare", onClick: () => void doMerge(full.number, "rebase", refreshList) },
-    ]),
-  );
-
-  const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("link-external"), span("Open on GitHub"));
-  openBtn.addEventListener("click", () => window.open(full.htmlUrl, "_blank"));
+    ]);
+  });
 
   const moreBtn = el("button", "mini-btn gh-icon-btn");
   moreBtn.append(glyph("ellipsis"));
@@ -340,28 +369,47 @@ function buildActions(
           },
       { separator: true },
       { label: "Copy link", icon: "copy", onClick: () => void copyText(full.htmlUrl, "Copied PR link.") },
+      { label: "Open on GitHub", icon: "link-external", onClick: () => window.open(full.htmlUrl, "_blank") },
     ]),
   );
 
-  // ✨ AI: explain / review the PR's diff, or draft a comment. Hidden until a
-  // model is connected. The diff is gathered from base…head by the main process.
+  // ✨ AI: explain / review the PR's diff, or draft a comment — each opens a
+  // conversational chat tab in the footer. Hidden until a model is connected.
   const aiBtn = el("button", "mini-btn ai-mini");
   aiBtn.hidden = true;
   aiBtn.append(glyph("sparkle"), span("AI"), glyph("chevron-down"));
-  const range = { base: full.base.ref, head: full.head.ref };
+  // Use the commit SHAs, not the branch names: a PR's head branch usually isn't a
+  // local ref (you'd have origin/<branch>), but the SHA resolves whenever the
+  // object has been fetched — so the diff is exact when it can be gathered at all.
+  const diffCmd = `git diff ${full.base.sha}..${full.head.sha}`;
   aiBtn.addEventListener("click", () =>
     openMenu(aiBtn, [
-      { label: "Explain this PR", icon: "comment", onClick: () => aiSheet({ title: `Explain PR #${full.number}`, task: "explainDiff", input: range }) },
-      { label: "Review this PR", icon: "search", onClick: () => aiSheet({ title: `Review PR #${full.number}`, task: "reviewDiff", input: range }) },
+      {
+        label: "Explain this PR",
+        icon: "comment",
+        onClick: () =>
+          openAssistantTab({
+            title: `Explain PR #${full.number}`,
+            goal: `Explain pull request #${full.number} ("${full.title}"). Run \`${diffCmd}\` to see the changes, then give a clear, structured summary of what it changes and why it matters.`,
+          }),
+      },
+      {
+        label: "Review this PR",
+        icon: "search",
+        onClick: () =>
+          openAssistantTab({
+            title: `Review PR #${full.number}`,
+            goal: `Review pull request #${full.number} ("${full.title}") for correctness bugs, security issues and risky changes. Run \`${diffCmd}\` to see the diff. Be specific and cite files.`,
+          }),
+      },
       { separator: true },
       {
         label: "Draft a comment",
         icon: "comment",
         onClick: () =>
-          aiSheet({
-            title: "Draft a comment",
-            task: "assist",
-            input: { description: `Draft a concise, constructive review comment for this pull request. Output only the comment.\n\nTitle: ${full.title}\n\n${full.body ?? ""}` },
+          openAssistantTab({
+            title: `Draft · PR #${full.number}`,
+            goal: `Draft a concise, constructive review comment for pull request #${full.number}. Output just the comment text.\n\nTitle: ${full.title}\n\n${full.body ?? ""}`,
           }),
       },
     ]),
@@ -375,7 +423,6 @@ function buildActions(
     ...(readyBtn ? [readyBtn] : []),
     aiBtn,
     mergeBtn,
-    openBtn,
     moreBtn,
   );
   return actions;
@@ -682,7 +729,7 @@ async function doRequestReviewers(n: number): Promise<void> {
   }
   let chosen: string[] | null;
   if (people.length) {
-    chosen = await reviewerPickerModal(people);
+    chosen = await peoplePickerModal({ title: "Request reviewers", okLabel: "Request", people, selected: [] });
   } else {
     const raw = await promptInline(
       "Request reviewers",
@@ -857,56 +904,3 @@ function createPrModal(opts: {
   });
 }
 
-function reviewerPickerModal(people: RepoCollaborator[]): Promise<string[] | null> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const overlay = el("div", "modal-overlay");
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "Request reviewers");
-    const card = el("div", "modal-card gh-pr-form");
-    const h = el("div", "modal-title");
-    h.textContent = "Request reviewers";
-    const list = el("div", "gh-reviewer-list");
-    const boxes: { login: string; cb: HTMLInputElement }[] = [];
-    for (const p of people) {
-      const row = el("label", "gh-form-check");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      row.append(cb, span("@" + p.login));
-      list.appendChild(row);
-      boxes.push({ login: p.login, cb });
-    }
-    const actions = el("div", "modal-actions");
-    const cancel = el("button", "mini-btn");
-    cancel.textContent = "Cancel";
-    const ok = el("button", "btn btn-primary modal-ok");
-    ok.append(span("Request"));
-    actions.append(cancel, ok);
-    card.append(h, list, actions);
-    const finish = (v: string[] | null): void => {
-      if (settled) return;
-      settled = true;
-      overlay.remove();
-      document.removeEventListener("keydown", onKey, true);
-      resolve(v);
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        finish(null);
-        return;
-      }
-      trapTab(e, card);
-    };
-    cancel.addEventListener("click", () => finish(null));
-    ok.addEventListener("click", () => finish(boxes.filter((b) => b.cb.checked).map((b) => b.login)));
-    overlay.addEventListener("mousedown", (e) => {
-      if (e.target === overlay) finish(null);
-    });
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    document.addEventListener("keydown", onKey, true);
-    setTimeout(() => (boxes[0]?.cb ?? ok).focus(), 0);
-  });
-}

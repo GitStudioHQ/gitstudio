@@ -11,7 +11,8 @@
 import { BottomDock } from "./bottomDock";
 import { TerminalPanel } from "./terminalPanel";
 import { OutputsPanel } from "./outputsPanel";
-import { el, span, glyph } from "./ui";
+import { ChatPanel } from "./chatPanel";
+import { el, span, glyph, wireResizerKeys } from "./ui";
 
 interface TermSession {
   id: string;
@@ -24,7 +25,29 @@ interface TermSession {
   renamed: boolean;
 }
 
-type TopTab = "commit-details" | "output" | "terminal";
+/** A footer AI chat tab (one per ✨ action), named + closable. */
+interface ChatTab {
+  id: string;
+  label: string;
+  surface: HTMLElement;
+  panel: ChatPanel;
+}
+
+/** What opens an inline AI chat tab in the footer (from the ✨ affordances). */
+export interface AssistantTabRequest {
+  title: string;
+  goal: string;
+  nav?: (view: string) => void;
+}
+
+/** A descriptor for one top tab in the strip. */
+interface TopTabDesc {
+  id: string;
+  label: string;
+  icon: string;
+  /** True for an AI chat tab — gets the ✨ accent + a close button. */
+  chat?: boolean;
+}
 
 export interface TerminalDockOptions {
   /** Start expanded vs collapsed-to-footer. */
@@ -40,8 +63,12 @@ export class TerminalDock {
   private readonly outputs: OutputsPanel;
   private readonly tabStrip: HTMLElement;
 
-  /** The active TOP tab. */
-  private active: TopTab = "terminal";
+  /** The active TOP tab id ("commit-details" | "output" | "terminal" | "chat-N"). */
+  private active = "terminal";
+
+  // Inline AI chat tabs (one per ✨ action), each a self-contained ChatPanel.
+  private chats: ChatTab[] = [];
+  private chatSeq = 0;
 
   // Commit-details (added only on the commits view; surface owned by renderer).
   private detailsVisible = false;
@@ -85,8 +112,44 @@ export class TerminalDock {
     this.termEmpty = el("div", "term-empty");
     this.termEmpty.append(glyph("terminal"), span("No terminals — start one from the list.", "term-empty-text"));
     this.termSide = el("div", "term-side");
+    // Width is user-resizable (the list was a fixed, oversized slab before) and
+    // persists across sessions. Clamped so it can't swallow the terminal.
+    const SIDE_MIN = 132, SIDE_MAX = 320;
+    const savedW = Number(localStorage.getItem("gitstudio.termSideW"));
+    let sideW = Number.isFinite(savedW) && savedW > 0 ? Math.min(SIDE_MAX, Math.max(SIDE_MIN, savedW)) : 168;
+    this.termSide.style.width = `${sideW}px`;
+    const setSideW = (w: number): void => {
+      sideW = Math.min(SIDE_MAX, Math.max(SIDE_MIN, w));
+      this.termSide.style.width = `${sideW}px`;
+    };
+    const sideResizer = el("div", "term-side-resizer");
+    sideResizer.append(el("div", "term-side-resizer-grip"));
+    wireResizerKeys(sideResizer, {
+      orientation: "vertical",
+      label: "Resize terminal list",
+      min: SIDE_MIN,
+      max: () => SIDE_MAX,
+      get: () => sideW,
+      // The list is the RIGHT pane, so "grow left pane" (→) shrinks it.
+      set: (w) => setSideW(SIDE_MIN + SIDE_MAX - w),
+      onCommit: () => localStorage.setItem("gitstudio.termSideW", String(sideW)),
+    });
+    sideResizer.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      const startX = e.clientX, startW = sideW;
+      document.body.classList.add("resizing-h");
+      const move = (ev: PointerEvent): void => setSideW(startW - (ev.clientX - startX));
+      const up = (): void => {
+        document.body.classList.remove("resizing-h");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        localStorage.setItem("gitstudio.termSideW", String(sideW));
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
     this.termStage.appendChild(this.termEmpty);
-    this.termGroup.append(this.termStage, this.termSide);
+    this.termGroup.append(this.termStage, sideResizer, this.termSide);
     this.termGroup.style.display = "none";
     this.dock.bodyEl.appendChild(this.termGroup);
 
@@ -128,6 +191,8 @@ export class TerminalDock {
 
   /** Public: add a terminal, focus it, switch to the Terminal tab + expand. */
   newTerminal(): void {
+    // Cap concurrent terminals so a held-down "+" can't spawn unbounded PTYs.
+    if (this.terminals.length >= 16) return;
     const t = this.createTerminal();
     this.activeTermId = t.id;
     this.active = "terminal";
@@ -160,15 +225,16 @@ export class TerminalDock {
 
   // ── Top tabs ────────────────────────────────────────────────────────────────
 
-  private topTabs(): { id: TopTab; label: string; icon: string }[] {
-    const tabs: { id: TopTab; label: string; icon: string }[] = [];
+  private topTabs(): TopTabDesc[] {
+    const tabs: TopTabDesc[] = [];
     if (this.detailsVisible) tabs.push({ id: "commit-details", label: "Commit details", icon: "git-commit" });
     tabs.push({ id: "output", label: "Output", icon: "output" });
     tabs.push({ id: "terminal", label: "Terminal", icon: "terminal" });
+    for (const c of this.chats) tabs.push({ id: c.id, label: c.label, icon: "sparkle", chat: true });
     return tabs;
   }
 
-  private setActiveTab(id: TopTab): void {
+  private setActiveTab(id: string): void {
     this.active = id;
     this.expand();
     this.renderTabs();
@@ -181,7 +247,9 @@ export class TerminalDock {
     this.tabStrip.setAttribute("aria-label", "Panel tabs");
     for (const t of this.topTabs()) {
       const sel = t.id === this.active;
-      const btn = el("button", "term-tab" + (sel ? " active" : "") + (t.id === "output" ? " is-output" : ""));
+      const cls =
+        "term-tab" + (sel ? " active" : "") + (t.id === "output" ? " is-output" : "") + (t.chat ? " is-chat" : "");
+      const btn = el("button", cls);
       btn.append(glyph(t.icon), span(t.label, "term-tab-label"));
       btn.title = t.label;
       btn.setAttribute("role", "tab");
@@ -190,12 +258,30 @@ export class TerminalDock {
       btn.tabIndex = sel ? 0 : -1;
       btn.addEventListener("click", () => this.setActiveTab(t.id));
       btn.addEventListener("keydown", (e) => this.onTabKey(e, t.id));
+      // Chat tabs carry an inline close affordance (✕), like a browser tab.
+      if (t.chat) {
+        const close = el("span", "term-tab-close");
+        close.append(glyph("close"));
+        close.title = `Close ${t.label}`;
+        close.setAttribute("role", "button");
+        close.setAttribute("aria-label", `Close ${t.label}`);
+        close.tabIndex = -1;
+        const doClose = (e: Event): void => {
+          e.stopPropagation();
+          this.closeChat(t.id);
+        };
+        close.addEventListener("click", doClose);
+        close.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") doClose(e);
+        });
+        btn.appendChild(close);
+      }
       this.tabStrip.appendChild(btn);
     }
   }
 
   /** Left/right roving navigation across the top tabs. */
-  private onTabKey(e: KeyboardEvent, id: TopTab): void {
+  private onTabKey(e: KeyboardEvent, id: string): void {
     const order = this.topTabs().map((t) => t.id);
     const idx = order.indexOf(id);
     let next = -1;
@@ -224,11 +310,28 @@ export class TerminalDock {
     list.setAttribute("role", "tablist");
     list.setAttribute("aria-orientation", "vertical");
     list.setAttribute("aria-label", "Terminals");
+    const rowEls: HTMLElement[] = [];
     for (const t of this.terminals) {
       const sel = t.id === this.activeTermId;
       const row = el("button", "term-side-row" + (sel ? " active" : ""));
       row.setAttribute("role", "tab");
       row.setAttribute("aria-selected", sel ? "true" : "false");
+      // Roving tabindex so a tablist behaves like one: only the active tab is in
+      // the Tab order; Up/Down move between terminals (standard tablist keys).
+      row.tabIndex = sel ? 0 : -1;
+      row.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        const i = rowEls.indexOf(row);
+        const n = this.terminals.length;
+        const ni = e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
+        const nt = this.terminals[ni];
+        if (!nt) return;
+        this.setActiveTerm(nt.id); // rebuilds the list (renderSide)
+        // Focus the freshly-rendered active row so keyboard focus follows.
+        (this.termSide.querySelector(".term-side-row.active") as HTMLElement | null)?.focus();
+      });
+      rowEls.push(row);
       const label = span(t.label, "term-side-label");
       row.append(glyph("terminal"), label);
       row.title = `${t.label} — double-click to rename`;
@@ -298,17 +401,53 @@ export class TerminalDock {
     }
     this.termEmpty.style.display = this.terminals.length === 0 ? "" : "none";
 
+    for (const c of this.chats) {
+      c.surface.style.display = c.id === this.active ? "" : "none";
+    }
+
     if (this.dock.isCollapsed()) this.layoutActive();
     else this.revealActive();
   }
 
-  /** Open the active shell's PTY (lazily) and re-fit it once laid out. */
+  /** Open the active shell's PTY (lazily) and re-fit it; focus the active chat. */
   private revealActive(): void {
     if (this.active === "terminal") {
       const t = this.terminals.find((x) => x.id === this.activeTermId);
       if (t) this.openTerm(t);
+    } else {
+      this.chats.find((c) => c.id === this.active)?.panel.reveal();
     }
     requestAnimationFrame(() => this.layoutActive());
+  }
+
+  // ── Inline AI chat tabs (✨ Explain / Review / Analyze / Draft) ───────────────
+
+  /** Open a named, closable AI chat tab seeded with `goal`, and reveal it. */
+  openChat(req: AssistantTabRequest): void {
+    const id = `chat-${++this.chatSeq}`;
+    const panel = new ChatPanel({ seedGoal: req.goal, seedLabel: req.title, nav: req.nav });
+    panel.el.classList.add("dock-chat-surface");
+    panel.el.style.display = "none";
+    this.dock.bodyEl.appendChild(panel.el);
+    this.chats.push({ id, label: req.title, surface: panel.el, panel });
+    this.active = id;
+    this.expand();
+    this.renderTabs();
+    this.showActive();
+  }
+
+  private closeChat(id: string): void {
+    const idx = this.chats.findIndex((c) => c.id === id);
+    if (idx < 0) return;
+    this.chats[idx].panel.dispose(); // aborts any in-flight turn + detaches the surface
+    this.chats.splice(idx, 1);
+    if (this.active === id) {
+      // Fall back to a remaining chat, else the Terminal.
+      const next = this.chats[Math.min(idx, this.chats.length - 1)];
+      this.active = next ? next.id : "terminal";
+    }
+    this.renderTabs();
+    this.showActive();
   }
 
   private openTerm(t: TermSession): void {
@@ -399,6 +538,8 @@ export class TerminalDock {
   dispose(): void {
     for (const t of this.terminals) t.panel.dispose();
     this.terminals = [];
+    for (const c of this.chats) c.panel.dispose();
+    this.chats = [];
     this.outputs.dispose();
     this.dock.dispose();
   }

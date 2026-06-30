@@ -14,15 +14,19 @@ import {
   relTimeISO,
   absTimeISO,
   skeletonList,
+  loadingState,
+  statePill,
   errorState,
   emptyState,
   cleanErr,
   openMenu,
   textBtn,
   ghRow,
+  parseGitHubItemUrl,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
-import { ghGate, ghHeader, type SectionRender } from "./common";
+import { renderMarkdown } from "../markdown";
+import { ghGate, ghHeader, type SectionRender, type SectionNav } from "./common";
 import type { NotificationThread } from "../../shared/ipc";
 
 /** Persisted across re-renders of this view: include already-read threads? */
@@ -35,12 +39,23 @@ export const renderNotifications: SectionRender = (wrap, nav) => {
   void mount(wrap, nav);
 };
 
-async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<void> {
+async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // Gate first (NEEDS_REPO = false — the inbox is account-wide).
   const gate = await ghGate(wrap, nav, false);
   if (!gate) return;
 
   const refresh = (): void => renderNotifications(wrap, nav);
+
+  // The in-app issue/PR views are scoped to the CURRENT repo, so a notification
+  // can only deep-link in-app when it belongs to that repo (else it's genuinely
+  // another repo and "Open" still goes to GitHub). Resolve the current slug once.
+  let currentRepo: string | undefined;
+  try {
+    const status = await host.invoke("github:status", undefined);
+    if (status.repo) currentRepo = `${status.repo.owner}/${status.repo.repo}`.toLowerCase();
+  } catch {
+    /* no current repo / not connected — every Open falls back to GitHub */
+  }
 
   const view = el("div", "list-view notif-view");
 
@@ -60,6 +75,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 
   const markAllBtn = el("button", "mini-btn notif-markall");
   markAllBtn.append(glyph("check-all"), span("Mark all read"));
+  markAllBtn.title = "Mark all read";
   markAllBtn.addEventListener("click", () => void markAllRead(markAllBtn, refresh));
 
   actions.append(toggleBtn, markAllBtn);
@@ -113,7 +129,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   body.replaceChildren();
   body.appendChild(notifSummary(threads.length, unreadCount));
   for (const t of threads) {
-    body.appendChild(notificationRow(t, body, refresh));
+    body.appendChild(notificationRow(t, body, refresh, nav, currentRepo));
   }
 }
 
@@ -141,7 +157,7 @@ export async function fetchUnreadCount(): Promise<number> {
  */
 export function openNotificationsPanel(
   anchor: HTMLElement,
-  nav: (view: string) => void,
+  nav: SectionNav,
   onClose?: () => void,
 ): void {
   // Toggle: a second click on the bell (or while open) closes the panel.
@@ -157,7 +173,7 @@ export function openNotificationsPanel(
 
   const position = (): void => {
     const r = anchor.getBoundingClientRect();
-    const w = panel.offsetWidth || 408;
+    const w = panel.offsetWidth || 424;
     const left = Math.max(12, Math.min(r.right - w, window.innerWidth - w - 12));
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(r.bottom + 6)}px`;
@@ -189,9 +205,9 @@ export function openNotificationsPanel(
 
   // Render the inbox into the panel; the connect prompt's "Sign in" closes the
   // panel before routing to Settings so we don't leave a popover floating.
-  renderNotifications(inner, (v) => {
+  renderNotifications(inner, (v, target) => {
     close();
-    nav(v);
+    nav(v, target);
   });
 
   position();
@@ -201,6 +217,99 @@ export function openNotificationsPanel(
     document.addEventListener("keydown", onKey, true);
     window.addEventListener("resize", position);
   }, 0);
+}
+
+/** Open a read-only, in-app viewer for an issue/PR in ANY repo (so a notification
+ *  for a different repository still opens INSIDE GitStudio, not github.com). */
+export function openExternalItem(o: {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: "issue" | "pull";
+  htmlUrl: string;
+}): void {
+  const overlay = el("div", "modal-overlay");
+  const card = el("div", "modal-card modal-card-form ext-item");
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  const close = (): void => {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") { e.preventDefault(); close(); }
+  };
+  document.addEventListener("keydown", onKey, true);
+  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
+
+  card.appendChild(loadingState("Loading…"));
+  void (async () => {
+    let item;
+    try {
+      item = await host.invoke("github:externalItem", {
+        owner: o.owner, repo: o.repo, number: o.number, kind: o.kind,
+      });
+    } catch {
+      /* fall through to the unavailable state */
+    }
+    if (!overlay.isConnected) return;
+    card.replaceChildren();
+    if (!item) {
+      card.appendChild(
+        errorState("Couldn't load this item", `${o.owner}/${o.repo} #${o.number} couldn't be fetched.`),
+      );
+      const foot = el("div", "modal-actions");
+      const gh = el("button", "mini-btn");
+      gh.append(glyph("link-external"), span("Open on GitHub"));
+      gh.addEventListener("click", () => { window.open(o.htmlUrl, "_blank", "noopener"); close(); });
+      const cls = el("button", "btn btn-primary modal-ok");
+      cls.appendChild(span("Close"));
+      cls.addEventListener("click", close);
+      foot.append(gh, cls);
+      card.appendChild(foot);
+      return;
+    }
+    // Header: state pill + repo · #number, then the title.
+    const head = el("div", "ext-item-head");
+    const stateKind = item.kind === "pull"
+      ? item.state === "merged" ? "merged" : item.state === "draft" ? "draft" : item.state === "closed" ? "closed" : "open-pr"
+      : item.state === "closed" ? "closed" : "open";
+    head.appendChild(statePill(item.state === "open" ? (item.kind === "pull" ? "Open" : "Open") : item.state.charAt(0).toUpperCase() + item.state.slice(1), stateKind));
+    const sub = el("span", "ext-item-sub");
+    sub.textContent = `${item.repo} #${item.number}${item.author ? ` · ${item.author}` : ""}${item.createdAt ? ` · ${relTimeISO(item.createdAt)}` : ""}`;
+    if (item.createdAt) sub.title = absTimeISO(item.createdAt);
+    head.appendChild(sub);
+    const title = el("div", "ext-item-title");
+    title.textContent = item.title;
+    card.append(head, title);
+
+    // Body (markdown) + comments — read only.
+    const scroll = el("div", "ext-item-scroll");
+    const body = el("div", "gh-body-md");
+    if (item.body && item.body.trim()) body.innerHTML = renderMarkdown(item.body);
+    else { body.classList.add("gh-empty-body"); body.textContent = "No description provided."; }
+    scroll.appendChild(body);
+    for (const c of item.comments) {
+      const cm = el("div", "gh-comment");
+      const ch = el("div", "gh-comment-head");
+      ch.append(span(c.author ?? "someone"), span(`commented · ${relTimeISO(c.createdAt)}`, "gh-comment-when"));
+      const cb = el("div", "gh-body-md");
+      cb.innerHTML = renderMarkdown(c.body || "");
+      cm.append(ch, cb);
+      scroll.appendChild(cm);
+    }
+    card.appendChild(scroll);
+
+    const foot = el("div", "modal-actions");
+    const gh = el("button", "mini-btn");
+    gh.append(glyph("link-external"), span("Open on GitHub"));
+    gh.addEventListener("click", () => { window.open(item!.htmlUrl, "_blank", "noopener"); });
+    const cls = el("button", "btn btn-primary modal-ok");
+    cls.appendChild(span("Close"));
+    cls.addEventListener("click", close);
+    foot.append(gh, cls);
+    card.appendChild(foot);
+  })();
 }
 
 /** A small count summary above the list (e.g. "12 threads · 3 unread"). */
@@ -220,6 +329,8 @@ function notificationRow(
   t: NotificationThread,
   body: HTMLElement,
   refresh: () => void,
+  nav: SectionNav,
+  currentRepo?: string,
 ): HTMLElement {
   // Leading: unread dot (when unread) + the subject-type glyph. We reuse the
   // existing .notif-lead/.notif-dot styling so unread emphasis + the read-state
@@ -252,14 +363,29 @@ function notificationRow(
     row.style.opacity = "0.72";
   }
 
+  // Open the subject IN-APP. Current-repo issues/PRs deep-link into the full
+  // Issues/PRs view (you can act on them); OTHER repos open a read-only in-app
+  // viewer. Only genuinely non-issue/PR subjects (commits/discussions/releases)
+  // fall back to github.com.
+  const item = parseGitHubItemUrl(t.htmlUrl);
+  const sameRepo = item && currentRepo && item.repo === currentRepo;
+  const openable = !!item; // any issue/PR can be read in-app
   const open = (): void => {
-    if (t.htmlUrl) window.open(t.htmlUrl, "_blank", "noopener");
-    else toast("This notification has no openable subject.", "info");
+    if (sameRepo && item) {
+      nav(item.kind, { number: item.number });
+    } else if (item) {
+      const [owner, repo] = item.repo.split("/");
+      openExternalItem({ owner, repo, number: item.number, kind: item.kind === "prs" ? "pull" : "issue", htmlUrl: t.htmlUrl });
+    } else if (t.htmlUrl) {
+      window.open(t.htmlUrl, "_blank", "noopener");
+    } else {
+      toast("This notification has no openable subject.", "info");
+    }
   };
 
   // Right-side action cluster (hover-revealed via .row-actions, like other rows).
   const acts = el("div", "row-actions");
-  acts.appendChild(textBtn("Open", "Open the subject on GitHub", open));
+  acts.appendChild(textBtn("Open", openable ? "Open in GitStudio" : "Open the subject on GitHub", open));
   if (t.unread) {
     acts.appendChild(
       textBtn("Mark read", "Mark this thread as read", () => void markRead(t, row, body, refresh)),

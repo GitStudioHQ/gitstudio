@@ -27,7 +27,7 @@ import {
   statePill,
 } from "../ui";
 import { confirmDialog, toast } from "../dialogs";
-import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
+import { ghGate, ghHeader, ghListResizer, searchField, type SectionRender } from "./common";
 import type { GistInfo } from "../../shared/ipc";
 
 // Remember the open gist + selected file across refreshes so the view feels
@@ -62,7 +62,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const body = el("div", "gh-body");
   const listEl = el("div", "gh-list");
   const detail = el("div", "gh-detail");
-  body.append(listEl, detail);
+  body.append(listEl, ghListResizer(listEl), detail);
   view.appendChild(body);
   wrap.replaceChildren(view);
 
@@ -126,7 +126,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     const row = ghRow({
       lead,
       title,
-      titleSuffix: [statePill(g.public ? "Public" : "Secret", g.public ? "open" : "draft")],
+      titleSuffix: [statePill(g.public ? "Public" : "Secret", g.public ? "public" : "private")],
       meta:
         `${g.fileCount} file${g.fileCount === 1 ? "" : "s"}` +
         (rel ? ` · updated ${rel}` : ""),

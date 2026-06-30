@@ -1,13 +1,14 @@
 // Reusable inline-AI affordances surfaced across the app (Changes, Compare, PRs,
-// Issues): a ✨ chip button, a streaming result sheet that renders Markdown live,
-// and a "stream straight into a textarea" helper (for commit messages / comment
-// drafts). Everything runs through the existing ai:task IPC, so the model, keys
-// and streaming all reuse the Assistant's plumbing.
+// Issues): a ✨ chip button, a helper that opens a named, conversational AI chat
+// tab in the footer dock (Explain / Review / Analyze / Draft a comment), and a
+// "stream straight into a textarea" helper (commit messages / comment drafts).
+// The chat tabs run on the persistent agent backend (ai:chat*); the textarea
+// helper runs the one-shot ai:task. Both reuse the Assistant's model + keys.
 
 import { host } from "./bridge";
-import { el, span, glyph, copyText, cleanErr } from "./ui";
-import { renderMarkdown } from "./markdown";
+import { el, span, glyph, cleanErr } from "./ui";
 import { toast } from "./dialogs";
+import type { AssistantTabRequest } from "./terminalDock";
 import type { AiTaskInput, AiTaskName } from "../shared/ipc";
 
 let enabledCache: boolean | undefined;
@@ -21,6 +22,13 @@ export async function aiEnabled(): Promise<boolean> {
     enabledCache = false;
   }
   return enabledCache;
+}
+
+/** Drop the cached enabled-state so the next aiEnabled() re-checks. Call after any
+ *  change to model connections (connect / remove / set key) so the ✨ affordances
+ *  appear or disappear without a full reload. */
+export function invalidateAiEnabled(): void {
+  enabledCache = undefined;
 }
 
 /** A small ✨ action chip. */
@@ -54,95 +62,24 @@ export async function streamTask(
   }
 }
 
-interface SheetOptions {
-  title: string;
-  task: AiTaskName;
-  input: AiTaskInput;
-  /** When set, an "Insert" button hands the result back (e.g. into a comment box). */
-  onInsert?: (text: string) => void;
-  insertLabel?: string;
+// ── Footer AI chat tabs ──────────────────────────────────────────────────────
+// The ✨ Explain / Review / Analyze / Draft actions open a named, conversational
+// tab in the footer dock instead of a dead-end modal. aiAssist stays decoupled
+// from the dock: the shell registers the opener once the dock is mounted.
+
+let tabOpener: ((req: AssistantTabRequest) => void) | undefined;
+
+/** Register the footer-dock opener. The shell calls this once after creating the
+ *  TerminalDock, so aiAssist need not import it (avoids a layering cycle). */
+export function registerAssistantTab(open: (req: AssistantTabRequest) => void): void {
+  tabOpener = open;
 }
 
-/** Open a modal sheet that streams a task's Markdown result, with copy/insert. */
-export function aiSheet(opts: SheetOptions): void {
-  const overlay = el("div", "ai-sheet-overlay");
-  const panel = el("div", "ai-sheet");
-
-  const head = el("div", "ai-sheet-head");
-  const spinner = glyph("loading");
-  spinner.classList.add("ai-sheet-spin");
-  const closeBtn = el("button", "icon-btn");
-  closeBtn.append(glyph("close"));
-  head.append(glyph("sparkle"), span(opts.title, "ai-sheet-title"), spinner, closeBtn);
-
-  const body = el("div", "ai-sheet-body assistant-msg");
-  const foot = el("div", "ai-sheet-foot");
-  panel.append(head, body, foot);
-  overlay.append(panel);
-  document.body.append(overlay);
-
-  const abort = new AbortController();
-  const close = (): void => {
-    abort.abort();
-    overlay.remove();
-    document.removeEventListener("keydown", onKey);
-  };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") close();
-  };
-  document.addEventListener("keydown", onKey);
-  closeBtn.addEventListener("click", close);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
-  });
-
-  // Live-render the streamed Markdown (throttled to one paint per frame).
-  let raw = "";
-  let pending = false;
-  const renderLive = (): void => {
-    if (pending) return;
-    pending = true;
-    requestAnimationFrame(() => {
-      pending = false;
-      body.innerHTML = renderMarkdown(raw);
-      body.scrollTop = body.scrollHeight;
-    });
-  };
-
-  void streamTask(
-    opts.task,
-    opts.input,
-    (d) => {
-      raw += d;
-      renderLive();
-    },
-    abort.signal,
-  ).then((res) => {
-    spinner.remove();
-    if (!res.ok) {
-      body.innerHTML = "";
-      const err = el("div", "ai-sheet-error");
-      err.append(glyph("error"), span(res.message ?? "The request failed."));
-      body.append(err);
-      return;
-    }
-    const text = (res.text ?? raw).trim();
-    body.innerHTML = renderMarkdown(text);
-    // Footer actions appear once there's a result.
-    const copy = el("button", "mini-btn");
-    copy.append(glyph("copy"), span("Copy"));
-    copy.addEventListener("click", () => void copyText(text, "Copied."));
-    foot.append(copy);
-    if (opts.onInsert) {
-      const insert = el("button", "btn btn-primary");
-      insert.append(glyph("insert"), span(opts.insertLabel ?? "Insert"));
-      insert.addEventListener("click", () => {
-        opts.onInsert!(text);
-        close();
-      });
-      foot.append(insert);
-    }
-  });
+/** Open a named, seeded AI chat tab in the footer dock. Falls back to a toast if
+ *  no dock is mounted yet (e.g. before a repository is open). */
+export function openAssistantTab(req: AssistantTabRequest): void {
+  if (tabOpener) tabOpener(req);
+  else toast("Open a repository to use the Assistant.", "info");
 }
 
 /**

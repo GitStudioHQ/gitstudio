@@ -127,11 +127,41 @@ function buildList(items: ListItem[]): string {
   return out;
 }
 
+/** A GFM table delimiter row: |---|:--:|--:| (border pipes optional). */
+function tableDelim(line: string): boolean {
+  return line.includes("-") && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(line);
+}
+
+/** Split a table row into trimmed cells: honour escaped \| and drop the optional
+ *  leading/trailing border pipes. */
+function tableCells(line: string): string[] {
+  const cells = line.split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, "|").trim());
+  if (cells.length && cells[0] === "") cells.shift();
+  if (cells.length && cells[cells.length - 1] === "") cells.pop();
+  return cells;
+}
+
+/** Build a bounded, escaped HTML table from a header, per-column alignment, and
+ *  body rows. Alignment is carried as a class (no inline styles → CSP-safe). */
+function buildTable(header: string[], aligns: string[], rows: string[][]): string {
+  const cls = (i: number): string => (aligns[i] ? ` class="md-${aligns[i]}"` : "");
+  const th = header.map((c, i) => `<th${cls(i)}>${inline(esc(c))}</th>`).join("");
+  const body = rows
+    .map((r) => `<tr>${header.map((_, i) => `<td${cls(i)}>${inline(esc(r[i] ?? ""))}</td>`).join("")}</tr>`)
+    .join("");
+  return `<table class="md-table"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+/** True when `line` opens a GFM table (a cell row followed by a delimiter row). */
+function isTableStart(line: string, next: string | undefined): boolean {
+  return line.includes("|") && next !== undefined && tableDelim(next);
+}
+
 /**
  * Convert a Markdown document to safe HTML.
  * Supports: ATX headings, fenced code, bold/italic, inline code, unordered and
- * ordered lists with bounded nesting, blockquotes (depth-capped), horizontal
- * rules, paragraphs, and hard line breaks.
+ * ordered lists with bounded nesting, blockquotes (depth-capped), GFM tables,
+ * horizontal rules, paragraphs, and hard line breaks.
  */
 export function renderMarkdown(src: string, depth = 0): string {
   const lines = src.replace(/\r\n?/g, "\n").split("\n");
@@ -205,6 +235,24 @@ export function renderMarkdown(src: string, depth = 0): string {
       continue;
     }
 
+    // GFM table — a header row of cells, then a |---|---| delimiter row.
+    if (isTableStart(line, lines[i + 1])) {
+      const header = tableCells(line);
+      const aligns = tableCells(lines[i + 1]).map((c) => {
+        const l = c.startsWith(":");
+        const r = c.endsWith(":");
+        return l && r ? "center" : r ? "right" : l ? "left" : "";
+      });
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && !/^\s*$/.test(lines[i]) && lines[i].includes("|")) {
+        rows.push(tableCells(lines[i]));
+        i++;
+      }
+      html.push(buildTable(header, aligns, rows));
+      continue;
+    }
+
     // Paragraph: gather consecutive non-special lines; join with <br/>.
     const para: string[] = [];
     while (
@@ -214,7 +262,8 @@ export function renderMarkdown(src: string, depth = 0): string {
       !/^\s*#{1,6}\s/.test(lines[i]) &&
       !/^\s*>/.test(lines[i]) &&
       !/^\s*([-*_])(\s*\1){2,}\s*$/.test(lines[i]) &&
-      !/^(\s*)([-*+]|\d+[.)])\s+/.test(lines[i])
+      !/^(\s*)([-*+]|\d+[.)])\s+/.test(lines[i]) &&
+      !isTableStart(lines[i], lines[i + 1])
     ) {
       para.push(inline(esc(lines[i].trim())));
       i++;

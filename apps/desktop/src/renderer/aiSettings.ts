@@ -9,8 +9,9 @@
 // ai:setKey and only ever reads back redacted views (hasKey/usable booleans).
 
 import { host } from "./bridge";
-import { el, span, glyph, settingsCard, settingsField, copyText, pill, cleanErr } from "./ui";
+import { el, span, glyph, settingsCard, settingsField, copyText, pill, cleanErr, runBusy } from "./ui";
 import { providerLogo } from "./providerLogos";
+import { invalidateAiEnabled } from "./aiAssist";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import type { AiConnectionView, AiPresetView, AiSettingsView, McpInfo } from "../shared/ipc";
 
@@ -19,6 +20,9 @@ export function aiModelsCard(): HTMLElement {
   const { card, body } = settingsCard("AI Models", "sparkle");
 
   const render = async (): Promise<void> => {
+    // Every connect / remove / set-key / set-default re-renders this card, so this
+    // is the one chokepoint that busts the inline-AI gate's cached enabled-state.
+    invalidateAiEnabled();
     body.replaceChildren();
     const sub = el("div", "settings-sub");
     sub.textContent =
@@ -81,10 +85,12 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
   const actions = el("div", "ai-conn-actions");
   if (!isDefault && c.usable) {
     const star = iconBtn("star-empty", "Set as default");
-    star.addEventListener("click", async () => {
-      await host.invoke("ai:setDefault", { id: c.id });
-      void refresh();
-    });
+    star.addEventListener("click", () =>
+      void runBusy(star, async () => {
+        await host.invoke("ai:setDefault", { id: c.id });
+        void refresh();
+      }),
+    );
     actions.append(star);
   }
   const edit = iconBtn("gear", "Configure");
@@ -153,15 +159,17 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
 
     const saveKey = el("button", "mini-btn");
     saveKey.append(glyph("key"), span(c.hasKey ? "Update key" : "Save key"));
-    saveKey.addEventListener("click", async () => {
+    saveKey.addEventListener("click", () => {
       if (!keyInput.value.trim()) {
         toast("Enter a key first.", "info");
         return;
       }
-      await host.invoke("ai:setKey", { id: c.id, key: keyInput.value.trim() });
-      keyInput.value = "";
-      toast("Key stored securely.", "success");
-      void refresh();
+      void runBusy(saveKey, async () => {
+        await host.invoke("ai:setKey", { id: c.id, key: keyInput.value.trim() });
+        keyInput.value = "";
+        toast("Key stored securely.", "success");
+        void refresh();
+      });
     });
     editor.append(saveKey);
   }
@@ -169,16 +177,18 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
   const actions = el("div", "settings-actions");
   const save = el("button", "btn btn-primary");
   save.append(glyph("check"), span("Save"));
-  save.addEventListener("click", async () => {
-    await host.invoke("ai:updateConnection", {
-      id: c.id,
-      label: labelF.input.value.trim() || c.label,
-      baseUrl: urlF.input.value.trim(),
-      models: { fast: fastF.input.value.trim(), mid: midF.input.value.trim(), deep: deepF.input.value.trim() },
-    });
-    toast("Saved.", "success");
-    void refresh();
-  });
+  save.addEventListener("click", () =>
+    void runBusy(save, async () => {
+      await host.invoke("ai:updateConnection", {
+        id: c.id,
+        label: labelF.input.value.trim() || c.label,
+        baseUrl: urlF.input.value.trim(),
+        models: { fast: fastF.input.value.trim(), mid: midF.input.value.trim(), deep: deepF.input.value.trim() },
+      });
+      toast("Saved.", "success");
+      void refresh();
+    }),
+  );
 
   const test = el("button", "mini-btn");
   test.append(glyph("debug-start"), span("Test"));
@@ -337,11 +347,19 @@ export function agentAccessCard(): HTMLElement {
       });
       seg.append(b);
     }
-    permWrap.append(permLabel, seg);
+    // Explain what the CURRENT level grants, so the choice is never a guess.
+    const permDesc = el("div", "mcp-perm-desc");
+    const permDescs: Record<typeof permission, string> = {
+      read: "Inspect only — history, diffs, branches and file contents. The agent cannot change your repository.",
+      write: "Everything in Read-only, plus stage, commit and create or switch branches. It can't discard or rewrite existing work.",
+      destructive: "Everything above, plus discard, reset and force operations that can lose uncommitted work or rewrite history.",
+    };
+    permDesc.textContent = permDescs[permission];
+    permWrap.append(permLabel, seg, permDesc);
     body.append(permWrap);
     if (permission === "destructive") {
       const note = el("div", "mcp-danger-note");
-      note.append(glyph("warning"), span("Destructive tools can discard uncommitted work and rewrite history. Only enable for an agent you trust."));
+      note.append(glyph("warning"), span("Only enable for an agent you trust — these tools can permanently lose work."));
       body.append(note);
     }
 
@@ -358,7 +376,7 @@ export function agentAccessCard(): HTMLElement {
       r.append(m);
       const btn = el("button", "mini-btn");
       btn.append(glyph(cl.installed ? "sync" : "add"), span(cl.installed ? "Update" : "Add"));
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", () => void runBusy(btn, async () => {
         try {
           const res = await host.invoke("ai:mcpInstall", {
             client: cl.id,
@@ -370,7 +388,7 @@ export function agentAccessCard(): HTMLElement {
         } catch (e) {
           toast(cleanErr(e), "error");
         }
-      });
+      }));
       r.append(btn);
       clients.append(r);
     }

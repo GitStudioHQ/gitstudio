@@ -106,12 +106,14 @@ export class ConversationStore {
 
   // ── writes ──
 
-  async create(repoRoot: string, connectionId: string, id: string): Promise<ChatSession> {
+  async create(repoRoot: string, connectionId: string, id: string, makeCurrent = true): Promise<ChatSession> {
     await this.ensureLoaded();
     const now = Date.now();
     const s: ChatSession = { id, repoRoot, connectionId, title: "New chat", turns: [], createdAt: now, updatedAt: now };
     this.sessions.set(id, s);
-    this.currentByRepo.set(repoRoot, id);
+    // Footer AI tabs pass makeCurrent=false so they don't steal the full
+    // Assistant's "current chat" (the one it restores on open).
+    if (makeCurrent) this.currentByRepo.set(repoRoot, id);
     await this.persist();
     return s;
   }

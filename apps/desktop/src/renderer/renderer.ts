@@ -27,7 +27,7 @@ import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant } from "./assistant";
 import { aiModelsCard, agentAccessCard } from "./aiSettings";
-import { aiChip, aiSheet, streamInto, aiEnabled } from "./aiAssist";
+import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
@@ -62,7 +62,7 @@ import {
 } from "./ui";
 import type { MenuItem } from "./ui";
 import { CommitContextMenu } from "./contextMenu";
-import type { SectionRender } from "./views/common";
+import type { SectionRender, SectionTarget } from "./views/common";
 import { renderIssues } from "./views/issues";
 import { renderPrs } from "./views/prs";
 import { renderActions } from "./views/actions";
@@ -107,6 +107,9 @@ class App {
   private viewHost!: HTMLElement;
   private navButtons: HTMLElement[] = [];
   private currentView = "code";
+  /** A pending deep-link target for the next section mount (e.g. an issue number
+   *  to open from the project board). Consumed + cleared by mountSection. */
+  private sectionTarget?: SectionTarget;
   /** Current directory inside the Code (repo browser) view; "" = repo root. */
   private codePath = "";
   /** Branches view: per-category collapse memory (label → collapsed), persisted
@@ -581,6 +584,8 @@ class App {
         this.persist();
       },
     });
+    // The ✨ inline AI actions open their chat tabs in this dock.
+    registerAssistantTab((req) => this.terminalDock?.openChat(req));
     return this.terminalDock;
   }
 
@@ -609,8 +614,14 @@ class App {
     this.persist();
   }
 
-  /** Swap the main area to the chosen view's surface. */
-  private routeView(id: string, force = false): void {
+  /** Swap the main area to the chosen view's surface. `target` deep-links a
+   *  specific item in a section view (e.g. opening an issue from the project
+   *  board) — keeping navigation inside the app instead of bouncing to GitHub. */
+  private routeView(id: string, force = false, target?: SectionTarget): void {
+    // Deep-linking an item must rebuild the section so it can select that item —
+    // never restore a stale cached view (which wouldn't have it open).
+    if (target) force = true;
+    this.sectionTarget = target;
     // Re-clicking the section you're already on (or navigating to it) should do
     // nothing — the view is already there. Only an explicit refresh rebuilds.
     if (!force && id === this.currentView && this.viewHost.firstChild) {
@@ -688,7 +699,9 @@ class App {
   private mountSection(render: SectionRender): void {
     const wrap = el("div", "view-host-inner");
     this.viewHost.replaceChildren(wrap);
-    render(wrap, (v) => this.routeView(v));
+    const target = this.sectionTarget;
+    this.sectionTarget = undefined;
+    render(wrap, (v, t) => this.routeView(v, false, t), target);
   }
 
   /** A real branch manager: local branches with upstream + ahead/behind + last
@@ -761,11 +774,20 @@ class App {
         const rows = refs.filter((r) => match(r.name));
         group(label, rows.length, (host) => {
           for (const r of rows) {
-            const row = el("button", "list-row");
+            const row = el("button", "list-row ref-row");
+            row.setAttribute("aria-label", `Check out ${label.toLowerCase()} ${r.name}`);
             row.append(glyph(icon));
             const nm = el("span", "list-row-name");
             nm.textContent = r.name;
             row.appendChild(nm);
+            // Parity with local rows: show the commit each ref points at, so a
+            // remote/tag row isn't a bare name floating in the list.
+            if (r.sha) {
+              const sha = el("span", "ref-sha");
+              sha.textContent = r.sha.slice(0, 7);
+              sha.title = r.sha;
+              row.appendChild(sha);
+            }
             row.addEventListener("click", () => pick(r));
             host.appendChild(row);
           }
@@ -822,7 +844,20 @@ class App {
         textBtn("Checkout", "Check out this branch", () => void this.checkoutRef(b.name)),
         textBtn("Delete", "Delete this branch", () => void this.deleteBranch(b.name), true),
       );
+      // The row itself checks out the branch (the nested buttons stopPropagation).
+      // It contains buttons, so it can't BE a <button> — use the role + keyboard
+      // contract instead so it's clickable AND keyboard-operable, not a dead div.
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
+      row.setAttribute("aria-label", `Check out branch ${b.name}`);
+      row.classList.add("is-clickable");
       row.addEventListener("click", () => void this.checkoutRef(b.name));
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          void this.checkoutRef(b.name);
+        }
+      });
     }
     row.appendChild(actions);
     return row;
@@ -832,7 +867,11 @@ class App {
     const name = await promptInline("New branch", "feature/my-change");
     if (!name) return;
     const r = await host.invoke("branch:create", { name, checkout: true });
-    if (!r.ok && r.message) toast(r.message, "error");
+    if (!r.ok) {
+      toast(r.message || `Couldn't create branch '${name}'.`, "error");
+      return; // nothing changed — don't refresh as if it had
+    }
+    toast(`Created and checked out ${name}.`, "success");
     bust();
     await this.refreshRefs();
     await this.updateSync();
@@ -851,8 +890,13 @@ class App {
       if (!force) return;
       r = await host.invoke("branch:delete", { name, force: true });
     }
-    if (!r.ok && r.message) toast(r.message, "error");
+    if (!r.ok) {
+      toast(r.message || `Couldn't delete branch '${name}'.`, "error");
+      return; // branch still exists — don't refresh as if it were gone
+    }
+    toast(`Deleted ${name}.`, "success");
     bust();
+    await this.refreshRefs();
     if (this.currentView === "branches") void this.showBranchesView();
   }
 
@@ -862,9 +906,14 @@ class App {
       action: "checkout",
       sha: ref,
     } as Parameters<App["runAction"]>[0]);
-    if (!result.ok && result.message) {
-      toast(result.message, "error");
+    // On failure (e.g. uncommitted changes block the switch) HEAD didn't move —
+    // surface the error and DON'T refresh as if it succeeded (which made the UI
+    // look like the branch was checked out when it wasn't).
+    if (!result.ok) {
+      toast(result.message || "Couldn't check out — you may have uncommitted changes.", "error");
+      return;
     }
+    toast(`Checked out ${ref}.`, "success");
     bust(); // checkout moves HEAD: refs/branches/status/graph/tree all change
     await this.refreshRefs();
     if (this.currentView === "branches") {
@@ -946,16 +995,39 @@ class App {
       void runCompare();
     });
     modeWrap.append(dot2, dot3);
-    // ✨ AI: explain or review what this comparison changes.
+    // ✨ AI: explain or review what this comparison changes — opens a footer chat
+    // tab the user can keep talking to. The agent runs the diff itself.
     const aiWrap = el("div", "cmp-ai");
     aiWrap.hidden = true;
-    const aiInput = (): { base: string; head: string } => ({ base: this.compareBase!, head: this.compareHead! });
+    const nav = (v: string): void => this.routeView(v);
     aiWrap.append(
-      aiChip("Explain", () => aiSheet({ title: `Explain ${this.compareBase}…${this.compareHead}`, task: "explainDiff", input: aiInput() }), "comment"),
-      aiChip("Review", () => aiSheet({ title: `Review ${this.compareBase}…${this.compareHead}`, task: "reviewDiff", input: aiInput() }), "search"),
+      aiChip(
+        "Explain",
+        () => {
+          const b = this.compareBase, h = this.compareHead;
+          openAssistantTab({
+            title: `Explain ${b}…${h}`,
+            goal: `Explain what changes between \`${b}\` and \`${h}\`. Run \`git diff ${b}..${h}\` to see the changes, then give a clear, structured summary of what changed and why it matters.`,
+            nav,
+          });
+        },
+        "comment",
+      ),
+      aiChip(
+        "Review",
+        () => {
+          const b = this.compareBase, h = this.compareHead;
+          openAssistantTab({
+            title: `Review ${b}…${h}`,
+            goal: `Review the changes between \`${b}\` and \`${h}\` for correctness bugs, security issues and risky changes. Run \`git diff ${b}..${h}\` to see them. Be specific and cite files.`,
+            nav,
+          });
+        },
+        "search",
+      ),
     );
     void aiEnabled().then((ok) => (aiWrap.hidden = !ok));
-    bar.append(baseLbl, baseBtn, swap, headLbl, headBtn, modeWrap, aiWrap);
+    bar.append(baseLbl, baseBtn, swap, headLbl, headBtn, modeWrap);
     syncMode();
 
     // ── View toggle: Commits | Changed files, with live counts + a summary. ───
@@ -971,7 +1043,9 @@ class App {
     filesTab.appendChild(filesCount);
     seg.append(commitsTab, filesTab);
     const summary = el("div", "cmp-summary");
-    viewBar.append(seg, summary);
+    // The Explain / Review actions live on the right of the results row — they act
+    // on the comparison's diff, so they belong with the results, not the pickers.
+    viewBar.append(seg, summary, aiWrap);
 
     const body = el("div", "cmp-body");
     wrap.append(bar, viewBar, body);
@@ -1046,13 +1120,18 @@ class App {
     }
     const list = el("div", "cmp-commits");
     for (const c of res.commits) {
-      const row = el("div", "compare-commit");
+      // A real button — keyboard-focusable + clickable to reveal the commit in the
+      // graph (the hover affordance now actually does something).
+      const row = el("button", "compare-commit");
+      row.setAttribute("aria-label", `Commit ${c.shortSha}: ${c.subject} — reveal in the graph`);
+      row.title = "Reveal in the commit graph";
       const subj = el("div", "cc-subject");
       subj.textContent = c.subject;
       const meta = el("div", "cc-meta");
       meta.textContent = `${c.author} · ${c.shortSha} · ${relTime(c.date)}`;
       if (c.date) meta.title = absTime(c.date);
       row.append(subj, meta);
+      row.addEventListener("click", () => this.revealInGraph(c.sha));
       list.appendChild(row);
     }
     body.appendChild(list);
@@ -1262,9 +1341,15 @@ class App {
       body.replaceChildren();
       if (status.connected) {
         const who = el("div", "settings-account-who");
-        who.append(glyph("github"));
+        who.append(
+          avatar(
+            status.login ?? "you",
+            status.login ? `https://github.com/${status.login}.png` : null,
+            36,
+          ),
+        );
         const name = el("span", "settings-account-name");
-        name.textContent = `@${status.login ?? "you"}`;
+        name.textContent = status.login ?? "you";
         who.appendChild(name);
         const sub = el("div", "settings-sub");
         sub.textContent = "Signed in via OAuth Device Flow · access: repos, actions, org, gists, notifications.";
@@ -1404,7 +1489,7 @@ class App {
     const repo = el("button", "gh-link");
     repo.append(glyph("github"), span("View the project on GitHub"));
     repo.addEventListener("click", () =>
-      window.open("https://github.com/", "_blank"),
+      window.open("https://github.com/GitStudioHQ/gitstudio", "_blank"),
     );
     body.append(sub, repo);
     return card;
@@ -1632,22 +1717,36 @@ class App {
       span(curBranch ?? "detached HEAD", "dc-branch-name"),
       branchSummary,
     );
+    const msgWrap = el("div", "dc-message-wrap");
     const textarea = document.createElement("textarea");
     textarea.className = "dc-message";
     textarea.placeholder = "Message (what & why)…";
     textarea.rows = 2;
-    // ✨ AI actions — write a commit message from the staged diff, or review the
-    // working changes. Hidden until a model is connected.
-    const aiRow = el("div", "dc-ai");
-    aiRow.hidden = true;
-    const writeBtn = aiChip("Write commit message", () =>
+    msgWrap.append(textarea);
+    // ✨ Write the message from the staged diff — a quiet affordance in the box's
+    // own corner (it writes INTO the message). Shown only when a model is connected.
+    const writeBtn = aiChip("Write message", () =>
       void streamInto("commitMessage", {}, textarea, writeBtn as HTMLButtonElement),
     );
-    aiRow.append(
-      writeBtn,
-      aiChip("Review changes", () => aiSheet({ title: "Review changes", task: "reviewDiff", input: {} }), "search"),
+    writeBtn.classList.add("dc-ai-write");
+    writeBtn.hidden = true;
+    msgWrap.append(writeBtn);
+    // ✨ Review the working changes — lives in the toolbar (it acts on the diff,
+    // not the message). Built here so aiEnabled() can toggle both at once.
+    const reviewBtn = el("button", "mini-btn dc-review");
+    reviewBtn.append(glyph("sparkle"), span("Review with AI"));
+    reviewBtn.hidden = true;
+    reviewBtn.addEventListener("click", () =>
+      openAssistantTab({
+        title: "Review changes",
+        goal: "Review my current working-tree changes for correctness bugs, security issues and risky changes. Run `git diff` (and check staged changes) to see them. Be specific and cite files.",
+        nav: (v) => this.routeView(v),
+      }),
     );
-    void aiEnabled().then((ok) => (aiRow.hidden = !ok));
+    void aiEnabled().then((ok) => {
+      writeBtn.hidden = !ok;
+      reviewBtn.hidden = !ok;
+    });
     const commitRow = el("div", "dc-commit-row");
     const commitBtn = el("button", "btn btn-primary dc-commit");
     const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit");
@@ -1657,7 +1756,7 @@ class App {
     pushBtn.append(glyph("arrow-up"), span("Commit & Push"));
     pushBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, pushBtn, true));
     commitRow.append(commitBtn, pushBtn);
-    composer.append(branchLine, textarea, aiRow, commitRow);
+    composer.append(branchLine, msgWrap, commitRow);
 
     const toolbar = el("div", "dc-toolbar");
     const tTitle = el("span", "dc-toolbar-title");
@@ -1671,7 +1770,7 @@ class App {
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showChangesView());
-    toolbar.append(tTitle, tSpacer, stageAllBtn, refreshBtn);
+    toolbar.append(tTitle, tSpacer, reviewBtn, stageAllBtn, refreshBtn);
 
     const body = el("div", "dc-body");
     const lists = el("div", "dc-lists");
@@ -2189,7 +2288,7 @@ class App {
     bell.addEventListener("click", () =>
       openNotificationsPanel(
         bell,
-        (v) => this.routeView(v),
+        (v, target) => this.routeView(v, false, target),
         () => void this.refreshNotifBadge(),
       ),
     );
@@ -2409,11 +2508,15 @@ class App {
     ]);
     this.refs = refs;
     if (this.branchSwitchName) {
-      this.branchSwitchName.textContent = !head
+      const label = !head
         ? "HEAD"
         : head.detached
           ? `detached @ ${head.sha.slice(0, 7)}`
           : (head.branch ?? "HEAD");
+      this.branchSwitchName.textContent = label;
+      // The name truncates in the slim bar — expose the full ref as a tooltip.
+      const sw = this.branchSwitchName.closest(".topbar-switch") as HTMLElement | null;
+      if (sw) sw.title = head?.detached ? `Detached HEAD at ${head.sha.slice(0, 12)}` : `On branch ${label} — switch branch`;
     }
   }
 

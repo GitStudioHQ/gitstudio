@@ -62,7 +62,13 @@ export class GraphMount {
           this.element.rows = message.rows;
           this.element.totalColumns = message.totalColumns;
           this.element.hasMore = message.hasMore;
-          this.element.status = message.rows.length === 0 ? "empty" : "ready";
+          if (message.rows.length === 0 && !message.hasMore) {
+            // A genuinely empty history gets the crafted tile, not the shared
+            // element's bare "No commits yet" — consistent with every other view.
+            this.renderEmpty();
+          } else {
+            this.element.status = message.rows.length === 0 ? "empty" : "ready";
+          }
           break;
         case "graphAppend":
           this.element.rows = this.element.rows.concat(message.rows);
@@ -92,30 +98,61 @@ export class GraphMount {
     }
   }
 
-  /** Replace the graph with a centered "couldn't load history" + Retry panel. */
-  private renderError(err: unknown): void {
+  /** Build the shared crafted state tile (accent icon badge + title + desc + CTA),
+   *  matching the desktop `.list-empty` empty/error states used across every view. */
+  private buildTile(
+    iconName: string,
+    title: string,
+    desc: string,
+    action?: { icon: string; label: string; onClick: () => void; primary?: boolean },
+  ): HTMLElement {
     const wrap = document.createElement("div");
-    wrap.className = "list-empty list-error";
+    wrap.className = "list-empty";
     const badge = document.createElement("div");
     badge.className = "list-empty-badge";
     const icon = document.createElement("span");
-    icon.className = "glyph codicon codicon-warning";
+    icon.className = `glyph codicon codicon-${iconName}`;
     badge.appendChild(icon);
-    const title = document.createElement("div");
-    title.className = "list-empty-title";
-    title.textContent = "Couldn't load history";
-    const desc = document.createElement("div");
-    desc.className = "list-empty-desc";
-    desc.textContent =
+    const titleEl = document.createElement("div");
+    titleEl.className = "list-empty-title";
+    titleEl.textContent = title;
+    const descEl = document.createElement("div");
+    descEl.className = "list-empty-desc";
+    descEl.textContent = desc;
+    wrap.append(badge, titleEl, descEl);
+    if (action) {
+      const btn = document.createElement("button");
+      btn.className = `${action.primary ? "btn btn-primary" : "mini-btn"} list-empty-action`;
+      btn.innerHTML = `<span class="glyph codicon codicon-${action.icon}"></span><span>${action.label}</span>`;
+      btn.addEventListener("click", action.onClick);
+      wrap.appendChild(btn);
+    }
+    return wrap;
+  }
+
+  /** Replace the graph with a centered "couldn't load history" + Retry panel. */
+  private renderError(err: unknown): void {
+    const desc =
       (err instanceof Error ? err.message : String(err ?? "")).replace(
         /^Error invoking remote method '[^']*':\s*/i,
         "",
       ) || "The git log couldn't be read for this repository.";
-    const retry = document.createElement("button");
-    retry.className = "mini-btn list-empty-action";
-    retry.innerHTML = '<span class="glyph codicon codicon-refresh"></span><span>Retry</span>';
-    retry.addEventListener("click", () => void this.reload());
-    wrap.append(badge, title, desc, retry);
+    const wrap = this.buildTile("warning", "Couldn't load history", desc, {
+      icon: "refresh",
+      label: "Retry",
+      onClick: () => void this.reload(),
+    });
+    wrap.classList.add("list-error");
+    this.container.replaceChildren(wrap);
+  }
+
+  /** Replace the graph with a crafted "no commits yet" tile. */
+  private renderEmpty(): void {
+    const wrap = this.buildTile(
+      "git-commit",
+      "No commits yet",
+      "This branch has no history. Make your first commit and it'll appear here.",
+    );
     this.container.replaceChildren(wrap);
   }
 

@@ -155,6 +155,83 @@ export function confirmDialog(opts: {
 }
 
 /** A modal text prompt (Electron's renderer has no window.prompt). */
+/** A proper single-step form modal: a required title input + a body textarea →
+ *  `{title, body}` or null. Replaces clumsy sequential prompts for issue/PR-style
+ *  edits, so editing feels like GitHub, not a chain of one-line dialogs. */
+export function editForm(opts: {
+  title: string;
+  okLabel?: string;
+  titleValue?: string;
+  titlePlaceholder?: string;
+  bodyValue?: string;
+  bodyPlaceholder?: string;
+}): Promise<{ title: string; body: string } | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    modal((close) => {
+      const card = mk("div", "modal-card modal-card-form");
+      const h = mk("div", "modal-title");
+      h.textContent = opts.title;
+      const titleInput = document.createElement("input");
+      titleInput.className = "modal-input";
+      titleInput.placeholder = opts.titlePlaceholder ?? "Title";
+      titleInput.value = opts.titleValue ?? "";
+      const bodyInput = document.createElement("textarea");
+      bodyInput.className = "modal-input modal-textarea";
+      bodyInput.placeholder = opts.bodyPlaceholder ?? "Description…";
+      bodyInput.value = opts.bodyValue ?? "";
+      bodyInput.rows = 7;
+      const actions = mk("div", "modal-actions");
+      const cancel = mk("button", "mini-btn");
+      cancel.textContent = "Cancel";
+      const ok = mk("button", "btn btn-primary modal-ok");
+      const okSpan = mk("span");
+      okSpan.textContent = opts.okLabel ?? "Save";
+      ok.appendChild(okSpan);
+      actions.append(cancel, ok);
+      card.append(h, titleInput, bodyInput, actions);
+      const done = (v: { title: string; body: string } | null): void => {
+        settled = true;
+        resolve(v);
+        close();
+      };
+      const submit = (): void => {
+        const t = titleInput.value.trim();
+        if (!t) {
+          titleInput.focus();
+          return; // title is required
+        }
+        done({ title: t, body: bodyInput.value.trim() });
+      };
+      cancel.addEventListener("click", () => done(null));
+      ok.addEventListener("click", submit);
+      // Enter in the title moves to the body; ⌘/Ctrl+Enter anywhere submits.
+      titleInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          bodyInput.focus();
+        }
+      });
+      const metaSubmit = (e: KeyboardEvent): void => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          submit();
+        }
+      };
+      titleInput.addEventListener("keydown", metaSubmit);
+      bodyInput.addEventListener("keydown", metaSubmit);
+      return {
+        card,
+        focusEl: titleInput,
+        label: opts.title,
+        onClose: () => {
+          if (!settled) resolve(null);
+        },
+      };
+    });
+  });
+}
+
 export function promptInline(
   title: string,
   placeholder: string,

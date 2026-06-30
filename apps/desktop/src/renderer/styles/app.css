@@ -28,6 +28,13 @@
   --dur-1: 120ms;
   --dur-2: 180ms;
 
+  /* Reading measures — the ONE source of truth for how wide content may run, so
+     no detail/prose pane floats in a dead gutter on a wide window. `read` is the
+     comfortable prose/detail column; `wide` is for data-dense panes (orgs/members)
+     that want more room before centering. Replaces scattered 760/820/900px one-offs. */
+  --measure-read: 820px;
+  --measure-wide: 1100px;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -69,6 +76,9 @@ body.vscode-dark {
   --status-add: #2ecf83;
   --status-mod: #4aa5ff;
   --status-del: #ef6191;
+  /* Amber "attention" ink (pre-release, action-required) — readable on the dark
+     canvas; the light theme darkens it for AA. Keeps amber out of literals. */
+  --status-warn: #e0a44e;
   --gs-accent-ink: #a78bff;
 
   /* ── Elevation — layered ambient+key shadows, deep for the near-black canvas.
@@ -131,6 +141,7 @@ body.vscode-light {
   --status-add: #0f7a44;
   --status-mod: #1a63c4;
   --status-del: #b82f5e;
+  --status-warn: #92610f;
 
   /* Light elevation — softer, cooler ink shadows; a bright top sheen. */
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 1px rgba(16, 24, 40, 0.04);
@@ -327,12 +338,16 @@ body {
     box-shadow var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .recent-card:hover {
-  background: var(--app-hover);
-  border-color: var(--accent-line);
-  box-shadow: var(--sheen), var(--shadow-md);
-  transform: translateY(-1px);
+  /* The parent list is `overflow:auto`, which CLIPS any external drop shadow to
+     its rectangle — a big --shadow-md spread read as an ugly SQUARE behind the
+     rounded card. Convey hover with an INSET accent ring + border + wash instead
+     (insets are painted inside the radius, so nothing can be clipped square). */
+  background: color-mix(in srgb, var(--gs-accent) 8%, var(--app-elevated));
+  border-color: color-mix(in srgb, var(--gs-accent) 45%, var(--app-border));
+  box-shadow: var(--sheen), inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 16%, transparent);
 }
-.recent-card:active { transform: translateY(0); }
+.recent-card:hover .glyph { background: color-mix(in srgb, var(--gs-accent) 22%, transparent); }
+.recent-card:active { transform: translateY(0.5px); }
 /* The leading folder glyph sits in its own tinted accent tile. */
 .recent-card .glyph {
   display: inline-flex;
@@ -371,6 +386,15 @@ button[disabled] {
   box-shadow: none;
 }
 button:disabled:hover { filter: grayscale(0.25); }
+/* A button mid-async-action (runBusy) — distinct from a plain disabled control:
+   a "working" cursor + a gentle pulse so the user knows the op is in flight. */
+button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
+.mini-btn.is-busy, .row-btn.is-busy, .ai-chip.is-busy {
+  cursor: progress;
+  animation: gs-busy 0.9s ease-in-out infinite;
+}
+@keyframes gs-busy { 0%, 100% { opacity: 0.62; } 50% { opacity: 0.38; } }
+@media (prefers-reduced-motion: reduce) { .is-busy { animation: none; } }
 
 /* A consistent keyboard focus ring on every interactive surface. */
 .nav-item:focus-visible,
@@ -391,6 +415,23 @@ button:disabled:hover { filter: grayscale(0.25); }
 .toast-close:focus-visible,
 .cmp-collapse:focus-visible,
 .cmp-restore:focus-visible,
+.cmp-mode-btn:focus-visible,
+.settings-seg-btn:focus-visible,
+.file-row:focus-visible,
+.term-tab-close:focus-visible,
+.gh-card.clickable:focus-visible,
+.term-tab:focus-visible,
+.term-side-row:focus-visible,
+.term-side-add:focus-visible,
+.term-menu-row:focus-visible,
+.term-ac-row:focus-visible,
+.assistant-iconbtn:focus-visible,
+.assistant-chip-ctl:focus-visible,
+.assistant-chip:focus-visible,
+.ai-chip:focus-visible,
+.assistant-send:focus-visible,
+.notif-toggle:focus-visible,
+.dock-chevron:focus-visible,
 .tab:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
   outline-offset: -2px;
@@ -476,13 +517,20 @@ button:disabled:hover { filter: grayscale(0.25); }
   transition: filter var(--dur-1) var(--ease), transform 100ms var(--ease),
     box-shadow var(--dur-1) var(--ease);
 }
+/* CRITICAL: re-state the purple face on hover. `.btn:hover` (background:
+   --app-hover) has equal specificity but the primary skin must win by coming
+   LATER — without this the primary buttons fell back to the gray hover face
+   (dark box in dark, white-text-on-light box in light). Lift toward light + a
+   stronger accent glow reads as a real raise while keeping white-on-purple AA. */
 .btn-primary:hover {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24),
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--gs-accent) 86%, white 14%),
+    color-mix(in srgb, var(--gs-accent) 100%, black 2%));
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28),
     0 1px 2px rgba(0, 0, 0, 0.22),
-    0 8px 24px color-mix(in srgb, var(--gs-accent) 48%, transparent);
+    0 10px 28px color-mix(in srgb, var(--gs-accent) 52%, transparent);
 }
-/* Darken on hover so white-on-purple contrast RISES, never washes out. */
-.btn-primary:hover { filter: brightness(0.94); }
 .btn-primary:active { transform: translateY(0.5px); }
 .btn-primary .glyph { color: #fff; }
 
@@ -896,6 +944,16 @@ html.is-mac .topbar { padding-left: 78px; }
   white-space: nowrap;
   max-width: 44%;
 }
+/* Trailing short-SHA on remote/tag rows — gives them the same right-edge anchor
+   the local rows get from their ahead/behind pills. */
+.ref-sha {
+  flex: 0 0 auto;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--app-muted);
+  opacity: 0.85;
+}
 .list-empty {
   flex: 1 1 auto;
   /* Fill the pane so the empty state is vertically centered regardless of whether
@@ -967,11 +1025,12 @@ html.is-mac .topbar { padding-left: 78px; }
   color: var(--vscode-foreground);
   font-family: inherit;
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: 600;
   cursor: pointer;
-  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .mini-btn:hover { background: var(--app-hover); border-color: var(--accent-line); }
+.mini-btn:active { transform: translateY(0.5px); }
 .mini-btn .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 
 /* A row with metadata + a hover-revealed action cluster. */
@@ -985,6 +1044,11 @@ html.is-mac .topbar { padding-left: 78px; }
   white-space: nowrap;
 }
 .list-row { cursor: default; }
+/* Interactive rows (a real <button>, a role=button, or .is-clickable) must show a
+   pointer — they looked dead/non-interactive under the default-cursor rule above. */
+button.list-row,
+.list-row[role="button"],
+.list-row.is-clickable { cursor: pointer; }
 .row-actions {
   flex: 0 0 auto;
   display: flex;
@@ -992,7 +1056,9 @@ html.is-mac .topbar { padding-left: 78px; }
   opacity: 0;
   transition: opacity 110ms;
 }
-.list-row:hover .row-actions { opacity: 1; }
+.list-row:hover .row-actions,
+.list-row.is-current:hover .row-actions,
+.list-row:focus-within .row-actions { opacity: 1; }
 .row-btn {
   height: 24px;
   padding: 0 9px;
@@ -1003,9 +1069,16 @@ html.is-mac .topbar { padding-left: 78px; }
   font-family: inherit;
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 110ms, border-color 110ms, color 110ms;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .row-btn:hover { background: var(--app-hover); border-color: color-mix(in srgb, var(--gs-accent) 45%, var(--app-border)); }
+.row-btn:active { transform: translateY(0.5px); }
+/* A destructive row action (Discard) must READ as dangerous at rest, not only on
+   hover — it looked identical to Stage before. Tint the text + border red. */
+.row-btn.danger {
+  color: var(--status-del);
+  border-color: color-mix(in srgb, var(--status-del) 32%, var(--app-border));
+}
 .row-btn.danger:hover {
   color: var(--status-del);
   border-color: color-mix(in srgb, var(--status-del) 50%, transparent);
@@ -1034,12 +1107,23 @@ html.is-mac .topbar { padding-left: 78px; }
   inset: 0;
   z-index: 2000;
   display: flex;
-  align-items: center;
+  /* `safe center` centers normally but falls back to start when the card is
+     taller than the viewport, so its top (and footer) stay scroll-reachable. */
+  align-items: safe center;
   justify-content: center;
   background: color-mix(in srgb, var(--app-bg) 58%, transparent);
   backdrop-filter: blur(4px) saturate(1.1);
   -webkit-backdrop-filter: blur(4px) saturate(1.1);
   animation: gs-overlay-in 140ms var(--ease) both;
+  /* CRITICAL: any modal can open OVER the welcome screen, which is a
+     `-webkit-app-region: drag` surface. Without this, every control inside the
+     modal (e.g. the clone dialog's Cancel) becomes a window-drag handle in
+     Electron and can't be clicked. Reset the whole overlay to no-drag. */
+  -webkit-app-region: no-drag;
+  /* Tall modals (the clone repo browser) must never push their footer actions
+     off-screen on a short window — let the overlay scroll instead. */
+  overflow: auto;
+  padding: 24px;
 }
 @keyframes gs-overlay-in { from { opacity: 0; } to { opacity: 1; } }
 .modal-card {
@@ -1070,10 +1154,63 @@ html.is-mac .topbar { padding-left: 78px; }
   font-size: 13px;
   outline: none;
 }
+/* Placeholder was inheriting the foreground colour (nearly invisible / too loud).
+   Use a true muted token so it reads as a hint in both themes. */
+.modal-input::placeholder, .modal-textarea::placeholder { color: var(--app-muted); opacity: 1; }
 .modal-input:focus { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 22%, transparent); }
 .modal-message { font-size: 13px; line-height: 1.55; color: var(--app-muted); white-space: pre-wrap; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.modal-ok { height: 30px; padding: 0 16px; }
+/* The modal CTA is a shorter 30px button, so drop the 13px .btn font a notch so
+   the label isn't cramped/optically mis-centred in the smaller box. */
+.modal-ok { height: 30px; padding: 0 16px; font-size: var(--text-sm); }
+/* A wider form modal (issue/PR edit) with a real body textarea. */
+.modal-card-form { width: min(560px, 92vw); }
+/* Searchable, avatar-rich people picker (PR reviewers + issue assignees). */
+.people-picker { width: min(480px, 92vw); }
+.people-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  padding: 4px;
+  background: var(--app-bg);
+}
+.people-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.people-row:hover { background: var(--app-hover); }
+.people-row input[type="checkbox"] { accent-color: var(--gs-accent); width: 15px; height: 15px; flex: 0 0 auto; }
+.people-login { font-size: 13px; color: var(--vscode-foreground); }
+.people-empty { padding: 12px; text-align: center; color: var(--app-muted); font-size: 12.5px; }
+/* Read-only cross-repo issue/PR viewer (a notification for another repo). */
+.ext-item { width: min(640px, 94vw); max-height: min(82vh, 760px); gap: 9px; }
+.ext-item-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.ext-item-sub { font-size: 12px; color: var(--app-muted); }
+.ext-item-title { font-size: 17px; font-weight: 650; color: var(--vscode-foreground); line-height: 1.3; }
+.ext-item-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  border-top: 1px solid var(--app-border);
+  padding-top: 6px;
+}
+.modal-textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.5;
+  font-family: inherit;
+  padding: 9px 11px;
+}
 
 /* Destructive primary button (delete / discard / force ops). */
 .btn-danger {
@@ -1091,7 +1228,16 @@ html.is-mac .topbar { padding-left: 78px; }
   box-shadow: 0 4px 16px color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 34%, transparent);
   transition: filter 120ms, transform 100ms;
 }
-.btn-danger:hover { filter: brightness(0.94); }
+/* Re-state the red face on hover so it wins over `.btn:hover`'s gray (same bug
+   the primary skin had — see .btn-primary:hover). */
+.btn-danger:hover {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 86%, white 14%),
+    color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 100%, black 2%));
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 8px 22px color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 42%, transparent);
+}
 .btn-danger:active { transform: translateY(0.5px); }
 .btn-danger .glyph { color: #fff; }
 .modal-ok.btn-danger { height: 30px; padding: 0 16px; }
@@ -1126,10 +1272,20 @@ html.is-mac .topbar { padding-left: 78px; }
 .toast.out { opacity: 0; transform: translateX(14px); }
 .toast .glyph { flex: 0 0 auto; margin-top: 1px; }
 .toast .glyph .codicon { font-size: 16px; }
-.toast-error { border-color: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 55%, var(--app-border)); }
-.toast-error > .glyph { color: var(--vscode-errorForeground, #e15a5a); }
-.toast-success { border-color: color-mix(in srgb, var(--gs-accent) 50%, var(--app-border)); }
-.toast-success > .glyph { color: var(--vscode-charts-green, #3fb950); }
+/* Type-tint the whole toast (a faint wash + a colored left edge), not just the
+   border — so success/error read at a glance, GitHub/Linear-style. */
+.toast-error {
+  border-color: color-mix(in srgb, var(--status-del) 50%, var(--app-border));
+  background: color-mix(in srgb, var(--status-del) 9%, color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground)));
+  border-left: 3px solid var(--status-del);
+}
+.toast-error > .glyph { color: var(--status-del); }
+.toast-success {
+  border-color: color-mix(in srgb, var(--status-add) 48%, var(--app-border));
+  background: color-mix(in srgb, var(--status-add) 9%, color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground)));
+  border-left: 3px solid var(--status-add);
+}
+.toast-success > .glyph { color: var(--status-add); }
 .toast-info > .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .toast-msg {
   flex: 1 1 auto;
@@ -1245,12 +1401,15 @@ html.is-mac .topbar { padding-left: 78px; }
   border-radius: 6px;
 }
 .code-crumb:hover:not(.is-current) { background: var(--app-hover); }
+.code-crumb:active:not(.is-current) { transform: translateY(0.5px); }
 .code-crumb.is-current { color: var(--vscode-foreground); cursor: default; }
 .code-crumb .glyph { color: var(--app-muted); }
 .code-crumb.is-current .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .code-crumb-sep { color: var(--app-muted); opacity: 0.55; }
 
-.code-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 16px 28px; }
+/* Cap + center the repo listing on the wide measure so the file table stays
+   comfortable on ultra-wide windows instead of stretching edge to edge. */
+.code-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px max(16px, calc((100% - var(--measure-wide)) / 2)) 28px; }
 
 /* The GitHub-style "latest commit" bar that crowns the repo-root listing. */
 .code-latest-slot:empty { display: none; }
@@ -1346,6 +1505,11 @@ html.is-mac .topbar { padding-left: 78px; }
   border-bottom: 1px solid var(--app-border);
 }
 .code-listing .code-row:last-child { border-bottom: none; }
+/* These rows are buttons — give them real hover/press feedback so the file tree
+   doesn't read as dead/unclickable (it had only a focus ring before). */
+.code-row { transition: background var(--dur-1) var(--ease); }
+.code-row:hover { background: var(--app-hover); }
+.code-row:active { background: var(--app-active); }
 .code-row .glyph { color: var(--gs-accent-ink, var(--gs-accent)); flex: 0 0 auto; }
 .code-row .file-path { font-family: inherit; font-size: 13px; }
 
@@ -1387,17 +1551,18 @@ html.is-mac .topbar { padding-left: 78px; }
 }
 .code-md > :first-child { margin-top: 0; }
 .code-md h1, .code-md h2 { border-bottom: 1px solid var(--app-border); padding-bottom: 6px; }
-.code-md h1 { font-size: 1.7em; margin: 0.6em 0 0.5em; }
-.code-md h2 { font-size: 1.4em; margin: 1em 0 0.5em; }
-.code-md h3 { font-size: 1.2em; margin: 1em 0 0.4em; }
-.code-md h4, .code-md h5, .code-md h6 { margin: 1em 0 0.4em; }
-.code-md p { margin: 0.7em 0; }
-.code-md ul, .code-md ol { margin: 0.6em 0; padding-left: 1.5em; }
-.code-md li { margin: 0.2em 0; }
+.code-md h1 { font-size: 1.6em; margin: 0.6em 0 0.4em; }
+.code-md h2 { font-size: 1.35em; margin: 0.85em 0 0.4em; }
+.code-md h3 { font-size: 1.15em; margin: 0.8em 0 0.3em; }
+.code-md h4, .code-md h5, .code-md h6 { margin: 0.8em 0 0.3em; }
+.code-md p { margin: 0.55em 0; }
+.code-md ul, .code-md ol { margin: 0.45em 0; padding-left: 1.5em; }
+.code-md li { margin: 0.15em 0; }
 .code-md blockquote {
-  margin: 0.7em 0;
+  margin: 0.6em 0;
   padding: 0.1em 1em;
-  border-left: 3px solid var(--app-border);
+  border-left: 3px solid color-mix(in srgb, var(--gs-accent) 22%, var(--app-border));
+  background: color-mix(in srgb, var(--app-elevated) 50%, transparent);
   color: var(--app-muted);
 }
 .code-md hr { border: none; border-top: 1px solid var(--app-border); margin: 1.4em 0; }
@@ -1464,6 +1629,7 @@ html.is-mac .topbar { padding-left: 78px; }
   cursor: pointer;
 }
 .ref-pick:hover { background: var(--app-hover); border-color: color-mix(in srgb, var(--gs-accent) 40%, var(--app-border)); }
+.ref-pick:active { transform: translateY(0.5px); }
 .ref-pick .glyph:first-child { color: var(--gs-accent-ink, var(--gs-accent)); }
 .ref-pick .glyph:last-child { color: var(--app-muted); }
 .ref-pick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1485,9 +1651,11 @@ html.is-mac .topbar { padding-left: 78px; }
   font-weight: 550;
   white-space: nowrap;
   cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .cmp-mode-btn + .cmp-mode-btn { border-left: 1px solid var(--app-border); }
 .cmp-mode-btn:hover { background: var(--app-hover); }
+.cmp-mode-btn:active { transform: translateY(0.5px); }
 .cmp-mode-btn.active {
   background: color-mix(in srgb, var(--gs-accent) 18%, transparent);
   color: var(--gs-accent-ink, var(--gs-accent));
@@ -1524,6 +1692,7 @@ html.is-mac .topbar { padding-left: 78px; }
 .cmp-seg-btn + .cmp-seg-btn { border-left: 1px solid var(--app-border); }
 .cmp-seg-btn .glyph .codicon { font-size: 15px; }
 .cmp-seg-btn:hover { background: var(--app-hover); }
+.cmp-seg-btn:active { transform: translateY(0.5px); }
 .cmp-seg-btn.active {
   background: color-mix(in srgb, var(--gs-accent) 18%, transparent);
   color: var(--gs-accent-ink, var(--gs-accent));
@@ -1552,10 +1721,24 @@ html.is-mac .topbar { padding-left: 78px; }
 /* Commits-only view. */
 .cmp-commits { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 10px 10px; }
 .compare-commit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
   padding: 7px 8px;
   border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .compare-commit:hover { background: var(--app-hover); }
+.compare-commit:active { transform: translateY(0.5px); }
+.compare-commit:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline-offset: -2px;
+}
 .cc-subject { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-meta { font-size: 11px; color: var(--app-muted); }
 
@@ -1648,8 +1831,14 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid var(--app-border);
+  /* Contained card materiality (matches .settings-card) so the composer reads as
+     a deliberate surface, not full-bleed fields floating on the panel. */
+  margin: 12px 14px 0;
+  padding: 12px 13px;
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  box-shadow: var(--sheen), var(--shadow-sm);
 }
 .dc-message {
   width: 100%;
@@ -1683,11 +1872,14 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   font-variant-numeric: tabular-nums;
   color: var(--app-muted);
 }
-.dc-commit-row { display: flex; gap: 6px; }
-.dc-commit { height: 32px; }
-.dc-commit-row .dc-commit:first-child { flex: 1 1 auto; }
+.dc-commit-row { display: flex; gap: 8px; }
+.dc-commit { height: 30px; }
+/* The primary stays dominant but is capped so it reads as a confident button,
+   not a full-width banner across a wide composer; the secondary keeps presence. */
+.dc-commit-row .dc-commit:first-child { flex: 1 1 auto; max-width: 420px; }
 .dc-push {
   flex: 0 0 auto;
+  min-width: 132px;
   background: var(--app-elevated);
   border: 1px solid var(--app-border);
   color: var(--vscode-foreground);
@@ -1817,6 +2009,11 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 }
 .settings-head {
   flex: 0 0 auto;
+  /* Center the title on the same reading measure as the cards so the column
+     reads as one intentional block instead of floating in a left gutter. */
+  align-self: center;
+  width: 100%;
+  max-width: var(--measure-read);
   padding: 16px 22px;
   border-bottom: 1px solid var(--app-border);
 }
@@ -1829,7 +2026,8 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   display: flex;
   flex-direction: column;
   gap: 16px;
-  max-width: 760px;
+  align-self: center;
+  max-width: var(--measure-read);
   width: 100%;
 }
 .settings-card {
@@ -1886,9 +2084,11 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   font-size: 12.5px;
   font-weight: 550;
   cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
 }
 .settings-seg-btn + .settings-seg-btn { border-left: 1px solid var(--app-border); }
 .settings-seg-btn:hover { background: var(--app-hover); }
+.settings-seg-btn:active { transform: translateY(0.5px); }
 .settings-seg-btn.active {
   background: color-mix(in srgb, var(--gs-accent) 18%, transparent);
   color: var(--gs-accent-ink, var(--gs-accent));
@@ -1979,14 +2179,17 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-pill {
   align-self: flex-start;
   margin-top: 3px;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   padding: 1px 7px;
   border-radius: 999px;
   color: var(--app-muted);
   background: color-mix(in srgb, var(--app-muted) 18%, transparent);
 }
-.gh-detail { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 18px 20px; }
+/* The detail pane is already width-constrained by the master/detail split; the
+   prose body (.gh-body-md) caps itself at --measure-read, so the pane just needs
+   comfortable padding (percentage-centering here resolves against the WRONG box). */
+.gh-detail { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 18px 22px; }
 .gh-detail-head { display: flex; flex-direction: column; gap: 7px; padding-bottom: 12px; border-bottom: 1px solid var(--app-border); }
 .gh-detail-title { font-size: 18px; font-weight: 650; color: var(--vscode-foreground); }
 .gh-detail-meta { font-size: 12px; color: var(--app-muted); display: flex; align-items: center; flex-wrap: wrap; }
@@ -2001,9 +2204,42 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   font-size: 13px;
   line-height: 1.6;
   color: var(--vscode-foreground);
-  white-space: pre-wrap;
-  max-width: 820px;
+  max-width: var(--measure-read);
+  word-wrap: break-word;
 }
+/* renderMarkdown emits block tags — give them the SAME tight rhythm as .code-md
+   (NO white-space:pre-wrap, which double-spaced every block by preserving the
+   inter-block newlines on top of the margins). */
+.gh-body-md > :first-child { margin-top: 0; }
+.gh-body-md > :last-child { margin-bottom: 0; }
+.gh-body-md h1, .gh-body-md h2, .gh-body-md h3,
+.gh-body-md h4, .gh-body-md h5, .gh-body-md h6 {
+  font-size: 1em; font-weight: 650; margin: 0.8em 0 0.3em; line-height: 1.35;
+}
+.gh-body-md h1 { font-size: 1.3em; }
+.gh-body-md h2 { font-size: 1.15em; }
+.gh-body-md p { margin: 0.5em 0; }
+.gh-body-md ul, .gh-body-md ol { margin: 0.4em 0; padding-left: 1.4em; }
+.gh-body-md li { margin: 0.15em 0; }
+.gh-body-md code {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 0.88em; background: var(--app-elevated);
+  border: 1px solid var(--app-border); border-radius: 5px; padding: 1px 5px;
+}
+.gh-body-md pre {
+  margin: 0.7em 0; padding: 12px 14px; overflow-x: auto;
+  background: var(--app-elevated); border: 1px solid var(--app-border); border-radius: 8px;
+}
+.gh-body-md pre code { background: none; border: none; padding: 0; }
+.gh-body-md blockquote {
+  margin: 0.6em 0; padding: 0.1em 1em;
+  border-left: 3px solid color-mix(in srgb, var(--gs-accent) 22%, var(--app-border));
+  background: color-mix(in srgb, var(--app-elevated) 50%, transparent);
+  color: var(--app-muted);
+}
+.gh-body-md a { color: var(--gs-accent-ink, var(--gs-accent)); text-decoration: none; }
+.gh-body-md a:hover { text-decoration: underline; }
+.gh-body-md hr { border: none; border-top: 1px solid var(--app-border); margin: 1.2em 0; }
 .gh-files .file-row { cursor: default; }
 .gh-adds { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--app-muted); margin-left: auto; }
 
@@ -2235,9 +2471,9 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 }
 .dropdown-item:hover { background: var(--app-hover); }
 .dropdown-item .glyph { color: var(--app-muted); flex: 0 0 auto; }
-.dropdown-item.is-current { color: var(--gs-accent-ink, var(--gs-accent)); font-weight: 600; }
+.dropdown-item.is-current { color: var(--gs-accent-ink, var(--gs-accent)); font-weight: 600; background: var(--accent-soft); }
 .dropdown-item.is-current .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
-.dropdown-item.is-disabled { color: var(--app-muted); cursor: default; }
+.dropdown-item.is-disabled { color: var(--app-muted); cursor: default; opacity: 0.5; }
 .dropdown-item.is-disabled:hover { background: transparent; }
 .dropdown-label {
   flex: 1 1 auto;
@@ -2601,20 +2837,10 @@ gitstudio-graph {
 .gh-issue-open { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .gh-issue-closed { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
 
-/* Label chips (list rows + detail). Tinted from the GitHub label color. */
+/* Label chips (list rows + detail). Layout only — the canonical, AA-locked
+   `.gh-label-chip` color rule lives further down (search ".gh-label-chip {"). */
 .gh-row-labels, .gh-detail-labels { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
 .gh-detail-labels { margin: 10px 0 4px; }
-.gh-label-chip {
-  font-size: 10.5px;
-  font-weight: 600;
-  line-height: 1.5;
-  padding: 1px 8px;
-  border-radius: 999px;
-  color: var(--chip, var(--app-muted));
-  background: color-mix(in srgb, var(--chip, var(--app-muted)) 16%, transparent);
-  border: 1px solid color-mix(in srgb, var(--chip, var(--app-muted)) 40%, transparent);
-  white-space: nowrap;
-}
 
 /* Assignee row in the detail. */
 .gh-detail-assignees { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
@@ -2673,6 +2899,11 @@ gitstudio-graph {
 .gh-state-closed { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
 .gh-state-merged { color: var(--gs-accent); background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
 .gh-state-draft { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 20%, transparent); }
+/* Semantic variants so Releases/Gists pills stop collapsing into gray "draft". */
+.gh-state-prerelease { color: var(--status-warn); background: color-mix(in srgb, var(--status-warn) 18%, transparent); }
+.gh-state-latest { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
+.gh-state-public { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 15%, transparent); }
+.gh-state-private { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 18%, transparent); }
 
 /* Pipelines rows that link out get the affordance only when clickable. */
 .gh-check-row.is-link { cursor: pointer; }
@@ -2829,11 +3060,14 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
    `pending`/`in_progress`/`queued`/`cancelled` already exist for .gh-check-dot;
    these add the pill-background variants + the conclusions Actions emits that
    PRs didn't (cancelled/skipped/neutral/timed_out/action_required/etc.). */
-.gh-checks-cancelled, .gh-checks-stale, .gh-checks-timed_out,
-.gh-checks-action_required, .gh-checks-startup_failure {
+.gh-checks-timed_out, .gh-checks-startup_failure {
   color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent);
 }
-.gh-checks-skipped, .gh-checks-neutral {
+/* "Attention" conclusions read as amber, not red — they're not outright failures. */
+.gh-checks-action_required {
+  color: var(--status-warn); background: color-mix(in srgb, var(--status-warn) 18%, transparent);
+}
+.gh-checks-skipped, .gh-checks-neutral, .gh-checks-stale, .gh-checks-cancelled {
   color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 14%, transparent);
 }
 .gh-checks-in_progress, .gh-checks-queued, .gh-checks-requested,
@@ -2950,6 +3184,30 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .gh-org-row .gh-row-title { display: flex; align-items: center; gap: 8px; }
 .gh-org-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-org-title { display: flex; align-items: center; gap: 9px; }
+/* Org Repos/Teams/Members as a responsive card grid that uses the full pane. */
+.gh-org-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+.gh-org-grid > .list-empty, .gh-org-grid > .list-loading, .gh-org-grid > .list-error {
+  grid-column: 1 / -1;
+}
+.gh-org-grid > .list-row {
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  border-radius: 10px;
+  box-shadow: var(--sheen);
+  padding: 9px 11px;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.gh-org-grid > .list-row:hover {
+  border-color: color-mix(in srgb, var(--gs-accent) 32%, var(--app-border));
+  background: color-mix(in srgb, var(--gs-accent) 5%, var(--app-elevated));
+  transform: translateY(-1px);
+}
+.gh-org-grid > .list-row:active { transform: translateY(0); }
 /* The org sub-tab rows are clickable (open on GitHub) — restore the pointer the
    shared .list-row sets to `default`, and let the avatar/icon sit inline. */
 .gh-org-repo, .gh-org-team, .gh-org-member { cursor: pointer; }
@@ -2974,7 +3232,11 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   padding: 14px 2px 6px;
 }
 .gh-col {
-  flex: 0 0 264px;
+  /* Grow to fill the board (kill the horizontal void on wide windows), but stay
+     within a comfortable card width; many columns then scroll past min-width. */
+  flex: 1 1 0;
+  min-width: 264px;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3020,6 +3282,11 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   background: var(--app-hover);
   border-color: color-mix(in srgb, var(--gs-accent) 35%, var(--app-border));
 }
+.gh-card.clickable:active { transform: translateY(0.5px); }
+/* A draft card (no issue/PR behind it) is inert — show it's not openable. */
+.gh-card:not(.clickable) { opacity: 0.72; }
+/* While a move mutation is in flight, lock + dim the card so it's clear. */
+.gh-card.is-moving { opacity: 0.5; pointer-events: none; }
 .gh-card.clickable:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
   outline-offset: 1px;
@@ -3055,7 +3322,9 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   opacity: 0;
   transition: opacity 110ms, background 110ms;
 }
-.gh-card:hover .gh-card-kebab { opacity: 1; }
+.gh-card:hover .gh-card-kebab,
+.gh-card.clickable:focus-visible .gh-card-kebab,
+.gh-card-kebab:focus-visible { opacity: 1; }
 .gh-card-kebab:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 .gh-card-kebab:focus-visible { opacity: 1; }
 .gh-card-sub { font-size: 11px; color: var(--app-muted); }
@@ -3321,7 +3590,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .dock-icon-btn:hover,
 .dock-chevron:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 .dock-icon-btn:focus-visible,
-.dock-chevron:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: -1px; }
+/* focus ring consolidated into the shared :focus-visible group near the top */
 .dock-icon-btn .codicon { font-size: 14px; }
 .dock-chevron .codicon { font-size: 13px; }
 
@@ -3451,7 +3720,9 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   pointer-events: none;
 }
 .term-surface:hover .term-overlay,
-.term-overlay:focus-within {
+.term-overlay:hover,
+.term-overlay:focus-within,
+.term-overlay-btn:focus {
   opacity: 1;
   transform: none;
   pointer-events: auto;
@@ -3728,7 +3999,8 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 .term-empty .codicon { font-size: 15px; }
 .term-side {
-  flex: 0 0 196px;
+  /* Width is set inline + drag-resized (see TerminalDock); was a fixed 196px slab. */
+  flex: 0 0 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -3738,6 +4010,26 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   background: var(--app-panel);
   overflow-y: auto;
 }
+/* Drag handle between the terminal stage and its list. */
+.term-side-resizer {
+  flex: 0 0 auto;
+  width: 7px;
+  margin: 0 -3px 0 -4px;
+  position: relative;
+  z-index: 3;
+  cursor: col-resize;
+}
+.term-side-resizer-grip {
+  position: absolute;
+  inset: 6px 2px;
+  border-radius: 2px;
+  transition: background var(--dur-1) var(--ease);
+}
+.term-side-resizer:hover .term-side-resizer-grip,
+.term-side-resizer:focus-visible .term-side-resizer-grip {
+  background: color-mix(in srgb, var(--gs-accent) 50%, transparent);
+}
+.term-side-resizer:focus-visible { outline: none; }
 .term-side-add {
   flex: 0 0 auto;
   display: inline-flex;
@@ -4135,19 +4427,30 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .gh-stat.del { color: var(--status-del); }
 
 /* Label chip — uses --chip (the GitHub hex); legible on both themes. */
+/* The GitHub label hex (--chip, set per-chip by labelChip()) drives a tinted
+   pill. The raw hex as TEXT can dip below AA on the near-black/near-white canvas
+   and on tinted/selected rows, so the text is pulled toward the theme foreground
+   (keeps the hue, guarantees legibility); the tint+border carry the colour. */
 .gh-label-chip {
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1.5;
   padding: 1px 8px;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--chip, #888) 82%, var(--vscode-foreground) 18%);
-  background: color-mix(in srgb, var(--chip, #888) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--chip, #888) 34%, transparent);
+  color: color-mix(in srgb, var(--chip, #888) 70%, var(--vscode-foreground) 30%);
+  background: color-mix(in srgb, var(--chip, #888) 18%, var(--app-elevated));
+  border: 1px solid color-mix(in srgb, var(--chip, #888) 34%, var(--app-border));
   white-space: nowrap;
 }
 body.vscode-light .gh-label-chip {
-  color: color-mix(in srgb, var(--chip, #888) 62%, #000 38%);
+  color: color-mix(in srgb, var(--chip, #888) 45%, #000 55%);
+  background: color-mix(in srgb, var(--chip, #888) 22%, var(--app-elevated));
+  border-color: color-mix(in srgb, var(--chip, #888) 55%, var(--app-border) 45%);
+}
+/* On a hovered/selected/active row the chip composites over a busier surface —
+   keep the same tested foreground so contrast never silently drops. */
+:is(.gh-row.active, .gh-row:hover, .list-row.is-current, .list-row.is-hover) .gh-label-chip {
+  background: color-mix(in srgb, var(--chip, #888) 20%, var(--app-panel));
 }
 
 /* Inline state pill (open / closed / merged / draft). */
@@ -4316,6 +4619,11 @@ body.vscode-light .gh-label-chip {
   white-space: nowrap;
   min-width: 0;
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  /* Truncate from the LEFT so the meaningful tail (…/src/main) survives instead
+     of the directory root. The path is one LTR-resolved run (latin + "/"), so an
+     rtl box only flips the ellipsis side, not the segment order. */
+  direction: rtl;
+  text-align: left;
 }
 .dc-file .file-status { margin-left: 6px; }
 
@@ -4402,7 +4710,7 @@ body.vscode-light .gh-label-chip {
 .notif-pop {
   position: fixed;
   z-index: 1000;
-  width: 408px;
+  width: 424px;
   max-width: calc(100vw - 24px);
   max-height: min(560px, calc(100vh - 80px));
   display: flex;
@@ -4416,10 +4724,21 @@ body.vscode-light .gh-label-chip {
   animation: menu-pop 140ms var(--ease-out) both;
 }
 @media (prefers-reduced-motion: reduce) { .notif-pop { animation: none; } }
-.notif-pop-inner { flex: 1 1 auto; min-height: 0; display: flex; }
-.notif-pop .notif-view { background: transparent; }
+.notif-pop-inner { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+/* min-width:0 lets the view shrink to the popover width — without it the flex
+   child sized to its widest row, blowing the header (and "Show all") past the
+   panel edge where overflow:hidden clipped it. */
+.notif-pop .notif-view { background: transparent; flex: 1 1 auto; min-width: 0; }
 .notif-pop .list-head { padding: 12px 13px 10px; }
 .notif-pop .list-body { padding: 7px; }
+/* The narrow popover header was over-crowded → "Mark all read"/timestamps got
+   clipped under overflow:hidden. Let the header wrap (never clip) and compact the
+   mark-all action to an icon so the title + toggle fit on one line. */
+.notif-pop .list-head-row { flex-wrap: wrap; row-gap: 8px; align-items: center; }
+.notif-pop .notif-actions { flex: 0 0 auto; }
+.notif-pop .notif-markall span { display: none; }
+.notif-pop .notif-markall { padding: 0 9px; }
+.notif-pop .gh-acct:empty { display: none; }
 
 /* The single account chip, pinned to the right edge of the bar. */
 .topbar-acct {
@@ -4469,10 +4788,10 @@ body.vscode-light .gh-label-chip {
    ───────────────────────────────────────────────────────────────────────────── */
 
 /* Pill variants used by the AI surfaces. */
-.pill.is-default { background: color-mix(in srgb, var(--gs-accent) 18%, transparent); color: var(--gs-accent-ink, var(--gs-accent)); }
-.pill.is-local { background: color-mix(in srgb, var(--gs-accent-2, var(--gs-accent)) 16%, transparent); color: var(--gs-accent-ink, var(--gs-accent)); }
-.pill.is-ready { background: color-mix(in srgb, var(--vscode-testing-iconPassed, #4caf72) 20%, transparent); color: color-mix(in srgb, var(--vscode-testing-iconPassed, #4caf72) 80%, var(--vscode-foreground)); }
-.pill.is-warn { background: color-mix(in srgb, var(--vscode-list-warningForeground, #d9a84e) 22%, transparent); color: color-mix(in srgb, var(--vscode-list-warningForeground, #d9a84e) 85%, var(--vscode-foreground)); }
+.pill.is-default { background: color-mix(in srgb, var(--gs-accent) 18%, var(--app-elevated)); color: color-mix(in srgb, var(--gs-accent-ink, var(--gs-accent)) 88%, var(--vscode-foreground)); }
+.pill.is-local { background: color-mix(in srgb, var(--gs-accent-2, var(--gs-accent)) 16%, var(--app-elevated)); color: color-mix(in srgb, var(--gs-accent-ink, var(--gs-accent)) 88%, var(--vscode-foreground)); }
+.pill.is-ready { background: color-mix(in srgb, var(--status-add) 18%, var(--app-elevated)); color: color-mix(in srgb, var(--status-add) 90%, var(--vscode-foreground)); }
+.pill.is-warn { background: color-mix(in srgb, var(--status-warn) 20%, var(--app-elevated)); color: color-mix(in srgb, var(--status-warn) 90%, var(--vscode-foreground)); }
 
 /* ── AI Models card ── */
 .ai-conn-list { display: flex; flex-direction: column; gap: 9px; }
@@ -4528,6 +4847,7 @@ body.vscode-light .gh-label-chip {
 
 /* ── Agent Access (MCP) card ── */
 .mcp-perm { display: flex; flex-direction: column; gap: 6px; }
+.mcp-perm-desc { font-size: 12px; line-height: 1.5; color: var(--app-muted); margin-top: 1px; }
 .mcp-danger-note {
   display: flex; align-items: flex-start; gap: 7px; font-size: 11.5px; line-height: 1.45;
   color: color-mix(in srgb, var(--vscode-list-warningForeground, #d9a84e) 85%, var(--vscode-foreground));
@@ -4606,6 +4926,20 @@ body.vscode-light .gh-label-chip {
 .assistant-msg code { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 12px; background: var(--app-elevated); padding: 1px 5px; border-radius: 5px; }
 .assistant-msg pre { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: 9px; padding: 10px 12px; overflow-x: auto; }
 .assistant-msg ul, .assistant-msg ol { margin: 4px 0 8px; padding-left: 20px; }
+.assistant-msg li { margin: 2px 0; }
+.assistant-msg h1, .assistant-msg h2, .assistant-msg h3,
+.assistant-msg h4, .assistant-msg h5, .assistant-msg h6 {
+  font-weight: 650; line-height: 1.35; margin: 0.7em 0 0.3em;
+}
+.assistant-msg h1 { font-size: 1.25em; }
+.assistant-msg h2 { font-size: 1.12em; }
+.assistant-msg h3, .assistant-msg h4, .assistant-msg h5, .assistant-msg h6 { font-size: 1em; }
+.assistant-msg > :first-child { margin-top: 0; }
+.assistant-msg blockquote {
+  margin: 0.5em 0; padding: 0.1em 0.9em;
+  border-left: 3px solid color-mix(in srgb, var(--gs-accent) 22%, var(--app-border));
+  color: var(--app-muted);
+}
 
 .assistant-thinking { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--app-muted); padding: 3px 0; }
 /* Three pulsing dots that read as "actively thinking". */
@@ -4675,11 +5009,19 @@ body.vscode-light .gh-label-chip {
 }
 .assistant-input:focus { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 20%, transparent); }
 .assistant-send { flex: 0 0 auto; height: 40px; width: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-.assistant-send.is-cancel { background: var(--gs-danger, #e15a5a); }
+.assistant-send.is-cancel { background: var(--status-del); }
+/* Stop the shared .btn-primary:hover (purple) from winning on the cancel button —
+   a stop/cancel action must stay danger-red on hover, not flip to accent. */
+.assistant-send.is-cancel:hover {
+  background: color-mix(in srgb, var(--status-del) 88%, white 12%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 6px 18px color-mix(in srgb, var(--status-del) 40%, transparent);
+}
 .assistant-send .codicon { font-size: 16px; }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   Inline AI affordances (✨ chips, the streaming result sheet, header launcher).
+   Inline AI affordances (✨ chips, the footer chat tabs, header launcher) and
+   the Markdown table styling shared by every AI surface.
    ───────────────────────────────────────────────────────────────────────────── */
 
 /* The header Assistant launcher. */
@@ -4700,26 +5042,58 @@ body.vscode-light .gh-label-chip {
 .ai-chip:disabled { opacity: 0.6; cursor: default; }
 .ai-chip .codicon { font-size: 13px; color: var(--gs-accent-ink, var(--gs-accent)); }
 .ai-mini .codicon:first-child { color: var(--gs-accent-ink, var(--gs-accent)); }
-.dc-ai, .cmp-ai { display: flex; flex-wrap: wrap; gap: 7px; }
-.dc-ai { margin: 2px 0 2px; }
-.cmp-ai { margin-left: auto; }
+.cmp-ai { display: flex; flex-wrap: wrap; gap: 7px; margin-left: auto; }
+/* The commit message box + its in-corner "Write message" affordance. */
+.dc-message-wrap { position: relative; display: flex; }
+.dc-message-wrap .dc-message { width: 100%; }
+.dc-ai-write {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  height: 22px;
+  padding: 0 9px;
+  gap: 5px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--app-elevated) 80%, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent) 26%, var(--app-border));
+  box-shadow: var(--shadow-sm);
+  opacity: 0.94;
+}
+.dc-ai-write:hover { opacity: 1; }
+.dc-ai-write .codicon { font-size: 12px; }
+/* The "Review with AI" toolbar action picks up the accent glyph like the chips. */
+.dc-review .glyph .codicon, .dc-review .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 
-/* The streaming result sheet (Explain / Review / Analyze). */
-.ai-sheet-overlay {
-  position: fixed; inset: 0; z-index: 70;
-  background: color-mix(in srgb, #000 44%, transparent);
-  display: flex; align-items: center; justify-content: center; animation: ai-fade 0.12s ease;
+/* ✨ AI chat tabs in the footer dock — the ✨ icon carries the accent so the AI
+   tabs read distinctly from Output / Terminal. */
+.term-tab.is-chat .glyph .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+
+/* The footer AI chat panel: a compact variant of the full Assistant transcript +
+   composer. The action's prompt is the first turn; follow-ups continue below. */
+.chat-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.chat-panel-transcript {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
 }
-.ai-sheet {
-  width: min(720px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
-  background: var(--app-panel); border: 1px solid var(--app-border); border-radius: 14px;
-  box-shadow: var(--shadow-lg, 0 18px 50px rgba(0,0,0,0.45)); overflow: hidden;
+.chat-panel-composer {
+  flex: 0 0 auto; padding: 8px 10px;
+  border-top: 1px solid var(--app-border); background: var(--app-panel);
 }
-.ai-sheet-head { display: flex; align-items: center; gap: 9px; padding: 13px 16px; border-bottom: 1px solid var(--app-border); }
-.ai-sheet-head > .codicon:first-child { color: var(--gs-accent-ink, var(--gs-accent)); font-size: 16px; }
-.ai-sheet-title { flex: 1 1 auto; font-size: 14px; font-weight: 650; color: var(--vscode-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ai-sheet-spin { color: var(--gs-accent-ink, var(--gs-accent)); }
-.ai-sheet-body { padding: 16px 18px; overflow-y: auto; font-size: 13px; line-height: 1.6; color: var(--vscode-foreground); }
-.ai-sheet-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 11px 16px; border-top: 1px solid var(--app-border); min-height: 14px; }
-.ai-sheet-foot:empty { display: none; }
-.ai-sheet-error { display: flex; align-items: flex-start; gap: 8px; color: var(--gs-danger, #e15a5a); font-size: 12.5px; }
+.chat-panel .assistant-input-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-panel .assistant-input { flex: 1 1 auto; resize: none; min-height: 34px; max-height: 140px; }
+.chat-panel .assistant-send {
+  flex: 0 0 auto; height: 34px; width: 38px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* GFM tables from the Markdown renderer — used across every AI surface. */
+.md-table {
+  border-collapse: collapse; margin: 8px 0; font-size: 12.5px;
+  display: block; max-width: 100%; overflow-x: auto;
+}
+.md-table th, .md-table td { border: 1px solid var(--app-border); padding: 5px 9px; text-align: left; vertical-align: top; }
+.md-table th { background: var(--app-elevated); font-weight: 650; white-space: nowrap; }
+.md-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--app-elevated) 45%, transparent); }
+.md-left { text-align: left; }
+.md-center { text-align: center; }
+.md-right { text-align: right; }

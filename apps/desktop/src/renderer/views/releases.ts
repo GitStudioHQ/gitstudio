@@ -26,11 +26,10 @@ import {
   ghRow,
   statBit,
   statePill,
-  labelChip,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
+import { ghGate, ghHeader, ghListResizer, searchField, type SectionRender } from "./common";
 import type { ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
 
 /** Which sub-list the left pane is showing. Module-scoped so it survives a re-render. */
@@ -90,7 +89,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const body = el("div", "gh-body");
   const listEl = el("div", "gh-list");
   const detail = el("div", "gh-detail");
-  body.append(listEl, detail);
+  body.append(listEl, ghListResizer(listEl), detail);
   view.appendChild(body);
   wrap.replaceChildren(view);
 
@@ -165,9 +164,10 @@ async function loadReleases(
     lead.appendChild(glyph("tag"));
 
     const suffix: HTMLElement[] = [];
-    if (rel.prerelease) suffix.push(statePill("Pre-release", "draft"));
+    if (rel.draft) suffix.push(statePill("Draft", "draft"));
+    if (rel.prerelease) suffix.push(statePill("Pre-release", "prerelease"));
     if (!rel.draft && rel.id === latestId) {
-      suffix.push(labelChip("Latest", "1f883d"));
+      suffix.push(statePill("Latest", "latest"));
     }
 
     const when = rel.publishedAt ? `published ${relTimeISO(rel.publishedAt)}` : "draft";
@@ -309,11 +309,11 @@ async function showReleaseDetail(
   meta.textContent = `${full.tagName}${target}${author} · ${when}`;
   if (full.draft) {
     meta.appendChild(document.createTextNode("  "));
-    meta.appendChild(pill("Draft"));
+    meta.appendChild(pill("Draft", "gh-pill-draft"));
   }
   if (full.prerelease) {
     meta.appendChild(document.createTextNode("  "));
-    meta.appendChild(pill("Pre-release"));
+    meta.appendChild(pill("Pre-release", "gh-state-prerelease"));
   }
 
   const actions = el("div", "gh-detail-actions");

@@ -104,6 +104,33 @@ export function absTimeISO(iso?: string): string {
   return Number.isNaN(ms) ? "" : new Date(ms).toLocaleString();
 }
 
+/** Parse a github.com issue/PR URL into the bits needed to open it IN-APP.
+ *  e.g. https://github.com/owner/repo/pull/156 → {repo:"owner/repo", kind:"prs", number:156}.
+ *  Returns null for anything that isn't a plain issue/PR link. */
+export function parseGitHubItemUrl(
+  url: string | null | undefined,
+): { repo: string; kind: "issues" | "prs"; number: number } | null {
+  if (!url) return null;
+  const m = /^https?:\/\/github\.com\/([^/]+\/[^/]+)\/(issues|pull)\/(\d+)/i.exec(url.trim());
+  if (!m) return null;
+  return { repo: m[1].toLowerCase(), kind: m[2].toLowerCase() === "pull" ? "prs" : "issues", number: Number(m[3]) };
+}
+
+/** Run an async action while disabling its button — prevents the double-submit /
+ *  spam-click races that fire duplicate network mutations. Re-enables in finally. */
+export async function runBusy(btn: HTMLElement, fn: () => Promise<void>): Promise<void> {
+  const b = btn as HTMLButtonElement;
+  if (b.disabled) return;
+  b.disabled = true;
+  btn.classList.add("is-busy");
+  try {
+    await fn();
+  } finally {
+    b.disabled = false;
+    btn.classList.remove("is-busy");
+  }
+}
+
 /** A small inline text-button used in list-row action clusters. */
 export function textBtn(
   label: string,
@@ -237,6 +264,10 @@ export function stateIconName(kind: string): string {
     case "closed": return "issue-closed";
     case "draft": return "git-pull-request-draft";
     case "open-pr": return "git-pull-request";
+    case "latest": return "verified-filled";
+    case "prerelease": return "beaker";
+    case "public": return "globe";
+    case "private": return "lock";
     default: return "issue-opened";
   }
 }

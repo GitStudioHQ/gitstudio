@@ -5,14 +5,26 @@
 // app feels like one product.
 
 import { host } from "../bridge";
-import { el, glyph, span, emptyState } from "../ui";
+import { el, glyph, span, emptyState, wireResizerKeys, avatar } from "../ui";
+
+/** An item another view asked this section to open on entry (e.g. the project
+ *  board opening an issue/PR by number — keeps everything in-app, never GitHub). */
+export interface SectionTarget {
+  /** The issue / PR number to auto-open in the destination section. */
+  number: number;
+}
+
+/** Routes to another sidebar view; pass a target to deep-link a specific item
+ *  (e.g. `nav("issues", { number: 142 })` opens issue #142 in the Issues view). */
+export type SectionNav = (view: string, target?: SectionTarget) => void;
 
 /**
  * The signature every section view module implements. `wrap` is the section's
- * own container (already mounted); `nav(viewId)` routes to another sidebar view
- * (e.g. "settings" to sign in). Re-render by clearing `wrap` and rebuilding.
+ * own container (already mounted); `nav(viewId, target?)` routes to another
+ * sidebar view (optionally deep-linking an item). `target` is what THIS section
+ * was asked to open on entry. Re-render by clearing `wrap` and rebuilding.
  */
-export type SectionRender = (wrap: HTMLElement, nav: (view: string) => void) => void;
+export type SectionRender = (wrap: HTMLElement, nav: SectionNav, target?: SectionTarget) => void;
 
 /** Resolved GitHub connection for a section view. */
 export interface GhGate {
@@ -360,13 +372,150 @@ export function trapTab(e: KeyboardEvent, card: HTMLElement): void {
   }
 }
 
+/** A searchable, avatar-rich multi-select people picker (GitHub-style) — shared by
+ *  PR reviewers and issue assignees. Returns the chosen logins, or null on cancel. */
+export function peoplePickerModal(opts: {
+  title: string;
+  okLabel: string;
+  people: { login: string; avatarUrl?: string | null }[];
+  selected?: string[];
+}): Promise<string[] | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const pre = new Set(opts.selected ?? []);
+    const overlay = el("div", "modal-overlay");
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", opts.title);
+    const card = el("div", "modal-card modal-card-form people-picker");
+    const h = el("div", "modal-title");
+    h.textContent = opts.title;
+
+    const search = document.createElement("input");
+    search.className = "modal-input";
+    search.placeholder = "Filter people…";
+    search.setAttribute("aria-label", "Filter people");
+
+    const list = el("div", "people-list");
+    const boxes: { login: string; cb: HTMLInputElement; row: HTMLElement }[] = [];
+    for (const p of opts.people) {
+      const row = el("label", "people-row");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = pre.has(p.login);
+      row.append(cb, avatar(p.login, p.avatarUrl ?? null, 22), span(p.login, "people-login"));
+      list.appendChild(row);
+      boxes.push({ login: p.login, cb, row });
+    }
+    const empty = el("div", "people-empty");
+    empty.textContent = "No people match.";
+    empty.hidden = true;
+    list.appendChild(empty);
+    const filter = (): void => {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      for (const b of boxes) {
+        const ok = !q || b.login.toLowerCase().includes(q);
+        b.row.hidden = !ok;
+        if (ok) shown++;
+      }
+      empty.hidden = shown > 0;
+    };
+    search.addEventListener("input", filter);
+
+    const actions = el("div", "modal-actions");
+    const cancel = el("button", "mini-btn");
+    cancel.textContent = "Cancel";
+    const ok = el("button", "btn btn-primary modal-ok");
+    ok.append(span(opts.okLabel));
+    actions.append(cancel, ok);
+    card.append(h, search, list, actions);
+
+    const finish = (v: string[] | null): void => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      document.removeEventListener("keydown", onKey, true);
+      resolve(v);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        finish(null);
+        return;
+      }
+      trapTab(e, card);
+    };
+    cancel.addEventListener("click", () => finish(null));
+    ok.addEventListener("click", () => finish(boxes.filter((b) => b.cb.checked).map((b) => b.login)));
+    overlay.addEventListener("mousedown", (e) => {
+      if (e.target === overlay) finish(null);
+    });
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    document.addEventListener("keydown", onKey, true);
+    setTimeout(() => search.focus(), 0);
+  });
+}
+
 /** A list-left / detail-right scaffold matching the PR & Issue views. */
+/** Make a `.gh-list` pane user-resizable + keyboard-operable. Returns the divider
+ *  element to place BETWEEN the list and the detail in a `.gh-body`. The width
+ *  persists across sessions AND across every section view (one shared key), so a
+ *  PR, an issue and a release all honour the same chosen proportion. */
+export function ghListResizer(listEl: HTMLElement): HTMLElement {
+  const MIN = 280;
+  const MAX = 720;
+  const saved = Number(localStorage.getItem("gitstudio.ghListW"));
+  let w = Number.isFinite(saved) && saved > 0 ? Math.min(MAX, Math.max(MIN, saved)) : 430;
+  const apply = (): void => {
+    listEl.style.flex = `0 0 ${w}px`;
+    listEl.style.minWidth = `${MIN}px`;
+    listEl.style.maxWidth = `${MAX}px`;
+  };
+  const setW = (n: number): void => {
+    w = Math.min(MAX, Math.max(MIN, Math.round(n)));
+    apply();
+  };
+  apply();
+
+  const split = el("div", "cmp-vsplit gh-vsplit");
+  split.append(el("div", "cmp-vsplit-grip"));
+  wireResizerKeys(split, {
+    orientation: "vertical",
+    label: "Resize the list pane",
+    min: MIN,
+    max: () => MAX,
+    get: () => w,
+    set: setW,
+    onCommit: () => localStorage.setItem("gitstudio.ghListW", String(w)),
+  });
+  split.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = w;
+    document.body.classList.add("resizing-h");
+    const move = (ev: PointerEvent): void => setW(startW + (ev.clientX - startX));
+    const up = (): void => {
+      document.body.classList.remove("resizing-h");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      localStorage.setItem("gitstudio.ghListW", String(w));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  });
+  return split;
+}
+
+/** The master/detail shell shared by every GitHub section view. The list⇄detail
+ *  split is user-resizable (see ghListResizer). */
 export function ghTwoPane(): { view: HTMLElement; listEl: HTMLElement; detailEl: HTMLElement } {
   const view = el("div", "gh-view");
   const body = el("div", "gh-body");
   const listEl = el("div", "gh-list");
   const detailEl = el("div", "gh-detail");
-  body.append(listEl, detailEl);
+  body.append(listEl, ghListResizer(listEl), detailEl);
   view.appendChild(body);
   return { view, listEl, detailEl };
 }

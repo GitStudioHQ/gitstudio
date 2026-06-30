@@ -452,6 +452,8 @@ function registerIpc(): void {
   //    notifications / orgs / projects / gists (each in src/main/github/*). ──
   // Issues.
   handle("issue:detail", (n) => github.withRepo((c, o, r) => issuesApi.getIssueDetail(c, o, r, n)));
+  // Cross-repo read-only item view (notifications for OTHER repos open in-app).
+  handle("github:externalItem", (req) => github.externalItem(req));
   handle("issue:create", (req) => github.withRepo((c, o, r) => issuesApi.createIssue(c, o, r, req)));
   handle("issue:comment", (req) => github.withRepo((c, o, r) => issuesApi.commentIssue(c, o, r, req)));
   handle("issue:setState", (req) => github.withRepo((c, o, r) => issuesApi.setIssueState(c, o, r, req)));
@@ -529,7 +531,7 @@ function registerIpc(): void {
   handle("ai:chatList", () => ai.chatList());
   handle("ai:chatCurrent", () => ai.chatCurrent());
   handle("ai:chatGet", (req) => ai.chatGet(req.id));
-  handle("ai:chatNew", () => ai.chatNew());
+  handle("ai:chatNew", (req) => ai.chatNew(req?.setCurrent !== false));
   handle("ai:chatSetCurrent", async (req) => {
     await ai.chatSetCurrent(req.id);
   });

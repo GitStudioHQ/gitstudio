@@ -28,7 +28,7 @@ import {
   statBit,
 } from "../ui";
 import { toast, confirmDialog } from "../dialogs";
-import { comboField, ghGate, ghHeader, searchField, type SectionRender } from "./common";
+import { comboField, ghGate, ghHeader, ghListResizer, searchField, type SectionRender } from "./common";
 import type {
   WorkflowRun,
   WorkflowRunDetail,
@@ -83,7 +83,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const body = el("div", "gh-body");
   const listEl = el("div", "gh-list");
   const detail = el("div", "gh-detail");
-  body.append(listEl, detail);
+  body.append(listEl, ghListResizer(listEl), detail);
   view.append(header, body);
   wrap.replaceChildren(view);
   emptyDetail(detail);
@@ -265,18 +265,15 @@ async function showRunDetail(detail: HTMLElement, run: WorkflowRun): Promise<voi
   cancelBtn.disabled = !live;
   cancelBtn.addEventListener("click", () => void cancelRun(full.id, cancelBtn, detail, run));
 
+  // One external action — "Logs" opened the same run page as "Open on GitHub" did,
+  // so they were duplicate buttons. Keep the Actions-specific one.
   const logsBtn = btn("mini-btn");
-  logsBtn.append(glyph("output"), span("Logs"));
+  logsBtn.append(glyph("link-external"), span("View logs"));
   logsBtn.title = "Open this run's logs on GitHub";
   logsBtn.disabled = !full.htmlUrl;
   logsBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
 
-  const openBtn = btn("mini-btn");
-  openBtn.append(glyph("link-external"), span("Open on GitHub"));
-  openBtn.disabled = !full.htmlUrl;
-  openBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
-
-  actions.append(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn, openBtn);
+  actions.append(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn);
   head.append(h, meta, actions);
   detail.appendChild(head);
 

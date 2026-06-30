@@ -15,6 +15,7 @@ import type {
   CommitActionResult,
   DeviceCodeInfo,
   DevicePollResult,
+  ExternalItemDetail,
   GitHubStatus,
   IssueInfo,
   MergeMethod,
@@ -218,6 +219,40 @@ export class GitHubBridge {
         this.client.getCombinedStatus(r.owner, r.repo, pr.head.sha).catch(() => ({ state: "", totalCount: 0 })),
       ]);
       return { pr, files, checks: status.state };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Read-only fetch of an issue/PR from ANY repo (cross-repo notifications open
+   *  in-app instead of github.com). Uses the client directly — not the current
+   *  repo's owner/repo — so any subject the user is notified about can be read here. */
+  async externalItem(req: {
+    owner: string;
+    repo: string;
+    number: number;
+    kind: "issue" | "pull";
+  }): Promise<ExternalItemDetail | undefined> {
+    if (!this.token) return undefined;
+    const { owner, repo, number, kind } = req;
+    try {
+      const comments = (await this.client.listConversation(owner, repo, number).catch(() => []))
+        .filter((c) => c.kind === "comment")
+        .map((c) => ({ author: c.author || null, body: c.body, createdAt: c.createdAt }));
+      if (kind === "pull") {
+        const pr = await this.client.getPull(owner, repo, number);
+        return {
+          kind: "pull", number, repo: `${owner}/${repo}`, title: pr.title,
+          state: pr.draft ? "draft" : pr.state, body: pr.body, htmlUrl: pr.htmlUrl,
+          author: pr.user?.login ?? null, createdAt: pr.createdAt, comments,
+        };
+      }
+      const issue = await this.client.getIssue(owner, repo, number);
+      return {
+        kind: "issue", number, repo: `${owner}/${repo}`, title: issue.title,
+        state: issue.state, body: issue.body, htmlUrl: issue.htmlUrl,
+        author: issue.user?.login ?? null, createdAt: issue.createdAt, comments,
+      };
     } catch {
       return undefined;
     }

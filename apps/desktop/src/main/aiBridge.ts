@@ -534,7 +534,8 @@ export class AiBridge {
       return host.diff({ base: `${input.sha}^`, head: input.sha, path: input.path });
     }
     if (input.base) {
-      return host.diff({ base: input.base, head: "HEAD", path: input.path });
+      // Honour an explicit head (PR / Compare diff base…head); else compare base…HEAD.
+      return host.diff({ base: input.base, head: input.head ?? "HEAD", path: input.path });
     }
     // Default: the unstaged working-tree diff (fall back to staged if empty).
     const working = await host.diff({ path: input.path });
@@ -690,12 +691,12 @@ export class AiBridge {
     return s ? AiBridge.chatView(s) : undefined;
   }
 
-  async chatNew(): Promise<ChatView | undefined> {
+  async chatNew(makeCurrent = true): Promise<ChatView | undefined> {
     await this.ensureLoaded();
     const root = this.repos.current()?.root;
     const conn = pickConnection(this.settings);
     if (!root || !conn) return undefined;
-    const s = await this.chats.create(root, conn.id, randomUUID());
+    const s = await this.chats.create(root, conn.id, randomUUID(), makeCurrent);
     return AiBridge.chatView(s);
   }
 

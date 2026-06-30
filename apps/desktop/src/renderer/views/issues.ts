@@ -29,11 +29,11 @@ import {
   statBit,
   stateLead,
 } from "../ui";
-import { confirmDialog, promptInline, toast } from "../dialogs";
+import { confirmDialog, promptInline, editForm, toast } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { aiChip, aiSheet, streamInto, aiEnabled } from "../aiAssist";
-import { ghGate, ghHeader, searchField, type SectionRender } from "./common";
-import type { IssueDetail, IssueInfo, RepoLabel } from "../../shared/ipc";
+import { aiChip, openAssistantTab, streamInto, aiEnabled } from "../aiAssist";
+import { ghGate, ghHeader, ghListResizer, peoplePickerModal, searchField, type SectionRender, type SectionNav, type SectionTarget } from "./common";
+import type { IssueDetail, IssueInfo, RepoCollaborator, RepoLabel } from "../../shared/ipc";
 
 /** The open/closed filter, persisted across re-renders within the section. */
 let issueState: "open" | "closed" = "open";
@@ -67,11 +67,11 @@ function commentCard(author: string, action: string, body: string, createdAt: st
 
 // ── The section view ─────────────────────────────────────────────────────────
 
-export const renderIssues: SectionRender = (wrap, nav) => {
-  void mount(wrap, nav);
+export const renderIssues: SectionRender = (wrap, nav, target) => {
+  void mount(wrap, nav, target);
 };
 
-async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<void> {
+async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
   const refresh = (): void => renderIssues(wrap, nav);
 
   const gate = await ghGate(wrap, nav, true);
@@ -100,7 +100,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const body = el("div", "gh-body");
   const listEl = el("div", "gh-list");
   const detail = el("div", "gh-detail");
-  body.append(listEl, detail);
+  body.append(listEl, ghListResizer(listEl), detail);
   view.appendChild(body);
   wrap.replaceChildren(view);
   const idleEmpty = (): void => {
@@ -176,6 +176,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
       stats,
       ariaLabel: `Issue #${it.number}: ${it.title}`,
     });
+    row.dataset.num = String(it.number);
     row.addEventListener("click", () => select(it, row));
     return row;
   };
@@ -216,7 +217,22 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     }),
   );
 
+  // If another view deep-linked an issue (e.g. the project board), open it on
+  // entry instead of the auto-selected first item — never bounce out to GitHub.
+  if (target?.number != null) autoSelected = true;
   renderList(issues);
+  if (target?.number != null) {
+    const n = target.number;
+    const it = issues.find((i) => i.number === n);
+    const row = listEl.querySelector(`[data-num="${n}"]`) as HTMLElement | null;
+    if (it && row) {
+      select(it, row);
+      row.scrollIntoView({ block: "nearest" });
+    } else {
+      // Not in the current state filter — open its detail directly by number.
+      void showDetail(detail, n, wrap, nav);
+    }
+  }
 }
 
 // ── Detail pane ──────────────────────────────────────────────────────────────
@@ -285,24 +301,35 @@ async function showDetail(
     void changeState(detail, it.number, closing ? "closed" : "open", stateBtn, wrap, nav),
   );
 
-  const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("link-external"), span("Open on GitHub"));
+  // A de-emphasized icon-only escape hatch — everything here is doable in-app, so
+  // "Open on GitHub" is a secondary affordance, not a peer of the real actions.
+  const openBtn = el("button", "mini-btn gh-icon-btn");
+  openBtn.append(glyph("link-external"));
+  openBtn.title = "Open this issue on GitHub";
+  openBtn.setAttribute("aria-label", "Open this issue on GitHub");
   openBtn.addEventListener("click", () => window.open(it.htmlUrl, "_blank"));
 
   // ✨ AI: analyze the issue (problem / cause / suggested approach). The same
   // issue context powers the "Draft a reply" chip on the composer below.
+  // Bound the context: issue/comment bodies are arbitrary user content, so cap how
+  // much we send (keep the most-recent comments) to stay under the model's window.
   const aiCtx = (): string => {
-    const comments = d.comments.map((c) => `${c.author?.login ?? "?"}: ${c.body}`).join("\n\n");
-    return `Issue: ${it.title}\n\n${it.body ?? ""}${comments ? `\n\nComments:\n${comments}` : ""}`;
+    const MAX_COMMENTS = 20;
+    const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}\n…(truncated)` : s);
+    const recent = d.comments.slice(-MAX_COMMENTS);
+    const omitted = d.comments.length - recent.length;
+    const comments = recent.map((c) => `${c.author?.login ?? "?"}: ${clip(c.body, 1500)}`).join("\n\n");
+    const omittedNote = omitted > 0 ? `(${omitted} earlier comment${omitted === 1 ? "" : "s"} omitted)\n\n` : "";
+    return `Issue: ${it.title}\n\n${clip(it.body ?? "", 4000)}${comments ? `\n\nComments:\n${omittedNote}${comments}` : ""}`;
   };
   const analyzeBtn = el("button", "mini-btn ai-mini");
   analyzeBtn.hidden = true;
   analyzeBtn.append(glyph("sparkle"), span("Analyze"));
   analyzeBtn.addEventListener("click", () =>
-    aiSheet({
+    openAssistantTab({
       title: `Analyze #${it.number}`,
-      task: "assist",
-      input: { description: `Analyze this GitHub issue. Summarize the problem, the likely root cause, and a concrete suggested approach. Be concise and use Markdown.\n\n${aiCtx()}` },
+      goal: `Analyze this GitHub issue. Summarize the problem, the likely root cause, and a concrete suggested approach. Be concise and use Markdown.\n\n${aiCtx()}`,
+      nav,
     }),
   );
   void aiEnabled().then((ok) => (analyzeBtn.hidden = !ok));
@@ -451,18 +478,22 @@ async function editIssue(
   wrap: HTMLElement,
   nav: (view: string) => void,
 ): Promise<void> {
-  const title = await promptInline("Edit title", "Issue title", it.title, "Next");
-  if (title === null) return;
-  // allowEmpty: "" means "clear the body"; null means the body step was cancelled
-  // (keep the existing body).
-  const body = await promptInline("Edit description", "Describe the issue…", it.body ?? "", "Save", true);
-  const finalBody = body === null ? it.body ?? "" : body;
-  if (finalBody === (it.body ?? "") && title === it.title) return; // nothing changed
+  // One unified form (title + body together) — not a chain of one-line prompts.
+  const res = await editForm({
+    title: `Edit issue #${it.number}`,
+    okLabel: "Save",
+    titleValue: it.title,
+    titlePlaceholder: "Issue title",
+    bodyValue: it.body ?? "",
+    bodyPlaceholder: "Describe the issue…",
+  });
+  if (!res) return;
+  if (res.title === it.title && res.body === (it.body ?? "")) return; // nothing changed
   try {
     const r = await host.invoke("issue:edit", {
       number: it.number,
-      title,
-      body: finalBody,
+      title: res.title,
+      body: res.body,
     });
     if (!r.ok) {
       toast(r.message ?? "Couldn't edit the issue.", "error");
@@ -537,17 +568,28 @@ async function editAssignees(
   wrap: HTMLElement,
   nav: (view: string) => void,
 ): Promise<void> {
-  const csv = await promptInline(
-    "Assignees",
-    "comma-separated logins, e.g. octocat, hubot",
-    current.join(", "),
-    "Save",
-  );
-  if (csv === null) return;
-  const assignees = csv
-    .split(",")
-    .map((s) => s.trim().replace(/^@/, ""))
-    .filter(Boolean);
+  // A searchable, avatar-rich picker of repo collaborators (GitHub-style), with
+  // the current assignees pre-checked. Falls back to a CSV prompt if the
+  // collaborator list can't be fetched (e.g. limited token scope).
+  let people: RepoCollaborator[] = [];
+  try {
+    people = await host.invoke("pr:reviewers", undefined);
+  } catch {
+    /* fall through to the free-text path */
+  }
+  let assignees: string[] | null;
+  if (people.length) {
+    assignees = await peoplePickerModal({ title: "Assignees", okLabel: "Save", people, selected: current });
+  } else {
+    const csv = await promptInline(
+      "Assignees",
+      "comma-separated logins, e.g. octocat, hubot",
+      current.join(", "),
+      "Save",
+    );
+    assignees = csv === null ? null : csv.split(",").map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
+  }
+  if (assignees === null) return;
   try {
     const r = await host.invoke("issue:setAssignees", { number: it.number, assignees });
     if (!r.ok) {
