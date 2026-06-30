@@ -16,11 +16,6 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { host } from "./bridge";
-import { CommandTracking } from "./terminalCommands";
-import { TerminalAutocomplete } from "./terminalAutocomplete";
-import { TerminalCommandMenu } from "./terminalCommandMenu";
-import { TerminalAgent } from "./terminalAgent";
-import { el, glyph } from "./ui";
 
 /** Read a CSS custom property off <body>, falling back to `fallback`. */
 function token(styles: CSSStyleDeclaration, name: string, fallback: string): string {
@@ -38,62 +33,45 @@ export class TerminalPanel {
   private offExit: (() => void) | null = null;
   /** Set by dispose() so an in-flight open() can bail out (and not leak the PTY). */
   private disposed = false;
-  /** Command-block tracking (OSC 133/633), once the shell is open. */
-  private tracking: CommandTracking | null = null;
-  /** Autocomplete controller (dropdown over the prompt), once the shell is open. */
-  private autocomplete: TerminalAutocomplete | null = null;
-  /** Command/history menu (launcher popup), once the shell is open. */
-  private menu: TerminalCommandMenu | null = null;
-  /** In-terminal AI agent panel, once the shell is open. */
-  private agent: TerminalAgent | null = null;
-  /** The floating command toolbar overlaid on the surface. */
-  private overlay: HTMLElement | null = null;
-  /** Buttons whose enabled state depends on the current selection. */
-  private cmdButtons: HTMLButtonElement[] = [];
-  /** The basename of the launched shell (e.g. "zsh"), for session labels. */
-  shellName = "";
-  /** Fired once the shell session is open, with its basename. */
-  onShell?: (shell: string) => void;
 
   constructor(private readonly container: HTMLElement) {}
 
   /**
-   * Build an xterm ITheme from the app's CSS tokens: background / foreground /
-   * cursor / selection track the live theme; the 16 ANSI colors are a tasteful
-   * fixed palette that reads well on both the dark and light editor surfaces.
+   * Build an xterm ITheme: background / foreground / selection track the live
+   * editor tokens, with the standard 16 ANSI colours and a neutral cursor — i.e.
+   * a normal, default-looking terminal palette.
    */
   private themeFromTokens(): ITheme {
     const styles = getComputedStyle(document.body);
-    const background = token(styles, "--vscode-editor-background", "#12151c");
-    const foreground = token(styles, "--vscode-editor-foreground", "#d7dae0");
-    const cursor = token(styles, "--gs-accent", "#7c5cf0");
+    const background = token(styles, "--vscode-editor-background", "#1e1e1e");
+    const foreground = token(styles, "--vscode-editor-foreground", "#cccccc");
     const selectionBackground = token(
       styles,
       "--vscode-editor-selectionBackground",
-      "#2a3a5a",
+      "#264f78",
     );
     return {
       background,
       foreground,
-      cursor,
+      cursor: foreground,
       cursorAccent: background,
       selectionBackground,
-      black: "#1c2029",
-      red: "#ff6b6b",
-      green: "#5ad48a",
-      yellow: "#e8c468",
-      blue: "#4aa5ff",
-      magenta: "#c792ea",
-      cyan: "#54c7d4",
-      white: "#cdd2da",
-      brightBlack: "#5a6273",
-      brightRed: "#ff8585",
-      brightGreen: "#7fe3a6",
-      brightYellow: "#f2d489",
-      brightBlue: "#74bcff",
-      brightMagenta: "#d9b0f5",
-      brightCyan: "#7fe0eb",
-      brightWhite: "#f4f6fa",
+      black: "#000000",
+      red: "#cd3131",
+      green: "#0dbc79",
+      yellow: "#e5e510",
+      blue: "#2472c8",
+      magenta: "#bc3fbc",
+      cyan: "#11a8cd",
+      white: "#e5e5e5",
+      brightBlack: "#666666",
+      brightRed: "#f14c4c",
+      brightGreen: "#23d18b",
+      brightYellow: "#f5f543",
+      brightBlue: "#3b8eea",
+      brightMagenta: "#d670d6",
+      brightCyan: "#29b8db",
+      brightWhite: "#ffffff",
     };
   }
 
@@ -151,8 +129,6 @@ export class TerminalPanel {
       return;
     }
     this.id = session.id;
-    this.shellName = session.shell.split(/[\\/]/).pop() || "shell";
-    this.onShell?.(this.shellName);
 
     this.offData = host.on("terminal:data", (m) => {
       if (m.id === this.id) {
@@ -168,134 +144,6 @@ export class TerminalPanel {
     term.onData((d) => {
       void host.invoke("terminal:write", { id: this.id!, data: d });
     });
-
-    const writePty = (data: string): void => {
-      if (this.id) void host.invoke("terminal:write", { id: this.id, data });
-    };
-
-    // Command blocks: parse the shell's OSC markers and overlay the toolbar.
-    this.tracking = new CommandTracking(term, {
-      write: writePty,
-      onChange: () => this.syncOverlay(),
-      onPrompt: (atPrompt) => this.autocomplete?.onPromptChange(atPrompt),
-    });
-    this.tracking.attach();
-
-    // Autocomplete dropdown over the prompt (additive — see terminalAutocomplete).
-    this.autocomplete = new TerminalAutocomplete(term, this.tracking, { write: writePty }, this.container);
-    this.autocomplete.attach();
-
-    // In-terminal AI agent panel (reuses the existing AI bridge over IPC).
-    this.agent = new TerminalAgent(this.container, {
-      atPrompt: () => this.tracking?.atPrompt() ?? false,
-      insertCommand: (cmd) => this.autocomplete?.replaceCurrentLine(cmd),
-      onClose: () => this.term?.focus(),
-    });
-
-    // Command / history menu (launcher popup).
-    this.menu = new TerminalCommandMenu(this.container, {
-      history: () => this.tracking?.history() ?? [],
-      atPrompt: () => this.tracking?.atPrompt() ?? false,
-      actions: [
-        { id: "agent", label: "Ask the AI agent", icon: "sparkle", hint: "⌘I" },
-        { id: "clear", label: "Clear terminal", icon: "clear-all" },
-        { id: "copy-output", label: "Copy last command output", icon: "list-selection" },
-      ],
-      onAction: (id) => this.onMenuAction(id),
-      onInsertCommand: (cmd) => this.autocomplete?.replaceCurrentLine(cmd),
-      onClose: () => this.term?.focus(),
-    });
-
-    this.buildOverlay();
-
-    term.attachCustomKeyEventHandler((e) => {
-      // Autocomplete claims plain ↑/↓/Tab/Enter/Esc while its menu is open.
-      if (this.autocomplete?.handleKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-      }
-      if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
-        const consume = (fn: () => void): boolean => {
-          fn();
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        };
-        // Cmd/Ctrl + ↑/↓ jumps between command blocks.
-        if (e.key === "ArrowUp") return consume(() => this.tracking?.selectPrev());
-        if (e.key === "ArrowDown") return consume(() => this.tracking?.selectNext());
-        // Cmd/Ctrl+P opens the command menu; Cmd/Ctrl+I opens the agent.
-        if (e.key === "p" || e.key === "P") return consume(() => this.menu?.toggle());
-        if (e.key === "i" || e.key === "I") return consume(() => void this.agent?.toggle());
-      }
-      return true;
-    });
-  }
-
-  /** Handle a command-menu action. */
-  private onMenuAction(id: string): void {
-    if (id === "agent") void this.agent?.show();
-    else if (id === "clear") {
-      this.term?.clear();
-      this.autocomplete?.reset();
-    } else if (id === "copy-output") {
-      const last = this.tracking?.commands().at(-1);
-      if (last) void this.tracking?.copyOutput(last);
-    }
-  }
-
-  // ── Command toolbar overlay ───────────────────────────────────────────────────
-
-  /** Build the floating toolbar (prev/next + copy/rerun/clear) over the surface. */
-  private buildOverlay(): void {
-    const bar = el("div", "term-overlay");
-    const mk = (
-      icon: string,
-      label: string,
-      onClick: () => void,
-      needsSel = false,
-    ): HTMLButtonElement => {
-      const b = el("button", "term-overlay-btn") as HTMLButtonElement;
-      b.append(glyph(icon));
-      b.title = label;
-      b.setAttribute("aria-label", label);
-      b.addEventListener("click", (e) => {
-        e.preventDefault();
-        onClick();
-        this.term?.focus();
-      });
-      if (needsSel) this.cmdButtons.push(b);
-      return b;
-    };
-    bar.append(
-      mk("chevron-up", "Previous command (⌘↑)", () => this.tracking?.selectPrev()),
-      mk("chevron-down", "Next command (⌘↓)", () => this.tracking?.selectNext()),
-      el("span", "term-overlay-sep"),
-      mk("copy", "Copy command", () => void this.tracking?.copyCommand(), true),
-      mk("list-selection", "Copy output", () => void this.tracking?.copyOutput(), true),
-      mk("debug-restart", "Put command on the prompt to re-run", () => {
-        const c = this.tracking?.selected();
-        if (c?.commandLine) this.autocomplete?.replaceCurrentLine(c.commandLine);
-      }, true),
-      el("span", "term-overlay-sep"),
-      mk("list-unordered", "Command menu (⌘P)", () => this.menu?.toggle()),
-      mk("sparkle", "Agent (⌘I)", () => void this.agent?.show()),
-      mk("clear-all", "Clear terminal", () => {
-        this.term?.clear();
-        this.autocomplete?.reset();
-      }),
-    );
-    this.overlay = bar;
-    this.container.appendChild(bar);
-    this.syncOverlay();
-  }
-
-  /** Enable selection-dependent buttons; reflect whether blocks are available. */
-  private syncOverlay(): void {
-    const hasSel = !!this.tracking?.selected();
-    for (const b of this.cmdButtons) b.disabled = !hasSel;
-    this.overlay?.classList.toggle("has-blocks", !!this.tracking?.hasCommands());
   }
 
   /** Re-fit to the container and tell the PTY about the new grid. */
@@ -338,17 +186,6 @@ export class TerminalPanel {
     this.offExit?.();
     this.offData = null;
     this.offExit = null;
-    this.autocomplete?.dispose();
-    this.autocomplete = null;
-    this.menu?.dispose();
-    this.menu = null;
-    this.agent?.dispose();
-    this.agent = null;
-    this.tracking?.dispose();
-    this.tracking = null;
-    this.overlay?.remove();
-    this.overlay = null;
-    this.cmdButtons = [];
     if (this.id) {
       void host.invoke("terminal:kill", { id: this.id });
     }
