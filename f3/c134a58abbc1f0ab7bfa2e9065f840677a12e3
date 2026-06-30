@@ -1,0 +1,25 @@
+apps/desktop/src/renderer/styles/app.css
+  s_3fc28b9b39c0aa::t_a12fb62e846868 3390,3396,3399
+apps/desktop/src/renderer/terminalDock.ts
+  s_3fc28b9b39c0aa::t_a12fb62e846868 222-223
+apps/desktop/src/main/terminalBridge.ts
+  s_3fc28b9b39c0aa::t_a12fb62e846868 64-65,69
+apps/desktop/src/renderer/terminalPanel.ts
+  s_3fc28b9b39c0aa::t_aaed8e29c15a70 40-42,46-47,51,56,59-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.4",
+  "base_commit_sha": "f3c134a58abbc1f0ab7bfa2e9065f840677a12e3",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
