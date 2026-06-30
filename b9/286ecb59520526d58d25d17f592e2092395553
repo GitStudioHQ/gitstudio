@@ -1,0 +1,34 @@
+apps/desktop/src/renderer/terminalCompletion.ts
+  s_3fc28b9b39c0aa::t_2b3037f10f790c 91-92
+  s_3fc28b9b39c0aa::t_d8671b09f30fd4 119
+apps/desktop/test/completionSpec.test.ts
+  s_3fc28b9b39c0aa::t_7ca9a4c770d260 75-85
+apps/desktop/src/main/main.ts
+  s_3fc28b9b39c0aa::t_fc44863fc88770 26
+  s_3fc28b9b39c0aa::t_c191772dc45fb9 422
+apps/desktop/src/shared/ipc.ts
+  s_3fc28b9b39c0aa::t_fdf537425f72c5 855
+apps/desktop/src/main/completionBridge.ts
+  s_3fc28b9b39c0aa::t_016064041ab04f 5
+  s_3fc28b9b39c0aa::t_199bbd007d4666 77-94
+apps/desktop/src/renderer/terminalAutocomplete.ts
+  s_3fc28b9b39c0aa::t_373b9a80f18589 159-167
+  s_3fc28b9b39c0aa::t_f78da8f15d671e 56-57
+  s_3fc28b9b39c0aa::t_3f948cf3e180c0 197-202,210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.4",
+  "base_commit_sha": "b9286ecb59520526d58d25d17f592e2092395553",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
