@@ -1,0 +1,62 @@
+apps/desktop/test/completionSpec.test.ts
+  s_3fc28b9b39c0aa::t_6c8a0e97b3a8e2 1-81
+apps/desktop/src/renderer/completionSpecsData.ts
+  s_3fc28b9b39c0aa::t_8011ae6237a46c 1-25351
+  s_3fc28b9b39c0aa::t_bab63eab0b233b 25352
+apps/desktop/test/terminalCompletion.test.ts
+  s_3fc28b9b39c0aa::t_8f23ecc418836b 69,74-76
+apps/desktop/src/renderer/completionSpec.ts
+  s_3fc28b9b39c0aa::t_94c33ba110b8be 196
+  s_3fc28b9b39c0aa::t_1dabc3a7594403 1-195,197-200
+apps/desktop/src/renderer/styles/app.css
+  s_3fc28b9b39c0aa::t_f118a153da185e 3543-3545
+  s_3fc28b9b39c0aa::t_5c8c3a7accb9b4 3573,3575-3587
+  s_3fc28b9b39c0aa::t_aaa6d7049852e3 3590-3619
+apps/desktop/src/renderer/terminalCompletion.ts
+  s_3fc28b9b39c0aa::t_fa0b3654e4a255 89-90
+  s_3fc28b9b39c0aa::t_b9e57dfea5d926 10-14,24-26
+  s_3fc28b9b39c0aa::t_dbf8d94e117b5f 104-145,149-152,157,178-179,181-182,184,187,191-195,197
+apps/desktop/src/renderer/terminalAutocomplete.ts
+  s_3fc28b9b39c0aa::t_29d1def35b49cd 146-156
+  s_3fc28b9b39c0aa::t_28525acb496746 54-55
+  s_3fc28b9b39c0aa::t_b9711a0817803f 287-291
+  s_3fc28b9b39c0aa::t_05453b351633bd 170-171,177-184,192
+  s_3fc28b9b39c0aa::t_401870ae5012af 31-33
+  s_3fc28b9b39c0aa::t_21b8df5f41cecc 311
+apps/desktop/src/renderer/terminalPanel.ts
+  s_3fc28b9b39c0aa::t_6108ed7f90c96a 362-363
+  s_3fc28b9b39c0aa::t_67add6bc6a8722 52-54
+  s_3fc28b9b39c0aa::t_76d890d94a6b5a 232-242,254-257,263-298
+  s_3fc28b9b39c0aa::t_1dbddbae460fb5 24
+  s_3fc28b9b39c0aa::t_2148f8f6412d62 373-381
+  s_3fc28b9b39c0aa::t_d1b5a258d1cb2f 299
+apps/desktop/src/main/main.ts
+  s_3fc28b9b39c0aa::t_e80702180f6227 421
+  s_3fc28b9b39c0aa::t_f42d6cd025768a 26
+apps/desktop/src/renderer/completionSpecs.ts
+  s_3fc28b9b39c0aa::t_68ecc1bfdda503 1-28
+apps/desktop/src/main/completionBridge.ts
+  s_3fc28b9b39c0aa::t_1d6f5a0563e4fc 40-76
+  s_3fc28b9b39c0aa::t_43fab303688277 7
+apps/desktop/test/visual/autocomplete.html
+  s_3fc28b9b39c0aa::t_5687bd093bbcd8 1-48
+apps/desktop/src/shared/ipc.ts
+  s_3fc28b9b39c0aa::t_5b6cd2b20e1b33 590-596
+  s_3fc28b9b39c0aa::t_b5c24a874d11b5 854
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.4",
+  "base_commit_sha": "6c5056f5ccda716fc562ac84ae4cabd1da76300f",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
