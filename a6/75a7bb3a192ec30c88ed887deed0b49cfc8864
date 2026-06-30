@@ -1,0 +1,39 @@
+apps/desktop/src/renderer/completionSpecs.ts
+  s_3fc28b9b39c0aa::t_7d50ac403d1de6 20-27
+apps/desktop/test/completionSpec.test.ts
+  s_3fc28b9b39c0aa::t_efd7f11a61f219 86-122
+  s_3fc28b9b39c0aa::t_737a3ff5394466 4
+apps/desktop/src/main/completionBridge.ts
+  s_3fc28b9b39c0aa::t_0d366dd918a896 5
+  s_3fc28b9b39c0aa::t_e33aeaac94454d 111-132
+apps/desktop/src/renderer/terminalCompletion.ts
+  s_3fc28b9b39c0aa::t_94404a3cfb303f 210
+  s_3fc28b9b39c0aa::t_f9808f07fc0979 48-49,52,54,63-70,74-80,82-83,87,89
+apps/desktop/src/renderer/completionSpec.ts
+  s_3fc28b9b39c0aa::t_6d137328bc414c 71-72,76,81-82,87-96,101,103,106
+  s_3fc28b9b39c0aa::t_850865d432780e 125,150-152,161,169-174
+  s_3fc28b9b39c0aa::t_3e8c8f6e2309ce 159-160,163-164
+apps/desktop/src/renderer/terminalPanel.ts
+  s_3fc28b9b39c0aa::t_3fc7b3400d9eb2 384-390
+  s_3fc28b9b39c0aa::t_11daf6c4dab460 269-271,281
+apps/desktop/src/renderer/terminalAutocomplete.ts
+  s_3fc28b9b39c0aa::t_cb3eb217f743af 286-289,291,304-307,310-311
+  s_3fc28b9b39c0aa::t_f4a75badf6594c 217-225
+  s_3fc28b9b39c0aa::t_dbb3d24fc7b8aa 46-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.4",
+  "base_commit_sha": "a675a7bb3a192ec30c88ed887deed0b49cfc8864",
+  "prompts": {},
+  "sessions": {
+    "s_3fc28b9b39c0aa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b795df0b-767a-4861-8718-51ae30bbf6a5",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
