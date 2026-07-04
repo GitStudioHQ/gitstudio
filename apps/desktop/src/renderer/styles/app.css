@@ -766,6 +766,19 @@ html.is-mac .topbar { padding-left: 78px; }
   outline: 2px solid color-mix(in srgb, var(--gs-accent) 60%, transparent);
   outline-offset: -2px;
 }
+/* The footer Settings gear: a quiet, compact affordance pinned to the very
+   bottom of the rail (margin-top:auto does the pinning that .nav-spacer would
+   otherwise do), sitting low so it reads at roughly the bottom-dock's level
+   rather than as a full-size row floating above a gap. Inherits hover/active/
+   focus from .nav-item — we only shrink and mute it. */
+.nav-foot-item {
+  margin-top: auto;
+  height: 28px;
+  margin-bottom: -4px;
+  font-size: calc(var(--text-base) - 0.5px);
+  color: color-mix(in srgb, var(--app-muted) 80%, transparent);
+}
+.nav-foot-item .glyph .codicon { font-size: 14px; }
 /* Group divider in the rail (Local views ↑ / GitHub views ↓). */
 .nav-divider {
   display: flex;
@@ -1406,6 +1419,23 @@ button.list-row,
 .code-crumb .glyph { color: var(--app-muted); }
 .code-crumb.is-current .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .code-crumb-sep { color: var(--app-muted); opacity: 0.55; }
+/* Folder / file count chip in the Code head — a quiet at-a-glance summary. */
+.code-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-elevated);
+  font-size: 11.5px;
+  color: var(--app-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.code-count[hidden] { display: none; }
+.code-count .glyph .codicon { font-size: 12px; color: var(--app-muted); }
 
 /* Cap + center the repo listing on the wide measure so the file table stays
    comfortable on ultra-wide windows instead of stretching edge to edge. */
@@ -1417,14 +1447,11 @@ button.list-row,
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 12px;
-  margin-bottom: 10px;
-  border: 1px solid var(--app-border);
-  border-radius: 11px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--app-border);
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--app-panel) 70%, var(--app-elevated)),
+    color-mix(in srgb, var(--app-elevated) 55%, var(--app-panel)),
     var(--app-panel));
-  box-shadow: var(--sheen), var(--shadow-sm);
   animation: welcome-rise 360ms var(--ease-out) both;
 }
 .code-latest-av {
@@ -1492,18 +1519,39 @@ button.list-row,
   font-variant-numeric: tabular-nums;
 }
 .code-latest-count .glyph .codicon { font-size: 14px; color: var(--gs-accent-ink, var(--gs-accent)); }
-.code-listing {
+/* The connected file card: latest-commit header + column header + rows share
+   one bordered, rounded surface — github.com's directory table. */
+.code-filecard {
   border: 1px solid var(--app-border);
   border-radius: 12px;
   overflow: hidden;
   background: var(--app-panel);
   box-shadow: var(--sheen), var(--shadow-sm);
 }
+.code-listing { background: transparent; }
+/* Thin column header above the rows — labels the Name / Size columns so the
+   listing reads as a deliberate table, not a loose stack of file links. */
+.code-listing-head {
+  display: flex;
+  align-items: center;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-elevated) 55%, var(--app-panel));
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.code-listing-head[hidden] { display: none; }
+.code-col-name { flex: 1 1 auto; min-width: 0; }
+.code-col-size { flex: 0 0 auto; }
 .code-row {
   border-radius: 0;
   padding: 8px 12px;
   border-bottom: 1px solid var(--app-border);
 }
+.code-up .file-path { color: var(--app-muted); }
 .code-listing .code-row:last-child { border-bottom: none; }
 /* These rows are buttons — give them real hover/press feedback so the file tree
    doesn't read as dead/unclickable (it had only a focus ring before). */
@@ -1861,7 +1909,7 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 }
 .dc-branch {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   font-size: var(--text-sm);
   color: var(--app-muted);
@@ -1877,6 +1925,18 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 /* The primary stays dominant but is capped so it reads as a confident button,
    not a full-width banner across a wide composer; the secondary keeps presence. */
 .dc-commit-row .dc-commit:first-child { flex: 1 1 auto; max-width: 420px; }
+/* Actions row: commit options on the left, the commit buttons up on the right. */
+.dc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+}
+.dc-actions .dc-options { flex: 1 1 auto; margin: 0; }
+.dc-actions .dc-commit-row { flex: 0 0 auto; }
+/* On the right, the buttons take their natural width (no full-width stretch). */
+.dc-actions .dc-commit-row .dc-commit:first-child { flex: 0 0 auto; max-width: none; }
 .dc-push {
   flex: 0 0 auto;
   min-width: 132px;
@@ -1906,6 +1966,12 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 /* The changes file-list divider reuses the compare vsplit look. */
 .dc-vsplit { border-left: 1px solid var(--app-border); }
 .dc-body .diff-surface { flex: 1 1 auto; min-width: 0; }
+
+/* File-row hover actions (Stage / Unstage / Discard) reveal on the Changes rows,
+   which are .file-row/.dc-file — the shared reveal rule only covered .list-row,
+   so these were invisible except on keyboard focus. */
+.dc-file:hover .row-actions,
+.dc-file:focus-within .row-actions { opacity: 1; }
 
 /* ── GitHub views (PRs / Issues / Projects) ────────────────────────────────── */
 .gh-connect {
@@ -2009,26 +2075,25 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 }
 .settings-head {
   flex: 0 0 auto;
-  /* Center the title on the same reading measure as the cards so the column
-     reads as one intentional block instead of floating in a left gutter. */
-  align-self: center;
-  width: 100%;
-  max-width: var(--measure-read);
-  padding: 16px 22px;
+  /* Span the full pane so the bottom border runs edge-to-edge, but pad the title
+     in with the same centering math as the scroll body below — so the title sits
+     directly above the card column instead of floating in a left gutter. */
+  padding: 16px max(22px, calc((100% - var(--measure-read)) / 2));
   border-bottom: 1px solid var(--app-border);
 }
 .settings-title { font-size: 19px; font-weight: 700; color: var(--vscode-foreground); }
 .settings-scroll {
+  /* The scroll viewport must span the WHOLE pane — otherwise the wheel only
+     scrolls over a narrow middle column and the scrollbar floats mid-pane. We
+     keep the cards on the reading measure by centering them with horizontal
+     padding (same trick as .code-scroll) rather than by capping this element. */
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 22px 40px;
+  padding: 20px max(22px, calc((100% - var(--measure-read)) / 2)) 40px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  align-self: center;
-  max-width: var(--measure-read);
-  width: 100%;
 }
 .settings-card {
   /* Never let the scroll column's flex-shrink compress a card — that clipped
@@ -2092,6 +2157,17 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .settings-seg-btn.active {
   background: color-mix(in srgb, var(--gs-accent) 18%, transparent);
   color: var(--gs-accent-ink, var(--gs-accent));
+}
+
+/* App-icon control: segmented picker with a small live preview of the mark. */
+.settings-logo-row { display: flex; align-items: center; gap: 12px; }
+.settings-logo-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  object-fit: contain;
 }
 
 /* Account */
@@ -2190,6 +2266,74 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
    prose body (.gh-body-md) caps itself at --measure-read, so the pane just needs
    comfortable padding (percentage-centering here resolves against the WRONG box). */
 .gh-detail { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 18px 22px; }
+
+/* ── Issue peek drawer (Projects board → read an issue without leaving) ──────── */
+.gh-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--app-bg) 55%, transparent);
+  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-app-region: no-drag;
+  opacity: 0;
+  transition: opacity 160ms var(--ease);
+}
+.gh-drawer-scrim.is-open { opacity: 1; }
+.gh-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 94vw);
+  height: 100%;
+  min-height: 0;
+  background: var(--app-bg);
+  border-left: 1px solid var(--app-border);
+  box-shadow: var(--shadow-pop);
+  transform: translateX(28px);
+  transition: transform 200ms var(--ease-out);
+}
+.gh-drawer-scrim.is-open .gh-drawer { transform: translateX(0); }
+@media (prefers-reduced-motion: reduce) {
+  .gh-drawer { transition: none; transform: none; }
+}
+.gh-drawer-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.gh-drawer-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--app-muted);
+}
+.gh-drawer-eyebrow .glyph .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+.gh-drawer-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.gh-drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease);
+}
+.gh-drawer-close:hover { background: var(--app-hover); color: var(--vscode-foreground); border-color: var(--app-border); }
+.gh-drawer-close .codicon { font-size: 15px; }
+.gh-drawer-body { flex: 1 1 auto; min-height: 0; }
 .gh-detail-head { display: flex; flex-direction: column; gap: 7px; padding-bottom: 12px; border-bottom: 1px solid var(--app-border); }
 .gh-detail-title { font-size: 18px; font-weight: 650; color: var(--vscode-foreground); }
 .gh-detail-meta { font-size: 12px; color: var(--app-muted); display: flex; align-items: center; flex-wrap: wrap; }
@@ -2653,6 +2797,51 @@ gitstudio-graph {
   border-top: 1px solid var(--app-border);
 }
 
+/* ── Diff mode chrome: file path + Inline/Split toggle above the editors ──── */
+.diffmode-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.diffmode-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+/* Left-truncate so the filename (the informative end) survives narrow panes. */
+.diffmode-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--app-muted);
+}
+.diffmode-seg { flex: 0 0 auto; }
+.diffmode-seg .cmp-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+.diffmode-seg .cmp-mode-btn .glyph { font-size: 12px; }
+.diffmode-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
 /* The shared <gitstudio-commit-details> inspect panel + the inline diff below
  * it. The diff surface stays hidden until a file is opened, then splits. */
 /* The commit-details surface inside the bottom dock fills the dock body; its
@@ -2683,8 +2872,12 @@ gitstudio-graph {
   min-height: 0;
 }
 .details-split .diff-surface { display: none; min-width: 0; min-height: 0; }
+/* The panel|diff divider exists only while a diff is open; its drag sets
+   --details-w on the split (persisted), which this flex-basis follows. */
+.details-split .details-vsplit { display: none; }
+.details-split.diff-open .details-vsplit { display: flex; }
 .details-split.diff-open .details-panel {
-  flex: 0 0 420px;
+  flex: 0 0 var(--details-w, 420px);
   border-right: 1px solid var(--app-border);
 }
 .details-split.diff-open .diff-surface { display: block; flex: 1 1 auto; }
@@ -2870,7 +3063,19 @@ gitstudio-graph {
   border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 22%, transparent);
 }
-.gh-composer-actions { display: flex; justify-content: flex-end; }
+.gh-composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+/* The AI "Draft a reply" affordance is a peer of the primary "Comment", so it
+   reads as one button family, not a tiny chip glued to a big button: match the
+   primary's height + corner radius while keeping the accent-tinted AI face. */
+.gh-composer-actions .ai-chip {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--gs-accent) 12%, var(--app-elevated));
+  border-color: color-mix(in srgb, var(--gs-accent) 42%, var(--app-border));
+}
 
 /* ── prs ── */
 /* ── Pull Requests section (renderer/views/prs.ts) ───────────────────────────
@@ -3788,6 +3993,30 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .term-unavailable { padding: 16px; color: var(--app-muted); font-size: var(--text-sm); }
 
 /* ── Output tab — the live git-command log ─────────────────────────────────── */
+.outputs-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.outputs-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+.outputs-count { font-size: var(--text-xs); color: var(--app-muted); display: inline-flex; gap: 4px; }
+.outputs-count-f { color: var(--gs-danger, #ff8585); font-weight: 600; }
+.outputs-bar-spacer { flex: 1 1 auto; }
+.outputs-failbtn.is-on {
+  color: var(--gs-danger, #ff8585);
+  border-color: color-mix(in srgb, var(--gs-danger, #ff8585) 42%, transparent);
+  background: color-mix(in srgb, var(--gs-danger, #ff8585) 12%, var(--app-panel, transparent));
+}
 .outputs-panel {
   flex: 1 1 auto;
   min-height: 0;
@@ -3806,17 +4035,82 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 .outputs-empty-title { font-weight: 700; color: var(--vscode-foreground); font-size: var(--text-sm); }
 .outputs-empty-sub { color: var(--app-muted); font-size: var(--text-xs); }
-.outputs-list { display: flex; flex-direction: column; }
-.outputs-row {
+.outputs-list { display: flex; flex-direction: column; gap: 1px; }
+/* "Errors only" filter hides successful rows and all-successful groups. */
+.outputs-wrap.failures-only .outputs-row:not(.is-failed) { display: none; }
+.outputs-wrap.failures-only .outputs-group:not(.has-fail) { display: none; }
+
+/* ── Action groups: the commands ONE user action executed, under its label ── */
+.outputs-group { margin: 3px 0; }
+.outputs-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.outputs-group-head:hover { background: var(--app-hover); }
+.outputs-group-chev {
+  font-size: 11px;
+  color: var(--app-muted);
+  transition: transform var(--dur-1, 110ms) var(--ease, ease);
+}
+.outputs-group.is-collapsed .outputs-group-chev { transform: rotate(-90deg); }
+.outputs-group-label {
+  font-family: var(--vscode-font-family, sans-serif);
+  font-size: var(--text-xs, 11.5px);
+  font-weight: 650;
+}
+.outputs-group.has-fail .outputs-group-label { color: var(--gs-danger, #ff8585); }
+.outputs-group-meta { font-size: 11px; color: var(--app-muted); }
+/* Commands indent under their action along a soft rail. */
+.outputs-group-body {
+  margin-left: 11px;
+  padding-left: 8px;
+  border-left: 1px solid var(--app-border);
+}
+.outputs-group.is-collapsed .outputs-group-body { display: none; }
+/* Lean rows tag their action inline, muted, in the UI font. */
+.outputs-act {
+  flex: 0 0 auto;
+  font-family: var(--vscode-font-family, sans-serif);
+  font-size: 10.5px;
+  color: var(--app-muted);
+  opacity: 0.85;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-foreground) 7%, transparent);
+}
+.outputs-row { border-radius: 5px; }
+.outputs-line {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  padding: 0 6px;
+  border-radius: 5px;
   white-space: nowrap;
 }
-.outputs-time { flex: 0 0 auto; color: var(--app-muted); opacity: 0.7; }
-.outputs-kw { flex: 0 0 auto; color: var(--gs-accent-ink, var(--gs-accent)); font-weight: 700; }
-.outputs-args { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--vscode-foreground); }
-.outputs-dur { flex: 0 0 auto; margin-left: auto; color: var(--app-muted); opacity: 0.65; }
+.outputs-line:hover { background: var(--app-hover, var(--vscode-list-hoverBackground)); }
+.outputs-time { flex: 0 0 auto; color: var(--app-muted); opacity: 0.7; font-size: 11px; }
+.outputs-kw { flex: 0 0 auto; color: var(--app-muted); opacity: 0.8; }
+.outputs-sub { flex: 0 0 auto; color: var(--gs-accent-ink, var(--gs-accent)); font-weight: 700; }
+.outputs-args { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: color-mix(in srgb, var(--vscode-foreground) 78%, transparent); }
+.outputs-rep {
+  flex: 0 0 auto;
+  color: var(--app-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.outputs-rep:empty { display: none; }
+.outputs-dur { flex: 0 0 auto; margin-left: auto; color: var(--app-muted); opacity: 0.65; font-size: 11px; }
+.outputs-dur.is-slow { color: var(--status-warn, #e0a44e); opacity: 1; }
 .outputs-code {
   flex: 0 0 auto;
   padding: 0 6px;
@@ -3826,7 +4120,35 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   color: #fff;
   background: color-mix(in srgb, var(--gs-danger, #ff6b6b) 82%, black 8%);
 }
+/* Failed rows: a red-tinted block; expandable when stderr was captured. */
+.outputs-row.is-failed {
+  background: color-mix(in srgb, var(--gs-danger, #ff6b6b) 7%, transparent);
+}
+.outputs-row.is-failed .outputs-sub,
 .outputs-row.is-failed .outputs-args { color: var(--gs-danger, #ff8585); }
+.outputs-row.is-failed .outputs-line[role="button"] { cursor: pointer; }
+.outputs-chevron {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 11px;
+  color: var(--app-muted);
+  transition: transform var(--dur-1, 110ms) var(--ease, ease);
+}
+.outputs-row.is-open .outputs-chevron { transform: rotate(90deg); }
+.outputs-stderr {
+  display: none;
+  margin: 0 6px 4px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  border-left: 2px solid color-mix(in srgb, var(--gs-danger, #ff6b6b) 55%, transparent);
+  background: color-mix(in srgb, var(--gs-danger, #ff6b6b) 5%, var(--app-panel, transparent));
+  color: color-mix(in srgb, var(--vscode-foreground) 82%, transparent);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.outputs-row.is-open .outputs-stderr { display: block; }
 
 /* ── Clone dialog ──────────────────────────────────────────────────────────── */
 .clone-card { width: min(560px, 92vw); gap: 14px; }
@@ -4263,7 +4585,7 @@ body.vscode-light .gh-label-chip {
 .list-error .list-empty-badge .codicon { color: var(--status-del); }
 
 /* ── Code view: balanced reading column + richer file rows ──────────────────── */
-.code-latest, .code-listing, .code-readme {
+.code-filecard, .code-readme {
   width: 100%;
   max-width: 1080px;
   margin-left: auto;
@@ -4729,21 +5051,26 @@ body.vscode-light .gh-label-chip {
 /* The commit message box + its in-corner "Write message" affordance. */
 .dc-message-wrap { position: relative; display: flex; }
 .dc-message-wrap .dc-message { width: 100%; }
+/* "Write message" now lives in the branch header row, pushed to the right. A
+   crisp accent-tinted pill (not a translucent overlay floating in the textarea). */
 .dc-ai-write {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  height: 22px;
-  padding: 0 9px;
-  gap: 5px;
-  font-size: 11px;
-  background: color-mix(in srgb, var(--app-elevated) 80%, var(--gs-accent));
-  border-color: color-mix(in srgb, var(--gs-accent) 26%, var(--app-border));
-  box-shadow: var(--shadow-sm);
-  opacity: 0.94;
+  margin-left: auto;
+  align-self: center;
+  height: 27px;
+  padding: 0 12px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gs-accent) 14%, var(--app-elevated));
+  border-color: color-mix(in srgb, var(--gs-accent) 45%, var(--app-border));
+  box-shadow: var(--sheen), var(--shadow-sm);
 }
-.dc-ai-write:hover { opacity: 1; }
-.dc-ai-write .codicon { font-size: 12px; }
+.dc-ai-write:hover {
+  background: color-mix(in srgb, var(--gs-accent) 22%, var(--app-elevated));
+  border-color: color-mix(in srgb, var(--gs-accent) 60%, var(--app-border));
+}
+.dc-ai-write .codicon { font-size: 13px; }
 /* The "Review with AI" toolbar action picks up the accent glyph like the chips. */
 .dc-review .glyph .codicon, .dc-review .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 
@@ -4780,3 +5107,591 @@ body.vscode-light .gh-label-chip {
 .md-left { text-align: left; }
 .md-center { text-align: center; }
 .md-right { text-align: right; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Depth styles — conflict merge bar, GitHub Actions (logs/artifacts/secrets),
+   commit-composer depth, op-state banner, PR review (Files diff + inline threads),
+   and a handful of CSS-only design-audit fixes.
+
+   Self-contained block. Every value reuses the shared tokens (--app-*, --gs-accent*,
+   --status-*, --sheen/--shadow-sm, the radius ladder, --dur-1/--ease) so these
+   surfaces are pixel-consistent with the rest of the app and flip cleanly between
+   the dark and light themes. Motion is reduced-motion-safe via the global
+   prefers-reduced-motion reset near the top of this file.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 · Conflict-resolution merge bar (diffPanel.ts) ───────────────────────── */
+/* The merge editor lives in a column: a slim toolbar on top, the Monaco merge
+   surface filling the rest. `.merge-surface` MUST keep min-height:0 so the editor
+   resolves a real pixel height inside the flex parent (else Monaco collapses). */
+.merge-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.merge-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--app-surface, var(--app-panel));
+  border-bottom: 1px solid var(--app-border);
+}
+.merge-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.merge-bar-title .glyph,
+.merge-bar-title .codicon { flex: 0 0 auto; color: var(--app-muted); }
+.merge-bar-title .codicon { font-size: 15px; }
+.merge-bar-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
+  /* Keep the meaningful tail (…/src/main.ts) when the path can't fit. */
+  direction: rtl;
+  text-align: left;
+}
+.merge-bar-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.merge-surface {
+  flex: 1 1 auto;
+  min-height: 0; /* CRITICAL — gives the Monaco merge editor real height */
+  position: relative;
+}
+/* `.merge-resolve` already carries .btn .btn-primary .mini-btn. Those skins fully
+   define the face; the only thing to guard is that the 28px mini-btn height wins
+   over the 40px .btn-primary height so it sits flush in the slim bar. */
+.merge-resolve.mini-btn { height: 28px; padding: 0 12px; }
+
+/* ── 2 · GitHub Actions — run logs / artifacts / secrets (views/actions.ts) ──── */
+
+/* The streamed-log panel: an elevated card with a sticky head + a bordered,
+   recessed scroll body that holds the monospace <pre>. */
+.actions-log-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-elevated);
+  box-shadow: var(--sheen), var(--shadow-sm);
+}
+.actions-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.actions-log-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--vscode-foreground);
+}
+.actions-log-title .codicon { color: var(--gs-accent-ink, var(--gs-accent)); font-size: 15px; flex: 0 0 auto; }
+.actions-log-title .actions-log-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.actions-log-headactions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.actions-log-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  color: var(--app-muted);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.actions-log-close .codicon { font-size: 14px; }
+.actions-log-close:hover { background: var(--app-hover); border-color: var(--accent-line); color: var(--vscode-foreground); }
+.actions-log-close:active { transform: translateY(0.5px); }
+.actions-log-close:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: -2px; border-radius: 8px; }
+.actions-log-body {
+  max-height: 460px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 9px;
+  background: var(--app-bg);
+}
+.actions-log {
+  margin: 0;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+  -moz-tab-size: 2;
+  color: var(--vscode-foreground, var(--app-text));
+}
+
+/* Artifacts — a compact titled list of downloadable build outputs. Rows reuse the
+   .list-row / .row-meta vocabulary; this only frames the group + its head. */
+.gh-artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+.gh-artifacts-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.gh-artifacts-head .codicon { font-size: 14px; color: var(--gs-accent-ink, var(--gs-accent)); }
+.gh-artifact-row { align-items: center; }
+.gh-artifact-row .codicon { color: var(--app-muted); }
+
+/* Secrets — a card grouping repo/env secret sections; each section is a key/value
+   table. Values are never shown (write-only), so rows are calm name + meta rows. */
+.actions-secrets-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-elevated);
+  box-shadow: var(--sheen), var(--shadow-sm);
+}
+.actions-secrets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.actions-secrets-head .actions-secrets-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-base);
+  font-weight: 650;
+  color: var(--vscode-foreground);
+}
+.actions-secrets-head .codicon { color: var(--gs-accent-ink, var(--gs-accent)); font-size: 15px; }
+.actions-secrets-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.actions-kv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 4px 6px;
+}
+.actions-kv-headtitle {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.actions-kv-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--app-border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+.actions-kv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 11px;
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
+  transition: background var(--dur-1) var(--ease);
+}
+.actions-kv-row + .actions-kv-row { border-top: 1px solid var(--app-border); }
+.actions-kv-row .actions-kv-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-weight: 550;
+}
+.actions-kv-row .actions-kv-meta {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  font-variant-numeric: tabular-nums;
+}
+.actions-kv-row:hover { background: var(--app-hover); }
+.actions-kv-empty {
+  padding: 14px 12px;
+  font-size: var(--text-sm);
+  color: var(--app-muted);
+  text-align: center;
+}
+
+/* ── 4 · Design-audit CSS-only consistency fixes ────────────────────────────── */
+
+/* Notifications: dim the WHOLE read row (was an inline style.opacity=0.72), so the
+   view can drop the inline rule and just toggle .notif-read. The existing
+   .notif-read title/icon rules above still apply for finer recede. */
+.notif-read { opacity: 0.72; }
+
+/* Gists: a semantic lead-icon colour (member of the .gh-lead-* family) so the
+   Gists view can drop its inline style.color on the leading code glyph. */
+.gh-lead-gist { color: var(--gs-accent-ink, var(--gs-accent)); }
+
+/* Empty-state CTA vs error-state Retry can swap between a 40px .btn-primary and a
+   28px .mini-btn; pin a shared min-height on the action slot so the layout doesn't
+   jump as a view moves between its empty and error states. */
+.list-empty-action { min-height: 40px; display: inline-flex; align-items: center; }
+
+/* ── 5 · Commit composer depth (Changes view, renderer.ts) ──────────────────── */
+/* A horizontal row of small toggle chips beneath the commit message box. */
+.dc-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+/* A small pill toggle — a subtler sibling of .mini-btn (muted face at rest). The
+   Amend / Sign-off switches carry role="switch" + aria-checked; the .is-on class
+   and aria-checked are flipped together, so we honour both for the ON face. */
+.dc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-elevated);
+  box-shadow: var(--sheen);
+  color: var(--app-muted);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.dc-toggle .glyph,
+.dc-toggle .codicon { font-size: 14px; flex: 0 0 auto; }
+.dc-toggle:hover { background: var(--app-hover); border-color: var(--accent-line); color: var(--vscode-foreground); }
+.dc-toggle:active { transform: translateY(0.5px); }
+.dc-toggle:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: -2px; border-radius: 999px; }
+.dc-toggle.is-on,
+.dc-toggle[aria-checked="true"] {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent) 42%, var(--app-border));
+  background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+}
+.dc-toggle.is-on .glyph,
+.dc-toggle.is-on .codicon,
+.dc-toggle[aria-checked="true"] .glyph,
+.dc-toggle[aria-checked="true"] .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+.dc-toggle.is-on:hover,
+.dc-toggle[aria-checked="true"]:hover {
+  background: color-mix(in srgb, var(--gs-accent) 20%, transparent);
+  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
+}
+/* Co-author chips below the toggles. */
+.dc-coauthors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 6px;
+}
+.dc-coauthor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px 0 9px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-panel);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+}
+.dc-coauthor-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The chip's ✕ remove button — tiny + muted, reddening on hover (row-btn sizing). */
+.dc-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.dc-chip-x .codicon { font-size: 11px; }
+.dc-chip-x:hover { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
+.dc-chip-x:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: 1px; }
+/* The "Create pull request" CTA in the Changes toolbar — a .mini-btn with a quiet
+   accent lean so it reads as the forward action without shouting like a primary. */
+.dc-createpr {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent) 38%, var(--app-border));
+}
+.dc-createpr .glyph,
+.dc-createpr .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+.dc-createpr:hover {
+  background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
+}
+
+/* ── 6 · Op-state banner — merge/rebase in progress (Changes view) ──────────── */
+/* Pinned at the top of the Changes view when a merge/rebase/cherry-pick is mid-op;
+   a soft amber "attention" wash with the Abort/Continue actions on the right. */
+.dc-opbanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--status-warn) 38%, var(--app-border));
+  border-left: 3px solid var(--status-warn);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--status-warn) 12%, transparent);
+}
+.dc-opbanner-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.dc-opbanner-text .glyph,
+.dc-opbanner-text > .codicon { flex: 0 0 auto; color: var(--status-warn); }
+.dc-opbanner-text .codicon { font-size: 15px; }
+.dc-opbanner-strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.dc-opbanner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* ── 7 · PR review depth — Files tab + inline threads (views/prs.ts) ─────────── */
+/* Matches the existing .gh-* detail look. The Files tab is a master/detail split:
+   a left file list, a right pane with the Monaco diff over an inline-threads panel. */
+.pr-files {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.pr-files-list {
+  flex: 0 0 auto;
+  width: 268px;
+  min-width: 220px;
+  max-width: 300px;
+  overflow-y: auto;
+  padding-right: 12px;
+  border-right: 1px solid var(--app-border);
+}
+.pr-files-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The Monaco diff host. min-height:0 is CRITICAL so the editor gets real height
+   (it also carries .diff-surface; we drop that block's top border in this pane). */
+.pr-diff-surface {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  border-top: none;
+}
+/* The inline-review panel beneath the diff. */
+.pr-threads {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 42%;
+  overflow-y: auto;
+  padding: 12px 2px 4px;
+  border-top: 1px solid var(--app-border);
+}
+.pr-threads-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pr-threads-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--app-muted);
+}
+.pr-threads-empty {
+  padding: 18px 12px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  text-align: center;
+}
+/* A thread card — extends .gh-comment; add a panel face + padding for the body. */
+.pr-thread {
+  background: var(--app-panel);
+}
+.pr-thread.is-resolved {
+  opacity: 0.65;
+  border-color: color-mix(in srgb, var(--status-add) 32%, var(--app-border));
+}
+/* .pr-thread-head extends .gh-comment-head — make it a space-between row so the
+   resolve toggle sits opposite the file:line anchor. */
+.pr-thread-head { justify-content: space-between; }
+.pr-thread-anchor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  font-weight: 550;
+  color: var(--app-muted);
+}
+.pr-thread-anchor .codicon { font-size: 13px; flex: 0 0 auto; }
+.pr-thread-line {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--app-muted) 16%, transparent);
+  color: var(--app-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.pr-thread-comment {
+  padding: 9px 12px;
+  border-top: 1px solid var(--app-border);
+}
+.pr-thread-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 5px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.pr-thread-author { color: var(--vscode-foreground); font-weight: 600; }
+.pr-thread-reply {
+  padding: 9px 12px;
+  border-top: 1px solid var(--app-border);
+}
+/* The reply textarea — extends .gh-composer-input; just shrink it for a thread. */
+.pr-reply-input { min-height: 56px; font-size: var(--text-sm); }
+
+/* — PR title inline-edit affordances — */
+.gh-detail-titlerow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.gh-detail-titlerow .gh-detail-title { flex: 1 1 auto; min-width: 0; }
+/* Subtle icon buttons (pencil / inline save+cancel) — they also carry
+   .mini-btn.gh-icon-btn; recede to a borderless ghost at rest, reveal on hover so
+   the edit affordance stays quiet until reached. */
+.gh-title-edit,
+.gh-inline-edit {
+  flex: 0 0 auto;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--app-muted);
+}
+.gh-title-edit:hover,
+.gh-inline-edit:hover {
+  background: var(--app-hover);
+  border-color: var(--app-border);
+  color: var(--vscode-foreground);
+}
+.gh-title-edit .glyph,
+.gh-inline-edit .glyph,
+.gh-title-edit .codicon,
+.gh-inline-edit .codicon { color: inherit; }
+/* The "open / unresolved" thread state pill (sibling of .gh-review-approved). */
+.gh-thread-open {
+  color: var(--status-warn);
+  background: color-mix(in srgb, var(--status-warn) 16%, transparent);
+}

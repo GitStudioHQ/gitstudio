@@ -34,16 +34,16 @@ import {
 } from "./avatar";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
-const ROW_HEIGHT = 24;
-const COL_WIDTH = 14;
+const ROW_HEIGHT = 28;
+const COL_WIDTH = 16;
 const NODE_RADIUS = 3.5;
 const OVERSCAN = 12;
 /** Author avatar diameter, px — sits ON the commit node, GitKraken-style. */
-const AVATAR_SIZE = 18;
+const AVATAR_SIZE = 20;
 /** Left inset added to every lane so a node avatar at lane 0 isn't clipped. */
-const NODE_INSET = 12;
+const NODE_INSET = 13;
 /** Min gutter width so even a linear history reserves room for the avatar. */
-const MIN_GUTTER_WIDTH = 34;
+const MIN_GUTTER_WIDTH = 44;
 /** Cap the *rendered* gutter width so a pathological fan-out can't eat the row. */
 const MAX_GUTTER_COLUMNS = 16;
 /** Trigger a loadMore when within this many rows of the bottom. */
@@ -52,6 +52,64 @@ const LOAD_MORE_THRESHOLD = 60;
 const MAX_VISIBLE_REFS = 4;
 /** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) node. */
 const ZERO_SHA_RE = /^0{40}$/;
+
+// ── Resizable / toggleable columns ───────────────────────────────────────────
+// The row + colhead grids share a set of CSS custom properties on :host, so a
+// drag on a header reflows both. Each toggleable column has: a CSS var carrying
+// its track width, a default width, a min/max clamp for dragging, an id used in
+// the hidden-set + localStorage, and a `:host(.hide-<id>)` class that collapses
+// the track to 0 and hides the cells. Gutter + subject stay the flexible tracks.
+interface ColumnSpec {
+  /** Stable id: localStorage key suffix + hide-class + popover row. */
+  id: "graph" | "refs" | "changes" | "author" | "date" | "sha";
+  /** Human label for the Columns popover. */
+  label: string;
+  /** CSS custom property carrying this column's grid track width. */
+  cssVar: string;
+  /** Default track width in px. */
+  def: number;
+  /** Drag clamp, px. */
+  min: number;
+  max: number;
+  /** False = always shown (excluded from the Columns popover / hide set). */
+  hideable?: boolean;
+}
+
+const COLUMN_SPECS: readonly ColumnSpec[] = [
+  // The graph gutter auto-sizes to the lane count; a manual resize overrides
+  // that (dbl-click / Home on the grip restores auto). Never hideable.
+  { id: "graph", label: "Graph", cssVar: "--gs-gutter-w", def: MIN_GUTTER_WIDTH, min: MIN_GUTTER_WIDTH, max: 480, hideable: false },
+  // Branch/Tag is a fixed, resizable track (not auto-fit) so subjects start at
+  // the same x on every row — a real scanability win, GitLens-style. Default is
+  // lean so empty-ref rows don't waste width; drag wider for busy ref sets.
+  { id: "refs", label: "Branch / Tag", cssVar: "--col-refs-w", def: 200, min: 60, max: 360 },
+  { id: "changes", label: "Changes", cssVar: "--col-changes-w", def: 108, min: 72, max: 220 },
+  { id: "author", label: "Author", cssVar: "--col-author-w", def: 132, min: 72, max: 240 },
+  { id: "date", label: "Date", cssVar: "--col-date-w", def: 88, min: 44, max: 170 },
+  { id: "sha", label: "SHA", cssVar: "--col-sha-w", def: 62, min: 48, max: 140 },
+];
+const COLUMN_BY_ID = new Map<string, ColumnSpec>(
+  COLUMN_SPECS.map((c) => [c.id, c]),
+);
+/** Default width (px) for a column id — used to seed the grid template. */
+function col(id: ColumnSpec["id"]): number {
+  return COLUMN_BY_ID.get(id)!.def;
+}
+
+/** localStorage keys (work in both the Electron renderer and VS Code webviews). */
+const LS_COL_WIDTHS = "gitstudio.graph.cols.widths";
+const LS_COL_HIDDEN = "gitstudio.graph.cols.hidden";
+const LS_SEARCH_SCOPE = "gitstudio.graph.search.scope";
+
+/** What the search query matches against. */
+export type SearchScope = "all" | "message" | "author" | "sha" | "refs";
+const SEARCH_SCOPES: ReadonlyArray<{ id: SearchScope; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "message", label: "Message" },
+  { id: "author", label: "Author" },
+  { id: "sha", label: "SHA" },
+  { id: "refs", label: "Branch+Tag" },
+];
 
 export type GraphAction =
   | { type: "select"; sha: string }
@@ -74,6 +132,9 @@ export class CommitGraph extends LitElement {
     palette: { state: true },
     selectedSha: { state: true },
     searchQuery: { state: true },
+    searchScope: { state: true },
+    columnsOpen: { state: true },
+    scopeOpen: { state: true },
   };
 
   static styles = [codiconStyles, css`
@@ -202,7 +263,121 @@ export class CommitGraph extends LitElement {
       color: var(--vscode-foreground);
     }
     .gh-iconbtn .codicon { font-size: 14px; }
+    .gh-iconbtn[aria-expanded="true"] {
+      background: var(--vscode-list-hoverBackground);
+      color: var(--vscode-foreground);
+    }
     .gh-refresh { margin-left: 2px; }
+
+    /* ── Anchored popover/menu shell (Columns + search scope share it) ────── */
+    .gh-anchor { position: relative; flex: 0 0 auto; display: inline-flex; }
+    .gh-pop {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 20;
+      min-width: 176px;
+      padding: 5px;
+      border-radius: 8px;
+      background: var(--vscode-menu-background,
+        color-mix(in srgb, var(--vscode-foreground) 6%, var(--vscode-editor-background)));
+      border: 1px solid var(--vscode-menu-border,
+        color-mix(in srgb, var(--vscode-foreground) 18%, transparent));
+      box-shadow: 0 6px 22px color-mix(in srgb, #000 38%, transparent);
+      color: var(--vscode-menu-foreground, var(--vscode-foreground));
+      animation: gh-pop-in 120ms ease;
+    }
+    @keyframes gh-pop-in {
+      from { opacity: 0; transform: translateY(-3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .gh-pop { animation: none; }
+    }
+    .gh-pop-title {
+      padding: 4px 8px 5px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--vscode-foreground) 50%, transparent);
+      user-select: none;
+    }
+    .gh-menuitem {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      height: 28px;
+      padding: 0 8px;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      color: inherit;
+      font-family: var(--vscode-font-family);
+      font-size: 12px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .gh-menuitem:hover,
+    .gh-menuitem:focus-visible {
+      background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
+      color: var(--vscode-menu-selectionForeground, var(--vscode-foreground));
+      outline: none;
+    }
+    .gh-menuitem .codicon-check {
+      flex: 0 0 auto;
+      font-size: 13px;
+      opacity: 0;
+    }
+    .gh-menuitem[aria-checked="true"] .codicon-check { opacity: 1; }
+    .gh-menuitem .lbl { flex: 1 1 auto; }
+    .gh-menuitem[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .gh-menuitem[disabled]:hover { background: transparent; }
+    .gh-pop-sep {
+      height: 1px;
+      margin: 4px 4px;
+      background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+    }
+    .gh-pop-hint {
+      padding: 3px 8px 4px;
+      font-size: 10.5px;
+      color: color-mix(in srgb, var(--vscode-foreground) 45%, transparent);
+    }
+
+    /* ── Search scope trigger (segmented-style button inside the search box) ── */
+    .gh-scope {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      height: 20px;
+      padding: 0 5px 0 6px;
+      margin-right: 1px;
+      border: none;
+      border-radius: 4px;
+      background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+      color: var(--vscode-foreground);
+      font-family: var(--vscode-font-family);
+      font-size: 11px;
+      white-space: nowrap;
+      cursor: pointer;
+      flex: 0 0 auto;
+      transition: background 120ms ease;
+    }
+    .gh-scope:hover { background: color-mix(in srgb, var(--vscode-foreground) 14%, transparent); }
+    .gh-scope:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+    .gh-scope .codicon-filter { font-size: 11px; opacity: 0.8; }
+    .gh-scope .codicon-chevron-down { font-size: 11px; opacity: 0.7; margin-left: -1px; }
+    .gh-scope.scoped {
+      background: color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
+      color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+    }
+    .gh-scope-pop { min-width: 150px; }
+    /* The scope popover anchors to the search box's scope button (left-ish). */
+    .gh-scope-pop { right: auto; left: 0; }
 
     /* Search highlight: matches glow, the rest recede. */
     .row.is-match {
@@ -215,24 +390,40 @@ export class CommitGraph extends LitElement {
     .row.is-nomatch .meta { opacity: 0.4; }
     .row.is-nomatch .avatar { opacity: 0.45; }
 
-    @media (max-width: 560px) { .gh-search { min-width: 130px; flex-basis: 200px; } }
+    @media (max-width: 560px) {
+      .gh-search { min-width: 130px; flex-basis: 200px; }
+      /* keep the scope trigger icon-only when space is tight */
+      .gh-scope > span:not(.codicon) { display: none; }
+    }
     @media (max-width: 420px) { .gh-count { display: none; } }
+
+    /* ── The shared 7-track grid (colhead + every row reference it) ──────
+       Gutter + subject are the flexible tracks; the rest are CSS vars so a
+       header drag reflows the whole list, and a hidden column collapses to 0.
+       Defaults live in the :host var declarations below. */
+    :host {
+      --gs-grid:
+        var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+        clamp(0px, var(--col-refs-w, ${col("refs")}px), 360px)
+        minmax(0, 1fr)
+        var(--col-changes-w, ${col("changes")}px)
+        var(--col-author-w, ${col("author")}px)
+        var(--col-date-w, ${col("date")}px)
+        var(--col-sha-w, ${col("sha")}px);
+    }
 
     /* ── Column header row (aligned to the row grid) ──────────────────── */
     .colhead {
+      position: relative;
       flex: 0 0 auto;
       display: grid;
-      grid-template-columns:
-        var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
-        auto
-        minmax(0, 1fr)
-        108px
-        132px
-        56px
-        62px;
+      grid-template-columns: var(--gs-grid);
       align-items: center;
       height: 24px;
       padding-right: 12px;
+      /* Mirror the rows' selection border so header cells sit exactly over
+         their column content. */
+      border-left: 2px solid transparent;
       border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
       background: color-mix(in srgb, var(--vscode-foreground) 2%, var(--vscode-editor-background));
       font-size: 10px;
@@ -242,14 +433,83 @@ export class CommitGraph extends LitElement {
       color: color-mix(in srgb, var(--vscode-foreground) 50%, transparent);
       user-select: none;
     }
+    /* Header cells let the right-edge grip escape (overflow:visible); the label
+       text is clipped by its own .ch-label child so it still ellipsizes. */
     .colhead > span {
-      overflow: hidden;
-      text-overflow: ellipsis;
+      position: relative;
+      overflow: visible;
       white-space: nowrap;
       padding-left: 2px;
     }
+    .colhead .ch-label {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .colhead .ch-graph { padding-left: 4px; }
-    .colhead .ch-sha { text-align: right; padding-right: 0; }
+    /* Chips start 6px into the refs cell — start the header label with them. */
+    .colhead .ch-refs { padding-left: 6px; }
+
+    /* ── Column resize handles (grab strips on the right edge of headers) ──
+       Pinned flush to the column's right edge, fully inside the track so the
+       parent span's box never clips them. A hairline brightens on hover/drag. */
+    .col-resize {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 9px;
+      height: 100%;
+      cursor: col-resize;
+      z-index: 4;
+      background:
+        linear-gradient(to right, transparent 4px,
+          color-mix(in srgb, var(--vscode-foreground) 16%, transparent) 4px,
+          color-mix(in srgb, var(--vscode-foreground) 16%, transparent) 5px,
+          transparent 5px);
+      transition: background 120ms ease;
+      touch-action: none;
+    }
+    .col-resize:hover,
+    .col-resize.dragging {
+      background:
+        linear-gradient(to right, transparent 4px,
+          var(--vscode-focusBorder) 4px,
+          var(--vscode-focusBorder) 5px,
+          transparent 5px);
+    }
+    .col-resize:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: -1px;
+      border-radius: 2px;
+    }
+    /* While dragging, lock the cursor + kill text selection document-wide. */
+    :host(.col-dragging) { cursor: col-resize; }
+    :host(.col-dragging) .scroller,
+    :host(.col-dragging) .row,
+    :host(.col-dragging) .colhead { user-select: none; }
+
+    /* ── Hidden columns: hide the cells/header (the track is collapsed to 0 on
+       the inline :host style by applyColumnStyles, which outranks any saved
+       width). These rules only remove the now-empty cells + their grip. */
+    :host(.hide-refs) .refs, :host(.hide-refs) .ch-refs,
+    :host(.hide-refs) .col-resize[data-col="refs"] { display: none; }
+    :host(.hide-changes) .changes, :host(.hide-changes) .ch-changes,
+    :host(.hide-changes) .col-resize[data-col="changes"] { display: none; }
+    :host(.hide-author) .author, :host(.hide-author) .ch-author,
+    :host(.hide-author) .col-resize[data-col="author"] { display: none; }
+    :host(.hide-date) .date, :host(.hide-date) .ch-date,
+    :host(.hide-date) .col-resize[data-col="date"] { display: none; }
+    /* SHA is the last column: no trailing grip (dividers only sit BETWEEN
+       columns, Git Graph-style) — the date|sha boundary resizes it. */
+    :host(.hide-sha) .sha, :host(.hide-sha) .ch-sha { display: none; }
+
+    /* Whichever column becomes last when trailing columns are hidden must not
+       keep a dangling right-edge grip either. */
+    :host(.hide-sha) .col-resize[data-col="date"] { display: none; }
+    :host(.hide-sha.hide-date) .col-resize[data-col="author"] { display: none; }
+    :host(.hide-sha.hide-date.hide-author)
+      .col-resize[data-col="changes"][data-invert="0"] { display: none; }
 
     .scroller {
       flex: 1 1 auto;
@@ -277,14 +537,7 @@ export class CommitGraph extends LitElement {
       width: 100%;
       height: ${ROW_HEIGHT}px;
       display: grid;
-      grid-template-columns:
-        var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
-        auto
-        minmax(0, 1fr)
-        108px
-        132px
-        56px
-        62px;
+      grid-template-columns: var(--gs-grid);
       align-items: center;
       column-gap: 0;
       box-sizing: border-box;
@@ -336,6 +589,10 @@ export class CommitGraph extends LitElement {
         0 0 0 3px var(--vscode-list-activeSelectionBackground, var(--gs-graph-node-hole));
     }
     .avatar img {
+      /* Positioned so it paints ABOVE the absolutely-positioned initials
+         fallback (positioned siblings always paint over static ones — a
+         static img here is permanently covered even after it loads). */
+      position: relative;
       width: 100%;
       height: 100%;
       display: block;
@@ -348,7 +605,7 @@ export class CommitGraph extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 8.5px;
+      font-size: 9px;
       font-weight: 600;
       letter-spacing: 0.02em;
       color: #fff;
@@ -382,28 +639,52 @@ export class CommitGraph extends LitElement {
     .refs {
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       padding: 0 8px 0 6px;
-      max-width: 320px;
+      min-width: 0;
       overflow: hidden;
       white-space: nowrap;
     }
-    /* Ref chips — radius 4px, 11px, subtle tinted bg, per the design system. */
+    /* ── Ref chips — clearer, more prominent, AA-legible in both themes ──────
+       Each kind is differentiated by hue + icon: local branch (accent), remote
+       (cool/neutral + cloud), tag (amber + tag), current HEAD (filled accent +
+       "you are here" dot). Every chip composites its tint over the OPAQUE editor
+       background (not transparent) so the label contrast can't collapse on a
+       selected (accent-filled) row. */
     .chip {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      height: 16px;
-      padding: 0 6px;
-      border-radius: 4px;
+      height: 18px;
+      padding: 0 7px;
+      border-radius: 5px;
       font-size: 11px;
-      line-height: 16px;
+      font-weight: 550;
+      line-height: 18px;
+      /* Stay readable when crowded: don't shrink below a few legible chars, and
+         cap a single long ref so it can't hog the whole column. */
+      min-width: 46px;
       max-width: 150px;
+      overflow: hidden;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      flex: 0 1 auto;
+    }
+    /* The text label inside a chip truncates; the icon never shrinks. */
+    .chip .nm {
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      border: 1px solid transparent;
+    }
+    /* Remote prefix ("origin/") recedes so the branch name carries the chip. */
+    .chip .rp { opacity: 0.58; }
+    /* Cloud tail on a local chip whose remote twin was folded into it. */
+    .chip .tail {
+      font-size: 10px;
       flex: 0 0 auto;
+      opacity: 0.7;
+      margin-left: 1px;
     }
     .chip .ico {
       font-size: 11px;
@@ -412,11 +693,14 @@ export class CommitGraph extends LitElement {
     }
     /* current HEAD = filled accent with a leading "you are here" dot. */
     .chip-current {
-      color: var(--vscode-button-foreground);
+      color: var(--vscode-button-foreground, #fff);
       background: var(--vscode-button-background,
         var(--vscode-focusBorder));
-      border-color: var(--vscode-button-background, var(--vscode-focusBorder));
-      font-weight: 600;
+      border-color: color-mix(in srgb,
+        var(--vscode-button-background, var(--vscode-focusBorder)) 70%, #000 0%);
+      font-weight: 650;
+      box-shadow: 0 1px 2px color-mix(in srgb,
+        var(--vscode-button-background, var(--vscode-focusBorder)) 40%, transparent);
     }
     .chip-current .dot {
       width: 5px;
@@ -426,38 +710,51 @@ export class CommitGraph extends LitElement {
       background: currentColor;
       box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
     }
-    /* Every chip composites its tint over the opaque editor background, not
-     * transparent — otherwise the fill rides the live row colour and the
-     * label contrast collapses on a selected (accent-filled) row. */
-    /* local branch = accent-tinted. */
+    /* local branch = accent-tinted, accent text + icon. */
     .chip-head {
       color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
       border-color: color-mix(in srgb,
-        var(--vscode-focusBorder) 38%, transparent);
+        var(--vscode-focusBorder) 45%, transparent);
       background: color-mix(in srgb,
-        var(--vscode-focusBorder) 14%, var(--vscode-editor-background));
+        var(--vscode-focusBorder) 16%, var(--vscode-editor-background));
     }
-    /* remote = neutral label + a muted cloud glyph. */
+    .chip-head .ico { color: var(--vscode-textLink-foreground, var(--vscode-focusBorder)); }
+    /* remote = a distinct cool tint + a muted cloud glyph. */
     .chip-remote {
-      color: var(--vscode-foreground);
-      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 28%, transparent);
-      background: color-mix(in srgb, var(--vscode-descriptionForeground) 12%, var(--vscode-editor-background));
+      color: color-mix(in srgb, var(--vscode-foreground) 88%, var(--vscode-charts-blue, #4aa5ff));
+      border-color: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 34%, transparent);
+      background: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 13%, var(--vscode-editor-background));
     }
-    .chip-remote .ico { color: var(--vscode-descriptionForeground); }
+    .chip-remote .ico { color: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 90%, var(--vscode-foreground)); }
     /* tag = amber / charts-yellow tinted with a tag glyph. */
     .chip-tag {
       color: var(--vscode-charts-yellow, #e5a73c);
       border-color: color-mix(in srgb,
-        var(--vscode-charts-yellow, #e5a73c) 34%, transparent);
+        var(--vscode-charts-yellow, #e5a73c) 40%, transparent);
       background: color-mix(in srgb,
-        var(--vscode-charts-yellow, #e5a73c) 14%, var(--vscode-editor-background));
+        var(--vscode-charts-yellow, #e5a73c) 16%, var(--vscode-editor-background));
     }
+    .chip-tag .ico { color: var(--vscode-charts-yellow, #e5a73c); }
+    /* The "+N" overflow pill must never shrink or ellipsize — it's the count. */
     .chip-overflow {
       color: var(--vscode-foreground);
-      background: color-mix(in srgb, var(--vscode-descriptionForeground) 10%, var(--vscode-editor-background));
-      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 22%, transparent);
-      padding: 0 5px;
+      background: color-mix(in srgb, var(--vscode-descriptionForeground) 12%, var(--vscode-editor-background));
+      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 24%, transparent);
+      padding: 0 6px;
+      min-width: 0;
+      flex: 0 0 auto;
+      overflow: visible;
+      cursor: default;
       font-variant-numeric: tabular-nums;
+    }
+    /* On a selected (accent-filled) row, lift chip contrast a touch so the
+       tinted fills don't muddy against the active-selection background. */
+    .row.selected .chip-head,
+    .row.selected .chip-remote,
+    .row.selected .chip-tag,
+    .row.selected .chip-overflow {
+      background: color-mix(in srgb,
+        var(--vscode-editor-background) 78%, transparent);
     }
 
     .subject {
@@ -500,16 +797,19 @@ export class CommitGraph extends LitElement {
       flex: 0 0 auto;
     }
     .changes .ch-count .codicon { font-size: 12px; opacity: 0.75; }
+    /* A slim proportional meter: length ~ size of the change (log scale),
+       green/red split = add/delete mix. Reads like the commit-details stat
+       bars, so the two surfaces speak the same language. */
     .changes .ch-bar {
       display: inline-flex;
-      gap: 1.5px;
+      height: 4px;
+      border-radius: 2px;
+      overflow: hidden;
       flex: 0 0 auto;
+      background: color-mix(in srgb, currentColor 16%, transparent);
     }
     .changes .ch-bar i {
-      width: 9px;
-      height: 8px;
-      border-radius: 1.5px;
-      background: color-mix(in srgb, currentColor 22%, transparent);
+      height: 100%;
     }
     .changes .ch-bar i.a {
       background: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #89d185));
@@ -518,24 +818,58 @@ export class CommitGraph extends LitElement {
       background: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, #f14c4c));
     }
     .author {
-      padding-right: 10px;
+      padding-right: 12px;
     }
+    /* Every column is left-aligned (Git Graph-style) — one reading axis. */
     .date {
-      text-align: right;
       padding-right: 12px;
       font-variant-numeric: tabular-nums;
     }
+    /* ── SHA cell — click to copy the FULL sha, with inline feedback ──────────
+       Interactivity (cursor, hover, copy glyph) is scoped to [data-sha-cell] so
+       the empty WIP-row sha cell stays inert. */
     .sha {
-      text-align: right;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 4px;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
       font-family: var(--vscode-editor-font-family, monospace);
       font-variant-numeric: tabular-nums;
       font-size: 11px;
       opacity: 0.8;
+      border-radius: 4px;
+      transition: color 120ms ease, opacity 120ms ease, background 120ms ease;
     }
+    .sha[data-sha-cell] { cursor: pointer; }
+    .sha .codicon {
+      font-size: 11px;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+    .row:hover .sha { opacity: 1; }
+    .row:hover .sha[data-sha-cell]:hover {
+      color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    /* A faint copy glyph fades in on row hover as the affordance cue. */
+    .row:hover .sha[data-sha-cell] .codicon-copy { opacity: 0.6; }
+    .row:hover .sha[data-sha-cell]:hover .codicon-copy { opacity: 1; }
+    /* "Copied" confirmation state (set for ~1s after a successful copy). */
+    .sha.copied {
+      color: var(--vscode-charts-green, var(--vscode-gitDecoration-addedResourceForeground, #89d185));
+      opacity: 1;
+      text-decoration: none;
+    }
+    .sha.copied .codicon-check { opacity: 1; }
     .row.selected .meta {
       color: inherit;
       opacity: 0.85;
     }
+    .row.selected .sha { opacity: 1; }
 
     /* Reduce the visual weight of unrelated rows on hover-focus. */
     .scroller.focusing .row:not(.focus-on) .subject,
@@ -600,10 +934,31 @@ export class CommitGraph extends LitElement {
   private declare palette: readonly string[];
   private declare selectedSha: string | undefined;
   private declare searchQuery: string;
+  /** What the search query is scoped to match against. */
+  private declare searchScope: SearchScope;
+  /** Whether the Columns popover / search-scope popover are open. */
+  private declare columnsOpen: boolean;
+  private declare scopeOpen: boolean;
   /** Row indices matching the current search, and the cursor into them. */
   private searchMatches: number[] = [];
   private matchSet = new Set<number>();
   private matchIdx = -1;
+
+  /** Per-column widths (px), keyed by column id; persisted to localStorage. */
+  private colWidths: Partial<Record<ColumnSpec["id"], number>> = {};
+  /** Hidden column ids; persisted to localStorage. */
+  private hiddenCols = new Set<ColumnSpec["id"]>();
+  /** Live column-drag bookkeeping (null when not dragging). */
+  private drag: {
+    id: ColumnSpec["id"];
+    startX: number;
+    startW: number;
+    handle: HTMLElement;
+    /** True for a divider on the LEFT of its column (drag right = shrink). */
+    invert: boolean;
+  } | null = null;
+  /** Timer that clears the "Copied" sha feedback. */
+  private copiedTimer: number | undefined;
 
   /** Emits user intents the host should act on. */
   onAction: (action: GraphAction) => void = () => {};
@@ -638,10 +993,14 @@ export class CommitGraph extends LitElement {
     this.palette = paletteForTheme();
     this.selectedSha = undefined;
     this.searchQuery = "";
+    this.searchScope = "all";
+    this.columnsOpen = false;
+    this.scopeOpen = false;
   }
 
   connectedCallback(): void {
     super.connectedCallback();
+    this.loadColumnPrefs();
     this.disposeTheme = observeGraphTheme((palette) => {
       this.palette = palette;
       this.renderRows();
@@ -653,6 +1012,12 @@ export class CommitGraph extends LitElement {
     this.teardownVirtualizer();
     this.disposeTheme?.();
     this.disposeTheme = undefined;
+    this.endColumnDrag();
+    if (this.copiedTimer !== undefined) {
+      clearTimeout(this.copiedTimer);
+      this.copiedTimer = undefined;
+    }
+    document.removeEventListener("pointerdown", this.onDocPointerDown, true);
   }
 
   updated(changed: PropertyValues): void {
@@ -666,6 +1031,13 @@ export class CommitGraph extends LitElement {
     // whatever scroller is live now, then paint the visible window. Doing this
     // every update also re-syncs the count after an append and re-fills the
     // sizer after any Lit re-render (e.g. a selection change).
+    // Column track widths + hide-classes live on :host and drive both the
+    // header and every row; (re)apply them on every update so a Lit re-render
+    // (selection, search, popover toggle) never drops them.
+    this.applyColumnStyles();
+    // A popover being open needs a document-level click-outside/Escape listener.
+    this.syncPopoverListener();
+
     const scroller = this.scroller;
     if (scroller) {
       if (!this.virtualizer || this.boundScroller !== scroller) {
@@ -734,7 +1106,330 @@ export class CommitGraph extends LitElement {
   }
 
   private applyGutterWidth(): void {
-    this.style.setProperty("--gs-gutter-w", `${this.gutterWidth()}px`);
+    // A user-dragged width wins over the lane-count auto-size (reset restores).
+    const w = this.colWidths.graph ?? this.gutterWidth();
+    this.style.setProperty("--gs-gutter-w", `${w}px`);
+  }
+
+  // ── Column preferences: resize, show/hide, persistence ─────────────────────
+
+  /** Load persisted widths + hidden set + search scope from localStorage. */
+  private loadColumnPrefs(): void {
+    try {
+      const raw = localStorage.getItem(LS_COL_WIDTHS);
+      if (raw) {
+        const obj = JSON.parse(raw) as Record<string, unknown>;
+        for (const spec of COLUMN_SPECS) {
+          const v = obj[spec.id];
+          if (typeof v === "number" && Number.isFinite(v)) {
+            this.colWidths[spec.id] = this.clampCol(spec, v);
+          }
+        }
+      }
+    } catch {
+      /* corrupt/unavailable storage → fall back to defaults */
+    }
+    try {
+      const raw = localStorage.getItem(LS_COL_HIDDEN);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          for (const id of arr) {
+            const spec = COLUMN_BY_ID.get(id);
+            if (spec && spec.hideable !== false) {
+              this.hiddenCols.add(id as ColumnSpec["id"]);
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    try {
+      const s = localStorage.getItem(LS_SEARCH_SCOPE);
+      if (s && SEARCH_SCOPES.some((x) => x.id === s)) {
+        this.searchScope = s as SearchScope;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private clampCol(spec: ColumnSpec, w: number): number {
+    return Math.round(Math.max(spec.min, Math.min(spec.max, w)));
+  }
+
+  /** Reflect column widths (as :host CSS vars) + hidden set (as :host classes).
+   *  A hidden column's track is forced to 0 on the INLINE style — the saved
+   *  width stays in `colWidths` so re-showing restores it, but inline style
+   *  outranks the `:host(.hide-*)` stylesheet rule, so we must zero it here or a
+   *  previously-resized-then-hidden column would leave a ghost gap. */
+  private applyColumnStyles(): void {
+    for (const spec of COLUMN_SPECS) {
+      // The graph track is owned by applyGutterWidth (auto-size + override).
+      if (spec.id === "graph") continue;
+      const hidden = this.hiddenCols.has(spec.id);
+      const w = this.colWidths[spec.id];
+      if (hidden) {
+        this.style.setProperty(spec.cssVar, "0px");
+      } else if (w !== undefined) {
+        this.style.setProperty(spec.cssVar, `${w}px`);
+      } else {
+        this.style.removeProperty(spec.cssVar);
+      }
+      this.classList.toggle(`hide-${spec.id}`, hidden);
+    }
+  }
+
+  private persistWidths(): void {
+    try {
+      localStorage.setItem(LS_COL_WIDTHS, JSON.stringify(this.colWidths));
+    } catch {
+      /* storage may be unavailable; non-fatal */
+    }
+  }
+
+  private persistHidden(): void {
+    try {
+      localStorage.setItem(LS_COL_HIDDEN, JSON.stringify([...this.hiddenCols]));
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  // ── Column resize (pointer drag on a header handle) ────────────────────────
+
+  private onResizeHandlePointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0) return;
+    const handle = e.currentTarget as HTMLElement;
+    const id = handle.dataset.col as ColumnSpec["id"] | undefined;
+    const spec = id ? COLUMN_BY_ID.get(id) : undefined;
+    if (!spec) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const startW = this.colWidths[spec.id] ?? this.defaultColWidth(spec);
+    const invert = handle.dataset.invert === "1";
+    this.drag = { id: spec.id, startX: e.clientX, startW, handle, invert };
+    handle.classList.add("dragging");
+    this.classList.add("col-dragging");
+    try {
+      handle.setPointerCapture(e.pointerId);
+    } catch {
+      /* setPointerCapture can throw if the pointer is already released */
+    }
+    handle.addEventListener("pointermove", this.onResizePointerMove);
+    handle.addEventListener("pointerup", this.onResizePointerUp);
+    handle.addEventListener("pointercancel", this.onResizePointerUp);
+  };
+
+  private onResizePointerMove = (e: PointerEvent): void => {
+    const d = this.drag;
+    if (!d) return;
+    const spec = COLUMN_BY_ID.get(d.id)!;
+    const dx = e.clientX - d.startX;
+    const next = this.clampCol(spec, d.startW + (d.invert ? -dx : dx));
+    this.colWidths[d.id] = next;
+    this.style.setProperty(spec.cssVar, `${next}px`);
+  };
+
+  private onResizePointerUp = (): void => {
+    if (this.drag) this.persistWidths();
+    this.endColumnDrag();
+    // Chip fitting is width-aware — recompute the visible window at the new
+    // width (during the live drag CSS clipping covers gracefully).
+    this.renderRows();
+  };
+
+  private endColumnDrag(): void {
+    const d = this.drag;
+    if (d) {
+      d.handle.classList.remove("dragging");
+      d.handle.removeEventListener("pointermove", this.onResizePointerMove);
+      d.handle.removeEventListener("pointerup", this.onResizePointerUp);
+      d.handle.removeEventListener("pointercancel", this.onResizePointerUp);
+    }
+    this.drag = null;
+    this.classList.remove("col-dragging");
+  }
+
+  /** Double-click a handle → reset that column to its default width. */
+  private onResizeHandleDblClick = (e: MouseEvent): void => {
+    const id = (e.currentTarget as HTMLElement).dataset.col as
+      | ColumnSpec["id"]
+      | undefined;
+    if (!id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.resetColumnWidth(id);
+  };
+
+  /** Keyboard resize: Left/Right nudge, Home reset (handles are focusable). */
+  private onResizeHandleKey = (e: KeyboardEvent): void => {
+    const id = (e.currentTarget as HTMLElement).dataset.col as
+      | ColumnSpec["id"]
+      | undefined;
+    const spec = id ? COLUMN_BY_ID.get(id) : undefined;
+    if (!spec) return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const invert = (e.currentTarget as HTMLElement).dataset.invert === "1";
+      const step = (e.shiftKey ? 16 : 6) * (invert ? -1 : 1);
+      const cur = this.colWidths[spec.id] ?? this.defaultColWidth(spec);
+      const next = this.clampCol(spec, cur + (e.key === "ArrowRight" ? step : -step));
+      this.colWidths[spec.id] = next;
+      this.style.setProperty(spec.cssVar, `${next}px`);
+      this.persistWidths();
+      this.renderRows();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      this.resetColumnWidth(spec.id);
+    }
+  };
+
+  private resetColumnWidth(id: ColumnSpec["id"]): void {
+    const spec = COLUMN_BY_ID.get(id)!;
+    delete this.colWidths[id];
+    this.style.removeProperty(spec.cssVar);
+    if (id === "graph") this.applyGutterWidth(); // back to lane-count auto-size
+    this.persistWidths();
+    this.renderRows();
+  }
+
+  /** Effective default width — the graph column's default is its auto-size. */
+  private defaultColWidth(spec: ColumnSpec): number {
+    return spec.id === "graph" ? this.gutterWidth() : spec.def;
+  }
+
+  // ── Show / hide columns ────────────────────────────────────────────────────
+
+  private toggleColumn(id: ColumnSpec["id"]): void {
+    if (COLUMN_BY_ID.get(id)?.hideable === false) return;
+    if (this.hiddenCols.has(id)) this.hiddenCols.delete(id);
+    else this.hiddenCols.add(id);
+    this.persistHidden();
+    this.applyColumnStyles();
+    this.requestUpdate(); // refresh the popover's checkmarks
+  }
+
+  // ── Popovers (Columns + search scope): open/close + dismissal ──────────────
+
+  private toggleColumnsPopover = (e?: Event): void => {
+    e?.stopPropagation();
+    this.scopeOpen = false;
+    this.columnsOpen = !this.columnsOpen;
+  };
+
+  private toggleScopePopover = (e?: Event): void => {
+    e?.stopPropagation();
+    this.columnsOpen = false;
+    this.scopeOpen = !this.scopeOpen;
+  };
+
+  private closePopovers(): void {
+    if (this.columnsOpen || this.scopeOpen) {
+      this.columnsOpen = false;
+      this.scopeOpen = false;
+    }
+  }
+
+  /** Attach/detach the document click-outside listener as popovers open/close. */
+  private syncPopoverListener(): void {
+    const open = this.columnsOpen || this.scopeOpen;
+    document.removeEventListener("pointerdown", this.onDocPointerDown, true);
+    if (open) {
+      document.addEventListener("pointerdown", this.onDocPointerDown, true);
+    }
+  }
+
+  // A pointerdown anywhere outside an open popover (the event re-targets to the
+  // host from outside the shadow root) dismisses it. Clicks inside the shadow
+  // popover keep `composedPath()` containing a `.gh-pop`, so we leave it open.
+  private onDocPointerDown = (e: Event): void => {
+    const path = e.composedPath();
+    const insidePop = path.some(
+      (n) =>
+        n instanceof HTMLElement &&
+        (n.classList.contains("gh-pop") || n.classList.contains("gh-anchor")),
+    );
+    if (!insidePop) this.closePopovers();
+  };
+
+  private onPopoverKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      const wasColumns = this.columnsOpen;
+      this.closePopovers();
+      // Return focus to the trigger so keyboard users aren't stranded.
+      requestAnimationFrame(() => {
+        const sel = wasColumns ? ".gh-columns-btn" : ".gh-scope";
+        (this.renderRoot.querySelector(sel) as HTMLElement | null)?.focus();
+      });
+    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const items = Array.from(
+        this.renderRoot.querySelectorAll<HTMLElement>(".gh-pop .gh-menuitem:not([disabled])"),
+      );
+      if (!items.length) return;
+      const root = this.renderRoot as ShadowRoot;
+      const active = (root.activeElement ?? null) as HTMLElement | null;
+      let i = items.findIndex((x) => x === active);
+      i = e.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      items[i]?.focus();
+    }
+  };
+
+  // ── Search scope ───────────────────────────────────────────────────────────
+
+  private setSearchScope(scope: SearchScope): void {
+    this.searchScope = scope;
+    this.scopeOpen = false;
+    try {
+      localStorage.setItem(LS_SEARCH_SCOPE, scope);
+    } catch {
+      /* non-fatal */
+    }
+    this.computeMatches();
+    this.renderRows();
+    // Refocus the input so the user can keep typing/jumping.
+    requestAnimationFrame(() => {
+      (this.renderRoot.querySelector(".gh-input") as HTMLInputElement | null)?.focus();
+    });
+  }
+
+  // ── Click-to-copy the full sha ─────────────────────────────────────────────
+
+  /** Copy a row's FULL sha; flash an inline "Copied" confirmation for ~1s. */
+  private copySha(sha: string, cell: HTMLElement): void {
+    // Restore any cell still showing a prior "Copied" flash before re-arming, so
+    // overlapping copies don't strand a cell in the confirmation state. (The
+    // virtualizer may also recycle the node out from under the timer; reading
+    // the label off the *current* target keeps the restore correct.)
+    if (this.copiedTimer !== undefined) {
+      clearTimeout(this.copiedTimer);
+      this.copiedTimer = undefined;
+    }
+    const label = cell.getAttribute("data-label") ?? esc(sha.slice(0, 7));
+    const done = () => {
+      cell.classList.add("copied");
+      cell.innerHTML =
+        `<span class="codicon codicon-check" aria-hidden="true"></span>Copied`;
+      this.copiedTimer = window.setTimeout(() => {
+        cell.classList.remove("copied");
+        cell.innerHTML =
+          `${label}<span class="codicon codicon-copy" aria-hidden="true"></span>`;
+        this.copiedTimer = undefined;
+      }, 1000);
+    };
+    try {
+      const p = navigator.clipboard?.writeText(sha);
+      if (p && typeof p.then === "function") p.then(done).catch(() => done());
+      else done();
+    } catch {
+      // Even if the clipboard API is unavailable, show feedback so the control
+      // never feels dead.
+      done();
+    }
   }
 
   // ── The hot path: render only the visible window into the sizer ────────────
@@ -797,20 +1492,27 @@ export class CommitGraph extends LitElement {
     if (!s || s.files === 0) {
       return "";
     }
-    const total = s.additions + s.deletions;
-    const cells = 5;
-    let greens = total === 0 ? 0 : Math.round((s.additions / total) * cells);
-    if (s.additions > 0 && greens === 0) greens = 1;
-    if (s.deletions > 0 && greens === cells) greens = cells - 1;
+    const adds = Math.max(0, s.additions);
+    const dels = Math.max(0, s.deletions);
+    const total = adds + dels;
+    // Bar length grows with the size of the change (log scale) so big commits
+    // read at a glance; the green/red split is the true add/delete proportion,
+    // with a floor so a tiny-but-present side never vanishes.
     let bar = "";
-    for (let i = 0; i < cells; i++) {
-      const c = total === 0 ? "n" : i < greens ? "a" : "d";
-      bar += `<i class="${c}"></i>`;
+    if (total > 0) {
+      const barW = Math.round(Math.min(46, 16 + 10 * Math.log10(1 + total)));
+      let a = Math.round((adds / total) * 100);
+      if (adds > 0 && dels > 0) a = Math.min(90, Math.max(10, a));
+      bar =
+        `<span class="ch-bar" style="width:${barW}px" title="+${adds} −${dels}">` +
+        (adds > 0 ? `<i class="a" style="width:${a}%"></i>` : "") +
+        (dels > 0 ? `<i class="d" style="width:${100 - a}%"></i>` : "") +
+        `</span>`;
     }
     return (
-      `<span class="ch-count" title="${s.files} file${s.files === 1 ? "" : "s"} changed">` +
+      `<span class="ch-count" title="${s.files} file${s.files === 1 ? "" : "s"} changed · +${adds} −${dels}">` +
       `<span class="codicon codicon-file"></span>${s.files}</span>` +
-      `<span class="ch-bar" title="+${Math.max(0, s.additions)} -${Math.max(0, s.deletions)}">${bar}</span>`
+      bar
     );
   }
 
@@ -866,21 +1568,67 @@ export class CommitGraph extends LitElement {
       `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
       `<div class="changes">${isWip ? "" : this.changesHtml(row.sha)}</div>` +
       `<div class="meta author" title="${esc(row.author)} <${esc(row.authorEmail)}>">${isWip ? "" : esc(row.author)}</div>` +
-      `<div class="meta date" title="${esc(absTime(row.authorDate))}">${isWip ? "now" : esc(relTime(row.authorDate))}</div>` +
-      `<div class="meta sha">${isWip ? "" : esc(row.shortSha)}</div>` +
+      `<div class="meta date" title="${esc(absTime(row.authorDate))}">${isWip ? "now" : esc(dateLabel(row.authorDate))}</div>` +
+      shaCellHtml(row.sha, row.shortSha, isWip) +
       `</div>`
     );
   }
 
   private refsHtml(refs: WireRef[]): string {
-    const visible = refs.slice(0, MAX_VISIBLE_REFS);
-    const overflow = refs.length - visible.length;
-    let out = "";
-    for (const ref of visible) {
-      out += chipHtml(ref);
+    // Fold each remote-tracking twin ("origin/foo") into its same-named local
+    // branch chip ("foo" gains a cloud tail) — GitKraken-style. This halves the
+    // chip clutter on the common local+remote row without losing information
+    // (the tooltip names the remotes).
+    const locals = new Map<string, ChipEntry>();
+    for (const ref of refs) {
+      if (ref.kind === "head" || ref.kind === "currentHead") {
+        locals.set(ref.name, { ref, remotes: [] });
+      }
     }
-    if (overflow > 0) {
-      out += `<span class="chip chip-overflow">+${overflow}</span>`;
+    const entries: ChipEntry[] = [];
+    for (const ref of refs) {
+      if (ref.kind === "remoteHead") {
+        const slash = ref.name.indexOf("/");
+        const local = slash > 0 ? locals.get(ref.name.slice(slash + 1)) : undefined;
+        if (local) {
+          local.remotes.push(ref.name.slice(0, slash));
+          continue;
+        }
+        entries.push({ ref, remotes: [] });
+      } else if (ref.kind === "head" || ref.kind === "currentHead") {
+        entries.push(locals.get(ref.name)!);
+      } else {
+        entries.push({ ref, remotes: [] });
+      }
+    }
+
+    // Width-aware fit: estimate each chip's rendered width and stop BEFORE the
+    // column edge would clip one mid-word; the rest collapse into a "+N" pill
+    // whose tooltip lists them. The first chip always renders (CSS min-width +
+    // ellipsis keep it legible even in a very narrow column).
+    const colW = this.hiddenCols.has("refs")
+      ? 0
+      : (this.colWidths.refs ?? col("refs"));
+    const budget = colW - 14; // .refs horizontal padding
+    let used = 0;
+    let shown = 0;
+    let out = "";
+    for (const entry of entries) {
+      if (shown >= MAX_VISIBLE_REFS) break;
+      const w = estimateChipWidth(entry);
+      const reserve = entries.length - shown - 1 > 0 ? 40 : 0; // room for "+N"
+      if (shown > 0 && used + w + reserve > budget) break;
+      out += chipHtml(entry.ref, entry.remotes);
+      used += w + 5; // + .refs flex gap
+      shown++;
+    }
+    const rest = entries.slice(shown);
+    // The "+N" pill renders only when it genuinely fits — a clipped pill looks
+    // worse than none. In an ultra-narrow column the first chip (which can
+    // shrink to its CSS min-width) wins the space.
+    if (rest.length > 0 && used + 30 <= budget) {
+      const names = rest.map((e) => e.ref.name).join(", ");
+      out += `<span class="chip chip-overflow" title="${esc(names)}">+${rest.length}</span>`;
     }
     return out;
   }
@@ -895,6 +1643,19 @@ export class CommitGraph extends LitElement {
   }
 
   private onClick = (e: MouseEvent): void => {
+    const target = e.target as HTMLElement | null;
+    // A click on a copyable SHA cell copies the FULL sha and must NOT select or
+    // open the row. Only real sha cells carry [data-sha-cell] (the WIP row's sha
+    // cell is empty + non-interactive, so it falls through to normal selection).
+    const shaCell = target?.closest(".sha[data-sha-cell]") as HTMLElement | null;
+    if (shaCell) {
+      const full = (shaCell.closest(".row") as HTMLElement | null)?.dataset.sha;
+      if (full) {
+        e.preventDefault();
+        this.copySha(full, shaCell);
+      }
+      return;
+    }
     const sha = this.rowShaFromEvent(e);
     if (!sha) {
       return;
@@ -1042,15 +1803,9 @@ export class CommitGraph extends LitElement {
     if (!q) {
       return;
     }
+    const scope = this.searchScope;
     for (let i = 0; i < this.rows.length; i++) {
-      const r = this.rows[i];
-      if (
-        r.subject.toLowerCase().includes(q) ||
-        r.author.toLowerCase().includes(q) ||
-        r.authorEmail.toLowerCase().includes(q) ||
-        r.sha.toLowerCase().startsWith(q) ||
-        r.refs.some((ref) => ref.name.toLowerCase().includes(q))
-      ) {
+      if (this.rowMatches(this.rows[i], q, scope)) {
         this.searchMatches.push(i);
         this.matchSet.add(i);
       }
@@ -1058,6 +1813,33 @@ export class CommitGraph extends LitElement {
     if (this.searchMatches.length) {
       this.matchIdx = 0;
       this.scrollToMatch();
+    }
+  }
+
+  /** Whether a row matches the lowercased query under the chosen scope. */
+  private rowMatches(r: WireRow, q: string, scope: SearchScope): boolean {
+    switch (scope) {
+      case "message":
+        return r.subject.toLowerCase().includes(q);
+      case "author":
+        return (
+          r.author.toLowerCase().includes(q) ||
+          r.authorEmail.toLowerCase().includes(q)
+        );
+      case "sha":
+        // SHA is prefix-matched against the full sha (so a long paste still hits).
+        return r.sha.toLowerCase().startsWith(q) || r.shortSha.toLowerCase().startsWith(q);
+      case "refs":
+        return r.refs.some((ref) => ref.name.toLowerCase().includes(q));
+      case "all":
+      default:
+        return (
+          r.subject.toLowerCase().includes(q) ||
+          r.author.toLowerCase().includes(q) ||
+          r.authorEmail.toLowerCase().includes(q) ||
+          r.sha.toLowerCase().startsWith(q) ||
+          r.refs.some((ref) => ref.name.toLowerCase().includes(q))
+        );
     }
   }
 
@@ -1114,10 +1896,11 @@ export class CommitGraph extends LitElement {
       <span class="gh-spacer"></span>
       <span class="gh-search ${q ? "active" : ""}">
         <span class="codicon codicon-search" aria-hidden="true"></span>
+        ${this.scopeControlHtml()}
         <input
           class="gh-input"
           type="text"
-          placeholder="Search commits, authors, refs…"
+          placeholder=${this.searchPlaceholder()}
           aria-label="Search commits"
           .value=${this.searchQuery}
           @input=${this.onSearchInput}
@@ -1148,6 +1931,7 @@ export class CommitGraph extends LitElement {
               </button>`
           : nothing}
       </span>
+      ${this.columnsControlHtml()}
       <button
         class="gh-iconbtn gh-refresh"
         title="Refresh"
@@ -1156,6 +1940,108 @@ export class CommitGraph extends LitElement {
         <span class="codicon codicon-refresh"></span>
       </button>
     </div>`;
+  }
+
+  private searchPlaceholder(): string {
+    switch (this.searchScope) {
+      case "message": return "Search messages…";
+      case "author": return "Search authors…";
+      case "sha": return "Search SHA…";
+      case "refs": return "Search branches & tags…";
+      default: return "Search commits, authors, refs…";
+    }
+  }
+
+  /** The scope segmented-button + its dropdown, sitting inside the search box.
+      Compact by default (just a filter glyph); when a non-"All" scope is active
+      it shows the scope label so the constraint is always visible. */
+  private scopeControlHtml() {
+    const cur = SEARCH_SCOPES.find((s) => s.id === this.searchScope) ?? SEARCH_SCOPES[0];
+    const scoped = this.searchScope !== "all";
+    return html`<span class="gh-anchor">
+      <button
+        class="gh-scope ${scoped ? "scoped" : ""}"
+        type="button"
+        title=${`Search scope: ${cur.label}`}
+        aria-label=${`Search scope: ${cur.label}`}
+        aria-haspopup="menu"
+        aria-expanded=${this.scopeOpen ? "true" : "false"}
+        @click=${this.toggleScopePopover}
+        @keydown=${this.onPopoverKeyDown}
+      >
+        <span class="codicon codicon-filter" aria-hidden="true"></span>
+        ${scoped ? html`<span>${cur.label}</span>` : nothing}
+        <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
+      </button>
+      ${this.scopeOpen
+        ? html`<div
+            class="gh-pop gh-scope-pop"
+            role="menu"
+            aria-label="Search scope"
+            @keydown=${this.onPopoverKeyDown}
+          >
+            <div class="gh-pop-title">Search in</div>
+            ${SEARCH_SCOPES.map(
+              (s) => html`<button
+                class="gh-menuitem"
+                role="menuitemradio"
+                aria-checked=${this.searchScope === s.id ? "true" : "false"}
+                @click=${() => this.setSearchScope(s.id)}
+              >
+                <span class="codicon codicon-check" aria-hidden="true"></span>
+                <span class="lbl">${s.label}</span>
+              </button>`,
+            )}
+          </div>`
+        : nothing}
+    </span>`;
+  }
+
+  /** The "Columns" button + show/hide popover. */
+  private columnsControlHtml() {
+    const hiddenCount = this.hiddenCols.size;
+    return html`<span class="gh-anchor">
+      <button
+        class="gh-iconbtn gh-columns-btn"
+        type="button"
+        title="Columns"
+        aria-label="Show or hide columns"
+        aria-haspopup="menu"
+        aria-expanded=${this.columnsOpen ? "true" : "false"}
+        @click=${this.toggleColumnsPopover}
+        @keydown=${this.onPopoverKeyDown}
+      >
+        <span class="codicon codicon-list-flat" aria-hidden="true"></span>
+      </button>
+      ${this.columnsOpen
+        ? html`<div
+            class="gh-pop"
+            role="menu"
+            aria-label="Toggle columns"
+            @keydown=${this.onPopoverKeyDown}
+          >
+            <div class="gh-pop-title">Columns</div>
+            ${COLUMN_SPECS.filter((s) => s.hideable !== false).map((spec) => {
+              const visible = !this.hiddenCols.has(spec.id);
+              return html`<button
+                class="gh-menuitem"
+                role="menuitemcheckbox"
+                aria-checked=${visible ? "true" : "false"}
+                @click=${() => this.toggleColumn(spec.id)}
+              >
+                <span class="codicon codicon-check" aria-hidden="true"></span>
+                <span class="lbl">${spec.label}</span>
+              </button>`;
+            })}
+            <div class="gh-pop-sep"></div>
+            <div class="gh-pop-hint">
+              ${hiddenCount === 0
+                ? "Graph & message are always shown"
+                : `${hiddenCount} hidden · drag header edges to resize`}
+            </div>
+          </div>`
+        : nothing}
+    </span>`;
   }
 
   render() {
@@ -1188,17 +2074,61 @@ export class CommitGraph extends LitElement {
       </div>${nothing}`;
   }
 
-  /** GitLens-style column headers, aligned to the row grid. */
+  /** GitLens-style column headers, aligned to the row grid, with resize grips.
+      Each resizable header carries a grip on its right edge; the flexible
+      subject + gutter columns have none. The refs grip resizes the Branch/Tag
+      track that sits to the LEFT of the subject. */
   private colHeadHtml() {
-    return html`<div class="colhead" aria-hidden="true">
-      <span class="ch-graph">Graph</span>
-      <span>Branch / Tag</span>
-      <span>Commit message</span>
-      <span>Changes</span>
-      <span>Author</span>
-      <span>Date</span>
-      <span class="ch-sha">SHA</span>
+    return html`<div class="colhead">
+      <span class="ch-graph"
+        ><span class="ch-label">Graph</span>${this.resizeHandle("graph")}</span
+      >
+      <span class="ch-refs"
+        ><span class="ch-label">Branch / Tag</span>${this.resizeHandle("refs")}</span
+      >
+      <span class="ch-subject"
+        ><span class="ch-label">Commit message</span>${this.resizeHandle(
+          "changes",
+          true,
+        )}</span
+      >
+      <span class="ch-changes"
+        ><span class="ch-label">Changes</span>${this.resizeHandle("changes")}</span
+      >
+      <span class="ch-author"
+        ><span class="ch-label">Author</span>${this.resizeHandle("author")}</span
+      >
+      <span class="ch-date"
+        ><span class="ch-label">Date</span>${this.resizeHandle("date")}</span
+      >
+      <span class="ch-sha"><span class="ch-label">SHA</span></span>
     </div>`;
+  }
+
+  /** A drag handle pinned to the right edge of a resizable column header.
+      `invert = true` places the SAME divider on the hosting header's right
+      edge but resizes the NAMED column inversely — used for the Commit
+      message / Changes boundary (dragging right widens the message). */
+  private resizeHandle(id: ColumnSpec["id"], invert = false) {
+    const spec = COLUMN_BY_ID.get(id)!;
+    const w = this.colWidths[id] ?? this.defaultColWidth(spec);
+    return html`<span
+      class="col-resize"
+      data-col=${id}
+      data-invert=${invert ? "1" : "0"}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label=${invert
+        ? "Resize Commit message / Changes divider"
+        : `Resize ${spec.label} column`}
+      aria-valuenow=${Math.round(w)}
+      aria-valuemin=${spec.min}
+      aria-valuemax=${spec.max}
+      tabindex="0"
+      @pointerdown=${this.onResizeHandlePointerDown}
+      @dblclick=${this.onResizeHandleDblClick}
+      @keydown=${this.onResizeHandleKey}
+    ></span>`;
   }
 }
 
@@ -1212,17 +2142,78 @@ const BRANCH_ICON = '<span class="ico codicon codicon-git-branch" aria-hidden="t
 /** "You are here" target dot for the current HEAD chip. */
 const CURRENT_DOT = '<span class="dot" aria-hidden="true"></span>';
 
-function chipHtml(ref: WireRef): string {
+/** A ref chip to render: the ref plus any remotes folded into it. */
+interface ChipEntry {
+  ref: WireRef;
+  /** Remote names ("origin") whose same-named branch was merged into this chip. */
+  remotes: string[];
+}
+
+/** Cloud tail marking a local chip that also exists on the listed remotes. */
+function tailHtml(remotes: string[]): string {
+  return remotes.length
+    ? '<span class="tail codicon codicon-cloud" aria-hidden="true"></span>'
+    : "";
+}
+
+/** Chip label; a remote chip's "origin/" prefix is visually muted. */
+function refNameHtml(ref: WireRef): string {
+  if (ref.kind === "remoteHead") {
+    const i = ref.name.indexOf("/");
+    if (i > 0) {
+      return (
+        `<span class="nm"><span class="rp">${esc(ref.name.slice(0, i + 1))}</span>` +
+        `${esc(ref.name.slice(i + 1))}</span>`
+      );
+    }
+  }
+  return `<span class="nm">${esc(ref.name)}</span>`;
+}
+
+/**
+ * Estimated rendered chip width (px) for the width-aware fit: padding + border
+ * + leading glyph + ~6px/char of 11px label text + optional cloud tail, clamped
+ * to the chip CSS min/max. An estimate is fine — chips can still shrink a few
+ * px via flex, and the fit only decides how many chips to attempt.
+ */
+function estimateChipWidth(entry: ChipEntry): number {
+  const w = 16 + 15 + entry.ref.name.length * 6 + (entry.remotes.length ? 15 : 0);
+  return Math.max(46, Math.min(150, w));
+}
+
+function chipHtml(ref: WireRef, remotes: string[] = []): string {
+  const nm = refNameHtml(ref);
+  const tail = tailHtml(remotes);
+  const also = remotes.length ? ` · also on ${esc(remotes.join(", "))}` : "";
   switch (ref.kind) {
     case "currentHead":
-      return `<span class="chip chip-current" title="${esc(ref.name)} (HEAD)">${CURRENT_DOT}${esc(ref.name)}</span>`;
+      return `<span class="chip chip-current" title="${esc(ref.name)} (current HEAD${also})">${CURRENT_DOT}${nm}${tail}</span>`;
     case "head":
-      return `<span class="chip chip-head" title="${esc(ref.name)}">${BRANCH_ICON}${esc(ref.name)}</span>`;
+      return `<span class="chip chip-head" title="${esc(ref.name)} (local branch${also})">${BRANCH_ICON}${nm}${tail}</span>`;
     case "remoteHead":
-      return `<span class="chip chip-remote" title="${esc(ref.name)}">${REMOTE_ICON}${esc(ref.name)}</span>`;
+      return `<span class="chip chip-remote" title="${esc(ref.name)} (remote branch)">${REMOTE_ICON}${nm}</span>`;
     case "tag":
-      return `<span class="chip chip-tag" title="${esc(ref.name)}">${TAG_ICON}${esc(ref.name)}</span>`;
+      return `<span class="chip chip-tag" title="${esc(ref.name)} (tag)">${TAG_ICON}${nm}</span>`;
   }
+}
+
+/**
+ * The trailing SHA cell — a click-to-copy affordance. Shows the short sha + a
+ * faint copy glyph (revealed on row hover via CSS). `data-sha-cell` marks it for
+ * the delegated copy handler; `data-label` lets the "Copied" flash restore the
+ * original text exactly. The WIP row renders an empty, non-interactive cell.
+ */
+function shaCellHtml(fullSha: string, shortSha: string, isWip: boolean): string {
+  if (isWip) {
+    return `<div class="meta sha" data-wip="1"></div>`;
+  }
+  const short = esc(shortSha);
+  return (
+    `<div class="meta sha" data-sha-cell="1" data-label="${short}" ` +
+    `title="Click to copy ${esc(fullSha)}">` +
+    `${short}<span class="codicon codicon-copy" aria-hidden="true"></span>` +
+    `</div>`
+  );
 }
 
 /**
@@ -1286,6 +2277,29 @@ function relTime(epochSeconds: number, now = Date.now() / 1000): string {
     return `${Math.floor(delta / MONTH)}mo`;
   }
   return `${Math.floor(delta / YEAR)}y`;
+}
+
+/**
+ * The DATE cell label: relative while it's still "today news" (now/5m/3h),
+ * then a real calendar date — a column of "2y" rows carries no information,
+ * while "Jun 12, 2024" places a commit instantly. Year is dropped for the
+ * current year to keep the column lean.
+ */
+function dateLabel(epochSeconds: number, now = Date.now() / 1000): string {
+  if (now - epochSeconds < DAY) {
+    return relTime(epochSeconds, now);
+  }
+  try {
+    const d = new Date(epochSeconds * 1000);
+    const sameYear = d.getFullYear() === new Date(now * 1000).getFullYear();
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(sameYear ? {} : { year: "numeric" }),
+    });
+  } catch {
+    return relTime(epochSeconds, now);
+  }
 }
 
 /** Full local timestamp for the date column's hover tooltip. */

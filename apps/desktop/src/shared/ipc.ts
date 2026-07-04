@@ -624,6 +624,12 @@ export interface GitLogEntry {
   exitCode: number | null;
   /** True when the process exited non-zero or failed to run. */
   failed: boolean;
+  /** On failure: the (truncated) stderr explaining why. */
+  stderr?: string;
+  /** The user action this command ran under (Output-tab group title). */
+  action?: string;
+  /** Groups commands of ONE action invocation (same id = same group). */
+  actionId?: number;
   /** Epoch milliseconds when the command finished. */
   at: number;
 }
@@ -890,6 +896,67 @@ export interface IpcChannels {
   "ai:chatSetCurrent": [{ id: string }, void];
   "ai:chatSend": [ChatSendRequest, AiDone];
   "ai:chatDelete": [{ id: string }, void];
+  // ── Conflict resolution write-back (3-pane merge editor) ──
+  "conflict:resolve": [{ path: string; content: string }, CommitActionResult];
+  "conflict:takeSide": [{ path: string; side: "ours" | "theirs" }, CommitActionResult];
+  "conflict:list": [void, string[]];
+  // ── Hunk / line staging (working ⇄ index) ──
+  "stage:lines": [{ path: string; lines: number[]; reverse?: boolean }, CommitActionResult];
+  // ── Branch ops (engine-backed: merge / rebase / rename / upstream) ──
+  "branch:merge": [{ name: string; noFf?: boolean }, CommitActionResult];
+  "branch:rebase": [{ onto: string }, CommitActionResult];
+  "branch:rename": [{ from: string; to: string }, CommitActionResult];
+  "branch:setUpstream": [{ name: string; upstream: string }, CommitActionResult];
+  "branch:deleteRemote": [{ remote: string; name: string }, CommitActionResult];
+  // ── In-progress operation state + abort/continue ──
+  "git:opState": [void, GitOpState];
+  "merge:abort": [void, CommitActionResult];
+  "merge:continue": [void, CommitActionResult];
+  "rebase:abort": [void, CommitActionResult];
+  "rebase:continue": [void, CommitActionResult];
+  "rebase:skip": [void, CommitActionResult];
+  // ── Tag creation (the Branches view's "Create tag here…") ──
+  "tag:create": [{ name: string; ref?: string; message?: string }, CommitActionResult];
+  // ── PR review depth: per-file diffs + inline threads + metadata ──
+  "pr:fileDiff": [{ number: number; path: string }, FileDiff | undefined];
+  "pr:reviewThreads": [number, PrReviewThread[]];
+  "pr:addReviewComment": [
+    { number: number; path: string; line: number; side?: "LEFT" | "RIGHT"; body: string },
+    CommitActionResult,
+  ];
+  "pr:replyThread": [{ number: number; threadId: string; body: string }, CommitActionResult];
+  "pr:resolveThread": [{ threadId: string; resolved: boolean }, CommitActionResult];
+  "pr:edit": [{ number: number; title?: string; body?: string }, CommitActionResult];
+  "pr:setLabels": [{ number: number; labels: string[] }, CommitActionResult];
+  "pr:setAssignees": [{ number: number; assignees: string[] }, CommitActionResult];
+  "pr:updateBranch": [number, CommitActionResult];
+  "pr:labels": [void, RepoLabel[]];
+  "pr:prefill": [void, PrPrefill];
+  // ── Issues depth: milestones + repo label CRUD ──
+  "issue:milestones": [void, MilestoneInfo[]];
+  "issue:setMilestone": [{ number: number; milestone: number | null }, CommitActionResult];
+  "labels:list": [void, RepoLabel[]];
+  "label:create": [{ name: string; color: string; description?: string }, CommitActionResult];
+  "label:update": [
+    { name: string; newName?: string; color?: string; description?: string },
+    CommitActionResult,
+  ];
+  "label:delete": [string, CommitActionResult];
+  // ── Actions depth: logs + artifacts + secrets/variables ──
+  "actions:jobLog": [{ jobId: number }, string];
+  "actions:runLog": [{ runId: number }, string];
+  "actions:artifacts": [number, ArtifactInfo[]];
+  "actions:downloadArtifact": [{ id: number; name: string }, CommitActionResult];
+  "actions:secrets": [void, RepoSecretInfo[]];
+  "actions:setSecret": [{ name: string; value: string }, CommitActionResult];
+  "actions:deleteSecret": [string, CommitActionResult];
+  "actions:variables": [void, RepoVariableInfo[]];
+  "actions:setVariable": [{ name: string; value: string }, CommitActionResult];
+  "actions:deleteVariable": [string, CommitActionResult];
+  // ── Appearance ──
+  /** Set the macOS dock icon to the light/dark brand mark. Renderer resolves
+   *  the effective variant (it alone knows the in-app theme override). */
+  "appearance:dockIcon": [{ variant: "dark" | "light" }, void];
 }
 
 export type IpcChannel = keyof IpcChannels;
@@ -927,6 +994,85 @@ export interface GitStudioBridge {
     payload: IpcRequest<C>,
   ): Promise<IpcResponse<C>>;
   on<E extends IpcEvent>(event: E, listener: (data: IpcEvents[E]) => void): () => void;
+}
+
+// ── Local-git depth wire types ──────────────────────────────────────────────────
+
+/** Which mid-operation state the repo is in — drives abort/continue banners. */
+export interface GitOpState {
+  merging: boolean;
+  rebasing: boolean;
+  cherryPicking: boolean;
+  reverting: boolean;
+  /** Number of currently-conflicted paths. */
+  conflicts: number;
+}
+
+// ── GitHub depth wire types (PR threads, milestones, actions) ───────────────────
+
+/** One inline review comment within a PR thread. */
+export interface PrReviewComment {
+  id: string;
+  author: GitHubUser;
+  body: string;
+  createdAt: string;
+}
+
+/** A PR inline review thread anchored to a file + line. */
+export interface PrReviewThread {
+  id: string;
+  path: string;
+  /** Diff line the thread anchors to (right side), if known. */
+  line: number | null;
+  isResolved: boolean;
+  isOutdated: boolean;
+  comments: PrReviewComment[];
+}
+
+/** Prefill for "Create PR from current branch" off the push/Changes flow. */
+export interface PrPrefill {
+  /** The pushed branch name to use as head; absent when nothing to PR. */
+  headRef?: string;
+  /** The repo default branch to use as base. */
+  baseRef?: string;
+  title?: string;
+  body?: string;
+  /** Commits the head is ahead of base by. */
+  commits?: number;
+  /** An already-open PR number for this head, if one exists. */
+  existing?: number;
+}
+
+/** A GitHub milestone. */
+export interface MilestoneInfo {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  dueOn?: string | null;
+  openIssues: number;
+  closedIssues: number;
+}
+
+/** A CI artifact produced by a workflow run. */
+export interface ArtifactInfo {
+  id: number;
+  name: string;
+  sizeBytes: number;
+  expired: boolean;
+  createdAt: string;
+}
+
+/** A repo Actions secret (value never returned — write-only). */
+export interface RepoSecretInfo {
+  name: string;
+  updatedAt: string;
+}
+
+/** A repo Actions variable (value is readable). */
+export interface RepoVariableInfo {
+  name: string;
+  value: string;
+  updatedAt: string;
 }
 
 // ── AI / Agent / MCP wire types ───────────────────────────────────────────────

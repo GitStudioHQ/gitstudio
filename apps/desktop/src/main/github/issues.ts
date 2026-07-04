@@ -20,6 +20,7 @@ import type {
   IssueComment,
   IssueDetail,
   IssueInfo,
+  MilestoneInfo,
   RepoLabel,
 } from "../../shared/ipc";
 
@@ -53,6 +54,14 @@ interface RawRepoLabel {
   name: string;
   color: string;
   description?: string | null;
+}
+interface RawMilestone {
+  number: number;
+  title: string;
+  state: string;
+  due_on?: string | null;
+  open_issues: number;
+  closed_issues: number;
 }
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
@@ -88,6 +97,17 @@ function mapComment(c: RawIssueComment): IssueComment {
 
 function mapLabel(l: RawRepoLabel): RepoLabel {
   return { name: l.name, color: l.color, description: l.description ?? null };
+}
+
+function mapMilestone(m: RawMilestone): MilestoneInfo {
+  return {
+    number: m.number,
+    title: m.title,
+    state: m.state === "closed" ? "closed" : "open",
+    dueOn: m.due_on ?? null,
+    openIssues: m.open_issues,
+    closedIssues: m.closed_issues,
+  };
 }
 
 /** Coerce any thrown value into a clean, user-facing message. */
@@ -149,6 +169,78 @@ export async function listLabels(
     `/repos/${enc(owner)}/${enc(repo)}/labels?per_page=100`,
   );
   return raw.map(mapLabel);
+}
+
+/** Repo-level label CRUD (the maintainer's label management surface). */
+export async function createLabel(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { name: string; color: string; description?: string },
+): Promise<CommitActionResult> {
+  try {
+    await client.requestBody("POST", `/repos/${enc(owner)}/${enc(repo)}/labels`, {
+      name: req.name,
+      color: req.color.replace(/^#/, ""),
+      description: req.description ?? "",
+    });
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, message: errMessage(err) };
+  }
+}
+
+export async function updateLabel(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { name: string; newName?: string; color?: string; description?: string },
+): Promise<CommitActionResult> {
+  try {
+    const body: Record<string, string> = {};
+    if (req.newName) body.new_name = req.newName;
+    if (req.color) body.color = req.color.replace(/^#/, "");
+    if (req.description !== undefined) body.description = req.description;
+    await client.requestBody(
+      "PATCH",
+      `/repos/${enc(owner)}/${enc(repo)}/labels/${enc(req.name)}`,
+      body,
+    );
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, message: errMessage(err) };
+  }
+}
+
+export async function deleteLabel(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  name: string,
+): Promise<CommitActionResult> {
+  try {
+    await client.request("DELETE", `/repos/${enc(owner)}/${enc(repo)}/labels/${enc(name)}`);
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, message: errMessage(err) };
+  }
+}
+
+/**
+ * Every milestone (open AND closed) for the repo, for the milestone filter and
+ * the per-issue milestone picker. `state=all` so closed milestones still show
+ * (an issue can carry a closed milestone). Newest-due first is GitHub's default.
+ */
+export async function milestones(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+): Promise<MilestoneInfo[]> {
+  const raw = await client.request<RawMilestone[]>(
+    "GET",
+    `/repos/${enc(owner)}/${enc(repo)}/milestones?state=all&per_page=100`,
+  );
+  return raw.map(mapMilestone);
 }
 
 // ── Mutations (never throw — return CommitActionResult) ──────────────────────
@@ -284,6 +376,28 @@ export async function setIssueAssignees(
   try {
     await client.requestBody("PATCH", `/repos/${enc(owner)}/${enc(repo)}/issues/${req.number}`, {
       assignees: req.assignees,
+    });
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, message: errMessage(err) };
+  }
+}
+
+/**
+ * Set or clear the issue's milestone (PATCH /issues/{n}). `milestone` is the
+ * milestone number to assign, or `null` to remove it — GitHub accepts a literal
+ * `null` on this field to clear it, which is exactly what the picker's "No
+ * milestone" choice sends.
+ */
+export async function setMilestone(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { number: number; milestone: number | null },
+): Promise<CommitActionResult> {
+  try {
+    await client.requestBody("PATCH", `/repos/${enc(owner)}/${enc(repo)}/issues/${req.number}`, {
+      milestone: req.milestone,
     });
     return { ok: true, changed: true };
   } catch (err) {

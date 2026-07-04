@@ -195,9 +195,24 @@ export function emailHash(email: string): string {
   return h;
 }
 
-/** Gravatar URL (identicon default) at the given pixel size. */
+/** GitHub noreply email → login ("123+login@users.noreply.github.com"). */
+const GH_NOREPLY_RE =
+  /^(?:\d+\+)?([a-z\d](?:[a-z\d-]*[a-z\d])?)@users\.noreply\.github\.com$/i;
+
+/**
+ * Best avatar URL for a commit author's email.
+ * - GitHub noreply emails resolve to the user's REAL GitHub profile picture
+ *   (avatars.githubusercontent.com serves by login, already CSP-allowed).
+ * - Everything else tries Gravatar with `d=404` — a real uploaded photo or
+ *   nothing, so authors without one get the styled initials disc instead of
+ *   identicon noise.
+ */
 export function gravatarUrl(email: string, size = 40): string {
-  return `https://www.gravatar.com/avatar/${emailHash(email)}?d=identicon&s=${size}`;
+  const gh = GH_NOREPLY_RE.exec(email.trim());
+  if (gh) {
+    return `https://avatars.githubusercontent.com/${gh[1]}?size=${size}`;
+  }
+  return `https://www.gravatar.com/avatar/${emailHash(email)}?d=404&s=${size}`;
 }
 
 /** A pleasant, theme-agnostic hue (0..359) deterministically from the hash. */

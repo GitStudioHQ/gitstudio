@@ -23,13 +23,26 @@ import {
   errorState,
   emptyState,
   cleanErr,
+  copyText,
+  formatBytes,
   openMenu,
   ghRow,
   statBit,
 } from "../ui";
-import { toast, confirmDialog } from "../dialogs";
-import { comboField, ghGate, ghHeader, ghListResizer, searchField, type SectionRender } from "./common";
+import { toast, confirmDialog, promptInline } from "../dialogs";
+import {
+  comboField,
+  ghGate,
+  ghHeader,
+  ghListResizer,
+  searchField,
+  trapTab,
+  type SectionRender,
+} from "./common";
 import type {
+  ArtifactInfo,
+  RepoSecretInfo,
+  RepoVariableInfo,
   WorkflowRun,
   WorkflowRunDetail,
   WorkflowJob,
@@ -74,10 +87,13 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const wfBtn = el("button", "mini-btn");
   wfBtn.append(glyph("list-unordered"), span("Workflows"));
   wfBtn.title = "List this repo's workflows";
+  const secretsBtn = el("button", "mini-btn");
+  secretsBtn.append(glyph("lock"), span("Secrets"));
+  secretsBtn.title = "Manage this repo's Actions secrets and variables";
   const runBtn = el("button", "btn btn-primary gh-run-btn");
   runBtn.append(glyph("play"), span("Run workflow"));
   runBtn.title = "Manually trigger a workflow_dispatch";
-  tools.append(wfBtn, runBtn);
+  tools.append(wfBtn, secretsBtn, runBtn);
   header.insertBefore(tools, header.querySelector(".gh-acct"));
 
   const body = el("div", "gh-body");
@@ -89,6 +105,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   emptyDetail(detail);
 
   wfBtn.addEventListener("click", () => void showWorkflowsList(detail));
+  secretsBtn.addEventListener("click", () => openSecretsManager());
   runBtn.addEventListener("click", () => void openDispatch(view, detail));
 
   // ── Runs list ──
@@ -265,13 +282,18 @@ async function showRunDetail(detail: HTMLElement, run: WorkflowRun): Promise<voi
   cancelBtn.disabled = !live;
   cancelBtn.addEventListener("click", () => void cancelRun(full.id, cancelBtn, detail, run));
 
-  // One external action — "Logs" opened the same run page as "Open on GitHub" did,
-  // so they were duplicate buttons. Keep the Actions-specific one.
+  // In-app logs: stream the whole run's aggregated logs into a viewer overlay —
+  // no browser hop. github.com stays reachable as a secondary link in the viewer.
   const logsBtn = btn("mini-btn");
-  logsBtn.append(glyph("link-external"), span("View logs"));
-  logsBtn.title = "Open this run's logs on GitHub";
-  logsBtn.disabled = !full.htmlUrl;
-  logsBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
+  logsBtn.append(glyph("output"), span("View logs"));
+  logsBtn.title = "View this run's logs in-app";
+  logsBtn.addEventListener("click", () =>
+    openLogViewer({
+      title: `Logs · ${full.name} #${full.id}`,
+      htmlUrl: full.htmlUrl,
+      load: () => host.invoke("actions:runLog", { runId: full.id }),
+    }),
+  );
 
   actions.append(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn);
   head.append(h, meta, actions);
@@ -280,11 +302,14 @@ async function showRunDetail(detail: HTMLElement, run: WorkflowRun): Promise<voi
   const jobs = d?.jobs ?? [];
   if (jobs.length === 0) {
     detail.appendChild(emptyState("No jobs", "This run reported no jobs yet."));
-    return;
+  } else {
+    const jobsWrap = el("div", "gh-jobs");
+    for (const j of jobs) jobsWrap.appendChild(jobCard(j));
+    detail.appendChild(jobsWrap);
   }
-  const jobsWrap = el("div", "gh-jobs");
-  for (const j of jobs) jobsWrap.appendChild(jobCard(j));
-  detail.appendChild(jobsWrap);
+
+  // Artifacts produced by this run — listed below the jobs, lazily loaded.
+  void showArtifacts(detail, full.id);
 }
 
 /** One expandable job card: header row (dot + name + state + Logs) + its steps. */
@@ -324,18 +349,482 @@ function jobCard(j: WorkflowJob): HTMLElement {
     head.classList.toggle("open", !nowHidden);
   });
 
-  if (j.htmlUrl) {
-    const log = el("button", "row-btn gh-job-log");
-    log.textContent = "Logs";
-    log.title = "Open this job's logs on GitHub";
-    log.addEventListener("click", (e) => {
-      e.stopPropagation();
-      window.open(j.htmlUrl, "_blank");
+  const log = el("button", "row-btn gh-job-log");
+  log.textContent = "Logs";
+  log.title = "View this job's logs in-app";
+  log.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openLogViewer({
+      title: `Logs · ${j.name}`,
+      htmlUrl: j.htmlUrl,
+      load: () => host.invoke("actions:jobLog", { jobId: j.id }),
     });
-    head.appendChild(log);
-  }
+  });
+  head.appendChild(log);
   card.append(head, steps);
   return card;
+}
+
+// ── In-app log viewer (overlay; reused for run + job logs) ─────────────────────
+
+/**
+ * A scrollable, terminal-styled log overlay. Fetches the text lazily (run or job)
+ * with a loading/error state, and offers Copy + Open-on-GitHub. Self-contained on
+ * the shared `.modal-overlay` scaffold (ESC / backdrop / focus-trap), matching the
+ * people-picker pattern — no new modal API.
+ */
+function openLogViewer(opts: {
+  title: string;
+  htmlUrl?: string;
+  load: () => Promise<string>;
+}): void {
+  let settled = false;
+  const overlay = el("div", "modal-overlay");
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", opts.title);
+
+  const card = el("div", "modal-card actions-log-card");
+  const head = el("div", "actions-log-head");
+  const h = el("div", "modal-title actions-log-title");
+  h.textContent = opts.title;
+  h.title = opts.title;
+
+  const headActions = el("div", "actions-log-headactions");
+  const copyBtn = btn("mini-btn");
+  copyBtn.append(glyph("copy"), span("Copy"));
+  copyBtn.title = "Copy the full log to the clipboard";
+  copyBtn.disabled = true; // enabled once the text loads
+  if (opts.htmlUrl) {
+    const ghBtn = el("button", "mini-btn");
+    ghBtn.append(glyph("link-external"), span("GitHub"));
+    ghBtn.title = "Open these logs on github.com";
+    ghBtn.addEventListener("click", () => opts.htmlUrl && window.open(opts.htmlUrl, "_blank"));
+    headActions.appendChild(ghBtn);
+  }
+  const closeBtn = el("button", "icon-btn actions-log-close");
+  closeBtn.appendChild(glyph("close"));
+  closeBtn.title = "Close (Esc)";
+  closeBtn.setAttribute("aria-label", "Close logs");
+  headActions.append(copyBtn, closeBtn);
+  head.append(h, headActions);
+
+  const body = el("div", "actions-log-body");
+  body.appendChild(loadingState("Fetching logs…"));
+  card.append(head, body);
+
+  const finish = (): void => {
+    if (settled) return;
+    settled = true;
+    overlay.remove();
+    document.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      finish();
+      return;
+    }
+    trapTab(e, card);
+  };
+  closeBtn.addEventListener("click", finish);
+  overlay.addEventListener("mousedown", (e) => {
+    if (e.target === overlay) finish();
+  });
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  document.addEventListener("keydown", onKey, true);
+  closeBtn.focus();
+
+  const fetchLogs = (): void => {
+    body.replaceChildren(loadingState("Fetching logs…"));
+    copyBtn.disabled = true;
+    opts
+      .load()
+      .then((text) => {
+        if (settled) return;
+        const content = text && text.trim().length ? text : "(no log output)";
+        const pre = el("pre", "actions-log") as HTMLPreElement;
+        pre.textContent = content;
+        body.replaceChildren(pre);
+        if (text && text.trim().length) {
+          copyBtn.disabled = false;
+          copyBtn.onclick = () => void copyText(content, "Log copied.");
+        }
+      })
+      .catch((e) => {
+        if (settled) return;
+        body.replaceChildren(
+          errorState("Couldn't load logs", cleanErr(e) || "GitHub request failed.", fetchLogs),
+        );
+      });
+  };
+  fetchLogs();
+}
+
+// ── Artifacts (in the run detail, below the jobs) ──────────────────────────────
+
+/** Load + render a run's artifacts as a labelled section under the jobs. Silent
+ *  on zero artifacts (the common case) so the detail pane isn't cluttered. */
+async function showArtifacts(detail: HTMLElement, runId: number): Promise<void> {
+  let items: ArtifactInfo[];
+  try {
+    items = await host.invoke("actions:artifacts", runId);
+  } catch {
+    return; // best-effort: a failed artifacts read never breaks the run detail
+  }
+  if (!detail.isConnected || items.length === 0) return;
+
+  const section = el("div", "gh-artifacts");
+  const label = el("div", "gh-artifacts-head");
+  label.append(glyph("package"), span(`Artifacts · ${items.length}`));
+  section.appendChild(label);
+
+  for (const a of items) {
+    const row = el("div", "gh-artifact-row");
+    const info = el("div", "row-meta");
+    const t = el("div", "row-meta-title");
+    t.textContent = a.name;
+    const sub = el("div", "row-meta-sub");
+    const size = formatBytes(a.sizeBytes) || "—";
+    sub.textContent = a.expired ? `${size} · expired` : size;
+    info.append(t, sub);
+
+    const dl = btn("mini-btn");
+    dl.append(glyph("cloud-download"), span("Download"));
+    if (a.expired) {
+      dl.disabled = true;
+      dl.title = "This artifact has expired and is no longer downloadable";
+    } else {
+      dl.title = "Download this artifact's .zip to your Downloads folder";
+      dl.addEventListener("click", () => void downloadArtifactZip(a, dl));
+    }
+
+    row.append(info, dl);
+    section.appendChild(row);
+  }
+  detail.appendChild(section);
+}
+
+/** Download one artifact zip → toast the saved path (or the error). */
+async function downloadArtifactZip(a: ArtifactInfo, btnEl: HTMLButtonElement): Promise<void> {
+  btnEl.disabled = true;
+  try {
+    const r = await host.invoke("actions:downloadArtifact", { id: a.id, name: a.name });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't download the artifact.", "error");
+      btnEl.disabled = false;
+      return;
+    }
+    toast(r.message ?? `Downloaded ${a.name}.`, "success");
+    btnEl.disabled = false;
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't download the artifact.", "error");
+    btnEl.disabled = false;
+  }
+}
+
+// ── Secrets & Variables manager (overlay) ──────────────────────────────────────
+
+/**
+ * A two-section manager overlay: repo Actions secrets (names only — values are
+ * write-only) and variables (name + value). Add/edit via `promptInline`, delete
+ * via `confirmDialog`. Each section reloads itself after a mutation. Built on the
+ * shared `.modal-overlay` scaffold (ESC / backdrop / focus-trap).
+ *
+ * Secret *creation* may be unsupported by the backend (it needs libsodium, which
+ * isn't bundled); when so, the backend returns a clear message and we surface it
+ * as a toast — listing + delete still work.
+ */
+function openSecretsManager(): void {
+  let settled = false;
+  const overlay = el("div", "modal-overlay");
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Secrets and variables");
+
+  const card = el("div", "modal-card actions-secrets-card");
+  const head = el("div", "actions-secrets-head");
+  const h = el("div", "modal-title");
+  h.textContent = "Secrets & variables";
+  const closeBtn = el("button", "icon-btn");
+  closeBtn.appendChild(glyph("close"));
+  closeBtn.title = "Close (Esc)";
+  closeBtn.setAttribute("aria-label", "Close");
+  head.append(h, closeBtn);
+
+  const finish = (): void => {
+    if (settled) return;
+    settled = true;
+    overlay.remove();
+    document.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      finish();
+      return;
+    }
+    trapTab(e, card);
+  };
+  closeBtn.addEventListener("click", finish);
+  overlay.addEventListener("mousedown", (e) => {
+    if (e.target === overlay) finish();
+  });
+
+  const secretsSection = el("div", "actions-secrets-section");
+  const variablesSection = el("div", "actions-secrets-section");
+  card.append(head, secretsSection, variablesSection);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  document.addEventListener("keydown", onKey, true);
+  closeBtn.focus();
+
+  const alive = (): boolean => !settled && overlay.isConnected;
+  void renderSecretsSection(secretsSection, alive);
+  void renderVariablesSection(variablesSection, alive);
+}
+
+/** Render the secrets list (name + updated) with an Add button and per-row delete. */
+async function renderSecretsSection(section: HTMLElement, alive: () => boolean): Promise<void> {
+  const reload = (): void => void renderSecretsSection(section, alive);
+  section.replaceChildren(sectionHeader("Secrets", "lock", "Add secret", () => void addSecret(reload)));
+  const listWrap = el("div", "actions-kv-list");
+  listWrap.appendChild(loadingState("Loading secrets…"));
+  section.appendChild(listWrap);
+
+  let items: RepoSecretInfo[];
+  try {
+    items = await host.invoke("actions:secrets", undefined);
+  } catch (e) {
+    if (!alive()) return;
+    listWrap.replaceChildren(
+      errorState("Couldn't load secrets", cleanErr(e) || "GitHub request failed.", reload),
+    );
+    return;
+  }
+  if (!alive()) return;
+  listWrap.replaceChildren();
+  if (items.length === 0) {
+    listWrap.appendChild(kvEmpty("No secrets defined for this repository."));
+    return;
+  }
+  for (const s of items) {
+    const updated = relTimeISO(s.updatedAt);
+    const row = kvRow(s.name, updated ? `Updated ${updated}` : "", s.updatedAt);
+    const del = btn("row-btn danger");
+    del.textContent = "Delete";
+    del.title = `Delete the secret “${s.name}”`;
+    del.addEventListener("click", () => void deleteSecret(s.name, del, reload));
+    row.appendChild(del);
+    listWrap.appendChild(row);
+  }
+}
+
+/** Render the variables list (name + value) with Add and per-row edit/delete. */
+async function renderVariablesSection(section: HTMLElement, alive: () => boolean): Promise<void> {
+  const reload = (): void => void renderVariablesSection(section, alive);
+  section.replaceChildren(
+    sectionHeader("Variables", "symbol-variable", "Add variable", () => void addVariable(reload)),
+  );
+  const listWrap = el("div", "actions-kv-list");
+  listWrap.appendChild(loadingState("Loading variables…"));
+  section.appendChild(listWrap);
+
+  let items: RepoVariableInfo[];
+  try {
+    items = await host.invoke("actions:variables", undefined);
+  } catch (e) {
+    if (!alive()) return;
+    listWrap.replaceChildren(
+      errorState("Couldn't load variables", cleanErr(e) || "GitHub request failed.", reload),
+    );
+    return;
+  }
+  if (!alive()) return;
+  listWrap.replaceChildren();
+  if (items.length === 0) {
+    listWrap.appendChild(kvEmpty("No variables defined for this repository."));
+    return;
+  }
+  for (const v of items) {
+    const row = kvRow(v.name, v.value, v.updatedAt);
+    const edit = btn("row-btn");
+    edit.textContent = "Edit";
+    edit.title = `Edit the variable “${v.name}”`;
+    edit.addEventListener("click", () => void editVariable(v, edit, reload));
+    const del = btn("row-btn danger");
+    del.textContent = "Delete";
+    del.title = `Delete the variable “${v.name}”`;
+    del.addEventListener("click", () => void deleteVariable(v.name, del, reload));
+    row.append(edit, del);
+    listWrap.appendChild(row);
+  }
+}
+
+/** A section header: an icon + title on the left, an Add button on the right. */
+function sectionHeader(title: string, icon: string, addLabel: string, onAdd: () => void): HTMLElement {
+  const head = el("div", "actions-kv-head");
+  const lead = el("div", "actions-kv-headtitle");
+  lead.append(glyph(icon), span(title));
+  const add = btn("mini-btn");
+  add.append(glyph("add"), span(addLabel));
+  add.addEventListener("click", onAdd);
+  head.append(lead, add);
+  return head;
+}
+
+/** One name/value row (value/sub is truncated + title-tipped for long strings). */
+function kvRow(name: string, sub: string, updatedISO: string): HTMLElement {
+  const row = el("div", "actions-kv-row");
+  const info = el("div", "row-meta");
+  const t = el("div", "row-meta-title");
+  t.textContent = name;
+  const s = el("div", "row-meta-sub");
+  s.textContent = sub || "—";
+  if (sub) s.title = updatedISO ? `${sub}\n${absTimeISO(updatedISO)}` : sub;
+  info.append(t, s);
+  row.appendChild(info);
+  return row;
+}
+
+/** An empty-line note inside a KV list. */
+function kvEmpty(text: string): HTMLElement {
+  const e = el("div", "actions-kv-empty");
+  e.textContent = text;
+  return e;
+}
+
+// Valid GitHub secret/variable name: letters, digits, underscores; not starting
+// with a digit or the reserved GITHUB_ prefix. Validated client-side for a clean
+// error before the round-trip.
+const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function invalidName(name: string): string | null {
+  if (!NAME_RE.test(name)) {
+    return "Names may use only letters, digits, and underscores, and can't start with a digit.";
+  }
+  if (/^github_/i.test(name)) return "Names can't start with the reserved “GITHUB_” prefix.";
+  return null;
+}
+
+async function addSecret(reload: () => void): Promise<void> {
+  const name = await promptInline("New secret", "SECRET_NAME", "", "Next");
+  if (name == null) return;
+  const bad = invalidName(name);
+  if (bad) {
+    toast(bad, "error");
+    return;
+  }
+  const value = await promptInline(`Value for ${name}`, "Secret value", "", "Save secret", true);
+  if (value == null) return;
+  try {
+    const r = await host.invoke("actions:setSecret", { name, value });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't save the secret.", "error");
+      return;
+    }
+    toast(`Saved secret ${name}.`, "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't save the secret.", "error");
+  }
+}
+
+async function deleteSecret(
+  name: string,
+  btnEl: HTMLButtonElement,
+  reload: () => void,
+): Promise<void> {
+  const confirmed = await confirmDialog({
+    title: `Delete secret ${name}?`,
+    message: "Workflows that reference this secret will lose access to it.",
+    confirmLabel: "Delete secret",
+    danger: true,
+  });
+  if (!confirmed) return;
+  btnEl.disabled = true;
+  try {
+    const r = await host.invoke("actions:deleteSecret", name);
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't delete the secret.", "error");
+      btnEl.disabled = false;
+      return;
+    }
+    toast(`Deleted secret ${name}.`, "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't delete the secret.", "error");
+    btnEl.disabled = false;
+  }
+}
+
+async function addVariable(reload: () => void): Promise<void> {
+  const name = await promptInline("New variable", "VARIABLE_NAME", "", "Next");
+  if (name == null) return;
+  const bad = invalidName(name);
+  if (bad) {
+    toast(bad, "error");
+    return;
+  }
+  const value = await promptInline(`Value for ${name}`, "Variable value", "", "Save variable", true);
+  if (value == null) return;
+  await saveVariable(name, value, reload);
+}
+
+async function editVariable(
+  v: RepoVariableInfo,
+  btnEl: HTMLButtonElement,
+  reload: () => void,
+): Promise<void> {
+  const value = await promptInline(`Edit ${v.name}`, "Variable value", v.value, "Save", true);
+  if (value == null) return;
+  btnEl.disabled = true;
+  await saveVariable(v.name, value, reload);
+  btnEl.disabled = false;
+}
+
+async function saveVariable(name: string, value: string, reload: () => void): Promise<void> {
+  try {
+    const r = await host.invoke("actions:setVariable", { name, value });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't save the variable.", "error");
+      return;
+    }
+    toast(`Saved variable ${name}.`, "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't save the variable.", "error");
+  }
+}
+
+async function deleteVariable(
+  name: string,
+  btnEl: HTMLButtonElement,
+  reload: () => void,
+): Promise<void> {
+  const confirmed = await confirmDialog({
+    title: `Delete variable ${name}?`,
+    message: "Workflows that reference this variable will lose its value.",
+    confirmLabel: "Delete variable",
+    danger: true,
+  });
+  if (!confirmed) return;
+  btnEl.disabled = true;
+  try {
+    const r = await host.invoke("actions:deleteVariable", name);
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't delete the variable.", "error");
+      btnEl.disabled = false;
+      return;
+    }
+    toast(`Deleted variable ${name}.`, "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't delete the variable.", "error");
+    btnEl.disabled = false;
+  }
 }
 
 // ── Run mutations (disable → invoke → toast → re-render detail) ────────────────

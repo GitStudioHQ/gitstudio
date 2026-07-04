@@ -33,21 +33,59 @@ import {
   statePill,
   stateLead,
 } from "../ui";
-import { toast, confirmDialog, promptInline } from "../dialogs";
+import { toast, confirmDialog, promptInline, editForm } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { openAssistantTab, aiEnabled } from "../aiAssist";
+import { DiffPanel } from "../diffPanel";
 import { ghGate, ghHeader, ghTwoPane, peoplePickerModal, searchField, trapTab, type SectionRender, type SectionNav, type SectionTarget } from "./common";
 import type {
   BranchRef,
+  FileDiff,
   PrComment,
   PrDetail,
+  PrFile,
+  PrReviewThread,
   PullRequest,
   RepoCollaborator,
+  RepoLabel,
 } from "../../shared/ipc";
 
 // Persist the active sub-tab across re-renders so a comment / state change keeps
 // the user on the tab they were reading.
 let activeSubTab = "conversation";
+// The file selected within the Files tab, persisted so re-rendering the detail
+// (after a mutation) keeps the same diff open.
+let activeFilePath: string | undefined;
+
+// ── Monaco diff lifecycle (self-contained; we can't touch renderer.ts) ─────────
+//
+// The Files tab mounts a shared Monaco DiffPanel. renderer.ts disposes Monaco
+// surfaces it knows about via `activeMonacoView`, but it never sees one we create
+// inside a section view — so we own this panel's whole lifecycle. We dispose it:
+//   • when a different file / PR / sub-tab is selected (the content re-renders),
+//   • when the PR view itself re-renders (start of mount),
+//   • when our surface is detached from the DOM (navigating to another section) —
+//     caught by a MutationObserver so the editor never leaks.
+let prDiffPanel: DiffPanel | undefined;
+let prDiffDetachObs: MutationObserver | undefined;
+
+function disposePrDiff(): void {
+  prDiffDetachObs?.disconnect();
+  prDiffDetachObs = undefined;
+  prDiffPanel?.dispose();
+  prDiffPanel = undefined;
+}
+
+/** Tear the diff down automatically once its surface leaves the document (e.g. a
+ *  route change replaces the view host) so the Monaco editor never lingers. */
+function watchDiffDetach(surface: HTMLElement): void {
+  prDiffDetachObs?.disconnect();
+  const obs = new MutationObserver(() => {
+    if (!surface.isConnected) disposePrDiff();
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  prDiffDetachObs = obs;
+}
 
 export const renderPrs: SectionRender = (wrap, nav, target) => {
   void mount(wrap, nav, target);
@@ -56,6 +94,9 @@ export const renderPrs: SectionRender = (wrap, nav, target) => {
 const refresher = (wrap: HTMLElement, nav: SectionNav) => () => renderPrs(wrap, nav);
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
+  // A re-render replaces the whole view subtree — drop any live Monaco diff from
+  // the previous render so it can't leak or write into detached DOM.
+  disposePrDiff();
   const gate = await ghGate(wrap, nav, true);
   if (!gate) return;
   const refresh = refresher(wrap, nav);
@@ -202,6 +243,8 @@ async function showDetail(
   pr: PullRequest,
   refreshList: () => void,
 ): Promise<void> {
+  // Switching PRs (or reloading this one) must drop the prior file's Monaco diff.
+  disposePrDiff();
   detail.replaceChildren(loadingState());
   let d: PrDetail | undefined;
   try {
@@ -218,8 +261,22 @@ async function showDetail(
   detail.replaceChildren();
 
   const head = el("div", "gh-detail-head");
+  // Title + an inline edit (pencil) affordance, mirroring the Issues view.
+  const titleRow = el("div", "gh-detail-titlerow");
+  titleRow.style.display = "flex";
+  titleRow.style.alignItems = "center";
+  titleRow.style.gap = "8px";
   const h = el("div", "gh-detail-title");
   h.textContent = full.title;
+  h.style.flex = "1 1 auto";
+  h.style.minWidth = "0";
+  const editTitleBtn = el("button", "mini-btn gh-icon-btn gh-title-edit");
+  editTitleBtn.append(glyph("pencil"));
+  editTitleBtn.title = "Edit title & description";
+  editTitleBtn.setAttribute("aria-label", "Edit pull request title and description");
+  editTitleBtn.addEventListener("click", () => void doEdit(detail, full, refreshList));
+  titleRow.append(h, editTitleBtn);
+
   const meta = el("div", "gh-detail-meta");
   const statePill = pill(full.draft ? "draft" : full.state);
   statePill.classList.add(full.draft ? "gh-state-draft" : `gh-state-${full.state}`);
@@ -237,8 +294,19 @@ async function showDetail(
   }
 
   const actions = buildActions(detail, full, d, refreshList);
-  head.append(h, meta, actions);
+  head.append(titleRow, meta, actions);
   detail.appendChild(head);
+
+  // Live label chips (data already on the PR) with an inline "edit labels" pill.
+  const labelRow = el("div", "gh-detail-labels");
+  for (const l of full.labels) labelRow.appendChild(labelChip(l.name, l.color));
+  const editLabels = el("button", "mini-btn gh-icon-btn gh-inline-edit");
+  editLabels.append(glyph("tag"));
+  editLabels.title = "Edit labels";
+  editLabels.setAttribute("aria-label", "Edit labels");
+  editLabels.addEventListener("click", () => void doLabels(editLabels, detail, full, refreshList));
+  labelRow.appendChild(editLabels);
+  detail.appendChild(labelRow);
 
   // Sub-tabs: Conversation · Commits · Pipelines · Files (mirrors github.com).
   const subBar = el("div", "gh-subtabs");
@@ -251,6 +319,8 @@ async function showDetail(
   ];
   const subBtns: HTMLElement[] = [];
   const selectSub = (id: string): void => {
+    // Leaving the Files tab tears the Monaco diff down (only Files mounts one).
+    if (activeSubTab === "files" && id !== "files") disposePrDiff();
     activeSubTab = id;
     for (const b of subBtns) b.classList.toggle("active", b.dataset.sub === id);
     void renderSubTab(content, full, d, id);
@@ -340,6 +410,19 @@ function buildActions(
     ]);
   });
 
+  // "Update branch" — merge the latest base into the PR head. We don't know the
+  // behind-state here, so it's always shown for an open, non-draft PR; a no-op
+  // (already up to date) just toasts the API's verbatim message. It sits in the
+  // merge area as a secondary action, left of the primary Merge button.
+  let updateBtn: HTMLElement | undefined;
+  if (full.state === "open") {
+    updateBtn = el("button", "mini-btn");
+    updateBtn.append(glyph("git-merge"), span("Update branch"));
+    updateBtn.title = "Merge the latest changes from the base branch into this PR";
+    const ub = updateBtn;
+    updateBtn.addEventListener("click", () => void doUpdateBranch(full.number, reload, refreshList, ub));
+  }
+
   const moreBtn = el("button", "mini-btn gh-icon-btn");
   moreBtn.append(glyph("ellipsis"));
   moreBtn.title = "More actions";
@@ -351,11 +434,37 @@ function buildActions(
         onClick: () => void doComment(full.number, detail, full, refreshList),
       },
       {
+        label: "Edit title & description",
+        icon: "pencil",
+        onClick: () => void doEdit(detail, full, refreshList),
+      },
+      { separator: true },
+      {
+        label: "Labels",
+        icon: "tag",
+        onClick: () => void doLabels(moreBtn, detail, full, refreshList),
+      },
+      {
+        label: "Assignees",
+        icon: "person",
+        onClick: () => void doAssignees(moreBtn, detail, full, refreshList),
+      },
+      {
         label: "Request reviewers",
         icon: "organization",
         onClick: () => void doRequestReviewers(full.number),
       },
+      {
+        label: "Re-request review",
+        icon: "sync",
+        onClick: () => void doRequestReviewers(full.number, true),
+      },
       { separator: true },
+      {
+        label: "Update branch",
+        icon: "git-merge",
+        onClick: () => void doUpdateBranch(full.number, reload, refreshList),
+      },
       full.state === "open"
         ? {
             label: "Close pull request",
@@ -422,6 +531,7 @@ function buildActions(
     reviewBtn,
     ...(readyBtn ? [readyBtn] : []),
     aiBtn,
+    ...(updateBtn ? [updateBtn] : []),
     mergeBtn,
     moreBtn,
   );
@@ -508,26 +618,278 @@ async function renderSubTab(
       content.appendChild(row);
     }
   } else {
+    // ── Files = a real master/detail review surface ──────────────────────────
     content.replaceChildren();
     const files = d?.files ?? [];
     if (files.length === 0) {
       content.appendChild(emptyState("No files changed", "This PR doesn't change any files."));
       return;
     }
-    const list = el("div", "gh-files");
-    for (const f of files) {
-      const row = el("div", `file-row status-${f.status.charAt(0).toUpperCase()}`);
-      const st = el("span", "file-status");
-      st.textContent = f.status.charAt(0).toUpperCase();
-      const path = el("span", "file-path");
-      path.textContent = f.filename;
-      const adds = el("span", "gh-adds");
-      adds.textContent = `+${f.additions} −${f.deletions}`;
-      row.append(st, path, adds);
-      list.appendChild(row);
-    }
-    content.appendChild(list);
+    renderFilesTab(content, full, files);
   }
+}
+
+/**
+ * The Files tab: a left file list (master) and a right pane (detail) showing the
+ * selected file's real Monaco diff with its inline review threads beneath it.
+ * Clicking a file fetches `pr:fileDiff`; the threads come from `pr:reviewThreads`
+ * filtered to that file. A composer adds a new inline comment at a chosen line.
+ */
+function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]): void {
+  const layout = el("div", "pr-files");
+  const list = el("div", "pr-files-list gh-files");
+  const detail = el("div", "pr-files-detail");
+  layout.append(list, detail);
+  content.appendChild(layout);
+  // Structural layout is applied inline so the master/detail + Monaco surface size
+  // correctly even before the integrator adds the polished .pr-files* CSS. Visual
+  // theming (borders, colors, radii) is left to those classes.
+  layout.style.display = "flex";
+  layout.style.gap = "12px";
+  layout.style.minHeight = "420px";
+  layout.style.height = "60vh";
+  list.style.flex = "0 0 240px";
+  list.style.overflowY = "auto";
+  list.style.minWidth = "0";
+  detail.style.flex = "1 1 auto";
+  detail.style.minWidth = "0";
+  detail.style.display = "flex";
+  detail.style.flexDirection = "column";
+  detail.style.overflow = "hidden";
+
+  // Threads are (re)fetched on each file open so a just-added comment / resolve
+  // shows immediately. A failure is non-fatal — the diff still renders; we just
+  // show no existing comments.
+  const loadThreads = async (): Promise<PrReviewThread[]> => {
+    try {
+      return await host.invoke("pr:reviewThreads", full.number);
+    } catch {
+      return [];
+    }
+  };
+
+  const rows = new Map<string, HTMLElement>();
+  const openFile = (f: PrFile): void => {
+    activeFilePath = f.filename;
+    for (const [p, r] of rows) r.classList.toggle("active", p === f.filename);
+    void showFileDiff(detail, full, f, loadThreads);
+  };
+
+  for (const f of files) {
+    const letter = f.status.charAt(0).toUpperCase();
+    const row = el("button", `file-row status-${letter}`);
+    (row as HTMLButtonElement).type = "button";
+    const st = el("span", "file-status");
+    st.textContent = letter;
+    const path = el("span", "file-path");
+    // Left-truncate long paths so the filename (the part you read) stays visible.
+    path.textContent = f.filename;
+    path.title = f.filename;
+    path.dir = "rtl";
+    const adds = el("span", "gh-adds");
+    adds.textContent = `+${f.additions} −${f.deletions}`;
+    row.append(st, path, adds);
+    row.addEventListener("click", () => openFile(f));
+    rows.set(f.filename, row);
+    list.appendChild(row);
+  }
+
+  // Re-open the previously-viewed file if it's still in the set, else the first.
+  const initial = files.find((f) => f.filename === activeFilePath) ?? files[0];
+  if (initial) openFile(initial);
+}
+
+/**
+ * Render one file's diff (left = base, right = head) into a shared DiffPanel,
+ * with a threads panel beneath it. The DiffPanel is module-owned so it survives
+ * re-renders of the threads panel but is disposed by the lifecycle hooks above.
+ * `loadThreads` is re-invoked (not the diff) whenever a review action lands, so
+ * the comments refresh in place without the Monaco editor flickering.
+ */
+async function showFileDiff(
+  detail: HTMLElement,
+  full: PullRequest,
+  f: PrFile,
+  loadThreads: () => Promise<PrReviewThread[]>,
+): Promise<void> {
+  // Build the stable shell ONCE per file open: a diff surface + a threads slot.
+  const surface = el("div", "diff-surface pr-diff-surface");
+  const threadsSlot = el("div", "pr-threads");
+  // Structural sizing inline (theming via the classes): the diff fills the upper
+  // half, the threads panel scrolls below it.
+  surface.style.flex = "1 1 60%";
+  surface.style.minHeight = "200px";
+  threadsSlot.style.flex = "0 1 auto";
+  threadsSlot.style.overflowY = "auto";
+  threadsSlot.style.maxHeight = "40%";
+  threadsSlot.style.marginTop = "10px";
+  detail.replaceChildren(surface, threadsSlot);
+  threadsSlot.replaceChildren(loadingState("Loading diff…"));
+
+  // (Re)create the Monaco panel against the fresh surface and arm the detach
+  // watcher so it's torn down if the view goes away.
+  disposePrDiff();
+  const panel = new DiffPanel(surface);
+  prDiffPanel = panel;
+  watchDiffDetach(surface);
+
+  // Refresh ONLY the threads panel (re-fetch + re-render) after a review action —
+  // the diff itself is unchanged, so leave the Monaco editor untouched.
+  const refreshThreads = async (): Promise<void> => {
+    if (prDiffPanel !== panel) return; // the file/view changed under us
+    threadsSlot.replaceChildren(loadingState("Refreshing comments…"));
+    const next = await loadThreads();
+    if (prDiffPanel !== panel) return;
+    renderThreadsPanel(threadsSlot, full, f, next, () => void refreshThreads());
+  };
+
+  const threadsReady = loadThreads();
+
+  let diff: FileDiff | undefined;
+  try {
+    diff = await host.invoke("pr:fileDiff", { number: full.number, path: f.filename });
+  } catch (e) {
+    // Surface the error inside the diff area; the file list stays usable.
+    if (prDiffPanel !== panel) return; // superseded by another open
+    panel.showEmpty(cleanErr(e) || "Couldn't load this file's diff.");
+    threadsSlot.replaceChildren();
+    return;
+  }
+  if (prDiffPanel !== panel) return; // a newer file was opened mid-fetch
+  if (!diff) {
+    panel.showEmpty("No diff available for this file.");
+  } else {
+    panel.showDiff(diff);
+  }
+
+  const threads = await threadsReady;
+  if (prDiffPanel !== panel) return;
+  renderThreadsPanel(threadsSlot, full, f, threads, () => void refreshThreads());
+}
+
+/** The inline-review panel beneath a file's diff: existing threads (grouped by
+ *  line) with resolve/reply, plus an "Add a comment" affordance. */
+function renderThreadsPanel(
+  slot: HTMLElement,
+  full: PullRequest,
+  f: PrFile,
+  threads: PrReviewThread[],
+  reloadFile: () => void,
+): void {
+  slot.replaceChildren();
+  const mine = threads
+    .filter((t) => t.path === f.filename)
+    .sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
+
+  const head = el("div", "pr-threads-head");
+  // Flex row with the add-comment action pushed to the right (structural inline).
+  head.style.display = "flex";
+  head.style.alignItems = "center";
+  head.style.gap = "8px";
+  head.style.margin = "4px 0 8px";
+  const title = span(`Review comments (${mine.length})`, "pr-threads-title");
+  title.style.fontWeight = "600";
+  head.append(glyph("comment-discussion"), title);
+  const addBtn = el("button", "mini-btn");
+  addBtn.style.marginLeft = "auto";
+  addBtn.append(glyph("comment"), span("Add a comment"));
+  addBtn.title = "Comment on a line of this file";
+  addBtn.addEventListener("click", () => void addInlineComment(full.number, f.filename, addBtn, reloadFile));
+  head.appendChild(addBtn);
+  slot.appendChild(head);
+
+  if (mine.length === 0) {
+    const none = el("div", "pr-threads-empty");
+    none.textContent = "No inline comments on this file yet.";
+    slot.appendChild(none);
+    return;
+  }
+  for (const t of mine) slot.appendChild(threadCard(full.number, t, reloadFile));
+}
+
+/** One review thread: a line anchor + its comments + resolve / reply controls.
+ *  Built on the existing `.gh-comment` shell (border / radius) for instant polish,
+ *  with `.pr-thread*` hooks the integrator can theme further. */
+function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void): HTMLElement {
+  const card = el("div", `gh-comment pr-thread${t.isResolved ? " is-resolved" : ""}`);
+  if (t.isResolved) card.style.opacity = "0.72";
+
+  const hd = el("div", "gh-comment-head pr-thread-head");
+  const anchor = el("span", "pr-thread-anchor");
+  anchor.append(glyph("git-commit"), span(t.line != null ? `Line ${t.line}` : "File", "pr-thread-line"));
+  hd.appendChild(anchor);
+  if (t.isOutdated) hd.appendChild(pill("outdated"));
+  const statusPill = pill(t.isResolved ? "resolved" : "open");
+  statusPill.classList.add(t.isResolved ? "gh-review-approved" : "gh-thread-open");
+  hd.appendChild(statusPill);
+
+  const resolveBtn = el("button", "mini-btn gh-inline-edit");
+  resolveBtn.style.marginLeft = "auto";
+  resolveBtn.append(glyph(t.isResolved ? "issue-reopened" : "check"), span(t.isResolved ? "Unresolve" : "Resolve"));
+  resolveBtn.addEventListener("click", () =>
+    void toggleResolve(t.id, !t.isResolved, resolveBtn, reloadFile),
+  );
+  hd.appendChild(resolveBtn);
+  card.appendChild(hd);
+
+  for (const c of t.comments) {
+    const cm = el("div", "pr-thread-comment");
+    cm.style.padding = "8px 12px";
+    cm.style.borderTop = "1px solid var(--app-border)";
+    const ch = el("div", "pr-thread-comment-head");
+    ch.style.display = "flex";
+    ch.style.alignItems = "center";
+    ch.style.gap = "7px";
+    ch.style.marginBottom = "4px";
+    ch.append(avatar(c.author.login, c.author.avatarUrl, 20), span(c.author.login, "pr-thread-author"));
+    if (c.createdAt) {
+      const when = span(relTimeISO(c.createdAt), "gh-comment-when");
+      when.title = absTimeISO(c.createdAt);
+      ch.appendChild(when);
+    }
+    cm.appendChild(ch);
+    const bd = el("div", "gh-body-md");
+    bd.style.margin = "0";
+    bd.style.padding = "0";
+    if (c.body.trim()) {
+      try {
+        bd.innerHTML = renderMarkdown(c.body);
+      } catch {
+        bd.classList.add("code-md-plain");
+        bd.textContent = c.body;
+      }
+    } else {
+      bd.classList.add("gh-empty-body");
+      bd.textContent = "(no body)";
+    }
+    cm.appendChild(bd);
+    card.appendChild(cm);
+  }
+
+  // Reply box (inline) — Enter submits, Shift+Enter for a newline.
+  const replyRow = el("div", "pr-thread-reply");
+  replyRow.style.display = "flex";
+  replyRow.style.gap = "8px";
+  replyRow.style.alignItems = "flex-end";
+  replyRow.style.padding = "8px 12px";
+  replyRow.style.borderTop = "1px solid var(--app-border)";
+  const ta = document.createElement("textarea");
+  ta.className = "gh-composer-input pr-reply-input";
+  ta.style.flex = "1 1 auto";
+  ta.placeholder = "Reply…";
+  ta.rows = 2;
+  const replyBtn = el("button", "btn btn-primary");
+  replyBtn.append(span("Reply"));
+  replyBtn.addEventListener("click", () => void replyToThread(prNumber, t.id, ta, replyBtn, reloadFile));
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void replyToThread(prNumber, t.id, ta, replyBtn, reloadFile);
+    }
+  });
+  replyRow.append(ta, replyBtn);
+  card.appendChild(replyRow);
+  return card;
 }
 
 function commentCard(author: string, suffix: string | undefined, body: string, reviewState?: string): HTMLElement {
@@ -720,22 +1082,25 @@ async function doMerge(
   }
 }
 
-async function doRequestReviewers(n: number): Promise<void> {
+/** Request reviewers (or re-request the same set, when `reRequest` is set — the
+ *  GitHub re-request just re-POSTs the chosen logins to the same endpoint). */
+async function doRequestReviewers(n: number, reRequest = false): Promise<void> {
   let people: RepoCollaborator[] = [];
   try {
     people = await host.invoke("pr:reviewers", undefined);
   } catch {
     /* fall through to the free-text path */
   }
+  const verb = reRequest ? "Re-request review" : "Request reviewers";
   let chosen: string[] | null;
   if (people.length) {
-    chosen = await peoplePickerModal({ title: "Request reviewers", okLabel: "Request", people, selected: [] });
+    chosen = await peoplePickerModal({ title: verb, okLabel: reRequest ? "Re-request" : "Request", people, selected: [] });
   } else {
     const raw = await promptInline(
-      "Request reviewers",
+      verb,
       "comma-separated logins, e.g. alice, bob",
       "",
-      "Request",
+      reRequest ? "Re-request" : "Request",
     );
     chosen = raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : null;
   }
@@ -746,15 +1111,257 @@ async function doRequestReviewers(n: number): Promise<void> {
       toast(r.message ?? "Couldn't request reviewers.", "error");
       return;
     }
-    toast(`Requested ${chosen.length} reviewer${chosen.length === 1 ? "" : "s"} on PR #${n}.`, "success");
+    toast(
+      reRequest
+        ? `Re-requested review from ${chosen.length} reviewer${chosen.length === 1 ? "" : "s"} on PR #${n}.`
+        : `Requested ${chosen.length} reviewer${chosen.length === 1 ? "" : "s"} on PR #${n}.`,
+      "success",
+    );
   } catch (e) {
     toast(cleanErr(e) || "Couldn't request reviewers.", "error");
   }
 }
 
+// ── PR review-depth mutations (edit · labels · assignees · update · inline) ─────
+
+/** Edit the PR's title + body in one unified form, then PATCH via pr:edit. */
+async function doEdit(detail: HTMLElement, pr: PullRequest, refreshList: () => void): Promise<void> {
+  const res = await editForm({
+    title: `Edit pull request #${pr.number}`,
+    okLabel: "Save",
+    titleValue: pr.title,
+    titlePlaceholder: "Pull request title",
+    bodyValue: pr.body ?? "",
+    bodyPlaceholder: "Describe the change…",
+  });
+  if (!res) return;
+  if (res.title === pr.title && res.body === (pr.body ?? "")) return; // nothing changed
+  try {
+    const r = await host.invoke("pr:edit", { number: pr.number, title: res.title, body: res.body });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't edit the pull request.", "error");
+      return;
+    }
+    toast(`Updated pull request #${pr.number}.`, "success");
+    activeSubTab = "conversation"; // the description card reflects the new body
+    void showDetail(detail, pr, refreshList);
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't edit the pull request.", "error");
+  }
+}
+
+/** A toggle-menu of the repo's labels (current ones checked) → pr:setLabels. */
+async function doLabels(
+  anchor: HTMLElement,
+  detail: HTMLElement,
+  pr: PullRequest,
+  refreshList: () => void,
+): Promise<void> {
+  let repoLabels: RepoLabel[] = [];
+  try {
+    repoLabels = await host.invoke("pr:labels", undefined);
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't load labels.", "error");
+    return;
+  }
+  if (repoLabels.length === 0) {
+    toast("This repo has no labels defined.", "info");
+    return;
+  }
+  const current = new Set(pr.labels.map((l) => l.name));
+  openMenu(
+    anchor,
+    repoLabels.map((l) => ({
+      label: l.name,
+      icon: "tag",
+      current: current.has(l.name),
+      onClick: () => {
+        const next = new Set(current);
+        if (next.has(l.name)) next.delete(l.name);
+        else next.add(l.name);
+        void applyLabels(detail, pr, [...next], refreshList);
+      },
+    })),
+    { searchable: true },
+  );
+}
+
+async function applyLabels(
+  detail: HTMLElement,
+  pr: PullRequest,
+  labelsList: string[],
+  refreshList: () => void,
+): Promise<void> {
+  try {
+    const r = await host.invoke("pr:setLabels", { number: pr.number, labels: labelsList });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't update labels.", "error");
+      return;
+    }
+    toast("Labels updated.", "success");
+    void showDetail(detail, pr, refreshList);
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't update labels.", "error");
+  }
+}
+
+/** Edit the PR's assignees via the avatar-rich people picker → pr:setAssignees. */
+async function doAssignees(
+  anchor: HTMLElement,
+  detail: HTMLElement,
+  pr: PullRequest,
+  refreshList: () => void,
+): Promise<void> {
+  void anchor;
+  let people: RepoCollaborator[] = [];
+  try {
+    people = await host.invoke("pr:reviewers", undefined);
+  } catch {
+    /* fall through to the free-text path */
+  }
+  let assignees: string[] | null;
+  if (people.length) {
+    assignees = await peoplePickerModal({ title: "Assignees", okLabel: "Save", people, selected: [] });
+  } else {
+    const csv = await promptInline("Assignees", "comma-separated logins, e.g. octocat, hubot", "", "Save");
+    assignees =
+      csv === null ? null : csv.split(",").map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
+  }
+  if (assignees === null) return;
+  try {
+    const r = await host.invoke("pr:setAssignees", { number: pr.number, assignees });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't update assignees.", "error");
+      return;
+    }
+    toast("Assignees updated.", "success");
+    void showDetail(detail, pr, refreshList);
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't update assignees.", "error");
+  }
+}
+
+/** Merge the latest base into the PR head (pr:updateBranch). */
+async function doUpdateBranch(
+  n: number,
+  reload: () => void,
+  refreshList: () => void,
+  btn?: HTMLElement,
+): Promise<void> {
+  if (btn) (btn as HTMLButtonElement).disabled = true;
+  try {
+    const r = await host.invoke("pr:updateBranch", n);
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't update the branch.", "error");
+      return;
+    }
+    toast(`Updated PR #${n} with the base branch.`, "success");
+    reload(); // the head SHA moved — refetch the detail (files / checks change)
+    refreshList();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't update the branch.", "error");
+  } finally {
+    if (btn) (btn as HTMLButtonElement).disabled = false;
+  }
+}
+
+/** Add a new inline review comment: prompt for a line + body → pr:addReviewComment. */
+async function addInlineComment(
+  n: number,
+  path: string,
+  btn: HTMLElement,
+  reloadFile: () => void,
+): Promise<void> {
+  const lineRaw = await promptInline(
+    `Comment on ${path}`,
+    "Line number (on the head side)",
+    "",
+    "Next",
+  );
+  if (lineRaw === null) return;
+  const line = Number(lineRaw);
+  if (!Number.isInteger(line) || line <= 0) {
+    toast("Enter a valid line number.", "error");
+    return;
+  }
+  const body = await promptInline(`Comment on ${path}:${line}`, "Leave a review comment…", "", "Comment");
+  if (!body) return;
+  (btn as HTMLButtonElement).disabled = true;
+  try {
+    const r = await host.invoke("pr:addReviewComment", { number: n, path, line, side: "RIGHT", body });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't add the comment.", "error");
+      return;
+    }
+    toast("Review comment added.", "success");
+    reloadFile(); // re-fetch threads so the new comment shows
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't add the comment.", "error");
+  } finally {
+    (btn as HTMLButtonElement).disabled = false;
+  }
+}
+
+/** Post a reply into an existing thread → pr:replyThread. */
+async function replyToThread(
+  n: number,
+  threadId: string,
+  ta: HTMLTextAreaElement,
+  btn: HTMLElement,
+  reloadFile: () => void,
+): Promise<void> {
+  const body = ta.value.trim();
+  if (!body) {
+    toast("Write a reply first.", "info");
+    return;
+  }
+  (btn as HTMLButtonElement).disabled = true;
+  ta.disabled = true;
+  try {
+    const r = await host.invoke("pr:replyThread", { number: n, threadId, body });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't post the reply.", "error");
+      return;
+    }
+    toast("Reply posted.", "success");
+    reloadFile();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't post the reply.", "error");
+  } finally {
+    (btn as HTMLButtonElement).disabled = false;
+    ta.disabled = false;
+  }
+}
+
+/** Resolve / unresolve a review thread → pr:resolveThread. */
+async function toggleResolve(
+  threadId: string,
+  resolved: boolean,
+  btn: HTMLElement,
+  reloadFile: () => void,
+): Promise<void> {
+  (btn as HTMLButtonElement).disabled = true;
+  try {
+    const r = await host.invoke("pr:resolveThread", { threadId, resolved });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't update the thread.", "error");
+      return;
+    }
+    toast(resolved ? "Thread resolved." : "Thread reopened.", "success");
+    reloadFile();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't update the thread.", "error");
+  } finally {
+    (btn as HTMLButtonElement).disabled = false;
+  }
+}
+
 // ── Create-PR flow ────────────────────────────────────────────────────────────
 
-async function openCreatePr(refresh: () => void): Promise<void> {
+export async function openCreatePr(
+  refresh: () => void,
+  prefill?: { head?: string; base?: string },
+): Promise<void> {
   let branches: BranchRef[];
   try {
     branches = await host.invoke("pr:branches", undefined);
@@ -766,8 +1373,14 @@ async function openCreatePr(refresh: () => void): Promise<void> {
     toast("Need at least two branches to open a pull request.", "error");
     return;
   }
-  const base = branches.find((b) => b.isDefault)?.name ?? branches[0].name;
-  const head = branches.find((b) => b.name !== base)?.name ?? branches[0].name;
+  const base =
+    (prefill?.base && branches.find((b) => b.name === prefill.base)?.name) ??
+    branches.find((b) => b.isDefault)?.name ??
+    branches[0].name;
+  const head =
+    (prefill?.head && branches.find((b) => b.name === prefill.head)?.name) ??
+    branches.find((b) => b.name !== base)?.name ??
+    branches[0].name;
 
   const res = await createPrModal({ branches, defaultBase: base, defaultHead: head });
   if (!res) return; // cancelled

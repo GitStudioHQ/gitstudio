@@ -7,28 +7,33 @@
 
 export type GraphThemeKind = "dark" | "light" | "hc-dark" | "hc-light";
 
-/** Dark base palette (the spec's house colors). */
+/** Dark base palette (the spec's house colors).
+ * Tuned for max lane separation at a 1.6–1.8px stroke: each hue is pushed a
+ * little brighter/more saturated than a pure house tint so thin lanes carry
+ * against the editor bg and adjacent lanes never read as the same color. */
 export const LANE_PALETTE_DARK: readonly string[] = [
-  "#4aa5ff", // blue
-  "#2ecf83", // green
-  "#c678dd", // magenta
-  "#e5a73c", // amber
-  "#ef6191", // pink
-  "#2bc2c2", // teal
-  "#a78bfa", // violet
-  "#d98a4e", // orange
+  "#52a8ff", // blue   — trunk, the most legible/forward hue
+  "#3ad17f", // green
+  "#cf7ae6", // magenta
+  "#edb14a", // amber
+  "#f56a9b", // pink
+  "#2dccca", // teal
+  "#b29bff", // violet
+  "#e0935a", // orange
 ];
 
-/** Light palette: the same hues, darkened/desaturated for contrast on white. */
+/** Light palette: the same hues, darkened/desaturated for contrast on white.
+ * Slightly deeper than the dark set so a 1.6px lane stays readable on a
+ * near-white canvas without going muddy. */
 export const LANE_PALETTE_LIGHT: readonly string[] = [
-  "#1a7fd4", // blue
-  "#1f9d5f", // green
-  "#9c4dbb", // magenta
-  "#b9781b", // amber
-  "#d23c6e", // pink
-  "#11999e", // teal
-  "#7c5cf0", // violet
-  "#bd6a2a", // orange
+  "#1773cc", // blue
+  "#198a52", // green
+  "#9442b3", // magenta
+  "#a86c14", // amber
+  "#c93567", // pink
+  "#0d8c91", // teal
+  "#6f4fe8", // violet
+  "#b0601f", // orange
 ];
 
 /** High-contrast dark: vivid, fully separated primaries on black. */

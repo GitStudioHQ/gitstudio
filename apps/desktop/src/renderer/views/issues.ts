@@ -33,12 +33,85 @@ import { confirmDialog, promptInline, editForm, toast } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { aiChip, openAssistantTab, streamInto, aiEnabled } from "../aiAssist";
 import { ghGate, ghHeader, ghListResizer, peoplePickerModal, searchField, type SectionRender, type SectionNav, type SectionTarget } from "./common";
-import type { IssueDetail, IssueInfo, RepoCollaborator, RepoLabel } from "../../shared/ipc";
+import type { IssueDetail, IssueInfo, MilestoneInfo, RepoCollaborator, RepoLabel } from "../../shared/ipc";
 
-/** The open/closed filter, persisted across re-renders within the section. */
-let issueState: "open" | "closed" = "open";
+/** The Open / Closed / All filter, persisted across re-renders within the section. */
+let issueState: "open" | "closed" | "all" = "open";
+
+/**
+ * Client-side facet filters applied to the already-loaded list (the API only
+ * filters by state). `null` means "any". These persist across re-renders so the
+ * active facet survives a refresh, mirroring `issueState`.
+ */
+let facetLabel: string | null = null;
+let facetAssignee: string | null = null;
+let facetMilestone: string | null = null;
+
+// ── Section-scoped styles ────────────────────────────────────────────────────
+
+/**
+ * Inject the few classes this view adds (facet buttons, label swatch, avatar
+ * assignee chips) once. App-wide CSS lives in app.css, but these are local to
+ * Issues depth, so they ship with the view. Tokens mirror app.css exactly
+ * (.mini-btn / .gh-seg-btn) so the look is indistinguishable from native rules.
+ */
+function ensureIssuesStyles(): void {
+  if (document.getElementById("issues-depth-styles")) return;
+  const s = document.createElement("style");
+  s.id = "issues-depth-styles";
+  s.textContent = `
+.gh-issue-facets { display: inline-flex; align-items: center; gap: 8px; }
+.gh-facet-btn { max-width: 220px; }
+.gh-facet-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-facet-btn .codicon-chevron-down { font-size: 13px; opacity: .65; margin-left: -1px; }
+.gh-facet-btn.is-active {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: var(--accent-line, var(--gs-accent));
+  background: var(--app-active);
+}
+.gh-facet-btn.is-active .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.gh-label-swatch {
+  display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 22%, transparent);
+  flex: 0 0 auto;
+}
+.gh-assignee-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 9px 0 4px; border-radius: 999px;
+  border: 1px solid var(--app-border); background: var(--app-elevated);
+  font-size: 12px; color: var(--vscode-foreground);
+}
+.gh-assignee-chip .av { flex: 0 0 auto; }
+`;
+  document.head.appendChild(s);
+}
 
 // ── Small DOM builders ───────────────────────────────────────────────────────
+
+/** A tiny round color swatch for a label, tinted from its hex (menu leading el). */
+function swatch(hexColor: string): HTMLElement {
+  const s = el("span", "gh-label-swatch");
+  s.style.background = `#${(hexColor || "888888").replace(/^#/, "")}`;
+  return s;
+}
+
+/**
+ * Render a facet button's label + state. Shows "<name>: <value>" with a
+ * trailing caret when a value is picked (and an `is-active` accent), or just the
+ * neutral "<name>" + caret when "any". Keeps the header cluster compact.
+ */
+function setFacetButton(
+  btn: HTMLButtonElement,
+  icon: string,
+  name: string,
+  value: string | null,
+): void {
+  btn.replaceChildren();
+  btn.classList.toggle("is-active", value != null);
+  btn.append(glyph(icon), span(value != null ? `${name}: ${value}` : name), glyph("chevron-down"));
+  btn.title = value != null ? `Filtering by ${name.toLowerCase()} “${value}” — click to change` : `Filter by ${name.toLowerCase()}`;
+  btn.setAttribute("aria-label", btn.title);
+}
 
 /** One timeline card: the issue body (first) or a comment. Markdown body. */
 function commentCard(author: string, action: string, body: string, createdAt: string): HTMLElement {
@@ -73,6 +146,7 @@ export const renderIssues: SectionRender = (wrap, nav, target) => {
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
   const refresh = (): void => renderIssues(wrap, nav);
+  ensureIssuesStyles();
 
   const gate = await ghGate(wrap, nav, true);
   if (!gate) return;
@@ -81,19 +155,34 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   const view = el("div", "gh-view");
   const header = ghHeader("Issues", gate.login, refresh);
 
-  // Right-side cluster in the header: state filter + New Issue.
+  // Right-side cluster in the header: a 3-way state segmented control, the facet
+  // filters (label / assignee / milestone, populated once the list loads), and
+  // New Issue. The state segment re-fetches; the facets filter client-side.
   const tools = el("div", "gh-head-tools");
-  const filter = el("button", "mini-btn");
-  filter.textContent = issueState === "open" ? "Open" : "Closed";
-  filter.title = "Toggle open / closed issues";
-  filter.addEventListener("click", () => {
-    issueState = issueState === "open" ? "closed" : "open";
-    refresh();
-  });
+
+  const seg = el("div", "gh-seg");
+  const segBtn = (label: string, value: "open" | "closed" | "all"): HTMLElement => {
+    const b = el("button", "gh-seg-btn");
+    b.textContent = label;
+    b.classList.toggle("active", issueState === value);
+    b.setAttribute("aria-pressed", String(issueState === value));
+    b.addEventListener("click", () => {
+      if (issueState === value) return;
+      issueState = value;
+      refresh();
+    });
+    return b;
+  };
+  seg.append(segBtn("Open", "open"), segBtn("Closed", "closed"), segBtn("All", "all"));
+
+  // The facet-filter buttons live in their own slot so we can populate their
+  // behavior after `issues` loads (they need the loaded set + repo metadata).
+  const facets = el("div", "gh-issue-facets");
+
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("add"), span("New Issue"));
   newBtn.addEventListener("click", () => void newIssue(wrap, nav));
-  tools.append(filter, newBtn);
+  tools.append(seg, facets, newBtn);
   header.querySelector(".gh-acct")?.before(tools);
   view.appendChild(header);
 
@@ -110,7 +199,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         "Select an issue to read its description, comment, manage labels and assignees, or close it.",
         {
           icon: "issue-opened",
-          hint: "Tip: use the Open / Closed toggle to switch which issues you're browsing.",
+          hint: "Tip: switch Open / Closed / All, or filter by label and assignee, to focus the list.",
         },
       ),
     );
@@ -133,18 +222,34 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   listEl.replaceChildren();
   if (issues.length === 0) {
     idleEmpty();
+    const emptyCopy: Record<typeof issueState, { title: string; desc: string; icon: string }> = {
+      open: {
+        title: "No open issues",
+        desc: "You're all caught up — there's nothing open to triage right now.",
+        icon: "issue-opened",
+      },
+      closed: {
+        title: "No closed issues",
+        desc: "Closed issues will show here once you close some.",
+        icon: "issue-closed",
+      },
+      all: {
+        title: "No issues yet",
+        desc: "This repo has no issues. Open the first one to start tracking work.",
+        icon: "issue-opened",
+      },
+    };
+    const c = emptyCopy[issueState];
     listEl.appendChild(
       emptyState(
-        issueState === "open" ? "No open issues" : "No closed issues",
-        issueState === "open"
-          ? "You're all caught up — there's nothing open to triage right now."
-          : "Closed issues will show here once you close some.",
-        issueState === "open"
-          ? {
-              icon: "issue-opened",
+        c.title,
+        c.desc,
+        issueState === "closed"
+          ? { icon: c.icon }
+          : {
+              icon: c.icon,
               action: { label: "New issue", icon: "add", onClick: () => void newIssue(wrap, nav) },
-            }
-          : { icon: "issue-closed" },
+            },
       ),
     );
     return;
@@ -189,13 +294,42 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     return hay.includes(q);
   };
 
+  // The live text query, kept alongside the persisted facets so any one of them
+  // changing re-applies the whole filter pipeline against the loaded `issues`.
+  let query = "";
+  const passesFacets = (it: IssueInfo): boolean => {
+    if (facetLabel && !it.labels.some((l) => l.name === facetLabel)) return false;
+    if (facetAssignee && !it.assignees.some((a) => a.login === facetAssignee)) return false;
+    return true;
+  };
+  const filtered = (): IssueInfo[] => {
+    const q = query.toLowerCase();
+    return issues.filter((it) => passesFacets(it) && (q ? matches(it, q) : true));
+  };
+  const facetsActive = (): boolean => facetLabel != null || facetAssignee != null;
+
   let autoSelected = false;
-  const renderList = (items: IssueInfo[], q = ""): void => {
+  const renderList = (): void => {
+    const items = filtered();
     listEl.replaceChildren();
     if (items.length === 0) {
-      listEl.appendChild(
-        emptyState("No matching issues", `Nothing matches “${q}”.`, { icon: "search" }),
-      );
+      // Distinguish "your text matched nothing" from "your facet filters did".
+      const desc = query
+        ? `Nothing matches “${query}”.`
+        : "No issues match the active filters.";
+      const empty = emptyState("No matching issues", desc, { icon: "search" });
+      if (facetsActive()) {
+        const clear = el("button", "btn btn-soft list-empty-action");
+        clear.append(glyph("clear-all"), span("Clear filters"));
+        clear.addEventListener("click", () => {
+          facetLabel = null;
+          facetAssignee = null;
+          syncFacetButtons();
+          renderList();
+        });
+        empty.appendChild(clear);
+      }
+      listEl.appendChild(empty);
       return;
     }
     for (const it of items) listEl.appendChild(buildRow(it));
@@ -209,18 +343,131 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     }
   };
 
+  // ── Facet filters (label / assignee) ───────────────────────────────────────
+  // These filter the already-loaded set client-side. Milestone is intentionally
+  // not a list facet: the wire `IssueInfo` carries no per-issue milestone, so it
+  // can't be filtered here (the detail still sets/clears it). Labels come from
+  // the repo; assignees are derived from whoever's actually assigned in view.
+  let repoLabels: RepoLabel[] = [];
+  void host
+    .invoke("issue:labels", undefined)
+    .then((ls) => {
+      repoLabels = ls;
+    })
+    .catch(() => {
+      /* best-effort — the label facet just falls back to in-list label names */
+    });
+
+  // Rebuilt whenever a facet changes so the active value shows on its button.
+  let labelBtn: HTMLButtonElement;
+  let assignBtn: HTMLButtonElement;
+  const syncFacetButtons = (): void => {
+    setFacetButton(labelBtn, "tag", "Label", facetLabel);
+    setFacetButton(assignBtn, "person", "Assignee", facetAssignee);
+  };
+
+  const openLabelFacet = (): void => {
+    // Prefer the repo's full label set (with colors); fall back to labels seen
+    // in the loaded issues if the repo fetch hasn't landed / was denied.
+    const fromRepo = repoLabels.map((l) => ({ name: l.name, color: l.color }));
+    const seen = new Map<string, string>();
+    for (const it of issues) for (const l of it.labels) seen.set(l.name, l.color);
+    const all = fromRepo.length
+      ? fromRepo
+      : [...seen].map(([name, color]) => ({ name, color }));
+    if (all.length === 0) {
+      toast("This repo has no labels to filter by.", "info");
+      return;
+    }
+    openMenu(
+      labelBtn,
+      [
+        {
+          label: "All labels",
+          icon: facetLabel == null ? "check" : "dash",
+          current: facetLabel == null,
+          onClick: () => {
+            facetLabel = null;
+            syncFacetButtons();
+            renderList();
+          },
+        },
+        { separator: true },
+        ...all.map((l) => ({
+          label: l.name,
+          iconEl: swatch(l.color),
+          current: facetLabel === l.name,
+          onClick: () => {
+            facetLabel = l.name;
+            syncFacetButtons();
+            renderList();
+          },
+        })),
+      ],
+      { searchable: all.length > 8 },
+    );
+  };
+
+  const openAssigneeFacet = (): void => {
+    // Distinct assignees across the loaded issues (avatars in the menu).
+    const seen = new Map<string, string | null>();
+    for (const it of issues) for (const a of it.assignees) if (!seen.has(a.login)) seen.set(a.login, a.avatarUrl);
+    const people = [...seen].map(([login, avatarUrl]) => ({ login, avatarUrl }));
+    if (people.length === 0) {
+      toast("No assignees on the issues in view.", "info");
+      return;
+    }
+    openMenu(
+      assignBtn,
+      [
+        {
+          label: "Anyone",
+          icon: facetAssignee == null ? "check" : "dash",
+          current: facetAssignee == null,
+          onClick: () => {
+            facetAssignee = null;
+            syncFacetButtons();
+            renderList();
+          },
+        },
+        { separator: true },
+        ...people.map((p) => ({
+          label: `@${p.login}`,
+          iconEl: avatar(p.login, p.avatarUrl, 18),
+          current: facetAssignee === p.login,
+          onClick: () => {
+            facetAssignee = p.login;
+            syncFacetButtons();
+            renderList();
+          },
+        })),
+      ],
+      { searchable: people.length > 8 },
+    );
+  };
+
+  labelBtn = el("button", "mini-btn gh-facet-btn") as HTMLButtonElement;
+  labelBtn.addEventListener("click", () => openLabelFacet());
+  assignBtn = el("button", "mini-btn gh-facet-btn") as HTMLButtonElement;
+  assignBtn.addEventListener("click", () => openAssigneeFacet());
+  facets.append(labelBtn, assignBtn);
+  syncFacetButtons();
+
   // A header search/filter — on the LEFT, next to the title (client-side, instant).
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search issues…",
-      onInput: (q) => renderList(q ? issues.filter((it) => matches(it, q.toLowerCase())) : issues, q),
+      onInput: (q) => {
+        query = q;
+        renderList();
+      },
     }),
   );
 
   // If another view deep-linked an issue (e.g. the project board), open it on
   // entry instead of the auto-selected first item — never bounce out to GitHub.
   if (target?.number != null) autoSelected = true;
-  renderList(issues);
+  renderList();
   if (target?.number != null) {
     const n = target.number;
     const it = issues.find((i) => i.number === n);
@@ -236,6 +483,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 }
 
 // ── Detail pane ──────────────────────────────────────────────────────────────
+
+/**
+ * Render a single issue's full detail (body, timeline, composer, action cluster)
+ * into any container — used by the Projects board to peek an issue inline in a
+ * slide-over drawer, so you never leave the board to read or reply to one. All
+ * in-detail mutations re-render inside `container`, so the drawer is fully live.
+ */
+export async function renderIssueDetailInto(
+  container: HTMLElement,
+  number: number,
+  nav: SectionNav,
+): Promise<void> {
+  await showDetail(container, number, container, nav);
+}
 
 async function showDetail(
   detail: HTMLElement,
@@ -294,6 +555,10 @@ async function showDetail(
   assignBtn.append(glyph("organization"), span("Assignees"));
   assignBtn.addEventListener("click", () => void editAssignees(detail, it, assignees, wrap, nav));
 
+  const milestoneBtn = el("button", "mini-btn");
+  milestoneBtn.append(glyph("milestone"), span("Milestone"));
+  milestoneBtn.addEventListener("click", () => void milestoneMenu(milestoneBtn, detail, it, wrap, nav));
+
   const closing = it.state === "open";
   const stateBtn = el("button", "mini-btn");
   stateBtn.append(glyph(closing ? "issue-closed" : "issue-opened"), span(closing ? "Close" : "Reopen"));
@@ -334,7 +599,7 @@ async function showDetail(
   );
   void aiEnabled().then((ok) => (analyzeBtn.hidden = !ok));
 
-  actions.append(editBtn, labelsBtn, assignBtn, analyzeBtn, stateBtn, openBtn);
+  actions.append(editBtn, labelsBtn, assignBtn, milestoneBtn, analyzeBtn, stateBtn, openBtn);
   head.append(h, meta, actions);
   detail.appendChild(head);
 
@@ -344,11 +609,18 @@ async function showDetail(
     for (const l of it.labels) labelRow.appendChild(labelChip(l.name, l.color));
     detail.appendChild(labelRow);
   }
-  // Assignee chips.
+  // Assignee chips — avatar + @login. Prefer the rich user objects (they carry
+  // avatar URLs); fall back to the login-only list if a user object is missing.
   if (assignees.length) {
     const aRow = el("div", "gh-detail-assignees");
     aRow.appendChild(span("Assigned:", "gh-assign-label"));
-    for (const login of assignees) aRow.appendChild(pill(`@${login}`));
+    const byLogin = new Map(it.assignees.map((a) => [a.login, a]));
+    for (const login of assignees) {
+      const chip = el("span", "gh-assignee-chip");
+      const u = byLogin.get(login);
+      chip.append(avatar(login, u?.avatarUrl ?? null, 18), span(`@${login}`));
+      aRow.appendChild(chip);
+    }
     detail.appendChild(aRow);
   }
 
@@ -529,7 +801,7 @@ async function labelsMenu(
     anchor,
     repoLabels.map((l) => ({
       label: l.name,
-      icon: "tag",
+      iconEl: swatch(l.color),
       current: current.has(l.name),
       onClick: () => {
         const next = new Set(current);
@@ -538,6 +810,7 @@ async function labelsMenu(
         void applyLabels(detail, it.number, [...next], wrap, nav);
       },
     })),
+    { searchable: repoLabels.length > 8 },
   );
 }
 
@@ -558,6 +831,76 @@ async function applyLabels(
     await showDetail(detail, n, wrap, nav);
   } catch (e) {
     toast(cleanErr(e) || "Couldn't update labels.", "error");
+  }
+}
+
+/**
+ * A picker of the repo's milestones (open milestones first, with progress as the
+ * `sub` line) plus a "No milestone" choice to clear. The wire `IssueInfo` does
+ * not carry the issue's current milestone, so we can't pre-check the active one;
+ * the detail re-fetches after the set so the result is authoritative regardless.
+ */
+async function milestoneMenu(
+  anchor: HTMLElement,
+  detail: HTMLElement,
+  it: IssueInfo,
+  wrap: HTMLElement,
+  nav: (view: string) => void,
+): Promise<void> {
+  let ms: MilestoneInfo[] = [];
+  try {
+    ms = await host.invoke("issue:milestones", undefined);
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't load milestones.", "error");
+    return;
+  }
+  if (ms.length === 0) {
+    toast("This repo has no milestones defined.", "info");
+    return;
+  }
+  // Open milestones first, then closed; within a group keep the API order.
+  const ordered = [...ms].sort((a, b) => (a.state === b.state ? 0 : a.state === "open" ? -1 : 1));
+  openMenu(
+    anchor,
+    [
+      {
+        label: "No milestone",
+        icon: "circle-slash",
+        onClick: () => void applyMilestone(detail, it.number, null, wrap, nav),
+      },
+      { separator: true },
+      ...ordered.map((m) => {
+        const total = m.openIssues + m.closedIssues;
+        const progress = total > 0 ? `${m.closedIssues}/${total} closed` : "no issues";
+        return {
+          label: m.title,
+          icon: "milestone",
+          sub: m.state === "closed" ? `closed · ${progress}` : progress,
+          onClick: () => void applyMilestone(detail, it.number, m.number, wrap, nav),
+        };
+      }),
+    ],
+    { searchable: ordered.length > 8 },
+  );
+}
+
+async function applyMilestone(
+  detail: HTMLElement,
+  n: number,
+  milestone: number | null,
+  wrap: HTMLElement,
+  nav: (view: string) => void,
+): Promise<void> {
+  try {
+    const r = await host.invoke("issue:setMilestone", { number: n, milestone });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't update the milestone.", "error");
+      return;
+    }
+    toast(milestone == null ? "Milestone cleared." : "Milestone updated.", "success");
+    await showDetail(detail, n, wrap, nav);
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't update the milestone.", "error");
   }
 }
 

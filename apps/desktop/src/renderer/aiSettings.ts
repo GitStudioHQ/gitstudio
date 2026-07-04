@@ -13,6 +13,7 @@ import { el, span, glyph, settingsCard, settingsField, copyText, pill, cleanErr,
 import { providerLogo } from "./providerLogos";
 import { invalidateAiEnabled } from "./aiAssist";
 import { toast, confirmDialog, promptInline } from "./dialogs";
+import { trapTab } from "./views/common";
 import type { AiConnectionView, AiPresetView, AiSettingsView, McpInfo } from "../shared/ipc";
 
 /** The "AI Models" card: manage model connections. */
@@ -223,9 +224,29 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
     presets = [];
   }
   const overlay = el("div", "ai-gallery-pop");
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Connect a model");
+  // Electron: an overlay over a -webkit-app-region:drag surface needs no-drag or
+  // its controls aren't clickable.
+  overlay.style.setProperty("-webkit-app-region", "no-drag");
+  const prevFocus = document.activeElement as HTMLElement | null;
+  const closeOverlay = (): void => {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey, true);
+    prevFocus?.focus?.();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeOverlay();
+      return;
+    }
+    trapTab(e, panel);
+  };
 
   const choose = async (p: AiPresetView): Promise<void> => {
-    overlay.remove();
+    closeOverlay();
     await host.invoke("ai:addConnection", { preset: p.id });
     const ready = !p.needsKey;
     toast(`Added ${p.label}. ${ready ? "Ready to use." : "Add your API key to finish."}`, "success");
@@ -278,7 +299,7 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   const ph = el("div", "ai-gallery-head");
   ph.append(span("Connect a model"));
   const close = iconBtn("close", "Close");
-  close.addEventListener("click", () => overlay.remove());
+  close.addEventListener("click", () => closeOverlay());
   ph.append(close);
   panel.append(ph);
 
@@ -290,10 +311,13 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   for (const s of sections) panel.append(s);
 
   overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) closeOverlay();
   });
   overlay.append(panel);
   document.body.append(overlay);
+  document.addEventListener("keydown", onKey, true);
+  // Focus the first card (or the close button) so keyboard users land inside.
+  (panel.querySelector<HTMLElement>(".ai-prov-card") ?? close).focus();
 }
 
 // ── Agent Access (MCP) card ────────────────────────────────────────────────────

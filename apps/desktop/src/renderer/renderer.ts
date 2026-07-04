@@ -19,7 +19,7 @@ import "./styles/app.css";
 import "./styles/codicons-full.css";
 import { host } from "./bridge";
 import { applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
-import type { ThemeMode } from "./desktopTheme";
+import type { AppTheme, ThemeMode, LogoMode } from "./desktopTheme";
 import { GraphMount } from "./graphMount";
 import { DiffPanel } from "./diffPanel";
 import { CompareDiff } from "./compareDiff";
@@ -64,7 +64,7 @@ import type { MenuItem } from "./ui";
 import { CommitContextMenu } from "./contextMenu";
 import type { SectionRender, SectionTarget } from "./views/common";
 import { renderIssues } from "./views/issues";
-import { renderPrs } from "./views/prs";
+import { renderPrs, openCreatePr } from "./views/prs";
 import { renderActions } from "./views/actions";
 import { renderReleases } from "./views/releases";
 import { openNotificationsPanel, fetchUnreadCount } from "./views/notifications";
@@ -156,6 +156,8 @@ class App {
   private syncing = false;
   /** Theme preference: follow the OS, or pin light/dark. */
   private themeMode: ThemeMode = "system";
+  /** Dock icon preference: "auto" follows the resolved theme, or pin light/dark. */
+  private logoMode: LogoMode = "auto";
   /** Sidebar rail: persisted width (px) + collapsed-to-icons state. */
   private railWidth = 188;
   private railCollapsed = false;
@@ -224,6 +226,9 @@ class App {
     if (prefs.themeMode === "system" || prefs.themeMode === "light" || prefs.themeMode === "dark") {
       this.themeMode = prefs.themeMode;
     }
+    if (prefs.logoMode === "auto" || prefs.logoMode === "light" || prefs.logoMode === "dark") {
+      this.logoMode = prefs.logoMode;
+    }
     if (typeof prefs.railWidth === "number" && prefs.railWidth >= 168 && prefs.railWidth <= 360) {
       this.railWidth = prefs.railWidth;
     }
@@ -237,12 +242,16 @@ class App {
     }
 
     applyTheme(resolveTheme(this.themeMode));
+    // Reflect the resolved brand mark on the dock now that the theme is settled.
+    this.syncDockIcon();
     // Re-apply on OS theme flips ONLY when following the system.
     followSystemTheme((osTheme) => {
       if (this.themeMode === "system") {
         applyTheme(osTheme);
         this.rerenderForTheme();
         this.terminalDock?.applyTheme();
+        // An "auto" dock icon must follow the OS flip too.
+        this.syncDockIcon();
       }
     });
     this.wireHostEvents();
@@ -406,6 +415,8 @@ class App {
     icon: string;
     /** A group divider is drawn before this item. */
     divider?: boolean;
+    /** The label shown on the divider before this item (defaults to "GitHub"). */
+    dividerLabel?: string;
   }> = [
     { id: "code", label: "Code", icon: "code" },
     { id: "changes", label: "Changes", icon: "request-changes" },
@@ -463,16 +474,19 @@ class App {
       if (it.divider) {
         const sep = el("div", "nav-divider");
         sep.setAttribute("aria-hidden", "true");
-        sep.append(span("GitHub", "nav-divider-label"));
+        sep.append(span(it.dividerLabel ?? "GitHub", "nav-divider-label"));
         nav.appendChild(sep);
       }
       nav.appendChild(mkItem(it.id, it.label, it.icon, i < 8 ? `${mod}${i + 1}` : undefined));
     });
     // Footer: just Settings, pinned to the bottom of the rail. The terminal lives
     // permanently in the bottom footer dock; the sidebar toggle lives in the top
-    // bar — neither clutters the rail.
+    // bar — neither clutters the rail. A dedicated class makes it a quiet, compact
+    // affordance hugging the rail's bottom edge, roughly at the footer dock's level.
     nav.appendChild(el("div", "nav-spacer"));
-    nav.appendChild(mkItem("settings", "Settings", "gear", `${mod},`));
+    const settingsItem = mkItem("settings", "Settings", "gear", `${mod},`);
+    settingsItem.classList.add("nav-foot-item");
+    nav.appendChild(settingsItem);
     return nav;
   }
 
@@ -597,6 +611,7 @@ class App {
       compareView: this.compareView,
       branchCatsCollapsed: this.branchCatsCollapsed,
       themeMode: this.themeMode,
+      logoMode: this.logoMode,
       railWidth: this.railWidth,
       railCollapsed: this.railCollapsed,
       changesListW: this.changesListW,
@@ -611,7 +626,26 @@ class App {
     applyTheme(resolveTheme(mode));
     this.rerenderForTheme();
     this.terminalDock?.applyTheme();
+    // An "auto" dock icon follows the new theme.
+    this.syncDockIcon();
     this.persist();
+  }
+
+  /** Change the dock icon mode: push to the dock + persist. */
+  private setLogoMode(mode: LogoMode): void {
+    this.logoMode = mode;
+    this.syncDockIcon();
+    this.persist();
+  }
+
+  /** The dock icon variant to show: pinned light/dark, or (auto) the resolved theme. */
+  private dockVariant(): AppTheme {
+    return this.logoMode === "auto" ? resolveTheme(this.themeMode) : this.logoMode;
+  }
+
+  /** Push the resolved dock icon variant to the main process (best-effort). */
+  private syncDockIcon(): void {
+    void host.invoke("appearance:dockIcon", { variant: this.dockVariant() }).catch(() => {});
   }
 
   /** Swap the main area to the chosen view's surface. `target` deep-links a
@@ -859,8 +893,111 @@ class App {
         }
       });
     }
+    const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
+    moreBtn.setAttribute("aria-label", `More actions for ${b.name}`);
+    moreBtn.setAttribute("aria-haspopup", "menu");
+    moreBtn.appendChild(glyph("ellipsis"));
+    moreBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.openBranchActions(b, moreBtn);
+    });
+    actions.appendChild(moreBtn);
     row.appendChild(actions);
     return row;
+  }
+
+  /** The per-branch action menu: merge / rebase / rename / set-upstream / tag /
+   *  delete-remote — the depth that makes Branches a real manager, not a list. */
+  private openBranchActions(b: BranchInfo, anchor: HTMLElement): void {
+    const refresh = async (): Promise<void> => {
+      bust();
+      await this.refreshRefs();
+      await this.updateSync();
+      if (this.currentView === "branches") void this.showBranchesView();
+    };
+    const run = async (
+      label: string,
+      p: Promise<{ ok: boolean; message?: string }>,
+    ): Promise<void> => {
+      try {
+        const r = await p;
+        if (!r.ok) toast(r.message || `Couldn't ${label}.`, "error");
+        else toast(`${label} ✓`, "success");
+      } catch (e) {
+        toast(cleanErr(e) || `Couldn't ${label}.`, "error");
+      }
+      await refresh();
+    };
+    const items: MenuItem[] = [];
+    if (!b.current) {
+      items.push({
+        label: `Merge ${b.name} into current`,
+        icon: "git-merge",
+        onClick: () => void run(`merge ${b.name}`, host.invoke("branch:merge", { name: b.name })),
+      });
+      items.push({
+        label: `Rebase current onto ${b.name}`,
+        icon: "git-pull-request",
+        onClick: () => void run(`rebase onto ${b.name}`, host.invoke("branch:rebase", { onto: b.name })),
+      });
+      items.push({ separator: true });
+    }
+    items.push({
+      label: "Rename…",
+      icon: "edit",
+      onClick: () => {
+        void (async (): Promise<void> => {
+          const to = await promptInline("Rename branch", "new-name", b.name);
+          if (to && to.trim() && to.trim() !== b.name)
+            await run("rename branch", host.invoke("branch:rename", { from: b.name, to: to.trim() }));
+        })();
+      },
+    });
+    items.push({
+      label: "Set upstream…",
+      icon: "cloud",
+      onClick: () => {
+        void (async (): Promise<void> => {
+          const up = await promptInline("Set upstream", "origin/" + b.name, b.upstream ?? "");
+          if (up && up.trim())
+            await run("set upstream", host.invoke("branch:setUpstream", { name: b.name, upstream: up.trim() }));
+        })();
+      },
+    });
+    items.push({
+      label: "Create tag here…",
+      icon: "tag",
+      onClick: () => {
+        void (async (): Promise<void> => {
+          const name = await promptInline("Tag name", "v1.0.0");
+          if (!name || !name.trim()) return;
+          const msg = await promptInline("Tag message (optional — blank = lightweight)", "Release 1.0.0");
+          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.name, message: msg?.trim() || undefined }));
+        })();
+      },
+    });
+    if (b.upstream && b.upstream.includes("/")) {
+      const slash = b.upstream.indexOf("/");
+      const remote = b.upstream.slice(0, slash);
+      const rname = b.upstream.slice(slash + 1);
+      items.push({ separator: true });
+      items.push({
+        label: `Delete remote branch (${b.upstream})`,
+        icon: "trash",
+        onClick: () => {
+          void (async (): Promise<void> => {
+            const ok = await confirmDialog({
+              title: "Delete remote branch",
+              message: `Delete ${b.upstream} from ${remote}? This affects everyone.`,
+              confirmLabel: "Delete remote branch",
+              danger: true,
+            });
+            if (ok) await run("delete remote branch", host.invoke("branch:deleteRemote", { remote, name: rname }));
+          })();
+        },
+      });
+    }
+    openMenu(anchor, items);
   }
 
   private async newBranch(): Promise<void> {
@@ -1320,11 +1457,48 @@ class App {
       b.addEventListener("click", () => {
         this.setThemeMode(m.id);
         btns.forEach((x) => x.classList.toggle("active", x === b));
+        // The auto preview tracks the theme, so refresh it on a theme switch.
+        syncLogoPreview();
       });
       btns.push(b);
       seg.appendChild(b);
     }
-    body.append(sub, seg);
+
+    // App icon: sits right next to the theme control, same card. "Auto" matches
+    // the theme; the others pin the dock mark regardless of the in-app theme.
+    const logoLabel = el("div", "settings-field-label");
+    logoLabel.textContent = "App icon";
+    const logoSub = el("div", "settings-sub");
+    logoSub.textContent = "Match the theme automatically, or pin the dock icon light or dark.";
+    const logoRow = el("div", "settings-logo-row");
+    const logoSeg = el("div", "settings-seg");
+    // A small live preview of the mark that will actually be shown on the dock.
+    const preview = el("img", "settings-logo-preview") as HTMLImageElement;
+    preview.alt = "";
+    const syncLogoPreview = (): void => {
+      preview.src = this.dockVariant() === "light" ? "./icon-light.png" : "./icon.png";
+    };
+    const logoModes: Array<{ id: LogoMode; label: string }> = [
+      { id: "auto", label: "Auto" },
+      { id: "light", label: "Light" },
+      { id: "dark", label: "Dark" },
+    ];
+    const logoBtns: HTMLElement[] = [];
+    for (const m of logoModes) {
+      const b = el("button", "settings-seg-btn" + (this.logoMode === m.id ? " active" : ""));
+      b.append(span(m.label));
+      b.addEventListener("click", () => {
+        this.setLogoMode(m.id);
+        logoBtns.forEach((x) => x.classList.toggle("active", x === b));
+        syncLogoPreview();
+      });
+      logoBtns.push(b);
+      logoSeg.appendChild(b);
+    }
+    syncLogoPreview();
+    logoRow.append(logoSeg, preview);
+
+    body.append(sub, seg, logoLabel, logoSub, logoRow);
     return card;
   }
 
@@ -1525,20 +1699,28 @@ class App {
       seg(p, parts.slice(0, i + 1).join("/"), i === parts.length - 1);
     });
 
+    const countChip = el("span", "code-count");
+    countChip.hidden = true;
     const refreshBtn = el("button", "topbar-icon");
     refreshBtn.title = "Refresh";
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showCodeView());
     const head = el("div", "code-head");
-    head.append(crumbs, el("div", "topbar-spacer"), refreshBtn);
+    head.append(crumbs, countChip, el("div", "topbar-spacer"), refreshBtn);
 
-    // The "latest commit" bar (filled at the repo root only, GitHub-style).
+    // The connected "file card": a latest-commit header (repo root only), a
+    // Name / Size column header, then the rows — one bordered surface, the way
+    // github.com frames a directory listing.
+    const card = el("div", "code-filecard");
     const latest = el("div", "code-latest-slot");
+    const colhead = el("div", "code-listing-head");
+    colhead.append(span("Name", "code-col code-col-name"), span("Size", "code-col code-col-size"));
     const listing = el("div", "code-listing");
+    card.append(latest, colhead, listing);
     const readme = el("div", "code-readme");
     const scroll = el("div", "code-scroll");
-    scroll.append(latest, listing, readme);
+    scroll.append(card, readme);
     listing.appendChild(skeletonList(8, false));
     wrap.append(head, scroll);
     this.viewHost.replaceChildren(wrap);
@@ -1549,6 +1731,7 @@ class App {
       entries = await gget("repo:tree", { path: this.codePath });
     } catch (e) {
       if (gen !== this.routeGen) return;
+      colhead.hidden = true;
       listing.replaceChildren(
         errorState("Couldn't read this folder", cleanErr(e) || "git ls-tree failed.", () =>
           void this.showCodeView(),
@@ -1559,10 +1742,36 @@ class App {
     if (gen !== this.routeGen) return;
     listing.replaceChildren();
 
-    // ".." up-row when not at the repo root.
+    // Folders first, then files — each group alphabetical (case-insensitive),
+    // the way github.com and every file browser orders a directory. `repo:tree`
+    // returns raw ls-tree order, which interleaves the two.
+    const sorted = [...entries].sort((a, b) => {
+      const ad = a.type === "tree" ? 0 : 1;
+      const bd = b.type === "tree" ? 0 : 1;
+      if (ad !== bd) return ad - bd;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+
+    // Summarise the folder / file split in the header chip.
+    const dirCount = sorted.filter((x) => x.type === "tree").length;
+    const fileCount = sorted.length - dirCount;
+    countChip.hidden = sorted.length === 0;
+    countChip.replaceChildren(
+      glyph("list-unordered"),
+      span(
+        [
+          dirCount ? `${dirCount} folder${dirCount === 1 ? "" : "s"}` : "",
+          fileCount ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") || "empty",
+      ),
+    );
+
+    // ".." up-row when not at the repo root (styled as a folder row).
     if (this.codePath) {
-      const up = el("button", "file-row code-row");
-      up.append(glyph("folder-opened"), span("..", "file-path"));
+      const up = el("button", "file-row code-row is-dir code-up");
+      up.append(glyph("arrow-up"), span("..", "file-path"), el("span", "code-row-size"));
       up.addEventListener("click", () => {
         this.codePath = this.codePath.split("/").slice(0, -1).join("/");
         void this.showCodeView();
@@ -1570,19 +1779,17 @@ class App {
       listing.appendChild(up);
     }
 
-    if (!entries.length && !this.codePath) {
+    if (!sorted.length && !this.codePath) {
+      colhead.hidden = true;
       listing.appendChild(emptyState("Empty repository", "No tracked files at HEAD yet."));
     }
 
-    for (const e of entries) {
+    for (const e of sorted) {
       const isDir = e.type === "tree";
       const row = el("button", "file-row code-row" + (isDir ? " is-dir" : ""));
-      row.append(glyph(fileIcon(e.name, isDir)), span(e.name, "file-path"));
-      if (!isDir) {
-        const size = el("span", "code-row-size");
-        size.textContent = formatBytes(e.size);
-        row.appendChild(size);
-      }
+      const size = el("span", "code-row-size");
+      size.textContent = isDir ? "" : formatBytes(e.size);
+      row.append(glyph(fileIcon(e.name, isDir)), span(e.name, "file-path"), size);
       row.addEventListener("click", () => {
         if (isDir) {
           this.codePath = e.path;
@@ -1723,14 +1930,14 @@ class App {
     textarea.placeholder = "Message (what & why)…";
     textarea.rows = 2;
     msgWrap.append(textarea);
-    // ✨ Write the message from the staged diff — a quiet affordance in the box's
-    // own corner (it writes INTO the message). Shown only when a model is connected.
+    // ✨ Write the message from the staged diff — sits up in the branch header row
+    // (right-aligned), not inside the textarea. Shown only when a model is connected.
     const writeBtn = aiChip("Write message", () =>
       void streamInto("commitMessage", {}, textarea, writeBtn as HTMLButtonElement),
     );
     writeBtn.classList.add("dc-ai-write");
     writeBtn.hidden = true;
-    msgWrap.append(writeBtn);
+    branchLine.append(writeBtn);
     // ✨ Review the working changes — lives in the toolbar (it acts on the diff,
     // not the message). Built here so aiEnabled() can toggle both at once.
     const reviewBtn = el("button", "mini-btn dc-review");
@@ -1747,30 +1954,154 @@ class App {
       writeBtn.hidden = !ok;
       reviewBtn.hidden = !ok;
     });
+    // Commit options: amend the last commit, append a Signed-off-by trailer, or
+    // add Co-authored-by trailers — the depth a power committer expects.
+    let amend = false;
+    let signoff = false;
+    const coAuthors: string[] = [];
+    const getOpts = (): { amend: boolean; signoff: boolean; coAuthors: string[] } => ({
+      amend,
+      signoff,
+      coAuthors,
+    });
+    const optsRow = el("div", "dc-options");
+    const amendToggle = el("button", "dc-toggle") as HTMLButtonElement;
+    amendToggle.setAttribute("role", "switch");
+    amendToggle.setAttribute("aria-checked", "false");
+    amendToggle.append(glyph("git-commit"), span("Amend last commit"));
+    const signoffToggle = el("button", "dc-toggle") as HTMLButtonElement;
+    signoffToggle.setAttribute("role", "switch");
+    signoffToggle.setAttribute("aria-checked", "false");
+    signoffToggle.append(glyph("verified"), span("Sign off"));
+    const coAuthorBtn = el("button", "dc-toggle") as HTMLButtonElement;
+    coAuthorBtn.append(glyph("person-add"), span("Add co-author"));
+    const coAuthorChips = el("div", "dc-coauthors");
+    const renderChips = (): void => {
+      coAuthorChips.replaceChildren();
+      coAuthors.forEach((ca, i) => {
+        const chip = el("span", "dc-coauthor-chip");
+        chip.append(span(ca));
+        const x = el("button", "dc-chip-x") as HTMLButtonElement;
+        x.setAttribute("aria-label", `Remove co-author ${ca}`);
+        x.appendChild(glyph("close"));
+        x.addEventListener("click", () => {
+          coAuthors.splice(i, 1);
+          renderChips();
+        });
+        chip.appendChild(x);
+        coAuthorChips.appendChild(chip);
+      });
+    };
+    amendToggle.addEventListener("click", () => {
+      amend = !amend;
+      amendToggle.classList.toggle("is-on", amend);
+      amendToggle.setAttribute("aria-checked", amend ? "true" : "false");
+      commitLabel.textContent = amend ? "Amend commit" : curBranch ? `Commit to ${curBranch}` : "Commit";
+      // Prefill the last commit message when amending an empty composer.
+      if (amend && !textarea.value.trim()) {
+        void host.invoke("repo:headCommit", undefined).then((hc) => {
+          if (amend && hc?.subject && !textarea.value.trim()) textarea.value = hc.subject;
+        });
+      }
+    });
+    signoffToggle.addEventListener("click", () => {
+      signoff = !signoff;
+      signoffToggle.classList.toggle("is-on", signoff);
+      signoffToggle.setAttribute("aria-checked", signoff ? "true" : "false");
+    });
+    coAuthorBtn.addEventListener("click", async () => {
+      const v = await promptInline("Add co-author", "Name <email@example.com>");
+      if (v && v.trim()) {
+        coAuthors.push(v.trim());
+        renderChips();
+      }
+    });
+    optsRow.append(amendToggle, signoffToggle, coAuthorBtn, coAuthorChips);
+
     const commitRow = el("div", "dc-commit-row");
     const commitBtn = el("button", "btn btn-primary dc-commit");
     const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit");
     commitBtn.append(glyph("git-commit"), commitLabel);
-    commitBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, commitBtn, false));
+    commitBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, commitBtn, false, getOpts()));
     const pushBtn = el("button", "btn dc-commit dc-push");
     pushBtn.append(glyph("arrow-up"), span("Commit & Push"));
-    pushBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, pushBtn, true));
+    pushBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, pushBtn, true, getOpts()));
     commitRow.append(commitBtn, pushBtn);
-    composer.append(branchLine, msgWrap, commitRow);
+    // Commit options on the left, the commit buttons up on the right — one row.
+    const actionsRow = el("div", "dc-actions");
+    actionsRow.append(optsRow, commitRow);
+    composer.append(branchLine, msgWrap, actionsRow);
 
     const toolbar = el("div", "dc-toolbar");
     const tTitle = el("span", "dc-toolbar-title");
     tTitle.textContent = "Changes";
     const tSpacer = el("div", "topbar-spacer");
     const stageAllBtn = el("button", "mini-btn");
-    stageAllBtn.append(span("Stage all"));
+    stageAllBtn.append(glyph("check-all"), span("Stage all"));
     stageAllBtn.addEventListener("click", () => void this.changesAction("stageAll", undefined));
+    // Create a PR from the branch you're working on — closes the local→remote→PR
+    // loop right where you commit. Shown only when the repo is on GitHub.
+    const createPrBtn = el("button", "mini-btn dc-createpr");
+    createPrBtn.append(glyph("git-pull-request"), span("Create pull request"));
+    createPrBtn.hidden = true;
+    createPrBtn.addEventListener("click", () =>
+      void openCreatePr(() => this.routeView("prs", true), { head: curBranch }),
+    );
+    void host
+      .invoke("github:status", undefined)
+      .then((s) => {
+        createPrBtn.hidden = !(s.connected && !!s.repo);
+      })
+      .catch(() => {
+        /* offline / not connected — leave hidden */
+      });
+    // Hunk / line staging: stage (or unstage) exactly the lines selected in the
+    // open file's diff. Hidden until a file is open; relabelled by stage state.
+    let openFile: { path: string; staged: boolean } | null = null;
+    let whitespaceIgnored = false;
+    const stageLinesBtn = el("button", "mini-btn dc-stagelines") as HTMLButtonElement;
+    stageLinesBtn.hidden = true;
+    const stageLinesLabel = span("Stage lines");
+    stageLinesBtn.append(glyph("list-selection"), stageLinesLabel);
+    stageLinesBtn.title = "Stage (or unstage) the lines selected in the diff";
+    stageLinesBtn.addEventListener("click", async () => {
+      if (!openFile) return;
+      const lines = diffPanel.getSelectedLines();
+      if (!lines || !lines.length) {
+        toast("Select lines in the diff first.", "info");
+        return;
+      }
+      try {
+        const r = await host.invoke("stage:lines", {
+          path: openFile.path,
+          lines,
+          reverse: openFile.staged,
+        });
+        if (!r.ok) toast(r.message || "Couldn't apply the selected lines.", "error");
+        else toast(openFile.staged ? "Unstaged selected lines." : "Staged selected lines.", "success");
+      } catch (e) {
+        toast(cleanErr(e) || "Couldn't apply the selected lines.", "error");
+      }
+      bust("status");
+      bust("diff");
+      if (this.currentView === "changes") void this.showChangesView();
+    });
+    const wsBtn = el("button", "topbar-icon dc-ws") as HTMLButtonElement;
+    wsBtn.hidden = true;
+    wsBtn.title = "Ignore whitespace in the diff";
+    wsBtn.setAttribute("aria-label", "Ignore whitespace");
+    wsBtn.appendChild(glyph("whitespace"));
+    wsBtn.addEventListener("click", () => {
+      whitespaceIgnored = !whitespaceIgnored;
+      wsBtn.classList.toggle("is-on", whitespaceIgnored);
+      diffPanel.setRenderOptions({ whitespace: whitespaceIgnored ? "all" : "none" });
+    });
     const refreshBtn = el("button", "topbar-icon");
     refreshBtn.title = "Refresh";
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showChangesView());
-    toolbar.append(tTitle, tSpacer, reviewBtn, stageAllBtn, refreshBtn);
+    toolbar.append(tTitle, tSpacer, reviewBtn, createPrBtn, stageLinesBtn, wsBtn, stageAllBtn, refreshBtn);
 
     const body = el("div", "dc-body");
     const lists = el("div", "dc-lists");
@@ -1819,7 +2150,18 @@ class App {
     this.activeMonacoView = diffPanel;
     diffPanel.showEmpty("Select a file to view its diff.");
 
-    const files = await gget("status", undefined, 3000);
+    let files: ChangedFile[];
+    try {
+      files = await gget("status", undefined, 3000);
+    } catch (e) {
+      // A failed status load must not leave the skeleton spinning forever.
+      lists.replaceChildren(
+        errorState("Couldn't read the working tree", cleanErr(e) || "Git status failed.", () =>
+          void this.showChangesView(),
+        ),
+      );
+      return;
+    }
     const staged = files.filter((f) => f.staged);
     const unstaged = files.filter((f) => !f.staged);
     commitLabel.textContent = curBranch ? `Commit to ${curBranch}` : "Commit";
@@ -1828,6 +2170,58 @@ class App {
     sumBits.push(staged.length ? `${staged.length} staged` : "nothing staged");
     if (unstaged.length) sumBits.push(`${unstaged.length} to stage`);
     branchSummary.textContent = `· ${sumBits.join(" · ")}`;
+
+    // Mid-operation banner: a merge/rebase/cherry-pick/revert in progress gets an
+    // Abort / Continue affordance (Continue is gated on zero remaining conflicts).
+    void host.invoke("git:opState", undefined).then((op) => {
+      if (this.currentView !== "changes") return;
+      const kind = op.merging
+        ? "merge"
+        : op.rebasing
+          ? "rebase"
+          : op.cherryPicking
+            ? "cherry-pick"
+            : op.reverting
+              ? "revert"
+              : null;
+      if (!kind) return;
+      const banner = el("div", "dc-opbanner");
+      const txt = el("div", "dc-opbanner-text");
+      txt.append(
+        glyph("warning"),
+        span(
+          op.conflicts > 0
+            ? `${kind} in progress — ${op.conflicts} file${op.conflicts === 1 ? "" : "s"} still conflicted`
+            : `${kind} in progress — resolve and continue`,
+          "dc-opbanner-strong",
+        ),
+      );
+      const acts = el("div", "dc-opbanner-actions");
+      const abort = el("button", "mini-btn") as HTMLButtonElement;
+      abort.append(glyph("discard"), span("Abort"));
+      const cont = el("button", "btn btn-primary mini-btn") as HTMLButtonElement;
+      cont.append(glyph("check"), span("Continue"));
+      cont.disabled = op.conflicts > 0;
+      const runOp = async (ch: "merge:abort" | "merge:continue" | "rebase:abort" | "rebase:continue"): Promise<void> => {
+        try {
+          const r = await host.invoke(ch, undefined);
+          if (!r.ok) toast(r.message || "Operation failed.", "error");
+          else toast("Done.", "success");
+        } catch (e) {
+          toast(cleanErr(e) || "Operation failed.", "error");
+        }
+        bust();
+        await this.refreshRefs();
+        await this.updateSync();
+        if (this.currentView === "changes") void this.showChangesView();
+      };
+      const isRebase = kind === "rebase";
+      abort.addEventListener("click", () => void runOp(isRebase ? "rebase:abort" : "merge:abort"));
+      cont.addEventListener("click", () => void runOp(isRebase ? "rebase:continue" : "merge:continue"));
+      acts.append(abort, cont);
+      banner.append(txt, acts);
+      wrap.insertBefore(banner, wrap.firstChild);
+    });
 
     const fileRow = (f: ChangedFile, kind: "staged" | "unstaged"): HTMLElement => {
       const row = el("button", `file-row dc-file status-${f.status}`);
@@ -1869,6 +2263,10 @@ class App {
       row.addEventListener("click", () => {
         lists.querySelectorAll(".file-row.active").forEach((n) => n.classList.remove("active"));
         row.classList.add("active");
+        openFile = { path: f.path, staged: !!f.staged };
+        stageLinesLabel.textContent = f.staged ? "Unstage lines" : "Stage lines";
+        stageLinesBtn.hidden = false;
+        wsBtn.hidden = false;
         void this.openWorkingFile(diffPanel, f.path);
       });
       return row;
@@ -1900,7 +2298,11 @@ class App {
     if (diff.conflicted) {
       const model = await host.invoke("conflict:model", path);
       if (model) {
-        diffPanel.showMerge(model);
+        diffPanel.showMerge(model, () => {
+          bust("status");
+          bust("diff");
+          if (this.currentView === "changes") void this.showChangesView();
+        });
         return;
       }
     }
@@ -1932,15 +2334,30 @@ class App {
     textarea: HTMLTextAreaElement,
     btn: HTMLElement,
     push: boolean,
+    opts?: { amend?: boolean; signoff?: boolean; coAuthors?: string[] },
   ): Promise<void> {
-    const message = textarea.value.trim();
+    let message = textarea.value.trim();
     if (!message) {
       textarea.focus();
       return;
     }
+    // Append trailers: co-authors first, then a Signed-off-by line if requested.
+    const trailers: string[] = [];
+    for (const ca of opts?.coAuthors ?? []) {
+      if (ca.trim()) trailers.push(`Co-authored-by: ${ca.trim()}`);
+    }
+    if (opts?.signoff) {
+      try {
+        const id = await host.invoke("git:identity", undefined);
+        if (id?.name && id?.email) trailers.push(`Signed-off-by: ${id.name} <${id.email}>`);
+      } catch {
+        /* identity unavailable — skip the sign-off trailer */
+      }
+    }
+    if (trailers.length) message = `${message}\n\n${trailers.join("\n")}`;
     (btn as HTMLButtonElement).disabled = true;
     try {
-      const r = await host.invoke("commit", { message });
+      const r = await host.invoke("commit", { message, amend: opts?.amend });
       if (!r.ok) {
         toast(r.message ?? "Commit failed.", "error");
         return;
@@ -2093,27 +2510,13 @@ class App {
   }
 
   /** A branded "coming next" panel for views still being built out. */
+  /** Fallback for an unknown view id. Every shipped view has a real builder in
+   *  routeView; this only guards against an unrecognized/restored id and never
+   *  advertises a finished feature as unbuilt. */
   private showPlaceholderView(id: string): void {
-    const copy: Record<string, { icon: string; title: string; desc: string }> = {
-      changes: { icon: "request-changes", title: "Changes", desc: "Stage, review, and commit your working tree — the full Changes experience is landing here next." },
-      branches: { icon: "git-branch", title: "Branches", desc: "Every local, remote, and tag with checkout, compare, and favorites — coming to the app next." },
-      compare: { icon: "git-compare", title: "Compare", desc: "Pick a base and a head to see the commits, files, and diffs between them — GitHub/GitLab-style." },
-      stashes: { icon: "archive", title: "Stashes", desc: "Save and restore work-in-progress without committing — arriving with the next pass." },
-      worktrees: { icon: "list-tree", title: "Worktrees", desc: "Check out multiple branches side by side — ideal for running agents in parallel." },
-      prs: { icon: "git-pull-request", title: "Pull Requests", desc: "Review, check, and merge pull requests — a github.com-grade experience, in the app." },
-    };
-    const m = copy[id] ?? { icon: "git-commit", title: id, desc: "Coming soon." };
-    const wrap = el("div", "view-placeholder");
-    const badge = el("div", "vp-badge");
-    badge.appendChild(glyph(m.icon));
-    const title = el("div", "vp-title");
-    title.textContent = m.title;
-    const desc = el("div", "vp-desc");
-    desc.textContent = m.desc;
-    const tag = el("div", "vp-tag");
-    tag.textContent = "Coming next";
-    wrap.append(badge, title, desc, tag);
-    this.viewHost.replaceChildren(wrap);
+    this.viewHost.replaceChildren(
+      errorState("View unavailable", `“${id}” isn’t a known view.`, () => this.routeView("code", true)),
+    );
   }
 
   // ── Sync widget (fetch / pull / push — control remote changes) ──────────────
@@ -2569,16 +2972,67 @@ class App {
       const detail = (e as CustomEvent).detail as { id: string; sha: string };
       void this.runDetailsAction(detail.id, detail.sha);
     });
+    // Parent-sha chips: jump the graph to the parent and inspect it.
+    panel.addEventListener("gs-reveal", (e) => {
+      const detail = (e as CustomEvent).detail as { sha: string };
+      this.graph?.reveal(detail.sha);
+      void this.selectCommit(detail.sha);
+    });
 
     const surface = el("div", "diff-surface");
     this.diffSurfaceEl = surface;
-    wrap.append(panel, surface);
+    wrap.append(panel, this.detailsPaneResizer(wrap), surface);
 
     if (!this.detailsEl) return;
     this.detailsEl.replaceChildren(wrap);
     // No diff editor yet — the split stays collapsed (details only) until the
     // user opens a file. Pop the commit-details dock open on the selected commit.
     this.terminalDock?.openDetails();
+  }
+
+  /** The drag divider between the commit-details panel and the diff pane
+   *  (shown only while a diff is open). Sets `--details-w` on the split so the
+   *  CSS `flex-basis` follows; width persists across sessions. */
+  private detailsPaneResizer(wrap: HTMLElement): HTMLElement {
+    const MIN = 300;
+    const MAX = 760;
+    const KEY = "gitstudio.detailsW";
+    const saved = Number(localStorage.getItem(KEY));
+    let w = Number.isFinite(saved) && saved > 0 ? Math.min(MAX, Math.max(MIN, saved)) : 420;
+    const apply = (): void => wrap.style.setProperty("--details-w", `${w}px`);
+    const setW = (n: number): void => {
+      w = Math.min(MAX, Math.max(MIN, Math.round(n)));
+      apply();
+    };
+    apply();
+
+    const split = el("div", "cmp-vsplit details-vsplit");
+    split.append(el("div", "cmp-vsplit-grip"));
+    wireResizerKeys(split, {
+      orientation: "vertical",
+      label: "Resize the commit details pane",
+      min: MIN,
+      max: () => MAX,
+      get: () => w,
+      set: setW,
+      onCommit: () => localStorage.setItem(KEY, String(w)),
+    });
+    split.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = w;
+      document.body.classList.add("resizing-h");
+      const move = (ev: PointerEvent): void => setW(startW + (ev.clientX - startX));
+      const up = (): void => {
+        document.body.classList.remove("resizing-h");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        localStorage.setItem(KEY, String(w));
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+    return split;
   }
 
   /** Route a details-panel toolbar action to the existing git context menu. */

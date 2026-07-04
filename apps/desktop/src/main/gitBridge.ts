@@ -6,11 +6,13 @@
 // graphPanel performs (now factored into @gitstudio/host-bridge/graphWire and
 // shared by both hosts).
 
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
+import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
+import type { LineRange } from "@gitstudio/engine/staging/applyLineChanges";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import type {
   CommitRecord,
@@ -29,6 +31,7 @@ import type {
   ConflictModel,
   FileDiff,
   GitIdentity,
+  GitOpState,
   GraphPage,
   HeadCommit,
   HeadInfo,
@@ -953,6 +956,217 @@ export class GitBridge {
       }
     });
   }
+
+  // ── Branch ops (merge / rebase / rename / upstream) ─────────────────────────
+
+  async branchMerge(req: { name: string; noFf?: boolean }): Promise<CommitActionResult> {
+    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.merge(req.name, { noFf: req.noFf }));
+  }
+
+  async branchRebase(req: { onto: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.onto)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.rebaseOnto(req.onto));
+  }
+
+  async branchRename(req: { from: string; to: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.from) || !safeArg(req.to)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.rename(req.from, req.to));
+  }
+
+  async branchSetUpstream(req: { name: string; upstream: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.name) || !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.setUpstream(req.name, req.upstream));
+  }
+
+  async branchDeleteRemote(req: { remote: string; name: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.remote) || !safeArg(req.name)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.deleteRemoteBranch(req.remote, req.name));
+  }
+
+  // ── In-progress operation state + abort/continue ────────────────────────────
+
+  async opState(): Promise<GitOpState> {
+    const ctx = this.ctx();
+    const empty: GitOpState = {
+      merging: false,
+      rebasing: false,
+      cherryPicking: false,
+      reverting: false,
+      conflicts: 0,
+    };
+    if (!ctx) return empty;
+    const present = async (gitPath: string): Promise<boolean> => {
+      try {
+        const r = await ctx.process.run(["rev-parse", "--git-path", gitPath]);
+        if (r.code !== 0) return false;
+        await stat(join(ctx.root, r.stdout.trim()));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    let conflicts = 0;
+    try {
+      conflicts = (await ctx.conflict.listConflicts()).length;
+    } catch {
+      conflicts = 0;
+    }
+    const [merging, rebaseM, rebaseA, cherryPicking, reverting] = await Promise.all([
+      present("MERGE_HEAD"),
+      present("rebase-merge"),
+      present("rebase-apply"),
+      present("CHERRY_PICK_HEAD"),
+      present("REVERT_HEAD"),
+    ]);
+    return {
+      merging,
+      rebasing: rebaseM || rebaseA,
+      cherryPicking,
+      reverting,
+      conflicts,
+    };
+  }
+
+  private runResult(args: string[]): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => {
+      const r = await ctx.process.run(args);
+      return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    });
+  }
+
+  mergeAbort(): Promise<CommitActionResult> {
+    return this.runResult(["merge", "--abort"]);
+  }
+  mergeContinue(): Promise<CommitActionResult> {
+    return this.runResult(["commit", "--no-edit"]);
+  }
+  rebaseAbort(): Promise<CommitActionResult> {
+    return this.runResult(["rebase", "--abort"]);
+  }
+  rebaseContinue(): Promise<CommitActionResult> {
+    return this.runResult(["-c", "core.editor=true", "rebase", "--continue"]);
+  }
+  rebaseSkip(): Promise<CommitActionResult> {
+    return this.runResult(["-c", "core.editor=true", "rebase", "--skip"]);
+  }
+
+  // ── Tag creation (the Branches view's "Create tag here…") ───────────────────
+
+  tagCreate(req: { name: string; ref?: string; message?: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.name)) return Promise.resolve(UNSAFE_REF_RESULT);
+    if (req.ref && !safeArg(req.ref)) return Promise.resolve(UNSAFE_REF_RESULT);
+    return this.staged((ctx) =>
+      ctx.tags.create(req.name, {
+        ref: req.ref,
+        message: req.message,
+        annotated: req.message !== undefined && req.message.length > 0,
+      }),
+    );
+  }
+
+  // ── Hunk / line staging (working ⇄ index) ───────────────────────────────────
+
+  async stageLines(req: { path: string; lines: number[]; reverse?: boolean }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    return this.serialize(async () => {
+      try {
+        const rel = req.path;
+        const ranges = linesToRanges(req.lines);
+        if (!ranges.length) return { ok: false, changed: false, message: "No lines selected." };
+        let original: string;
+        let modified: string;
+        if (req.reverse) {
+          // Unstage: roll the selected index changes back to HEAD.
+          original = await ctx.staging.indexContent(rel);
+          modified = await ctx.staging.headContent(rel);
+        } else {
+          // Stage: apply the selected working-tree changes onto the index.
+          original = await ctx.staging.indexContent(rel);
+          modified = await readWorking(ctx, rel);
+        }
+        const hunks = computeHunks(original, modified);
+        const selected = hunks.filter((h) => ranges.some((r) => rangesOverlap(h.modified, r)));
+        if (!selected.length) return { ok: false, changed: false, message: "Nothing to apply in the selection." };
+        const content = applySelectedChanges(original, modified, selected.map((h) => h.modified));
+        await ctx.staging.stageContent(rel, content);
+        return { ok: true, changed: true };
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
+  }
+
+  // ── Conflict resolution write-back ──────────────────────────────────────────
+
+  async conflictList(): Promise<string[]> {
+    const ctx = this.ctx();
+    if (!ctx) return [];
+    try {
+      return await ctx.conflict.listConflicts();
+    } catch {
+      return [];
+    }
+  }
+
+  async conflictResolve(req: { path: string; content: string }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safeArg(req.path)) return UNSAFE_REF_RESULT;
+    return this.serialize(async () => {
+      try {
+        await writeFile(join(ctx.root, req.path), req.content, "utf8");
+        const r = await ctx.process.run(["add", "--", req.path]);
+        if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
+        return { ok: true, changed: true };
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
+  }
+
+  async conflictTakeSide(req: { path: string; side: "ours" | "theirs" }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safeArg(req.path)) return UNSAFE_REF_RESULT;
+    const stage = req.side === "ours" ? "2" : "3";
+    return this.serialize(async () => {
+      try {
+        const show = await ctx.process.run(["show", `:${stage}:${req.path}`]);
+        if (show.code !== 0) return { ok: false, changed: false, message: show.stderr.trim() };
+        await writeFile(join(ctx.root, req.path), show.stdout, "utf8");
+        const r = await ctx.process.run(["add", "--", req.path]);
+        if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
+        return { ok: true, changed: true };
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
+  }
+}
+
+/** Group a sorted, de-duplicated list of 1-based line numbers into 0-based
+ *  inclusive {start,end} ranges (consecutive lines merge into one range). */
+function linesToRanges(lines: number[]): LineRange[] {
+  const sorted = Array.from(new Set(lines.filter((n) => Number.isInteger(n) && n >= 1))).sort(
+    (a, b) => a - b,
+  );
+  const ranges: LineRange[] = [];
+  for (const n of sorted) {
+    const zero = n - 1;
+    const last = ranges[ranges.length - 1];
+    if (last && zero === last.end + 1) last.end = zero;
+    else ranges.push({ start: zero, end: zero });
+  }
+  return ranges;
+}
+
+/** Whether two inclusive line ranges overlap (zero-width spans treated as a point). */
+function rangesOverlap(a: LineRange, b: LineRange): boolean {
+  const aEnd = a.end < a.start ? a.start : a.end;
+  const bEnd = b.end < b.start ? b.start : b.end;
+  return a.start <= bEnd && b.start <= aEnd;
 }
 
 /** The git argv for a commit action, or undefined for renderer-only actions. */

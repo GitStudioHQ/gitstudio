@@ -12,6 +12,8 @@
 export type AppTheme = "dark" | "light";
 /** The user's choice: follow the OS, or pin light/dark. */
 export type ThemeMode = "system" | "light" | "dark";
+/** The dock icon choice: "auto" follows the resolved theme, or pin light/dark. */
+export type LogoMode = "auto" | "light" | "dark";
 
 /** Apply the theme: set the body class the shared code reads and let CSS vars resolve. */
 export function applyTheme(theme: AppTheme): void {

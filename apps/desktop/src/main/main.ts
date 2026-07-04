@@ -16,6 +16,7 @@ import {
   shell,
 } from "electron";
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from "electron";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { RepoStore } from "./repoStore";
@@ -172,9 +173,25 @@ async function createWindow(): Promise<void> {
   await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
 }
 
-/** Brand icon; electron-builder embeds the platform icon, this is the dev/window one. */
+/** The dock/window brand mark for a theme variant (dev/window icon; electron-builder
+ *  embeds the packaged icon separately). Light theme gets the light-tile mark. */
+function iconPath(variant: "dark" | "light"): string {
+  return join(__dirname, variant === "light" ? "../renderer/icon-light.png" : "../renderer/icon.png");
+}
+
+/** Brand icon for the window `icon:`; electron-builder embeds the platform icon,
+ *  this is the dev/window one. Tracks the OS scheme so it isn't visibly wrong. */
 function appIcon(): string {
-  return join(__dirname, "../renderer/icon.png");
+  return iconPath(nativeTheme.shouldUseDarkColors ? "dark" : "light");
+}
+
+/** Swap the macOS dock icon to the given brand variant (best-effort). */
+function setDockIcon(variant: "dark" | "light"): void {
+  try {
+    app.dock?.setIcon(iconPath(variant));
+  } catch {
+    /* non-macOS or missing — harmless */
+  }
 }
 
 // ── Menu ─────────────────────────────────────────────────────────────────────
@@ -334,13 +351,73 @@ function closeRepo(): void {
 
 // ── IPC registration ─────────────────────────────────────────────────────────
 
+// Every IPC invocation runs inside an "action" async context; the git-command
+// observer reads it so the Output tab can group the commands a single user
+// action executed under a human label (AsyncLocalStorage follows the awaits,
+// so concurrent actions never cross-tag each other's commands).
+const actionCtx = new AsyncLocalStorage<{ id: number; label: string }>();
+let actionSeq = 0;
+
+/** Human label for the action behind an IPC channel (Output-tab group title). */
+function actionLabel(channel: string): string {
+  const NAMES: Record<string, string> = {
+    "graph:load": "Load history",
+    "refs:list": "Refresh refs",
+    "head:get": "Read HEAD",
+    status: "Refresh status",
+    "commit:details": "Inspect commit",
+    "commit:rowStats": "Commit stats",
+    "diff:files": "List changes",
+    "file:diff": "Open diff",
+    "conflict:model": "Open conflict",
+    "blame:file": "Blame file",
+    "commit:action": "Commit action",
+    stage: "Stage",
+    unstage: "Unstage",
+    discard: "Discard",
+    stageAll: "Stage all",
+    unstageAll: "Unstage all",
+    commit: "Commit",
+    "stash:list": "List stashes",
+    "stash:apply": "Apply stash",
+    "stash:pop": "Pop stash",
+    "stash:drop": "Drop stash",
+    "stash:save": "Stash",
+    "worktree:list": "List worktrees",
+    "worktree:add": "Add worktree",
+    "worktree:remove": "Remove worktree",
+    "sync:status": "Check sync",
+    "sync:fetch": "Fetch",
+    "sync:pull": "Pull",
+    "sync:push": "Push",
+    "branches:list": "List branches",
+    "branch:create": "Create branch",
+    "branch:delete": "Delete branch",
+    "compare:refs": "Compare",
+    "compare:fileDiff": "Compare file",
+    "repo:tree": "Read tree",
+    "repo:file": "Read file",
+    "repo:open": "Open repository",
+    "repo:openPath": "Open repository",
+    "clone:start": "Clone",
+    "pr:checkout": "Checkout PR",
+    "git:identity": "Read identity",
+    "git:setIdentity": "Set identity",
+  };
+  if (NAMES[channel]) return NAMES[channel];
+  // "branch:rename" → "Branch rename" — readable even for unmapped channels.
+  return channel.replace(/[:.]/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
 /** Registers a typed `ipcMain.handle` endpoint. */
 function handle<C extends IpcChannel>(
   channel: C,
   fn: (payload: IpcRequest<C>, event: IpcMainInvokeEvent) => Promise<IpcResponse<C>>,
 ): void {
   ipcMain.handle(channel, (event, payload) =>
-    fn(payload as IpcRequest<C>, event),
+    actionCtx.run({ id: ++actionSeq, label: actionLabel(channel) }, () =>
+      fn(payload as IpcRequest<C>, event),
+    ),
   );
 }
 
@@ -534,6 +611,59 @@ function registerIpc(): void {
   handle("ai:chatDelete", async (req) => {
     await ai.chatDelete(req.id);
   });
+
+  // ── Local-git depth (engine-backed via GitBridge) ──
+  handle("conflict:resolve", (req) => bridge.conflictResolve(req));
+  handle("conflict:takeSide", (req) => bridge.conflictTakeSide(req));
+  handle("conflict:list", () => bridge.conflictList());
+  handle("stage:lines", (req) => bridge.stageLines(req));
+  handle("branch:merge", (req) => bridge.branchMerge(req));
+  handle("branch:rebase", (req) => bridge.branchRebase(req));
+  handle("branch:rename", (req) => bridge.branchRename(req));
+  handle("branch:setUpstream", (req) => bridge.branchSetUpstream(req));
+  handle("branch:deleteRemote", (req) => bridge.branchDeleteRemote(req));
+  handle("git:opState", () => bridge.opState());
+  handle("merge:abort", () => bridge.mergeAbort());
+  handle("merge:continue", () => bridge.mergeContinue());
+  handle("rebase:abort", () => bridge.rebaseAbort());
+  handle("rebase:continue", () => bridge.rebaseContinue());
+  handle("rebase:skip", () => bridge.rebaseSkip());
+  handle("tag:create", (req) => bridge.tagCreate(req));
+
+  // ── GitHub depth (PR review / issues / actions / search / repo admin) ──
+  handle("pr:fileDiff", (req) => github.withRepo((c, o, r) => prsApi.fileDiff(c, o, r, req)));
+  handle("pr:reviewThreads", (n) => github.withRepo((c, o, r) => prsApi.reviewThreads(c, o, r, n)));
+  handle("pr:addReviewComment", (req) => github.withRepo((c, o, r) => prsApi.addReviewComment(c, o, r, req)));
+  handle("pr:replyThread", (req) => github.withRepo((c, o, r) => prsApi.replyThread(c, o, r, req)));
+  handle("pr:resolveThread", (req) => github.withRepo((c, o, r) => prsApi.resolveThread(c, o, r, req)));
+  handle("pr:edit", (req) => github.withRepo((c, o, r) => prsApi.edit(c, o, r, req)));
+  handle("pr:setLabels", (req) => github.withRepo((c, o, r) => prsApi.setLabels(c, o, r, req)));
+  handle("pr:setAssignees", (req) => github.withRepo((c, o, r) => prsApi.setAssignees(c, o, r, req)));
+  handle("pr:updateBranch", (n) => github.withRepo((c, o, r) => prsApi.updateBranch(c, o, r, n)));
+  handle("pr:labels", () => github.withRepo((c, o, r) => prsApi.labels(c, o, r)));
+  handle("pr:prefill", () => github.withRepo((c, o, r) => prsApi.prefill(c, o, r)));
+  handle("issue:milestones", () => github.withRepo((c, o, r) => issuesApi.milestones(c, o, r)));
+  handle("issue:setMilestone", (req) => github.withRepo((c, o, r) => issuesApi.setMilestone(c, o, r, req)));
+  handle("labels:list", () => github.withRepo((c, o, r) => issuesApi.listLabels(c, o, r)));
+  handle("label:create", (req) => github.withRepo((c, o, r) => issuesApi.createLabel(c, o, r, req)));
+  handle("label:update", (req) => github.withRepo((c, o, r) => issuesApi.updateLabel(c, o, r, req)));
+  handle("label:delete", (name) => github.withRepo((c, o, r) => issuesApi.deleteLabel(c, o, r, name)));
+  handle("actions:jobLog", (req) => github.withRepo((c, o, r) => actionsApi.jobLog(c, o, r, req)));
+  handle("actions:runLog", (req) => github.withRepo((c, o, r) => actionsApi.runLog(c, o, r, req)));
+  handle("actions:artifacts", (id) => github.withRepo((c, o, r) => actionsApi.artifacts(c, o, r, id)));
+  handle("actions:downloadArtifact", (req) => github.withRepo((c, o, r) => actionsApi.downloadArtifact(c, o, r, req)));
+  handle("actions:secrets", () => github.withRepo((c, o, r) => actionsApi.secrets(c, o, r)));
+  handle("actions:setSecret", (req) => github.withRepo((c, o, r) => actionsApi.setSecret(c, o, r, req)));
+  handle("actions:deleteSecret", (name) => github.withRepo((c, o, r) => actionsApi.deleteSecret(c, o, r, name)));
+  handle("actions:variables", () => github.withRepo((c, o, r) => actionsApi.variables(c, o, r)));
+  handle("actions:setVariable", (req) => github.withRepo((c, o, r) => actionsApi.setVariable(c, o, r, req)));
+  handle("actions:deleteVariable", (name) => github.withRepo((c, o, r) => actionsApi.deleteVariable(c, o, r, name)));
+
+  // Appearance: the renderer owns the in-app theme override, so it tells us
+  // which brand variant the dock should wear.
+  handle("appearance:dockIcon", async (payload) => {
+    setDockIcon(payload.variant);
+  });
 }
 
 /** Picks (or creates) a folder, then adds a worktree there for `ref`. */
@@ -573,7 +703,8 @@ async function boot(): Promise<void> {
   });
   // Stream every git command the open repo runs to the renderer's Output tab.
   let gitLogId = 0;
-  repos.onGitRun = (e) =>
+  repos.onGitRun = (e) => {
+    const action = actionCtx.getStore();
     send("git:log", {
       id: ++gitLogId,
       args: e.args,
@@ -581,17 +712,18 @@ async function boot(): Promise<void> {
       durationMs: e.durationMs,
       exitCode: e.exitCode,
       failed: e.failed,
+      ...(e.stderr ? { stderr: e.stderr } : {}),
+      ...(action ? { actionId: action.id, action: action.label } : {}),
       at: Date.now(),
     });
+  };
 
   registerIpc();
   buildMenu();
-  // Dev builds show Electron's dock icon; force the GitStudio brand mark.
-  try {
-    app.dock?.setIcon(appIcon());
-  } catch {
-    /* non-macOS or icon missing — harmless */
-  }
+  // Dev builds show Electron's dock icon; force the GitStudio brand mark. Pick a
+  // sensible initial variant from the OS scheme so it doesn't flash the wrong
+  // tile before the renderer reports its (possibly overridden) theme.
+  setDockIcon(nativeTheme.shouldUseDarkColors ? "dark" : "light");
   await createWindow();
   initAutoUpdate({ isDev: !app.isPackaged });
 

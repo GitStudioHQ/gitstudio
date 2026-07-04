@@ -26,6 +26,7 @@ import {
 } from "../ui";
 import { toast } from "../dialogs";
 import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
+import { renderIssueDetailInto } from "./issues";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
 
 // Which project the user last opened. Survives a re-render so a move (or refresh)
@@ -212,18 +213,24 @@ function projectCard(
   );
   card.appendChild(typePill);
 
-  // Whole-card click opens the underlying issue/PR IN-APP — the project board is
-  // part of our ecosystem; you never have to bounce to github.com to read an item.
+  // Whole-card click opens the underlying item IN-APP — the project board is part
+  // of our ecosystem; you never bounce to github.com to read one. Issues peek in a
+  // slide-over drawer right here on the board (read, comment, triage — no screen
+  // switch); PRs open their full workspace, where the diff + review tools live.
   // (Draft items live only in the project and have no number, so they stay inert.)
   const canOpen =
     it.number != null && (it.type === "ISSUE" || it.type === "PULL_REQUEST");
   if (canOpen) {
-    const dest = it.type === "PULL_REQUEST" ? "prs" : "issues";
-    const open = (): void => nav(dest, { number: it.number as number });
+    const num = it.number as number;
+    const isPr = it.type === "PULL_REQUEST";
+    const open = (): void => {
+      if (isPr) nav("prs", { number: num });
+      else openIssueDrawer(num, nav);
+    };
     card.classList.add("clickable");
     card.tabIndex = 0;
     card.setAttribute("role", "button");
-    card.title = `Open ${it.type === "PULL_REQUEST" ? "pull request" : "issue"} #${it.number}`;
+    card.title = isPr ? `Open pull request #${num}` : `Peek issue #${num}`;
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -233,6 +240,68 @@ function projectCard(
     });
   }
   return card;
+}
+
+/**
+ * Peek an issue inline in a right-side slide-over drawer, so the board never has
+ * to hand off to the Issues screen to read, comment on, or triage an item. The
+ * drawer hosts the full issue detail (body, timeline, composer, action cluster),
+ * all of whose mutations re-render inside it. "Open in Issues" escalates to the
+ * two-pane workspace when you want the list alongside.
+ */
+function openIssueDrawer(number: number, nav: SectionNav): void {
+  const opener = document.activeElement as HTMLElement | null;
+  const scrim = el("div", "gh-drawer-scrim");
+  const drawer = el("div", "gh-drawer");
+  drawer.setAttribute("role", "dialog");
+  drawer.setAttribute("aria-modal", "true");
+  drawer.setAttribute("aria-label", `Issue #${number}`);
+
+  const head = el("div", "gh-drawer-head");
+  const eyebrow = el("div", "gh-drawer-eyebrow");
+  eyebrow.append(glyph("issue-opened"), span(`Issue #${number}`));
+  const headActions = el("div", "gh-drawer-actions");
+  const openFull = el("button", "mini-btn");
+  openFull.append(glyph("link-external"), span("Open in Issues"));
+  openFull.title = "Open this issue in the full Issues workspace";
+  const closeBtn = el("button", "gh-drawer-close");
+  closeBtn.setAttribute("aria-label", "Close");
+  closeBtn.title = "Close  (Esc)";
+  closeBtn.appendChild(glyph("close"));
+  headActions.append(openFull, closeBtn);
+  head.append(eyebrow, headActions);
+
+  const body = el("div", "gh-detail gh-drawer-body");
+  drawer.append(head, body);
+  scrim.appendChild(drawer);
+  document.body.appendChild(scrim);
+
+  const dispose = (): void => {
+    document.removeEventListener("keydown", onKey, true);
+    scrim.classList.remove("is-open");
+    // Let the slide-out play, then remove; restore focus to the card.
+    window.setTimeout(() => scrim.remove(), 200);
+    opener?.focus?.();
+  };
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      dispose();
+    }
+  };
+  document.addEventListener("keydown", onKey, true);
+  scrim.addEventListener("mousedown", (e) => {
+    if (e.target === scrim) dispose();
+  });
+  closeBtn.addEventListener("click", dispose);
+  openFull.addEventListener("click", () => {
+    dispose();
+    nav("issues", { number });
+  });
+
+  requestAnimationFrame(() => scrim.classList.add("is-open"));
+  closeBtn.focus();
+  void renderIssueDetailInto(body, number, nav);
 }
 
 /** Kebab menu: "Open on GitHub" + "Move to → <Status option>" (the write path). */

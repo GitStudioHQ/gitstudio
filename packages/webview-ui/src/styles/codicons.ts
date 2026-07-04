@@ -55,4 +55,7 @@ export const codiconStyles = css`
   .codicon-search::before { content: "\\ea6d"; }
   .codicon-close::before { content: "\\ea76"; }
   .codicon-refresh::before { content: "\\eb37"; }
+  .codicon-file::before { content: "\\ea7b"; }
+  .codicon-filter::before { content: "\\eaf1"; }
+  .codicon-list-flat::before { content: "\\eb84"; }
 `;

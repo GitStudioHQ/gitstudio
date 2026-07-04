@@ -25,6 +25,8 @@ export interface GitRunEvent {
   exitCode: number | null;
   /** True when the process exited non-zero or failed to run. */
   failed: boolean;
+  /** On failure: the (truncated) stderr, so log surfaces can explain WHY. */
+  stderr?: string;
 }
 
 /** Observer invoked once per completed (non-aborted) git invocation. */
@@ -93,13 +95,23 @@ export class GitProcess {
     exitCode: number | null,
     failed: boolean,
     startedAt: number,
+    stderr?: string,
   ): void {
     const hook = this.onRun;
     if (!hook) {
       return;
     }
+    // Only failures carry stderr, truncated — the log needs the reason, not a
+    // transcript.
+    const err = failed && stderr ? stderr.trim().slice(0, 2000) : undefined;
     try {
-      hook({ args, exitCode, failed, durationMs: Date.now() - startedAt });
+      hook({
+        args,
+        exitCode,
+        failed,
+        durationMs: Date.now() - startedAt,
+        ...(err ? { stderr: err } : {}),
+      });
     } catch {
       // An observer must never break git execution.
     }
@@ -205,7 +217,10 @@ export class GitProcess {
           }
           settled = true;
           cleanup();
-          this.report(args, null, true, startedAt);
+          this.report(
+            args, null, true, startedAt,
+            Buffer.concat(stderr).toString("utf8") || err.message,
+          );
           reject(err);
         });
 
@@ -215,7 +230,10 @@ export class GitProcess {
           }
           settled = true;
           cleanup();
-          this.report(args, code ?? 0, (code ?? 0) !== 0, startedAt);
+          this.report(
+            args, code ?? 0, (code ?? 0) !== 0, startedAt,
+            Buffer.concat(stderr).toString("utf8"),
+          );
           resolve({
             stdout: Buffer.concat(stdout).toString("utf8"),
             stderr: Buffer.concat(stderr).toString("utf8"),
@@ -352,6 +370,7 @@ export class GitProcess {
           exitCode,
           !!failure || (exitCode !== null && exitCode !== 0),
           startedAt,
+          Buffer.concat(stderr).toString("utf8") || failure?.message,
         );
       }
     }

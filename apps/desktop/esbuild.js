@@ -96,6 +96,9 @@ function copyStaticAssets() {
   // needs no asset here.
   const brand = {
     "brand/gitstudio-icon-512.png": "icon.png",
+    // Light-tile sibling of the dock mark, so the dock icon can theme-swap at
+    // runtime (main's `appearance:dockIcon` picks light/dark per the app theme).
+    "brand/gitstudio-icon-light-512.png": "icon-light.png",
     "brand/gitstudio-icon.svg": "brand-icon.svg",
     "brand/gitstudio-icon-light.svg": "brand-icon-light.svg",
     "brand/gitstudio-wordmark-light.svg": "brand-wordmark-light.svg",

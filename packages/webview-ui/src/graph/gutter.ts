@@ -26,9 +26,9 @@ export interface GutterOptions {
 }
 
 /** Lane stroke width — thin enough to feel native, thick enough to read. */
-const STROKE_WIDTH = 1.6;
+const STROKE_WIDTH = 1.75;
 /** Dimmed opacity for unrelated lanes when a lane is focused. */
-const DIM_OPACITY = 0.22;
+const DIM_OPACITY = 0.2;
 
 /** Center x of a lane column. Half-pixel aligned so verticals stay crisp. */
 export function laneCenterX(
@@ -85,36 +85,55 @@ export function renderRowGutterSVG(
   const cx = laneCenterX(row.column, colWidth, inset);
   const cy = Math.round(rowHeight / 2) + 0.5;
 
-  let paths = "";
+  // Draw diagonals (lane shifts / merges) first, then straight verticals on top
+  // — a vertical through-lane should read as continuous over a curve that peels
+  // off it, which gives clean GitKraken-style junctions instead of muddy
+  // crossings. Within each group, dimmed (unfocused) lanes render first so the
+  // focused lane always wins the z-order.
+  const diagonals: string[] = [];
+  const verticals: string[] = [];
+  const dimDiagonals: string[] = [];
+  const dimVerticals: string[] = [];
   for (const seg of row.segments) {
     const dim = focusColor !== undefined && seg.color !== focusColor;
     const opacity = dim ? ` opacity="${DIM_OPACITY}"` : "";
-    paths +=
-      `<path d="${segmentPath(seg, colWidth, rowHeight, inset)}" ` +
-      `fill="none" stroke="${color(palette, seg.color)}" ` +
-      `stroke-width="${STROKE_WIDTH}" stroke-linecap="round"${opacity}/>`;
+    const d = segmentPath(seg, colWidth, rowHeight, inset);
+    const markup =
+      `<path d="${d}" fill="none" stroke="${color(palette, seg.color)}" ` +
+      `stroke-width="${STROKE_WIDTH}" stroke-linecap="round" ` +
+      `stroke-linejoin="round"${opacity}/>`;
+    const straight = seg.fromColumn === seg.toColumn;
+    if (dim) (straight ? dimVerticals : dimDiagonals).push(markup);
+    else (straight ? verticals : diagonals).push(markup);
   }
+  const paths =
+    dimDiagonals.join("") +
+    dimVerticals.join("") +
+    diagonals.join("") +
+    verticals.join("");
 
   const nodeColor = color(palette, row.color);
   const nodeDim = focusColor !== undefined && row.color !== focusColor;
   const nodeOpacity = nodeDim ? ` opacity="${DIM_OPACITY}"` : "";
+  // The hole-colored halo radius: large enough that crossing lanes never fuse
+  // into the node, scaled to the avatar that sits on top of ordinary nodes.
+  const halo = nodeRadius + 1.6;
   let node: string;
   if (row.isMerge) {
-    // Hollow ring: a circle stroked in the lane color over a punched-out hole,
-    // so merge commits read as junctions and stand apart from ordinary nodes.
-    // A faint hole-colored halo first keeps crossing lanes from fusing into it.
-    const r = nodeRadius + 0.6;
+    // Merge = a hollow ring stroked in the lane color over a punched-out hole,
+    // so merges read as junctions and stand apart from ordinary nodes. The
+    // hole-colored halo first keeps crossing lanes from fusing into it.
+    const r = nodeRadius + 0.7;
     node =
-      `<circle cx="${cx}" cy="${cy}" r="${r + 1}" ` +
+      `<circle cx="${cx}" cy="${cy}" r="${halo + 0.4}" ` +
       `fill="var(--gs-graph-node-hole)"${nodeOpacity}/>` +
       `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--gs-graph-node-hole)" ` +
-      `stroke="${nodeColor}" stroke-width="2"${nodeOpacity}/>`;
+      `stroke="${nodeColor}" stroke-width="2.1"${nodeOpacity}/>`;
   } else {
     // Filled dot with a faint same-background halo so adjacent lane lines never
-    // visually fuse into the node, then a hairline lane-colored ring for crisp
-    // edge definition against the hole.
+    // visually fuse into the node.
     node =
-      `<circle cx="${cx}" cy="${cy}" r="${nodeRadius + 1.4}" ` +
+      `<circle cx="${cx}" cy="${cy}" r="${halo}" ` +
       `fill="var(--gs-graph-node-hole)"${nodeOpacity}/>` +
       `<circle cx="${cx}" cy="${cy}" r="${nodeRadius}" fill="${nodeColor}"${nodeOpacity}/>`;
   }

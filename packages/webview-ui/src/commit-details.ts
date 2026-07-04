@@ -57,6 +57,16 @@ export class CommitDetails extends LitElement {
     this.details = null;
   }
 
+  connectedCallback(): void {
+    super.connectedCallback();
+    try {
+      const raw = Number(localStorage.getItem(CommitDetails.LS_LEFT));
+      if (Number.isFinite(raw) && raw > 0) this.setLeftW(raw);
+    } catch {
+      /* storage unavailable — keep the default width */
+    }
+  }
+
   static styles = [
     codiconStyles,
     css`
@@ -86,7 +96,74 @@ export class CommitDetails extends LitElement {
       /* border-box so height:100% + padding fits the host (shadow DOM doesn't
          inherit the document's global box-sizing) — otherwise the padding pushes
          the scroller past :host{overflow:hidden} and the bottom can't be reached. */
-      .scroll { box-sizing: border-box; height: 100%; overflow-y: auto; padding: 12px 14px 18px; }
+      .scroll {
+        box-sizing: border-box;
+        height: 100%;
+        overflow-y: auto;
+        padding: 12px 14px 18px;
+        container-type: inline-size;
+      }
+
+      /* ── Git Graph-style split when the panel is WIDE (the desktop bottom
+         dock): commit identity + message on the left, the changed files beside
+         them on the right, each scrolling independently. Narrow hosts (the
+         extension sidebar) keep the stacked flow. ─────────────────────────── */
+      /* The identity|files divider only exists in the wide layout. */
+      .col-split { display: none; }
+
+      @container (min-width: 720px) {
+        .scroll { overflow: hidden; padding-bottom: 0; }
+        .layout {
+          display: grid;
+          grid-template-columns:
+            clamp(280px, var(--gs-details-left, 380px), 560px)
+            10px
+            minmax(0, 1fr);
+          height: 100%;
+          min-height: 0;
+        }
+        .col-main,
+        .col-files {
+          box-sizing: border-box;
+          min-height: 0;
+          height: 100%;
+          overflow-y: auto;
+          padding-bottom: 14px;
+        }
+        /* Short dock: actions must stay reachable — they sit ABOVE the message
+           card here, so the card (which can be long) is what scrolls away. */
+        .col-main { display: flex; flex-direction: column; align-items: flex-start; padding-right: 6px; }
+        .col-main > * { width: 100%; }
+        .col-main .message { order: 10; }
+        /* Drag divider between the columns: a centered hairline that brightens
+           on hover/drag, keyboard-operable (role=separator). */
+        .col-split {
+          display: block;
+          cursor: col-resize;
+          background: linear-gradient(to right,
+            transparent 4px,
+            var(--gs-border-soft) 4px,
+            var(--gs-border-soft) 5px,
+            transparent 5px);
+          transition: background 120ms ease;
+          touch-action: none;
+        }
+        .col-split:hover,
+        .col-split.dragging {
+          background: linear-gradient(to right,
+            transparent 4px,
+            var(--gs-accent) 4px,
+            var(--gs-accent) 5px,
+            transparent 5px);
+        }
+        .col-split:focus-visible {
+          outline: 1px solid var(--gs-accent);
+          outline-offset: -1px;
+          border-radius: 2px;
+        }
+        .col-files { padding-left: 12px; }
+        .col-files .files-head { margin-top: 0; padding-top: 2px; border-top: none; }
+      }
 
       .empty {
         height: 100%;
@@ -109,7 +186,9 @@ export class CommitDetails extends LitElement {
         position: relative; overflow: hidden; flex: 0 0 auto;
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--gs-fg) 14%, transparent);
       }
-      .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      /* Positioned so the loaded photo paints ABOVE the absolute fallback
+         (positioned siblings always paint over static ones). */
+      .avatar img { position: relative; width: 100%; height: 100%; object-fit: cover; display: block; }
       .avatar .fallback {
         position: absolute; inset: 0; display: flex; align-items: center;
         justify-content: center; font-size: 14px; font-weight: 600; color: #fff;
@@ -129,6 +208,29 @@ export class CommitDetails extends LitElement {
       }
       .sha-row:hover { background: var(--gs-hover); color: var(--gs-fg); }
       .sha-row .codicon { font-size: 12px; }
+      .email {
+        display: block; font-weight: 400; font-size: 11.5px;
+        color: var(--gs-fg-subtle); margin-top: 1px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      /* Parents — labeled clickable short-sha chips, Git Graph's "Parents:" row. */
+      .parents {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 6px;
+      }
+      .parents .plabel {
+        font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+        text-transform: uppercase; color: var(--gs-fg-subtle);
+      }
+      .parent {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 11px; color: var(--gs-fg-muted);
+        padding: 0 6px; height: 18px; border-radius: 999px;
+        border: 1px solid var(--gs-border); background: transparent;
+        cursor: pointer; transition: background 120ms, color 120ms;
+      }
+      .parent:hover { background: var(--gs-hover); color: var(--gs-accent-text); }
+      .parent .codicon { font-size: 11px; opacity: 0.7; }
       .head-tools { display: flex; gap: 2px; flex: 0 0 auto; }
       .icon-btn {
         width: 26px; height: 26px; display: inline-flex; align-items: center;
@@ -255,9 +357,13 @@ export class CommitDetails extends LitElement {
       .fnums .add { color: var(--gs-added); }
       .fnums .del { color: var(--gs-deleted); }
       .fnums .bin { color: var(--gs-fg-subtle); }
-      /* tiny add/del proportion bar */
-      .bar { display: inline-flex; gap: 1px; }
-      .bar i { width: 5px; height: 5px; border-radius: 1px; background: color-mix(in srgb, var(--gs-fg) 18%, transparent); }
+      /* Slim proportional add/del meter — same language as the graph's
+         CHANGES column, length scaled to the size of the file's change. */
+      .bar {
+        display: inline-flex; height: 4px; border-radius: 2px; overflow: hidden;
+        background: color-mix(in srgb, var(--gs-fg) 16%, transparent);
+      }
+      .bar i { height: 100%; }
       .bar i.a { background: var(--gs-added); }
       .bar i.d { background: var(--gs-deleted); }
     `,
@@ -279,13 +385,107 @@ export class CommitDetails extends LitElement {
     }
     const isWip = d.kind === "wip";
     return html`<div class="scroll">
-      ${isWip ? this.wipHeader() : this.commitHeader(d)}
-      ${!isWip && d.refs.length ? this.refsHtml(d.refs) : nothing}
-      ${!isWip ? this.messageHtml(d) : nothing}
-      ${this.actionsHtml(isWip ? WIP_ACTIONS : COMMIT_ACTIONS, d)}
-      ${this.filesHtml(d)}
+      <div class="layout">
+        <div class="col-main">
+          ${isWip ? this.wipHeader() : this.commitHeader(d)}
+          ${!isWip && d.refs.length ? this.refsHtml(d.refs) : nothing}
+          ${!isWip ? this.messageHtml(d) : nothing}
+          ${this.actionsHtml(isWip ? WIP_ACTIONS : COMMIT_ACTIONS, d)}
+        </div>
+        <div
+          class="col-split"
+          aria-label="Resize the details column"
+          aria-valuemin="280"
+          aria-valuemax="560"
+          aria-valuenow=${this.leftW ?? 380}
+          role="separator"
+          aria-orientation="vertical"
+          tabindex="0"
+          title="Drag to resize · double-click to reset"
+          @pointerdown=${this.onColSplitPointerDown}
+          @keydown=${this.onColSplitKey}
+          @dblclick=${this.resetColSplit}
+        ></div>
+        <div class="col-files">${this.filesHtml(d)}</div>
+      </div>
     </div>`;
   }
+
+  // ── Identity|files column divider (wide layout) ─────────────────────────────
+
+  /** Persisted left-column width (px), or undefined for the 380px default. */
+  private leftW: number | undefined;
+  private static readonly LS_LEFT = "gitstudio.details.leftw";
+
+  private applyLeftW(): void {
+    if (this.leftW !== undefined) {
+      this.style.setProperty("--gs-details-left", `${this.leftW}px`);
+    } else {
+      this.style.removeProperty("--gs-details-left");
+    }
+  }
+
+  private setLeftW(px: number): void {
+    this.leftW = Math.round(Math.min(560, Math.max(280, px)));
+    this.applyLeftW();
+  }
+
+  private persistLeftW(): void {
+    try {
+      if (this.leftW === undefined) localStorage.removeItem(CommitDetails.LS_LEFT);
+      else localStorage.setItem(CommitDetails.LS_LEFT, String(this.leftW));
+    } catch {
+      /* storage unavailable — non-fatal */
+    }
+  }
+
+  private onColSplitPointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const handle = e.currentTarget as HTMLElement;
+    const startX = e.clientX;
+    const startW = this.leftW ?? 380;
+    handle.classList.add("dragging");
+    try {
+      handle.setPointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    const move = (ev: PointerEvent): void => this.setLeftW(startW + (ev.clientX - startX));
+    const up = (): void => {
+      handle.classList.remove("dragging");
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      handle.setAttribute("aria-valuenow", String(this.leftW ?? 380));
+      this.persistLeftW();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  };
+
+  private onColSplitKey = (e: KeyboardEvent): void => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const step = (e.shiftKey ? 24 : 8) * (e.key === "ArrowRight" ? 1 : -1);
+      this.setLeftW((this.leftW ?? 380) + step);
+      (e.currentTarget as HTMLElement).setAttribute(
+        "aria-valuenow",
+        String(this.leftW ?? 380),
+      );
+      this.persistLeftW();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      this.resetColSplit();
+    }
+  };
+
+  private resetColSplit = (): void => {
+    this.leftW = undefined;
+    this.applyLeftW();
+    this.persistLeftW();
+  };
 
   private commitHeader(d: CommitDetailsPayload) {
     const hue = avatarHue(d.authorEmail);
@@ -303,14 +503,25 @@ export class CommitDetails extends LitElement {
         <div class="author">${d.author}
           <span class="when" title=${absTime(d.committerDate)}>committed ${relTime(d.committerDate)}</span>
         </div>
+        <span class="email" title=${d.authorEmail}>${d.authorEmail}</span>
         ${sameCommitter
           ? nothing
-          : html`<div class="sub-when">authored by ${d.author} ${relTime(d.authorDate)}</div>`}
+          : html`<div class="sub-when">committed by ${d.committer}; authored ${relTime(d.authorDate)}</div>`}
         <span class="sha-row" title="Copy full SHA"
           @click=${() => this.emit("gs-copy", { text: d.sha })}>
           <span class="codicon codicon-git-commit"></span>${d.shortSha}
           <span class="codicon codicon-copy"></span>
         </span>
+        ${d.parents.length
+          ? html`<div class="parents">
+              <span class="plabel">${d.parents.length === 1 ? "Parent" : "Parents"}</span>
+              ${d.parents.map(
+                (p) => html`<button class="parent" title=${`Reveal ${p} in the graph`}
+                  @click=${() => this.emit("gs-reveal", { sha: p })}>
+                  <span class="codicon codicon-git-commit"></span>${p.slice(0, 7)}</button>`,
+              )}
+            </div>`
+          : nothing}
       </div>
       <div class="head-tools">
         ${d.hasRemote
@@ -438,22 +649,22 @@ function statusColor(status: string): string {
   }
 }
 
-/** A 5-cell bar proportioned green(adds)/red(dels) by ratio (GitHub-style). */
+/** Proportional add/del meter: length log-scales with the change size, the
+ *  green/red split is the true ratio (floored so a tiny side stays visible) —
+ *  the same visual language as the graph's CHANGES column. */
 function statBar(add: number, del: number) {
   const total = add + del;
-  const cells = 5;
-  const out = [];
   if (total === 0) {
-    for (let i = 0; i < cells; i++) out.push(html`<i></i>`);
-    return out;
+    return html`<i style="width:14px"></i>`;
   }
-  let greens = Math.round((add / total) * cells);
-  if (add > 0 && greens === 0) greens = 1;
-  if (del > 0 && greens === cells) greens = cells - 1;
-  for (let i = 0; i < cells; i++) {
-    out.push(html`<i class=${i < greens ? "a" : "d"}></i>`);
-  }
-  return out;
+  const barW = Math.round(Math.min(40, 12 + 9 * Math.log10(1 + total)));
+  let a = Math.round((add / total) * 100);
+  if (add > 0 && del > 0) a = Math.min(90, Math.max(10, a));
+  return html`${add > 0
+    ? html`<i class="a" style="width:${(a / 100) * barW}px"></i>`
+    : nothing}${del > 0
+    ? html`<i class="d" style="width:${((100 - a) / 100) * barW}px"></i>`
+    : nothing}`;
 }
 
 const MIN = 60, HOUR = 3600, DAY = 86400, MONTH = 2592000, YEAR = 31536000;
