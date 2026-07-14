@@ -2,7 +2,7 @@
   "name": "gitstudio",
   "displayName": "GitStudio",
   "description": "A free, open-source, JetBrains-grade Git suite for VS Code & Cursor — live commit graph, inline blame, hunk staging, 3-pane merge, interactive rebase with universal Undo, and in-editor GitHub PRs.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",

@@ -4,6 +4,44 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-07-14
+
+The 1.0.0 walkthrough advertised features that silently did nothing. This is the
+repair release.
+
+### Fixed
+- **Pull no longer demands a rebase.** A plain `git pull` ran with no
+  reconciliation strategy; since git 2.34 that is a hard error on divergent
+  branches (*"Need to specify how to reconcile divergent branches"*), which we
+  surfaced verbatim. Because the pull aborted, no merge was attempted — so
+  conflicts, and the 3-pane merge editor, never appeared either.
+- **The 3-pane merge editor opens.** Clicking a conflicted file in the Changes
+  view used to open a plain 2-way diff; the merge editor was only reachable from
+  VS Code's built-in SCM view.
+- **Inline blame no longer stacks** on top of VS Code's built-in blame or
+  GitLens. The duplicate check tested a setting's *default* instead of its
+  effective value, so the one annotation that actually overlapped was never
+  detected — while the only branch that fired silently rewrote your global
+  settings. GitStudio now asks, and never edits another extension's settings on
+  its own.
+- **File & line history work.** Per-file history had no working UI at all (it
+  was routed through a *proposed* API that threw at activation). Added
+  **GitStudio: Show File History**. Line history no longer re-opens its picker on
+  top of the diff it just opened, and history/blame commands no longer no-op
+  silently when there is no active editor.
+- **Staging is visible and honest.** The Staged group no longer disappears when
+  empty; committing with nothing staged offers *Stage All & Commit* instead of
+  failing with "unknown error"; rows no longer snap back between groups; Discard
+  reads as destructive; and a conflicted file's action says **Mark as Resolved**.
+- **The walkthrough works.** Every button now runs a command that does something
+  from the walkthrough, the AI step points at the real Connect AI panel
+  (zero-key Copilot/Cursor, OpenAI-compatible, or a local agent CLI), and the
+  merge step no longer starts a destructive interactive rebase.
+- **History, blame, and merge work on Windows** — a path helper never matched a
+  Windows `\` path, so those features silently did nothing there.
+- **The macOS dock icon** is no longer oversized (it now carries Apple's icon
+  margin) and no longer swaps to a white tile that washed the mark out.
+
 ## [1.0.0] - 2026-07-14
 
 The first stable release: the whole extension loads **instantly**, the commit
