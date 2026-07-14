@@ -1,28 +1,34 @@
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- GitStudio mark: the brand's isometric commit-cube whose inner edges ARE
-       the graph lanes, with commit nodes at the centre and the three alternating
-       vertices. Faithful monochrome reduction of brand/gitstudio-mark.svg — all
-       currentColor so the activity bar tints it on dark, light, and HC. Every
-       node is a big, blunt, near-equal disc punched with a real centre hole (one
-       mask cuts the eyelet through both the lane and the disc), so the bar shows
-       through — no painted-on core (no shine), no glow halo (no fade). -->
+  <!-- GitStudio activity-bar mark: the brand's ISOMETRIC commit-cube (matching
+       brand/gitstudio-mark.svg) reduced to a bold monochrome glyph. Subtle 3D
+       faces give the cube body; the merge-Y (two branches converging into one
+       commit, then down) is the bold signature, with four commit nodes punched
+       through so the bar shows the hole. All currentColor so the activity bar
+       tints it on dark / light / high-contrast. -->
   <defs>
     <mask id="gs-ab-holes">
       <rect width="24" height="24" fill="#fff"/>
-      <circle cx="4.05" cy="7.4" r="0.88" fill="#000"/>
-      <circle cx="19.95" cy="7.4" r="0.88" fill="#000"/>
-      <circle cx="12" cy="21.2" r="0.88" fill="#000"/>
-      <circle cx="12" cy="12" r="1" fill="#000"/>
+      <circle cx="3.8" cy="7.25" r="0.8" fill="#000"/>
+      <circle cx="20.2" cy="7.25" r="0.8" fill="#000"/>
+      <circle cx="12" cy="21.5" r="0.8" fill="#000"/>
+      <circle cx="12" cy="12" r="1.0" fill="#000"/>
     </mask>
   </defs>
   <g mask="url(#gs-ab-holes)">
-    <path d="M12 2.8 L19.95 7.4 L19.95 16.6 L12 21.2 L4.05 16.6 L4.05 7.4 Z"
-          stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" opacity="0.55"/>
-    <path d="M12 12 L4.05 7.4 M12 12 L19.95 7.4 M12 12 L12 21.2"
-          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="4.05" cy="7.4" r="2.2" fill="currentColor"/>
-    <circle cx="19.95" cy="7.4" r="2.2" fill="currentColor"/>
-    <circle cx="12" cy="21.2" r="2.2" fill="currentColor"/>
-    <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+    <!-- Isometric cube faces (top / right / left) — a subtle 3D body. -->
+    <path d="M12 2.5 L20.2 7.25 L12 12 L3.8 7.25 Z" fill="currentColor" fill-opacity="0.16"/>
+    <path d="M20.2 7.25 L20.2 16.75 L12 21.5 L12 12 Z" fill="currentColor" fill-opacity="0.34"/>
+    <path d="M12 12 L12 21.5 L3.8 16.75 L3.8 7.25 Z" fill="currentColor" fill-opacity="0.24"/>
+    <!-- Cube silhouette. -->
+    <path d="M12 2.5 L20.2 7.25 L20.2 16.75 L12 21.5 L3.8 16.75 L3.8 7.25 Z"
+          stroke="currentColor" stroke-width="1.1" stroke-opacity="0.5" stroke-linejoin="round"/>
+    <!-- Merge-Y lanes — the bold signature. -->
+    <path d="M12 12 L3.8 7.25 M12 12 L20.2 7.25 M12 12 L12 21.5"
+          stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- Commit nodes. -->
+    <circle cx="3.8" cy="7.25" r="2.2" fill="currentColor"/>
+    <circle cx="20.2" cy="7.25" r="2.2" fill="currentColor"/>
+    <circle cx="12" cy="21.5" r="2.2" fill="currentColor"/>
+    <circle cx="12" cy="12" r="2.6" fill="currentColor"/>
   </g>
 </svg>

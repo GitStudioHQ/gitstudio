@@ -10,6 +10,7 @@
 
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { codiconStyles } from "../styles/codicons";
+import { hostTokens } from "../styles/hostTokens";
 import {
   Virtualizer,
   observeElementRect,
@@ -34,12 +35,12 @@ import {
 } from "./avatar";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
-const ROW_HEIGHT = 28;
-const COL_WIDTH = 16;
+const ROW_HEIGHT = 30;
+const COL_WIDTH = 20;
 const NODE_RADIUS = 3.5;
 const OVERSCAN = 12;
 /** Author avatar diameter, px — sits ON the commit node, GitKraken-style. */
-const AVATAR_SIZE = 20;
+const AVATAR_SIZE = 18;
 /** Left inset added to every lane so a node avatar at lane 0 isn't clipped. */
 const NODE_INSET = 13;
 /** Min gutter width so even a linear history reserves room for the avatar. */
@@ -115,9 +116,19 @@ export type GraphAction =
   | { type: "select"; sha: string }
   | { type: "open"; sha: string }
   | { type: "context"; sha: string; x: number; y: number }
+  | { type: "menuAction"; sha: string; id: string }
   | { type: "loadMore" }
   | { type: "refresh" }
   | { type: "requestStats"; shas: string[] };
+
+/** One item in the in-graph commit actions popover (from the host). */
+export interface CommitMenuItem {
+  id: string;
+  label: string;
+  icon?: string;
+  danger?: boolean;
+  sep?: boolean;
+}
 
 export class CommitGraph extends LitElement {
   // Declared imperatively (no decorators) so the build is independent of the
@@ -128,6 +139,7 @@ export class CommitGraph extends LitElement {
     totalColumns: { attribute: false },
     hasMore: { attribute: false },
     status: { attribute: false },
+    errorMessage: { attribute: false },
     head: { attribute: false },
     palette: { state: true },
     selectedSha: { state: true },
@@ -135,9 +147,10 @@ export class CommitGraph extends LitElement {
     searchScope: { state: true },
     columnsOpen: { state: true },
     scopeOpen: { state: true },
+    commitMenu: { state: true },
   };
 
-  static styles = [codiconStyles, css`
+  static styles = [hostTokens, codiconStyles, css`
     :host {
       display: flex;
       flex-direction: column;
@@ -146,10 +159,10 @@ export class CommitGraph extends LitElement {
       overflow: hidden;
       /* Hole color punched through graph nodes = the surface behind the row.
          Falls through to the editor bg; hover/selected rows override it so the
-         node hole tracks the row tint. */
+         node hole tracks the row tint. (The --gs-* scale is inherited from the
+         document via graph.css @import "./tokens.css" — only this graph-specific
+         var is declared locally.) */
       --gs-graph-node-hole: var(--vscode-editor-background, #1e1e1e);
-      --gs-accent: var(--vscode-focusBorder);
-      --gs-fg-muted: var(--vscode-descriptionForeground, #9aa0a6);
       color: var(--vscode-foreground);
       font-family: var(--vscode-font-family);
       font-size: var(--vscode-font-size, 13px);
@@ -248,19 +261,19 @@ export class CommitGraph extends LitElement {
       height: 22px;
       padding: 0;
       border: none;
-      border-radius: 5px;
+      border-radius: var(--gs-radius-sm);
       background: transparent;
       color: var(--gs-fg-muted);
       cursor: pointer;
-      transition: background 120ms ease, color 120ms ease;
+      transition: background var(--gs-motion-fast) var(--gs-ease), color var(--gs-motion-fast) var(--gs-ease);
     }
-    .gh-iconbtn:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
-    .gh-iconbtn:active { background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent); }
+    .gh-iconbtn:hover { background: var(--gs-hover); color: var(--gs-fg); }
+    .gh-iconbtn:active { background: color-mix(in srgb, var(--gs-fg) 12%, transparent); }
     .gh-iconbtn:focus-visible {
-      outline: 1px solid var(--vscode-focusBorder);
+      outline: 1px solid var(--gs-accent);
       outline-offset: -1px;
-      background: var(--vscode-list-hoverBackground);
-      color: var(--vscode-foreground);
+      background: var(--gs-hover);
+      color: var(--gs-fg);
     }
     .gh-iconbtn .codicon { font-size: 14px; }
     .gh-iconbtn[aria-expanded="true"] {
@@ -293,6 +306,14 @@ export class CommitGraph extends LitElement {
     }
     @media (prefers-reduced-motion: reduce) {
       .gh-pop { animation: none; }
+    }
+    /* The commit context popover is positioned at the cursor (fixed), not
+       anchored to a header control. */
+    .gh-pop.gh-ctx { position: fixed; top: auto; right: auto; min-width: 214px; }
+    .gh-menuitem.danger { color: var(--vscode-errorForeground, #e15a5a); }
+    .gh-menuitem.danger:hover {
+      background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 16%, transparent);
+      color: var(--vscode-errorForeground, #e15a5a);
     }
     .gh-pop-title {
       padding: 4px 8px 5px;
@@ -357,23 +378,23 @@ export class CommitGraph extends LitElement {
       padding: 0 5px 0 6px;
       margin-right: 1px;
       border: none;
-      border-radius: 4px;
-      background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
-      color: var(--vscode-foreground);
-      font-family: var(--vscode-font-family);
+      border-radius: var(--gs-radius-sm);
+      background: color-mix(in srgb, var(--gs-fg) 8%, transparent);
+      color: var(--gs-fg);
+      font-family: var(--gs-font-ui);
       font-size: 11px;
       white-space: nowrap;
       cursor: pointer;
       flex: 0 0 auto;
-      transition: background 120ms ease;
+      transition: background var(--gs-motion-fast) var(--gs-ease);
     }
-    .gh-scope:hover { background: color-mix(in srgb, var(--vscode-foreground) 14%, transparent); }
-    .gh-scope:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+    .gh-scope:hover { background: color-mix(in srgb, var(--gs-fg) 14%, transparent); }
+    .gh-scope:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
     .gh-scope .codicon-filter { font-size: 11px; opacity: 0.8; }
     .gh-scope .codicon-chevron-down { font-size: 11px; opacity: 0.7; margin-left: -1px; }
     .gh-scope.scoped {
-      background: color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
-      color: var(--vscode-textLink-foreground, var(--vscode-foreground));
+      background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+      color: var(--gs-accent-text);
     }
     .gh-scope-pop { min-width: 150px; }
     /* The scope popover anchors to the search box's scope button (left-ish). */
@@ -410,6 +431,54 @@ export class CommitGraph extends LitElement {
         var(--col-author-w, ${col("author")}px)
         var(--col-date-w, ${col("date")}px)
         var(--col-sha-w, ${col("sha")}px);
+    }
+    /* refs + subject share a wrapper. In column mode it is display:contents so
+       they behave as their own grid tracks; in the sidebar (inline) mode it
+       becomes a flex box so the chips flow INLINE before the message. */
+    .content { display: contents; min-width: 0; }
+
+    /* ── Responsive: in a narrow host (the Commits SIDEBAR view) drop trailing
+       columns from the right so the commit SUBJECT always has room. You must be
+       able to READ commit messages even in a slim sidebar — the graph, refs and
+       subject stay; date → sha → author → changes fall away as it narrows. The
+       hidden data is still on the row's hover tooltip and in the details dock. */
+    @media (max-width: 760px) {
+      :host {
+        --gs-grid:
+          var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+          clamp(0px, var(--col-refs-w, ${col("refs")}px), 300px)
+          minmax(0, 1fr)
+          var(--col-changes-w, ${col("changes")}px)
+          var(--col-author-w, ${col("author")}px);
+      }
+      .colhead .ch-date, .colhead .ch-sha,
+      .row .date, .row .sha { display: none; }
+    }
+    /* ── Sidebar (inline) mode ──────────────────────────────────────────────
+       Below ~620px (every practical sidebar width) the refs stop being a fixed
+       column — they flow INLINE right before the message, so a commit with no
+       refs uses the FULL width instead of starting behind a ~120px empty gap.
+       The column header, resize handles and all trailing columns fall away; it
+       reads as a clean commit list, not a cramped spreadsheet. */
+    @media (max-width: 620px) {
+      :host {
+        --gs-grid:
+          var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+          minmax(0, 1fr);
+      }
+      /* :host-qualified so these beat the later base .colhead/.col-resize
+         rules on specificity, not just source order. */
+      :host .colhead { display: none; }
+      :host .col-resize { display: none; }
+      .row .changes, .row .author, .row .date, .row .sha { display: none; }
+      .content { display: flex; align-items: center; gap: 7px; }
+      .content .refs {
+        display: inline-flex; flex: 0 1 auto; min-width: 0;
+        max-width: 58%; margin: 0; padding: 0;
+      }
+      /* No refs → no chip box → no leading gap: the message starts at the edge. */
+      .content .refs:empty { display: none; }
+      .content .subject { flex: 1 1 auto; min-width: 0; }
     }
 
     /* ── Column header row (aligned to the row grid) ──────────────────── */
@@ -591,14 +660,21 @@ export class CommitGraph extends LitElement {
     .avatar img {
       /* Positioned so it paints ABOVE the absolutely-positioned initials
          fallback (positioned siblings always paint over static ones — a
-         static img here is permanently covered even after it loads). */
+         static img here is permanently covered even after it loads).
+         Starts hidden and is revealed ONLY once it confirms a successful load
+         (onImgLoad adds .is-loaded). A Gravatar 404 (d=404), a blocked host, or
+         an offline fetch therefore never obscures the initials disc with an
+         empty box — the disc is the always-visible base, the photo is a
+         progressive enhancement painted on top only when it truly arrives. */
       position: relative;
       width: 100%;
       height: 100%;
       display: block;
       object-fit: cover;
       background: transparent;
+      opacity: 0;
     }
+    .avatar img.is-loaded { opacity: 1; }
     .avatar .fallback {
       position: absolute;
       inset: 0;
@@ -608,9 +684,12 @@ export class CommitGraph extends LitElement {
       font-size: 9px;
       font-weight: 600;
       letter-spacing: 0.02em;
-      color: #fff;
+      color: var(--vscode-foreground);
       font-family: var(--vscode-font-family);
-      background: hsl(var(--gs-av-hue, 210) 48% 42%);
+      /* A soft, near-neutral disc — a whisper of the author's hue mixed into the
+         surface, not a saturated color. Keeps per-author identity without turning
+         the avatar column into a rainbow (the loudest "busy" signal in a graph). */
+      background: color-mix(in srgb, hsl(var(--gs-av-hue, 210) 45% 50%) 30%, var(--gs-bg, var(--vscode-editor-background, #24262c)));
     }
     /* WIP node: a pencil glyph in a dashed lane-colored ring. */
     .avatar.wip-node {
@@ -661,9 +740,9 @@ export class CommitGraph extends LitElement {
       font-size: 11px;
       font-weight: 550;
       line-height: 18px;
-      /* Stay readable when crowded: don't shrink below a few legible chars, and
-         cap a single long ref so it can't hog the whole column. */
-      min-width: 46px;
+      /* Cap a single long ref so it can't hog the whole column; no min-width, so
+         short refs (a 3-char branch, a tag) pack tight instead of each reserving
+         a wide slot and pushing the rest into a "+N". */
       max-width: 150px;
       overflow: hidden;
       white-space: nowrap;
@@ -691,16 +770,13 @@ export class CommitGraph extends LitElement {
       flex: 0 0 auto;
       opacity: 0.95;
     }
-    /* current HEAD = filled accent with a leading "you are here" dot. */
+    /* current HEAD = filled GitStudio violet with a leading "you are here" dot. */
     .chip-current {
-      color: var(--vscode-button-foreground, #fff);
-      background: var(--vscode-button-background,
-        var(--vscode-focusBorder));
-      border-color: color-mix(in srgb,
-        var(--vscode-button-background, var(--vscode-focusBorder)) 70%, #000 0%);
+      color: var(--gs-brand-fg, #fff);
+      background: var(--gs-brand);
+      border-color: var(--gs-brand);
       font-weight: 650;
-      box-shadow: 0 1px 2px color-mix(in srgb,
-        var(--vscode-button-background, var(--vscode-focusBorder)) 40%, transparent);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--gs-brand) 40%, transparent);
     }
     .chip-current .dot {
       width: 5px;
@@ -726,15 +802,15 @@ export class CommitGraph extends LitElement {
       background: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 13%, var(--vscode-editor-background));
     }
     .chip-remote .ico { color: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 90%, var(--vscode-foreground)); }
-    /* tag = amber / charts-yellow tinted with a tag glyph. */
+    /* tag = amber tinted with a tag glyph. Uses --gs-amber (the legibility-tuned
+       gitDecoration "modified" foreground), NOT raw charts-yellow, which fails
+       AA as small text on light themes. */
     .chip-tag {
-      color: var(--vscode-charts-yellow, #e5a73c);
-      border-color: color-mix(in srgb,
-        var(--vscode-charts-yellow, #e5a73c) 40%, transparent);
-      background: color-mix(in srgb,
-        var(--vscode-charts-yellow, #e5a73c) 16%, var(--vscode-editor-background));
+      color: var(--gs-amber);
+      border-color: color-mix(in srgb, var(--gs-amber) 40%, transparent);
+      background: color-mix(in srgb, var(--gs-amber) 16%, var(--vscode-editor-background));
     }
-    .chip-tag .ico { color: var(--vscode-charts-yellow, #e5a73c); }
+    .chip-tag .ico { color: var(--gs-amber); }
     /* The "+N" overflow pill must never shrink or ellipsize — it's the count. */
     .chip-overflow {
       color: var(--vscode-foreground);
@@ -871,14 +947,18 @@ export class CommitGraph extends LitElement {
     }
     .row.selected .sha { opacity: 1; }
 
-    /* Reduce the visual weight of unrelated rows on hover-focus. */
-    .scroller.focusing .row:not(.focus-on) .subject,
+    /* Lane focus (engaged only while hovering the gutter — see onPointerMove):
+       unrelated branches recede so the hovered branch stands out. The gutter and
+       row chrome dim firmly; the subject stays legible so the list is still
+       readable, not blanked out. */
+    .scroller.focusing .row:not(.focus-on) .gutter,
     .scroller.focusing .row:not(.focus-on) .refs,
     .scroller.focusing .row:not(.focus-on) .avatar,
     .scroller.focusing .row:not(.focus-on) .changes,
     .scroller.focusing .row:not(.focus-on) .meta {
-      opacity: 0.5;
+      opacity: 0.42;
     }
+    .scroller.focusing .row:not(.focus-on) .subject { opacity: 0.62; }
 
     .placeholder {
       display: flex;
@@ -886,10 +966,35 @@ export class CommitGraph extends LitElement {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 8px;
+      padding: 24px;
       color: var(--vscode-descriptionForeground, #9aa0a6);
       font-size: 13px;
+      text-align: center;
     }
+    .placeholder .ph-icon { font-size: 30px; opacity: 0.45; }
+    .placeholder .ph-title {
+      font-size: 13px; font-weight: 600; color: var(--vscode-foreground);
+    }
+    .placeholder .ph-detail {
+      font-size: 12px; line-height: 1.5; max-width: 300px; color: var(--gs-fg-muted);
+    }
+    .placeholder .ph-retry {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 4px; height: 26px; padding: 0 12px;
+      border-radius: var(--gs-radius-sm); border: 1px solid var(--gs-border);
+      background: var(--gs-surface); color: var(--gs-fg);
+      cursor: pointer; font-size: 12px; font-family: inherit;
+      transition: background var(--gs-motion) var(--gs-ease),
+                  border-color var(--gs-motion) var(--gs-ease);
+    }
+    .placeholder .ph-retry:hover {
+      background: var(--gs-hover); border-color: var(--gs-fg-subtle);
+    }
+    .placeholder .ph-retry:focus-visible {
+      outline: 1px solid var(--gs-accent); outline-offset: 1px;
+    }
+    .placeholder .ph-retry .codicon { font-size: 13px; }
     .spinner {
       width: 18px;
       height: 18px;
@@ -927,7 +1032,10 @@ export class CommitGraph extends LitElement {
   /** Whether more pages remain to be loaded on scroll. */
   declare hasMore: boolean;
   /** Lifecycle phase for the placeholder states. */
-  declare status: "loading" | "ready" | "empty";
+  declare status: "loading" | "ready" | "empty" | "error";
+  /** Message for the error placeholder — a git failure, NOT an empty repo
+      (an empty/fresh repo stays in the "empty" state with its own guidance). */
+  declare errorMessage: string;
   /** Sha of the current HEAD commit. */
   declare head: string;
 
@@ -939,10 +1047,41 @@ export class CommitGraph extends LitElement {
   /** Whether the Columns popover / search-scope popover are open. */
   private declare columnsOpen: boolean;
   private declare scopeOpen: boolean;
+  /** The open in-graph commit actions popover, or null. Positioned at (x,y). */
+  private declare commitMenu: {
+    sha: string;
+    x: number;
+    y: number;
+    title: string;
+    items: CommitMenuItem[];
+  } | null;
   /** Row indices matching the current search, and the cursor into them. */
   private searchMatches: number[] = [];
   private matchSet = new Set<number>();
   private matchIdx = -1;
+
+  /** Host-resolved author photos: lowercased email → avatar URL (e.g. GitHub).
+   *  Empty until the host pushes them; a plain DOM property (not a Lit reactive
+   *  prop) whose setter repaints the virtualized rows in place. */
+  /** URLs whose avatar image has loaded successfully at least once, so recycled
+   *  rows can render them visible immediately (no scroll flicker). */
+  private loadedAvatars = new Set<string>();
+  private _authorAvatars: Record<string, string> = {};
+  set authorAvatars(map: Record<string, string> | undefined) {
+    this._authorAvatars = map ?? {};
+    // Rows are virtualized (raw innerHTML), so a reactive re-render wouldn't
+    // touch them — repaint explicitly once the map lands.
+    if (this.rows.length > 0) {
+      this.renderRows();
+    }
+  }
+  get authorAvatars(): Record<string, string> {
+    return this._authorAvatars;
+  }
+  /** The resolved photo URL for an author email, or undefined to fall back. */
+  private avatarFor(email: string): string | undefined {
+    return email ? this._authorAvatars[email.toLowerCase()] : undefined;
+  }
 
   /** Per-column widths (px), keyed by column id; persisted to localStorage. */
   private colWidths: Partial<Record<ColumnSpec["id"], number>> = {};
@@ -989,6 +1128,7 @@ export class CommitGraph extends LitElement {
     this.totalColumns = 1;
     this.hasMore = false;
     this.status = "loading";
+    this.errorMessage = "";
     this.head = "";
     this.palette = paletteForTheme();
     this.selectedSha = undefined;
@@ -996,6 +1136,7 @@ export class CommitGraph extends LitElement {
     this.searchScope = "all";
     this.columnsOpen = false;
     this.scopeOpen = false;
+    this.commitMenu = null;
   }
 
   connectedCallback(): void {
@@ -1330,11 +1471,36 @@ export class CommitGraph extends LitElement {
       this.columnsOpen = false;
       this.scopeOpen = false;
     }
+    if (this.commitMenu) {
+      this.commitMenu = null;
+    }
+  }
+
+  /** Open the in-graph commit actions popover at (x, y). x < 0 → near the
+   *  selected row (keyboard menu). Host-driven; replaces the native quick-pick. */
+  showCommitMenu(
+    sha: string,
+    x: number,
+    y: number,
+    title: string,
+    items: CommitMenuItem[],
+  ): void {
+    this.columnsOpen = false;
+    this.scopeOpen = false;
+    let px = x;
+    let py = y;
+    if (x < 0 || y < 0) {
+      const row = this.renderRoot.querySelector<HTMLElement>(".row.selected");
+      const r = row?.getBoundingClientRect();
+      px = r ? r.left + 24 : window.innerWidth / 2;
+      py = r ? r.bottom : window.innerHeight / 2;
+    }
+    this.commitMenu = { sha, x: px, y: py, title, items };
   }
 
   /** Attach/detach the document click-outside listener as popovers open/close. */
   private syncPopoverListener(): void {
-    const open = this.columnsOpen || this.scopeOpen;
+    const open = this.columnsOpen || this.scopeOpen || this.commitMenu !== null;
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
     if (open) {
       document.addEventListener("pointerdown", this.onDocPointerDown, true);
@@ -1551,9 +1717,18 @@ export class CommitGraph extends LitElement {
     // pencil glyph instead of an author avatar.
     const cx = Math.round(row.column * COL_WIDTH + COL_WIDTH / 2 + NODE_INSET);
     const ring = this.palette[row.color % this.palette.length] ?? "#888";
+    const avatarUrl =
+      this.avatarFor(row.authorEmail) || gravatarUrl(row.authorEmail, 40);
     const avatar = isWip
       ? `<span class="avatar wip-node" style="--gs-av-x:${cx}px;--gs-av-ring:${esc(ring)}" aria-hidden="true"><span class="codicon codicon-edit"></span></span>`
-      : avatarHtml(row.author, row.authorEmail, cx, ring);
+      : avatarHtml(
+          row.author,
+          row.authorEmail,
+          cx,
+          ring,
+          avatarUrl,
+          this.loadedAvatars.has(avatarUrl),
+        );
     const label = esc(
       isWip
         ? "Uncommitted changes"
@@ -1564,8 +1739,10 @@ export class CommitGraph extends LitElement {
       `aria-selected="${selected ? "true" : "false"}" aria-label="${label}" ` +
       `style="transform:translateY(${item.start}px)">` +
       `<div class="gutter">${gutter}${avatar}</div>` +
-      `<div class="refs">${refs}</div>` +
-      `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
+      `<div class="content">` +
+        `<div class="refs">${refs}</div>` +
+        `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
+      `</div>` +
       `<div class="changes">${isWip ? "" : this.changesHtml(row.sha)}</div>` +
       `<div class="meta author" title="${esc(row.author)} <${esc(row.authorEmail)}>">${isWip ? "" : esc(row.author)}</div>` +
       `<div class="meta date" title="${esc(absTime(row.authorDate))}">${isWip ? "now" : esc(dateLabel(row.authorDate))}</div>` +
@@ -1668,8 +1845,11 @@ export class CommitGraph extends LitElement {
     if (!sha) {
       return;
     }
+    // Double-click opens the in-graph actions popover (same as right-click), so
+    // every sidebar tab behaves the same — no native quick-pick.
+    e.preventDefault();
     this.select(sha, false);
-    this.onAction({ type: "open", sha });
+    this.onAction({ type: "context", sha, x: e.clientX, y: e.clientY });
   };
 
   private onContextMenu = (e: MouseEvent): void => {
@@ -1683,9 +1863,12 @@ export class CommitGraph extends LitElement {
   };
 
   private onPointerMove = (e: PointerEvent): void => {
-    const el = (e.target as HTMLElement | null)?.closest(
-      ".row",
-    ) as HTMLElement | null;
+    // Lane focus is a deliberate affordance: only engage while the pointer is
+    // over the graph gutter (the rails). Casually moving across subjects/refs
+    // while reading no longer dims the list — that restlessness was the graph's
+    // biggest "busy" tell. Off the gutter → focus clears.
+    const inGutter = (e.target as HTMLElement | null)?.closest(".gutter");
+    const el = inGutter?.closest(".row") as HTMLElement | null;
     const sha = el?.dataset.sha;
     const idx = sha ? this.shaToIndex.get(sha) : undefined;
     const next = idx !== undefined ? this.rows[idx]?.color : undefined;
@@ -1708,6 +1891,29 @@ export class CommitGraph extends LitElement {
   };
   private onImgErrorOptions = {
     handleEvent: (e: Event) => this.onImgError(e),
+    capture: true,
+  };
+
+  // Companion to onImgError: a delegated, capture-phase `load` handler (load,
+  // like error, does not bubble). The avatar <img> starts hidden (opacity:0);
+  // it is revealed ONLY here, once it has genuinely loaded. This makes the
+  // initials disc the always-visible base and the photo a pure enhancement —
+  // so a 404 / blocked host / offline fetch can never leave a blank avatar, and
+  // every recycled virtual row gets a fresh <img> that re-fires load from cache.
+  private onImgLoad = (e: Event): void => {
+    const t = e.target as HTMLElement | null;
+    if (t && t instanceof HTMLImageElement && t.classList.contains("av-img")) {
+      t.classList.add("is-loaded");
+      // Remember this URL succeeded so future recycled rows render it visible
+      // up front (see avatarHtml `preloaded`) — kills the scroll flicker.
+      const src = t.getAttribute("src");
+      if (src) {
+        this.loadedAvatars.add(src);
+      }
+    }
+  };
+  private onImgLoadOptions = {
+    handleEvent: (e: Event) => this.onImgLoad(e),
     capture: true,
   };
 
@@ -1785,6 +1991,10 @@ export class CommitGraph extends LitElement {
       this.gotoMatch(e.shiftKey ? -1 : 1);
     } else if (e.key === "Escape") {
       e.preventDefault();
+      // Keep this Escape inside the search box: without stopPropagation the
+      // composed event also reaches the host's document-level Escape handler,
+      // which would collapse the commit-details dock at the same time.
+      e.stopPropagation();
       this.clearSearch();
     }
   };
@@ -2046,9 +2256,23 @@ export class CommitGraph extends LitElement {
 
   render() {
     const header = this.headerHtml();
+    if (this.status === "error") {
+      return html`${header}<div class="placeholder">
+          <span class="ph-icon codicon codicon-warning"></span>
+          <div class="ph-title">Couldn't load the history</div>
+          ${this.errorMessage
+            ? html`<div class="ph-detail">${this.errorMessage}</div>`
+            : nothing}
+          <button class="ph-retry" @click=${() => this.onAction({ type: "refresh" })}>
+            <span class="codicon codicon-refresh"></span> Retry
+          </button>
+        </div>${nothing}`;
+    }
     if (this.status === "empty") {
       return html`${header}<div class="placeholder">
-          <div>No commits yet</div>
+          <span class="ph-icon codicon codicon-git-commit"></span>
+          <div class="ph-title">No commits yet</div>
+          <div class="ph-detail">Make your first commit and the history will appear here.</div>
         </div>${nothing}`;
     }
     if (this.status === "loading" && this.rows.length === 0) {
@@ -2069,9 +2293,58 @@ export class CommitGraph extends LitElement {
         @pointermove=${this.onPointerMove}
         @pointerleave=${this.onPointerLeave}
         @error=${this.onImgErrorOptions}
+        @load=${this.onImgLoadOptions}
       >
         <div class="sizer"></div>
-      </div>${nothing}`;
+      </div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;
+  }
+
+  /** The in-graph commit actions popover (fixed at the cursor, clamped). */
+  private renderCommitMenu() {
+    const m = this.commitMenu;
+    if (!m) {
+      return nothing;
+    }
+    // Clamp to the viewport (approx sizes; refined once measured is fine).
+    const W = 220;
+    const H = 34 + m.items.length * 28;
+    const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
+    const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
+    const pick = (id: string) => {
+      const sha = m.sha;
+      this.commitMenu = null;
+      if (id) {
+        this.onAction({ type: "menuAction", sha, id });
+      }
+    };
+    return html`<div
+      class="gh-pop gh-ctx"
+      role="menu"
+      style="left:${Math.round(left)}px;top:${Math.round(top)}px"
+      @keydown=${(e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          this.commitMenu = null;
+        }
+      }}
+    >
+      <div class="gh-pop-title">${m.title}</div>
+      ${m.items.map((it) =>
+        it.sep
+          ? html`<div class="gh-pop-sep"></div>`
+          : html`<button
+              class="gh-menuitem${it.danger ? " danger" : ""}"
+              role="menuitem"
+              @click=${() => pick(it.id)}
+            >
+              ${it.icon
+                ? html`<span class="codicon codicon-${it.icon}"></span>`
+                : nothing}
+              <span class="lbl">${it.label}</span>
+            </button>`,
+      )}
+    </div>`;
   }
 
   /** GitLens-style column headers, aligned to the row grid, with resize grips.
@@ -2230,15 +2503,23 @@ function avatarHtml(
   email: string,
   cx: number,
   ring: string,
+  resolvedUrl: string,
+  preloaded: boolean,
 ): string {
   const hue = avatarHue(email);
   const initials = esc(authorInitials(author, email));
-  const url = esc(gravatarUrl(email, 40));
+  const url = esc(resolvedUrl);
+  // `preloaded` = this exact URL already loaded once (tracked in loadedAvatars).
+  // Render it visible IMMEDIATELY so a row recycled during scroll shows the
+  // cached photo instantly instead of flashing the initials disc while it waits
+  // for a fresh load event — the flicker. A first-ever load still starts hidden
+  // and is revealed by onImgLoad, over the disc base (a 404 stays hidden).
+  const cls = preloaded ? "av-img is-loaded" : "av-img";
   return (
     `<span class="avatar" style="--gs-av-hue:${hue};--gs-av-x:${cx}px;` +
     `--gs-av-ring:${esc(ring)}" aria-hidden="true">` +
     `<span class="fallback">${initials}</span>` +
-    `<img class="av-img" src="${url}" alt="" loading="lazy" decoding="async" />` +
+    `<img class="${cls}" src="${url}" alt="" loading="lazy" decoding="async" />` +
     `</span>`
   );
 }

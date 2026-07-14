@@ -4,6 +4,12 @@
 
 /* The real VS Code icon font, declared at document scope (esbuild inlines the
  * .ttf) so the <gitstudio-rebase> shadow root can use it — see codiconStyles. */
+
+/* Shared GitStudio design tokens. Custom properties inherit through shadow DOM,
+ * so importing them here exposes the --gs-* scale inside the <gitstudio-rebase>
+ * shadow root — one source of truth, no local re-declaration. */
+@import "../styles/tokens.css";
+
 @font-face {
   font-family: "codicon";
   font-display: block;

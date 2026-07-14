@@ -49,6 +49,9 @@ function start(root: HTMLElement): void {
 
   shell.append(graphPane, divider, details);
   shell.dataset.detailsOpen = "false";
+  // Once the user closes the dock it stays closed while they browse (selecting
+  // commits just highlights them); a double-click / parent-reveal re-opens it.
+  shell.dataset.detailsDismissed = "false";
   root.replaceChildren(shell);
 
   // ── Graph intents → host ──────────────────────────────────────────────────
@@ -56,9 +59,13 @@ function start(root: HTMLElement): void {
     switch (action.type) {
       case "select":
         vscode.postMessage({ type: "selectCommit", sha: action.sha });
-        openDetails();
+        // A single click respects a prior dismissal — it selects without
+        // forcing the dock back open.
+        if (shell.dataset.detailsDismissed !== "true") openDetails();
         break;
       case "open":
+        // An explicit open (double-click) always shows the details.
+        shell.dataset.detailsDismissed = "false";
         vscode.postMessage({ type: "selectCommit", sha: action.sha });
         openDetails();
         break;
@@ -69,6 +76,9 @@ function start(root: HTMLElement): void {
           x: action.x,
           y: action.y,
         });
+        break;
+      case "menuAction":
+        vscode.postMessage({ type: "commitMenuAction", sha: action.sha, id: action.id });
         break;
       case "loadMore":
         vscode.postMessage({ type: "loadMore" });
@@ -96,6 +106,15 @@ function start(root: HTMLElement): void {
     const d = (e as CustomEvent).detail as { text: string };
     vscode.postMessage({ type: "copyText", text: d.text });
   });
+  details.addEventListener("gs-close", () => closeDetails());
+  // Escape collapses the dock too (only when it's open, so it doesn't swallow
+  // Escape elsewhere).
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && shell.dataset.detailsOpen === "true") {
+      e.preventDefault();
+      closeDetails();
+    }
+  });
 
   // ── Resizable divider ─────────────────────────────────────────────────────
   let dragging = false;
@@ -122,6 +141,11 @@ function start(root: HTMLElement): void {
 
   function openDetails(): void {
     shell.dataset.detailsOpen = "true";
+    shell.dataset.detailsDismissed = "false";
+  }
+  function closeDetails(): void {
+    shell.dataset.detailsOpen = "false";
+    shell.dataset.detailsDismissed = "true";
   }
 
   // ── Host → webview ────────────────────────────────────────────────────────
@@ -158,7 +182,9 @@ function handle(
     }
     case "commitDetails": {
       details.details = message.details;
-      if (message.details) {
+      // Fill the dock's content, but don't force it open if the user dismissed
+      // it — they're browsing with the dock collapsed.
+      if (message.details && shell.dataset.detailsDismissed !== "true") {
         shell.dataset.detailsOpen = "true";
       }
       break;
@@ -169,7 +195,28 @@ function handle(
     }
     case "revealCommit": {
       graph.reveal(message.sha);
+      // An explicit reveal (e.g. clicking a parent) re-opens the dock.
+      shell.dataset.detailsDismissed = "false";
       shell.dataset.detailsOpen = "true";
+      break;
+    }
+    case "authorAvatars": {
+      graph.authorAvatars = message.avatars;
+      break;
+    }
+    case "commitMenu": {
+      graph.showCommitMenu(
+        message.sha,
+        message.x,
+        message.y,
+        message.title,
+        message.items,
+      );
+      break;
+    }
+    case "graphError": {
+      graph.errorMessage = message.message ?? "";
+      graph.status = "error";
       break;
     }
     case "graphConfig":

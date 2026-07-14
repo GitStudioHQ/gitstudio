@@ -50,6 +50,8 @@ export type {
   CommitOptions,
   CommitResult,
 } from "./StagingProvider";
+export { StatusProvider, parseV2 as parseStatusV2 } from "./StatusProvider";
+export type { RepoStatus, StatusFile } from "./StatusProvider";
 export { SnapshotProvider } from "./SnapshotProvider";
 export type { Snapshot } from "./SnapshotProvider";
 export { StashProvider } from "./StashProvider";

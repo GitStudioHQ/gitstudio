@@ -201,9 +201,39 @@ export class PullRequestsTreeProvider
   }
 
   refresh(): void {
-    this.data = undefined;
     this.lastError = undefined;
-    this.emitter.fire(undefined);
+    if (this.data) {
+      // Stale-while-revalidate: keep the current rows on screen and refresh in
+      // the background. Routine git activity (a local commit, a fetch) triggers
+      // a refresh, and we don't want it to blank the list and re-run the whole
+      // GitHub load before anything shows again.
+      void this.revalidate();
+    } else {
+      // Nothing loaded yet — let getChildren do the first (lazy) load.
+      this.emitter.fire(undefined);
+    }
+  }
+
+  private revalidating = false;
+  private async revalidate(): Promise<void> {
+    if (this.revalidating) {
+      return;
+    }
+    this.revalidating = true;
+    try {
+      const ctx = await resolveGitHubContext(this.repos);
+      if (ctx && (await this.auth.isConnected())) {
+        this.data = await this.load(ctx);
+        this.lastError = undefined;
+      } else {
+        this.data = undefined;
+      }
+    } catch (err) {
+      this.lastError = friendlyError(err);
+    } finally {
+      this.revalidating = false;
+      this.emitter.fire(undefined);
+    }
   }
 
   private scheduleRefresh(): void {
@@ -270,8 +300,13 @@ export class PullRequestsTreeProvider
   }
 
   private async load(ctx: GitHubRepoContext): Promise<LoadedData> {
-    const pulls = await this.api.listOpenPulls(ctx.owner, ctx.repo);
-    const me = await this.api.currentLogin();
+    // The pulls list and the current login are independent — fetch them together
+    // rather than one after the other (saves a full GitHub round-trip on first
+    // paint).
+    const [pulls, me] = await Promise.all([
+      this.api.listOpenPulls(ctx.owner, ctx.repo),
+      this.api.currentLogin(),
+    ]);
     const login = me?.login;
 
     const mine: PullRequest[] = [];
@@ -289,12 +324,27 @@ export class PullRequestsTreeProvider
       }
     }
 
-    // CI status is best-effort and only fetched for a small top slice to keep
-    // the listing cheap (one extra request per PR). Failures are swallowed.
-    const statusByNumber = new Map<number, string>();
-    const slice = pulls.slice(0, 8);
+    const data: LoadedData = {
+      ctx,
+      groups: { review, mine, open: pulls },
+      statusByNumber: new Map<number, string>(),
+    };
+    // CI status is a purely cosmetic per-row glyph. Previously the whole list
+    // waited on up to 8 `commits/{sha}/status` calls before ANY row painted;
+    // now we return immediately and fetch them in the background, repainting the
+    // glyphs when they arrive.
+    void this.loadStatuses(ctx, pulls.slice(0, 8), data);
+    return data;
+  }
+
+  /** Best-effort CI-status glyphs, fetched off the first-paint path. */
+  private async loadStatuses(
+    ctx: GitHubRepoContext,
+    pulls: PullRequest[],
+    data: LoadedData,
+  ): Promise<void> {
     await Promise.all(
-      slice.map(async (pr) => {
+      pulls.map(async (pr) => {
         try {
           const status = await this.api.getCombinedStatus(
             ctx.owner,
@@ -303,19 +353,18 @@ export class PullRequestsTreeProvider
           );
           const glyph = statusGlyph(status.state);
           if (glyph) {
-            statusByNumber.set(pr.number, glyph);
+            data.statusByNumber.set(pr.number, glyph);
           }
         } catch {
           // ignore — no glyph for this PR.
         }
       }),
     );
-
-    return {
-      ctx,
-      groups: { review, mine, open: pulls },
-      statusByNumber,
-    };
+    // Only repaint if this data is still the one on screen — a later refresh may
+    // have replaced it, and we must not clobber fresher rows with stale glyphs.
+    if (this.data === data && data.statusByNumber.size > 0) {
+      this.emitter.fire(undefined);
+    }
   }
 
   dispose(): void {

@@ -1,103 +1,18 @@
 import * as vscode from "vscode";
-import type { StashEntry } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
-import { relativeTime } from "../util/relativeTime";
 
 // The Stashes pillar — genuinely absent from free VS Code, so GitStudio makes it
-// first-class. Each row is one `git stash` entry; clicking opens its diff, and
-// inline/context actions cover apply / pop / drop (with Undo) / create-branch.
+// first-class. The list + row actions live in a branded webview
+// (StashesWebviewViewProvider); this module owns the stash OPERATIONS
+// (save / apply / pop / drop / branch / show) those actions invoke, plus the
+// read-only content provider that renders a stash's diff.
 
 const STASH_DIFF_SCHEME = "gitstudio-stash";
 
-/** One stash row, carrying the entry for the action commands. */
-export class StashNode extends vscode.TreeItem {
-  readonly kind = "stash" as const;
-  constructor(readonly entry: StashEntry) {
-    super(
-      entry.message || entry.ref,
-      vscode.TreeItemCollapsibleState.None,
-    );
-    // Muted metadata: stash selector · relative time · short sha.
-    this.description = `${entry.ref} · ${relativeTime(entry.time)} · ${entry.sha.slice(0, 7)}`;
-    this.iconPath = new vscode.ThemeIcon("git-stash");
-    this.contextValue = "gitstudio.stash";
-    this.tooltip = buildTooltip(entry);
-    this.command = {
-      command: "gitstudio.stash.show",
-      title: "Show Stash Diff",
-      arguments: [this],
-    };
-  }
-}
-
-function buildTooltip(entry: StashEntry): vscode.MarkdownString {
-  const md = new vscode.MarkdownString(undefined, true);
-  md.supportThemeIcons = true;
-  md.appendMarkdown(`$(git-stash) **${escapeMarkdown(entry.message || entry.ref)}**\n\n`);
-  md.appendMarkdown(`$(git-stash) \`${entry.ref}\`\n\n`);
-  md.appendMarkdown(`$(git-commit) \`${entry.sha.slice(0, 7)}\`\n\n`);
-  md.appendMarkdown(
-    `$(calendar) ${new Date(entry.time * 1000).toLocaleString()}`,
-  );
-  return md;
-}
-
-function escapeMarkdown(text: string): string {
-  return text.replace(/[\\`*_{}[\]()#+\-.!|>]/g, "\\$&");
-}
-
 /**
- * Feeds the Stashes tree (a flat list, newest first). Refreshes on
- * RepoManager.onDidChange.
- */
-export class StashesTreeProvider
-  implements vscode.TreeDataProvider<StashNode>, vscode.Disposable
-{
-  private readonly emitter = new vscode.EventEmitter<StashNode | undefined>();
-  readonly onDidChangeTreeData = this.emitter.event;
-  private readonly disposables: vscode.Disposable[] = [];
-
-  constructor(private readonly repos: RepoManager) {
-    this.disposables.push(this.repos.onDidChange(() => this.refresh()));
-  }
-
-  refresh(): void {
-    this.emitter.fire(undefined);
-  }
-
-  getTreeItem(element: StashNode): vscode.TreeItem {
-    return element;
-  }
-
-  async getChildren(element?: StashNode): Promise<StashNode[]> {
-    if (element) {
-      return [];
-    }
-    const active = this.repos.getActive();
-    if (!active) {
-      return [];
-    }
-    try {
-      const entries = await active.ctx.stashes.list();
-      return entries.map((e) => new StashNode(e));
-    } catch {
-      return [];
-    }
-  }
-
-  dispose(): void {
-    for (const d of this.disposables) {
-      d.dispose();
-    }
-    this.disposables.length = 0;
-    this.emitter.dispose();
-  }
-}
-
-/**
- * Read-only content provider for stash diffs, so `gitstudio.stash.show` opens
- * the patch in a regular (diff-highlighted) read-only editor. The uri encodes
- * the repo root + stash ref; content is resolved lazily via the StashProvider.
+ * Read-only content provider for stash diffs, so `showStash` opens the patch in
+ * a regular (diff-highlighted) read-only editor. The uri encodes the repo root +
+ * stash ref; content is resolved lazily via the StashProvider.
  */
 export class StashDiffContentProvider
   implements vscode.TextDocumentContentProvider, vscode.Disposable
@@ -107,11 +22,12 @@ export class StashDiffContentProvider
   constructor(private readonly repos: RepoManager) {}
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
-    // uri.path is "/<encoded ref>.diff"; the repo root rides in the query.
+    // uri.path is "/<encoded ref>.diff"; the repo root (+ a cache-busting sha)
+    // ride in the query.
     const ref = decodeURIComponent(
       uri.path.replace(/^\//, "").replace(/\.diff$/, ""),
     );
-    const root = uri.query;
+    const root = new URLSearchParams(uri.query).get("root") ?? "";
     const entry = this.repos.getAll().find((e) => e.root === root);
     if (!entry) {
       return "";
@@ -124,16 +40,26 @@ export class StashDiffContentProvider
   }
 }
 
-/** Build the read-only uri a stash diff renders from. */
-export function stashDiffUri(root: string, ref: string): vscode.Uri {
+/** Build the read-only uri a stash diff renders from. Keyed on the stash sha
+ * too: a stash mutation reindexes stash@{n}, so without the sha an already-open
+ * diff would be served stale from VS Code's per-uri content cache. */
+export function stashDiffUri(
+  root: string,
+  ref: string,
+  sha?: string,
+): vscode.Uri {
+  const query = new URLSearchParams({ root });
+  if (sha) {
+    query.set("sha", sha);
+  }
   return vscode.Uri.from({
     scheme: STASH_DIFF_SCHEME,
     path: `/${encodeURIComponent(ref)}.diff`,
-    query: root,
+    query: query.toString(),
   });
 }
 
-// ── Commands ─────────────────────────────────────────────────────────────────
+// ── Operations ───────────────────────────────────────────────────────────────
 
 /** Resolve the active repo, or surface a hint. */
 function active(repos: RepoManager): RepoEntry | undefined {
@@ -144,16 +70,17 @@ function active(repos: RepoManager): RepoEntry | undefined {
   return a;
 }
 
-/** `gitstudio.stash.show` — open the stash's diff in a read-only editor. */
+/** Open a stash's diff in a read-only editor. */
 export async function showStash(
   repos: RepoManager,
-  node: StashNode,
+  ref: string,
+  sha?: string,
 ): Promise<void> {
   const a = repos.getActive();
-  if (!a || !node) {
+  if (!a || !ref) {
     return;
   }
-  const uri = stashDiffUri(a.root, node.entry.ref);
+  const uri = stashDiffUri(a.root, ref, sha);
   const doc = await vscode.workspace.openTextDocument(uri);
   await vscode.languages.setTextDocumentLanguage(doc, "diff");
   await vscode.window.showTextDocument(doc, { preview: true });
@@ -217,75 +144,75 @@ export async function saveStash(
   refresh();
 }
 
-/** `gitstudio.stash.apply` — apply without dropping. */
+/** Apply a stash without dropping it. */
 export async function applyStash(
   repos: RepoManager,
-  node: StashNode,
+  ref: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !node) {
+  if (!a || !ref) {
     return;
   }
-  const result = await a.ctx.stashes.apply(node.entry.ref);
+  const result = await a.ctx.stashes.apply(ref);
   reportStashOp(result, "Applied stash", refresh);
 }
 
-/** `gitstudio.stash.pop` — apply then drop (routed through Undo). */
+/** Apply then drop a stash (routed through Undo). */
 export async function popStash(
   repos: RepoManager,
-  node: StashNode,
+  ref: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !node) {
+  if (!a || !ref) {
     return;
   }
   const ledger = repos.getUndoLedger();
-  const run = () => a.ctx.stashes.pop(node.entry.ref);
+  const run = () => a.ctx.stashes.pop(ref);
   const result = ledger
-    ? await ledger.runWithUndo(a, `Pop ${node.entry.ref}`, run)
+    ? await ledger.runWithUndo(a, `Pop ${ref}`, run)
     : await run();
   reportStashOp(result, "Popped stash", refresh);
 }
 
-/** `gitstudio.stash.drop` — confirm + drop (routed through Undo). */
+/** Confirm + drop a stash (routed through Undo). */
 export async function dropStash(
   repos: RepoManager,
-  node: StashNode,
+  ref: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !node) {
+  if (!a || !ref) {
     return;
   }
   const ok = await confirm(
-    `Drop ${node.entry.ref}? This discards the stashed changes.`,
+    `Drop ${ref}? This discards the stashed changes.`,
     "Drop",
   );
   if (!ok) {
     return;
   }
   const ledger = repos.getUndoLedger();
-  const run = () => a.ctx.stashes.drop(node.entry.ref);
+  const run = () => a.ctx.stashes.drop(ref);
   const result = ledger
-    ? await ledger.runWithUndo(a, `Drop ${node.entry.ref}`, run)
+    ? await ledger.runWithUndo(a, `Drop ${ref}`, run)
     : await run();
   reportStashOp(result, "Dropped stash", refresh);
 }
 
-/** `gitstudio.stash.branch` — create a branch from the stash. */
+/** Create a branch from a stash. */
 export async function branchFromStash(
   repos: RepoManager,
-  node: StashNode,
+  ref: string,
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  if (!a || !node) {
+  if (!a || !ref) {
     return;
   }
   const name = await vscode.window.showInputBox({
-    title: `Create branch from ${node.entry.ref}`,
+    title: `Create branch from ${ref}`,
     prompt: "New branch name",
     placeHolder: "feature/from-stash",
     validateInput: validateRefName,
@@ -293,7 +220,7 @@ export async function branchFromStash(
   if (!name) {
     return;
   }
-  const result = await a.ctx.stashes.branch(node.entry.ref, name);
+  const result = await a.ctx.stashes.branch(ref, name);
   reportStashOp(result, `Created branch ${name}`, refresh);
 }
 

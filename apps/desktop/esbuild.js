@@ -128,10 +128,13 @@ async function main() {
     platform: "node",
     format: "cjs",
     target: "node20",
-    // node-pty is a native module (loaded lazily by the terminal bridge); it
-    // can't be bundled — keep it external so `require("node-pty")` resolves from
-    // node_modules at runtime (packaged builds asar-unpack it).
-    external: ["electron", "electron-updater", "node-pty"],
+    // `electron` is provided by the runtime; `node-pty` is a NATIVE module (the
+    // terminal bridge loads it lazily) that can't be bundled — kept external so
+    // `require("node-pty")` resolves from node_modules (packaged builds
+    // asar-unpack it). electron-updater is pure JS and MUST be bundled: the
+    // packaged app ships only `dist/**` (not node_modules), so leaving it
+    // external silently disabled auto-update in every shipped build.
+    external: ["electron", "node-pty"],
   });
 
   const preloadCtx = await esbuild.context({

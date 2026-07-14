@@ -260,6 +260,38 @@ export class GitHubApi {
 
   // ── Pull requests ────────────────────────────────────────────────────────────
 
+  /**
+   * Best-effort map of commit-author email → GitHub avatar URL from one
+   * `GET /repos/{owner}/{repo}/commits?per_page=100` page. GitHub resolves each
+   * commit's author to a user account (when the email is associated with one)
+   * and returns `author.avatar_url`; we key it by the git email so the commit
+   * graph can show real profile photos. Unresolved emails simply don't appear
+   * (the graph then falls back to Gravatar / the initials disc).
+   */
+  async commitAuthorAvatars(
+    owner: string,
+    repo: string,
+    ref?: string,
+    init?: { signal?: AbortSignal },
+  ): Promise<Record<string, string>> {
+    const q = ref ? `?sha=${enc(ref)}&per_page=100` : `?per_page=100`;
+    const raw = await this.request<RawCommitListItem[]>(
+      "GET",
+      `/repos/${enc(owner)}/${enc(repo)}/commits${q}`,
+      undefined,
+      init,
+    );
+    const map: Record<string, string> = {};
+    for (const c of raw ?? []) {
+      const email = c.commit?.author?.email?.toLowerCase();
+      const avatar = c.author?.avatar_url;
+      if (email && avatar) {
+        map[email] = avatar;
+      }
+    }
+    return map;
+  }
+
   /** `GET /repos/{owner}/{repo}/pulls?state=open` (paged, first 100). */
   async listOpenPulls(
     owner: string,
@@ -402,6 +434,11 @@ interface RawUser {
   login: string;
   avatar_url?: string;
   html_url?: string;
+}
+
+interface RawCommitListItem {
+  commit?: { author?: { email?: string | null } | null } | null;
+  author?: RawUser | null;
 }
 
 interface RawRef {

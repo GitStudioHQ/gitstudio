@@ -5,18 +5,22 @@ import * as vscode from "vscode";
  * graph entry + its stylesheet. Mirrors the merge/diff webview's pattern: a
  * nonce gates inline + bundled scripts, and cspSource scopes the bundled assets.
  *
+ * `bundle` picks the front-end: "graph" is the full editor-area surface,
+ * "graph-sidebar" the compact sidebar rail (dist/webview/<bundle>.js + .css).
+ *
  * Never hardcode the URI scheme returned by asWebviewUri — it is opaque.
  */
 export function getGraphHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri,
   nonce: string,
+  bundle: "graph" | "graph-sidebar" = "graph",
 ): string {
   const dist = (...parts: string[]) =>
     webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", ...parts));
 
-  const scriptUri = dist("webview", "graph.js");
-  const styleUri = dist("webview", "graph.css");
+  const scriptUri = dist("webview", `${bundle}.js`);
+  const styleUri = dist("webview", `${bundle}.css`);
 
   const csp = [
     `default-src 'none'`,

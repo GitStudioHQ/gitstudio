@@ -6,6 +6,7 @@ import { BlameProvider } from "./BlameProvider";
 import { HistoryProvider } from "./HistoryProvider";
 import { ConflictProvider } from "./ConflictProvider";
 import { StagingProvider } from "./StagingProvider";
+import { StatusProvider } from "./StatusProvider";
 import { SnapshotProvider } from "./SnapshotProvider";
 import { StashProvider } from "./StashProvider";
 import { WorktreeProvider } from "./WorktreeProvider";
@@ -19,7 +20,7 @@ export interface GitContextOptions {
   root: string;
   /** Path to the git binary; defaults to "git". */
   gitPath?: string;
-  /** Maximum number of concurrent git processes; defaults to 5. */
+  /** Maximum number of concurrent git processes; defaults to 12 (see GitProcess). */
   maxConcurrent?: number;
   /** Optional observer fired once per completed git invocation (see GitProcess). */
   onRun?: GitRunHook;
@@ -40,6 +41,7 @@ export class GitContext {
   readonly history: HistoryProvider;
   readonly conflict: ConflictProvider;
   readonly staging: StagingProvider;
+  readonly status: StatusProvider;
   readonly snapshot: SnapshotProvider;
   readonly stashes: StashProvider;
   readonly worktrees: WorktreeProvider;
@@ -63,6 +65,7 @@ export class GitContext {
     this.history = new HistoryProvider(this.process);
     this.conflict = new ConflictProvider(this.process);
     this.staging = new StagingProvider(this.process);
+    this.status = new StatusProvider(this.process);
     this.snapshot = new SnapshotProvider(this.process);
     this.stashes = new StashProvider(this.process);
     this.worktrees = new WorktreeProvider(this.process);

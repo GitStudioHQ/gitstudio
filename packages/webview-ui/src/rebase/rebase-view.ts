@@ -13,6 +13,7 @@
 
 import { LitElement, html, css } from "lit";
 import { codiconStyles } from "../styles/codicons";
+import { hostTokens } from "../styles/hostTokens";
 import type {
   WireRebaseAction,
   WireRebaseRow,
@@ -64,25 +65,15 @@ export class RebaseView extends LitElement {
   ></span>`;
 
   static styles = [codiconStyles, css`
-    /* Theme-native primitives — mirror packages/webview-ui/src/styles/tokens.css.
-     * This element renders into a shadow root, so it re-declares the same
-     * --vscode-* derived tokens locally rather than importing the stylesheet. */
+    /* Theme-native primitives come from the shared token system. This element
+     * renders into a shadow root; the --gs-* tokens are inherited from the
+     * document (rebase.css @imports tokens.css), so it does NOT re-declare them
+     * here — one source of truth, no drift. */
     :host {
-      --gs-fg: var(--vscode-foreground);
-      --gs-fg-muted: var(--vscode-descriptionForeground);
-      --gs-border: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
-      --gs-hover: var(--vscode-list-hoverBackground);
-      --gs-accent: var(--vscode-focusBorder);
-      --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+      /* Rebase is an editor-area tab, so pin its elevated surfaces to the
+         editor background (not the shared sidebar-based --gs-surface) — keeps
+         the header/card lift reading correctly against the editor page. */
       --gs-surface: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background));
-      --gs-font-ui: var(--vscode-font-family);
-      --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
-      --gs-radius: 7px;
-      --gs-radius-sm: 5px;
-      --gs-motion: 170ms;
-      --gs-motion-fast: 110ms;
-      --gs-ease: cubic-bezier(0.2, 0, 0, 1);
-
       display: flex;
       flex-direction: column;
       height: 100%;

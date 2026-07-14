@@ -821,6 +821,30 @@ export class GitBridge {
     return this.staged((ctx) => ctx.sync.push({ setUpstream: opts?.setUpstream }));
   }
 
+  /** Fast-forward a local branch straight from its upstream WITHOUT checking it
+   *  out: `git fetch <remote> <remoteBranch>:<localBranch>`. Git itself refuses
+   *  a non-fast-forward and the currently checked-out branch, so the worktree
+   *  is never touched. */
+  async branchPullFf(name: string): Promise<CommitActionResult> {
+    return this.staged(async (ctx) => {
+      const up = await ctx.process.run([
+        "for-each-ref",
+        "--format=%(upstream:short)",
+        `refs/heads/${name}`,
+      ]);
+      const upstream = up.stdout.trim();
+      const slash = upstream.indexOf("/");
+      if (up.code !== 0 || slash <= 0) {
+        return { ok: false, stderr: `'${name}' has no upstream to pull from.` };
+      }
+      return ctx.process.run([
+        "fetch",
+        upstream.slice(0, slash),
+        `${upstream.slice(slash + 1)}:${name}`,
+      ]);
+    });
+  }
+
   // ── Branch management ───────────────────────────────────────────────────────
 
   /** One `for-each-ref` gives every local branch with upstream + ahead/behind. */

@@ -49,6 +49,10 @@ export interface GitRef {
   isCurrent: boolean;
   /** Short upstream ref name (e.g. "origin/main"), when set. */
   upstream?: string;
+  /** Commits ahead of the upstream (from `%(upstream:track)`), when tracked. */
+  ahead?: number;
+  /** Commits behind the upstream (from `%(upstream:track)`), when tracked. */
+  behind?: number;
 }
 
 export interface RepoHead {

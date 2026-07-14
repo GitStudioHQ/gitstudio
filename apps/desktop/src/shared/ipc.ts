@@ -769,6 +769,9 @@ export interface IpcChannels {
   "branches:list": [void, BranchInfo[]];
   "branch:create": [{ name: string; checkout?: boolean }, CommitActionResult];
   "branch:delete": [{ name: string; force?: boolean }, CommitActionResult];
+  /** Fast-forward a local branch straight from its upstream WITHOUT checking
+   *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`). */
+  "branch:pullFf": [{ name: string }, CommitActionResult];
   // ── Compare (base…head) ──
   "compare:refs": [{ base: string; head: string; mode?: CompareMode }, CompareResult | undefined];
   "compare:fileDiff": [{ base: string; head: string; path: string; mode?: CompareMode }, FileDiff | undefined];

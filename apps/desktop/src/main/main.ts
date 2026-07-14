@@ -393,6 +393,7 @@ function actionLabel(channel: string): string {
     "branches:list": "List branches",
     "branch:create": "Create branch",
     "branch:delete": "Delete branch",
+    "branch:pullFf": "Pull branch",
     "compare:refs": "Compare",
     "compare:fileDiff": "Compare file",
     "repo:tree": "Read tree",
@@ -473,6 +474,7 @@ function registerIpc(): void {
   handle("branches:list", () => bridge.branchesList());
   handle("branch:create", (req) => bridge.branchCreate(req));
   handle("branch:delete", (req) => bridge.branchDelete(req));
+  handle("branch:pullFf", (req) => bridge.branchPullFf(req.name));
 
   // Compare (base…head).
   handle("compare:refs", (req) => bridge.compareRefs(req));

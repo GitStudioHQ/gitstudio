@@ -1114,6 +1114,40 @@ button.list-row,
 .ab-pill.ahead { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .ab-pill.behind { color: var(--status-mod); background: color-mix(in srgb, var(--status-mod) 16%, transparent); }
 
+/* The behind pill is a real Pull button: same pill face, but interactive. */
+button.ab-btn {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--motion-fast, 110ms) ease, box-shadow var(--motion-fast, 110ms) ease;
+}
+button.ab-btn .glyph { font-size: 10px; color: inherit; }
+button.ab-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--status-mod) 30%, transparent);
+}
+button.ab-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1.5px var(--app-accent, var(--gs-accent));
+}
+button.ab-btn:disabled { cursor: default; opacity: 0.85; }
+
+/* Live sync feedback: any glyph with .spin rotates (pull/push/fetch in
+   flight — the topbar widget, the ↓ pill, the branch-menu Fetch item). */
+.glyph.spin { animation: gs-spin 0.9s linear infinite; }
+@keyframes gs-spin { to { transform: rotate(360deg); } }
+/* In-flight items keep the normal cursor — the spinner lives IN the item
+   (a macOS "progress" cursor next to the pointer reads as fake loading). */
+.dropdown-item.is-busy-item { opacity: 0.75; cursor: default; }
+.topbar-sync.busy .sync-main { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .glyph.spin { animation: none; opacity: 0.6; }
+}
+
 /* Modal prompt (new branch, etc.). */
 .modal-overlay {
   position: fixed;

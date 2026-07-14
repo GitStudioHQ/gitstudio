@@ -112,12 +112,52 @@ export class WorktreesTreeProvider
   readonly onDidChangeTreeData = this.emitter.event;
   private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(private readonly repos: RepoManager) {
-    this.disposables.push(this.repos.onDidChange(() => this.refresh()));
+  /**
+   * A short-TTL cache of the worktree list. RepoManager's change event is a
+   * firehose — it fires on every ref write (commits, fetches, branch updates) —
+   * but worktree membership changes rarely, so serving a cached list for a few
+   * seconds avoids re-spawning `git worktree list` on every unrelated git poke.
+   * An explicit refresh() (a worktree add/remove, or the refresh button) busts
+   * it, so real changes still show immediately.
+   */
+  private cache: { root: string; at: number; nodes: WorktreeNode[] } | undefined;
+  private static readonly TTL_MS = 4000;
+  /**
+   * Set by refresh() (a worktree add/remove/lock/prune, or the refresh button)
+   * so the very next getChildren skips the persisted seed and awaits a fresh
+   * `git worktree list` — after a mutation the persisted list is stale by one
+   * entry, and we don't want it to flash before the fresh list lands.
+   */
+  private forceFresh = false;
+  /** In-flight `git worktree list` for a root, so prewarm() and VS Code's own
+   * first render (which fire getChildren twice in quick succession) share ONE
+   * spawn instead of racing two concurrent ones. */
+  private inflight: { root: string; p: Promise<WorktreeEntry[]> } | undefined;
+
+  constructor(
+    private readonly repos: RepoManager,
+    /** workspaceState — persists the last worktree list across window reloads
+     * so the FIRST paint of a session is instant instead of paying a cold
+     * `git worktree list` spawn (the in-memory cache is empty on every reload). */
+    private readonly store: vscode.Memento,
+  ) {
+    // Passive repo changes just re-emit; getChildren serves the cache (below).
+    this.disposables.push(
+      this.repos.onDidChange(() => this.emitter.fire(undefined)),
+    );
   }
 
   refresh(): void {
+    this.cache = undefined;
+    this.forceFresh = true;
     this.emitter.fire(undefined);
+  }
+
+  /** Warm the in-memory cache off the reveal path (called right after the view
+   * is created) so a cold spawn overlaps activation instead of blocking first
+   * reveal. Fire-and-forget; errors are swallowed by getChildren. */
+  prewarm(): void {
+    void this.getChildren();
   }
 
   getTreeItem(element: WorktreeNode): vscode.TreeItem {
@@ -130,15 +170,109 @@ export class WorktreesTreeProvider
     }
     const a = this.repos.getActive();
     if (!a) {
+      this.cache = undefined;
       return [];
     }
+    const now = Date.now();
+    if (
+      this.cache &&
+      this.cache.root === a.root &&
+      now - this.cache.at < WorktreesTreeProvider.TTL_MS
+    ) {
+      return this.cache.nodes;
+    }
+    // Cross-session cold start: seed from the persisted list for an instant
+    // first paint, then revalidate in the background. Skipped right after an
+    // explicit refresh (forceFresh) so mutations never flash a stale entry.
+    if (!this.cache && !this.forceFresh) {
+      const persisted = this.store.get<WorktreeEntry[]>(this.storeKey(a.root));
+      if (persisted && persisted.length) {
+        const nodes = this.buildNodes(persisted, a.root);
+        // Seed as a normal fresh cache entry so VS Code's own first render
+        // cache-HITS this instead of falling through to a second fetch; the
+        // background revalidate below is the only thing that touches git.
+        this.cache = { root: a.root, at: now, nodes };
+        void this.revalidate(a);
+        return nodes;
+      }
+    }
+    this.forceFresh = false;
+    return this.fetch(a, now);
+  }
+
+  private storeKey(root: string): string {
+    return `gitstudio.worktrees:${root}`;
+  }
+
+  private buildNodes(list: WorktreeEntry[], root: string): WorktreeNode[] {
+    return list.map((e) => new WorktreeNode(e, samePath(e.path, root)));
+  }
+
+  /** Dedup the git spawn: concurrent callers for the same root share one list. */
+  private listOnce(a: RepoEntry): Promise<WorktreeEntry[]> {
+    if (this.inflight && this.inflight.root === a.root) {
+      return this.inflight.p;
+    }
+    const p = a.ctx.worktrees.list();
+    this.inflight = { root: a.root, p };
+    const clear = (): void => {
+      if (this.inflight && this.inflight.p === p) {
+        this.inflight = undefined;
+      }
+    };
+    p.then(clear, clear);
+    return p;
+  }
+
+  /** Stable signature of a worktree list, to skip needless repaints. */
+  private signature(list: WorktreeEntry[]): string {
+    return list
+      .map(
+        (e) =>
+          `${e.path} ${e.head} ${e.branch ?? ""} ${e.bare ? 1 : 0}${e.locked ? 1 : 0}${e.prunable ? 1 : 0}`,
+      )
+      .join("");
+  }
+
+  /** Awaited fetch — used for the first-ever load of a repo and after refresh. */
+  private async fetch(a: RepoEntry, at: number): Promise<WorktreeNode[]> {
     try {
-      const list = await a.ctx.worktrees.list();
-      return list.map(
-        (e) => new WorktreeNode(e, samePath(e.path, a.root)),
-      );
+      const list = await this.listOnce(a);
+      // An empty result means a failed read: a valid repo always lists at least
+      // its own main worktree. Keep the last good list rather than blanking it
+      // (and don't clobber the persisted seed with []).
+      if (list.length === 0) {
+        return this.cache && this.cache.root === a.root ? this.cache.nodes : [];
+      }
+      const nodes = this.buildNodes(list, a.root);
+      this.cache = { root: a.root, at, nodes };
+      void this.store.update(this.storeKey(a.root), list);
+      return nodes;
     } catch {
-      return [];
+      // Keep showing the last good list for this repo if we have one.
+      return this.cache && this.cache.root === a.root ? this.cache.nodes : [];
+    }
+  }
+
+  /** Background refresh behind a seeded (persisted) paint — repaints only on
+   * an actual change so an unchanged list doesn't flicker the whole tree. */
+  private async revalidate(a: RepoEntry): Promise<void> {
+    try {
+      const prevSig = this.signature(
+        this.store.get<WorktreeEntry[]>(this.storeKey(a.root)) ?? [],
+      );
+      const list = await this.listOnce(a);
+      if (list.length === 0) {
+        return; // failed read — keep the seeded/last-good list
+      }
+      const nodes = this.buildNodes(list, a.root);
+      this.cache = { root: a.root, at: Date.now(), nodes };
+      void this.store.update(this.storeKey(a.root), list);
+      if (this.signature(list) !== prevSig) {
+        this.emitter.fire(undefined);
+      }
+    } catch {
+      // Keep the seeded view; a later change event will retry.
     }
   }
 
@@ -151,9 +285,15 @@ export class WorktreesTreeProvider
   }
 }
 
-/** Loose path equality (handles trailing slashes). */
+/** Loose path equality: tolerant of trailing slashes AND of git's forward-slash
+ * worktree paths vs vscode fsPath backslashes on Windows (and of case on
+ * macOS/Windows). Without the separator/case unification the current worktree
+ * was never matched on Windows. */
 function samePath(a: string, b: string): boolean {
-  const norm = (p: string) => p.replace(/\/+$/, "");
+  const norm = (p: string) => {
+    const unified = p.replace(/[\\/]+/g, "/").replace(/\/+$/, "");
+    return process.platform === "linux" ? unified : unified.toLowerCase();
+  };
   return norm(a) === norm(b);
 }
 

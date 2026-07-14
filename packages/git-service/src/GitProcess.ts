@@ -4,7 +4,14 @@ export interface GitProcessOptions {
   cwd: string;
   /** Path to the git binary; defaults to "git". */
   gitPath?: string;
-  /** Maximum number of concurrent git processes; defaults to 5. */
+  /**
+   * Maximum number of concurrent git processes; defaults to 12. Git *reads*
+   * (status, worktree list, for-each-ref, log streams, …) dominate the sidebar's
+   * opening burst, and a long-lived `log` stream holds a slot for its whole
+   * duration — so a low cap serialised the burst and starved fast reads like
+   * `worktree list` behind them. Reads are cheap and idempotent, so a wider pool
+   * clears the burst in one wave; the cap still exists to prevent a fork-storm.
+   */
   maxConcurrent?: number;
   /**
    * Optional observer fired once per completed git invocation. Used by hosts to
@@ -85,7 +92,7 @@ export class GitProcess {
   constructor(opts: GitProcessOptions) {
     this.cwd = opts.cwd;
     this.gitPath = opts.gitPath ?? "git";
-    this.maxConcurrent = opts.maxConcurrent ?? 5;
+    this.maxConcurrent = opts.maxConcurrent ?? 12;
     this.onRun = opts.onRun;
   }
 

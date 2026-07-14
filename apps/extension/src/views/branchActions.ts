@@ -1,10 +1,6 @@
 import * as vscode from "vscode";
-import type { GitRef } from "@gitstudio/host-bridge/git";
+import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
-import {
-  compareWithCurrent,
-  type SearchCompareTreeProvider,
-} from "../search/searchCompareView";
 
 // Branch / remote / tag context-menu actions for the Branches view. Each runs a
 // real git op via the GitContext provider methods, confirms destructive ops, and
@@ -23,6 +19,51 @@ function refOf(arg: unknown): GitRef | undefined {
     return (arg as RefNodeLike).ref;
   }
   return undefined;
+}
+
+/**
+ * The ref a command was invoked on (from a tree/graph node), or — when the
+ * command is run from the Command Palette with no node — one the user picks from
+ * a quick pick. This is what gives tag / remote-branch / set-upstream commands a
+ * real home in the palette instead of silently no-op'ing without a node.
+ */
+async function refOrPick(
+  a: RepoEntry,
+  arg: unknown,
+  type: GitRefType,
+  placeHolder: string,
+  icon: string,
+): Promise<GitRef | undefined> {
+  const direct = refOf(arg);
+  if (direct) {
+    return direct;
+  }
+  let refs: GitRef[] = [];
+  try {
+    refs = await a.ctx.refs.listRefs();
+  } catch {
+    /* ignore — handled as "none" below */
+  }
+  const candidates = refs.filter((r) => r.type === type);
+  if (candidates.length === 0) {
+    const noun =
+      type === "head"
+        ? "branches"
+        : type === "remote"
+          ? "remote branches"
+          : type === "tag"
+            ? "tags"
+            : "stashes";
+    void vscode.window.showInformationMessage(
+      `GitStudio: this repository has no ${noun} to choose from.`,
+    );
+    return undefined;
+  }
+  const picked = await vscode.window.showQuickPick(
+    candidates.map((r) => ({ label: `$(${icon}) ${r.name}`, ref: r })),
+    { placeHolder },
+  );
+  return picked?.ref;
 }
 
 function active(repos: RepoManager): RepoEntry | undefined {
@@ -186,8 +227,17 @@ export async function setUpstream(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  if (!a) {
+    return;
+  }
+  const ref = await refOrPick(
+    a,
+    arg,
+    "head",
+    "Set the upstream for which branch?",
+    "git-branch",
+  );
+  if (!ref) {
     return;
   }
   let refs: GitRef[] = [];
@@ -290,20 +340,6 @@ export async function createWorktreeForBranch(
   }
 }
 
-/** "Compare with current" — pin current..<ref> into the Search & Compare view. */
-export async function compareRefWithCurrent(
-  repos: RepoManager,
-  provider: SearchCompareTreeProvider,
-  reveal: () => void,
-  arg: unknown,
-): Promise<void> {
-  const ref = refOf(arg);
-  if (!ref) {
-    return;
-  }
-  await compareWithCurrent(repos, provider, reveal, ref.name);
-}
-
 // ── Remote branch actions ────────────────────────────────────────────────────
 
 export async function checkoutRemoteBranch(
@@ -312,8 +348,17 @@ export async function checkoutRemoteBranch(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  if (!a) {
+    return;
+  }
+  const ref = await refOrPick(
+    a,
+    arg,
+    "remote",
+    "Check out which remote branch?",
+    "cloud",
+  );
+  if (!ref) {
     return;
   }
   // origin/feature → local "feature" tracking origin/feature.
@@ -339,8 +384,17 @@ export async function deleteRemoteBranch(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  if (!a) {
+    return;
+  }
+  const ref = await refOrPick(
+    a,
+    arg,
+    "remote",
+    "Delete which remote branch?",
+    "cloud",
+  );
+  if (!ref) {
     return;
   }
   // origin/feature → remote "origin", branch "feature".
@@ -369,8 +423,11 @@ export async function checkoutTag(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  if (!a) {
+    return;
+  }
+  const ref = await refOrPick(a, arg, "tag", "Select a tag to check out", "tag");
+  if (!ref) {
     return;
   }
   const ok = await confirm(
@@ -390,8 +447,11 @@ export async function deleteTag(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  if (!a) {
+    return;
+  }
+  const ref = await refOrPick(a, arg, "tag", "Select a tag to delete", "tag");
+  if (!ref) {
     return;
   }
   const ok = await confirm(`Delete tag ${ref.name}?`, "Delete");
@@ -408,8 +468,11 @@ export async function pushTag(
   refresh: () => void,
 ): Promise<void> {
   const a = active(repos);
-  const ref = refOf(arg);
-  if (!a || !ref) {
+  if (!a) {
+    return;
+  }
+  const ref = await refOrPick(a, arg, "tag", "Select a tag to push", "tag");
+  if (!ref) {
     return;
   }
   const remotes = await a.ctx.remotes.list();

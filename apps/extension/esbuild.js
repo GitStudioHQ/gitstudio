@@ -82,6 +82,12 @@ async function main() {
     platform: "node",
     format: "cjs",
     external: ["vscode"],
+    // Inline `*.css` imports as raw text (default export) so the inline-template
+    // webviews (the Changes view + PR panel) can embed the shared tokens.css
+    // bytes directly into their <style> — one design-token source, no runtime
+    // fetch. Only the Node extension ctx uses this; the browser webview ctxs
+    // below bundle CSS as CSS.
+    loader: { ".css": "text" },
   });
 
   // Shared webview front-end (browser / IIFE). Monaco pulls in .css and .ttf;
@@ -115,6 +121,18 @@ async function main() {
     loader: { ".ttf": "dataurl" },
   });
 
+  // The sidebar Commits rail webview (Lit + @tanstack/virtual-core) — the
+  // compact sidebar-native commit log. Its .css import emits
+  // dist/webview/graph-sidebar.css alongside the bundle.
+  const graphSidebarCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "graph/sidebar-main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/graph-sidebar.js"),
+    platform: "browser",
+    format: "iife",
+    loader: { ".ttf": "dataurl" },
+  });
+
   // The interactive-rebase webview (Lit). Its .css import emits
   // dist/webview/rebase.css alongside the bundle.
   const rebaseCtx = await esbuild.context({
@@ -126,7 +144,14 @@ async function main() {
     loader: { ".ttf": "dataurl" },
   });
 
-  const contexts = [extensionCtx, webviewCtx, workerCtx, graphCtx, rebaseCtx];
+  const contexts = [
+    extensionCtx,
+    webviewCtx,
+    workerCtx,
+    graphCtx,
+    graphSidebarCtx,
+    rebaseCtx,
+  ];
 
   if (watch) {
     await Promise.all(contexts.map((c) => c.watch()));

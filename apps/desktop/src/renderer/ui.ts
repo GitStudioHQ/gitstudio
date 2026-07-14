@@ -467,7 +467,12 @@ export interface MenuItem {
   current?: boolean;
   disabled?: boolean;
   separator?: boolean;
-  onClick?: () => void;
+  /** Don't close the menu on click — for in-place live actions (e.g. Fetch,
+   *  which spins its own icon and refreshes the view behind the open menu). */
+  keepOpen?: boolean;
+  /** Receives the rendered menuitem element, so keepOpen actions can drive a
+   *  live state on it (spinner, disabled) while they run. */
+  onClick?: (itemEl: HTMLElement) => void;
 }
 
 /** Tuning for `openMenu`. `searchable` forces the type-to-filter field on (it
@@ -570,8 +575,14 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     if (it.current) row.appendChild(glyph("check"));
     if (!it.disabled && it.onClick) {
       row.addEventListener("click", () => {
+        // A keepOpen action runs in place (live spinner on the item); a busy
+        // in-place action must not re-fire while it's still running.
+        if (it.keepOpen) {
+          if (!row.classList.contains("is-busy-item")) it.onClick!(row);
+          return;
+        }
         close(false);
-        it.onClick!();
+        it.onClick!(row);
       });
       rows.push(row);
     }

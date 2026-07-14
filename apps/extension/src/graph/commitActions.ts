@@ -1,5 +1,23 @@
 import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
+import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
+
+/** The commit actions as plain items for the IN-GRAPH popover (no vscode types
+ * / codicon markup) — the webview renders these; ids match runCommitAction. */
+export function commitMenuItems(): GraphMenuItem[] {
+  return [
+    { id: "checkout", label: "Checkout Commit", icon: "git-commit" },
+    { id: "branch", label: "Create Branch Here…", icon: "git-branch" },
+    { id: "tag", label: "Create Tag Here…", icon: "tag" },
+    { id: "cherryPick", label: "Cherry-Pick Commit", icon: "git-pull-request" },
+    { id: "revert", label: "Revert Commit", icon: "history" },
+    { id: "reset", label: "Reset Current Branch to Here…", icon: "discard", danger: true },
+    { id: "interactiveRebase", label: "Start Interactive Rebase Here…", icon: "git-merge" },
+    { id: "", label: "", sep: true },
+    { id: "copySha", label: "Copy SHA", icon: "copy" },
+    { id: "copyMessage", label: "Copy Message", icon: "copy" },
+  ];
+}
 
 /**
  * The commit-graph context-menu actions. Each runs a real git command via the

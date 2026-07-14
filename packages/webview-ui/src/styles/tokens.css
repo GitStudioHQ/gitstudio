@@ -30,6 +30,8 @@
  * ========================================================================== */
 
 :root {
+  color-scheme: light dark;
+
   /* ---- Typography ------------------------------------------------------- */
   --gs-font-ui: var(--vscode-font-family);
   --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
@@ -75,10 +77,26 @@
   --gs-status-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
   --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
   --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
+  /* Extended working-tree states (upstreamed from the Changes view so every
+     surface names them identically). Untracked reads green like an add; a
+     rename reads blue; a conflict reads red; ignored reads muted. */
+  --gs-status-untracked: var(--vscode-gitDecoration-untrackedResourceForeground, var(--vscode-charts-green));
+  --gs-status-renamed: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-blue));
+  --gs-status-conflict: var(--vscode-gitDecoration-conflictingResourceForeground, var(--vscode-charts-red));
+  --gs-status-ignored: var(--vscode-gitDecoration-ignoredResourceForeground, var(--gs-fg-muted));
   /* Raw charts-yellow as small text fails AA on light themes (≈3:1); the
      gitDecoration "modified" foreground is the legibility-tuned equivalent and
      keeps every amber consumer (tag chips, modified "M") readable on both. */
   --gs-amber: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
+
+  /* ---- Brand ------------------------------------------------------------ */
+  /* GitStudio violet. The mark's "one git tone" is #A98CFF (a light line
+     color); this is a deeper, AA-safe shade of that hue for SOLID primary
+     buttons with white text. Fixed across light AND dark so the primary action
+     is unmistakably GitStudio, not the theme's default (usually blue) accent. */
+  --gs-brand: #7458e8;
+  --gs-brand-hover: #7d61ec;
+  --gs-brand-fg: #ffffff;
 
   /* ---- Elevation -------------------------------------------------------- */
   --gs-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.16);
@@ -147,9 +165,9 @@
   border-color: color-mix(in srgb, var(--gs-fg-muted) 24%, transparent);
 }
 .gs-chip--head {
-  color: var(--vscode-button-foreground);
-  background: var(--vscode-button-background);
-  border-color: var(--vscode-button-background);
+  color: var(--gs-brand-fg);
+  background: var(--gs-brand);
+  border-color: var(--gs-brand);
   font-weight: var(--gs-weight-emphasis);
 }
 
@@ -167,30 +185,47 @@
   color: var(--vscode-button-secondaryForeground, var(--gs-fg));
   background: var(--vscode-button-secondaryBackground, transparent);
   cursor: pointer;
-  transition: background var(--gs-motion) var(--gs-ease);
+  transition: filter var(--gs-motion) var(--gs-ease),
+    background var(--gs-motion) var(--gs-ease),
+    box-shadow var(--gs-motion) var(--gs-ease),
+    border-color var(--gs-motion) var(--gs-ease),
+    transform var(--gs-motion-fast) var(--gs-ease);
 }
-.gs-btn:hover {
+/* Scoped to :not(--primary): the secondary hover background is a SOLID colour
+   and would otherwise out-specify (and clobber) the primary button's gradient on
+   hover — turning a violet primary button grey. Primary keeps its gradient and
+   brightens via the rule below. */
+.gs-btn:not(.gs-btn--primary):hover {
   background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover));
 }
 .gs-btn--primary {
-  color: var(--vscode-button-foreground);
+  color: var(--gs-brand-fg);
   background:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--vscode-button-background) 88%, white 12%),
-      var(--vscode-button-background));
+      color-mix(in srgb, var(--gs-brand) 86%, white 14%),
+      var(--gs-brand));
+  border-color: var(--gs-brand);
   font-weight: var(--gs-weight-emphasis);
   box-shadow: var(--gs-shadow-1),
-    inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
-}
-.gs-btn--primary:hover {
-  background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
-  box-shadow: var(--gs-shadow-2),
     inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 }
-.gs-btn:active:not([disabled]) { transform: translateY(0.5px); }
+.gs-btn--primary:hover {
+  /* Brighten the gradient smoothly (filter animates; a gradient background
+     cannot be interpolated) and lift the shadow. */
+  filter: brightness(1.1);
+  border-color: var(--gs-brand-hover);
+  box-shadow: var(--gs-shadow-2),
+    inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
+}
+.gs-btn:active:not([disabled]) { transform: translateY(1px); }
+.gs-btn--primary:active:not([disabled]) { filter: brightness(0.95); }
 .gs-btn[disabled] {
   opacity: 0.45;
   cursor: default;
+  /* A button disabled while hovered keeps :hover in Chromium — neutralize the
+     primary hover's filter/shadow so a disabled button always reads inert. */
+  filter: none;
+  box-shadow: none;
 }
 
 /* ---- List rows ---------------------------------------------------------- */

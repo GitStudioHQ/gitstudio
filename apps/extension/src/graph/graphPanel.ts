@@ -17,7 +17,8 @@ import type {
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
-import { commitActionItems, runCommitAction } from "./commitActions";
+import { getAuthorAvatarResolver } from "./authorAvatars";
+import { commitMenuItems, runCommitAction } from "./commitActions";
 import { openRevisionDiff } from "../history/revisionContentProvider";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
@@ -38,6 +39,10 @@ const ACTION_ID_MAP: Record<string, string> = {
 
 /** Commits per page. The first page lands fast; more stream in on scroll. */
 const PAGE_SIZE = 500;
+// The FIRST page is deliberately small so the graph paints fast on open (a
+// 500-commit log + full lane layout was the bulk of the first-paint cost);
+// deeper history streams in via loadMore as you scroll.
+const FIRST_PAGE_SIZE = 150;
 /** Debounce repo-change rebuilds (a rebase touches many refs in a burst). */
 const REFRESH_DEBOUNCE_MS = 300;
 
@@ -48,10 +53,11 @@ const REFRESH_DEBOUNCE_MS = 300;
  */
 export class CommitGraphPanel {
   private static current: CommitGraphPanel | undefined;
+  private static currentPanel: vscode.WebviewPanel | undefined;
 
   static show(repos: RepoManager, extensionUri: vscode.Uri): void {
-    if (CommitGraphPanel.current) {
-      CommitGraphPanel.current.panel.reveal(vscode.ViewColumn.Active);
+    if (CommitGraphPanel.currentPanel) {
+      CommitGraphPanel.currentPanel.reveal(vscode.ViewColumn.Active);
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -64,11 +70,30 @@ export class CommitGraphPanel {
         localResourceRoots: [vscode.Uri.joinPath(extensionUri, "dist")],
       },
     );
-    CommitGraphPanel.current = new CommitGraphPanel(
-      panel,
-      repos,
-      extensionUri,
-    );
+    CommitGraphPanel.currentPanel = panel;
+    const host = new CommitGraphPanel(panel.webview, repos, extensionUri);
+    CommitGraphPanel.current = host;
+    panel.onDidDispose(() => {
+      host.dispose();
+      if (CommitGraphPanel.current === host) {
+        CommitGraphPanel.current = undefined;
+      }
+      CommitGraphPanel.currentPanel = undefined;
+    });
+  }
+
+  /**
+   * Attach a graph host to an arbitrary webview — used by the Commits sidebar
+   * view, which renders the SAME graph inline. The caller owns the returned
+   * instance's lifecycle (call dispose() when its view goes away).
+   */
+  static forView(
+    webview: vscode.Webview,
+    repos: RepoManager,
+    extensionUri: vscode.Uri,
+    opts?: { sidebar?: boolean },
+  ): CommitGraphPanel {
+    return new CommitGraphPanel(webview, repos, extensionUri, !!opts?.sidebar);
   }
 
   /** Open (or focus) the graph, then select + reveal a commit and its details. */
@@ -100,18 +125,24 @@ export class CommitGraphPanel {
   private pendingReveal: string | undefined;
 
   private constructor(
-    private readonly panel: vscode.WebviewPanel,
+    private readonly webview: vscode.Webview,
     private readonly repos: RepoManager,
     private readonly extensionUri: vscode.Uri,
+    /** Sidebar mode: loads the compact <gitstudio-commit-rail> bundle. */
+    private readonly sidebar = false,
   ) {
     const nonce = getNonce();
-    panel.webview.html = getGraphHtml(panel.webview, extensionUri, nonce);
+    webview.html = getGraphHtml(
+      webview,
+      extensionUri,
+      nonce,
+      sidebar ? "graph-sidebar" : "graph",
+    );
 
     this.disposables.push(
-      panel.webview.onDidReceiveMessage((msg: GraphWebviewMessage) =>
+      webview.onDidReceiveMessage((msg: GraphWebviewMessage) =>
         this.onMessage(msg),
       ),
-      panel.onDidDispose(() => this.dispose()),
       this.repos.onDidChange(() => this.scheduleRefresh()),
     );
   }
@@ -137,8 +168,13 @@ export class CommitGraphPanel {
         void this.pushCommitDetails(msg.sha);
         break;
       case "contextMenu":
+        this.openCommitMenu(msg.sha, msg.x, msg.y);
+        break;
       case "action":
-        void this.showCommitMenu(msg.sha);
+        this.openCommitMenu(msg.sha, -1, -1);
+        break;
+      case "commitMenuAction":
+        void this.runCommitMenuAction(msg.sha, msg.id);
         break;
       case "openFile":
         void this.doOpenFile(msg.sha, msg.path, !!msg.wip);
@@ -152,11 +188,40 @@ export class CommitGraphPanel {
       case "requestStats":
         void this.pushRowStats(msg.shas);
         break;
+      case "openInGraph":
+        // Sidebar rail → promote to the full editor-area graph at this commit.
+        CommitGraphPanel.revealCommit(this.repos, this.extensionUri, msg.sha);
+        break;
     }
   }
 
   private post(message: GraphHostMessage): void {
-    void this.panel.webview.postMessage(message);
+    void this.webview.postMessage(message);
+  }
+
+  /** Best-effort: resolve real author photos and push them to the webview to
+   * replace the Gravatar/initials placeholders. Never blocks or fails the graph
+   * — no resolver, no GitHub connection, or a network error just leaves the
+   * placeholders in place. */
+  private async loadAuthorAvatars(
+    active: RepoEntry,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const resolver = getAuthorAvatarResolver();
+    if (!resolver) {
+      return;
+    }
+    try {
+      const avatars = await resolver.resolve(active);
+      if (signal.aborted || active.root !== this.repoRoot) {
+        return;
+      }
+      if (Object.keys(avatars).length > 0) {
+        this.post({ type: "authorAvatars", avatars });
+      }
+    } catch {
+      /* best-effort — placeholders remain */
+    }
   }
 
   // ── Loading & layout ───────────────────────────────────────────────────────
@@ -202,14 +267,19 @@ export class CommitGraphPanel {
     this.nextSkip = 0;
 
     try {
-      await this.loadRefs(active);
-      const page = await this.readPage(active, 0, controller.signal);
+      // Refs (for-each-ref + stash) and the first log page run CONCURRENTLY —
+      // refs no longer block the log spawn. buildRows needs both, but they land
+      // together.
+      const [, page] = await Promise.all([
+        this.loadRefs(active),
+        this.readPage(active, 0, controller.signal, FIRST_PAGE_SIZE),
+      ]);
       if (controller.signal.aborted) {
         return;
       }
       this.loaded = page;
       this.nextSkip = page.length;
-      this.hasMore = page.length === PAGE_SIZE;
+      this.hasMore = page.length === FIRST_PAGE_SIZE;
 
       // GitKraken-style WIP node: when the working tree is dirty, prepend a
       // synthetic "Uncommitted changes" commit parented on HEAD so it sits at
@@ -231,16 +301,30 @@ export class CommitGraphPanel {
         this.pendingReveal = undefined;
         this.reveal(sha);
       }
+      // Real author photos (GitHub) land asynchronously and replace the
+      // Gravatar/initials placeholders in place — never blocking the graph.
+      void this.loadAuthorAvatars(active, controller.signal);
     } catch (err) {
       if (!controller.signal.aborted) {
-        // Empty/fresh repo or a transient git error: show the empty state.
-        this.post({
-          type: "graphInit",
-          rows: [],
-          head: "",
-          totalColumns: 1,
-          hasMore: false,
-        });
+        // Distinguish a fresh/empty repo (no commits yet — a normal empty state)
+        // from a real git failure, which deserves an error placeholder + Retry
+        // rather than a silent "No commits yet" that looks like an empty repo.
+        const msg = err instanceof Error ? err.message : String(err);
+        const isEmptyRepo =
+          /does not have any commits|bad default revision|unknown revision|ambiguous argument .HEAD./i.test(
+            msg,
+          );
+        if (isEmptyRepo) {
+          this.post({
+            type: "graphInit",
+            rows: [],
+            head: "",
+            totalColumns: 1,
+            hasMore: false,
+          });
+        } else {
+          this.post({ type: "graphError", message: msg });
+        }
       }
     } finally {
       if (this.loadController === controller) {
@@ -295,11 +379,12 @@ export class CommitGraphPanel {
     active: RepoEntry,
     skip: number,
     signal: AbortSignal,
+    limit: number = PAGE_SIZE,
   ): Promise<GraphInputCommit[]> {
     const page: GraphInputCommit[] = [];
     for await (const commit of active.ctx.log.streamCommits({
       revRange: "--all",
-      maxCount: PAGE_SIZE,
+      maxCount: limit,
       skip,
       signal,
     })) {
@@ -378,43 +463,45 @@ export class CommitGraphPanel {
         2000,
       );
     } else if (choice === "Commit Actions…") {
-      await this.showCommitMenu(sha);
+      this.openCommitMenu(sha, -1, -1);
     }
   }
 
-  private async showCommitMenu(sha: string): Promise<void> {
+  /** Open the commit actions as an IN-GRAPH popover at (x, y) — no native
+   *  quick-pick. x < 0 means "position near the selected row" (keyboard menu). */
+  private openCommitMenu(sha: string, x: number, y: number): void {
+    const record = this.records.get(sha);
+    this.post({
+      type: "commitMenu",
+      sha,
+      x,
+      y,
+      title: `${sha.slice(0, 7)} · ${record?.subject ?? ""}`.trim(),
+      items: commitMenuItems(),
+    });
+  }
+
+  /** Run the action the user picked in the in-graph commit popover. */
+  private async runCommitMenuAction(sha: string, id: string): Promise<void> {
     const active = this.repos.getActive();
-    if (!active) {
+    if (!active || !id) {
+      return;
+    }
+    // "Start interactive rebase here" is its own flow (spawns a terminal + opens
+    // the rebase webview), not a runCommitAction case.
+    if (id === "interactiveRebase") {
+      await vscode.commands.executeCommand("gitstudio.startInteractiveRebase", sha);
       return;
     }
     const record = this.records.get(sha);
-    const picked = await vscode.window.showQuickPick(commitActionItems(), {
-      title: `${sha.slice(0, 7)} · ${record?.subject ?? ""}`.trim(),
-      placeHolder: "Commit actions",
-    });
-    if (!picked || !picked.id) {
-      return;
-    }
-
-    // "Start interactive rebase here" is its own flow (it spawns a terminal +
-    // opens the rebase webview), not a runCommitAction case.
-    if (picked.id === "interactiveRebase") {
-      await vscode.commands.executeCommand(
-        "gitstudio.startInteractiveRebase",
-        sha,
-      );
-      return;
-    }
-
     // Route destructive ops through the Undo envelope when it's available.
     const ledger = this.repos.getUndoLedger();
     const undo = ledger
       ? <T>(label: string, fn: () => Promise<T>) =>
           ledger.runWithUndo(active, label, fn)
       : undefined;
-
     const changed = await runCommitAction(
-      picked.id,
+      id,
       active.ctx,
       { sha, subject: record?.subject ?? "" },
       undo,
@@ -439,7 +526,9 @@ export class CommitGraphPanel {
 
   /** Prepend a synthetic "Uncommitted changes" node when the tree is dirty. */
   private injectWipNode(active: RepoEntry): void {
-    if (!this.currentHeadSha) {
+    if (!this.currentHeadSha || !active.repo) {
+      // No WIP node until vscode.git attaches (it drives the dirty check); the
+      // commit history still renders from our git-service in the meantime.
       return;
     }
     const st = active.repo.state;
@@ -516,6 +605,9 @@ export class CommitGraphPanel {
 
   /** Build the working-tree (WIP) details payload from the repo state. */
   private pushWipDetails(active: RepoEntry): void {
+    if (!active.repo) {
+      return;
+    }
     const st = active.repo.state;
     const now = Math.floor(Date.now() / 1000);
     const toFiles = (changes: Change[] | undefined) =>
@@ -710,7 +802,6 @@ export class CommitGraphPanel {
   }
 
   dispose(): void {
-    CommitGraphPanel.current = undefined;
     this.loadController?.abort();
     this.loadController = undefined;
     if (this.refreshTimer !== undefined) {

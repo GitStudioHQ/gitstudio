@@ -8,16 +8,10 @@ import {
 } from "./views/commitsView";
 import { RefsTreeProvider } from "./views/branchesView";
 import {
-  StashesTreeProvider,
   StashDiffContentProvider,
-  showStash,
   saveStash,
-  applyStash,
-  popStash,
-  dropStash,
-  branchFromStash,
-  type StashNode,
 } from "./views/stashesView";
+import { StashesWebviewViewProvider } from "./views/stashesWebview";
 import {
   WorktreesTreeProvider,
   openWorktree,
@@ -27,16 +21,17 @@ import {
   pruneWorktrees,
   type WorktreeNode,
 } from "./views/worktreesView";
-import {
-  SearchCompareTreeProvider,
-  runSearch,
-  compareRefs,
-  openSearchCommit,
-  openCompareFileDiff,
-} from "./search/searchCompareView";
+import { ComparePanel } from "./compare/comparePanel";
 import { SyncStatusItem } from "./statusBar/syncStatus";
 import * as branchActions from "./views/branchActions";
 import { CommitGraphPanel } from "./graph/graphPanel";
+import { CommitsGraphViewProvider } from "./graph/commitsGraphView";
+import {
+  GitHubAuthorAvatars,
+  setAuthorAvatarResolver,
+} from "./graph/authorAvatars";
+import { GitHubApi } from "./pr/githubApi";
+import { GitHubAuth } from "./pr/githubAuth";
 import {
   RevisionContentProvider,
   REVISION_SCHEME,
@@ -68,6 +63,7 @@ import {
   abortRebase,
 } from "./rebase/rebaseCommands";
 import { GitBrain } from "./ai/gitBrain";
+import { AiSettingsPanel } from "./ai/aiSettingsPanel";
 import {
   setApiKey,
   clearApiKey,
@@ -78,6 +74,7 @@ import {
   generateCommitMessageCommand,
   explainDiffCommand,
   summarizeChangesCommand,
+  reviewChangesCommand,
 } from "./ai/aiCommands";
 import { registerPrFeature } from "./pr/prFeature";
 
@@ -133,11 +130,20 @@ export function activate(context: vscode.ExtensionContext): void {
   void RepoManager.create().then((repos) => {
     try {
     context.subscriptions.push(repos);
-    log(
-      `RepoManager ready — repos=${repos.getAll().length}, active=${
-        repos.getActive()?.root ?? "none"
-      }`,
-    );
+    // NOTE: git activation now runs in the BACKGROUND (RepoManager.create no
+    // longer awaits init), so this body runs BEFORE repos are discovered — the
+    // views register immediately and fill in on the first onDidChange. The real
+    // repo count is logged from that first change (below), not here (0 now).
+    log("views registered — repos discovering in background");
+    const readyOnce = repos.onDidChange(() => {
+      readyOnce.dispose();
+      log(
+        `RepoManager ready — repos=${repos.getAll().length}, active=${
+          repos.getActive()?.root ?? "none"
+        }`,
+      );
+    });
+    context.subscriptions.push(readyOnce);
 
     // Inline blame, status bar, rich hover, and full-file annotations.
     const blame = new BlameController(repos, context, log);
@@ -150,7 +156,25 @@ export function activate(context: vscode.ExtensionContext): void {
     // mounted as sidebar tree views.
     const commitsProvider = new CommitsTreeProvider(repos);
     const refsProvider = new RefsTreeProvider(repos);
-    context.subscriptions.push(commitsProvider, refsProvider);
+    // The Commits sidebar view renders the commit graph inline (webview view).
+    const commitsGraphView = new CommitsGraphViewProvider(
+      repos,
+      context.extensionUri,
+    );
+    context.subscriptions.push(commitsProvider, refsProvider, commitsGraphView);
+
+    // Real author photos for the commit graph. A GitHub-backed resolver injected
+    // once and used best-effort by the graph surfaces: the signed-in user's own
+    // commits show their GitHub avatar even in a local repo, and GitHub-hosted
+    // repos resolve every recent author. Falls back to Gravatar/initials when
+    // GitHub isn't connected. Its own auth instance keeps it independent of the
+    // PR feature's lifecycle.
+    const avatarAuth = new GitHubAuth();
+    const avatarApi = new GitHubApi({ getToken: (o) => avatarAuth.getToken(o) });
+    setAuthorAvatarResolver(
+      new GitHubAuthorAvatars(avatarApi, repos, () => avatarAuth.isConnected()),
+    );
+    context.subscriptions.push(avatarAuth);
 
     // File & line history + revision navigation (M5).
     const revisionContent = new RevisionContentProvider(repos);
@@ -180,7 +204,7 @@ export function activate(context: vscode.ExtensionContext): void {
         "gitstudio.openCommitInGraph",
         (sha?: string) => {
           if (typeof sha === "string" && sha) {
-            CommitGraphPanel.revealCommit(repos, context.extensionUri, sha);
+            void commitsGraphView.reveal(sha);
           }
         },
       ),
@@ -277,6 +301,12 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand("gitstudio.ai.summarizeChanges", () =>
         summarizeChangesCommand(brain, repos),
       ),
+      vscode.commands.registerCommand("gitstudio.ai.reviewChanges", () =>
+        reviewChangesCommand(brain, repos),
+      ),
+      vscode.commands.registerCommand("gitstudio.ai.connect", () =>
+        AiSettingsPanel.show(brain, context.extensionUri),
+      ),
     );
 
     // In-editor Pull Request review — GitHub first (M11). Connect once via VS
@@ -307,6 +337,12 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     context.subscriptions.push(commitProvider, revisionContent);
 
+    // The instant a model is connected/disconnected, refresh the composer so the
+    // plug → ✨/Review buttons flip live (not on the next git event).
+    context.subscriptions.push(
+      brain.onDidChangeEnabled(() => commitProvider.requestState()),
+    );
+
     // After any staging op (line/hunk staging): re-push the commit webview's
     // state and invalidate open diffs. The webview owns the change lists now.
     const stagingRefresh: StagingRefresh = {
@@ -315,7 +351,7 @@ export function activate(context: vscode.ExtensionContext): void {
         commitProvider.requestState();
         // Nudge vscode.git to re-scan so the groups update promptly.
         const active = repos.getActive();
-        void active?.repo.status?.();
+        void active?.repo?.status?.();
       },
     };
 
@@ -323,6 +359,10 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.registerWebviewViewProvider(
         CommitViewProvider.viewId,
         commitProvider,
+        // Keep the webview alive when the view is hidden so switching away and
+        // back is INSTANT — without this VS Code disposes + rebuilds it (reload
+        // HTML, re-run JS, re-scan git) every time, which reads as seconds of lag.
+        { webviewOptions: { retainContextWhenHidden: true } },
       ),
       // Line / hunk staging in any file or diff editor.
       vscode.commands.registerCommand("gitstudio.stageSelectedLines", () =>
@@ -400,75 +440,63 @@ export function activate(context: vscode.ExtensionContext): void {
     // status-bar sync segment. Destructive ops (pop/drop, merge/rebase, branch
     // delete) route through the universal Undo envelope via the RepoManager's
     // wired-in ledger.
-    const stashesProvider = new StashesTreeProvider(repos);
-    const worktreesProvider = new WorktreesTreeProvider(repos);
-    const searchCompareProvider = new SearchCompareTreeProvider(repos);
-    const stashDiffContent = new StashDiffContentProvider(repos);
-    context.subscriptions.push(
-      stashesProvider,
-      worktreesProvider,
-      searchCompareProvider,
+    const stashesProvider = new StashesWebviewViewProvider(
+      repos,
+      context.extensionUri,
     );
+    const worktreesProvider = new WorktreesTreeProvider(
+      repos,
+      context.workspaceState,
+    );
+    const stashDiffContent = new StashDiffContentProvider(repos);
+    context.subscriptions.push(stashesProvider, worktreesProvider);
 
-    const stashesView = vscode.window.createTreeView("gitstudio.stashes", {
-      treeDataProvider: stashesProvider,
-      showCollapseAll: false,
-    });
     const worktreesView = vscode.window.createTreeView("gitstudio.worktrees", {
       treeDataProvider: worktreesProvider,
       showCollapseAll: false,
     });
-    const searchCompareView = vscode.window.createTreeView(
-      "gitstudio.searchCompare",
-      { treeDataProvider: searchCompareProvider, showCollapseAll: true },
-    );
-
+    // Warm the worktree list off the reveal path so the cold `git worktree list`
+    // spawn overlaps activation. Since git activation is now backgrounded, a
+    // setup-time prewarm sees no repo yet — so also warm on the FIRST onDidChange
+    // (when repos are discovered), then stop.
+    worktreesProvider.prewarm();
+    const warmWorktrees = repos.onDidChange(() => {
+      warmWorktrees.dispose();
+      worktreesProvider.prewarm();
+    });
+    context.subscriptions.push(warmWorktrees);
     const refreshStashes = () => stashesProvider.refresh();
     const refreshWorktrees = () => worktreesProvider.refresh();
     const refreshBranches = () => refsProvider.refresh();
-    const revealSearchCompare = () => {
-      void vscode.commands.executeCommand("gitstudio.searchCompare.focus");
-    };
 
     // The status-bar sync segment.
     const syncStatus = new SyncStatusItem(repos);
     context.subscriptions.push(syncStatus);
 
     context.subscriptions.push(
-      stashesView,
       worktreesView,
-      searchCompareView,
+      vscode.window.registerWebviewViewProvider(
+        CommitsGraphViewProvider.viewId,
+        commitsGraphView,
+        // Retain so re-opening the Commits graph is instant (no re-render/re-fetch).
+        { webviewOptions: { retainContextWhenHidden: true } },
+      ),
+      vscode.window.registerWebviewViewProvider(
+        StashesWebviewViewProvider.viewId,
+        stashesProvider,
+        { webviewOptions: { retainContextWhenHidden: true } },
+      ),
       vscode.workspace.registerTextDocumentContentProvider(
         StashDiffContentProvider.scheme,
         stashDiffContent,
       ),
 
-      // ── Stashes ────────────────────────────────────────────────────────────
+      // ── Stashes (apply/pop/drop/branch/show are driven by the webview) ──────
       vscode.commands.registerCommand("gitstudio.stashes.refresh", () =>
         stashesProvider.refresh(),
       ),
-      vscode.commands.registerCommand(
-        "gitstudio.stash.show",
-        (node: StashNode) => void showStash(repos, node),
-      ),
       vscode.commands.registerCommand("gitstudio.stash.save", () =>
         saveStash(repos, refreshStashes),
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.stash.apply",
-        (node: StashNode) => applyStash(repos, node, refreshStashes),
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.stash.pop",
-        (node: StashNode) => popStash(repos, node, refreshStashes),
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.stash.drop",
-        (node: StashNode) => dropStash(repos, node, refreshStashes),
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.stash.branch",
-        (node: StashNode) => branchFromStash(repos, node, refreshStashes),
       ),
 
       // ── Worktrees ──────────────────────────────────────────────────────────
@@ -500,20 +528,9 @@ export function activate(context: vscode.ExtensionContext): void {
         pruneWorktrees(repos, refreshWorktrees),
       ),
 
-      // ── Search & Compare ───────────────────────────────────────────────────
-      vscode.commands.registerCommand("gitstudio.search", () =>
-        runSearch(repos, searchCompareProvider, revealSearchCompare),
-      ),
+      // ── Compare branches / tags ────────────────────────────────────────────
       vscode.commands.registerCommand("gitstudio.compareRefs", () =>
-        compareRefs(repos, searchCompareProvider, revealSearchCompare),
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.searchCompare.openCommit",
-        (node) => void openSearchCommit(node),
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.searchCompare.openFileDiff",
-        (arg) => void openCompareFileDiff(arg),
+        ComparePanel.show(repos, context.extensionUri),
       ),
 
       // ── Branch / remote / tag context actions ──────────────────────────────
@@ -555,16 +572,17 @@ export function activate(context: vscode.ExtensionContext): void {
         (arg) =>
           branchActions.createWorktreeForBranch(repos, arg, refreshWorktrees),
       ),
-      vscode.commands.registerCommand(
-        "gitstudio.branch.compare",
-        (arg) =>
-          branchActions.compareRefWithCurrent(
-            repos,
-            searchCompareProvider,
-            revealSearchCompare,
-            arg,
-          ),
-      ),
+      vscode.commands.registerCommand("gitstudio.branch.compare", (arg) => {
+        // Compare the clicked branch against the current one. The branch-pill
+        // menu passes `{ ref: { name } }`; the (dead) tree passed a RefNode.
+        const a = arg as
+          | { ref?: { name?: string }; name?: string }
+          | string
+          | undefined;
+        const head =
+          typeof a === "string" ? a : (a?.ref?.name ?? a?.name ?? undefined);
+        return ComparePanel.show(repos, context.extensionUri, undefined, head);
+      }),
       vscode.commands.registerCommand(
         "gitstudio.remoteBranch.checkout",
         (arg) =>

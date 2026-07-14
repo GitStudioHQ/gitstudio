@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import { getNonce } from "../webview/html";
 import { relativeTime } from "../util/relativeTime";
+// Shared design tokens, inlined as text by esbuild — injected into the panel's
+// <style> so it consumes the SAME token system as every other GitStudio surface.
+import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
 import {
   GitHubApi,
   GitHubApiError,
@@ -61,6 +64,7 @@ export class PrDescriptionPanel {
   }
 
   private readonly disposables: vscode.Disposable[] = [];
+  private disposed = false;
   private pr: PullRequest;
   private files: PrFile[] = [];
   private status: CombinedStatus | undefined;
@@ -79,6 +83,11 @@ export class PrDescriptionPanel {
       ),
       this.panel.onDidDispose(() => this.dispose()),
     );
+    // Paint the PR we already have immediately, so the panel never opens blank
+    // while the fresh detail / files / checks are still loading — update()
+    // re-renders with the full data as it arrives (progressive, not a blank
+    // webview until the network returns).
+    this.render();
   }
 
   /** Re-fetch the PR detail + files + status and re-render. */
@@ -120,6 +129,11 @@ export class PrDescriptionPanel {
   }
 
   private render(): void {
+    // update() awaits several GitHub calls before re-rendering; if the panel was
+    // closed meanwhile, writing to the disposed webview throws.
+    if (this.disposed) {
+      return;
+    }
     this.panel.webview.html = renderHtml(
       this.panel.webview,
       this.deps.extensionUri,
@@ -168,6 +182,7 @@ export class PrDescriptionPanel {
   }
 
   dispose(): void {
+    this.disposed = true;
     PrDescriptionPanel.panels.delete(this.key);
     for (const d of this.disposables) {
       d.dispose();
@@ -259,23 +274,14 @@ function renderHtml(
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <link href="${codiconUri}" rel="stylesheet" />
+<style nonce="${nonce}">${tokensCss}</style>
 <style nonce="${nonce}">
   :root {
-    --gs-fg: var(--vscode-foreground);
-    --gs-fg-muted: var(--vscode-descriptionForeground);
-    --gs-border: var(--vscode-panel-border, var(--vscode-widget-border));
-    --gs-hover: var(--vscode-list-hoverBackground);
-    --gs-accent: var(--vscode-focusBorder);
-    --gs-link: var(--vscode-textLink-foreground);
-    --gs-font-ui: var(--vscode-font-family);
-    --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
-    --gs-radius: 6px;
-    --gs-radius-sm: 5px;
-    --gs-green: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
-    --gs-red: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, var(--vscode-errorForeground)));
-    --gs-amber: var(--vscode-charts-yellow);
-    --gs-motion: 170ms;
-    --gs-ease: cubic-bezier(0.2, 0, 0, 1);
+    /* Short status aliases used in this panel, sourced from the shared scale.
+       Everything else — fg, border, radius, motion, and the AA-safe --gs-amber
+       (was raw charts-yellow here) — comes from the injected tokens.css above. */
+    --gs-green: var(--gs-status-added);
+    --gs-red: var(--gs-status-deleted);
   }
   * { box-sizing: border-box; }
   body {
@@ -345,28 +351,46 @@ function renderHtml(
   .toolbar button {
     display: inline-flex; align-items: center; gap: 6px;
     height: 28px; padding: 0 13px; border-radius: var(--gs-radius);
-    border: 1px solid transparent; font-weight: 600;
+    border: 1px solid var(--gs-brand); font-weight: 600;
+    color: var(--gs-brand-fg);
+    /* The primary PR action is GitStudio violet, not the theme's blue accent
+       — matches the shared .gs-btn--primary language everywhere else. */
     background:
       linear-gradient(180deg,
-        color-mix(in srgb, var(--vscode-button-background) 88%, white 12%),
-        var(--vscode-button-background));
-    color: var(--vscode-button-foreground);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16),
-      inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
-    transition: background var(--gs-motion) var(--gs-ease),
+        color-mix(in srgb, var(--gs-brand) 86%, white 14%),
+        var(--gs-brand));
+    box-shadow: var(--gs-shadow-1),
+      inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+    transition: filter var(--gs-motion) var(--gs-ease),
+      background var(--gs-motion) var(--gs-ease),
       box-shadow var(--gs-motion) var(--gs-ease),
-      transform var(--gs-motion) var(--gs-ease);
+      border-color var(--gs-motion) var(--gs-ease),
+      transform var(--gs-motion-fast) var(--gs-ease);
   }
-  .toolbar button:active { transform: translateY(0.5px); }
+  /* Brighten the gradient smoothly (filter animates; a gradient can't) + lift. */
+  .toolbar button:hover {
+    filter: brightness(1.1);
+    border-color: var(--gs-brand-hover);
+    box-shadow: var(--gs-shadow-2),
+      inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
+  }
+  .toolbar button:active { transform: translateY(1px); filter: brightness(0.95); }
   .toolbar button svg { width: 14px; height: 14px; }
   .toolbar button.secondary {
     background: var(--vscode-button-secondaryBackground, transparent);
     color: var(--vscode-button-secondaryForeground, var(--gs-fg));
-    border-color: var(--vscode-button-border, var(--gs-border));
+    border-color: var(--gs-border);
     box-shadow: none;
   }
-  .toolbar button:hover { background: var(--vscode-button-hoverBackground); }
-  .toolbar button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover)); }
+  .toolbar button.secondary:hover {
+    filter: none;
+    background: var(--vscode-button-secondaryHoverBackground, var(--gs-hover));
+    border-color: var(--gs-border);
+    box-shadow: none;
+  }
+  /* A disabled action (e.g. Merge on a closed/merged/draft PR) reads inert. */
+  .toolbar button:disabled { opacity: 0.45; cursor: default; filter: none; box-shadow: none; }
+  .toolbar button:disabled:hover { filter: none; background: var(--vscode-button-secondaryBackground, transparent); box-shadow: none; }
   button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 2px; }
 
   /* ── Sections ───────────────────────────────────────────── */
@@ -469,8 +493,14 @@ function renderHtml(
 
   <div class="toolbar">
     <button id="btn-checkout">${ICON.checkout}Checkout</button>
-    <button id="btn-review" class="secondary">${ICON.review}Start Review</button>
-    <button id="btn-merge" class="secondary">${ICON.merge}Merge…</button>
+    <button id="btn-review" class="secondary"${
+      pr.state === "open" ? "" : " disabled"
+    }>${ICON.review}Start Review</button>
+    <button id="btn-merge" class="secondary"${
+      pr.state === "open" && !pr.draft
+        ? ""
+        : ' disabled title="Only open, non-draft pull requests can be merged"'
+    }>${ICON.merge}Merge…</button>
     <button id="btn-open" class="secondary">${ICON.external}Open on GitHub</button>
     <button id="btn-refresh" class="secondary">${ICON.refresh}Refresh</button>
   </div>

@@ -12,6 +12,7 @@
 
 import { LitElement, html, css, nothing } from "lit";
 import { codiconStyles } from "./styles/codicons";
+import { hostTokens } from "./styles/hostTokens";
 import { gravatarUrl, avatarHue, authorInitials } from "./graph/avatar";
 import type {
   CommitDetailsPayload,
@@ -26,10 +27,12 @@ interface ActionDef {
   icon: string;
   /** Destructive actions get a danger tint. */
   danger?: boolean;
+  /** The one emphasized action in a toolbar (filled accent); at most one. */
+  primary?: boolean;
 }
 
 const COMMIT_ACTIONS: ActionDef[] = [
-  { id: "checkout", label: "Checkout", icon: "check" },
+  { id: "checkout", label: "Checkout", icon: "check", primary: true },
   { id: "branch", label: "Branch", icon: "git-branch" },
   { id: "tag", label: "Tag", icon: "tag" },
   { id: "cherry-pick", label: "Cherry-pick", icon: "git-commit" },
@@ -38,7 +41,7 @@ const COMMIT_ACTIONS: ActionDef[] = [
 ];
 
 const WIP_ACTIONS: ActionDef[] = [
-  { id: "commit", label: "Commit…", icon: "git-commit" },
+  { id: "commit", label: "Commit…", icon: "git-commit", primary: true },
   { id: "stage-all", label: "Stage all", icon: "add" },
   { id: "unstage-all", label: "Unstage all", icon: "dash" },
   { id: "stash", label: "Stash", icon: "archive" },
@@ -68,23 +71,17 @@ export class CommitDetails extends LitElement {
   }
 
   static styles = [
+    hostTokens,
     codiconStyles,
     css`
       :host {
-        --gs-fg: var(--vscode-foreground);
-        --gs-fg-muted: var(--vscode-descriptionForeground);
-        --gs-fg-subtle: color-mix(in srgb, var(--gs-fg) 50%, transparent);
-        --gs-accent: var(--vscode-focusBorder);
-        --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
-        --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
-        --gs-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));
-        --gs-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--gs-fg) 7%, transparent));
-        --gs-border: color-mix(in srgb, var(--gs-fg) 13%, transparent);
-        --gs-border-soft: color-mix(in srgb, var(--gs-fg) 8%, transparent);
-        --gs-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #89d185));
-        --gs-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow, #e2c08d));
-        --gs-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, #f14c4c));
-        --gs-renamed: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-blue, #6fb3d2));
+        /* The --gs-* scale is inherited from the document (graph.css @imports
+           tokens.css). Only this panel's short status aliases are declared here,
+           sourced from the shared scale — one source of truth, no drift. */
+        --gs-added: var(--gs-status-added);
+        --gs-modified: var(--gs-status-modified);
+        --gs-deleted: var(--gs-status-deleted);
+        --gs-renamed: var(--gs-status-renamed);
         display: block;
         height: 100%;
         overflow: hidden;
@@ -130,11 +127,21 @@ export class CommitDetails extends LitElement {
           overflow-y: auto;
           padding-bottom: 14px;
         }
-        /* Short dock: actions must stay reachable — they sit ABOVE the message
-           card here, so the card (which can be long) is what scrolls away. */
+        /* Message reads in natural order — directly under identity/refs, since
+           it's what you opened the panel for. The action row instead docks to
+           the bottom as a sticky footer, so it stays reachable even when a long
+           message scrolls behind it (the old fix put actions ABOVE the message,
+           which buried the thing you came to read). */
         .col-main { display: flex; flex-direction: column; align-items: flex-start; padding-right: 6px; }
         .col-main > * { width: 100%; }
-        .col-main .message { order: 10; }
+        .col-main .actions {
+          position: sticky;
+          bottom: 0;
+          margin: auto 0 0;
+          padding: 10px 0 2px;
+          background: var(--gs-bg);
+          box-shadow: 0 -1px 0 var(--gs-border-soft), 0 -10px 12px -10px var(--gs-bg);
+        }
         /* Drag divider between the columns: a centered hairline that brightens
            on hover/drag, keyboard-operable (role=separator). */
         .col-split {
@@ -187,19 +194,30 @@ export class CommitDetails extends LitElement {
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--gs-fg) 14%, transparent);
       }
       /* Positioned so the loaded photo paints ABOVE the absolute fallback
-         (positioned siblings always paint over static ones). */
-      .avatar img { position: relative; width: 100%; height: 100%; object-fit: cover; display: block; }
+         (positioned siblings always paint over static ones). The photo starts
+         hidden and is revealed only once it confirms a load (.is-loaded), so a
+         404 / blocked host / offline fetch can never obscure the initials disc. */
+      .avatar img { position: relative; width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; }
+      .avatar img.is-loaded { opacity: 1; }
       .avatar .fallback {
         position: absolute; inset: 0; display: flex; align-items: center;
-        justify-content: center; font-size: 14px; font-weight: 600; color: #fff;
-        background: hsl(var(--av-hue, 210) 48% 42%);
+        justify-content: center; font-size: 14px; font-weight: 600;
+        color: var(--vscode-foreground);
+        /* Soft, near-neutral disc — matches the graph's calmed avatar (a whisper
+           of the author's hue, not a saturated color). */
+        background: color-mix(in srgb, hsl(var(--av-hue, 210) 45% 50%) 30%, var(--gs-bg, var(--vscode-editor-background, #24262c)));
       }
       .id { min-width: 0; flex: 1 1 auto; }
       .author { font-weight: 600; font-size: 13.5px; }
       .when { color: var(--gs-fg-muted); font-weight: 400; font-size: 12px; }
       .sub-when { color: var(--gs-fg-subtle); font-size: 11px; margin-top: 1px; }
+      /* One compact metadata line: the sha chip + parent chip(s) together. */
+      .meta-row {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+        margin-top: 6px;
+      }
       .sha-row {
-        display: inline-flex; align-items: center; gap: 6px; margin-top: 5px;
+        display: inline-flex; align-items: center; gap: 6px;
         font-family: var(--vscode-editor-font-family, monospace);
         font-size: 11.5px; color: var(--gs-fg-muted);
         padding: 1px 7px 1px 6px; border-radius: 999px;
@@ -208,14 +226,9 @@ export class CommitDetails extends LitElement {
       }
       .sha-row:hover { background: var(--gs-hover); color: var(--gs-fg); }
       .sha-row .codicon { font-size: 12px; }
-      .email {
-        display: block; font-weight: 400; font-size: 11.5px;
-        color: var(--gs-fg-subtle); margin-top: 1px;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      }
-      /* Parents — labeled clickable short-sha chips, Git Graph's "Parents:" row. */
+      /* Parents — labeled clickable short-sha chips. */
       .parents {
-        display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 6px;
+        display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px;
       }
       .parents .plabel {
         font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
@@ -250,8 +263,8 @@ export class CommitDetails extends LitElement {
       }
       .chip .codicon { font-size: 11px; }
       .chip-current {
-        color: var(--vscode-button-foreground);
-        background: var(--vscode-button-background, var(--gs-accent));
+        color: var(--gs-brand-fg);
+        background: var(--gs-brand);
         font-weight: 600;
       }
       .chip-head {
@@ -265,17 +278,15 @@ export class CommitDetails extends LitElement {
         border-color: color-mix(in srgb, currentColor 24%, transparent);
       }
       .chip-tag {
-        color: var(--vscode-charts-yellow, #e2c08d);
-        background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 14%, transparent);
-        border-color: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 32%, transparent);
+        color: var(--gs-amber);
+        background: color-mix(in srgb, var(--gs-amber) 14%, transparent);
+        border-color: color-mix(in srgb, var(--gs-amber) 32%, transparent);
       }
 
       /* ── Message ────────────────────────────────────────────────── */
-      .message {
-        margin: 12px 0 0; padding: 10px 12px; border-radius: 7px;
-        background: var(--gs-surface); border: 1px solid var(--gs-border-soft);
-      }
-      .subject { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
+      /* Plain prose, no boxed card — less chrome, reads like a message. */
+      .message { margin: 12px 0 2px; }
+      .subject { font-weight: 600; font-size: 13.5px; line-height: 1.4; }
       .body {
         margin-top: 7px; white-space: pre-wrap; word-break: break-word;
         color: var(--gs-fg-muted); font-size: 12.5px; line-height: 1.5;
@@ -286,12 +297,39 @@ export class CommitDetails extends LitElement {
       .act {
         display: inline-flex; align-items: center; gap: 5px; height: 26px;
         padding: 0 9px; border-radius: 6px; border: 1px solid var(--gs-border);
-        background: var(--gs-surface); color: var(--gs-fg); cursor: pointer;
+        /* Secondary actions are ghost (transparent) so the one primary action
+           carries the emphasis — a flat wall of equally-filled buttons reads
+           busy and hides which one you usually want. */
+        background: transparent; color: var(--gs-fg); cursor: pointer;
         font-size: 12px; font-family: inherit;
-        transition: background 120ms, border-color 120ms;
+        transition: filter var(--gs-motion), background var(--gs-motion),
+          border-color var(--gs-motion), box-shadow var(--gs-motion),
+          transform var(--gs-motion-fast);
       }
       .act:hover { background: var(--gs-hover); border-color: var(--gs-fg-subtle); }
+      .act:active { transform: translateY(1px); }
       .act .codicon { font-size: 13px; color: var(--gs-fg-muted); }
+      /* Primary = the expected default (Checkout / Commit) — filled accent.
+         Matches the shared .gs-btn--primary: brighten-on-hover via filter (a
+         gradient fill can't be interpolated) + a shadow lift. */
+      .act.primary {
+        color: var(--gs-brand-fg);
+        background: linear-gradient(180deg,
+          color-mix(in srgb, var(--gs-brand) 86%, white 14%),
+          var(--gs-brand));
+        border-color: var(--gs-brand);
+        font-weight: 600;
+        box-shadow: var(--gs-shadow-1),
+          inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+      }
+      .act.primary:hover {
+        filter: brightness(1.1);
+        border-color: var(--gs-brand-hover);
+        box-shadow: var(--gs-shadow-2),
+          inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
+      }
+      .act.primary:active { filter: brightness(0.95); }
+      .act.primary .codicon { color: var(--gs-brand-fg); }
       .act.danger:hover {
         color: var(--gs-deleted);
         border-color: color-mix(in srgb, var(--gs-deleted) 40%, transparent);
@@ -373,6 +411,15 @@ export class CommitDetails extends LitElement {
     this.dispatchEvent(
       new CustomEvent(name, { detail, bubbles: true, composed: true }),
     );
+  }
+
+  /** Close (X) affordance for the docked details panel — the host collapses the
+   * dock so the graph reclaims the space. */
+  private closeButton() {
+    return html`<button class="icon-btn close-details" title="Close details (Esc)"
+      aria-label="Close details"
+      @click=${() => this.emit("gs-close", {})}>
+      <span class="codicon codicon-close"></span></button>`;
   }
 
   render() {
@@ -496,32 +543,34 @@ export class CommitDetails extends LitElement {
     return html`<div class="head">
       <span class="avatar" style="--av-hue:${hue}">
         <span class="fallback">${initials}</span>
-        <img src=${url} alt="" loading="lazy" decoding="async"
+        <img class="av-img" src=${url} alt="" loading="lazy" decoding="async"
+          @load=${(e: Event) => (e.target as HTMLElement).classList.add("is-loaded")}
           @error=${(e: Event) => ((e.target as HTMLElement).style.display = "none")} />
       </span>
       <div class="id">
-        <div class="author">${d.author}
-          <span class="when" title=${absTime(d.committerDate)}>committed ${relTime(d.committerDate)}</span>
+        <div class="author" title=${d.authorEmail}>${d.author}
+          <span class="when" title=${absTime(d.committerDate)}>· ${relTime(d.committerDate)}</span>
         </div>
-        <span class="email" title=${d.authorEmail}>${d.authorEmail}</span>
         ${sameCommitter
           ? nothing
-          : html`<div class="sub-when">committed by ${d.committer}; authored ${relTime(d.authorDate)}</div>`}
-        <span class="sha-row" title="Copy full SHA"
-          @click=${() => this.emit("gs-copy", { text: d.sha })}>
-          <span class="codicon codicon-git-commit"></span>${d.shortSha}
-          <span class="codicon codicon-copy"></span>
-        </span>
-        ${d.parents.length
-          ? html`<div class="parents">
-              <span class="plabel">${d.parents.length === 1 ? "Parent" : "Parents"}</span>
-              ${d.parents.map(
-                (p) => html`<button class="parent" title=${`Reveal ${p} in the graph`}
-                  @click=${() => this.emit("gs-reveal", { sha: p })}>
-                  <span class="codicon codicon-git-commit"></span>${p.slice(0, 7)}</button>`,
-              )}
-            </div>`
-          : nothing}
+          : html`<div class="sub-when">committed by ${d.committer}</div>`}
+        <div class="meta-row">
+          <span class="sha-row" title="Copy full SHA"
+            @click=${() => this.emit("gs-copy", { text: d.sha })}>
+            <span class="codicon codicon-git-commit"></span>${d.shortSha}
+            <span class="codicon codicon-copy"></span>
+          </span>
+          ${d.parents.length
+            ? html`<span class="parents">
+                <span class="plabel">${d.parents.length === 1 ? "Parent" : "Parents"}</span>
+                ${d.parents.map(
+                  (p) => html`<button class="parent" title=${`Reveal ${p} in the graph`}
+                    @click=${() => this.emit("gs-reveal", { sha: p })}>
+                    <span class="codicon codicon-git-commit"></span>${p.slice(0, 7)}</button>`,
+                )}
+              </span>`
+            : nothing}
+        </div>
       </div>
       <div class="head-tools">
         ${d.hasRemote
@@ -529,6 +578,7 @@ export class CommitDetails extends LitElement {
               @click=${() => this.emit("gs-action", { id: "open-remote", sha: d.sha })}>
               <span class="codicon codicon-link-external"></span></button>`
           : nothing}
+        ${this.closeButton()}
       </div>
     </div>`;
   }
@@ -544,6 +594,7 @@ export class CommitDetails extends LitElement {
         </div>
         <div class="sub-when">Stage, commit, stash, or discard below</div>
       </div>
+      <div class="head-tools">${this.closeButton()}</div>
     </div>`;
   }
 
@@ -574,7 +625,7 @@ export class CommitDetails extends LitElement {
   private actionsHtml(actions: ActionDef[], d: CommitDetailsPayload) {
     return html`<div class="actions">
       ${actions.map(
-        (a) => html`<button class="act ${a.danger ? "danger" : ""}"
+        (a) => html`<button class="act ${a.primary ? "primary" : ""} ${a.danger ? "danger" : ""}"
           title=${a.label}
           @click=${() => this.emit("gs-action", { id: a.id, sha: d.sha })}>
           <span class="codicon codicon-${a.icon}"></span>${a.label}</button>`,

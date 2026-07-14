@@ -58,4 +58,6 @@ export const codiconStyles = css`
   .codicon-file::before { content: "\\ea7b"; }
   .codicon-filter::before { content: "\\eaf1"; }
   .codicon-list-flat::before { content: "\\eb84"; }
+  .codicon-warning::before { content: "\\ea6c"; }
+  .codicon-target::before { content: "\\ebf8"; }
 `;

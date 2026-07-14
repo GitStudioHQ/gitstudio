@@ -23,6 +23,17 @@ export interface GutterOptions {
    * hover "focus this lane" affordance. `undefined` = everything full.
    */
   focusColor?: number;
+  /**
+   * Max vertical px a diagonal's bend occupies, centered in the row, with
+   * straight vertical lead-in/lead-out to the row edges. Keeps transitions
+   * taut in TALL rows (the sidebar rail's 40px two-line rows) — without it a
+   * one-lane shift stretches its S-curve over the full height and reads as a
+   * droopy wobble. Omit (default) = the bend spans the full rowHeight, the
+   * editor graph's original geometry.
+   */
+  curveSpan?: number;
+  /** Lane stroke width override, px (default 1.75). */
+  strokeWidth?: number;
 }
 
 /** Lane stroke width — thin enough to feel native, thick enough to read. */
@@ -48,12 +59,18 @@ function color(palette: readonly string[], index: number): string {
  * Straight vertical when the columns match; a vertically-symmetric cubic bezier
  * S-curve (control points pinned at mid-height) when they differ, so merges and
  * lane shifts sweep smoothly instead of kinking.
+ *
+ * `curveSpan` (optional) confines the bend to a centered vertical span with
+ * straight lead-in/lead-out — both joints keep vertical tangents, so rows
+ * still chain seamlessly. Omitted or >= rowHeight yields the original
+ * full-height sweep.
  */
 export function segmentPath(
   seg: WireSegment,
   colWidth: number,
   rowHeight: number,
   inset = 0,
+  curveSpan?: number,
 ): string {
   const x0 = laneCenterX(seg.fromColumn, colWidth, inset);
   const x1 = laneCenterX(seg.toColumn, colWidth, inset);
@@ -63,6 +80,16 @@ export function segmentPath(
     return `M${x0} ${y0}V${y1}`;
   }
   const midY = rowHeight / 2;
+  if (curveSpan !== undefined && curveSpan < rowHeight) {
+    const c0 = (rowHeight - curveSpan) / 2;
+    const c1 = rowHeight - c0;
+    // Vertical to the bend, the same mid-pinned S across it, vertical out.
+    return (
+      `M${x0} ${y0}V${c0}` +
+      `C${x0} ${midY} ${x1} ${midY} ${x1} ${c1}` +
+      `V${y1}`
+    );
+  }
   // Control points at mid-height on each lane's x: a smooth S whose tangents
   // are vertical at both edges, so it joins the rows above/below seamlessly.
   return `M${x0} ${y0}C${x0} ${midY} ${x1} ${midY} ${x1} ${y1}`;
@@ -82,6 +109,7 @@ export function renderRowGutterSVG(
 ): string {
   const { colWidth, rowHeight, nodeRadius, palette, focusColor } = opts;
   const inset = opts.nodeInset ?? 0;
+  const strokeWidth = opts.strokeWidth ?? STROKE_WIDTH;
   const cx = laneCenterX(row.column, colWidth, inset);
   const cy = Math.round(rowHeight / 2) + 0.5;
 
@@ -97,10 +125,10 @@ export function renderRowGutterSVG(
   for (const seg of row.segments) {
     const dim = focusColor !== undefined && seg.color !== focusColor;
     const opacity = dim ? ` opacity="${DIM_OPACITY}"` : "";
-    const d = segmentPath(seg, colWidth, rowHeight, inset);
+    const d = segmentPath(seg, colWidth, rowHeight, inset, opts.curveSpan);
     const markup =
       `<path d="${d}" fill="none" stroke="${color(palette, seg.color)}" ` +
-      `stroke-width="${STROKE_WIDTH}" stroke-linecap="round" ` +
+      `stroke-width="${strokeWidth}" stroke-linecap="round" ` +
       `stroke-linejoin="round"${opacity}/>`;
     const straight = seg.fromColumn === seg.toColumn;
     if (dim) (straight ? dimVerticals : dimDiagonals).push(markup);

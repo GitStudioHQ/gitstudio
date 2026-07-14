@@ -1,7 +1,12 @@
 import * as vscode from "vscode";
+import type { GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { Change } from "../git/git";
 import { getNonce } from "../webview/html";
+// The shared design tokens, inlined as text by esbuild (the extension ctx uses
+// the ".css": "text" loader). Injected into the webview <style> so this surface
+// consumes the SAME token system as every bundled webview — one source, no drift.
+import tokensCss from "../../../../packages/webview-ui/src/styles/tokens.css";
 import {
   openChangeDiff,
   relativePath,
@@ -31,6 +36,9 @@ interface BranchRefPayload {
   current: boolean;
   upstream?: string;
   favorite: boolean;
+  /** Commits ahead/behind the upstream — drives the menu's ↑/↓ badges. */
+  ahead?: number;
+  behind?: number;
 }
 
 /** Everything the branch menu needs: local branches (with favorites), remotes, recents. */
@@ -78,6 +86,13 @@ interface FromWebview {
     | "stageAll"
     | "unstageAll"
     | "discardAll"
+    | "stageFolder"
+    | "unstageFolder"
+    | "discardFolder"
+    | "openFile"
+    | "reviewChanges"
+    | "connectAI"
+    | "stash"
     | "setLayout"
     | "amendToggled"
     | "branchAction"
@@ -87,13 +102,18 @@ interface FromWebview {
   path?: string;
   staged?: boolean;
   group?: GroupKind;
+  /** File paths targeted by a folder-level stage/unstage/discard. */
+  paths?: string[];
   layout?: "tree" | "list";
+  /** One-letter status of the file a `fileMenu` targets (M/A/D/R/U/!/…). */
+  status?: string;
   message?: string;
   amend?: boolean;
   signoff?: boolean;
   author?: string;
   push?: boolean;
-  /** Branch-menu sub-action: checkout | checkoutRemote | new | checkoutRef | pull | pullRebase | push | fetch | favorite. */
+  /** Branch-menu sub-action: checkout | checkoutRemote | new | checkoutRef |
+   *  pull | pullRebase | push | fetch | pullFf | copyName | favorite. */
   action?: string;
   /** The ref a branch action targets (branch name or "remote/branch"). */
   ref?: string;
@@ -124,6 +144,30 @@ export class CommitViewProvider
   private view: vscode.WebviewView | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private busy = false;
+
+  /**
+   * Coalesces overlapping non-amend state pushes. `onDidChange` is a debounced
+   * firehose but still fires repeatedly during a rebase/fetch, and each push
+   * used to run to completion concurrently. We now run one at a time and fold
+   * any pushes that arrive mid-flight into a single trailing re-push.
+   */
+  private pushing = false;
+  private pushQueued = false;
+  // Last-known slow values, so the instant first push carries them (no flicker)
+  // and re-posts refresh them once the git/LM probes resolve.
+  private lastAiEnabled = false;
+  private lastBranches: BranchesPayload | undefined;
+
+  /**
+   * Short-TTL cache of the raw ref list — the priciest part of a state push (a
+   * `for-each-ref` + `stash list`). Staging a file, or any unrelated ref write,
+   * shouldn't re-list every branch on every push. Favorites/recents are still
+   * recomputed fresh from the memento on each push, so the cache never freezes
+   * the star toggles; branch operations call {@link invalidateRefs} so a
+   * checkout / new / delete still reflects immediately.
+   */
+  private refsCache: { root: string; at: number; refs: GitRef[] } | undefined;
+  private static readonly REFS_TTL_MS = 1500;
 
   constructor(
     /** The extension root URI, for loading bundled assets (the codicon font). */
@@ -220,10 +264,53 @@ export class CommitViewProvider
       case "discardAll":
         await this.doDiscardAll();
         return;
+      case "stageFolder":
+        await this.mutate((entry) =>
+          entry.ctx.staging.stageFiles(msg.paths ?? []),
+        );
+        return;
+      case "unstageFolder":
+        await this.mutate((entry) =>
+          entry.ctx.staging.unstageFiles(msg.paths ?? []),
+        );
+        return;
+      case "discardFolder":
+        await this.doDiscardFolder(msg.paths ?? []);
+        return;
+      case "openFile":
+        await this.doOpenFile(msg.path ?? "");
+        return;
+      case "reviewChanges":
+        await vscode.commands.executeCommand("gitstudio.ai.reviewChanges");
+        return;
+      case "connectAI":
+        await vscode.commands.executeCommand("gitstudio.ai.connect");
+        return;
+      case "stash":
+        // Runs the shared stash flow (message + options quick-pick), then
+        // re-scans so the working tree list clears immediately.
+        await vscode.commands.executeCommand("gitstudio.stash.save");
+        try {
+          await this.repos.getActive()?.repo?.status?.();
+        } catch {
+          // best-effort; the firehose reconciles the list either way
+        }
+        await this.pushState();
+        return;
     }
   }
 
-  /** Run a per-file staging op against the active repo, then refresh everything. */
+  /**
+   * Run a per-file staging op against the active repo, then reconcile.
+   *
+   * The webview has ALREADY moved the row optimistically (see the client's
+   * `applyOptimistic`), so this path no longer gates what the user sees. We run
+   * the git op, force a fresh vscode.git status scan, and push the authoritative
+   * state to reconcile. `await`ing `status()` — instead of the old
+   * fire-and-forget + read-STALE-state — is the fix that made staging feel slow:
+   * the real lists now land the moment git finishes, not a debounce cycle later,
+   * and (crucially) we never repaint the pre-stage state over the optimistic row.
+   */
   private async mutate(
     op: (entry: RepoEntry) => Promise<unknown>,
   ): Promise<void> {
@@ -234,12 +321,66 @@ export class CommitViewProvider
     try {
       await op(entry);
     } catch {
-      // Surface nothing destructive here — a failed stage just leaves state.
+      // A failed op leaves git untouched; the reconcile below repaints the real
+      // state, which quietly undoes the optimistic move.
     }
-    // Nudge vscode.git to re-scan so the change lists update promptly.
-    void entry.repo.status?.();
+    // Re-scan NOW so pushState reads fresh index/worktree state. (The old code
+    // fired this and forgot, then immediately read STALE state — so the row only
+    // really moved a debounce cycle later, which read as "seconds of lag".)
+    try {
+      await entry.repo?.status?.();
+    } catch {
+      // status() is best-effort; the firehose still reconciles eventually.
+    }
     this.onCommitted();
     await this.pushState();
+  }
+
+  /**
+   * Discard a set of working-tree files, routing UNTRACKED files (status "U")
+   * to `git clean -f` and tracked files to `git checkout --`, in SEPARATE git
+   * invocations. A single `git checkout -- <paths>` aborts atomically the moment
+   * any pathspec is untracked, which would silently discard NOTHING — so the two
+   * classes must never share one command. Runs inside one mutate() so the view
+   * reconciles once.
+   */
+  private async discardEntries(files: FileEntry[]): Promise<void> {
+    const untracked = files
+      .filter((f) => f.status === "U")
+      .map((f) => f.path);
+    const tracked = files.filter((f) => f.status !== "U").map((f) => f.path);
+    if (untracked.length === 0 && tracked.length === 0) {
+      return;
+    }
+    await this.mutate(async (e) => {
+      if (tracked.length > 0) {
+        await e.ctx.staging.discardFiles(tracked);
+      }
+      if (untracked.length > 0) {
+        await e.ctx.staging.cleanFiles(untracked);
+      }
+    });
+  }
+
+  /**
+   * Resolve each path to its working-tree status letter (for discard routing).
+   * Paths not currently in the unstaged/merge groups default to tracked ("M"),
+   * so they still go through `git checkout --`.
+   */
+  private async entriesForPaths(
+    active: RepoEntry,
+    paths: string[],
+  ): Promise<FileEntry[]> {
+    const wanted = paths.filter((p) => p);
+    if (wanted.length === 0) {
+      return [];
+    }
+    const { unstaged, merge } = await this.resolveState(active);
+    const byPath = new Map<string, string>();
+    for (const f of [...unstaged, ...merge]) {
+      byPath.set(f.path, f.status);
+    }
+    return wanted.map((path) => ({ path, status: byPath.get(path) ?? "M" }));
   }
 
   private async doDiscard(path: string): Promise<void> {
@@ -254,80 +395,125 @@ export class CommitViewProvider
     if (choice !== "Discard") {
       return;
     }
-    await this.mutate((entry) => entry.ctx.staging.discardChanges(path));
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    await this.discardEntries(await this.entriesForPaths(active, [path]));
   }
 
   private doOpenDiff(path: string, staged: boolean): void {
-    const entry = this.repos.getActive();
-    if (!entry || !path) {
+    const active = this.repos.getActive();
+    if (!active || !path) {
       return;
     }
-    const state = entry.repo.state;
     const kind: GroupKind = staged ? "staged" : "unstaged";
-    const pool = staged
-      ? state.indexChanges
-      : findIn(state.mergeChanges, entry.root, path)
-        ? state.mergeChanges
-        : state.workingTreeChanges;
-    const change = findIn(pool, entry.root, path);
-    if (!change) {
+    // When vscode.git is attached, use its live Change (carries the rename
+    // originalUri) and detect a merge/conflict pool.
+    if (active.repo) {
+      const state = active.repo.state;
+      const pool = staged
+        ? state.indexChanges
+        : findIn(state.mergeChanges, active.root, path)
+          ? state.mergeChanges
+          : state.workingTreeChanges;
+      const change = findIn(pool, active.root, path);
+      if (change) {
+        const isMerge = pool === state.mergeChanges;
+        void openChangeDiff(
+          new ChangeFileNode(isMerge ? "merge" : kind, active.root, change),
+        );
+        return;
+      }
+    }
+    // Eager window (or a not-yet-known file): openChangeDiff only needs the
+    // working-tree URI, which we synthesize from the path — so the diff opens
+    // without waiting for vscode.git.
+    const uri = vscode.Uri.joinPath(
+      vscode.Uri.file(active.root),
+      ...path.split("/"),
+    );
+    void openChangeDiff(
+      new ChangeFileNode(kind, active.root, { uri } as unknown as Change),
+    );
+  }
+
+  /** Open the working-tree file (from the in-sidebar file actions menu). */
+  private async doOpenFile(path: string): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || !path) {
       return;
     }
-    const isMerge = pool === state.mergeChanges;
-    const node = new ChangeFileNode(isMerge ? "merge" : kind, entry.root, change);
-    void openChangeDiff(node);
+    const uri = vscode.Uri.joinPath(
+      vscode.Uri.file(active.root),
+      ...path.split("/"),
+    );
+    try {
+      await vscode.window.showTextDocument(uri, { preview: true });
+    } catch {
+      // File may be gone (e.g. deleted) — best-effort.
+    }
   }
 
   private async doBulkStage(group?: GroupKind): Promise<void> {
-    const entry = this.repos.getActive();
-    if (!entry) {
+    const active = this.repos.getActive();
+    if (!active) {
       return;
     }
-    const state = entry.repo.state;
-    const changes =
-      group === "merge" ? state.mergeChanges : state.workingTreeChanges;
-    await this.mutate(async (e) => {
-      for (const c of changes) {
-        await e.ctx.staging.stageFile(relativePath(e.root, c.uri.fsPath));
-      }
-    });
+    const { merge, unstaged } = await this.resolveState(active);
+    const rels = (group === "merge" ? merge : unstaged).map((e) => e.path);
+    await this.mutate((e) => e.ctx.staging.stageFiles(rels));
   }
 
   private async doBulkUnstage(): Promise<void> {
-    const entry = this.repos.getActive();
-    if (!entry) {
+    const active = this.repos.getActive();
+    if (!active) {
       return;
     }
-    const changes = entry.repo.state.indexChanges.slice();
-    await this.mutate(async (e) => {
-      for (const c of changes) {
-        await e.ctx.staging.unstageFile(relativePath(e.root, c.uri.fsPath));
-      }
-    });
+    const { staged } = await this.resolveState(active);
+    const rels = staged.map((e) => e.path);
+    await this.mutate((e) => e.ctx.staging.unstageFiles(rels));
   }
 
   private async doDiscardAll(): Promise<void> {
-    const entry = this.repos.getActive();
-    if (!entry) {
+    const active = this.repos.getActive();
+    if (!active) {
       return;
     }
-    const changes = entry.repo.state.workingTreeChanges.slice();
-    if (changes.length === 0) {
+    const { unstaged } = await this.resolveState(active);
+    const rels = unstaged.map((e) => e.path);
+    if (rels.length === 0) {
       return;
     }
     const choice = await vscode.window.showWarningMessage(
-      `Discard all ${changes.length} working-tree changes? This cannot be undone.`,
+      `Discard all ${rels.length} working-tree changes? This cannot be undone.`,
       { modal: true },
       "Discard All",
     );
     if (choice !== "Discard All") {
       return;
     }
-    await this.mutate(async (e) => {
-      for (const c of changes) {
-        await e.ctx.staging.discardChanges(relativePath(e.root, c.uri.fsPath));
-      }
-    });
+    await this.discardEntries(unstaged);
+  }
+
+  private async doDiscardFolder(paths: string[]): Promise<void> {
+    const rels = paths.filter((p) => p);
+    if (rels.length === 0) {
+      return;
+    }
+    const choice = await vscode.window.showWarningMessage(
+      `Discard changes in all ${rels.length} file${rels.length === 1 ? "" : "s"} under this folder? This cannot be undone.`,
+      { modal: true },
+      "Discard",
+    );
+    if (choice !== "Discard") {
+      return;
+    }
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    await this.discardEntries(await this.entriesForPaths(active, rels));
   }
 
   /**
@@ -418,7 +604,7 @@ export class CommitViewProvider
 
       // Clear the box and refresh the views.
       this.view?.webview.postMessage({ type: "clear" });
-      void entry.repo.status?.();
+      void entry.repo?.status?.();
       this.onCommitted();
     } finally {
       this.busy = false;
@@ -454,12 +640,7 @@ export class CommitViewProvider
 
   /** Local branches (with favorites), remotes, and recents for the branch menu. */
   private async collectBranches(entry: RepoEntry): Promise<BranchesPayload> {
-    let refs: Awaited<ReturnType<typeof entry.ctx.refs.listRefs>> = [];
-    try {
-      refs = await entry.ctx.refs.listRefs();
-    } catch {
-      refs = [];
-    }
+    const refs = await this.listRefsCached(entry);
     const favs = new Set(this.favorites(entry));
     const local: BranchRefPayload[] = refs
       .filter((r) => r.type === "head")
@@ -468,12 +649,46 @@ export class CommitViewProvider
         current: r.isCurrent,
         upstream: r.upstream,
         favorite: favs.has(r.name),
+        ahead: r.ahead,
+        behind: r.behind,
       }));
     const remote = refs
       .filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"))
       .map((r) => r.name);
     const recent = this.memento.get<string[]>(this.recentKey(entry), []);
     return { local, remote, recent };
+  }
+
+  /**
+   * `listRefs()` behind a short-TTL cache — the single priciest git call in a
+   * state push. Serves cached refs within REFS_TTL_MS so a staging burst (or the
+   * onDidChange firehose) doesn't re-list every branch each tick; branch
+   * operations call {@link invalidateRefs} so real ref changes still show at
+   * once. On error, falls back to the last-known refs for this repo.
+   */
+  private async listRefsCached(entry: RepoEntry): Promise<GitRef[]> {
+    const now = Date.now();
+    const cached = this.refsCache;
+    if (
+      cached &&
+      cached.root === entry.root &&
+      now - cached.at < CommitViewProvider.REFS_TTL_MS
+    ) {
+      return cached.refs;
+    }
+    let refs: GitRef[];
+    try {
+      refs = await entry.ctx.refs.listRefs();
+    } catch {
+      refs = cached && cached.root === entry.root ? cached.refs : [];
+    }
+    this.refsCache = { root: entry.root, at: now, refs };
+    return refs;
+  }
+
+  /** Drop the cached ref list so the next push re-lists (post branch op). */
+  private invalidateRefs(): void {
+    this.refsCache = undefined;
   }
 
   /** Run a branch-menu action against the active repo, then refresh state. */
@@ -487,6 +702,12 @@ export class CommitViewProvider
     if (msg.action === "favorite") {
       await this.toggleFavorite(entry, ref);
       await this.pushState();
+      return;
+    }
+    // Copy is clipboard-only — no git op, no state refresh.
+    if (msg.action === "copyName") {
+      await vscode.env.clipboard.writeText(ref);
+      vscode.window.setStatusBarMessage(`Copied “${ref}”`, 2000);
       return;
     }
     let result: { ok: boolean; stderr?: string } = { ok: true };
@@ -538,6 +759,30 @@ export class CommitViewProvider
         case "fetch":
           result = await entry.ctx.sync.fetch();
           break;
+        case "pullFf": {
+          // Fast-forward a NON-checked-out local straight from its upstream:
+          // `git fetch <remote> <remoteBranch>:<localBranch>`. Git refuses
+          // non-ff and the current branch, so the worktree is never touched.
+          const up = (
+            await entry.ctx.process.run([
+              "for-each-ref",
+              "--format=%(upstream:short)",
+              `refs/heads/${ref}`,
+            ])
+          ).stdout.trim();
+          const slash = up.indexOf("/");
+          if (slash <= 0) {
+            result = { ok: false, stderr: `'${ref}' has no upstream to pull from.` };
+            break;
+          }
+          const r = await entry.ctx.process.run([
+            "fetch",
+            up.slice(0, slash),
+            `${up.slice(slash + 1)}:${ref}`,
+          ]);
+          result = { ok: r.code === 0, stderr: r.stderr };
+          break;
+        }
         default:
           return;
       }
@@ -548,10 +793,20 @@ export class CommitViewProvider
       void vscode.window.showErrorMessage(
         `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
+    } else if (msg.action === "pullFf") {
+      vscode.window.setStatusBarMessage(`Fast-forwarded ${ref}`, 2500);
     }
-    void entry.repo.status?.();
+    // A branch action moved/created/deleted refs — refetch them on the next push.
+    this.invalidateRefs();
+    void entry.repo?.status?.();
     this.onCommitted();
     await this.pushState();
+    // Tell the webview the op is over — it clears the pill/menu spinners (the
+    // fresh counts arrived with the pushState above).
+    void this.view?.webview.postMessage({
+      type: "branchActionDone",
+      action: msg.action,
+    });
   }
 
   /**
@@ -570,12 +825,23 @@ export class CommitViewProvider
     };
     try {
       await vscode.commands.executeCommand(msg.command, arg);
+      // Checkouts through the submenu feed the Recent group — previously only
+      // the (rarely-hit) plain checkout action recorded recents, so the
+      // Recent section starved even though the user switched branches daily.
+      if (msg.command === "gitstudio.branch.checkout" && msg.ref) {
+        await this.noteRecentBranch(entry, msg.ref);
+      } else if (msg.command === "gitstudio.remoteBranch.checkout" && msg.ref) {
+        const local = msg.ref.split("/").slice(1).join("/") || msg.ref;
+        await this.noteRecentBranch(entry, local);
+      }
     } catch (err) {
       void vscode.window.showErrorMessage(
         `GitStudio: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    void entry.repo.status?.();
+    // The submenu command may have moved refs (checkout/rename/delete/merge).
+    this.invalidateRefs();
+    void entry.repo?.status?.();
     this.onCommitted();
     await this.pushState();
   }
@@ -584,74 +850,170 @@ export class CommitViewProvider
    * Pushes the full state to the webview: branch, staged count, the merge /
    * staged / unstaged change lists, AI availability, and — when `amend` is
    * requested — the last commit's subject+body to prefill the message.
+   *
+   * Non-amend pushes are coalesced: while one is running, further pushes fold
+   * into a single trailing re-push rather than piling up concurrently (the
+   * onDidChange firehose can request many per second). Amend pushes are
+   * user-initiated and always run immediately so the prefill isn't dropped.
    */
   private async pushState(amend = false): Promise<void> {
+    if (amend) {
+      await this.doPushState(true);
+      return;
+    }
+    if (this.pushing) {
+      this.pushQueued = true;
+      return;
+    }
+    this.pushing = true;
+    try {
+      await this.doPushState(false);
+      while (this.pushQueued) {
+        this.pushQueued = false;
+        await this.doPushState(false);
+      }
+    } finally {
+      this.pushing = false;
+    }
+  }
+
+  /**
+   * The change lists + branch info from vscode.git's live cached state when
+   * it's attached (instant, no spawn), else from our own git-service `git
+   * status` (the eager window, before vscode.git activates). Shared by
+   * doPushState AND the bulk stage/unstage/discard ops so they all work in
+   * either state — the paths + status letters match across both sources.
+   */
+  private async resolveState(active: RepoEntry): Promise<{
+    merge: FileEntry[];
+    staged: FileEntry[];
+    unstaged: FileEntry[];
+    branch?: string;
+    upstream?: string;
+    ahead?: number;
+    behind?: number;
+  }> {
+    if (active.repo) {
+      const state = active.repo.state;
+      const toEntries = (changes: Change[] | undefined): FileEntry[] =>
+        (changes ?? []).map((c) => ({
+          path: relativePath(active.root, c.uri.fsPath),
+          status: statusLetter(c.status),
+        }));
+      const head = state.HEAD;
+      // `git.untrackedChanges: separate` moves untracked files out of
+      // workingTreeChanges into a separate list (not in the pinned API type but
+      // present at runtime). Fold it back in so untracked files show the same
+      // as under the default 'mixed' (and as our eager parser shows them).
+      const untracked =
+        (state as { untrackedChanges?: Change[] }).untrackedChanges ?? [];
+      return {
+        merge: toEntries(state.mergeChanges),
+        staged: toEntries(state.indexChanges),
+        unstaged: [
+          ...toEntries(state.workingTreeChanges),
+          ...toEntries(untracked),
+        ],
+        branch: head?.name,
+        upstream: head?.upstream
+          ? `${head.upstream.remote}/${head.upstream.name}`
+          : undefined,
+        ahead: head?.ahead,
+        behind: head?.behind,
+      };
+    }
+    const st = await active.ctx.status.read();
+    return {
+      merge: st.merge,
+      staged: st.staged,
+      unstaged: st.unstaged,
+      branch: st.detached ? undefined : st.branch,
+      upstream: st.upstream,
+      ahead: st.ahead,
+      behind: st.behind,
+    };
+  }
+
+  private async doPushState(amend: boolean): Promise<void> {
     if (!this.view) {
       return;
     }
-    const entry = this.repos.getActive();
-    const state = entry?.repo.state;
+    // Resolve the change lists + branch info from vscode.git's live cached state
+    // when it's attached (instant), else from OUR OWN git-service `git status`
+    // so the Changes view renders during the eager window (~30ms, not the
+    // seconds vscode.git activation costs).
+    const active = this.repos.getActive();
+    let hasRepo = false;
+    let merge: FileEntry[] = [];
+    let staged: FileEntry[] = [];
+    let unstaged: FileEntry[] = [];
+    let branch: string | undefined;
+    let upstream: string | undefined;
+    let ahead: number | undefined;
+    let behind: number | undefined;
+    if (active) {
+      try {
+        ({ merge, staged, unstaged, branch, upstream, ahead, behind } =
+          await this.resolveState(active));
+        hasRepo = true;
+      } catch {
+        hasRepo = false;
+      }
+    }
 
-    const toEntries = (changes: Change[] | undefined): FileEntry[] =>
-      (changes ?? []).map((c) => ({
-        path: relativePath(entry!.root, c.uri.fsPath),
-        status: statusLetter(c.status),
-      }));
-
-    const merge = entry ? toEntries(state?.mergeChanges) : [];
-    const staged = entry ? toEntries(state?.indexChanges) : [];
-    const unstaged = entry ? toEntries(state?.workingTreeChanges) : [];
-    const stagedCount = entry ? await this.countStaged(entry) : 0;
-    const head = state?.HEAD;
-    const branch = head?.name;
-    const upstream = head?.upstream
-      ? `${head.upstream.remote}/${head.upstream.name}`
-      : undefined;
-    const ahead = head?.ahead;
-    const behind = head?.behind;
-    const repoName = entry
-      ? entry.root.split(/[\\/]/).filter(Boolean).pop()
+    const stagedCount = staged.length;
+    const repoName = active
+      ? active.root.split(/[\\/]/).filter(Boolean).pop()
       : undefined;
     const lastMessage =
-      amend && entry ? await this.lastMessage(entry) : undefined;
+      amend && active ? await this.lastMessage(active) : undefined;
     const signoffDefault = vscode.workspace
       .getConfiguration("gitstudio")
       .get<boolean>("commit.signoffByDefault", false);
-    const aiEnabled = this.generator
-      ? await this.generator.isEnabled().catch(() => false)
-      : false;
     const layout =
       this.memento.get<"tree" | "list">(LAYOUT_KEY) === "tree" ? "tree" : "list";
-    const branches = entry ? await this.collectBranches(entry) : undefined;
 
-    const payload: StatePayload = {
+    // Everything above comes from vscode.git's IN-MEMORY cached state (the same
+    // source the built-in SCM view reads) — no git spawn, no LM/keychain probe.
+    // Post it FIRST so the file list paints instantly, carrying the last-known
+    // AI/branch-menu values so nothing flickers.
+    const base: StatePayload = {
       type: "state",
-      hasRepo: !!entry,
+      hasRepo,
       merge,
       staged,
       unstaged,
       stagedCount,
       branch,
-      branches,
+      branches: this.lastBranches,
       upstream,
       ahead,
       behind,
       repoName,
       lastMessage,
       signoffDefault,
-      aiEnabled,
+      aiEnabled: this.lastAiEnabled,
       layout,
       busy: this.busy,
     };
-    void this.view.webview.postMessage(payload);
-  }
+    void this.view.webview.postMessage(base);
 
-  private async countStaged(entry: RepoEntry): Promise<number> {
-    try {
-      return await entry.ctx.staging.stagedCount();
-    } catch {
-      return 0;
+    // THEN resolve the slower bits — the AI-availability probe (vscode.lm /
+    // keychain) and the branch-menu data (for-each-ref + stash list) — in
+    // parallel, and re-post. The client dedups the (unchanged) file list, so
+    // this only refreshes the ✨ button + branch menu without a re-render.
+    const [aiEnabled, branches] = await Promise.all([
+      this.generator
+        ? this.generator.isEnabled().catch(() => false)
+        : Promise.resolve(false),
+      active ? this.collectBranches(active) : Promise.resolve(undefined),
+    ]);
+    this.lastAiEnabled = aiEnabled;
+    this.lastBranches = branches;
+    if (!this.view) {
+      return;
     }
+    void this.view.webview.postMessage({ ...base, aiEnabled, branches });
   }
 
   /** The HEAD commit's full message (subject + body) for amend prefill. */
@@ -688,41 +1050,11 @@ export class CommitViewProvider
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${codiconUri}" rel="stylesheet" />
+  <style nonce="${nonce}">${tokensCss}</style>
   <style nonce="${nonce}">
-    :root {
-      color-scheme: light dark;
-      --gs-font-ui: var(--vscode-font-family);
-      --gs-font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
-      --gs-fg: var(--vscode-foreground);
-      --gs-fg-muted: var(--vscode-descriptionForeground);
-      --gs-fg-subtle: color-mix(in srgb, var(--gs-fg) 50%, transparent);
-      --gs-accent: var(--vscode-focusBorder);
-      --gs-accent-text: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
-      --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
-      /* Theme-native elevation: lift surfaces off the base in light AND dark
-         by mixing in a little foreground — no hardcoded chrome colors. */
-      --gs-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));
-      --gs-surface-2: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
-      --gs-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--gs-fg) 7%, transparent));
-      --gs-border: color-mix(in srgb, var(--gs-fg) 13%, transparent);
-      --gs-border-soft: color-mix(in srgb, var(--gs-fg) 8%, transparent);
-      --gs-radius: 7px;
-      --gs-radius-sm: 5px;
-      --gs-radius-pill: 999px;
-      --gs-motion-fast: 110ms;
-      --gs-motion: 170ms;
-      --gs-ease: cubic-bezier(0.2, 0, 0, 1);
-      --gs-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.16);
-      --gs-shadow-2: 0 2px 6px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.14);
-      --gs-glow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 24%, transparent);
-      --gs-status-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
-      --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
-      --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
-      --gs-status-untracked: var(--vscode-gitDecoration-untrackedResourceForeground, var(--vscode-charts-green));
-      --gs-status-renamed: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-blue));
-      --gs-status-conflict: var(--vscode-gitDecoration-conflictingResourceForeground, var(--vscode-charts-red));
-      --gs-status-ignored: var(--vscode-gitDecoration-ignoredResourceForeground, var(--gs-fg-muted));
-    }
+    /* Surface-specific styling only. The --gs-* token scale and the .gs-*
+       utility classes come from the shared tokens.css injected above — this
+       view no longer forks its own token block. */
     * { box-sizing: border-box; }
     body {
       margin: 0;
@@ -771,9 +1103,9 @@ export class CommitViewProvider
       height: 22px;
       padding: 0 6px 0 8px;
       border-radius: var(--gs-radius-pill);
-      background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
-      border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, transparent);
-      color: var(--gs-accent-text);
+      background: color-mix(in srgb, var(--gs-brand) 15%, transparent);
+      border: 1px solid color-mix(in srgb, var(--gs-brand) 40%, transparent);
+      color: var(--gs-brand);
       font-family: var(--gs-font-ui);
       font-size: 12px;
       font-weight: 600;
@@ -782,8 +1114,8 @@ export class CommitViewProvider
                   border-color var(--gs-motion-fast) var(--gs-ease);
     }
     .branch:hover {
-      background: color-mix(in srgb, var(--gs-accent) 20%, transparent);
-      border-color: color-mix(in srgb, var(--gs-accent) 45%, transparent);
+      background: color-mix(in srgb, var(--gs-brand) 24%, transparent);
+      border-color: color-mix(in srgb, var(--gs-brand) 58%, transparent);
     }
     .branch:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
     .branch svg { width: 13px; height: 13px; flex: 0 0 auto; opacity: 0.95; }
@@ -801,24 +1133,35 @@ export class CommitViewProvider
     }
     .sync { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; flex: 0 0 auto; }
     .sync.hidden { display: none; }
+    /* The sync pills are real buttons: ↓ Pull N runs the pull (↑ Push N the
+       push) with a live spinner in place — not just indicators. */
     .sync-pill {
       display: none;
       align-items: center;
       gap: 3px;
       height: 19px;
+      margin: 0;
+      border: 0;
       padding: 0 7px 0 5px;
       border-radius: var(--gs-radius-pill);
+      font-family: inherit;
       font-size: 11px;
       font-weight: 600;
       font-variant-numeric: tabular-nums;
       color: var(--gs-fg-muted);
       background: color-mix(in srgb, var(--gs-fg) 9%, transparent);
       white-space: nowrap;
+      cursor: pointer;
+      transition: background var(--gs-motion-fast) var(--gs-ease);
     }
     .sync-pill.visible { display: inline-flex; }
     .sync-pill svg { width: 11px; height: 11px; }
     .sync-pill.ahead.visible { color: var(--gs-status-added); background: color-mix(in srgb, var(--gs-status-added) 14%, transparent); }
     .sync-pill.behind.visible { color: var(--gs-status-modified); background: color-mix(in srgb, var(--gs-status-modified) 16%, transparent); }
+    .sync-pill.ahead.visible:hover:not(:disabled) { background: color-mix(in srgb, var(--gs-status-added) 26%, transparent); }
+    .sync-pill.behind.visible:hover:not(:disabled) { background: color-mix(in srgb, var(--gs-status-modified) 28%, transparent); }
+    .sync-pill:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+    .sync-pill:disabled { cursor: default; opacity: 0.85; }
     .sync-clean {
       display: none;
       align-items: center;
@@ -909,11 +1252,37 @@ export class CommitViewProvider
     .bm-branch.is-current .bm-bname { color: var(--gs-accent-text); font-weight: 600; }
     .bm-branch.is-current .bm-bicon { color: var(--gs-accent-text); }
     .bm-bname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Per-branch unpushed/unpulled badges — refreshed live by the in-menu Fetch. */
+    .bm-ab {
+      flex: 0 0 auto;
+      font-size: 10px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      padding: 0 5px;
+      border-radius: 999px;
+      line-height: 15px;
+    }
+    .bm-ab.up { color: var(--gs-status-added); background: color-mix(in srgb, var(--gs-status-added) 14%, transparent); }
+    .bm-ab.down { color: var(--gs-status-modified); background: color-mix(in srgb, var(--gs-status-modified) 16%, transparent); }
+    /* In-flight items keep the normal cursor — the spinner lives IN the item. */
+    .bm-action.is-busy, .bm-subaction.is-busy { opacity: 0.8; cursor: default; }
     .bm-bup { flex: 0 1 auto; font-size: 10.5px; color: var(--gs-fg-subtle); max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .bm-bmore { flex: 0 0 auto; font-size: 13px; color: var(--gs-fg-subtle); opacity: 0; transition: opacity 100ms; }
     .bm-branch:hover .bm-bmore { opacity: 0.8; }
 
     /* Per-branch action submenu (flyout). */
+    /* The scrim behind the branch dialog stack: dims the view so the open
+       dialog is unmistakable (the layers otherwise read as one flat surface). */
+    .bm-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 45;
+      background: rgba(0, 0, 0, 0.32);
+    }
+    body.vscode-light .bm-backdrop,
+    body.vscode-high-contrast-light .bm-backdrop { background: rgba(0, 0, 0, 0.16); }
+    /* The per-branch submenu is a CHILD dialog — brand-tinted surface and a
+       branded title band, so it never reads as "the same window again". */
     .branch-submenu {
       position: fixed;
       z-index: 60;
@@ -922,16 +1291,18 @@ export class CommitViewProvider
       display: flex;
       flex-direction: column;
       padding: 4px;
-      background: var(--vscode-menu-background, var(--gs-surface));
-      border: 1px solid var(--vscode-menu-border, var(--gs-border));
+      background: color-mix(in srgb, var(--gs-brand) 6%, var(--vscode-menu-background, var(--gs-surface)));
+      border: 1px solid color-mix(in srgb, var(--gs-brand) 42%, var(--vscode-menu-border, var(--gs-border)));
       border-radius: var(--gs-radius);
       box-shadow: var(--gs-shadow-2);
     }
     .bm-subhead {
       display: flex; align-items: center; gap: 7px;
-      padding: 5px 8px 7px;
-      margin-bottom: 3px;
-      border-bottom: 1px solid var(--gs-border);
+      margin: -4px -4px 3px;
+      padding: 7px 10px 8px;
+      border-radius: calc(var(--gs-radius) - 1px) calc(var(--gs-radius) - 1px) 0 0;
+      background: color-mix(in srgb, var(--gs-brand) 15%, transparent);
+      border-bottom: 1px solid color-mix(in srgb, var(--gs-brand) 32%, transparent);
       color: var(--gs-fg-muted);
     }
     .bm-subhead .codicon { font-size: 13px; }
@@ -969,20 +1340,32 @@ export class CommitViewProvider
     .bm-star .codicon { font-size: 13px; }
     .bm-empty { padding: 10px 8px; color: var(--gs-fg-muted); font-size: 12px; text-align: center; }
 
-    /* ---- Message composer (elevated card) ----------------------------- */
-    .message-wrap {
-      position: relative;
-      margin: 0 2px;
+    /* ---- Message composer -------------------------------------------------
+       ONE elevated card holds the message, the toggles, the author override and
+       the Commit/Push footer, so the primary action reads as part of the box
+       rather than a band floating below it. */
+    .composer {
+      margin: 0 2px 10px;
       background: var(--vscode-input-background, var(--gs-surface));
       border: 1px solid var(--gs-border);
       border-radius: var(--gs-radius);
       box-shadow: var(--gs-shadow-1);
+      overflow: hidden;
       transition: border-color var(--gs-motion) var(--gs-ease),
                   box-shadow var(--gs-motion) var(--gs-ease);
     }
-    .message-wrap:focus-within {
+    .composer:focus-within {
       border-color: var(--gs-accent);
       box-shadow: var(--gs-glow);
+    }
+    /* The message area sits flush inside the card — the card owns the chrome. */
+    .message-wrap {
+      position: relative;
+      margin: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
     }
     textarea {
       display: block;
@@ -1046,6 +1429,11 @@ export class CommitViewProvider
                   border-color var(--gs-motion-fast) var(--gs-ease);
     }
     .sparkle.visible { display: inline-flex; }
+    /* The Review + Connect buttons sit just left of the ✨ Generate slot. Review
+       shows when AI is on; Connect shows when it is off (mutually exclusive with
+       Generate), so at most two buttons ever appear. */
+    .sparkle.review { right: 35px; }
+    .sparkle.connect { color: var(--gs-accent-text); }
     .sparkle svg { width: 15px; height: 15px; display: block; }
     .sparkle .spinner { display: none; }
     .sparkle.loading .glyph { display: none; }
@@ -1066,7 +1454,8 @@ export class CommitViewProvider
       flex-wrap: wrap;
       gap: 3px 4px;
       align-items: center;
-      margin: 6px 2px 6px;
+      margin: 0;
+      padding: 4px 8px 2px;
       font-size: 11.5px;
     }
     .toggles label {
@@ -1082,17 +1471,17 @@ export class CommitViewProvider
     }
     .toggles label:hover { background: var(--gs-hover); color: var(--gs-fg); }
     .toggles label:has(input:checked) {
-      color: var(--gs-accent-text);
-      background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+      color: var(--gs-brand);
+      background: color-mix(in srgb, var(--gs-brand) 14%, transparent);
     }
     .toggles input[type="checkbox"] {
-      accent-color: var(--gs-accent);
+      accent-color: var(--gs-brand);
       width: 13px; height: 13px;
       margin: 0;
     }
 
-    /* ---- Author override row ------------------------------------------ */
-    .author-row { margin: 0 2px 8px; }
+    /* ---- Author override row (expands inside the composer card) -------- */
+    .author-row { margin: 0; padding: 2px 8px 8px; }
     .author-row.hidden { display: none; }
     .author-row input {
       width: 100%;
@@ -1131,8 +1520,15 @@ export class CommitViewProvider
     .link[aria-expanded="true"] .chev { transform: rotate(180deg); }
     .link .chev { transition: transform var(--gs-motion) ease; }
 
-    /* ---- Action buttons ----------------------------------------------- */
-    .actions { display: flex; gap: 6px; margin: 0 2px; }
+    /* ---- Action buttons (docked footer of the composer card) ---------- */
+    .actions {
+      display: flex;
+      gap: 6px;
+      margin: 0;
+      padding: 8px;
+      border-top: 1px solid var(--gs-border-soft);
+      background: color-mix(in srgb, var(--gs-fg) 3%, transparent);
+    }
     button.gs-commit {
       position: relative;
       display: inline-flex;
@@ -1148,32 +1544,44 @@ export class CommitViewProvider
       font-size: 12.5px;
       line-height: 1.2;
       overflow: hidden;
-      transition: background var(--gs-motion) var(--gs-ease),
+      /* Animate filter/shadow/transform — NOT background: a gradient fill can't
+         be interpolated, so the hover brighten rides on filter instead. */
+      transition: filter var(--gs-motion) var(--gs-ease),
+                  background var(--gs-motion) var(--gs-ease),
                   box-shadow var(--gs-motion) var(--gs-ease),
+                  border-color var(--gs-motion) var(--gs-ease),
                   transform var(--gs-motion-fast) var(--gs-ease),
                   opacity var(--gs-motion) var(--gs-ease);
     }
     button.gs-commit svg { width: 14px; height: 14px; flex: 0 0 auto; }
     button.primary {
       flex: 1;
-      color: var(--vscode-button-foreground);
-      /* Subtle vertical sheen over the theme accent — reads as a real,
-         tactile primary action without leaving the theme palette. */
+      color: var(--gs-brand-fg);
+      /* GitStudio violet with a subtle vertical sheen — a real, tactile,
+         on-brand primary action, not the theme's default (blue) accent. */
       background:
         linear-gradient(180deg,
-          color-mix(in srgb, var(--vscode-button-background) 88%, white 12%),
-          var(--vscode-button-background));
+          color-mix(in srgb, var(--gs-brand) 86%, white 14%),
+          var(--gs-brand));
+      border-color: var(--gs-brand);
       font-weight: 600;
       letter-spacing: 0.01em;
       box-shadow: var(--gs-shadow-1),
-        inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
-    }
-    button.primary:hover {
-      background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
-      box-shadow: var(--gs-shadow-2),
         inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
     }
-    button.gs-commit:active { transform: translateY(0.5px); }
+    button.primary:hover {
+      /* Keep the gradient; brighten it smoothly + lift the shadow. */
+      filter: brightness(1.1);
+      border-color: var(--gs-brand-hover);
+      box-shadow: var(--gs-shadow-2),
+        inset 0 1px 0 color-mix(in srgb, white 24%, transparent);
+    }
+    button.gs-commit:active { transform: translateY(1px); }
+    button.primary:active {
+      filter: brightness(0.95);
+      box-shadow: var(--gs-shadow-1),
+        inset 0 1px 0 color-mix(in srgb, white 12%, transparent);
+    }
     button.split {
       color: var(--vscode-button-secondaryForeground, var(--gs-fg));
       background: var(--vscode-button-secondaryBackground, var(--gs-surface-2));
@@ -1188,6 +1596,9 @@ export class CommitViewProvider
       cursor: default;
       box-shadow: none;
       transform: none;
+      /* A button disabled WHILE hovered keeps :hover in Chromium; reset the
+         hover filter too so a busy Commit button isn't dimmed AND brightened. */
+      filter: none;
     }
     button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 2px; }
     .link:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
@@ -1320,14 +1731,9 @@ export class CommitViewProvider
       color: var(--gs-fg-muted);
       flex: 0 0 auto;
     }
-    .group--staged .gcount {
-      background: color-mix(in srgb, var(--gs-status-added) 18%, transparent);
-      color: var(--gs-status-added);
-    }
-    .group--merge .gcount {
-      background: color-mix(in srgb, var(--gs-status-conflict) 18%, transparent);
-      color: var(--gs-status-conflict);
-    }
+    /* The count stays neutral for every group. The colored .gdot already signals
+       the group's status; a status-tinted count would just repeat it, so the
+       header ends up saying the same thing three times (dot + label + count). */
     .group-actions {
       display: inline-flex;
       gap: 1px;
@@ -1405,26 +1811,36 @@ export class CommitViewProvider
     .row .row-actions {
       display: inline-flex;
       gap: 1px;
-      opacity: 0;
+      /* Resting-visible (not opacity:0) so the stage/unstage affordance is
+         discoverable at a glance, crisp on hover. The old hover-only reveal +
+         muted colour + thin dash made the "-" nearly invisible. */
+      opacity: 0.55;
       flex: 0 0 auto;
       transition: opacity var(--gs-motion) ease;
     }
     .row:hover .row-actions,
     .row:focus-within .row-actions { opacity: 1; }
+    /* The +/-/discard glyphs are the primary per-row action — render them at
+       full strength and a touch larger than the muted toolbar default so they
+       read clearly (esp. the single-stroke unstage dash). */
+    .row .row-actions .icon-btn { color: var(--gs-fg); }
+    .row .row-actions .icon-btn:hover { color: var(--gs-brand); }
+    .row .row-actions .codicon,
+    .group-actions .icon-btn .codicon { font-size: 17px; }
+    /* Status letter: plain colored monospace, not a filled pill. Each row
+       already carries its status via the tinted icon and the hover rail — a
+       third, filled badge per row was the busiest signal in the list. The fixed
+       width keeps the letters column-aligned. */
     .row .status {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       font-family: var(--gs-font-mono);
-      font-size: 10px;
+      font-size: 10.5px;
       font-weight: 700;
-      width: 16px;
-      height: 16px;
-      border-radius: 4px;
-      text-align: center;
+      width: 14px;
       flex: 0 0 auto;
       color: var(--gs-row-accent, var(--gs-fg-muted));
-      background: color-mix(in srgb, var(--gs-row-accent, var(--gs-fg-muted)) 15%, transparent);
     }
     .st-M { --gs-row-accent: var(--gs-status-modified); }
     .st-A { --gs-row-accent: var(--gs-status-added); }
@@ -1489,10 +1905,7 @@ export class CommitViewProvider
     /* When no repo is open, the composer + change list are irrelevant — show
        only the onboarding. */
     body.no-repo .repo-bar,
-    body.no-repo .message-wrap,
-    body.no-repo .toggles,
-    body.no-repo .author-row,
-    body.no-repo .actions,
+    body.no-repo .composer,
     body.no-repo .changes-toolbar,
     body.no-repo .groups,
     body.no-repo #empty-state { display: none !important; }
@@ -1505,6 +1918,26 @@ export class CommitViewProvider
       }
       .sparkle.loading .spinner { animation: none; }
     }
+
+    /* Shared custom tooltip (viewport-fixed so nothing clips it). */
+    .gs-tip {
+      position: fixed; z-index: 99999; pointer-events: none;
+      transform: translate(-50%, -100%);
+      max-width: 280px; padding: 3px 7px;
+      border-radius: var(--gs-radius-sm);
+      border: 1px solid var(--gs-border);
+      /* MUST be opaque — --gs-surface* are color-mix-with-transparent tints
+         for cards on known backgrounds; a floating tip over arbitrary rows
+         turns see-through with them and reads as a rendering glitch. */
+      background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background, #2b2b2b));
+      color: var(--gs-fg);
+      font-family: var(--gs-font-ui); font-size: 11.5px; line-height: 1.35;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      box-shadow: var(--gs-shadow-2);
+      opacity: 0; transition: opacity var(--gs-motion-fast) var(--gs-ease);
+    }
+    .gs-tip.below { transform: translate(-50%, 0); }
+    .gs-tip.show { opacity: 1; }
   </style>
 </head>
 <body class="layout-list">
@@ -1516,14 +1949,18 @@ export class CommitViewProvider
       <i class="codicon codicon-chevron-down branch-caret" aria-hidden="true"></i>
     </button>
     <span class="sync hidden" id="sync">
-      <span class="sync-pill ahead" id="ahead" title="Commits to push">
+      <button class="sync-pill ahead" id="ahead" type="button"
+        title="Push these commits to the upstream" aria-label="Push commits">
         <i class="codicon codicon-arrow-up" aria-hidden="true"></i>
+        <span class="sync-verb">Push</span>
         <span id="ahead-n">0</span>
-      </span>
-      <span class="sync-pill behind" id="behind" title="Commits to pull">
+      </button>
+      <button class="sync-pill behind" id="behind" type="button"
+        title="Pull these commits from the upstream" aria-label="Pull commits">
         <i class="codicon codicon-arrow-down" aria-hidden="true"></i>
+        <span class="sync-verb">Pull</span>
         <span id="behind-n">0</span>
-      </span>
+      </button>
       <span class="sync-clean" id="sync-clean" title="Up to date with upstream">
         <i class="codicon codicon-check" aria-hidden="true"></i>
         <span>up to date</span>
@@ -1531,6 +1968,7 @@ export class CommitViewProvider
     </span>
   </header>
 
+  <div class="composer">
   <div class="message-wrap">
     <textarea id="message" rows="1"
       placeholder="Message (what & why)…"
@@ -1540,6 +1978,16 @@ export class CommitViewProvider
       aria-label="Generate commit message">
       <i class="codicon codicon-sparkle glyph" aria-hidden="true"></i>
       <i class="codicon codicon-loading spinner" aria-hidden="true"></i>
+    </button>
+    <button class="sparkle review" id="review" type="button"
+      title="Review changes with AI"
+      aria-label="Review changes with AI">
+      <i class="codicon codicon-checklist glyph" aria-hidden="true"></i>
+    </button>
+    <button class="sparkle connect" id="connect-ai" type="button"
+      title="Connect an AI provider — powers commit messages &amp; code review"
+      aria-label="Connect AI">
+      <i class="codicon codicon-plug glyph" aria-hidden="true"></i>
     </button>
     <div class="composer-foot">
       <span class="counter" id="counter" aria-hidden="true"></span>
@@ -1573,6 +2021,7 @@ export class CommitViewProvider
       <span>Push</span>
     </button>
   </div>
+  </div>
 
   <div class="changes-toolbar">
     <span class="changes-title">Changed Files</span>
@@ -1587,6 +2036,10 @@ export class CommitViewProvider
       <button class="icon-btn stage-all-top" id="stage-all-top" type="button"
         title="Stage All Changes" aria-label="Stage All Changes">
         <i class="codicon codicon-add" aria-hidden="true"></i>
+      </button>
+      <button class="icon-btn stash-btn" id="stash-changes" type="button"
+        title="Stash Changes…" aria-label="Stash Changes">
+        <i class="codicon codicon-archive" aria-hidden="true"></i>
       </button>
       <button class="icon-btn collapse-all" id="collapse-all" type="button"
         title="Collapse All Folders" aria-label="Collapse All Folders">
@@ -1645,6 +2098,7 @@ export class CommitViewProvider
     const layoutToggle = $("layout-toggle");
     const collapseAllBtn = $("collapse-all");
     const stageAllTopBtn = $("stage-all-top");
+    const stashChangesBtn = $("stash-changes");
     const refreshBtn = $("refresh");
     const branchPill = $("branch-pill");
     const branchName = $("branch-name");
@@ -1658,25 +2112,150 @@ export class CommitViewProvider
     const messageWrap = message.closest(".message-wrap");
     const changesTotal = $("changes-total");
 
+    // ---- Live sync (pull/push/fetch run with in-place spinners) ----------
+    let syncBusy = "";      // "" | "pull" | "push" — an op is in flight
+    let menuSyncBusy = "";  // quick action (fetch/pull/push) running IN the menu
+    let subLive = null;     // { action, ref } — a submenu item running in place
+    let subMenuFor = null;  // { name, kind, current } — which branch's submenu is open
+    let branchBackdrop = null; // scrim behind the branch dialog stack
+    let lastHeaderState = null; // last state renderHeader painted (for restore)
+    function pillIcon(pill, name, spin) {
+      const i = pill.querySelector(".codicon");
+      if (i) i.className = "codicon codicon-" + name + (spin ? " codicon-modifier-spin" : "");
+    }
+    function applySyncBusy() {
+      behindEl.disabled = !!syncBusy;
+      aheadEl.disabled = !!syncBusy;
+      if (syncBusy === "pull") { behindEl.classList.add("visible"); pillIcon(behindEl, "loading", true); }
+      else pillIcon(behindEl, "arrow-down", false);
+      if (syncBusy === "push") { aheadEl.classList.add("visible"); pillIcon(aheadEl, "loading", true); }
+      else pillIcon(aheadEl, "arrow-up", false);
+    }
+    function startSync(action) {
+      if (syncBusy) return;
+      syncBusy = action;
+      applySyncBusy();
+      vscode.postMessage({ type: "branchAction", action: action });
+    }
+    behindEl.addEventListener("click", () => startSync("pull"));
+    aheadEl.addEventListener("click", () => startSync("push"));
+
     let stagedCount = 0;
     let generating = false;
     let layout = "list";
     // Persisted-in-DOM collapse memory, keyed by group + folder path.
     const collapsed = Object.create(null);
+    // authState = last authoritative lists from the host (real git state).
+    // lastState = what we actually render = authState with the pending optimistic
+    // moves applied on top. Splitting the two lets a stage/unstage move the row
+    // INSTANTLY (no round-trip to git), then reconcile silently when git catches
+    // up — the row never snaps back mid-flight, even across rapid clicks.
+    let authState = { merge: [], staged: [], unstaged: [] };
     let lastState = { merge: [], staged: [], unstaged: [] };
     let branchData = { local: [], remote: [], recent: [] };
+    let lastBranchSig = "";
+
+    // path -> { action: "stage" | "unstage", at: ms }. An optimistic move that
+    // git hasn't confirmed yet. Cleared once the authoritative state agrees, or
+    // after PENDING_TTL (so a failed op self-heals instead of sticking forever).
+    const pending = new Map();
+    const PENDING_TTL = 4000;
+    const has = (list, path) => list.some((e) => e.path === path);
+
+    // Drop pending ops the authoritative state already reflects (or that have
+    // aged out), so they stop being re-applied.
+    function reconcilePending(auth) {
+      const now = Date.now();
+      for (const [path, op] of pending) {
+        const inStaged = has(auth.staged, path);
+        const present = inStaged || has(auth.unstaged, path) || has(auth.merge, path);
+        const satisfied = op.action === "stage"
+          ? inStaged || !present
+          : !inStaged;
+        if (satisfied || now - op.at > PENDING_TTL) pending.delete(path);
+      }
+    }
+
+    // Derive the displayed lists: authoritative state + every still-pending move.
+    // Idempotent — a move whose source row is already gone is simply a no-op.
+    function applyPending(auth) {
+      const merge = auth.merge.slice();
+      const staged = auth.staged.slice();
+      const unstaged = auth.unstaged.slice();
+      const take = (list, path) => {
+        const i = list.findIndex((e) => e.path === path);
+        return i === -1 ? null : list.splice(i, 1)[0];
+      };
+      for (const [path, op] of pending) {
+        if (op.action === "stage") {
+          const e = take(unstaged, path) || take(merge, path);
+          if (e && !has(staged, path)) {
+            staged.push({ path, status: e.status === "U" ? "A" : e.status });
+          }
+        } else {
+          const e = take(staged, path);
+          if (e && !has(unstaged, path)) {
+            unstaged.push({ path, status: e.status === "A" ? "U" : e.status });
+          }
+        }
+      }
+      return { merge, staged, unstaged };
+    }
+
+    // Re-derive lastState from authState + pending, refresh the count, repaint.
+    function applyOptimistic() {
+      lastState = applyPending(authState);
+      stagedCount = lastState.staged.length;
+      renderCount();
+      render();
+    }
+    function queueOp(path, action) {
+      if (!path) return;
+      pending.set(path, { action, at: Date.now() });
+      applyOptimistic();
+    }
+    // Stage/unstage every file currently shown in a group, optimistically.
+    // Sets all pending ops first, then repaints once (not per file).
+    function queueGroup(kind, action) {
+      const list = (lastState[kind] || []).slice();
+      if (!list.length) return;
+      const at = Date.now();
+      for (const e of list) pending.set(e.path, { action, at });
+      applyOptimistic();
+    }
+    // Stage/unstage an explicit set of paths (a folder's files) optimistically.
+    function queueFiles(paths, action) {
+      if (!paths || !paths.length) return;
+      const at = Date.now();
+      for (const p of paths) pending.set(p, { action, at });
+      applyOptimistic();
+    }
 
     // ---- Icon glyphs: the real VS Code codicon font ----------------------
     const ICON_FILE = '<i class="codicon codicon-file" aria-hidden="true"></i>';
     const ICON_FOLDER = '<i class="codicon codicon-folder" aria-hidden="true"></i>';
     const ICON_CHEVRON = '<i class="codicon codicon-chevron-right" aria-hidden="true"></i>';
     const ICON_STAGE = '<i class="codicon codicon-add" aria-hidden="true"></i>';
-    const ICON_UNSTAGE = '<i class="codicon codicon-dash" aria-hidden="true"></i>';
+    // codicon-remove (a full-width minus) not codicon-dash (a short thin
+    // stroke) so Unstage visually balances the Stage "+".
+    const ICON_UNSTAGE = '<i class="codicon codicon-remove" aria-hidden="true"></i>';
     const ICON_DISCARD = '<i class="codicon codicon-discard" aria-hidden="true"></i>';
 
-    const CONFLICT_LETTERS = new Set(["!", "U"]);
+    // Only "!" is a conflict. "U" is UNTRACKED (statusLetter maps unmerged
+    // states to "!", untracked to "U") — including it here painted every
+    // untracked row with the conflict/red accent.
+    const CONFLICT_LETTERS = new Set(["!"]);
     function statusClass(letter) {
       return "st-" + (/^[A-Z!]$/.test(letter) ? letter.replace("!", "C") : "M");
+    }
+    // Spell out the one-letter status on hover so the A / U / M / D … column
+    // isn't a mystery.
+    const STATUS_NAMES = {
+      A: "Added", U: "Untracked", D: "Deleted", R: "Renamed",
+      "!": "Conflict", I: "Ignored", T: "Type changed", M: "Modified",
+    };
+    function statusTitle(letter) {
+      return STATUS_NAMES[letter] || "Modified";
     }
 
     function el(tag, cls, html) {
@@ -1718,6 +2297,7 @@ export class CommitViewProvider
 
     // ---- Branch / sync header -------------------------------------------
     function renderHeader(state) {
+      lastHeaderState = state;
       branchName.textContent = state.branch || "(no branch)";
       branchPill.title = (state.repoName ? state.repoName + " · " : "") +
         (state.branch || "detached HEAD") +
@@ -1731,6 +2311,8 @@ export class CommitViewProvider
       behindEl.classList.toggle("visible", behind > 0);
       syncClean.classList.toggle("visible", hasUpstream && ahead === 0 && behind === 0);
       syncEl.classList.toggle("hidden", !state.branch);
+      // A status push can land mid-pull — keep the in-flight face on top.
+      applySyncBusy();
     }
 
     function doCommit(push) {
@@ -1758,6 +2340,14 @@ export class CommitViewProvider
       setGenerating(true);
       vscode.postMessage({ type: "generateMessage" });
     });
+    const reviewBtn = $("review");
+    const connectAiBtn = $("connect-ai");
+    reviewBtn.addEventListener("click", () =>
+      vscode.postMessage({ type: "reviewChanges" }),
+    );
+    connectAiBtn.addEventListener("click", () =>
+      vscode.postMessage({ type: "connectAI" }),
+    );
 
     amend.addEventListener("change", () => {
       renderCount();
@@ -1793,7 +2383,11 @@ export class CommitViewProvider
       render();
     });
     stageAllTopBtn.addEventListener("click", () => {
+      queueGroup("unstaged", "stage");
       vscode.postMessage({ type: "stageAll" });
+    });
+    stashChangesBtn.addEventListener("click", () => {
+      vscode.postMessage({ type: "stash" });
     });
     refreshBtn.addEventListener("click", () => {
       vscode.postMessage({ type: "ready" });
@@ -1808,6 +2402,8 @@ export class CommitViewProvider
 
     function closeBranchMenu() {
       closeBranchSubmenu();
+      subMenuFor = null;
+      if (branchBackdrop) { branchBackdrop.remove(); branchBackdrop = null; }
       if (!branchMenu) return;
       branchMenu.remove();
       branchMenu = null;
@@ -1817,6 +2413,7 @@ export class CommitViewProvider
     }
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
+      hideTip(); // a tip anchored to a removed submenu item must not linger
     }
     function onBranchDocDown(e) {
       const inMenu = branchMenu && branchMenu.contains(e.target);
@@ -1827,13 +2424,15 @@ export class CommitViewProvider
     }
     function onBranchKey(e) {
       if (e.key === "Escape") {
-        if (branchSubmenu) { closeBranchSubmenu(); return; }
+        if (branchSubmenu) { closeBranchSubmenu(); subMenuFor = null; return; }
         closeBranchMenu(); branchPill.focus();
       }
     }
     function branchAct(action, ref) {
       vscode.postMessage({ type: "branchAction", action: action, ref: ref });
-      if (action !== "favorite") closeBranchMenu();
+      // Fetch runs IN PLACE: the menu stays open and the rows' ↑/↓ badges
+      // refresh live when the host pushes the fetched state.
+      if (action !== "favorite" && action !== "fetch") closeBranchMenu();
     }
     function matchF(s) { return !branchFilter || s.toLowerCase().indexOf(branchFilter) !== -1; }
 
@@ -1858,7 +2457,7 @@ export class CommitViewProvider
       return cur ? cur.name : "current branch";
     }
 
-    function branchRow(name, kind, up, fav, current) {
+    function branchRow(name, kind, up, fav, current, ahead, behind) {
       const row = el("div", "bm-branch" + (current ? " is-current" : ""));
       if (kind === "local") {
         const star = el("button", "bm-star" + (fav ? " on" : ""),
@@ -1871,7 +2470,11 @@ export class CommitViewProvider
       }
       row.appendChild(el("i", "codicon codicon-" +
         (kind === "remote" ? "cloud" : (current ? "check" : "git-branch")) + " bm-bicon"));
+      row.dataset.bname = name; // refreshOpenBranchUi re-finds the row by name
       const nm = el("span", "bm-bname", hl(name)); row.appendChild(nm);
+      // Unpushed/unpulled counts per branch — the payoff of the in-menu Fetch.
+      if (ahead) row.appendChild(el("span", "bm-ab up", "↑" + ahead));
+      if (behind) row.appendChild(el("span", "bm-ab down", "↓" + behind));
       if (up) { const u = el("span", "bm-bup"); u.textContent = up; row.appendChild(u); }
       row.appendChild(el("i", "codicon codicon-chevron-right bm-bmore"));
       row.title = "Branch actions";
@@ -1895,7 +2498,92 @@ export class CommitViewProvider
       b.addEventListener("click", fn);
       list.appendChild(b);
     }
+    // A submenu action that runs IN PLACE: the dialog stays open, THIS item
+    // spins until the host confirms the real op finished (branchActionDone),
+    // then the whole dialog stack repaints with fresh counts.
+    function subItemLive(list, icon, label, busyLabel, action, ref, title) {
+      const running = subLive && subLive.action === action && subLive.ref === ref;
+      const b = el("button", "bm-subaction" + (running ? " is-busy" : ""),
+        bIcon(running ? "loading codicon-modifier-spin" : icon) + "<span></span>");
+      b.querySelector("span").textContent = running ? busyLabel : label;
+      b.title = title || label;
+      b.addEventListener("click", () => {
+        if (subLive || syncBusy || menuSyncBusy) return;
+        subLive = { action: action, ref: ref };
+        b.classList.add("is-busy");
+        const i = b.querySelector(".codicon");
+        if (i) i.className = "codicon codicon-loading codicon-modifier-spin";
+        b.querySelector("span").textContent = busyLabel;
+        if (action === "pull" || action === "pullRebase") { syncBusy = "pull"; applySyncBusy(); }
+        else if (action === "push") { syncBusy = "push"; applySyncBusy(); }
+        vscode.postMessage({ type: "branchAction", action: action, ref: ref });
+      });
+      list.appendChild(b);
+    }
     function subSep(list) { list.appendChild(el("div", "bm-subsep")); }
+    /** Repaint the open menu (badges/labels) and re-open the same branch's
+     *  submenu on its NEW row — an in-place live refresh of the dialog stack. */
+    function refreshOpenBranchUi() {
+      if (!branchMenu) return;
+      const sub = subMenuFor;
+      renderBranchMenu(); // closes the submenu; rows rebuilt with fresh data
+      if (sub) {
+        const row = branchMenu.querySelector('.bm-branch[data-bname="' + (window.CSS && CSS.escape ? CSS.escape(sub.name) : sub.name) + '"]');
+        if (row) openBranchActions(sub.name, sub.kind, sub.current, row);
+        else subMenuFor = null; // the branch vanished (e.g. deleted)
+      }
+    }
+
+    // ---- Reusable in-sidebar action popover (file rows: double/right-click) ----
+    // Opens right at the row inside the sidebar — NOT the VS Code quick-pick.
+    let actionMenuEl = null;
+    function closeActionMenu() {
+      if (actionMenuEl) { actionMenuEl.remove(); actionMenuEl = null; }
+      document.removeEventListener("mousedown", onActionDocDown, true);
+      document.removeEventListener("keydown", onActionKey, true);
+    }
+    function onActionDocDown(e) {
+      if (actionMenuEl && !actionMenuEl.contains(e.target)) closeActionMenu();
+    }
+    function onActionKey(e) {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeActionMenu(); }
+    }
+    function openActionMenu(title, items, anchor) {
+      closeActionMenu();
+      closeBranchSubmenu();
+      const menu = el("div", "branch-submenu action-menu");
+      if (title) {
+        const head = el("div", "bm-subhead");
+        head.appendChild(el("i", "codicon codicon-file"));
+        const nm = el("span", "bm-subhead-name");
+        nm.textContent = title;
+        head.appendChild(nm);
+        menu.appendChild(head);
+      }
+      const list = el("div", "bm-sublist");
+      menu.appendChild(list);
+      for (const it of items) {
+        if (it.sep) { subSep(list); continue; }
+        subItem(list, it.icon, it.label, () => { closeActionMenu(); it.fn(); }, it.danger);
+      }
+      document.body.appendChild(menu);
+      actionMenuEl = menu;
+      // Anchor under the row's left edge; flip up / clamp so it never leaves view.
+      const PAD = 6;
+      const r = menu.getBoundingClientRect();
+      const a = anchor.getBoundingClientRect();
+      let left = Math.max(PAD, Math.min(a.left, window.innerWidth - r.width - PAD));
+      let top = a.bottom + 2;
+      if (top + r.height > window.innerHeight - PAD) {
+        top = Math.max(PAD, a.top - r.height - 2);
+      }
+      menu.style.left = Math.round(left) + "px";
+      menu.style.top = Math.round(top) + "px";
+      document.addEventListener("mousedown", onActionDocDown, true);
+      document.addEventListener("keydown", onActionKey, true);
+      const first = list.querySelector(".bm-subaction");
+      if (first) first.focus();
+    }
 
     function openBranchActions(name, kind, current, anchor) {
       closeBranchSubmenu();
@@ -1909,17 +2597,28 @@ export class CommitViewProvider
       const list = el("div", "bm-sublist");
       menu.appendChild(list);
 
+      // Live branch data for this row (counts may have just changed via Fetch).
+      const bd = (branchData.local || []).find((x) => x.name === name);
+      subMenuFor = { name: name, kind: kind, current: current };
       if (current) {
-        subItem(list, "arrow-down", "Pull using Rebase", () => plainAct("pullRebase", name));
-        subItem(list, "arrow-down", "Pull using Merge", () => plainAct("pull", name));
-        subItem(list, "arrow-up", "Push", () => plainAct("push", name));
+        subItemLive(list, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name);
+        subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pull", name);
+        subItemLive(list, "arrow-up", "Push", "Pushing…", "push", name);
         subSep(list);
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
+        subItem(list, "copy", "Copy Branch Name", () => plainAct("copyName", name));
       } else {
         subItem(list, kind === "remote" ? "cloud-download" : "check", "Checkout", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType));
+        if (kind === "local" && bd && bd.upstream) {
+          // Fast-forward this branch from its upstream WITHOUT checking it out.
+          subItemLive(list, "arrow-down",
+            "Pull " + (bd.behind ? bd.behind + " " : "") + "into '" + name + "'",
+            "Pulling…", "pullFf", name,
+            "Fast-forwards '" + name + "' from " + bd.upstream + " — no checkout");
+        }
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
         subSep(list);
         subItem(list, "git-compare", "Compare with '" + cur + "'", () => subAct("gitstudio.branch.compare", name, refType));
@@ -1929,6 +2628,7 @@ export class CommitViewProvider
         subSep(list);
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         if (kind === "local") subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
+        subItem(list, "copy", "Copy Branch Name", () => plainAct("copyName", name));
         subSep(list);
         subItem(list, "trash", "Delete", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true);
@@ -1973,10 +2673,15 @@ export class CommitViewProvider
       const list = branchMenu.querySelector(".bm-list");
       list.replaceChildren();
 
+      // Fetch sits on TOP: it's the read-only "what's out there?" action the
+      // rest of the menu builds on. Fetch/pull/push all run IN PLACE — the
+      // dialog stays open, the item itself spins until the real op finishes,
+      // and the branch rows' ↑/↓ badges refresh live.
+      const busyLabels = { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" };
       const actions = [
+        { a: "fetch", icon: "sync", label: "Fetch" },
         { a: "pull", icon: "arrow-down", label: "Update (pull)" },
         { a: "push", icon: "arrow-up", label: "Push" },
-        { a: "fetch", icon: "sync", label: "Fetch" },
         { a: "new", icon: "add", label: "New Branch…" },
         { a: "checkoutRef", icon: "tag", label: "Checkout Tag or Revision…" },
       ];
@@ -1984,9 +2689,25 @@ export class CommitViewProvider
       for (const it of actions) {
         if (!matchF(it.label)) continue;
         anyAction = true;
-        const b = el("button", "bm-action", bIcon(it.icon) + "<span></span>");
-        b.querySelector("span").innerHTML = hl(it.label);
-        b.addEventListener("click", () => branchAct(it.a));
+        const live = it.a === "fetch" || it.a === "pull" || it.a === "push";
+        const spinning = live && menuSyncBusy === it.a;
+        const b = el("button", "bm-action" + (spinning ? " is-busy" : ""),
+          bIcon(spinning ? "loading codicon-modifier-spin" : it.icon) + "<span></span>");
+        b.querySelector("span").innerHTML = spinning ? busyLabels[it.a] : hl(it.label);
+        b.addEventListener("click", () => {
+          if (live) {
+            if (menuSyncBusy || syncBusy) return;
+            menuSyncBusy = it.a;
+            if (it.a === "fetch") {
+              vscode.postMessage({ type: "branchAction", action: "fetch" });
+            } else {
+              startSync(it.a); // the header pill mirrors the in-flight state
+            }
+            renderBranchMenu();
+          } else {
+            branchAct(it.a);
+          }
+        });
         list.appendChild(b);
       }
 
@@ -2022,9 +2743,9 @@ export class CommitViewProvider
         list.appendChild(body);
       }
 
-      group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current));
-      group("Recent", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current));
-      group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current));
+      group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current, b.ahead, b.behind));
+      group("Recent", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current, b.ahead, b.behind));
+      group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current, b.ahead, b.behind));
       group("Remote", remotes, (n) => branchRow(n, "remote", "", false, false));
 
       if (!anyAction && !favs.length && !recents.length && !others.length && !remotes.length) {
@@ -2035,6 +2756,10 @@ export class CommitViewProvider
     function openBranchMenu() {
       if (branchMenu) { closeBranchMenu(); return; }
       branchFilter = "";
+      // A scrim dims the view behind the dialog stack, so it's unmistakable
+      // that you're IN a dialog (clicking it closes, like any modal).
+      branchBackdrop = el("div", "bm-backdrop");
+      document.body.appendChild(branchBackdrop);
       branchMenu = el("div", "branch-menu");
       const search = el("div", "bm-search");
       const input = document.createElement("input");
@@ -2114,7 +2839,29 @@ export class CommitViewProvider
       { kind: "unstaged", label: "Unstaged", staged: false },
     ];
 
+    // Signature of everything the file-list render depends on (layout + each
+    // group's paths/statuses). Used to skip a rebuild when nothing changed.
+    let lastRenderSig = null;
+    function stateSig() {
+      let s = layout;
+      for (const k of ["merge", "staged", "unstaged"]) {
+        const list = lastState[k] || [];
+        s += "|" + k + ":";
+        for (const e of list) s += e.path + e.status + ",";
+      }
+      return s;
+    }
+    // The firehose pushes state on EVERY git poke (fetches, unrelated ref
+    // writes, background status polls). Rebuilding the whole list each time is
+    // wasted work AND it resets the native tooltip's hover timer, so hovering a
+    // button never shows its title. Only re-render when the state truly changed;
+    // user interactions (collapse, layout) still call render() directly.
+    function renderIfChanged() {
+      if (stateSig() === lastRenderSig) return;
+      render();
+    }
     function render() {
+      lastRenderSig = stateSig();
       groupsEl.textContent = "";
       folderKeyAccumulator = [];
       const data = {
@@ -2156,11 +2903,13 @@ export class CommitViewProvider
       if (def.kind === "staged") {
         actions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage All", (ev) => {
           ev.stopPropagation();
+          queueGroup("staged", "unstage");
           vscode.postMessage({ type: "unstageAll", group: def.kind });
         }));
       } else {
         actions.appendChild(makeIconBtn(ICON_STAGE, "Stage All", (ev) => {
           ev.stopPropagation();
+          queueGroup(def.kind, "stage");
           vscode.postMessage({ type: "stageAll", group: def.kind });
         }));
         if (def.kind === "unstaged") {
@@ -2178,6 +2927,9 @@ export class CommitViewProvider
       };
       header.addEventListener("click", toggleGroup);
       header.addEventListener("keydown", (e) => {
+        // Only act when the header itself is focused — never swallow Enter/Space
+        // meant for a focused action button inside it (Stage All / Unstage All).
+        if (e.target !== header) return;
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(); }
       });
       group.appendChild(header);
@@ -2197,6 +2949,14 @@ export class CommitViewProvider
       renderNode(body, def, tree, 1);
     }
 
+    // Flatten every file path under a folder node (direct + nested) so a
+    // folder-level stage/unstage can hand the whole set to one git op.
+    function collectFolderFiles(node, out) {
+      for (const f of node.files) out.push(f.entry.path);
+      for (const [, d] of node.dirs) collectFolderFiles(d, out);
+      return out;
+    }
+
     function renderNode(container, def, node, depth) {
       // Folders first (alphabetical), then files.
       const dirs = [...node.dirs.values()].sort((a, b) =>
@@ -2214,9 +2974,36 @@ export class CommitViewProvider
         name.textContent = dir.name;
         row.appendChild(name);
         row.appendChild(el("span", "spacer"));
+        // Folder-level stage/unstage/discard — one git op over every file under
+        // this folder (mirrors the per-file actions; stopPropagation so the
+        // button click never toggles the folder's collapse).
+        const folderPaths = collectFolderFiles(dir, []);
+        const factions = el("span", "row-actions");
+        if (def.staged) {
+          factions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage folder", (ev) => {
+            ev.stopPropagation();
+            queueFiles(folderPaths, "unstage");
+            vscode.postMessage({ type: "unstageFolder", paths: folderPaths });
+          }));
+        } else {
+          factions.appendChild(makeIconBtn(ICON_STAGE, "Stage folder", (ev) => {
+            ev.stopPropagation();
+            queueFiles(folderPaths, "stage");
+            vscode.postMessage({ type: "stageFolder", paths: folderPaths });
+          }));
+          if (def.kind === "unstaged") {
+            factions.appendChild(makeIconBtn(ICON_DISCARD, "Discard folder", (ev) => {
+              ev.stopPropagation();
+              vscode.postMessage({ type: "discardFolder", paths: folderPaths });
+            }));
+          }
+        }
+        row.appendChild(factions);
         const toggle = () => { collapsed[key] = !isCollapsed; render(); };
         row.addEventListener("click", toggle);
         row.addEventListener("keydown", (e) => {
+          // Don't hijack Enter/Space aimed at a focused folder action button.
+          if (e.target !== row) return;
           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
         });
         container.appendChild(row);
@@ -2271,17 +3058,19 @@ export class CommitViewProvider
 
       const actions = el("span", "row-actions");
       if (def.staged) {
-        actions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage", (ev) => {
+        actions.appendChild(makeIconBtn(ICON_UNSTAGE, "Unstage file", (ev) => {
           ev.stopPropagation();
+          queueOp(e.path, "unstage");
           vscode.postMessage({ type: "unstage", path: e.path });
         }));
       } else {
-        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage", (ev) => {
+        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage file", (ev) => {
           ev.stopPropagation();
+          queueOp(e.path, "stage");
           vscode.postMessage({ type: "stage", path: e.path });
         }));
         if (def.kind === "unstaged") {
-          actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard", (ev) => {
+          actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard changes", (ev) => {
             ev.stopPropagation();
             vscode.postMessage({ type: "discard", path: e.path });
           }));
@@ -2291,14 +3080,44 @@ export class CommitViewProvider
 
       const status = el("span", "status " + statusClass(letter));
       status.textContent = letter;
+      status.dataset.tip = statusTitle(letter);
       row.appendChild(status);
 
       const open = () => vscode.postMessage({
         type: "openDiff", path: e.path, staged: !!def.staged,
       });
+      const menu = (ev) => {
+        ev.preventDefault();
+        const items = [
+          { icon: "git-compare", label: "Open Changes", fn: open },
+        ];
+        if (letter !== "D") {
+          items.push({ icon: "go-to-file", label: "Open File",
+            fn: () => vscode.postMessage({ type: "openFile", path: e.path }) });
+        }
+        items.push({ sep: true });
+        if (def.staged) {
+          items.push({ icon: "remove", label: "Unstage",
+            fn: () => { queueOp(e.path, "unstage"); vscode.postMessage({ type: "unstage", path: e.path }); } });
+        } else {
+          items.push({ icon: "add", label: "Stage",
+            fn: () => { queueOp(e.path, "stage"); vscode.postMessage({ type: "stage", path: e.path }); } });
+          if (letter !== "!") {
+            items.push({ icon: "discard", label: "Discard Changes", danger: true,
+              fn: () => vscode.postMessage({ type: "discard", path: e.path }) });
+          }
+        }
+        openActionMenu(fileName, items, row);
+      };
       row.addEventListener("click", open);
+      // Double-click OR right-click a file → an actions menu (open / stage / discard).
+      row.addEventListener("dblclick", menu);
+      row.addEventListener("contextmenu", menu);
       row.addEventListener("keydown", (ev) => {
+        // Don't hijack Enter aimed at a focused stage/unstage/discard button.
+        if (ev.target !== row) return;
         if (ev.key === "Enter") { ev.preventDefault(); open(); }
+        else if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) menu(ev);
       });
       return row;
     }
@@ -2306,7 +3125,9 @@ export class CommitViewProvider
     function makeIconBtn(svg, title, onClick) {
       const b = el("button", "icon-btn", svg);
       b.type = "button";
-      b.title = title;
+      // data-tip drives our own tooltip (native title is flaky in webviews);
+      // aria-label keeps it accessible.
+      b.dataset.tip = title;
       b.setAttribute("aria-label", title);
       b.addEventListener("click", onClick);
       return b;
@@ -2316,22 +3137,36 @@ export class CommitViewProvider
     window.addEventListener("message", (event) => {
       const msg = event.data;
       if (msg.type === "state") {
-        stagedCount = msg.stagedCount || 0;
         setBusy(!!msg.busy);
         document.body.classList.toggle("no-repo", !msg.hasRepo);
         renderHeader(msg);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
+        reviewBtn.classList.toggle("visible", !!msg.aiEnabled);
+        connectAiBtn.classList.toggle("visible", !msg.aiEnabled);
         if (msg.layout && msg.layout !== layout) {
           layout = msg.layout;
           applyLayoutClass();
         }
-        lastState = {
+        // Fold the authoritative git state in under any still-pending optimistic
+        // moves, so a reconcile never snaps a just-clicked row back mid-flight.
+        authState = {
           merge: msg.merge || [],
           staged: msg.staged || [],
           unstaged: msg.unstaged || [],
         };
+        reconcilePending(authState);
+        lastState = applyPending(authState);
+        stagedCount = lastState.staged.length;
         branchData = msg.branches || { local: [], remote: [], recent: [] };
-        if (branchMenu) renderBranchMenu();
+        // Only rebuild an OPEN branch menu when the branch data actually
+        // changed. Every state push (and now the redundant 2nd post) would
+        // otherwise call renderBranchMenu(), which closeBranchSubmenu()s and
+        // replaceChildren()s — wiping a submenu the user just opened and
+        // resetting the scroll position. refreshOpenBranchUi re-opens the
+        // same branch's submenu on its fresh row, so the stack survives.
+        const branchSig = JSON.stringify(branchData);
+        if (branchMenu && branchSig !== lastBranchSig) refreshOpenBranchUi();
+        lastBranchSig = branchSig;
         if (typeof msg.lastMessage === "string" && amend.checked &&
             message.value.trim() === "") {
           message.value = msg.lastMessage;
@@ -2342,7 +3177,22 @@ export class CommitViewProvider
           signoff.checked = true;
         }
         renderCount();
-        render();
+        renderIfChanged();
+      } else if (msg.type === "branchActionDone") {
+        // A sync op finished — clear every in-flight face (the fresh counts
+        // arrived via the state push the host sent just before this).
+        if (msg.action === "pull" || msg.action === "pullRebase" || msg.action === "push") {
+          syncBusy = "";
+          // Re-derive pill visibility from the last real counts — the busy
+          // face force-showed the pill, which must not linger at count 0.
+          if (lastHeaderState) renderHeader(lastHeaderState);
+          else applySyncBusy();
+        }
+        if (menuSyncBusy === msg.action) menuSyncBusy = "";
+        if (subLive && subLive.action === msg.action) subLive = null;
+        // Repaint the open dialog stack in place: fresh badges + labels, and
+        // the submenu (if one is up) rebuilt for the same branch.
+        refreshOpenBranchUi();
       } else if (msg.type === "setMessage") {
         if (typeof msg.text === "string") {
           message.value = msg.text; autoGrow(); updateComposer();
@@ -2359,6 +3209,70 @@ export class CommitViewProvider
         updateComposer();
         renderCount();
       }
+    });
+
+    // ---- Reliable tooltips ------------------------------------------------
+    // Native title tooltips are unreliable inside webviews. Move every title
+    // onto data-tip and render ONE shared, viewport-positioned tooltip so it is
+    // never clipped by a scrolling/overflow ancestor and always appears.
+    const tipEl = document.createElement("div");
+    tipEl.className = "gs-tip";
+    tipEl.setAttribute("aria-hidden", "true");
+    document.body.appendChild(tipEl);
+    let tipTarget = null;
+    let tipTimer = 0;
+    function upgradeTips(node) {
+      if (!node || node.nodeType !== 1) return;
+      if (node.hasAttribute && node.hasAttribute("title")) {
+        node.dataset.tip = node.getAttribute("title");
+        node.removeAttribute("title");
+      }
+      if (node.querySelectorAll) {
+        node.querySelectorAll("[title]").forEach((c) => {
+          c.dataset.tip = c.getAttribute("title");
+          c.removeAttribute("title");
+        });
+      }
+    }
+    function hideTip() { clearTimeout(tipTimer); tipTarget = null; tipEl.classList.remove("show"); }
+    function showTip() {
+      // The hovered node can be swapped out by a live dialog repaint before
+      // the delay fires — a tip for a detached node would float orphaned.
+      if (!tipTarget || !tipTarget.isConnected) { hideTip(); return; }
+      const text = tipTarget.getAttribute("data-tip");
+      if (!text) return;
+      tipEl.textContent = text;
+      tipEl.classList.add("show");
+      const r = tipTarget.getBoundingClientRect();
+      const tw = tipEl.offsetWidth;
+      let left = r.left + r.width / 2;
+      left = Math.max(tw / 2 + 5, Math.min(window.innerWidth - tw / 2 - 5, left));
+      let top = r.top - 6;
+      tipEl.classList.toggle("below", top - tipEl.offsetHeight < 2);
+      if (top - tipEl.offsetHeight < 2) top = r.bottom + 6;
+      tipEl.style.left = Math.round(left) + "px";
+      tipEl.style.top = Math.round(top) + "px";
+    }
+    document.addEventListener("pointerover", (e) => {
+      const t = e.target.closest ? e.target.closest("[data-tip]") : null;
+      if (t === tipTarget) return;
+      hideTip();
+      if (t) { tipTarget = t; tipTimer = setTimeout(showTip, 350); }
+    });
+    document.addEventListener("pointerout", (e) => {
+      const t = e.target.closest ? e.target.closest("[data-tip]") : null;
+      if (t && t === tipTarget) hideTip();
+    });
+    document.addEventListener("pointerdown", hideTip);
+    window.addEventListener("scroll", hideTip, true);
+    upgradeTips(document.body);
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        m.addedNodes.forEach(upgradeTips);
+        if (m.type === "attributes" && m.target.getAttribute("title")) upgradeTips(m.target);
+      }
+    }).observe(document.body, {
+      subtree: true, childList: true, attributes: true, attributeFilter: ["title"],
     });
 
     applyLayoutClass();

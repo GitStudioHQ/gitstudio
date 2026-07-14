@@ -111,13 +111,54 @@ export interface GraphRevealMessage {
   sha: string;
 }
 
+/** Host-resolved author profile photos: lowercased commit-author email → avatar
+ * URL (e.g. a GitHub avatar). Best-effort + late-arriving; the webview repaints
+ * avatars in place, falling back to Gravatar/initials for unmapped emails. */
+export interface GraphAuthorAvatarsMessage {
+  type: "authorAvatars";
+  avatars: Record<string, string>;
+}
+
+/** One item in the in-graph commit actions popover (host builds the list). */
+export interface GraphMenuItem {
+  /** Action id posted back as `commitMenuAction` (empty for a separator). */
+  id: string;
+  /** Display label (no codicon markup). */
+  label: string;
+  /** Optional codicon name shown before the label. */
+  icon?: string;
+  danger?: boolean;
+  sep?: boolean;
+}
+
+/** Host asks the webview to open the commit actions menu as an in-graph popover
+ * at (x, y) — replaces the native quick-pick so it reads as part of the graph. */
+export interface GraphCommitMenuMessage {
+  type: "commitMenu";
+  sha: string;
+  x: number;
+  y: number;
+  title: string;
+  items: GraphMenuItem[];
+}
+
 export type GraphHostMessage =
   | GraphInitMessage
   | GraphAppendMessage
   | GraphConfigMessage
   | GraphCommitDetailsMessage
   | GraphRowStatsMessage
-  | GraphRevealMessage;
+  | GraphRevealMessage
+  | GraphAuthorAvatarsMessage
+  | GraphCommitMenuMessage
+  | GraphErrorMessage;
+
+/** The graph failed to load — a real git error, distinct from an empty repo
+ * (which stays a "graphInit" with no rows). Drives the error placeholder. */
+export interface GraphErrorMessage {
+  type: "graphError";
+  message?: string;
+}
 
 // ── Webview → host ──────────────────────────────────────────────────────────
 
@@ -139,7 +180,12 @@ export type GraphWebviewMessage =
   | { type: "openFile"; sha: string; path: string; wip?: boolean }
   /** A commit action from the details panel's toolbar. */
   | { type: "commitAction"; action: string; sha: string }
+  /** The user picked an item from the in-graph commit actions popover. */
+  | { type: "commitMenuAction"; sha: string; id: string }
   /** Copy text to the clipboard (host-side, CSP-safe). */
   | { type: "copyText"; text: string }
   /** Request CHANGES-column stats for these (visible) shas. */
-  | { type: "requestStats"; shas: string[] };
+  | { type: "requestStats"; shas: string[] }
+  /** Sidebar rail: promote this commit to the full graph panel (open the
+   * editor-area Commit Graph revealed + selected at `sha`). */
+  | { type: "openInGraph"; sha: string };

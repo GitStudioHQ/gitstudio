@@ -5,6 +5,14 @@
 /* The real VS Code icon font. Declared at document scope (esbuild inlines the
  * .ttf as a data URL) so the <gitstudio-graph> shadow root can use it too —
  * @font-face is registered on the document, not scoped to a shadow tree. */
+
+/* Pull in the shared GitStudio design tokens (--gs-* scale + .gs-* utilities).
+ * CSS custom properties inherit through shadow DOM, so importing them at the
+ * document scope exposes the whole token system inside the <gitstudio-graph>
+ * and <gitstudio-details> shadow roots — the surfaces consume ONE system
+ * instead of each re-declaring a drifting subset. */
+@import "./tokens.css";
+
 @font-face {
   font-family: "codicon";
   font-display: block;
@@ -37,7 +45,9 @@ body {
   flex-direction: column;
   height: 100%;
   width: 100%;
-  --gs-details-h: 42%;
+  /* The dock starts a touch under a third of the height so the graph keeps the
+     room; the user can drag the divider or close it entirely. */
+  --gs-details-h: 38%;
 }
 .gs-graph-pane {
   flex: 1 1 auto;

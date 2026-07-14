@@ -760,10 +760,12 @@ class App {
 
     const gen = this.routeGen;
     await this.refreshRefs();
-    const locals = await gget("branches:list", undefined);
+    let locals = await gget("branches:list", undefined);
     if (gen !== this.routeGen) return;
-    const remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
-    const tags = this.refs.filter((r) => r.type === "tag");
+    // Recomputed on every render so a live reload (fetch from the branch menu)
+    // picks up new remote branches/tags without rebuilding the whole view.
+    let remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
+    let tags = this.refs.filter((r) => r.type === "tag");
 
     // A collapsible category: a clickable header (chevron + label + count) over a
     // body div holding its rows. Collapse state lives on the App instance so it
@@ -842,6 +844,31 @@ class App {
     };
     filterInput.addEventListener("input", render);
     render();
+
+    // Live row reload — refreshes counts/refs IN PLACE (no skeleton, and an
+    // open branch-actions menu survives) after fetch/pull. Stale-guarded by
+    // the route generation; cleared implicitly when another view renders.
+    this.reloadBranchRows = async (): Promise<void> => {
+      if (gen !== this.routeGen) return;
+      await this.refreshRefs();
+      locals = await gget("branches:list", undefined);
+      if (gen !== this.routeGen) return;
+      remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
+      tags = this.refs.filter((r) => r.type === "tag");
+      render();
+    };
+  }
+
+  /** Set while the Branches view is live — see showBranchesView. */
+  private reloadBranchRows: (() => Promise<void>) | null = null;
+
+  /** Refresh branch rows in place when the Branches view is up, else fully. */
+  private async refreshBranchesSoft(): Promise<void> {
+    if (this.currentView === "branches" && this.reloadBranchRows) {
+      await this.reloadBranchRows();
+    } else if (this.currentView === "branches") {
+      void this.showBranchesView();
+    }
   }
 
   private localBranchRow(b: BranchInfo): HTMLElement {
@@ -855,11 +882,22 @@ class App {
     if (b.ahead) {
       const p = el("span", "ab-pill ahead");
       p.textContent = `↑${b.ahead}`;
+      p.title = `${b.ahead} commit(s) to push to ${b.upstream ?? "upstream"}`;
       top.appendChild(p);
     }
     if (b.behind) {
-      const p = el("span", "ab-pill behind");
-      p.textContent = `↓${b.behind}`;
+      // The behind count IS the pull button: click pulls those commits live
+      // (fast-forwarding the branch in place when it isn't checked out).
+      const p = el("button", "ab-pill behind ab-btn") as HTMLButtonElement;
+      p.append(glyph("arrow-down"), span(`Pull ${b.behind}`, "ab-lbl"));
+      p.title = b.current
+        ? `Pull ${b.behind} commit(s) from ${b.upstream ?? "upstream"}`
+        : `Pull ${b.behind} commit(s) into ${b.name} — fast-forward, no checkout`;
+      p.setAttribute("aria-label", p.title);
+      p.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void this.pullBranchLive(b, p);
+      });
       top.appendChild(p);
     }
     meta.appendChild(top);
@@ -878,21 +916,24 @@ class App {
         textBtn("Checkout", "Check out this branch", () => void this.checkoutRef(b.name)),
         textBtn("Delete", "Delete this branch", () => void this.deleteBranch(b.name), true),
       );
-      // The row itself checks out the branch (the nested buttons stopPropagation).
-      // It contains buttons, so it can't BE a <button> — use the role + keyboard
-      // contract instead so it's clickable AND keyboard-operable, not a dead div.
-      row.setAttribute("role", "button");
-      row.tabIndex = 0;
-      row.setAttribute("aria-label", `Check out branch ${b.name}`);
-      row.classList.add("is-clickable");
-      row.addEventListener("click", () => void this.checkoutRef(b.name));
-      row.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          void this.checkoutRef(b.name);
-        }
-      });
     }
+    // Clicking a row opens the branch-actions dialog (same one as the ⋯
+    // button) — deliberate actions live there; a stray click can no longer
+    // check out a branch. A double-click's second click hits the same handler,
+    // so single and double click land on the SAME dialog. The row contains
+    // buttons, so it can't BE a <button> — role + keyboard contract instead.
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+    row.setAttribute("aria-label", `Branch actions for ${b.name}`);
+    row.setAttribute("aria-haspopup", "menu");
+    row.classList.add("is-clickable");
+    row.addEventListener("click", () => this.openBranchActions(b, row));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        this.openBranchActions(b, row);
+      }
+    });
     const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
     moreBtn.setAttribute("aria-label", `More actions for ${b.name}`);
     moreBtn.setAttribute("aria-haspopup", "menu");
@@ -929,6 +970,43 @@ class App {
       await refresh();
     };
     const items: MenuItem[] = [];
+    // Fetch is pinned on top and runs IN PLACE: the menu stays open, the item
+    // spins while the remotes refresh, and every row's ↓/↑ counts update live
+    // behind it — so "what's unpulled where?" is one click, not a round trip.
+    items.push({
+      label: "Fetch",
+      sub: "update remote tracking",
+      icon: "sync",
+      keepOpen: true,
+      onClick: (itemEl) => void this.fetchLiveInMenu(itemEl, b),
+    });
+    items.push({ separator: true });
+    if (!b.current) {
+      items.push({
+        label: `Checkout ${b.name}`,
+        icon: "check",
+        onClick: () => void this.checkoutRef(b.name),
+      });
+    }
+    // Always offered while an upstream exists (a fetch from this very menu can
+    // surface new commits): pulls WITHOUT checking the branch out. The current
+    // branch gets a real pull instead, shown only when it's actually behind.
+    if (b.upstream && !b.current) {
+      items.push({
+        label: b.behind ? `Pull ${b.behind} into ${b.name}` : `Pull latest into ${b.name}`,
+        sub: "fast-forward — no checkout",
+        icon: "arrow-down",
+        onClick: () => void this.pullBranchLive(b),
+      });
+    } else if (b.current && b.behind && b.upstream) {
+      items.push({
+        label: `Pull ${b.behind} commit${b.behind === 1 ? "" : "s"}`,
+        sub: b.upstream,
+        icon: "arrow-down",
+        onClick: () => void this.pullBranchLive(b),
+      });
+    }
+    if (!b.current || b.behind) items.push({ separator: true });
     if (!b.current) {
       items.push({
         label: `Merge ${b.name} into current`,
@@ -942,6 +1020,16 @@ class App {
       });
       items.push({ separator: true });
     }
+    items.push({
+      label: "Copy branch name",
+      icon: "copy",
+      onClick: () => {
+        void navigator.clipboard.writeText(b.name).then(
+          () => toast(`Copied “${b.name}”.`, "success"),
+          () => toast("Couldn't copy to the clipboard.", "error"),
+        );
+      },
+    });
     items.push({
       label: "Rename…",
       icon: "edit",
@@ -998,6 +1086,88 @@ class App {
       });
     }
     openMenu(anchor, items);
+  }
+
+  /** Fetch triggered from an open branch menu: spins the menu item in place
+   *  (the menu stays open) and live-refreshes every row's ↑/↓ counts — plus
+   *  the menu's own "Pull … into <branch>" label, so it never goes stale. */
+  private async fetchLiveInMenu(itemEl?: HTMLElement, b?: BranchInfo): Promise<void> {
+    const g = itemEl?.querySelector(".glyph");
+    itemEl?.classList.add("is-busy-item");
+    g?.classList.add("spin");
+    try {
+      const r = await host.invoke("sync:fetch", undefined);
+      if (!r.ok) {
+        toast(r.message || "Fetch failed.", "error");
+        return;
+      }
+      bust();
+      await this.updateSync();
+      await this.refreshBranchesSoft();
+      if (b) {
+        const fresh = (await gget("branches:list", undefined)).find(
+          (x) => x.name === b.name,
+        );
+        const pullLabel = itemEl
+          ?.closest(".dropdown")
+          ?.querySelector<HTMLElement>(".dropdown-item .codicon-arrow-down")
+          ?.parentElement?.querySelector(".dropdown-label");
+        if (fresh && pullLabel) {
+          pullLabel.textContent = fresh.current
+            ? `Pull ${fresh.behind} commit${fresh.behind === 1 ? "" : "s"}`
+            : fresh.behind
+              ? `Pull ${fresh.behind} into ${fresh.name}`
+              : `Pull latest into ${fresh.name}`;
+        }
+      }
+    } catch (e) {
+      toast(cleanErr(e) || "Fetch failed.", "error");
+    } finally {
+      itemEl?.classList.remove("is-busy-item");
+      g?.classList.remove("spin");
+    }
+  }
+
+  /** Pull a branch live: the current branch does a real pull; any other local
+   *  fast-forwards straight from its upstream without a checkout. `btn` (the
+   *  row's ↓ pill) spins while the pull runs; rows then refresh in place. */
+  private async pullBranchLive(b: BranchInfo, btn?: HTMLButtonElement): Promise<void> {
+    const g = btn?.querySelector(".glyph");
+    const lbl = btn?.querySelector(".ab-lbl");
+    if (btn) {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.classList.add("busy");
+      g?.classList.remove("codicon-arrow-down");
+      g?.classList.add("codicon-sync", "spin");
+      if (lbl) lbl.textContent = "Pulling…";
+    }
+    try {
+      const r = b.current
+        ? await host.invoke("sync:pull", undefined)
+        : await host.invoke("branch:pullFf", { name: b.name });
+      if (!r.ok) {
+        toast(r.message || `Couldn't pull ${b.name}.`, "error");
+        return;
+      }
+      toast(b.current ? "Pulled successfully." : `Fast-forwarded ${b.name}.`, "success");
+      bust();
+      await this.updateSync();
+      if (b.current) await this.refreshAll();
+      await this.refreshBranchesSoft();
+    } catch (e) {
+      toast(cleanErr(e) || `Couldn't pull ${b.name}.`, "error");
+    } finally {
+      // On success the live reload rebuilt the row (and this button); only a
+      // still-connected button — the failure path — needs restoring.
+      if (btn?.isConnected) {
+        btn.disabled = false;
+        btn.classList.remove("busy");
+        g?.classList.remove("codicon-sync", "spin");
+        g?.classList.add("codicon-arrow-down");
+        if (lbl) lbl.textContent = `Pull ${b.behind}`;
+      }
+    }
   }
 
   private async newBranch(): Promise<void> {
@@ -2533,6 +2703,7 @@ class App {
 
     this.renderSyncWidget = (s: SyncStatus | undefined): void => {
       main.replaceChildren();
+      (main as HTMLButtonElement).disabled = false; // clears doSync's in-flight state
       if (!s || !s.branch) {
         wrap.style.display = "none";
         return;
@@ -2577,6 +2748,22 @@ class App {
     this.syncing = true;
     const widget = document.querySelector(".topbar-sync");
     widget?.classList.add("busy");
+    // Live in-flight state: the widget shows WHAT it's doing with a spinning
+    // icon ("Pulling… / Pushing…"), not just a dimmed button.
+    const main = widget?.querySelector<HTMLButtonElement>(".sync-main");
+    if (main) {
+      const verbing =
+        action === "fetch"
+          ? "Fetching…"
+          : action === "pull"
+            ? "Pulling…"
+            : action === "publish"
+              ? "Publishing…"
+              : "Pushing…";
+      main.replaceChildren(glyph("sync"), span(verbing));
+      main.querySelector(".glyph")?.classList.add("spin");
+      main.disabled = true;
+    }
     try {
       const r =
         action === "fetch"
@@ -2603,6 +2790,9 @@ class App {
     } finally {
       this.syncing = false;
       document.querySelector(".topbar-sync")?.classList.remove("busy");
+      // Restore the widget from its in-flight face (success already repainted
+      // it via updateSync; this covers the failure path).
+      this.renderSyncWidget?.(this.syncStatus);
     }
   }
 
@@ -2977,6 +3167,12 @@ class App {
       const detail = (e as CustomEvent).detail as { sha: string };
       this.graph?.reveal(detail.sha);
       void this.selectCommit(detail.sha);
+    });
+    // The panel's Close (X) button + its Esc affordance emit gs-close; collapse
+    // the details dock (mirrors the extension webview, which handles gs-close in
+    // graph/main.ts). Without this the visible Close control is dead on desktop.
+    panel.addEventListener("gs-close", () => {
+      this.terminalDock?.setDetailsVisible(false);
     });
 
     const surface = el("div", "diff-surface");
