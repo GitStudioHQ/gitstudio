@@ -1,0 +1,47 @@
+.github/workflows/ci.yml
+  s_8b33a63136feb2::t_8d1cf9c62ff03b 52-54
+apps/desktop/src/main/autoUpdate.ts
+  s_8b33a63136feb2::t_00967e7675b192 25-28
+apps/desktop/src/main/gitBridge.ts
+  s_8b33a63136feb2::t_459dd3b242dac7 10,1170-1172,1191-1193,1324-1326
+  s_8b33a63136feb2::t_355b8ab782d01f 75-90
+  s_8b33a63136feb2::t_bb302761aec258 449-459,855,1377-1390
+packages/git-service/src/StatusProvider.ts
+  s_8b33a63136feb2::t_5a66f82973fe49 93-97
+packages/git-service/src/RefProvider.ts
+  s_8b33a63136feb2::t_42b855abe31d91 6-8,12
+  s_8b33a63136feb2::t_84169014d0e7e7 63,73-75
+packages/webview-ui/src/graph/commit-graph.ts
+  s_8b33a63136feb2::t_3cc49186f42044 1162
+  s_8b33a63136feb2::t_8726d8b6bb3387 1502-1505,1509,1512,1516-1521
+  s_8b33a63136feb2::t_61396dc0917076 1522
+apps/extension/src/graph/graphPanel.ts
+  s_8b33a63136feb2::t_17ea966464d294 575-577,581
+  s_8b33a63136feb2::t_7930be1f237a7d 668-670
+  s_8b33a63136feb2::t_4670b33ecab553 536-545,550-552,555-556,562-564
+  s_8b33a63136feb2::t_f0f5d49827ef19 553-554,557-561
+  s_8b33a63136feb2::t_f0121357fa6d8c 350-364
+  s_8b33a63136feb2::t_96fdf2afc87130 565-566
+apps/extension/src/git/git.d.ts
+  s_8b33a63136feb2::t_1e72cd7054b536 72-74
+.github/workflows/release.yml
+  s_8b33a63136feb2::t_ed0ecf5f284b29 72-75,79-81
+apps/extension/src/pr/pullRequestsView.ts
+  s_8b33a63136feb2::t_4ca0599e6b29af 149-152,154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "185a9f89d4f92f220239e4e6df7023eb0cbb4424",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
