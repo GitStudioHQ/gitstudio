@@ -1,0 +1,114 @@
+/* Host-page chrome for the commit-graph webview. The <gitstudio-graph> Lit
+ * element carries all of its own (shadow-DOM) styling; this file only frames
+ * the page so the element fills the panel and inherits the VS Code theme. */
+
+/* The real VS Code icon font. Declared at document scope (esbuild inlines the
+ * .ttf as a data URL) so the <gitstudio-graph> shadow root can use it too —
+ * @font-face is registered on the document, not scoped to a shadow tree. */
+
+/* Pull in the shared GitStudio design tokens (--gs-* scale + .gs-* utilities).
+ * CSS custom properties inherit through shadow DOM, so importing them at the
+ * document scope exposes the whole token system inside the <gitstudio-graph>
+ * and <gitstudio-details> shadow roots — the surfaces consume ONE system
+ * instead of each re-declaring a drifting subset. */
+@import "./tokens.css";
+
+@font-face {
+  font-family: "codicon";
+  font-display: block;
+  src: url("@vscode/codicons/dist/codicon.ttf") format("truetype");
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  background: var(--vscode-editor-background);
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* The graph + docked details split (GitKraken/GitLens layout). */
+.gs-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  /* The dock starts a touch under a third of the height so the graph keeps the
+     room; the user can drag the divider or close it entirely. */
+  --gs-details-h: 38%;
+}
+.gs-graph-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+/* NB: do NOT set `display` here — the element's shadow `:host` uses
+ * `display:flex; flex-direction:column` so its header/columns/scroller lay out
+ * as a column. A light-DOM `display:block` would override `:host` and collapse
+ * the flex:1 scroller to zero height. Only size the host. */
+.gs-graph-pane gitstudio-graph {
+  height: 100%;
+  width: 100%;
+}
+.gs-divider {
+  display: none;
+  flex: 0 0 auto;
+  height: 7px;
+  cursor: row-resize;
+  background: var(--vscode-editor-background);
+  border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+  position: relative;
+}
+.gs-divider::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 2px;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--vscode-foreground) 22%, transparent);
+}
+.gs-divider:hover::after {
+  background: color-mix(in srgb, var(--vscode-foreground) 40%, transparent);
+}
+.gs-details-pane {
+  display: none;
+  flex: 0 0 auto;
+  height: var(--gs-details-h);
+  min-height: 140px;
+  overflow: hidden;
+}
+.gs-shell[data-details-open="true"] .gs-divider { display: block; }
+.gs-shell[data-details-open="true"] .gs-details-pane { display: block; }
+
+/* Bare usage (e.g. the desktop app mounts <gitstudio-graph> directly). Size
+ * only — `:host` owns `display:flex` (see note above). */
+gitstudio-graph {
+  height: 100%;
+  width: 100%;
+}
+
+/* Pre-mount placeholder shown before the element upgrades / first paint. */
+#boot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  color: var(--vscode-descriptionForeground, #9aa0a6);
+  font-size: 13px;
+}

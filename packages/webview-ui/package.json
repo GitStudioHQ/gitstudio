@@ -1,0 +1,21 @@
+{
+  "name": "@gitstudio/webview-ui",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "GitStudio shared webview UI: Monaco merge/diff views, SVG ribbons, theme bridge, decorations, and (added incrementally) Lit components for graph/history/staging.",
+  "exports": {
+    "./styles/*.css": "./src/styles/*.css",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@gitstudio/engine": "*",
+    "@gitstudio/host-bridge": "*",
+    "@tanstack/virtual-core": "^3.13.12",
+    "lit": "^3.3.1",
+    "monaco-editor": "^0.55.1"
+  }
+}

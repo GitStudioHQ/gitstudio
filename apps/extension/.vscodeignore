@@ -1,0 +1,19 @@
+.vscode/**
+.github/**
+src/**
+test/**
+node_modules/**
+**/*.ts
+**/*.map
+**/*-harness.html
+esbuild.js
+tsconfig.json
+.gitignore
+.vscodeignore
+**/.DS_Store
+*.vsix
+media/*.svg
+!media/activitybar.svg
+# Store screenshots are served from GitHub (vsce rewrites relative README image
+# links to raw.githubusercontent.com) — keep them out of the vsix.
+media/shots/**

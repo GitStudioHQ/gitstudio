@@ -1,0 +1,19 @@
+{
+  "name": "@gitstudio/git-service",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Host-agnostic Git data layer for GitStudio: spawned git CLI process pool + streaming log/blame/ref/object providers. No vscode import.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "tsx --import ./test/hermetic.ts --test \"test/**/*.test.ts\"",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@gitstudio/ai": "*",
+    "@gitstudio/engine": "*",
+    "@gitstudio/host-bridge": "*"
+  }
+}

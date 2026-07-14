@@ -1,6 +1,10 @@
 node_modules/
 dist/
 out/
+release/
 *.vsix
 .DS_Store
 .vscode-test/
+
+# IDE dependency-graph plugin artifacts
+.dependencygraph/

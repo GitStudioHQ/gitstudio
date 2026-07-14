@@ -1,0 +1,14 @@
+{
+  "name": "@gitstudio/host-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Host-agnostic message protocol + HostBridge / HostGitAdapter interfaces shared by the VS Code extension and the desktop shell.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  }
+}

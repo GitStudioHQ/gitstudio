@@ -1,0 +1,54 @@
+/* Host-page chrome for the SIDEBAR Commits webview. The <gitstudio-commit-rail>
+ * Lit element carries all of its own (shadow-DOM) styling; this file only
+ * frames the page so the element fills the view and inherits the VS Code
+ * theme. Sits on the SIDEBAR background, not the editor background. */
+
+/* Shared GitStudio design tokens (--gs-* scale). Custom properties inherit
+ * through shadow DOM, so importing them at document scope exposes the token
+ * system inside the <gitstudio-commit-rail> shadow root. */
+@import "./tokens.css";
+
+/* The real VS Code icon font, at document scope (esbuild inlines the .ttf as a
+ * data URL) — @font-face is registered on the document, not per shadow tree. */
+@font-face {
+  font-family: "codicon";
+  font-display: block;
+  src: url("@vscode/codicons/dist/codicon.ttf") format("truetype");
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size, 13px);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+/* Size the host only — `:host` owns `display` (a light-DOM `display:block`
+ * would override the shadow `:host{display:flex}` and collapse the flex:1
+ * scroller to zero height; see the graph.css note). */
+gitstudio-commit-rail {
+  height: 100%;
+  width: 100%;
+}
+
+#boot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}

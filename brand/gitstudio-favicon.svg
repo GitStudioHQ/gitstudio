@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<defs>
+<linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">
+<stop offset="0%" stop-color="#4E4C6A"/>
+<stop offset="100%" stop-color="#383650"/>
+</linearGradient>
+<linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#2C2A44"/>
+<stop offset="100%" stop-color="#1C1A30"/>
+</linearGradient>
+<linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">
+<stop offset="0%" stop-color="#3C3A58"/>
+<stop offset="100%" stop-color="#282640"/>
+</linearGradient>
+<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#1B1B27"/>
+<stop offset="100%" stop-color="#0C0C16"/>
+</linearGradient>
+<radialGradient id="bgglow" cx="0.30" cy="0.20" r="0.95">
+<stop offset="0%" stop-color="#403A66" stop-opacity="0.5"/>
+<stop offset="60%" stop-color="#2A2D3A" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="512" height="512" rx="116" fill="url(#bg)"/>
+<rect width="512" height="512" rx="116" fill="url(#bgglow)"/>
+<rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#fff" stroke-opacity="0.06" stroke-width="3"/>
+<mask id="cubeHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+<rect width="512" height="512" fill="#fff"/>
+<circle cx="124.4" cy="174.0" r="9.2" fill="#000"/>
+<circle cx="387.6" cy="174.0" r="9.2" fill="#000"/>
+<circle cx="256.0" cy="402.0" r="9.2" fill="#000"/>
+<circle cx="256.0" cy="250.0" r="10.4" fill="#000"/>
+</mask>
+<g mask="url(#cubeHoles)">
+<path d="M256.0,98.0 L387.6,174.0 L256.0,250.0 L124.4,174.0 Z" fill="url(#fTop)"/>
+<path d="M387.6,174.0 L387.6,326.0 L256.0,402.0 L256.0,250.0 Z" fill="url(#fRight)"/>
+<path d="M256.0,250.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="url(#fLeft)"/>
+<path d="M256.0,98.0 L387.6,174.0 L387.6,326.0 L256.0,402.0 L124.4,326.0 L124.4,174.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="3" stroke-linejoin="round"/>
+<g fill="none" stroke-width="18" stroke-linecap="round">
+<path d="M256.0,250.0 L124.4,174.0" stroke="#A98CFF"/>
+<path d="M256.0,250.0 L387.6,174.0" stroke="#A98CFF"/>
+<path d="M256.0,250.0 L256.0,402.0" stroke="#A98CFF"/>
+</g>
+<circle cx="124.4" cy="174.0" r="23" fill="#A98CFF"/>
+<circle cx="387.6" cy="174.0" r="23" fill="#A98CFF"/>
+<circle cx="256.0" cy="402.0" r="23" fill="#A98CFF"/>
+<circle cx="256.0" cy="250.0" r="26" fill="#A98CFF"/>
+</g>
+</svg>

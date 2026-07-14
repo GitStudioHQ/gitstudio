@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Tests run on every OS the release workflows build on — otherwise a tagged
+  # release is the FIRST time the suite ever executes on windows/mac, and a
+  # failure there yields a half-published release instead of a red PR.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run check-types
+
+      - name: Test
+        run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Engine purity guard
+        run: npm run check-purity
+
+      - name: Package extension (smoke-test the build)
+        run: |
+          npm run package
+          npx @vscode/vsce package -o gitstudio.vsix --no-dependencies \
+            --baseImagesUrl https://github.com/GitStudioHQ/gitstudio/raw/HEAD/apps/extension \
+            --baseContentUrl https://github.com/GitStudioHQ/gitstudio/blob/HEAD/apps/extension
+        working-directory: apps/extension
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gitstudio-vsix
+          path: apps/extension/gitstudio.vsix
+
+      - name: Build desktop bundles (smoke-test)
+        run: npm run build --workspace apps/desktop

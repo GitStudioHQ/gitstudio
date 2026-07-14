@@ -1,0 +1,14 @@
+GitStudio
+Copyright 2026 GitStudio
+
+This product includes software developed for the GitStudio project
+(https://gitstudio.dev).
+
+Portions of the shared engine and webview UI originate from Merge Studio
+(https://github.com/GitStudioHQ/merge-studio), licensed under the MIT License,
+and are redistributed here under the Apache License, Version 2.0.
+
+This product depends on third-party software, including:
+- Monaco Editor (MIT), Microsoft Corporation
+- vscode-diff (MIT)
+- DOMPurify (Apache-2.0 / MPL-2.0)
