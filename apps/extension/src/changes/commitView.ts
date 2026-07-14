@@ -420,9 +420,19 @@ export class CommitViewProvider
       const change = findIn(pool, active.root, path);
       if (change) {
         const isMerge = pool === state.mergeChanges;
-        void openChangeDiff(
-          new ChangeFileNode(isMerge ? "merge" : kind, active.root, change),
-        );
+        if (isMerge) {
+          // A conflicted file belongs in the 3-pane merge editor — that is the
+          // whole point of the feature. It used to open a plain 2-way
+          // "Working Tree vs HEAD" diff, so the merge editor was unreachable
+          // from GitStudio's own Changes view (its only entry points were VS
+          // Code's built-in SCM view and the editor title bar).
+          void vscode.commands.executeCommand(
+            "gitstudio.resolveInMergeEditor",
+            change.uri,
+          );
+          return;
+        }
+        void openChangeDiff(new ChangeFileNode(kind, active.root, change));
         return;
       }
     }

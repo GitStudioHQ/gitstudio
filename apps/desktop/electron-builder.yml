@@ -40,6 +40,10 @@ publish:
 # converts it to .icns / .ico per platform automatically.
 mac:
   category: public.app-category.developer-tools
+  # macOS needs the padded variant (824px art in a 1024 canvas, Apple's icon
+  # grid). The full-bleed build/icon.png used for win/linux gets scaled
+  # edge-to-edge into the dock slot and renders bigger than every other app.
+  icon: build/icon-mac.png
   # dmg is the human download; zip is REQUIRED for electron-updater to deliver
   # macOS auto-updates (it can't update from a .dmg).
   target:

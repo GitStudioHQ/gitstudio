@@ -12,6 +12,7 @@ import {
   type TimelineOptions,
   type TimelineProvider,
 } from "./timelineApi";
+import { isSamePathOrInside } from "../git/repoManager";
 
 /** The source id this provider registers under (also its TimelineItem.source). */
 export const FILE_HISTORY_SOURCE = "gitstudio-file-history";
@@ -168,11 +169,10 @@ function parseCursor(cursor: string | undefined): number {
 }
 
 function isInside(filePath: string, dir: string): boolean {
-  if (filePath === dir) {
-    return true;
-  }
-  const withSep = dir.endsWith("/") ? dir : `${dir}/`;
-  return filePath.startsWith(withSep);
+  // Delegates to the ONE separator- and case-tolerant implementation. The old
+  // local copy only matched a "/" boundary, so on Windows (fsPaths use "\\")
+  // it always returned false and this feature silently did nothing.
+  return isSamePathOrInside(filePath, dir);
 }
 
 function baseName(rel: string): string {

@@ -62,7 +62,7 @@ export class BlameController implements vscode.Disposable {
     );
     this.statusBar.command = "gitstudio.blame.showLineActions";
 
-    void this.maybeDisableNativeBlame();
+    void this.checkDuplicateBlame();
 
     this.disposables.push(
       this.inlineDecoration,
@@ -75,10 +75,12 @@ export class BlameController implements vscode.Disposable {
         this.scheduleInline(e.textEditor),
       ),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
+        // Always clear FIRST: the annotation is only ever painted on the active
+        // editor, so without this the previous editor keeps its stale line
+        // annotation in a split view — which looks exactly like duplicate blame.
+        this.clearInline();
         if (editor) {
           this.scheduleInline(editor);
-        } else {
-          this.clearInline();
         }
       }),
       vscode.workspace.onDidChangeTextDocument((e) => {
@@ -420,50 +422,86 @@ export class BlameController implements vscode.Disposable {
     return promise;
   }
 
-  // --- Native-blame de-duplication (one-time) ------------------------------
+  // --- Duplicate inline-blame detection ------------------------------------
 
-  private async maybeDisableNativeBlame(): Promise<void> {
+  /**
+   * Three extensions can paint an end-of-line blame annotation on the same
+   * line: GitStudio, VS Code's built-in git, and GitLens. Stacked, they read as
+   * garbage.
+   *
+   * The previous check was broken in both directions. It tested
+   * `inspect().defaultValue`, not the EFFECTIVE value — and since
+   * `git.blame.editorDecoration.enabled` ships defaulting to `false`, the
+   * built-in decoration (the one that actually overlaps us) was never detected.
+   * Meanwhile `git.blame.statusBarItem.enabled` defaults to `true`, so the only
+   * branch that ever fired silently rewrote the user's GLOBAL settings to turn
+   * off the status-bar item — which wasn't overlapping anything.
+   *
+   * Now: read effective values, notice GitLens too, and never touch another
+   * extension's settings without being told to. We ask; the user decides.
+   */
+  private async checkDuplicateBlame(): Promise<void> {
     if (this.context.globalState.get<boolean>(NATIVE_BLAME_DISABLED_KEY)) {
+      return; // asked once already — don't nag on every launch
+    }
+    // Nothing can collide with us if we aren't rendering inline blame.
+    const ours = vscode.workspace
+      .getConfiguration("gitstudio.blame")
+      .get<boolean>("inlineEnabled", true);
+    if (!ours) {
       return;
     }
+
     const git = vscode.workspace.getConfiguration("git");
-    const editorDecoration = git.inspect<boolean>("blame.editorDecoration.enabled");
-    const statusBarItem = git.inspect<boolean>("blame.statusBarItem.enabled");
+    const builtInOn = git.get<boolean>("blame.editorDecoration.enabled", false);
 
-    // Only act when the *effective* value is on AND the user hasn't explicitly
-    // set it (globally or per-workspace) themselves.
-    const userSet = (v?: { globalValue?: boolean; workspaceValue?: boolean }) =>
-      v?.globalValue !== undefined || v?.workspaceValue !== undefined;
+    const gitlens = vscode.extensions.getExtension("eamodio.gitlens");
+    const gitlensOn =
+      gitlens !== undefined &&
+      vscode.workspace
+        .getConfiguration("gitlens")
+        .get<boolean>("currentLine.enabled", true);
 
-    const decOn =
-      editorDecoration?.defaultValue === true && !userSet(editorDecoration);
-    const sbOn = statusBarItem?.defaultValue === true && !userSet(statusBarItem);
+    const others: string[] = [];
+    if (builtInOn) others.push("VS Code's built-in Git");
+    if (gitlensOn) others.push("GitLens");
+    if (others.length === 0) {
+      return;
+    }
 
-    // Mark handled regardless, so we never nag again on this machine.
     await this.context.globalState.update(NATIVE_BLAME_DISABLED_KEY, true);
 
-    if (!decOn && !sbOn) {
-      return;
-    }
+    const TURN_OFF_OURS = "Turn off GitStudio's";
+    const TURN_OFF_THEIRS = "Turn off the other";
+    const KEEP = "Keep both";
+    const choice = await vscode.window.showInformationMessage(
+      `${others.join(" and ")} ${others.length > 1 ? "also show" : "also shows"} ` +
+        "inline blame, so you'll see the annotation more than once per line.",
+      TURN_OFF_OURS,
+      TURN_OFF_THEIRS,
+      KEEP,
+    );
+
     try {
-      if (decOn) {
-        await git.update(
-          "blame.editorDecoration.enabled",
-          false,
-          vscode.ConfigurationTarget.Global,
-        );
+      if (choice === TURN_OFF_OURS) {
+        await vscode.workspace
+          .getConfiguration("gitstudio.blame")
+          .update("inlineEnabled", false, vscode.ConfigurationTarget.Global);
+      } else if (choice === TURN_OFF_THEIRS) {
+        // Only ever on an explicit click — this writes settings we don't own.
+        if (builtInOn) {
+          await git.update(
+            "blame.editorDecoration.enabled",
+            false,
+            vscode.ConfigurationTarget.Global,
+          );
+        }
+        if (gitlensOn) {
+          await vscode.workspace
+            .getConfiguration("gitlens")
+            .update("currentLine.enabled", false, vscode.ConfigurationTarget.Global);
+        }
       }
-      if (sbOn) {
-        await git.update(
-          "blame.statusBarItem.enabled",
-          false,
-          vscode.ConfigurationTarget.Global,
-        );
-      }
-      void vscode.window.showInformationMessage(
-        "GitStudio inline blame is on; disabled the built-in blame to avoid " +
-          "duplicate annotations. You can re-enable it in settings.",
-      );
     } catch {
       // Best-effort: a settings write failure shouldn't break activation.
     }

@@ -124,11 +124,30 @@ export class SyncOps {
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git pull [--rebase] [<remote> <branch>]`. */
+  /**
+   * `git pull [--rebase|--no-rebase] [<remote> <branch>]`.
+   *
+   * The strategy is ALWAYS explicit. Since git 2.34 a bare `git pull` on
+   * divergent branches is a hard error when the user has no `pull.rebase` /
+   * `pull.ff` config —
+   *
+   *   fatal: Need to specify how to reconcile divergent branches.
+   *
+   * — which we used to surface verbatim, so a plain Pull looked like GitStudio
+   * was demanding the user go configure a rebase. Worse, the pull aborted, so
+   * no merge was ever attempted and conflicts (and the 3-pane merge editor)
+   * never appeared. When the caller doesn't pick, we respect an explicit user
+   * config if one exists and otherwise fall back to a merge (git's historical
+   * default), which is the behaviour people expect from a Pull button.
+   */
   async pull(opts?: PullOptions): Promise<SyncOpResult> {
     const args = ["pull"];
-    if (opts?.rebase) {
+    if (opts?.rebase === true) {
       args.push("--rebase");
+    } else if (opts?.rebase === false) {
+      args.push("--no-rebase");
+    } else if (!(await this.hasPullStrategyConfig())) {
+      args.push("--no-rebase");
     }
     if (opts?.remote) {
       args.push(opts.remote);
@@ -138,6 +157,18 @@ export class SyncOps {
     }
     const r = await this.proc.run(args, { signal: opts?.signal });
     return { ok: r.code === 0, stderr: r.stderr };
+  }
+
+  /** True when the user has configured how `git pull` reconciles divergence
+   *  (`pull.rebase` or `pull.ff=only`) — then we leave their choice alone. */
+  private async hasPullStrategyConfig(): Promise<boolean> {
+    for (const key of ["pull.rebase", "pull.ff"]) {
+      const r = await this.proc.run(["config", "--get", key]);
+      if (r.code === 0 && r.stdout.trim().length > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** `git fetch [--all] [--prune]`. */

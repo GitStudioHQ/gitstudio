@@ -39,6 +39,7 @@ import {
 import { FileTimelineProvider } from "./history/fileTimelineProvider";
 import { registerTimelineProvider } from "./history/timelineApi";
 import { showLineHistory } from "./history/lineHistory";
+import { showFileHistory } from "./history/fileHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
 import { showReflog } from "./history/reflog";
 import { MergeEditorProvider } from "./merge/mergeEditorProvider";
@@ -208,6 +209,9 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         },
       ),
+      vscode.commands.registerCommand("gitstudio.showFileHistory", () => {
+        void showFileHistory(repos);
+      }),
       vscode.commands.registerCommand("gitstudio.showLineHistory", () => {
         void showLineHistory(repos);
       }),

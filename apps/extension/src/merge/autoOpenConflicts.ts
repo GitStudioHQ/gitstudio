@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { relative } from "node:path";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { MergeEditorProvider } from "./mergeEditorProvider";
+import { isSamePathOrInside } from "../git/repoManager";
 
 /**
  * Watches every open repository for newly-conflicted files and, when
@@ -80,9 +81,24 @@ export class AutoOpenConflicts implements vscode.Disposable {
         uri,
         MergeEditorProvider.viewType,
       );
-    } catch {
-      // The file may have been deleted or the conflict resolved between the
-      // scan and the open; ignore and let the next scan reconcile.
+    } catch (err) {
+      // A vanished file / already-resolved conflict is fine to ignore, but we
+      // used to swallow EVERY error — so a merge editor that failed to open
+      // did so completely silently, which is indistinguishable from "the
+      // feature doesn't work". Say something, and offer the plain diff.
+      const exists = await fileExists(uri);
+      if (!exists) {
+        return; // resolved/deleted between the scan and the open — genuinely fine
+      }
+      const OPEN_DIFF = "Open as Diff";
+      const choice = await vscode.window.showErrorMessage(
+        `GitStudio couldn't open the merge editor for ${rel}: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+        OPEN_DIFF,
+      );
+      if (choice === OPEN_DIFF) {
+        await vscode.commands.executeCommand("vscode.open", uri);
+      }
     }
   }
 
@@ -161,9 +177,19 @@ function resolveTarget(
 }
 
 function isInside(filePath: string, dir: string): boolean {
-  if (filePath === dir) {
+  // Delegates to the ONE separator- and case-tolerant implementation. The old
+  // local copy only matched a "/" boundary, so on Windows (fsPaths use "\\")
+  // it always returned false and this feature silently did nothing.
+  return isSamePathOrInside(filePath, dir);
+}
+
+/** Does the file still exist on disk? (A conflict resolved between the scan and
+ *  the open is expected; a missing merge editor for a file that IS there isn't.) */
+async function fileExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
     return true;
+  } catch {
+    return false;
   }
-  const withSep = dir.endsWith("/") ? dir : `${dir}/`;
-  return filePath.startsWith(withSep);
 }
