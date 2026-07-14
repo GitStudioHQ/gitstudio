@@ -1,0 +1,23 @@
+apps/extension/CHANGELOG.md
+  s_8b33a63136feb2::t_1eb9ed49a5d34d 7-44
+apps/desktop/package.json
+  s_8b33a63136feb2::t_1eb9ed49a5d34d 3
+apps/extension/package.json
+  s_8b33a63136feb2::t_1eb9ed49a5d34d 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "89ebb429217e0a54d9cde11a9dc0c7812aa5768a",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
