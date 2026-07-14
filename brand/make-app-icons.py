@@ -49,55 +49,48 @@ DARK = {
     "bg_top": "#20202F", "bg_bot": "#0E0E1A",
     "glow": "#4A4480", "glow_edge": "#2A2D3A",
     "hairline": "#ffffff", "hairline_op": "0.07",
-    "f_top": ("#7B79A6", "#5D5B82"),
-    "f_left": ("#39375A", "#2A2845"),
-    "f_right": ("#55527C", "#403E63"),
-    "edge_dark": "#0E0E1A", "edge_dark_op": "0.35",
-    "edge_light": "#FFFFFF", "edge_light_op": "0.16",
-    # Brighter than the old #C4ADFF→#9A78FF so the lanes pop off the slate cube.
-    "lane": ("#DCCFFF", "#AB8FFF"),
-    "ring": "#C3ACFF", "center_ring": "#D0BCFF",
+    # Bright end of the wordmark gradient — it sits on a dark ground.
+    "g1": "#C9B6FF", "g2": "#D98BFF",
+    "face_ops": (0.30, 0.55, 0.42),
+    "sil_op": "0.55",
 }
 
 LIGHT = {
+    # A darker shade of white (lavender-grey), so the mark has a ground to sit
+    # on. Near-white paper let the whole cube dissolve into a light dock.
     "bg_top": "#E7E3F3", "bg_bot": "#D2CCE6",
     "glow": "#BFB4E4", "glow_edge": "#C9CBD9",
     "hairline": "#1B1A2E", "hairline_op": "0.14",
-    "f_top": ("#7B79A6", "#5D5B82"),
-    "f_left": ("#39375A", "#2A2845"),
-    "f_right": ("#55527C", "#403E63"),
-    "edge_dark": "#14121F", "edge_dark_op": "0.30",
-    "edge_light": "#FFFFFF", "edge_light_op": "0.28",
-    # Deep brand violet: it must carry on the PALE tile *and* the slate cube —
-    # the corner nodes straddle that boundary, and light violet vanished on the
-    # tile (that was the "white background hides the lines" complaint).
-    "lane": ("#8B75F5", "#6B5BE6"),
-    "ring": "#6B5BE6", "center_ring": "#7C64F2",
+    # DEEPER end of the same gradient: the bright one washes out on lavender.
+    # Same hues, same structure — so it is visibly the same logo, not another.
+    "g1": "#7C5FF0", "g2": "#B44FE0",
+    "face_ops": (0.40, 0.68, 0.55),
+    "sil_op": "0.65",
 }
 
 
 def svg(t: dict) -> str:
+    """The activity-bar glyph's recipe, in colour.
+
+    The cube is translucent tints of ONE gradient (never a second hue), so the
+    mark keeps its identity on any ground — that is why the dark and light tiles
+    now read as the same logo. Every commit node is punched through by a mask,
+    so the dot centres are true HOLES showing the tile, not painted discs.
+    """
     nodes = [(LEFT_X, UPPER_Y), (RIGHT_X, UPPER_Y), (CX, BOT_Y)]
     holes = "".join(
         f'<circle cx="{x}" cy="{y}" r="{HOLE_R}" fill="#000"/>' for x, y in nodes
     )
     holes += f'<circle cx="{CX}" cy="{MID_Y}" r="{CENTER_HOLE_R}" fill="#000"/>'
-    rings = "".join(
-        f'<circle cx="{x}" cy="{y}" r="{NODE_R}" fill="{t["ring"]}"/>' for x, y in nodes
+    discs = "".join(
+        f'<circle cx="{x}" cy="{y}" r="{NODE_R}" fill="url(#g)"/>' for x, y in nodes
     )
-    rings += (
-        f'<circle cx="{CX}" cy="{MID_Y}" r="{CENTER_NODE_R}" fill="{t["center_ring"]}"/>'
-    )
+    discs += f'<circle cx="{CX}" cy="{MID_Y}" r="{CENTER_NODE_R}" fill="url(#g)"/>'
+    fo = t["face_ops"]
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{BOX}" height="{BOX}" viewBox="0 0 {BOX} {BOX}">
 <defs>
-<linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">
-<stop offset="0%" stop-color="{t["f_top"][0]}"/><stop offset="100%" stop-color="{t["f_top"][1]}"/>
-</linearGradient>
-<linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0%" stop-color="{t["f_left"][0]}"/><stop offset="100%" stop-color="{t["f_left"][1]}"/>
-</linearGradient>
-<linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">
-<stop offset="0%" stop-color="{t["f_right"][0]}"/><stop offset="100%" stop-color="{t["f_right"][1]}"/>
+<linearGradient id="g" x1="0.05" y1="0" x2="0.95" y2="1">
+<stop offset="0%" stop-color="{t["g1"]}"/><stop offset="100%" stop-color="{t["g2"]}"/>
 </linearGradient>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
 <stop offset="0%" stop-color="{t["bg_top"]}"/><stop offset="100%" stop-color="{t["bg_bot"]}"/>
@@ -106,9 +99,6 @@ def svg(t: dict) -> str:
 <stop offset="0%" stop-color="{t["glow"]}" stop-opacity="0.55"/>
 <stop offset="60%" stop-color="{t["glow_edge"]}" stop-opacity="0"/>
 </radialGradient>
-<linearGradient id="lane" gradientUnits="userSpaceOnUse" x1="{CX}" y1="{UPPER_Y}" x2="{CX}" y2="{BOT_Y}">
-<stop offset="0%" stop-color="{t["lane"][0]}"/><stop offset="100%" stop-color="{t["lane"][1]}"/>
-</linearGradient>
 <mask id="cubeHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="{BOX}" height="{BOX}">
 <rect width="{BOX}" height="{BOX}" fill="#fff"/>{holes}
 </mask>
@@ -117,17 +107,16 @@ def svg(t: dict) -> str:
 <rect width="{BOX}" height="{BOX}" rx="116" fill="url(#bgglow)"/>
 <rect x="2" y="2" width="{BOX - 4}" height="{BOX - 4}" rx="114" fill="none" stroke="{t["hairline"]}" stroke-opacity="{t["hairline_op"]}" stroke-width="3"/>
 <g mask="url(#cubeHoles)">
-<path d="M{CX},{TOP_Y} L{RIGHT_X},{UPPER_Y} L{CX},{MID_Y} L{LEFT_X},{UPPER_Y} Z" fill="url(#fTop)"/>
-<path d="M{RIGHT_X},{UPPER_Y} L{RIGHT_X},{LOWER_Y} L{CX},{BOT_Y} L{CX},{MID_Y} Z" fill="url(#fRight)"/>
-<path d="M{CX},{MID_Y} L{CX},{BOT_Y} L{LEFT_X},{LOWER_Y} L{LEFT_X},{UPPER_Y} Z" fill="url(#fLeft)"/>
-<path d="M{CX},{TOP_Y} L{RIGHT_X},{UPPER_Y} L{RIGHT_X},{LOWER_Y} L{CX},{BOT_Y} L{LEFT_X},{LOWER_Y} L{LEFT_X},{UPPER_Y} Z" fill="none" stroke="{t["edge_dark"]}" stroke-opacity="{t["edge_dark_op"]}" stroke-width="3.5" stroke-linejoin="round"/>
-<path d="M{CX},{TOP_Y} L{RIGHT_X},{UPPER_Y} L{CX},{MID_Y} L{LEFT_X},{UPPER_Y} Z" fill="none" stroke="{t["edge_light"]}" stroke-opacity="{t["edge_light_op"]}" stroke-width="3.5" stroke-linejoin="round"/>
-<g fill="none" stroke-width="{LANE_W}" stroke-linecap="round">
-<path d="M{CX},{MID_Y} L{LEFT_X},{UPPER_Y}" stroke="url(#lane)"/>
-<path d="M{CX},{MID_Y} L{RIGHT_X},{UPPER_Y}" stroke="url(#lane)"/>
-<path d="M{CX},{MID_Y} L{CX},{BOT_Y}" stroke="url(#lane)"/>
+<path d="M{CX},{TOP_Y} L{RIGHT_X},{UPPER_Y} L{CX},{MID_Y} L{LEFT_X},{UPPER_Y} Z" fill="url(#g)" fill-opacity="{fo[0]}"/>
+<path d="M{RIGHT_X},{UPPER_Y} L{RIGHT_X},{LOWER_Y} L{CX},{BOT_Y} L{CX},{MID_Y} Z" fill="url(#g)" fill-opacity="{fo[1]}"/>
+<path d="M{CX},{MID_Y} L{CX},{BOT_Y} L{LEFT_X},{LOWER_Y} L{LEFT_X},{UPPER_Y} Z" fill="url(#g)" fill-opacity="{fo[2]}"/>
+<path d="M{CX},{TOP_Y} L{RIGHT_X},{UPPER_Y} L{RIGHT_X},{LOWER_Y} L{CX},{BOT_Y} L{LEFT_X},{LOWER_Y} L{LEFT_X},{UPPER_Y} Z" fill="none" stroke="url(#g)" stroke-opacity="{t["sil_op"]}" stroke-width="4" stroke-linejoin="round"/>
+<g fill="none" stroke-width="{LANE_W}" stroke-linecap="round" stroke-linejoin="round">
+<path d="M{CX},{MID_Y} L{LEFT_X},{UPPER_Y}" stroke="url(#g)"/>
+<path d="M{CX},{MID_Y} L{RIGHT_X},{UPPER_Y}" stroke="url(#g)"/>
+<path d="M{CX},{MID_Y} L{CX},{BOT_Y}" stroke="url(#g)"/>
 </g>
-{rings}
+{discs}
 </g>
 </svg>'''
 
