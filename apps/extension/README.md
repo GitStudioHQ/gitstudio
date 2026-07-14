@@ -5,93 +5,134 @@
 <h1 align="center">GitStudio</h1>
 
 <p align="center">
-  <b>A free, open-source, JetBrains-grade Git suite for VS Code &amp; Cursor — the whole workflow, in one extension.</b>
-</p>
-
-<p align="center">
-  Commit graph · inline blame · file &amp; line history · hunk/line staging · side-by-side diff · 3-pane merge · interactive rebase with a universal <b>Undo</b> · branches, remotes, stashes, tags, worktrees · search &amp; compare · in-editor GitHub PR review · optional bring-your-own-key AI.
+  <b>A free, open-source, JetBrains-grade Git suite for VS Code and Cursor — the whole workflow, in one extension.</b>
 </p>
 
 ---
 
-GitStudio brings the parts people love from **GitLens**, **GitKraken**, and **JetBrains IDEs** into one unified, free, open-source extension — the *information* lens *and* the *interaction* (merging, staging, rebasing, resolving), with an optional intelligence layer on top. It runs identically on VS Code and Cursor (built on stable APIs, shipped to the Marketplace and Open VSX).
+VS Code's built-in Git is functional but flat. GitLens is great at *information* — blame, history, lenses — but the *interaction* (merging, staging, rebasing, resolving) still sends you to the terminal or a separate app. GitStudio owns both: a live commit graph, inline blame, file and line history, hunk/line staging, a three-pane merge editor, drag-to-reorder interactive rebase with a universal Undo, first-class branches/stashes/worktrees/tags, in-editor GitHub pull-request review, and an optional bring-your-own-key AI layer. All of it free, on public and private repos, with no account and no paywall.
 
-> **Free, with no paywall.** GitLens gates its graph, "commit details," and AI behind GitLens+; GitKraken's client is a paid app for private repos. GitStudio's entire feature set — graph, blame, history, merge, rebase, PR review — is free on public *and* private repos. No account, telemetry off by default, Apache-2.0.
+## The commit graph
 
-## Features by pillar
+**A real graph, not a log with lines drawn on it.** The full-screen Commit Graph panel renders colored branch lanes, ref chips, and author avatars on the commit nodes, and stays fast at tens of thousands of commits because rendering is virtualized — it draws what's on screen, streams the rest as you scroll. Checkout, cherry-pick, branch, tag, or reset from any commit; full keyboard navigation; theme-aware light, dark, and high-contrast palettes.
 
-### Visualize
-- **Commit graph** — a real, virtualized branch/commit graph that stays fast at tens of thousands of commits, with colored lanes, ref chips, and keyboard navigation.
-- **Inline blame** — current-line authorship inline and in the status bar; full-file annotations with a code-age heatmap (recent changes warm, old changes cool) and rich command hovers.
-- **History & timeline** — per-file history, **line history** (blame-over-time), revision step navigation, and a **reflog time-machine** for recovery.
+![The full Commit Graph panel: colored branch lanes, ref chips, and author avatars riding the commit nodes, with commit details alongside](media/shots/graph-panel.png)
 
-### Change
-- **Hunk- & line-level staging** — stage exactly the lines you mean, from any editor or diff, plus file/group stage · unstage · discard in the Changes view.
-- **Guided commit box** — auto-growing message, Amend, Sign-off, author override, and **Commit & Push**, with a ✨ button to draft the message from your staged diff (when AI is on).
-- **Side-by-side & unified diff** — word-level highlighting and a clean, theme-true presentation.
-- **3-pane merge editor** — a JetBrains-style *yours / result / theirs* conflict editor with one-click accept ribbons; conflicts auto-open as they appear.
+**The graph also lives in your sidebar.** The Commits view is a sidebar-native commit log built for that width, not a shrunken copy of the panel: compact two-line rows (message on top; refs, author, age below) show 3–4× more history at a glance, the true branch topology renders as a rail with mini author avatars on the nodes, and remote branches fold into their local chip. Search with scopes — message, author, SHA, refs — and match stepping sit in the header. Every commit action is on right-click, and double-click or `Enter` promotes any commit into the full Commit Graph for deep work.
 
-### Rewrite — safely
-- **Interactive rebase** — a drag-to-reorder rebase editor (pick · reword · edit · squash · fixup · drop) that isn't terrifying.
-- **Universal Undo** — a reflog-powered safety net that snapshots before every destructive op and reverses it with one command (pushed history falls back to a safe Revert). **Undo never hijacks `Ctrl/Cmd+Z`.**
+![The Commits sidebar view: compact two-line commit rows with a branch topology rail, mini author avatars, and scoped search in the header](media/shots/commits-rail.png)
 
-### Manage
-- **Branches, remotes, tags, stashes, worktrees** — rich sidebar views and operations (checkout, merge, rebase, rename, delete, push, set-upstream, new branch/worktree, fetch, manage remotes, stash apply/pop/drop/branch, lock/prune worktrees, tag push/checkout/delete).
-- **Search & Compare** — search commits and compare any two branches/tags into a results view.
-- **Status-bar sync** — ahead/behind with one-click fetch/pull/push (force-push uses the safer `--force-with-lease` by default).
+## Changes: staging and sync without the wait
 
-### Collaborate & assist (optional)
-- **In-editor GitHub PR review** — sign in once with VS Code's built-in GitHub account to list, open, check out, review (inline comments + submit), merge, and create pull requests without leaving the editor.
-- **GitBrain AI** — bring-your-own-key (Anthropic) or zero-key via GitHub Copilot's model: AI commit messages, *explain this diff*, and change summaries. **Off until you turn it on, and it never gates or breaks a Git operation.**
+**Staging is instant.** Files move the moment you click — the git operation reconciles in the background. Stage, unstage, or discard by file, folder, or whole group; stage exactly the hunks or lines you mean from any editor or diff (`Ctrl/Cmd+Alt+G S` on a selection). The commit box auto-grows and handles Amend, Sign-off, author override, and Commit & Push.
 
-## Keybindings
+![The Changes view: staged and unstaged groups, the guided commit box, and live Push/Pull buttons with ahead/behind counts in the header](media/shots/changes-view.png)
 
-GitStudio's chorded actions use one consistent, conflict-free family — **`Ctrl+Alt+G`** (`Cmd+Alt+G` on macOS) then a letter:
+**Sync is live, not a status readout.** The ahead/behind counts in the header are real Push and Pull buttons that run the operation with a spinner in place. Force-push defaults to the safer `--force-with-lease`.
+
+**The branch dialog does the work in place.** Fetch runs without closing the menu — the item spins, then every branch row's ↑/↓ badges update so you can see exactly what's unpulled where. Local branches can be **pulled without checking them out** (fast-forward from upstream, straight from the branch's submenu), and each branch carries its full operation set: checkout, merge into current, rebase onto, rename, delete, push/publish, set upstream, new branch from here, create worktree, compare.
+
+![The branch dialog: per-branch ahead/behind badges, in-place fetch, and pull-without-checkout from a branch submenu](media/shots/branch-dialog.png)
+
+## Blame, file history, line history
+
+**Authorship where you're reading.** Current-line blame renders inline at the end of the line and in the status bar; toggle full-file annotations (`Ctrl/Cmd+Alt+G B`) for a code-age heatmap — recent changes warm, old changes cool — with rich hovers that link to the commit.
+
+**History at three depths.** Per-file history, **line history** (blame-over-time for the code under your cursor, `Ctrl/Cmd+Alt+G H`), and revision navigation that steps a file backward and forward through its versions. When something goes truly wrong, the **reflog time machine** (`GitStudio: Show Reflog`) shows every place HEAD has been, so lost commits are recoverable, not gone.
+
+## Merge conflicts in three panes
+
+**Yours, result, theirs — the JetBrains layout.** Conflicted files open in a three-pane merge editor with one-click accept ribbons per conflict, and conflicts auto-open as they appear during a merge, rebase, or cherry-pick (configurable via `gitstudio.merge.autoOpen`). No hand-editing `<<<<<<<` markers.
+
+## Interactive rebase with a real Undo
+
+**Rebase you can see.** `GitStudio: Start Interactive Rebase…` opens a drag-to-reorder editor — pick, reword, edit, squash, fixup, drop — instead of a todo file in a text buffer.
+
+**Undo is universal.** GitStudio snapshots the reflog before every destructive operation, and `Ctrl/Cmd+Alt+G Z` reverses the last one — a bad rebase, a wrong reset, an accidental branch delete. History that's already pushed falls back to a safe Revert instead of rewriting shared commits. Undo never hijacks your editor's `Ctrl/Cmd+Z`.
+
+## Branches, stashes, worktrees, tags, remotes
+
+- **Stashes** get a first-class view: one-click **Stash Changes**, per-row Apply / Pop / Branch / Drop, plus a stash control in the Changes toolbar.
+- **Worktrees** get their own view too: open, create, remove, lock/unlock, and prune — the sane way to review a PR without stashing your work.
+- **Tags** support checkout, delete, and push; **remotes** support add, manage, and fetch — all reachable from the branch dialog, the graph, or the Command Palette.
+
+## GitHub pull requests, in-editor
+
+**Review where the code is.** Sign in once with VS Code's built-in GitHub account — no extra token — and the Pull Requests view lists open PRs for the current repo. Open the description panel, check the PR out, start a review, add inline comments on the diff, submit, and merge with your preferred method (merge, squash, or rebase — default configurable). Create new PRs from the editor too. Not a GitHub repo, or not signed in? The view shows a quiet connect prompt; nothing breaks.
+
+## Branch compare
+
+**A GitHub-style compare, locally, for any two refs.** `GitStudio: Compare Branches/Tags…` (or *Compare with Current* from any branch) opens a panel with ahead/behind counts, the exact commits between the two refs, and the changed files as native VS Code diffs. Answer "what would this merge actually bring in" before you merge it.
+
+## Optional AI, on your terms
+
+**Off until you turn it on, and it never gates a Git operation.** GitBrain adds four commands — **Generate Commit Message**, **Explain Diff**, **Summarize Changes**, and **Review Changes** (a structured code review of your working tree, with a customizable review prompt) — plus a ✨ button in the commit box that drafts a message from your staged diff.
+
+Connect it however you already pay for AI:
+
+- **Zero-key** — if you have GitHub Copilot (or Cursor's models), GitStudio uses the VS Code Language Model API directly. No API key, nothing to configure; `gitstudio.ai.provider` is `auto` by default.
+- **Anthropic** — `GitStudio: Set Anthropic API Key…`. Model IDs for fast/mid/deep tiers are configurable.
+- **OpenAI-compatible** — `GitStudio: Set OpenAI API Key…`, with a configurable base URL, so it also works against local OpenAI-compatible servers.
+- **Local CLI agents** — point GitBrain at Claude Code, Codex, or Gemini CLI; it drives the CLI's existing login, no key at all.
+
+Keys live in your OS keychain via VS Code SecretStorage and are never sent to a webview. Commit-message style is configurable (`conventional`, `concise`, or `descriptive`).
+
+## Built for speed
+
+**The sidebar paints before you can look at it.** GitStudio ships its own git engine: it discovers your repo itself (symlink-safe `git rev-parse`) and reads history, status, stashes, and worktrees directly, instead of blocking on the built-in Git extension's activation and scan. Views keep their context when you switch away, so coming back is instant rather than a rebuild. The commit list re-renders only when something actually changed, the graph loads a small first page and streams the rest, and staging updates the UI optimistically while git catches up. Large monorepos are the design target, not the failure case.
+
+## Why GitStudio
+
+An honest comparison:
+
+- **vs GitLens** — GitLens pioneered blame-and-history in VS Code and remains excellent at it. But its Commit Graph, worktrees, and AI sit behind a paid plan, and it's an information layer more than an interaction one. GitStudio's entire feature set — graph, worktrees, merge, rebase, PR review, AI — is free on public *and* private repos, and it handles the doing, not just the showing.
+- **vs Git Graph** — a well-liked graph, but a graph alone isn't a workflow. GitStudio pairs its graph (panel *and* sidebar) with staging, merge, rebase, undo, stashes, worktrees, and PRs in the same extension.
+- **vs GitKraken Desktop** — a polished client, but a separate paid app outside your editor. GitStudio brings the same class of graph and workflow into VS Code and Cursor, where your code, terminal, and AI tooling already live.
+
+No account. No telemetry by default. No feature flags waiting for your credit card.
+
+## Getting started
+
+1. Install **GitStudio** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio) or [Open VSX](https://open-vsx.org/extension/gitstudio/gitstudio). It runs identically in **VS Code**, **Cursor**, and **VSCodium**.
+2. Open a folder containing a Git repository.
+3. Click the GitStudio icon in the Activity Bar. The sidebar reads top-to-bottom as a workflow: **Changes** (commit box + working tree) → **Commits** (the live graph) → **Stashes** → **Worktrees** → **Pull Requests**.
+4. Run **GitStudio: Get Started** for a guided walkthrough.
+
+## Keyboard shortcuts
+
+Everything lives under one conflict-free chord — `Ctrl+Alt+G` (`Cmd+Alt+G` on macOS), then a letter:
 
 | Action | Windows / Linux | macOS |
 |---|---|---|
-| Toggle file blame | `Ctrl+Alt+G` `B` | `Cmd+Alt+G` `B` |
+| Toggle file blame annotations | `Ctrl+Alt+G` `B` | `Cmd+Alt+G` `B` |
 | Show line history | `Ctrl+Alt+G` `H` | `Cmd+Alt+G` `H` |
-| Open changes (vs HEAD) | `Ctrl+Alt+G` `D` | `Cmd+Alt+G` `D` |
+| Open changes vs HEAD | `Ctrl+Alt+G` `D` | `Cmd+Alt+G` `D` |
 | Stage selected lines | `Ctrl+Alt+G` `S` | `Cmd+Alt+G` `S` |
 | Unstage selected lines | `Ctrl+Alt+G` `U` | `Cmd+Alt+G` `U` |
 | Undo last Git operation | `Ctrl+Alt+G` `Z` | `Cmd+Alt+G` `Z` |
 
-In the **commit box**: `Enter` commits, `Shift+Enter` adds a newline, `Ctrl/Cmd+Enter` also commits. All bindings are remappable in *Keyboard Shortcuts*.
-
-## GitBrain AI — bring your own key
-
-AI is entirely optional and stays off until configured. Two ways to enable it:
-
-1. **Zero-key (GitHub Copilot):** if you have Copilot, set `gitstudio.ai.provider` to `auto` (the default) — GitBrain uses the built-in VS Code Language Model, no key needed.
-2. **Anthropic (BYO-key):** run **GitStudio: Set AI API Key…** and paste an `sk-ant-…` key. It's stored in your OS keychain (SecretStorage) and **never** sent to a webview.
-
-Then use the ✨ in the commit box, or **Generate Commit Message / Explain Diff / Summarize Changes** from the palette. Models and commit style are configurable (see settings).
-
-## GitHub PR review setup
-
-No extra account or token: open the **Pull Requests** view and click **Sign in to GitHub** (VS Code's built-in auth). GitStudio then lists open PRs for the current repo; from there you can open the description panel, check out, start a review (add inline comments and submit), merge with your preferred method, or create a new PR. Not a GitHub repo or not signed in? The view simply shows a connect prompt — nothing throws.
+In the commit box, `Enter` commits and `Shift+Enter` inserts a newline. All bindings are remappable in *Keyboard Shortcuts*.
 
 ## Settings highlights
 
 | Setting | Default | What it does |
 |---|---|---|
-| `gitstudio.blame.inlineEnabled` | `true` | Inline current-line blame at end of line. |
-| `gitstudio.blame.statusBarEnabled` | `true` | Current-line author/age in the status bar. |
-| `gitstudio.blame.heatmap` | `true` | Code-age heatmap on full-file annotations. |
-| `gitstudio.merge.autoOpen` | `true` | Auto-open conflicts in the 3-pane merge editor. |
-| `gitstudio.commit.signoffByDefault` | `false` | Default the Sign-off toggle on in the commit box. |
-| `gitstudio.push.forceWithLease` | `true` | Use the safer `--force-with-lease` when force-pushing. |
-| `gitstudio.ai.provider` | `auto` | `auto` · `anthropic` · `vscode-lm` · `off`. |
+| `gitstudio.blame.inlineEnabled` | `true` | Inline current-line blame at the end of the line. |
+| `gitstudio.blame.heatmap` | `true` | Code-age heatmap on full-file blame annotations. |
+| `gitstudio.merge.autoOpen` | `true` | Auto-open conflicted files in the 3-pane merge editor. |
+| `gitstudio.push.forceWithLease` | `true` | Use `--force-with-lease` when force-pushing. |
+| `gitstudio.ai.provider` | `auto` | `auto` · `copilot` · `anthropic` · `openai` · `off`. |
 | `gitstudio.ai.commitStyle` | `conventional` | `conventional` · `concise` · `descriptive`. |
 | `gitstudio.pr.defaultMergeMethod` | `squash` | `merge` · `squash` · `rebase`. |
 
-(Anthropic model IDs for fast/mid/deep tiers are configurable too.)
+## Requirements
 
-## Get started
+- **`git`** available on your `PATH` (any recent version). GitStudio talks to git directly — no other extension required.
+- **VS Code 1.74+**, or a current Cursor / VSCodium.
+- **Optional:** a GitHub sign-in (VS Code's built-in auth) for the Pull Requests view, and an AI provider (Copilot, an API key, or a local CLI agent) for GitBrain. Everything else works fully offline.
 
-Install, open a folder with a Git repo, and run **GitStudio: Get Started** (or use the rocket in the GitStudio sidebar) for a guided tour. The activity-bar container reads top-to-bottom as a workflow: **Commit → Changes → Commits → Branches → Stashes → Worktrees → Search & Compare → Pull Requests.**
+## Free & open source
 
-## License
+GitStudio is **Apache-2.0**, developed in the open at [github.com/GitStudioHQ/gitstudio](https://github.com/GitStudioHQ/gitstudio). Bug reports and feature requests: [issues](https://github.com/GitStudioHQ/gitstudio/issues). A desktop app built on the same engine ships from the same repo — see [gitstudio.dev](https://gitstudio.dev).
 
-Licensed under **Apache-2.0**. Part of the [GitStudio](https://gitstudio.dev) family. Portions of the shared engine and webview UI originate from Merge Studio (MIT) — see `NOTICE`.
+Portions of the shared engine and webview UI originate from Merge Studio (MIT) — see `NOTICE`.

@@ -1,8 +1,8 @@
 {
   "name": "gitstudio",
   "displayName": "GitStudio",
-  "description": "A free, open-source, JetBrains-grade Git suite for VS Code & Cursor — commit graph, inline blame, file & line history, hunk/line staging, side-by-side diff, 3-pane merge, interactive rebase with a universal Undo safety net, and optional bring-your-own-key AI.",
-  "version": "0.1.6",
+  "description": "A free, open-source, JetBrains-grade Git suite for VS Code & Cursor — live commit graph, inline blame, hunk staging, 3-pane merge, interactive rebase with universal Undo, and in-editor GitHub PRs.",
+  "version": "1.0.0",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -15,41 +15,64 @@
     "url": "https://github.com/GitStudioHQ/gitstudio/issues"
   },
   "galleryBanner": {
-    "color": "#1E222A",
+    "color": "#1A1726",
     "theme": "dark"
   },
   "qna": "marketplace",
-  "badges": [],
+  "badges": [
+    {
+      "url": "https://img.shields.io/github/actions/workflow/status/GitStudioHQ/gitstudio/ci.yml?branch=main&label=CI",
+      "href": "https://github.com/GitStudioHQ/gitstudio/actions/workflows/ci.yml",
+      "description": "CI build status"
+    },
+    {
+      "url": "https://img.shields.io/visual-studio-marketplace/v/gitstudio.gitstudio?label=Marketplace",
+      "href": "https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio",
+      "description": "Visual Studio Marketplace version"
+    },
+    {
+      "url": "https://img.shields.io/github/license/GitStudioHQ/gitstudio",
+      "href": "https://github.com/GitStudioHQ/gitstudio/blob/main/LICENSE",
+      "description": "Apache-2.0 license"
+    }
+  ],
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
     "SCM Providers",
     "Visualization",
-    "Other"
+    "AI"
   ],
   "keywords": [
     "git",
-    "gitlens",
-    "gitkraken",
     "git graph",
     "commit graph",
+    "gitlens",
+    "gitkraken",
+    "git blame",
     "blame",
     "git history",
-    "git blame",
-    "merge",
-    "diff",
-    "rebase",
+    "file history",
     "interactive rebase",
+    "rebase",
+    "merge",
+    "merge conflict",
+    "merge editor",
+    "diff",
     "staging",
-    "cherry-pick",
     "stash",
+    "cherry-pick",
     "worktree",
+    "reflog",
+    "undo",
+    "branch compare",
     "pull request",
     "github",
-    "vscode",
-    "cursor",
-    "source control"
+    "ai commit message",
+    "source control",
+    "scm",
+    "cursor"
   ],
   "main": "./dist/extension.js",
   "activationEvents": [
@@ -76,16 +99,18 @@
           "type": "webview"
         },
         {
+          "id": "gitstudio.commits",
+          "name": "Commits",
+          "type": "webview"
+        },
+        {
           "id": "gitstudio.stashes",
-          "name": "Stashes"
+          "name": "Stashes",
+          "type": "webview"
         },
         {
           "id": "gitstudio.worktrees",
           "name": "Worktrees"
-        },
-        {
-          "id": "gitstudio.searchCompare",
-          "name": "Search & Compare"
         },
         {
           "id": "gitstudio.pullRequests",
@@ -95,19 +120,9 @@
     },
     "viewsWelcome": [
       {
-        "view": "gitstudio.stashes",
-        "when": "gitstudio.hasRepo",
-        "contents": "No stashes yet.\nStash your working-tree changes to set them aside without committing.\n[Stash Changes](command:gitstudio.stash.save)"
-      },
-      {
         "view": "gitstudio.worktrees",
         "when": "gitstudio.hasRepo",
         "contents": "Work on multiple branches at once with linked worktrees.\n[New Worktree](command:gitstudio.worktree.add)"
-      },
-      {
-        "view": "gitstudio.searchCompare",
-        "when": "gitstudio.hasRepo",
-        "contents": "Search commits or compare two refs; results show up here.\n[Search Commits](command:gitstudio.search)\n[Compare Branches/Tags](command:gitstudio.compareRefs)"
       },
       {
         "view": "gitstudio.pullRequests",
@@ -301,36 +316,6 @@
         "icon": "$(add)"
       },
       {
-        "command": "gitstudio.stash.show",
-        "title": "Show Stash Diff",
-        "category": "GitStudio",
-        "icon": "$(diff)"
-      },
-      {
-        "command": "gitstudio.stash.apply",
-        "title": "Apply Stash",
-        "category": "GitStudio",
-        "icon": "$(arrow-down)"
-      },
-      {
-        "command": "gitstudio.stash.pop",
-        "title": "Pop Stash",
-        "category": "GitStudio",
-        "icon": "$(inbox)"
-      },
-      {
-        "command": "gitstudio.stash.drop",
-        "title": "Drop Stash",
-        "category": "GitStudio",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "gitstudio.stash.branch",
-        "title": "Create Branch from Stash…",
-        "category": "GitStudio",
-        "icon": "$(git-branch)"
-      },
-      {
         "command": "gitstudio.worktrees.refresh",
         "title": "Refresh Worktrees",
         "category": "GitStudio",
@@ -373,22 +358,10 @@
         "icon": "$(clear-all)"
       },
       {
-        "command": "gitstudio.search",
-        "title": "Search Commits…",
-        "category": "GitStudio",
-        "icon": "$(search)"
-      },
-      {
         "command": "gitstudio.compareRefs",
         "title": "Compare Branches/Tags…",
         "category": "GitStudio",
         "icon": "$(git-compare)"
-      },
-      {
-        "command": "gitstudio.searchCompare.openCommit",
-        "title": "Open Commit",
-        "category": "GitStudio",
-        "icon": "$(git-commit)"
       },
       {
         "command": "gitstudio.branch.checkout",
@@ -547,6 +520,18 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "gitstudio.ai.reviewChanges",
+        "title": "Review Changes (AI)",
+        "category": "GitStudio",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "gitstudio.ai.connect",
+        "title": "Connect AI Provider",
+        "category": "GitStudio",
+        "icon": "$(plug)"
+      },
+      {
         "command": "gitstudio.pr.create",
         "title": "Create Pull Request",
         "category": "GitStudio",
@@ -631,7 +616,43 @@
         "icon": "$(copy)"
       }
     ],
-    "keybindings": [],
+    "keybindings": [
+      {
+        "command": "gitstudio.toggleFileBlame",
+        "key": "ctrl+alt+g b",
+        "mac": "cmd+alt+g b",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "gitstudio.showLineHistory",
+        "key": "ctrl+alt+g h",
+        "mac": "cmd+alt+g h",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "gitstudio.openChanges",
+        "key": "ctrl+alt+g d",
+        "mac": "cmd+alt+g d",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "gitstudio.stageSelectedLines",
+        "key": "ctrl+alt+g s",
+        "mac": "cmd+alt+g s",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "gitstudio.unstageSelectedLines",
+        "key": "ctrl+alt+g u",
+        "mac": "cmd+alt+g u",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "gitstudio.undo",
+        "key": "ctrl+alt+g z",
+        "mac": "cmd+alt+g z"
+      }
+    ],
     "configuration": {
       "title": "GitStudio",
       "properties": {
@@ -734,6 +755,34 @@
           "default": "conventional",
           "description": "How GitBrain styles generated commit messages."
         },
+        "gitstudio.ai.reviewPrompt": {
+          "type": "string",
+          "editPresentation": "multilineText",
+          "default": "",
+          "markdownDescription": "Custom system prompt for **Review Changes (AI)**. Leave empty to use GitStudio's built-in code-review prompt. Set your own to steer the review (e.g. focus areas, house style, output format)."
+        },
+        "gitstudio.ai.cliAgent": {
+          "type": "string",
+          "enum": [
+            "",
+            "claude-code",
+            "codex",
+            "gemini-cli"
+          ],
+          "enumDescriptions": [
+            "No local agent.",
+            "Claude Code CLI (`claude`).",
+            "OpenAI Codex CLI (`codex`).",
+            "Gemini CLI (`gemini`)."
+          ],
+          "default": "",
+          "description": "The local agent CLI to drive (uses its own login, no API key). Set via the GitStudio · AI panel; used when the provider is a local agent."
+        },
+        "gitstudio.ai.cliModel": {
+          "type": "string",
+          "default": "",
+          "description": "Optional model override passed to the local agent CLI (blank = the CLI's default)."
+        },
         "gitstudio.pr.defaultMergeMethod": {
           "type": "string",
           "enum": [
@@ -760,13 +809,13 @@
         "steps": [
           {
             "id": "gitstudio.walkthrough.graph",
-            "title": "Open the Commit Graph",
-            "description": "See your history as a real, virtualized branch/commit graph — fast even at tens of thousands of commits. Colored lanes, refs, and authorship, not a flat list.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\nTip: it also lives at the top of the GitStudio sidebar.",
+            "title": "Browse your history in the commit graph",
+            "description": "Your history as a live, virtualized commit graph — right in the **Commits** view in the sidebar, or full-screen in an editor tab. Colored lanes, ref chips and authorship (never a flat list); right-click any commit to checkout, cherry-pick, branch, or reset, and compare any two branches.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\nTip: the graph lives in the **Commits** view at the top of the GitStudio sidebar — no need to leave it.",
             "media": {
               "image": {
-                "light": "media/wordmark-dark.png",
-                "dark": "media/wordmark-light.png",
-                "hc": "media/wordmark-light.png"
+                "light": "media/wordmark-light.png",
+                "dark": "media/wordmark-dark.png",
+                "hc": "media/wordmark-dark.png"
               },
               "altText": "GitStudio"
             },
@@ -780,9 +829,9 @@
             "description": "Ambient, native-feeling authorship: who last changed the current line and when, inline and in the status bar. Toggle full-file annotations with a code-age heatmap.\n[Toggle File Blame](command:gitstudio.toggleFileBlame)\nShortcut: __Ctrl/Cmd+Alt+G B__ in any editor.",
             "media": {
               "image": {
-                "light": "media/wordmark-dark.png",
-                "dark": "media/wordmark-light.png",
-                "hc": "media/wordmark-light.png"
+                "light": "media/wordmark-light.png",
+                "dark": "media/wordmark-dark.png",
+                "hc": "media/wordmark-dark.png"
               },
               "altText": "GitStudio"
             },
@@ -796,9 +845,9 @@
             "description": "Stage by hunk or even by line, then commit from the GitStudio commit box (Amend, Sign-off, author override, Commit & Push). When AI is on, the ✨ button drafts a message from your staged diff.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nShortcut: select lines and press __Ctrl/Cmd+Alt+G S__ to stage them.",
             "media": {
               "image": {
-                "light": "media/wordmark-dark.png",
-                "dark": "media/wordmark-light.png",
-                "hc": "media/wordmark-light.png"
+                "light": "media/wordmark-light.png",
+                "dark": "media/wordmark-dark.png",
+                "hc": "media/wordmark-dark.png"
               },
               "altText": "GitStudio"
             },
@@ -813,9 +862,9 @@
             "description": "Step through how a file — or a single line — evolved over time, with revision navigation and a reflog time-machine for recovery.\n[Show Line History](command:gitstudio.showLineHistory)\nShortcut: __Ctrl/Cmd+Alt+G H__ on the current line.",
             "media": {
               "image": {
-                "light": "media/wordmark-dark.png",
-                "dark": "media/wordmark-light.png",
-                "hc": "media/wordmark-light.png"
+                "light": "media/wordmark-light.png",
+                "dark": "media/wordmark-dark.png",
+                "hc": "media/wordmark-dark.png"
               },
               "altText": "GitStudio"
             },
@@ -830,9 +879,9 @@
             "description": "When a merge, rebase, or cherry-pick conflicts, GitStudio opens a JetBrains-style three-pane editor — yours, the result, and theirs — with one-click accept ribbons. Interactive rebase gets the same care, wrapped in a universal, reflog-powered Undo.\n[Start Interactive Rebase](command:gitstudio.startInteractiveRebase)\nMade a mistake? __Undo Last Git Operation__ (Ctrl/Cmd+Alt+G Z) reverses it.",
             "media": {
               "image": {
-                "light": "media/wordmark-dark.png",
-                "dark": "media/wordmark-light.png",
-                "hc": "media/wordmark-light.png"
+                "light": "media/wordmark-light.png",
+                "dark": "media/wordmark-dark.png",
+                "hc": "media/wordmark-dark.png"
               },
               "altText": "GitStudio"
             },
@@ -847,9 +896,9 @@
             "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional and bring-your-own-key — set an Anthropic key (or use Copilot's model) for commit messages, explain-this-diff, and summaries. It's off until you turn it on and never gates a Git operation.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Set AI API Key](command:gitstudio.ai.setApiKey)",
             "media": {
               "image": {
-                "light": "media/wordmark-dark.png",
-                "dark": "media/wordmark-light.png",
-                "hc": "media/wordmark-light.png"
+                "light": "media/wordmark-light.png",
+                "dark": "media/wordmark-dark.png",
+                "hc": "media/wordmark-dark.png"
               },
               "altText": "GitStudio"
             },
@@ -865,48 +914,18 @@
       "view/title": [
         {
           "command": "gitstudio.showCommitGraph",
-          "when": "view == gitstudio.commits",
+          "when": "view == gitstudio.commit",
           "group": "navigation@1"
         },
         {
-          "command": "gitstudio.refreshCommits",
-          "when": "view == gitstudio.commits",
+          "command": "gitstudio.ai.connect",
+          "when": "view == gitstudio.commit",
           "group": "navigation@2"
         },
         {
           "command": "gitstudio.openWalkthrough",
-          "when": "view == gitstudio.commits",
+          "when": "view == gitstudio.commit",
           "group": "9_help@1"
-        },
-        {
-          "command": "gitstudio.branch.new",
-          "when": "view == gitstudio.branches",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitstudio.fetch",
-          "when": "view == gitstudio.branches",
-          "group": "navigation@2"
-        },
-        {
-          "command": "gitstudio.refreshBranches",
-          "when": "view == gitstudio.branches",
-          "group": "navigation@3"
-        },
-        {
-          "command": "gitstudio.manageRemotes",
-          "when": "view == gitstudio.branches",
-          "group": "1_remotes@1"
-        },
-        {
-          "command": "gitstudio.addRemote",
-          "when": "view == gitstudio.branches",
-          "group": "1_remotes@2"
-        },
-        {
-          "command": "gitstudio.stash.save",
-          "when": "view == gitstudio.stashes",
-          "group": "navigation@1"
         },
         {
           "command": "gitstudio.stashes.refresh",
@@ -929,16 +948,6 @@
           "group": "navigation@3"
         },
         {
-          "command": "gitstudio.search",
-          "when": "view == gitstudio.searchCompare",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitstudio.compareRefs",
-          "when": "view == gitstudio.searchCompare",
-          "group": "navigation@2"
-        },
-        {
           "command": "gitstudio.pr.create",
           "when": "view == gitstudio.pullRequests && gitstudio.github.connected",
           "group": "navigation@1"
@@ -957,6 +966,11 @@
           "command": "gitstudio.pr.refresh",
           "when": "view == gitstudio.pullRequests",
           "group": "navigation@4"
+        },
+        {
+          "command": "gitstudio.showCommitGraph",
+          "when": "view == gitstudio.commits",
+          "group": "navigation@1"
         }
       ],
       "editor/title": [
@@ -1067,6 +1081,10 @@
           "when": "gitstudio.ai.enabled && gitstudio.hasRepo"
         },
         {
+          "command": "gitstudio.ai.reviewChanges",
+          "when": "gitstudio.ai.enabled && gitstudio.hasRepo"
+        },
+        {
           "command": "gitstudio.toggleFileBlame",
           "when": "editorTextFocus && gitstudio.hasRepo"
         },
@@ -1151,26 +1169,6 @@
           "when": "gitstudio.hasRepo"
         },
         {
-          "command": "gitstudio.stash.show",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.stash.apply",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.stash.pop",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.stash.drop",
-          "when": "false"
-        },
-        {
-          "command": "gitstudio.stash.branch",
-          "when": "false"
-        },
-        {
           "command": "gitstudio.worktree.add",
           "when": "gitstudio.hasRepo"
         },
@@ -1199,16 +1197,8 @@
           "when": "false"
         },
         {
-          "command": "gitstudio.search",
-          "when": "gitstudio.hasRepo"
-        },
-        {
           "command": "gitstudio.compareRefs",
           "when": "gitstudio.hasRepo"
-        },
-        {
-          "command": "gitstudio.searchCompare.openCommit",
-          "when": "false"
         },
         {
           "command": "gitstudio.fetch",
@@ -1252,7 +1242,7 @@
         },
         {
           "command": "gitstudio.branch.setUpstream",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.branch.createWorktree",
@@ -1264,23 +1254,23 @@
         },
         {
           "command": "gitstudio.remoteBranch.checkout",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.remoteBranch.delete",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.tag.checkout",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.tag.delete",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.tag.push",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.pr.create",
@@ -1341,61 +1331,6 @@
       ],
       "view/item/context": [
         {
-          "command": "gitstudio.copyCommitSha",
-          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
-          "group": "inline"
-        },
-        {
-          "command": "gitstudio.copyCommitSha",
-          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
-          "group": "9_gitstudio@1"
-        },
-        {
-          "command": "gitstudio.startInteractiveRebase",
-          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
-          "group": "1_gitstudio@1"
-        },
-        {
-          "command": "gitstudio.resetToCommit",
-          "when": "view == gitstudio.commits && viewItem == gitstudio.commit",
-          "group": "1_gitstudio@2"
-        },
-        {
-          "command": "gitstudio.stash.apply",
-          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.stash.pop",
-          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
-          "group": "inline@2"
-        },
-        {
-          "command": "gitstudio.stash.drop",
-          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
-          "group": "inline@3"
-        },
-        {
-          "command": "gitstudio.stash.apply",
-          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
-          "group": "1_stash@1"
-        },
-        {
-          "command": "gitstudio.stash.pop",
-          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
-          "group": "1_stash@2"
-        },
-        {
-          "command": "gitstudio.stash.branch",
-          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
-          "group": "1_stash@3"
-        },
-        {
-          "command": "gitstudio.stash.drop",
-          "when": "view == gitstudio.stashes && viewItem == gitstudio.stash",
-          "group": "2_stash@1"
-        },
-        {
           "command": "gitstudio.worktree.open",
           "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
           "group": "inline@1"
@@ -1424,116 +1359,6 @@
           "command": "gitstudio.worktree.remove",
           "when": "view == gitstudio.worktrees && (viewItem == gitstudio.worktree || viewItem == gitstudio.worktree.locked)",
           "group": "2_worktree@1"
-        },
-        {
-          "command": "gitstudio.branch.checkout",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.branch.checkout",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "1_branch@1"
-        },
-        {
-          "command": "gitstudio.branch.merge",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "1_branch@2"
-        },
-        {
-          "command": "gitstudio.branch.rebase",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "1_branch@3"
-        },
-        {
-          "command": "gitstudio.branch.compare",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "1_branch@4"
-        },
-        {
-          "command": "gitstudio.branch.new",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "2_branch@1"
-        },
-        {
-          "command": "gitstudio.branch.createWorktree",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "2_branch@2"
-        },
-        {
-          "command": "gitstudio.branch.push",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "3_branch@1"
-        },
-        {
-          "command": "gitstudio.branch.setUpstream",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "3_branch@2"
-        },
-        {
-          "command": "gitstudio.branch.rename",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "4_branch@1"
-        },
-        {
-          "command": "gitstudio.branch.delete",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.branch",
-          "group": "4_branch@2"
-        },
-        {
-          "command": "gitstudio.remoteBranch.checkout",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.remoteBranch.checkout",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
-          "group": "1_remoteBranch@1"
-        },
-        {
-          "command": "gitstudio.branch.compare",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
-          "group": "1_remoteBranch@2"
-        },
-        {
-          "command": "gitstudio.remoteBranch.delete",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.remoteBranch",
-          "group": "2_remoteBranch@1"
-        },
-        {
-          "command": "gitstudio.tag.checkout",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.tag.checkout",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
-          "group": "1_tag@1"
-        },
-        {
-          "command": "gitstudio.tag.push",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
-          "group": "1_tag@2"
-        },
-        {
-          "command": "gitstudio.tag.delete",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.tag",
-          "group": "2_tag@1"
-        },
-        {
-          "command": "gitstudio.fetch",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.category.remotes",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitstudio.manageRemotes",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.category.remotes",
-          "group": "1_remotes@1"
-        },
-        {
-          "command": "gitstudio.addRemote",
-          "when": "view == gitstudio.branches && viewItem == gitstudio.category.remotes",
-          "group": "1_remotes@2"
         },
         {
           "command": "gitstudio.pr.checkout",
@@ -1637,5 +1462,6 @@
       "supported": false,
       "description": "GitStudio requires a local git repository on disk."
     }
-  }
+  },
+  "preview": false
 }

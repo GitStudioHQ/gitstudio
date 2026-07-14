@@ -1,16 +1,22 @@
 name: Release Desktop
 
-# Builds the GitStudio desktop (Electron) app for macOS, Windows, and Linux and
-# uploads the per-OS installers (.dmg / .exe / .AppImage) to the GitHub Release
-# when an `app-v*` tag is pushed.
+# Builds the GitStudio desktop (Electron) app for macOS (Apple Silicon + Intel),
+# Windows, and Linux and uploads the per-OS installers (.dmg / .exe / .AppImage /
+# .deb) to the GitHub Release when an `app-v*` tag is pushed.
 #
 # Cut a release:
 #   1. bump "version" in apps/desktop/package.json
-#   2. git tag app-v0.1.0 && git push origin app-v0.1.0
+#   2. git tag app-v1.0.0 && git push origin app-v1.0.0
 #
-# Code-signing/notarization are OPTIONAL: the publish/sign steps below are
-# guarded so a missing secret SKIPS (not fails). With no secrets you still get
-# unsigned installers attached to the Release.
+# Structure: ONE create-release job makes the Release (so four matrix jobs never
+# race `gh release create` against each other), then the per-OS build jobs only
+# upload assets. Desktop releases stay the repo's "latest" release — the in-app
+# auto-updater resolves /releases/latest, and extension (`ext-v*`) releases are
+# created with --latest=false so they can never hijack that pointer.
+#
+# Code-signing/notarization are OPTIONAL: electron-builder builds UNSIGNED when
+# the CSC_*/APPLE_* secrets are absent. With no secrets you still get working
+# (unsigned) installers attached to the Release.
 
 on:
   push:
@@ -22,17 +28,68 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Guard: tag matches package.json version"
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: apps/desktop
+        run: |
+          node -e '
+            const v = require("./package.json").version;
+            const tag = process.env.GITHUB_REF_NAME.replace(/^app-v/, "");
+            if (v !== tag) {
+              console.error(`Tag app-v${tag} != package.json version ${v}`);
+              process.exit(1);
+            }'
+
+      - name: Create the GitHub Release (once, before the matrix)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists."
+            exit 0
+          fi
+          NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "${GITHUB_REF_NAME}" --latest \
+              --title "GitStudio ${GITHUB_REF_NAME#app-v}" --notes-file "$NOTES"
+          else
+            gh release create "${GITHUB_REF_NAME}" --latest --generate-notes \
+              --title "GitStudio ${GITHUB_REF_NAME#app-v}"
+          fi
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            artifact: 'apps/desktop/release/*.dmg'
+          # Build each mac arch NATIVELY (macos-14 = Apple Silicon, macos-15-intel
+          # = x64; macos-13 was retired by GitHub in Dec 2025) so node-pty's
+          # per-arch prebuild loads without cross-compiling.
+          #
+          # NOTE: mac deliberately does NOT upload latest-mac.yml. Both arch runners
+          # emit an identically-named latest-mac.yml, so a --clobber upload would
+          # leave the Release with ONE arch's feed and mis-update the other; the
+          # app skips update checks on macOS instead (see autoUpdate.ts). Windows/
+          # Linux are single-arch, so their feeds are safe.
+          - os: macos-14
+            artifact: 'apps/desktop/release/*.dmg apps/desktop/release/*.zip'
+          - os: macos-15-intel
+            artifact: 'apps/desktop/release/*.dmg apps/desktop/release/*.zip'
           - os: windows-latest
-            artifact: 'apps/desktop/release/*.exe'
-          - os: ubuntu-latest
-            artifact: 'apps/desktop/release/*.AppImage'
+            artifact: 'apps/desktop/release/*.exe apps/desktop/release/*.yml apps/desktop/release/*.blockmap'
+          # ubuntu-22.04 (not -latest): the AppImage links the build host's glibc,
+          # so building on 24.04 (glibc 2.39) breaks Ubuntu 22.04/Debian 12 users.
+          # No *.blockmap here — AppImage/deb don't emit one, and a non-matching
+          # glob would fail the upload.
+          - os: ubuntu-22.04
+            artifact: 'apps/desktop/release/*.AppImage apps/desktop/release/*.deb apps/desktop/release/*.yml'
     runs-on: ${{ matrix.os }}
     env:
       # electron-builder reads these; when absent it builds UNSIGNED (it does not
@@ -44,7 +101,6 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      # electron-builder publishes to the GitHub Release of this tag.
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -70,10 +126,7 @@ jobs:
         working-directory: apps/desktop
         run: npx electron-builder --publish never
 
-      - name: Attach installer to the GitHub Release
+      - name: Upload installers to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: |
-          gh release create "${GITHUB_REF_NAME}" --generate-notes \
-            || echo "Release already exists; uploading assets."
-          gh release upload "${GITHUB_REF_NAME}" ${{ matrix.artifact }} --clobber
+        run: gh release upload "${GITHUB_REF_NAME}" ${{ matrix.artifact }} --clobber

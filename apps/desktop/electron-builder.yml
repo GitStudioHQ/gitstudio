@@ -45,6 +45,9 @@ mac:
   target:
     - dmg
     - zip
+  # Include the arch so the Apple-Silicon and Intel builds (built natively on
+  # separate runners) don't clobber each other's assets on the Release.
+  artifactName: ${productName}-${version}-${arch}.${ext}
   hardenedRuntime: true
   gatekeeperAssess: false
 
@@ -54,6 +57,10 @@ dmg:
 win:
   target:
     - nsis
+  # No spaces (the nsis default is "GitStudio Setup 1.0.0.exe"): GitHub asset
+  # names replace spaces with dots while electron-updater requests them with
+  # dashes — a guaranteed 404. Dashes also give the website stable download URLs.
+  artifactName: ${productName}-Setup-${version}.${ext}
 
 nsis:
   oneClick: false
@@ -62,6 +69,15 @@ nsis:
 
 linux:
   category: Development
+  # AppImage = the universal, distro-agnostic download; deb = native install for
+  # Debian/Ubuntu/Mint (the largest Linux desktop share).
   target:
     - AppImage
+    - deb
+  # Pinned so the website can link GitStudio-<version>-<arch>.AppImage forever.
+  artifactName: ${productName}-${version}-${arch}.${ext}
   maintainer: GitStudio <hello@gitstudio.dev>
+  synopsis: A free, open-source, JetBrains-grade Git suite for your desktop.
+
+deb:
+  priority: optional

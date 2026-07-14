@@ -4,6 +4,53 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-07-14
+
+The first stable release: the whole extension loads **instantly**, the commit
+graph lives in the sidebar, sync is live, and stashing is first-class.
+
+### Performance — the views are now instant
+- **No more waiting on VS Code's Git extension.** GitStudio discovers your repo itself
+  (its own `git rev-parse`, symlink-safe) and reads worktrees, stashes, commit history,
+  and working-tree changes through its own git-service. The views paint from local git
+  that's already loaded instead of blocking on vscode.git's activation + scan.
+- **Views stay warm.** Sidebar webviews retain their context, so switching away and back
+  is instant instead of a full rebuild.
+- **Instant staging.** Files move the moment you click; the git op reconciles in the
+  background. Staging or unstaging a folder (tree view) or a whole group is one operation.
+- The commit list only re-renders when something actually changed (no churn on background
+  git activity), and the graph loads a small first page, then streams as you scroll.
+
+### New & reworked
+- **Live sync in the Changes view** — the ahead/behind counts in the header are now real
+  **Push / Pull buttons** that run the op with a spinner in place. The branch menu's
+  **Fetch runs without closing the menu**: the item spins, then every branch row's new
+  **↑/↓ badges** update live — you see exactly what's unpulled where. Local branches can
+  be **pulled without checking them out** (fast-forward from upstream, straight from the
+  branch's submenu), and every branch's submenu gained **Copy Branch Name**.
+- **A sidebar-native Commits view** — rebuilt from scratch for the sidebar instead of
+  squeezing the full graph in. Compact two-line rows (message on top; refs, author, and
+  age below) show 3–4× more history at a glance, the true branch topology renders at
+  sidebar scale with **mini author avatars riding the commit nodes**, and remote branches
+  fold into their local chip. Search with scopes (message/author/SHA/refs) and match
+  stepping lives in the header, every commit action is on right-click, and double-click,
+  Enter, or the row's hover action promotes a commit to the full-screen Commit Graph —
+  which is unchanged for deep work.
+- **Branded Stashes view** — rebuilt as a first-class panel with a one-click **Stash
+  Changes** button and per-row Apply / Pop / Branch / Drop, plus a stash control right in
+  the Changes toolbar.
+- **Branch compare** — a GitHub-style panel (ahead/behind, the commits between two refs,
+  and the changed files as native diffs), reachable from the Changes branch menu.
+
+### Design
+- A unified, on-brand **GitStudio-violet** button system across every surface (commit,
+  checkout, PR, compare), a redesigned activity-bar icon derived from the brand mark, the
+  HEAD chip and primary actions consistently violet, and reliable tooltips throughout.
+
+### Removed
+- The **Search & Compare** tree — superseded by the in-sidebar commit graph and the
+  dedicated branch-compare panel.
+
 ## [0.1.0] — Initial release
 
 The first public release: a free, open-source, JetBrains-grade Git suite for VS Code

@@ -10,6 +10,14 @@ export function initAutoUpdate(opts: AutoUpdateOptions): void {
   if (opts.isDev) {
     return;
   }
+  if (process.platform === "darwin") {
+    // No macOS update channel yet: the release ships per-arch dmg/zip from two
+    // runners whose latest-mac.yml feeds would clobber each other, so the feed
+    // is deliberately not uploaded (see release-desktop.yml) — and unsigned
+    // builds couldn't apply a Squirrel.Mac update anyway. Skip the check
+    // instead of 404ing on every launch; mac users update via the website.
+    return;
+  }
   // Imported lazily so a missing electron-updater (e.g. a `--dir` smoke build
   // that skips optional deps) never crashes startup.
   void import("electron-updater")

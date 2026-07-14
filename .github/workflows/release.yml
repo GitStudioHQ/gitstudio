@@ -6,12 +6,17 @@ name: Release Extension
 #
 # One-time setup — add two repo secrets:
 #   VSCE_PAT  Azure DevOps PAT, scope "Marketplace > Manage", for publisher `gitstudio`
-#   OVSX_PAT  Open VSX access token
+#   OVSX_PAT  Open VSX access token (namespace `gitstudio` must exist)
 #
 # Cut a release:
 #   1. bump "version" in apps/extension/package.json (+ a CHANGELOG entry)
-#   2. git tag ext-v0.1.0 && git push origin ext-v0.1.0
-# The publish steps SKIP (not fail) if a secret is missing.
+#   2. git tag ext-v1.0.0 && git push origin ext-v1.0.0
+#
+# The .vsix is attached to the Release BEFORE publishing, so even a failed
+# publish leaves a downloadable artifact; the publish steps FAIL LOUDLY when a
+# secret is missing (a silent green run that shipped nothing cost us a launch).
+# After adding the missing secret, re-run via workflow_dispatch — it rebuilds
+# and publishes the current package.json version without needing a new tag.
 
 on:
   push:
@@ -39,6 +44,19 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # The tag names the release, but vsce/electron-builder ship whatever is in
+      # package.json — a mismatch publishes the WRONG version under this tag.
+      - name: "Guard: tag matches package.json version"
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          node -e '
+            const v = require("./package.json").version;
+            const tag = process.env.GITHUB_REF_NAME.replace(/^ext-v/, "");
+            if (v !== tag) {
+              console.error(`Tag ext-v${tag} != package.json version ${v}`);
+              process.exit(1);
+            }'
+
       - name: Install (workspace root)
         run: npm ci
         working-directory: .
@@ -56,18 +74,36 @@ jobs:
           npm run package
           npx @vscode/vsce package -o gitstudio.vsix --no-dependencies
 
-      - name: Publish to VS Code Marketplace
-        if: env.VSCE_PAT != ''
-        run: npx @vscode/vsce publish --packagePath gitstudio.vsix
-
-      - name: Publish to Open VSX
-        if: env.OVSX_PAT != ''
-        run: npx ovsx publish gitstudio.vsix
-
+      # `--latest=false` is load-bearing: the desktop app's auto-updater reads
+      # /releases/latest, and an extension release marked "latest" would point
+      # it at a tag with no latest.yml feed (update checks 404 forever).
       - name: Attach .vsix to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" gitstudio.vsix --generate-notes \
-            || gh release upload "${GITHUB_REF_NAME}" gitstudio.vsix --clobber
+          NOTES="../../docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            gh release create "${GITHUB_REF_NAME}" gitstudio.vsix --latest=false \
+              --title "GitStudio extension ${GITHUB_REF_NAME#ext-v}" --notes-file "$NOTES" \
+              || gh release upload "${GITHUB_REF_NAME}" gitstudio.vsix --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" gitstudio.vsix --latest=false --generate-notes \
+              || gh release upload "${GITHUB_REF_NAME}" gitstudio.vsix --clobber
+          fi
+
+      - name: Publish to VS Code Marketplace
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::VSCE_PAT secret is missing — Marketplace publish did NOT run. Add the secret, then re-run this workflow (workflow_dispatch)."
+            exit 1
+          fi
+          npx @vscode/vsce publish --packagePath gitstudio.vsix
+
+      - name: Publish to Open VSX
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::error::OVSX_PAT secret is missing — Open VSX publish did NOT run. Add the secret, then re-run this workflow (workflow_dispatch)."
+            exit 1
+          fi
+          npx ovsx publish gitstudio.vsix

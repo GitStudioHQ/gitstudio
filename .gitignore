@@ -5,3 +5,6 @@ release/
 *.vsix
 .DS_Store
 .vscode-test/
+
+# IDE dependency-graph plugin artifacts
+.dependencygraph/
