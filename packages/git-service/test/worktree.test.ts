@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { parseWorktreePorcelain } from "../src/WorktreeProvider";
 
@@ -65,7 +65,10 @@ test("add creates a linked worktree on a new branch, then list shows both", asyn
   // so match on the branch rather than the exact path.
   const linked = list.find((w) => w.branch === "feature");
   assert.ok(linked, "linked worktree should be listed");
-  assert.ok(linked!.path.endsWith(wtPath.split("/").pop()!));
+  // basename() on both sides: git porcelain reports forward slashes even on
+  // Windows, where wtPath itself is backslash-separated — a raw split("/")
+  // never splits it and the endsWith comparison fails.
+  assert.equal(basename(linked!.path), basename(wtPath));
 });
 
 test("remove deletes the linked worktree", async () => {

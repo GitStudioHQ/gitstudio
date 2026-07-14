@@ -39,10 +39,10 @@ Download the installer for your platform from the [latest GitHub Release](https:
 |---|---|
 | **macOS — Apple Silicon** | `GitStudio-<version>-arm64.dmg` |
 | **macOS — Intel** | `GitStudio-<version>-x64.dmg` |
-| **Windows** | `GitStudio Setup <version>.exe` (NSIS — choose your install dir) |
-| **Linux** | `GitStudio-<version>.AppImage` (universal) · `gitstudio_<version>_amd64.deb` (Debian/Ubuntu) |
+| **Windows** | `GitStudio-Setup-<version>.exe` (NSIS — choose your install dir) |
+| **Linux** | `GitStudio-<version>-x64.AppImage` (universal) · `GitStudio-<version>-x64.deb` (Debian/Ubuntu) |
 
-The app checks GitHub Releases for updates (electron-updater), so you install once and stay current.
+Windows and Linux (AppImage) builds check GitHub Releases and update in-app (electron-updater); macOS updates are manual until signed builds ship.
 
 ## The idea
 
