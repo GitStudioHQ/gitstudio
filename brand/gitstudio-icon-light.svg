@@ -21,8 +21,8 @@
 <stop offset="60%" stop-color="#D5D9E6" stop-opacity="0"/>
 </radialGradient>
 <linearGradient id="lane" gradientUnits="userSpaceOnUse" x1="256" y1="158" x2="256" y2="420">
-<stop offset="0%" stop-color="#C4ADFF"/>
-<stop offset="100%" stop-color="#9A78FF"/>
+<stop offset="0%" stop-color="#8B75F5"/>
+<stop offset="100%" stop-color="#6B5BE6"/>
 </linearGradient>
 </defs>
 <rect width="512" height="512" rx="116" fill="url(#bg)"/>
@@ -46,13 +46,13 @@
 <path d="M256.0,250.0 L400.4,166.6" stroke="url(#lane)"/>
 <path d="M256.0,250.0 L256.0,416.9" stroke="url(#lane)"/>
 </g>
-<circle cx="111.6" cy="166.6" r="25" fill="#B49BFF"/>
-<circle cx="400.4" cy="166.6" r="25" fill="#B49BFF"/>
-<circle cx="256.0" cy="416.9" r="25" fill="#B49BFF"/>
-<circle cx="256.0" cy="250.0" r="28" fill="#C2ABFF"/>
-<circle cx="111.6" cy="166.6" r="10" fill="#F3EEFF"/>
-<circle cx="400.4" cy="166.6" r="10" fill="#F3EEFF"/>
-<circle cx="256.0" cy="416.9" r="10" fill="#F3EEFF"/>
-<circle cx="256.0" cy="250.0" r="11.5" fill="#F3EEFF"/>
+<circle cx="111.6" cy="166.6" r="25" fill="#6B5BE6"/>
+<circle cx="400.4" cy="166.6" r="25" fill="#6B5BE6"/>
+<circle cx="256.0" cy="416.9" r="25" fill="#6B5BE6"/>
+<circle cx="256.0" cy="250.0" r="28" fill="#7C64F2"/>
+<circle cx="111.6" cy="166.6" r="10" fill="#FFFFFF"/>
+<circle cx="400.4" cy="166.6" r="10" fill="#FFFFFF"/>
+<circle cx="256.0" cy="416.9" r="10" fill="#FFFFFF"/>
+<circle cx="256.0" cy="250.0" r="11.5" fill="#FFFFFF"/>
 </g>
 </svg>

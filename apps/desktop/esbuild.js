@@ -95,12 +95,12 @@ function copyStaticAssets() {
   // text. The top-bar mark is an inline currentColor SVG in the renderer, so it
   // needs no asset here.
   const brand = {
-    // The macOS-padded mark (824px art inset in a 1024 canvas, per Apple's icon
-    // grid) — a full-bleed square is scaled edge-to-edge into the dock slot and
-    // renders visibly bigger than every neighbouring app.
-    // NOTE: no light-tile sibling any more. The dock icon is fixed identity and
-    // no longer theme-swaps: the white tile washed the mark's lanes out.
+    // Both tiles are macOS-padded (824px art inset in a 1024 canvas, per Apple's
+    // icon grid) — a full-bleed square is scaled edge-to-edge into the dock slot
+    // and renders visibly bigger than every neighbouring app. macOS can't carry
+    // appearance variants in an .icns, so main swaps these at runtime.
     "brand/gitstudio-icon-mac-1024.png": "icon.png",
+    "brand/gitstudio-icon-light-mac-1024.png": "icon-light.png",
     "brand/gitstudio-icon.svg": "brand-icon.svg",
     "brand/gitstudio-icon-light.svg": "brand-icon-light.svg",
     "brand/gitstudio-wordmark-light.svg": "brand-wordmark-light.svg",

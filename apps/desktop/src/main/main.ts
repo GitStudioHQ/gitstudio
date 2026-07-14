@@ -174,25 +174,36 @@ async function createWindow(): Promise<void> {
 }
 
 /**
- * The app icon. ONE icon, never theme-swapped: a dock/taskbar icon is the app's
- * identity, and no real app changes it with the OS appearance. (It used to swap
- * to a white tile in light mode, which washed the mark's lanes out and made
- * GitStudio the odd one out in the dock.) The mark carries its own dark
- * squircle, so it reads on a light and a dark dock alike.
+ * The dock/window mark for an appearance.
  *
- * The file is the macOS-padded variant (824px art inset in a 1024 canvas per
+ * macOS cannot carry light/dark variants inside an `.icns`, so an Electron app
+ * has to adapt the dock icon itself (`app.dock.setIcon`) — which only works if
+ * BOTH tiles are properly designed. The light tile used to be the dark mark's
+ * artwork dropped onto a pale background unchanged: its light-violet lanes and
+ * near-white node cores disappeared, and the nodes that straddle the cube's
+ * edge simply vanished. It is now re-tuned (deep brand-violet lanes and rings,
+ * white cores) so it reads on the pale tile.
+ *
+ * Both files are the macOS-padded variant (824px art inset in a 1024 canvas per
  * Apple's icon grid) — a full-bleed square gets scaled edge-to-edge into the
  * dock slot and renders visibly bigger than every neighbouring app.
  */
-function appIcon(): string {
-  return join(__dirname, "../renderer/icon.png");
+function iconPath(variant: "dark" | "light"): string {
+  return join(
+    __dirname,
+    variant === "light" ? "../renderer/icon-light.png" : "../renderer/icon.png",
+  );
 }
 
-/** Pin the macOS dock icon to the brand mark (best-effort; dev-mode only —
- *  electron-builder embeds the .icns in packaged builds). */
-function setDockIcon(): void {
+/** Window/dev icon for the current OS appearance. */
+function appIcon(): string {
+  return iconPath(nativeTheme.shouldUseDarkColors ? "dark" : "light");
+}
+
+/** Swap the macOS dock icon to the given brand tile (best-effort). */
+function setDockIcon(variant: "dark" | "light"): void {
   try {
-    app.dock?.setIcon(appIcon());
+    app.dock?.setIcon(iconPath(variant));
   } catch {
     /* non-macOS or missing — harmless */
   }
@@ -667,10 +678,8 @@ function registerIpc(): void {
 
   // Appearance: the renderer owns the in-app theme override, so it tells us
   // which brand variant the dock should wear.
-  handle("appearance:dockIcon", async () => {
-    // Kept for renderer compatibility; the dock icon is fixed brand identity
-    // now and no longer follows the theme.
-    setDockIcon();
+  handle("appearance:dockIcon", async (payload) => {
+    setDockIcon(payload.variant);
   });
 }
 
@@ -731,7 +740,7 @@ async function boot(): Promise<void> {
   // Dev builds show Electron's dock icon; force the GitStudio brand mark. Pick a
   // sensible initial variant from the OS scheme so it doesn't flash the wrong
   // tile before the renderer reports its (possibly overridden) theme.
-  setDockIcon();
+  setDockIcon(nativeTheme.shouldUseDarkColors ? "dark" : "light");
   await createWindow();
   initAutoUpdate({ isDev: !app.isPackaged });
 
