@@ -1,0 +1,28 @@
+packages/git-service/src/StagingProvider.ts
+  s_8b33a63136feb2::t_c84265178cac0f 23-26,281-287
+  s_8b33a63136feb2::t_209a04e01d0fe0 27
+apps/extension/src/changes/commitView.ts
+  s_8b33a63136feb2::t_83339327b3eef4 405-413,627,3387-3401
+  s_8b33a63136feb2::t_20851f5a908a1a 584-606
+  s_8b33a63136feb2::t_5fbee5b9beb232 1718-1720,1722-1728,1880-1886,2231,2233-2236,2238,3196-3197
+  s_8b33a63136feb2::t_6414ae25cd1114 2232,3144
+  s_8b33a63136feb2::t_5de70d310fa219 2946-2948,2958,3145-3154,3159,3208-3209
+  s_8b33a63136feb2::t_34671a4c7dfe5b 2308,3013-3020
+  s_8b33a63136feb2::t_0361ccc8bdc73e 3402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "f52e8b8eea4c41bddb491f00d72fe136f5c689c5",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
