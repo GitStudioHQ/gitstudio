@@ -1,0 +1,87 @@
+apps/extension/README.md
+  s_8b33a63136feb2::t_c54fd10f4a4095 8,13,15,17,19,21,23,25,27,29,31,33-57,59,61,63,65,67,69-112,114,120-124,128,130-132,134,136
+  s_8b33a63136feb2::t_4b4ee113f4430d 138
+docs/releases/app-v1.0.0.md
+  s_8b33a63136feb2::t_4b4ee113f4430d 1-36
+apps/desktop/src/main/autoUpdate.ts
+  s_8b33a63136feb2::t_70a61f3d089b1d 13-20
+RELEASING.md
+  s_967c4a3920e43f::t_4200878c472072 1-9,11,17-19,22,24,27,30,32-42,44,46,49,53-54,56-64,67,71,78,80,82-100
+  s_8b33a63136feb2::t_06c077cf27835e 10,12-16,20-21,23,25-26,28-29,31,43,45,47-48,50-52,55,65-66,68-70,72-77,79,81,101
+.github/workflows/release-desktop.yml
+  s_967c4a3920e43f::t_1e8245df027bea 74-76,86
+  s_967c4a3920e43f::t_f042749c19aa2d 81-82,84
+  s_967c4a3920e43f::t_939ed604bae0d7 72-73
+  s_967c4a3920e43f::t_15e5a4687c7f9b 77-80
+  s_967c4a3920e43f::t_b188a4aebc0ed7 83
+  s_967c4a3920e43f::t_9390a3fe695845 87-89
+  s_8b33a63136feb2::t_90902374323c1e 3-5,9,11-19,31-65,67,90-92,129,132
+.gitignore
+  s_8b33a63136feb2::t_e7eb1b76c4eb50 8-10
+apps/desktop/package.json
+  s_8b33a63136feb2::t_6f29184c4181b0 3
+apps/extension/package.json
+  s_967c4a3920e43f::t_19738437fb970c 764-785
+  s_967c4a3920e43f::t_88de4bdab91bfe 523-528
+  s_967c4a3920e43f::t_4ae2f673765fb6 529-533
+  s_967c4a3920e43f::t_4fe27c0e0c86e3 921
+  s_967c4a3920e43f::t_04778325b5b2df 816-818,832-834,848-850,865-867,882-884,899-901
+  s_967c4a3920e43f::t_df4c8b7cabf2da 522,619-655,917,927
+  s_967c4a3920e43f::t_ea9d9496a116e0 922
+  s_967c4a3920e43f::t_e982c1d2434cd5 101-102,105,969-973,1083
+  s_967c4a3920e43f::t_74aa4e7f4cad9b 1084-1086
+  s_8b33a63136feb2::t_6f29184c4181b0 4-5,22-38,45,51-53,56-58,60-61,65,67-69,72-75,1465-1466
+  s_967c4a3920e43f::t_ab8a2bcbcc50c1 18,812-813
+  s_967c4a3920e43f::t_ea5d740429d4cc 758-763
+  s_967c4a3920e43f::t_07502141d14a39 108-109
+  s_967c4a3920e43f::t_795a972d99cbee 103-104
+  s_967c4a3920e43f::t_be664348753d8a 1245,1257,1261,1265,1269,1273
+apps/extension/.vscodeignore
+  s_8b33a63136feb2::t_dddce04dc52fbd 17-19
+  s_967c4a3920e43f::t_6d4cbb92517eba 8
+.github/workflows/release.yml
+  s_8b33a63136feb2::t_488ae3d972fff0 49
+  s_8b33a63136feb2::t_9ec230353694a2 9,13-19,47-48,50-59,77-79,85-109
+apps/desktop/electron-builder.yml
+  s_967c4a3920e43f::t_ea0b1cd7d2c3f2 72-73,76,80-83
+  s_8b33a63136feb2::t_e3572f67cfacc7 60-63,77-78
+  s_967c4a3920e43f::t_d82f89cbee382e 48-50
+apps/extension/CHANGELOG.md
+  s_8b33a63136feb2::t_6b9d081b9d744e 7,9-10
+  s_967c4a3920e43f::t_324cadc76a52a3 8,11-24,39-53
+  s_8b33a63136feb2::t_83c6b602500a10 25-30
+  s_8b33a63136feb2::t_499fb88ab5b8d3 31-32
+  s_8b33a63136feb2::t_ae77f476e72b71 33-38
+README.md
+  s_8b33a63136feb2::t_4b4ee113f4430d 156
+  s_8b33a63136feb2::t_1c71e4785d69a2 8-16,23-46,51,53,55,59-64,66-77,85-87,89-90,92-94,97,99,104,107,110,114-134,137-146,150-152
+docs/releases/ext-v1.0.0.md
+  s_8b33a63136feb2::t_4b4ee113f4430d 1-36
+.github/workflows/ci.yml
+  s_967c4a3920e43f::t_55e0bd0c9547f2 51
+  s_8b33a63136feb2::t_2102f3e46018a6 9-17,34-48,59-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "913b93fed6ba821f0e343baa49aee969875b9a07",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_967c4a3920e43f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a2138437-641a-4f13-a400-0345b39df867",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
