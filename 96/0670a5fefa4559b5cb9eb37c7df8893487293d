@@ -1,0 +1,23 @@
+brand/gitstudio-icon-light.svg
+  s_8b33a63136feb2::t_6141a352c536e2 3-4,21-28,30
+brand/gitstudio-icon.svg
+  s_8b33a63136feb2::t_86b3f9d30af9b7 3-4,21-28,30
+brand/make-app-icons.py
+  s_8b33a63136feb2::t_83b63506f35e56 52-55,59-60,64-68,73-79,85-86,88-89,92-93,110-117,119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "960670a5fefa4559b5cb9eb37c7df8893487293d",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
