@@ -39,24 +39,45 @@ LEFT_X, RIGHT_X = 92.0, 420.0
 UPPER_Y = 155.0
 LOWER_Y = 345.0
 
-LANE_W = 33      # the merge-Y is the signature — it must read at 48px in a dock
-NODE_R = 33      # outer violet ring
-HOLE_R = 14.0    # the punched hole = the dot's dark centre
-CENTER_NODE_R = 37
-CENTER_HOLE_R = 16.0
+# ── optical sizing ───────────────────────────────────────────────────────────
+# One lane weight cannot serve both a 180px hero and a 48px dock slot: thin
+# lanes read as elegant when large and DISAPPEAR when small; thick lanes stay
+# legible when small and look clumsy when large. So the same mark ships in two
+# weights, and each surface gets the one it needs.
+#
+#   DISPLAY — welcome hero, Marketplace listing, README. Rendered big.
+#   DOCK    — the macOS dock / Windows taskbar. Rendered at 32-64px.
+DISPLAY_W = dict(lane=23, node=26, hole=11.0, cnode=29, chole=12.5)
+DOCK_W = dict(lane=38, node=37, hole=15.0, cnode=41, chole=17.0)
+
+# Set by weights(); the svg() template reads these.
+LANE_W = DISPLAY_W["lane"]
+NODE_R = DISPLAY_W["node"]
+HOLE_R = DISPLAY_W["hole"]
+CENTER_NODE_R = DISPLAY_W["cnode"]
+CENTER_HOLE_R = DISPLAY_W["chole"]
+
+
+def weights(w: dict) -> None:
+    """Select the optical weight the next svg() call renders at."""
+    global LANE_W, NODE_R, HOLE_R, CENTER_NODE_R, CENTER_HOLE_R
+    LANE_W, NODE_R, HOLE_R = w["lane"], w["node"], w["hole"]
+    CENTER_NODE_R, CENTER_HOLE_R = w["cnode"], w["chole"]
+
 
 DARK = {
     "bg_top": "#20202F", "bg_bot": "#0E0E1A",
     "glow": "#4A4480", "glow_edge": "#2A2D3A",
     "hairline": "#ffffff", "hairline_op": "0.07",
-    "f_top": ("#7B79A6", "#5D5B82"),
-    "f_left": ("#39375A", "#2A2845"),
-    "f_right": ("#55527C", "#403E63"),
+    # A lighter cube body than before: at 48px the old slate sank into the dark
+    # tile and the whole mark went muddy.
+    "f_top": ("#8E8CBC", "#6E6C96"),
+    "f_left": ("#454373", "#33315A"),
+    "f_right": ("#63608F", "#4B4974"),
     "edge_dark": "#0E0E1A", "edge_dark_op": "0.35",
-    "edge_light": "#FFFFFF", "edge_light_op": "0.16",
-    # Brighter than the old #C4ADFF→#9A78FF so the lanes pop off the slate cube.
-    "lane": ("#DCCFFF", "#AB8FFF"),
-    "ring": "#C3ACFF", "center_ring": "#D0BCFF",
+    "edge_light": "#FFFFFF", "edge_light_op": "0.20",
+    "lane": ("#E6DCFF", "#B79EFF"),
+    "ring": "#CFBCFF", "center_ring": "#DBCBFF",
 }
 
 LIGHT = {
@@ -169,24 +190,29 @@ def padded(svg_text: str) -> Image.Image:
 
 
 def main() -> None:
-    dark_svg, light_svg = svg(DARK), svg(LIGHT)
-
-    # The SVGs on disk are the brand's source of truth (the app + web use them).
+    # DISPLAY weight: the welcome hero, the Marketplace icon, the README.
+    weights(DISPLAY_W)
+    dark_display, light_display = svg(DARK), svg(LIGHT)
     with open(os.path.join(HERE, "gitstudio-icon.svg"), "w") as f:
-        f.write(dark_svg)
+        f.write(dark_display)
     with open(os.path.join(HERE, "gitstudio-icon-light.svg"), "w") as f:
-        f.write(light_svg)
+        f.write(light_display)
+    full_display = rasterize(dark_display, CANVAS)
 
-    full = rasterize(dark_svg, CANVAS)
-    mac, mac_light = padded(dark_svg), padded(light_svg)
+    # DOCK weight: the macOS dock and the Windows taskbar, seen at 32-64px.
+    weights(DOCK_W)
+    dark_dock, light_dock = svg(DARK), svg(LIGHT)
+    full_dock = rasterize(dark_dock, CANVAS)
+    mac, mac_light = padded(dark_dock), padded(light_dock)
 
     targets = [
-        # full-bleed: windows/linux packaged icon + the Marketplace icon
-        (full, os.path.join(REPO, "apps/desktop/build/icon.png")),
-        (full, os.path.join(REPO, "apps/extension/media/icon.png")),
-        (full, os.path.join(HERE, "gitstudio-icon-1024.png")),
-        # mac: padded. The .icns bakes the dark tile; main swaps to the light
-        # tile at runtime (an .icns cannot carry appearance variants).
+        # DISPLAY: shown large — thin lanes read as elegant here.
+        (full_display, os.path.join(REPO, "apps/extension/media/icon.png")),
+        (full_display, os.path.join(HERE, "gitstudio-icon-1024.png")),
+        # DOCK: shown tiny — thick lanes survive. Windows/Linux full-bleed…
+        (full_dock, os.path.join(REPO, "apps/desktop/build/icon.png")),
+        # …and macOS padded (Apple's icon grid), dark + the light tile the dock
+        # swaps to at runtime (an .icns cannot carry appearance variants).
         (mac, os.path.join(REPO, "apps/desktop/build/icon-mac.png")),
         (mac, os.path.join(HERE, "gitstudio-icon-mac-1024.png")),
         (mac_light, os.path.join(HERE, "gitstudio-icon-light-mac-1024.png")),
@@ -196,14 +222,13 @@ def main() -> None:
         img.save(path, "PNG")
         print(f"wrote {os.path.relpath(path, REPO)}  {img.size[0]}x{img.size[1]}")
 
-    # Guard the exact bug that shipped: the dots must be punched HOLES, never
-    # white discs. If a renderer ever ignores the mask again, fail loudly.
-    for name, s in (("dark", dark_svg), ("light", light_svg)):
-        probe = rasterize(s, 512)
-        core = probe.getpixel((int(CX), int(MID_Y)))[:3]
-        if name == "dark" and sum(core) > 300:
-            sys.exit(f"FAIL: dark node cores rendered light {core} — mask ignored.")
-        print(f"ok: {name} centre node core rgb={core} (a hole, not a white disc)")
+    # Guard the bug that shipped once: the dots must be punched HOLES, never
+    # white discs. If a renderer ignores the mask again, fail loudly.
+    probe = rasterize(dark_dock, 512)
+    core = probe.getpixel((int(CX), int(MID_Y)))[:3]
+    if sum(core) > 300:
+        sys.exit(f"FAIL: dark node cores rendered light {core} — mask ignored.")
+    print(f"ok: dark centre node core rgb={core} (a hole, not a white disc)")
 
 
 if __name__ == "__main__":
