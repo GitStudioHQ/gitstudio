@@ -402,6 +402,15 @@ export class CommitViewProvider
     await this.discardEntries(await this.entriesForPaths(active, [path]));
   }
 
+  /** Is anything actually in the index? (Cheap: `git diff --cached`.) */
+  private async hasStagedChanges(entry: RepoEntry): Promise<boolean> {
+    try {
+      return (await entry.ctx.staging.stagedCount()) > 0;
+    } catch {
+      return true; // can't tell — let git have the final word
+    }
+  }
+
   private doOpenDiff(path: string, staged: boolean): void {
     const active = this.repos.getActive();
     if (!active || !path) {
@@ -572,6 +581,29 @@ export class CommitViewProvider
       return;
     }
 
+    // Nothing staged? git exits 1 and prints "no changes added to commit" to
+    // STDOUT — but we only ever read stderr, so the user got the immortal
+    // "commit failed — unknown error" and no hint that staging is even a thing.
+    // Offer VS Code's own escape hatch instead of failing at them.
+    if (!msg.amend && !(await this.hasStagedChanges(entry))) {
+      const STAGE_ALL = "Stage All & Commit";
+      const choice = await vscode.window.showWarningMessage(
+        "There are no staged changes to commit. Stage all your changes and commit them directly?",
+        { modal: true },
+        STAGE_ALL,
+      );
+      if (choice !== STAGE_ALL) {
+        return;
+      }
+      const staged = await entry.ctx.staging.stageAll();
+      if (!staged.ok) {
+        void vscode.window.showErrorMessage(
+          `GitStudio: couldn't stage your changes — ${describeGitFailure(staged)}`,
+        );
+        return;
+      }
+    }
+
     this.busy = true;
     void this.pushState();
     try {
@@ -592,7 +624,7 @@ export class CommitViewProvider
           : await doCommit();
       if (!result.ok) {
         void vscode.window.showErrorMessage(
-          `GitStudio: commit failed — ${result.stderr.trim() || "unknown error"}`,
+          `GitStudio: commit failed — ${describeGitFailure(result)}`,
         );
         return;
       }
@@ -1683,7 +1715,17 @@ export class CommitViewProvider
     /* ---- Groups -------------------------------------------------------- */
     .groups { margin: 0 0 2px; }
     .group { margin-top: 4px; }
+    /* The STAGED group always renders, even at zero: hiding it meant a new user
+       never saw that staging exists, then hit "commit failed". Other empty
+       groups still collapse. */
     .group.empty { display: none; }
+    .group.empty.keep-empty { display: block; }
+    .group-empty-hint {
+      padding: 6px 8px 10px 26px;
+      font-size: 11.5px;
+      color: var(--gs-fg-subtle);
+      font-style: italic;
+    }
     .group-header {
       display: flex;
       align-items: center;
@@ -1835,6 +1877,13 @@ export class CommitViewProvider
        read clearly (esp. the single-stroke unstage dash). */
     .row .row-actions .icon-btn { color: var(--gs-fg); }
     .row .row-actions .icon-btn:hover { color: var(--gs-brand); }
+    /* Discard is IRREVERSIBLE and sits in the same slot where Unstage sits in
+       the staged group — muscle memory from one group would destroy work in the
+       other. Make it read as destructive. */
+    .row .row-actions .icon-btn.danger:hover {
+      color: var(--gs-status-deleted);
+      background: color-mix(in srgb, var(--gs-status-deleted) 16%, transparent);
+    }
     .row .row-actions .codicon,
     .group-actions .icon-btn .codicon { font-size: 17px; }
     /* Status letter: plain colored monospace, not a filled pill. Each row
@@ -2179,8 +2228,14 @@ export class CommitViewProvider
       for (const [path, op] of pending) {
         const inStaged = has(auth.staged, path);
         const present = inStaged || has(auth.unstaged, path) || has(auth.merge, path);
+        // A stage is only truly done when the path has LEFT the unstaged/merge
+        // lists. Keying on inStaged alone was wrong for a partially-staged
+        // file (git status "MM"), which sits in BOTH lists before we even run:
+        // the very next state push "satisfied" the op, the optimistic move was
+        // dropped, and the row visibly snapped back to Unstaged.
+        const stillUnstaged = has(auth.unstaged, path) || has(auth.merge, path);
         const satisfied = op.action === "stage"
-          ? inStaged || !present
+          ? !stillUnstaged || !present
           : !inStaged;
         if (satisfied || now - op.at > PENDING_TTL) pending.delete(path);
       }
@@ -2250,6 +2305,7 @@ export class CommitViewProvider
     // stroke) so Unstage visually balances the Stage "+".
     const ICON_UNSTAGE = '<i class="codicon codicon-remove" aria-hidden="true"></i>';
     const ICON_DISCARD = '<i class="codicon codicon-discard" aria-hidden="true"></i>';
+    const ICON_CHECK = '<i class="codicon codicon-check" aria-hidden="true"></i>';
 
     // Only "!" is a conflict. "U" is UNTRACKED (statusLetter maps unmerged
     // states to "!", untracked to "U") — including it here painted every
@@ -2887,7 +2943,9 @@ export class CommitViewProvider
 
       for (const def of GROUP_DEFS) {
         const list = data[def.kind];
-        if (def.kind === "merge" && list.length === 0) continue;
+        // Merge + Unstaged collapse when empty, but STAGED always shows: hiding
+        // it is why staging was invisible until a commit failed.
+        if (def.kind !== "staged" && list.length === 0) continue;
         groupsEl.appendChild(renderGroup(def, list));
       }
     }
@@ -2897,6 +2955,7 @@ export class CommitViewProvider
       const isCollapsed = collapsed[collapseKey] === true;
       const group = el("div", "group group--" + def.kind +
         (list.length === 0 ? " empty" : "") +
+        (list.length === 0 && def.kind === "staged" ? " keep-empty" : "") +
         (isCollapsed ? " collapsed" : ""));
 
       const header = el("div", "group-header");
@@ -2951,6 +3010,14 @@ export class CommitViewProvider
         for (const f of list) body.appendChild(renderFileRow(def, f, 1));
       }
       group.appendChild(body);
+      // With nothing staged, say so — and say what to do about it. Silence here
+      // is exactly why "staging is confusing": the group simply vanished.
+      if (list.length === 0 && def.kind === "staged") {
+        const hint = el("div", "group-empty-hint");
+        hint.textContent = "Nothing staged yet — click + on a file to stage it.";
+        body.appendChild(hint);
+      }
+
       return group;
     }
 
@@ -3074,16 +3141,22 @@ export class CommitViewProvider
           vscode.postMessage({ type: "unstage", path: e.path });
         }));
       } else {
-        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage file", (ev) => {
-          ev.stopPropagation();
-          queueOp(e.path, "stage");
-          vscode.postMessage({ type: "stage", path: e.path });
-        }));
+        // On a conflicted file, staging means "I resolved this" — calling that
+        // button "Stage file" told the user nothing about what it does.
+        const isConflict = def.kind === "merge";
+        actions.appendChild(makeIconBtn(
+          isConflict ? ICON_CHECK : ICON_STAGE,
+          isConflict ? "Mark as Resolved" : "Stage file",
+          (ev) => {
+            ev.stopPropagation();
+            queueOp(e.path, "stage");
+            vscode.postMessage({ type: "stage", path: e.path });
+          }));
         if (def.kind === "unstaged") {
           actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard changes", (ev) => {
             ev.stopPropagation();
             vscode.postMessage({ type: "discard", path: e.path });
-          }));
+          }, true));
         }
       }
       row.appendChild(actions);
@@ -3120,8 +3193,8 @@ export class CommitViewProvider
         openActionMenu(fileName, items, row);
       };
       row.addEventListener("click", open);
-      // Double-click OR right-click a file → an actions menu (open / stage / discard).
-      row.addEventListener("dblclick", menu);
+      // Right-click → actions menu. NOT double-click: a dblclick fires click
+      // twice first, so the diff opened twice and the menu then popped over it.
       row.addEventListener("contextmenu", menu);
       row.addEventListener("keydown", (ev) => {
         // Don't hijack Enter aimed at a focused stage/unstage/discard button.
@@ -3132,8 +3205,8 @@ export class CommitViewProvider
       return row;
     }
 
-    function makeIconBtn(svg, title, onClick) {
-      const b = el("button", "icon-btn", svg);
+    function makeIconBtn(svg, title, onClick, danger) {
+      const b = el("button", "icon-btn" + (danger ? " danger" : ""), svg);
       b.type = "button";
       // data-tip drives our own tooltip (native title is flaky in webviews);
       // aria-label keeps it accessible.
@@ -3310,4 +3383,20 @@ function findIn(
   path: string,
 ): Change | undefined {
   return changes.find((c) => relativePath(root, c.uri.fsPath) === path);
+}
+
+/** A human reason for a failed git op. git puts the most useful commit failures
+ *  on stdout ("no changes added to commit", "nothing to commit"), so reading
+ *  only stderr yields an empty string — and the user got "unknown error". */
+function describeGitFailure(r: { stderr: string; stdout?: string }): string {
+  const err = r.stderr.trim();
+  if (err) {
+    return err;
+  }
+  const out = (r.stdout ?? "").trim();
+  if (out) {
+    // git's stdout here is multi-line advice; the first line is the reason.
+    return out.split("\n")[0];
+  }
+  return "git reported no reason. Check the Output panel for details.";
 }
