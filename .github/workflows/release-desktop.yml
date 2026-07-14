@@ -89,7 +89,7 @@ jobs:
           # No *.blockmap here — AppImage/deb don't emit one, and a non-matching
           # glob would fail the upload.
           - os: ubuntu-22.04
-            artifact: 'apps/desktop/release/*.AppImage apps/desktop/release/*.deb apps/desktop/release/*.yml'
+            artifact: 'apps/desktop/release/*.AppImage apps/desktop/release/*.deb apps/desktop/release/latest-linux.yml'
     runs-on: ${{ matrix.os }}
     env:
       # electron-builder reads these; when absent it builds UNSIGNED (it does not

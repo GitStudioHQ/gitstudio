@@ -13,8 +13,8 @@ License: Apache-2.0 · Source: https://github.com/GitStudioHQ/gitstudio · Websi
 | macOS — Apple Silicon | `GitStudio-1.0.0-arm64.dmg` |
 | macOS — Intel | `GitStudio-1.0.0-x64.dmg` |
 | Windows 10/11 (x64) | `GitStudio-Setup-1.0.0.exe` |
-| Linux — universal | `GitStudio-1.0.0-x64.AppImage` |
-| Linux — Debian / Ubuntu | `GitStudio-1.0.0-x64.deb` |
+| Linux — universal | `GitStudio-1.0.0-x86_64.AppImage` |
+| Linux — Debian / Ubuntu | `GitStudio-1.0.0-amd64.deb` |
 
 The macOS `.zip` assets exist for the auto-update feed — download the `.dmg`.
 

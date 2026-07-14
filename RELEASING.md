@@ -74,7 +74,7 @@ A `create-release` job makes the Release once (so the matrix jobs never race eac
 
 - **macOS** — `GitStudio-1.0.0-arm64.dmg`, `GitStudio-1.0.0-x64.dmg` (+ `.zip`)
 - **Windows** — `GitStudio-Setup-1.0.0.exe` (NSIS, user-choosable install dir)
-- **Linux** — `GitStudio-1.0.0-x64.AppImage` (universal), `GitStudio-1.0.0-x64.deb` (Debian/Ubuntu)
+- **Linux** — `GitStudio-1.0.0-x86_64.AppImage` (universal), `GitStudio-1.0.0-amd64.deb` (Debian/Ubuntu)
 
 Artifact names are pinned in `electron-builder.yml` (no spaces, arch-suffixed) so the website can link them predictably: `https://github.com/GitStudioHQ/gitstudio/releases/download/app-v<version>/<name>`.
 
