@@ -146,8 +146,12 @@ function buildTooltip(
   if (ci) {
     md.appendMarkdown(`${ci}\n\n`);
   }
+  // Inside a `code span` backslash escapes render LITERALLY (CommonMark), so
+  // escapeMd would display "release\-1\.x". Backticks are the only character
+  // that can break the span — neutralize just those.
+  const codeSpan = (s: string) => `\`${s.replace(/`/g, "'")}\``;
   md.appendMarkdown(
-    `$(git-branch) \`${escapeMd(pr.base.ref)}\` ← \`${escapeMd(pr.head.label)}\`\n\n`,
+    `$(git-branch) ${codeSpan(pr.base.ref)} ← ${codeSpan(pr.head.label)}\n\n`,
   );
   const body = (pr.body ?? "").trim();
   if (body.length > 0) {

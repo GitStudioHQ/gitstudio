@@ -3,10 +3,13 @@ import type { GitProcess } from "./GitProcess";
 
 const FIELD_SEP = "\x1f";
 
+// %(*objectname) peels annotated tags to the COMMIT they tag — %(objectname)
+// alone is the tag object's own sha, which matches no graph row, so annotated
+// tags would never render a chip anywhere. Empty for everything else.
 const REF_FORMAT =
   `--format=%(objectname)${FIELD_SEP}%(refname)${FIELD_SEP}` +
   `%(refname:short)${FIELD_SEP}%(HEAD)${FIELD_SEP}%(upstream:short)` +
-  `${FIELD_SEP}%(upstream:track)`;
+  `${FIELD_SEP}%(upstream:track)${FIELD_SEP}%(*objectname)`;
 
 /** Parses `%(upstream:track)` ("[ahead 2, behind 3]", "[gone]", or "") into
  *  ahead/behind counts. Returns undefined counts when not tracked/clean. */
@@ -57,7 +60,7 @@ export class RefProvider {
       this.proc.run(["stash", "list", STASH_FORMAT]),
     ]);
     for (const line of splitLines(branchesAndTags.stdout)) {
-      const [objectname, refname, short, head, upstream, track] =
+      const [objectname, refname, short, head, upstream, track, peeled] =
         line.split(FIELD_SEP);
       const type = refTypeFromFullName(refname);
       if (!type) {
@@ -67,7 +70,9 @@ export class RefProvider {
         type,
         name: short,
         fullName: refname,
-        sha: objectname,
+        // Annotated tags: use the peeled commit sha so decorations land on a
+        // real graph row; lightweight tags/branches have no peel (empty).
+        sha: peeled || objectname,
         isCurrent: head === "*",
       };
       if (upstream) {

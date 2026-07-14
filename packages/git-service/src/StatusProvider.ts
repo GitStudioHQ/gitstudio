@@ -90,6 +90,11 @@ function unstagedLetter(y: string): string | undefined {
       // INTENT_TO_ADD → "A" in workingTreeChanges, so match it (else the file
       // is invisible during the eager window then pops in when vscode.git lands).
       return "A";
+    case "R":
+    case "C":
+      // Worktree-side rename/copy (e.g. `mv a b && git add -N b` emits "2 .R"
+      // as the file's ONLY record) — dropping it hides the file entirely.
+      return "R";
     default:
       return undefined; // "." = unchanged in the worktree
   }

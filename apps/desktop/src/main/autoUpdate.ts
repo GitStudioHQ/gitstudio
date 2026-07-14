@@ -22,7 +22,10 @@ export function initAutoUpdate(opts: AutoUpdateOptions): void {
   // that skips optional deps) never crashes startup.
   void import("electron-updater")
     .then(({ autoUpdater }) => {
-      autoUpdater.autoDownload = false;
+      // Download in the background and install on quit (autoInstallOnAppQuit
+      // defaults to true). With autoDownload=false and no update-available
+      // listener the checker was a no-op that never delivered an update.
+      autoUpdater.autoDownload = true;
       autoUpdater.on("error", () => {
         // Swallow: a repo with no published releases yields a 404 here, which
         // is expected until the first `app-v*` tag ships installers.

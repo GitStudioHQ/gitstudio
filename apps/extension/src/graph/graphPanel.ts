@@ -347,8 +347,21 @@ export class CommitGraphPanel {
     const skip = this.nextSkip;
     try {
       const page = await this.readPage(active, skip, controller.signal);
-      if (controller.signal.aborted || page.length === 0) {
-        this.hasMore = page.length === PAGE_SIZE;
+      if (controller.signal.aborted) {
+        return;
+      }
+      if (page.length === 0) {
+        // History length was an exact multiple of the page size. The webview
+        // disarmed its loadMore when it fired this request and only re-arms on
+        // a rows/hasMore change — a silent return leaves it stuck showing
+        // "loading older commits…" forever, so tell it the history ended.
+        this.hasMore = false;
+        this.post({
+          type: "graphAppend",
+          rows: [],
+          totalColumns: 0,
+          hasMore: false,
+        });
         return;
       }
       this.nextSkip += page.length;
@@ -520,8 +533,35 @@ export class CommitGraphPanel {
       this.pendingReveal = sha;
       return;
     }
+    if (!this.records.has(sha) && this.hasMore) {
+      // Promoted from the sidebar rail (its own instance may have paged much
+      // deeper than this fresh panel): page toward the commit first, else the
+      // webview's reveal silently no-ops on a row it doesn't have.
+      void this.pageUntilLoaded(sha).then(() => {
+        this.post({ type: "revealCommit", sha });
+        void this.pushCommitDetails(sha);
+      });
+      return;
+    }
     this.post({ type: "revealCommit", sha });
     void this.pushCommitDetails(sha);
+  }
+
+  /** Page in more history until `sha` is loaded (bounded so a sha that isn't
+   *  in the log at all can't trigger an unbounded full-history walk). */
+  private async pageUntilLoaded(sha: string): Promise<void> {
+    const MAX_STEPS = 25; // ~20 pages × 500 = 10k commits of reach
+    for (let i = 0; i < MAX_STEPS; i++) {
+      if (this.records.has(sha) || !this.hasMore) {
+        return;
+      }
+      if (this.loadController) {
+        // A page is already in flight (loadMore would no-op); let it land.
+        await new Promise((r) => setTimeout(r, 150));
+        continue;
+      }
+      await this.loadMore();
+    }
   }
 
   /** Prepend a synthetic "Uncommitted changes" node when the tree is dirty. */
@@ -532,9 +572,13 @@ export class CommitGraphPanel {
       return;
     }
     const st = active.repo.state;
+    // untrackedChanges is populated (instead of workingTreeChanges) when the
+    // user sets git.untrackedChanges = "separate" — without it a worktree of
+    // only-new files shows no WIP node at all.
     const dirty =
       (st.indexChanges?.length ?? 0) +
         (st.workingTreeChanges?.length ?? 0) +
+        (st.untrackedChanges?.length ?? 0) +
         (st.mergeChanges?.length ?? 0) >
       0;
     if (!dirty) {
@@ -621,6 +665,9 @@ export class CommitGraphPanel {
     const unstaged = [
       ...toFiles(st.mergeChanges),
       ...toFiles(st.workingTreeChanges),
+      // Populated instead of workingTreeChanges under git.untrackedChanges =
+      // "separate" — omit it and new files vanish from the WIP details.
+      ...toFiles(st.untrackedChanges),
     ];
     this.post({
       type: "commitDetails",

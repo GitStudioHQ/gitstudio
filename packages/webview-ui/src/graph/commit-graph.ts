@@ -1159,6 +1159,7 @@ export class CommitGraph extends LitElement {
       this.copiedTimer = undefined;
     }
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
+    document.removeEventListener("keydown", this.onDocKeyDown, true);
   }
 
   updated(changed: PropertyValues): void {
@@ -1498,14 +1499,26 @@ export class CommitGraph extends LitElement {
     this.commitMenu = { sha, x: px, y: py, title, items };
   }
 
-  /** Attach/detach the document click-outside listener as popovers open/close. */
+  /** Attach/detach the document click-outside/Escape listeners as popovers
+   *  open/close. Escape must dismiss from ANYWHERE — focus often sits on the
+   *  trigger (the filter button / the clicked row), not inside the popover, so
+   *  the popover's own keydown handler never sees it (same fix as the rail). */
   private syncPopoverListener(): void {
     const open = this.columnsOpen || this.scopeOpen || this.commitMenu !== null;
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
+    document.removeEventListener("keydown", this.onDocKeyDown, true);
     if (open) {
       document.addEventListener("pointerdown", this.onDocPointerDown, true);
+      document.addEventListener("keydown", this.onDocKeyDown, true);
     }
   }
+
+  private onDocKeyDown = (e: KeyboardEvent): void => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.closePopovers();
+  };
 
   // A pointerdown anywhere outside an open popover (the event re-targets to the
   // host from outside the shadow root) dismisses it. Clicks inside the shadow

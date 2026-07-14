@@ -7,7 +7,7 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
@@ -71,6 +71,22 @@ const UNSAFE_REF_RESULT: CommitActionResult = {
   changed: false,
   message: "That value isn't a valid git reference.",
 };
+
+/**
+ * Resolves a renderer-supplied repo-relative path and REFUSES anything that
+ * escapes the repository root ("../../…" or an absolute path). safeArg alone
+ * only blocks option injection — without this containment check a hostile
+ * renderer payload like `../../.zshenv` turns writeFile/readFile into an
+ * arbitrary file write/read primitive outside the repo.
+ */
+function containedPath(root: string, rel: string): string | undefined {
+  const abs = resolve(root, rel);
+  const base = resolve(root);
+  if (abs === base || abs.startsWith(base + sep)) {
+    return abs;
+  }
+  return undefined;
+}
 
 export class GitBridge {
   /** sha → record, accumulated as the graph pages stream in (for details). */
@@ -430,7 +446,17 @@ export class GitBridge {
     return this.staged(async (ctx) => ctx.staging.unstageFile(path));
   }
   async discard(path: string): Promise<CommitActionResult> {
-    return this.staged(async (ctx) => ctx.staging.discardChanges(path));
+    return this.staged(async (ctx) => {
+      // `git checkout --` only restores TRACKED paths; an untracked file must
+      // be removed via `git clean` instead (StagingProvider's own contract) —
+      // otherwise Discard on a new file always fails with "pathspec did not
+      // match any file(s) known to git".
+      const st = await ctx.process.run(["status", "--porcelain=v1", "-z", "--", path]);
+      const untracked = st.code === 0 && st.stdout.startsWith("??");
+      return untracked
+        ? ctx.staging.cleanFiles([path])
+        : ctx.staging.discardChanges(path);
+    });
   }
   async stageAll(): Promise<CommitActionResult> {
     return this.staged(async (ctx) => ctx.process.run(["add", "-A"]));
@@ -826,6 +852,7 @@ export class GitBridge {
    *  a non-fast-forward and the currently checked-out branch, so the worktree
    *  is never touched. */
   async branchPullFf(name: string): Promise<CommitActionResult> {
+    if (!safeArg(name)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => {
       const up = await ctx.process.run([
         "for-each-ref",
@@ -1140,7 +1167,9 @@ export class GitBridge {
     if (!safeArg(req.path)) return UNSAFE_REF_RESULT;
     return this.serialize(async () => {
       try {
-        await writeFile(join(ctx.root, req.path), req.content, "utf8");
+        const abs = containedPath(ctx.root, req.path);
+        if (!abs) return { ok: false, changed: false, message: "Path escapes the repository." };
+        await writeFile(abs, req.content, "utf8");
         const r = await ctx.process.run(["add", "--", req.path]);
         if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
         return { ok: true, changed: true };
@@ -1159,7 +1188,9 @@ export class GitBridge {
       try {
         const show = await ctx.process.run(["show", `:${stage}:${req.path}`]);
         if (show.code !== 0) return { ok: false, changed: false, message: show.stderr.trim() };
-        await writeFile(join(ctx.root, req.path), show.stdout, "utf8");
+        const abs = containedPath(ctx.root, req.path);
+        if (!abs) return { ok: false, changed: false, message: "Path escapes the repository." };
+        await writeFile(abs, show.stdout, "utf8");
         const r = await ctx.process.run(["add", "--", req.path]);
         if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
         return { ok: true, changed: true };
@@ -1290,7 +1321,9 @@ async function parentOf(ctx: GitContext, sha: string): Promise<string | undefine
  */
 async function readWorking(ctx: GitContext, rel: string): Promise<string> {
   try {
-    return await readFile(join(ctx.root, rel), "utf8");
+    const abs = containedPath(ctx.root, rel);
+    if (!abs) return "";
+    return await readFile(abs, "utf8");
   } catch {
     const indexed = await ctx.staging.indexContent(rel).catch(() => "");
     return indexed || (await ctx.staging.headContent(rel).catch(() => ""));
@@ -1341,10 +1374,20 @@ export function parsePorcelainStatus(stdout: string): ChangedFile[] {
     if (x === "R" || y === "R" || x === "C" || y === "C") {
       i++;
     }
-    const staged = x !== " " && x !== "?";
-    const status = (staged ? x : y).trim() || "?";
-    if (path) {
-      files.push({ path, status, staged });
+    if (!path) {
+      continue;
+    }
+    // A record can carry BOTH an index half (x) and a worktree half (y) —
+    // e.g. "MM" = staged edit plus a newer unstaged edit. Emitting only the
+    // index side hides the worktree half from the Changes view, and a commit
+    // then silently excludes the newer edits.
+    const hasStaged = x !== " " && x !== "?";
+    const hasUnstaged = y !== " ";
+    if (hasStaged) {
+      files.push({ path, status: x.trim() || "?", staged: true });
+    }
+    if (hasUnstaged || !hasStaged) {
+      files.push({ path, status: y.trim() || "?", staged: false });
     }
   }
   return files;

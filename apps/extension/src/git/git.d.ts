@@ -69,6 +69,9 @@ export interface RepositoryState {
   readonly mergeChanges: Change[];
   readonly indexChanges: Change[];
   readonly workingTreeChanges: Change[];
+  /** Populated instead of workingTreeChanges for new files when the user sets
+   *  git.untrackedChanges = "separate" (absent on older vscode.git builds). */
+  readonly untrackedChanges?: Change[];
   readonly onDidChange: Event<void>;
 }
 

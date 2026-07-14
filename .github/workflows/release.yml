@@ -69,10 +69,16 @@ jobs:
         run: npm test
         working-directory: .
 
+      # --baseImagesUrl: vsce's default rewrite of relative README images uses
+      # the repo ROOT (https://github.com/…/raw/HEAD/media/…), but this is a
+      # monorepo — the images live under apps/extension. Without this flag every
+      # store screenshot 404s.
       - name: Package
         run: |
           npm run package
-          npx @vscode/vsce package -o gitstudio.vsix --no-dependencies
+          npx @vscode/vsce package -o gitstudio.vsix --no-dependencies \
+            --baseImagesUrl https://github.com/GitStudioHQ/gitstudio/raw/HEAD/apps/extension \
+            --baseContentUrl https://github.com/GitStudioHQ/gitstudio/blob/HEAD/apps/extension
 
       # `--latest=false` is load-bearing: the desktop app's auto-updater reads
       # /releases/latest, and an extension release marked "latest" would point
