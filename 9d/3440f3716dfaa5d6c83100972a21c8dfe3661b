@@ -1,0 +1,24 @@
+docs/releases/app-v1.0.0.md
+  s_8b33a63136feb2::t_a6737b0b33b35e 15-17
+packages/git-service/test/worktree.test.ts
+  s_8b33a63136feb2::t_380d0e9d867b48 68-71
+  s_8b33a63136feb2::t_b5844d0103d261 6
+README.md
+  s_8b33a63136feb2::t_ad720ce329db36 42-43,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "9d3440f3716dfaa5d6c83100972a21c8dfe3661b",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
