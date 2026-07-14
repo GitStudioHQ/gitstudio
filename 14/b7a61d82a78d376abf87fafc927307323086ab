@@ -1,0 +1,24 @@
+brand/make-app-icons.py
+  s_8b33a63136feb2::t_2014a4a8eaca4b 2,4,6-10,12-15,17,20-22,30-137,141,149-153,155-163,165,172-181,184,188-189,199-207
+  s_8b33a63136feb2::t_2dba6db348fb1b 138-140,142-148,154
+brand/gitstudio-icon-light.svg
+  s_8b33a63136feb2::t_44b045a6f11154 4,7,10,13,19-20,22-24,30-38,40,42
+brand/gitstudio-icon.svg
+  s_8b33a63136feb2::t_5e96a39909fe53 4,7,10,13,19-20,22-24,28,30-38,40,42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "14b7a61d82a78d376abf87fafc927307323086ab",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
