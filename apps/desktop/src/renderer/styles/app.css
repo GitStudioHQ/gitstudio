@@ -578,9 +578,13 @@ html.is-mac .topbar { padding-left: 78px; }
  * themes); the merge-Y lanes + nodes are the violet accent (legible on both). */
 .topbar-mark { width: 26px; height: 26px; display: block; color: var(--vscode-foreground); }
 .topbar-mark svg { display: block; }
-.topbar-mark .bm-cube { stroke: currentColor; stroke-opacity: 0.42; }
-.topbar-mark .bm-lane { stroke: var(--gs-accent-ink, var(--gs-accent)); }
-.topbar-mark .bm-node { fill: var(--gs-accent-ink, var(--gs-accent)); }
+/* The mark is painted in the wordmark's violet→magenta gradient, so the glyph
+   and the logotype read as one brand. Faces carry the same gradient at low
+   opacity — depth from opacity, never a second hue. */
+.topbar-mark .bm-face { fill: url(#bm-grad); }
+.topbar-mark .bm-cube { stroke: url(#bm-grad); stroke-opacity: 0.55; }
+.topbar-mark .bm-lane { stroke: url(#bm-grad); }
+.topbar-mark .bm-node { fill: url(#bm-grad); }
 .topbar-switch {
   display: inline-flex;
   align-items: center;

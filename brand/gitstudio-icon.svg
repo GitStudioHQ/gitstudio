@@ -20,7 +20,7 @@
 <stop offset="0%" stop-color="#DCCFFF"/><stop offset="100%" stop-color="#AB8FFF"/>
 </linearGradient>
 <mask id="cubeHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
-<rect width="512" height="512" fill="#fff"/><circle cx="92.0" cy="155.0" r="12.5" fill="#000"/><circle cx="420.0" cy="155.0" r="12.5" fill="#000"/><circle cx="256.0" cy="436.0" r="12.5" fill="#000"/><circle cx="256.0" cy="246.0" r="14" fill="#000"/>
+<rect width="512" height="512" fill="#fff"/><circle cx="92.0" cy="155.0" r="14.0" fill="#000"/><circle cx="420.0" cy="155.0" r="14.0" fill="#000"/><circle cx="256.0" cy="436.0" r="14.0" fill="#000"/><circle cx="256.0" cy="246.0" r="16.0" fill="#000"/>
 </mask>
 </defs>
 <rect width="512" height="512" rx="116" fill="url(#bg)"/>
@@ -32,11 +32,11 @@
 <path d="M256.0,246.0 L256.0,436.0 L92.0,345.0 L92.0,155.0 Z" fill="url(#fLeft)"/>
 <path d="M256.0,64.0 L420.0,155.0 L420.0,345.0 L256.0,436.0 L92.0,345.0 L92.0,155.0 Z" fill="none" stroke="#0E0E1A" stroke-opacity="0.35" stroke-width="3.5" stroke-linejoin="round"/>
 <path d="M256.0,64.0 L420.0,155.0 L256.0,246.0 L92.0,155.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="3.5" stroke-linejoin="round"/>
-<g fill="none" stroke-width="27" stroke-linecap="round">
+<g fill="none" stroke-width="33" stroke-linecap="round">
 <path d="M256.0,246.0 L92.0,155.0" stroke="url(#lane)"/>
 <path d="M256.0,246.0 L420.0,155.0" stroke="url(#lane)"/>
 <path d="M256.0,246.0 L256.0,436.0" stroke="url(#lane)"/>
 </g>
-<circle cx="92.0" cy="155.0" r="28" fill="#C3ACFF"/><circle cx="420.0" cy="155.0" r="28" fill="#C3ACFF"/><circle cx="256.0" cy="436.0" r="28" fill="#C3ACFF"/><circle cx="256.0" cy="246.0" r="31" fill="#D0BCFF"/>
+<circle cx="92.0" cy="155.0" r="33" fill="#C3ACFF"/><circle cx="420.0" cy="155.0" r="33" fill="#C3ACFF"/><circle cx="256.0" cy="436.0" r="33" fill="#C3ACFF"/><circle cx="256.0" cy="246.0" r="37" fill="#D0BCFF"/>
 </g>
 </svg>

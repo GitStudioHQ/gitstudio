@@ -10,33 +10,33 @@
 <stop offset="0%" stop-color="#55527C"/><stop offset="100%" stop-color="#403E63"/>
 </linearGradient>
 <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-<stop offset="0%" stop-color="#FBFAFE"/><stop offset="100%" stop-color="#EDEBF7"/>
+<stop offset="0%" stop-color="#E7E3F3"/><stop offset="100%" stop-color="#D2CCE6"/>
 </linearGradient>
 <radialGradient id="bgglow" cx="0.30" cy="0.20" r="0.95">
-<stop offset="0%" stop-color="#CFC4F2" stop-opacity="0.55"/>
-<stop offset="60%" stop-color="#D5D9E6" stop-opacity="0"/>
+<stop offset="0%" stop-color="#BFB4E4" stop-opacity="0.55"/>
+<stop offset="60%" stop-color="#C9CBD9" stop-opacity="0"/>
 </radialGradient>
 <linearGradient id="lane" gradientUnits="userSpaceOnUse" x1="256.0" y1="155.0" x2="256.0" y2="436.0">
 <stop offset="0%" stop-color="#8B75F5"/><stop offset="100%" stop-color="#6B5BE6"/>
 </linearGradient>
 <mask id="cubeHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
-<rect width="512" height="512" fill="#fff"/><circle cx="92.0" cy="155.0" r="12.5" fill="#000"/><circle cx="420.0" cy="155.0" r="12.5" fill="#000"/><circle cx="256.0" cy="436.0" r="12.5" fill="#000"/><circle cx="256.0" cy="246.0" r="14" fill="#000"/>
+<rect width="512" height="512" fill="#fff"/><circle cx="92.0" cy="155.0" r="14.0" fill="#000"/><circle cx="420.0" cy="155.0" r="14.0" fill="#000"/><circle cx="256.0" cy="436.0" r="14.0" fill="#000"/><circle cx="256.0" cy="246.0" r="16.0" fill="#000"/>
 </mask>
 </defs>
 <rect width="512" height="512" rx="116" fill="url(#bg)"/>
 <rect width="512" height="512" rx="116" fill="url(#bgglow)"/>
-<rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#1B1A2E" stroke-opacity="0.10" stroke-width="3"/>
+<rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#1B1A2E" stroke-opacity="0.14" stroke-width="3"/>
 <g mask="url(#cubeHoles)">
 <path d="M256.0,64.0 L420.0,155.0 L256.0,246.0 L92.0,155.0 Z" fill="url(#fTop)"/>
 <path d="M420.0,155.0 L420.0,345.0 L256.0,436.0 L256.0,246.0 Z" fill="url(#fRight)"/>
 <path d="M256.0,246.0 L256.0,436.0 L92.0,345.0 L92.0,155.0 Z" fill="url(#fLeft)"/>
-<path d="M256.0,64.0 L420.0,155.0 L420.0,345.0 L256.0,436.0 L92.0,345.0 L92.0,155.0 Z" fill="none" stroke="#1B1A2E" stroke-opacity="0.18" stroke-width="3.5" stroke-linejoin="round"/>
+<path d="M256.0,64.0 L420.0,155.0 L420.0,345.0 L256.0,436.0 L92.0,345.0 L92.0,155.0 Z" fill="none" stroke="#14121F" stroke-opacity="0.30" stroke-width="3.5" stroke-linejoin="round"/>
 <path d="M256.0,64.0 L420.0,155.0 L256.0,246.0 L92.0,155.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.28" stroke-width="3.5" stroke-linejoin="round"/>
-<g fill="none" stroke-width="27" stroke-linecap="round">
+<g fill="none" stroke-width="33" stroke-linecap="round">
 <path d="M256.0,246.0 L92.0,155.0" stroke="url(#lane)"/>
 <path d="M256.0,246.0 L420.0,155.0" stroke="url(#lane)"/>
 <path d="M256.0,246.0 L256.0,436.0" stroke="url(#lane)"/>
 </g>
-<circle cx="92.0" cy="155.0" r="28" fill="#6B5BE6"/><circle cx="420.0" cy="155.0" r="28" fill="#6B5BE6"/><circle cx="256.0" cy="436.0" r="28" fill="#6B5BE6"/><circle cx="256.0" cy="246.0" r="31" fill="#7C64F2"/>
+<circle cx="92.0" cy="155.0" r="33" fill="#6B5BE6"/><circle cx="420.0" cy="155.0" r="33" fill="#6B5BE6"/><circle cx="256.0" cy="436.0" r="33" fill="#6B5BE6"/><circle cx="256.0" cy="246.0" r="37" fill="#7C64F2"/>
 </g>
 </svg>

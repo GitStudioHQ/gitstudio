@@ -39,11 +39,11 @@ LEFT_X, RIGHT_X = 92.0, 420.0
 UPPER_Y = 155.0
 LOWER_Y = 345.0
 
-LANE_W = 27      # was 21 — the merge-Y is the signature; make it read
-NODE_R = 28      # outer violet ring
-HOLE_R = 12.5    # the punched hole = the dot's dark centre
-CENTER_NODE_R = 31
-CENTER_HOLE_R = 14
+LANE_W = 33      # the merge-Y is the signature — it must read at 48px in a dock
+NODE_R = 33      # outer violet ring
+HOLE_R = 14.0    # the punched hole = the dot's dark centre
+CENTER_NODE_R = 37
+CENTER_HOLE_R = 16.0
 
 DARK = {
     "bg_top": "#20202F", "bg_bot": "#0E0E1A",
@@ -60,13 +60,13 @@ DARK = {
 }
 
 LIGHT = {
-    "bg_top": "#FBFAFE", "bg_bot": "#EDEBF7",
-    "glow": "#CFC4F2", "glow_edge": "#D5D9E6",
-    "hairline": "#1B1A2E", "hairline_op": "0.10",
+    "bg_top": "#E7E3F3", "bg_bot": "#D2CCE6",
+    "glow": "#BFB4E4", "glow_edge": "#C9CBD9",
+    "hairline": "#1B1A2E", "hairline_op": "0.14",
     "f_top": ("#7B79A6", "#5D5B82"),
     "f_left": ("#39375A", "#2A2845"),
     "f_right": ("#55527C", "#403E63"),
-    "edge_dark": "#1B1A2E", "edge_dark_op": "0.18",
+    "edge_dark": "#14121F", "edge_dark_op": "0.30",
     "edge_light": "#FFFFFF", "edge_light_op": "0.28",
     # Deep brand violet: it must carry on the PALE tile *and* the slate cube —
     # the corner nodes straddle that boundary, and light violet vanished on the
