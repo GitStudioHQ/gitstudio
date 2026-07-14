@@ -1,0 +1,25 @@
+RELEASING.md
+  s_8b33a63136feb2::t_490f0e843c9c4f 77
+.github/workflows/release-desktop.yml
+  s_8b33a63136feb2::t_322adbc3495776 92
+README.md
+  s_8b33a63136feb2::t_490f0e843c9c4f 43
+docs/releases/app-v1.0.0.md
+  s_8b33a63136feb2::t_490f0e843c9c4f 16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "5ba0fd6e0e4a4861f08e4674d944165399c2c270",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
