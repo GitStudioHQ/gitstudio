@@ -124,7 +124,19 @@ jobs:
 
       - name: Build installer (electron-builder)
         working-directory: apps/desktop
-        run: npx electron-builder --publish never
+        shell: bash
+        run: |
+          # GitHub sets `env: FOO: ${{ secrets.FOO }}` to an EMPTY STRING when
+          # the secret is unset. electron-builder treats an empty CSC_LINK as a
+          # relative cert PATH and resolves it to the project dir → the macOS
+          # build dies with "<dir> not a file". Unset the empty signing vars so
+          # unsigned builds work; disable mac auto-discovery for good measure.
+          for v in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD \
+                   APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then unset "$v"; fi
+          done
+          if [ -z "$CSC_LINK" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
+          npx electron-builder --publish never
 
       - name: Upload installers to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
