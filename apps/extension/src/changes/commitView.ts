@@ -209,8 +209,15 @@ export class CommitViewProvider
   }
 
   private async onMessage(msg: FromWebview): Promise<void> {
+    // Temporary tripwire: surface the webview's self-diagnostics in the
+    // extension-host log (webview console errors don't reach it otherwise).
+    if ((msg as { type?: string }).type === "__diag") {
+      console.error("GitStudio[webview]:", JSON.stringify(msg));
+      return;
+    }
     switch (msg.type) {
       case "ready":
+        console.error("GitStudio: webview 'ready' received → pushState");
         await this.pushState();
         return;
       case "amendToggled":
@@ -2197,6 +2204,19 @@ export class CommitViewProvider
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
+    // ── Self-diagnostics ──────────────────────────────────────────────────
+    // Webview console errors never reach the extension-host log, so a silent
+    // script failure (a CSP block, a runtime throw during init) is invisible
+    // from outside. Report them — and a "the script started" ping — back to the
+    // host, which logs them where they can actually be read. Temporary tripwire
+    // for the "empty branch pill / dead clicks" report.
+    window.addEventListener("error", (e) => {
+      vscode.postMessage({ type: "__diag", kind: "error", msg: String(e.message), src: String(e.filename||""), line: e.lineno|0 });
+    });
+    window.addEventListener("securitypolicyviolation", (e) => {
+      vscode.postMessage({ type: "__diag", kind: "csp", directive: e.violatedDirective, blocked: String(e.blockedURI||""), line: e.lineNumber|0 });
+    });
+    vscode.postMessage({ type: "__diag", kind: "alive" });
     const $ = (id) => document.getElementById(id);
     const message = $("message");
     const amend = $("amend");
