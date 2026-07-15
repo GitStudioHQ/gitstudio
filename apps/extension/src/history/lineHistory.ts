@@ -20,15 +20,16 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
   if (!active) {
     return;
   }
-  const editor = vscode.window.activeTextEditor;
-  if (!editor) {
-    return;
-  }
-
   // 1-based inclusive line range from the selection (a caret = a single line).
-  const sel = editor.selection;
-  const startLine = sel.start.line + 1;
-  const endLine = sel.end.line + 1;
+  // The editor may not be the *active* tab (the command can be run from the
+  // walkthrough or a diff), so find the one showing this file; with no editor
+  // at all, fall back to the first line rather than silently doing nothing.
+  const editor = vscode.window.visibleTextEditors.find(
+    (e) => e.document.uri.fsPath === active.uri.fsPath,
+  );
+  const sel = editor?.selection;
+  const startLine = sel ? sel.start.line + 1 : 1;
+  const endLine = sel ? sel.end.line + 1 : 1;
 
   let entries: LineHistoryEntry[];
   try {
@@ -60,24 +61,21 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
     startLine === endLine ? `line ${startLine}` : `lines ${startLine}–${endLine}`;
   const fileName = baseName(active.rel);
 
-  // The walker: pick a commit → open its diff → reopen the QuickPick so the
-  // user can step to an older/newer revision. Escape closes the loop.
-  let keepWalking = true;
-  while (keepWalking) {
-    const picked = await pickCommit(entries, `${fileName} · ${range}`);
-    if (!picked) {
-      keepWalking = false;
-      break;
-    }
-    await openRevisionDiff(
-      active.entry.root,
-      active.rel,
-      `${picked.sha}~1`,
-      picked.sha,
-      `${fileName} (${picked.shortSha})`,
-    );
-    revealRange(startLine, endLine);
+  // Pick a commit → open its diff. It used to loop and re-open the QuickPick
+  // immediately ON TOP of the diff it had just opened, so the diff was hidden
+  // behind the picker and the whole thing read as "nothing happened".
+  const picked = await pickCommit(entries, `${fileName} · ${range}`);
+  if (!picked) {
+    return;
   }
+  await openRevisionDiff(
+    active.entry.root,
+    active.rel,
+    `${picked.sha}~1`,
+    picked.sha,
+    `${fileName} (${picked.shortSha})`,
+  );
+  revealRange(startLine, endLine);
 }
 
 function pickCommit(

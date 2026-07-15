@@ -20,6 +20,11 @@ export interface CommitOptions {
 export interface CommitResult {
   ok: boolean;
   stderr: string;
+  /** git reports the most useful commit failures on STDOUT, not stderr —
+   *  notably "no changes added to commit". Callers that only read stderr end up
+   *  telling the user "unknown error", which is how a plain
+   *  nothing-staged commit became an inexplicable failure. */
+  stdout?: string;
 }
 
 /**
@@ -273,7 +278,13 @@ export class StagingProvider {
       signal: opts?.signal,
       input: reuseMessage ? undefined : message,
     });
-    return { ok: r.code === 0, stderr: r.stderr };
+    return { ok: r.code === 0, stderr: r.stderr, stdout: r.stdout };
+  }
+
+  /** `git add -A` — stage every change in the working tree. */
+  async stageAll(opts?: StagingOptions): Promise<CommitResult> {
+    const r = await this.proc.run(["add", "-A"], { signal: opts?.signal });
+    return { ok: r.code === 0, stderr: r.stderr, stdout: r.stdout };
   }
 
   /** The number of staged entries that differ from HEAD (`git diff --cached

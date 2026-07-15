@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { setLogSink } from "./log";
 import { RepoManager } from "./git/repoManager";
 import { BlameController } from "./blame/blameController";
 import {
@@ -39,6 +40,7 @@ import {
 import { FileTimelineProvider } from "./history/fileTimelineProvider";
 import { registerTimelineProvider } from "./history/timelineApi";
 import { showLineHistory } from "./history/lineHistory";
+import { showFileHistory } from "./history/fileHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
 import { showReflog } from "./history/reflog";
 import { MergeEditorProvider } from "./merge/mergeEditorProvider";
@@ -94,6 +96,9 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(out);
   const log = (m: string): void =>
     out.appendLine(`[${new Date().toISOString().slice(11, 23)}] ${m}`);
+  // Share the channel writer so any module (e.g. the Changes provider) can log
+  // diagnostics that are actually readable from Output → GitStudio.
+  setLogSink(log);
   log("activate() called");
 
   const WALKTHROUGH_ID = "gitstudio.gitstudio#gitstudio.gettingStarted";
@@ -208,6 +213,9 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         },
       ),
+      vscode.commands.registerCommand("gitstudio.showFileHistory", () => {
+        void showFileHistory(repos);
+      }),
       vscode.commands.registerCommand("gitstudio.showLineHistory", () => {
         void showLineHistory(repos);
       }),

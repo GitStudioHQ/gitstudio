@@ -398,8 +398,13 @@ function isPathInside(filePath: string, dir: string): boolean {
 
 /** Case-insensitive on macOS/Windows: is `child` the same path as, or inside,
  * `parent`? Used to detect whether git's symlink-resolved root already matches
- * the opened folder (vscode.git-compatible root resolution). */
-function isSamePathOrInside(child: string, parent: string): boolean {
+ * the opened folder (vscode.git-compatible root resolution).
+ *
+ * EXPORTED because every feature that asks "is this file in the repo?" needs
+ * it: history, blame, and the merge editor each carried their own
+ * forward-slash-only copy, which never matched a Windows `\` fsPath — so those
+ * features silently did nothing on Windows. One implementation, one behaviour. */
+export function isSamePathOrInside(child: string, parent: string): boolean {
   const norm = (p: string): string => {
     const noTrail = p.replace(/[\\/]+$/, "");
     return process.platform === "linux" ? noTrail : noTrail.toLowerCase();

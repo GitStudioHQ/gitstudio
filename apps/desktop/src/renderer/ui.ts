@@ -430,16 +430,30 @@ export function isBenignError(message: string, source?: string): boolean {
   return false;
 }
 
-/** The GitStudio brand mark, inline so it tracks the theme with no asset swap.
- *  The merge-Y lanes terminate in ringed nodes: each node — the three ends and
- *  the centre — is punched with a real hole (an SVG mask cuts through both the
- *  node and the lane beneath, so the bar background shows through on any theme),
- *  giving the lines that "open eyelet" look at every tip, not just the centre. */
+/**
+ * The GitStudio brand mark, inline so it tracks the theme with no asset swap.
+ *
+ * This is the activity-bar glyph's recipe, in colour: three translucent
+ * isometric FACES give the cube a real 3D body (the flat silhouette-only mark
+ * it replaced read as a wireframe), a soft silhouette closes it, and the
+ * merge-Y — two branches converging into one commit, then down — is the bold
+ * signature on top. Every node (the three tips and the centre) is punched with
+ * a real hole by an SVG mask that cuts through the node AND the lane beneath,
+ * so the bar shows through: the "open eyelet" look, on any theme.
+ *
+ * The paint is the wordmark's violet→magenta gradient, so the mark and the
+ * logotype are visibly the same brand.
+ */
 export function brandMark(): HTMLElement {
   const s = el("span", "topbar-mark");
   s.innerHTML =
     '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" aria-hidden="true">' +
-    "<defs><mask id=\"bm-holes\">" +
+    "<defs>" +
+    '<linearGradient id="bm-grad" x1="0" y1="0" x2="1" y2="1">' +
+    '<stop offset="0%" stop-color="#A98CFF"/>' +
+    '<stop offset="100%" stop-color="#C160EF"/>' +
+    "</linearGradient>" +
+    '<mask id="bm-holes">' +
     '<rect x="0" y="0" width="24" height="24" fill="#fff"/>' +
     '<circle cx="4.05" cy="7.4" r="0.88" fill="#000"/>' +
     '<circle cx="19.95" cy="7.4" r="0.88" fill="#000"/>' +
@@ -447,12 +461,17 @@ export function brandMark(): HTMLElement {
     '<circle cx="12" cy="12" r="1" fill="#000"/>' +
     "</mask></defs>" +
     '<g mask="url(#bm-holes)">' +
-    '<path class="bm-cube" d="M12 2.8 L19.95 7.4 L19.95 16.6 L12 21.2 L4.05 16.6 L4.05 7.4 Z" stroke-width="1.4" stroke-linejoin="round"/>' +
-    '<path class="bm-lane" d="M12 12 L4.05 7.4 M12 12 L19.95 7.4 M12 12 L12 21.2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    // The 3D body: top / right / left faces, each a different opacity of the
+    // same gradient — depth without a second colour.
+    '<path class="bm-face" d="M12 2.8 L19.95 7.4 L12 12 L4.05 7.4 Z" fill-opacity="0.16"/>' +
+    '<path class="bm-face" d="M19.95 7.4 L19.95 16.6 L12 21.2 L12 12 Z" fill-opacity="0.34"/>' +
+    '<path class="bm-face" d="M12 12 L12 21.2 L4.05 16.6 L4.05 7.4 Z" fill-opacity="0.24"/>' +
+    '<path class="bm-cube" d="M12 2.8 L19.95 7.4 L19.95 16.6 L12 21.2 L4.05 16.6 L4.05 7.4 Z" stroke-width="1.1" stroke-linejoin="round"/>' +
+    '<path class="bm-lane" d="M12 12 L4.05 7.4 M12 12 L19.95 7.4 M12 12 L12 21.2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<circle class="bm-node" cx="4.05" cy="7.4" r="2.2"/>' +
     '<circle class="bm-node" cx="19.95" cy="7.4" r="2.2"/>' +
     '<circle class="bm-node" cx="12" cy="21.2" r="2.2"/>' +
-    '<circle class="bm-node" cx="12" cy="12" r="2.5"/>' +
+    '<circle class="bm-node" cx="12" cy="12" r="2.6"/>' +
     "</g>" +
     "</svg>";
   return s;

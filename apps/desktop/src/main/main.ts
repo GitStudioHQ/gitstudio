@@ -173,19 +173,34 @@ async function createWindow(): Promise<void> {
   await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
 }
 
-/** The dock/window brand mark for a theme variant (dev/window icon; electron-builder
- *  embeds the packaged icon separately). Light theme gets the light-tile mark. */
+/**
+ * The dock/window mark for an appearance.
+ *
+ * macOS cannot carry light/dark variants inside an `.icns`, so an Electron app
+ * has to adapt the dock icon itself (`app.dock.setIcon`) — which only works if
+ * BOTH tiles are properly designed. The light tile used to be the dark mark's
+ * artwork dropped onto a pale background unchanged: its light-violet lanes and
+ * near-white node cores disappeared, and the nodes that straddle the cube's
+ * edge simply vanished. It is now re-tuned (deep brand-violet lanes and rings,
+ * white cores) so it reads on the pale tile.
+ *
+ * Both files are the macOS-padded variant (824px art inset in a 1024 canvas per
+ * Apple's icon grid) — a full-bleed square gets scaled edge-to-edge into the
+ * dock slot and renders visibly bigger than every neighbouring app.
+ */
 function iconPath(variant: "dark" | "light"): string {
-  return join(__dirname, variant === "light" ? "../renderer/icon-light.png" : "../renderer/icon.png");
+  return join(
+    __dirname,
+    variant === "light" ? "../renderer/icon-light.png" : "../renderer/icon.png",
+  );
 }
 
-/** Brand icon for the window `icon:`; electron-builder embeds the platform icon,
- *  this is the dev/window one. Tracks the OS scheme so it isn't visibly wrong. */
+/** Window/dev icon for the current OS appearance. */
 function appIcon(): string {
   return iconPath(nativeTheme.shouldUseDarkColors ? "dark" : "light");
 }
 
-/** Swap the macOS dock icon to the given brand variant (best-effort). */
+/** Swap the macOS dock icon to the given brand tile (best-effort). */
 function setDockIcon(variant: "dark" | "light"): void {
   try {
     app.dock?.setIcon(iconPath(variant));

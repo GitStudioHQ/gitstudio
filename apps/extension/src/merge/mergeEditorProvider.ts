@@ -8,6 +8,7 @@ import type {
   WebviewMessage,
 } from "@gitstudio/host-bridge/protocol";
 import { getWebviewHtml } from "../webview/html";
+import { isSamePathOrInside } from "../git/repoManager";
 
 // IntelliJ's merge-dialog wording for the side panes.
 const OURS_LABEL = "Current change";
@@ -282,9 +283,8 @@ export function classifyConflict(versions: ConflictVersions): ConflictType {
 }
 
 function isInside(filePath: string, dir: string): boolean {
-  if (filePath === dir) {
-    return true;
-  }
-  const withSep = dir.endsWith("/") ? dir : `${dir}/`;
-  return filePath.startsWith(withSep);
+  // Delegates to the ONE separator- and case-tolerant implementation. The old
+  // local copy only matched a "/" boundary, so on Windows (fsPaths use "\\")
+  // it always returned false and this feature silently did nothing.
+  return isSamePathOrInside(filePath, dir);
 }

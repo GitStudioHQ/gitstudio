@@ -14,6 +14,7 @@ tsconfig.json
 *.vsix
 media/*.svg
 !media/activitybar.svg
-# Store screenshots are served from GitHub (vsce rewrites relative README image
-# links to raw.githubusercontent.com) — keep them out of the vsix.
-media/shots/**
+# media/shots/** MUST ship: the walkthrough renders these as step media, and
+# walkthrough images are loaded from INSIDE the extension (unlike README images,
+# which vsce rewrites to absolute GitHub URLs). Excluding them = a walkthrough
+# of broken image boxes.

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { log } from "../log";
 import type { GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { Change } from "../git/git";
@@ -209,8 +210,15 @@ export class CommitViewProvider
   }
 
   private async onMessage(msg: FromWebview): Promise<void> {
+    // Temporary tripwire: surface the webview's self-diagnostics in the
+    // GitStudio output channel (webview console errors don't reach any log).
+    if ((msg as { type?: string }).type === "__diag") {
+      log(`[diag] webview: ${JSON.stringify(msg)}`);
+      return;
+    }
     switch (msg.type) {
       case "ready":
+        log("[diag] webview 'ready' received → pushState");
         await this.pushState();
         return;
       case "amendToggled":
@@ -402,6 +410,15 @@ export class CommitViewProvider
     await this.discardEntries(await this.entriesForPaths(active, [path]));
   }
 
+  /** Is anything actually in the index? (Cheap: `git diff --cached`.) */
+  private async hasStagedChanges(entry: RepoEntry): Promise<boolean> {
+    try {
+      return (await entry.ctx.staging.stagedCount()) > 0;
+    } catch {
+      return true; // can't tell — let git have the final word
+    }
+  }
+
   private doOpenDiff(path: string, staged: boolean): void {
     const active = this.repos.getActive();
     if (!active || !path) {
@@ -420,9 +437,19 @@ export class CommitViewProvider
       const change = findIn(pool, active.root, path);
       if (change) {
         const isMerge = pool === state.mergeChanges;
-        void openChangeDiff(
-          new ChangeFileNode(isMerge ? "merge" : kind, active.root, change),
-        );
+        if (isMerge) {
+          // A conflicted file belongs in the 3-pane merge editor — that is the
+          // whole point of the feature. It used to open a plain 2-way
+          // "Working Tree vs HEAD" diff, so the merge editor was unreachable
+          // from GitStudio's own Changes view (its only entry points were VS
+          // Code's built-in SCM view and the editor title bar).
+          void vscode.commands.executeCommand(
+            "gitstudio.resolveInMergeEditor",
+            change.uri,
+          );
+          return;
+        }
+        void openChangeDiff(new ChangeFileNode(kind, active.root, change));
         return;
       }
     }
@@ -547,6 +574,13 @@ export class CommitViewProvider
 
   /** Runs the commit (+ optional push), surfacing errors and clearing on success. */
   private async doCommit(msg: FromWebview): Promise<void> {
+    // Guard re-entrancy: doCommit now awaits (staged-check, the Stage-All
+    // prompt) before setting this.busy, so a rapid double-click could let two
+    // invocations both reach staging.commit() and the loser toasts a spurious
+    // "nothing to commit" right after a success. One commit at a time.
+    if (this.busy) {
+      return;
+    }
     const entry = this.repos.getActive();
     if (!entry) {
       void vscode.window.showInformationMessage(
@@ -560,6 +594,29 @@ export class CommitViewProvider
         "GitStudio: enter a commit message.",
       );
       return;
+    }
+
+    // Nothing staged? git exits 1 and prints "no changes added to commit" to
+    // STDOUT — but we only ever read stderr, so the user got the immortal
+    // "commit failed — unknown error" and no hint that staging is even a thing.
+    // Offer VS Code's own escape hatch instead of failing at them.
+    if (!msg.amend && !(await this.hasStagedChanges(entry))) {
+      const STAGE_ALL = "Stage All & Commit";
+      const choice = await vscode.window.showWarningMessage(
+        "There are no staged changes to commit. Stage all your changes and commit them directly?",
+        { modal: true },
+        STAGE_ALL,
+      );
+      if (choice !== STAGE_ALL) {
+        return;
+      }
+      const staged = await entry.ctx.staging.stageAll();
+      if (!staged.ok) {
+        void vscode.window.showErrorMessage(
+          `GitStudio: couldn't stage your changes — ${describeGitFailure(staged)}`,
+        );
+        return;
+      }
     }
 
     this.busy = true;
@@ -582,7 +639,7 @@ export class CommitViewProvider
           : await doCommit();
       if (!result.ok) {
         void vscode.window.showErrorMessage(
-          `GitStudio: commit failed — ${result.stderr.trim() || "unknown error"}`,
+          `GitStudio: commit failed — ${describeGitFailure(result)}`,
         );
         return;
       }
@@ -893,34 +950,45 @@ export class CommitViewProvider
     ahead?: number;
     behind?: number;
   }> {
-    if (active.repo) {
-      const state = active.repo.state;
-      const toEntries = (changes: Change[] | undefined): FileEntry[] =>
-        (changes ?? []).map((c) => ({
-          path: relativePath(active.root, c.uri.fsPath),
-          status: statusLetter(c.status),
-        }));
-      const head = state.HEAD;
-      // `git.untrackedChanges: separate` moves untracked files out of
-      // workingTreeChanges into a separate list (not in the pinned API type but
-      // present at runtime). Fold it back in so untracked files show the same
-      // as under the default 'mixed' (and as our eager parser shows them).
-      const untracked =
-        (state as { untrackedChanges?: Change[] }).untrackedChanges ?? [];
-      return {
-        merge: toEntries(state.mergeChanges),
-        staged: toEntries(state.indexChanges),
-        unstaged: [
-          ...toEntries(state.workingTreeChanges),
-          ...toEntries(untracked),
-        ],
-        branch: head?.name,
-        upstream: head?.upstream
-          ? `${head.upstream.remote}/${head.upstream.name}`
-          : undefined,
-        ahead: head?.ahead,
-        behind: head?.behind,
-      };
+    // Prefer vscode.git's live cached state, but ONLY once it actually has a
+    // HEAD branch — during the window where it has attached the repo but not
+    // yet computed HEAD, its branch is undefined, which would blank the pill.
+    // In that window (and on any throw) fall through to our own `git status`,
+    // which needs no vscode.git. The old code used vscode.git the moment the
+    // repo attached and let a throw blank the whole Changes view.
+    if (active.repo?.state?.HEAD?.name) {
+      try {
+        const state = active.repo.state;
+        const toEntries = (changes: Change[] | undefined): FileEntry[] =>
+          (changes ?? []).map((c) => ({
+            path: relativePath(active.root, c.uri.fsPath),
+            status: statusLetter(c.status),
+          }));
+        const head = state.HEAD;
+        // `git.untrackedChanges: separate` moves untracked files out of
+        // workingTreeChanges into a separate list (not in the pinned API type
+        // but present at runtime). Fold it back in so untracked files show the
+        // same as under the default 'mixed' (and as our eager parser shows).
+        const untracked =
+          (state as { untrackedChanges?: Change[] }).untrackedChanges ?? [];
+        return {
+          merge: toEntries(state.mergeChanges),
+          staged: toEntries(state.indexChanges),
+          unstaged: [
+            ...toEntries(state.workingTreeChanges),
+            ...toEntries(untracked),
+          ],
+          branch: head?.name,
+          upstream: head?.upstream
+            ? `${head.upstream.remote}/${head.upstream.name}`
+            : undefined,
+          ahead: head?.ahead,
+          behind: head?.behind,
+        };
+      } catch (err) {
+        // Surface it (exthost log) but keep going via the git-service path.
+        log(`[diag] vscode.git state read failed → git status fallback: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     const st = await active.ctx.status.read();
     return {
@@ -956,8 +1024,27 @@ export class CommitViewProvider
         ({ merge, staged, unstaged, branch, upstream, ahead, behind } =
           await this.resolveState(active));
         hasRepo = true;
-      } catch {
-        hasRepo = false;
+      } catch (err) {
+        // A repo IS open — a transient status read failed. Keep hasRepo TRUE so
+        // the Changes view stays alive instead of collapsing to onboarding.
+        log(`[diag] resolveState FAILED (keeping view alive): ${err instanceof Error ? err.message : String(err)}`);
+        hasRepo = true;
+      }
+      // GUARANTEE the branch is populated. resolveState can legitimately return
+      // an empty branch (vscode.git attached but HEAD not computed yet, a race
+      // other Git extensions can trigger), which showed the pill as "—" with no
+      // branch to click. Our own git-service always knows the branch — use it as
+      // the authoritative fallback so the pill can never be empty on a real repo.
+      if (!branch) {
+        try {
+          const head = await active.ctx.refs.getHead();
+          if (!head.detached && head.branch) {
+            branch = head.branch;
+            log(`[diag] branch was empty → recovered '${branch}' from git-service`);
+          }
+        } catch (err) {
+          log(`[diag] getHead fallback failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     }
 
@@ -996,6 +1083,7 @@ export class CommitViewProvider
       layout,
       busy: this.busy,
     };
+    log(`[diag] pushState → hasRepo=${hasRepo} branch=${JSON.stringify(branch)} staged=${staged.length} unstaged=${unstaged.length} active=${!!active} usedVscodeGit=${!!active?.repo?.state?.HEAD?.name}`);
     void this.view.webview.postMessage(base);
 
     // THEN resolve the slower bits — the AI-availability probe (vscode.lm /
@@ -1006,7 +1094,15 @@ export class CommitViewProvider
       this.generator
         ? this.generator.isEnabled().catch(() => false)
         : Promise.resolve(false),
-      active ? this.collectBranches(active) : Promise.resolve(undefined),
+      active
+        ? this.collectBranches(active).catch((err) => {
+            // A branch-list failure must not sink the whole state push (which
+            // would leave the branch pill and menu empty). Log and keep the
+            // last-known list.
+            log(`[diag] collectBranches failed: ${err instanceof Error ? err.message : String(err)}`);
+            return this.lastBranches;
+          })
+        : Promise.resolve(undefined),
     ]);
     this.lastAiEnabled = aiEnabled;
     this.lastBranches = branches;
@@ -1203,6 +1299,7 @@ export class CommitViewProvider
     .bm-search input:focus { border-color: var(--gs-accent); box-shadow: var(--gs-glow); }
     .bm-list { overflow-y: auto; padding: 3px; }
     .bm-action, .bm-branch {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -1216,9 +1313,27 @@ export class CommitViewProvider
       text-align: left;
       border-radius: var(--gs-radius-sm);
       cursor: pointer;
+      transition: background var(--gs-motion-fast) var(--gs-ease);
     }
     .bm-action .codicon, .bm-bicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
-    .bm-action:hover, .bm-branch:hover { background: var(--gs-hover); }
+    /* A clearer hover: a stronger tint than the near-invisible list-hover, an
+       accent-tinted border, and a left accent bar so where you're pointing in
+       the dialog is unmistakable. */
+    .bm-action:hover, .bm-branch:hover,
+    .bm-action:focus-visible, .bm-branch:focus-visible {
+      background: color-mix(in srgb, var(--gs-accent) 16%, var(--gs-hover));
+      outline: none;
+    }
+    .bm-action:hover::before, .bm-branch:hover::before,
+    .bm-action:focus-visible::before, .bm-branch:focus-visible::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 3px; bottom: 3px;
+      width: 2px;
+      border-radius: 2px;
+      background: var(--gs-accent);
+    }
+    .bm-action:hover .codicon, .bm-branch:hover .bm-bicon { color: var(--gs-fg); }
     /* A collapsible category header: chevron + label + count, full-width button. */
     .bm-sep {
       display: flex;
@@ -1673,7 +1788,17 @@ export class CommitViewProvider
     /* ---- Groups -------------------------------------------------------- */
     .groups { margin: 0 0 2px; }
     .group { margin-top: 4px; }
+    /* The STAGED group always renders, even at zero: hiding it meant a new user
+       never saw that staging exists, then hit "commit failed". Other empty
+       groups still collapse. */
     .group.empty { display: none; }
+    .group.empty.keep-empty { display: block; }
+    .group-empty-hint {
+      padding: 6px 8px 10px 26px;
+      font-size: 11.5px;
+      color: var(--gs-fg-subtle);
+      font-style: italic;
+    }
     .group-header {
       display: flex;
       align-items: center;
@@ -1825,6 +1950,13 @@ export class CommitViewProvider
        read clearly (esp. the single-stroke unstage dash). */
     .row .row-actions .icon-btn { color: var(--gs-fg); }
     .row .row-actions .icon-btn:hover { color: var(--gs-brand); }
+    /* Discard is IRREVERSIBLE and sits in the same slot where Unstage sits in
+       the staged group — muscle memory from one group would destroy work in the
+       other. Make it read as destructive. */
+    .row .row-actions .icon-btn.danger:hover {
+      color: var(--gs-status-deleted);
+      background: color-mix(in srgb, var(--gs-status-deleted) 16%, transparent);
+    }
     .row .row-actions .codicon,
     .group-actions .icon-btn .codicon { font-size: 17px; }
     /* Status letter: plain colored monospace, not a filled pill. Each row
@@ -1923,7 +2055,15 @@ export class CommitViewProvider
     .gs-tip {
       position: fixed; z-index: 99999; pointer-events: none;
       transform: translate(-50%, -100%);
-      max-width: 280px; padding: 3px 7px;
+      /* WRAP long content — a truncated "Merge 'x' into 'y'" or a clipped
+         branch name is exactly what the tip exists to reveal, so it must never
+         ellipsize itself. Wide enough for a long ref, then it wraps. */
+      max-width: 340px;
+      /* pre-line: honor the \n we put between a ref name, its upstream, and the
+         hint, while still wrapping any single long line. */
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+      padding: 5px 9px;
       border-radius: var(--gs-radius-sm);
       border: 1px solid var(--gs-border);
       /* MUST be opaque — --gs-surface* are color-mix-with-transparent tints
@@ -1931,8 +2071,7 @@ export class CommitViewProvider
          turns see-through with them and reads as a rendering glitch. */
       background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background, #2b2b2b));
       color: var(--gs-fg);
-      font-family: var(--gs-font-ui); font-size: 11.5px; line-height: 1.35;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-family: var(--gs-font-ui); font-size: 11.5px; line-height: 1.4;
       box-shadow: var(--gs-shadow-2);
       opacity: 0; transition: opacity var(--gs-motion-fast) var(--gs-ease);
     }
@@ -2082,6 +2221,19 @@ export class CommitViewProvider
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
+    // ── Self-diagnostics ──────────────────────────────────────────────────
+    // Webview console errors never reach the extension-host log, so a silent
+    // script failure (a CSP block, a runtime throw during init) is invisible
+    // from outside. Report them — and a "the script started" ping — back to the
+    // host, which logs them where they can actually be read. Temporary tripwire
+    // for the "empty branch pill / dead clicks" report.
+    window.addEventListener("error", (e) => {
+      vscode.postMessage({ type: "__diag", kind: "error", msg: String(e.message), src: String(e.filename||""), line: e.lineno|0 });
+    });
+    window.addEventListener("securitypolicyviolation", (e) => {
+      vscode.postMessage({ type: "__diag", kind: "csp", directive: e.violatedDirective, blocked: String(e.blockedURI||""), line: e.lineNumber|0 });
+    });
+    vscode.postMessage({ type: "__diag", kind: "alive" });
     const $ = (id) => document.getElementById(id);
     const message = $("message");
     const amend = $("amend");
@@ -2169,8 +2321,14 @@ export class CommitViewProvider
       for (const [path, op] of pending) {
         const inStaged = has(auth.staged, path);
         const present = inStaged || has(auth.unstaged, path) || has(auth.merge, path);
+        // A stage is only truly done when the path has LEFT the unstaged/merge
+        // lists. Keying on inStaged alone was wrong for a partially-staged
+        // file (git status "MM"), which sits in BOTH lists before we even run:
+        // the very next state push "satisfied" the op, the optimistic move was
+        // dropped, and the row visibly snapped back to Unstaged.
+        const stillUnstaged = has(auth.unstaged, path) || has(auth.merge, path);
         const satisfied = op.action === "stage"
-          ? inStaged || !present
+          ? !stillUnstaged || !present
           : !inStaged;
         if (satisfied || now - op.at > PENDING_TTL) pending.delete(path);
       }
@@ -2240,6 +2398,7 @@ export class CommitViewProvider
     // stroke) so Unstage visually balances the Stage "+".
     const ICON_UNSTAGE = '<i class="codicon codicon-remove" aria-hidden="true"></i>';
     const ICON_DISCARD = '<i class="codicon codicon-discard" aria-hidden="true"></i>';
+    const ICON_CHECK = '<i class="codicon codicon-check" aria-hidden="true"></i>';
 
     // Only "!" is a conflict. "U" is UNTRACKED (statusLetter maps unmerged
     // states to "!", untracked to "U") — including it here painted every
@@ -2477,7 +2636,13 @@ export class CommitViewProvider
       if (behind) row.appendChild(el("span", "bm-ab down", "↓" + behind));
       if (up) { const u = el("span", "bm-bup"); u.textContent = up; row.appendChild(u); }
       row.appendChild(el("i", "codicon codicon-chevron-right bm-bmore"));
-      row.title = "Branch actions";
+      // Lead the tooltip with the FULL branch name (+ its upstream), so a row
+      // whose name is ellipsis-clipped reveals in full on hover; the action
+      // hint comes after. Long names wrap in the tip now.
+      const bits = [name];
+      if (up) bits.push("→ " + up);
+      bits.push(current ? "Current branch · click for actions" : "Click for branch actions");
+      row.title = bits.join("\n");
       row.addEventListener("click", () => openBranchActions(name, kind, current, row));
       return row;
     }
@@ -2877,16 +3042,22 @@ export class CommitViewProvider
 
       for (const def of GROUP_DEFS) {
         const list = data[def.kind];
-        if (def.kind === "merge" && list.length === 0) continue;
-        groupsEl.appendChild(renderGroup(def, list));
+        // The empty STAGED group stays visible (with a hint) ONLY while there
+        // ARE changes to stage — that's what made staging discoverable. On a
+        // fully clean tree it collapses like the rest, so we don't stack
+        // "Nothing staged yet" on top of "Working tree clean".
+        const keepEmptyStaged = def.kind === "staged" && total > 0;
+        if (list.length === 0 && !keepEmptyStaged) continue;
+        groupsEl.appendChild(renderGroup(def, list, keepEmptyStaged));
       }
     }
 
-    function renderGroup(def, list) {
+    function renderGroup(def, list, keepEmpty) {
       const collapseKey = "group:" + def.kind;
       const isCollapsed = collapsed[collapseKey] === true;
       const group = el("div", "group group--" + def.kind +
         (list.length === 0 ? " empty" : "") +
+        (keepEmpty ? " keep-empty" : "") +
         (isCollapsed ? " collapsed" : ""));
 
       const header = el("div", "group-header");
@@ -2941,6 +3112,15 @@ export class CommitViewProvider
         for (const f of list) body.appendChild(renderFileRow(def, f, 1));
       }
       group.appendChild(body);
+      // With changes present but nothing staged, say so — and say what to do
+      // about it. (keepEmpty is only set for the staged group when total > 0,
+      // so this never shows on a clean tree.)
+      if (list.length === 0 && keepEmpty) {
+        const hint = el("div", "group-empty-hint");
+        hint.textContent = "Nothing staged yet — click + on a file to stage it.";
+        body.appendChild(hint);
+      }
+
       return group;
     }
 
@@ -3064,16 +3244,22 @@ export class CommitViewProvider
           vscode.postMessage({ type: "unstage", path: e.path });
         }));
       } else {
-        actions.appendChild(makeIconBtn(ICON_STAGE, "Stage file", (ev) => {
-          ev.stopPropagation();
-          queueOp(e.path, "stage");
-          vscode.postMessage({ type: "stage", path: e.path });
-        }));
+        // On a conflicted file, staging means "I resolved this" — calling that
+        // button "Stage file" told the user nothing about what it does.
+        const isConflict = def.kind === "merge";
+        actions.appendChild(makeIconBtn(
+          isConflict ? ICON_CHECK : ICON_STAGE,
+          isConflict ? "Mark as Resolved" : "Stage file",
+          (ev) => {
+            ev.stopPropagation();
+            queueOp(e.path, "stage");
+            vscode.postMessage({ type: "stage", path: e.path });
+          }));
         if (def.kind === "unstaged") {
           actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard changes", (ev) => {
             ev.stopPropagation();
             vscode.postMessage({ type: "discard", path: e.path });
-          }));
+          }, true));
         }
       }
       row.appendChild(actions);
@@ -3110,8 +3296,8 @@ export class CommitViewProvider
         openActionMenu(fileName, items, row);
       };
       row.addEventListener("click", open);
-      // Double-click OR right-click a file → an actions menu (open / stage / discard).
-      row.addEventListener("dblclick", menu);
+      // Right-click → actions menu. NOT double-click: a dblclick fires click
+      // twice first, so the diff opened twice and the menu then popped over it.
       row.addEventListener("contextmenu", menu);
       row.addEventListener("keydown", (ev) => {
         // Don't hijack Enter aimed at a focused stage/unstage/discard button.
@@ -3122,8 +3308,8 @@ export class CommitViewProvider
       return row;
     }
 
-    function makeIconBtn(svg, title, onClick) {
-      const b = el("button", "icon-btn", svg);
+    function makeIconBtn(svg, title, onClick, danger) {
+      const b = el("button", "icon-btn" + (danger ? " danger" : ""), svg);
       b.type = "button";
       // data-tip drives our own tooltip (native title is flaky in webviews);
       // aria-label keeps it accessible.
@@ -3300,4 +3486,20 @@ function findIn(
   path: string,
 ): Change | undefined {
   return changes.find((c) => relativePath(root, c.uri.fsPath) === path);
+}
+
+/** A human reason for a failed git op. git puts the most useful commit failures
+ *  on stdout ("no changes added to commit", "nothing to commit"), so reading
+ *  only stderr yields an empty string — and the user got "unknown error". */
+function describeGitFailure(r: { stderr: string; stdout?: string }): string {
+  const err = r.stderr.trim();
+  if (err) {
+    return err;
+  }
+  const out = (r.stdout ?? "").trim();
+  if (out) {
+    // git's stdout here is multi-line advice; the first line is the reason.
+    return out.split("\n")[0];
+  }
+  return "git reported no reason. Check the Output panel for details.";
 }

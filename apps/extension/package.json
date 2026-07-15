@@ -2,7 +2,7 @@
   "name": "gitstudio",
   "displayName": "GitStudio",
   "description": "A free, open-source, JetBrains-grade Git suite for VS Code & Cursor — live commit graph, inline blame, hunk staging, 3-pane merge, interactive rebase with universal Undo, and in-editor GitHub PRs.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -200,6 +200,12 @@
         "title": "Show Commit Graph",
         "category": "GitStudio",
         "icon": "$(git-commit)"
+      },
+      {
+        "command": "gitstudio.showFileHistory",
+        "title": "Show File History",
+        "category": "GitStudio",
+        "icon": "$(history)"
       },
       {
         "command": "gitstudio.showLineHistory",
@@ -693,14 +699,16 @@
             "copilot",
             "anthropic",
             "openai",
-            "off"
+            "off",
+            "cli"
           ],
           "enumDescriptions": [
             "Prefer the zero-key VS Code Language Model (GitHub Copilot / Cursor) when available; otherwise Anthropic (if a key is set), then an OpenAI-compatible endpoint (if a model is configured).",
             "Use the VS Code Language Model API — GitHub Copilot or Cursor's models, with no key. Pick a specific model via “GitStudio: Select AI Model…”.",
             "Use Anthropic directly (requires an API key set via GitStudio: Set AI API Key).",
             "Use any OpenAI-compatible endpoint — OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Configure the base URL and model below; a key is optional for local servers.",
-            "Disable all GitBrain AI features."
+            "Disable all GitBrain AI features.",
+            "Drive a local agent CLI (Claude Code, Codex, or Gemini CLI) using its own login — no API key."
           ],
           "default": "auto",
           "markdownDescription": "Which provider GitBrain uses for optional AI features. AI is off until a provider is available; it never gates or breaks Git operations. Use **GitStudio: Select AI Model…** for a guided picker."
@@ -809,13 +817,13 @@
         "steps": [
           {
             "id": "gitstudio.walkthrough.graph",
-            "title": "Browse your history in the commit graph",
-            "description": "Your history as a live, virtualized commit graph — right in the **Commits** view in the sidebar, or full-screen in an editor tab. Colored lanes, ref chips and authorship (never a flat list); right-click any commit to checkout, cherry-pick, branch, or reset, and compare any two branches.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\nTip: the graph lives in the **Commits** view at the top of the GitStudio sidebar — no need to leave it.",
+            "title": "See your whole history",
+            "description": "A real commit graph: colored branch lanes, ref chips, author avatars on the nodes — virtualized, so it stays fast at tens of thousands of commits. Check out, cherry-pick, branch, tag or reset from any commit.\n[Show Commit Graph](command:gitstudio.showCommitGraph)",
             "media": {
               "image": {
-                "light": "media/wordmark-light.png",
-                "dark": "media/wordmark-dark.png",
-                "hc": "media/wordmark-dark.png"
+                "light": "media/shots/graph-panel.png",
+                "dark": "media/shots/graph-panel.png",
+                "hc": "media/shots/graph-panel.png"
               },
               "altText": "GitStudio"
             },
@@ -824,42 +832,59 @@
             ]
           },
           {
-            "id": "gitstudio.walkthrough.blame",
-            "title": "Turn on inline blame",
-            "description": "Ambient, native-feeling authorship: who last changed the current line and when, inline and in the status bar. Toggle full-file annotations with a code-age heatmap.\n[Toggle File Blame](command:gitstudio.toggleFileBlame)\nShortcut: __Ctrl/Cmd+Alt+G B__ in any editor.",
+            "id": "gitstudio.walkthrough.sidebar",
+            "title": "The sidebar is the workflow",
+            "description": "Open GitStudio in the Activity Bar and it reads top-to-bottom: __Changes__ (commit box + working tree) → __Commits__ (a sidebar-native log with the branch topology) → __Stashes__ → __Worktrees__ → __Pull Requests__.\n[Open GitStudio](command:workbench.view.extension.gitstudio)",
             "media": {
               "image": {
-                "light": "media/wordmark-light.png",
-                "dark": "media/wordmark-dark.png",
-                "hc": "media/wordmark-dark.png"
+                "light": "media/shots/commits-rail.png",
+                "dark": "media/shots/commits-rail.png",
+                "hc": "media/shots/commits-rail.png"
               },
               "altText": "GitStudio"
             },
             "completionEvents": [
-              "onCommand:gitstudio.toggleFileBlame"
+              "onView:gitstudio.commits"
             ]
           },
           {
             "id": "gitstudio.walkthrough.stage",
-            "title": "Stage a hunk & commit",
-            "description": "Stage by hunk or even by line, then commit from the GitStudio commit box (Amend, Sign-off, author override, Commit & Push). When AI is on, the ✨ button drafts a message from your staged diff.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nShortcut: select lines and press __Ctrl/Cmd+Alt+G S__ to stage them.",
+            "title": "Stage exactly what you mean",
+            "description": "Files move the moment you click — the git call reconciles behind you. Stage by file, folder or group, or select lines in the editor and stage just those (__Ctrl/Cmd+Alt+G S__; __U__ to unstage).\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nThe commit box handles Amend, Sign-off, an author override, and Commit & Push.",
             "media": {
               "image": {
-                "light": "media/wordmark-light.png",
-                "dark": "media/wordmark-dark.png",
-                "hc": "media/wordmark-dark.png"
+                "light": "media/shots/changes-view.png",
+                "dark": "media/shots/changes-view.png",
+                "hc": "media/shots/changes-view.png"
               },
               "altText": "GitStudio"
             },
             "completionEvents": [
               "onCommand:gitstudio.stageHunk",
-              "onCommand:gitstudio.stageSelectedLines"
+              "onCommand:gitstudio.stageSelectedLines",
+              "onView:gitstudio.commit"
+            ]
+          },
+          {
+            "id": "gitstudio.walkthrough.sync",
+            "title": "Fetch and pull without losing your place",
+            "description": "The ahead/behind counts in the Changes header are real __Push__ and __Pull__ buttons. In the branch dialog, __Fetch__ runs without closing the menu — every branch's ↑/↓ updates live — and any branch can be pulled __without checking it out__.\n[Open the Changes view](command:workbench.view.extension.gitstudio)",
+            "media": {
+              "image": {
+                "light": "media/shots/branch-dialog.png",
+                "dark": "media/shots/branch-dialog.png",
+                "hc": "media/shots/branch-dialog.png"
+              },
+              "altText": "GitStudio"
+            },
+            "completionEvents": [
+              "onView:gitstudio.commit"
             ]
           },
           {
             "id": "gitstudio.walkthrough.history",
-            "title": "Explore file & line history",
-            "description": "Step through how a file — or a single line — evolved over time, with revision navigation and a reflog time-machine for recovery.\n[Show Line History](command:gitstudio.showLineHistory)\nShortcut: __Ctrl/Cmd+Alt+G H__ on the current line.",
+            "title": "Blame, file history, line history",
+            "description": "Open a file, then: inline blame at the end of the current line, full-file annotations with a code-age heatmap (__Ctrl/Cmd+Alt+G B__), and the history of the exact lines under your cursor (__Ctrl/Cmd+Alt+G H__).\n[Show File History](command:gitstudio.showFileHistory)\nTip: these act on the file you're looking at — open one first.",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -869,14 +894,15 @@
               "altText": "GitStudio"
             },
             "completionEvents": [
+              "onCommand:gitstudio.showFileHistory",
               "onCommand:gitstudio.showLineHistory",
-              "onCommand:gitstudio.showReflog"
+              "onCommand:gitstudio.toggleFileBlame"
             ]
           },
           {
-            "id": "gitstudio.walkthrough.merge",
-            "title": "Resolve conflicts in the 3-pane editor",
-            "description": "When a merge, rebase, or cherry-pick conflicts, GitStudio opens a JetBrains-style three-pane editor — yours, the result, and theirs — with one-click accept ribbons. Interactive rebase gets the same care, wrapped in a universal, reflog-powered Undo.\n[Start Interactive Rebase](command:gitstudio.startInteractiveRebase)\nMade a mistake? __Undo Last Git Operation__ (Ctrl/Cmd+Alt+G Z) reverses it.",
+            "id": "gitstudio.walkthrough.safety",
+            "title": "Rewrite history, safely",
+            "description": "Drag-to-reorder interactive rebase (pick, reword, squash, fixup, drop), and a three-pane merge editor that opens conflicts automatically — click a conflicted file in __Changes__ to resolve it.\nEvery destructive operation is snapshotted first, so __Undo__ (__Ctrl/Cmd+Alt+G Z__) reverses a bad rebase, reset, or branch delete. It never touches your editor's undo.\n[Show Undo History](command:gitstudio.showUndoHistory)",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -886,14 +912,15 @@
               "altText": "GitStudio"
             },
             "completionEvents": [
-              "onCommand:gitstudio.startInteractiveRebase",
+              "onCommand:gitstudio.showUndoHistory",
+              "onCommand:gitstudio.undo",
               "onCommand:gitstudio.resolveInMergeEditor"
             ]
           },
           {
-            "id": "gitstudio.walkthrough.connect",
-            "title": "Connect GitHub & set up GitBrain (optional)",
-            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional and bring-your-own-key — set an Anthropic key (or use Copilot's model) for commit messages, explain-this-diff, and summaries. It's off until you turn it on and never gates a Git operation.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Set AI API Key](command:gitstudio.ai.setApiKey)",
+            "id": "gitstudio.walkthrough.github",
+            "title": "Review pull requests in the editor",
+            "description": "Sign in with VS Code's built-in GitHub account — no extra token. Browse open PRs, check one out, review the diff with inline comments, and merge.\n[Sign in to GitHub](command:gitstudio.pr.signIn)",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -904,7 +931,24 @@
             },
             "completionEvents": [
               "onCommand:gitstudio.pr.signIn",
-              "onCommand:gitstudio.ai.setApiKey"
+              "onView:gitstudio.pullRequests"
+            ]
+          },
+          {
+            "id": "gitstudio.walkthrough.ai",
+            "title": "Connect AI (optional)",
+            "description": "GitBrain is __off until you connect it__, and it never gates a Git operation. Use __Copilot or Cursor's model with no key at all__, bring an Anthropic or OpenAI-compatible key (OpenRouter, Ollama, LM Studio), or drive a local agent CLI (Claude Code, Codex, Gemini).\nIt writes commit messages from your staged diff, explains a diff, summarizes changes, and reviews your working tree.\n[Connect AI](command:gitstudio.ai.connect)\nIt's the plug icon at the top of the Changes view.",
+            "media": {
+              "image": {
+                "light": "media/wordmark-light.png",
+                "dark": "media/wordmark-dark.png",
+                "hc": "media/wordmark-dark.png"
+              },
+              "altText": "GitStudio"
+            },
+            "completionEvents": [
+              "onContext:gitstudio.ai.enabled",
+              "onCommand:gitstudio.ai.connect"
             ]
           }
         ]
