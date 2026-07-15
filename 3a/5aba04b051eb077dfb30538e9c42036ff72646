@@ -1,0 +1,35 @@
+packages/git-service/src/SyncOps.ts
+  s_8b33a63136feb2::t_522249d4cb3bfc 162-166,168-179
+apps/extension/src/changes/commitView.ts
+  s_8b33a63136feb2::t_93f7822ec8581c 3008-3014,3018,3023
+  s_8b33a63136feb2::t_eb4b175814836f 3078-3081
+  s_8b33a63136feb2::t_c26a419c250cfa 569-575
+  s_8b33a63136feb2::t_29b50d95eb8682 1073-1081
+  s_8b33a63136feb2::t_df7d0811d06dd7 2602-2608
+  s_8b33a63136feb2::t_9a21aa3342e099 945-951
+  s_8b33a63136feb2::t_c90583780d9c3d 2034-2037,2041-2042,2050
+  s_8b33a63136feb2::t_a3cea40d697012 1019-1024
+  s_8b33a63136feb2::t_72a90307e23afd 952-983
+  s_8b33a63136feb2::t_2df7dcbc743761 1278,1292,1295-1312
+  s_8b33a63136feb2::t_28fc657b870371 2038-2040
+apps/extension/src/blame/blameController.ts
+  s_8b33a63136feb2::t_f643ea4e72c914 270
+apps/extension/src/history/fileHistory.ts
+  s_8b33a63136feb2::t_59513d8ba876f4 52-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "3a5aba04b051eb077dfb30538e9c42036ff72646",
+  "prompts": {},
+  "sessions": {
+    "s_8b33a63136feb2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60caf71e-bda0-495e-8b1e-3609d1f7c2a3",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
