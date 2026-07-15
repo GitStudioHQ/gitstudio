@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { log } from "../log";
 import type { GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { Change } from "../git/git";
@@ -210,14 +211,14 @@ export class CommitViewProvider
 
   private async onMessage(msg: FromWebview): Promise<void> {
     // Temporary tripwire: surface the webview's self-diagnostics in the
-    // extension-host log (webview console errors don't reach it otherwise).
+    // GitStudio output channel (webview console errors don't reach any log).
     if ((msg as { type?: string }).type === "__diag") {
-      console.error("GitStudio[webview]:", JSON.stringify(msg));
+      log(`[diag] webview: ${JSON.stringify(msg)}`);
       return;
     }
     switch (msg.type) {
       case "ready":
-        console.error("GitStudio: webview 'ready' received → pushState");
+        log("[diag] webview 'ready' received → pushState");
         await this.pushState();
         return;
       case "amendToggled":
@@ -986,7 +987,7 @@ export class CommitViewProvider
         };
       } catch (err) {
         // Surface it (exthost log) but keep going via the git-service path.
-        console.error("GitStudio: vscode.git state read failed, using git status fallback:", err);
+        log(`[diag] vscode.git state read failed → git status fallback: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     const st = await active.ctx.status.read();
@@ -1025,10 +1026,25 @@ export class CommitViewProvider
         hasRepo = true;
       } catch (err) {
         // A repo IS open — a transient status read failed. Keep hasRepo TRUE so
-        // the Changes view stays alive (empty lists, branch from last state)
-        // instead of collapsing to the no-repo onboarding, and log the reason.
-        console.error("GitStudio: resolveState failed:", err);
+        // the Changes view stays alive instead of collapsing to onboarding.
+        log(`[diag] resolveState FAILED (keeping view alive): ${err instanceof Error ? err.message : String(err)}`);
         hasRepo = true;
+      }
+      // GUARANTEE the branch is populated. resolveState can legitimately return
+      // an empty branch (vscode.git attached but HEAD not computed yet, a race
+      // other Git extensions can trigger), which showed the pill as "—" with no
+      // branch to click. Our own git-service always knows the branch — use it as
+      // the authoritative fallback so the pill can never be empty on a real repo.
+      if (!branch) {
+        try {
+          const head = await active.ctx.refs.getHead();
+          if (!head.detached && head.branch) {
+            branch = head.branch;
+            log(`[diag] branch was empty → recovered '${branch}' from git-service`);
+          }
+        } catch (err) {
+          log(`[diag] getHead fallback failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     }
 
@@ -1067,6 +1083,7 @@ export class CommitViewProvider
       layout,
       busy: this.busy,
     };
+    log(`[diag] pushState → hasRepo=${hasRepo} branch=${JSON.stringify(branch)} staged=${staged.length} unstaged=${unstaged.length} active=${!!active} usedVscodeGit=${!!active?.repo?.state?.HEAD?.name}`);
     void this.view.webview.postMessage(base);
 
     // THEN resolve the slower bits — the AI-availability probe (vscode.lm /
@@ -1082,7 +1099,7 @@ export class CommitViewProvider
             // A branch-list failure must not sink the whole state push (which
             // would leave the branch pill and menu empty). Log and keep the
             // last-known list.
-            console.error("GitStudio: collectBranches failed:", err);
+            log(`[diag] collectBranches failed: ${err instanceof Error ? err.message : String(err)}`);
             return this.lastBranches;
           })
         : Promise.resolve(undefined),
