@@ -267,10 +267,7 @@ export class BlameController implements vscode.Disposable {
         void vscode.window.showInformationMessage(`Copied ${commit.author}`);
         break;
       case "history":
-        // Stub: file history lands in a later milestone.
-        void vscode.window.showInformationMessage(
-          "File history is coming in a later GitStudio milestone.",
-        );
+        await vscode.commands.executeCommand("gitstudio.showFileHistory");
         break;
       case "toggle":
         await this.toggleFileBlame();

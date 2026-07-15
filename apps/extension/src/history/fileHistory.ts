@@ -49,6 +49,11 @@ export async function showFileHistory(repos: RepoManager): Promise<void> {
   if (!picked) {
     return;
   }
+  // KNOWN LIMITATION: the diff uses the file's CURRENT path. `--follow` lists
+  // commits from before a rename, but at those commits the file lived under its
+  // old name, so `git show <sha>:<currentPath>` is empty and the diff reads as
+  // "no change". Fixing it means capturing the per-commit historical path from
+  // the shared HistoryProvider (used by both apps) — deferred past 1.0.1.
   await openRevisionDiff(
     active.entry.root,
     active.rel,

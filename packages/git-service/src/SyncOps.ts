@@ -159,10 +159,24 @@ export class SyncOps {
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** True when the user has configured how `git pull` reconciles divergence
-   *  (`pull.rebase` or `pull.ff=only`) — then we leave their choice alone. */
+  /** True when the user has configured how `git pull` reconciles divergence —
+   *  then we leave their choice alone rather than injecting `--no-rebase`.
+   *  Covers the global `pull.rebase`/`pull.ff` AND the current branch's
+   *  `branch.<name>.rebase` (which git honors over `pull.rebase`), so a
+   *  per-branch rebase workflow isn't silently overridden into a merge. */
   private async hasPullStrategyConfig(): Promise<boolean> {
-    for (const key of ["pull.rebase", "pull.ff"]) {
+    const keys = ["pull.rebase", "pull.ff"];
+    const head = await this.proc.run([
+      "symbolic-ref",
+      "--quiet",
+      "--short",
+      "HEAD",
+    ]);
+    const branch = head.code === 0 ? head.stdout.trim() : "";
+    if (branch) {
+      keys.push(`branch.${branch}.rebase`);
+    }
+    for (const key of keys) {
       const r = await this.proc.run(["config", "--get", key]);
       if (r.code === 0 && r.stdout.trim().length > 0) {
         return true;
