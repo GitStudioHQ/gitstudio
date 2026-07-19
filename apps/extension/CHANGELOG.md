@@ -4,6 +4,39 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-19
+
+A big round of push, compare, and commit-graph improvements.
+
+### Added
+- **Push review modal.** Every push route — the ↑ pill, the branch menu, and the
+  Commit&Push button — now opens a confirmation that lists the exact commits and
+  file changes about to be pushed, with per-file `+/−` and a diffstat header.
+  From it you can open any file's diff, **Undo local commits** (reset them back to
+  staged / unstaged changes), or **branch off** with *New branch…*. The Push
+  button shows a live in-button loader while it runs.
+- **State-driven Commit / Push buttons.** The primary action reads **Commit & Push**
+  when there's staged work, and **Push N** / **Publish** when there are only
+  unpushed commits (no commit message required), each with an in-button spinner.
+- **Tags** now appear in the branch menu alongside a **Recents** group; every row
+  shows its full ref name on hover and the popover widens with the sidebar.
+- **Compare view, rebuilt GitHub/GitLab-style:** a *commits · files · +X −Y*
+  diffstat header, inline **unified & split** diffs rendered in-page, an optional
+  **file-tree sidebar**, a path filter, and per-file additions/deletions.
+
+### Fixed
+- **Commit graph.** Lane lines now route through their commit nodes, so every
+  node sits on its own line — no more lines that end nowhere, doubled crossings,
+  or nodes floating beside the graph. Author avatars are pixel-aligned to their
+  nodes, and the lane layout is hardened against duplicate / out-of-order commits
+  from paginated history.
+- **Branch-name tooltips** wrap to show the full name instead of ellipsizing.
+- The push window is now robustly centered and responsive at any sidebar width.
+
+### Changed
+- **Fetch** is listed **above Update (pull)** in the sync menus.
+- Firmer, more legible **hover** states in dark themes across every surface.
+
 ## [1.0.0] - 2026-07-14
 
 The first stable release: the whole extension loads **instantly**, the commit

@@ -14,6 +14,12 @@ import {
   statusLetter,
   type GroupKind,
 } from "./changesView";
+import {
+  collectCommits,
+  collectCompareFiles,
+  type CompareFile,
+} from "../compare/refCompare";
+import { toRevisionUri } from "../history/revisionContentProvider";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
 // that renders BOTH the commit message box AND the working-tree changes —
@@ -41,11 +47,13 @@ interface BranchRefPayload {
   behind?: number;
 }
 
-/** Everything the branch menu needs: local branches (with favorites), remotes, recents. */
+/** Everything the branch menu needs: local branches (with favorites), remotes, recents, tags. */
 interface BranchesPayload {
   local: BranchRefPayload[];
   remote: string[];
   recent: string[];
+  /** Tag names, newest-looking first (numeric-desc sort). */
+  tags: string[];
 }
 
 interface StatePayload {
@@ -65,6 +73,12 @@ interface StatePayload {
   ahead?: number;
   /** Commits the local branch is behind its upstream. */
   behind?: number;
+  /** Commits a push would SEND: `ahead` when tracking an upstream, else the
+   *  count of commits not yet on ANY remote (the never-pushed publish case). */
+  unpushed?: number;
+  /** True when those commits have somewhere to go (an upstream, or a remote to
+   *  publish a never-pushed branch to) — gates the primary Push/Publish button. */
+  canPublish?: boolean;
   /** Short repo/workspace name shown in the header. */
   repoName?: string;
   lastMessage?: string;
@@ -97,9 +111,16 @@ interface FromWebview {
     | "amendToggled"
     | "branchAction"
     | "branchRefCommand"
+    | "requestPushPreview"
+    | "confirmPush"
+    | "discardLocalCommits"
+    | "newBranchFromPush"
+    | "openPushFileDiff"
     | "openFolder"
     | "openGraph";
   path?: string;
+  /** Original path for a renamed file (push-modal file diff). */
+  oldPath?: string;
   staged?: boolean;
   group?: GroupKind;
   /** File paths targeted by a folder-level stage/unstage/discard. */
@@ -136,6 +157,17 @@ export interface CommitMessageGenerator {
 
 const LAYOUT_KEY = "gitstudio.commit.layout";
 
+/** Git's canonical empty-tree object — the "before" side when previewing the
+ *  push of a branch whose oldest unpushed commit is a root commit. */
+const COMMIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/** A short, friendly label for a diff ref: 7-char sha, "(new file)" for the
+ *  empty tree, or the ref name verbatim (e.g. "origin/main"). */
+function pushRefLabel(ref: string): string {
+  if (ref === COMMIT_EMPTY_TREE) return "(new file)";
+  return /^[0-9a-f]{40}$/i.test(ref) ? ref.slice(0, 7) : ref;
+}
+
 export class CommitViewProvider
   implements vscode.WebviewViewProvider, vscode.Disposable
 {
@@ -170,6 +202,8 @@ export class CommitViewProvider
   private static readonly REFS_TTL_MS = 1500;
 
   constructor(
+    /** For opening the branded Monaco diff panel from the push modal. */
+    private readonly context: vscode.ExtensionContext,
     /** The extension root URI, for loading bundled assets (the codicon font). */
     private readonly extensionUri: vscode.Uri,
     private readonly repos: RepoManager,
@@ -221,6 +255,21 @@ export class CommitViewProvider
         return;
       case "branchRefCommand":
         await this.handleBranchRefCommand(msg);
+        return;
+      case "requestPushPreview":
+        await this.sendPushPreview();
+        return;
+      case "confirmPush":
+        await this.confirmPush();
+        return;
+      case "discardLocalCommits":
+        await this.discardLocalCommits();
+        return;
+      case "newBranchFromPush":
+        await this.newBranchFromPush();
+        return;
+      case "openPushFileDiff":
+        await this.openPushFileDiff(msg.path ?? "", msg.oldPath);
         return;
       case "openFolder":
         await vscode.commands.executeCommand("vscode.openFolder");
@@ -559,6 +608,7 @@ export class CommitViewProvider
       void vscode.window.showWarningMessage(
         "GitStudio: enter a commit message.",
       );
+      void this.view?.webview.postMessage({ type: "commitDone", ok: false });
       return;
     }
 
@@ -584,28 +634,29 @@ export class CommitViewProvider
         void vscode.window.showErrorMessage(
           `GitStudio: commit failed — ${result.stderr.trim() || "unknown error"}`,
         );
+        void this.view?.webview.postMessage({
+          type: "commitDone",
+          ok: false,
+          error: result.stderr.trim(),
+        });
         return;
       }
 
-      if (msg.push) {
-        const push = await entry.ctx.process.run(["push"]);
-        if (push.code !== 0) {
-          void vscode.window.showErrorMessage(
-            `GitStudio: commit succeeded, but push failed — ${
-              push.stderr.trim() || "unknown error"
-            }`,
-          );
-        } else {
-          void vscode.window.setStatusBarMessage("$(check) Committed & pushed", 3000);
-        }
-      } else {
-        void vscode.window.setStatusBarMessage("$(check) Committed", 3000);
-      }
+      void vscode.window.setStatusBarMessage("$(check) Committed", 3000);
 
-      // Clear the box and refresh the views.
+      // Clear the box and refresh the views. The commit spinner clears on
+      // commitDone; for a Commit & Push the modal then opens for the push step.
       this.view?.webview.postMessage({ type: "clear" });
+      this.view?.webview.postMessage({ type: "commitDone", ok: true });
       void entry.repo?.status?.();
       this.onCommitted();
+
+      // Commit & Push never pushes blindly: it opens the same review modal every
+      // other push route uses, so the user confirms exactly what's about to be
+      // pushed (and can still undo the commit) before it leaves their machine.
+      if (msg.push) {
+        await this.sendPushPreview();
+      }
     } finally {
       this.busy = false;
       void this.pushState();
@@ -638,7 +689,7 @@ export class CommitViewProvider
     await this.memento.update(this.recentKey(entry), next);
   }
 
-  /** Local branches (with favorites), remotes, and recents for the branch menu. */
+  /** Local branches (with favorites), remotes, recents, and tags for the branch menu. */
   private async collectBranches(entry: RepoEntry): Promise<BranchesPayload> {
     const refs = await this.listRefsCached(entry);
     const favs = new Set(this.favorites(entry));
@@ -655,8 +706,14 @@ export class CommitViewProvider
     const remote = refs
       .filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"))
       .map((r) => r.name);
+    // Tags sorted so "newest" (highest version) floats up — a numeric-aware
+    // descending compare puts v1.10 above v1.9 and v2 above v1.
+    const tags = refs
+      .filter((r) => r.type === "tag")
+      .map((r) => r.name)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     const recent = this.memento.get<string[]>(this.recentKey(entry), []);
-    return { local, remote, recent };
+    return { local, remote, recent, tags };
   }
 
   /**
@@ -846,6 +903,341 @@ export class CommitViewProvider
     await this.pushState();
   }
 
+  // ── Push preview + confirm (every push goes through a review modal) ────────
+
+  /**
+   * Gather what a push would send: the unpushed commits and their aggregate
+   * file changes, plus the target ref and ahead/behind. Returns `null` when
+   * there's nothing to push. Works with OR without a configured upstream (an
+   * unpublished branch previews everything not yet on any remote).
+   */
+  private async gatherPushData(entry: RepoEntry): Promise<{
+    hasUpstream: boolean;
+    target: string;
+    branch: string;
+    /** The ref the unpushed commits diverge FROM — the left side of file diffs. */
+    base: string;
+    canPush: boolean;
+    reason?: string;
+    ahead: number;
+    behind: number;
+    additions: number;
+    deletions: number;
+    commits: Array<{ sha: string; subject: string; author: string; date: number }>;
+    files: CompareFile[];
+  } | null> {
+    const head = await entry.ctx.refs.getHead();
+    const branch = head.detached ? head.sha.slice(0, 12) : (head.branch ?? "HEAD");
+    const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
+    let remotes: Array<{ name: string }> = [];
+    try {
+      remotes = await entry.ctx.remotes.list();
+    } catch {
+      remotes = [];
+    }
+
+    // Resolve the FORK POINT the push diverges from — used as the left side of
+    // both the aggregate file list AND each per-file diff, so they always agree
+    // (even on a diverged branch). The commit list is gathered ONCE (the
+    // no-upstream base can be the empty tree, invalid in a `base..HEAD` range).
+    let base: string;
+    let target: string;
+    let commitRecords: Awaited<ReturnType<typeof collectCommits>>;
+    if (upstream) {
+      target = upstream;
+      commitRecords = await collectCommits(entry, [`${upstream}..HEAD`]);
+      // The merge-base is the true fork point (right for a diverged branch); a
+      // plain 2-dot diff from it equals the 3-dot `upstream...HEAD`.
+      const mb = await entry.ctx.process.run(["merge-base", upstream, "HEAD"]);
+      base = mb.code === 0 && mb.stdout.trim() ? mb.stdout.trim() : upstream;
+    } else {
+      // No upstream — everything reachable from HEAD but not on any remote.
+      commitRecords = await collectCommits(entry, ["HEAD", "--not", "--remotes"]);
+      if (commitRecords.length === 0) {
+        return null;
+      }
+      const oldest = commitRecords[commitRecords.length - 1];
+      base = oldest.parents[0] ?? COMMIT_EMPTY_TREE;
+      const pushRemote =
+        remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
+      target = pushRemote ? `${pushRemote}/${branch}` : branch;
+    }
+    if (commitRecords.length === 0) {
+      return null;
+    }
+
+    const [files, ab] = await Promise.all([
+      // 2-dot from the fork point = exactly what the unpushed commits introduce.
+      collectCompareFiles(entry, base, "HEAD", false),
+      upstream ? entry.ctx.sync.aheadBehind() : Promise.resolve({ ahead: 0, behind: 0 }),
+    ]);
+    let additions = 0;
+    let deletions = 0;
+    for (const f of files) {
+      if (f.additions > 0) additions += f.additions;
+      if (f.deletions > 0) deletions += f.deletions;
+    }
+    const canPush = upstream ? true : remotes.length > 0;
+    return {
+      hasUpstream: !!upstream,
+      target,
+      branch,
+      base,
+      canPush,
+      reason: canPush ? undefined : "No remote is configured for this repository.",
+      ahead: upstream ? ab.ahead : commitRecords.length,
+      behind: upstream ? ab.behind : 0,
+      additions,
+      deletions,
+      commits: commitRecords.map((c) => ({
+        sha: c.sha,
+        subject: c.subject || "(no message)",
+        author: c.author,
+        date: c.authorDate,
+      })),
+      files,
+    };
+  }
+
+  /** Gather the preview and open the confirm-push modal in the webview. */
+  private async sendPushPreview(): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    let data;
+    try {
+      data = await this.gatherPushData(entry);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: couldn't prepare the push — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+    if (!data) {
+      vscode.window.setStatusBarMessage("$(check) Nothing to push — up to date", 2500);
+      // Clear any spinner the trigger may have started.
+      void this.view?.webview.postMessage({ type: "pushDone", ok: true, nothing: true });
+      return;
+    }
+    // Remember the diff base so a click on a file row can open its committed diff.
+    this.lastPushBase = data.base;
+    void this.view?.webview.postMessage({ type: "pushPreview", ...data });
+  }
+
+  /** The base ref of the last push preview (left side of committed file diffs). */
+  private lastPushBase = "";
+
+  /**
+   * Open the diff of one committed-but-unpushed file from the push modal — in
+   * GitStudio's own Monaco diff panel (syntax-highlighted, branded), diffing the
+   * fork-point version (lastPushBase) against HEAD, i.e. exactly what the commits
+   * about to be pushed introduce.
+   */
+  private async openPushFileDiff(path: string, oldPath?: string): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry || !path) {
+      return;
+    }
+    // Open the STANDARD VS Code diff — the familiar, readable one with a built-in
+    // inline ⇄ side-by-side toggle and clear red/green add-delete. LEFT is the
+    // fork-point ("before"), RIGHT is HEAD ("after"), so the title says which is
+    // which; `preview` reuses a single tab instead of piling up editors.
+    const base = this.lastPushBase || "HEAD~1";
+    const left = toRevisionUri(entry.root, base, oldPath || path);
+    const right = toRevisionUri(entry.root, "HEAD", path);
+    const name = path.split("/").pop() ?? path;
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      left,
+      right,
+      `${name}  (before ${pushRefLabel(base)} ↔ after HEAD)`,
+      { preview: true } satisfies vscode.TextDocumentShowOptions,
+    );
+  }
+
+  /** Run the actual push (after the user confirms in the modal). */
+  private async confirmPush(): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    let result: { ok: boolean; stderr: string };
+    try {
+      const head = await entry.ctx.refs.getHead();
+      const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
+      if (upstream) {
+        result = await entry.ctx.sync.push();
+      } else {
+        const remotes = await entry.ctx.remotes.list();
+        const remote =
+          remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
+        const branch = head.branch;
+        if (!remote || !branch) {
+          result = { ok: false, stderr: "No remote is configured to publish to." };
+        } else {
+          result = await entry.ctx.sync.push({ setUpstream: true, remote, branch });
+        }
+      }
+    } catch (err) {
+      result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
+    }
+    if (result.ok) {
+      vscode.window.setStatusBarMessage("$(check) Pushed", 3000);
+    } else {
+      void vscode.window.showErrorMessage(
+        `GitStudio: push failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
+      );
+    }
+    this.invalidateRefs();
+    void entry.repo?.status?.();
+    this.onCommitted();
+    await this.pushState();
+    void this.view?.webview.postMessage({
+      type: "pushDone",
+      ok: result.ok,
+      error: result.ok ? undefined : result.stderr.trim(),
+    });
+  }
+
+  /**
+   * Discard the local (unpushed) commits, returning their contents to the
+   * working tree as staged (`--soft`) or unstaged (`--mixed`) changes — so
+   * nothing is lost, the commits are just "un-made".
+   */
+  private async discardLocalCommits(): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    // Resolve the ref to reset back to (the point just before the local commits).
+    let base: string | undefined;
+    let count = 0;
+    try {
+      const head = await entry.ctx.refs.getHead();
+      const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
+      if (upstream) {
+        count = (await entry.ctx.sync.aheadBehind()).ahead;
+        // Reset to the FORK POINT (merge-base), not the upstream tip. On a
+        // diverged branch the tip has commits we never pulled — resetting there
+        // would silently adopt them and stage a bogus reversal diff. The
+        // merge-base is exactly "the commit before my local commits", so a
+        // soft/mixed reset drops only the ahead commits and keeps their content.
+        const mb = await entry.ctx.process.run(["merge-base", upstream, "HEAD"]);
+        base = mb.code === 0 && mb.stdout.trim() ? mb.stdout.trim() : undefined;
+      } else {
+        const unpushed = await collectCommits(entry, ["HEAD", "--not", "--remotes"]);
+        count = unpushed.length;
+        const oldest = unpushed[unpushed.length - 1];
+        if (oldest && oldest.parents.length === 0) {
+          void vscode.window.showWarningMessage(
+            "GitStudio: can't undo the repository's initial commit this way.",
+          );
+          return;
+        }
+        base = oldest?.parents[0];
+      }
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
+    if (!base || count === 0) {
+      vscode.window.setStatusBarMessage("$(info) No local commits to undo", 2500);
+      return;
+    }
+
+    const plural = count === 1 ? "commit" : "commits";
+    const mode = await vscode.window.showQuickPick(
+      [
+        {
+          label: "$(check) Keep changes staged",
+          detail: `Undo ${count} ${plural}; their changes return to the Staged group (soft reset)`,
+          value: "--soft",
+        },
+        {
+          label: "$(edit) Unstage changes",
+          detail: `Undo ${count} ${plural}; their changes return as unstaged edits (mixed reset)`,
+          value: "--mixed",
+        },
+      ],
+      {
+        title: `Undo ${count} local ${plural}`,
+        placeHolder: "Where should the committed changes go?",
+      },
+    );
+    if (!mode) {
+      return;
+    }
+    const r = await entry.ctx.process.run(["reset", mode.value, base]);
+    if (r.code !== 0) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: undo failed${r.stderr ? ` — ${r.stderr.trim()}` : ""}`,
+      );
+    } else {
+      vscode.window.setStatusBarMessage(
+        `$(check) Undid ${count} local ${plural}`,
+        3000,
+      );
+    }
+    this.invalidateRefs();
+    void entry.repo?.status?.();
+    this.onCommitted();
+    await this.pushState();
+    void this.view?.webview.postMessage({
+      type: "pushDone",
+      ok: r.code === 0,
+      discarded: r.code === 0,
+      error: r.code === 0 ? undefined : r.stderr.trim(),
+    });
+  }
+
+  /**
+   * "New branch…" from the push modal: create a branch at the current commit
+   * (carrying the unpushed commits) and switch to it — the "I want these on a
+   * new branch instead of pushing here" escape hatch. Cancelling the name prompt
+   * leaves the modal open; success closes it (the push target changed).
+   */
+  private async newBranchFromPush(): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    const name = await vscode.window.showInputBox({
+      title: "New Branch from These Commits",
+      prompt: "Create a new branch at the current commit and switch to it",
+      placeHolder: "feature/my-change",
+      validateInput: (v) =>
+        v && /\s/.test(v) ? "Branch names can't contain spaces" : undefined,
+    });
+    if (!name) {
+      return; // cancelled — keep the modal open
+    }
+    let result: { ok: boolean; stderr: string };
+    try {
+      result = await entry.ctx.branches.checkoutNew(name.trim());
+    } catch (err) {
+      result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
+    }
+    if (!result.ok) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: couldn't create branch${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
+      );
+      return; // keep the modal open so the user can retry / cancel
+    }
+    vscode.window.setStatusBarMessage(`$(check) Created & switched to ${name.trim()}`, 3000);
+    await this.noteRecentBranch(entry, name.trim());
+    this.invalidateRefs();
+    void entry.repo?.status?.();
+    this.onCommitted();
+    await this.pushState();
+    // The branch (and thus the push target) changed — close the stale modal.
+    void this.view?.webview.postMessage({ type: "pushDone", ok: true, nothing: true });
+  }
+
   /**
    * Pushes the full state to the webview: branch, staged count, the merge /
    * staged / unstaged change lists, AI availability, and — when `amend` is
@@ -1002,18 +1394,58 @@ export class CommitViewProvider
     // keychain) and the branch-menu data (for-each-ref + stash list) — in
     // parallel, and re-post. The client dedups the (unchanged) file list, so
     // this only refreshes the ✨ button + branch menu without a re-render.
-    const [aiEnabled, branches] = await Promise.all([
+    const [aiEnabled, branches, pushInfo] = await Promise.all([
       this.generator
         ? this.generator.isEnabled().catch(() => false)
         : Promise.resolve(false),
       active ? this.collectBranches(active) : Promise.resolve(undefined),
+      active
+        ? this.countUnpushed(active, upstream, ahead)
+        : Promise.resolve({ unpushed: 0, canPublish: false }),
     ]);
     this.lastAiEnabled = aiEnabled;
     this.lastBranches = branches;
     if (!this.view) {
       return;
     }
-    void this.view.webview.postMessage({ ...base, aiEnabled, branches });
+    void this.view.webview.postMessage({
+      ...base,
+      aiEnabled,
+      branches,
+      unpushed: pushInfo.unpushed,
+      canPublish: pushInfo.canPublish,
+    });
+  }
+
+  /**
+   * Commits a push would send, correct even for a branch that has never been
+   * pushed. With an upstream, `ahead` already carries it. Without one, count the
+   * commits reachable from HEAD but not on ANY remote (the exact set
+   * gatherPushData/confirmPush publish) and report whether a remote exists.
+   */
+  private async countUnpushed(
+    entry: RepoEntry,
+    upstream: string | undefined,
+    ahead: number | undefined,
+  ): Promise<{ unpushed: number; canPublish: boolean }> {
+    if (upstream) {
+      return { unpushed: ahead ?? 0, canPublish: true };
+    }
+    try {
+      const commits = await collectCommits(entry, ["HEAD", "--not", "--remotes"]);
+      if (commits.length === 0) {
+        return { unpushed: 0, canPublish: false };
+      }
+      let hasRemote = false;
+      try {
+        hasRemote = (await entry.ctx.remotes.list()).length > 0;
+      } catch {
+        hasRemote = false;
+      }
+      return { unpushed: commits.length, canPublish: hasRemote };
+    } catch {
+      return { unpushed: ahead ?? 0, canPublish: false };
+    }
   }
 
   /** The HEAD commit's full message (subject + body) for amend prefill. */
@@ -1177,7 +1609,9 @@ export class CommitViewProvider
       position: fixed;
       z-index: 50;
       min-width: 248px;
-      max-width: 288px;
+      /* Grow with the sidebar so a wider panel reveals more of long ref names
+         (bounded so it never sprawls). The tooltip covers whatever still clips. */
+      max-width: min(460px, calc(100vw - 12px));
       max-height: 72vh;
       display: flex;
       flex-direction: column;
@@ -1218,7 +1652,7 @@ export class CommitViewProvider
       cursor: pointer;
     }
     .bm-action .codicon, .bm-bicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
-    .bm-action:hover, .bm-branch:hover { background: var(--gs-hover); }
+    .bm-action:hover, .bm-branch:hover { background: var(--gs-hover-strong); }
     /* A collapsible category header: chevron + label + count, full-width button. */
     .bm-sep {
       display: flex;
@@ -1323,7 +1757,7 @@ export class CommitViewProvider
     }
     .bm-subaction .codicon { font-size: 14px; color: var(--gs-fg-muted); flex: 0 0 auto; }
     .bm-subaction span { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .bm-subaction:hover { background: var(--gs-hover); }
+    .bm-subaction:hover { background: var(--gs-hover-strong); }
     .bm-subaction.danger { color: var(--vscode-errorForeground, #e15a5a); }
     .bm-subaction.danger .codicon { color: var(--vscode-errorForeground, #e15a5a); }
     .bm-subaction.danger:hover { background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 14%, transparent); }
@@ -1339,6 +1773,7 @@ export class CommitViewProvider
     .bm-star.on { color: var(--vscode-charts-yellow, #d7ba00); }
     .bm-star .codicon { font-size: 13px; }
     .bm-empty { padding: 10px 8px; color: var(--gs-fg-muted); font-size: 12px; text-align: center; }
+    .bm-note { padding: 4px 8px 6px 34px; color: var(--gs-fg-subtle); font-size: 11px; font-style: italic; }
 
     /* ---- Message composer -------------------------------------------------
        ONE elevated card holds the message, the toggles, the author override and
@@ -1602,6 +2037,20 @@ export class CommitViewProvider
     }
     button:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 2px; }
     .link:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+
+    /* The compact Commit button sits beside the prominent primary action. */
+    .commit-btn { flex: 0 0 auto; padding: 0 10px; }
+    /* In-button loading: swap the glyph for a spinner while the op runs. */
+    button.gs-commit .spin { display: none; }
+    button.gs-commit .spin.codicon { animation: codicon-spin 1s steps(12) infinite; }
+    button.gs-commit.is-busy .glyph { display: none; }
+    button.gs-commit.is-busy .spin { display: inline-flex; }
+    button.gs-commit.is-busy { cursor: default; }
+    /* Flash the composer when a commit is attempted with an empty message. */
+    .composer.needs-msg {
+      border-color: var(--gs-status-deleted);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-status-deleted) 22%, transparent);
+    }
 
     /* ---- (keyboard hint removed — the composer is self-evident) -------- */
 
@@ -1923,7 +2372,7 @@ export class CommitViewProvider
     .gs-tip {
       position: fixed; z-index: 99999; pointer-events: none;
       transform: translate(-50%, -100%);
-      max-width: 280px; padding: 3px 7px;
+      padding: 3px 7px;
       border-radius: var(--gs-radius-sm);
       border: 1px solid var(--gs-border);
       /* MUST be opaque — --gs-surface* are color-mix-with-transparent tints
@@ -1932,12 +2381,206 @@ export class CommitViewProvider
       background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background, #2b2b2b));
       color: var(--gs-fg);
       font-family: var(--gs-font-ui); font-size: 11.5px; line-height: 1.35;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      /* Default to ONE line; showTip() measures the natural width and only
+         switches to white-space:normal (wrapping) when it exceeds the viewport.
+         overflow-wrap:break-word then breaks a no-space ref name if it must. */
+      white-space: nowrap; overflow-wrap: break-word;
       box-shadow: var(--gs-shadow-2);
       opacity: 0; transition: opacity var(--gs-motion-fast) var(--gs-ease);
     }
     .gs-tip.below { transform: translate(-50%, 0); }
     .gs-tip.show { opacity: 1; }
+
+    /* ---- Push review modal (confirm before every push) ------------------- */
+    /* The backdrop is the centering layer: a fixed full-viewport flex box that
+       centers the modal. Robust at ANY width (no fragile left:50%/translate that
+       could push content off the sidebar's left edge), and the padding keeps the
+       modal off the edges. */
+    .push-backdrop {
+      position: fixed; inset: 0; z-index: 120;
+      display: flex; align-items: center; justify-content: center;
+      padding: 12px; box-sizing: border-box;
+      background: rgba(0, 0, 0, 0.42);
+      animation: pm-fade var(--gs-motion) var(--gs-ease);
+    }
+    body.vscode-light .push-backdrop,
+    body.vscode-high-contrast-light .push-backdrop { background: rgba(0, 0, 0, 0.22); }
+    @keyframes pm-fade { from { opacity: 0; } to { opacity: 1; } }
+    .push-modal {
+      position: relative; z-index: 121;
+      width: 100%; max-width: 560px;
+      max-height: 100%;
+      display: flex; flex-direction: column;
+      background: var(--vscode-editorWidget-background, var(--gs-surface));
+      border: 1px solid var(--vscode-editorWidget-border, var(--gs-border));
+      border-radius: var(--gs-radius);
+      box-shadow: var(--gs-shadow-2);
+      animation: pm-pop var(--gs-motion) var(--gs-ease);
+      overflow: hidden;
+    }
+    @keyframes pm-pop {
+      from { opacity: 0; transform: scale(0.97); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .pm-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--gs-border-soft);
+    }
+    .pm-head .codicon { font-size: 15px; color: var(--gs-brand); }
+    .pm-title { flex: 1 1 auto; font-size: 13px; font-weight: 600; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pm-title b { color: var(--gs-accent-text); }
+    .pm-close {
+      flex: 0 0 auto; width: 24px; height: 24px; border: none; background: transparent;
+      color: var(--gs-fg-muted); border-radius: var(--gs-radius-sm); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+    }
+    .pm-close:hover { background: var(--gs-hover-strong); color: var(--gs-fg); }
+    .pm-stats {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 9px 14px; font-size: 12px; color: var(--gs-fg-muted);
+      border-bottom: 1px solid var(--gs-border-soft);
+      background: color-mix(in srgb, var(--gs-fg) 3%, transparent);
+    }
+    .pm-stat b { color: var(--gs-fg); font-variant-numeric: tabular-nums; }
+    .pm-add { color: var(--gs-status-added); font-variant-numeric: tabular-nums; font-weight: 600; }
+    .pm-del { color: var(--gs-status-deleted); font-variant-numeric: tabular-nums; font-weight: 600; }
+    .pm-behind {
+      margin-left: auto; color: var(--gs-amber); font-weight: 600;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .pm-behind .codicon { color: var(--gs-amber); font-size: 12px; }
+    .pm-body { overflow-y: auto; padding: 4px 6px 8px; }
+    .pm-section-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--gs-fg-muted); padding: 9px 8px 4px;
+    }
+    .pm-commit {
+      display: flex; align-items: baseline; gap: 8px;
+      padding: 4px 8px; border-radius: var(--gs-radius-sm);
+    }
+    .pm-commit:hover { background: var(--gs-hover); }
+    .pm-commit .sha {
+      flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 11px;
+      color: var(--gs-fg-subtle);
+    }
+    .pm-commit .subj { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pm-commit .meta { flex: 0 0 auto; font-size: 11px; color: var(--gs-fg-muted); }
+    .pm-file {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 8px; border-radius: var(--gs-radius-sm);
+    }
+    .pm-file:hover { background: var(--gs-hover-strong); }
+    .pm-file.clickable { cursor: pointer; }
+    .pm-file.clickable:hover .name { text-decoration: underline; text-underline-offset: 2px; }
+    .pm-file .st { flex: 0 0 auto; width: 13px; text-align: center; font-family: var(--gs-font-mono); font-weight: 700; font-size: 11px; }
+    .pm-file .name { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pm-file .dir { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--gs-fg-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+    .pm-file .nums { flex: 0 0 auto; font-family: var(--gs-font-mono); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .pm-file .nums .add { color: var(--gs-status-added); }
+    .pm-file .nums .del { color: var(--gs-status-deleted); margin-left: 5px; }
+    .pm-file.st-A .st { color: var(--gs-status-added); }
+    .pm-file.st-M .st { color: var(--gs-status-modified); }
+    .pm-file.st-D .st { color: var(--gs-status-deleted); }
+    .pm-file.st-R .st { color: var(--gs-status-renamed); }
+    .pm-error {
+      margin: 4px 8px 0; padding: 7px 9px; font-size: 11.5px;
+      color: var(--vscode-errorForeground, #e15a5a);
+      background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 12%, transparent);
+      border-radius: var(--gs-radius-sm); white-space: pre-wrap;
+    }
+    .pm-foot {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 12px 14px;
+      border-top: 1px solid var(--gs-border-soft);
+      background: color-mix(in srgb, var(--gs-fg) 2.5%, transparent);
+    }
+    /* The two "instead of pushing" alternatives group on the left; Cancel + Push
+       stay on the right. When the modal is too narrow (the Changes sidebar), the
+       whole footer WRAPS so nothing clips — the alt group drops to its own row. */
+    .pm-foot-alt { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-right: auto; }
+    .pm-foot .spacer { flex: 1 1 auto; }
+    .pm-btn {
+      flex: 0 0 auto; /* never grow/shrink — natural content width in any modal size */
+      height: 32px; padding: 0 16px; border-radius: var(--gs-radius);
+      border: 1px solid transparent;
+      font-family: var(--gs-font-ui); font-size: 12.5px; font-weight: 500;
+      cursor: pointer; white-space: nowrap;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background var(--gs-motion-fast) var(--gs-ease),
+                  border-color var(--gs-motion-fast) var(--gs-ease),
+                  color var(--gs-motion-fast) var(--gs-ease),
+                  filter var(--gs-motion-fast) var(--gs-ease),
+                  box-shadow var(--gs-motion-fast) var(--gs-ease),
+                  transform var(--gs-motion-fast) var(--gs-ease);
+    }
+    .pm-btn .codicon { font-size: 14px; }
+    .pm-btn:active { transform: translateY(1px); }
+    .pm-btn:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: 2px; }
+    .pm-btn:disabled { opacity: 0.45; cursor: default; filter: none; box-shadow: none; transform: none; }
+
+    /* Cancel — a clean neutral secondary. */
+    .pm-btn.secondary {
+      color: var(--gs-fg);
+      background: color-mix(in srgb, var(--gs-fg) 7%, transparent);
+      border-color: var(--gs-border);
+    }
+    .pm-btn.secondary:hover {
+      background: color-mix(in srgb, var(--gs-fg) 13%, transparent);
+      border-color: var(--gs-fg-subtle);
+    }
+
+    /* Undo local commits — a subtle destructive ghost that asserts its danger
+       only on hover, so it never competes with the primary Push action. */
+    .pm-btn.danger {
+      color: var(--gs-fg-muted); background: transparent; border-color: transparent; font-weight: 400;
+    }
+    .pm-btn.danger:hover {
+      color: var(--vscode-errorForeground, #e15a5a);
+      background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 13%, transparent);
+      border-color: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 30%, transparent);
+    }
+
+    /* New branch — a neutral ghost alternative that firms up on hover. */
+    .pm-btn.ghost {
+      color: var(--gs-fg-muted); background: transparent; border-color: transparent; font-weight: 400;
+    }
+    .pm-btn.ghost:hover {
+      color: var(--gs-fg);
+      background: color-mix(in srgb, var(--gs-fg) 10%, transparent);
+      border-color: var(--gs-border);
+    }
+
+    /* Push — the hero action: brand gradient, a gentle lift + glow on hover. */
+    .pm-btn.primary {
+      color: var(--gs-brand-fg); font-weight: 600; padding: 0 18px;
+      border-color: var(--gs-brand);
+      background: linear-gradient(180deg, color-mix(in srgb, var(--gs-brand) 88%, white 12%), var(--gs-brand));
+      box-shadow: var(--gs-shadow-1), inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
+    }
+    .pm-btn.primary:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+      box-shadow: var(--gs-shadow-2), inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+    }
+    .pm-btn.primary:active { transform: translateY(0); filter: brightness(0.95); }
+    /* While pushing: keep the button vivid (not greyed like :disabled) with a
+       gentle breathing glow, and spin the arrow — same footprint as "Push", no
+       width jump. Mirrors the header pull/push pills. */
+    .pm-btn.primary.loading {
+      opacity: 1; cursor: default; transform: none;
+      animation: pm-breathe 1.5s ease-in-out infinite;
+    }
+    .pm-btn.primary.loading:hover { transform: none; }
+    @keyframes pm-breathe {
+      0%, 100% { filter: brightness(1); box-shadow: var(--gs-shadow-1), inset 0 1px 0 color-mix(in srgb, white 22%, transparent); }
+      50% { filter: brightness(1.13); box-shadow: var(--gs-shadow-2), 0 0 0 3px color-mix(in srgb, var(--gs-brand) 22%, transparent), inset 0 1px 0 color-mix(in srgb, white 28%, transparent); }
+    }
+    .pm-btn .codicon { font-size: 13px; }
+    .pm-btn .codicon-modifier-spin { animation: codicon-spin 1s steps(12) infinite; }
+    .pm-empty-note { padding: 14px 10px; text-align: center; color: var(--gs-fg-muted); font-size: 12px; }
   </style>
 </head>
 <body class="layout-list">
@@ -2011,14 +2654,15 @@ export class CommitViewProvider
   </div>
 
   <div class="actions">
-    <button class="gs-commit primary" id="commit" type="button">
-      <i class="codicon codicon-git-commit" aria-hidden="true"></i>
+    <button class="gs-commit split commit-btn" id="commit" type="button" aria-label="Commit">
+      <i class="codicon codicon-git-commit glyph" aria-hidden="true"></i>
+      <i class="codicon codicon-loading spin" aria-hidden="true"></i>
       <span id="commit-label">Commit</span>
     </button>
-    <button class="gs-commit split" id="commit-push" type="button"
-      title="Commit &amp; Push" aria-label="Commit and Push">
-      <i class="codicon codicon-arrow-up" aria-hidden="true"></i>
-      <span>Push</span>
+    <button class="gs-commit primary main-btn" id="commit-push" type="button" aria-label="Commit and Push">
+      <i class="codicon codicon-arrow-up glyph" aria-hidden="true"></i>
+      <i class="codicon codicon-loading spin" aria-hidden="true"></i>
+      <span id="main-label">Commit &amp; Push</span>
     </button>
   </div>
   </div>
@@ -2090,6 +2734,7 @@ export class CommitViewProvider
     const author = $("author");
     const commitBtn = $("commit");
     const pushBtn = $("commit-push");
+    const mainLabel = $("main-label");
     const generateBtn = $("generate");
     const commitLabel = $("commit-label");
     const authorToggle = $("author-toggle");
@@ -2138,9 +2783,19 @@ export class CommitViewProvider
       vscode.postMessage({ type: "branchAction", action: action });
     }
     behindEl.addEventListener("click", () => startSync("pull"));
-    aheadEl.addEventListener("click", () => startSync("push"));
+    // Push always opens the review modal first (see openPushModal) — never a
+    // silent one-click push. Pull stays instant.
+    aheadEl.addEventListener("click", () => {
+      if (syncBusy) return;
+      vscode.postMessage({ type: "requestPushPreview" });
+    });
 
     let stagedCount = 0;
+    let aheadCount = 0;     // commits a push would send (drives the button label)
+    let canPublish = false; // there IS somewhere to push/publish those commits
+    let onUpstream = false; // branch tracks an upstream (Push) vs not (Publish)
+    let committing = false; // a commit op is in flight (button spinner)
+    let hostBusy = false;   // the host reported a busy state
     let generating = false;
     let layout = "list";
     // Persisted-in-DOM collapse memory, keyed by group + folder path.
@@ -2152,7 +2807,7 @@ export class CommitViewProvider
     // up — the row never snaps back mid-flight, even across rapid clicks.
     let authState = { merge: [], staged: [], unstaged: [] };
     let lastState = { merge: [], staged: [], unstaged: [] };
-    let branchData = { local: [], remote: [], recent: [] };
+    let branchData = { local: [], remote: [], recent: [], tags: [] };
     let lastBranchSig = "";
 
     // path -> { action: "stage" | "unstage", at: ms }. An optimistic move that
@@ -2284,16 +2939,40 @@ export class CommitViewProvider
     message.addEventListener("input", () => { autoGrow(); updateComposer(); });
 
     function setBusy(busy) {
-      commitBtn.disabled = busy;
-      pushBtn.disabled = busy;
+      hostBusy = busy;
       branchPill.style.opacity = busy ? "0.6" : "";
+      renderCommitButtons();
     }
 
-    function renderCount() {
-      // Staged count lives on the Commit button itself — no redundant title.
+    // The primary action + compact Commit button are STATE-DRIVEN:
+    //  • staged work present → primary = "Commit & Push" (needs a message)
+    //  • nothing staged, unpushed commits present → primary = "Push N" (no message)
+    //  • nothing to do → primary disabled.
+    // The Commit button only commits staged work; it shrinks beside the primary.
+    function renderCommitButtons() {
       const verb = amend.checked ? "Amend" : "Commit";
-      commitLabel.textContent = stagedCount > 0 ? verb + " " + stagedCount : verb;
+      const hasStaged = stagedCount > 0 || amend.checked;
+      // Commit button label + state.
+      if (!committing) commitLabel.textContent = hasStaged && stagedCount > 0 ? verb + " " + stagedCount : verb;
+      commitBtn.disabled = committing || hostBusy || !hasStaged;
+      // Primary action mode + label. "Push" is available whenever there are
+      // unpushed commits — OR the branch has no upstream yet (publish), where the
+      // ahead count reads 0 but there IS local work to send. Only a tracked
+      // branch that's fully up to date leaves nothing to push.
+      let mode, label;
+      if (hasStaged) {
+        mode = "commitpush"; label = (amend.checked ? "Amend" : "Commit") + " & Push";
+      } else if (aheadCount > 0 && canPublish) {
+        mode = "push"; label = (onUpstream ? "Push " : "Publish ") + aheadCount;
+      } else {
+        mode = "none"; label = "Push";
+      }
+      pushBtn.dataset.mode = mode;
+      if (!pushBtn.classList.contains("is-busy")) mainLabel.textContent = label;
+      pushBtn.disabled = committing || hostBusy || mode === "none";
     }
+    // Back-compat alias — older call sites still call renderCount().
+    function renderCount() { renderCommitButtons(); }
 
     // ---- Branch / sync header -------------------------------------------
     function renderHeader(state) {
@@ -2311,6 +2990,15 @@ export class CommitViewProvider
       behindEl.classList.toggle("visible", behind > 0);
       syncClean.classList.toggle("visible", hasUpstream && ahead === 0 && behind === 0);
       syncEl.classList.toggle("hidden", !state.branch);
+      // Commits a push would send: the header ahead count when tracking an
+      // upstream, else the host-computed count of commits not on any remote (the
+      // never-pushed branch). Falls back to ahead before the 2nd post lands.
+      aheadCount = typeof state.unpushed === "number" ? state.unpushed : ahead;
+      onUpstream = hasUpstream;
+      // With an upstream we can always push; without one we can only PUBLISH
+      // when the host found a remote to publish to.
+      canPublish = hasUpstream || !!state.canPublish;
+      renderCommitButtons();
       // A status push can land mid-pull — keep the in-flight face on top.
       applySyncBusy();
     }
@@ -2325,8 +3013,44 @@ export class CommitViewProvider
         push: !!push,
       });
     }
-    commitBtn.addEventListener("click", () => doCommit(false));
-    pushBtn.addEventListener("click", () => doCommit(true));
+    // Start a commit with an in-button spinner. Guards the empty-message case up
+    // front (nudging the composer) so we never spin for a commit that can't run.
+    function startCommit(push, btn, labelEl) {
+      if (committing || hostBusy) return;
+      if (message.value.trim() === "" && !amend.checked) {
+        const composer = message.closest(".composer");
+        if (composer) {
+          composer.classList.add("needs-msg");
+          setTimeout(() => composer.classList.remove("needs-msg"), 650);
+        }
+        message.focus();
+        return;
+      }
+      committing = true;
+      btn.classList.add("is-busy");
+      labelEl.textContent = "Committing…";
+      renderCommitButtons();
+      doCommit(push);
+    }
+    function clearCommitBusy() {
+      committing = false;
+      commitBtn.classList.remove("is-busy");
+      pushBtn.classList.remove("is-busy");
+      renderCommitButtons();
+    }
+    // Compact Commit button: commit staged work only.
+    commitBtn.addEventListener("click", () => startCommit(false, commitBtn, commitLabel));
+    // Primary action: Commit & Push (needs a message) OR straight Push of the
+    // existing unpushed commits (no message required) — depending on state.
+    pushBtn.addEventListener("click", () => {
+      const mode = pushBtn.dataset.mode;
+      if (mode === "push") {
+        // Already-committed work: skip the commit, open the review modal directly.
+        vscode.postMessage({ type: "requestPushPreview" });
+      } else if (mode === "commitpush") {
+        startCommit(true, pushBtn, mainLabel);
+      }
+    });
 
     function setGenerating(on) {
       generating = on;
@@ -2397,7 +3121,7 @@ export class CommitViewProvider
     let branchMenu = null;
     let branchFilter = "";
     let branchSubmenu = null;
-    // Per-category collapse memory (Favorites / Recent / Local / Remote).
+    // Per-category collapse memory (Favorites / Recents / Local / Remote / Tags).
     const collapsedCats = Object.create(null);
 
     function closeBranchMenu() {
@@ -2468,8 +3192,10 @@ export class CommitViewProvider
       } else {
         row.appendChild(el("span", "bm-star-spacer"));
       }
-      row.appendChild(el("i", "codicon codicon-" +
-        (kind === "remote" ? "cloud" : (current ? "check" : "git-branch")) + " bm-bicon"));
+      const icon = kind === "remote" ? "cloud"
+        : kind === "tag" ? "tag"
+        : current ? "check" : "git-branch";
+      row.appendChild(el("i", "codicon codicon-" + icon + " bm-bicon"));
       row.dataset.bname = name; // refreshOpenBranchUi re-finds the row by name
       const nm = el("span", "bm-bname", hl(name)); row.appendChild(nm);
       // Unpushed/unpulled counts per branch — the payoff of the in-menu Fetch.
@@ -2477,7 +3203,9 @@ export class CommitViewProvider
       if (behind) row.appendChild(el("span", "bm-ab down", "↓" + behind));
       if (up) { const u = el("span", "bm-bup"); u.textContent = up; row.appendChild(u); }
       row.appendChild(el("i", "codicon codicon-chevron-right bm-bmore"));
-      row.title = "Branch actions";
+      // Full ref name on hover — a narrow sidebar ellipsis-clips the row, so the
+      // tooltip is how the whole name (esp. long remote refs) is always readable.
+      row.title = name + (up ? "  ↔ " + up : "");
       row.addEventListener("click", () => openBranchActions(name, kind, current, row));
       return row;
     }
@@ -2588,10 +3316,11 @@ export class CommitViewProvider
     function openBranchActions(name, kind, current, anchor) {
       closeBranchSubmenu();
       const cur = currentBranchName();
-      const refType = kind === "remote" ? "remote" : "head";
+      const refType = kind === "remote" ? "remote" : kind === "tag" ? "tag" : "head";
+      const headIcon = kind === "remote" ? "cloud" : kind === "tag" ? "tag" : "git-branch";
       const menu = el("div", "branch-submenu");
       const head = el("div", "bm-subhead");
-      head.appendChild(el("i", "codicon codicon-" + (kind === "remote" ? "cloud" : "git-branch")));
+      head.appendChild(el("i", "codicon codicon-" + headIcon));
       head.appendChild(el("span", "bm-subhead-name", esc(name)));
       menu.appendChild(head);
       const list = el("div", "bm-sublist");
@@ -2600,10 +3329,26 @@ export class CommitViewProvider
       // Live branch data for this row (counts may have just changed via Fetch).
       const bd = (branchData.local || []).find((x) => x.name === name);
       subMenuFor = { name: name, kind: kind, current: current };
-      if (current) {
+      if (kind === "tag") {
+        subItem(list, "check", "Checkout Tag (detached)", () => subAct("gitstudio.tag.checkout", name, "tag"));
+        subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, "tag"));
+        subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, "tag"));
+        subSep(list);
+        subItem(list, "git-compare", "Compare with '" + cur + "'", () => subAct("gitstudio.branch.compare", name, "tag"));
+        subSep(list);
+        subItem(list, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag"));
+        subItem(list, "copy", "Copy Tag Name", () => plainAct("copyName", name));
+        subSep(list);
+        subItem(list, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true);
+      } else if (current) {
         subItemLive(list, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name);
         subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pull", name);
-        subItemLive(list, "arrow-up", "Push", "Pushing…", "push", name);
+        // Push opens the review modal (see openPushModal) rather than pushing in
+        // place, so every push route funnels through the same confirmation.
+        subItem(list, "arrow-up", "Push…", () => {
+          closeBranchMenu();
+          vscode.postMessage({ type: "requestPushPreview" });
+        });
         subSep(list);
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
@@ -2697,6 +3442,12 @@ export class CommitViewProvider
         b.addEventListener("click", () => {
           if (live) {
             if (menuSyncBusy || syncBusy) return;
+            // Push routes through the review modal, not a silent in-place push.
+            if (it.a === "push") {
+              closeBranchMenu();
+              vscode.postMessage({ type: "requestPushPreview" });
+              return;
+            }
             menuSyncBusy = it.a;
             if (it.a === "fetch") {
               vscode.postMessage({ type: "branchAction", action: "fetch" });
@@ -2721,18 +3472,22 @@ export class CommitViewProvider
         !b.favorite && recentNames.indexOf(b.name) === -1 && matchF(b.name));
       const remotes = (branchData.remote || []).filter((n) => matchF(n));
 
-      // A collapsible category: a clickable header (chevron + count) over its rows.
-      // While searching, force-expand so matches are always visible.
-      function group(label, rows, build) {
+      // A collapsible category: a clickable header (chevron + count) over its
+      // rows. While searching, force-expand so matches are always visible.
+      // opts.count overrides the header badge (for a capped list); opts.note
+      // appends a muted footer row (e.g. "N more — type to search").
+      function group(label, rows, build, opts) {
         if (!rows.length) return;
         const collapsed = !branchFilter && !!collapsedCats[label];
         const head = el("button", "bm-sep" + (collapsed ? " collapsed" : ""),
           bIcon("chevron-down") + '<span class="bm-sep-label"></span><span class="bm-sep-count"></span>');
         head.querySelector(".bm-sep-label").textContent = label;
-        head.querySelector(".bm-sep-count").textContent = String(rows.length);
+        head.querySelector(".bm-sep-count").textContent =
+          String(opts && opts.count != null ? opts.count : rows.length);
         const body = el("div", "bm-group-body");
         if (collapsed) body.style.display = "none";
         rows.forEach((r) => body.appendChild(build(r)));
+        if (opts && opts.note) body.appendChild(el("div", "bm-note", esc(opts.note)));
         head.addEventListener("click", () => {
           collapsedCats[label] = !collapsedCats[label];
           const c = !!collapsedCats[label];
@@ -2743,12 +3498,26 @@ export class CommitViewProvider
         list.appendChild(body);
       }
 
+      // Tags can number in the thousands — always cap the rendered rows (even
+      // while filtering, since a broad term like "v1" can still match hundreds)
+      // so the menu never builds a giant DOM. The note points at the remainder.
+      const TAG_CAP = 40;
+      const allTags = (branchData.tags || []).filter((n) => matchF(n));
+      const tagsShown = allTags.slice(0, TAG_CAP);
+      const tagsHidden = allTags.length - tagsShown.length;
+      const tagsNote = tagsHidden > 0
+        ? tagsHidden + (branchFilter ? " more matches — refine search" : " more — type to search")
+        : null;
+
       group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current, b.ahead, b.behind));
-      group("Recent", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current, b.ahead, b.behind));
+      group("Recents", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current, b.ahead, b.behind));
       group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current, b.ahead, b.behind));
       group("Remote", remotes, (n) => branchRow(n, "remote", "", false, false));
+      group("Tags", tagsShown, (n) => branchRow(n, "tag", "", false, false),
+        { count: allTags.length, note: tagsNote });
 
-      if (!anyAction && !favs.length && !recents.length && !others.length && !remotes.length) {
+      if (!anyAction && !favs.length && !recents.length && !others.length &&
+          !remotes.length && !allTags.length) {
         list.appendChild(el("div", "bm-empty", "No matches"));
       }
     }
@@ -2787,6 +3556,172 @@ export class CommitViewProvider
       }, 0);
     }
     branchPill.addEventListener("click", openBranchMenu);
+
+    // ---- Push review modal (confirm before every push) -------------------
+    // Every push route (the ↑ pill, the branch-menu Push, Commit & Push) opens
+    // this modal first: it lists the exact commits + file changes about to leave
+    // the machine, with a confirmational Push and an "undo local commits" escape
+    // hatch that returns the committed work to staged / unstaged changes.
+    let pushModal = null, pushBackdrop = null, pushBusy = false;
+    function closePushModal() {
+      if (pushBackdrop) { pushBackdrop.remove(); pushBackdrop = null; }
+      if (pushModal) { pushModal.remove(); pushModal = null; }
+      pushBusy = false;
+      document.removeEventListener("keydown", onPushKey, true);
+    }
+    function onPushKey(e) {
+      if (e.key === "Escape" && !pushBusy) { e.preventDefault(); e.stopPropagation(); closePushModal(); }
+    }
+    function relTime(sec) {
+      const d = Math.max(0, Date.now() / 1000 - sec);
+      if (d < 60) return "just now";
+      const m = Math.floor(d / 60); if (m < 60) return m + "m ago";
+      const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+      const days = Math.floor(h / 24); if (days < 30) return days + "d ago";
+      const mo = Math.floor(days / 30); if (mo < 12) return mo + "mo ago";
+      return Math.floor(mo / 12) + "y ago";
+    }
+    function openPushModal(data) {
+      closePushModal();
+      closeBranchMenu();
+      pushBackdrop = el("div", "push-backdrop");
+      // Close only when the backdrop ITSELF is clicked — not a click that bubbled
+      // up from the modal (which now lives inside the backdrop for flex centering).
+      pushBackdrop.addEventListener("click", (e) => { if (e.target === pushBackdrop && !pushBusy) closePushModal(); });
+      document.body.appendChild(pushBackdrop);
+
+      const modal = el("div", "push-modal");
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", "true");
+      modal.setAttribute("aria-label", "Confirm push");
+
+      const head = el("div", "pm-head");
+      head.appendChild(el("i", "codicon codicon-arrow-up"));
+      const title = el("div", "pm-title");
+      title.innerHTML = "Push to <b></b>";
+      title.querySelector("b").textContent = data.target;
+      head.appendChild(title);
+      const close = el("button", "pm-close", "&times;");
+      close.setAttribute("aria-label", "Close");
+      close.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
+      head.appendChild(close);
+      modal.appendChild(head);
+
+      const stats = el("div", "pm-stats");
+      const nC = data.commits.length, nF = data.files.length;
+      const cStat = el("span", "pm-stat"); cStat.innerHTML = "<b></b> ";
+      cStat.querySelector("b").textContent = String(nC);
+      cStat.appendChild(document.createTextNode(nC === 1 ? "commit" : "commits"));
+      stats.appendChild(cStat);
+      const fStat = el("span", "pm-stat"); fStat.innerHTML = "<b></b> ";
+      fStat.querySelector("b").textContent = String(nF);
+      fStat.appendChild(document.createTextNode(nF === 1 ? "file changed" : "files changed"));
+      stats.appendChild(fStat);
+      if (data.additions) stats.appendChild(el("span", "pm-add", "+" + data.additions));
+      if (data.deletions) stats.appendChild(el("span", "pm-del", "−" + data.deletions));
+      if (data.behind > 0) {
+        const b = el("span", "pm-behind", '<i class="codicon codicon-arrow-down"></i>');
+        b.appendChild(document.createTextNode(data.behind + " behind — pull first"));
+        stats.appendChild(b);
+      }
+      modal.appendChild(stats);
+
+      const body = el("div", "pm-body");
+      body.appendChild(el("div", "pm-section-label", "Commits to push"));
+      data.commits.forEach((c) => {
+        const row = el("div", "pm-commit");
+        row.appendChild(el("span", "sha", esc(c.sha.slice(0, 7))));
+        const subj = el("span", "subj"); subj.textContent = c.subject; subj.title = c.subject; row.appendChild(subj);
+        const meta = el("span", "meta"); meta.textContent = c.author + " · " + relTime(c.date); row.appendChild(meta);
+        body.appendChild(row);
+      });
+      body.appendChild(el("div", "pm-section-label", "Files changed"));
+      if (!data.files.length) {
+        body.appendChild(el("div", "pm-empty-note", "No file changes in these commits."));
+      } else {
+        data.files.forEach((f) => {
+          const st = (f.status || "M").charAt(0).toUpperCase();
+          const row = el("div", "pm-file " + statusClass(st));
+          row.appendChild(el("span", "st", st));
+          const name = f.path.split("/").pop() || f.path;
+          const dir = f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : "";
+          const nm = el("span", "name"); nm.textContent = name; row.appendChild(nm);
+          const dd = el("span", "dir"); dd.textContent = dir; row.appendChild(dd);
+          row.title = "Open diff — " + f.path + (f.oldPath ? "  (was " + f.oldPath + ")" : "");
+          if (f.additions > 0 || f.deletions > 0) {
+            const nums = el("span", "nums");
+            if (f.additions > 0) nums.appendChild(el("span", "add", "+" + f.additions));
+            if (f.deletions > 0) nums.appendChild(el("span", "del", "−" + f.deletions));
+            row.appendChild(nums);
+          }
+          // Clicking a committed file opens its diff (base…HEAD) in the editor,
+          // so you can review exactly what's about to be pushed. The modal stays.
+          row.classList.add("clickable");
+          row.addEventListener("click", () =>
+            vscode.postMessage({ type: "openPushFileDiff", path: f.path, oldPath: f.oldPath }));
+          body.appendChild(row);
+        });
+      }
+      if (!data.canPush && data.reason) {
+        const err = el("div", "pm-error"); err.textContent = data.reason; body.appendChild(err);
+      }
+      modal.appendChild(body);
+
+      const foot = el("div", "pm-foot");
+      const alt = el("div", "pm-foot-alt");
+      const undo = el("button", "pm-btn danger", '<i class="codicon codicon-discard"></i>');
+      undo.appendChild(document.createTextNode("Undo commits…"));
+      undo.title = "Undo these local commits — reset them back to staged / unstaged changes";
+      undo.addEventListener("click", () => { if (!pushBusy) vscode.postMessage({ type: "discardLocalCommits" }); });
+      alt.appendChild(undo);
+      // Branch off instead of pushing here — create a new branch at these commits.
+      const newBranch = el("button", "pm-btn ghost", '<i class="codicon codicon-git-branch"></i>');
+      newBranch.appendChild(document.createTextNode("New branch…"));
+      newBranch.title = "Create a new branch from these commits (and switch to it)";
+      newBranch.addEventListener("click", () => { if (!pushBusy) vscode.postMessage({ type: "newBranchFromPush" }); });
+      alt.appendChild(newBranch);
+      foot.appendChild(alt);
+      const cancel = el("button", "pm-btn secondary", "Cancel");
+      cancel.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
+      foot.appendChild(cancel);
+      const pushB = el("button", "pm-btn primary", '<i class="codicon codicon-arrow-up"></i>');
+      pushB.appendChild(document.createTextNode("Push"));
+      if (!data.canPush) { pushB.disabled = true; pushB.title = data.reason || "Cannot push"; }
+      pushB.addEventListener("click", () => {
+        if (pushBusy || !data.canPush) return;
+        pushBusy = true;
+        pushB.disabled = true; cancel.disabled = true; undo.disabled = true; newBranch.disabled = true;
+        // Keep the "Push" label (no width jump) — just spin the arrow into a
+        // loader, exactly like the header pull/push pills.
+        pushB.classList.add("loading");
+        const i = pushB.querySelector(".codicon");
+        if (i) i.className = "codicon codicon-loading codicon-modifier-spin";
+        vscode.postMessage({ type: "confirmPush" });
+      });
+      foot.appendChild(pushB);
+      modal.appendChild(foot);
+
+      pushBackdrop.appendChild(modal); // inside the backdrop → flex-centered at any width
+      pushModal = modal;
+      pushBusy = false;
+      document.addEventListener("keydown", onPushKey, true);
+      if (data.canPush) pushB.focus(); else cancel.focus();
+    }
+    function pushModalError(text) {
+      if (!pushModal) return;
+      pushBusy = false;
+      let err = pushModal.querySelector(".pm-error");
+      if (!err) { err = el("div", "pm-error"); pushModal.querySelector(".pm-body").appendChild(err); }
+      err.textContent = text || "Operation failed.";
+      pushModal.querySelectorAll(".pm-btn").forEach((b) => { b.disabled = false; });
+      const pushB = pushModal.querySelector(".pm-btn.primary");
+      if (pushB) {
+        pushB.classList.remove("loading");
+        const i = pushB.querySelector(".codicon");
+        if (i) i.className = "codicon codicon-arrow-up";
+      }
+      err.scrollIntoView({ block: "nearest" });
+    }
 
     // ---- No-repository onboarding actions --------------------------------
     $("open-folder").addEventListener("click", () => vscode.postMessage({ type: "openFolder" }));
@@ -3157,7 +4092,7 @@ export class CommitViewProvider
         reconcilePending(authState);
         lastState = applyPending(authState);
         stagedCount = lastState.staged.length;
-        branchData = msg.branches || { local: [], remote: [], recent: [] };
+        branchData = msg.branches || { local: [], remote: [], recent: [], tags: [] };
         // Only rebuild an OPEN branch menu when the branch data actually
         // changed. Every state push (and now the redundant 2nd post) would
         // otherwise call renderBranchMenu(), which closeBranchSubmenu()s and
@@ -3197,6 +4132,15 @@ export class CommitViewProvider
         if (typeof msg.text === "string") {
           message.value = msg.text; autoGrow(); updateComposer();
         }
+      } else if (msg.type === "pushPreview") {
+        openPushModal(msg);
+      } else if (msg.type === "pushDone") {
+        if (msg.ok) closePushModal();
+        else pushModalError(msg.error);
+      } else if (msg.type === "commitDone") {
+        // Commit finished (ok or not) — clear the in-button spinner. A successful
+        // Commit & Push then opens the review modal via a separate pushPreview.
+        clearCommitBusy();
       } else if (msg.type === "generateDone") {
         setGenerating(false);
       } else if (msg.type === "clear") {
@@ -3243,6 +4187,28 @@ export class CommitViewProvider
       if (!text) return;
       tipEl.textContent = text;
       tipEl.classList.add("show");
+      // Grow to the full single-line width, and ONLY wrap when that width
+      // exceeds the viewport. The tip is position fixed, so an auto width is a
+      // shrink-to-fit; reset left to 0 first so the measurement sees the whole
+      // viewport (a stale left from the previous tip would narrow it). With
+      // white-space nowrap, offsetWidth is the TRUE single-line width.
+      const avail = window.innerWidth - 12;
+      tipEl.style.left = "0px";
+      tipEl.style.right = "auto";
+      tipEl.style.whiteSpace = "nowrap";
+      tipEl.style.wordBreak = "normal";
+      tipEl.style.width = "auto";
+      tipEl.style.maxWidth = "none";
+      if (tipEl.offsetWidth > avail) {
+        // Genuinely too wide for the panel — wrap. Use break-all so each line
+        // fills COMPLETELY and the remainder just overflows to the next row,
+        // instead of break-word snapping at the last hyphen and leaving a ragged
+        // gap on line 1 (which reads as "there's still room, why did it wrap?").
+        tipEl.style.whiteSpace = "normal";
+        tipEl.style.wordBreak = "break-all";
+        tipEl.style.width = avail + "px";
+        tipEl.style.maxWidth = avail + "px";
+      }
       const r = tipTarget.getBoundingClientRect();
       const tw = tipEl.offsetWidth;
       let left = r.left + r.width / 2;

@@ -71,6 +71,7 @@ export function segmentPath(
   rowHeight: number,
   inset = 0,
   curveSpan?: number,
+  nodeColumn?: number,
 ): string {
   const x0 = laneCenterX(seg.fromColumn, colWidth, inset);
   const x1 = laneCenterX(seg.toColumn, colWidth, inset);
@@ -80,6 +81,24 @@ export function segmentPath(
     return `M${x0} ${y0}V${y1}`;
   }
   const midY = rowHeight / 2;
+  // Route edges that TOUCH the commit node through the node point
+  // (nodeColumn, midY) so the node always sits ON its own lines. Without this a
+  // node whose first parent shifts columns floats off to the side of the curve
+  // that sweeps past it (the "lines end up nowhere / node not on its line" bug).
+  //   • from === nodeColumn → an edge LEAVING the node (first-parent lane shift
+  //     or a branch fork): drop straight to the node, then peel out to its lane.
+  //   • to   === nodeColumn → an edge MERGING into the node: curve from the side
+  //     INTO the node and stop there (the merged branch ends at the node).
+  if (nodeColumn !== undefined) {
+    if (seg.fromColumn === nodeColumn) {
+      const cy = (midY + y1) / 2;
+      return `M${x0} ${y0}V${midY}C${x0} ${cy} ${x1} ${cy} ${x1} ${y1}`;
+    }
+    if (seg.toColumn === nodeColumn) {
+      const cy = midY / 2;
+      return `M${x0} ${y0}C${x0} ${cy} ${x1} ${cy} ${x1} ${midY}`;
+    }
+  }
   if (curveSpan !== undefined && curveSpan < rowHeight) {
     const c0 = (rowHeight - curveSpan) / 2;
     const c1 = rowHeight - c0;
@@ -125,7 +144,7 @@ export function renderRowGutterSVG(
   for (const seg of row.segments) {
     const dim = focusColor !== undefined && seg.color !== focusColor;
     const opacity = dim ? ` opacity="${DIM_OPACITY}"` : "";
-    const d = segmentPath(seg, colWidth, rowHeight, inset, opts.curveSpan);
+    const d = segmentPath(seg, colWidth, rowHeight, inset, opts.curveSpan, row.column);
     const markup =
       `<path d="${d}" fill="none" stroke="${color(palette, seg.color)}" ` +
       `stroke-width="${strokeWidth}" stroke-linecap="round" ` +

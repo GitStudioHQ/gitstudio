@@ -16,6 +16,12 @@ export interface CompareFile {
   path: string;
   /** Single-letter git status (A/M/D/R…). */
   status: string;
+  /** Lines added (from `--numstat`); -1 for a binary file. */
+  additions: number;
+  /** Lines deleted (from `--numstat`); -1 for a binary file. */
+  deletions: number;
+  /** For a rename (status R), the original path. */
+  oldPath?: string;
 }
 
 /** The full result of comparing two refs. */
@@ -23,6 +29,10 @@ export interface CompareResult {
   /** Commits in `head` that `base` doesn't have (base..head). */
   commits: CommitRecord[];
   files: CompareFile[];
+  /** Total lines added across all files (binaries excluded). */
+  additions: number;
+  /** Total lines deleted across all files (binaries excluded). */
+  deletions: number;
   /** `head` is this many commits ahead of `base`. Counted exactly via
    *  `rev-list --count`; the `commits` LIST above is capped for display, but
    *  this number is not, so a >400-commit lead still reports truthfully. */
@@ -88,8 +98,23 @@ export async function collectCommits(
   return commits;
 }
 
-/** Files changed between two refs. `threeDot` uses `A...B` (what B introduced,
- *  GitHub-style); otherwise the direct `A B` diff. */
+/**
+ * Reconstruct the new path from a `--numstat` rename token, which git renders
+ * as either `old => new` or `pre{old => new}post` (compressed common
+ * pre/suffix). Returns the plain path unchanged when there's no rename arrow.
+ */
+function numstatNewPath(token: string): string {
+  const brace = token.match(/^(.*)\{(.*) => (.*)\}(.*)$/);
+  if (brace) {
+    // `src/{a => b}/f` → `src/b/f`; collapse any doubled slash from an empty side.
+    return (brace[1] + brace[3] + brace[4]).replace(/\/\//g, "/");
+  }
+  const arrow = token.indexOf(" => ");
+  return arrow >= 0 ? token.slice(arrow + 4) : token;
+}
+
+/** Files changed between two refs, with per-file line counts. `threeDot` uses
+ *  `A...B` (what B introduced, GitHub-style); otherwise the direct `A B` diff. */
 export async function collectCompareFiles(
   repo: RepoEntry,
   refA: string,
@@ -97,26 +122,53 @@ export async function collectCompareFiles(
   threeDot = true,
 ): Promise<CompareFile[]> {
   const range = threeDot ? [`${refA}...${refB}`] : [refA, refB];
-  const r = await repo.ctx.process.run([
-    "diff",
-    "--name-status",
-    "-M",
-    ...range,
+  const [nameStatus, numstat] = await Promise.all([
+    repo.ctx.process.run(["diff", "--name-status", "-M", ...range]),
+    repo.ctx.process.run(["diff", "--numstat", "-M", ...range]),
   ]);
-  if (r.code !== 0) {
+  if (nameStatus.code !== 0) {
     return [];
   }
+  // Per-new-path line counts. `-` means binary (git prints `-\t-\tpath`).
+  const counts = new Map<string, { additions: number; deletions: number }>();
+  if (numstat.code === 0) {
+    for (const line of numstat.stdout.split("\n")) {
+      if (!line.trim()) {
+        continue;
+      }
+      const parts = line.split("\t");
+      if (parts.length < 3) {
+        continue;
+      }
+      const add = parts[0] === "-" ? -1 : Number(parts[0]);
+      const del = parts[1] === "-" ? -1 : Number(parts[1]);
+      counts.set(numstatNewPath(parts.slice(2).join("\t")), {
+        additions: Number.isFinite(add) ? add : 0,
+        deletions: Number.isFinite(del) ? del : 0,
+      });
+    }
+  }
   const files: CompareFile[] = [];
-  for (const line of r.stdout.split("\n")) {
+  for (const line of nameStatus.stdout.split("\n")) {
     if (!line.trim()) {
       continue;
     }
     const parts = line.split("\t");
     const status = (parts[0] ?? "").charAt(0);
-    const path = parts.length >= 3 ? parts[2] : (parts[1] ?? "");
-    if (path) {
-      files.push({ path, status });
+    // Renames/copies carry both old (parts[1]) and new (parts[2]) paths.
+    const isRename = status === "R" || status === "C";
+    const path = isRename ? (parts[2] ?? "") : (parts[1] ?? "");
+    if (!path) {
+      continue;
     }
+    const c = counts.get(path) ?? { additions: 0, deletions: 0 };
+    files.push({
+      path,
+      status,
+      additions: c.additions,
+      deletions: c.deletions,
+      oldPath: isRename ? parts[1] : undefined,
+    });
   }
   return files;
 }
@@ -182,26 +234,58 @@ export async function compareRefsData(
     countRange(repo, head, base), // behind: commits base has, head lacks
     threeDot ? mergeBase(repo, base, head) : Promise.resolve(undefined),
   ]);
+  let additions = 0;
+  let deletions = 0;
+  for (const f of files) {
+    if (f.additions > 0) additions += f.additions;
+    if (f.deletions > 0) deletions += f.deletions;
+  }
   return {
     commits,
     files,
+    additions,
+    deletions,
     ahead,
     behind,
     filesLeftRef: threeDot ? (mb ?? base) : base,
   };
 }
 
-/** Open a native side-by-side diff of one file between two refs. */
+/** The raw unified-diff patch for ONE file between two refs, for inline
+ *  rendering in the compare view. `-M` detects renames; a small context. */
+export async function fileDiffPatch(
+  repo: RepoEntry,
+  refA: string,
+  refB: string,
+  path: string,
+  oldPath?: string,
+  threeDot = true,
+): Promise<string> {
+  const range = threeDot ? [`${refA}...${refB}`] : [refA, refB];
+  const paths = oldPath && oldPath !== path ? [oldPath, path] : [path];
+  const r = await repo.ctx.process.run([
+    "diff",
+    "-M",
+    ...range,
+    "--",
+    ...paths,
+  ]);
+  return r.code === 0 ? r.stdout : "";
+}
+
+/** Open a native side-by-side diff of one file between two refs. For a rename,
+ *  the left (base) side reads from `oldPath`. */
 export async function openCompareFileDiff(arg: {
   root: string;
   refA: string;
   refB: string;
   path: string;
+  oldPath?: string;
 }): Promise<void> {
   if (!arg) {
     return;
   }
-  const left = toRevisionUri(arg.root, arg.refA, arg.path);
+  const left = toRevisionUri(arg.root, arg.refA, arg.oldPath || arg.path);
   const right = toRevisionUri(arg.root, arg.refB, arg.path);
   const name = arg.path.split("/").pop() ?? arg.path;
   await vscode.commands.executeCommand(

@@ -23,7 +23,7 @@ import type {
   WireRef,
   RowStat,
 } from "@gitstudio/host-bridge/graphProtocol";
-import { renderRowGutterSVG } from "./gutter";
+import { renderRowGutterSVG, laneCenterX } from "./gutter";
 import {
   paletteForTheme,
   observeGraphTheme,
@@ -638,7 +638,9 @@ export class CommitGraph extends LitElement {
     .avatar {
       position: absolute;
       left: var(--gs-av-x, 12px);
-      top: 50%;
+      /* node cy = Math.round(ROW_HEIGHT/2)+0.5 = 15.5 — sit exactly on it (the
+         rail applies the same +0.5); plain 50% lands the icon 0.5px high. */
+      top: calc(50% + 0.5px);
       width: ${AVATAR_SIZE}px;
       height: ${AVATAR_SIZE}px;
       transform: translate(-50%, -50%);
@@ -1728,20 +1730,27 @@ export class CommitGraph extends LitElement {
     // The avatar sits ON the commit node (GitKraken-style), positioned at the
     // node's lane x and ringed in the lane color. The WIP node gets a distinct
     // pencil glyph instead of an author avatar.
-    const cx = Math.round(row.column * COL_WIDTH + COL_WIDTH / 2 + NODE_INSET);
+    // Byte-for-byte the same x the gutter node uses (laneCenterX includes the
+    // +0.5 crisp-align), so the avatar center can never drift off the node.
+    const cx = laneCenterX(row.column, COL_WIDTH, NODE_INSET);
     const ring = this.palette[row.color % this.palette.length] ?? "#888";
     const avatarUrl =
       this.avatarFor(row.authorEmail) || gravatarUrl(row.authorEmail, 40);
-    const avatar = isWip
-      ? `<span class="avatar wip-node" style="--gs-av-x:${cx}px;--gs-av-ring:${esc(ring)}" aria-hidden="true"><span class="codicon codicon-edit"></span></span>`
-      : avatarHtml(
-          row.author,
-          row.authorEmail,
-          cx,
-          ring,
-          avatarUrl,
-          this.loadedAvatars.has(avatarUrl),
-        );
+    // Deep lanes past the (capped) gutter width would clip the avatar to a
+    // half-circle — drop it there, exactly like the rail does.
+    const avatarFits = cx + AVATAR_SIZE / 2 <= gutterW;
+    const avatar = !avatarFits
+      ? ""
+      : isWip
+        ? `<span class="avatar wip-node" style="--gs-av-x:${cx}px;--gs-av-ring:${esc(ring)}" aria-hidden="true"><span class="codicon codicon-edit"></span></span>`
+        : avatarHtml(
+            row.author,
+            row.authorEmail,
+            cx,
+            ring,
+            avatarUrl,
+            this.loadedAvatars.has(avatarUrl),
+          );
     const label = esc(
       isWip
         ? "Uncommitted changes"

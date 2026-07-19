@@ -64,6 +64,10 @@
   --gs-surface-2: color-mix(in srgb, var(--gs-fg) 7%, var(--gs-bg));
   --gs-border: color-mix(in srgb, var(--gs-fg) 13%, transparent);
   --gs-border-soft: color-mix(in srgb, var(--gs-fg) 8%, transparent);
+  /* Base hover — the theme's list-hover. Overridden per-scheme below because
+     most dark themes ship a near-invisible list-hover (≈4% white), so rows and
+     menu items barely react at night. We layer a guaranteed foreground tint on
+     top so the hover always reads, stronger in dark, gentle in light. */
   --gs-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--gs-fg) 7%, transparent));
   --gs-selection-bg: var(--vscode-list-activeSelectionBackground);
   --gs-selection-fg: var(--vscode-list-activeSelectionForeground);
@@ -113,6 +117,26 @@
   --gs-icon-error: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8"/></svg>');
   --gs-icon-chevron-up: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg>');
   --gs-icon-chevron-down: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>');
+}
+
+/* ---- Hover legibility (theme-aware) ------------------------------------
+ * Dark themes' native list-hover is often ~4% white — nearly invisible at
+ * night. Layer a foreground tint over it so every row / menu item visibly
+ * responds. Dark gets a firm boost; light stays subtle; high-contrast is left
+ * on its own crisp value (it never hits these class scopes). VS Code stamps
+ * these classes on the webview <body>, so descendants inherit the override. */
+.vscode-dark {
+  --gs-hover: color-mix(in srgb, var(--gs-fg) 12%, var(--vscode-list-hoverBackground, transparent));
+  /* A slightly firmer variant for floating menus/popovers, where a row must
+     read as "armed" against an already-elevated surface. */
+  --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 17%, var(--vscode-list-hoverBackground, transparent));
+}
+.vscode-light {
+  --gs-hover: color-mix(in srgb, var(--gs-fg) 6%, var(--vscode-list-hoverBackground, transparent));
+  --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 10%, var(--vscode-list-hoverBackground, transparent));
+}
+:root {
+  --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 12%, var(--gs-hover));
 }
 
 /* ---- Section header ----------------------------------------------------- */

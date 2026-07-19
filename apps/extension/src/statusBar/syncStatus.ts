@@ -92,19 +92,24 @@ export class SyncStatusItem implements vscode.Disposable {
     const upstream = await active.ctx.sync.currentUpstream();
     const items: Array<vscode.QuickPickItem & { id: string }> = [];
     if (upstream) {
+      // Fetch sits above Pull — the read-only "what's out there?" step comes
+      // before Update, matching the Changes-view branch menu ordering.
       items.push(
         { id: "sync", label: "$(sync) Sync", description: "pull, then push" },
+        { id: "fetch", label: "$(repo-fetch) Fetch" },
         { id: "pull", label: "$(arrow-down) Pull" },
         { id: "push", label: "$(arrow-up) Push" },
       );
     } else {
-      items.push({
-        id: "publish",
-        label: "$(cloud-upload) Publish Branch",
-        description: "push --set-upstream",
-      });
+      items.push(
+        {
+          id: "publish",
+          label: "$(cloud-upload) Publish Branch",
+          description: "push --set-upstream",
+        },
+        { id: "fetch", label: "$(repo-fetch) Fetch" },
+      );
     }
-    items.push({ id: "fetch", label: "$(repo-fetch) Fetch" });
 
     const picked = await vscode.window.showQuickPick(items, {
       title: "GitStudio Sync",

@@ -27,6 +27,7 @@ export const hostTokens = css`
     --gs-bg: var(--vscode-sideBar-background, var(--vscode-editor-background));
     --gs-surface: color-mix(in srgb, var(--gs-fg) 4%, var(--gs-bg));
     --gs-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--gs-fg) 7%, transparent));
+    --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 12%, var(--gs-hover));
     --gs-border: color-mix(in srgb, var(--gs-fg) 13%, transparent);
     --gs-border-soft: color-mix(in srgb, var(--gs-fg) 8%, transparent);
     --gs-amber: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
@@ -44,5 +45,16 @@ export const hostTokens = css`
     --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
     --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
     --gs-status-renamed: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-blue));
+  }
+  /* Match tokens.css: dark themes ship a near-invisible list-hover, so layer a
+     foreground tint on top (firmer in dark) — via :host-context so a shadow-DOM
+     component still picks up the outer webview's theme class. */
+  :host-context(.vscode-dark) {
+    --gs-hover: color-mix(in srgb, var(--gs-fg) 12%, var(--vscode-list-hoverBackground, transparent));
+    --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 17%, var(--vscode-list-hoverBackground, transparent));
+  }
+  :host-context(.vscode-light) {
+    --gs-hover: color-mix(in srgb, var(--gs-fg) 6%, var(--vscode-list-hoverBackground, transparent));
+    --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 10%, var(--vscode-list-hoverBackground, transparent));
   }
 `;

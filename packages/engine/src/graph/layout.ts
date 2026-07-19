@@ -72,6 +72,12 @@ export function computeGraphLayout(
   let nextColor = 0;
   const rows: GraphRow[] = [];
   let totalColumns = 0;
+  // Every commit we've already placed. Guards against a non-topological input —
+  // e.g. a skip-based paginator re-emitting a sha as refs move mid-scroll — which
+  // would otherwise spawn an orphan lane waiting for an already-drawn commit
+  // (an endless "line to nowhere") and shove the next real commit into the wrong
+  // column (a misplaced node/avatar). Valid `git log --date-order` never trips it.
+  const seenShas = new Set<string>();
 
   const allocColor = (): number => {
     const color = nextColor;
@@ -91,6 +97,12 @@ export function computeGraphLayout(
   };
 
   for (const commit of commits) {
+    // 0. Drop a re-emitted (duplicate) commit — it would spawn an orphan lane.
+    if (seenShas.has(commit.sha)) {
+      continue;
+    }
+    seenShas.add(commit.sha);
+
     // 1. Snapshot the lane layout at the row's TOP edge (before this commit
     //    rewrites lanes). Segments are drawn from these top columns.
     const topColumns: (Lane | null)[] = lanes.slice();
@@ -128,7 +140,12 @@ export function computeGraphLayout(
     //    - Else the FIRST parent reuses the node's column, keeping the commit's
     //      color (the mainline continues straight down). Extra parents claim a
     //      fresh lane with a new color (a branch forking out to the right).
-    const parents = commit.parents;
+    // Dedupe parents so a degenerate merge with two identical parents doesn't
+    // wire (and later draw) the same edge twice. `isMerge` is still computed
+    // from the ORIGINAL parent list below, so the node shape stays honest.
+    const parents = commit.parents.filter(
+      (p, i) => commit.parents.indexOf(p) === i && !seenShas.has(p),
+    );
     lanes[column] = null;
     // The lane column each parent edge leaves the node toward, with its color.
     const parentTargets: { column: number; color: number }[] = [];
@@ -244,8 +261,10 @@ export function computeGraphLayout(
       sha: commit.sha,
       column,
       color,
-      parents,
-      isMerge: parents.length > 1,
+      parents: commit.parents,
+      // Honest to git: anything with 2+ parent entries is a merge (draws as a
+      // ring), even if the deduped wiring above collapsed identical parents.
+      isMerge: commit.parents.length > 1,
       segments,
       maxColumn,
     });
