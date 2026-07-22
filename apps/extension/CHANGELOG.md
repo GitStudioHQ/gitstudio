@@ -4,6 +4,14 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-19
+
+### Changed
+- **Marketplace discoverability.** The listing title now surfaces the core
+  capabilities (*Git Graph, GUI, Blame & Merge*) instead of the bare name, and
+  the keyword/tag set now covers the terms people actually search for a Git GUI —
+  so GitStudio shows up where it should. No functional changes.
+
 ## [1.1.0] - 2026-07-19
 
 A big round of push, compare, and commit-graph improvements.
