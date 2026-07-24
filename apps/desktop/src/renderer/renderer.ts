@@ -3233,6 +3233,13 @@ class App {
 
   /** Route a details-panel toolbar action to the existing git context menu. */
   private async runDetailsAction(id: string, sha: string): Promise<void> {
+    if (id === "interactive-rebase") {
+      // The visual rebase workspace currently ships only in the GitStudio
+      // extension (it's a VS Code webview panel). Until a desktop port exists,
+      // give honest feedback rather than leaving a dead button.
+      toast("Interactive rebase isn't available in the desktop app yet.", "info");
+      return;
+    }
     const map: Record<string, string> = {
       checkout: "checkout",
       branch: "branch",

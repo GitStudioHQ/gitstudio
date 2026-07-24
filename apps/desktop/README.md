@@ -54,3 +54,10 @@ Config: `electron-builder.yml` (appId `dev.gitstudio.desktop`, productName
 macOS/Windows/Ubuntu matrix on `app-v*` tags
 (`.github/workflows/release-desktop.yml`); signing/publish steps skip cleanly
 when their secrets are absent.
+
+## Privacy
+
+No accounts, no usage tracking. During the beta the app sends **anonymous,
+scrubbed crash reports** (on by default; toggle via **Help → Send Anonymous
+Crash Reports**) to the same collector as the extension. Details in
+[PRIVACY.md](PRIVACY.md).

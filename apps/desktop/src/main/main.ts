@@ -26,6 +26,7 @@ import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
 import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
 import { initAutoUpdate } from "./autoUpdate";
+import { ErrorReporter } from "./errorReporter";
 import * as issuesApi from "./github/issues";
 import * as prsApi from "./github/prs";
 import * as actionsApi from "./github/actions";
@@ -306,6 +307,13 @@ function buildMenu(): void {
           click: () =>
             openExternalSafely("https://github.com/GitStudioHQ/gitstudio/issues"),
         },
+        { type: "separator" as const },
+        {
+          label: "Send Anonymous Crash Reports",
+          type: "checkbox" as const,
+          checked: ErrorReporter.current?.isEnabled() ?? true,
+          click: (item) => ErrorReporter.current?.setEnabled(item.checked),
+        },
       ],
     },
   ];
@@ -416,9 +424,25 @@ function handle<C extends IpcChannel>(
   fn: (payload: IpcRequest<C>, event: IpcMainInvokeEvent) => Promise<IpcResponse<C>>,
 ): void {
   ipcMain.handle(channel, (event, payload) =>
-    actionCtx.run({ id: ++actionSeq, label: actionLabel(channel) }, () =>
-      fn(payload as IpcRequest<C>, event),
-    ),
+    actionCtx.run({ id: ++actionSeq, label: actionLabel(channel) }, async () => {
+      try {
+        const result = await fn(payload as IpcRequest<C>, event);
+        // A handled failure carrying a message (e.g. a non-zero git command) is
+        // the desktop analog of the extension's showGitError — report it too.
+        if (result && typeof result === "object" && (result as { ok?: unknown }).ok === false) {
+          const message = (result as { message?: unknown }).message;
+          if (typeof message === "string" && message.trim()) {
+            ErrorReporter.current?.captureGitError(actionLabel(channel), message);
+          }
+        }
+        return result;
+      } catch (err) {
+        // A thrown handler is an unexpected bug — capture it, then let it
+        // propagate to the renderer exactly as before.
+        ErrorReporter.current?.captureError(`ipc:${channel}`, err);
+        throw err;
+      }
+    }),
   );
 }
 
@@ -690,6 +714,11 @@ async function worktreeAddDialog(req: {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
+  // Arm anonymous crash reporting first, so failures during startup are caught.
+  // On by default; honors the persisted opt-out and never throws — see
+  // errorReporter.ts and PRIVACY.md.
+  await ErrorReporter.init().catch(() => undefined);
+
   // Belt-and-suspenders navigation lockdown: any webContents that ever gets
   // created (not just the main window) inherits the same hardening.
   app.on("web-contents-created", (_e, contents) => hardenWebContents(contents));
@@ -741,10 +770,12 @@ async function boot(): Promise<void> {
 process.on("uncaughtException", (err) => {
   // eslint-disable-next-line no-console
   console.error("GitStudio main: uncaught exception:", err);
+  ErrorReporter.current?.captureError("uncaughtException", err);
 });
 process.on("unhandledRejection", (reason) => {
   // eslint-disable-next-line no-console
   console.error("GitStudio main: unhandled rejection:", reason);
+  ErrorReporter.current?.captureError("unhandledRejection", reason);
 });
 
 app.whenReady().then(boot).catch((err) => {
