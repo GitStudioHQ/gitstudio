@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
+import { ErrorReporter } from "../reporting/errorReporter";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction. */
@@ -296,6 +297,9 @@ function showGitError(title: string, stderr: string): void {
   void vscode.window.showErrorMessage(
     stderr ? `${title}: ${stderr}` : title,
   );
+  // Anonymous, scrubbed crash report so we hear about failures during beta
+  // (no-op if the user turned reporting off or VS Code telemetry is off).
+  ErrorReporter.current?.captureGitError(title, stderr);
 }
 
 function flash(message: string): void {

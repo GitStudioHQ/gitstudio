@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { ErrorReporter } from "./reporting/errorReporter";
 import { RepoManager } from "./git/repoManager";
 import { BlameController } from "./blame/blameController";
 import {
@@ -58,10 +59,8 @@ import {
 import { runCommitAction } from "./graph/commitActions";
 import { UndoLedger } from "./undo/undoLedger";
 import { RebaseTodoEditorProvider } from "./rebase/rebaseTodoEditor";
-import {
-  startInteractiveRebase,
-  abortRebase,
-} from "./rebase/rebaseCommands";
+import { abortRebase } from "./rebase/rebaseCommands";
+import { RebaseWorkspacePanel } from "./rebase/rebaseWorkspacePanel";
 import { GitBrain } from "./ai/gitBrain";
 import { AiSettingsPanel } from "./ai/aiSettingsPanel";
 import {
@@ -95,6 +94,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const log = (m: string): void =>
     out.appendLine(`[${new Date().toISOString().slice(11, 23)}] ${m}`);
   log("activate() called");
+
+  // Anonymous crash reporting. Constructed first so its failure hooks are live
+  // before any command runs. On by default but honors VS Code's telemetry
+  // opt-out and a blank endpoint — see reporting/errorReporter.ts.
+  context.subscriptions.push(new ErrorReporter(context));
 
   const WALKTHROUGH_ID = "gitstudio.gitstudio#gitstudio.gettingStarted";
   context.subscriptions.push(
@@ -398,7 +402,10 @@ export function activate(context: vscode.ExtensionContext): void {
         (arg?: string | { commit?: { sha?: string } }) => {
           const sha =
             typeof arg === "string" ? arg : arg?.commit?.sha;
-          void startInteractiveRebase(repos, undo, sha);
+          // Opens the visual Interactive Rebase workspace (editor-area panel)
+          // and drives the rebase non-interactively — works in VS Code, Cursor,
+          // and VSCodium (no terminal / `code --wait` dependency).
+          void RebaseWorkspacePanel.show(repos, undo, context.extensionUri, sha);
         },
       ),
       vscode.commands.registerCommand("gitstudio.abortRebase", () =>

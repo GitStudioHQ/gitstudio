@@ -17,6 +17,7 @@ export type CommitDetailsActionId =
   | "tag"
   | "cherry-pick"
   | "revert"
+  | "interactive-rebase"
   | "reset"
   | "copy-sha"
   | "open-remote"

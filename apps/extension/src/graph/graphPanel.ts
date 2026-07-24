@@ -744,6 +744,12 @@ export class CommitGraphPanel {
       );
       return;
     }
+    // The visual Interactive Rebase workspace opens via its command (needs the
+    // RepoManager + Undo ledger), not runCommitAction — same route as the menu.
+    if (action === "interactive-rebase") {
+      await vscode.commands.executeCommand("gitstudio.startInteractiveRebase", sha);
+      return;
+    }
     const mapped = ACTION_ID_MAP[action];
     if (!mapped) {
       return;

@@ -5,7 +5,7 @@
 <h1 align="center">GitStudio</h1>
 
 <p align="center">
-  <b>A free, open-source, JetBrains-grade Git suite for VS Code and Cursor — the whole workflow, in one extension.</b>
+  <b>A free, open-source, JetBrains-style Git GUI for VS Code and Cursor — a full alternative to GitLens, GitKraken &amp; Sourcetree, in one extension.</b>
 </p>
 
 ---
@@ -89,7 +89,11 @@ An honest comparison:
 - **vs Git Graph** — a well-liked graph, but a graph alone isn't a workflow. GitStudio pairs its graph (panel *and* sidebar) with staging, merge, rebase, undo, stashes, worktrees, and PRs in the same extension.
 - **vs GitKraken Desktop** — a polished client, but a separate paid app outside your editor. GitStudio brings the same class of graph and workflow into VS Code and Cursor, where your code, terminal, and AI tooling already live.
 
-No account. No telemetry by default. No feature flags waiting for your credit card.
+No account. No usage tracking or analytics. No feature flags waiting for your credit card.
+
+## Privacy
+
+No accounts, no usage tracking, no analytics — GitStudio never reports what you *do*. The one thing it sends, during the beta, is **anonymous crash reports** when a command fails, so we can find and fix bugs without waiting for someone to file them. Each report is only the *shape* of a failure — an error type with a scrubbed message/stack, or the name of the git operation that failed — tagged with a random install id and your OS/editor version. Absolute paths, home directories, emails, remote URLs (host, org, and repo), tokens, and full commit SHAs are stripped before anything leaves your machine. Never your code, file names, commit messages, or branch names. Crash reporting honors VS Code's global `telemetry.telemetryLevel` (turn that off and GitStudio sends nothing), and you can opt out of just this with `gitstudio.errorReporting.enabled: false`.
 
 ## Getting started
 
@@ -124,6 +128,7 @@ In the commit box, `Enter` commits and `Shift+Enter` inserts a newline. All bind
 | `gitstudio.ai.provider` | `auto` | `auto` · `copilot` · `anthropic` · `openai` · `off`. |
 | `gitstudio.ai.commitStyle` | `conventional` | `conventional` · `concise` · `descriptive`. |
 | `gitstudio.pr.defaultMergeMethod` | `squash` | `merge` · `squash` · `rebase`. |
+| `gitstudio.errorReporting.enabled` | `true` | Send anonymous, scrubbed crash reports when a command fails (honors VS Code's telemetry setting). |
 
 ## Requirements
 

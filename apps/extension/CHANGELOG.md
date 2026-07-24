@@ -4,6 +4,28 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-24
+
+### Added
+- **Visual interactive rebase.** A dedicated rebase workspace — reorder commits
+  by dragging, choose a per-commit action (pick / reword / squash / fixup / edit
+  / drop) with a plain-English preview of what each one does, then apply with a
+  real one-step Undo. Open it from a commit's **Rebase** action or the graph
+  context menu. Works in **VS Code *and* Cursor** via an editor-agnostic,
+  non-interactive rebase driver (no more relying on `code --wait`).
+- **Anonymous crash reporting.** When a GitStudio command fails during the beta,
+  an anonymized, PII-scrubbed report can be sent so we can find and fix issues
+  without waiting for a manual bug report. It honors VS Code's telemetry setting
+  and is one flip to disable (`gitstudio.errorReporting.enabled`). Absolute
+  paths, home dirs, emails, remote URLs, tokens, and SHAs are stripped locally —
+  your code, file names, commit messages, and branch names never leave the
+  machine.
+
+### Changed
+- **Marketplace positioning.** Refined the title, description, and keywords
+  around how people actually search for a JetBrains-style Git GUI. No functional
+  changes.
+
 ## [1.1.1] - 2026-07-19
 
 ### Changed

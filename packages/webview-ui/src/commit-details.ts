@@ -37,6 +37,7 @@ const COMMIT_ACTIONS: ActionDef[] = [
   { id: "tag", label: "Tag", icon: "tag" },
   { id: "cherry-pick", label: "Cherry-pick", icon: "git-commit" },
   { id: "revert", label: "Revert", icon: "discard" },
+  { id: "interactive-rebase", label: "Rebase", icon: "git-merge" },
   { id: "reset", label: "Reset", icon: "history", danger: true },
 ];
 
