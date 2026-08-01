@@ -39,13 +39,27 @@ function start(root: HTMLElement): void {
   graph.status = "loading";
   graphPane.appendChild(graph);
 
+  // "side" splits graph | details left/right (the wide, short bottom panel);
+  // the default docks details under the graph (the tall editor tab).
+  const side = root.dataset.layout === "side";
+  shell.dataset.layout = side ? "side" : "dock";
+
   const divider = document.createElement("div");
   divider.className = "gs-divider";
   divider.setAttribute("role", "separator");
-  divider.setAttribute("aria-orientation", "horizontal");
+  divider.setAttribute("aria-orientation", side ? "vertical" : "horizontal");
 
   const details = document.createElement("gitstudio-commit-details") as CommitDetails;
   details.className = "gs-details-pane";
+
+  // The bottom panel is short and wide: run both surfaces in compact density
+  // (leaner columns, no SHA track, smaller chrome) so the message leads.
+  // NB: set after `details` is constructed — referencing it earlier is a TDZ
+  // crash that blanks the whole webview.
+  if (side) {
+    graph.setAttribute("compact", "");
+    details.setAttribute("compact", "");
+  }
 
   shell.append(graphPane, divider, details);
   shell.dataset.detailsOpen = "false";
@@ -59,9 +73,10 @@ function start(root: HTMLElement): void {
     switch (action.type) {
       case "select":
         vscode.postMessage({ type: "selectCommit", sha: action.sha });
-        // A single click respects a prior dismissal — it selects without
-        // forcing the dock back open.
-        if (shell.dataset.detailsDismissed !== "true") openDetails();
+        // Clicking a commit IS a request to see it, so it always reopens the
+        // dock. Closing it used to be sticky, which left no way back short of
+        // reloading the window.
+        openDetails();
         break;
       case "open":
         // An explicit open (double-click) always shows the details.
@@ -107,6 +122,20 @@ function start(root: HTMLElement): void {
     vscode.postMessage({ type: "copyText", text: d.text });
   });
   details.addEventListener("gs-close", () => closeDetails());
+  // Clicking a parent sha jumps to that commit. This was emitted by the details
+  // pane but only ever handled by the DESKTOP app — in the extension the click
+  // did nothing at all. Reveal it locally and ask the host for its details.
+  details.addEventListener("gs-reveal", (e) => {
+    const d = (e as CustomEvent).detail as { sha: string };
+    graph.reveal(d.sha);
+    openDetails();
+    vscode.postMessage({ type: "selectCommit", sha: d.sha });
+  });
+  // "in N branches" — a history walk, so it is only requested on demand.
+  details.addEventListener("gs-contains", (e) => {
+    const d = (e as CustomEvent).detail as { sha: string };
+    vscode.postMessage({ type: "requestContains", sha: d.sha });
+  });
   // Escape collapses the dock too (only when it's open, so it doesn't swallow
   // Escape elsewhere).
   document.addEventListener("keydown", (e) => {
@@ -121,13 +150,25 @@ function start(root: HTMLElement): void {
   divider.addEventListener("pointerdown", (e) => {
     dragging = true;
     divider.setPointerCapture(e.pointerId);
-    document.body.style.cursor = "row-resize";
+    document.body.style.cursor = side ? "col-resize" : "row-resize";
   });
   divider.addEventListener("pointermove", (e) => {
     if (!dragging) return;
     const rect = shell.getBoundingClientRect();
+    // Clamp so BOTH panes keep a usable size — and compute the upper bound with
+    // a max() so a very small pane can never invert the range (min > max, which
+    // would pin the details pane to its minimum and swallow the graph).
+    if (side) {
+      // Details sit on the RIGHT, so size them from the shell's right edge.
+      const fromRight = rect.right - e.clientX;
+      const maxW = Math.max(260, rect.width - 320);
+      const w = Math.max(260, Math.min(maxW, fromRight));
+      shell.style.setProperty("--gs-details-w", `${w}px`);
+      return;
+    }
     const fromBottom = rect.bottom - e.clientY;
-    const h = Math.max(140, Math.min(rect.height - 120, fromBottom));
+    const maxH = Math.max(140, rect.height - 120);
+    const h = Math.max(140, Math.min(maxH, fromBottom));
     shell.style.setProperty("--gs-details-h", `${h}px`);
   });
   const endDrag = (e: PointerEvent) => {
@@ -142,10 +183,14 @@ function start(root: HTMLElement): void {
   function openDetails(): void {
     shell.dataset.detailsOpen = "true";
     shell.dataset.detailsDismissed = "false";
+    vscode.postMessage({ type: "detailsVisibility", open: true });
   }
   function closeDetails(): void {
     shell.dataset.detailsOpen = "false";
     shell.dataset.detailsDismissed = "true";
+    // Tell the host, or it will think this commit is still fully on screen and
+    // dedupe away the very click meant to bring the details back.
+    vscode.postMessage({ type: "detailsVisibility", open: false });
   }
 
   // ── Host → webview ────────────────────────────────────────────────────────
@@ -184,7 +229,7 @@ function handle(
       details.details = message.details;
       // Fill the dock's content, but don't force it open if the user dismissed
       // it — they're browsing with the dock collapsed.
-      if (message.details && shell.dataset.detailsDismissed !== "true") {
+      if (message.details) {
         shell.dataset.detailsOpen = "true";
       }
       break;
@@ -202,6 +247,8 @@ function handle(
     }
     case "authorAvatars": {
       graph.authorAvatars = message.avatars;
+      // The details pane shows the same person — give it the same photos.
+      details.authorAvatars = message.avatars;
       break;
     }
     case "commitMenu": {
@@ -212,6 +259,10 @@ function handle(
         message.title,
         message.items,
       );
+      break;
+    }
+    case "commitContains": {
+      details.setContains(message.sha, message.branches, message.truncated);
       break;
     }
     case "graphError": {

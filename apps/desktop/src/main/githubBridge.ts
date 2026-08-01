@@ -46,16 +46,29 @@ export class GitHubBridge {
       return;
     }
     this.loaded = true;
-    // Only ever read a token back when the OS can decrypt it. We never persist
-    // a plaintext token (see persistToken), so a non-decryptable file is junk.
+    // Read the token file FIRST and bail if there isn't one.
+    //
+    // Order matters: on macOS `safeStorage.isEncryptionAvailable()` reaches into
+    // the login keychain for the app's "Safe Storage" key, which raises the OS
+    // password prompt. The Changes view asks for github:status on every launch
+    // (just to decide whether to show "Create pull request"), so probing
+    // safeStorage up front prompted every single start — even for users who
+    // never connected GitHub and have no token to decrypt.
+    let buf: Buffer;
+    try {
+      buf = await readFile(this.tokenPath());
+    } catch {
+      return; // no stored token — nothing to decrypt, keychain never touched
+    }
+    // We never persist a plaintext token (see persistToken), so a file we can't
+    // decrypt is junk.
     if (!safeStorage.isEncryptionAvailable()) {
       return;
     }
     try {
-      const buf = await readFile(this.tokenPath());
       this.token = safeStorage.decryptString(buf);
     } catch {
-      // no stored token, or it can't be decrypted on this machine
+      // stored by a different machine/user — treat as not connected
     }
   }
 

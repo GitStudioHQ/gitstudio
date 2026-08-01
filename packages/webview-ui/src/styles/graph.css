@@ -88,12 +88,55 @@ body {
 .gs-details-pane {
   display: none;
   flex: 0 0 auto;
-  height: var(--gs-details-h);
-  min-height: 140px;
+  /* The divider writes an ABSOLUTE px size. Re-clamp it in CSS against the
+     current shell so shrinking the surface (toggling the sidebar, resizing the
+     window) can never squeeze the graph to zero or push this pane past the
+     edge — CSS re-derives min() on every layout, so no resize listener is
+     needed. min-height stays 0 for the same reason: a floor here would win over
+     the clamp and reintroduce the overflow. */
+  height: min(var(--gs-details-h), calc(100% - 120px));
+  min-height: 0;
   overflow: hidden;
 }
 .gs-shell[data-details-open="true"] .gs-divider { display: block; }
 .gs-shell[data-details-open="true"] .gs-details-pane { display: block; }
+
+/* ── Side-by-side layout ──────────────────────────────────────────────────────
+   Used by the bottom-panel surface, which is wide and short: docking the
+   details UNDER the graph there leaves both halves unreadable, so the panel
+   splits left/right instead (graph | commit details) the way JetBrains lays out
+   its Git log. Same markup, same components — only the axis changes. */
+.gs-shell[data-layout="side"] {
+  flex-direction: row;
+  /* Details take a comfortable right-hand column; drag the divider to taste. */
+  --gs-details-w: 42%;
+}
+.gs-shell[data-layout="side"] .gs-graph-pane {
+  min-width: 0;
+  min-height: 0;
+}
+.gs-shell[data-layout="side"] .gs-divider {
+  height: auto;
+  width: 7px;
+  cursor: col-resize;
+  border-top: none;
+  border-left: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+}
+.gs-shell[data-layout="side"] .gs-divider::after {
+  width: 2px;
+  height: 28px;
+}
+.gs-shell[data-layout="side"] .gs-details-pane {
+  height: auto;
+  /* Same re-clamp on the width axis: always leave the graph room, whatever the
+     divider last wrote, however narrow the panel later becomes. The 260px
+     comfort floor is enforced while dragging (main.ts), NOT as a min-width —
+     a floor here would win over the clamp and overflow a narrow panel. */
+  width: min(var(--gs-details-w), calc(100% - 320px));
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+}
 
 /* Bare usage (e.g. the desktop app mounts <gitstudio-graph> directly). Size
  * only — `:host` owns `display:flex` (see note above). */

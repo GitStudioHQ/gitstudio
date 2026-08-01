@@ -217,7 +217,14 @@ export async function pushBranch(
     report(result, `Published ${ref.name} to ${remote}`, refresh);
     return;
   }
-  const result = await a.ctx.sync.push();
+  // Push the ref we were invoked ON, not whatever happens to be checked out.
+  // A bare push() pushes the CURRENT branch, so invoking this on any other
+  // branch pushed the wrong one and then reported the right one's name.
+  const slash = upstream.indexOf("/");
+  const remote = slash > 0 ? upstream.slice(0, slash) : undefined;
+  const result = remote
+    ? await a.ctx.sync.push({ remote, branch: ref.name })
+    : await a.ctx.sync.push();
   report(result, `Pushed ${ref.name}`, refresh);
 }
 
@@ -281,17 +288,19 @@ export async function newBranchFrom(
   if (!name) {
     return;
   }
-  const checkout = await vscode.window.showQuickPick(
-    [
-      { label: "$(check) Create and switch", value: true },
-      { label: "$(git-branch) Create only", value: false },
-    ],
-    { title: `Create ${name}`, placeHolder: "Switch to the new branch?" },
+  // A two-way choice is a dialog, not a search box. The command palette is for
+  // finding things among many; picking between two named outcomes belongs in a
+  // modal you can answer without typing.
+  const checkout = await vscode.window.showInformationMessage(
+    `Create ${name}`,
+    { modal: true, detail: "Switch to the new branch after creating it?" },
+    "Create and Switch",
+    "Create Only",
   );
   if (checkout === undefined) {
     return;
   }
-  const result = checkout.value
+  const result = checkout === "Create and Switch"
     ? await a.ctx.branches.checkoutNew(name, startPoint)
     : await a.ctx.branches.create(name, startPoint);
   report(result, `Created ${name}`, refresh);
@@ -569,16 +578,24 @@ export async function manageRemotes(
     return;
   }
 
-  const action = await vscode.window.showQuickPick(
-    [
-      { label: "$(sync) Fetch", id: "fetch" },
-      { label: "$(trash) Prune stale branches", id: "prune" },
-      { label: "$(edit) Edit URL", id: "url" },
-      { label: "$(symbol-string) Rename", id: "rename" },
-      { label: "$(close) Remove", id: "remove" },
-    ],
-    { title: `Remote: ${remote.name}`, placeHolder: "Pick an action" },
+  // An action menu belongs in a dialog, not the search bar — the palette is for
+  // finding one item among many, not for answering "what do you want to do?".
+  const ACTIONS: { label: string; id: string }[] = [
+    { label: "Fetch", id: "fetch" },
+    { label: "Prune Stale Branches", id: "prune" },
+    { label: "Edit URL", id: "url" },
+    { label: "Rename", id: "rename" },
+    { label: "Remove", id: "remove" },
+  ];
+  const chosen = await vscode.window.showInformationMessage(
+    `Remote: ${remote.name}`,
+    { modal: true, detail: remote.description },
+    ...ACTIONS.map((x) => x.label),
   );
+  if (!chosen) {
+    return;
+  }
+  const action = ACTIONS.find((x) => x.label === chosen);
   if (!action) {
     return;
   }

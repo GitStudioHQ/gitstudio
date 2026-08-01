@@ -7,6 +7,8 @@ import * as vscode from "vscode";
  *
  * `bundle` picks the front-end: "graph" is the full editor-area surface,
  * "graph-sidebar" the compact sidebar rail (dist/webview/<bundle>.js + .css).
+ * `layout` picks how the full surface splits: "dock" puts commit details under
+ * the graph (tall editor tab), "side" puts them beside it (wide bottom panel).
  *
  * Never hardcode the URI scheme returned by asWebviewUri — it is opaque.
  */
@@ -15,6 +17,7 @@ export function getGraphHtml(
   extensionUri: vscode.Uri,
   nonce: string,
   bundle: "graph" | "graph-sidebar" = "graph",
+  layout: "dock" | "side" = "dock",
 ): string {
   const dist = (...parts: string[]) =>
     webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", ...parts));
@@ -42,7 +45,7 @@ export function getGraphHtml(
   <title>Commit Graph</title>
 </head>
 <body>
-  <div id="root"><div id="boot">Loading history…</div></div>
+  <div id="root" data-layout="${layout}"><div id="boot">Loading history…</div></div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

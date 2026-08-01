@@ -721,6 +721,55 @@ export interface WorkflowRun {
   htmlUrl: string;
 }
 
+// ── Interactive rebase (the Rebase view) ────────────────────────────────────
+
+/** One commit in the rebase plan, oldest first (git's todo order). */
+export interface RebaseCommitInfo {
+  sha: string;
+  shortSha: string;
+  author: string;
+  subject: string;
+  /** Humanized author time, e.g. "3h ago". */
+  rel: string;
+}
+
+/** Everything the Rebase view needs to render a plan. */
+export interface RebasePlanState {
+  ok: boolean;
+  /** Why the plan couldn't be loaded (ok === false). */
+  message?: string;
+  /** The base the rebase runs onto, exclusive (or "--root"). */
+  base: string;
+  branch: string;
+  commits: RebaseCommitInfo[];
+  /** The commit being rebased ONTO — the dimmed anchor row. */
+  baseCommit?: { shortSha: string; subject: string };
+  /** True when a rebase is already mid-flight (conflict or `edit` stop). */
+  inProgress: boolean;
+}
+
+export type RebaseAction = "pick" | "reword" | "edit" | "squash" | "fixup" | "drop";
+
+export interface RebaseApplyRow {
+  action: RebaseAction;
+  sha: string;
+  subject: string;
+  /** New message for a `reword` row. */
+  message?: string;
+}
+
+export interface RebaseApplyRequest {
+  base: string;
+  rows: RebaseApplyRow[];
+}
+
+/** Wire form of the runner's RebaseOutcome. */
+export interface RebaseOutcomeWire {
+  status: "done" | "stopped" | "failed";
+  reason?: "conflict" | "edit" | "unknown";
+  message?: string;
+}
+
 /**
  * The full channel map: channel name -> [request, response]. Used to make the
  * preload's `invoke` and the main handlers strongly typed end to end.
@@ -733,6 +782,9 @@ export interface IpcChannels {
   "repo:close": [void, void];
   "graph:load": [{ skip?: number; maxCount?: number }, GraphPage];
   "refs:list": [void, RefInfo[]];
+  /** Branches CONTAINING a commit (reachability), for the details pane's
+   *  "in N branches" row. Lazy — it walks history. */
+  "refs:contains": [{ sha: string }, { branches: string[]; truncated: boolean }];
   "head:get": [void, HeadInfo | undefined];
   "status": [void, ChangedFile[]];
   "commit:details": [string, CommitDetailsPayload | undefined];
@@ -742,6 +794,10 @@ export interface IpcChannels {
   "conflict:model": [string, ConflictModel | undefined];
   "blame:file": [string, unknown];
   "commit:action": [CommitActionRequest, CommitActionResult];
+  // ── Interactive rebase (Rebase view). Continue/abort/skip reuse the existing
+  //    mid-operation channels further down — they drive the same git state.
+  "rebase:load": [{ base?: string; sha?: string }, RebasePlanState];
+  "rebase:apply": [RebaseApplyRequest, RebaseOutcomeWire];
   // ── Working-tree staging + commit (Changes view) ──
   "stage": [string, CommitActionResult];
   "unstage": [string, CommitActionResult];

@@ -68,23 +68,29 @@ export async function createPullRequest(
   // Body: a commit checklist by default; offer an AI draft when enabled.
   let body = commits.length > 0 ? commits.map((c) => `- ${c}`).join("\n") : "";
   if (await brain.isEnabled()) {
-    const choice = await vscode.window.showQuickPick(
-      [
-        { label: "$(list-unordered) Use commit list", value: "commits" },
-        { label: "$(sparkle) AI draft", value: "ai" },
-        { label: "$(edit) Empty / write my own", value: "empty" },
-      ],
-      { placeHolder: "How should we fill the description?" },
+    // Three named outcomes → a dialog. Routing a decision through the search
+    // bar makes the user type to answer a question they were just asked.
+    const choice = await vscode.window.showInformationMessage(
+      "How should we fill the description?",
+      {
+        modal: true,
+        detail:
+          "Commit list: one bullet per commit. AI draft: summarize the change. " +
+          "Empty: start from a blank body.",
+      },
+      "Commit List",
+      "AI Draft",
+      "Empty",
     );
     if (!choice) {
       return;
     }
-    if (choice.value === "ai") {
+    if (choice === "AI Draft") {
       const drafted = await draftWithAi(brain, entry.ctx, ctx.remoteName, base, headBranch, commits);
       if (drafted) {
         body = drafted;
       }
-    } else if (choice.value === "empty") {
+    } else if (choice === "Empty") {
       body = "";
     }
   }
@@ -97,12 +103,16 @@ export async function createPullRequest(
     return;
   }
 
-  const draftPick = await vscode.window.showQuickPick(
-    [
-      { label: "$(git-pull-request) Ready for review", value: false },
-      { label: "$(git-pull-request-draft) Draft", value: true },
-    ],
-    { placeHolder: "Open as a draft?" },
+  const draftPick = await vscode.window.showInformationMessage(
+    "Open as a draft?",
+    {
+      modal: true,
+      detail:
+        "A draft pull request signals work in progress and cannot be merged " +
+        "until marked ready.",
+    },
+    "Ready for Review",
+    "Draft",
   );
   if (!draftPick) {
     return;
@@ -113,7 +123,7 @@ export async function createPullRequest(
     head: headBranch,
     base,
     body: editedBody,
-    draft: draftPick.value,
+    draft: draftPick === "Draft",
   };
 
   await vscode.window.withProgress(

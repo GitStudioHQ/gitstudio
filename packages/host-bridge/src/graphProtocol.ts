@@ -151,6 +151,7 @@ export type GraphHostMessage =
   | GraphRevealMessage
   | GraphAuthorAvatarsMessage
   | GraphCommitMenuMessage
+  | GraphCommitContainsMessage
   | GraphErrorMessage;
 
 /** The graph failed to load — a real git error, distinct from an empty repo
@@ -158,6 +159,18 @@ export type GraphHostMessage =
 export interface GraphErrorMessage {
   type: "graphError";
   message?: string;
+}
+
+/** Lazily-computed answer to "which branches contain this commit?". `sha` is
+ * echoed back so a slow reply for a previously-selected commit can be ignored
+ * rather than painted onto the wrong one. */
+export interface GraphCommitContainsMessage {
+  type: "commitContains";
+  sha: string;
+  /** Local branches first, then remote-tracking, each sorted. */
+  branches: string[];
+  /** True when the list was capped — render "N+" rather than an exact count. */
+  truncated: boolean;
 }
 
 // ── Webview → host ──────────────────────────────────────────────────────────
@@ -188,4 +201,12 @@ export type GraphWebviewMessage =
   | { type: "requestStats"; shas: string[] }
   /** Sidebar rail: promote this commit to the full graph panel (open the
    * editor-area Commit Graph revealed + selected at `sha`). */
-  | { type: "openInGraph"; sha: string };
+  | { type: "openInGraph"; sha: string }
+  /** The details dock was opened/dismissed in the webview. The host mirrors
+   * this so it can tell "already showing that commit" from "showing it, but the
+   * user closed the details" — only a fresh reveal re-opens a dismissed dock. */
+  | { type: "detailsVisibility"; open: boolean }
+  /** The details pane's "in N branches" row was expanded. Containment is a
+   * history walk (`git branch --all --contains`) that can be slow on large
+   * repos, so it is never computed up front — only when the user asks. */
+  | { type: "requestContains"; sha: string };

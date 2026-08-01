@@ -71,6 +71,7 @@ import { openNotificationsPanel, fetchUnreadCount } from "./views/notifications"
 import { renderOrgs } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
+import { renderRebase } from "./views/rebase";
 import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
 import type {
   BranchInfo,
@@ -419,17 +420,26 @@ class App {
     dividerLabel?: string;
   }> = [
     { id: "code", label: "Code", icon: "code" },
-    { id: "changes", label: "Changes", icon: "request-changes" },
+    // `source-control` (not `request-changes`, a PR-review verdict icon) — this
+    // is the working tree.
+    { id: "changes", label: "Changes", icon: "source-control" },
     { id: "graph", label: "Commits", icon: "git-commit" },
     { id: "branches", label: "Branches", icon: "git-branch" },
+    // `git-merge` keeps Rebase in the same visual family as the other git tabs
+    // (commit / branch / compare) instead of a generic list glyph.
+    { id: "rebase", label: "Rebase", icon: "git-merge" },
     { id: "compare", label: "Compare", icon: "git-compare" },
     { id: "prs", label: "Pull Requests", icon: "git-pull-request", divider: true },
-    { id: "issues", label: "Issues", icon: "issue-opened" },
-    { id: "actions", label: "Actions", icon: "play" },
+    // `issues` (the list glyph) rather than `issue-opened`, which reads as a
+    // single issue's OPEN state and clashed with per-issue status icons.
+    { id: "issues", label: "Issues", icon: "issues" },
+    // CI pipelines read as "runs" — a play badge, not the abstract Actions logo.
+    { id: "actions", label: "Actions", icon: "play-circle" },
     { id: "releases", label: "Releases", icon: "tag" },
     { id: "projects", label: "Projects", icon: "project" },
     { id: "orgs", label: "Organizations", icon: "organization" },
-    { id: "gists", label: "Gists", icon: "code" },
+    // `gist` — was `code`, a duplicate of the Code tab's glyph.
+    { id: "gists", label: "Gists", icon: "gist" },
   ];
 
   private buildNav(): HTMLElement {
@@ -704,6 +714,8 @@ class App {
       void this.showChangesView();
     } else if (id === "compare") {
       void this.showCompareView();
+    } else if (id === "rebase") {
+      this.mountSection(renderRebase);
     } else if (id === "assistant") {
       this.mountSection(renderAssistant);
     } else if (id === "prs") {
@@ -1871,13 +1883,21 @@ class App {
 
     const countChip = el("span", "code-count");
     countChip.hidden = true;
+    // Instant in-folder filter — GitHub makes you leave the listing for its
+    // file finder; here the folder narrows as you type, with keyboard nav.
+    const filterInput = document.createElement("input");
+    filterInput.className = "code-filter";
+    filterInput.type = "text";
+    filterInput.placeholder = "Filter files…  (/)";
+    filterInput.setAttribute("aria-label", "Filter files in this folder");
+    filterInput.spellcheck = false;
     const refreshBtn = el("button", "topbar-icon");
     refreshBtn.title = "Refresh";
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showCodeView());
     const head = el("div", "code-head");
-    head.append(crumbs, countChip, el("div", "topbar-spacer"), refreshBtn);
+    head.append(crumbs, countChip, el("div", "topbar-spacer"), filterInput, refreshBtn);
 
     // The connected "file card": a latest-commit header (repo root only), a
     // Name / Size column header, then the rows — one bordered surface, the way
@@ -1925,18 +1945,15 @@ class App {
     // Summarise the folder / file split in the header chip.
     const dirCount = sorted.filter((x) => x.type === "tree").length;
     const fileCount = sorted.length - dirCount;
+    const summaryText =
+      [
+        dirCount ? `${dirCount} folder${dirCount === 1 ? "" : "s"}` : "",
+        fileCount ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ") || "empty";
     countChip.hidden = sorted.length === 0;
-    countChip.replaceChildren(
-      glyph("list-unordered"),
-      span(
-        [
-          dirCount ? `${dirCount} folder${dirCount === 1 ? "" : "s"}` : "",
-          fileCount ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : "",
-        ]
-          .filter(Boolean)
-          .join(" · ") || "empty",
-      ),
-    );
+    countChip.replaceChildren(glyph("list-unordered"), span(summaryText));
 
     // ".." up-row when not at the repo root (styled as a folder row).
     if (this.codePath) {
@@ -1954,12 +1971,15 @@ class App {
       listing.appendChild(emptyState("Empty repository", "No tracked files at HEAD yet."));
     }
 
+    /** Rows in display order, so the filter and keyboard nav can drive them. */
+    const rows: Array<{ el: HTMLElement; name: string; label: HTMLElement }> = [];
     for (const e of sorted) {
       const isDir = e.type === "tree";
       const row = el("button", "file-row code-row" + (isDir ? " is-dir" : ""));
       const size = el("span", "code-row-size");
       size.textContent = isDir ? "" : formatBytes(e.size);
-      row.append(glyph(fileIcon(e.name, isDir)), span(e.name, "file-path"), size);
+      const label = span(e.name, "file-path");
+      row.append(glyph(fileIcon(e.name, isDir)), label, size);
       row.addEventListener("click", () => {
         if (isDir) {
           this.codePath = e.path;
@@ -1969,7 +1989,89 @@ class App {
         }
       });
       listing.appendChild(row);
+      rows.push({ el: row, name: e.name, label });
     }
+
+    // ── filter + keyboard navigation ──
+    const upRow = listing.querySelector(".code-up") as HTMLElement | null;
+    const visibleRows = (): HTMLElement[] =>
+      rows.filter((r) => !r.el.hidden).map((r) => r.el);
+
+    const applyFilter = (): void => {
+      const q = filterInput.value.trim().toLowerCase();
+      let shown = 0;
+      for (const r of rows) {
+        const at = q ? r.name.toLowerCase().indexOf(q) : -1;
+        const match = !q || at >= 0;
+        r.el.hidden = !match;
+        if (match) shown++;
+        // Re-render the label so the matched run is highlighted (textContent
+        // everywhere — never innerHTML with a user-supplied filename).
+        r.label.replaceChildren();
+        if (q && at >= 0) {
+          r.label.append(
+            document.createTextNode(r.name.slice(0, at)),
+            (() => {
+              const m = document.createElement("mark");
+              m.textContent = r.name.slice(at, at + q.length);
+              return m;
+            })(),
+            document.createTextNode(r.name.slice(at + q.length)),
+          );
+        } else {
+          r.label.textContent = r.name;
+        }
+      }
+      if (upRow) upRow.hidden = q.length > 0;
+      countChip.hidden = false;
+      countChip.replaceChildren(
+        glyph("list-unordered"),
+        span(q ? `${shown} of ${rows.length} matching` : summaryText),
+      );
+      if (q && shown === 0) {
+        listing.classList.add("is-empty-filter");
+      } else {
+        listing.classList.remove("is-empty-filter");
+      }
+    };
+    filterInput.addEventListener("input", applyFilter);
+    filterInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        filterInput.value = "";
+        applyFilter();
+      } else if (ev.key === "Enter" || ev.key === "ArrowDown") {
+        ev.preventDefault();
+        visibleRows()[0]?.focus();
+      }
+    });
+
+    // Arrow keys walk the listing; "/" (or plain typing) jumps to the filter;
+    // Backspace goes up a folder — the shortcuts a file browser should have.
+    wrap.addEventListener("keydown", (ev) => {
+      const vis = visibleRows();
+      const idx = vis.indexOf(document.activeElement as HTMLElement);
+      if (ev.key === "ArrowDown" && idx >= 0) {
+        ev.preventDefault();
+        vis[Math.min(idx + 1, vis.length - 1)]?.focus();
+      } else if (ev.key === "ArrowUp" && idx >= 0) {
+        ev.preventDefault();
+        if (idx === 0) filterInput.focus();
+        else vis[idx - 1]?.focus();
+      } else if (ev.key === "/" && document.activeElement !== filterInput) {
+        ev.preventDefault();
+        filterInput.focus();
+        filterInput.select();
+      } else if (
+        ev.key === "Backspace" &&
+        document.activeElement !== filterInput &&
+        this.codePath
+      ) {
+        ev.preventDefault();
+        this.codePath = this.codePath.split("/").slice(0, -1).join("/");
+        void this.showCodeView();
+      }
+    });
 
     // The latest-commit bar — repo root only, mirroring github.com's repo page.
     // Best-effort: if it can't be read, the bar is simply omitted.
@@ -3066,7 +3168,10 @@ class App {
     }
     if (remotes.length) {
       items.push({ separator: true, label: "Remotes" });
-      for (const b of remotes.slice(0, 16)) {
+      // No cap. This menu used to slice to 16 with NO indication, and its
+      // type-to-filter only hides rows that were already built — so anything
+      // past the 16th was unreachable by any means, including search.
+      for (const b of remotes) {
         items.push({
           label: b.name,
           icon: "cloud",
@@ -3076,7 +3181,13 @@ class App {
     }
     if (tags.length) {
       items.push({ separator: true, label: "Tags" });
-      for (const t of tags.slice(0, 16)) {
+      // for-each-ref returns refname (byte) order, which puts v1.10 BELOW v1.9
+      // and meant the old 16-item cap kept the oldest tags. Numeric-aware
+      // descending, matching the extension's branch dialog.
+      const tagsSorted = [...tags].sort((a, b) =>
+        b.name.localeCompare(a.name, undefined, { numeric: true }),
+      );
+      for (const t of tagsSorted) {
         items.push({
           label: t.name,
           icon: "tag",
@@ -3087,6 +3198,8 @@ class App {
     if (items.length === 0) {
       items.push({ label: "No branches yet", disabled: true });
     }
+    // No `searchable` override: openMenu already turns the filter on above 9
+    // rows, which every repo large enough to need it will exceed.
     openMenu(anchor, items);
   }
 
@@ -3167,6 +3280,19 @@ class App {
       const detail = (e as CustomEvent).detail as { sha: string };
       this.graph?.reveal(detail.sha);
       void this.selectCommit(detail.sha);
+    });
+    // "in N branches" — the same lazy containment query the extension runs.
+    // Without this the control would spin forever on desktop.
+    panel.addEventListener("gs-contains", (e) => {
+      const detail = (e as CustomEvent).detail as { sha: string };
+      void (async () => {
+        try {
+          const r = await host.invoke("refs:contains", { sha: detail.sha });
+          panel.setContains(detail.sha, r.branches, r.truncated);
+        } catch {
+          panel.setContains(detail.sha, [], false);
+        }
+      })();
     });
     // The panel's Close (X) button + its Esc affordance emit gs-close; collapse
     // the details dock (mirrors the extension webview, which handles gs-close in

@@ -180,7 +180,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
-   * Submit the pending review: QuickPick Comment / Approve / Request changes,
+   * Submit the pending review: a modal Comment / Approve / Request changes,
    * optional summary, then one `POST .../reviews` with all collected comments.
    */
   async submitReview(): Promise<void> {
@@ -192,17 +192,30 @@ export class ReviewController implements vscode.Disposable {
     }
     const { pr, ctx } = this.active;
 
-    const pick = await vscode.window.showQuickPick(
-      [
-        { label: "$(comment) Comment", event: "COMMENT" as ReviewEvent, detail: "Submit general feedback without explicit approval." },
-        { label: "$(check) Approve", event: "APPROVE" as ReviewEvent, detail: "Approve these changes." },
-        { label: "$(request-changes) Request changes", event: "REQUEST_CHANGES" as ReviewEvent, detail: "Request changes before merging." },
-      ],
-      { placeHolder: `Submit review for PR #${pr.number} (${this.threads.size} inline comment(s))` },
+    // Submitting a review is a three-way verdict, not a search. Modal dialog.
+    const pick = await vscode.window.showInformationMessage(
+      `Submit review for PR #${pr.number}`,
+      {
+        modal: true,
+        detail:
+          `${this.threads.size} inline comment(s) will be submitted.\n\n` +
+          "Comment: general feedback, no explicit approval.\n" +
+          "Approve: approve these changes.\n" +
+          "Request changes: block until addressed.",
+      },
+      "Comment",
+      "Approve",
+      "Request Changes",
     );
     if (!pick) {
       return;
     }
+    const event: ReviewEvent =
+      pick === "Approve"
+        ? "APPROVE"
+        : pick === "Request Changes"
+          ? "REQUEST_CHANGES"
+          : "COMMENT";
 
     const summary = await vscode.window.showInputBox({
       prompt: "Review summary (optional)",
@@ -230,7 +243,7 @@ export class ReviewController implements vscode.Disposable {
     }
 
     // A COMMENT review with neither a body nor comments is rejected by GitHub.
-    if (pick.event === "COMMENT" && comments.length === 0 && summary.trim().length === 0) {
+    if (event === "COMMENT" && comments.length === 0 && summary.trim().length === 0) {
       void vscode.window.showWarningMessage(
         "Add a comment or a summary before submitting a Comment review.",
       );
@@ -239,7 +252,7 @@ export class ReviewController implements vscode.Disposable {
 
     try {
       await this.api.submitReview(ctx.owner, ctx.repo, pr.number, {
-        event: pick.event,
+        event,
         body: summary,
         comments,
       });
@@ -252,7 +265,7 @@ export class ReviewController implements vscode.Disposable {
     await this.setReviewing(false);
     this.active = undefined;
     void vscode.window.showInformationMessage(
-      `Review submitted for PR #${pr.number} (${pick.label.replace(/\$\([^)]*\)\s*/, "")}).`,
+      `Review submitted for PR #${pr.number} (${pick}).`,
     );
   }
 

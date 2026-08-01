@@ -5142,6 +5142,264 @@ body.vscode-light .gh-label-chip {
 .md-center { text-align: center; }
 .md-right { text-align: right; }
 
+/* Shared Markdown element styling across every surface that renders it:
+   the Code-view README, GitHub issue/PR/release bodies, and AI chat. */
+.code-md img, .gh-body-md img, .assistant-msg img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+/* Badge rows (shields.io et al) sit inline and shouldn't gain a card look. */
+.code-md a img, .gh-body-md a img, .assistant-msg a img {
+  border-radius: 3px;
+  margin: 1px 2px;
+}
+/* GitHub-style centered headers: <p align="center"> is legacy HTML the
+   sanitizer keeps, but flex/grid children ignore it — force it here. */
+.code-md [align="center"], .gh-body-md [align="center"] { text-align: center; }
+.code-md [align="right"], .gh-body-md [align="right"] { text-align: right; }
+
+/* Task lists — inert glyphs (never real <input>), aligned like GitHub's. */
+.md-task-list { list-style: none; padding-left: 1.1em; }
+.md-task-item { position: relative; }
+.md-task {
+  display: inline-block;
+  width: 1.1em;
+  margin-right: 0.25em;
+  color: var(--app-muted);
+  font-size: 0.95em;
+}
+.md-task-done { color: var(--gs-accent-ink, var(--gs-accent)); }
+
+.code-md del, .gh-body-md del, .assistant-msg del { opacity: 0.68; }
+.code-md kbd, .gh-body-md kbd, .assistant-msg kbd {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 0.82em;
+  padding: 1px 5px;
+  border: 1px solid var(--app-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--app-elevated);
+  white-space: nowrap;
+}
+.code-md details, .gh-body-md details {
+  margin: 0.6em 0;
+  padding: 8px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-elevated) 45%, transparent);
+}
+.code-md summary, .gh-body-md summary { cursor: pointer; font-weight: 600; }
+.gh-body-md pre, .assistant-msg pre { overflow-x: auto; max-width: 100%; }
+
+/* Code view: instant in-folder filter + keyboard navigation affordances. */
+.code-filter {
+  width: 190px; max-width: 34vw;
+  padding: 4px 9px; font-size: 12px; font-family: inherit;
+  color: var(--app-text); background: var(--app-elevated);
+  border: 1px solid var(--app-border); border-radius: 7px;
+  transition: width 140ms ease, border-color 120ms ease;
+}
+.code-filter::placeholder { color: var(--app-muted); }
+.code-filter:focus {
+  width: 260px; outline: none;
+  border-color: var(--gs-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gs-accent) 22%, transparent);
+}
+.code-row .file-path mark {
+  background: color-mix(in srgb, var(--gs-accent) 34%, transparent);
+  color: inherit; border-radius: 3px; padding: 0 1px;
+}
+.code-row:focus-visible {
+  outline: 1px solid var(--gs-accent); outline-offset: -1px;
+  background: var(--app-hover);
+}
+.code-listing.is-empty-filter::after {
+  content: "No files match that filter.";
+  display: block; padding: 18px 14px; color: var(--app-muted); font-size: 12.5px;
+}
+
+/* ── Interactive Rebase view ──────────────────────────────────────────────────
+   A commit rail with node dots, per-commit action dropdowns, plain-English
+   consequences, and a dimmed "onto" base row — the desktop twin of the
+   extension's rebase workspace. */
+.rb-view { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+.rb-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 18px 10px; position: sticky; top: 0; z-index: 5;
+  background: var(--app-bg); border-bottom: 1px solid var(--app-border);
+}
+.rb-title { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 650; }
+.rb-title .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-sub { display: flex; align-items: center; gap: 4px; color: var(--app-muted); font-size: 12px; }
+.rb-sub b { color: var(--gs-accent-ink, var(--gs-accent)); font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
+.rb-spacer { flex: 1 1 auto; }
+.rb-hint { display: flex; align-items: center; gap: 6px; padding: 8px 18px 2px; color: var(--app-muted); font-size: 11.5px; }
+
+.rb-explain {
+  position: relative; margin: 10px 16px 2px; padding: 12px 34px 12px 14px;
+  border: 1px solid var(--app-border); border-radius: 10px;
+  background: color-mix(in srgb, var(--gs-accent) 7%, var(--app-elevated));
+}
+.rb-explain[hidden] { display: none; }
+.rb-explain-lead { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 12.5px; line-height: 1.55; }
+.rb-explain-lead .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-explain-x {
+  position: absolute; top: 7px; right: 8px; width: 22px; height: 22px;
+  border: none; background: transparent; color: var(--app-muted);
+  font-size: 16px; line-height: 1; cursor: pointer; border-radius: 6px;
+}
+.rb-explain-x:hover { background: var(--app-hover); color: var(--app-text); }
+.rb-gloss {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 3px 18px; margin-top: 10px; font-size: 11.5px; color: var(--app-muted);
+}
+.rb-gloss b { font-weight: 650; margin-right: 2px; }
+.rb-gloss .g-pick { color: var(--app-text); }
+.rb-gloss .g-reword { color: #4a9eda; }
+.rb-gloss .g-squash, .rb-gloss .g-fixup { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-gloss .g-edit { color: var(--status-warn); }
+.rb-gloss .g-drop { color: var(--gs-danger); }
+
+.rb-list { padding: 6px 16px 8px; }
+.rb-row {
+  display: flex; align-items: stretch; gap: 9px; position: relative;
+  padding: 8px 10px 8px 0; border-radius: 8px;
+  transition: background 120ms ease, opacity 120ms ease;
+}
+.rb-row:hover { background: var(--app-hover); }
+.rb-row.dragging { opacity: 0.4; }
+.rb-row.drag-over { box-shadow: inset 0 -2px 0 var(--gs-accent); }
+.rb-row:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
+.rb-row.dropped .rb-subj { text-decoration: line-through; opacity: 0.55; }
+
+/* The continuous rail + per-commit node dot. */
+.rb-rail { flex: 0 0 24px; position: relative; }
+.rb-rail::before {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+  transform: translateX(-50%); background: var(--gs-accent); opacity: 0.35;
+}
+.rb-node {
+  position: absolute; left: 50%; top: 13px; width: 9px; height: 9px;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: var(--gs-accent); box-shadow: 0 0 0 3px var(--app-bg);
+}
+.rb-row[data-action="squash"] .rb-node, .rb-row[data-action="fixup"] .rb-node {
+  width: 6px; height: 6px; background: var(--app-bg); border: 2px solid var(--gs-accent);
+}
+.rb-row[data-action="drop"] .rb-node { background: var(--app-bg); border: 2px solid var(--gs-danger); }
+.rb-row.rb-base .rb-node { background: var(--app-bg); border: 2px solid var(--app-muted); }
+.rb-row.rb-base .rb-rail::before { bottom: 50%; }
+.rb-row.rb-base { opacity: 0.72; }
+.rb-onto {
+  align-self: center; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--app-muted);
+  border: 1px solid var(--app-border); border-radius: 5px; padding: 1px 5px;
+}
+
+.rb-grip { display: flex; align-items: center; color: var(--app-muted); cursor: grab; opacity: 0; }
+.rb-row:hover .rb-grip, .rb-row:focus-within .rb-grip { opacity: 1; }
+
+.rb-action {
+  align-self: flex-start; margin-top: 1px; min-width: 88px;
+  background: var(--app-elevated); color: var(--app-text);
+  border: 1px solid var(--app-border); border-radius: 6px;
+  padding: 3px 6px; font-size: 11.5px; font-weight: 600; cursor: pointer;
+}
+.rb-action.a-reword { color: #4a9eda; }
+.rb-action.a-squash, .rb-action.a-fixup { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-action.a-edit { color: var(--status-warn); }
+.rb-action.a-drop { color: var(--gs-danger); }
+
+.rb-main { flex: 1 1 auto; min-width: 0; }
+.rb-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rb-subj { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.rb-avatar {
+  flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; color: #fff;
+  background: hsl(var(--h, 250) 55% 45%);
+}
+.rb-meta { flex: 0 0 auto; color: var(--app-muted); font-size: 11px; }
+.rb-sha {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px;
+  color: var(--app-muted); font-size: 11px;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+}
+.rb-sha .glyph { font-size: 11px; }
+
+/* The reword editor only appears for a `reword` row. */
+.rb-reword { display: none; margin-top: 6px; }
+.rb-row[data-action="reword"] .rb-reword { display: block; }
+.rb-reword textarea {
+  width: 100%; resize: vertical; padding: 6px 8px; font-size: 12px;
+  color: var(--app-text); background: var(--app-elevated);
+  border: 1px solid var(--app-border); border-radius: 6px;
+  font-family: inherit;
+}
+.rb-reword textarea:focus { outline: 1px solid var(--gs-accent); border-color: var(--gs-accent); }
+
+.rb-consequence { display: none; align-items: center; gap: 5px; margin-top: 5px; font-size: 11.5px; color: var(--app-muted); }
+.rb-consequence .glyph { font-size: 12px; }
+.rb-row[data-action="squash"] .rb-consequence,
+.rb-row[data-action="fixup"] .rb-consequence,
+.rb-row[data-action="edit"] .rb-consequence,
+.rb-row[data-action="drop"] .rb-consequence { display: flex; }
+.rb-row[data-action="squash"] .rb-consequence,
+.rb-row[data-action="fixup"] .rb-consequence { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-row[data-action="edit"] .rb-consequence { color: var(--status-warn); }
+.rb-row[data-action="drop"] .rb-consequence { color: var(--gs-danger); }
+
+.rb-banner { margin: 6px 16px; padding: 8px 12px; border-radius: 8px; font-size: 12px; }
+.rb-banner[hidden] { display: none; }
+.rb-banner.warn { background: color-mix(in srgb, var(--status-warn) 16%, transparent); border: 1px solid color-mix(in srgb, var(--status-warn) 40%, transparent); }
+.rb-banner.error { background: color-mix(in srgb, var(--gs-danger) 15%, transparent); border: 1px solid color-mix(in srgb, var(--gs-danger) 40%, transparent); }
+
+.rb-foot {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 18px; margin-top: auto;
+  position: sticky; bottom: 0; background: var(--app-bg);
+  border-top: 1px solid var(--app-border);
+}
+.rb-preview { color: var(--app-muted); font-size: 11.5px; }
+.rb-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--app-border); background: var(--app-elevated);
+  color: var(--app-text); cursor: pointer;
+}
+.rb-btn:hover { background: var(--app-hover); }
+.rb-btn.primary { background: var(--gs-accent); border-color: var(--gs-accent); color: #fff; }
+.rb-btn.primary:hover { filter: brightness(1.08); }
+.rb-btn.danger { color: var(--gs-danger); border-color: color-mix(in srgb, var(--gs-danger) 45%, var(--app-border)); }
+.rb-btn.ghost { background: transparent; }
+.rb-btn:disabled { opacity: 0.6; cursor: default; }
+.rb-btn.busy .glyph { animation: rb-spin 1s linear infinite; }
+@keyframes rb-spin { to { transform: rotate(360deg); } }
+
+.rb-loading { display: flex; align-items: center; gap: 8px; padding: 24px; color: var(--app-muted); }
+.rb-loading .glyph { animation: rb-spin 1s linear infinite; }
+.rb-basebar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* One-click range presets so a rebase can start without typing a ref. */
+.rb-chip {
+  padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600;
+  border: 1px solid var(--app-border); background: var(--app-elevated);
+  color: var(--app-muted); cursor: pointer;
+}
+.rb-chip:hover { background: var(--app-hover); color: var(--app-text); }
+.rb-chip.is-active {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
+  background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+}
+
+.rb-inprogress { margin: 22px auto; max-width: 560px; padding: 18px 20px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-elevated); }
+.rb-inprogress-head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 650; }
+.rb-inprogress-head .glyph { color: var(--status-warn); }
+.rb-inprogress-body { display: block; margin: 8px 0 14px; color: var(--app-muted); font-size: 12.5px; line-height: 1.55; }
+.rb-inprogress-btns { display: flex; gap: 8px; }
+
 /* ════════════════════════════════════════════════════════════════════════════
    Depth styles — conflict merge bar, GitHub Actions (logs/artifacts/secrets),
    commit-composer depth, op-state banner, PR review (Files diff + inline threads),

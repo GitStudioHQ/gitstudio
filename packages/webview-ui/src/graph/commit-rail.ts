@@ -423,21 +423,30 @@ export class CommitRail extends LitElement {
         min-width: 0;
         overflow: hidden; /* a squeezed chip clips — it never paints over the author */
       }
+      /* Flat and borderless, matching <commit-graph>. A border PLUS a surface
+         fill PLUS a coloured label is three encodings of one fact, and at 15px
+         in a dense list that reads as a row of little buttons. The fill alone
+         carries the kind; only the current HEAD gets real weight, so the eye
+         has one anchor per screen. 4px radius, not an 8px capsule — capsules
+         at this size look like tags-on-a-tag. */
       .chip {
         flex: 0 1 auto;
-        min-width: 30px;
+        min-width: 0;
+        box-sizing: border-box;
         display: inline-flex;
         align-items: center;
         gap: 3px;
         height: 15px;
         padding: 0 5px;
-        border-radius: 8px;
+        border-radius: 4px;
         font-size: 10px;
+        font-weight: 550;
         line-height: 1;
         max-width: 104px;
-        border: 1px solid var(--gs-border);
-        background: var(--gs-surface);
-        color: var(--gs-fg-muted);
+        border: 0;
+        /* Default = a local branch: quiet accent wash, accent label. */
+        background: color-mix(in srgb, var(--gs-accent) 13%, var(--gs-bg));
+        color: var(--gs-accent-text);
         white-space: nowrap;
       }
       .chip > .name {
@@ -448,15 +457,29 @@ export class CommitRail extends LitElement {
       .chip .codicon { font-size: 9px; flex: 0 0 auto; }
       .chip.current {
         background: var(--gs-brand);
-        border-color: var(--gs-brand);
         color: var(--gs-brand-fg);
+        font-weight: 650;
       }
-      .chip.tag { color: var(--gs-amber); }
+      /* A remote-only ref is context ("this also exists upstream"), not
+         something you act on — so it gets no hue of its own. Previously it was
+         styled identically to a local branch, which is why a row of refs read
+         as undifferentiated boxes. */
+      .chip.remote {
+        background: color-mix(in srgb, var(--gs-fg) 8%, var(--gs-bg));
+        color: var(--gs-fg-muted);
+      }
+      .chip.tag {
+        background: color-mix(in srgb, var(--gs-amber) 13%, var(--gs-bg));
+        color: var(--gs-amber);
+      }
+      /* "+N" is a footnote, not a peer of the ref names — no box. */
       .chip.more {
         flex: 0 0 auto;
         min-width: 0;
-        padding: 0 4px;
+        padding: 0 3px;
+        background: transparent;
         color: var(--gs-fg-subtle);
+        font-variant-numeric: tabular-nums;
       }
       .chip .cloud { font-size: 9px; opacity: 0.85; }
 
@@ -1019,6 +1042,7 @@ export class CommitRail extends LitElement {
       const cls =
         "chip" +
         (chip.kind === "currentHead" ? " current" : "") +
+        (chip.kind === "remoteHead" ? " remote" : "") +
         (chip.kind === "tag" ? " tag" : "");
       const icon =
         chip.kind === "tag"

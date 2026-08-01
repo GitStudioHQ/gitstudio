@@ -119,7 +119,77 @@ export class RefProvider {
 
     return detached ? { detached: true, sha } : { detached: false, branch, sha };
   }
+
+  /**
+   * Branches that CONTAIN `sha` — i.e. it is reachable from their tip. This is
+   * a different question from "which refs point AT this commit" (that is
+   * `listRefs`), and it is the one that answers "where has this change already
+   * landed?". JetBrains' "In N branches" is this query.
+   *
+   * Deliberately lazy: on a repo with many branches this walks history and can
+   * take real time, so callers should only ask when the user opts in.
+   *
+   * Returns local branches first, then remote-tracking ones, each de-duplicated
+   * and sorted; `truncated` is true when the result was capped.
+   */
+  async containingBranches(
+    sha: string,
+    opts?: { limit?: number; signal?: AbortSignal },
+  ): Promise<{ branches: string[]; truncated: boolean }> {
+    const limit = opts?.limit ?? CONTAINS_LIMIT;
+    // FULL refnames, not %(refname:short). The short form is ambiguous here:
+    // a local "feature/x" and a remote "origin/x" are both "a/b", so splitting
+    // on the presence of "/" filed every local topic branch under remotes; and
+    // refs/remotes/origin/HEAD shortens to a bare "origin", which then looked
+    // like a local branch of that name.
+    const result = await this.proc.run(
+      ["branch", "--all", "--contains", sha, "--format=%(refname)"],
+      { signal: opts?.signal },
+    );
+    if (result.code !== 0) {
+      // Unknown sha, or a repo with no branches — report "none" rather than
+      // surfacing a git error for what is an optional, informational query.
+      return { branches: [], truncated: false };
+    }
+    const seen = new Set<string>();
+    const locals: string[] = [];
+    const remotes: string[] = [];
+    for (const line of splitLines(result.stdout)) {
+      const ref = line.trim();
+      if (!ref) {
+        continue;
+      }
+      if (ref.startsWith("refs/heads/")) {
+        const name = ref.slice("refs/heads/".length);
+        if (name && !seen.has(name)) {
+          seen.add(name);
+          locals.push(name);
+        }
+      } else if (ref.startsWith("refs/remotes/")) {
+        const name = ref.slice("refs/remotes/".length);
+        // refs/remotes/<remote>/HEAD is a symbolic pointer at the remote's
+        // default branch, not a branch of its own — listing it duplicates
+        // whatever it points at.
+        if (!name || name.endsWith("/HEAD") || seen.has(name)) {
+          continue;
+        }
+        seen.add(name);
+        remotes.push(name);
+      }
+      // Anything else (a detached-HEAD pseudo-entry) names nothing actionable.
+    }
+    locals.sort();
+    remotes.sort();
+    const all = [...locals, ...remotes];
+    return {
+      branches: all.slice(0, limit),
+      truncated: all.length > limit,
+    };
+  }
 }
+
+/** Cap on reported containing branches — a repo can have thousands. */
+const CONTAINS_LIMIT = 100;
 
 function splitLines(text: string): string[] {
   return text.split("\n").filter((line) => line.length > 0);

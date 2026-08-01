@@ -74,22 +74,21 @@ async function offerRecoveryActions(
   const sha = await resolveSha(ctx, entry.hash);
   const commit = { sha, subject: entry.action };
 
-  const action = await vscode.window.showQuickPick(
-    [
-      { id: "branch", label: "$(git-branch) Create Branch Here…" },
-      {
-        id: "reset",
-        label: "$(discard) Reset Current Branch to Here…",
-        description: "soft / mixed / hard",
-      },
-      { id: "checkout", label: "$(git-commit) Checkout" },
-      { id: "copySha", label: "$(copy) Copy SHA" },
-    ],
-    {
-      title: `Recover — ${entry.selector} (${entry.hash})`,
-      placeHolder: entry.action,
-    },
+  const RECOVERY: { id: string; label: string }[] = [
+    { id: "branch", label: "Create Branch Here" },
+    { id: "checkout", label: "Checkout" },
+    { id: "reset", label: "Reset Branch to Here" },
+    { id: "copySha", label: "Copy SHA" },
+  ];
+  const chosen = await vscode.window.showInformationMessage(
+    `Recover — ${entry.selector} (${entry.hash})`,
+    { modal: true, detail: entry.action },
+    ...RECOVERY.map((r) => r.label),
   );
+  if (!chosen) {
+    return;
+  }
+  const action = RECOVERY.find((r) => r.label === chosen);
   if (!action) {
     return;
   }

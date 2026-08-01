@@ -222,32 +222,27 @@ async function resetTo(
   commit: CommitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
-  const mode = await vscode.window.showQuickPick(
-    [
-      {
-        label: "$(arrow-up) Soft",
-        description: "--soft · keep working tree and index",
-        value: "--soft",
-      },
-      {
-        label: "$(list-flat) Mixed",
-        description: "--mixed · keep working tree, reset index (default)",
-        value: "--mixed",
-      },
-      {
-        label: "$(warning) Hard",
-        description: "--hard · DISCARD all working-tree and index changes",
-        value: "--hard",
-      },
-    ],
+  // Three named outcomes with real consequences — a dialog, not the search bar.
+  const chosen = await vscode.window.showWarningMessage(
+    `Reset current branch to ${short(commit.sha)}`,
     {
-      title: `Reset current branch to ${short(commit.sha)}`,
-      placeHolder: "Choose how much to reset",
+      modal: true,
+      detail:
+        "Soft: keep your working tree and staged changes.\n" +
+        "Mixed: keep the working tree, unstage everything (default).\n" +
+        "Hard: DISCARD all working-tree and staged changes.",
     },
+    "Soft",
+    "Mixed",
+    "Hard",
   );
-  if (!mode) {
+  if (!chosen) {
     return false;
   }
+  const mode = {
+    value:
+      chosen === "Soft" ? "--soft" : chosen === "Hard" ? "--hard" : "--mixed",
+  };
 
   if (mode.value === "--hard") {
     const ok = await confirmDestructive(

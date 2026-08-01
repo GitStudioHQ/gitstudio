@@ -27,6 +27,7 @@ import { SyncStatusItem } from "./statusBar/syncStatus";
 import * as branchActions from "./views/branchActions";
 import { CommitGraphPanel } from "./graph/graphPanel";
 import { CommitsGraphViewProvider } from "./graph/commitsGraphView";
+import { CommitPanelViewProvider } from "./graph/commitPanelView";
 import {
   GitHubAuthorAvatars,
   setAuthorAvatarResolver,
@@ -153,6 +154,27 @@ export function activate(context: vscode.ExtensionContext): void {
     const blame = new BlameController(repos, context, log);
     context.subscriptions.push(blame);
 
+    // Inspecting a commit means revealing it in OUR Commit Graph — hosted in
+    // the BOTTOM panel as a graph | details split, so your code stays open
+    // above it, the way JetBrains docks its Git log.
+    const commitPanel = new CommitPanelViewProvider(repos, context.extensionUri);
+    context.subscriptions.push(
+      commitPanel,
+      vscode.window.registerWebviewViewProvider(
+        CommitPanelViewProvider.viewId,
+        commitPanel,
+        { webviewOptions: { retainContextWhenHidden: true } },
+      ),
+      vscode.commands.registerCommand("gitstudio.revealCommitInGraph", (sha?: string) => {
+        if (typeof sha === "string" && sha) {
+          void commitPanel.reveal(sha);
+        }
+      }),
+      vscode.commands.registerCommand("gitstudio.showCommitPanel", () =>
+        commitPanel.show(),
+      ),
+    );
+
     // The Commits and Branches views were retired: the commit graph supersedes
     // the flat Commits list, and all branch actions now live in the Changes
     // view's branch menu. The providers stay (the branch-action commands +
@@ -201,8 +223,12 @@ export function activate(context: vscode.ExtensionContext): void {
         "gitstudio.copyCommitSha",
         (arg?: CommitNode | string) => void copyCommitSha(arg),
       ),
+      // Deprecated surface, kept as an alias: the editor-tab graph is superseded
+      // by the bottom-panel graph, which shows the graph and commit details side
+      // by side without eating an editor tab. The command still exists so old
+      // keybindings and muscle memory keep working — it just opens the panel.
       vscode.commands.registerCommand("gitstudio.showCommitGraph", () => {
-        CommitGraphPanel.show(repos, context.extensionUri);
+        void commitPanel.show();
       }),
       vscode.commands.registerCommand(
         "gitstudio.openCommitInGraph",
@@ -311,6 +337,42 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand("gitstudio.ai.connect", () =>
         AiSettingsPanel.show(brain, context.extensionUri),
       ),
+      // The inverse of Connect. Turning AI off was only possible by knowing to
+      // find `gitstudio.ai.provider` in Settings; this makes it a first-class,
+      // discoverable action. It writes that same setting rather than
+      // introducing a second source of truth.
+      vscode.commands.registerCommand("gitstudio.ai.disable", async () => {
+        const cfg = vscode.workspace.getConfiguration("gitstudio");
+        if (cfg.get<string>("ai.provider") === "off") {
+          void vscode.window.showInformationMessage(
+            "GitStudio: AI features are already disabled.",
+          );
+          return;
+        }
+        const ok = await vscode.window.showWarningMessage(
+          "Disable all GitStudio AI features?",
+          {
+            modal: true,
+            detail:
+              "Commit-message drafting, diff explanation, summaries and AI review " +
+              "stop being offered. Git operations are unaffected. Re-enable with " +
+              "GitStudio: Connect AI Provider, or by setting gitstudio.ai.provider.",
+          },
+          "Disable AI",
+        );
+        if (ok !== "Disable AI") {
+          return;
+        }
+        await cfg.update(
+          "ai.provider",
+          "off",
+          vscode.ConfigurationTarget.Global,
+        );
+        void vscode.window.setStatusBarMessage(
+          "$(check) GitStudio: AI features disabled",
+          3000,
+        );
+      }),
     );
 
     // In-editor Pull Request review — GitHub first (M11). Connect once via VS

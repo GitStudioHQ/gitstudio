@@ -235,30 +235,36 @@ async function mergePr(
     .getConfiguration("gitstudio.pr")
     .get<MergeMethod>("defaultMergeMethod", "squash");
 
-  const methods: { label: string; method: MergeMethod }[] = [
-    { label: "$(git-merge) Create a merge commit", method: "merge" },
-    { label: "$(git-commit) Squash and merge", method: "squash" },
-    { label: "$(git-pull-request) Rebase and merge", method: "rebase" },
-  ];
-  // Surface the configured default first.
-  methods.sort((a, b) =>
-    a.method === configured ? -1 : b.method === configured ? 1 : 0,
-  );
+  const labels: Record<MergeMethod, string> = {
+    merge: "Merge Commit",
+    squash: "Squash and Merge",
+    rebase: "Rebase and Merge",
+  };
+  // Configured default first, so the common answer is the leftmost button.
+  const order: MergeMethod[] = ["merge", "squash", "rebase"].sort((a, b) =>
+    a === configured ? -1 : b === configured ? 1 : 0,
+  ) as MergeMethod[];
 
-  const pick = await vscode.window.showQuickPick(methods, {
-    placeHolder: `Merge PR #${pr.number} "${pr.title}"`,
-  });
-  if (!pick) {
-    return;
-  }
-  const confirm = await vscode.window.showWarningMessage(
-    `Merge PR #${pr.number} into ${pr.base.ref} (${pick.method})?`,
-    { modal: true },
-    "Merge",
+  // One modal instead of a search-bar pick followed by a confirm dialog: the
+  // choice IS the confirmation, so asking twice was pure friction.
+  const picked = await vscode.window.showWarningMessage(
+    `Merge PR #${pr.number} into ${pr.base.ref}?`,
+    {
+      modal: true,
+      detail:
+        `"${pr.title}"\n\n` +
+        "Merge commit: keep every commit and add a merge commit.\n" +
+        "Squash: combine all commits into one.\n" +
+        "Rebase: replay the commits onto the base branch.",
+    },
+    ...order.map((m) => labels[m]),
   );
-  if (confirm !== "Merge") {
+  if (!picked) {
     return;
   }
+  const pick = {
+    method: (order.find((m) => labels[m] === picked) ?? configured) as MergeMethod,
+  };
 
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Merging PR #${pr.number}…` },

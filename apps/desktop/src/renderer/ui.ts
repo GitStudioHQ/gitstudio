@@ -50,9 +50,57 @@ export function relTime(epochSec: number): string {
 export function fileIcon(name: string, isDir = false): string {
   if (isDir) return "folder";
   const n = name.toLowerCase();
-  if (/^(readme|changelog|contributing|authors|notice)\b/.test(n) || /\.(md|markdown|mdx)$/.test(n)) return "markdown";
-  if (/^license/.test(n)) return "book";
-  if (/\.(ts|tsx|js|jsx|mjs|cjs|json|css|scss|less|html|htm|vue|svelte|py|go|rs|rb|java|kt|swift|c|h|cpp|cc|cs|php|sh|bash|zsh|yml|yaml|toml|sql|graphql|lua|dart)$/.test(n)) return "file-code";
+
+  // Well-known filenames win over extension rules — a Dockerfile has no
+  // extension, and `package.json` should read as a manifest, not raw JSON.
+  if (/^(readme|changelog|contributing|authors|notice|codeowners|maintainers)\b/.test(n)) return "book";
+  if (/^licen[cs]e/.test(n)) return "law";
+  if (/^dockerfile|^docker-compose|^\.dockerignore$/.test(n)) return "server";
+  if (/^(package|package-lock|pnpm-lock|yarn|bun|deno)\b.*\.(json|ya?ml|lock|jsonc)$/.test(n)) return "package";
+  if (/^(cargo|gemfile|pipfile|poetry|go)\.(toml|lock|mod|sum)$/.test(n) || /^requirements.*\.txt$/.test(n)) return "package";
+  if (/^\.git|^\.editorconfig$|^\.npmrc$|^\.nvmrc$|^\.prettierrc|^\.eslintrc|^tsconfig|^jsconfig|^\.babelrc|^vite\.config|^webpack\.config|^rollup\.config|^esbuild/.test(n)) return "settings-gear";
+  if (/^\.env/.test(n)) return "key";
+  if (/^makefile$|^rakefile$|^justfile$/.test(n)) return "tools";
+
+  const ext = n.includes(".") ? n.slice(n.lastIndexOf(".") + 1) : "";
+  switch (ext) {
+    // Markup / prose
+    case "md": case "markdown": case "mdx": case "rst": case "adoc": return "markdown";
+    case "txt": case "log": return "note";
+    case "pdf": return "file-pdf";
+    // Data / config
+    case "json": case "jsonc": case "json5": return "json";
+    case "yml": case "yaml": case "toml": case "ini": case "cfg": case "conf": case "properties": case "xml": case "plist":
+      return "settings-gear";
+    case "csv": case "tsv": return "graph";
+    case "sql": case "db": case "sqlite": case "sqlite3": case "prisma": return "database";
+    // Web
+    case "html": case "htm": case "xhtml": case "ejs": case "hbs": case "pug": return "browser";
+    case "css": case "scss": case "sass": case "less": case "styl": return "paintcan";
+    // Media
+    case "png": case "jpg": case "jpeg": case "gif": case "webp": case "avif": case "bmp": case "ico": case "svg":
+      return "file-media";
+    case "mp4": case "mov": case "webm": case "mp3": case "wav": case "flac": case "ogg": return "file-media";
+    case "woff": case "woff2": case "ttf": case "otf": case "eot": return "text-size";
+    // Archives / binaries
+    case "zip": case "tar": case "gz": case "tgz": case "bz2": case "xz": case "7z": case "rar": return "file-zip";
+    case "exe": case "dll": case "so": case "dylib": case "bin": case "wasm": case "o": case "a": return "file-binary";
+    // Shells / scripts
+    case "sh": case "bash": case "zsh": case "fish": case "ps1": case "bat": case "cmd": return "terminal-bash";
+    // Security
+    case "pem": case "key": case "crt": case "cer": case "p12": case "pfx": return "lock";
+    // Notebooks
+    case "ipynb": return "notebook";
+    // Ruby gets its own glyph in the codicon set
+    case "rb": case "erb": case "gemspec": return "ruby";
+    default:
+      break;
+  }
+
+  // Everything else that is source code.
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte|astro|py|pyi|go|rs|java|kt|kts|swift|m|mm|c|h|cpp|cc|cxx|hpp|cs|fs|php|lua|dart|scala|clj|cljs|ex|exs|erl|hs|ml|nim|pl|r|jl|zig|v|sol|gradle|graphql|gql|proto|tf|hcl)$/.test(n)) {
+    return "file-code";
+  }
   return "file";
 }
 

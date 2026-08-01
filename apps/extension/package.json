@@ -1,8 +1,8 @@
 {
   "name": "gitstudio",
-  "displayName": "GitStudio — JetBrains-style Git Graph, Blame & Merge",
-  "description": "Free, open-source Git GUI & commit graph for VS Code and Cursor. Git Studio brings a JetBrains-style Git workflow into the editor — inline blame, file history, hunk & line staging, 3-pane merge, interactive rebase with universal Undo, stash/shelf, worktrees, and in-editor GitHub PRs. A free alternative to GitLens, GitKraken & Sourcetree.",
-  "version": "1.2.0",
+  "displayName": "GitStudio \u2014 JetBrains-style Git Graph, Blame & Merge",
+  "description": "Free, open-source Git GUI & commit graph for VS Code and Cursor. Git Studio brings a JetBrains-style Git workflow into the editor \u2014 inline blame, file history, hunk & line staging, 3-pane merge, interactive rebase with universal Undo, stash/shelf, worktrees, and in-editor GitHub PRs. A free alternative to GitLens, GitKraken & Sourcetree.",
+  "version": "1.3.0",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -91,6 +91,13 @@
           "title": "GitStudio",
           "icon": "media/activitybar.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "gitstudioPanel",
+          "title": "Commit Graph",
+          "icon": "media/activitybar.svg"
+        }
       ]
     },
     "views": {
@@ -98,25 +105,43 @@
         {
           "id": "gitstudio.commit",
           "name": "Changes",
-          "type": "webview"
+          "type": "webview",
+          "initialSize": 7,
+          "visibility": "visible"
         },
         {
           "id": "gitstudio.commits",
           "name": "Commits",
-          "type": "webview"
+          "type": "webview",
+          "initialSize": 3,
+          "visibility": "visible"
         },
         {
           "id": "gitstudio.stashes",
           "name": "Stashes",
-          "type": "webview"
+          "type": "webview",
+          "initialSize": 1,
+          "visibility": "collapsed"
         },
         {
           "id": "gitstudio.worktrees",
-          "name": "Worktrees"
+          "name": "Worktrees",
+          "initialSize": 1,
+          "visibility": "collapsed"
         },
         {
           "id": "gitstudio.pullRequests",
-          "name": "Pull Requests"
+          "name": "Pull Requests",
+          "initialSize": 1,
+          "visibility": "collapsed"
+        }
+      ],
+      "gitstudioPanel": [
+        {
+          "id": "gitstudio.commitPanel",
+          "name": "Commit Graph",
+          "type": "webview",
+          "contextualTitle": "GitStudio Commit Graph"
         }
       ]
     },
@@ -187,7 +212,7 @@
       },
       {
         "command": "gitstudio.toggleFileBlame",
-        "title": "Toggle Git Blame Annotations",
+        "title": "Annotate with Git Blame",
         "category": "GitStudio",
         "icon": "$(eye)"
       },
@@ -217,7 +242,7 @@
       },
       {
         "command": "gitstudio.openFileAtRevision",
-        "title": "Open File at Revision…",
+        "title": "Open File at Revision\u2026",
         "category": "GitStudio",
         "icon": "$(history)"
       },
@@ -247,7 +272,7 @@
       },
       {
         "command": "gitstudio.compare",
-        "title": "Compare File…",
+        "title": "Compare File\u2026",
         "category": "GitStudio",
         "icon": "$(git-compare)"
       },
@@ -277,7 +302,7 @@
       },
       {
         "command": "gitstudio.startInteractiveRebase",
-        "title": "Start Interactive Rebase…",
+        "title": "Start Interactive Rebase\u2026",
         "category": "GitStudio",
         "icon": "$(git-merge)"
       },
@@ -301,7 +326,7 @@
       },
       {
         "command": "gitstudio.resetToCommit",
-        "title": "Reset Current Branch to Here…",
+        "title": "Reset Current Branch to Here\u2026",
         "category": "GitStudio",
         "icon": "$(discard)"
       },
@@ -313,7 +338,7 @@
       },
       {
         "command": "gitstudio.stash.save",
-        "title": "Stash Changes…",
+        "title": "Stash Changes\u2026",
         "category": "GitStudio",
         "icon": "$(add)"
       },
@@ -331,7 +356,7 @@
       },
       {
         "command": "gitstudio.worktree.add",
-        "title": "New Worktree…",
+        "title": "New Worktree\u2026",
         "category": "GitStudio",
         "icon": "$(add)"
       },
@@ -361,7 +386,7 @@
       },
       {
         "command": "gitstudio.compareRefs",
-        "title": "Compare Branches/Tags…",
+        "title": "Compare Branches/Tags\u2026",
         "category": "GitStudio",
         "icon": "$(git-compare)"
       },
@@ -385,7 +410,7 @@
       },
       {
         "command": "gitstudio.branch.rename",
-        "title": "Rename Branch…",
+        "title": "Rename Branch\u2026",
         "category": "GitStudio",
         "icon": "$(edit)"
       },
@@ -403,19 +428,19 @@
       },
       {
         "command": "gitstudio.branch.setUpstream",
-        "title": "Set Upstream…",
+        "title": "Set Upstream\u2026",
         "category": "GitStudio",
         "icon": "$(cloud)"
       },
       {
         "command": "gitstudio.branch.new",
-        "title": "New Branch from Here…",
+        "title": "New Branch from Here\u2026",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.branch.createWorktree",
-        "title": "Create Worktree for This Branch…",
+        "title": "Create Worktree for This Branch\u2026",
         "category": "GitStudio",
         "icon": "$(repo-clone)"
       },
@@ -427,7 +452,7 @@
       },
       {
         "command": "gitstudio.remoteBranch.checkout",
-        "title": "Checkout (Create Local Tracking)…",
+        "title": "Checkout (Create Local Tracking)\u2026",
         "category": "GitStudio",
         "icon": "$(check)"
       },
@@ -451,7 +476,7 @@
       },
       {
         "command": "gitstudio.tag.push",
-        "title": "Push Tag…",
+        "title": "Push Tag\u2026",
         "category": "GitStudio",
         "icon": "$(arrow-up)"
       },
@@ -463,19 +488,19 @@
       },
       {
         "command": "gitstudio.addRemote",
-        "title": "Add Remote…",
+        "title": "Add Remote\u2026",
         "category": "GitStudio",
         "icon": "$(add)"
       },
       {
         "command": "gitstudio.manageRemotes",
-        "title": "Manage Remotes…",
+        "title": "Manage Remotes\u2026",
         "category": "GitStudio",
         "icon": "$(cloud)"
       },
       {
         "command": "gitstudio.ai.setApiKey",
-        "title": "Set Anthropic API Key…",
+        "title": "Set Anthropic API Key\u2026",
         "category": "GitStudio",
         "icon": "$(key)"
       },
@@ -487,7 +512,7 @@
       },
       {
         "command": "gitstudio.ai.setOpenAIKey",
-        "title": "Set OpenAI API Key…",
+        "title": "Set OpenAI API Key\u2026",
         "category": "GitStudio",
         "icon": "$(key)"
       },
@@ -499,7 +524,7 @@
       },
       {
         "command": "gitstudio.ai.selectModel",
-        "title": "Select AI Model…",
+        "title": "Select AI Model\u2026",
         "category": "GitStudio",
         "icon": "$(sparkle)"
       },
@@ -532,6 +557,11 @@
         "title": "Connect AI Provider",
         "category": "GitStudio",
         "icon": "$(plug)"
+      },
+      {
+        "command": "gitstudio.ai.disable",
+        "title": "Disable AI Features",
+        "category": "GitStudio"
       },
       {
         "command": "gitstudio.pr.create",
@@ -616,6 +646,177 @@
         "title": "Copy Pull Request URL",
         "category": "GitStudio",
         "icon": "$(copy)"
+      },
+      {
+        "command": "gitstudio.blame.field.revision.on",
+        "title": "\u2713 Revision",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.field.revision.off",
+        "title": "Revision",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.field.date.on",
+        "title": "\u2713 Date",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.field.date.off",
+        "title": "Date",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.field.author.on",
+        "title": "\u2713 Author",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.field.author.off",
+        "title": "Author",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.field.commitNumber.on",
+        "title": "\u2713 Commit number",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.field.commitNumber.off",
+        "title": "Commit number",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.colors.author.on",
+        "title": "\u2713 Author",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.colors.author.off",
+        "title": "Author",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.colors.order.on",
+        "title": "\u2713 Order",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.colors.order.off",
+        "title": "Order",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.colors.hide.on",
+        "title": "\u2713 Hide",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.colors.hide.off",
+        "title": "Hide",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.initials.on",
+        "title": "\u2713 Initials",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.initials.off",
+        "title": "Initials",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.lastName.on",
+        "title": "\u2713 Last Name",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.lastName.off",
+        "title": "Last Name",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.firstName.on",
+        "title": "\u2713 First Name",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.firstName.off",
+        "title": "First Name",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.fullName.on",
+        "title": "\u2713 Full Name",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.fullName.off",
+        "title": "Full Name",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.email.on",
+        "title": "\u2713 Email",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.names.email.off",
+        "title": "Email",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.hover.on",
+        "title": "\u2713 Show Diff On Hover",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.hover.off",
+        "title": "Show Diff On Hover",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.revealCommitInGraph",
+        "title": "Show Commit in Graph",
+        "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.blame.copyRevision",
+        "title": "Copy Revision Number",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.showDiff",
+        "title": "Show Diff",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.showCommit",
+        "title": "Show Commit",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.openPreviousRevision",
+        "title": "Open Previous Revision",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.viewInBrowser",
+        "title": "View in Browser",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.blame.closeAnnotations",
+        "title": "Close Annotations",
+        "category": "GitStudio Blame"
+      },
+      {
+        "command": "gitstudio.showCommitPanel",
+        "title": "Show Commit Graph",
+        "category": "GitStudio",
+        "icon": "$(git-commit)"
       }
     ],
     "keybindings": [
@@ -668,6 +869,78 @@
           "default": true,
           "description": "Show the current line's commit author and age in the status bar."
         },
+        "gitstudio.changesBadge": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a count badge on the GitStudio activity-bar icon for changed files in the working tree (like the built-in Source Control badge). The tooltip also reports commits waiting to be pulled."
+        },
+        "gitstudio.blame.clickOpensCommit": {
+          "type": "boolean",
+          "default": true,
+          "description": "While blame annotations are shown, clicking one reveals that commit in the GitStudio Commit Graph, opened beside the code."
+        },
+        "gitstudio.blame.gutter.fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "revision",
+              "date",
+              "author",
+              "commitNumber"
+            ],
+            "enumDescriptions": [
+              "The short commit hash.",
+              "The author date (YYYY-MM-DD).",
+              "The author name (see gitstudio.blame.gutter.nameStyle).",
+              "The commit's ordinal within this file's history (1 = oldest)."
+            ]
+          },
+          "default": [
+            "date",
+            "author"
+          ],
+          "description": "Which columns the blame annotation gutter shows. Configure them from the annotation right-click menu: Git Blame Annotations \u2192 Options."
+        },
+        "gitstudio.blame.gutter.nameStyle": {
+          "type": "string",
+          "enum": [
+            "initials",
+            "lastName",
+            "firstName",
+            "fullName",
+            "email"
+          ],
+          "enumDescriptions": [
+            "AA",
+            "Arnaudov",
+            "Anton",
+            "Anton Arnaudov",
+            "anton@example.com"
+          ],
+          "default": "fullName",
+          "description": "How author names are written in the blame annotation gutter."
+        },
+        "gitstudio.blame.gutter.colors": {
+          "type": "string",
+          "enum": [
+            "order",
+            "author",
+            "hide"
+          ],
+          "enumDescriptions": [
+            "Tint by commit age \u2014 a code-age heatmap (recent warmer, older cooler).",
+            "Give every author their own stable tint.",
+            "No background tint."
+          ],
+          "default": "order",
+          "description": "Background tint for the blame annotation gutter."
+        },
+        "gitstudio.blame.showDiffOnHover": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the commit behind a line \u2014 message, author, date, and a copyable SHA \u2014 when hovering it."
+        },
         "gitstudio.blame.heatmap": {
           "type": "boolean",
           "default": true,
@@ -699,13 +972,13 @@
           ],
           "enumDescriptions": [
             "Prefer the zero-key VS Code Language Model (GitHub Copilot / Cursor) when available; otherwise Anthropic (if a key is set), then an OpenAI-compatible endpoint (if a model is configured).",
-            "Use the VS Code Language Model API — GitHub Copilot or Cursor's models, with no key. Pick a specific model via “GitStudio: Select AI Model…”.",
+            "Use the VS Code Language Model API \u2014 GitHub Copilot or Cursor's models, with no key. Pick a specific model via \u201cGitStudio: Select AI Model\u2026\u201d.",
             "Use Anthropic directly (requires an API key set via GitStudio: Set AI API Key).",
-            "Use any OpenAI-compatible endpoint — OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Configure the base URL and model below; a key is optional for local servers.",
+            "Use any OpenAI-compatible endpoint \u2014 OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Configure the base URL and model below; a key is optional for local servers.",
             "Disable all GitBrain AI features."
           ],
           "default": "auto",
-          "markdownDescription": "Which provider GitBrain uses for optional AI features. AI is off until a provider is available; it never gates or breaks Git operations. Use **GitStudio: Select AI Model…** for a guided picker."
+          "markdownDescription": "Which provider GitBrain uses for optional AI features. AI is off until a provider is available; it never gates or breaks Git operations. Use **GitStudio: Select AI Model\u2026** for a guided picker."
         },
         "gitstudio.ai.openai.baseUrl": {
           "type": "string",
@@ -778,7 +1051,7 @@
             "Gemini CLI (`gemini`)."
           ],
           "default": "",
-          "description": "The local agent CLI to drive (uses its own login, no API key). Set via the GitStudio · AI panel; used when the provider is a local agent."
+          "description": "The local agent CLI to drive (uses its own login, no API key). Set via the GitStudio \u00b7 AI panel; used when the provider is a local agent."
         },
         "gitstudio.ai.cliModel": {
           "type": "string",
@@ -803,7 +1076,7 @@
         "gitstudio.errorReporting.enabled": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Send **anonymous, scrubbed crash reports** when a GitStudio command fails, so we can find and fix bugs during the beta without waiting for someone to file a report. No identity, repo contents, file names, commit messages, branch names, or remotes are ever collected — only the shape of a failure (error type/message/stack or the failed operation), tagged with a random install id and your OS/editor version. Reports are also gated by VS Code's global `telemetry.telemetryLevel`: set that to `off` to disable regardless of this toggle. Turn this off to opt out entirely."
+          "markdownDescription": "Send **anonymous, scrubbed crash reports** when a GitStudio command fails, so we can find and fix bugs during the beta without waiting for someone to file a report. No identity, repo contents, file names, commit messages, branch names, or remotes are ever collected \u2014 only the shape of a failure (error type/message/stack or the failed operation), tagged with a random install id and your OS/editor version. Reports are also gated by VS Code's global `telemetry.telemetryLevel`: set that to `off` to disable regardless of this toggle. Turn this off to opt out entirely."
         },
         "gitstudio.errorReporting.endpoint": {
           "type": "string",
@@ -816,13 +1089,13 @@
       {
         "id": "gitstudio.gettingStarted",
         "title": "Get Started with GitStudio",
-        "description": "A free, JetBrains-grade Git suite — commit graph, blame, history, hunk staging, 3-pane merge, interactive rebase with Undo, and optional BYO-key AI. Take the tour.",
+        "description": "A free, JetBrains-grade Git suite \u2014 commit graph, blame, history, hunk staging, 3-pane merge, interactive rebase with Undo, and optional BYO-key AI. Take the tour.",
         "when": "true",
         "steps": [
           {
             "id": "gitstudio.walkthrough.graph",
             "title": "Browse your history in the commit graph",
-            "description": "Your history as a live, virtualized commit graph — right in the **Commits** view in the sidebar, or full-screen in an editor tab. Colored lanes, ref chips and authorship (never a flat list); right-click any commit to checkout, cherry-pick, branch, or reset, and compare any two branches.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\nTip: the graph lives in the **Commits** view at the top of the GitStudio sidebar — no need to leave it.",
+            "description": "Your history as a live, virtualized commit graph \u2014 right in the **Commits** view in the sidebar, or full-screen in an editor tab. Colored lanes, ref chips and authorship (never a flat list); right-click any commit to checkout, cherry-pick, branch, or reset, and compare any two branches.\n[Open Commit Graph](command:gitstudio.showCommitGraph)\nTip: the graph lives in the **Commits** view at the top of the GitStudio sidebar \u2014 no need to leave it.",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -854,7 +1127,7 @@
           {
             "id": "gitstudio.walkthrough.stage",
             "title": "Stage a hunk & commit",
-            "description": "Stage by hunk or even by line, then commit from the GitStudio commit box (Amend, Sign-off, author override, Commit & Push). When AI is on, the ✨ button drafts a message from your staged diff.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nShortcut: select lines and press __Ctrl/Cmd+Alt+G S__ to stage them.",
+            "description": "Stage by hunk or even by line, then commit from the GitStudio commit box (Amend, Sign-off, author override, Commit & Push). When AI is on, the \u2728 button drafts a message from your staged diff.\n[Open the Changes view](command:workbench.view.extension.gitstudio)\nShortcut: select lines and press __Ctrl/Cmd+Alt+G S__ to stage them.",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -871,7 +1144,7 @@
           {
             "id": "gitstudio.walkthrough.history",
             "title": "Explore file & line history",
-            "description": "Step through how a file — or a single line — evolved over time, with revision navigation and a reflog time-machine for recovery.\n[Show Line History](command:gitstudio.showLineHistory)\nShortcut: __Ctrl/Cmd+Alt+G H__ on the current line.",
+            "description": "Step through how a file \u2014 or a single line \u2014 evolved over time, with revision navigation and a reflog time-machine for recovery.\n[Show Line History](command:gitstudio.showLineHistory)\nShortcut: __Ctrl/Cmd+Alt+G H__ on the current line.",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -888,7 +1161,7 @@
           {
             "id": "gitstudio.walkthrough.merge",
             "title": "Resolve conflicts in the 3-pane editor",
-            "description": "When a merge, rebase, or cherry-pick conflicts, GitStudio opens a JetBrains-style three-pane editor — yours, the result, and theirs — with one-click accept ribbons. Interactive rebase gets the same care, wrapped in a universal, reflog-powered Undo.\n[Start Interactive Rebase](command:gitstudio.startInteractiveRebase)\nMade a mistake? __Undo Last Git Operation__ (Ctrl/Cmd+Alt+G Z) reverses it.",
+            "description": "When a merge, rebase, or cherry-pick conflicts, GitStudio opens a JetBrains-style three-pane editor \u2014 yours, the result, and theirs \u2014 with one-click accept ribbons. Interactive rebase gets the same care, wrapped in a universal, reflog-powered Undo.\n[Start Interactive Rebase](command:gitstudio.startInteractiveRebase)\nMade a mistake? __Undo Last Git Operation__ (Ctrl/Cmd+Alt+G Z) reverses it.",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -905,7 +1178,7 @@
           {
             "id": "gitstudio.walkthrough.connect",
             "title": "Connect GitHub & set up GitBrain (optional)",
-            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional and bring-your-own-key — set an Anthropic key (or use Copilot's model) for commit messages, explain-this-diff, and summaries. It's off until you turn it on and never gates a Git operation.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Set AI API Key](command:gitstudio.ai.setApiKey)",
+            "description": "Sign in once with VS Code's built-in GitHub account to list, check out, review, merge, and create pull requests in-editor. GitBrain AI is optional and bring-your-own-key \u2014 set an Anthropic key (or use Copilot's model) for commit messages, explain-this-diff, and summaries. It's off until you turn it on and never gates a Git operation.\n[Sign in to GitHub](command:gitstudio.pr.signIn)\n[Set AI API Key](command:gitstudio.ai.setApiKey)",
             "media": {
               "image": {
                 "light": "media/wordmark-light.png",
@@ -998,8 +1271,8 @@
         },
         {
           "command": "gitstudio.toggleFileBlame",
-          "when": "editorTextFocus && gitstudio.hasRepo",
-          "group": "navigation"
+          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "group": "navigation@-3"
         }
       ],
       "scm/resourceState/context": [
@@ -1053,6 +1326,11 @@
           "command": "gitstudio.unstageHunk",
           "when": "editorTextFocus && gitstudio.hasRepo && resourceScheme == file",
           "group": "2_gitstudio@4"
+        },
+        {
+          "submenu": "gitstudio.blame.annotationsMenu",
+          "when": "gitstudio.blameAnnotated",
+          "group": "1_gitstudio@1"
         }
       ],
       "commandPalette": [
@@ -1250,7 +1528,7 @@
         },
         {
           "command": "gitstudio.branch.push",
-          "when": "false"
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.branch.setUpstream",
@@ -1339,6 +1617,146 @@
         {
           "command": "gitstudio.pr.deleteReviewComment",
           "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.revision.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.revision.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.date.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.date.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.author.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.author.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.commitNumber.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.field.commitNumber.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.colors.author.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.colors.author.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.colors.order.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.colors.order.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.colors.hide.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.colors.hide.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.initials.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.initials.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.lastName.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.lastName.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.firstName.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.firstName.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.fullName.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.fullName.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.email.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.names.email.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.hover.on",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.hover.off",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.closeAnnotations",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.blame.copyRevision",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.blame.showDiff",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.blame.showCommit",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.blame.openPreviousRevision",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.blame.viewInBrowser",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.revealCommitInGraph",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.copyCommitSha",
+          "when": "false"
+        },
+        {
+          "command": "gitstudio.showCommitPanel",
+          "when": "gitstudio.hasRepo"
         }
       ],
       "view/item/context": [
@@ -1438,8 +1856,216 @@
           "when": "commentController == gitstudio.prReview && comment == gitstudio.prReviewComment",
           "group": "group@1"
         }
+      ],
+      "editor/lineNumber/context": [
+        {
+          "command": "gitstudio.toggleFileBlame",
+          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "group": "1_gitstudio@1"
+        },
+        {
+          "submenu": "gitstudio.blame.annotationsMenu",
+          "when": "gitstudio.blameAnnotated",
+          "group": "1_gitstudio@3"
+        }
+      ],
+      "gitstudio.blame.annotationsMenu": [
+        {
+          "command": "gitstudio.blame.closeAnnotations",
+          "group": "1_annotate@1"
+        },
+        {
+          "command": "gitstudio.blame.showDiff",
+          "group": "2_inspect@1"
+        },
+        {
+          "command": "gitstudio.blame.showCommit",
+          "group": "2_inspect@2"
+        },
+        {
+          "command": "gitstudio.blame.copyRevision",
+          "group": "2_inspect@3"
+        },
+        {
+          "command": "gitstudio.blame.openPreviousRevision",
+          "group": "3_revision@1"
+        },
+        {
+          "command": "gitstudio.showLineHistory",
+          "group": "3_revision@2"
+        },
+        {
+          "command": "gitstudio.blame.viewInBrowser",
+          "group": "4_external@1"
+        },
+        {
+          "submenu": "gitstudio.blame.optionsMenu",
+          "group": "5_options@1"
+        }
+      ],
+      "gitstudio.blame.colorsMenu": [
+        {
+          "command": "gitstudio.blame.colors.author.on",
+          "when": "gitstudio.blame.c == author",
+          "group": "1@0"
+        },
+        {
+          "command": "gitstudio.blame.colors.author.off",
+          "when": "!(gitstudio.blame.c == author)",
+          "group": "1@0"
+        },
+        {
+          "command": "gitstudio.blame.colors.order.on",
+          "when": "gitstudio.blame.c == order",
+          "group": "1@1"
+        },
+        {
+          "command": "gitstudio.blame.colors.order.off",
+          "when": "!(gitstudio.blame.c == order)",
+          "group": "1@1"
+        },
+        {
+          "command": "gitstudio.blame.colors.hide.on",
+          "when": "gitstudio.blame.c == hide",
+          "group": "1@2"
+        },
+        {
+          "command": "gitstudio.blame.colors.hide.off",
+          "when": "!(gitstudio.blame.c == hide)",
+          "group": "1@2"
+        }
+      ],
+      "gitstudio.blame.namesMenu": [
+        {
+          "command": "gitstudio.blame.names.initials.on",
+          "when": "gitstudio.blame.n == initials",
+          "group": "1@0"
+        },
+        {
+          "command": "gitstudio.blame.names.initials.off",
+          "when": "!(gitstudio.blame.n == initials)",
+          "group": "1@0"
+        },
+        {
+          "command": "gitstudio.blame.names.lastName.on",
+          "when": "gitstudio.blame.n == lastName",
+          "group": "1@1"
+        },
+        {
+          "command": "gitstudio.blame.names.lastName.off",
+          "when": "!(gitstudio.blame.n == lastName)",
+          "group": "1@1"
+        },
+        {
+          "command": "gitstudio.blame.names.firstName.on",
+          "when": "gitstudio.blame.n == firstName",
+          "group": "1@2"
+        },
+        {
+          "command": "gitstudio.blame.names.firstName.off",
+          "when": "!(gitstudio.blame.n == firstName)",
+          "group": "1@2"
+        },
+        {
+          "command": "gitstudio.blame.names.fullName.on",
+          "when": "gitstudio.blame.n == fullName",
+          "group": "1@3"
+        },
+        {
+          "command": "gitstudio.blame.names.fullName.off",
+          "when": "!(gitstudio.blame.n == fullName)",
+          "group": "1@3"
+        },
+        {
+          "command": "gitstudio.blame.names.email.on",
+          "when": "gitstudio.blame.n == email",
+          "group": "1@4"
+        },
+        {
+          "command": "gitstudio.blame.names.email.off",
+          "when": "!(gitstudio.blame.n == email)",
+          "group": "1@4"
+        }
+      ],
+      "gitstudio.blame.optionsMenu": [
+        {
+          "command": "gitstudio.blame.field.revision.on",
+          "when": "gitstudio.blame.f.revision",
+          "group": "1_fields@0"
+        },
+        {
+          "command": "gitstudio.blame.field.revision.off",
+          "when": "!gitstudio.blame.f.revision",
+          "group": "1_fields@0"
+        },
+        {
+          "command": "gitstudio.blame.field.date.on",
+          "when": "gitstudio.blame.f.date",
+          "group": "1_fields@1"
+        },
+        {
+          "command": "gitstudio.blame.field.date.off",
+          "when": "!gitstudio.blame.f.date",
+          "group": "1_fields@1"
+        },
+        {
+          "command": "gitstudio.blame.field.author.on",
+          "when": "gitstudio.blame.f.author",
+          "group": "1_fields@2"
+        },
+        {
+          "command": "gitstudio.blame.field.author.off",
+          "when": "!gitstudio.blame.f.author",
+          "group": "1_fields@2"
+        },
+        {
+          "command": "gitstudio.blame.field.commitNumber.on",
+          "when": "gitstudio.blame.f.commitNumber",
+          "group": "1_fields@3"
+        },
+        {
+          "command": "gitstudio.blame.field.commitNumber.off",
+          "when": "!gitstudio.blame.f.commitNumber",
+          "group": "1_fields@3"
+        },
+        {
+          "submenu": "gitstudio.blame.colorsMenu",
+          "group": "2_style@1"
+        },
+        {
+          "submenu": "gitstudio.blame.namesMenu",
+          "group": "2_style@2"
+        },
+        {
+          "command": "gitstudio.blame.hover.on",
+          "when": "gitstudio.blame.h",
+          "group": "3_hover@1"
+        },
+        {
+          "command": "gitstudio.blame.hover.off",
+          "when": "!gitstudio.blame.h",
+          "group": "3_hover@1"
+        }
       ]
-    }
+    },
+    "submenus": [
+      {
+        "id": "gitstudio.blame.annotationsMenu",
+        "label": "Git Blame Annotations"
+      },
+      {
+        "id": "gitstudio.blame.colorsMenu",
+        "label": "Colors"
+      },
+      {
+        "id": "gitstudio.blame.namesMenu",
+        "label": "Names"
+      },
+      {
+        "id": "gitstudio.blame.optionsMenu",
+        "label": "Options"
+      }
+    ]
   },
   "scripts": {
     "compile": "node esbuild.js",

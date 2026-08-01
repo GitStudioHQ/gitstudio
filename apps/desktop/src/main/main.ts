@@ -22,6 +22,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { RepoStore } from "./repoStore";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
+import { RebaseBridge } from "./rebaseBridge";
 import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
 import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
@@ -53,6 +54,7 @@ let mainWindow: BrowserWindow | undefined;
 let repos: RepoStore;
 let bridge: GitBridge;
 let github: GitHubBridge;
+let rebase: RebaseBridge;
 let ai: AiBridge;
 let terminal: TerminalBridge;
 
@@ -457,6 +459,7 @@ function registerIpc(): void {
 
   handle("graph:load", (opts) => bridge.graphLoad(opts));
   handle("refs:list", () => bridge.refsList());
+  handle("refs:contains", (a) => bridge.refsContains(a.sha));
   handle("head:get", () => bridge.head());
   handle("status", () => bridge.status());
   handle("commit:details", (sha) => bridge.commitDetails(sha));
@@ -466,6 +469,11 @@ function registerIpc(): void {
   handle("conflict:model", (path) => bridge.conflictModel(path));
   handle("blame:file", (path) => bridge.blameFile(path));
   handle("commit:action", (req) => bridge.commitAction(req));
+  // Interactive rebase (Rebase view) — driven by the shared RebaseRunner, the
+  // same module the VS Code extension uses. Continue/abort/skip are already
+  // registered below (the mid-operation controls) and drive the same git state.
+  handle("rebase:load", (req) => rebase.load(req ?? {}));
+  handle("rebase:apply", (req) => rebase.apply(req));
 
   // Working-tree staging + commit (Changes view).
   handle("stage", (path) => bridge.stage(path));
@@ -727,6 +735,7 @@ async function boot(): Promise<void> {
   repos = new RepoStore(state.recent);
   bridge = new GitBridge(repos);
   github = new GitHubBridge(repos);
+  rebase = new RebaseBridge(repos);
   ai = new AiBridge(repos, send);
   repos.onChange((info) => {
     send("repo:changed", info);

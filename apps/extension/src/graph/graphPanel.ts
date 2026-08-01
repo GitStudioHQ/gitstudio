@@ -20,6 +20,7 @@ import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { commitMenuItems, runCommitAction } from "./commitActions";
 import { openRevisionDiff } from "../history/revisionContentProvider";
+import { commitWebUrl } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
 
@@ -55,15 +56,31 @@ export class CommitGraphPanel {
   private static current: CommitGraphPanel | undefined;
   private static currentPanel: vscode.WebviewPanel | undefined;
 
-  static show(repos: RepoManager, extensionUri: vscode.Uri): void {
+  /** True while the graph panel exists. */
+  static get isOpen(): boolean {
+    return CommitGraphPanel.currentPanel !== undefined;
+  }
+
+
+  /**
+   * Open (or focus) the Commit Graph. `column` lets callers put it *beside* the
+   * code instead of over it — what a blame-annotation reveal wants, so the file
+   * and the commit stay on screen together.
+   */
+  static show(
+    repos: RepoManager,
+    extensionUri: vscode.Uri,
+    column: vscode.ViewColumn = vscode.ViewColumn.Active,
+  ): void {
     if (CommitGraphPanel.currentPanel) {
-      CommitGraphPanel.currentPanel.reveal(vscode.ViewColumn.Active);
+      // Already open: focus it where it is rather than moving the user's layout.
+      CommitGraphPanel.currentPanel.reveal(undefined, true);
       return;
     }
     const panel = vscode.window.createWebviewPanel(
       "gitstudio.commitGraph",
       "Commit Graph",
-      vscode.ViewColumn.Active,
+      { viewColumn: column, preserveFocus: true },
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -91,18 +108,33 @@ export class CommitGraphPanel {
     webview: vscode.Webview,
     repos: RepoManager,
     extensionUri: vscode.Uri,
-    opts?: { sidebar?: boolean },
+    opts?: { sidebar?: boolean; layout?: "dock" | "side" },
   ): CommitGraphPanel {
-    return new CommitGraphPanel(webview, repos, extensionUri, !!opts?.sidebar);
+    return new CommitGraphPanel(
+      webview,
+      repos,
+      extensionUri,
+      !!opts?.sidebar,
+      opts?.layout ?? "dock",
+    );
   }
 
-  /** Open (or focus) the graph, then select + reveal a commit and its details. */
+  /**
+   * Open (or focus) the graph, then select + reveal a commit and its details.
+   *
+   * @deprecated The editor-tab graph is superseded by the bottom-panel graph
+   * (`gitstudio.commitPanel`), which shows the graph and the commit details
+   * side by side without consuming an editor tab. Prefer the
+   * `gitstudio.revealCommitInGraph` command. Retained so an existing keybinding
+   * or a pinned editor tab keeps working.
+   */
   static revealCommit(
     repos: RepoManager,
     extensionUri: vscode.Uri,
     sha: string,
+    column: vscode.ViewColumn = vscode.ViewColumn.Active,
   ): void {
-    CommitGraphPanel.show(repos, extensionUri);
+    CommitGraphPanel.show(repos, extensionUri, column);
     CommitGraphPanel.current?.reveal(sha);
   }
 
@@ -120,6 +152,17 @@ export class CommitGraphPanel {
   private nextSkip = 0;
   private hasMore = false;
   private ready = false;
+  /** True once a graphInit with real rows has reached the webview. */
+  private initialized = false;
+  /**
+   * The commit THIS surface is currently showing — updated when the host
+   * reveals one and when the user selects one inside the graph. Callers dedupe
+   * against this live value rather than remembering what they last asked for,
+   * which goes stale the moment the graph moves on.
+   */
+  private shown: string | undefined;
+  /** Mirrors the webview's details-dock visibility (see detailsOpen). */
+  private detailsVisible = false;
   private repoRoot: string | undefined;
   /** A sha to reveal once the first page is loaded (from the Commits view). */
   private pendingReveal: string | undefined;
@@ -130,6 +173,8 @@ export class CommitGraphPanel {
     private readonly extensionUri: vscode.Uri,
     /** Sidebar mode: loads the compact <gitstudio-commit-rail> bundle. */
     private readonly sidebar = false,
+    /** Full-surface split axis: details docked under, or beside, the graph. */
+    private readonly layout: "dock" | "side" = "dock",
   ) {
     const nonce = getNonce();
     webview.html = getGraphHtml(
@@ -137,6 +182,7 @@ export class CommitGraphPanel {
       extensionUri,
       nonce,
       sidebar ? "graph-sidebar" : "graph",
+      this.layout,
     );
 
     this.disposables.push(
@@ -162,9 +208,8 @@ export class CommitGraphPanel {
         void this.loadInitial();
         break;
       case "selectCommit":
-        void this.pushCommitDetails(msg.sha);
-        break;
       case "openCommit":
+        this.shown = msg.sha;
         void this.pushCommitDetails(msg.sha);
         break;
       case "contextMenu":
@@ -188,9 +233,16 @@ export class CommitGraphPanel {
       case "requestStats":
         void this.pushRowStats(msg.shas);
         break;
+      case "requestContains":
+        void this.pushContains(msg.sha);
+        break;
+      case "detailsVisibility":
+        this.detailsVisible = msg.open;
+        break;
       case "openInGraph":
-        // Sidebar rail → promote to the full editor-area graph at this commit.
-        CommitGraphPanel.revealCommit(this.repos, this.extensionUri, msg.sha);
+        // Sidebar rail → promote into the BOTTOM PANEL graph (the split view
+        // beside the terminal), which supersedes the old editor-tab graph.
+        void vscode.commands.executeCommand("gitstudio.revealCommitInGraph", msg.sha);
         break;
     }
   }
@@ -265,6 +317,9 @@ export class CommitGraphPanel {
     this.records.clear();
     this.loaded = [];
     this.nextSkip = 0;
+    // Rows in the webview are about to be replaced — until the new graphInit
+    // lands, a reveal has nothing to select and must queue (see reveal()).
+    this.initialized = false;
 
     try {
       // Refs (for-each-ref + stash) and the first log page run CONCURRENTLY —
@@ -294,8 +349,12 @@ export class CommitGraphPanel {
         totalColumns,
         hasMore: this.hasMore,
       });
-      // Flush a queued reveal (e.g. from a Commits-view click) now that rows
-      // exist in the webview.
+      // Rows now exist in the webview — reveals can land. Must be set BEFORE
+      // the flush below, or the replayed reveal would just re-queue itself.
+      this.initialized = true;
+      // Flush a queued reveal (e.g. from a blame click or a Commits-view
+      // click). Later reveals overwrite the pending one, so the commit the user
+      // clicked LAST is the one that wins.
       if (this.pendingReveal) {
         const sha = this.pendingReveal;
         this.pendingReveal = undefined;
@@ -526,10 +585,25 @@ export class CommitGraphPanel {
 
   // ── Commit details panel (docked under the graph) ──────────────────────────
 
+  /** What this surface is currently showing (undefined until something is). */
+  get selectedSha(): string | undefined {
+    return this.shown;
+  }
+
+  /** Whether the details dock is currently open in the webview. Mirrored from
+   *  the webview because the user can dismiss it there, and only a fresh
+   *  reveal re-opens it. */
+  get detailsOpen(): boolean {
+    return this.detailsVisible;
+  }
+
   /** Public: select + reveal a commit and show its details (from another view). */
   reveal(sha: string): void {
-    if (!this.ready) {
-      // The webview hasn't booted / loaded its first page yet — queue it.
+    // `ready` only means the webview booted — its first page of rows arrives
+    // later, and revealing into an empty graph silently no-ops. Queue until
+    // graphInit has actually landed (`initialized`), or a reveal issued during
+    // that window is lost.
+    if (!this.ready || !this.initialized) {
       this.pendingReveal = sha;
       return;
     }
@@ -538,11 +612,15 @@ export class CommitGraphPanel {
       // deeper than this fresh panel): page toward the commit first, else the
       // webview's reveal silently no-ops on a row it doesn't have.
       void this.pageUntilLoaded(sha).then(() => {
+        this.shown = sha;
+        this.detailsVisible = true;
         this.post({ type: "revealCommit", sha });
         void this.pushCommitDetails(sha);
       });
       return;
     }
+    this.shown = sha;
+    this.detailsVisible = true; // revealCommit re-opens the dock webview-side
     this.post({ type: "revealCommit", sha });
     void this.pushCommitDetails(sha);
   }
@@ -737,11 +815,15 @@ export class CommitGraphPanel {
       return;
     }
     if (action === "open-remote") {
-      await this.doCopy(sha);
-      void vscode.window.setStatusBarMessage(
-        "$(check) Copied SHA (open-on-remote coming soon)",
-        2500,
-      );
+      const remote = await active.ctx.process.run(["remote", "get-url", "origin"]);
+      const url = commitWebUrl(remote.stdout.trim(), sha);
+      if (!url) {
+        void vscode.window.showInformationMessage(
+          "GitStudio: origin isn't a recognised GitHub/GitLab/Bitbucket remote.",
+        );
+        return;
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(url));
       return;
     }
     // The visual Interactive Rebase workspace opens via its command (needs the
@@ -780,6 +862,43 @@ export class CommitGraphPanel {
   }
 
   /** Compute + post CHANGES-column stats for the requested (visible) shas. */
+  /**
+   * Answer the details pane's "in N branches" request. Lazy and best-effort:
+   * `git branch --all --contains` walks history, so a slow or failing call must
+   * never break the pane — we reply with an empty list instead. The sha is
+   * echoed back so the webview can discard a late reply for a commit the user
+   * has already navigated away from.
+   */
+  private async pushContains(sha: string): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active || sha === UNCOMMITTED_SHA) {
+      this.post({ type: "commitContains", sha, branches: [], truncated: false });
+      return;
+    }
+    // One walk at a time. `git branch --all --contains` is O(history) and a
+    // burst of selections would otherwise queue an unbounded number of git
+    // processes; a repeat request for the same sha is simply dropped.
+    if (this.containsInFlight === sha) {
+      return;
+    }
+    this.containsInFlight = sha;
+    try {
+      const { branches, truncated } = await active.ctx.refs.containingBranches(sha);
+      // The user may have moved on; the webview also guards, but not posting a
+      // reply for a stale commit keeps the two ends honest.
+      this.post({ type: "commitContains", sha, branches, truncated });
+    } catch {
+      this.post({ type: "commitContains", sha, branches: [], truncated: false });
+    } finally {
+      if (this.containsInFlight === sha) {
+        this.containsInFlight = undefined;
+      }
+    }
+  }
+
+  /** Sha whose containment walk is currently running, if any. */
+  private containsInFlight: string | undefined;
+
   private async pushRowStats(shas: string[]): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {

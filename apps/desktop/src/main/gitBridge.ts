@@ -194,6 +194,21 @@ export class GitBridge {
 
   // ── Refs / HEAD ────────────────────────────────────────────────────────────
 
+  /** Branches containing `sha`. Best-effort: never throws at the renderer. */
+  async refsContains(
+    sha: string,
+  ): Promise<{ branches: string[]; truncated: boolean }> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { branches: [], truncated: false };
+    }
+    try {
+      return await ctx.refs.containingBranches(sha);
+    } catch {
+      return { branches: [], truncated: false };
+    }
+  }
+
   async refsList(): Promise<RefInfo[]> {
     const ctx = this.ctx();
     if (!ctx) {

@@ -3,7 +3,9 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 
 // A compact left status-bar segment for the active repo's sync state:
 //   $(git-branch) <branch> $(arrow-down)<behind> $(arrow-up)<ahead>
-// Clicking opens a QuickPick of Sync / Push / Pull / Fetch / Publish. Updated
+// Clicking SYNCS immediately (pull, then push) — no command-palette prompt.
+// Fetch / Pull / Push live as command links in the item's hover tooltip, which
+// keeps every action one click away without hijacking the search bar. Updated
 // (debounced) on RepoManager.onDidChange; hidden when no repo is open. Coexists
 // with built-in git's own item by staying terse and in its own segment.
 
@@ -28,6 +30,16 @@ export class SyncStatusItem implements vscode.Disposable {
     this.disposables.push(
       this.item,
       vscode.commands.registerCommand(COMMAND_ID, () => this.showMenu()),
+      // One command per verb so the tooltip can link to them directly.
+      ...(["sync", "fetch", "pull", "push", "publish"] as const).map((id) =>
+        vscode.commands.registerCommand(`gitstudio.sync.${id}`, async () => {
+          const active = this.repos.getActive();
+          if (active) {
+            await this.runAction(active, id);
+            this.scheduleUpdate();
+          }
+        }),
+      ),
       this.repos.onDidChange(() => this.scheduleUpdate()),
     );
 
@@ -75,7 +87,7 @@ export class SyncStatusItem implements vscode.Disposable {
         parts.push("$(cloud-upload)");
       }
       this.item.text = parts.join(" ");
-      this.item.tooltip = buildTooltip(branch, upstream, counts);
+      this.setTooltip(branch, upstream, counts.ahead, counts.behind);
       this.item.show();
     } catch {
       if (token === this.updateToken) {
@@ -84,49 +96,77 @@ export class SyncStatusItem implements vscode.Disposable {
     }
   }
 
+  /**
+   * Clicking the item performs the DEFAULT action directly: sync when there is
+   * an upstream, publish when there isn't. Deliberately not a QuickPick — the
+   * palette is a search box, not a menu, and a one-click control should just
+   * act. The other verbs are command links in the tooltip (see setTooltip).
+   */
   private async showMenu(): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
       return;
     }
     const upstream = await active.ctx.sync.currentUpstream();
-    const items: Array<vscode.QuickPickItem & { id: string }> = [];
-    if (upstream) {
-      // Fetch sits above Pull — the read-only "what's out there?" step comes
-      // before Update, matching the Changes-view branch menu ordering.
-      items.push(
-        { id: "sync", label: "$(sync) Sync", description: "pull, then push" },
-        { id: "fetch", label: "$(repo-fetch) Fetch" },
-        { id: "pull", label: "$(arrow-down) Pull" },
-        { id: "push", label: "$(arrow-up) Push" },
-      );
-    } else {
-      items.push(
-        {
-          id: "publish",
-          label: "$(cloud-upload) Publish Branch",
-          description: "push --set-upstream",
-        },
-        { id: "fetch", label: "$(repo-fetch) Fetch" },
-      );
-    }
-
-    const picked = await vscode.window.showQuickPick(items, {
-      title: "GitStudio Sync",
-      placeHolder: upstream ? `Upstream: ${upstream}` : "No upstream set",
-    });
-    if (!picked) {
-      return;
-    }
-    await this.runAction(active, picked.id);
+    await this.runAction(active, upstream ? "sync" : "publish");
     this.scheduleUpdate();
+  }
+
+  /** A hover menu of real, clickable commands — the alternative to a QuickPick. */
+  private setTooltip(
+    branch: string,
+    upstream: string | null | undefined,
+    ahead: number,
+    behind: number,
+  ): void {
+    const md = new vscode.MarkdownString(undefined, true);
+    md.isTrusted = {
+      enabledCommands: [
+        "gitstudio.sync.sync",
+        "gitstudio.sync.fetch",
+        "gitstudio.sync.pull",
+        "gitstudio.sync.push",
+        "gitstudio.sync.publish",
+      ],
+    };
+    md.supportThemeIcons = true;
+    md.appendMarkdown(`**${branch}**\n\n`);
+    md.appendMarkdown(
+      upstream
+        ? `$(git-branch) tracking \`${upstream}\` · ${behind} in, ${ahead} out\n\n`
+        : "No upstream set\n\n",
+    );
+    md.appendMarkdown("---\n\n");
+    if (upstream) {
+      md.appendMarkdown("[$(sync) Sync](command:gitstudio.sync.sync) &nbsp; ");
+      md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch) &nbsp; ");
+      md.appendMarkdown("[$(arrow-down) Pull](command:gitstudio.sync.pull) &nbsp; ");
+      md.appendMarkdown("[$(arrow-up) Push](command:gitstudio.sync.push)");
+    } else {
+      md.appendMarkdown("[$(cloud-upload) Publish Branch](command:gitstudio.sync.publish) &nbsp; ");
+      md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch)");
+    }
+    this.item.tooltip = md;
   }
 
   private async runAction(active: RepoEntry, id: string): Promise<void> {
     switch (id) {
       case "sync": {
+        // Fetch explicitly FIRST. `git pull` does its own fetch, but when that
+        // fetch fails (no SSH agent in the host's environment, auth, network)
+        // git reports the useless "your configuration specifies to merge with
+        // the ref 'refs/heads/X' ... but no such ref was fetched" instead of the
+        // actual failure. Doing it in two steps surfaces the real error.
+        const fetched = await active.ctx.sync.fetch({ prune: true });
+        if (!fetched.ok) {
+          reportSync(fetched, "Fetch");
+          return;
+        }
         const pull = await active.ctx.sync.pull();
         if (!pull.ok) {
+          if (await this.offerUpstreamRepair(active, pull.stderr)) {
+            return;
+          }
           reportSync(pull, "Pull");
           return;
         }
@@ -174,33 +214,102 @@ export class SyncStatusItem implements vscode.Disposable {
     }
   }
 
-  private async askRebase(): Promise<boolean | undefined> {
-    const choice = await vscode.window.showQuickPick(
-      [
-        { label: "$(arrow-down) Merge", value: false },
-        { label: "$(git-merge) Rebase", value: true },
-      ],
-      { title: "Pull strategy", placeHolder: "Merge or rebase local commits?" },
+  /**
+   * Git's worst sync error, made actionable.
+   *
+   * When a branch tracks a remote branch that has since been deleted, `git pull`
+   * says "your configuration specifies to merge with the ref 'refs/heads/X' from
+   * the remote, but no such ref was fetched" — which describes git's internals,
+   * not the user's problem, and offers no way out. The actual situation is
+   * simply "the branch you were tracking is gone", and there are exactly two
+   * sane answers: republish this branch, or stop tracking.
+   *
+   * Returns true when it handled the failure (so the caller suppresses the raw
+   * git error), false to fall through to normal reporting.
+   */
+  private async offerUpstreamRepair(
+    active: RepoEntry,
+    stderr: string,
+  ): Promise<boolean> {
+    if (!/no such ref was fetched/i.test(stderr)) {
+      return false;
+    }
+    const head = await active.ctx.refs.getHead();
+    if (head.detached || !head.branch) {
+      return false;
+    }
+    const branch = head.branch;
+    const upstream = (await active.ctx.sync.currentUpstream()) ?? "its upstream";
+    const choice = await vscode.window.showWarningMessage(
+      `"${branch}" tracks ${upstream}, which no longer exists on the remote.`,
+      {
+        modal: true,
+        detail:
+          "Someone deleted or renamed that remote branch. Republish to recreate " +
+          "it from your local commits, or stop tracking it and set a new " +
+          "upstream later.",
+      },
+      "Republish Branch",
+      "Stop Tracking",
     );
-    return choice?.value;
+    if (choice === "Republish Branch") {
+      const remote = await this.pickRemote(active);
+      if (!remote) {
+        return true;
+      }
+      reportSync(
+        await active.ctx.sync.push({ remote, branch, setUpstream: true }),
+        "Publish",
+        `Published ${branch}`,
+      );
+      return true;
+    }
+    if (choice === "Stop Tracking") {
+      const r = await active.ctx.process.run([
+        "branch",
+        "--unset-upstream",
+        branch,
+      ]);
+      reportSync(
+        { ok: r.code === 0, stderr: r.stderr },
+        "Unset upstream",
+        `"${branch}" no longer tracks a remote branch`,
+      );
+      return true;
+    }
+    // Dismissed — the user has been told what is wrong; don't also throw git's
+    // version of the same thing at them.
+    return true;
+  }
+
+  private async askRebase(): Promise<boolean | undefined> {
+    // A real dialog, not the command palette: this is a decision with
+    // consequences, and the palette is a search box.
+    const choice = await vscode.window.showInformationMessage(
+      "Pull: how should your local commits be integrated?",
+      { modal: true, detail: "Merge keeps history as-is. Rebase replays your commits on top." },
+      "Merge",
+      "Rebase",
+    );
+    return choice === undefined ? undefined : choice === "Rebase";
   }
 
   private async askForce(): Promise<boolean | undefined> {
     const forceDefault = vscode.workspace
       .getConfiguration("gitstudio")
       .get<boolean>("push.forceWithLease", true);
-    const choice = await vscode.window.showQuickPick(
-      [
-        { label: "$(arrow-up) Push", description: "normal push", value: false },
-        {
-          label: "$(warning) Force push (with lease)",
-          description: forceDefault ? "--force-with-lease" : "",
-          value: true,
-        },
-      ],
-      { title: "Push", placeHolder: "Push or force-push?" },
+    const choice = await vscode.window.showWarningMessage(
+      "Push to the upstream branch?",
+      {
+        modal: true,
+        detail: forceDefault
+          ? "Force push uses --force-with-lease, which refuses to overwrite remote work you haven't seen."
+          : "Force push overwrites the remote branch.",
+      },
+      "Push",
+      "Force push",
     );
-    return choice?.value;
+    return choice === undefined ? undefined : choice === "Force push";
   }
 
   private async currentBranch(active: RepoEntry): Promise<string | undefined> {
@@ -225,11 +334,13 @@ export class SyncStatusItem implements vscode.Disposable {
     if (remotes.length === 1) {
       return remotes[0].name;
     }
-    const picked = await vscode.window.showQuickPick(
-      remotes.map((r) => ({ label: `$(cloud) ${r.name}`, name: r.name })),
-      { title: "Publish to which remote?" },
+    const names = remotes.map((r) => r.name);
+    const picked = await vscode.window.showInformationMessage(
+      "Publish this branch to which remote?",
+      { modal: true },
+      ...names,
     );
-    return picked?.name;
+    return picked;
   }
 
   dispose(): void {
@@ -244,24 +355,6 @@ export class SyncStatusItem implements vscode.Disposable {
   }
 }
 
-function buildTooltip(
-  branch: string,
-  upstream: string | null,
-  counts: { ahead: number; behind: number },
-): vscode.MarkdownString {
-  const md = new vscode.MarkdownString(undefined, true);
-  md.supportThemeIcons = true;
-  md.appendMarkdown(`$(git-branch) **${branch}**\n\n`);
-  if (upstream) {
-    md.appendMarkdown(`$(cloud) Upstream: \`${upstream}\`\n\n`);
-    md.appendMarkdown(
-      `$(arrow-down) ${counts.behind} behind · $(arrow-up) ${counts.ahead} ahead`,
-    );
-  } else {
-    md.appendMarkdown("No upstream — click to publish.");
-  }
-  return md;
-}
 
 function reportSync(
   result: { ok: boolean; stderr: string },

@@ -64,7 +64,10 @@ interface StatePayload {
   staged: FileEntry[];
   unstaged: FileEntry[];
   stagedCount: number;
+  /** Branch name, or the short revision when HEAD is detached. */
   branch?: string;
+  /** True when `branch` is a revision (detached HEAD), not a branch name. */
+  detached?: boolean;
   /** Branch + remote lists driving the in-header branch/actions menu. */
   branches?: BranchesPayload;
   /** Upstream tracking ref (e.g. "origin/main"), when the branch tracks one. */
@@ -266,7 +269,7 @@ export class CommitViewProvider
         await this.discardLocalCommits();
         return;
       case "newBranchFromPush":
-        await this.newBranchFromPush();
+        await this.newBranchFromPush(msg.ref);
         return;
       case "openPushFileDiff":
         await this.openPushFileDiff(msg.path ?? "", msg.oldPath);
@@ -683,6 +686,42 @@ export class CommitViewProvider
     }
     await this.memento.update(this.favKey(entry), [...cur]);
   }
+  /**
+   * Mirror the built-in SCM view's count badge on the GitStudio activity-bar
+   * icon, so pending work is visible without opening the view. The number is
+   * changed FILES (a path staged *and* modified counts once, like the native
+   * badge); incoming commits ride along in the tooltip rather than inflating
+   * the count into something ambiguous.
+   */
+  private updateBadge(
+    staged: readonly FileEntry[],
+    unstaged: readonly FileEntry[],
+    behind: number | undefined,
+  ): void {
+    if (!this.view) {
+      return;
+    }
+    const on = vscode.workspace
+      .getConfiguration("gitstudio")
+      .get<boolean>("changesBadge", true);
+    if (!on) {
+      this.view.badge = undefined;
+      return;
+    }
+    const paths = new Set<string>();
+    for (const f of staged) paths.add(f.path);
+    for (const f of unstaged) paths.add(f.path);
+    const count = paths.size;
+    if (!count && !behind) {
+      this.view.badge = undefined;
+      return;
+    }
+    const bits: string[] = [];
+    if (count) bits.push(`${count} changed file${count === 1 ? "" : "s"}`);
+    if (behind) bits.push(`${behind} incoming commit${behind === 1 ? "" : "s"} to pull`);
+    this.view.badge = { value: count, tooltip: `GitStudio — ${bits.join(" · ")}` };
+  }
+
   private async noteRecentBranch(entry: RepoEntry, name: string): Promise<void> {
     const prev = this.memento.get<string[]>(this.recentKey(entry), []);
     const next = [name, ...prev.filter((n) => n !== name)].slice(0, 8);
@@ -781,27 +820,20 @@ export class CommitViewProvider
           if (result.ok) await this.noteRecentBranch(entry, local);
           break;
         }
+        // The name/revision comes from the view's own dialog (openRefPrompt),
+        // not from vscode.window.showInputBox — the quick-input is a search bar
+        // that dies on focus loss and cannot complete over our refs.
         case "new": {
-          const name = await vscode.window.showInputBox({
-            title: "New Branch",
-            prompt: "Create and switch to a new branch from HEAD",
-            placeHolder: "feature/my-change",
-            validateInput: (v) =>
-              v && /\s/.test(v) ? "Branch names can't contain spaces" : undefined,
-          });
+          const name = (msg.ref ?? "").trim();
           if (!name) return;
-          result = await entry.ctx.branches.checkoutNew(name.trim());
-          if (result.ok) await this.noteRecentBranch(entry, name.trim());
+          result = await entry.ctx.branches.checkoutNew(name);
+          if (result.ok) await this.noteRecentBranch(entry, name);
           break;
         }
         case "checkoutRef": {
-          const r = await vscode.window.showInputBox({
-            title: "Checkout Tag or Revision",
-            prompt: "Check out a tag, commit, or revision (detached HEAD)",
-            placeHolder: "v1.2.0   ·   a1b2c3d   ·   origin/main~3",
-          });
+          const r = (msg.ref ?? "").trim();
           if (!r) return;
-          result = await entry.ctx.branches.checkout(r.trim(), { detach: true });
+          result = await entry.ctx.branches.checkout(r, { detach: true });
           break;
         }
         case "pull":
@@ -953,16 +985,19 @@ export class CommitViewProvider
     } else {
       // No upstream — everything reachable from HEAD but not on any remote.
       commitRecords = await collectCommits(entry, ["HEAD", "--not", "--remotes"]);
-      if (commitRecords.length === 0) {
-        return null;
-      }
+      // No commits of our own is still a valid publish: the branch itself is
+      // what gets created. Diff HEAD against itself so the file list is simply
+      // empty rather than bailing out of the whole preview.
       const oldest = commitRecords[commitRecords.length - 1];
-      base = oldest.parents[0] ?? COMMIT_EMPTY_TREE;
+      base = commitRecords.length === 0
+        ? "HEAD"
+        : oldest.parents[0] ?? COMMIT_EMPTY_TREE;
       const pushRemote =
         remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
       target = pushRemote ? `${pushRemote}/${branch}` : branch;
     }
-    if (commitRecords.length === 0) {
+    // A tracked branch with nothing ahead really has nothing to preview.
+    if (upstream && commitRecords.length === 0) {
       return null;
     }
 
@@ -1151,27 +1186,23 @@ export class CommitViewProvider
     }
 
     const plural = count === 1 ? "commit" : "commits";
-    const mode = await vscode.window.showQuickPick(
-      [
-        {
-          label: "$(check) Keep changes staged",
-          detail: `Undo ${count} ${plural}; their changes return to the Staged group (soft reset)`,
-          value: "--soft",
-        },
-        {
-          label: "$(edit) Unstage changes",
-          detail: `Undo ${count} ${plural}; their changes return as unstaged edits (mixed reset)`,
-          value: "--mixed",
-        },
-      ],
+    // Two named outcomes → a dialog. (Never the search bar for actions.)
+    const chosen = await vscode.window.showInformationMessage(
+      `Undo ${count} local ${plural}`,
       {
-        title: `Undo ${count} local ${plural}`,
-        placeHolder: "Where should the committed changes go?",
+        modal: true,
+        detail:
+          "Where should the committed changes go?\n\n" +
+          `Keep staged: their changes return to the Staged group.\n` +
+          `Unstage: their changes return as unstaged edits.`,
       },
+      "Keep Staged",
+      "Unstage",
     );
-    if (!mode) {
+    if (!chosen) {
       return;
     }
+    const mode = { value: chosen === "Keep Staged" ? "--soft" : "--mixed" };
     const r = await entry.ctx.process.run(["reset", mode.value, base]);
     if (r.code !== 0) {
       void vscode.window.showErrorMessage(
@@ -1201,24 +1232,19 @@ export class CommitViewProvider
    * new branch instead of pushing here" escape hatch. Cancelling the name prompt
    * leaves the modal open; success closes it (the push target changed).
    */
-  private async newBranchFromPush(): Promise<void> {
+  private async newBranchFromPush(nameFromView?: string): Promise<void> {
     const entry = this.repos.getActive();
     if (!entry) {
       return;
     }
-    const name = await vscode.window.showInputBox({
-      title: "New Branch from These Commits",
-      prompt: "Create a new branch at the current commit and switch to it",
-      placeHolder: "feature/my-change",
-      validateInput: (v) =>
-        v && /\s/.test(v) ? "Branch names can't contain spaces" : undefined,
-    });
+    // Named by the modal's own dialog, not the quick-input.
+    const name = (nameFromView ?? "").trim();
     if (!name) {
       return; // cancelled — keep the modal open
     }
     let result: { ok: boolean; stderr: string };
     try {
-      result = await entry.ctx.branches.checkoutNew(name.trim());
+      result = await entry.ctx.branches.checkoutNew(name);
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
@@ -1277,6 +1303,8 @@ export class CommitViewProvider
    * either state — the paths + status letters match across both sources.
    */
   private async resolveState(active: RepoEntry): Promise<{
+    /** True when HEAD points at a revision rather than a branch. */
+    detached?: boolean;
     merge: FileEntry[];
     staged: FileEntry[];
     unstaged: FileEntry[];
@@ -1306,7 +1334,12 @@ export class CommitViewProvider
           ...toEntries(state.workingTreeChanges),
           ...toEntries(untracked),
         ],
-        branch: head?.name,
+        // On a detached HEAD the built-in API gives no `name`, only a commit.
+        // Show the revision rather than nothing — this fast path is the one
+        // actually taken when vscode.git is available, so a fix applied only to
+        // the git-CLI path below would never be seen.
+        branch: head?.name ?? head?.commit?.slice(0, 7),
+        detached: !head?.name,
         upstream: head?.upstream
           ? `${head.upstream.remote}/${head.upstream.name}`
           : undefined,
@@ -1315,11 +1348,24 @@ export class CommitViewProvider
       };
     }
     const st = await active.ctx.status.read();
+    // On a detached HEAD there is no branch name, but "(no branch)" tells the
+    // user nothing about WHERE they are. Show the revision instead — after
+    // checking out a tag or a sha that is the only identity the head has.
+    let detachedSha: string | undefined;
+    if (st.detached) {
+      try {
+        const head = await active.ctx.refs.getHead();
+        detachedSha = head.sha.slice(0, 7);
+      } catch {
+        detachedSha = undefined;
+      }
+    }
     return {
       merge: st.merge,
       staged: st.staged,
       unstaged: st.unstaged,
-      branch: st.detached ? undefined : st.branch,
+      branch: st.detached ? detachedSha : st.branch,
+      detached: st.detached,
       upstream: st.upstream,
       ahead: st.ahead,
       behind: st.behind,
@@ -1343,9 +1389,10 @@ export class CommitViewProvider
     let upstream: string | undefined;
     let ahead: number | undefined;
     let behind: number | undefined;
+    let detached: boolean | undefined;
     if (active) {
       try {
-        ({ merge, staged, unstaged, branch, upstream, ahead, behind } =
+        ({ merge, staged, unstaged, branch, detached, upstream, ahead, behind } =
           await this.resolveState(active));
         hasRepo = true;
       } catch {
@@ -1377,6 +1424,7 @@ export class CommitViewProvider
       unstaged,
       stagedCount,
       branch,
+      detached,
       branches: this.lastBranches,
       upstream,
       ahead,
@@ -1389,6 +1437,7 @@ export class CommitViewProvider
       busy: this.busy,
     };
     void this.view.webview.postMessage(base);
+    this.updateBadge(staged, unstaged, behind);
 
     // THEN resolve the slower bits — the AI-availability probe (vscode.lm /
     // keychain) and the branch-menu data (for-each-ref + stash list) — in
@@ -1433,15 +1482,17 @@ export class CommitViewProvider
     }
     try {
       const commits = await collectCommits(entry, ["HEAD", "--not", "--remotes"]);
-      if (commits.length === 0) {
-        return { unpushed: 0, canPublish: false };
-      }
       let hasRemote = false;
       try {
         hasRemote = (await entry.ctx.remotes.list()).length > 0;
       } catch {
         hasRemote = false;
       }
+      // An unpublished branch is publishable whenever a remote exists — having
+      // commits of its own is NOT a precondition. Creating an empty branch on
+      // the remote is a normal thing to want (open a PR, share the name, park
+      // work), and conflating the two disabled the button entirely for a branch
+      // with nothing ahead, so pushing appeared to do nothing at all.
       return { unpushed: commits.length, canPublish: hasRemote };
     } catch {
       return { unpushed: ahead ?? 0, canPublish: false };
@@ -1525,6 +1576,14 @@ export class CommitViewProvider
     }
     /* The branch is a button: click opens the branch + actions menu (JetBrains-
        style). It folds in everything the old Branches view did. */
+    /* A detached HEAD is a revision, not a branch: monospace it so it reads as
+       a sha, and tint it amber so the difference is visible at a glance rather
+       than only in the tooltip. Previously this said "(no branch)", which named
+       the one thing it is not. */
+    .branch.is-detached #branch-name {
+      font-family: var(--vscode-editor-font-family, monospace);
+      color: var(--gs-amber, var(--vscode-gitDecoration-modifiedResourceForeground));
+    }
     .branch {
       display: inline-flex;
       align-items: center;
@@ -1774,6 +1833,71 @@ export class CommitViewProvider
     .bm-star .codicon { font-size: 13px; }
     .bm-empty { padding: 10px 8px; color: var(--gs-fg-muted); font-size: 12px; text-align: center; }
     .bm-note { padding: 4px 8px 6px 34px; color: var(--gs-fg-subtle); font-size: 11px; font-style: italic; }
+    /* ── In-view ref prompt ───────────────────────────────────────────────
+       Replaces vscode.window.showInputBox for "New Branch" and "Checkout Tag
+       or Revision". The quick-input is a floating search bar: it vanishes on
+       alt-tab taking whatever you typed with it, and it cannot complete over
+       the refs we already have in this webview. This dialog lives in the view,
+       so focus loss cannot destroy it, and it completes as you type. */
+    /* Above the push modal (120/121). The prompt can be opened FROM that modal
+       ("New branch from these commits"), and at z-index 60 it rendered behind
+       the modal's backdrop — invisible, while still holding keyboard focus. */
+    .rp-backdrop {
+      position: fixed; inset: 0; z-index: 129;
+      background: var(--gs-scrim, rgba(0, 0, 0, 0.45));
+    }
+    .rp-panel {
+      position: fixed; z-index: 130; left: 50%; top: 12%;
+      transform: translateX(-50%);
+      width: min(460px, calc(100vw - 24px));
+      display: flex; flex-direction: column;
+      background: var(--gs-bg-elevated, var(--vscode-editorWidget-background));
+      border: 1px solid var(--gs-border); border-radius: 8px;
+      box-shadow: 0 12px 34px rgba(0,0,0,0.45); overflow: hidden;
+    }
+    .rp-title { padding: 9px 11px 3px; font-size: 12.5px; font-weight: 600; }
+    .rp-hint { padding: 0 11px 8px; font-size: 11px; color: var(--gs-fg-muted); }
+    .rp-inputwrap { padding: 0 9px 8px; }
+    .rp-inputwrap input {
+      width: 100%; box-sizing: border-box; padding: 6px 8px;
+      font-family: inherit; font-size: 12.5px;
+      color: var(--gs-fg); background: var(--vscode-input-background);
+      border: 1px solid var(--gs-border); border-radius: 5px; outline: none;
+    }
+    .rp-inputwrap input:focus { border-color: var(--gs-accent); box-shadow: var(--gs-glow); }
+    .rp-err { padding: 0 11px 7px; font-size: 11px; color: var(--gs-danger, #f14c4c); }
+    .rp-list { max-height: 260px; overflow-y: auto; border-top: 1px solid var(--gs-border-soft); }
+    .rp-row {
+      display: flex; align-items: center; gap: 7px;
+      padding: 5px 11px; font-size: 12px; cursor: pointer;
+    }
+    .rp-row .codicon { font-size: 12px; opacity: 0.8; flex: 0 0 auto; }
+    .rp-row .rp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rp-row .rp-kind { margin-left: auto; font-size: 10px; color: var(--gs-fg-subtle); }
+    .rp-row:hover, .rp-row.sel { background: var(--gs-hover); }
+    .rp-row.sel { box-shadow: inset 2px 0 0 var(--gs-accent); }
+    .rp-empty { padding: 8px 11px; font-size: 11px; color: var(--gs-fg-subtle); }
+    .rp-foot {
+      display: flex; justify-content: flex-end; gap: 6px;
+      padding: 8px 9px; border-top: 1px solid var(--gs-border-soft);
+    }
+    .rp-foot button {
+      padding: 4px 11px; font-size: 12px; border-radius: 5px; cursor: pointer;
+      border: 1px solid var(--gs-border); background: transparent; color: var(--gs-fg);
+    }
+    .rp-foot button.primary {
+      background: var(--gs-accent); border-color: var(--gs-accent);
+      color: var(--vscode-button-foreground, #fff);
+    }
+    .rp-foot button:disabled { opacity: 0.5; cursor: default; }
+    /* Reads as an action, not a footnote — it is the only way to reach the
+       remaining tags, so it must look clickable. */
+    .bm-more {
+      padding: 5px 8px 6px 34px; color: var(--gs-accent-text);
+      font-size: 11px; cursor: pointer; user-select: none;
+    }
+    .bm-more:hover { background: var(--gs-hover); text-decoration: underline; }
+    .bm-more:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
 
     /* ---- Message composer -------------------------------------------------
        ONE elevated card holds the message, the toggles, the author override and
@@ -2962,8 +3086,14 @@ export class CommitViewProvider
       let mode, label;
       if (hasStaged) {
         mode = "commitpush"; label = (amend.checked ? "Amend" : "Commit") + " & Push";
-      } else if (aheadCount > 0 && canPublish) {
-        mode = "push"; label = (onUpstream ? "Push " : "Publish ") + aheadCount;
+      } else if (canPublish && (aheadCount > 0 || !onUpstream)) {
+        // An unpublished branch is always actionable: "Publish" even with a
+        // zero ahead-count. Only a TRACKED branch that is up to date has
+        // genuinely nothing to do.
+        mode = "push";
+        label = onUpstream
+          ? "Push " + aheadCount
+          : (aheadCount > 0 ? "Publish " + aheadCount : "Publish");
       } else {
         mode = "none"; label = "Push";
       }
@@ -2978,8 +3108,14 @@ export class CommitViewProvider
     function renderHeader(state) {
       lastHeaderState = state;
       branchName.textContent = state.branch || "(no branch)";
+      // A detached head is a revision, not a branch — mark it so the pill can
+      // look different from an ordinary branch instead of silently lying.
+      branchPill.classList.toggle("is-detached", !!state.detached);
       branchPill.title = (state.repoName ? state.repoName + " · " : "") +
-        (state.branch || "detached HEAD") +
+        (state.detached
+          ? "Detached HEAD at " + (state.branch || "an unknown revision") +
+            " — commits here belong to no branch"
+          : (state.branch || "detached HEAD")) +
         (state.upstream ? "  ↔ " + state.upstream : "");
       const ahead = state.ahead || 0;
       const behind = state.behind || 0;
@@ -3120,6 +3256,10 @@ export class CommitViewProvider
     // ---- Branch + actions menu (folds in the old Branches view) ----------
     let branchMenu = null;
     let branchFilter = "";
+    // How many tags are rendered at once, and the current window. Paged rather
+    // than capped so every tag is reachable via "Show more".
+    const TAG_PAGE = 40;
+    let tagLimit = TAG_PAGE;
     let branchSubmenu = null;
     // Per-category collapse memory (Favorites / Recents / Local / Remote / Tags).
     const collapsedCats = Object.create(null);
@@ -3335,6 +3475,7 @@ export class CommitViewProvider
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, "tag"));
         subSep(list);
         subItem(list, "git-compare", "Compare with '" + cur + "'", () => subAct("gitstudio.branch.compare", name, "tag"));
+        subItem(list, "git-merge", "Merge '" + name + "' into '" + cur + "'", () => subAct("gitstudio.branch.merge", name, "tag"));
         subSep(list);
         subItem(list, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag"));
         subItem(list, "copy", "Copy Tag Name", () => plainAct("copyName", name));
@@ -3372,6 +3513,14 @@ export class CommitViewProvider
         subItem(list, "git-pull-request", "Rebase '" + cur + "' onto '" + name + "'", () => subAct("gitstudio.branch.rebase", name, refType));
         subSep(list);
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
+        if (kind === "local") {
+          subSep(list);
+          subItem(list, "arrow-up", "Push…", () => subAct("gitstudio.branch.push", name, refType));
+          subItem(list, "cloud",
+            bd && bd.upstream ? "Tracked Branch: " + bd.upstream + "…" : "Set Tracked Branch…",
+            () => subAct("gitstudio.branch.setUpstream", name, refType));
+          subSep(list);
+        }
         if (kind === "local") subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
         subItem(list, "copy", "Copy Branch Name", () => plainAct("copyName", name));
         subSep(list);
@@ -3455,6 +3604,39 @@ export class CommitViewProvider
               startSync(it.a); // the header pill mirrors the in-flight state
             }
             renderBranchMenu();
+          } else if (it.a === "new") {
+            closeBranchMenu();
+            openRefPrompt({
+              title: "New Branch",
+              hint: "Creates the branch at HEAD and switches to it.",
+              placeholder: "feature/my-change",
+              confirmLabel: "Create Branch",
+              candidates: [],
+              allowFreeText: true,
+              validate: function (v) {
+                if (/\s/.test(v)) return "Branch names cannot contain spaces.";
+                if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$/.test(v)) {
+                  return "Not a valid branch name.";
+                }
+                return null;
+              },
+              onConfirm: function (v) {
+                vscode.postMessage({ type: "branchAction", action: "new", ref: v });
+              },
+            });
+          } else if (it.a === "checkoutRef") {
+            closeBranchMenu();
+            openRefPrompt({
+              title: "Checkout Tag or Revision",
+              hint: "Pick a tag or branch, or type any revision (a sha, origin/main~3). Checks out as a detached HEAD.",
+              placeholder: "v1.2.0   a1b2c3d   origin/main~3",
+              confirmLabel: "Checkout",
+              candidates: allRefCandidates(),
+              allowFreeText: true,
+              onConfirm: function (v) {
+                vscode.postMessage({ type: "branchAction", action: "checkoutRef", ref: v });
+              },
+            });
           } else {
             branchAct(it.a);
           }
@@ -3488,6 +3670,23 @@ export class CommitViewProvider
         if (collapsed) body.style.display = "none";
         rows.forEach((r) => body.appendChild(build(r)));
         if (opts && opts.note) body.appendChild(el("div", "bm-note", esc(opts.note)));
+        if (opts && opts.more > 0) {
+          const more = el("div", "bm-more", "Show " + Math.min(opts.more, TAG_PAGE) +
+            " more of " + opts.more);
+          more.setAttribute("role", "button");
+          more.setAttribute("tabindex", "0");
+          const grow = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            tagLimit += TAG_PAGE;
+            renderBranchMenu();
+          };
+          more.addEventListener("click", grow);
+          more.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter" || ev.key === " ") grow(ev);
+          });
+          body.appendChild(more);
+        }
         head.addEventListener("click", () => {
           collapsedCats[label] = !collapsedCats[label];
           const c = !!collapsedCats[label];
@@ -3498,23 +3697,20 @@ export class CommitViewProvider
         list.appendChild(body);
       }
 
-      // Tags can number in the thousands — always cap the rendered rows (even
-      // while filtering, since a broad term like "v1" can still match hundreds)
-      // so the menu never builds a giant DOM. The note points at the remainder.
-      const TAG_CAP = 40;
+      // Tags can number in the thousands, so we PAGE them rather than build a
+      // giant DOM up front — but every tag stays reachable: the "Show more" row
+      // raises the window until they are all rendered. The old hard cap applied
+      // even while filtering, so tags past it could not be reached at all.
       const allTags = (branchData.tags || []).filter((n) => matchF(n));
-      const tagsShown = allTags.slice(0, TAG_CAP);
+      const tagsShown = allTags.slice(0, tagLimit);
       const tagsHidden = allTags.length - tagsShown.length;
-      const tagsNote = tagsHidden > 0
-        ? tagsHidden + (branchFilter ? " more matches — refine search" : " more — type to search")
-        : null;
 
       group("Favorites", favs, (b) => branchRow(b.name, "local", b.upstream, true, b.current, b.ahead, b.behind));
       group("Recents", recents, (b) => branchRow(b.name, "local", b.upstream, false, b.current, b.ahead, b.behind));
       group("Local", others, (b) => branchRow(b.name, "local", b.upstream, b.favorite, b.current, b.ahead, b.behind));
       group("Remote", remotes, (n) => branchRow(n, "remote", "", false, false));
       group("Tags", tagsShown, (n) => branchRow(n, "tag", "", false, false),
-        { count: allTags.length, note: tagsNote });
+        { count: allTags.length, more: tagsHidden });
 
       if (!anyAction && !favs.length && !recents.length && !others.length &&
           !remotes.length && !allTags.length) {
@@ -3522,9 +3718,213 @@ export class CommitViewProvider
       }
     }
 
+    // ── In-view ref prompt ────────────────────────────────────────────────
+    // A real dialog inside the webview instead of vscode.window.showInputBox.
+    // Three reasons the quick-input was wrong here: it is the command palette
+    // (a search bar) wearing a different hat; alt-tabbing away destroys it AND
+    // whatever you had typed; and it cannot complete over the branches and tags
+    // this webview is already holding. This completes as you type, keeps free
+    // text for revision expressions like origin/main~3 or a bare sha, and
+    // survives focus loss because it is just DOM.
+    var refPrompt = null;
+    var refPromptBackdrop = null;
+
+    var refPromptKeyHandler = null;
+    var refPromptReturnFocus = null;
+
+    function closeRefPrompt() {
+      if (refPromptKeyHandler) {
+        window.removeEventListener("keydown", refPromptKeyHandler, true);
+        refPromptKeyHandler = null;
+      }
+      if (refPromptBackdrop) { refPromptBackdrop.remove(); refPromptBackdrop = null; }
+      if (refPrompt) { refPrompt.remove(); refPrompt = null; }
+      // Put focus back where it came from; otherwise it falls to <body> and the
+      // next Tab restarts from the top of the view.
+      if (refPromptReturnFocus && refPromptReturnFocus.focus) {
+        try { refPromptReturnFocus.focus(); } catch (e) { /* gone from the DOM */ }
+      }
+      refPromptReturnFocus = null;
+    }
+
+    function openRefPrompt(opts) {
+      closeRefPrompt();
+      var candidates = opts.candidates || [];
+      var sel = -1;
+      var shown = [];
+
+      refPromptReturnFocus = document.activeElement;
+      refPromptBackdrop = el("div", "rp-backdrop");
+      refPromptBackdrop.addEventListener("click", closeRefPrompt);
+      document.body.appendChild(refPromptBackdrop);
+      // CAPTURE phase on the document: the push modal has its own capture-phase
+      // handler that stopPropagation()s Escape, so a listener on our input alone
+      // would let Escape close the modal UNDERNEATH us and leave this dialog up.
+      // Capturing also means Escape still works once focus moves to a button.
+      // On WINDOW, capture phase. Capture propagates root-first, so a window
+      // listener runs BEFORE the push modal's document-level capture handler —
+      // registering on document instead fires second and is useless, because the
+      // modal already handled Escape. stopImmediatePropagation (not merely
+      // stopPropagation) is required: stopPropagation does not suppress other
+      // listeners bound to the same target.
+      refPromptKeyHandler = function (e) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          closeRefPrompt();
+        }
+      };
+      window.addEventListener("keydown", refPromptKeyHandler, true);
+
+      refPrompt = el("div", "rp-panel");
+      refPrompt.setAttribute("role", "dialog");
+      refPrompt.setAttribute("aria-label", opts.title);
+      var titleEl = el("div", "rp-title");
+      titleEl.textContent = opts.title;
+      refPrompt.appendChild(titleEl);
+      if (opts.hint) {
+        var hintEl = el("div", "rp-hint");
+        hintEl.textContent = opts.hint;
+        refPrompt.appendChild(hintEl);
+      }
+
+      var wrap = el("div", "rp-inputwrap");
+      var input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = opts.placeholder || "";
+      input.value = opts.value || "";
+      input.setAttribute("aria-label", opts.title);
+      wrap.appendChild(input);
+      refPrompt.appendChild(wrap);
+
+      var err = el("div", "rp-err");
+      err.style.display = "none";
+      refPrompt.appendChild(err);
+
+      var list = el("div", "rp-list");
+      refPrompt.appendChild(list);
+
+      var foot = el("div", "rp-foot");
+      var cancel = document.createElement("button");
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", closeRefPrompt);
+      var ok = document.createElement("button");
+      ok.className = "primary";
+      ok.textContent = opts.confirmLabel || "OK";
+      foot.appendChild(cancel);
+      foot.appendChild(ok);
+      refPrompt.appendChild(foot);
+      document.body.appendChild(refPrompt);
+
+      function currentValue() {
+        return sel >= 0 && shown[sel] ? shown[sel].name : input.value.trim();
+      }
+
+      function validate() {
+        var v = currentValue();
+        var msg = opts.validate ? opts.validate(v) : null;
+        if (msg) {
+          err.textContent = msg;
+          err.style.display = "";
+        } else {
+          err.style.display = "none";
+        }
+        ok.disabled = !v || !!msg;
+        return !ok.disabled;
+      }
+
+      function renderList() {
+        var q = input.value.trim().toLowerCase();
+        shown = (q
+          ? candidates.filter(function (c) { return c.name.toLowerCase().indexOf(q) !== -1; })
+          : candidates).slice(0, 60);
+        if (sel >= shown.length) sel = shown.length - 1;
+        list.textContent = "";
+        if (!candidates.length) return;
+        if (!shown.length) {
+          var none = el("div", "rp-empty",
+            opts.allowFreeText ? "No match — Enter uses what you typed" : "No matches");
+          list.appendChild(none);
+          return;
+        }
+        shown.forEach(function (c, i) {
+          var row = el("div", "rp-row" + (i === sel ? " sel" : ""));
+          var ic = el("span", "codicon codicon-" + (c.icon || "git-branch"));
+          row.appendChild(ic);
+          // textContent, NOT el()'s innerHTML: git permits < > & " in ref names
+          // (it only forbids space ~ ^ : ? * [ \\ and control chars), so a branch
+          // named like an HTML tag would otherwise be parsed as markup. The
+          // webview CSP blocks inline handlers, but that is defence in depth,
+          // not a reason to interpolate untrusted text as HTML.
+          var nameEl = el("span", "rp-name");
+          nameEl.textContent = c.name;
+          row.appendChild(nameEl);
+          if (c.kind) {
+            var kindEl = el("span", "rp-kind");
+            kindEl.textContent = c.kind;
+            row.appendChild(kindEl);
+          }
+          row.addEventListener("click", function () {
+            input.value = c.name;
+            sel = -1;
+            renderList();
+            if (validate()) confirm();
+          });
+          list.appendChild(row);
+        });
+      }
+
+      function confirm() {
+        var v = currentValue();
+        if (!v) return;
+        if (opts.validate && opts.validate(v)) return;
+        closeRefPrompt();
+        opts.onConfirm(v);
+      }
+
+      input.addEventListener("input", function () { sel = -1; renderList(); validate(); });
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { e.preventDefault(); closeRefPrompt(); return; }
+        if (e.key === "Enter") { e.preventDefault(); confirm(); return; }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          if (!shown.length) return;
+          e.preventDefault();
+          sel = e.key === "ArrowDown"
+            ? Math.min(sel + 1, shown.length - 1)
+            : Math.max(sel - 1, -1);
+          renderList();
+          var selEl = list.querySelector(".rp-row.sel");
+          if (selEl && selEl.scrollIntoView) selEl.scrollIntoView({ block: "nearest" });
+          validate();
+        }
+      });
+      ok.addEventListener("click", confirm);
+
+      renderList();
+      validate();
+      input.focus();
+      input.select();
+    }
+
+    /** Every ref this webview already knows, as completion candidates. */
+    function allRefCandidates() {
+      var out = [];
+      (branchData.local || []).forEach(function (b) {
+        out.push({ name: b.name, kind: "branch", icon: "git-branch" });
+      });
+      (branchData.remote || []).forEach(function (n) {
+        out.push({ name: n, kind: "remote", icon: "cloud" });
+      });
+      (branchData.tags || []).forEach(function (n) {
+        out.push({ name: n, kind: "tag", icon: "tag" });
+      });
+      return out;
+    }
+
     function openBranchMenu() {
       if (branchMenu) { closeBranchMenu(); return; }
       branchFilter = "";
+      tagLimit = TAG_PAGE;
       // A scrim dims the view behind the dialog stack, so it's unmistakable
       // that you're IN a dialog (clicking it closes, like any modal).
       branchBackdrop = el("div", "bm-backdrop");
@@ -3535,7 +3935,11 @@ export class CommitViewProvider
       input.type = "text";
       input.placeholder = "Search for branches and actions";
       input.setAttribute("aria-label", "Search branches and actions");
-      input.addEventListener("input", () => { branchFilter = input.value.trim().toLowerCase(); renderBranchMenu(); });
+      input.addEventListener("input", () => {
+        branchFilter = input.value.trim().toLowerCase();
+        tagLimit = TAG_PAGE; // a new query starts from the first page again
+        renderBranchMenu();
+      });
       search.appendChild(input);
       branchMenu.appendChild(search);
       branchMenu.appendChild(el("div", "bm-list"));
@@ -3678,7 +4082,24 @@ export class CommitViewProvider
       const newBranch = el("button", "pm-btn ghost", '<i class="codicon codicon-git-branch"></i>');
       newBranch.appendChild(document.createTextNode("New branch…"));
       newBranch.title = "Create a new branch from these commits (and switch to it)";
-      newBranch.addEventListener("click", () => { if (!pushBusy) vscode.postMessage({ type: "newBranchFromPush" }); });
+      newBranch.addEventListener("click", () => {
+        if (pushBusy) return;
+        openRefPrompt({
+          title: "New Branch from These Commits",
+          hint: "Creates the branch at the current commit and switches to it.",
+          placeholder: "feature/my-change",
+          confirmLabel: "Create Branch",
+          candidates: [],
+          allowFreeText: true,
+          validate: function (v) {
+            if (/\s/.test(v)) return "Branch names cannot contain spaces.";
+            return null;
+          },
+          onConfirm: function (v) {
+            vscode.postMessage({ type: "newBranchFromPush", ref: v });
+          },
+        });
+      });
       alt.appendChild(newBranch);
       foot.appendChild(alt);
       const cancel = el("button", "pm-btn secondary", "Cancel");

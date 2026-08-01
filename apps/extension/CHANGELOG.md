@@ -4,6 +4,74 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-01
+
+### Added
+- **Git blame annotations, JetBrains-style.** Inline annotations beside each
+  line — revision, date, author, commit number — with per-field toggles, name
+  styles (initials / first / last / full / email), author or order colouring,
+  and diff-on-hover. Right-click an annotation for the full menu: copy revision,
+  show diff, open the previous revision, view in browser, reveal the commit in
+  the graph. Sticky per file, and never routed through the command palette.
+- **Commit graph in the bottom panel.** The graph and the commit details now sit
+  side by side beside the terminal, so you can read code and history at once
+  without spending an editor tab.
+- **"In N branches".** The details pane answers where a commit has actually
+  landed — which branches *contain* it, as distinct from which refs point at it.
+  Loaded lazily, because it is a real history walk.
+- **Changed-files badge** on the activity-bar icon, matching the built-in Source
+  Control behaviour, with incoming-commit count in the tooltip. Disable with
+  `gitstudio.changesBadge`.
+- **Disable AI Features** command, so turning GitBrain off no longer means
+  hunting for a provider setting.
+
+### Changed
+- **The command palette is no longer used for GitStudio's own menus.** Nine
+  action menus became real dialogs (reset mode, merge method, review verdict,
+  PR draft state, remote actions, branch create-and-switch, undo mode). "New
+  Branch" and "Checkout Tag or Revision" now open an in-view picker that
+  completes over your branches and tags, accepts any revision expression, and —
+  unlike the quick input — survives alt-tabbing without losing what you typed.
+- **Every branch and tag is browsable.** Removed the hidden caps that silently
+  dropped refs past the 16th (desktop) and 40th (extension) — the latter applied
+  even while searching, so those refs were unreachable by any means. Tags now
+  sort newest-first instead of byte order.
+- **Redesigned the commit details pane.** Refs are grouped by the question they
+  answer — `tip of`, `pushed to`, `tagged`, `in` — so nothing has to be decoded
+  from colour. `pushed to` states publication by presence, and an unpushed
+  commit says so explicitly instead of just showing one chip fewer. Ref chips
+  are flat and borderless across the graph, the sidebar rail and the details
+  pane; full branch names wrap rather than truncate; sizes scale with the
+  editor's font size.
+- **A detached HEAD shows the revision** (`b7ddc41b`) instead of "(no branch)".
+- Copying a SHA now acknowledges the copy.
+- Sidebar views declare relative sizes, so collapsing one gives its space to
+  Changes rather than spreading it evenly.
+- The editor-tab commit graph is deprecated in favour of the panel; existing
+  commands and keybindings still work and open the panel.
+
+### Fixed
+- **Pushing an unpublished branch with no new commits did nothing.** The Changes
+  view decided publishability by counting commits, so the button rendered
+  disabled and the branch menu reported "nothing to push".
+- **A branch whose name collides with a tag could not be published** — the
+  unqualified refspec matched both.
+- **Publishing ignored `branch.<name>.pushRemote` / `remote.pushDefault`**, so a
+  fork workflow published to the wrong remote.
+- **Sync showed git's "no such ref was fetched"** when a tracked remote branch
+  had been deleted. It now explains the situation and offers Republish or Stop
+  Tracking.
+- **"In N branches" misclassified refs** — every `feature/…` branch was filed
+  under remotes, and `refs/remotes/origin/HEAD` appeared as a phantom branch
+  named `origin`.
+- **Clicking a parent SHA did nothing** in the extension; only the desktop app
+  handled it.
+- Ref names are no longer interpolated as HTML in the new ref picker.
+- Interactive rebase: the todo is validated before it is written, git can no
+  longer hang forever on a credential or signing prompt, and the editor
+  environment is shell-quoted so an install path containing shell metacharacters
+  cannot execute.
+
 ## [1.2.0] - 2026-07-24
 
 ### Added

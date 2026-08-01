@@ -36,6 +36,8 @@ import {
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
 const ROW_HEIGHT = 30;
+/** The commit subject never shrinks below this — metadata columns yield first. */
+const SUBJECT_MIN_WIDTH = 220;
 const COL_WIDTH = 20;
 const NODE_RADIUS = 3.5;
 const OVERSCAN = 12;
@@ -181,6 +183,19 @@ export class CommitGraph extends LitElement {
       background: color-mix(in srgb,
         var(--vscode-foreground) 3%, var(--vscode-editor-background));
       user-select: none;
+    }
+    /* Detached HEAD is a revision, not a branch. Amber + a warning glyph +
+       monospace, so it is obvious you are not on a branch — the old label
+       literally read "detached HEAD", which told you the state but not WHERE
+       you were. */
+    .gh-branch.is-detached {
+      color: var(--gs-amber);
+      background: color-mix(in srgb, var(--gs-amber) 13%, transparent);
+      border-color: color-mix(in srgb, var(--gs-amber) 32%, transparent);
+    }
+    .gh-branch.is-detached .nm {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-weight: 600;
     }
     .gh-branch {
       display: inline-flex;
@@ -411,27 +426,96 @@ export class CommitGraph extends LitElement {
     .row.is-nomatch .meta { opacity: 0.4; }
     .row.is-nomatch .avatar { opacity: 0.45; }
 
-    @media (max-width: 560px) {
+    @container (max-width: 560px) {
       .gh-search { min-width: 130px; flex-basis: 200px; }
       /* keep the scope trigger icon-only when space is tight */
       .gh-scope > span:not(.codicon) { display: none; }
     }
-    @media (max-width: 420px) { .gh-count { display: none; } }
+    @container (max-width: 420px) { .gh-count { display: none; } }
+    /* In a genuinely narrow sidebar the "also on origin" cloud tail costs ~14px
+       to restate something the row already implies — and it was the reason the
+       current branch rendered as "m… ☁" instead of "main". Drop the tail, keep
+       the name. Declared on the element (never on :host — a container cannot
+       match its own container query). */
+    @container (max-width: 480px) { .chip .tail { display: none; } }
 
     /* ── The shared 7-track grid (colhead + every row reference it) ──────
        Gutter + subject are the flexible tracks; the rest are CSS vars so a
        header drag reflows the whole list, and a hidden column collapses to 0.
        Defaults live in the :host var declarations below. */
     :host {
+      /* Size queries below measure THIS element, not the window. In the
+         bottom-panel split the graph is only a fraction of the webview, so
+         viewport media queries never fired and the subject column collapsed. */
+      container-type: inline-size;
+      /* The MESSAGE is the point of a commit list, so it gets a hard floor and
+         the metadata yields to it: every fixed track is minmax(0, …) so it can
+         give width back when space runs short. Rigid tracks plus a
+         minmax(0, 1fr) subject is what let saved column widths starve the
+         message down to "mai…" on a wide window. */
       --gs-grid:
         var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
-        clamp(0px, var(--col-refs-w, ${col("refs")}px), 360px)
-        minmax(0, 1fr)
-        var(--col-changes-w, ${col("changes")}px)
-        var(--col-author-w, ${col("author")}px)
-        var(--col-date-w, ${col("date")}px)
-        var(--col-sha-w, ${col("sha")}px);
+        minmax(0, clamp(0px, var(--col-refs-w, ${col("refs")}px), 360px))
+        minmax(${SUBJECT_MIN_WIDTH}px, 1fr)
+        minmax(0, var(--col-changes-w, ${col("changes")}px))
+        minmax(0, var(--col-author-w, ${col("author")}px))
+        minmax(0, var(--col-date-w, ${col("date")}px))
+        minmax(0, var(--col-sha-w, ${col("sha")}px));
     }
+    /* ── Compact mode (the bottom panel) ────────────────────────────────────
+       A short, wide surface. Two things wasted space here: a fixed Branch/Tag
+       track that sat empty on most rows, and a wide gap between the message and
+       the trailing metadata. So in compact the refs flow INLINE just before the
+       message (a ref-less commit uses the full width), the SHA track goes away
+       (it is right there in the details pane), and what is left — changes /
+       author / date — forms one quiet cluster on the right. The message leads;
+       everything else recedes. */
+    :host([compact]) {
+      --gs-grid:
+        var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+        minmax(${SUBJECT_MIN_WIDTH}px, 1fr)
+        minmax(0, var(--col-changes-w, 84px))
+        minmax(0, var(--col-author-w, 112px))
+        minmax(0, var(--col-date-w, 64px));
+    }
+    :host([compact]) .colhead .ch-refs,
+    :host([compact]) .colhead .ch-sha,
+    :host([compact]) .row .sha { display: none; }
+    /* Column grips would sit on the wrong boundaries once refs leaves the grid,
+       and a five-track panel does not need them. */
+    :host([compact]) .col-resize { display: none; }
+    :host([compact]) .content {
+      display: flex; align-items: center; gap: 7px; min-width: 0;
+    }
+    :host([compact]) .content .refs {
+      display: inline-flex; flex: 0 1 auto; min-width: 0;
+      max-width: 44%; margin: 0; padding: 0;
+    }
+    /* The row carrying the current HEAD gets a wider ref budget. At 44% the
+       cell clipped the current-branch chip mid-glyph (no ellipsis — the chip is
+       already at its own max-width, so the CELL was the thing overflowing), and
+       "main" rendered as "mai". This is the one row where the ref outranks the
+       subject for attention, so it may borrow the space. Degrades silently to
+       44% wherever :has() is unsupported. */
+    :host([compact]) .content .refs:has(.chip-current) {
+      max-width: 62%;
+      /* The CELL never shrinks, but the CHIP inside it still can. Any shrink at
+         all on the cell put the chip 2-3px under its natural width and tripped
+         the ellipsis, so "main" read as "m…". Locking the chip instead (tried
+         first) clipped it mid-glyph, because then the cell was the thing
+         overflowing. Lock the cell, keep the chip fluid: the subject absorbs
+         the squeeze, and once max-width binds the chip ellipsizes cleanly. */
+      flex-shrink: 0;
+    }
+    /* No refs → no chip box → no leading gap. */
+    :host([compact]) .content .refs:empty { display: none; }
+    :host([compact]) .content .subject { flex: 1 1 auto; min-width: 0; }
+    /* Metadata recedes: smaller, dimmer, hugging the right edge. */
+    :host([compact]) .row .author,
+    :host([compact]) .row .date { font-size: 11px; opacity: 0.72; }
+    :host([compact]) .colhead { font-size: 10px; letter-spacing: 0.06em; opacity: 0.66; }
+    :host([compact]) .row { padding-right: 10px; }
+
     /* refs + subject share a wrapper. In column mode it is display:contents so
        they behave as their own grid tracks; in the sidebar (inline) mode it
        becomes a flex box so the chips flow INLINE before the message. */
@@ -442,14 +526,16 @@ export class CommitGraph extends LitElement {
        able to READ commit messages even in a slim sidebar — the graph, refs and
        subject stay; date → sha → author → changes fall away as it narrows. The
        hidden data is still on the row's hover tooltip and in the details dock. */
-    @media (max-width: 760px) {
-      :host {
+    @container (max-width: 760px) {
+      /* NB: declared on the consumers, not :host — :host is the query container
+         and an element cannot match its own container query. */
+      .colhead, .row {
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
-          clamp(0px, var(--col-refs-w, ${col("refs")}px), 300px)
-          minmax(0, 1fr)
-          var(--col-changes-w, ${col("changes")}px)
-          var(--col-author-w, ${col("author")}px);
+          minmax(0, clamp(0px, var(--col-refs-w, ${col("refs")}px), 300px))
+          minmax(${SUBJECT_MIN_WIDTH}px, 1fr)
+          minmax(0, var(--col-changes-w, ${col("changes")}px))
+          minmax(0, var(--col-author-w, ${col("author")}px));
       }
       .colhead .ch-date, .colhead .ch-sha,
       .row .date, .row .sha { display: none; }
@@ -460,8 +546,9 @@ export class CommitGraph extends LitElement {
        refs uses the FULL width instead of starting behind a ~120px empty gap.
        The column header, resize handles and all trailing columns fall away; it
        reads as a clean commit list, not a cramped spreadsheet. */
-    @media (max-width: 620px) {
-      :host {
+    @container (max-width: 620px) {
+      /* Same reason as above: set the grid on the consumers, not the container. */
+      .colhead, .row {
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
           minmax(0, 1fr);
@@ -736,18 +823,29 @@ export class CommitGraph extends LitElement {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      height: 18px;
-      padding: 0 7px;
-      border-radius: 5px;
-      font-size: 11px;
+      /* border-box is NOT inherited here — only .row sets it — so without this
+         the 1px border and 6px padding are ADDED to height/max-width (chips came
+         out 18px tall and 146px wide against a 16/132 spec).
+         NB: never put backticks in these comments — this CSS is a JS template
+         literal, and a stray backtick ends the string and still compiles. */
+      box-sizing: border-box;
+      height: 16px;
+      padding: 0 6px;
+      border-radius: 4px;
+      font-size: 10.5px;
       font-weight: 550;
-      line-height: 18px;
+      line-height: 16px;
       /* Cap a single long ref so it can't hog the whole column; no min-width, so
          short refs (a 3-char branch, a tag) pack tight instead of each reserving
          a wide slot and pushing the rest into a "+N". */
-      max-width: 150px;
+      max-width: 132px;
       overflow: hidden;
       white-space: nowrap;
+      /* Deliberately BORDERLESS. A border + a tinted fill + a coloured label is
+         three encodings of one fact; in a dense list that reads as clutter. The
+         fill alone carries the kind, and only the current HEAD gets real weight
+         (see .chip-current) so the eye has exactly one anchor per screen. The
+         transparent border stays only to keep metrics identical across kinds. */
       border: 1px solid transparent;
       flex: 0 1 auto;
     }
@@ -772,13 +870,12 @@ export class CommitGraph extends LitElement {
       flex: 0 0 auto;
       opacity: 0.95;
     }
-    /* current HEAD = filled GitStudio violet with a leading "you are here" dot. */
+    /* current HEAD = the ONE strong element: solid brand fill, no shadow. */
     .chip-current {
       color: var(--gs-brand-fg, #fff);
       background: var(--gs-brand);
-      border-color: var(--gs-brand);
+      border-color: transparent;
       font-weight: 650;
-      box-shadow: 0 1px 2px color-mix(in srgb, var(--gs-brand) 40%, transparent);
     }
     .chip-current .dot {
       width: 5px;
@@ -788,37 +885,42 @@ export class CommitGraph extends LitElement {
       background: currentColor;
       box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
     }
-    /* local branch = accent-tinted, accent text + icon. */
+    /* local branch = quiet accent wash, accent text + icon. */
     .chip-head {
       color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
-      border-color: color-mix(in srgb,
-        var(--vscode-focusBorder) 45%, transparent);
+      border-color: transparent;
       background: color-mix(in srgb,
-        var(--vscode-focusBorder) 16%, var(--vscode-editor-background));
+        var(--vscode-focusBorder) 13%, var(--vscode-editor-background));
     }
     .chip-head .ico { color: var(--vscode-textLink-foreground, var(--vscode-focusBorder)); }
-    /* remote = a distinct cool tint + a muted cloud glyph. */
+    /* remote = the quietest kind. It is context ("this also exists upstream"),
+       not a thing you act on, so it gets no hue of its own — just a neutral
+       wash and dimmed text. This is what stops a row of refs reading as a row
+       of competing buttons. */
     .chip-remote {
-      color: color-mix(in srgb, var(--vscode-foreground) 88%, var(--vscode-charts-blue, #4aa5ff));
-      border-color: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 34%, transparent);
-      background: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 13%, var(--vscode-editor-background));
+      color: var(--vscode-descriptionForeground);
+      border-color: transparent;
+      background: color-mix(in srgb,
+        var(--vscode-foreground) 8%, var(--vscode-editor-background));
     }
-    .chip-remote .ico { color: color-mix(in srgb, var(--vscode-charts-blue, #6c93c0) 90%, var(--vscode-foreground)); }
-    /* tag = amber tinted with a tag glyph. Uses --gs-amber (the legibility-tuned
+    .chip-remote .ico { color: inherit; opacity: 0.8; }
+    /* tag = amber text on a bare wash. Uses --gs-amber (the legibility-tuned
        gitDecoration "modified" foreground), NOT raw charts-yellow, which fails
        AA as small text on light themes. */
     .chip-tag {
       color: var(--gs-amber);
-      border-color: color-mix(in srgb, var(--gs-amber) 40%, transparent);
-      background: color-mix(in srgb, var(--gs-amber) 16%, var(--vscode-editor-background));
+      border-color: transparent;
+      background: color-mix(in srgb, var(--gs-amber) 13%, var(--vscode-editor-background));
     }
     .chip-tag .ico { color: var(--gs-amber); }
     /* The "+N" overflow pill must never shrink or ellipsize — it's the count. */
+    /* "+2" is a footnote, not a peer of the branch chips — no box, just a quiet
+       count so the eye lands on the actual ref names. */
     .chip-overflow {
-      color: var(--vscode-foreground);
-      background: color-mix(in srgb, var(--vscode-descriptionForeground) 12%, var(--vscode-editor-background));
-      border-color: color-mix(in srgb, var(--vscode-descriptionForeground) 24%, transparent);
-      padding: 0 6px;
+      color: var(--vscode-descriptionForeground);
+      background: transparent;
+      border-color: transparent;
+      padding: 0 3px;
       min-width: 0;
       flex: 0 0 auto;
       overflow: visible;
@@ -1438,6 +1540,24 @@ export class CommitGraph extends LitElement {
     this.persistWidths();
     this.renderRows();
   }
+
+  /**
+   * Restore every column to its default width in one go. Saved widths persist
+   * across sessions, so a layout dragged wide months ago keeps starving the
+   * commit message on every future open — this is the way back without hunting
+   * for each grip.
+   */
+  private resetAllColumnWidths = (e?: Event): void => {
+    e?.stopPropagation();
+    for (const spec of COLUMN_SPECS) {
+      delete this.colWidths[spec.id];
+      this.style.removeProperty(spec.cssVar);
+    }
+    this.applyGutterWidth(); // graph column returns to its lane-count auto-size
+    this.persistWidths();
+    this.renderRows();
+    this.columnsOpen = false;
+  };
 
   /** Effective default width — the graph column's default is its auto-size. */
   private defaultColWidth(spec: ColumnSpec): number {
@@ -2118,11 +2238,20 @@ export class CommitGraph extends LitElement {
       : "";
     return html`<div class="gheader">
       <span
-        class="gh-branch"
-        title=${branch ? `${branch} (current branch)` : "Detached HEAD"}
+        class="gh-branch ${branch ? "" : "is-detached"}"
+        title=${branch
+          ? `${branch} (current branch)`
+          : this.head
+            ? `Detached HEAD at ${this.head.slice(0, 8)} — commits here belong to no branch`
+            : "Detached HEAD"}
       >
-        <span class="codicon codicon-git-branch" aria-hidden="true"></span>
-        <span class="nm">${branch || "detached HEAD"}</span>
+        <span
+          class="codicon codicon-${branch ? "git-branch" : "warning"}"
+          aria-hidden="true"
+        ></span>
+        <span class="nm"
+          >${branch || (this.head ? this.head.slice(0, 8) : "detached HEAD")}</span
+        >
       </span>
       ${count ? html`<span class="gh-count">${count}</span>` : nothing}
       <span class="gh-spacer"></span>
@@ -2265,6 +2394,16 @@ export class CommitGraph extends LitElement {
                 <span class="lbl">${spec.label}</span>
               </button>`;
             })}
+            <div class="gh-pop-sep"></div>
+            <button
+              class="gh-menuitem"
+              role="menuitem"
+              title="Restore every column to its default width"
+              @click=${this.resetAllColumnWidths}
+            >
+              <span class="codicon codicon-discard" aria-hidden="true"></span>
+              <span class="lbl">Reset column widths</span>
+            </button>
             <div class="gh-pop-sep"></div>
             <div class="gh-pop-hint">
               ${hiddenCount === 0
@@ -2467,13 +2606,17 @@ function refNameHtml(ref: WireRef): string {
 
 /**
  * Estimated rendered chip width (px) for the width-aware fit: padding + border
- * + leading glyph + ~6px/char of 11px label text + optional cloud tail, clamped
- * to the chip CSS min/max. An estimate is fine — chips can still shrink a few
- * px via flex, and the fit only decides how many chips to attempt.
+ * + leading glyph + ~5.8px/char of 10.5px label text + optional cloud tail,
+ * clamped to the chip CSS min/max. An estimate is fine — chips can still shrink
+ * a few px via flex, and the fit only decides how many chips to attempt.
+ *
+ * KEEP THE CONSTANTS IN SYNC WITH `.chip` ABOVE (6px side padding, 1px border,
+ * 132px max). Over-estimating here silently folds chips that would have fit
+ * into a "+N", which looks like a layout bug rather than a metrics drift.
  */
 function estimateChipWidth(entry: ChipEntry): number {
-  const w = 16 + 15 + entry.ref.name.length * 6 + (entry.remotes.length ? 15 : 0);
-  return Math.max(46, Math.min(150, w));
+  const w = 14 + 14 + entry.ref.name.length * 5.8 + (entry.remotes.length ? 14 : 0);
+  return Math.max(44, Math.min(132, Math.ceil(w)));
 }
 
 function chipHtml(ref: WireRef, remotes: string[] = []): string {
@@ -2482,7 +2625,9 @@ function chipHtml(ref: WireRef, remotes: string[] = []): string {
   const also = remotes.length ? ` · also on ${esc(remotes.join(", "))}` : "";
   switch (ref.kind) {
     case "currentHead":
-      return `<span class="chip chip-current" title="${esc(ref.name)} (current HEAD${also})">${CURRENT_DOT}${nm}${tail}</span>`;
+      // No leading dot: the filled accent already marks the current branch, and
+      // the dot + name + cloud tail read as clutter at chip size.
+      return `<span class="chip chip-current" title="${esc(ref.name)} (current HEAD${also})">${BRANCH_ICON}${nm}${tail}</span>`;
     case "head":
       return `<span class="chip chip-head" title="${esc(ref.name)} (local branch${also})">${BRANCH_ICON}${nm}${tail}</span>`;
     case "remoteHead":

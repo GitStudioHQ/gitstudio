@@ -183,3 +183,64 @@ test("branches and tags ops round-trip on the clone", async () => {
   t = await ctx.tags.delete("v2");
   assert.ok(t.ok, t.stderr);
 });
+
+// Publishing an unpublished branch that has NO commits of its own.
+// A bare `git push` REFUSES this ("the current branch has no upstream branch"),
+// so SyncOps.push() must resolve the target itself and --set-upstream. The
+// zero-commits case is the one that regressed: the branch exists only locally
+// and pushing appeared to do nothing at all.
+test("push() publishes an unpublished branch with no new commits", async () => {
+  await ctx.branches.checkout("main");
+  const r0 = await ctx.branches.checkoutNew("publish-me", "main");
+  assert.ok(r0.ok, r0.stderr);
+
+  // Precondition: no upstream, and nothing ahead.
+  assert.equal(await ctx.sync.currentUpstream(), null);
+  assert.deepEqual(await ctx.sync.aheadBehind(), { ahead: 0, behind: 0 });
+
+  // The bare call the UI makes — no remote, no branch, no setUpstream.
+  const pushed = await ctx.sync.push();
+  assert.ok(pushed.ok, `push failed: ${pushed.stderr}`);
+
+  // It really landed on the remote, and tracking is configured.
+  assert.equal(await ctx.sync.currentUpstream(), "origin/publish-me");
+  const remoteHeads = gitIn(clone, ["ls-remote", "--heads", "origin"]);
+  assert.match(remoteHeads, /refs\/heads\/publish-me/);
+
+  // A second push is a normal no-op push, not another publish.
+  const again = await ctx.sync.push();
+  assert.ok(again.ok, `second push failed: ${again.stderr}`);
+
+  await ctx.branches.checkout("main");
+});
+
+// An already-tracking branch must NOT be re-published or have its upstream
+// rewritten by the auto-publish path.
+test("push() leaves an existing upstream alone", async () => {
+  await ctx.branches.checkout("main");
+  const before = await ctx.sync.currentUpstream();
+  assert.equal(before, "origin/main");
+  const r = await ctx.sync.push();
+  assert.ok(r.ok, r.stderr);
+  assert.equal(await ctx.sync.currentUpstream(), "origin/main");
+});
+
+// A branch that shares its name with a tag must still publish. An unqualified
+// refspec resolves against refs/heads AND refs/tags, so `git push origin X`
+// fails with "src refspec X matches more than one"; the auto-publish path
+// therefore pushes refs/heads/X:refs/heads/X.
+test("push() publishes a branch whose name collides with a tag", async () => {
+  await ctx.branches.checkout("main");
+  const c = await ctx.branches.checkoutNew("collide", "main");
+  assert.ok(c.ok, c.stderr);
+  const t = await ctx.tags.create("collide");
+  assert.ok(t.ok, t.stderr);
+
+  assert.equal(await ctx.sync.currentUpstream(), null);
+  const pushed = await ctx.sync.push();
+  assert.ok(pushed.ok, `push failed: ${pushed.stderr}`);
+  assert.equal(await ctx.sync.currentUpstream(), "origin/collide");
+
+  await ctx.tags.delete("collide");
+  await ctx.branches.checkout("main");
+});
