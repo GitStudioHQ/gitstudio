@@ -78,6 +78,16 @@ linux:
   artifactName: ${productName}-${version}-${arch}.${ext}
   maintainer: GitStudio <hello@gitstudio.dev>
   synopsis: A free, open-source, JetBrains-grade Git suite for your desktop.
+  # Without this, electron-builder falls back to package.json's description —
+  # an internal note about which workspace packages the app reuses, which would
+  # be what `apt show` and every Linux software centre displayed.
+  description: >-
+    GitStudio is a free, open-source Git client for people who work in Git all
+    day. Stage by hunk or by line, read history in a real commit graph, resolve
+    conflicts in a three-way merge editor, reshape history with a visual
+    interactive rebase, and manage branches, stashes, worktrees, tags and pull
+    requests without leaving the app. Optional AI assistance is off until you
+    connect a provider, and it never gates or blocks a Git operation.
 
 deb:
   priority: optional

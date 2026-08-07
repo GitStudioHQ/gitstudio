@@ -20,13 +20,24 @@ The macOS `.zip` assets exist for the auto-update feed — download the `.dmg`.
 
 ## Unsigned builds (for now)
 
-These builds are not yet code-signed, so the OS will warn on first launch:
+These builds are not yet code-signed, so the OS will warn on first launch.
 
-- **macOS:** right-click **GitStudio.app → Open** (confirm the dialog), or clear the quarantine flag:
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/GitStudio.app
-  ```
-- **Windows:** on the SmartScreen prompt, click **More info → Run anyway**.
+**macOS — one command, and it is done:**
+
+```bash
+xattr -dr com.apple.quarantine /Applications/GitStudio.app
+```
+
+Run that after dragging the app to Applications and it launches normally from
+then on.
+
+> Older guides say to right-click the app and choose **Open**. That no longer
+> works: macOS 15 (Sequoia) removed the Control-click bypass for apps that are
+> not notarized. Without the command above, the GUI route is
+> **System Settings → Privacy & Security**, scroll to the message about
+> GitStudio, and click **Open Anyway**.
+
+**Windows:** on the SmartScreen prompt, click **More info → Run anyway**.
 
 Signed and notarized builds are planned; nothing else about the app changes.
 
