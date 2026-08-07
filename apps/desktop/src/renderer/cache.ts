@@ -33,6 +33,16 @@ const DEFAULT_TTL = 8000;
 let scope = "";
 
 /**
+ * Bumped by every `bust()` and every scope change. A request that was already
+ * in flight when the cache was invalidated must NOT write its (pre-mutation)
+ * answer back — doing so re-seeded stale data with a FRESH timestamp, so a
+ * just-deleted branch reappeared for the whole TTL and looked like the delete
+ * had failed. The epoch is captured when the request starts and re-checked
+ * before the write.
+ */
+let epoch = 0;
+
+/**
  * Point the cache at a repo. Changing the active repo clears all cached entries
  * (a different repo's branches/status/graph must never bleed through). Call this
  * on every `repo:changed` before re-rendering.
@@ -42,6 +52,7 @@ export function setCacheScope(repoRoot: string | undefined): void {
   if (next !== scope) {
     scope = next;
     store.clear();
+    epoch++;
   }
 }
 
@@ -77,18 +88,28 @@ export async function gget<C extends IpcChannel>(
     if (e.pending) return e.pending as Promise<IpcResponse<C>>;
     if (Date.now() - e.at <= ttl) return e.value as IpcResponse<C>;
   }
+  const startedEpoch = epoch;
+  const startedScope = scope;
+  /** Was the cache invalidated (or the repo switched) while we were waiting? */
+  const superseded = (): boolean => epoch !== startedEpoch || scope !== startedScope;
   const pending = host.invoke(channel, payload).then(
     (value) => {
-      store.set(key, { value, at: Date.now() });
+      // Only publish if nothing invalidated the cache meanwhile — otherwise this
+      // answer predates the mutation that busted it.
+      if (!superseded()) {
+        store.set(key, { value, at: Date.now() });
+      }
       return value;
     },
     (err) => {
       // Drop the failed in-flight marker so a retry can re-fetch; keep any prior
       // good value in place (callers can still `peek` the last-known-good).
-      const prev = store.get(key);
-      if (prev && prev.pending) {
-        if (prev.value !== undefined) store.set(key, { value: prev.value, at: prev.at });
-        else store.delete(key);
+      if (!superseded()) {
+        const prev = store.get(key);
+        if (prev && prev.pending) {
+          if (prev.value !== undefined) store.set(key, { value: prev.value, at: prev.at });
+          else store.delete(key);
+        }
       }
       throw err;
     },
@@ -101,6 +122,7 @@ export async function gget<C extends IpcChannel>(
  *  No prefix → clear everything; a prefix clears the current repo's channels
  *  that start with it (keys are namespaced by repo scope, so match within it). */
 export function bust(prefix?: string): void {
+  epoch++;
   if (!prefix) {
     store.clear();
     return;

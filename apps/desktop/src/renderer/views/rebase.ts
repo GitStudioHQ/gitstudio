@@ -6,7 +6,7 @@
 // @gitstudio/git-service/RebaseRunner (the same module the extension uses).
 
 import { host } from "../bridge";
-import { el, span, glyph, emptyState } from "../ui";
+import { el, span, glyph, emptyState, cleanErr } from "../ui";
 import { toast, confirmDialog, promptInline } from "../dialogs";
 import type { SectionRender } from "./common";
 import type {
@@ -46,7 +46,7 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
     state = await host.invoke("rebase:load", {});
   } catch (err) {
     wrap.replaceChildren(
-      emptyState("Couldn't load the rebase plan", err instanceof Error ? err.message : String(err), {
+      emptyState("Couldn't load the rebase plan", cleanErr(err), {
         icon: "warning",
       }),
     );
@@ -342,7 +342,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
           flashBanner(outcome.message || "Rebase failed.", "error");
         }
       } catch (err) {
-        flashBanner(err instanceof Error ? err.message : String(err), "error");
+        flashBanner(cleanErr(err), "error");
       } finally {
         busy = false;
         applyBtn.classList.remove("busy");
@@ -426,7 +426,7 @@ function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => 
         }
         toast(re.message || `No commits between ${short(base)} and HEAD.`, "error");
       } catch (err) {
-        toast(err instanceof Error ? err.message : String(err), "error");
+        toast(cleanErr(err), "error");
       }
       // Fall back to whatever was on screen before.
       if (state.commits.length) build(wrap, nav, state);

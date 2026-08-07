@@ -92,12 +92,53 @@ function serverArgs(binPath: string, repoRoot: string | undefined, req: { write:
   return args;
 }
 
-function readJson(path: string): Record<string, unknown> | undefined {
+/**
+ * Reading a client's MCP config, keeping "there is no file" DISTINCT from "there
+ * is a file I could not parse".
+ *
+ * Collapsing the two is destructive: install would fall back to `{}` and write
+ * that over a config it simply failed to understand, deleting every other MCP
+ * server the user had. Several of these clients accept JSONC (comments and
+ * trailing commas), which `JSON.parse` rejects outright — so this is the normal
+ * case, not an exotic one.
+ */
+type ConfigRead =
+  | { kind: "missing" }
+  | { kind: "parsed"; json: Record<string, unknown> }
+  | { kind: "unreadable"; reason: string };
+
+function readConfig(path: string): ConfigRead {
+  let text: string;
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-  } catch {
-    return undefined;
+    text = readFileSync(path, "utf8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === "ENOENT") {
+      return { kind: "missing" };
+    }
+    return { kind: "unreadable", reason: err instanceof Error ? err.message : String(err) };
   }
+  // An empty/whitespace-only file is effectively absent, and safe to replace.
+  if (text.trim().length === 0) {
+    return { kind: "missing" };
+  }
+  try {
+    const json = JSON.parse(text) as unknown;
+    if (!json || typeof json !== "object" || Array.isArray(json)) {
+      return { kind: "unreadable", reason: "the file is not a JSON object" };
+    }
+    return { kind: "parsed", json: json as Record<string, unknown> };
+  } catch (err) {
+    return {
+      kind: "unreadable",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+function readJson(path: string): Record<string, unknown> | undefined {
+  const r = readConfig(path);
+  return r.kind === "parsed" ? r.json : undefined;
 }
 
 /** Is GitStudio's server already present in a client's config? */
@@ -150,12 +191,33 @@ export function installMcp(
   const entry = { command: "node", args: serverArgs(binPath, repoRoot, req) };
   try {
     mkdirSync(dirname(cfg.path), { recursive: true });
-    const json = readJson(cfg.path) ?? {};
+    const read = readConfig(cfg.path);
+    if (read.kind === "unreadable") {
+      // Refuse rather than overwrite. Editing by hand is a two-minute job; a
+      // silently erased MCP config is not recoverable.
+      return {
+        ok: false,
+        message:
+          `${cfg.label}'s config at ${cfg.path} couldn't be read as JSON ` +
+          `(${read.reason}). GitStudio won't overwrite it — add the "gitstudio" ` +
+          `entry under "${cfg.serversKey}" by hand, or fix the file and retry.`,
+      };
+    }
+    const json = read.kind === "parsed" ? read.json : {};
     const servers = (json[cfg.serversKey] && typeof json[cfg.serversKey] === "object"
       ? json[cfg.serversKey]
       : {}) as Record<string, unknown>;
     servers.gitstudio = entry;
     json[cfg.serversKey] = servers;
+    // Keep one backup of a file we did not create — cheap insurance against a
+    // shape we round-tripped wrongly.
+    if (read.kind === "parsed") {
+      try {
+        writeFileSync(`${cfg.path}.gitstudio-backup`, readFileSync(cfg.path, "utf8"));
+      } catch {
+        /* best effort — never block the install on the backup */
+      }
+    }
     writeFileSync(cfg.path, JSON.stringify(json, null, 2));
     const mode = req.destructive ? "read + write + destructive" : req.write ? "read + write" : "read-only";
     return { ok: true, message: `Added GitStudio (${mode}) to ${cfg.label}. Restart ${cfg.label} to pick it up.` };

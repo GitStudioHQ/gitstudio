@@ -57,7 +57,11 @@ export class BottomDock {
   constructor(host: HTMLElement, opts: BottomDockOptions) {
     this.opts = opts;
     this.collapsed = opts.collapsed;
-    this.heightPx = Math.max(opts.minHeight ?? 120, opts.height);
+    // Clamp the RESTORED height against the CURRENT window. A height dragged
+    // out for the terminal was replayed verbatim, so opening the dock later
+    // (e.g. the Diff tab) could leave the graph three rows tall on a smaller
+    // window — or on the same window, simply be far more than the content needs.
+    this.heightPx = BottomDock.clampHeight(opts.height, opts.minHeight ?? 120);
 
     // The body pops UP above a permanently-pinned footer bar, so the resizer
     // (drag the body's top edge) and the body sit ABOVE the footer; the footer
@@ -69,7 +73,7 @@ export class BottomDock {
       orientation: "horizontal",
       label: opts.label ? `Resize ${opts.label}` : "Resize panel",
       min: opts.minHeight ?? 120,
-      max: () => Math.max(opts.minHeight ?? 120, window.innerHeight - 220),
+      max: () => BottomDock.clampHeight(Number.MAX_SAFE_INTEGER, opts.minHeight ?? 120),
       get: () => this.heightPx,
       set: (h) => {
         this.heightPx = h;
@@ -141,6 +145,37 @@ export class BottomDock {
     this.chevron.title = this.collapsed ? "Expand panel" : "Collapse panel";
   }
 
+  /**
+   * The dock may never take more than this share of the window: below that the
+   * view above it (graph + details) stops being usable.
+   */
+  private static readonly MAX_SHARE = 0.6;
+
+  static clampHeight(h: number, min = 120): number {
+    const ceiling = Math.max(min, Math.round(window.innerHeight * BottomDock.MAX_SHARE));
+    return Math.max(min, Math.min(ceiling, Math.round(h)));
+  }
+
+  /** Re-clamp after a window resize so a shrunk window can't leave the dock
+   *  covering everything. */
+  /** Set the body height (clamped). Used when a surface is opened
+   *  programmatically and the stored height is unsuitable for it. */
+  setHeight(h: number): void {
+    this.heightPx = BottomDock.clampHeight(h, this.opts.minHeight ?? 120);
+    this.bodyEl.style.height = `${this.heightPx}px`;
+    this.opts.onResize?.();
+    this.opts.onHeightChange?.(this.heightPx);
+  }
+
+  reclamp(): void {
+    const next = BottomDock.clampHeight(this.heightPx, this.opts.minHeight ?? 120);
+    if (next !== this.heightPx) {
+      this.heightPx = next;
+      this.bodyEl.style.height = `${next}px`;
+      this.opts.onResize?.();
+    }
+  }
+
   /** Drag the top edge to resize the body height (clamped), then relayout. */
   private startResize(e: PointerEvent): void {
     if (this.collapsed) return;
@@ -149,7 +184,7 @@ export class BottomDock {
     const startY = e.clientY;
     const startH = this.heightPx;
     const min = this.opts.minHeight ?? 120;
-    const max = Math.max(min, window.innerHeight - 220);
+    const max = BottomDock.clampHeight(Number.MAX_SAFE_INTEGER, min);
     const move = (ev: PointerEvent): void => {
       const h = Math.max(min, Math.min(max, startH + (startY - ev.clientY)));
       this.heightPx = h;

@@ -1,4 +1,4 @@
-// The bottom dock's content: three top-level tabs in the bar — "Commit details"
+// The bottom dock's content: three top-level tabs in the bar — "Diff"
 // (only on the commits view), "Output" (the live git-command log), and a single
 // "Terminal" view. The Terminal is ONE tab (VS-Code style): its multiple shells
 // are managed by a side list (right of the terminal) with a "New terminal" button
@@ -95,7 +95,7 @@ export class TerminalDock {
       onHeightChange: () => this.persist(),
     });
 
-    // Top tab strip (Commit details · Output · Terminal).
+    // Top tab strip (Diff · Output · Terminal).
     this.tabStrip = el("div", "term-tabs");
     this.dock.tabsEl.appendChild(this.tabStrip);
 
@@ -217,7 +217,9 @@ export class TerminalDock {
 
   private topTabs(): TopTabDesc[] {
     const tabs: TopTabDesc[] = [];
-    if (this.detailsVisible) tabs.push({ id: "commit-details", label: "Commit details", icon: "git-commit" });
+    // The commit metadata now lives beside the graph; this tab is where a file
+    // DIFF opens, so the dock shows code rather than duplicating the details.
+    if (this.detailsVisible) tabs.push({ id: "commit-details", label: "Diff", icon: "diff" });
     tabs.push({ id: "output", label: "Output", icon: "output" });
     tabs.push({ id: "terminal", label: "Terminal", icon: "terminal" });
     for (const c of this.chats) tabs.push({ id: c.id, label: c.label, icon: "sparkle", chat: true });
@@ -426,7 +428,7 @@ export class TerminalDock {
     // The commit-details diff (DiffView) relayouts via its own ResizeObserver.
   }
 
-  // ── Commit-details tab (present only on the commits/graph view) ──────────────
+  // ── Diff tab (present only on the commits/graph view) ───────────────────────
 
   setDetailsVisible(visible: boolean): void {
     if (visible) {
@@ -449,15 +451,32 @@ export class TerminalDock {
     this.renderTabs();
   }
 
-  /** The element the renderer renders commit details into (when the tab exists). */
+  /** The element the renderer mounts the file diff into (when the tab exists). */
   detailsSurface(): HTMLElement | undefined {
     return this.detailsEl;
   }
 
-  /** Activate the commit-details tab and expand the dock (on commit click). */
+  /** Activate the Diff tab and expand the dock (when a file is opened). */
   openDetails(): void {
     if (!this.detailsVisible) return;
+    // Was the Diff tab already the one on screen? If so the current height is a
+    // deliberate choice for reading diffs and we leave it alone. Otherwise we
+    // are switching INTO it — from a collapsed dock or from Terminal/Output —
+    // and must not inherit a height dragged out for a terminal, which is what
+    // crushed the graph down to a few rows.
+    const wasShowingDiff = !this.dock.isCollapsed() && this.active === "commit-details";
     this.setActiveTab("commit-details");
+    if (!wasShowingDiff) {
+      const preferred = Math.round(window.innerHeight * 0.45);
+      if (this.dock.height > preferred) {
+        this.dock.setHeight(preferred);
+      }
+    }
+  }
+
+  /** Keep the dock within its share of the window as the window changes. */
+  handleWindowResize(): void {
+    this.dock.reclamp();
   }
 
   private persist(): void {

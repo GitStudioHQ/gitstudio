@@ -10,6 +10,7 @@
   --gs-accent: #7c5cf0;
   --gs-accent-2: #4aa5ff;
 
+
   /* Type ramp — one intentional scale instead of scattered px values. */
   --text-2xs: 10.5px;
   --text-xs: 11.5px;
@@ -156,6 +157,33 @@ body.vscode-light {
   --canvas: radial-gradient(1200px 520px at 50% -340px,
       color-mix(in srgb, var(--gs-accent) 6%, transparent), transparent 70%),
     var(--app-bg);
+}
+
+/* Two names the Rebase workspace was written against that nothing ever declared,
+   so every "danger" cue in it (Drop rows, the error banner's fill and border,
+   the Abort button) rendered in inherited ink — a commit marked Drop looked
+   identical to a Pick. They alias tokens the rest of the app already uses.
+
+   These MUST live on `body`, not `:root`: their targets (--status-del,
+   --vscode-foreground) are declared by the theme classes ON body, and custom
+   properties only inherit DOWNWARD — a :root alias cannot see them and silently
+   resolves to nothing, which is exactly how this shipped. */
+body {
+  --app-text: var(--vscode-foreground);
+  --gs-danger: var(--status-del);
+
+  /* The SHARED graph/rail components style hover, selection and focus through
+     the --vscode-list-* names (they were written for the VS Code webview host).
+     The desktop declared none of them, so `background: var(--vscode-list-
+     hoverBackground)` resolved to nothing: rows had no hover, no selection
+     tint and no focus ring — clicking a commit gave no feedback at all.
+     Map them onto the app's own scale so both hosts look native. */
+  --vscode-list-hoverBackground: var(--app-hover);
+  --vscode-list-activeSelectionBackground: var(--app-active);
+  --vscode-list-activeSelectionForeground: var(--vscode-foreground);
+  --vscode-list-inactiveSelectionBackground: var(--app-hover);
+  --vscode-list-focusOutline: var(--gs-accent);
+  --vscode-focusBorder: var(--gs-accent);
 }
 
 * {
@@ -821,6 +849,35 @@ html.is-mac .topbar { padding-left: 78px; }
   display: flex;
   flex-direction: column;
 }
+
+/* Commits view: graph LEFT, commit details RIGHT — the same side-by-side shape
+   as the extension's commit panel. Details previously sat in the bottom dock,
+   stacked under the graph and competing with the terminal for height. */
+.graph-view.graph-split {
+  flex-direction: row;
+  min-width: 0;
+}
+.graph-split .graph-host-full {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+.graph-split .graph-details {
+  flex: 0 0 var(--graph-details-w, 480px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+/* Closing the panel (its X) gives the whole view back to the graph. */
+.graph-split.details-hidden .graph-details,
+.graph-split.details-hidden .graph-vsplit { display: none; }
+/* The details column is metadata + file list only; opening a file sends the
+   diff to the bottom dock rather than squeezing it in beside the metadata. */
+.graph-split .graph-details > .details-split { flex: 1 1 auto; min-height: 0; }
 
 /* Branded "coming next" panel for views still being built. */
 .view-placeholder {
@@ -2905,16 +2962,8 @@ gitstudio-graph {
   min-width: 0;
   min-height: 0;
 }
-.details-split .diff-surface { display: none; min-width: 0; min-height: 0; }
-/* The panel|diff divider exists only while a diff is open; its drag sets
-   --details-w on the split (persisted), which this flex-basis follows. */
-.details-split .details-vsplit { display: none; }
-.details-split.diff-open .details-vsplit { display: flex; }
-.details-split.diff-open .details-panel {
-  flex: 0 0 var(--details-w, 420px);
-  border-right: 1px solid var(--app-border);
-}
-.details-split.diff-open .diff-surface { display: block; flex: 1 1 auto; }
+/* The file diff lives in the bottom dock's "Diff" tab now, so this column is
+   details-only — no inner split, no divider. */
 
 .diff-empty {
   display: flex;

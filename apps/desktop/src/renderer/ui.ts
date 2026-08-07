@@ -461,7 +461,36 @@ export function cleanErr(e: unknown): string {
   let m = e instanceof Error ? e.message : typeof e === "string" ? e : String(e ?? "");
   m = m.replace(/^Error invoking remote method '[^']*':\s*/i, "");
   m = m.replace(/^(Uncaught\s+)?(Error|UnhandledPromiseRejection):\s*/i, "");
-  return m.trim();
+  return condenseGitOutput(m.trim());
+}
+
+/**
+ * Reduce multi-line git output to the one line worth reading.
+ *
+ * Raw stderr went straight into a ~380px toast that collapses newlines and
+ * self-destructs after a few seconds, so a message like
+ *   "error: Your local changes ... would be overwritten by merge:\n\tsrc/a.ts
+ *    \n\tsrc/b.ts\nPlease commit your changes or stash them before you merge.\n
+ *    Aborting"
+ * arrived as an unreadable run-on. git puts the actionable sentence on its
+ * `fatal:`/`error:` line, so prefer that; otherwise take the first real line.
+ */
+export function condenseGitOutput(text: string): string {
+  if (!text) {
+    return "";
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length === 0) {
+    return "";
+  }
+  const primary = lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines[0];
+  // Drop git's own severity prefix — the toast already signals severity. Done
+  // for one-line messages too, so "fatal: …" and a multi-line failure read the
+  // same way.
+  return primary.replace(/^(fatal|error):\s*/i, "");
 }
 
 /**
