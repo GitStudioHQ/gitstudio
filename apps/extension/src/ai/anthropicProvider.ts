@@ -31,9 +31,16 @@ const DEFAULT_MODELS: Record<ModelTier, string> = {
 export interface AnthropicProviderOptions {
   /**
    * Injected secret getter — returns the stored key, or undefined when unset.
-   * Accepts a Thenable so vscode's SecretStorage.get can be passed directly.
+   * Accepts a Thenable so any async store can be passed directly.
    */
   getKey: () => PromiseLike<string | undefined>;
+  /**
+   * Cheap "is a key configured?" probe that must NOT read the key itself.
+   * `isAvailable()` runs on every Changes-view state push, so answering it by
+   * fetching key material puts the secret store on a hot path. Falls back to
+   * `getKey` when not supplied.
+   */
+  hasKey?: () => boolean;
   /** Friendly-message sink for surfaced errors (toast / log). Never throws. */
   onError?: (message: string) => void;
   /** Optional per-tier model overrides (from gitstudio.ai.anthropicModel*). */
@@ -61,8 +68,11 @@ export class AnthropicProvider implements GitBrainProvider {
 
   constructor(private readonly opts: AnthropicProviderOptions) {}
 
-  /** Available iff a key is present. */
+  /** Available iff a key is present — answered without reading it when possible. */
   async isAvailable(): Promise<boolean> {
+    if (this.opts.hasKey) {
+      return this.opts.hasKey();
+    }
     const key = await this.opts.getKey();
     return typeof key === "string" && key.trim().length > 0;
   }

@@ -1,0 +1,14 @@
+{
+  "name": "@gitstudio/secret-store",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Keychain-free secret storage for GitStudio: AES-256-GCM blobs under an owner-only directory, keyed by a local device key. Deliberately does NOT use the OS keyring (macOS login keychain / libsecret / DPAPI), so reading or writing a secret never raises an OS password prompt.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "tsx --test \"test/**/*.test.ts\"",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  }
+}

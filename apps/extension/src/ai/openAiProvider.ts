@@ -34,7 +34,7 @@ export interface OpenAiConfig {
 export interface OpenAiProviderOptions {
   /**
    * Injected secret getter — returns the stored key, or undefined when unset.
-   * Accepts a Thenable so vscode's SecretStorage.get can be passed directly.
+   * Accepts a Thenable so any async store can be passed directly.
    * A key is OPTIONAL: local servers (Ollama / LM Studio) need none.
    */
   getKey: () => PromiseLike<string | undefined>;

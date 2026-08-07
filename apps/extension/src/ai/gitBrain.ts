@@ -8,6 +8,7 @@ import {
   truncateDiff,
   type CommitStyle,
 } from "@gitstudio/engine/ai/gitBrainCore";
+import { SecretStore } from "@gitstudio/secret-store/secretStore";
 import { AnthropicProvider } from "./anthropicProvider";
 import { VsCodeLmProvider, type LmModelInfo } from "./vscodeLmProvider";
 import { CliProvider, CLI_SPECS } from "./cliProvider";
@@ -72,10 +73,21 @@ export interface AiConnectionStatus {
   commitStyle: CommitStyle;
 }
 
-/** Storage key for the Anthropic API key in SecretStorage. */
+/**
+ * Storage key for the Anthropic API key.
+ *
+ * Keys live in GitStudio's own encrypted store (@gitstudio/secret-store), NOT in
+ * vscode's SecretStorage. SecretStorage is backed by the host editor's OS-keyring
+ * entry, and on macOS that entry's ACL is bound to the host's code signature —
+ * so every Cursor/VS Code update invalidated it and the next read raised
+ * "Cursor wants to make changes. Enter your password to allow this."
+ * GitBrain reads its key while merely deciding whether to show the ✨ button, so
+ * that prompt fired at startup, for users who had never configured AI at all.
+ * See importFromEditorSecretStorage() for the one-way migration path.
+ */
 export const ANTHROPIC_KEY_SECRET = "gitstudio.ai.anthropicApiKey";
 
-/** Storage key for the OpenAI-compatible API key in SecretStorage (optional). */
+/** Storage key for the OpenAI-compatible API key (optional). */
 export const OPENAI_KEY_SECRET = "gitstudio.ai.openaiApiKey";
 
 /** globalState key remembering the user's chosen vscode.lm model id. */
@@ -135,7 +147,13 @@ export class GitBrain implements vscode.Disposable {
   readonly onDidChangeEnabled = this.enabledChanged.event;
   private lastEnabled: boolean | undefined;
 
+  /** GitStudio's own encrypted key store — never the editor's OS keyring. */
+  private readonly secrets: SecretStore;
+
   constructor(private readonly context: vscode.ExtensionContext) {
+    this.secrets = new SecretStore(
+      vscode.Uri.joinPath(context.globalStorageUri, "secrets").fsPath,
+    );
     const onError = (message: string) => {
       this.lastProviderError = message;
       if (!this.suppressErrorToast) {
@@ -143,7 +161,10 @@ export class GitBrain implements vscode.Disposable {
       }
     };
     this.anthropic = new AnthropicProvider({
-      getKey: () => this.context.secrets.get(ANTHROPIC_KEY_SECRET),
+      getKey: () => this.secrets.get(ANTHROPIC_KEY_SECRET),
+      // Availability is answered from the filesystem, never by reading key
+      // material — `isEnabled()` runs on every Changes-view state push.
+      hasKey: () => this.secrets.has(ANTHROPIC_KEY_SECRET),
       onError,
       models: this.readModelOverrides(),
     });
@@ -151,18 +172,15 @@ export class GitBrain implements vscode.Disposable {
       getPreferredModelId: () => this.preferredLmModelId(),
     });
     this.openai = new OpenAiProvider({
-      getKey: () => this.context.secrets.get(OPENAI_KEY_SECRET),
+      getKey: () => this.secrets.get(OPENAI_KEY_SECRET),
       config: () => this.openAiConfig(),
       onError,
     });
 
-    // Re-evaluate availability when a key changes or a relevant setting flips.
+    // Re-evaluate availability when a relevant setting flips. (Key changes call
+    // refreshEnabled() directly from the setter — our store is a plain file, so
+    // there is no cross-process change event to subscribe to.)
     this.disposables.push(
-      this.context.secrets.onDidChange((e) => {
-        if (e.key === ANTHROPIC_KEY_SECRET || e.key === OPENAI_KEY_SECRET) {
-          void this.refreshEnabled();
-        }
-      }),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (
           e.affectsConfiguration("gitstudio.ai.provider") ||
@@ -432,13 +450,12 @@ export class GitBrain implements vscode.Disposable {
 
   /** A snapshot of the current AI connection, for the settings panel. */
   async connectionStatus(): Promise<AiConnectionStatus> {
-    const [hasAnthropicKey, hasOpenaiKey, copilotAvailable, active] =
-      await Promise.all([
-        this.context.secrets.get(ANTHROPIC_KEY_SECRET).then((v) => !!v),
-        this.context.secrets.get(OPENAI_KEY_SECRET).then((v) => !!v),
-        this.vscodeLm.isAvailable(),
-        this.getProvider(),
-      ]);
+    const [copilotAvailable, active] = await Promise.all([
+      this.vscodeLm.isAvailable(),
+      this.getProvider(),
+    ]);
+    const hasAnthropicKey = this.secrets.has(ANTHROPIC_KEY_SECRET);
+    const hasOpenaiKey = this.secrets.has(OPENAI_KEY_SECRET);
     const oa = this.openAiConfig();
     return {
       provider: this.providerChoice(),
@@ -482,12 +499,27 @@ export class GitBrain implements vscode.Disposable {
   }
 
   async setAnthropicKey(key: string): Promise<void> {
-    await this.context.secrets.store(ANTHROPIC_KEY_SECRET, key);
+    await this.secrets.set(ANTHROPIC_KEY_SECRET, key);
     await this.refreshEnabled();
   }
 
   async setOpenAiKey(key: string): Promise<void> {
-    await this.context.secrets.store(OPENAI_KEY_SECRET, key);
+    await this.secrets.set(OPENAI_KEY_SECRET, key);
+    await this.refreshEnabled();
+  }
+
+  /** Is an Anthropic key configured? Answered WITHOUT reading the key. */
+  hasAnthropicKey(): boolean {
+    return this.secrets.has(ANTHROPIC_KEY_SECRET);
+  }
+
+  async clearAnthropicKey(): Promise<void> {
+    await this.secrets.delete(ANTHROPIC_KEY_SECRET);
+    await this.refreshEnabled();
+  }
+
+  async clearOpenAiKey(): Promise<void> {
+    await this.secrets.delete(OPENAI_KEY_SECRET);
     await this.refreshEnabled();
   }
 
@@ -511,9 +543,48 @@ export class GitBrain implements vscode.Disposable {
 
   /** Disconnect: forget keys and turn AI off. */
   async disconnectAll(): Promise<void> {
-    await this.context.secrets.delete(ANTHROPIC_KEY_SECRET);
-    await this.context.secrets.delete(OPENAI_KEY_SECRET);
+    await this.secrets.delete(ANTHROPIC_KEY_SECRET);
+    await this.secrets.delete(OPENAI_KEY_SECRET);
     await this.setProviderChoice("off");
+  }
+
+  /**
+   * One-way import of keys left behind in the editor's SecretStorage by
+   * GitStudio ≤ 1.3.
+   *
+   * Only ever called from an explicit user action in the AI settings panel,
+   * because reading SecretStorage is exactly what raises the OS password prompt
+   * we removed — so it must be something the user asked for and can decline,
+   * not something that happens to them at startup. Once imported, the editor's
+   * copy is deleted so this never needs to run twice.
+   */
+  async importFromEditorSecretStorage(): Promise<{ imported: number; message: string }> {
+    let imported = 0;
+    for (const key of [ANTHROPIC_KEY_SECRET, OPENAI_KEY_SECRET]) {
+      let legacy: string | undefined;
+      try {
+        legacy = await this.context.secrets.get(key);
+      } catch {
+        continue; // keyring unavailable or the user dismissed the unlock
+      }
+      if (!legacy) {
+        continue;
+      }
+      await this.secrets.set(key, legacy);
+      try {
+        await this.context.secrets.delete(key);
+      } catch {
+        // The import is what mattered; a stale keyring entry is harmless.
+      }
+      imported++;
+    }
+    await this.refreshEnabled();
+    return {
+      imported,
+      message: imported
+        ? `Imported ${imported} key${imported === 1 ? "" : "s"} into GitStudio's own encrypted store. Your editor's keychain entry has been cleared.`
+        : "No GitStudio keys were found in the editor's secret storage.",
+    };
   }
 
   /** Live-probe the active provider with a tiny prompt. */
@@ -578,8 +649,7 @@ export class GitBrain implements vscode.Disposable {
   ): Promise<string[]> {
     try {
       if (kind === "anthropic") {
-        const k =
-          key || (await this.context.secrets.get(ANTHROPIC_KEY_SECRET)) || "";
+        const k = key || (await this.secrets.get(ANTHROPIC_KEY_SECRET)) || "";
         if (!k) {
           return [];
         }
@@ -594,7 +664,7 @@ export class GitBrain implements vscode.Disposable {
       }
       // OpenAI-compatible (openai/openrouter/groq/ollama/lmstudio/custom).
       const base = (baseUrl || this.openAiConfig().baseUrl).replace(/\/+$/, "");
-      const k = key || (await this.context.secrets.get(OPENAI_KEY_SECRET)) || "";
+      const k = key || (await this.secrets.get(OPENAI_KEY_SECRET)) || "";
       const headers: Record<string, string> = {};
       if (k) {
         headers["Authorization"] = `Bearer ${k}`;

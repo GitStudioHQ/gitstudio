@@ -24,7 +24,15 @@ const LOGO_PATHS: Record<string, string> = {
 };
 
 interface FromPanel {
-  type: "ready" | "connect" | "disconnect" | "test" | "setStyle" | "openExternal" | "detectModels";
+  type:
+    | "ready"
+    | "connect"
+    | "disconnect"
+    | "test"
+    | "setStyle"
+    | "openExternal"
+    | "detectModels"
+    | "importLegacyKeys";
   kind?: string;
   baseUrl?: string;
   model?: string;
@@ -122,6 +130,14 @@ export class AiSettingsPanel {
           void vscode.env.openExternal(vscode.Uri.parse(m.url));
         }
         return;
+      case "importLegacyKeys": {
+        // The ONLY place that reads the editor's OS-keyring-backed secret
+        // storage. It can raise a keychain password prompt, which is why it is
+        // behind an explicit click and never runs on its own.
+        const r = await this.brain.importFromEditorSecretStorage();
+        await this.postResult(r.imported > 0, r.message);
+        return;
+      }
       case "detectModels": {
         const list = await this.brain.detectModels(
           m.kind ?? "",
@@ -325,6 +341,12 @@ export class AiSettingsPanel {
   .ai-page .ai-gallery-section-title { margin: 20px 2px 2px; }
   .ai-page .ai-gallery-section-sub { margin: 0 2px 12px; }
   .ai-gallery-page { padding: 0; }
+  /* Upgrade-only footer: carrying a pre-1.4 key out of the editor's keychain. */
+  .ai-legacy-import { margin: 26px 2px 4px; padding-top: 16px; border-top: 1px solid var(--app-border); }
+  .ai-legacy-import .ai-gallery-section-sub { margin: 0 0 10px; max-width: 62ch; }
+  .ai-legacy-import-btn { font: inherit; font-size: 12px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--app-border); background: var(--app-elevated); color: var(--app-fg); cursor: pointer; }
+  .ai-legacy-import-btn:hover:not(:disabled) { border-color: var(--accent-line); }
+  .ai-legacy-import-btn:disabled { opacity: .6; cursor: default; }
   /* The picked provider's connect form spans the full grid width, right under it. */
   .ai-editor-inline { grid-column: 1 / -1; }
   .ai-editor-inline .ai-conn { border-color: var(--accent-line); box-shadow: 0 0 0 1px color-mix(in srgb, var(--gs-accent) 22%, transparent); }
@@ -560,8 +582,31 @@ export class AiSettingsPanel {
       section(page,"No key needed","Use your editor's AI, or run a model on your own machine.", avail.filter((p)=>p.group==="nokey"));
       section(page,"Connect with an API key","Bring your own key from any provider.", avail.filter((p)=>p.group==="key"));
       cardEl.append(page);
+      page.append(legacyImportRow());
 
       renderNote();
+    }
+
+    // GitStudio ≤ 1.3 kept API keys in the editor's secret storage, which is
+    // backed by the OS keyring — the thing that made macOS ask for your password
+    // at startup. Keys now live in GitStudio's own encrypted store, so an
+    // upgrade leaves the old copy stranded. This offers to move it across, as a
+    // deliberate click: it is the one action that still touches the keyring, so
+    // it must be the user's decision and not a surprise prompt.
+    function legacyImportRow() {
+      const row = el("div", "ai-legacy-import");
+      row.append(el("div", "ai-gallery-section-sub",
+        "Upgrading from GitStudio 1.3 or earlier? Your API key was stored in the editor's keychain. GitStudio no longer reads the keychain — import it once to carry it over."));
+      const b = document.createElement("button");
+      b.className = "ai-legacy-import-btn";
+      b.textContent = "Import key from the editor's secret storage";
+      b.addEventListener("click", () => {
+        b.disabled = true;
+        b.textContent = "Importing…";
+        vscode.postMessage({ type: "importLegacyKeys" });
+      });
+      row.append(b);
+      return row;
     }
 
     function section(parent, title, sub, items) {

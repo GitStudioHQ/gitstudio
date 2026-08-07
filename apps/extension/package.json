@@ -2089,6 +2089,7 @@
     "@gitstudio/engine": "*",
     "@gitstudio/git-service": "*",
     "@gitstudio/host-bridge": "*",
+    "@gitstudio/secret-store": "*",
     "@gitstudio/webview-ui": "*"
   },
   "pricing": "Free",
