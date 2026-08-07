@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { promptConfirm } from "../ui/dialogs";
+import { promptRevision } from "../ui/refPrompt";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { UndoLedger } from "../undo/undoLedger";
@@ -44,14 +46,14 @@ export async function startInteractiveRebase(
   }
 
   if (await isDirty(active.ctx)) {
-    const proceed = await vscode.window.showWarningMessage(
-      "You have uncommitted changes. Interactive rebase works best on a clean " +
-        "tree — commit or stash first. GitStudio will snapshot your work so you " +
-        "can Undo, but git may refuse to start.",
-      { modal: true },
-      "Continue Anyway",
-    );
-    if (proceed !== "Continue Anyway") {
+    const proceed = await promptConfirm({
+      title: "You have uncommitted changes",
+      message:
+        "Interactive rebase works best on a clean tree — commit or stash first. GitStudio snapshots your work so Undo can recover it, but git may simply refuse to start.",
+      confirmLabel: "Continue Anyway",
+      danger: true,
+    });
+    if (!proceed) {
       return;
     }
   }
@@ -102,12 +104,12 @@ async function resolveBase(
   sha?: string,
 ): Promise<string | undefined> {
   if (!sha) {
-    const ref = await vscode.window.showInputBox({
+    return promptRevision(active, {
       title: "Interactive rebase",
-      prompt: "Rebase onto which commit/branch? (the base, exclusive)",
-      placeHolder: "e.g. HEAD~5, main, origin/main",
+      hint: "Rebase onto which commit or branch? The base itself is excluded — everything after it becomes the todo.",
+      placeholder: "HEAD~5   main   origin/main",
+      confirmLabel: "Start Rebase",
     });
-    return ref?.trim() || undefined;
   }
   // Does the commit have a parent?
   const parent = await active.ctx.process.run([

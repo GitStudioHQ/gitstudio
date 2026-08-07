@@ -3,6 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import { runCommitAction } from "../graph/commitActions";
+import { promptPick } from "../ui/dialogs";
 
 const FIELD_SEP = "\x1f";
 
@@ -17,15 +18,11 @@ interface ReflogEntry {
   date: number;
 }
 
-interface ReflogPick extends vscode.QuickPickItem {
-  entry: ReflogEntry;
-}
-
 /**
  * `gitstudio.showReflog`: the recovery safety-net browser. Lists `git reflog`
- * entries in a QuickPick; picking one offers Create branch here / Reset current
- * branch to here / Checkout — reusing the shared commit actions. This is the
- * foundation M8's Undo builds on.
+ * entries in a GitStudio dialog; picking one offers Create branch here / Reset
+ * current branch to here / Checkout — reusing the shared commit actions. This is
+ * the foundation M8's Undo builds on.
  */
 export async function showReflog(repos: RepoManager): Promise<void> {
   const active = repos.getActive();
@@ -48,22 +45,26 @@ export async function showReflog(repos: RepoManager): Promise<void> {
     return;
   }
 
-  const items: ReflogPick[] = entries.map((e) => ({
-    label: e.action,
-    description: `${e.selector} · ${relativeTime(e.date)} · ${e.hash}`,
-    entry: e,
-  }));
-
-  const picked = await vscode.window.showQuickPick(items, {
+  const pickedIndex = await promptPick({
     title: "Reflog — Time Machine",
-    placeHolder: "Pick a point in history to recover from",
-    matchOnDescription: true,
+    hint: "Every position HEAD has held, including ones no branch points at any more.",
+    choices: entries.map((e, i) => ({
+      id: String(i),
+      label: e.action,
+      icon: "history",
+      detail: e.hash,
+      description: `${e.selector} · ${relativeTime(e.date)}`,
+    })),
   });
-  if (!picked) {
+  if (pickedIndex === undefined) {
+    return;
+  }
+  const entry = entries[Number(pickedIndex)];
+  if (!entry) {
     return;
   }
 
-  await offerRecoveryActions(active.ctx, picked.entry);
+  await offerRecoveryActions(active.ctx, entry);
 }
 
 async function offerRecoveryActions(
@@ -74,28 +75,22 @@ async function offerRecoveryActions(
   const sha = await resolveSha(ctx, entry.hash);
   const commit = { sha, subject: entry.action };
 
-  const RECOVERY: { id: string; label: string }[] = [
-    { id: "branch", label: "Create Branch Here" },
-    { id: "checkout", label: "Checkout" },
-    { id: "reset", label: "Reset Branch to Here" },
-    { id: "copySha", label: "Copy SHA" },
-  ];
-  const chosen = await vscode.window.showInformationMessage(
-    `Recover — ${entry.selector} (${entry.hash})`,
-    { modal: true, detail: entry.action },
-    ...RECOVERY.map((r) => r.label),
-  );
+  const chosen = await promptPick({
+    title: `Recover — ${entry.selector} (${entry.hash})`,
+    hint: entry.action,
+    choices: [
+      { id: "branch", label: "Create Branch Here", icon: "git-branch", description: "Give this commit a name so it stops being unreachable." },
+      { id: "checkout", label: "Checkout", icon: "git-commit", description: "Go here on a detached HEAD to look around." },
+      { id: "reset", label: "Reset Branch to Here", icon: "history", description: "Move the current branch back to this commit." },
+      { id: "copySha", label: "Copy SHA", icon: "copy" },
+    ],
+  });
   if (!chosen) {
     return;
   }
-  const action = RECOVERY.find((r) => r.label === chosen);
-  if (!action) {
-    return;
-  }
-
   // Reuse the shared commit actions (which confirm destructive ops and surface
   // git errors). RepoManager's .git watchers refresh the views automatically.
-  await runCommitAction(action.id, ctx, commit);
+  await runCommitAction(chosen, ctx, commit);
 }
 
 async function loadReflog(ctx: GitContext): Promise<ReflogEntry[]> {

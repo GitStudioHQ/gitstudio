@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { CommitRecord, GitRef } from "@gitstudio/host-bridge/git";
 import type { RepoEntry } from "../git/repoManager";
 import { toRevisionUri } from "../history/revisionContentProvider";
+import { promptPick } from "../ui/dialogs";
 
 // The ref-comparison engine, lifted out of the retired Search & Compare view so
 // the branch-compare panel (and any future consumer) can reuse the same
@@ -296,24 +297,20 @@ export async function openCompareFileDiff(arg: {
   );
 }
 
-/** A QuickPick over the repo's branches/tags; returns the chosen ref name. */
+/** A GitStudio dialog over the repo's branches/tags; returns the chosen name. */
 export async function pickRef(
   refs: GitRef[],
   title: string,
 ): Promise<string | undefined> {
   const icon = (r: GitRef) =>
-    r.type === "tag"
-      ? "$(tag)"
-      : r.type === "remote"
-        ? "$(cloud)"
-        : "$(git-branch)";
-  const picked = await vscode.window.showQuickPick(
-    refs.map((r) => ({
-      label: `${icon(r)} ${r.name}`,
-      description: r.sha.slice(0, 7),
-      name: r.name,
+    r.type === "tag" ? "tag" : r.type === "remote" ? "cloud" : "git-branch";
+  return promptPick({
+    title,
+    choices: refs.map((r) => ({
+      id: r.name,
+      label: r.name,
+      icon: icon(r),
+      detail: r.sha.slice(0, 7),
     })),
-    { title, placeHolder: "Pick a branch / tag" },
-  );
-  return picked?.name;
+  });
 }

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptPick } from "../ui/dialogs";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
 // A compact left status-bar segment for the active repo's sync state:
@@ -240,19 +241,25 @@ export class SyncStatusItem implements vscode.Disposable {
     }
     const branch = head.branch;
     const upstream = (await active.ctx.sync.currentUpstream()) ?? "its upstream";
-    const choice = await vscode.window.showWarningMessage(
-      `"${branch}" tracks ${upstream}, which no longer exists on the remote.`,
-      {
-        modal: true,
-        detail:
-          "Someone deleted or renamed that remote branch. Republish to recreate " +
-          "it from your local commits, or stop tracking it and set a new " +
-          "upstream later.",
-      },
-      "Republish Branch",
-      "Stop Tracking",
-    );
-    if (choice === "Republish Branch") {
+    const choice = await promptPick({
+      title: `"${branch}" tracks ${upstream}, which no longer exists`,
+      hint: "Someone deleted or renamed that remote branch.",
+      choices: [
+        {
+          id: "republish",
+          label: "Republish Branch",
+          icon: "cloud-upload",
+          description: "Recreate the remote branch from your local commits.",
+        },
+        {
+          id: "unset",
+          label: "Stop Tracking",
+          icon: "debug-disconnect",
+          description: "Leave the branch local-only; set a new upstream later.",
+        },
+      ],
+    });
+    if (choice === "republish") {
       const remote = await this.pickRemote(active);
       if (!remote) {
         return true;
@@ -264,7 +271,7 @@ export class SyncStatusItem implements vscode.Disposable {
       );
       return true;
     }
-    if (choice === "Stop Tracking") {
+    if (choice === "unset") {
       const r = await active.ctx.process.run([
         "branch",
         "--unset-upstream",
@@ -283,33 +290,51 @@ export class SyncStatusItem implements vscode.Disposable {
   }
 
   private async askRebase(): Promise<boolean | undefined> {
-    // A real dialog, not the command palette: this is a decision with
-    // consequences, and the palette is a search box.
-    const choice = await vscode.window.showInformationMessage(
-      "Pull: how should your local commits be integrated?",
-      { modal: true, detail: "Merge keeps history as-is. Rebase replays your commits on top." },
-      "Merge",
-      "Rebase",
-    );
-    return choice === undefined ? undefined : choice === "Rebase";
+    const choice = await promptPick({
+      title: "Pull: how should your local commits be integrated?",
+      choices: [
+        {
+          id: "merge",
+          label: "Merge",
+          icon: "git-merge",
+          description: "Keep history as it is; add a merge commit if the branches diverged.",
+        },
+        {
+          id: "rebase",
+          label: "Rebase",
+          icon: "git-pull-request",
+          description: "Replay your local commits on top of the incoming ones. Linear history, new shas.",
+        },
+      ],
+    });
+    return choice === undefined ? undefined : choice === "rebase";
   }
 
   private async askForce(): Promise<boolean | undefined> {
     const forceDefault = vscode.workspace
       .getConfiguration("gitstudio")
       .get<boolean>("push.forceWithLease", true);
-    const choice = await vscode.window.showWarningMessage(
-      "Push to the upstream branch?",
-      {
-        modal: true,
-        detail: forceDefault
-          ? "Force push uses --force-with-lease, which refuses to overwrite remote work you haven't seen."
-          : "Force push overwrites the remote branch.",
-      },
-      "Push",
-      "Force push",
-    );
-    return choice === undefined ? undefined : choice === "Force push";
+    const choice = await promptPick({
+      title: "Push to the upstream branch?",
+      choices: [
+        {
+          id: "push",
+          label: "Push",
+          icon: "arrow-up",
+          description: "A normal push. Refused if the remote has commits you don't have.",
+        },
+        {
+          id: "force",
+          label: "Force push",
+          icon: "warning",
+          danger: true,
+          description: forceDefault
+            ? "Uses --force-with-lease, which still refuses to overwrite remote work you haven't seen."
+            : "Overwrites the remote branch, including work you haven't seen.",
+        },
+      ],
+    });
+    return choice === undefined ? undefined : choice === "force";
   }
 
   private async currentBranch(active: RepoEntry): Promise<string | undefined> {
@@ -334,13 +359,15 @@ export class SyncStatusItem implements vscode.Disposable {
     if (remotes.length === 1) {
       return remotes[0].name;
     }
-    const names = remotes.map((r) => r.name);
-    const picked = await vscode.window.showInformationMessage(
-      "Publish this branch to which remote?",
-      { modal: true },
-      ...names,
-    );
-    return picked;
+    return promptPick({
+      title: "Publish this branch to which remote?",
+      choices: remotes.map((r) => ({
+        id: r.name,
+        label: r.name,
+        icon: "cloud",
+        description: r.fetchUrl,
+      })),
+    });
   }
 
   dispose(): void {

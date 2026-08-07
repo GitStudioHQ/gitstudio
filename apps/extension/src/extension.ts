@@ -77,6 +77,7 @@ import {
   reviewChangesCommand,
 } from "./ai/aiCommands";
 import { registerPrFeature } from "./pr/prFeature";
+import { promptConfirm, registerDialogHost } from "./ui/dialogs";
 
 // GitStudio extension entry point.
 //
@@ -300,8 +301,10 @@ export function activate(context: vscode.ExtensionContext): void {
     // GitBrain — the optional bring-your-own-key AI layer (M10). It is OFF until
     // configured: with no provider, `gitstudio.ai.enabled` stays false, the ✨
     // affordance and palette commands stay hidden, and every call returns null.
-    // AI never gates or breaks a git op. The API key lives in SecretStorage and
-    // never leaves the host (the commit box only receives the result text).
+    // AI never gates or breaks a git op. The API key lives in GitStudio's own
+    // encrypted store — NOT the editor's OS-keyring-backed SecretStorage, whose
+    // read is what made this very line raise a macOS password prompt at startup
+    // — and never leaves the host (the commit box only gets the result text).
     const brain = new GitBrain(context);
     context.subscriptions.push(brain);
     void brain.refreshEnabled();
@@ -349,18 +352,13 @@ export function activate(context: vscode.ExtensionContext): void {
           );
           return;
         }
-        const ok = await vscode.window.showWarningMessage(
-          "Disable all GitStudio AI features?",
-          {
-            modal: true,
-            detail:
-              "Commit-message drafting, diff explanation, summaries and AI review " +
-              "stop being offered. Git operations are unaffected. Re-enable with " +
-              "GitStudio: Connect AI Provider, or by setting gitstudio.ai.provider.",
-          },
-          "Disable AI",
-        );
-        if (ok !== "Disable AI") {
+        const ok = await promptConfirm({
+          title: "Disable all GitStudio AI features?",
+          message:
+            "Commit-message drafting, diff explanation, summaries and AI review stop being offered. Git operations are unaffected. Re-enable with GitStudio: Connect AI Provider, or by setting gitstudio.ai.provider.",
+          confirmLabel: "Disable AI",
+        });
+        if (!ok) {
           return;
         }
         await cfg.update(
@@ -403,6 +401,13 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     );
     context.subscriptions.push(commitProvider, revisionContent);
+
+    // The Changes view is where every GitStudio dialog renders — naming a
+    // branch, choosing a reset mode, confirming a delete. Registering it here
+    // means command code can call promptInput/promptPick/promptConfirm from
+    // anywhere (palette, graph, tree context menu) and get OUR dialog rather
+    // than the command-palette search bar. See ui/dialogs.ts.
+    context.subscriptions.push(registerDialogHost(commitProvider));
 
     // The instant a model is connected/disconnected, refresh the composer so the
     // plug → ✨/Review buttons flip live (not on the next git event).

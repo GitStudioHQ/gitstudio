@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
+import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction. */
@@ -123,11 +124,12 @@ async function checkout(
   commit: CommitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
-  const ok = await confirm(
-    `Checkout ${short(commit.sha)}? This leaves your working tree in a ` +
-      `"detached HEAD" state (not on any branch).`,
-    "Checkout",
-  );
+  const ok = await promptConfirm({
+    title: `Check out ${short(commit.sha)}?`,
+    message:
+      "You'll be on a detached HEAD — not on any branch. Commits made here belong to nothing until you create a branch for them.",
+    confirmLabel: "Checkout",
+  });
   if (!ok) {
     return false;
   }
@@ -140,11 +142,12 @@ async function createBranch(
   ctx: GitContext,
   commit: CommitContext,
 ): Promise<boolean> {
-  const name = await vscode.window.showInputBox({
+  const name = await promptInput({
     title: `Create branch at ${short(commit.sha)}`,
-    prompt: "New branch name",
-    placeHolder: "feature/my-branch",
-    validateInput: validateRefName,
+    hint: `${commit.subject} — the branch starts here. You stay on the current branch.`,
+    placeholder: "feature/my-branch",
+    confirmLabel: "Create Branch",
+    validate: "refName",
   });
   if (!name) {
     return false;
@@ -156,11 +159,12 @@ async function createTag(
   ctx: GitContext,
   commit: CommitContext,
 ): Promise<boolean> {
-  const name = await vscode.window.showInputBox({
+  const name = await promptInput({
     title: `Create tag at ${short(commit.sha)}`,
-    prompt: "New tag name",
-    placeHolder: "v1.0.0",
-    validateInput: validateRefName,
+    hint: `${commit.subject} — a lightweight tag, local until you push it.`,
+    placeholder: "v1.0.0",
+    confirmLabel: "Create Tag",
+    validate: "refName",
   });
   if (!name) {
     return false;
@@ -223,42 +227,48 @@ async function resetTo(
   undo?: UndoRunner,
 ): Promise<boolean> {
   // Three named outcomes with real consequences — a dialog, not the search bar.
-  const chosen = await vscode.window.showWarningMessage(
-    `Reset current branch to ${short(commit.sha)}`,
-    {
-      modal: true,
-      detail:
-        "Soft: keep your working tree and staged changes.\n" +
-        "Mixed: keep the working tree, unstage everything (default).\n" +
-        "Hard: DISCARD all working-tree and staged changes.",
-    },
-    "Soft",
-    "Mixed",
-    "Hard",
-  );
+  const chosen = await promptPick({
+    title: `Reset current branch to ${short(commit.sha)}`,
+    hint: commit.subject,
+    choices: [
+      {
+        id: "--soft",
+        label: "Soft",
+        icon: "history",
+        detail: "--soft",
+        description: "Move the branch. Keep your working tree AND everything staged.",
+      },
+      {
+        id: "--mixed",
+        label: "Mixed",
+        icon: "list-flat",
+        detail: "--mixed",
+        description: "Move the branch, keep the working tree, unstage everything. Git's default.",
+      },
+      {
+        id: "--hard",
+        label: "Hard",
+        icon: "trash",
+        detail: "--hard",
+        danger: true,
+        description: "Move the branch and DISCARD every working-tree and staged change.",
+      },
+    ],
+  });
   if (!chosen) {
     return false;
   }
-  const mode = {
-    value:
-      chosen === "Soft" ? "--soft" : chosen === "Hard" ? "--hard" : "--mixed",
-  };
+  const mode = { value: chosen };
 
   if (mode.value === "--hard") {
-    const ok = await confirmDestructive(
-      `Hard reset to ${short(commit.sha)} will permanently DISCARD all ` +
-        `uncommitted changes and move the current branch. This cannot be ` +
-        `undone. Continue?`,
-      "Reset --hard",
-    );
-    if (!ok) {
-      return false;
-    }
-  } else {
-    const ok = await confirm(
-      `Reset current branch to ${short(commit.sha)} (${mode.value})?`,
-      "Reset",
-    );
+    // A second gate, because this is the one reset that destroys work git has
+    // never seen — the reflog can restore the commits, but not your edits.
+    const ok = await promptConfirm({
+      title: `Discard all uncommitted changes?`,
+      message: `Hard-resetting to ${short(commit.sha)} throws away every uncommitted edit in the working tree and the index. Undo can move the branch back, but it cannot bring those edits back — git never recorded them.`,
+      confirmLabel: "Reset --hard",
+      danger: true,
+    });
     if (!ok) {
       return false;
     }
@@ -299,47 +309,6 @@ function showGitError(title: string, stderr: string): void {
 
 function flash(message: string): void {
   void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
-}
-
-async function confirm(message: string, action: string): Promise<boolean> {
-  const choice = await vscode.window.showWarningMessage(
-    message,
-    { modal: true },
-    action,
-  );
-  return choice === action;
-}
-
-/** A two-modal gate for irreversible operations. */
-async function confirmDestructive(
-  message: string,
-  action: string,
-): Promise<boolean> {
-  const choice = await vscode.window.showWarningMessage(
-    message,
-    { modal: true },
-    action,
-  );
-  return choice === action;
-}
-
-function validateRefName(value: string): string | undefined {
-  const name = value.trim();
-  if (!name) {
-    return "Name cannot be empty";
-  }
-  // git check-ref-format rules, the common subset.
-  if (
-    /[ ~^:?*\[\\]/.test(name) ||
-    name.includes("..") ||
-    name.startsWith("/") ||
-    name.endsWith("/") ||
-    name.endsWith(".") ||
-    name.endsWith(".lock")
-  ) {
-    return "Invalid character in ref name";
-  }
-  return undefined;
 }
 
 function short(sha: string): string {

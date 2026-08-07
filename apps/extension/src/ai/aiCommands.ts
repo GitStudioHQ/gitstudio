@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptInput, promptPick, type DialogChoice } from "../ui/dialogs";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import {
   GitBrain,
@@ -18,17 +19,17 @@ const UNAVAILABLE_MESSAGE =
 // input; the staged-diff drafting helper they share is exported here so every
 // surface uses one code path.
 
-/** Store the Anthropic key (password input) in SecretStorage. */
+/** Store the Anthropic key in GitStudio's own encrypted store. */
 export async function setApiKey(
-  context: vscode.ExtensionContext,
+  _context: vscode.ExtensionContext,
   brain: GitBrain,
 ): Promise<void> {
-  const key = await vscode.window.showInputBox({
-    title: "GitStudio: Set Anthropic API Key",
-    prompt: "Stored securely in your OS keychain (SecretStorage). Never sent to a webview.",
-    password: true,
-    ignoreFocusOut: true,
-    placeHolder: "sk-ant-…",
+  const key = await promptInput({
+    title: "Set Anthropic API Key",
+    hint: "Encrypted at rest in GitStudio's own store — not your OS keychain, so it never raises a password prompt. The key stays host-side and is never sent to a webview.",
+    placeholder: "sk-ant-…",
+    confirmLabel: "Save Key",
+    secret: true,
   });
   if (key === undefined) {
     return; // cancelled
@@ -38,8 +39,7 @@ export async function setApiKey(
     void vscode.window.showWarningMessage("GitStudio: no key entered.");
     return;
   }
-  await context.secrets.store(ANTHROPIC_KEY_SECRET, trimmed);
-  await brain.refreshEnabled();
+  await brain.setAnthropicKey(trimmed);
   void vscode.window.showInformationMessage(
     "GitStudio: Anthropic API key saved. AI features are now available.",
   );
@@ -47,47 +47,42 @@ export async function setApiKey(
 
 /** Clear the stored Anthropic key. */
 export async function clearApiKey(
-  context: vscode.ExtensionContext,
+  _context: vscode.ExtensionContext,
   brain: GitBrain,
 ): Promise<void> {
-  await context.secrets.delete(ANTHROPIC_KEY_SECRET);
-  await brain.refreshEnabled();
+  await brain.clearAnthropicKey();
   void vscode.window.showInformationMessage(
     "GitStudio: Anthropic API key cleared.",
   );
 }
 
 /**
- * Store the OpenAI-compatible key (password input) in SecretStorage. The key is
- * OPTIONAL — local servers (Ollama / LM Studio) need none — so an empty entry
- * clears it rather than warning.
+ * Store the OpenAI-compatible key. It is OPTIONAL — local servers (Ollama /
+ * LM Studio) need none — so an empty entry clears it rather than warning.
  */
 export async function setOpenAIKey(
-  context: vscode.ExtensionContext,
+  _context: vscode.ExtensionContext,
   brain: GitBrain,
 ): Promise<void> {
-  const key = await vscode.window.showInputBox({
-    title: "GitStudio: Set OpenAI API Key",
-    prompt:
-      "For OpenAI / Codex / OpenRouter. Leave blank for a local server (Ollama / LM Studio). Stored in your OS keychain; never sent to a webview.",
-    password: true,
-    ignoreFocusOut: true,
-    placeHolder: "sk-… (blank for a local, keyless server)",
+  const key = await promptInput({
+    title: "Set OpenAI API Key",
+    hint: "For OpenAI / Codex / OpenRouter. Leave blank for a local, keyless server (Ollama / LM Studio). Encrypted at rest in GitStudio's own store and never sent to a webview.",
+    placeholder: "sk-…   (blank for a local, keyless server)",
+    confirmLabel: "Save Key",
+    secret: true,
   });
   if (key === undefined) {
     return; // cancelled
   }
   const trimmed = key.trim();
   if (trimmed.length === 0) {
-    await context.secrets.delete(OPENAI_KEY_SECRET);
-    await brain.refreshEnabled();
+    await brain.clearOpenAiKey();
     void vscode.window.showInformationMessage(
       "GitStudio: OpenAI API key cleared (keyless / local mode).",
     );
     return;
   }
-  await context.secrets.store(OPENAI_KEY_SECRET, trimmed);
-  await brain.refreshEnabled();
+  await brain.setOpenAiKey(trimmed);
   void vscode.window.showInformationMessage(
     "GitStudio: OpenAI API key saved.",
   );
@@ -95,11 +90,10 @@ export async function setOpenAIKey(
 
 /** Clear the stored OpenAI-compatible key. */
 export async function clearOpenAIKey(
-  context: vscode.ExtensionContext,
+  _context: vscode.ExtensionContext,
   brain: GitBrain,
 ): Promise<void> {
-  await context.secrets.delete(OPENAI_KEY_SECRET);
-  await brain.refreshEnabled();
+  await brain.clearOpenAiKey();
   void vscode.window.showInformationMessage(
     "GitStudio: OpenAI API key cleared.",
   );
@@ -338,66 +332,64 @@ export async function selectModelCommand(
   context: vscode.ExtensionContext,
   brain: GitBrain,
 ): Promise<void> {
-  interface ModelItem extends vscode.QuickPickItem {
-    target: "lm" | "anthropic" | "openai";
-    modelId?: string;
-  }
-
-  const items: ModelItem[] = [];
+  // ids are "lm:<modelId>" | "anthropic" | "openai".
+  const choices: DialogChoice[] = [];
 
   const lmModels = await brain.listLmModels();
   for (const m of lmModels) {
     const vendor = m.vendor || "Language Model";
     const family = m.family || m.name || m.id;
-    items.push({
-      target: "lm",
-      modelId: m.id,
-      label: `$(sparkle) ${vendor} · ${family}`,
-      description: m.name && m.name !== family ? m.name : undefined,
-      detail: "VS Code Language Model (zero-key) — Copilot / Cursor",
+    choices.push({
+      id: `lm:${m.id}`,
+      label: `${vendor} · ${family}`,
+      icon: "sparkle",
+      detail: m.name && m.name !== family ? m.name : undefined,
+      description: "VS Code Language Model (zero-key) — Copilot / Cursor",
     });
   }
 
-  items.push({
-    target: "anthropic",
-    label: "$(key) Claude (Anthropic) — set key…",
-    detail: "Use Anthropic directly with your API key.",
+  choices.push({
+    id: "anthropic",
+    label: "Claude (Anthropic)",
+    icon: "key",
+    description: "Use Anthropic directly with your API key.",
   });
 
   const baseUrl = vscode.workspace
     .getConfiguration("gitstudio.ai")
     .get<string>("openai.baseUrl", "https://api.openai.com/v1");
-  items.push({
-    target: "openai",
-    label: `$(server) OpenAI / local (OpenAI-compatible) — ${baseUrl}`,
-    detail:
+  choices.push({
+    id: "openai",
+    label: "OpenAI / local (OpenAI-compatible)",
+    icon: "server",
+    detail: baseUrl,
+    description:
       "OpenAI, Codex, OpenRouter, or a local server (Ollama / LM Studio). Base URL / model / key.",
   });
 
-  const pick = await vscode.window.showQuickPick(items, {
-    title: "GitStudio: Select AI Model",
-    placeHolder: "Pick the model GitBrain should use",
-    ignoreFocusOut: true,
+  const pick = await promptPick({
+    title: "Select AI Model",
+    hint: "Which model should GitBrain use?",
+    choices,
   });
   if (!pick) {
     return;
   }
 
   const cfg = vscode.workspace.getConfiguration("gitstudio.ai");
-  if (pick.target === "lm") {
-    await brain.setPreferredLmModelId(pick.modelId);
+  if (pick.startsWith("lm:")) {
+    const modelId = pick.slice(3);
+    await brain.setPreferredLmModelId(modelId);
     await cfg.update("provider", "copilot", vscode.ConfigurationTarget.Global);
     await brain.refreshEnabled();
-    void vscode.window.showInformationMessage(
-      `GitStudio: using ${pick.label.replace(/^\$\([^)]*\)\s*/, "")}.`,
-    );
+    const label = choices.find((c) => c.id === pick)?.label ?? modelId;
+    void vscode.window.showInformationMessage(`GitStudio: using ${label}.`);
     return;
   }
 
-  if (pick.target === "anthropic") {
+  if (pick === "anthropic") {
     await cfg.update("provider", "anthropic", vscode.ConfigurationTarget.Global);
-    const hasKey = await context.secrets.get(ANTHROPIC_KEY_SECRET);
-    if (!hasKey) {
+    if (!brain.hasAnthropicKey()) {
       await setApiKey(context, brain);
     } else {
       await brain.refreshEnabled();
@@ -419,12 +411,12 @@ async function configureOpenAi(
   brain: GitBrain,
   cfg: vscode.WorkspaceConfiguration,
 ): Promise<void> {
-  const baseUrl = await vscode.window.showInputBox({
-    title: "GitStudio: OpenAI-compatible Base URL",
-    prompt:
-      "e.g. https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · http://localhost:1234/v1 (LM Studio)",
+  const baseUrl = await promptInput({
+    title: "OpenAI-compatible Base URL",
+    hint: "https://api.openai.com/v1 · http://localhost:11434/v1 (Ollama) · http://localhost:1234/v1 (LM Studio)",
     value: cfg.get<string>("openai.baseUrl", "https://api.openai.com/v1"),
-    ignoreFocusOut: true,
+    confirmLabel: "Continue",
+    validate: "url",
   });
   if (baseUrl === undefined) {
     return; // cancelled
@@ -437,12 +429,11 @@ async function configureOpenAi(
     );
   }
 
-  const model = await vscode.window.showInputBox({
-    title: "GitStudio: OpenAI-compatible Model",
-    prompt:
-      "Model ID for commit messages / explain (e.g. gpt-4o-mini, llama3.1, qwen2.5-coder).",
+  const model = await promptInput({
+    title: "OpenAI-compatible Model",
+    hint: "Model ID for commit messages and explain — gpt-4o-mini, llama3.1, qwen2.5-coder.",
     value: cfg.get<string>("openai.modelFast", ""),
-    ignoreFocusOut: true,
+    confirmLabel: "Continue",
   });
   if (model === undefined) {
     return; // cancelled

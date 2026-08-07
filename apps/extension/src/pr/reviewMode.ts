@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptInput, promptPick } from "../ui/dialogs";
 import { GitHubApi, GitHubApiError, type PullRequest, type PrFile, type ReviewComment, type ReviewEvent } from "./githubApi";
 import type { GitHubAuth } from "./githubAuth";
 import type { GitHubRepoContext } from "./repoContext";
@@ -192,34 +193,27 @@ export class ReviewController implements vscode.Disposable {
     }
     const { pr, ctx } = this.active;
 
-    // Submitting a review is a three-way verdict, not a search. Modal dialog.
-    const pick = await vscode.window.showInformationMessage(
-      `Submit review for PR #${pr.number}`,
-      {
-        modal: true,
-        detail:
-          `${this.threads.size} inline comment(s) will be submitted.\n\n` +
-          "Comment: general feedback, no explicit approval.\n" +
-          "Approve: approve these changes.\n" +
-          "Request changes: block until addressed.",
-      },
-      "Comment",
-      "Approve",
-      "Request Changes",
-    );
+    // Submitting a review is a three-way verdict, not a search.
+    const pick = await promptPick({
+      title: `Submit review for PR #${pr.number}`,
+      hint: `${this.threads.size} inline comment${this.threads.size === 1 ? "" : "s"} will be submitted with it.`,
+      choices: [
+        { id: "COMMENT", label: "Comment", icon: "comment", description: "General feedback, no explicit approval." },
+        { id: "APPROVE", label: "Approve", icon: "check", description: "Approve these changes." },
+        { id: "REQUEST_CHANGES", label: "Request Changes", icon: "request-changes", danger: true, description: "Block the PR until the feedback is addressed." },
+      ],
+    });
     if (!pick) {
       return;
     }
-    const event: ReviewEvent =
-      pick === "Approve"
-        ? "APPROVE"
-        : pick === "Request Changes"
-          ? "REQUEST_CHANGES"
-          : "COMMENT";
+    const event = pick as ReviewEvent;
 
-    const summary = await vscode.window.showInputBox({
-      prompt: "Review summary (optional)",
-      placeHolder: "Leave a summary comment…",
+    const summary = await promptInput({
+      title: "Review summary",
+      hint: "Optional — Ctrl/Cmd+Enter to submit.",
+      placeholder: "Leave a summary comment…",
+      multiline: true,
+      confirmLabel: "Submit Review",
     });
     // Escape (undefined) cancels; an empty string is a valid no-summary submit.
     if (summary === undefined) {

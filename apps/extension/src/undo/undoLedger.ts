@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptConfirm, promptPick } from "../ui/dialogs";
 import type { GitContext, Snapshot } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
@@ -146,18 +147,31 @@ export class UndoLedger {
     // Newest first. Track how many newer entries each choice would discard.
     const items = buffer
       .map((entry, index) => ({
-        label: `$(history) ${entry.label}`,
-        description: relativeTime(entry.time / 1000),
-        detail: `HEAD was ${short(entry.headBefore)}`,
         entry,
+        index,
         discardNewer: buffer.length - 1 - index,
       }))
       .reverse();
 
-    const picked = await vscode.window.showQuickPick(items, {
+    const pickedId = await promptPick({
       title: "Undo History",
-      placeHolder: "Restore the repository to a point before this operation",
+      hint: "Restore the repository to the point before this operation.",
+      choices: items.map((it) => ({
+        id: String(it.index),
+        label: it.entry.label,
+        icon: "history",
+        detail: relativeTime(it.entry.time / 1000),
+        description: `HEAD was ${short(it.entry.headBefore)}${
+          it.discardNewer > 0
+            ? ` · also discards ${it.discardNewer} newer operation${it.discardNewer === 1 ? "" : "s"}`
+            : ""
+        }`,
+      })),
     });
+    if (pickedId === undefined) {
+      return;
+    }
+    const picked = items.find((it) => String(it.index) === pickedId);
     if (!picked) {
       return;
     }
@@ -197,12 +211,12 @@ export class UndoLedger {
     const dirtyNote = entry.snapshot.stashSha
       ? " Your uncommitted changes from that point will be restored."
       : "";
-    const ok = await confirm(
-      `Undo "${entry.label}"? The repository will be reset to ${short(
-        entry.headBefore,
-      )}.${extra}${dirtyNote}`,
-      "Undo",
-    );
+    const ok = await promptConfirm({
+      title: `Undo "${entry.label}"?`,
+      message: `The repository goes back to ${short(entry.headBefore)}.${extra}${dirtyNote}`,
+      confirmLabel: "Undo",
+      danger: discardNewer > 0,
+    });
     if (!ok) {
       return;
     }
@@ -231,14 +245,13 @@ export class UndoLedger {
     entry: UndoEntry,
     currentHead: string,
   ): Promise<void> {
-    const choice = await vscode.window.showWarningMessage(
-      `"${entry.label}" has already been pushed. Rewriting published history ` +
-        `is unsafe, so GitStudio will Revert the change instead (a new commit ` +
-        `that undoes it).`,
-      { modal: true },
-      "Revert",
-    );
-    if (choice !== "Revert") {
+    const ok = await promptConfirm({
+      title: `"${entry.label}" has already been pushed`,
+      message:
+        "Rewriting published history would break everyone who has already pulled it. GitStudio will Revert instead — a new commit that undoes the change, leaving the original in place.",
+      confirmLabel: "Revert",
+    });
+    if (!ok) {
       return;
     }
     // Revert every commit from headBefore..currentHead (the op may have added
@@ -321,15 +334,6 @@ export class UndoLedger {
 }
 
 // ── Local UI helpers (mirror commitActions.ts) ───────────────────────────────
-
-async function confirm(message: string, action: string): Promise<boolean> {
-  const choice = await vscode.window.showWarningMessage(
-    message,
-    { modal: true },
-    action,
-  );
-  return choice === action;
-}
 
 function flash(message: string): void {
   void vscode.window.setStatusBarMessage(`$(discard) ${message}`, 2500);

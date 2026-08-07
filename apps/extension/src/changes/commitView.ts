@@ -3,6 +3,13 @@ import type { GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { Change } from "../git/git";
 import { getNonce } from "../webview/html";
+import {
+  promptConfirm,
+  promptPick,
+  type DialogHost,
+  type DialogResult,
+  type DialogSpec,
+} from "../ui/dialogs";
 // The shared design tokens, inlined as text by esbuild (the extension ctx uses
 // the ".css": "text" loader). Injected into the webview <style> so this surface
 // consumes the SAME token system as every bundled webview — one source, no drift.
@@ -120,7 +127,12 @@ interface FromWebview {
     | "newBranchFromPush"
     | "openPushFileDiff"
     | "openFolder"
-    | "openGraph";
+    | "openGraph"
+    | "dialogResult";
+  /** Correlation id for a `dialogResult` reply (see DialogHost below). */
+  dialogId?: string;
+  /** The dialog's answer: text, a choice id, checked ids, or "ok". */
+  dialogValue?: string | string[];
   path?: string;
   /** Original path for a renamed file (push-modal file diff). */
   oldPath?: string;
@@ -172,7 +184,7 @@ function pushRefLabel(ref: string): string {
 }
 
 export class CommitViewProvider
-  implements vscode.WebviewViewProvider, vscode.Disposable
+  implements vscode.WebviewViewProvider, vscode.Disposable, DialogHost
 {
   static readonly viewId = "gitstudio.commit";
 
@@ -237,7 +249,101 @@ export class CommitViewProvider
         void this.pushState();
       }
     });
+    view.onDidDispose(() => {
+      // The webview holding a dialog is gone; nobody will ever answer. Settle
+      // every waiter as "dismissed" so the awaiting command finishes instead of
+      // hanging forever on a promise that can't resolve.
+      this.settleAllDialogs();
+      if (this.view === view) {
+        this.view = undefined;
+      }
+    });
+    // A reload replaces the DOM, taking any open dialog with it.
+    this.settleAllDialogs();
+    // Fresh document ⇒ fresh script; nothing is listening until it says "ready".
+    this.webviewReady = new Promise<void>((resolve) => {
+      this.markReady = resolve;
+    });
     void this.pushState();
+  }
+
+  // ── DialogHost — GitStudio's own dialogs, rendered in this view ─────────────
+
+  /** Pending dialogs by correlation id → the resolver awaiting an answer. */
+  private readonly dialogWaiters = new Map<
+    string,
+    (r: DialogResult | undefined) => void
+  >();
+  private dialogSeq = 0;
+  /** Resolves once the current webview document's script is listening. */
+  private webviewReady: Promise<void> | undefined;
+  private markReady: (() => void) | undefined;
+
+  /**
+   * Render a dialog in this view and await the answer.
+   *
+   * Reveals the Changes view first: a command can be run from the palette, the
+   * commit graph, or an editor context menu while the sidebar is collapsed, and
+   * a dialog nobody can see is worse than the quick input we replaced.
+   */
+  async show(spec: DialogSpec): Promise<DialogResult | undefined> {
+    if (!this.view?.visible) {
+      try {
+        // Resolves the view if it has never been opened, and expands it if the
+        // user had it collapsed. Focus lands in the dialog either way.
+        await vscode.commands.executeCommand(`${CommitViewProvider.viewId}.focus`);
+      } catch {
+        // Fall through — if the view did resolve, the post below still works.
+      }
+    }
+    const view = this.view;
+    if (!view) {
+      return undefined;
+    }
+    // A just-revealed webview has a document but not yet a running script, and a
+    // message posted into that gap is dropped — the dialog would simply never
+    // appear. Wait for its "ready", but never longer than a moment: if the
+    // script is wedged, showing the dialog late still beats hanging the command.
+    await Promise.race([
+      this.webviewReady ?? Promise.resolve(),
+      new Promise<void>((r) => setTimeout(r, 3000)),
+    ]);
+    const dialogId = `d${++this.dialogSeq}`;
+    const answered = new Promise<DialogResult | undefined>((resolve) => {
+      this.dialogWaiters.set(dialogId, resolve);
+    });
+    const posted = await view.webview.postMessage({
+      type: "dialog",
+      dialogId,
+      spec,
+    });
+    if (!posted) {
+      // The webview never received it (disposed mid-flight) — don't await an
+      // answer that cannot come.
+      this.dialogWaiters.delete(dialogId);
+      return undefined;
+    }
+    return answered;
+  }
+
+  private resolveDialog(id: string | undefined, value: string | string[] | undefined): void {
+    if (!id) {
+      return;
+    }
+    const resolve = this.dialogWaiters.get(id);
+    if (!resolve) {
+      return; // already settled (a dismissal that raced a reload)
+    }
+    this.dialogWaiters.delete(id);
+    resolve(value === undefined ? undefined : { value });
+  }
+
+  /** Settle every pending dialog as dismissed (view reloaded or disposed). */
+  private settleAllDialogs(): void {
+    for (const resolve of this.dialogWaiters.values()) {
+      resolve(undefined);
+    }
+    this.dialogWaiters.clear();
   }
 
   /** Re-push state (staged count + change lists) after an external op. */
@@ -248,10 +354,14 @@ export class CommitViewProvider
   private async onMessage(msg: FromWebview): Promise<void> {
     switch (msg.type) {
       case "ready":
+        this.markReady?.();
         await this.pushState();
         return;
       case "amendToggled":
         await this.pushState(!!msg.amend);
+        return;
+      case "dialogResult":
+        this.resolveDialog(msg.dialogId, msg.dialogValue);
         return;
       case "branchAction":
         await this.handleBranchAction(msg);
@@ -439,12 +549,14 @@ export class CommitViewProvider
     if (!path) {
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
-      `Discard changes in ${path}? This cannot be undone.`,
-      { modal: true },
-      "Discard",
-    );
-    if (choice !== "Discard") {
+    const ok = await promptConfirm({
+      title: `Discard changes in ${path}?`,
+      message:
+        "The file goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
     const active = this.repos.getActive();
@@ -537,12 +649,14 @@ export class CommitViewProvider
     if (rels.length === 0) {
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
-      `Discard all ${rels.length} working-tree changes? This cannot be undone.`,
-      { modal: true },
-      "Discard All",
-    );
-    if (choice !== "Discard All") {
+    const ok = await promptConfirm({
+      title: `Discard all ${rels.length} working-tree change${rels.length === 1 ? "" : "s"}?`,
+      message:
+        "Every unstaged edit goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
+      confirmLabel: "Discard All",
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
     await this.discardEntries(unstaged);
@@ -553,12 +667,14 @@ export class CommitViewProvider
     if (rels.length === 0) {
       return;
     }
-    const choice = await vscode.window.showWarningMessage(
-      `Discard changes in all ${rels.length} file${rels.length === 1 ? "" : "s"} under this folder? This cannot be undone.`,
-      { modal: true },
-      "Discard",
-    );
-    if (choice !== "Discard") {
+    const ok = await promptConfirm({
+      title: `Discard changes in ${rels.length} file${rels.length === 1 ? "" : "s"}?`,
+      message:
+        "Every edit under this folder goes back to its committed state. These edits were never committed, so nothing — not even Undo — can bring them back.",
+      confirmLabel: "Discard",
+      danger: true,
+    });
+    if (!ok) {
       return;
     }
     const active = this.repos.getActive();
@@ -1186,23 +1302,28 @@ export class CommitViewProvider
     }
 
     const plural = count === 1 ? "commit" : "commits";
-    // Two named outcomes → a dialog. (Never the search bar for actions.)
-    const chosen = await vscode.window.showInformationMessage(
-      `Undo ${count} local ${plural}`,
-      {
-        modal: true,
-        detail:
-          "Where should the committed changes go?\n\n" +
-          `Keep staged: their changes return to the Staged group.\n` +
-          `Unstage: their changes return as unstaged edits.`,
-      },
-      "Keep Staged",
-      "Unstage",
-    );
+    const chosen = await promptPick({
+      title: `Undo ${count} local ${plural}`,
+      hint: "Where should the committed changes go? Your work is kept either way.",
+      choices: [
+        {
+          id: "keep",
+          label: "Keep Staged",
+          icon: "check",
+          description: "Their changes return to the Staged group, ready to re-commit.",
+        },
+        {
+          id: "unstage",
+          label: "Unstage",
+          icon: "list-flat",
+          description: "Their changes return as unstaged edits.",
+        },
+      ],
+    });
     if (!chosen) {
       return;
     }
-    const mode = { value: chosen === "Keep Staged" ? "--soft" : "--mixed" };
+    const mode = { value: chosen === "keep" ? "--soft" : "--mixed" };
     const r = await entry.ctx.process.run(["reset", mode.value, base]);
     if (r.code !== 0) {
       void vscode.window.showErrorMessage(
@@ -1833,12 +1954,15 @@ export class CommitViewProvider
     .bm-star .codicon { font-size: 13px; }
     .bm-empty { padding: 10px 8px; color: var(--gs-fg-muted); font-size: 12px; text-align: center; }
     .bm-note { padding: 4px 8px 6px 34px; color: var(--gs-fg-subtle); font-size: 11px; font-style: italic; }
-    /* ── In-view ref prompt ───────────────────────────────────────────────
-       Replaces vscode.window.showInputBox for "New Branch" and "Checkout Tag
-       or Revision". The quick-input is a floating search bar: it vanishes on
-       alt-tab taking whatever you typed with it, and it cannot complete over
-       the refs we already have in this webview. This dialog lives in the view,
-       so focus loss cannot destroy it, and it completes as you type. */
+    /* ── GitStudio dialogs (rp-*) ─────────────────────────────────────────
+       Every question GitStudio asks renders here — naming a branch, choosing a
+       reset mode, confirming a delete — whether it was raised by this webview
+       or by host-side command code (see ui/dialogs.ts). Replaces the quick
+       input, which is a floating search bar that vanishes on alt-tab taking
+       whatever you typed with it and cannot complete over the refs we already
+       hold, and the modal message box, which is OS chrome unrelated to the
+       surface you clicked in. This lives in the view, so focus loss cannot
+       destroy it, and it completes as you type. */
     /* Above the push modal (120/121). The prompt can be opened FROM that modal
        ("New branch from these commits"), and at z-index 60 it rendered behind
        the modal's backdrop — invisible, while still holding keyboard focus. */
@@ -1889,7 +2013,31 @@ export class CommitViewProvider
       background: var(--gs-accent); border-color: var(--gs-accent);
       color: var(--vscode-button-foreground, #fff);
     }
+    .rp-foot button.primary.danger {
+      background: var(--gs-danger, #f14c4c); border-color: var(--gs-danger, #f14c4c);
+    }
     .rp-foot button:disabled { opacity: 0.5; cursor: default; }
+    /* A multi-line answer (a PR body, a review summary). Same frame as the
+       single-line input so the dialog doesn't change shape between kinds. */
+    .rp-inputwrap textarea {
+      width: 100%; box-sizing: border-box; padding: 6px 8px; min-height: 116px;
+      font-family: inherit; font-size: 12.5px; line-height: 1.45; resize: vertical;
+      color: var(--gs-fg); background: var(--vscode-input-background);
+      border: 1px solid var(--gs-border); border-radius: 5px; outline: none;
+    }
+    .rp-inputwrap textarea:focus { border-color: var(--gs-accent); box-shadow: var(--gs-glow); }
+    /* Pick rows carry a second explanatory line, so they stack rather than
+       sitting on one baseline like the ref-completion rows above. */
+    .rp-choice { align-items: flex-start; padding: 7px 11px; }
+    .rp-choice .codicon { margin-top: 1px; }
+    .rp-choice-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .rp-choice-label { overflow: hidden; text-overflow: ellipsis; }
+    .rp-choice-desc { font-size: 11px; color: var(--gs-fg-muted); line-height: 1.4; white-space: normal; }
+    .rp-choice-detail { margin-left: auto; padding-left: 10px; font-size: 10px; color: var(--gs-fg-subtle); flex: 0 0 auto; }
+    .rp-choice.danger .rp-choice-label, .rp-choice.danger .codicon { color: var(--gs-danger, #f14c4c); }
+    .rp-check { flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--gs-accent); }
+    /* A confirm has no list and no input — just the question. */
+    .rp-msg { padding: 2px 11px 11px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
     /* Reads as an action, not a footnote — it is the only way to reach the
        remaining tags, so it must look clickable. */
     .bm-more {
@@ -3718,123 +3866,228 @@ export class CommitViewProvider
       }
     }
 
-    // ── In-view ref prompt ────────────────────────────────────────────────
-    // A real dialog inside the webview instead of vscode.window.showInputBox.
-    // Three reasons the quick-input was wrong here: it is the command palette
-    // (a search bar) wearing a different hat; alt-tabbing away destroys it AND
-    // whatever you had typed; and it cannot complete over the branches and tags
-    // this webview is already holding. This completes as you type, keeps free
-    // text for revision expressions like origin/main~3 or a bare sha, and
-    // survives focus loss because it is just DOM.
-    var refPrompt = null;
-    var refPromptBackdrop = null;
+    // ── GitStudio dialogs ─────────────────────────────────────────────────
+    // Real dialogs inside the webview, instead of vscode.window.showInputBox /
+    // showQuickPick / showXMessage({modal:true}). Four reasons the built-ins
+    // were wrong here: the quick input IS the command palette (a search bar)
+    // wearing a different hat; alt-tabbing away destroys it AND whatever you
+    // had typed; it cannot complete over the branches and tags this webview is
+    // already holding; and a modal message box is OS chrome unrelated to the
+    // surface you clicked in. These complete as you type, keep free text for
+    // revision expressions like origin/main~3 or a bare sha, and survive focus
+    // loss because they are just DOM.
+    //
+    // Two entry points, one renderer:
+    //   • openRefPrompt(opts)  — opened by this webview's own UI (branch menu).
+    //   • a "dialog" message   — opened by host-side command code, which awaits
+    //                            the "dialogResult" reply. See ui/dialogs.ts.
+    var dlgEl = null;
+    var dlgBackdrop = null;
+    var dlgKeyHandler = null;
+    var dlgReturnFocus = null;
+    /** Correlation id of a host-requested dialog, so we can answer exactly once. */
+    var dlgHostId = null;
 
-    var refPromptKeyHandler = null;
-    var refPromptReturnFocus = null;
-
-    function closeRefPrompt() {
-      if (refPromptKeyHandler) {
-        window.removeEventListener("keydown", refPromptKeyHandler, true);
-        refPromptKeyHandler = null;
+    /**
+     * Remove the dialog's DOM and listeners WITHOUT answering anyone.
+     *
+     * Separate from closeDialog because opening a dialog has to dismantle the
+     * previous one, and that teardown must not post a result under whatever id
+     * is current — see startDialog.
+     */
+    function teardownDialog() {
+      if (dlgKeyHandler) {
+        window.removeEventListener("keydown", dlgKeyHandler, true);
+        dlgKeyHandler = null;
       }
-      if (refPromptBackdrop) { refPromptBackdrop.remove(); refPromptBackdrop = null; }
-      if (refPrompt) { refPrompt.remove(); refPrompt = null; }
+      if (dlgBackdrop) { dlgBackdrop.remove(); dlgBackdrop = null; }
+      if (dlgEl) { dlgEl.remove(); dlgEl = null; }
       // Put focus back where it came from; otherwise it falls to <body> and the
       // next Tab restarts from the top of the view.
-      if (refPromptReturnFocus && refPromptReturnFocus.focus) {
-        try { refPromptReturnFocus.focus(); } catch (e) { /* gone from the DOM */ }
+      if (dlgReturnFocus && dlgReturnFocus.focus) {
+        try { dlgReturnFocus.focus(); } catch (e) { /* gone from the DOM */ }
       }
-      refPromptReturnFocus = null;
+      dlgReturnFocus = null;
     }
 
-    function openRefPrompt(opts) {
-      closeRefPrompt();
-      var candidates = opts.candidates || [];
-      var sel = -1;
-      var shown = [];
+    /**
+     * Tear the dialog down and settle it. 'answer === undefined' means dismissed.
+     * A host dialog MUST be answered or the awaiting command hangs, so the reply
+     * is posted here — the single place every close path funnels through.
+     */
+    function closeDialog(answer) {
+      teardownDialog();
+      var hostId = dlgHostId;
+      dlgHostId = null;
+      if (hostId) {
+        vscode.postMessage({ type: "dialogResult", dialogId: hostId, dialogValue: answer });
+      }
+    }
 
-      refPromptReturnFocus = document.activeElement;
-      refPromptBackdrop = el("div", "rp-backdrop");
-      refPromptBackdrop.addEventListener("click", closeRefPrompt);
-      document.body.appendChild(refPromptBackdrop);
-      // CAPTURE phase on the document: the push modal has its own capture-phase
-      // handler that stopPropagation()s Escape, so a listener on our input alone
-      // would let Escape close the modal UNDERNEATH us and leave this dialog up.
-      // Capturing also means Escape still works once focus moves to a button.
-      // On WINDOW, capture phase. Capture propagates root-first, so a window
-      // listener runs BEFORE the push modal's document-level capture handler —
-      // registering on document instead fires second and is useless, because the
-      // modal already handled Escape. stopImmediatePropagation (not merely
-      // stopPropagation) is required: stopPropagation does not suppress other
-      // listeners bound to the same target.
-      refPromptKeyHandler = function (e) {
+    /**
+     * Open a dialog, claiming (or clearing) the host correlation id.
+     *
+     * ORDER MATTERS. Any dialog already on screen must be settled under ITS OWN
+     * id before we adopt the new one — assigning dlgHostId first and letting the
+     * teardown post meant every host dialog answered "cancelled" the instant it
+     * appeared, while the answer the user then gave went nowhere.
+     */
+    function startDialog(hostId, render) {
+      closeDialog(undefined);
+      dlgHostId = hostId || null;
+      render();
+    }
+
+    /** Named validators, so a spec can cross postMessage without a function. */
+    var DLG_VALIDATORS = {
+      refName: function (v) {
+        if (/\s/.test(v)) return "Cannot contain spaces.";
+        if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$|@\{/.test(v)) return "Not a valid git ref name.";
+        if (v === "@") return "Not a valid git ref name.";
+        return null;
+      },
+      remoteName: function (v) {
+        if (/\s/.test(v)) return "Cannot contain spaces.";
+        if (!/^[A-Za-z0-9._-]+$/.test(v)) return "Use letters, digits, dot, dash or underscore.";
+        return null;
+      },
+      url: function (v) {
+        // Deliberately permissive: git remotes are legitimately https://, ssh://,
+        // git@host:path, and plain local paths.
+        if (/\s/.test(v)) return "A remote URL cannot contain spaces.";
+        return null;
+      },
+      nonEmpty: function (v) {
+        return v.trim() ? null : "Required.";
+      },
+    };
+
+    /** Shell shared by every dialog kind: scrim, panel, Escape, focus return. */
+    function beginDialog(spec) {
+      teardownDialog();
+      dlgReturnFocus = document.activeElement;
+      dlgBackdrop = el("div", "rp-backdrop");
+      dlgBackdrop.addEventListener("click", function () { closeDialog(undefined); });
+      document.body.appendChild(dlgBackdrop);
+      // On WINDOW, capture phase. The push modal has its own capture-phase
+      // handler that stops Escape, so a listener on our input alone would let
+      // Escape close the modal UNDERNEATH us and leave this dialog up. Capture
+      // propagates root-first, so a window listener runs BEFORE the modal's
+      // document-level one — registering on document instead fires second and is
+      // useless. stopImmediatePropagation (not merely stopPropagation) is
+      // required: stopPropagation does not suppress listeners on the same target.
+      dlgKeyHandler = function (e) {
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopImmediatePropagation();
-          closeRefPrompt();
+          closeDialog(undefined);
         }
       };
-      window.addEventListener("keydown", refPromptKeyHandler, true);
+      window.addEventListener("keydown", dlgKeyHandler, true);
 
-      refPrompt = el("div", "rp-panel");
-      refPrompt.setAttribute("role", "dialog");
-      refPrompt.setAttribute("aria-label", opts.title);
+      dlgEl = el("div", "rp-panel");
+      dlgEl.setAttribute("role", "dialog");
+      dlgEl.setAttribute("aria-modal", "true");
+      dlgEl.setAttribute("aria-label", spec.title);
       var titleEl = el("div", "rp-title");
-      titleEl.textContent = opts.title;
-      refPrompt.appendChild(titleEl);
-      if (opts.hint) {
+      titleEl.textContent = spec.title;
+      dlgEl.appendChild(titleEl);
+      if (spec.hint) {
         var hintEl = el("div", "rp-hint");
-        hintEl.textContent = opts.hint;
-        refPrompt.appendChild(hintEl);
+        hintEl.textContent = spec.hint;
+        dlgEl.appendChild(hintEl);
       }
+      return dlgEl;
+    }
 
-      var wrap = el("div", "rp-inputwrap");
-      var input = document.createElement("input");
-      input.type = "text";
-      input.placeholder = opts.placeholder || "";
-      input.value = opts.value || "";
-      input.setAttribute("aria-label", opts.title);
-      wrap.appendChild(input);
-      refPrompt.appendChild(wrap);
-
-      var err = el("div", "rp-err");
-      err.style.display = "none";
-      refPrompt.appendChild(err);
-
-      var list = el("div", "rp-list");
-      refPrompt.appendChild(list);
-
+    /** The Cancel / confirm footer. Returns the confirm button. */
+    function dialogFoot(panel, confirmLabel, danger, onConfirm) {
       var foot = el("div", "rp-foot");
       var cancel = document.createElement("button");
       cancel.textContent = "Cancel";
-      cancel.addEventListener("click", closeRefPrompt);
+      cancel.addEventListener("click", function () { closeDialog(undefined); });
       var ok = document.createElement("button");
-      ok.className = "primary";
-      ok.textContent = opts.confirmLabel || "OK";
+      ok.className = "primary" + (danger ? " danger" : "");
+      ok.textContent = confirmLabel || "OK";
+      ok.addEventListener("click", onConfirm);
       foot.appendChild(cancel);
       foot.appendChild(ok);
-      refPrompt.appendChild(foot);
-      document.body.appendChild(refPrompt);
+      panel.appendChild(foot);
+      document.body.appendChild(panel);
+      return ok;
+    }
+
+    /**
+     * Text entry with completion over 'candidates'.
+     *
+     * Local callers pass 'onConfirm'; host dialogs leave it off and are answered
+     * through closeDialog. 'strict' requires one of the candidates; otherwise any
+     * free text is accepted (a sha, 'origin/main~3', a brand-new branch name).
+     */
+    function openInputDialog(spec, onConfirm) {
+      var candidates = spec.candidates || [];
+      var sel = -1;
+      var shown = [];
+      var panel = beginDialog(spec);
+
+      var wrap = el("div", "rp-inputwrap");
+      var input = spec.multiline
+        ? document.createElement("textarea")
+        : document.createElement("input");
+      if (!spec.multiline) input.type = spec.secret ? "password" : "text";
+      input.placeholder = spec.placeholder || "";
+      input.value = spec.value || "";
+      input.setAttribute("aria-label", spec.title);
+      wrap.appendChild(input);
+      panel.appendChild(wrap);
+
+      var err = el("div", "rp-err");
+      err.style.display = "none";
+      panel.appendChild(err);
+
+      var list = el("div", "rp-list");
+      panel.appendChild(list);
+
+      var ok = dialogFoot(panel, spec.confirmLabel, false, confirm);
 
       function currentValue() {
-        return sel >= 0 && shown[sel] ? shown[sel].name : input.value.trim();
+        if (sel >= 0 && shown[sel]) return shown[sel].name;
+        return spec.multiline ? input.value : input.value.trim();
+      }
+
+      function problem(v) {
+        // A named validator from the host, or the function a local caller passed.
+        var fn = typeof spec.validate === "function"
+          ? spec.validate
+          : DLG_VALIDATORS[spec.validate];
+        var msg = fn ? fn(v) : null;
+        if (msg) return msg;
+        if (spec.strict && candidates.length) {
+          for (var i = 0; i < candidates.length; i++) {
+            if (candidates[i].name === v) return null;
+          }
+          return "Pick one of the listed entries.";
+        }
+        return null;
       }
 
       function validate() {
         var v = currentValue();
-        var msg = opts.validate ? opts.validate(v) : null;
+        var msg = v ? problem(v) : null;
         if (msg) {
           err.textContent = msg;
           err.style.display = "";
         } else {
           err.style.display = "none";
         }
+        // An empty value is only refusable, never an error message — the field
+        // starts empty and shouting at someone before they type is hostile.
         ok.disabled = !v || !!msg;
         return !ok.disabled;
       }
 
       function renderList() {
-        var q = input.value.trim().toLowerCase();
+        var q = (spec.multiline ? "" : input.value.trim()).toLowerCase();
         shown = (q
           ? candidates.filter(function (c) { return c.name.toLowerCase().indexOf(q) !== -1; })
           : candidates).slice(0, 60);
@@ -3842,15 +4095,13 @@ export class CommitViewProvider
         list.textContent = "";
         if (!candidates.length) return;
         if (!shown.length) {
-          var none = el("div", "rp-empty",
-            opts.allowFreeText ? "No match — Enter uses what you typed" : "No matches");
-          list.appendChild(none);
+          list.appendChild(el("div", "rp-empty",
+            spec.strict ? "No matches" : "No match — Enter uses what you typed"));
           return;
         }
         shown.forEach(function (c, i) {
           var row = el("div", "rp-row" + (i === sel ? " sel" : ""));
-          var ic = el("span", "codicon codicon-" + (c.icon || "git-branch"));
-          row.appendChild(ic);
+          row.appendChild(el("span", "codicon codicon-" + (c.icon || "git-branch")));
           // textContent, NOT el()'s innerHTML: git permits < > & " in ref names
           // (it only forbids space ~ ^ : ? * [ \\ and control chars), so a branch
           // named like an HTML tag would otherwise be parsed as markup. The
@@ -3876,16 +4127,21 @@ export class CommitViewProvider
 
       function confirm() {
         var v = currentValue();
-        if (!v) return;
-        if (opts.validate && opts.validate(v)) return;
-        closeRefPrompt();
-        opts.onConfirm(v);
+        if (!v || problem(v)) return;
+        closeDialog(onConfirm ? undefined : v);
+        if (onConfirm) onConfirm(v);
       }
 
       input.addEventListener("input", function () { sel = -1; renderList(); validate(); });
       input.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { e.preventDefault(); closeRefPrompt(); return; }
-        if (e.key === "Enter") { e.preventDefault(); confirm(); return; }
+        if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
+        if (e.key === "Enter") {
+          // In a textarea Enter inserts a newline; Ctrl/Cmd+Enter submits.
+          if (spec.multiline && !(e.ctrlKey || e.metaKey)) return;
+          e.preventDefault();
+          confirm();
+          return;
+        }
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           if (!shown.length) return;
           e.preventDefault();
@@ -3898,12 +4154,224 @@ export class CommitViewProvider
           validate();
         }
       });
-      ok.addEventListener("click", confirm);
 
       renderList();
       validate();
       input.focus();
-      input.select();
+      if (input.select) input.select();
+    }
+
+    /** Build one choice row (shared by pick and multiPick). */
+    function choiceRow(c, selected, multi) {
+      var row = el("div", "rp-row rp-choice" + (c.danger ? " danger" : "") +
+        (selected ? " sel" : ""));
+      if (multi) {
+        var box = document.createElement("input");
+        box.type = "checkbox";
+        box.className = "rp-check";
+        box.checked = !!c.picked;
+        box.tabIndex = -1;
+        row.appendChild(box);
+      }
+      if (c.icon) {
+        row.appendChild(el("span", "codicon codicon-" + c.icon));
+      }
+      var text = el("div", "rp-choice-text");
+      var label = el("div", "rp-choice-label");
+      label.textContent = c.label;
+      text.appendChild(label);
+      if (c.description) {
+        var desc = el("div", "rp-choice-desc");
+        desc.textContent = c.description;
+        text.appendChild(desc);
+      }
+      row.appendChild(text);
+      if (c.detail) {
+        var det = el("span", "rp-choice-detail");
+        det.textContent = c.detail;
+        row.appendChild(det);
+      }
+      return row;
+    }
+
+    /** Choose exactly one option. Clicking a row commits it — no second step. */
+    function openPickDialog(spec) {
+      var choices = spec.choices || [];
+      var useFilter = spec.filter === undefined ? choices.length > 8 : !!spec.filter;
+      var sel = 0;
+      var shown = choices;
+      var panel = beginDialog(spec);
+
+      var input = null;
+      if (useFilter) {
+        var wrap = el("div", "rp-inputwrap");
+        input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "Filter";
+        input.setAttribute("aria-label", "Filter " + spec.title);
+        wrap.appendChild(input);
+        panel.appendChild(wrap);
+      }
+
+      var list = el("div", "rp-list");
+      panel.appendChild(list);
+
+      // No confirm button: a pick IS the commit, exactly like the branch menu.
+      var foot = el("div", "rp-foot");
+      var cancel = document.createElement("button");
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", function () { closeDialog(undefined); });
+      foot.appendChild(cancel);
+      panel.appendChild(foot);
+      document.body.appendChild(panel);
+
+      function render() {
+        var q = input ? input.value.trim().toLowerCase() : "";
+        shown = q
+          ? choices.filter(function (c) {
+              return (c.label + " " + (c.description || "")).toLowerCase().indexOf(q) !== -1;
+            })
+          : choices;
+        if (sel >= shown.length) sel = shown.length - 1;
+        if (sel < 0) sel = 0;
+        list.textContent = "";
+        if (!shown.length) {
+          list.appendChild(el("div", "rp-empty", "No matches"));
+          return;
+        }
+        shown.forEach(function (c, i) {
+          var row = choiceRow(c, i === sel, false);
+          row.addEventListener("click", function () { closeDialog(c.id); });
+          list.appendChild(row);
+        });
+      }
+
+      function onKey(e) {
+        if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (shown[sel]) closeDialog(shown[sel].id);
+          return;
+        }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          if (!shown.length) return;
+          e.preventDefault();
+          sel = e.key === "ArrowDown"
+            ? Math.min(sel + 1, shown.length - 1)
+            : Math.max(sel - 1, 0);
+          render();
+          var selEl = list.querySelector(".rp-row.sel");
+          if (selEl && selEl.scrollIntoView) selEl.scrollIntoView({ block: "nearest" });
+        }
+      }
+
+      if (input) {
+        input.addEventListener("input", function () { sel = 0; render(); });
+        input.addEventListener("keydown", onKey);
+      } else {
+        panel.tabIndex = -1;
+        panel.addEventListener("keydown", onKey);
+      }
+
+      render();
+      if (input) input.focus(); else panel.focus();
+    }
+
+    /** Choose any number of options — the answer is a (possibly empty) id list. */
+    function openMultiPickDialog(spec) {
+      var choices = (spec.choices || []).map(function (c) {
+        return {
+          id: c.id, label: c.label, icon: c.icon, detail: c.detail,
+          description: c.description, danger: c.danger, picked: !!c.picked,
+        };
+      });
+      var sel = 0;
+      var panel = beginDialog(spec);
+      var list = el("div", "rp-list");
+      panel.appendChild(list);
+
+      dialogFoot(panel, spec.confirmLabel, false, function () {
+        closeDialog(choices.filter(function (c) { return c.picked; })
+          .map(function (c) { return c.id; }));
+      });
+
+      function toggle(i) {
+        choices[i].picked = !choices[i].picked;
+        sel = i;
+        render();
+      }
+
+      function render() {
+        list.textContent = "";
+        choices.forEach(function (c, i) {
+          var row = choiceRow(c, i === sel, true);
+          row.addEventListener("click", function () { toggle(i); });
+          list.appendChild(row);
+        });
+      }
+
+      panel.tabIndex = -1;
+      panel.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
+        if (e.key === " ") { e.preventDefault(); toggle(sel); return; }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          closeDialog(choices.filter(function (c) { return c.picked; })
+            .map(function (c) { return c.id; }));
+          return;
+        }
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          if (!choices.length) return;
+          e.preventDefault();
+          sel = e.key === "ArrowDown"
+            ? Math.min(sel + 1, choices.length - 1)
+            : Math.max(sel - 1, 0);
+          render();
+        }
+      });
+
+      render();
+      panel.focus();
+    }
+
+    /** Yes/no. Dismissing is "no", so a destructive default can never fire. */
+    function openConfirmDialog(spec) {
+      var panel = beginDialog(spec);
+      var msg = el("div", "rp-msg");
+      msg.textContent = spec.message;
+      panel.appendChild(msg);
+      var ok = dialogFoot(panel, spec.confirmLabel, spec.danger, function () {
+        closeDialog("ok");
+      });
+      panel.tabIndex = -1;
+      panel.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { e.preventDefault(); closeDialog(undefined); return; }
+        if (e.key === "Enter") { e.preventDefault(); closeDialog("ok"); }
+      });
+      // A destructive action never starts focused — Enter out of muscle memory
+      // should not delete a branch. Cancel takes focus instead.
+      if (spec.danger) panel.focus(); else ok.focus();
+    }
+
+    /** Open whichever dialog a host-requested spec describes. */
+    function openDialog(spec, hostId) {
+      startDialog(hostId, function () {
+        if (spec.kind === "pick") return openPickDialog(spec);
+        if (spec.kind === "multiPick") return openMultiPickDialog(spec);
+        if (spec.kind === "confirm") return openConfirmDialog(spec);
+        return openInputDialog(spec, null);
+      });
+    }
+
+    /**
+     * This webview's own callers (the branch menu, the push modal), which pass
+     * an onConfirm callback and a validate FUNCTION rather than a validator
+     * name. No host is waiting, so the correlation id is cleared.
+     */
+    function openRefPrompt(opts) {
+      startDialog(null, function () {
+        openInputDialog(opts, opts.onConfirm);
+      });
     }
 
     /** Every ref this webview already knows, as completion candidates. */
@@ -4492,6 +4960,14 @@ export class CommitViewProvider
     // ---- Host messages ---------------------------------------------------
     window.addEventListener("message", (event) => {
       const msg = event.data;
+      if (msg.type === "dialog") {
+        // A host-side command needs an answer. It is awaiting our
+        // "dialogResult" reply, so every close path must post exactly once —
+        // closeDialog() owns that, and openDialog claims the id in the right
+        // order (see startDialog).
+        openDialog(msg.spec, msg.dialogId);
+        return;
+      }
       if (msg.type === "state") {
         setBusy(!!msg.busy);
         document.body.classList.toggle("no-repo", !msg.hasRepo);

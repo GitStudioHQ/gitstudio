@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { homedir } from "node:os";
 import type { WorktreeEntry, GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
@@ -313,22 +314,23 @@ export async function openWorktree(node: WorktreeNode): Promise<void> {
     return;
   }
   const uri = vscode.Uri.file(node.entry.path);
-  const choice = await vscode.window.showQuickPick(
-    [
-      { label: "$(window) Open in New Window", value: true },
-      { label: "$(arrow-right) Open in This Window", value: false },
+  const choice = await promptPick({
+    title: `Open worktree ${node.label}`,
+    hint: node.entry.path,
+    choices: [
+      { id: "new", label: "Open in New Window", icon: "window" },
+      { id: "here", label: "Open in This Window", icon: "arrow-right", description: "Replaces what is currently open." },
     ],
-    { title: `Open worktree ${node.label}`, placeHolder: "Where to open" },
-  );
+  });
   if (choice === undefined) {
     return;
   }
   await vscode.commands.executeCommand("vscode.openFolder", uri, {
-    forceNewWindow: choice.value,
+    forceNewWindow: choice === "new",
   });
 }
 
-/** `gitstudio.worktree.add` — QuickPick branch/new-branch + a folder. */
+/** `gitstudio.worktree.add` — pick a branch (or name a new one) + a folder. */
 export async function addWorktree(
   repos: RepoManager,
   refresh: () => void,
@@ -346,21 +348,25 @@ export async function addWorktree(
   }
   const localBranches = refs.filter((r) => r.type === "head");
 
-  const NEW = "$(add) New branch…";
-  const items: vscode.QuickPickItem[] = [
-    { label: NEW, description: "create a new branch in the worktree" },
-    {
-      label: "",
-      kind: vscode.QuickPickItemKind.Separator,
-    },
-    ...localBranches.map((r) => ({
-      label: `$(git-branch) ${r.name}`,
-      description: r.sha.slice(0, 7),
-    })),
-  ];
-  const picked = await vscode.window.showQuickPick(items, {
+  // A sentinel id no branch can collide with: git forbids ":" in a ref name.
+  const NEW = "gitstudio:new-branch";
+  const picked = await promptPick({
     title: "New worktree — pick a branch",
-    placeHolder: "Check out which branch in the new worktree?",
+    hint: "Which branch should be checked out in the new worktree?",
+    choices: [
+      {
+        id: NEW,
+        label: "New branch…",
+        icon: "add",
+        description: "Create a new branch in the worktree.",
+      },
+      ...localBranches.map((r) => ({
+        id: r.name,
+        label: r.name,
+        icon: "git-branch",
+        detail: r.sha.slice(0, 7),
+      })),
+    ],
   });
   if (!picked) {
     return;
@@ -368,12 +374,13 @@ export async function addWorktree(
 
   let ref: string;
   let newBranch = false;
-  if (picked.label === NEW) {
-    const name = await vscode.window.showInputBox({
+  if (picked === NEW) {
+    const name = await promptInput({
       title: "New worktree branch",
-      prompt: "New branch name",
-      placeHolder: "feature/worktree",
-      validateInput: validateRefName,
+      hint: "The branch is created and checked out in the new worktree.",
+      placeholder: "feature/worktree",
+      confirmLabel: "Continue",
+      validate: "refName",
     });
     if (!name) {
       return;
@@ -381,7 +388,7 @@ export async function addWorktree(
     ref = name;
     newBranch = true;
   } else {
-    ref = picked.label.replace(/^\$\(git-branch\)\s*/, "");
+    ref = picked;
   }
 
   const folders = await vscode.window.showOpenDialog({
@@ -428,19 +435,25 @@ export async function removeWorktree(
   if (!a || !node) {
     return;
   }
-  const ok = await confirm(
-    `Remove worktree at ${node.entry.path}? This deletes the worktree's files.`,
-    "Remove",
-  );
+  const ok = await promptConfirm({
+    title: `Remove worktree at ${node.entry.path}?`,
+    message:
+      "The worktree's directory and its files are deleted from disk. The branch it had checked out is left alone.",
+    confirmLabel: "Remove",
+    danger: true,
+  });
   if (!ok) {
     return;
   }
   let result = await a.ctx.worktrees.remove(node.entry.path);
   if (!result.ok && /dirty|locked|use --force/i.test(result.stderr)) {
-    const force = await confirm(
-      `The worktree is dirty or locked. Force removal (discarding changes)?`,
-      "Force Remove",
-    );
+    const force = await promptConfirm({
+      title: "The worktree is dirty or locked",
+      message:
+        "Forcing removal deletes it anyway, discarding any uncommitted changes inside it. Those edits were never committed, so nothing can bring them back.",
+      confirmLabel: "Force Remove",
+      danger: true,
+    });
     if (!force) {
       return;
     }
@@ -496,33 +509,6 @@ function report(
   }
 }
 
-async function confirm(message: string, action: string): Promise<boolean> {
-  const choice = await vscode.window.showWarningMessage(
-    message,
-    { modal: true },
-    action,
-  );
-  return choice === action;
-}
-
 function flash(message: string): void {
   void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
-}
-
-function validateRefName(value: string): string | undefined {
-  const name = value.trim();
-  if (!name) {
-    return "Name cannot be empty";
-  }
-  if (
-    /[ ~^:?*\[\\]/.test(name) ||
-    name.includes("..") ||
-    name.startsWith("/") ||
-    name.endsWith("/") ||
-    name.endsWith(".") ||
-    name.endsWith(".lock")
-  ) {
-    return "Invalid character in ref name";
-  }
-  return undefined;
 }

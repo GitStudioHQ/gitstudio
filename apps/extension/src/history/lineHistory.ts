@@ -4,16 +4,14 @@ import type { RepoManager } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
 import { openRevisionDiff } from "./revisionContentProvider";
 import { resolveActiveFile } from "./historyContext";
-
-interface LineHistoryItem extends vscode.QuickPickItem {
-  entry: LineHistoryEntry;
-}
+import { promptPick } from "../ui/dialogs";
 
 /**
  * `gitstudio.showLineHistory`: walks the evolution of the active selection's
- * line range. Presents the commits that touched those lines in a QuickPick; the
- * pick opens that commit's diff for the file. The QuickPick re-opens after each
- * diff so you can step through the range's history without re-invoking.
+ * line range. Presents the commits that touched those lines in a GitStudio
+ * dialog; the pick opens that commit's diff for the file. The dialog re-opens
+ * after each diff so you can step through the range's history without
+ * re-invoking.
  */
 export async function showLineHistory(repos: RepoManager): Promise<void> {
   const active = resolveActiveFile(repos);
@@ -80,37 +78,22 @@ export async function showLineHistory(repos: RepoManager): Promise<void> {
   }
 }
 
-function pickCommit(
+async function pickCommit(
   entries: LineHistoryEntry[],
   title: string,
 ): Promise<LineHistoryEntry | undefined> {
-  const items: LineHistoryItem[] = entries.map((e) => ({
-    label: e.subject,
-    description: `${e.author} · ${relativeTime(e.authorDate)} · ${e.shortSha}`,
-    entry: e,
-  }));
-
-  return new Promise((resolve) => {
-    const qp = vscode.window.createQuickPick<LineHistoryItem>();
-    qp.title = `Line History — ${title}`;
-    qp.placeholder = "Pick a commit to diff it against its parent (Esc to close)";
-    qp.matchOnDescription = true;
-    qp.items = items;
-    let accepted = false;
-    qp.onDidAccept(() => {
-      accepted = true;
-      const sel = qp.selectedItems[0];
-      qp.hide();
-      resolve(sel?.entry);
-    });
-    qp.onDidHide(() => {
-      qp.dispose();
-      if (!accepted) {
-        resolve(undefined);
-      }
-    });
-    qp.show();
+  const picked = await promptPick({
+    title: `Line History — ${title}`,
+    hint: "Pick a commit to diff it against its parent.",
+    choices: entries.map((e, i) => ({
+      id: String(i),
+      label: e.subject,
+      icon: "git-commit",
+      detail: e.shortSha,
+      description: `${e.author} · ${relativeTime(e.authorDate)}`,
+    })),
   });
+  return picked === undefined ? undefined : entries[Number(picked)];
 }
 
 /** Best-effort scroll of the freshly-opened diff to the range of interest. */

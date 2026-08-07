@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { promptConfirm, promptInput, promptPickMany } from "../ui/dialogs";
 
 // The Stashes pillar — genuinely absent from free VS Code, so GitStudio makes it
 // first-class. The list + row actions live in a branded webview
@@ -86,7 +87,7 @@ export async function showStash(
   await vscode.window.showTextDocument(doc, { preview: true });
 }
 
-/** `gitstudio.stash.save` — QuickPick a message + options, then stash. */
+/** `gitstudio.stash.save` — name the stash, choose options, then stash. */
 export async function saveStash(
   repos: RepoManager,
   refresh: () => void,
@@ -95,44 +96,46 @@ export async function saveStash(
   if (!a) {
     return;
   }
-  const message = await vscode.window.showInputBox({
+  const message = await promptInput({
     title: "Stash changes",
-    prompt: "Optional stash message",
-    placeHolder: "WIP: …",
+    hint: "A label to recognise this stash by later. Optional — press Enter to skip.",
+    placeholder: "WIP: …",
+    confirmLabel: "Continue",
+    // No validator: a stash message is free text, and an empty one is fine.
   });
   if (message === undefined) {
     return; // cancelled
   }
 
-  const options = await vscode.window.showQuickPick(
-    [
+  const options = await promptPickMany({
+    title: "Stash options",
+    hint: "Neither is required — plain `git stash` is the common case.",
+    confirmLabel: "Stash",
+    choices: [
       {
-        label: "$(file) Include untracked files",
-        description: "--include-untracked",
-        picked: false,
         id: "untracked",
+        label: "Include untracked files",
+        icon: "file",
+        detail: "--include-untracked",
+        description: "Brand-new files are stashed too, instead of being left behind.",
       },
       {
-        label: "$(check) Keep staged changes staged",
-        description: "--keep-index",
-        picked: false,
         id: "keep",
+        label: "Keep staged changes staged",
+        icon: "check",
+        detail: "--keep-index",
+        description: "The index survives the stash, so a partially staged commit stays ready.",
       },
     ],
-    {
-      title: "Stash options",
-      placeHolder: "Toggle options (Enter to stash)",
-      canPickMany: true,
-    },
-  );
+  });
   if (options === undefined) {
     return; // cancelled
   }
 
   const result = await a.ctx.stashes.save({
     message: message || undefined,
-    includeUntracked: options.some((o) => o.id === "untracked"),
-    keepIndex: options.some((o) => o.id === "keep"),
+    includeUntracked: options.includes("untracked"),
+    keepIndex: options.includes("keep"),
   });
   if (!result.ok) {
     void vscode.window.showErrorMessage(
@@ -186,10 +189,13 @@ export async function dropStash(
   if (!a || !ref) {
     return;
   }
-  const ok = await confirm(
-    `Drop ${ref}? This discards the stashed changes.`,
-    "Drop",
-  );
+  const ok = await promptConfirm({
+    title: `Drop ${ref}?`,
+    message:
+      "The stashed changes are discarded. GitStudio's Undo can bring the stash back.",
+    confirmLabel: "Drop",
+    danger: true,
+  });
   if (!ok) {
     return;
   }
@@ -211,11 +217,12 @@ export async function branchFromStash(
   if (!a || !ref) {
     return;
   }
-  const name = await vscode.window.showInputBox({
+  const name = await promptInput({
     title: `Create branch from ${ref}`,
-    prompt: "New branch name",
-    placeHolder: "feature/from-stash",
-    validateInput: validateRefName,
+    hint: "The stash is applied on the new branch and dropped once it applies cleanly.",
+    placeholder: "feature/from-stash",
+    confirmLabel: "Create Branch",
+    validate: "refName",
   });
   if (!name) {
     return;
@@ -241,33 +248,6 @@ function reportStashOp(
   }
 }
 
-async function confirm(message: string, action: string): Promise<boolean> {
-  const choice = await vscode.window.showWarningMessage(
-    message,
-    { modal: true },
-    action,
-  );
-  return choice === action;
-}
-
 function flash(message: string): void {
   void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
-}
-
-function validateRefName(value: string): string | undefined {
-  const name = value.trim();
-  if (!name) {
-    return "Name cannot be empty";
-  }
-  if (
-    /[ ~^:?*\[\\]/.test(name) ||
-    name.includes("..") ||
-    name.startsWith("/") ||
-    name.endsWith("/") ||
-    name.endsWith(".") ||
-    name.endsWith(".lock")
-  ) {
-    return "Invalid character in ref name";
-  }
-  return undefined;
 }

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptPick } from "../ui/dialogs";
 import { relative } from "node:path";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { DiffInitPayload, WebviewMessage } from "@gitstudio/host-bridge/protocol";
@@ -380,17 +381,29 @@ export async function compareCommand(
     return;
   }
 
-  const pickHead = "Compare with HEAD (last committed version)";
-  const pickFile = "Compare with another file…";
-  const choice = await vscode.window.showQuickPick([pickHead, pickFile], {
-    placeHolder: `Compare ${baseName(left)} with…`,
+  const choice = await promptPick({
+    title: `Compare ${baseName(left)} with…`,
+    choices: [
+      {
+        id: "head",
+        label: "HEAD",
+        icon: "git-commit",
+        description: "The last committed version of this file.",
+      },
+      {
+        id: "file",
+        label: "Another file…",
+        icon: "file",
+        description: "Pick any file on disk to diff against.",
+      },
+    ],
   });
   if (!choice) {
     return;
   }
 
   const fileName = left.fsPath;
-  if (choice === pickHead) {
+  if (choice === "head") {
     await DiffPanel.create(context, repos, {
       fileName,
       leftLabel: `${baseName(left)} (HEAD)`,

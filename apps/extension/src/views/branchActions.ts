@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import {
+  promptConfirm,
+  promptInput,
+  promptPick,
+  type DialogChoice,
+} from "../ui/dialogs";
 
 // Branch / remote / tag context-menu actions for the Branches view. Each runs a
 // real git op via the GitContext provider methods, confirms destructive ops, and
@@ -24,14 +30,15 @@ function refOf(arg: unknown): GitRef | undefined {
 /**
  * The ref a command was invoked on (from a tree/graph node), or — when the
  * command is run from the Command Palette with no node — one the user picks from
- * a quick pick. This is what gives tag / remote-branch / set-upstream commands a
- * real home in the palette instead of silently no-op'ing without a node.
+ * a GitStudio dialog. This is what gives tag / remote-branch / set-upstream
+ * commands a real home in the palette instead of silently no-op'ing without a
+ * node.
  */
 async function refOrPick(
   a: RepoEntry,
   arg: unknown,
   type: GitRefType,
-  placeHolder: string,
+  title: string,
   icon: string,
 ): Promise<GitRef | undefined> {
   const direct = refOf(arg);
@@ -59,11 +66,16 @@ async function refOrPick(
     );
     return undefined;
   }
-  const picked = await vscode.window.showQuickPick(
-    candidates.map((r) => ({ label: `$(${icon}) ${r.name}`, ref: r })),
-    { placeHolder },
-  );
-  return picked?.ref;
+  const id = await promptPick({
+    title,
+    choices: candidates.map((r) => ({
+      id: r.name,
+      label: r.name,
+      icon,
+      detail: r.sha.slice(0, 7),
+    })),
+  });
+  return candidates.find((r) => r.name === id);
 }
 
 function active(repos: RepoManager): RepoEntry | undefined {
@@ -100,10 +112,12 @@ export async function mergeBranchIntoCurrent(
   if (!a || !ref) {
     return;
   }
-  const ok = await confirm(
-    `Merge ${ref.name} into the current branch?`,
-    "Merge",
-  );
+  const ok = await promptConfirm({
+    title: `Merge ${ref.name} into the current branch?`,
+    message:
+      "Its commits join your history. If the two sides touched the same lines you'll get conflicts to resolve, and Undo can take you back either way.",
+    confirmLabel: "Merge",
+  });
   if (!ok) {
     return;
   }
@@ -123,11 +137,11 @@ export async function rebaseCurrentOnto(
   if (!a || !ref) {
     return;
   }
-  const ok = await confirm(
-    `Rebase the current branch onto ${ref.name}? This rewrites your local ` +
-      `commits on top of ${ref.name}.`,
-    "Rebase",
-  );
+  const ok = await promptConfirm({
+    title: `Rebase the current branch onto ${ref.name}?`,
+    message: `Your local commits are rewritten on top of ${ref.name}, so they get new shas. If you have already pushed them, the next push needs a force. Undo can take you back.`,
+    confirmLabel: "Rebase",
+  });
   if (!ok) {
     return;
   }
@@ -147,11 +161,12 @@ export async function renameBranch(
   if (!a || !ref) {
     return;
   }
-  const neu = await vscode.window.showInputBox({
+  const neu = await promptInput({
     title: `Rename branch ${ref.name}`,
-    prompt: "New branch name",
+    hint: "The branch keeps its upstream and its commits — only the name changes.",
     value: ref.name,
-    validateInput: validateRefName,
+    confirmLabel: "Rename",
+    validate: "refName",
   });
   if (!neu || neu === ref.name) {
     return;
@@ -170,7 +185,11 @@ export async function deleteBranch(
   if (!a || !ref) {
     return;
   }
-  const ok = await confirm(`Delete branch ${ref.name}?`, "Delete");
+  const ok = await confirm(
+    `Delete branch ${ref.name}?`,
+    "The branch label is removed. Its commits stay reachable from anywhere else that points at them, and GitStudio's Undo can put the branch back.",
+    "Delete",
+  );
   if (!ok) {
     return;
   }
@@ -178,8 +197,8 @@ export async function deleteBranch(
     let result = await a.ctx.branches.delete(ref.name);
     if (!result.ok && /not fully merged/i.test(result.stderr)) {
       const force = await confirm(
-        `${ref.name} is not fully merged. Force delete (its unmerged commits ` +
-          `may become unreachable)?`,
+        `${ref.name} is not fully merged`,
+        "Some of its commits are not on any other branch, so deleting it may leave them unreachable. Undo can still recover them.",
         "Force Delete",
       );
       if (!force) {
@@ -254,18 +273,21 @@ export async function setUpstream(
     /* ignore */
   }
   const remoteBranches = refs.filter((r) => r.type === "remote");
-  const picked = await vscode.window.showQuickPick(
-    remoteBranches.map((r) => ({ label: `$(cloud) ${r.name}`, ref: r })),
-    {
-      title: `Set upstream for ${ref.name}`,
-      placeHolder: "Pick the remote-tracking branch",
-    },
-  );
-  if (!picked) {
+  const upstream = await promptPick({
+    title: `Set upstream for ${ref.name}`,
+    hint: "The remote-tracking branch this branch pushes to and compares against.",
+    choices: remoteBranches.map((r) => ({
+      id: r.name,
+      label: r.name,
+      icon: "cloud",
+      detail: r.sha.slice(0, 7),
+    })),
+  });
+  if (!upstream) {
     return;
   }
-  const result = await a.ctx.branches.setUpstream(ref.name, picked.ref.name);
-  report(result, `Set upstream of ${ref.name} → ${picked.ref.name}`, refresh);
+  const result = await a.ctx.branches.setUpstream(ref.name, upstream);
+  report(result, `Set upstream of ${ref.name} → ${upstream}`, refresh);
 }
 
 export async function newBranchFrom(
@@ -279,28 +301,40 @@ export async function newBranchFrom(
     return;
   }
   const startPoint = ref?.name;
-  const name = await vscode.window.showInputBox({
+  const name = await promptInput({
     title: startPoint ? `New branch from ${startPoint}` : "New branch",
-    prompt: "New branch name",
-    placeHolder: "feature/my-branch",
-    validateInput: validateRefName,
+    hint: startPoint
+      ? `The branch starts at ${startPoint}.`
+      : "The branch starts at HEAD.",
+    placeholder: "feature/my-branch",
+    confirmLabel: "Continue",
+    validate: "refName",
   });
   if (!name) {
     return;
   }
-  // A two-way choice is a dialog, not a search box. The command palette is for
-  // finding things among many; picking between two named outcomes belongs in a
-  // modal you can answer without typing.
-  const checkout = await vscode.window.showInformationMessage(
-    `Create ${name}`,
-    { modal: true, detail: "Switch to the new branch after creating it?" },
-    "Create and Switch",
-    "Create Only",
-  );
+  const checkout = await promptPick({
+    title: `Create ${name}`,
+    hint: "Switch to the new branch after creating it?",
+    choices: [
+      {
+        id: "switch",
+        label: "Create and Switch",
+        icon: "git-branch",
+        description: "Create the branch and check it out.",
+      },
+      {
+        id: "only",
+        label: "Create Only",
+        icon: "add",
+        description: `Create the branch and stay on the current one.`,
+      },
+    ],
+  });
   if (checkout === undefined) {
     return;
   }
-  const result = checkout === "Create and Switch"
+  const result = checkout === "switch"
     ? await a.ctx.branches.checkoutNew(name, startPoint)
     : await a.ctx.branches.create(name, startPoint);
   report(result, `Created ${name}`, refresh);
@@ -374,11 +408,12 @@ export async function checkoutRemoteBranch(
   const local = ref.name.includes("/")
     ? ref.name.slice(ref.name.indexOf("/") + 1)
     : ref.name;
-  const name = await vscode.window.showInputBox({
+  const name = await promptInput({
     title: `Check out ${ref.name}`,
-    prompt: "Local branch name (tracks the remote branch)",
+    hint: `Creates a local branch tracking ${ref.name}.`,
     value: local,
-    validateInput: validateRefName,
+    confirmLabel: "Checkout",
+    validate: "refName",
   });
   if (!name) {
     return;
@@ -414,7 +449,8 @@ export async function deleteRemoteBranch(
   const remote = ref.name.slice(0, slash);
   const branch = ref.name.slice(slash + 1);
   const ok = await confirm(
-    `Delete ${branch} on ${remote}? This removes the branch from the remote.`,
+    `Delete ${branch} on ${remote}?`,
+    `This removes the branch from the remote for everyone, not just from your copy. Your local ${branch} (if you have one) is untouched.`,
     "Delete Remote Branch",
   );
   if (!ok) {
@@ -439,10 +475,12 @@ export async function checkoutTag(
   if (!ref) {
     return;
   }
-  const ok = await confirm(
-    `Checkout tag ${ref.name}? This leaves a detached HEAD.`,
-    "Checkout",
-  );
+  const ok = await promptConfirm({
+    title: `Check out tag ${ref.name}?`,
+    message:
+      "You'll be on a detached HEAD — commits made here belong to no branch until you create one.",
+    confirmLabel: "Checkout",
+  });
   if (!ok) {
     return;
   }
@@ -463,7 +501,11 @@ export async function deleteTag(
   if (!ref) {
     return;
   }
-  const ok = await confirm(`Delete tag ${ref.name}?`, "Delete");
+  const ok = await confirm(
+    `Delete tag ${ref.name}?`,
+    "This deletes the tag locally. If it was already pushed, it stays on the remote until you delete it there too.",
+    "Delete",
+  );
   if (!ok) {
     return;
   }
@@ -516,20 +558,22 @@ export async function addRemote(
   if (!a) {
     return;
   }
-  const name = await vscode.window.showInputBox({
+  const name = await promptInput({
     title: "Add remote",
-    prompt: "Remote name",
-    placeHolder: "origin",
-    validateInput: (v) => (v.trim() ? undefined : "Name cannot be empty"),
+    hint: "The short name you'll refer to it by — origin, upstream, fork.",
+    placeholder: "origin",
+    confirmLabel: "Continue",
+    validate: "remoteName",
   });
   if (!name) {
     return;
   }
-  const url = await vscode.window.showInputBox({
+  const url = await promptInput({
     title: `Add remote ${name}`,
-    prompt: "Remote URL",
-    placeHolder: "https://github.com/owner/repo.git",
-    validateInput: (v) => (v.trim() ? undefined : "URL cannot be empty"),
+    hint: "An https:// URL, an ssh URL, git@host:owner/repo.git, or a local path.",
+    placeholder: "https://github.com/owner/repo.git",
+    confirmLabel: "Add Remote",
+    validate: "url",
   });
   if (!url) {
     return;
@@ -549,57 +593,58 @@ export async function manageRemotes(
   }
   const remotes = await a.ctx.remotes.list();
   if (remotes.length === 0) {
-    const add = await vscode.window.showInformationMessage(
-      "No remotes configured.",
-      "Add Remote",
-    );
-    if (add === "Add Remote") {
+    const add = await promptConfirm({
+      title: "No remotes configured",
+      message:
+        "This repository has no remotes, so there is nothing to fetch from or push to.",
+      confirmLabel: "Add Remote…",
+    });
+    if (add) {
       await addRemote(repos, refresh);
     }
     return;
   }
-  const ADD = "$(add) Add remote…";
-  const remote = await vscode.window.showQuickPick(
-    [
+  // A sentinel id no remote can collide with: git forbids ":" in a remote name.
+  const ADD = "gitstudio:add-remote";
+  const pickedRemote = await promptPick({
+    title: "Manage remotes",
+    choices: [
       ...remotes.map((r) => ({
-        label: `$(cloud) ${r.name}`,
+        id: r.name,
+        label: r.name,
+        icon: "cloud",
         description: r.fetchUrl,
-        name: r.name,
       })),
-      { label: ADD, description: "", name: "" },
+      { id: ADD, label: "Add remote…", icon: "add" },
     ],
-    { title: "Manage remotes", placeHolder: "Pick a remote" },
-  );
-  if (!remote) {
+  });
+  if (!pickedRemote) {
     return;
   }
-  if (remote.label === ADD) {
+  if (pickedRemote === ADD) {
     await addRemote(repos, refresh);
     return;
   }
-
-  // An action menu belongs in a dialog, not the search bar — the palette is for
-  // finding one item among many, not for answering "what do you want to do?".
-  const ACTIONS: { label: string; id: string }[] = [
-    { label: "Fetch", id: "fetch" },
-    { label: "Prune Stale Branches", id: "prune" },
-    { label: "Edit URL", id: "url" },
-    { label: "Rename", id: "rename" },
-    { label: "Remove", id: "remove" },
-  ];
-  const chosen = await vscode.window.showInformationMessage(
-    `Remote: ${remote.name}`,
-    { modal: true, detail: remote.description },
-    ...ACTIONS.map((x) => x.label),
-  );
-  if (!chosen) {
+  const remote = remotes.find((r) => r.name === pickedRemote);
+  if (!remote) {
     return;
   }
-  const action = ACTIONS.find((x) => x.label === chosen);
+
+  const action = await promptPick({
+    title: `Remote: ${remote.name}`,
+    hint: remote.fetchUrl,
+    choices: [
+      { id: "fetch", label: "Fetch", icon: "sync", description: "Update this remote's branches." },
+      { id: "prune", label: "Prune Stale Branches", icon: "trash", description: "Drop remote-tracking branches that no longer exist on the server." },
+      { id: "url", label: "Edit URL", icon: "link", description: remote.fetchUrl },
+      { id: "rename", label: "Rename", icon: "edit" },
+      { id: "remove", label: "Remove", icon: "trash", danger: true },
+    ],
+  });
   if (!action) {
     return;
   }
-  switch (action.id) {
+  switch (action) {
     case "fetch":
       report(
         await a.ctx.remotes.fetch(remote.name, { prune: true }),
@@ -615,10 +660,12 @@ export async function manageRemotes(
       );
       break;
     case "url": {
-      const url = await vscode.window.showInputBox({
+      const url = await promptInput({
         title: `Edit URL of ${remote.name}`,
-        prompt: "New remote URL",
-        validateInput: (v) => (v.trim() ? undefined : "URL cannot be empty"),
+        hint: "Where this remote fetches from and pushes to.",
+        value: remote.fetchUrl,
+        confirmLabel: "Update URL",
+        validate: "url",
       });
       if (!url) {
         return;
@@ -631,11 +678,12 @@ export async function manageRemotes(
       break;
     }
     case "rename": {
-      const neu = await vscode.window.showInputBox({
+      const neu = await promptInput({
         title: `Rename ${remote.name}`,
-        prompt: "New remote name",
+        hint: "Its remote-tracking branches are renamed to match.",
         value: remote.name,
-        validateInput: (v) => (v.trim() ? undefined : "Name cannot be empty"),
+        confirmLabel: "Rename",
+        validate: "remoteName",
       });
       if (!neu || neu === remote.name) {
         return;
@@ -648,7 +696,11 @@ export async function manageRemotes(
       break;
     }
     case "remove": {
-      const ok = await confirm(`Remove remote ${remote.name}?`, "Remove");
+      const ok = await confirm(
+        `Remove remote ${remote.name}?`,
+        "Its remote-tracking branches go with it. Nothing on the server changes.",
+        "Remove",
+      );
       if (!ok) {
         return;
       }
@@ -677,11 +729,13 @@ async function pickRemote(
   if (remotes.length === 1) {
     return remotes[0].name;
   }
-  const picked = await vscode.window.showQuickPick(
-    remotes.map((r) => ({ label: `$(cloud) ${r.name}`, description: r.fetchUrl, name: r.name })),
-    { title, placeHolder: "Pick a remote" },
-  );
-  return picked?.name;
+  const choices: DialogChoice[] = remotes.map((r) => ({
+    id: r.name,
+    label: r.name,
+    icon: "cloud",
+    description: r.fetchUrl,
+  }));
+  return promptPick({ title, choices });
 }
 
 async function withUndo(
@@ -738,33 +792,18 @@ function reportMergeLike(
   }
 }
 
-async function confirm(message: string, action: string): Promise<boolean> {
-  const choice = await vscode.window.showWarningMessage(
-    message,
-    { modal: true },
-    action,
-  );
-  return choice === action;
+/**
+ * A destructive-action confirmation, in GitStudio's own dialog rather than an OS
+ * modal sheet. `title` is the question, `action` the button.
+ */
+async function confirm(
+  title: string,
+  message: string,
+  action: string,
+): Promise<boolean> {
+  return promptConfirm({ title, message, confirmLabel: action, danger: true });
 }
 
 function flash(message: string): void {
   void vscode.window.setStatusBarMessage(`$(check) ${message}`, 2500);
-}
-
-function validateRefName(value: string): string | undefined {
-  const name = value.trim();
-  if (!name) {
-    return "Name cannot be empty";
-  }
-  if (
-    /[ ~^:?*\[\\]/.test(name) ||
-    name.includes("..") ||
-    name.startsWith("/") ||
-    name.endsWith("/") ||
-    name.endsWith(".") ||
-    name.endsWith(".lock")
-  ) {
-    return "Invalid character in ref name";
-  }
-  return undefined;
 }

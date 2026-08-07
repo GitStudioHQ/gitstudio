@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { promptConfirm } from "../ui/dialogs";
+import { promptRevision } from "../ui/refPrompt";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { UndoLedger } from "../undo/undoLedger";
 import { getNonce } from "../webview/html";
@@ -68,12 +70,14 @@ export class RebaseWorkspacePanel {
       return;
     }
     if (commits.length > 200) {
-      const go = await vscode.window.showWarningMessage(
-        `That's ${commits.length} commits. Interactive rebase over a very long range is slow and error-prone — continue?`,
-        { modal: true },
-        "Continue",
-      );
-      if (go !== "Continue") {
+      const go = await promptConfirm({
+        title: `Rebase ${commits.length} commits?`,
+        message:
+          "Interactive rebase over a range this long is slow, and a conflict in the middle leaves you resolving one commit at a time. A nearer base is usually what you want.",
+        confirmLabel: "Continue",
+        danger: true,
+      });
+      if (!go) {
         return;
       }
     }
@@ -301,12 +305,12 @@ function shortRef(ref: string): string {
 
 async function resolveBase(active: RepoEntry, sha?: string): Promise<string | undefined> {
   if (!sha) {
-    const ref = await vscode.window.showInputBox({
+    return promptRevision(active, {
       title: "Interactive Rebase",
-      prompt: "Rebase onto which commit/branch? (the base, exclusive)",
-      placeHolder: "e.g. HEAD~5, main, origin/main",
+      hint: "Rebase onto which commit or branch? The base itself is excluded — everything after it lands in the workspace.",
+      placeholder: "HEAD~5   main   origin/main",
+      confirmLabel: "Open Workspace",
     });
-    return ref?.trim() || undefined;
   }
   const parent = await active.ctx.process.run(["rev-parse", "--verify", "--quiet", `${sha}^`]);
   return parent.code === 0 ? `${sha}^` : "--root";

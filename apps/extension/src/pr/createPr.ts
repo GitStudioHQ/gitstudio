@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { RepoManager } from "../git/repoManager";
 import type { GitBrain } from "../ai/gitBrain";
@@ -57,9 +58,12 @@ export async function createPullRequest(
   const commits = await commitSubjects(entry.ctx, ctx.remoteName, base, headBranch);
   const defaultTitle = commits[0] ?? headBranch;
 
-  const title = await vscode.window.showInputBox({
-    prompt: "Pull request title",
+  const title = await promptInput({
+    title: "Pull request title",
+    hint: `Merging ${headBranch} into ${base}.`,
     value: defaultTitle,
+    confirmLabel: "Continue",
+    validate: "nonEmpty",
   });
   if (title === undefined || title.trim().length === 0) {
     return;
@@ -68,52 +72,45 @@ export async function createPullRequest(
   // Body: a commit checklist by default; offer an AI draft when enabled.
   let body = commits.length > 0 ? commits.map((c) => `- ${c}`).join("\n") : "";
   if (await brain.isEnabled()) {
-    // Three named outcomes → a dialog. Routing a decision through the search
-    // bar makes the user type to answer a question they were just asked.
-    const choice = await vscode.window.showInformationMessage(
-      "How should we fill the description?",
-      {
-        modal: true,
-        detail:
-          "Commit list: one bullet per commit. AI draft: summarize the change. " +
-          "Empty: start from a blank body.",
-      },
-      "Commit List",
-      "AI Draft",
-      "Empty",
-    );
+    const choice = await promptPick({
+      title: "How should we fill the description?",
+      choices: [
+        { id: "commits", label: "Commit List", icon: "list-unordered", description: "One bullet per commit in the range." },
+        { id: "ai", label: "AI Draft", icon: "sparkle", description: "Summarize what the change actually does." },
+        { id: "empty", label: "Empty", icon: "circle-slash", description: "Start from a blank body." },
+      ],
+    });
     if (!choice) {
       return;
     }
-    if (choice === "AI Draft") {
+    if (choice === "ai") {
       const drafted = await draftWithAi(brain, entry.ctx, ctx.remoteName, base, headBranch, commits);
       if (drafted) {
         body = drafted;
       }
-    } else if (choice === "Empty") {
+    } else if (choice === "empty") {
       body = "";
     }
   }
 
-  const editedBody = await vscode.window.showInputBox({
-    prompt: "Pull request description (optional)",
+  const editedBody = await promptInput({
+    title: "Pull request description",
+    hint: "Optional. Markdown is fine — Ctrl/Cmd+Enter to continue.",
     value: body,
+    multiline: true,
+    confirmLabel: "Continue",
   });
   if (editedBody === undefined) {
     return;
   }
 
-  const draftPick = await vscode.window.showInformationMessage(
-    "Open as a draft?",
-    {
-      modal: true,
-      detail:
-        "A draft pull request signals work in progress and cannot be merged " +
-        "until marked ready.",
-    },
-    "Ready for Review",
-    "Draft",
-  );
+  const draftPick = await promptPick({
+    title: "Open as a draft?",
+    choices: [
+      { id: "ready", label: "Ready for Review", icon: "git-pull-request", description: "Reviewers are requested and the PR can be merged." },
+      { id: "draft", label: "Draft", icon: "git-pull-request-draft", description: "Signals work in progress; cannot be merged until marked ready." },
+    ],
+  });
   if (!draftPick) {
     return;
   }
@@ -186,12 +183,12 @@ async function ensurePushed(
   const prompt = upstream
     ? `Your branch is ${ahead} commit(s) ahead of ${upstream}. Push before creating the PR?`
     : `Branch "${branch}" hasn't been pushed to ${remote} yet. Push it now?`;
-  const choice = await vscode.window.showInformationMessage(
-    prompt,
-    { modal: true },
-    "Push",
-  );
-  if (choice !== "Push") {
+  const ok = await promptConfirm({
+    title: "Push before creating the pull request?",
+    message: prompt,
+    confirmLabel: "Push",
+  });
+  if (!ok) {
     return false;
   }
 
@@ -225,23 +222,32 @@ async function pickBase(
   const candidates = Array.from(
     new Set([defaultBranch, "main", "master", "develop"].filter((b) => b !== headBranch)),
   );
-  const items: vscode.QuickPickItem[] = candidates.map((b) => ({ label: b }));
-  items.push({ label: "$(edit) Other…", description: "Type a base branch name" });
-
-  const pick = await vscode.window.showQuickPick(items, {
-    placeHolder: `Base branch to merge "${headBranch}" into`,
+  const OTHER = "gitstudio:other";
+  const pick = await promptPick({
+    title: `Base branch to merge "${headBranch}" into`,
+    choices: [
+      ...candidates.map((b) => ({
+        id: b,
+        label: b,
+        icon: "git-branch",
+        detail: b === defaultBranch ? "default" : undefined,
+      })),
+      { id: OTHER, label: "Other…", icon: "edit", description: "Type a base branch name." },
+    ],
   });
   if (!pick) {
     return undefined;
   }
-  if (pick.label.startsWith("$(edit)")) {
-    const typed = await vscode.window.showInputBox({
-      prompt: "Base branch name",
+  if (pick === OTHER) {
+    const typed = await promptInput({
+      title: "Base branch name",
       value: defaultBranch,
+      confirmLabel: "Use This Base",
+      validate: "refName",
     });
     return typed?.trim() || undefined;
   }
-  return pick.label;
+  return pick;
 }
 
 async function commitSubjects(

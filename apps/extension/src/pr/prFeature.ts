@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptPick } from "../ui/dialogs";
 import type { RepoManager } from "../git/repoManager";
 import type { GitBrain } from "../ai/gitBrain";
 import { GitHubAuth } from "./githubAuth";
@@ -89,15 +90,18 @@ export function registerPrFeature(
         void vscode.window.showInformationMessage("No open pull requests.");
         return undefined;
       }
-      const pick = await vscode.window.showQuickPick(
-        pulls.map((p) => ({
-          label: `#${p.number} ${p.title}`,
+      const picked = await promptPick({
+        title: "Open pull requests",
+        choices: pulls.map((p) => ({
+          id: String(p.number),
+          label: p.title,
+          icon: p.draft ? "git-pull-request-draft" : "git-pull-request",
+          detail: `#${p.number}`,
           description: p.user?.login ?? "",
-          pr: p,
         })),
-        { placeHolder: "Select a pull request" },
-      );
-      return pick ? { pr: pick.pr, ctx } : undefined;
+      });
+      const pr = pulls.find((p) => String(p.number) === picked);
+      return pr ? { pr, ctx } : undefined;
     } catch (err) {
       void warn(err, "Couldn't list pull requests.");
       return undefined;
@@ -245,26 +249,28 @@ async function mergePr(
     a === configured ? -1 : b === configured ? 1 : 0,
   ) as MergeMethod[];
 
-  // One modal instead of a search-bar pick followed by a confirm dialog: the
-  // choice IS the confirmation, so asking twice was pure friction.
-  const picked = await vscode.window.showWarningMessage(
-    `Merge PR #${pr.number} into ${pr.base.ref}?`,
-    {
-      modal: true,
-      detail:
-        `"${pr.title}"\n\n` +
-        "Merge commit: keep every commit and add a merge commit.\n" +
-        "Squash: combine all commits into one.\n" +
-        "Rebase: replay the commits onto the base branch.",
-    },
-    ...order.map((m) => labels[m]),
-  );
+  // One dialog instead of a pick followed by a confirm: the choice IS the
+  // confirmation, so asking twice was pure friction.
+  const descriptions: Record<string, string> = {
+    merge: "Keep every commit and add a merge commit.",
+    squash: "Combine all commits into one.",
+    rebase: "Replay the commits onto the base branch.",
+  };
+  const picked = await promptPick({
+    title: `Merge PR #${pr.number} into ${pr.base.ref}?`,
+    hint: pr.title,
+    choices: order.map((m) => ({
+      id: m,
+      label: labels[m],
+      icon: "git-merge",
+      detail: m === configured ? "default" : undefined,
+      description: descriptions[m],
+    })),
+  });
   if (!picked) {
     return;
   }
-  const pick = {
-    method: (order.find((m) => labels[m] === picked) ?? configured) as MergeMethod,
-  };
+  const pick = { method: picked as MergeMethod };
 
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Merging PR #${pr.number}…` },

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { promptConfirm } from "../ui/dialogs";
 import {
   parseRebaseTodo,
   serializeRebaseTodo,
@@ -163,12 +164,13 @@ export class RebaseTodoEditorProvider
    * --abort`). This avoids the risk of git interpreting a half-cleared file.
    */
   private async abort(document: vscode.TextDocument): Promise<void> {
-    const choice = await vscode.window.showWarningMessage(
-      "Abort this interactive rebase? No commits will be changed.",
-      { modal: true },
-      "Abort Rebase",
-    );
-    if (choice !== "Abort Rebase") {
+    const ok = await promptConfirm({
+      title: "Abort this interactive rebase?",
+      message:
+        "The branch goes back to where it was before the rebase started. No commits are changed.",
+      confirmLabel: "Abort Rebase",
+    });
+    if (!ok) {
       return;
     }
     // Clear the todo to a no-op so the in-flight `git rebase -i` exits cleanly
