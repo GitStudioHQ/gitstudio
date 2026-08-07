@@ -1,0 +1,63 @@
+apps/desktop/src/renderer/views/notifications.ts
+  s_763a729f684fd0::t_30f3d6d36ba345 144-147
+apps/desktop/src/main/main.ts
+  s_763a729f684fd0::t_1ab53f4a05205f 405
+  s_763a729f684fd0::t_c9cdb82d116f32 507
+  s_763a729f684fd0::t_30f3d6d36ba345 600-607
+  s_763a729f684fd0::t_803effa9739b10 344-350
+apps/desktop/src/main/gitBridge.ts
+  s_763a729f684fd0::t_c9cdb82d116f32 890-928
+  s_763a729f684fd0::t_859bdb0f5b46d3 1108-1115
+apps/desktop/src/renderer/renderer.ts
+  s_763a729f684fd0::t_803effa9739b10 1039,3145-3147
+  s_763a729f684fd0::t_c68ce4e7272a58 3490-3494
+  s_763a729f684fd0::t_dc0d678676555b 2263-2269,2297-2299,2318,2336,2349,2360-2369
+  s_763a729f684fd0::t_29e52ab88f2d9d 3406
+  s_763a729f684fd0::t_f51366bfa9d3b1 713-721,3403-3405,3409-3420
+  s_763a729f684fd0::t_fd4b2c792d7364 113-124,2736-2737
+  s_763a729f684fd0::t_aeea5abe44b3d6 3528
+  s_763a729f684fd0::t_bc2be46c12c5e7 3397-3399,3513-3516,3522
+  s_763a729f684fd0::t_6380c44ef3982a 396-397
+  s_763a729f684fd0::t_6a220e2871c868 101-102,3408,3421-3436,3446,3457,3461,3473-3474
+  s_763a729f684fd0::t_3566787ccaad07 633-634
+  s_763a729f684fd0::t_9bcd0da746bdf6 153-158,2644-2646,2648,2655,3523-3527,3529,3531,3533,3538,3540,3544
+  s_763a729f684fd0::t_38838e6b6d6f5b 1005
+  s_763a729f684fd0::t_352ae9d4fea0fe 3437-3443,3445,3448,3451,3453-3455,3463
+  s_763a729f684fd0::t_b3318cbe0cae8f 2850-2854,2856-2858,2861,3394,3407
+  s_763a729f684fd0::t_1ab53f4a05205f 1023-1038
+  s_763a729f684fd0::t_41d4453672c04e 1246-1259
+  s_6427f6b84537f9::t_2d2fce1d0db2b2 3456
+apps/desktop/src/renderer/bridge.ts
+  s_763a729f684fd0::t_dc0534697e1a8b 35-42,50,75,78-80,85-89
+apps/desktop/src/main/autoUpdate.ts
+  s_763a729f684fd0::t_f5da36b4d6d12b 1-17,23-82,89-101,106,108,111,117,120-128
+  s_763a729f684fd0::t_f34606494718c6 83-88
+apps/desktop/src/shared/ipc.ts
+  s_763a729f684fd0::t_c9cdb82d116f32 824-825
+  s_763a729f684fd0::t_30f3d6d36ba345 907-910
+  s_763a729f684fd0::t_803effa9739b10 1035-1036
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "bd13214991b034e3917e2d666331eb79fb4aef48",
+  "prompts": {},
+  "sessions": {
+    "s_6427f6b84537f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26956764-1968-4a6a-8ca4-8c80a1a83a36",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_763a729f684fd0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e06d769-8ba0-4352-af56-b48de47c832a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
