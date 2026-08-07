@@ -119,10 +119,13 @@ export class SyncOps {
     let remote = opts?.remote;
     let branch = opts?.branch;
     let setUpstream = opts?.setUpstream ?? false;
-    // When WE resolved the branch, push a fully-qualified refspec. A bare name
-    // is resolved against refs/heads AND refs/tags, so a branch that shares a
-    // name with a tag fails outright with "src refspec X matches more than one".
-    let qualify = false;
+    /**
+     * The refspec to push, when WE resolved the target rather than the caller.
+     * Always fully qualified: a bare name is resolved against refs/heads AND
+     * refs/tags, so a branch sharing a name with a tag fails outright with
+     * "src refspec X matches more than one".
+     */
+    let refspec: string | undefined;
 
     if (!remote && !branch) {
       const upstream = await this.currentUpstream({ signal: opts?.signal });
@@ -130,9 +133,25 @@ export class SyncOps {
         const target = await this.publishTarget(opts?.signal);
         if (target) {
           remote = target.remote;
-          branch = target.branch;
+          refspec = `refs/heads/${target.branch}:refs/heads/${target.branch}`;
           setUpstream = true;
-          qualify = true;
+        }
+      } else {
+        // The upstream can be named differently from the local branch — most
+        // often because the branch was renamed, since `git branch -m` keeps the
+        // old tracking config. A bare `git push` then behaves differently on
+        // every machine: push.default=simple REFUSES with a wall of advice,
+        // while `upstream`/`tracking` silently pushes to the other name. Neither
+        // is a thing to hand a user, so resolve the pair ourselves and push an
+        // explicit refspec — "push" then means the same everywhere.
+        //
+        // Source is HEAD, not the local branch name: the destination is the
+        // UPSTREAM's name, and pushing refs/heads/<upstream> would look for a
+        // local branch by that name (which usually doesn't exist).
+        const pair = await this.upstreamPair(opts?.signal);
+        if (pair && pair.remoteBranch !== pair.local) {
+          remote = pair.remote;
+          refspec = `HEAD:refs/heads/${pair.remoteBranch}`;
         }
       }
     }
@@ -149,14 +168,42 @@ export class SyncOps {
     }
     if (remote) {
       args.push(remote);
-      if (branch) {
-        args.push(
-          qualify ? `refs/heads/${branch}:refs/heads/${branch}` : branch,
-        );
+      if (refspec) {
+        args.push(refspec);
+      } else if (branch) {
+        args.push(branch);
       }
     }
     const r = await this.proc.run(args, { signal: opts?.signal });
     return { ok: r.code === 0, stderr: r.stderr };
+  }
+
+  /**
+   * The current branch and the branch its upstream names ON the remote. These
+   * differ after a rename (git keeps the tracking config), and legitimately when
+   * someone tracks `origin/main` from a differently-named local branch.
+   */
+  private async upstreamPair(
+    signal?: AbortSignal,
+  ): Promise<{ local: string; remote: string; remoteBranch: string } | null> {
+    const head = await this.proc.run(["symbolic-ref", "--quiet", "HEAD"], {
+      signal,
+    });
+    const fullRef = head.stdout.trim();
+    if (head.code !== 0 || !fullRef.startsWith("refs/heads/")) {
+      return null; // detached
+    }
+    const local = fullRef.slice("refs/heads/".length);
+    const [remoteR, mergeR] = await Promise.all([
+      this.proc.run(["config", "--get", `branch.${local}.remote`], { signal }),
+      this.proc.run(["config", "--get", `branch.${local}.merge`], { signal }),
+    ]);
+    const remote = remoteR.stdout.trim();
+    const merge = mergeR.stdout.trim();
+    if (!remote || !merge.startsWith("refs/heads/")) {
+      return null;
+    }
+    return { local, remote, remoteBranch: merge.slice("refs/heads/".length) };
   }
 
   /**

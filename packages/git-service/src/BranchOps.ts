@@ -76,7 +76,15 @@ export class BranchOps {
     return { ok: r.code === 0, stderr: r.stderr };
   }
 
-  /** `git branch -m <old> <neu>`. */
+  /**
+   * `git branch -m <old> <neu>`.
+   *
+   * NOTE: git deliberately carries the tracking config across a rename — the
+   * branch on the server did not get renamed, so `branch.<neu>.merge` still
+   * names `refs/heads/<old>`. That is correct as far as git is concerned but is
+   * almost never what someone means right after renaming, so callers should ask;
+   * `upstreamOf` is how they detect it. See renameBranch in the extension.
+   */
   async rename(
     old: string,
     neu: string,
@@ -86,6 +94,40 @@ export class BranchOps {
       signal: opts?.signal,
     });
     return { ok: r.code === 0, stderr: r.stderr };
+  }
+
+  /**
+   * The configured upstream of `branch`, split into its remote and the branch
+   * name ON that remote — which is NOT always the local name.
+   *
+   * Read from config rather than `@{upstream}` because config survives the
+   * remote-tracking ref going missing (a deleted or not-yet-pushed remote
+   * branch), and it is the only way to see the mismatch a rename leaves behind.
+   */
+  async upstreamOf(
+    branch: string,
+    opts?: GitRunOptions,
+  ): Promise<{ remote: string; branch: string } | null> {
+    const [remoteR, mergeR] = await Promise.all([
+      this.proc.run(["config", "--get", `branch.${branch}.remote`], {
+        signal: opts?.signal,
+      }),
+      this.proc.run(["config", "--get", `branch.${branch}.merge`], {
+        signal: opts?.signal,
+      }),
+    ]);
+    const remote = remoteR.stdout.trim();
+    const merge = mergeR.stdout.trim();
+    if (!remote || !merge) {
+      return null;
+    }
+    // `merge` is a full ref on the remote: refs/heads/<name>.
+    return {
+      remote,
+      branch: merge.startsWith("refs/heads/")
+        ? merge.slice("refs/heads/".length)
+        : merge,
+    };
   }
 
   /** `git branch -d|-D <name>`. */

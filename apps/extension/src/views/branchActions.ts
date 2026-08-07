@@ -163,7 +163,7 @@ export async function renameBranch(
   }
   const neu = await promptInput({
     title: `Rename branch ${ref.name}`,
-    hint: "The branch keeps its upstream and its commits — only the name changes.",
+    hint: "Only the local name changes — the commits and the remote branch stay where they are.",
     value: ref.name,
     confirmLabel: "Rename",
     validate: "refName",
@@ -172,7 +172,107 @@ export async function renameBranch(
     return;
   }
   const result = await a.ctx.branches.rename(ref.name, neu);
+  if (!result.ok) {
+    report(result, `Renamed to ${neu}`, refresh);
+    return;
+  }
+  await reconcileUpstreamAfterRename(a, ref.name, neu, refresh);
   report(result, `Renamed to ${neu}`, refresh);
+}
+
+/**
+ * A rename leaves a published branch tracking its OLD name on the remote.
+ *
+ * `git branch -m` deliberately keeps the tracking config, because the branch on
+ * the server was not renamed — so `branch.<new>.merge` still says
+ * `refs/heads/<old>`. Everything downstream then quietly refers to the old
+ * branch: the push modal targets it, the ↑/↓ badges count against it, and a
+ * push either lands on the old name or is refused outright depending on the
+ * user's `push.default`. Renaming and then pushing "into the new branch" is the
+ * obvious thing to want, and it silently did not happen.
+ *
+ * Git can't decide this for us — tracking a differently-named branch is legal
+ * and sometimes deliberate — so ask, with the overwhelmingly common intent
+ * first. Only fires when the upstream actually named the OLD branch; a branch
+ * that was already tracking something else is left alone.
+ */
+async function reconcileUpstreamAfterRename(
+  a: RepoEntry,
+  oldName: string,
+  newName: string,
+  refresh: () => void,
+): Promise<void> {
+  let upstream: { remote: string; branch: string } | null = null;
+  try {
+    upstream = await a.ctx.branches.upstreamOf(newName);
+  } catch {
+    return; // never let this block the rename that already succeeded
+  }
+  if (!upstream || upstream.branch !== oldName) {
+    return; // unpublished, or deliberately tracking some other branch
+  }
+  const { remote } = upstream;
+
+  const choice = await promptPick({
+    title: `Rename ${oldName} on ${remote} too?`,
+    hint: `This branch still tracks ${remote}/${oldName} — renaming locally doesn't rename it on the remote.`,
+    choices: [
+      {
+        id: "rename",
+        label: `Rename on ${remote}`,
+        icon: "cloud-upload",
+        description: `Push ${newName}, track it, and delete ${remote}/${oldName}.`,
+      },
+      {
+        id: "publish",
+        label: `Publish ${newName}, keep ${oldName}`,
+        icon: "repo-forked",
+        description: `Push ${newName} and track it, but leave ${remote}/${oldName} in place.`,
+      },
+      {
+        id: "keep",
+        label: `Keep tracking ${remote}/${oldName}`,
+        icon: "link",
+        description: "Git's default. The new name stays local-only.",
+      },
+    ],
+  });
+  if (!choice || choice === "keep") {
+    return;
+  }
+
+  const pushed = await a.ctx.sync.push({
+    remote,
+    branch: newName,
+    setUpstream: true,
+  });
+  if (!pushed.ok) {
+    void vscode.window.showErrorMessage(
+      `GitStudio: renamed locally, but publishing ${newName} failed${
+        pushed.stderr ? ` — ${pushed.stderr.trim()}` : ""
+      }. It still tracks ${remote}/${oldName}.`,
+    );
+    return;
+  }
+  if (choice === "publish") {
+    flash(`Published ${newName} to ${remote}`);
+    refresh();
+    return;
+  }
+
+  // "rename": the old remote branch has served its purpose. Deleting it is the
+  // destructive half, so a failure here is reported but never undoes the push.
+  const removed = await a.ctx.branches.deleteRemoteBranch(remote, oldName);
+  if (!removed.ok) {
+    void vscode.window.showWarningMessage(
+      `GitStudio: ${newName} is published and tracked, but ${remote}/${oldName} could not be deleted${
+        removed.stderr ? ` — ${removed.stderr.trim()}` : ""
+      }.`,
+    );
+  } else {
+    flash(`Renamed on ${remote}: ${oldName} → ${newName}`);
+  }
+  refresh();
 }
 
 export async function deleteBranch(
