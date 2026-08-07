@@ -1,0 +1,44 @@
+apps/desktop/src/main/aiBridge.ts
+  s_6427f6b84537f9::t_c609a396df9f24 116,143,145-150,152,156-180,182,184,190-192,196-199,203,205
+  s_6427f6b84537f9::t_4598c6a5a6baed 84-88
+  s_6427f6b84537f9::t_b6e7782429dde6 5-16,23
+  s_6427f6b84537f9::t_22df60298ce6be 108-109,113-115
+  s_6427f6b84537f9::t_fa5397cd2b5088 117
+apps/desktop/src/main/githubBridge.ts
+  s_763a729f684fd0::t_fa082e3877dc70 233,251-253,266
+  s_6427f6b84537f9::t_1d0a96a64da6f0 144,146-147,150
+  s_6427f6b84537f9::t_1f752b936fd70a 42-43
+  s_6427f6b84537f9::t_22c28c53ec8735 1-6,9,11-14
+  s_6427f6b84537f9::t_3cb678302fd4e4 47-48,52-56,62-77,80,82,84,86,88,90,92,94-96,148,287
+  s_763a729f684fd0::t_79dbc6ba4b6151 273-286
+  s_6427f6b84537f9::t_3e0a90c2fc5276 172-175
+  s_6427f6b84537f9::t_a39c55eabe4100 224,226
+  s_763a729f684fd0::t_43d907468f66ea 123-134,136-143,145,149,151-153,289
+  s_6427f6b84537f9::t_e9f693076ed3c0 288,290
+apps/desktop/package.json
+  s_6427f6b84537f9::t_ce3a808d9222ca 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2ed413072b0890eba5c682802a89ab5b8d544e59",
+  "prompts": {},
+  "sessions": {
+    "s_6427f6b84537f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26956764-1968-4a6a-8ca4-8c80a1a83a36",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_763a729f684fd0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e06d769-8ba0-4352-af56-b48de47c832a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
