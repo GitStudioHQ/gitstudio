@@ -51,19 +51,29 @@ test("never writes the plaintext to disk", async () => {
   });
 });
 
-test("secret blobs and the device key are owner-only", async () => {
-  await withDir(async (dir) => {
-    await new SecretStore(dir).set(KEY, "v");
-    for (const entry of await readdir(dir)) {
-      const st = await stat(join(dir, entry));
-      assert.equal(
-        st.mode & 0o077,
-        0,
-        `${entry} is readable or writable by group/other`,
-      );
-    }
-  });
-});
+// NTFS has no POSIX mode bits: Node synthesizes st.mode from the read-only
+// attribute alone, so every file reports group/other bits and this can never
+// hold there. The `mode` we pass still isn't wasted — libuv applies it on
+// platforms that have it — and on Windows the blobs live under the user's
+// private per-user app-data directory, whose ACL is what actually protects
+// them. Assert the real property where it is real.
+test(
+  "secret blobs and the device key are owner-only",
+  { skip: process.platform === "win32" ? "POSIX mode bits only" : false },
+  async () => {
+    await withDir(async (dir) => {
+      await new SecretStore(dir).set(KEY, "v");
+      for (const entry of await readdir(dir)) {
+        const st = await stat(join(dir, entry));
+        assert.equal(
+          st.mode & 0o077,
+          0,
+          `${entry} is readable or writable by group/other`,
+        );
+      }
+    });
+  },
+);
 
 test("has() answers without decrypting — a wiped device key still reports present", async () => {
   await withDir(async (dir) => {
