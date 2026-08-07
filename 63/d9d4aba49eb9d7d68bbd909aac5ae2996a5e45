@@ -1,0 +1,51 @@
+apps/desktop/src/renderer/bottomDock.ts
+  s_763a729f684fd0::t_029669b69df6fa 161-169
+  s_763a729f684fd0::t_113a9fb01592a3 60-64,76,148-160,170-178,187
+apps/desktop/src/renderer/cache.ts
+  s_763a729f684fd0::t_e0a7ca98ee9a88 36-44,55,91-94,97-101,107-112,125
+  s_6427f6b84537f9::t_f5921b4e213ded 35
+apps/desktop/src/renderer/terminalDock.ts
+  s_763a729f684fd0::t_4f262938e2e7b2 462-467,469
+  s_763a729f684fd0::t_029669b69df6fa 470-479
+  s_763a729f684fd0::t_d57f4ca481658f 1,98,220-222,431,454,459
+apps/desktop/src/renderer/styles/app.css
+  s_763a729f684fd0::t_0458291dcd1cb6 13
+  s_763a729f684fd0::t_62e8037653a3bc 162-173
+  s_763a729f684fd0::t_eaeb31c42d8cae 174-186
+  s_763a729f684fd0::t_3730a2fa65afbb 187,853-877,880
+  s_763a729f684fd0::t_c6fe989d547123 878-879,2965-2966
+  s_6427f6b84537f9::t_52b0edea711012 188,881
+apps/desktop/src/renderer/views/rebase.ts
+  s_763a729f684fd0::t_86e4e530a65bb3 9,49,345,429
+apps/desktop/src/main/errorReporter.ts
+  s_763a729f684fd0::t_ac8f17df119d63 8,108-113
+apps/desktop/src/renderer/ui.ts
+  s_763a729f684fd0::t_1afa0df9a37003 486-487,489-493
+  s_763a729f684fd0::t_38838e6b6d6f5b 464-485,488
+apps/desktop/src/main/mcpConfig.ts
+  s_763a729f684fd0::t_0aad0a924ab02b 95-124,126-135,139-143,194-206,212-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "63d9d4aba49eb9d7d68bbd909aac5ae2996a5e45",
+  "prompts": {},
+  "sessions": {
+    "s_6427f6b84537f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26956764-1968-4a6a-8ca4-8c80a1a83a36",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_763a729f684fd0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e06d769-8ba0-4352-af56-b48de47c832a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
