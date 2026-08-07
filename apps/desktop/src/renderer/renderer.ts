@@ -98,6 +98,8 @@ class App {
   private contextMenu = new CommitContextMenu((req) => this.runAction(req));
 
   private detailsEl?: HTMLElement;
+  /** The commit-details column beside the graph (commits view). */
+  private graphDetailsPane?: HTMLElement;
   private diffSurfaceEl?: HTMLElement;
   private repoSwitchName?: HTMLElement;
   private branchSwitchName?: HTMLElement;
@@ -108,6 +110,18 @@ class App {
   private viewHost!: HTMLElement;
   private navButtons: HTMLElement[] = [];
   private currentView = "code";
+  /**
+   * The Changes composer's in-progress state, held on the instance because
+   * every stage / unstage / discard rebuilds that whole subtree. Without it,
+   * typing a message and then staging one more file discarded the message —
+   * along with the amend / sign-off toggles and any co-authors.
+   */
+  private composerDraft: {
+    message: string;
+    amend: boolean;
+    signoff: boolean;
+    coAuthors: string[];
+  } = { message: "", amend: false, signoff: false, coAuthors: [] };
   /** A pending deep-link target for the next section mount (e.g. an issue number
    *  to open from the project board). Consumed + cleared by mountSection. */
   private sectionTarget?: SectionTarget;
@@ -136,6 +150,12 @@ class App {
   /** Bumped whenever the visible surface changes; async work captures it and
    *  bails if superseded, so a slow IPC reply can't clobber a newer view. */
   private routeGen = 0;
+  /**
+   * Bumped whenever a new file diff starts loading. Diffs are fetched over IPC,
+   * so clicking a second file (or a second commit) while the first is still in
+   * flight used to paint the SLOWER, older diff over the newer selection.
+   */
+  private diffGen = 0;
   /** Keep-alive cache of rendered (non-Monaco) view containers, so navigating
    *  back to a view restores it instantly instead of rebuilding from scratch.
    *  Cleared on a repo switch; busted per-view on an explicit refresh. */
@@ -373,6 +393,8 @@ class App {
     // Namespace (and wipe) the SWR cache so the previous repo's branches/status/
     // graph can never bleed into this one.
     setCacheScope(info.root);
+    // A half-written commit message belongs to the repo it was typed in.
+    this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [] };
     // Drop the previous repo's graph mount so a refresh from a non-graph view
     // never reloads stale history.
     this.graph?.dispose();
@@ -608,6 +630,8 @@ class App {
         this.persist();
       },
     });
+    // Shrinking the window must not leave the dock covering the whole view.
+    window.addEventListener("resize", () => this.terminalDock?.handleWindowResize());
     // The ✨ inline AI actions open their chat tabs in this dock.
     registerAssistantTab((req) => this.terminalDock?.openChat(req));
     return this.terminalDock;
@@ -686,11 +710,15 @@ class App {
     // Free the previous view's Monaco surface before swapping the DOM under it.
     this.activeMonacoView?.dispose();
     this.activeMonacoView = undefined;
-    // The "Commit details" dock tab only exists on the commits/graph view. Toggle
-    // it AFTER disposing the Monaco diff (which lives in its surface) so we never
-    // remove a surface with a live editor in it.
-    this.terminalDock?.setDetailsVisible(id === "graph");
-    if (id !== "graph") this.detailsEl = undefined;
+    // The "Diff" dock tab exists ONLY while a file diff is actually open — it
+    // used to appear the moment you entered the commits view and sit there
+    // empty. openFile() creates it on demand; leaving the view removes it.
+    // Done AFTER disposing the Monaco diff (which lives in its surface) so we
+    // never remove a surface with a live editor in it.
+    if (id !== "graph") {
+      this.closeDiffTab();
+      this.detailsEl = undefined;
+    }
     for (const btn of this.navButtons) {
       const active = btn.dataset.view === id;
       btn.classList.toggle("active", active);
@@ -974,7 +1002,7 @@ class App {
     ): Promise<void> => {
       try {
         const r = await p;
-        if (!r.ok) toast(r.message || `Couldn't ${label}.`, "error");
+        if (!r.ok) toast(cleanErr(r.message) || `Couldn't ${label}.`, "error");
         else toast(`${label} ✓`, "success");
       } catch (e) {
         toast(cleanErr(e) || `Couldn't ${label}.`, "error");
@@ -991,6 +1019,23 @@ class App {
       icon: "sync",
       keepOpen: true,
       onClick: (itemEl) => void this.fetchLiveInMenu(itemEl, b),
+    });
+    // Push / Publish for THIS branch. The menu offered no way to push at all —
+    // only the top-bar widget could, and only for the checked-out branch, so an
+    // ahead or unpublished branch was unpushable from the list showing it.
+    items.push({
+      label: b.upstream ? "Push" : "Publish branch",
+      sub: b.upstream
+        ? b.ahead
+          ? `${b.ahead} commit(s) to ${b.upstream}`
+          : `to ${b.upstream}`
+        : "create it on the remote and track it",
+      icon: b.upstream ? "arrow-up" : "cloud-upload",
+      onClick: () =>
+        void run(
+          b.upstream ? `push ${b.name}` : `publish ${b.name}`,
+          host.invoke("branch:push", { name: b.name }),
+        ),
     });
     items.push({ separator: true });
     if (!b.current) {
@@ -1198,6 +1243,20 @@ class App {
   }
 
   private async deleteBranch(name: string): Promise<void> {
+    // Confirm FIRST. This sits a few pixels from Checkout in a hover-revealed
+    // row cluster, and every other destructive action in the app asks before
+    // acting — deleting a branch outright was the one that did not. The
+    // force-delete prompt below is a different question (it only fires for an
+    // unmerged branch) and is not a substitute for this one.
+    const ok = await confirmDialog({
+      title: "Delete branch",
+      message: `Delete '${name}'? Commits that are only on this branch may become unreachable.`,
+      confirmLabel: "Delete branch",
+      danger: true,
+    });
+    if (!ok) {
+      return;
+    }
     let r = await host.invoke("branch:delete", { name });
     if (!r.ok && r.message && /not fully merged/i.test(r.message)) {
       const force = await confirmDialog({
@@ -2201,6 +2260,13 @@ class App {
     textarea.className = "dc-message";
     textarea.placeholder = "Message (what & why)…";
     textarea.rows = 2;
+    // Every stage / unstage / discard re-runs showChangesView(), which rebuilds
+    // this whole subtree. Without a surviving draft, typing a commit message and
+    // then staging one more file silently threw the message away.
+    textarea.value = this.composerDraft.message;
+    textarea.addEventListener("input", () => {
+      this.composerDraft.message = textarea.value;
+    });
     msgWrap.append(textarea);
     // ✨ Write the message from the staged diff — sits up in the branch header row
     // (right-aligned), not inside the textarea. Shown only when a model is connected.
@@ -2228,9 +2294,9 @@ class App {
     });
     // Commit options: amend the last commit, append a Signed-off-by trailer, or
     // add Co-authored-by trailers — the depth a power committer expects.
-    let amend = false;
-    let signoff = false;
-    const coAuthors: string[] = [];
+    let amend = this.composerDraft.amend;
+    let signoff = this.composerDraft.signoff;
+    const coAuthors: string[] = [...this.composerDraft.coAuthors];
     const getOpts = (): { amend: boolean; signoff: boolean; coAuthors: string[] } => ({
       amend,
       signoff,
@@ -2249,6 +2315,7 @@ class App {
     coAuthorBtn.append(glyph("person-add"), span("Add co-author"));
     const coAuthorChips = el("div", "dc-coauthors");
     const renderChips = (): void => {
+      this.composerDraft.coAuthors = [...coAuthors];
       coAuthorChips.replaceChildren();
       coAuthors.forEach((ca, i) => {
         const chip = el("span", "dc-coauthor-chip");
@@ -2266,6 +2333,7 @@ class App {
     };
     amendToggle.addEventListener("click", () => {
       amend = !amend;
+      this.composerDraft.amend = amend;
       amendToggle.classList.toggle("is-on", amend);
       amendToggle.setAttribute("aria-checked", amend ? "true" : "false");
       commitLabel.textContent = amend ? "Amend commit" : curBranch ? `Commit to ${curBranch}` : "Commit";
@@ -2278,6 +2346,7 @@ class App {
     });
     signoffToggle.addEventListener("click", () => {
       signoff = !signoff;
+      this.composerDraft.signoff = signoff;
       signoffToggle.classList.toggle("is-on", signoff);
       signoffToggle.setAttribute("aria-checked", signoff ? "true" : "false");
     });
@@ -2288,6 +2357,16 @@ class App {
         renderChips();
       }
     });
+    // Paint the restored toggle state — the buttons are built in the "off" shape.
+    if (amend) {
+      amendToggle.classList.add("is-on");
+      amendToggle.setAttribute("aria-checked", "true");
+    }
+    if (signoff) {
+      signoffToggle.classList.add("is-on");
+      signoffToggle.setAttribute("aria-checked", "true");
+    }
+    renderChips();
     optsRow.append(amendToggle, signoffToggle, coAuthorBtn, coAuthorChips);
 
     const commitRow = el("div", "dc-commit-row");
@@ -2562,13 +2641,18 @@ class App {
   }
 
   private async openWorkingFile(diffPanel: DiffPanel, path: string): Promise<void> {
+    // Same staleness guard as openFile: a slow diff must not overwrite the file
+    // the user selected after it.
+    const gen = ++this.diffGen;
     const diff = await host.invoke("file:diff", { path });
+    if (gen !== this.diffGen) return;
     if (!diff) {
       diffPanel.showEmpty("No diff available.");
       return;
     }
     if (diff.conflicted) {
       const model = await host.invoke("conflict:model", path);
+      if (gen !== this.diffGen) return;
       if (model) {
         diffPanel.showMerge(model, () => {
           bust("status");
@@ -2649,6 +2733,8 @@ class App {
         toast("Changes committed.", "success");
       }
       textarea.value = "";
+      // The draft has been spent — do not carry it into the next commit.
+      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [] };
       bust(); // a commit (± push) touches refs/branches/status/sync/graph
       await this.refreshRefs();
       await this.updateSync();
@@ -2761,14 +2847,18 @@ class App {
 
   /** The commit graph + a collapsible / drag-resizable commit-details panel. */
   private showGraphView(): void {
-    // The graph fills the view; commit details live in the bottom dock (the
-    // "Commit details" tab is added by routeView when entering this view).
-    const wrap = el("div", "graph-view");
+    // Graph LEFT, commit details RIGHT — the same side-by-side arrangement the
+    // extension's commit panel uses. Details used to live in the bottom dock,
+    // which stacked them under the graph and left the dock competing with the
+    // terminal for height.
+    const wrap = el("div", "graph-view graph-split");
     const graphHost = el("div", "graph-host graph-host-full");
-    wrap.append(graphHost);
+    const detailsPane = el("div", "graph-details");
+    this.graphDetailsPane = detailsPane;
+    wrap.append(graphHost, this.graphSplitResizer(wrap), detailsPane);
     this.viewHost.replaceChildren(wrap);
 
-    this.detailsEl = this.terminalDock?.detailsSurface();
+    this.detailsEl = detailsPane;
     this.showDetailsPlaceholder();
 
     this.graph?.dispose(); // tear down a prior mount before replacing it
@@ -3052,6 +3142,9 @@ class App {
         void this.showWelcome();
       }
     });
+    host.on("app:notice", (n) => {
+      toast(n.message, n.kind === "error" ? "error" : n.kind === "warn" ? "error" : "info");
+    });
     host.on("menu:command", (msg) => {
       if (msg.command === "openRepo") void this.openRepo();
       else if (msg.command === "refresh") void this.refreshAll();
@@ -3298,43 +3391,76 @@ class App {
     // the details dock (mirrors the extension webview, which handles gs-close in
     // graph/main.ts). Without this the visible Close control is dead on desktop.
     panel.addEventListener("gs-close", () => {
-      this.terminalDock?.setDetailsVisible(false);
+      this.setGraphDetailsVisible(false);
     });
 
-    const surface = el("div", "diff-surface");
-    this.diffSurfaceEl = surface;
-    wrap.append(panel, this.detailsPaneResizer(wrap), surface);
+    // No diff surface here any more: the file diff opens in the bottom dock's
+    // "Diff" tab, so this column is purely the commit's metadata + file list.
+    wrap.append(panel);
 
     if (!this.detailsEl) return;
     this.detailsEl.replaceChildren(wrap);
-    // No diff editor yet — the split stays collapsed (details only) until the
-    // user opens a file. Pop the commit-details dock open on the selected commit.
-    this.terminalDock?.openDetails();
+    // Selecting another commit makes any open diff stale — it belonged to the
+    // previous commit's file. Drop the tab rather than leaving the wrong diff up.
+    this.closeDiffTab();
+    // Make sure the details column beside the graph is showing.
+    this.setGraphDetailsVisible(true);
   }
 
-  /** The drag divider between the commit-details panel and the diff pane
-   *  (shown only while a diff is open). Sets `--details-w` on the split so the
-   *  CSS `flex-basis` follows; width persists across sessions. */
-  private detailsPaneResizer(wrap: HTMLElement): HTMLElement {
-    const MIN = 300;
-    const MAX = 760;
-    const KEY = "gitstudio.detailsW";
+
+  /** Remove the dock's Diff tab and dispose the editor living in it. */
+  private closeDiffTab(): void {
+    this.diffPanel?.dispose();
+    this.diffPanel = undefined;
+    if (this.activeMonacoView) {
+      this.activeMonacoView = undefined;
+    }
+    this.diffSurfaceEl = undefined;
+    this.terminalDock?.setDetailsVisible(false);
+  }
+
+  /** Show/hide the commit-details column beside the graph. */
+  private setGraphDetailsVisible(visible: boolean): void {
+    const wrap = this.graphDetailsPane?.parentElement;
+    if (!wrap) return;
+    wrap.classList.toggle("details-hidden", !visible);
+  }
+
+  /**
+   * The drag divider between the graph and the commit-details column. Mirrors
+   * detailsPaneResizer (which splits details|diff INSIDE the pane); this one
+   * splits graph|details. Width persists across sessions.
+   */
+  private graphSplitResizer(wrap: HTMLElement): HTMLElement {
+    const MIN = 320;
+    const KEY = "gitstudio.graphDetailsW";
+    // The graph drops its Date and SHA columns below 760px (a container query in
+    // commit-graph), so the details column must never squeeze it past that —
+    // otherwise columns silently vanish and their resize handles go with them.
+    // Leave a little headroom above the breakpoint.
+    const GRAPH_FLOOR = 800;
+    const maxFor = (): number =>
+      Math.max(MIN, Math.min(900, Math.round(wrap.getBoundingClientRect().width) - GRAPH_FLOOR));
     const saved = Number(localStorage.getItem(KEY));
-    let w = Number.isFinite(saved) && saved > 0 ? Math.min(MAX, Math.max(MIN, saved)) : 420;
-    const apply = (): void => wrap.style.setProperty("--details-w", `${w}px`);
+    let w = Number.isFinite(saved) && saved > 0 ? saved : 420;
+    const apply = (): void => wrap.style.setProperty("--graph-details-w", `${w}px`);
     const setW = (n: number): void => {
-      w = Math.min(MAX, Math.max(MIN, Math.round(n)));
+      w = Math.min(maxFor(), Math.max(MIN, Math.round(n)));
       apply();
     };
-    apply();
+    setW(w); // clamp the restored value against the CURRENT window
 
-    const split = el("div", "cmp-vsplit details-vsplit");
+    // Re-clamp when the window changes, so narrowing it starves the details
+    // column rather than the graph.
+    window.addEventListener("resize", () => setW(w));
+
+    const split = el("div", "cmp-vsplit graph-vsplit");
     split.append(el("div", "cmp-vsplit-grip"));
     wireResizerKeys(split, {
       orientation: "vertical",
-      label: "Resize the commit details pane",
+      label: "Resize the commit details column",
       min: MIN,
-      max: () => MAX,
+      max: maxFor,
       get: () => w,
       set: setW,
       onCommit: () => localStorage.setItem(KEY, String(w)),
@@ -3344,7 +3470,8 @@ class App {
       const startX = e.clientX;
       const startW = w;
       document.body.classList.add("resizing-h");
-      const move = (ev: PointerEvent): void => setW(startW + (ev.clientX - startX));
+      // Dragging LEFT widens the details column (it is the right-hand pane).
+      const move = (ev: PointerEvent): void => setW(startW - (ev.clientX - startX));
       const up = (): void => {
         document.body.classList.remove("resizing-h");
         window.removeEventListener("pointermove", move);
@@ -3360,10 +3487,11 @@ class App {
   /** Route a details-panel toolbar action to the existing git context menu. */
   private async runDetailsAction(id: string, sha: string): Promise<void> {
     if (id === "interactive-rebase") {
-      // The visual rebase workspace currently ships only in the GitStudio
-      // extension (it's a VS Code webview panel). Until a desktop port exists,
-      // give honest feedback rather than leaving a dead button.
-      toast("Interactive rebase isn't available in the desktop app yet.", "info");
+      // The desktop DOES have the visual rebase workspace — it is the Rebase
+      // section in the sidebar. This used to toast "isn't available in the
+      // desktop app yet", which was stale the moment that view shipped and
+      // contradicted a working tab two rows away.
+      this.routeView("rebase", true);
       return;
     }
     const map: Record<string, string> = {
@@ -3382,30 +3510,38 @@ class App {
   }
 
   private async openFile(file: ChangedFile, sha?: string): Promise<void> {
-    this.detailsSplitEl()?.classList.add("diff-open");
+    // The diff opens in the bottom dock's "Diff" tab — the commit metadata
+    // stays put beside the graph instead of being shoved aside by the editor.
+    this.terminalDock?.setDetailsVisible(true);
+    this.diffSurfaceEl = this.terminalDock?.detailsSurface();
     // Lazily spin up the Monaco diff the first time a file is opened.
     if (!this.diffPanel && this.diffSurfaceEl) {
       this.diffPanel = new DiffPanel(this.diffSurfaceEl);
       this.activeMonacoView = this.diffPanel;
     }
-    if (!this.diffPanel) return;
+    this.terminalDock?.openDetails(); // activate the Diff tab + expand the dock
+    // Capture the panel — re-reading `this.diffPanel` after an await threw
+    // "cannot read showDiff of undefined" when the user picked another commit
+    // mid-load and the panel was disposed. `gen` discards a stale result rather
+    // than painting it over the newer selection.
+    const panel = this.diffPanel;
+    if (!panel) return;
+    const gen = ++this.diffGen;
     const diff = await host.invoke("file:diff", { path: file.path, sha });
+    if (gen !== this.diffGen || panel !== this.diffPanel) return;
     if (!diff) {
-      this.diffPanel.showEmpty("No diff available.");
+      panel.showEmpty("No diff available.");
       return;
     }
     if (diff.conflicted) {
       const model = await host.invoke("conflict:model", file.path);
+      if (gen !== this.diffGen || panel !== this.diffPanel) return;
       if (model) {
-        this.diffPanel.showMerge(model);
+        panel.showMerge(model);
         return;
       }
     }
-    this.diffPanel.showDiff(diff);
-  }
-
-  private detailsSplitEl(): HTMLElement | null {
-    return this.detailsEl?.querySelector(".details-split") ?? null;
+    panel.showDiff(diff);
   }
 
   private showDetailsPlaceholder(): void {

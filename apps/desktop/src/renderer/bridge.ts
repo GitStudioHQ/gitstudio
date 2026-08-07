@@ -32,6 +32,14 @@ export class GraphHostAdapter {
   private skip = 0;
   private loading = false;
   private exhausted = false;
+  /**
+   * Bumped on every reset. A page request that was in flight when the graph was
+   * reset (repo switch, refresh) must not apply its result: it would splice a
+   * page of the OLD history onto the freshly-reset list and set `skip` from a
+   * cursor that no longer means anything, so subsequent paging skipped or
+   * duplicated commits.
+   */
+  private gen = 0;
 
   constructor(
     private readonly onMessage: (msg: GraphInitMessage | GraphAppendMessage) => void,
@@ -39,6 +47,7 @@ export class GraphHostAdapter {
 
   /** Resets to the first page (e.g. after the active repo changes). */
   reset(): void {
+    this.gen++;
     this.skip = 0;
     this.loading = false;
     this.exhausted = false;
@@ -63,13 +72,21 @@ export class GraphHostAdapter {
       return;
     }
     this.loading = true;
+    const myGen = this.gen;
     try {
       const result = await host.invoke("graph:load", { skip: this.skip });
+      if (myGen !== this.gen) {
+        return; // reset while we waited — this page belongs to a dead view
+      }
       this.skip = result.nextSkip;
       this.exhausted = !result.hasMore;
       this.onMessage(nextGraphMessage(result, initial));
     } finally {
-      this.loading = false;
+      // Only clear the flag we set. A superseded request must not unblock a
+      // newer one that is legitimately in flight.
+      if (myGen === this.gen) {
+        this.loading = false;
+      }
     }
   }
 }

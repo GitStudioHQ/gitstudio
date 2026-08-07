@@ -141,8 +141,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
  */
 export async function fetchUnreadCount(): Promise<number> {
   try {
-    const threads = await host.invoke("notifications:list", { all: false, participating: false });
-    return threads.filter((t) => t.unread).length;
+    // The AMBIENT channel: it never unlocks the stored token, so the badge
+    // refreshing on launch cannot raise a keychain prompt. It reports 0 until
+    // something the user actually asked for has unlocked the token.
+    return await host.invoke("notifications:unreadCount", undefined);
   } catch {
     return 0;
   }

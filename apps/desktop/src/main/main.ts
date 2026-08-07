@@ -341,11 +341,13 @@ async function openRepoDialog(): Promise<RepoInfo | undefined> {
 
 async function openRepoPath(path: string): Promise<RepoInfo | undefined> {
   const info = await repos.open(path);
-  if (!info && mainWindow) {
-    await dialog.showMessageBox(mainWindow, {
-      type: "warning",
-      message: "Not a Git repository",
-      detail: `${path} is not inside a Git repository.`,
+  if (!info) {
+    // In-app, not a native alert. This is the most likely first-run failure
+    // (open the wrong folder) and dialogs.ts is explicit that native dialogs
+    // read as jarring — an OS modal was the worst possible first impression.
+    send("app:notice", {
+      kind: "warn",
+      message: `${path} is not inside a Git repository.`,
     });
   }
   buildMenu();
@@ -400,6 +402,7 @@ function actionLabel(channel: string): string {
     "sync:fetch": "Fetch",
     "sync:pull": "Pull",
     "sync:push": "Push",
+    "branch:push": "Push branch",
     "branches:list": "List branches",
     "branch:create": "Create branch",
     "branch:delete": "Delete branch",
@@ -501,6 +504,7 @@ function registerIpc(): void {
   handle("sync:fetch", () => bridge.syncFetch());
   handle("sync:pull", () => bridge.syncPull());
   handle("sync:push", (opts) => bridge.syncPush(opts || undefined));
+  handle("branch:push", (a) => bridge.branchPush(a.name));
 
   // Branch management.
   handle("branches:list", () => bridge.branchesList());
@@ -593,6 +597,14 @@ function registerIpc(): void {
   handle("release:delete", (id) => github.withRepo((c, o, r) => releasesApi.deleteRelease(c, o, r, id)));
   // Notifications (user-level).
   handle("notifications:list", (opts) => github.withClient((c) => notificationsApi.listNotifications(c, opts)));
+  // Ambient: polls on launch, so it must NOT unlock the token (that prompted for
+  // the keychain password on every start). Reports 0 while still locked.
+  handle("notifications:unreadCount", async () => {
+    const threads = await github.withClientIfUnlocked((c) =>
+      notificationsApi.listNotifications(c, { all: false, participating: false }),
+    );
+    return threads ? threads.filter((t) => t.unread).length : 0;
+  });
   handle("notification:markRead", (req) => github.withClient((c) => notificationsApi.markNotificationRead(c, req.id)));
   handle("notifications:markAllRead", () => github.withClient((c) => notificationsApi.markAllNotificationsRead(c)));
   // Organizations (user-level).

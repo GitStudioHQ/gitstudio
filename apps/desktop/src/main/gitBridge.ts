@@ -887,6 +887,45 @@ export class GitBridge {
     });
   }
 
+  /**
+   * Push a SPECIFIC branch, publishing it when it has no upstream yet. The
+   * Branches view previously had no push at all — only the top-bar widget could
+   * push, and only the checked-out branch — so an ahead or unpublished branch
+   * was unpushable from the list it was displayed in.
+   */
+  async branchPush(name: string): Promise<CommitActionResult> {
+    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+    return this.staged(async (ctx) => {
+      const up = await ctx.process.run([
+        "for-each-ref",
+        "--format=%(upstream:short)",
+        `refs/heads/${name}`,
+      ]);
+      const upstream = up.code === 0 ? up.stdout.trim() : "";
+      const slash = upstream.indexOf("/");
+      if (slash > 0) {
+        // Tracked: push it to the remote it already tracks.
+        return ctx.sync.push({ remote: upstream.slice(0, slash), branch: name });
+      }
+      // Unpublished: pick a remote and set upstream. Prefer origin, else the
+      // only remote; with several non-origin remotes there is no safe guess.
+      const remotes = await ctx.remotes.list();
+      const names = remotes.map((r) => r.name);
+      const remote =
+        names.find((n) => n === "origin") ?? (names.length === 1 ? names[0] : undefined);
+      if (!remote) {
+        return {
+          ok: false,
+          stderr:
+            names.length === 0
+              ? `No remote is configured, so '${name}' can't be published.`
+              : `Several remotes are configured — publish '${name}' from the branch's Set upstream… action.`,
+        };
+      }
+      return ctx.sync.push({ remote, branch: name, setUpstream: true });
+    });
+  }
+
   // ── Branch management ───────────────────────────────────────────────────────
 
   /** One `for-each-ref` gives every local branch with upstream + ahead/behind. */
@@ -1066,7 +1105,14 @@ export class GitBridge {
       try {
         const r = await ctx.process.run(["rev-parse", "--git-path", gitPath]);
         if (r.code !== 0) return false;
-        await stat(join(ctx.root, r.stdout.trim()));
+        // resolve(), NOT join(). Inside a linked worktree git answers with an
+        // ABSOLUTE path (…/main-repo/.git/worktrees/<wt>/MERGE_HEAD), and
+        // path.join concatenates it onto the root to produce a path that cannot
+        // exist — so an in-progress merge or rebase in a worktree was never
+        // detected and the Abort/Continue banner never appeared, stranding the
+        // user with no in-app way out. resolve() returns an absolute second
+        // argument unchanged and still joins a relative one.
+        await stat(resolve(ctx.root, r.stdout.trim()));
         return true;
       } catch {
         return false;

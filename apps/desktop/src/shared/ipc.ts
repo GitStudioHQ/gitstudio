@@ -821,6 +821,8 @@ export interface IpcChannels {
   "sync:fetch": [void, CommitActionResult];
   "sync:pull": [void, CommitActionResult];
   "sync:push": [{ setUpstream?: boolean } | void, CommitActionResult];
+  /** Push (or publish) ONE named branch, not just the checked-out one. */
+  "branch:push": [{ name: string }, CommitActionResult];
   // ── Branch management ──
   "branches:list": [void, BranchInfo[]];
   "branch:create": [{ name: string; checkout?: boolean }, CommitActionResult];
@@ -902,6 +904,10 @@ export interface IpcChannels {
   "release:delete": [number, CommitActionResult];
   // Notifications.
   "notifications:list": [{ all?: boolean; participating?: boolean }, NotificationThread[]];
+  /** Unread count for the top-bar badge. AMBIENT: never unlocks the stored
+   *  token, so launching the app cannot trigger a keychain prompt. Returns 0
+   *  when the token is still locked. */
+  "notifications:unreadCount": [void, number];
   "notification:markRead": [{ id: string }, NotificationActionResult];
   "notifications:markAllRead": [void, NotificationActionResult];
   // Organizations.
@@ -1026,6 +1032,8 @@ export type IpcResponse<C extends IpcChannel> = IpcChannels[C][1];
 export interface IpcEvents {
   /** The active repo changed (opened/closed) — the renderer reloads. */
   "repo:changed": RepoInfo | undefined;
+  /** A message from the main process to show in-app (never a native alert). */
+  "app:notice": { kind: "info" | "warn" | "error"; message: string };
   /** A menu item asks the renderer to do something it owns. */
   "menu:command": { command: "openRepo" | "refresh" | "closeRepo" | "toggleTerminal" | "cloneRepo" };
   /** A chunk of PTY output for a terminal session. */
