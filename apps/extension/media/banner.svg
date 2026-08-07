@@ -1,0 +1,258 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-label="GitStudio — the complete Git suite for VS Code and Cursor">
+  <!--
+    GitStudio store banner. 1280x360, rendered to media/banner.png by
+    brand/render-banner.sh (the Marketplace refuses SVG in a README).
+
+    Composition mirrors Merge Studio's banner so the family reads as one brand:
+    identity block on the left, an illustrated product window on the right. The
+    window here is the commit graph, because that is what GitStudio is known
+    for on sight — lanes, ref chips and author nodes, drawn (not screenshotted)
+    so it stays crisp at any scale and never goes stale with the UI.
+
+    Colors are the real ones: brand violet #A98CFF and the slate cube faces from
+    brand/gitstudio-icon.svg, lanes from packages/webview-ui/src/graph/lanePalette.ts.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B1B27"/>
+      <stop offset="1" stop-color="#0C0C16"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.34" r="0.75">
+      <stop offset="0" stop-color="#4A4480" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#4A4480" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="studio" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#A98CFF"/>
+      <stop offset="0.55" stop-color="#8E78F6"/>
+      <stop offset="1" stop-color="#C36BF0"/>
+    </linearGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#A98CFF"/>
+      <stop offset="1" stop-color="#A98CFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Icon tile + cube faces, lifted from brand/gitstudio-icon.svg -->
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#20202F"/>
+      <stop offset="1" stop-color="#0E0E1A"/>
+    </linearGradient>
+    <linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#7B79A6"/>
+      <stop offset="1" stop-color="#5D5B82"/>
+    </linearGradient>
+    <linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#39375A"/>
+      <stop offset="1" stop-color="#2A2845"/>
+    </linearGradient>
+    <linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#55527C"/>
+      <stop offset="1" stop-color="#403E63"/>
+    </linearGradient>
+    <linearGradient id="lane" gradientUnits="userSpaceOnUse" x1="256" y1="158" x2="256" y2="420">
+      <stop offset="0" stop-color="#C4ADFF"/>
+      <stop offset="1" stop-color="#9A78FF"/>
+    </linearGradient>
+    <mask id="cubeHoles" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <circle cx="111.6" cy="166.6" r="11.0" fill="#000"/>
+      <circle cx="400.4" cy="166.6" r="11.0" fill="#000"/>
+      <circle cx="256.0" cy="416.9" r="11.0" fill="#000"/>
+      <circle cx="256.0" cy="250.0" r="12.4" fill="#000"/>
+    </mask>
+
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22212F" stop-opacity="0"/>
+      <stop offset="1" stop-color="#22212F" stop-opacity="0.92"/>
+    </linearGradient>
+
+    <clipPath id="winClip"><rect x="430" y="40" width="810" height="280" rx="12"/></clipPath>
+    <clipPath id="rowsClip"><rect x="430" y="106" width="810" height="214"/></clipPath>
+  </defs>
+
+  <style>
+    .t { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; }
+  </style>
+
+  <rect width="1280" height="360" fill="url(#bg)"/>
+  <ellipse cx="330" cy="170" rx="600" ry="330" fill="url(#glow)"/>
+
+  <!-- ═══════════════════ IDENTITY ═══════════════════ -->
+  <g transform="translate(64,52) scale(0.1484)">
+    <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+    <rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#fff" stroke-opacity="0.07" stroke-width="3"/>
+    <g mask="url(#cubeHoles)">
+      <path d="M256,83 L400.4,166.6 L256,250 L111.6,166.6 Z" fill="url(#fTop)"/>
+      <path d="M400.4,166.6 L400.4,333.4 L256,416.9 L256,250 Z" fill="url(#fRight)"/>
+      <path d="M256,250 L256,416.9 L111.6,333.4 L111.6,166.6 Z" fill="url(#fLeft)"/>
+      <path d="M256,83 L400.4,166.6 L256,250 L111.6,166.6 Z" fill="none" stroke="#fff" stroke-opacity="0.30" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M256,83 L400.4,166.6 L400.4,333.4 L256,416.9 L111.6,333.4 L111.6,166.6 Z" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="3.5" stroke-linejoin="round"/>
+      <g fill="none" stroke-width="21" stroke-linecap="round">
+        <path d="M256,250 L111.6,166.6" stroke="url(#lane)"/>
+        <path d="M256,250 L400.4,166.6" stroke="url(#lane)"/>
+        <path d="M256,250 L256,416.9" stroke="url(#lane)"/>
+      </g>
+      <circle cx="111.6" cy="166.6" r="25" fill="#B49BFF"/>
+      <circle cx="400.4" cy="166.6" r="25" fill="#B49BFF"/>
+      <circle cx="256" cy="416.9" r="25" fill="#B49BFF"/>
+      <circle cx="256" cy="250" r="28" fill="#C2ABFF"/>
+      <circle cx="111.6" cy="166.6" r="10" fill="#F3EEFF"/>
+      <circle cx="400.4" cy="166.6" r="10" fill="#F3EEFF"/>
+      <circle cx="256" cy="416.9" r="10" fill="#F3EEFF"/>
+      <circle cx="256" cy="250" r="11.5" fill="#F3EEFF"/>
+    </g>
+  </g>
+
+  <text class="t" x="152" y="97" font-size="40" font-weight="700" letter-spacing="-1" fill="#EDEAFB">Git<tspan fill="url(#studio)">Studio</tspan></text>
+  <!-- Tagline sits on its OWN line at the column's left edge, not beside the
+       wordmark: at 15px it needs ~320px, which would run under the window. -->
+  <text class="t" x="65" y="141" font-size="15" font-weight="500" letter-spacing="0.15" fill="#9A94B8">The complete Git suite for VS Code and Cursor.</text>
+  <rect x="65" y="157" width="240" height="2.5" rx="1.25" fill="url(#rule)"/>
+
+  <!-- Three pillars. Named, not abstract: breadth IS the pitch. -->
+  <g class="t" font-size="13" font-weight="600" letter-spacing="0.1">
+    <g>
+      <rect x="64" y="184" width="330" height="34" rx="9" fill="#211F31" stroke="#322F49" stroke-width="1"/>
+      <circle cx="84" cy="201" r="4.5" fill="#52a8ff"/>
+      <text x="99" y="206" fill="#C9C4E0">Commit graph, blame &amp; file history</text>
+    </g>
+    <g>
+      <rect x="64" y="226" width="330" height="34" rx="9" fill="#211F31" stroke="#322F49" stroke-width="1"/>
+      <circle cx="84" cy="243" r="4.5" fill="#3ad17f"/>
+      <text x="99" y="248" fill="#C9C4E0">Hunk staging, 3-pane merge, rebase</text>
+    </g>
+    <g>
+      <rect x="64" y="268" width="330" height="34" rx="9" fill="#211F31" stroke="#322F49" stroke-width="1"/>
+      <circle cx="84" cy="285" r="4.5" fill="#cf7ae6"/>
+      <text x="99" y="290" fill="#C9C4E0">Worktrees, stashes &amp; GitHub PRs</text>
+    </g>
+  </g>
+
+  <g>
+    <rect x="64" y="312" width="216" height="28" rx="14" fill="#A98CFF" fill-opacity="0.13"/>
+    <text class="t" x="80" y="330.5" font-size="12.5" font-weight="600" letter-spacing="0.3" fill="#B9A3FF">Free. Open source. No account.</text>
+  </g>
+
+  <!-- ═══════════════════ COMMIT GRAPH WINDOW ═══════════════════ -->
+  <g>
+    <rect x="430" y="40" width="810" height="280" rx="12" fill="#22212F" stroke="#343149" stroke-width="1"/>
+    <g clip-path="url(#winClip)">
+      <!-- title bar -->
+      <rect x="430" y="40" width="810" height="34" fill="#1C1B27"/>
+      <line x1="430" y1="74" x2="1278" y2="74" stroke="#343149" stroke-width="1"/>
+      <circle cx="450" cy="57" r="4" fill="#E06A52"/>
+      <circle cx="466" cy="57" r="4" fill="#E0B054"/>
+      <circle cx="482" cy="57" r="4" fill="#57A75F"/>
+      <rect x="510" y="46" width="152" height="22" rx="4" fill="#2B2940"/>
+      <rect x="521" y="54" width="9" height="6" rx="1.5" fill="#A98CFF"/>
+      <rect x="538" y="55" width="88" height="5" rx="2.5" fill="#8A84A8"/>
+
+      <!-- toolbar: branch pill, count, search -->
+      <rect x="430" y="74" width="810" height="32" fill="#1F1E2B"/>
+      <line x1="430" y1="106" x2="1278" y2="106" stroke="#2B2940" stroke-width="1"/>
+      <rect x="446" y="82" width="74" height="18" rx="9" fill="#A98CFF" fill-opacity="0.18" stroke="#A98CFF" stroke-opacity="0.45" stroke-width="1"/>
+      <circle cx="457" cy="91" r="3" fill="#B49BFF"/>
+      <rect x="465" y="88.5" width="44" height="5" rx="2.5" fill="#B49BFF"/>
+      <rect x="532" y="88.5" width="56" height="5" rx="2.5" fill="#57536E"/>
+      <rect x="1044" y="80" width="220" height="22" rx="11" fill="#191824" stroke="#2F2C44" stroke-width="1"/>
+      <circle cx="1059" cy="91" r="4.2" fill="none" stroke="#6B6688" stroke-width="1.6"/>
+      <line x1="1062" y1="94" x2="1065" y2="97" stroke="#6B6688" stroke-width="1.6" stroke-linecap="round"/>
+      <rect x="1074" y="88.5" width="120" height="5" rx="2.5" fill="#413D59"/>
+
+      <g clip-path="url(#rowsClip)">
+        <!-- ── graph lanes ──────────────────────────────────────────
+             Lane x: 424 (blue trunk), 452 (green), 480 (magenta).
+             Rows every 26px from y=124. -->
+        <g fill="none" stroke-width="2.2" stroke-linecap="round">
+          <!-- blue trunk, full height -->
+          <path d="M462,112 L462,320" stroke="#52a8ff"/>
+          <!-- green: branches off the trunk at row 2, merges back at row 7 -->
+          <path d="M462,150 C462,163 490,163 490,176 L490,254 C490,267 462,267 462,280" stroke="#3ad17f"/>
+          <!-- magenta: a release lane that never merges back -->
+          <path d="M490,202 C490,215 518,215 518,228 L518,306" stroke="#cf7ae6"/>
+        </g>
+
+        <!-- commit nodes (author discs, like the real rail) -->
+        <g>
+          <circle cx="462" cy="124" r="7" fill="#2E4E73" stroke="#52a8ff" stroke-width="1.6"/>
+          <circle cx="462" cy="150" r="7" fill="#4A3A66" stroke="#52a8ff" stroke-width="1.6"/>
+          <circle cx="490" cy="176" r="7" fill="#2F5545" stroke="#3ad17f" stroke-width="1.6"/>
+          <circle cx="490" cy="202" r="7" fill="#2F5545" stroke="#3ad17f" stroke-width="1.6"/>
+          <circle cx="518" cy="228" r="7" fill="#5A3760" stroke="#cf7ae6" stroke-width="1.6"/>
+          <circle cx="490" cy="254" r="7" fill="#6A5238" stroke="#3ad17f" stroke-width="1.6"/>
+          <circle cx="462" cy="280" r="7" fill="#2E4E73" stroke="#52a8ff" stroke-width="1.6"/>
+          <circle cx="462" cy="306" r="7" fill="#4A3A66" stroke="#52a8ff" stroke-width="1.6"/>
+        </g>
+
+        <!-- ref chips + message bars + author/date/sha columns -->
+        <!-- row 1: main + tag -->
+        <rect x="544" y="117" width="46" height="15" rx="4" fill="#A98CFF" fill-opacity="0.20" stroke="#A98CFF" stroke-opacity="0.5" stroke-width="1"/>
+        <circle cx="553" cy="124.5" r="2.6" fill="#B49BFF"/>
+        <rect x="560" y="122" width="22" height="5" rx="2.5" fill="#B49BFF"/>
+        <rect x="596" y="117" width="42" height="15" rx="4" fill="#edb14a" fill-opacity="0.16" stroke="#edb14a" stroke-opacity="0.45" stroke-width="1"/>
+        <rect x="604" y="122" width="26" height="5" rx="2.5" fill="#E5B45C"/>
+        <rect x="652" y="121.5" width="196" height="6" rx="3" fill="#B6B1CC"/>
+
+        <!-- row 2 -->
+        <rect x="544" y="147.5" width="240" height="6" rx="3" fill="#8F8AA8"/>
+        <!-- row 3: feature branch chip -->
+        <rect x="544" y="169" width="104" height="15" rx="4" fill="#52a8ff" fill-opacity="0.16" stroke="#52a8ff" stroke-opacity="0.45" stroke-width="1"/>
+        <circle cx="553" cy="176.5" r="2.6" fill="#7CC0FF"/>
+        <rect x="560" y="174" width="80" height="5" rx="2.5" fill="#7CC0FF"/>
+        <rect x="658" y="173.5" width="164" height="6" rx="3" fill="#8F8AA8"/>
+        <!-- row 4 -->
+        <rect x="544" y="199.5" width="212" height="6" rx="3" fill="#8F8AA8"/>
+        <!-- row 5: release chip -->
+        <rect x="544" y="221" width="86" height="15" rx="4" fill="#cf7ae6" fill-opacity="0.16" stroke="#cf7ae6" stroke-opacity="0.45" stroke-width="1"/>
+        <circle cx="553" cy="228.5" r="2.6" fill="#DDA0EE"/>
+        <rect x="560" y="226" width="62" height="5" rx="2.5" fill="#DDA0EE"/>
+        <rect x="640" y="225.5" width="150" height="6" rx="3" fill="#8F8AA8"/>
+        <!-- rows 6-8 -->
+        <rect x="544" y="251.5" width="268" height="6" rx="3" fill="#8F8AA8"/>
+        <rect x="544" y="277.5" width="188" height="6" rx="3" fill="#8F8AA8"/>
+        <rect x="544" y="303.5" width="230" height="6" rx="3" fill="#8F8AA8"/>
+
+        <!-- changed-files bars (the green/red stat column) -->
+        <g>
+          <rect x="918" y="122" width="30" height="4" rx="2" fill="#3ad17f"/><rect x="948" y="122" width="8" height="4" rx="2" fill="#e05252"/>
+          <rect x="918" y="148" width="22" height="4" rx="2" fill="#3ad17f"/><rect x="940" y="148" width="12" height="4" rx="2" fill="#e05252"/>
+          <rect x="918" y="174" width="34" height="4" rx="2" fill="#3ad17f"/><rect x="952" y="174" width="6" height="4" rx="2" fill="#e05252"/>
+          <rect x="918" y="200" width="18" height="4" rx="2" fill="#3ad17f"/><rect x="936" y="200" width="16" height="4" rx="2" fill="#e05252"/>
+          <rect x="918" y="226" width="28" height="4" rx="2" fill="#3ad17f"/><rect x="946" y="226" width="9" height="4" rx="2" fill="#e05252"/>
+          <rect x="918" y="252" width="24" height="4" rx="2" fill="#3ad17f"/><rect x="942" y="252" width="14" height="4" rx="2" fill="#e05252"/>
+          <rect x="918" y="278" width="32" height="4" rx="2" fill="#3ad17f"/><rect x="950" y="278" width="7" height="4" rx="2" fill="#e05252"/>
+          <rect x="918" y="304" width="20" height="4" rx="2" fill="#3ad17f"/><rect x="938" y="304" width="11" height="4" rx="2" fill="#e05252"/>
+        </g>
+
+        <!-- author avatars + name/date/sha columns -->
+        <g>
+          <circle cx="998" cy="124" r="7" fill="#3E5F86"/><rect x="1014" y="121.5" width="72" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="121.5" width="30" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="121.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+          <circle cx="998" cy="150" r="7" fill="#5C4478"/><rect x="1014" y="147.5" width="60" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="147.5" width="26" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="147.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+          <circle cx="998" cy="176" r="7" fill="#3B6650"/><rect x="1014" y="173.5" width="80" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="173.5" width="30" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="173.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+          <circle cx="998" cy="202" r="7" fill="#3E5F86"/><rect x="1014" y="199.5" width="66" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="199.5" width="24" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="199.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+          <circle cx="998" cy="228" r="7" fill="#7A5340"/><rect x="1014" y="225.5" width="74" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="225.5" width="28" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="225.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+          <circle cx="998" cy="254" r="7" fill="#3B6650"/><rect x="1014" y="251.5" width="58" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="251.5" width="30" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="251.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+          <circle cx="998" cy="280" r="7" fill="#5C4478"/><rect x="1014" y="277.5" width="78" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="277.5" width="26" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="277.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+          <circle cx="998" cy="306" r="7" fill="#3E5F86"/><rect x="1014" y="303.5" width="64" height="5" rx="2.5" fill="#5E5978"/><rect x="1128" y="303.5" width="30" height="5" rx="2.5" fill="#46425C"/><rect x="1194" y="303.5" width="56" height="5" rx="2.5" fill="#46425C"/>
+        </g>
+      </g>
+
+      <!-- column separators, kept faint so the lanes stay the focus -->
+      <g stroke="#2B2940" stroke-width="1">
+        <line x1="894" y1="106" x2="894" y2="320"/>
+        <line x1="974" y1="106" x2="974" y2="320"/>
+        <line x1="1106" y1="106" x2="1106" y2="320"/>
+        <line x1="1174" y1="106" x2="1174" y2="320"/>
+      </g>
+
+      <!-- bottom fade, so the rows read as continuing past the frame -->
+      <rect x="430" y="278" width="810" height="42" fill="url(#fade)"/>
+    </g>
+  </g>
+
+  <defs>
+    <linearGradient id="fade" x1="38" y1="0" x2="38" y2="1">
+      <stop offset="0" stop-color="#22212F" stop-opacity="0"/>
+      <stop offset="1" stop-color="#22212F" stop-opacity="0.92"/>
+    </linearGradient>
+  </defs>
+</svg>

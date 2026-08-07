@@ -18,22 +18,30 @@
     "color": "#1A1726",
     "theme": "dark"
   },
-  "qna": "marketplace",
+  "sponsor": {
+    "url": "https://github.com/sponsors/antonarnaudov"
+  },
+  "qna": "https://github.com/GitStudioHQ/gitstudio/issues",
   "badges": [
     {
-      "url": "https://img.shields.io/github/actions/workflow/status/GitStudioHQ/gitstudio/ci.yml?branch=main&label=CI",
+      "url": "https://img.shields.io/open-vsx/v/gitstudio/gitstudio?label=Open%20VSX&logo=eclipseide&logoColor=white&color=C36BF0",
+      "href": "https://open-vsx.org/extension/gitstudio/gitstudio",
+      "description": "Also on Open VSX \u2014 Cursor, VSCodium, Windsurf, Gitpod"
+    },
+    {
+      "url": "https://img.shields.io/github/actions/workflow/status/GitStudioHQ/gitstudio/ci.yml?branch=main&label=build&logo=githubactions&logoColor=white",
       "href": "https://github.com/GitStudioHQ/gitstudio/actions/workflows/ci.yml",
       "description": "CI build status"
     },
     {
-      "url": "https://img.shields.io/visual-studio-marketplace/v/gitstudio.gitstudio?label=Marketplace",
-      "href": "https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio",
-      "description": "Visual Studio Marketplace version"
+      "url": "https://img.shields.io/badge/license-Apache--2.0-44a248",
+      "href": "https://github.com/GitStudioHQ/gitstudio/blob/main/LICENSE",
+      "description": "Apache-2.0 licensed \u2014 free on public and private repos"
     },
     {
-      "url": "https://img.shields.io/github/license/GitStudioHQ/gitstudio",
-      "href": "https://github.com/GitStudioHQ/gitstudio/blob/main/LICENSE",
-      "description": "Apache-2.0 license"
+      "url": "https://img.shields.io/badge/Sponsor-EA4AAA?logo=githubsponsors&logoColor=white",
+      "href": "https://github.com/sponsors/antonarnaudov",
+      "description": "Sponsor GitStudio on GitHub"
     }
   ],
   "engines": {

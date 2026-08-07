@@ -1,0 +1,4 @@
+# Renders the "Sponsor" button on the repository page. The Marketplace gets the
+# same link from the `sponsor` field in apps/extension/package.json.
+github: [antonarnaudov]
+custom: ["https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d"]
