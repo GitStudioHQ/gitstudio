@@ -26,6 +26,7 @@
     "@gitstudio/engine": "*",
     "@gitstudio/git-service": "*",
     "@gitstudio/host-bridge": "*",
+    "@gitstudio/secret-store": "*",
     "@gitstudio/webview-ui": "*",
     "@types/node": "^22.0.0",
     "@xterm/addon-fit": "^0.11.0",

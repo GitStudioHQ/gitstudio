@@ -2,18 +2,25 @@
 // tasks and the Assistant agent, and brokers the MCP "Agent Access" config.
 //
 // It is the ONLY place API keys live: each connection's key is encrypted at rest
-// with Electron safeStorage (userData/ai-keys/<id>.bin) and never crosses to the
-// renderer — the renderer only ever sees a redacted AiConnectionView. All model
-// traffic runs here in the main process (Node fetch), so there's no CORS and no
-// secret in a web context. Everything degrades silently: with no usable
-// connection the ✨ affordances and the Assistant simply stay hidden; git is
-// never gated or blocked by AI.
+// in userData/secrets/ and never crosses to the renderer — the renderer only
+// ever sees a redacted AiConnectionView. All model traffic runs here in the main
+// process (Node fetch), so there's no CORS and no secret in a web context.
+// Everything degrades silently: with no usable connection the ✨ affordances and
+// the Assistant simply stay hidden; git is never gated or blocked by AI.
+//
+// Keys are NOT in the OS keyring. Electron's safeStorage keeps its master key in
+// the login keychain, whose ACL is bound to the app's code signature — so every
+// rebuild or update voided it and the next read raised "GitStudio wants to make
+// changes. Enter your password to allow this." See @gitstudio/secret-store for
+// the trade-off that replaces it, and migrateLegacyKeys() for the one-way import
+// of keys written by the old scheme.
 
 import { app, safeStorage } from "electron";
 import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { SecretStore } from "@gitstudio/secret-store/secretStore";
 import {
   DEFAULT_AGENT_CONFIG,
   EMPTY_AI_SETTINGS,
@@ -74,8 +81,11 @@ const CONFIRM_TIMEOUT_MS = 120_000;
 export class AiBridge {
   private settings: AiSettings = { ...EMPTY_AI_SETTINGS };
   private loaded = false;
-  /** In-memory decrypted key cache, keyed by connection id. */
-  private readonly keyCache = new Map<string, string>();
+  /**
+   * Keychain-free key storage. Lazily constructed because `app.getPath` is only
+   * valid once Electron is ready, and AiBridge is built during startup.
+   */
+  private store: SecretStore | undefined;
   /** In-flight requests → their AbortController (for ai:cancel). */
   private readonly aborts = new Map<string, AbortController>();
   /** Pending agent write-confirmations → their resolver. */
@@ -95,8 +105,14 @@ export class AiBridge {
   private settingsPath(): string {
     return join(app.getPath("userData"), "ai-settings.json");
   }
-  private keyPath(id: string): string {
+  /** Pre-1.4 location: a safeStorage blob, i.e. the OS keyring. */
+  private legacyKeyPath(id: string): string {
     return join(app.getPath("userData"), "ai-keys", `${id}.bin`);
+  }
+
+  private secrets(): SecretStore {
+    this.store ??= new SecretStore(join(app.getPath("userData"), "secrets"));
+    return this.store;
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -124,41 +140,69 @@ export class AiBridge {
     }
   }
 
-  // ── keys (encrypted at rest) ─────────────────────────────────────────────────
+  // ── keys (encrypted at rest, no OS keyring) ──────────────────────────────────
 
+  /**
+   * Is a key stored for this connection?
+   *
+   * Answers from the filesystem only. This backs `usable` on every connection
+   * row, so it runs whenever the settings view renders — it must never decrypt.
+   */
   private hasKeyFile(id: string): boolean {
-    return existsSync(this.keyPath(id));
+    return this.secrets().has(id) || existsSync(this.legacyKeyPath(id));
   }
 
   private async loadKey(id: string): Promise<string | undefined> {
-    if (this.keyCache.has(id)) {
-      return this.keyCache.get(id);
+    const current = await this.secrets().get(id);
+    if (current !== undefined) {
+      return current;
     }
+    return this.adoptLegacyKey(id);
+  }
+
+  /**
+   * Move a pre-1.4 safeStorage key into the keychain-free store, once.
+   *
+   * This is the last code path in the app that can raise an OS password prompt,
+   * so it is deliberately confined to `loadKey` — reached only when the user
+   * runs an AI task or opens the model picker, never from a status probe or
+   * startup. After it succeeds the legacy blob is deleted, so a given key can
+   * cost at most one prompt, ever. If the user dismisses that prompt the
+   * decrypt throws and AI just stays unavailable; nothing is lost and the next
+   * attempt can try again.
+   */
+  private async adoptLegacyKey(id: string): Promise<string | undefined> {
+    const legacy = this.legacyKeyPath(id);
+    let buf: Buffer;
     try {
-      const buf = await readFile(this.keyPath(id));
-      const key = safeStorage.isEncryptionAvailable()
+      buf = await readFile(legacy);
+    } catch {
+      return undefined; // no key at all
+    }
+    let key: string;
+    try {
+      key = safeStorage.isEncryptionAvailable()
         ? safeStorage.decryptString(buf)
         : buf.toString("utf8");
-      this.keyCache.set(id, key);
-      return key;
     } catch {
       return undefined;
     }
+    await this.secrets().set(id, key);
+    await unlink(legacy).catch(() => {});
+    return key;
   }
 
   private async storeKey(id: string, key: string): Promise<void> {
-    await mkdir(join(app.getPath("userData"), "ai-keys"), { recursive: true });
-    const data = safeStorage.isEncryptionAvailable()
-      ? safeStorage.encryptString(key)
-      : Buffer.from(key, "utf8");
-    await writeFile(this.keyPath(id), data);
-    this.keyCache.set(id, key);
+    await this.secrets().set(id, key);
+    // A re-entered key supersedes any pre-1.4 blob; drop it so `hasKeyFile`
+    // can't be satisfied by a stale file we will never read again.
+    await unlink(this.legacyKeyPath(id)).catch(() => {});
   }
 
   private async deleteKey(id: string): Promise<void> {
-    this.keyCache.delete(id);
+    await this.secrets().delete(id);
     try {
-      await unlink(this.keyPath(id));
+      await unlink(this.legacyKeyPath(id));
     } catch {
       // already gone
     }
