@@ -75,6 +75,41 @@ export function scrub(input: string): string {
  * The current user's home directory, read from the environment so this stays
  * `node:*`-free (works in the extension host, Electron main, and under tsx).
  */
+/**
+ * Scrub a GIT ERROR MESSAGE down to its error CLASS.
+ *
+ * `scrub()` handles absolute paths, emails, URLs, tokens and SHAs, but git
+ * stderr routinely names the things PRIVACY.md promises never to send:
+ *   "error: Your local changes to the following files would be overwritten by
+ *    merge:\n\tsrc/billing/secret-project.ts"
+ *   "fatal: couldn't find remote ref 'feature/acme-migration'"
+ * Both the file list and the quoted ref are repo-relative, so nothing above
+ * touches them. This keeps the diagnostic sentence and redacts the identifiers.
+ */
+export function scrubGitMessage(input: string): string {
+  if (!input) {
+    return "";
+  }
+  return (
+    scrub(input)
+      // git quotes refs, branches and pathspecs in single quotes. The opening
+      // quote must NOT follow a letter, or the apostrophe in "couldn't" opens a
+      // bogus span and eats the rest of the sentence.
+      .replace(/(^|[\s(:=[])'[^']{1,200}'/g, "$1'<ref>'")
+      // ...and in double quotes in a few messages.
+      .replace(/"[^"]{1,200}"/g, '"<ref>"')
+      // Indented file lists under "the following files would be…".
+      .replace(/^[ \t]+\S.*$/gm, "\t<path>")
+      // Any surviving repo-relative path (a/b.ts, src/x/y).
+      .replace(/\b[\w.-]+(?:\/[\w.-]+)+\b/g, "<path>")
+      // A bare filename with a code-ish extension.
+      .replace(/\b[\w.-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|rb|c|h|cpp|cs|php|swift|kt|md|json|ya?ml|txt|lock)\b/gi, "<file>")
+      // Collapse the runs of <path> a file list turns into.
+      .replace(/(?:<path>[\s,]*){2,}/g, "<path> ")
+      .trim()
+  );
+}
+
 export function safeHome(): string {
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
   return proc?.env?.HOME || proc?.env?.USERPROFILE || "";

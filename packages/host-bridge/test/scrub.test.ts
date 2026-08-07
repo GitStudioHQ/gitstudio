@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import * as os from "node:os";
-import { scrub, scrubExtra, safeShort, randomId } from "../src/scrub";
+import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "../src/scrub";
 
 // The scrubber is the last line of defense before an anonymous crash report
 // leaves a user's machine, so every identifying shape it must catch is pinned
@@ -101,4 +101,34 @@ test("randomId is 32 hex chars and non-repeating", () => {
   const b = randomId();
   assert.match(a, /^[0-9a-f]{32}$/);
   assert.notEqual(a, b);
+});
+
+// PRIVACY.md promises crash reports "**Never**" carry file names, commit
+// messages or branch names. Git stderr names all three, and plain scrub() does
+// not touch them because they are repo-RELATIVE.
+test("scrubGitMessage redacts file lists from git stderr", () => {
+  const msg =
+    "error: Your local changes to the following files would be overwritten by merge:" +
+    "\n\tsrc/billing/secret-project.ts\n\tdocs/roadmap.md";
+  const out = scrubGitMessage(msg);
+  assert.ok(!out.includes("secret-project"), out);
+  assert.ok(!out.includes("roadmap"), out);
+  // The diagnostic sentence survives — that is the whole point of reporting it.
+  assert.match(out, /would be overwritten by merge/);
+});
+
+test("scrubGitMessage redacts quoted refs but keeps the sentence", () => {
+  const out = scrubGitMessage("fatal: couldn't find remote ref 'feature/acme-migration'");
+  assert.ok(!out.includes("acme"), out);
+  assert.match(out, /couldn't find remote ref/); // apostrophe must not open a span
+});
+
+test("scrubGitMessage redacts a conflicted path", () => {
+  const out = scrubGitMessage("CONFLICT (content): Merge conflict in apps/web/checkout.tsx");
+  assert.ok(!out.includes("checkout.tsx"), out);
+  assert.match(out, /Merge conflict in/);
+});
+
+test("scrubGitMessage is empty-safe", () => {
+  assert.equal(scrubGitMessage(""), "");
 });

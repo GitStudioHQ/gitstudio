@@ -539,6 +539,12 @@ export class CommitGraph extends LitElement {
       }
       .colhead .ch-date, .colhead .ch-sha,
       .row .date, .row .sha { display: none; }
+      /* The cells are gone, but their grips are absolutely positioned inside
+         them and survived as 0x0 hit targets — a handle you can see the cursor
+         change on but can never drag. Author becomes the last visible column
+         here, so it must not keep a trailing grip either. */
+      .colhead .col-resize[data-col="date"],
+      .colhead .col-resize[data-col="author"] { display: none; }
     }
     /* ── Sidebar (inline) mode ──────────────────────────────────────────────
        Below ~620px (every practical sidebar width) the refs stop being a fixed

@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as https from "node:https";
 import * as http from "node:http";
 import { URL } from "node:url";
-import { scrub, scrubExtra, safeShort, randomId } from "@gitstudio/host-bridge/scrub";
+import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstudio/host-bridge/scrub";
 
 /**
  * Anonymous, PII-scrubbed crash reporting — so during the beta we hear about
@@ -123,7 +123,12 @@ export class ErrorReporter implements vscode.Disposable {
     try {
       this.send("git-error", {
         op: safeShort(label, 80),
-        stderr: scrub(stderr || "").slice(0, 600),
+        // scrubGitMessage, not scrub: git stderr names FILES and BRANCHES, which
+        // PRIVACY.md promises never leave the machine. scrub() only covers
+        // absolute paths, emails, URLs, tokens and SHAs — all of which are
+        // repo-INdependent — so a repo-relative path or a quoted ref sailed
+        // straight through.
+        stderr: scrubGitMessage(stderr || "").slice(0, 600),
       });
     } catch {
       // Crash reporting must never itself crash the host.

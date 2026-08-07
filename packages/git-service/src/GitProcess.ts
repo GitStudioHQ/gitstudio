@@ -149,7 +149,17 @@ export class GitProcess {
   private spawnChild(args: string[]): ChildProcessWithoutNullStreams {
     const child = spawn(this.gitPath, [...HARDENED_ARGS, ...args], {
       cwd: this.cwd,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      env: {
+        ...process.env,
+        GIT_OPTIONAL_LOCKS: "0",
+        // Neither host has a terminal, so a git credential/passphrase prompt is
+        // an unanswerable question that blocks forever — a fetch/pull/push over
+        // HTTPS on a repo with no cached credential froze the sync UI with no
+        // way out. Fail fast instead; real credential HELPERS (osxkeychain,
+        // manager, GUI askpass) are unaffected — this only disables the
+        // read-from-the-tty fallback.
+        GIT_TERMINAL_PROMPT: "0",
+      },
     });
     this.children.add(child);
     return child;
@@ -185,9 +195,13 @@ export class GitProcess {
 
         // Feed a dirty buffer via stdin when requested, then close it so git
         // sees EOF. A broken pipe (git exits before draining) is harmless here.
+        spawned.stdin.on("error", () => {});
         if (opts?.input !== undefined) {
-          spawned.stdin.on("error", () => {});
           spawned.stdin.end(opts.input);
+        } else {
+          // No payload: end it anyway. Left open, any git command that decides
+          // to read stdin waits on a pipe nobody will ever write to.
+          spawned.stdin.end();
         }
 
         const stdout: Buffer[] = [];
