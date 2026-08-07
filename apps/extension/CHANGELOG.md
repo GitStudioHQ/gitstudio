@@ -4,6 +4,68 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-08
+
+### Fixed
+- **Git could hang forever on a credential prompt.** No editor host has a
+  terminal, so when git asked for a username, password or key passphrase the
+  question had nowhere to go and the operation blocked indefinitely — a fetch,
+  pull or push over HTTPS on a repo with no cached credential froze the sync UI
+  with no way out. Git is now told there is no terminal, so it fails fast with a
+  real message instead. Credential *helpers* — macOS Keychain, Git Credential
+  Manager, any GUI askpass — are unaffected; only the read-from-the-tty fallback
+  is gone.
+- **Dead column-resize handles in the narrow commit graph.** Below the width
+  where the date and SHA columns hide, their resize grips survived as invisible
+  hit targets: the cursor changed to a resize arrow over a handle that could
+  never be dragged.
+- **Renaming a published branch left it pushing to the old name.** `git branch
+  -m` deliberately keeps the tracking config — the branch on the server was not
+  renamed — so a renamed branch still pointed at `origin/<old-name>`. Everything
+  downstream inherited that: the push modal named the old branch, the ↑/↓ badges
+  counted against it, and the push itself did one of three different things
+  depending on a `push.default` you never set (refuse outright on `simple`, push
+  to the old name on `upstream`, push to the new name while still tracking the
+  old on `current`). Renaming a published branch now asks what you meant —
+  rename it on the remote too, publish the new name and keep the old, or keep
+  tracking the old — and a push resolves its refspec explicitly, so it lands in
+  the same place on every machine and reports the real problem (a divergence
+  needing a force push) instead of a lecture about `push.default`.
+
+### Changed
+- **GitStudio no longer uses your OS keychain, so it can no longer ask for your
+  password.** Reading a key from the editor's SecretStorage unlocks the host
+  app's keychain entry, and on macOS that entry's ACL is bound to the app's code
+  signature — so every Cursor / VS Code update invalidated it and the next read
+  raised *"Cursor wants to make changes. Enter your password to allow this."*
+  GitStudio read its key while merely deciding whether to show the ✨ button, on
+  every launch and again on every Changes-view refresh, which meant the prompt
+  fired at startup even for people who had never configured AI at all. API keys
+  now live in GitStudio's own AES-256-GCM store under the extension's private
+  storage directory, owner-only on disk, and "is a key configured?" is answered
+  from the filesystem without ever touching key material. If you had a key saved
+  in a previous version, **GitStudio · AI** has an *Import key from the editor's
+  secret storage* button — the one and only remaining action that can raise a
+  keychain prompt, and only when you click it.
+- **The command palette is gone from GitStudio entirely.** 1.3.0 moved nine
+  action menus into real dialogs; this finishes the job. Every remaining
+  question — renaming a branch, setting an upstream, adding a remote, naming a
+  stash, choosing a base for an interactive rebase, picking a PR, entering an
+  API key, and every destructive confirmation — now renders as a GitStudio
+  dialog inside the Changes view, whether you started from the branch menu, a
+  tree context menu, the commit graph, or the palette itself. The quick input
+  was the palette wearing a different hat: it hijacked the top of the window,
+  discarded whatever you had typed the moment focus moved, and could not
+  complete over the refs the view was already holding. Rebase and revision
+  prompts now complete over every branch, remote branch and tag while still
+  accepting any revision expression. A test now fails the build if
+  `showInputBox`, `showQuickPick`, or a modal message box is reintroduced
+  anywhere in the extension.
+- Confirmations say what will actually happen and what can be recovered, instead
+  of asserting "this cannot be undone" on operations Undo handles fine. The one
+  case that genuinely cannot be recovered — discarding uncommitted work — says
+  so, and says why: git never recorded those edits.
+
 ## [1.3.0] - 2026-08-01
 
 ### Added
