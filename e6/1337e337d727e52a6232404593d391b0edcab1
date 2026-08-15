@@ -1,0 +1,23 @@
+docs/releases/ext-v1.5.2.md
+  s_d8657a47fc5a6a::t_3cba39e5161e6d 1-33
+apps/extension/CHANGELOG.md
+  s_d8657a47fc5a6a::t_3294ea55ed1530 7-18
+apps/extension/package.json
+  s_d8657a47fc5a6a::t_3294ea55ed1530 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e61337e337d727e52a6232404593d391b0edcab1",
+  "prompts": {},
+  "sessions": {
+    "s_d8657a47fc5a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44acfba7-24a8-4223-be23-9f287a654407",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
