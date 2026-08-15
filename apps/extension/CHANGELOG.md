@@ -4,6 +4,51 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-15
+
+### Fixed
+- **Branch and remote names containing the letter "s" were rejected as
+  containing a space.** The Changes webview is built as one template literal, so
+  the backslashes in its inline script were consumed before the browser saw
+  them: `/\s/` became `/s/`. Every dialog that validates a ref name shares those
+  validators, so you could not create or rename a branch called `styles`, add a
+  remote named `upstream`, or paste any `https://` URL — each refused for
+  "containing a space", while an actual space was accepted. The same cooking
+  silently degraded the check beside it into one that only rejected the
+  characters git forbids (`~ ^ : ? * [ \`) at the very end of a name, and never
+  rejected a backslash at all. Both are fixed, and two tests now guard the class
+  of mistake — one that no compiler or linter can see. Thanks to
+  [@wanzirong](https://github.com/wanzirong) for diagnosing it (#8).
+- **The activity-bar badge kept a stale count after committing.** Commit and
+  push everything, and the GitStudio icon still read "1" beside a view that said
+  "Working tree clean". Clearing a webview view's badge does not work in VS Code
+  — the pane only applies a badge when there is one, and never clears the old —
+  so the count is now published as zero, which the activity bar renders as
+  nothing. Turning the badge setting off also takes effect immediately instead
+  of on the next window reload. (#7)
+- **Clicking a commit did nothing once the details dock was closed.** Clicking
+  the row that was already selected emitted no intent at all, so the dock stayed
+  shut with no way back short of reloading the window. (#4)
+- **Branch/tag chips did not reflow while dragging the column.** Chips that do
+  not fit are removed from the row rather than clipped, but only releasing the
+  mouse re-rendered — so the column widened while the chips stayed folded behind
+  a "+N" and everything snapped into place at the end. (#5)
+- **The "+N" chip read as decoration.** Clicking it opens the commit details,
+  which lists every hidden ref in full, but nothing said so. It now shows a
+  pointer and a hover state, and its tooltip names each hidden ref *and* whether
+  it is a local branch, a remote branch or a tag. (#5)
+- **"Cherry-Pick Commit" had no icon** in the commit-graph context menu, where
+  every other item had one.
+
+### Added
+- **Check out a branch from the commit graph.** Right-clicking a row now heads
+  the menu with the refs on that commit — "Checkout main", "Checkout
+  origin/main…", "Checkout v1.4.0…" — above the commit-scoped actions.
+  Previously the only checkout offered was "Checkout Commit", which detaches
+  HEAD; landing on a detached HEAD when you meant "switch to main" is the wrong
+  outcome. A remote branch offers a local name to track it with, a tag confirms
+  the detached HEAD first, and the branch you are already on is omitted. (#6)
+
 ## [1.4.0] - 2026-08-08
 
 ### Fixed
