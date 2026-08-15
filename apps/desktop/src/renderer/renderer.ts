@@ -2866,6 +2866,9 @@ class App {
       onSelect: (sha) => void this.selectCommit(sha),
       onOpen: (sha) => void this.selectCommit(sha),
       onContext: (sha, x, y) => this.contextMenu.open(sha, x, y),
+      // Show the pane again WITHOUT re-selecting: selectCommit() would call
+      // closeDiffTab() and dispose a diff the user still has open.
+      onShowDetails: () => this.setGraphDetailsVisible(true),
     });
     this.graph = graph;
     void graph.reload();

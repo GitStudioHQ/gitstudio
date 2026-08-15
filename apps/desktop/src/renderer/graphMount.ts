@@ -13,6 +13,8 @@ export interface GraphCallbacks {
   onSelect(sha: string): void;
   onOpen(sha: string): void;
   onContext(sha: string, x: number, y: number): void;
+  /** The already-selected row was clicked again — reveal the details pane. */
+  onShowDetails(sha: string): void;
 }
 
 export class GraphMount {
@@ -28,6 +30,9 @@ export class GraphMount {
       switch (action.type) {
         case "select":
           cb.onSelect(action.sha);
+          break;
+        case "showDetails":
+          cb.onShowDetails(action.sha);
           break;
         case "open":
           cb.onOpen(action.sha);

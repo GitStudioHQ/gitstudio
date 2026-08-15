@@ -78,6 +78,11 @@ function start(root: HTMLElement): void {
         // reloading the window.
         openDetails();
         break;
+      case "showDetails":
+        // Same commit, dock closed: just bring it back. The host already has
+        // this commit's payload, so no selectCommit and no git work.
+        openDetails();
+        break;
       case "open":
         // An explicit open (double-click) always shows the details.
         shell.dataset.detailsDismissed = "false";

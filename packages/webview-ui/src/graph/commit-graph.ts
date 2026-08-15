@@ -116,6 +116,12 @@ const SEARCH_SCOPES: ReadonlyArray<{ id: SearchScope; label: string }> = [
 
 export type GraphAction =
   | { type: "select"; sha: string }
+  /**
+   * The row that is ALREADY selected was clicked again. Nothing about the
+   * selection changed, so there is nothing to fetch — it only means "show me
+   * this", which is how a closed details dock gets reopened with the mouse.
+   */
+  | { type: "showDetails"; sha: string }
   | { type: "open"; sha: string }
   | { type: "context"; sha: string; x: number; y: number }
   | { type: "menuAction"; sha: string; id: string }
@@ -1983,6 +1989,15 @@ export class CommitGraph extends LitElement {
     }
     const sha = this.rowShaFromEvent(e);
     if (!sha) {
+      return;
+    }
+    // Re-clicking the selected row: select() would early-return and emit
+    // nothing, so a details dock the user had closed stayed closed no matter how
+    // many times they clicked the commit they wanted (issue #4). Say "show it"
+    // instead of forcing a re-select — a re-select would re-fetch the commit and
+    // tear down the diff tab the user has open.
+    if (this.selectedSha === sha) {
+      this.onAction({ type: "showDetails", sha });
       return;
     }
     this.select(sha, false);
