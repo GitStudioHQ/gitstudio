@@ -2,7 +2,7 @@
   "name": "gitstudio",
   "displayName": "GitStudio \u2014 JetBrains-style Git Graph, Blame & Merge",
   "description": "Free, open-source Git GUI & commit graph for VS Code and Cursor. Git Studio brings a JetBrains-style Git workflow into the editor \u2014 inline blame, file history, hunk & line staging, 3-pane merge, interactive rebase with universal Undo, stash/shelf, worktrees, and in-editor GitHub PRs. A free alternative to GitLens, GitKraken & Sourcetree.",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",

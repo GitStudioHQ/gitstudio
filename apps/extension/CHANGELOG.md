@@ -4,6 +4,35 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-08-15
+
+### Fixed
+- **GitStudio filed other extensions' crashes as its own.** The crash reporter
+  listens for unhandled promise rejections, but that listener is process-wide and
+  the extension host is shared by every installed extension — so it saw theirs
+  too. A check on the error's stack was meant to keep only GitStudio's own
+  failures; it ran *after* wrapping non-Error values in a new `Error`, which
+  stamped GitStudio's own frame onto the stack and made the check accept
+  everything. Three reports had been filed from other extensions this way, one of
+  them carrying an unrelated project's source code. A failure is now attributed
+  to GitStudio only when it arrives as an `Error` whose own *call frames* point
+  into GitStudio's code; anything without that provenance is discarded rather
+  than sent. Matching the error's message was part of the same leak — another
+  extension's failure mentioning a path like `~/code/gitstudio/` was enough to
+  be counted as ours.
+- **Closing a panel while it was still working raised "Webview is disposed".**
+  Reading a panel's webview after it is closed throws immediately, so closing the
+  AI result panel mid-answer, the AI settings panel while models were being
+  detected, or the rebase workspace during a git operation each produced a
+  background error you could do nothing about. All three now stop writing once
+  the panel is gone.
+- **Reverting a merge commit failed with git's own error.** A merge has more than
+  one parent, so "undo this commit" is ambiguous and git refuses unless told
+  which side to keep. GitStudio passed that refusal straight through. It now asks
+  which parent to keep as the mainline, showing each one's commit subject —
+  including for octopus merges with three or more parents. Reverting something
+  that is already reverted now says so, instead of failing with an empty reason.
+
 ## [1.5.0] - 2026-08-15
 
 ### Fixed
