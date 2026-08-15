@@ -1,0 +1,25 @@
+packages/webview-ui/src/graph/commit-graph.ts
+  s_d2ecb15f6febc8::t_759b9b0d619902 119-124,1994-2002
+apps/desktop/src/renderer/renderer.ts
+  s_d2ecb15f6febc8::t_25eec483e53325 2869-2871
+apps/desktop/src/renderer/graphMount.ts
+  s_d2ecb15f6febc8::t_c7142736144c74 16-17,34-36
+packages/webview-ui/src/graph/main.ts
+  s_d2ecb15f6febc8::t_29fa53aeee9f5e 81-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "daf6f00e90c5c8decb050921f7187a69ecefd1b6",
+  "prompts": {},
+  "sessions": {
+    "s_d2ecb15f6febc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bd977926-fda5-4a29-a234-f089ee9a9a77",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
