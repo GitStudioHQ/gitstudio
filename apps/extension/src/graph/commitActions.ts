@@ -315,13 +315,80 @@ async function cherryPick(
   });
 }
 
+/**
+ * Reverting a MERGE needs to know which side to keep.
+ *
+ * A merge has two parents, so "undo this commit" is ambiguous — git refuses with
+ * *"commit X is a merge but no -m option was given"* and stops. We used to hand
+ * that sentence straight to the user, which reads as a defect in GitStudio and
+ * offers nothing to do about it.
+ *
+ * Ask instead. `-m 1` keeps the branch the merge was made ON — the common intent
+ * ("undo this merge, put my branch back") — and `-m 2` keeps the branch that was
+ * merged in. Returns the mainline number, `undefined` for an ordinary commit, or
+ * `null` if the user cancelled.
+ */
+async function mainlineFor(
+  ctx: GitContext,
+  commit: CommitContext,
+): Promise<number | undefined | null> {
+  const r = await ctx.process.run(["rev-list", "--parents", "-n", "1", commit.sha]);
+  if (r.code !== 0) {
+    return undefined; // let the revert itself report the real problem
+  }
+  const parents = r.stdout.trim().split(/\s+/).slice(1);
+  if (parents.length < 2) {
+    return undefined;
+  }
+
+  const describe = async (sha: string): Promise<string> => {
+    const s = await ctx.process.run(["log", "-1", "--format=%s", sha]);
+    return s.code === 0 ? s.stdout.trim() : "";
+  };
+  const [first, second] = [await describe(parents[0]), await describe(parents[1])];
+
+  const chosen = await promptPick({
+    title: `Revert the merge ${short(commit.sha)}`,
+    hint: "A merge has two sides, so git needs to know which one to keep.",
+    choices: [
+      {
+        id: "1",
+        label: "Keep the branch this was merged into",
+        icon: "git-branch",
+        detail: short(parents[0]),
+        description: first || "The first parent — usually what you want.",
+      },
+      {
+        id: "2",
+        label: "Keep the branch that was merged in",
+        icon: "git-merge",
+        detail: short(parents[1]),
+        description: second || "The second parent.",
+      },
+    ],
+  });
+  if (!chosen) {
+    return null;
+  }
+  return chosen === "2" ? 2 : 1;
+}
+
 async function revert(
   ctx: GitContext,
   commit: CommitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
+  const mainline = await mainlineFor(ctx, commit);
+  if (mainline === null) {
+    return false;
+  }
   return withUndo(undo, `Revert ${short(commit.sha)}`, async () => {
-    const result = await ctx.process.run(["revert", "--no-edit", commit.sha]);
+    const args = ["revert", "--no-edit"];
+    if (mainline !== undefined) {
+      args.push("-m", String(mainline));
+    }
+    args.push(commit.sha);
+    const result = await ctx.process.run(args);
     if (result.code === 0) {
       flash(`Reverted ${short(commit.sha)}`);
       return true;
