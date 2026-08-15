@@ -267,7 +267,11 @@ function renderHtml(
 
   const bodyHtml = renderMarkdownish(pr.body ?? "");
 
-  return `<!DOCTYPE html>
+  // String.raw for the same reason as commitView.ts / aiCommands.ts: this literal
+  // carries the webview's inline script, and an untagged literal would eat the
+  // backslash of any regex added to it later. Nothing here needs one today, so
+  // the tag changes no output — it just keeps the next `\s` from meaning "s".
+  return String.raw`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />

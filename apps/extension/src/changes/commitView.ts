@@ -1647,7 +1647,20 @@ export class CommitViewProvider
       `script-src 'nonce-${nonce}'`,
     ].join("; ");
 
-    return `<!DOCTYPE html>
+    // String.raw so the inline script's regex backslashes (\s, \[, \{, \\) survive
+    // verbatim instead of being processed as template-literal escapes. ${...}
+    // interpolation still works.
+    //
+    // Without it \s cooked to a bare s, so the ref-name validator rejected every
+    // name containing the letter "s" as "cannot contain spaces" — you could not
+    // create or rename a branch called "styles" — while the ref-character check
+    // next to it silently degraded into a regex that let genuinely illegal names
+    // through. Same reason aiCommands.ts and comparePanel.ts are raw.
+    //
+    // The tag is what makes the single-backslash regexes below correct. Doubling
+    // them instead (\\s) fixes the five \s sites but not the \[ and \\ on the
+    // very next lines, and would mean backslash-then-s under this tag.
+    return String.raw`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -3203,7 +3216,7 @@ export class CommitViewProvider
       const text = message.value;
       const hasText = text.trim().length > 0;
       messageWrap.classList.toggle("has-text", hasText);
-      const subject = text.split("\\n", 1)[0].length;
+      const subject = text.split("\n", 1)[0].length;
       counterEl.textContent = String(subject);
       counterEl.classList.toggle("warn", subject > 50 && subject <= 72);
       counterEl.classList.toggle("over", subject > 72);
@@ -3762,7 +3775,7 @@ export class CommitViewProvider
               candidates: [],
               allowFreeText: true,
               validate: function (v) {
-                if (/\\s/.test(v)) return "Branch names cannot contain spaces.";
+                if (/\s/.test(v)) return "Branch names cannot contain spaces.";
                 if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$/.test(v)) {
                   return "Not a valid branch name.";
                 }
@@ -3941,20 +3954,20 @@ export class CommitViewProvider
     /** Named validators, so a spec can cross postMessage without a function. */
     var DLG_VALIDATORS = {
       refName: function (v) {
-        if (/\\s/.test(v)) return "Cannot contain spaces.";
+        if (/\s/.test(v)) return "Cannot contain spaces.";
         if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$|@\{/.test(v)) return "Not a valid git ref name.";
         if (v === "@") return "Not a valid git ref name.";
         return null;
       },
       remoteName: function (v) {
-        if (/\\s/.test(v)) return "Cannot contain spaces.";
+        if (/\s/.test(v)) return "Cannot contain spaces.";
         if (!/^[A-Za-z0-9._-]+$/.test(v)) return "Use letters, digits, dot, dash or underscore.";
         return null;
       },
       url: function (v) {
         // Deliberately permissive: git remotes are legitimately https://, ssh://,
         // git@host:path, and plain local paths.
-        if (/\\s/.test(v)) return "A remote URL cannot contain spaces.";
+        if (/\s/.test(v)) return "A remote URL cannot contain spaces.";
         return null;
       },
       nonEmpty: function (v) {
@@ -4103,7 +4116,7 @@ export class CommitViewProvider
           var row = el("div", "rp-row" + (i === sel ? " sel" : ""));
           row.appendChild(el("span", "codicon codicon-" + (c.icon || "git-branch")));
           // textContent, NOT el()'s innerHTML: git permits < > & " in ref names
-          // (it only forbids space ~ ^ : ? * [ \\ and control chars), so a branch
+          // (it only forbids space ~ ^ : ? * [ \ and control chars), so a branch
           // named like an HTML tag would otherwise be parsed as markup. The
           // webview CSP blocks inline handlers, but that is defence in depth,
           // not a reason to interpolate untrusted text as HTML.
@@ -4560,7 +4573,7 @@ export class CommitViewProvider
           candidates: [],
           allowFreeText: true,
           validate: function (v) {
-            if (/\\s/.test(v)) return "Branch names cannot contain spaces.";
+            if (/\s/.test(v)) return "Branch names cannot contain spaces.";
             return null;
           },
           onConfirm: function (v) {
