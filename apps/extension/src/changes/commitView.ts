@@ -820,22 +820,31 @@ export class CommitViewProvider
     const on = vscode.workspace
       .getConfiguration("gitstudio")
       .get<boolean>("changesBadge", true);
-    if (!on) {
-      this.view.badge = undefined;
-      return;
-    }
     const paths = new Set<string>();
-    for (const f of staged) paths.add(f.path);
-    for (const f of unstaged) paths.add(f.path);
-    const count = paths.size;
-    if (!count && !behind) {
-      this.view.badge = undefined;
-      return;
+    if (on) {
+      for (const f of staged) paths.add(f.path);
+      for (const f of unstaged) paths.add(f.path);
     }
+    const count = paths.size;
+    const incoming = on ? (behind ?? 0) : 0;
     const bits: string[] = [];
     if (count) bits.push(`${count} changed file${count === 1 ? "" : "s"}`);
-    if (behind) bits.push(`${behind} incoming commit${behind === 1 ? "" : "s"} to pull`);
-    this.view.badge = { value: count, tooltip: `GitStudio — ${bits.join(" · ")}` };
+    if (incoming) bits.push(`${incoming} incoming commit${incoming === 1 ? "" : "s"} to pull`);
+
+    // A zero badge, NEVER `undefined`. Clearing a *webview* view's badge does not
+    // work: WebviewViewPane.updateBadge only calls showViewActivity when the new
+    // badge is truthy and has no else-branch to clear the old one — unlike the
+    // TreeView setter beside it, which does. So `badge = undefined` updates the
+    // field and leaves the last number stranded on the activity-bar icon forever.
+    // That is issue #7: commit everything, and the icon still reads "1".
+    //
+    // The activity bar sums its container's number badges and only renders when
+    // the total is > 0, so a 0 is invisible — and we already relied on that, since
+    // a repo that is only behind has always published { value: 0 }.
+    this.view.badge = {
+      value: count,
+      tooltip: bits.length ? `GitStudio — ${bits.join(" · ")}` : "",
+    };
   }
 
   private async noteRecentBranch(entry: RepoEntry, name: string): Promise<void> {
