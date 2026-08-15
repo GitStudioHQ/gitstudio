@@ -144,11 +144,19 @@ export class AiSettingsPanel {
           (m.baseUrl ?? "").trim(),
           (m.key ?? "").trim(),
         );
-        void this.panel.webview.postMessage({
-          type: "models",
-          kind: m.kind ?? "",
-          list,
-        });
+        try {
+          // Same guard as pushStatus/postResult: model detection is a network
+          // round-trip, and `panel.webview` THROWS if the panel closed while it
+          // was in flight. onMessage's promise is discarded, so that throw would
+          // surface as an unhandled rejection.
+          void this.panel.webview.postMessage({
+            type: "models",
+            kind: m.kind ?? "",
+            list,
+          });
+        } catch {
+          /* panel may be closing */
+        }
         return;
       }
     }

@@ -217,6 +217,12 @@ export class RebaseWorkspacePanel {
   }
 
   private post(msg: unknown): void {
+    // `panel.webview` is a getter that THROWS once disposed, so the `void` here
+    // protects nothing — the throw beats the promise. Every post() sits after an
+    // await on a git operation, and closing the panel mid-rebase is normal.
+    if (this.disposed) {
+      return;
+    }
     void this.panel.webview.postMessage(msg);
   }
 
