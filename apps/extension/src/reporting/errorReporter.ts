@@ -59,7 +59,20 @@ export function isAttributable(reason: unknown, extPath: string): reason is Erro
   if (!stack) {
     return false;
   }
-  return stack.includes(extPath) || /gitstudio\.gitstudio|[/\\]gitstudio[/\\]/i.test(stack);
+  // Match against the CALL FRAMES only.
+  //
+  // `.stack` begins with the message, and the message is attacker-shaped text we
+  // do not control — another extension's `ENOENT: ... '/Users/me/code/gitstudio/
+  // src/a.ts'` would otherwise be attributed to us purely because the user keeps
+  // a directory by that name. Provenance lives in the frames, never in the prose.
+  const frames = stack
+    .split("\n")
+    .filter((line) => /^\s+at\s/.test(line))
+    .join("\n");
+  if (!frames) {
+    return false;
+  }
+  return frames.includes(extPath) || /gitstudio\.gitstudio|[/\\]gitstudio[/\\]/i.test(frames);
 }
 
 export class ErrorReporter implements vscode.Disposable {
@@ -124,11 +137,6 @@ export class ErrorReporter implements vscode.Disposable {
     // A blank endpoint disables sending entirely (a second, explicit opt-out).
     const ep = (cfg.get<string>("endpoint") ?? "").trim();
     this.endpoint = ep || undefined;
-  }
-
-  /** Does this error originate in GitStudio's own bundle? (Filters the noise.) */
-  private isOurs(err: Error): boolean {
-    return isAttributable(err, this.extPath);
   }
 
   /** Report a thrown/rejected error (from a command or internal op). */

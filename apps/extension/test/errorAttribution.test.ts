@@ -100,6 +100,42 @@ test("does NOT report a non-Error rejection, whatever its shape", async () => {
   }
 });
 
+test("does NOT let the MESSAGE stand in for provenance", async () => {
+  const isAttributable = await loadIsAttributable();
+  // `.stack` starts with the message, which is text we do not control. Matching
+  // it would attribute another extension's error to us purely because the user
+  // keeps a directory called "gitstudio" — the same privacy leak, different door.
+  const foreignFrame =
+    "    at Object.x (/Users/someone/.vscode/extensions/other.ext-2.0.0/out/main.js:1:1)";
+  const cases: [string, string][] = [
+    ["a user's own repo path in the message", "ENOENT: open '/Users/me/code/gitstudio/src/a.ts'"],
+    ["our publisher id in the message", "failed to activate gitstudio.gitstudio"],
+    ["our install path in the message", `cannot read ${EXT_PATH}/dist/extension.js`],
+  ];
+  for (const [why, message] of cases) {
+    assert.equal(
+      isAttributable(errorWithStack(message, `Error: ${message}\n${foreignFrame}`), EXT_PATH),
+      false,
+      `${why}: no GitStudio frame is present, so it is not ours`,
+    );
+  }
+});
+
+test("still reports when a GitStudio frame is present below a foreign one", async () => {
+  const isAttributable = await loadIsAttributable();
+  assert.equal(
+    isAttributable(
+      errorWithStack(
+        "boom",
+        "Error: boom\n    at vscode (/Applications/Code.app/out/x.js:1:1)\n" +
+          `    at ours (${EXT_PATH}/dist/extension.js:9:9)`,
+      ),
+      EXT_PATH,
+    ),
+    true,
+  );
+});
+
 test("does NOT report an Error with no stack at all", async () => {
   const isAttributable = await loadIsAttributable();
   const e = new Error("stackless");
