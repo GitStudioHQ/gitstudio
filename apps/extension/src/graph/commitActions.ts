@@ -345,32 +345,37 @@ async function mainlineFor(
     const s = await ctx.process.run(["log", "-1", "--format=%s", sha]);
     return s.code === 0 ? s.stdout.trim() : "";
   };
-  const [first, second] = [await describe(parents[0]), await describe(parents[1])];
+  const subjects = await Promise.all(parents.map(describe));
 
+  // Every parent, not just the first two — an octopus merge has three or more,
+  // and offering a subset would silently make the others unrevertable.
+  const pair = parents.length === 2;
   const chosen = await promptPick({
     title: `Revert the merge ${short(commit.sha)}`,
-    hint: "A merge has two sides, so git needs to know which one to keep.",
-    choices: [
-      {
-        id: "1",
-        label: "Keep the branch this was merged into",
-        icon: "git-branch",
-        detail: short(parents[0]),
-        description: first || "The first parent — usually what you want.",
-      },
-      {
-        id: "2",
-        label: "Keep the branch that was merged in",
-        icon: "git-merge",
-        detail: short(parents[1]),
-        description: second || "The second parent.",
-      },
-    ],
+    hint: pair
+      ? "A merge has two sides, so git needs to know which one to keep."
+      : `This merge has ${parents.length} parents. Which one should be kept as the mainline?`,
+    choices: parents.map((sha, i) => ({
+      id: String(i + 1),
+      label: pair
+        ? i === 0
+          ? "Keep the branch this was merged into"
+          : "Keep the branch that was merged in"
+        : `Keep parent ${i + 1}`,
+      icon: i === 0 ? "git-branch" : "git-merge",
+      detail: short(sha),
+      description:
+        subjects[i] || (i === 0 ? "The first parent — usually what you want." : ""),
+    })),
   });
   if (!chosen) {
     return null;
   }
-  return chosen === "2" ? 2 : 1;
+  const picked = Number(chosen);
+  // git counts parents from 1. An id outside that range cannot happen — they are
+  // generated just above — but falling back to 1 would silently revert against
+  // the WRONG parent, so treat it as a cancel instead.
+  return Number.isInteger(picked) && picked >= 1 && picked <= parents.length ? picked : null;
 }
 
 async function revert(
@@ -399,9 +404,20 @@ async function revert(
         `Revert of ${short(commit.sha)} hit conflicts. Resolve them, then ` +
           `continue or abort the revert.`,
       );
-    } else {
-      showGitError("Revert failed", stderr);
+      return true;
     }
+    // Nothing left to undo. Reverting an already-reverted change exits non-zero
+    // with an EMPTY stderr — git puts "nothing to commit, working tree clean" on
+    // stdout — so reading stderr alone produced a modal saying only "Revert
+    // failed", with no reason, for a case where git did exactly the right thing.
+    // Reverting a merge twice is an easy thing to do now that it works at all.
+    if (!stderr) {
+      void vscode.window.showInformationMessage(
+        `Nothing to revert — ${short(commit.sha)} is already undone on this branch.`,
+      );
+      return true;
+    }
+    showGitError("Revert failed", stderr);
     return true;
   });
 }
