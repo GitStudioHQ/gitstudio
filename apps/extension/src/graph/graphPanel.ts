@@ -18,7 +18,7 @@ import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
-import { commitMenuItems, runCommitAction } from "./commitActions";
+import { commitMenuItems, refMenuItems, runCommitAction } from "./commitActions";
 import { openRevisionDiff } from "../history/revisionContentProvider";
 import { commitWebUrl } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
@@ -549,7 +549,8 @@ export class CommitGraphPanel {
       x,
       y,
       title: `${sha.slice(0, 7)} · ${record?.subject ?? ""}`.trim(),
-      items: commitMenuItems(),
+      // Refs on this row first ("Checkout main"), then the commit-scoped actions.
+      items: [...refMenuItems(this.refsToWire(sha)), ...commitMenuItems()],
     });
   }
 

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
-import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
+import type { GraphMenuItem, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 
@@ -19,6 +19,58 @@ export function commitMenuItems(): GraphMenuItem[] {
     { id: "copySha", label: "Copy SHA", icon: "copy" },
     { id: "copyMessage", label: "Copy Message", icon: "copy" },
   ];
+}
+
+/** Namespace for the per-ref items, so they cannot collide with a commit id. */
+const REF_ACTION = "ref:";
+
+/**
+ * "Checkout <branch>" entries for the refs sitting on a commit, shown above the
+ * commit actions.
+ *
+ * The menu used to be purely commit-scoped, so right-clicking a row whose tip is
+ * `main` offered only "Checkout Commit" — which detaches HEAD. Landing on a
+ * detached HEAD when you meant "switch to main" is the wrong outcome, and the
+ * branch name was right there on the row.
+ *
+ * Built host-side from the refs the panel already holds rather than from the
+ * clicked chip, which is deliberate: a row's local branch and its remote twin
+ * render as ONE chip, and any ref past the fourth is folded into a "+N" pill, so
+ * a chip-driven menu could never reach either. The name rides in the id, so this
+ * needs no protocol change.
+ */
+export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
+  const items: GraphMenuItem[] = [];
+  for (const ref of refs) {
+    // Already on it — offering to switch to where you are is noise.
+    if (ref.kind === "currentHead") {
+      continue;
+    }
+    if (ref.kind === "head") {
+      items.push({
+        id: `${REF_ACTION}head:${ref.name}`,
+        label: `Checkout ${ref.name}`,
+        icon: "git-branch",
+      });
+    } else if (ref.kind === "remoteHead") {
+      // Ellipsis: both of these ask something before they act.
+      items.push({
+        id: `${REF_ACTION}remoteHead:${ref.name}`,
+        label: `Checkout ${ref.name}…`,
+        icon: "cloud",
+      });
+    } else {
+      items.push({
+        id: `${REF_ACTION}tag:${ref.name}`,
+        label: `Checkout ${ref.name}…`,
+        icon: "tag",
+      });
+    }
+  }
+  if (items.length) {
+    items.push({ id: "", label: "", sep: true });
+  }
+  return items;
 }
 
 /**
@@ -113,11 +165,77 @@ export async function runCommitAction(
       flash("Copied commit message");
       return false;
     default:
+      // The per-ref checkout items carry their ref name in the id.
+      if (id.startsWith(REF_ACTION)) {
+        return checkoutRef(id.slice(REF_ACTION.length), ctx, undo);
+      }
       return false;
   }
 }
 
 // ── Individual actions ───────────────────────────────────────────────────────
+
+/**
+ * Check out one of the refs on the row. `rest` is "<kind>:<name>"; a ref name may
+ * itself contain ":" only in forms git rejects, but split on the FIRST colon
+ * anyway so a odd name can never be silently truncated.
+ *
+ * Each arm mirrors the Branches view (views/branchActions.ts) exactly, so the
+ * same operation asks the same question wherever you start it.
+ */
+async function checkoutRef(
+  rest: string,
+  ctx: GitContext,
+  undo?: UndoRunner,
+): Promise<boolean> {
+  const sep = rest.indexOf(":");
+  const kind = sep < 0 ? "" : rest.slice(0, sep);
+  const name = sep < 0 ? "" : rest.slice(sep + 1);
+  if (!name) {
+    return false;
+  }
+
+  if (kind === "head") {
+    return withUndo(undo, `Checkout ${name}`, () =>
+      runGit(ctx, ["checkout", name], `Switched to ${name}`),
+    );
+  }
+
+  if (kind === "remoteHead") {
+    // origin/feature → local "feature" tracking origin/feature.
+    const suggested = name.includes("/") ? name.slice(name.indexOf("/") + 1) : name;
+    const local = await promptInput({
+      title: `Check out ${name}`,
+      hint: `Creates a local branch tracking ${name}.`,
+      value: suggested,
+      confirmLabel: "Checkout",
+      validate: "refName",
+    });
+    if (!local) {
+      return false;
+    }
+    return withUndo(undo, `Checkout ${local}`, () =>
+      runGit(ctx, ["checkout", "-b", local, name], `Checked out ${local} (tracking ${name})`),
+    );
+  }
+
+  if (kind === "tag") {
+    const ok = await promptConfirm({
+      title: `Check out tag ${name}?`,
+      message:
+        "A tag is a fixed point, so you'll be on a detached HEAD — not on any branch. Commits made here belong to nothing until you create a branch for them.",
+      confirmLabel: "Checkout",
+    });
+    if (!ok) {
+      return false;
+    }
+    return withUndo(undo, `Checkout ${name}`, () =>
+      runGit(ctx, ["checkout", "--detach", name], `Checked out ${name}`),
+    );
+  }
+
+  return false;
+}
 
 async function checkout(
   ctx: GitContext,
