@@ -3762,7 +3762,7 @@ export class CommitViewProvider
               candidates: [],
               allowFreeText: true,
               validate: function (v) {
-                if (/\s/.test(v)) return "Branch names cannot contain spaces.";
+                if (/\\s/.test(v)) return "Branch names cannot contain spaces.";
                 if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$/.test(v)) {
                   return "Not a valid branch name.";
                 }
@@ -3941,20 +3941,20 @@ export class CommitViewProvider
     /** Named validators, so a spec can cross postMessage without a function. */
     var DLG_VALIDATORS = {
       refName: function (v) {
-        if (/\s/.test(v)) return "Cannot contain spaces.";
+        if (/\\s/.test(v)) return "Cannot contain spaces.";
         if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$|@\{/.test(v)) return "Not a valid git ref name.";
         if (v === "@") return "Not a valid git ref name.";
         return null;
       },
       remoteName: function (v) {
-        if (/\s/.test(v)) return "Cannot contain spaces.";
+        if (/\\s/.test(v)) return "Cannot contain spaces.";
         if (!/^[A-Za-z0-9._-]+$/.test(v)) return "Use letters, digits, dot, dash or underscore.";
         return null;
       },
       url: function (v) {
         // Deliberately permissive: git remotes are legitimately https://, ssh://,
         // git@host:path, and plain local paths.
-        if (/\s/.test(v)) return "A remote URL cannot contain spaces.";
+        if (/\\s/.test(v)) return "A remote URL cannot contain spaces.";
         return null;
       },
       nonEmpty: function (v) {
@@ -4560,7 +4560,7 @@ export class CommitViewProvider
           candidates: [],
           allowFreeText: true,
           validate: function (v) {
-            if (/\s/.test(v)) return "Branch names cannot contain spaces.";
+            if (/\\s/.test(v)) return "Branch names cannot contain spaces.";
             return null;
           },
           onConfirm: function (v) {
