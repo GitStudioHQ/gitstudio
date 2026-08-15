@@ -1,0 +1,24 @@
+apps/extension/src/reporting/errorReporter.ts
+  s_d8657a47fc5a6a::t_9cb719c173fb1d 33-64
+  s_d8657a47fc5a6a::t_a98808e1c4f642 106-107,111
+  s_d8657a47fc5a6a::t_393b81cb91a8dc 131
+apps/extension/test/errorAttribution.test.ts
+  s_d8657a47fc5a6a::t_f2e6e56e4ec8e0 1-114,122-128
+  s_d8657a47fc5a6a::t_6826930fe30588 115-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "620ee7aa3f2146ee534b99c4f5e4e9338721ec4a",
+  "prompts": {},
+  "sessions": {
+    "s_d8657a47fc5a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44acfba7-24a8-4223-be23-9f287a654407",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
