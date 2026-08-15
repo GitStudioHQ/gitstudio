@@ -1,0 +1,23 @@
+apps/desktop/package.json
+  s_d8657a47fc5a6a::t_3294ea55ed1530 3
+docs/releases/app-v1.1.1.md
+  s_d8657a47fc5a6a::t_3423b337736fee 1-40
+apps/desktop/CHANGELOG.md
+  s_d8657a47fc5a6a::t_3294ea55ed1530 12-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "70cc5fdc576522ee57310933c45456d9f325f4a4",
+  "prompts": {},
+  "sessions": {
+    "s_d8657a47fc5a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44acfba7-24a8-4223-be23-9f287a654407",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
