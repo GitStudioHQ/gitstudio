@@ -1,0 +1,21 @@
+apps/extension/src/ai/aiSettingsPanel.ts
+  s_d8657a47fc5a6a::t_5cd65f7028757a 147-159
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_d8657a47fc5a6a::t_8d9969dda180ab 220-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "bbcb548d606c3894953b1e1c28925b262e87a23d",
+  "prompts": {},
+  "sessions": {
+    "s_d8657a47fc5a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44acfba7-24a8-4223-be23-9f287a654407",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
