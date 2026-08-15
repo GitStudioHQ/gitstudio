@@ -9,6 +9,26 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [1.1.1] - 2026-08-15
+
+### Fixed
+- **Clicking a commit did nothing once the details pane was closed.** Clicking
+  the row that was already selected emitted nothing at all, so the pane stayed
+  shut. It now reopens — without re-fetching the commit or disturbing a diff you
+  have open.
+- **Branch/tag chips did not reflow while dragging the column.** Chips that do
+  not fit are removed from the row rather than clipped, but only releasing the
+  mouse re-rendered — so the column widened while the chips stayed folded behind
+  a "+N", then everything snapped into place at the end.
+- **The "+N" chip read as decoration.** Clicking it opens the commit details,
+  which lists every hidden ref in full, but nothing said so. It now shows a
+  pointer and a hover state, and its tooltip names each hidden ref *and* whether
+  it is a local branch, a remote branch or a tag.
+- **Not being signed in to GitHub was treated as a crash.** Opening
+  notifications without a connected account raised an error that GitStudio filed
+  as a failure report. It is a state you are allowed to be in, and is now handled
+  as one.
+
 ## [1.1.0] - 2026-08-08
 
 ### Added
