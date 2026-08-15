@@ -1,0 +1,19 @@
+apps/extension/src/graph/commitActions.ts
+  s_d8657a47fc5a6a::t_92ef3bcd7dbd49 318-375,381-384,386-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "091e39729b38b91e8bb6537fc913a39c1fb3283d",
+  "prompts": {},
+  "sessions": {
+    "s_d8657a47fc5a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44acfba7-24a8-4223-be23-9f287a654407",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
