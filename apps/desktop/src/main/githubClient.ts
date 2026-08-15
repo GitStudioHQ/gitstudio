@@ -4,6 +4,7 @@
 // extension's githubApi.ts (the proven PR client) and adds Issues + Projects.
 // The token is supplied by the caller (GitHubBridge reads it from safeStorage).
 
+import { ExpectedError } from "./expectedError";
 import type {
   CheckRun,
   GitHubUser,
@@ -35,7 +36,7 @@ export class GitHubClient {
   async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const token = this.getToken();
     if (!token) {
-      throw new Error("Not connected to GitHub.");
+      throw new ExpectedError("Not connected to GitHub.");
     }
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
@@ -68,7 +69,7 @@ export class GitHubClient {
   async requestBody(method: string, path: string, body: unknown): Promise<void> {
     const token = this.getToken();
     if (!token) {
-      throw new Error("Not connected to GitHub.");
+      throw new ExpectedError("Not connected to GitHub.");
     }
     const res = await fetch(`${API_BASE}${path}`, {
       method,
@@ -90,7 +91,7 @@ export class GitHubClient {
   async graphql<T>(query: string, variables: unknown): Promise<T> {
     const token = this.getToken();
     if (!token) {
-      throw new Error("Not connected to GitHub.");
+      throw new ExpectedError("Not connected to GitHub.");
     }
     const res = await fetch(GRAPHQL, {
       method: "POST",

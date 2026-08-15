@@ -151,6 +151,13 @@ export interface CommitActionResult {
   /** True when the repo state changed and the graph should refresh. */
   changed: boolean;
   message?: string;
+  /**
+   * This failure is a condition the user can be in, not a defect — so it must
+   * not be crash-reported. The renderer shows `message` exactly as before; only
+   * the reporter treats it differently. Mirrors ExpectedError for the throwing
+   * paths (see main/expectedError.ts).
+   */
+  expected?: boolean;
 }
 
 /** A stash entry for the Stashes view. */

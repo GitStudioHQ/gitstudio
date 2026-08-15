@@ -28,6 +28,7 @@ import { TerminalBridge } from "./terminalBridge";
 import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
 import { initAutoUpdate } from "./autoUpdate";
 import { ErrorReporter } from "./errorReporter";
+import { isExpectedError } from "./expectedError";
 import * as issuesApi from "./github/issues";
 import * as prsApi from "./github/prs";
 import * as actionsApi from "./github/actions";
@@ -436,7 +437,11 @@ function handle<C extends IpcChannel>(
         // the desktop analog of the extension's showGitError — report it too.
         if (result && typeof result === "object" && (result as { ok?: unknown }).ok === false) {
           const message = (result as { message?: unknown }).message;
-          if (typeof message === "string" && message.trim()) {
+          // `expected` is the returned-result twin of ExpectedError: some
+          // handlers report "not connected to GitHub" by RETURNING ok:false
+          // rather than throwing, and this branch was reporting exactly the
+          // message the throwing path had just been taught to skip.
+          if (typeof message === "string" && message.trim() && !isExpectedError(result)) {
             ErrorReporter.current?.captureGitError(actionLabel(channel), message);
           }
         }
@@ -444,7 +449,13 @@ function handle<C extends IpcChannel>(
       } catch (err) {
         // A thrown handler is an unexpected bug — capture it, then let it
         // propagate to the renderer exactly as before.
-        ErrorReporter.current?.captureError(`ipc:${channel}`, err);
+        //
+        // Unless it is an answer rather than a fault: "you have not connected
+        // GitHub" is a state the user is allowed to be in, and filing it as a
+        // crash produced reports for people who had simply not signed in.
+        if (!isExpectedError(err)) {
+          ErrorReporter.current?.captureError(`ipc:${channel}`, err);
+        }
         throw err;
       }
     }),

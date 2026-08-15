@@ -17,6 +17,7 @@ import { access, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { GitHubClient, enc, type TokenGetter } from "../githubClient";
+import { ExpectedError } from "../expectedError";
 import type {
   ArtifactInfo,
   CommitActionResult,
@@ -156,7 +157,7 @@ function mapVariable(v: RawVariable): RepoVariableInfo {
  *  closure field; we reach it through a typed view rather than widening to `any`. */
 function bearer(client: GitHubClient): string {
   const token = (client as unknown as { getToken: TokenGetter }).getToken();
-  if (!token) throw new Error("Not connected to GitHub.");
+  if (!token) throw new ExpectedError("Not connected to GitHub.");
   return token;
 }
 

@@ -15,6 +15,7 @@ const TOKEN_SECRET = "github.token";
 import { GitHubClient } from "./githubClient";
 import { requestDeviceCode, pollForToken } from "./githubAuth";
 import type { RepoStore } from "./repoStore";
+import { ExpectedError } from "./expectedError";
 import type {
   CheckRun,
   CommitActionResult,
@@ -252,11 +253,11 @@ export class GitHubBridge {
     // here is expected and explicable — unlike one at launch.
     await this.ensureLoaded();
     if (!this.token) {
-      throw new Error("Not connected to GitHub.");
+      throw new ExpectedError("Not connected to GitHub.");
     }
     const r = await this.resolveOwnerRepo();
     if (!r) {
-      throw new Error("This repository isn't on github.com.");
+      throw new ExpectedError("This repository isn't on github.com.");
     }
     return fn(this.client, r.owner, r.repo);
   }
@@ -265,7 +266,7 @@ export class GitHubBridge {
   async withClient<T>(fn: (client: GitHubClient) => Promise<T>): Promise<T> {
     await this.ensureLoaded();
     if (!this.token) {
-      throw new Error("Not connected to GitHub.");
+      throw new ExpectedError("Not connected to GitHub.");
     }
     return fn(this.client);
   }
@@ -362,7 +363,7 @@ export class GitHubBridge {
   async prMerge(req: { number: number; method: MergeMethod }): Promise<CommitActionResult> {
     const r = await this.resolveOwnerRepo();
     if (!r || !this.token) {
-      return { ok: false, changed: false, message: "Not connected to GitHub." };
+      return { ok: false, changed: false, message: "Not connected to GitHub.", expected: true };
     }
     try {
       await this.client.mergePull(r.owner, r.repo, req.number, req.method);
@@ -394,7 +395,7 @@ export class GitHubBridge {
   }
   async prApprove(n: number): Promise<CommitActionResult> {
     const r = await this.resolveOwnerRepo();
-    if (!r || !this.token) return { ok: false, changed: false, message: "Not connected to GitHub." };
+    if (!r || !this.token) return { ok: false, changed: false, message: "Not connected to GitHub.", expected: true };
     try {
       await this.client.approvePull(r.owner, r.repo, n);
       return { ok: true, changed: false };
