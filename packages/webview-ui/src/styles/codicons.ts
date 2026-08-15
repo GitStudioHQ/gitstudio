@@ -26,6 +26,9 @@ export const codiconStyles = css`
   .codicon-git-branch::before { content: "\\ec6f"; }
   .codicon-git-commit::before { content: "\\eafc"; }
   .codicon-git-merge::before { content: "\\eafe"; }
+  /* Cherry-Pick's icon in the graph context menu. Missing from this subset, so
+     that one item rendered a blank 0px gap where every sibling had a glyph. */
+  .codicon-git-pull-request::before { content: "\\ea64"; }
   .codicon-cloud::before { content: "\\ebaa"; }
   .codicon-tag::before { content: "\\ea66"; }
   .codicon-repo::before { content: "\\ea62"; }

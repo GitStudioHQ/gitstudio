@@ -53,6 +53,13 @@ const MAX_GUTTER_COLUMNS = 16;
 const LOAD_MORE_THRESHOLD = 60;
 /** Cap ref chips shown inline before collapsing into a "+N" overflow pill. */
 const MAX_VISIBLE_REFS = 4;
+/** How each ref kind reads in the overflow pill's tooltip. */
+const REF_KIND_LABEL: Record<WireRef["kind"], string> = {
+  currentHead: "current HEAD",
+  head: "local branch",
+  remoteHead: "remote branch",
+  tag: "tag",
+};
 /** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) node. */
 const ZERO_SHA_RE = /^0{40}$/;
 
@@ -936,8 +943,16 @@ export class CommitGraph extends LitElement {
       min-width: 0;
       flex: 0 0 auto;
       overflow: visible;
-      cursor: default;
+      /* Clicking it opens the details dock, which lists every hidden ref in
+         full. It read as decoration at cursor:default, so people resized the
+         column instead of clicking (issue #5). */
+      cursor: pointer;
       font-variant-numeric: tabular-nums;
+    }
+    .chip-overflow:hover {
+      color: var(--vscode-foreground);
+      background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+      border-radius: 3px;
     }
     /* On a selected (accent-filled) row, lift chip contrast a touch so the
        tinted fills don't muddy against the active-selection background. */
@@ -1212,6 +1227,8 @@ export class CommitGraph extends LitElement {
     /** True for a divider on the LEFT of its column (drag right = shrink). */
     invert: boolean;
   } | null = null;
+  /** Pending re-fit frame while the refs column is being dragged (0 = none). */
+  private resizeRaf = 0;
   /** Timer that clears the "Copied" sha feedback. */
   private copiedTimer: number | undefined;
 
@@ -1488,17 +1505,38 @@ export class CommitGraph extends LitElement {
     const next = this.clampCol(spec, d.startW + (d.invert ? -dx : dx));
     this.colWidths[d.id] = next;
     this.style.setProperty(spec.cssVar, `${next}px`);
+    // Re-fit the ref chips as you drag, not just on release.
+    //
+    // Chip fitting is width-aware and DESTRUCTIVE: refsHtml budgets against
+    // colWidths.refs and breaks out of the loop, so chips that don't fit are
+    // absent from the DOM rather than clipped by CSS. Without a re-render the
+    // column visibly widens while the chips stay folded behind a "+2", and
+    // everything snaps into place only on pointerup. The keyboard resize path
+    // has always re-rendered on every nudge; this makes the drag agree.
+    //
+    // Only `refs` needs it — the gutter derives its width from the lane count,
+    // never from colWidths.graph. Coalesced to one frame because pointermove
+    // fires far faster than we can lay out rows.
+    if (d.id === "refs" && this.resizeRaf === 0) {
+      this.resizeRaf = requestAnimationFrame(() => {
+        this.resizeRaf = 0;
+        if (this.drag) this.renderRows();
+      });
+    }
   };
 
   private onResizePointerUp = (): void => {
     if (this.drag) this.persistWidths();
     this.endColumnDrag();
-    // Chip fitting is width-aware — recompute the visible window at the new
-    // width (during the live drag CSS clipping covers gracefully).
+    // Final settle at the committed width.
     this.renderRows();
   };
 
   private endColumnDrag(): void {
+    if (this.resizeRaf !== 0) {
+      cancelAnimationFrame(this.resizeRaf);
+      this.resizeRaf = 0;
+    }
     const d = this.drag;
     if (d) {
       d.handle.classList.remove("dragging");
@@ -1958,8 +1996,14 @@ export class CommitGraph extends LitElement {
     // worse than none. In an ultra-narrow column the first chip (which can
     // shrink to its CSS min-width) wins the space.
     if (rest.length > 0 && used + 30 <= budget) {
-      const names = rest.map((e) => e.ref.name).join(", ");
-      out += `<span class="chip chip-overflow" title="${esc(names)}">+${rest.length}</span>`;
+      // Name AND kind, one per line — a bare comma list left you guessing whether
+      // "1.1.0" was a tag or a branch, which is the thing people open the pill
+      // for. Matches the per-chip titles built by chipHtml.
+      const names = rest.map((e) => `${e.ref.name} (${REF_KIND_LABEL[e.ref.kind]})`).join("\n");
+      out +=
+        `<span class="chip chip-overflow" title="${esc(names)}"` +
+        ` aria-label="${esc(`${rest.length} more: ${names.split("\n").join(", ")}`)}">` +
+        `+${rest.length}</span>`;
     }
     return out;
   }
