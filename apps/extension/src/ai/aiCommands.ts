@@ -621,11 +621,30 @@ function createResultPanel(title: string, subtitle = ""): ResultPanel {
   const nonce = getNonce();
   panel.webview.html = resultHtml(nonce, title, subtitle);
 
+  // Reading `panel.webview` THROWS once the panel is disposed — it is a getter
+  // that asserts, not a value. `void panel.webview.postMessage(...)` therefore
+  // protects nothing: the throw happens before there is a promise to ignore.
+  //
+  // Closing the result panel while a model is still streaming is completely
+  // normal (you got the gist, you close it), and every delta after that raised
+  // "Webview is disposed" out of an async command with no catch — an unhandled
+  // rejection the user could do nothing about. Track disposal and go quiet.
+  let disposed = false;
+  panel.onDidDispose(() => {
+    disposed = true;
+  });
+
   return {
     postMarkdown(markdown: string): void {
+      if (disposed) {
+        return;
+      }
       void panel.webview.postMessage({ type: "content", text: markdown });
     },
     postStatus(text: string, kind: "loading" | "error" = "loading"): void {
+      if (disposed) {
+        return;
+      }
       void panel.webview.postMessage({ type: "status", text, kind });
     },
     onDidDispose(cb: () => void): void {
