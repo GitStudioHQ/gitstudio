@@ -269,15 +269,26 @@ export class UndoLedger {
       return;
     }
     const stderr = result.stderr.trim();
-    if (/conflict/i.test(stderr)) {
+    // Ask git whether the revert PAUSED rather than reading its prose — the same
+    // locale trap as the graph's cherry-pick/revert: on a translated git the
+    // English test misses and a routine "resolve this" reads as a hard failure.
+    // Exit 1 + REVERT_HEAD means paused; 128 means git refused outright.
+    const paused =
+      result.code === 1 &&
+      (await active.ctx.process.run(["rev-parse", "--verify", "--quiet", "REVERT_HEAD"])).code === 0;
+    if (paused) {
       void vscode.window.showWarningMessage(
-        `Revert of "${entry.label}" hit conflicts. Resolve them, then ` +
-          `continue or abort the revert.`,
+        `Revert of "${entry.label}" needs a decision — resolve any conflicts ` +
+          `and continue, or abort the revert.`,
+      );
+    } else if (!stderr) {
+      // Non-zero with nothing on stderr means there was nothing left to undo;
+      // git explains that on stdout.
+      void vscode.window.showInformationMessage(
+        `Nothing to revert — "${entry.label}" is already undone.`,
       );
     } else {
-      void vscode.window.showErrorMessage(
-        stderr ? `Revert failed: ${stderr}` : "Revert failed",
-      );
+      void vscode.window.showErrorMessage(`Revert failed: ${stderr}`);
     }
   }
 

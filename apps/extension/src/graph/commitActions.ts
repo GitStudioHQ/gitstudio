@@ -301,16 +301,23 @@ async function cherryPick(
       flash(`Cherry-picked ${short(commit.sha)}`);
       return true;
     }
-    // Conflicts leave the cherry-pick in progress; tell the user how to proceed.
     const stderr = result.stderr.trim();
-    if (/conflict/i.test(stderr) || /after resolving/i.test(stderr)) {
+    // Paused, not failed. Git leaves CHERRY_PICK_HEAD behind whenever it stops
+    // to ask you something — a conflict, or a pick that turned out to be empty
+    // because the change is already on this branch.
+    //
+    // Matching git's English prose is what got this wrong: a user on a Russian
+    // locale hit the empty-pick case, the /conflict/i test did not fire, and a
+    // routine "this is already applied" was shown as a failure AND filed as a
+    // crash report. The marker file says the same thing in every language.
+    if (await pausedForUser(ctx, result.code, "CHERRY_PICK_HEAD")) {
       void vscode.window.showWarningMessage(
-        `Cherry-pick of ${short(commit.sha)} hit conflicts. Resolve them, ` +
-          `then continue or abort the cherry-pick.`,
+        `Cherry-pick of ${short(commit.sha)} needs a decision — resolve any ` +
+          `conflicts and continue, skip this commit, or abort.`,
       );
-    } else {
-      showGitError("Cherry-pick failed", stderr);
+      return true;
     }
+    showGitError("Cherry-pick failed", stderr);
     return true;
   });
 }
@@ -399,10 +406,12 @@ async function revert(
       return true;
     }
     const stderr = result.stderr.trim();
-    if (/conflict/i.test(stderr) || /after resolving/i.test(stderr)) {
+    // Same locale-independent test as cherryPick: REVERT_HEAD means git stopped
+    // to ask, not that the revert failed.
+    if (await pausedForUser(ctx, result.code, "REVERT_HEAD")) {
       void vscode.window.showWarningMessage(
-        `Revert of ${short(commit.sha)} hit conflicts. Resolve them, then ` +
-          `continue or abort the revert.`,
+        `Revert of ${short(commit.sha)} needs a decision — resolve any ` +
+          `conflicts and continue, or abort the revert.`,
       );
       return true;
     }
@@ -497,6 +506,36 @@ async function runGit(
   }
   showGitError(`git ${args[0]} failed`, result.stderr.trim());
   return true;
+}
+
+/**
+ * Did THIS operation stop to ask the user something?
+ *
+ * Two conditions, and both are load-bearing.
+ *
+ * The marker ref (CHERRY_PICK_HEAD / REVERT_HEAD) exists while an operation is
+ * in progress — the same answer in every locale, unlike reading git's prose.
+ *
+ * But the marker alone is not enough: if a cherry-pick was ALREADY paused and
+ * you start another one, git refuses ("you have unmerged files") while the old
+ * marker is still there, pointing at the earlier commit. Reading the marker on
+ * its own would announce that the commit you just picked "needs a decision",
+ * naming a commit git never touched, and swallow the real reason.
+ *
+ * The exit code separates them cleanly: git exits 1 when it PAUSED (conflict, or
+ * an empty pick) and 128 when it REFUSED (bad revision, dirty tree, an operation
+ * already in progress). Verified against git 2.49 across all six cases.
+ */
+async function pausedForUser(
+  ctx: GitContext,
+  code: number,
+  marker: string,
+): Promise<boolean> {
+  if (code !== 1) {
+    return false;
+  }
+  const r = await ctx.process.run(["rev-parse", "--verify", "--quiet", marker]);
+  return r.code === 0;
 }
 
 function showGitError(title: string, stderr: string): void {
