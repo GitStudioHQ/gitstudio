@@ -4,6 +4,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-08-15
+
+### Fixed
+- **A cherry-pick or revert that stops to ask you something is no longer
+  reported as a failure.** Git pauses in two situations — a conflict, or a
+  cherry-pick that turns out to be empty because the change is already on your
+  branch — and GitStudio told those apart by reading git's English wording. On a
+  translated git, the wording did not match: a routine "this change is already
+  applied" appeared as *"Cherry-pick failed"* and was filed as a crash report.
+  GitStudio now asks git directly whether the operation is paused, which is the
+  same answer in every language, and offers the choices you actually have. Revert
+  gets the same treatment, in both the commit-graph action and the Undo flow that
+  becomes a revert once history has been pushed.
+
 ## [1.5.1] - 2026-08-15
 
 ### Fixed
