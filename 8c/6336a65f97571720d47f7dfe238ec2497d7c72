@@ -1,0 +1,33 @@
+apps/desktop/src/main/githubBridge.ts
+  s_d8657a47fc5a6a::t_0270011d9d155b 18,256,260,269
+apps/desktop/src/main/expectedError.ts
+  s_d8657a47fc5a6a::t_fd42777ba5ddac 1-32
+  s_d8657a47fc5a6a::t_9d0bb4b114cacf 33-35
+apps/desktop/src/main/main.ts
+  s_d8657a47fc5a6a::t_b37beafda0ad95 448-454
+  s_d8657a47fc5a6a::t_df943adf578fa2 31
+apps/desktop/test/expectedError.test.ts
+  s_d8657a47fc5a6a::t_1ed8053f598cbe 1-38
+  s_d8657a47fc5a6a::t_4edf52ec414714 39-41
+  s_d8657a47fc5a6a::t_ca2a9ef28ba3c0 42-67
+apps/desktop/src/main/github/actions.ts
+  s_d8657a47fc5a6a::t_0270011d9d155b 20,160
+apps/desktop/src/main/githubClient.ts
+  s_d8657a47fc5a6a::t_0270011d9d155b 7,39,72,94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "8c6336a65f97571720d47f7dfe238ec2497d7c72",
+  "prompts": {},
+  "sessions": {
+    "s_d8657a47fc5a6a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44acfba7-24a8-4223-be23-9f287a654407",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
