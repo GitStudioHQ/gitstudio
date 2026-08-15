@@ -30,6 +30,38 @@ import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "@gitstu
 const INSTALL_ID_KEY = "gitstudio.errorReporting.installId.v1";
 const MAX_EVENTS_PER_SESSION = 50;
 
+/**
+ * Can this rejection/exception be attributed to GitStudio?
+ *
+ * `process.on("unhandledRejection")` is PROCESS-wide, and the extension host is
+ * shared by every installed extension — so this handler sees their failures too.
+ * A stack that points into our own bundle is what tells the two apart.
+ *
+ * The subtle part, and the reason this is a function with a test: a rejection is
+ * only attributable when the reason is ALREADY an Error. Wrapping a non-Error in
+ * `new Error(String(reason))` synthesizes a stack rooted at the wrapping call —
+ * i.e. inside this file — so the ownership check then matches our own bundle and
+ * says yes to *everything*. That shipped, and it filed other extensions' crashes
+ * as ours, including one whose message carried a stranger's source code.
+ *
+ * A non-Error rejection carries no provenance whatsoever, so it cannot be shown
+ * to be ours and is dropped. Losing our own non-Error rejections is the right
+ * side of that trade: the alternative is transmitting other people's data.
+ *
+ * Exported for tests — the class itself needs a live vscode ExtensionContext.
+ */
+export function isAttributable(reason: unknown, extPath: string): reason is Error {
+  if (!(reason instanceof Error)) {
+    return false;
+  }
+  // Read the ORIGINAL stack. Never construct one here.
+  const stack = reason.stack ?? "";
+  if (!stack) {
+    return false;
+  }
+  return stack.includes(extPath) || /gitstudio\.gitstudio|[/\\]gitstudio[/\\]/i.test(stack);
+}
+
 export class ErrorReporter implements vscode.Disposable {
   /** The active instance, so scattered call sites can report without threading. */
   static current: ErrorReporter | undefined;
@@ -71,13 +103,12 @@ export class ErrorReporter implements vscode.Disposable {
     // ONLY errors whose stack points into GitStudio's own code, and never
     // suppress or alter them — other extensions' errors pass through untouched.
     this.onRejection = (reason) => {
-      const err = reason instanceof Error ? reason : new Error(String(reason));
-      if (this.isOurs(err)) {
-        this.captureError("unhandledRejection", err);
+      if (isAttributable(reason, this.extPath)) {
+        this.captureError("unhandledRejection", reason);
       }
     };
     this.onException = (err) => {
-      if (this.isOurs(err)) {
+      if (isAttributable(err, this.extPath)) {
         this.captureError("uncaughtException", err);
       }
     };
@@ -97,8 +128,7 @@ export class ErrorReporter implements vscode.Disposable {
 
   /** Does this error originate in GitStudio's own bundle? (Filters the noise.) */
   private isOurs(err: Error): boolean {
-    const stack = err.stack ?? "";
-    return stack.includes(this.extPath) || /gitstudio\.gitstudio|[/\\]gitstudio[/\\]/i.test(stack);
+    return isAttributable(err, this.extPath);
   }
 
   /** Report a thrown/rejected error (from a command or internal op). */
