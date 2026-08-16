@@ -10,6 +10,7 @@ import {
   promptPick,
   type DialogChoice,
 } from "../ui/dialogs";
+import { worktreeFromRef } from "./worktreesView";
 
 // Branch / remote / tag context-menu actions for the Branches view. Each runs a
 // real git op via the GitContext provider methods, confirms destructive ops, and
@@ -457,7 +458,9 @@ export async function newBranchFrom(
   report(result, `Created ${name}`, refresh);
 }
 
-/** "Create worktree for this branch" — pick a folder, add a worktree on `ref`. */
+/** "Create worktree for this branch" — pick a folder, add a worktree on `ref`.
+ *  Delegates to the shared worktree flow so it can also create a new named
+ *  branch from this ref (including remote branches), from any current branch. */
 export async function createWorktreeForBranch(
   repos: RepoManager,
   arg: unknown,
@@ -468,36 +471,7 @@ export async function createWorktreeForBranch(
   if (!a || !ref) {
     return;
   }
-  const folders = await vscode.window.showOpenDialog({
-    canSelectFolders: true,
-    canSelectFiles: false,
-    canSelectMany: false,
-    openLabel: "Create Worktree Here",
-    title: `Pick a parent folder for the ${ref.name} worktree`,
-  });
-  const parent = folders?.[0];
-  if (!parent) {
-    return;
-  }
-  const leaf = ref.name.split("/").pop() ?? ref.name;
-  const target = vscode.Uri.joinPath(parent, leaf);
-  const result = await a.ctx.worktrees.add(target.fsPath, ref.name);
-  if (!result.ok) {
-    void vscode.window.showErrorMessage(
-      result.stderr.trim() || "GitStudio: worktree add failed.",
-    );
-    return;
-  }
-  refresh();
-  const open = await vscode.window.showInformationMessage(
-    `Created worktree for ${ref.name} at ${target.fsPath}`,
-    "Open in New Window",
-  );
-  if (open === "Open in New Window") {
-    await vscode.commands.executeCommand("vscode.openFolder", target, {
-      forceNewWindow: true,
-    });
-  }
+  await worktreeFromRef(repos, ref, refresh);
 }
 
 // ── Remote branch actions ────────────────────────────────────────────────────

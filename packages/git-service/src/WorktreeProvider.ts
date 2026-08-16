@@ -19,6 +19,9 @@ export interface WorktreeEntry {
 export interface WorktreeAddOptions extends GitRunOptions {
   /** Create a new branch (`-b <ref>`) instead of checking out an existing one. */
   newBranch?: boolean;
+  /** When `newBranch`, the ref the new branch starts from (`git worktree add
+   *  -b <ref> <path> <startPoint>`). Defaults to the current HEAD when unset. */
+  startPoint?: string;
 }
 
 export interface WorktreeRemoveOptions extends GitRunOptions {
@@ -53,6 +56,16 @@ export class WorktreeProvider {
   /**
    * `git worktree add [-b <ref>] <path> <ref>` — check out `ref` (or a new
    * branch named `ref`) into a fresh worktree at `path`.
+   *
+   * Upstream is deliberately NOT forced here: whether `-b <ref> <path>
+   * <startPoint>` sets the new branch to track its start point is decided by
+   * the user's `branch.autoSetupMerge` config. With the default `true` a
+   * differently-named branch started from a remote-tracking ref would
+   * auto-track the source — which is surprising (a bare `git push` then
+   * refuses under push.default=simple, or SyncOps pushes HEAD onto the
+   * source branch). JetBrains never tracks on "New Branch from <remote>",
+   * so GitStudio matches that by recommending `branch.autoSetupMerge simple`
+   * (track only when the names match) instead of baking `--no-track` in.
    */
   async add(
     path: string,
@@ -62,11 +75,32 @@ export class WorktreeProvider {
     const args = ["worktree", "add"];
     if (opts?.newBranch) {
       args.push("-b", ref, path);
+      if (opts.startPoint) {
+        args.push(opts.startPoint);
+      }
     } else {
       args.push(path, ref);
     }
     const r = await this.proc.run(args, { signal: opts?.signal });
     return { ok: r.code === 0, stderr: r.stderr };
+  }
+
+  /**
+   * The MAIN repository's working-tree root — the repo's "home" checkout, not
+   * this (possibly linked) worktree. `git worktree list` always reports the
+   * primary worktree first, so its path is the main checkout even when this
+   * runs from inside a linked worktree. Returns undefined when git can't report
+   * it. Used to name new worktree folders with a stable project prefix
+   * regardless of where the add is initiated from.
+   *
+   * NOT `rev-parse --absolute-git-common-dir`: Apple Git doesn't recognize that
+   * flag and `git rev-parse` then echoes the flag back as its own output
+   * (exit 0), turning the "project name" into ".". Worktree-list parsing has no
+   * such dependence on flag support.
+   */
+  async mainRoot(opts?: GitRunOptions): Promise<string | undefined> {
+    const entries = await this.list(opts);
+    return entries[0]?.path;
   }
 
   /** `git worktree remove [--force] <path>`. */
