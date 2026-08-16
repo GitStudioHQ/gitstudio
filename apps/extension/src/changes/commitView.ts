@@ -3444,6 +3444,7 @@ export class CommitViewProvider
       branchPill.setAttribute("aria-expanded", "false");
       document.removeEventListener("mousedown", onBranchDocDown, true);
       document.removeEventListener("keydown", onBranchKey, true);
+      window.removeEventListener("blur", onBranchBlur, true);
     }
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
@@ -3454,6 +3455,12 @@ export class CommitViewProvider
       const inSub = branchSubmenu && branchSubmenu.contains(e.target);
       const onPill = branchPill.contains(e.target);
       if (inSub || inMenu || onPill) return;
+      closeBranchMenu();
+    }
+    // Clicks in the editor/main area never reach this webview; blur is the only
+    // signal that focus left it, so close the popover (JetBrains dismisses
+    // popovers on any click anywhere in the IDE).
+    function onBranchBlur() {
       closeBranchMenu();
     }
     function onBranchKey(e) {
@@ -3579,9 +3586,16 @@ export class CommitViewProvider
       if (actionMenuEl) { actionMenuEl.remove(); actionMenuEl = null; }
       document.removeEventListener("mousedown", onActionDocDown, true);
       document.removeEventListener("keydown", onActionKey, true);
+      window.removeEventListener("blur", onActionBlur, true);
     }
     function onActionDocDown(e) {
       if (actionMenuEl && !actionMenuEl.contains(e.target)) closeActionMenu();
+    }
+    // The webview cannot see clicks in the editor/main area — those never reach
+    // this document. Blur is the only signal that focus left the webview, so
+    // treat it like a click-outside (JetBrains dismisses popovers on any click).
+    function onActionBlur() {
+      closeActionMenu();
     }
     function onActionKey(e) {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeActionMenu(); }
@@ -3619,6 +3633,7 @@ export class CommitViewProvider
       menu.style.top = Math.round(top) + "px";
       document.addEventListener("mousedown", onActionDocDown, true);
       document.addEventListener("keydown", onActionKey, true);
+      window.addEventListener("blur", onActionBlur, true);
       const first = list.querySelector(".bm-subaction");
       if (first) first.focus();
     }
@@ -3906,6 +3921,7 @@ export class CommitViewProvider
     var dlgEl = null;
     var dlgBackdrop = null;
     var dlgKeyHandler = null;
+    var dlgBlurHandler = null;
     var dlgReturnFocus = null;
     /** Correlation id of a host-requested dialog, so we can answer exactly once. */
     var dlgHostId = null;
@@ -3921,6 +3937,10 @@ export class CommitViewProvider
       if (dlgKeyHandler) {
         window.removeEventListener("keydown", dlgKeyHandler, true);
         dlgKeyHandler = null;
+      }
+      if (dlgBlurHandler) {
+        window.removeEventListener("blur", dlgBlurHandler, true);
+        dlgBlurHandler = null;
       }
       if (dlgBackdrop) { dlgBackdrop.remove(); dlgBackdrop = null; }
       if (dlgEl) { dlgEl.remove(); dlgEl = null; }
@@ -4006,6 +4026,13 @@ export class CommitViewProvider
         }
       };
       window.addEventListener("keydown", dlgKeyHandler, true);
+
+      // Clicks in the editor/main area never reach this webview; blur is the
+      // only signal that focus left it, so dismiss the dialog like JetBrains
+      // does for any click outside. Closing answers "undefined" (cancelled) —
+      // safe for destructive confirms, which only act on the explicit OK.
+      dlgBlurHandler = function () { closeDialog(undefined); };
+      window.addEventListener("blur", dlgBlurHandler, true);
 
       dlgEl = el("div", "rp-panel");
       dlgEl.setAttribute("role", "dialog");
@@ -4447,6 +4474,7 @@ export class CommitViewProvider
       setTimeout(() => {
         document.addEventListener("mousedown", onBranchDocDown, true);
         document.addEventListener("keydown", onBranchKey, true);
+        window.addEventListener("blur", onBranchBlur, true);
       }, 0);
     }
     branchPill.addEventListener("click", openBranchMenu);
