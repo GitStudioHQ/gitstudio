@@ -3,7 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
 import { pausedForUser } from "../git/pausedForUser";
-import { planRemoteCheckout } from "../git/checkoutRemote";
+import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types

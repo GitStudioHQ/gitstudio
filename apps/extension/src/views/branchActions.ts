@@ -3,7 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { pausedForUser, type OperationMarker } from "../git/pausedForUser";
-import { planRemoteCheckout } from "../git/checkoutRemote";
+import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import {
   promptConfirm,
   promptInput,

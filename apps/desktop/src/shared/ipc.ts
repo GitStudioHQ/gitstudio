@@ -132,7 +132,15 @@ export interface ConflictModel {
 /** A git action requested from the graph context menu. */
 export interface CommitActionRequest {
   action:
+    /** Detaching checkout of the commit itself. */
     | "checkout"
+    /**
+     * Check out a REF that sits on this commit — the branch, not the commit
+     * (issues #12/#19). `name` carries the ref and `refKind` how to treat it: a
+     * local branch attaches by name, a remote one creates a local tracking
+     * branch, a tag detaches (which is the only case where detaching is right).
+     */
+    | "checkout-ref"
     | "branch"
     | "tag"
     | "cherry-pick"
@@ -142,8 +150,10 @@ export interface CommitActionRequest {
     | "reset-hard"
     | "copy-sha";
   sha: string;
-  /** Free-text argument (a new branch/tag name) where the action needs one. */
+  /** Free-text argument (a new branch/tag name, or the ref for checkout-ref). */
   name?: string;
+  /** For checkout-ref: what kind of ref `name` is. */
+  refKind?: "head" | "remote" | "tag";
 }
 
 export interface CommitActionResult {

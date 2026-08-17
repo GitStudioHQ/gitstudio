@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { localNameFor, planRemoteCheckout } from "../src/git/checkoutRemote";
+import { localNameFor, planRemoteCheckout } from "../src/checkoutRemote";
 
 // "Check out origin/fix/1.0.1-quality" used to open a rename prompt pre-filled
 // with the name it had already worked out. It goes straight to the branch now.
@@ -14,7 +14,7 @@ import { localNameFor, planRemoteCheckout } from "../src/git/checkoutRemote";
 // conditional — off under `checkout.guess=false`, refused when two remotes
 // carry the same branch name. Both of those are pinned below.
 
-// Hermetic git, for the reason test/opInProgress.test.ts spells out at length:
+// Hermetic git, for the reason the extension's opInProgress test spells out:
 // a developer's global config brings LFS filters, hooks, and a trace2 listener
 // that writes to the repo after the command exits and races teardown.
 const HERMETIC_CFG = join(mkdtempSync(join(tmpdir(), "gs-co-cfg-")), "config");

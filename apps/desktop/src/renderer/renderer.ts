@@ -2877,7 +2877,7 @@ class App {
     const graph = new GraphMount(graphHost, {
       onSelect: (sha) => void this.selectCommit(sha),
       onOpen: (sha) => void this.selectCommit(sha),
-      onContext: (sha, x, y) => this.contextMenu.open(sha, x, y),
+      onContext: (sha, x, y) => this.contextMenu.open(sha, x, y, this.refsOn(sha)),
       // Show the pane again WITHOUT re-selecting: selectCommit() would call
       // closeDiffTab() and dispose a diff the user still has open.
       onShowDetails: () => this.setGraphDetailsVisible(true),
@@ -3205,6 +3205,26 @@ class App {
    * refresh when they finish, and refreshing underneath them makes the list flicker
    * between two truths.
    */
+  /**
+   * The refs sitting on one commit, for the graph's context menu (issues #12/#19).
+   *
+   * `origin/HEAD` is dropped: it is a symbolic pointer at the remote's default
+   * branch, so "Checkout origin/HEAD" would put you on a detached HEAD at
+   * whatever it happens to point to — never what someone means. The sidebar's
+   * ref sections filter it out for the same reason.
+   */
+  private refsOn(
+    sha: string,
+  ): Array<{ name: string; kind: "head" | "remote" | "tag"; current?: boolean }> {
+    return this.refs
+      .filter((r) => r.sha === sha && r.type !== "stash" && !r.name.endsWith("/HEAD"))
+      .map((r) => ({
+        name: r.name,
+        kind: r.type === "remote" ? "remote" : r.type === "tag" ? "tag" : "head",
+        current: r.isCurrent,
+      }));
+  }
+
   private async refreshFromDisk(gitDir: boolean): Promise<void> {
     if (!this.currentRepo || this.refreshingFromDisk) {
       return;

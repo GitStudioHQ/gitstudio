@@ -5,10 +5,15 @@
 
 import type { CommitActionRequest } from "../shared/ipc";
 import { confirmDialog, promptInline } from "./dialogs";
+import { refMenuItems, type RowRef } from "./refMenuItems";
 
 interface MenuItem {
   label: string;
   action: CommitActionRequest["action"];
+  /** For checkout-ref: the ref this item checks out, and its kind. */
+  ref?: { name: string; kind: "head" | "remote" | "tag" };
+  /** Rendered above the commit-scoped items, with a separator after. */
+  refItem?: boolean;
   /** Requires a free-text name (new branch / tag). */
   prompt?: string;
   /** Show a confirm dialog before dispatching. */
@@ -40,7 +45,19 @@ export class CommitContextMenu {
     public readonly resolve: (req: CommitActionRequest) => void,
   ) {}
 
-  open(sha: string, x: number, y: number): void {
+  /**
+   * `refs` are the refs sitting ON this commit. They become "Checkout <name>"
+   * items above the commit actions (issues #12/#19) — the extension has done this
+   * since 1.5.0, and without it right-clicking a branch tip offered only a
+   * detaching checkout of the commit, which is never what you want when the
+   * branch itself is right there.
+   */
+  open(
+    sha: string,
+    x: number,
+    y: number,
+    refs: readonly RowRef[] = [],
+  ): void {
     this.close();
     this.prevFocus = document.activeElement as HTMLElement | null;
     const menu = document.createElement("div");
@@ -52,7 +69,14 @@ export class CommitContextMenu {
     menu.appendChild(header);
 
     this.rows = [];
-    for (const item of ITEMS) {
+    const refRows: MenuItem[] = refMenuItems(refs).map((r) => ({
+      label: r.label,
+      action: "checkout-ref" as const,
+      ref: r.ref,
+      refItem: true,
+      ...(r.confirm ? { confirm: r.confirm } : {}),
+    }));
+    for (const item of [...refRows, ...ITEMS]) {
       const button = document.createElement("button");
       button.className = `ctx-menu-item${item.danger ? " ctx-danger" : ""}`;
       button.textContent = item.label;

@@ -2,6 +2,9 @@
  * Checking out a remote branch — "origin/fix/1.0.1-quality" → local
  * "fix/1.0.1-quality" — without asking anything first.
  *
+ * Lives in git-service, not in either app, because both need it: the extension's
+ * Branches view and graph menu, and the desktop app's graph menu (issues #12/#19).
+ *
  * Both entry points (the Branches view and the graph's per-ref menu) used to
  * open a text prompt pre-filled with the name they had already worked out, so
  * the answer was almost always "yes, that one". A rename dialog in front of a
@@ -17,7 +20,10 @@
  * predictable.
  */
 
-import type { GitRunner } from "./pausedForUser";
+/** All this needs from a GitContext: the ability to run a git command. */
+export interface GitRunner {
+  run(args: string[]): Promise<{ code: number }>;
+}
 
 export interface RemoteCheckoutPlan {
   /** The local branch the checkout lands on. */

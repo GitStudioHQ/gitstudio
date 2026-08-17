@@ -16,6 +16,7 @@ import type { LineRange } from "@gitstudio/engine/staging/applyLineChanges";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
+import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import type {
   CommitRecord,
   GitContext,
@@ -1049,6 +1050,46 @@ export class GitBridge {
     return this.staged((ctx) => ctx.branches.delete(req.name, { force: req.force }));
   }
 
+  /**
+   * Check out a ref that sits on a commit, rather than the commit itself
+   * (issues #12/#19). The extension has offered this since 1.5.0; the app only
+   * ever offered a detaching checkout, so landing on a branch tip meant either a
+   * detached HEAD or a trip to the Branches view.
+   *
+   * The remote case reuses the extension's planner from git-service verbatim, so
+   * "check out origin/x" means the same thing in both products: switch to a local
+   * x if it exists, otherwise create it tracking the remote.
+   */
+  private async checkoutRef(
+    ctx: GitContext,
+    req: CommitActionRequest,
+  ): Promise<CommitActionResult> {
+    const name = req.name;
+    if (!name || !safeArg(name)) {
+      return UNSAFE_REF_RESULT;
+    }
+    return this.serialize(async () => {
+      const args =
+        req.refKind === "remote"
+          ? (await planRemoteCheckout(ctx.process, name)).args
+          : req.refKind === "tag"
+            ? // A tag is a fixed point, so this one really does detach.
+              ["checkout", "--detach", name]
+            : ["checkout", name];
+      const r = await ctx.process.run(args);
+      if (r.code === 0) {
+        return { ok: true, changed: true };
+      }
+      const stderr = r.stderr.trim();
+      return {
+        ok: false,
+        changed: false,
+        message: stderr || r.stdout.trim() || "The checkout failed.",
+        ...(stderr ? {} : { expected: true }),
+      };
+    });
+  }
+
   private async revCount(ctx: GitContext, range: string): Promise<number> {
     try {
       const r = await ctx.process.run(["rev-list", "--count", range]);
@@ -1141,6 +1182,9 @@ export class GitBridge {
     }
     if ((req.action === "branch" || req.action === "tag") && !safeArg(req.name)) {
       return UNSAFE_REF_RESULT;
+    }
+    if (req.action === "checkout-ref") {
+      return this.checkoutRef(ctx, req);
     }
     const args = actionArgs(req);
     if (!args) {
@@ -1416,6 +1460,9 @@ function actionArgs(req: CommitActionRequest): string[] | undefined {
     case "reset-hard":
       return ["reset", "--hard", req.sha];
     case "copy-sha":
+    case "checkout-ref":
+      // copy-sha is renderer-only; checkout-ref needs an async probe and is
+      // intercepted in commitAction before this is reached.
       return undefined;
   }
 }
