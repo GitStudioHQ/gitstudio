@@ -14,6 +14,7 @@
 // PRs); GraphQL is only needed for Projects v2, which lives elsewhere.
 
 import { GitHubClient, enc, mapUser, type RawUser } from "../githubClient";
+import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
   GitHubUser,
@@ -110,11 +111,6 @@ function mapMilestone(m: RawMilestone): MilestoneInfo {
   };
 }
 
-/** Coerce any thrown value into a clean, user-facing message. */
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 // ── Reads (THROW on error) ───────────────────────────────────────────────────
 
 /**
@@ -186,7 +182,7 @@ export async function createLabel(
     });
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -208,7 +204,7 @@ export async function updateLabel(
     );
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -222,7 +218,7 @@ export async function deleteLabel(
     await client.request("DELETE", `/repos/${enc(owner)}/${enc(repo)}/labels/${enc(name)}`);
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -267,7 +263,7 @@ export async function createIssue(
     );
     return { ok: true, number: created.number };
   } catch (err) {
-    return { ok: false, message: errMessage(err) };
+    return { ok: false, ...errorFields(err) };
   }
 }
 
@@ -290,7 +286,7 @@ export async function commentIssue(
     );
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -307,7 +303,7 @@ export async function setIssueState(
     });
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -335,7 +331,7 @@ export async function editIssue(
     );
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -357,7 +353,7 @@ export async function setIssueLabels(
     );
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -379,7 +375,7 @@ export async function setIssueAssignees(
     });
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -401,6 +397,6 @@ export async function setMilestone(
     });
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }

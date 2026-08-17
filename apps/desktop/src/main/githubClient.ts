@@ -5,6 +5,7 @@
 // The token is supplied by the caller (GitHubBridge reads it from safeStorage).
 
 import { ExpectedError } from "./expectedError";
+import { githubHttpError, graphqlError, networkError } from "./githubErrors";
 import type {
   CheckRun,
   GitHubUser,
@@ -55,14 +56,14 @@ export class GitHubClient {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch {
-      throw new Error("Couldn't reach GitHub. Check your network connection.");
+      throw networkError();
     }
     if (res.ok) {
       if (res.status === 204) return undefined as T;
       const text = await res.text();
       return (text.length > 0 ? JSON.parse(text) : undefined) as T;
     }
-    throw await this.toError(res);
+    throw await githubHttpError(res);
   }
 
   /** REST call that ignores the response body (fire-and-forget mutations). */
@@ -71,19 +72,27 @@ export class GitHubClient {
     if (!token) {
       throw new ExpectedError("Not connected to GitHub.");
     }
-    const res = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "GitStudio",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    // Wrapped for the same reason `request` is: an unwrapped fetch lets a bare
+    // `TypeError: fetch failed` escape to the crash reporter, so going offline
+    // filed a report instead of telling the user to check their connection.
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "GitStudio",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw networkError();
+    }
     if (!res.ok) {
-      throw await this.toError(res);
+      throw await githubHttpError(res);
     }
   }
 
@@ -93,37 +102,33 @@ export class GitHubClient {
     if (!token) {
       throw new ExpectedError("Not connected to GitHub.");
     }
-    const res = await fetch(GRAPHQL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "GitStudio",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-    if (!res.ok) {
-      throw await this.toError(res);
+    let res: Response;
+    try {
+      res = await fetch(GRAPHQL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "User-Agent": "GitStudio",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+    } catch {
+      throw networkError();
     }
-    const json = (await res.json()) as { data?: T; errors?: { message: string }[] };
+    if (!res.ok) {
+      throw await githubHttpError(res);
+    }
+    const json = (await res.json()) as {
+      data?: T;
+      errors?: { message: string; type?: string }[];
+    };
     if (json.errors && json.errors.length) {
-      throw new Error(json.errors[0].message);
+      // GraphQL reports failure in a 200 body, so the status-code policy never
+      // sees it — a rate limit or a missing scope arrives here instead.
+      throw graphqlError(json.errors[0]);
     }
     return json.data as T;
-  }
-
-  private async toError(res: Response): Promise<Error> {
-    let detail = "";
-    try {
-      const data = (await res.json()) as { message?: string };
-      detail = data?.message ?? "";
-    } catch {
-      /* non-JSON body */
-    }
-    if (res.status === 401) return new Error("Your GitHub token is invalid or expired.");
-    if (res.status === 403) return new Error(detail || "GitHub denied the request (permissions or rate limit).");
-    if (res.status === 404) return new Error(detail || "Not found on GitHub.");
-    return new Error(detail || `GitHub request failed (HTTP ${res.status}).`);
   }
 
   // ── User ──

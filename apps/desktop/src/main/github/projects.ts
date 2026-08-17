@@ -13,6 +13,7 @@
 // guards the not-connected / not-on-github.com cases before we are reached.
 
 import { GitHubClient } from "../githubClient";
+import { errorFields } from "../githubErrors";
 import type { CommitActionResult, ProjectBoard, ProjectInfo } from "../../shared/ipc";
 
 // ── Raw GraphQL shapes (this module owns its own Raw* interfaces + mappers) ────
@@ -209,7 +210,7 @@ export async function moveProjectItem(
     }
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -233,6 +234,6 @@ export async function addProjectItem(
     );
     return { ok: true, changed: true };
   } catch (err) {
-    return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }

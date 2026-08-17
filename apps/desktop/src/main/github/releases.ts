@@ -11,6 +11,7 @@
 // surfaces a 403 from the mutation calls as a normal error message.
 
 import { GitHubClient, enc, mapUser, type RawUser } from "../githubClient";
+import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
   ReleaseInfo,
@@ -151,7 +152,7 @@ export async function createRelease(
     return {
       ok: false,
       changed: false,
-      message: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     };
   }
 }
@@ -186,7 +187,7 @@ export async function updateRelease(
     return {
       ok: false,
       changed: false,
-      message: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     };
   }
 }
@@ -212,7 +213,7 @@ export async function deleteRelease(
     return {
       ok: false,
       changed: false,
-      message: err instanceof Error ? err.message : String(err),
+      ...errorFields(err),
     };
   }
 }

@@ -19,6 +19,7 @@
 // module is self-contained.
 
 import { GitHubClient, enc, mapUser, RawUser } from "../githubClient";
+import { errorFields } from "../githubErrors";
 import type {
   BranchRef,
   CommitActionResult,
@@ -182,7 +183,7 @@ export async function prCreate(
     });
     return { ok: true, changed: false, message: `#${mapPull(raw).number}` };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -199,7 +200,7 @@ export async function prComment(
     });
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -221,7 +222,7 @@ export async function prReview(
     });
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -238,7 +239,7 @@ export async function prSetState(
     });
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -257,7 +258,7 @@ export async function prRequestReviewers(
     );
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -286,7 +287,7 @@ export async function prMarkReady(
     );
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -496,7 +497,7 @@ export async function addReviewComment(
     );
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -522,7 +523,7 @@ export async function replyThread(
     );
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -545,7 +546,7 @@ export async function resolveThread(
     );
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -563,7 +564,7 @@ export async function edit(
     await client.requestBody("PATCH", `/repos/${enc(owner)}/${enc(repo)}/pulls/${req.number}`, patch);
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -585,7 +586,7 @@ export async function setLabels(
     );
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -627,7 +628,7 @@ export async function setAssignees(
     }
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -646,6 +647,6 @@ export async function updateBranch(
     await client.requestBody("PUT", `/repos/${enc(owner)}/${enc(repo)}/pulls/${number}/update-branch`, {});
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }

@@ -11,6 +11,7 @@
 // can select it after a refresh.
 
 import { GitHubClient, enc, mapUser, RawUser } from "../githubClient";
+import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
   GistCreate,
@@ -75,10 +76,6 @@ function mapGist(g: RawGist): GistInfo {
   };
 }
 
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 // ── Reads (throw on error) ───────────────────────────────────────────────────
 
 /** The authenticated user's own gists, newest first (GitHub default: updated desc).
@@ -110,7 +107,7 @@ export async function createGist(
     });
     return { ok: true, changed: false, message: created.id };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -132,7 +129,7 @@ export async function updateGist(
     });
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }
 
@@ -145,6 +142,6 @@ export async function deleteGist(
     await client.request<void>("DELETE", `/gists/${enc(id)}`);
     return { ok: true, changed: false };
   } catch (err) {
-    return { ok: false, changed: false, message: errMessage(err) };
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }

@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { GitHubClient, enc, type TokenGetter } from "../githubClient";
 import { ExpectedError } from "../expectedError";
+import { errorFields, githubHttpError, networkError } from "../githubErrors";
 import type {
   ArtifactInfo,
   CommitActionResult,
@@ -171,20 +172,6 @@ function ghHeaders(token: string): Record<string, string> {
   };
 }
 
-/** Turn a non-2xx GitHub response into a clean Error (parallels the client). */
-async function rawError(res: Response): Promise<Error> {
-  let detail = "";
-  try {
-    detail = ((await res.json()) as { message?: string })?.message ?? "";
-  } catch {
-    /* non-JSON body */
-  }
-  if (res.status === 401) return new Error("Your GitHub token is invalid or expired.");
-  if (res.status === 403) return new Error(detail || "GitHub denied the request (permissions or rate limit).");
-  if (res.status === 404) return new Error(detail || "Not found on GitHub.");
-  return new Error(detail || `GitHub request failed (HTTP ${res.status}).`);
-}
-
 /**
  * GET a redirecting GitHub endpoint and return the final `Response`. Hits the API
  * with `redirect: "manual"`; on a 3xx, re-GETs the `Location` with NO auth header
@@ -196,7 +183,7 @@ async function fetchSignedRedirect(token: string, path: string): Promise<Respons
   try {
     res = await fetch(`${API_BASE}${path}`, { headers: ghHeaders(token), redirect: "manual" });
   } catch {
-    throw new Error("Couldn't reach GitHub. Check your network connection.");
+    throw networkError();
   }
   // undici surfaces the real 3xx (not an opaque response) with a readable Location.
   if (res.status >= 300 && res.status < 400) {
@@ -205,10 +192,12 @@ async function fetchSignedRedirect(token: string, path: string): Promise<Respons
     try {
       res = await fetch(loc);
     } catch {
-      throw new Error("Couldn't download from GitHub's storage. Check your network connection.");
+      throw networkError(
+        "Couldn't download from GitHub's storage. Check your network connection.",
+      );
     }
   }
-  if (!res.ok) throw await rawError(res);
+  if (!res.ok) throw await githubHttpError(res);
   return res;
 }
 
@@ -380,7 +369,7 @@ const ok = (msg?: string): CommitActionResult => ({ ok: true, changed: false, me
 const fail = (err: unknown): CommitActionResult => ({
   ok: false,
   changed: false,
-  message: err instanceof Error ? err.message : String(err),
+  ...errorFields(err),
 });
 
 /** Re-run every job in a run (POST /actions/runs/{id}/rerun). */

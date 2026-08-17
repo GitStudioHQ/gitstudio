@@ -16,6 +16,7 @@ import { GitHubClient } from "./githubClient";
 import { requestDeviceCode, pollForToken } from "./githubAuth";
 import type { RepoStore } from "./repoStore";
 import { ExpectedError } from "./expectedError";
+import { errorFields } from "./githubErrors";
 import type {
   CheckRun,
   CommitActionResult,
@@ -193,7 +194,19 @@ export class GitHubBridge {
         expiresIn: dc.expiresIn,
       };
     } catch (err) {
-      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+      // `expected` keeps sign-in out of the crash reporter. The IPC wrapper
+      // reports any returned ok:false down a separate branch from a throw, so
+      // marking the throw in githubAuth.ts is not enough on its own — this
+      // result is what that branch actually sees.
+      //
+      // Nothing that can fail here is our defect: the user is offline, or
+      // github.com refused to issue a device code. Both are conditions the
+      // sign-in panel already shows the user a message for.
+      return {
+        ok: false,
+        expected: true,
+        ...errorFields(err),
+      };
     }
   }
 
@@ -203,7 +216,7 @@ export class GitHubBridge {
     try {
       r = await pollForToken(req.deviceCode);
     } catch (err) {
-      return { state: "error", message: err instanceof Error ? err.message : String(err) };
+      return { state: "error", ...errorFields(err) };
     }
     if (r.state !== "authorized") {
       return { state: r.state, message: r.message };
@@ -369,7 +382,7 @@ export class GitHubBridge {
       await this.client.mergePull(r.owner, r.repo, req.number, req.method);
       return { ok: true, changed: true };
     } catch (err) {
-      return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
+      return { ok: false, changed: false, ...errorFields(err) };
     }
   }
 
@@ -400,7 +413,7 @@ export class GitHubBridge {
       await this.client.approvePull(r.owner, r.repo, n);
       return { ok: true, changed: false };
     } catch (err) {
-      return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
+      return { ok: false, changed: false, ...errorFields(err) };
     }
   }
   async actionsRuns(): Promise<WorkflowRun[]> {

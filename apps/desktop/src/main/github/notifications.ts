@@ -10,6 +10,7 @@
 // scope is needed; the existing `request`/`requestBody` primitives set Bearer.
 
 import { GitHubClient, enc } from "../githubClient";
+import { errorFields } from "../githubErrors";
 import type { NotificationActionResult, NotificationThread } from "../../shared/ipc";
 
 /** Options for the inbox listing (mirrors the IPC request shape). */
@@ -52,7 +53,7 @@ export async function markNotificationRead(
     await client.requestBody("PATCH", `/notifications/threads/${enc(id)}`, {});
     return { ok: true };
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    return { ok: false, ...errorFields(err) };
   }
 }
 
@@ -68,7 +69,7 @@ export async function markAllNotificationsRead(
     await client.requestBody("PUT", "/notifications", { read: true });
     return { ok: true };
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    return { ok: false, ...errorFields(err) };
   }
 }
 

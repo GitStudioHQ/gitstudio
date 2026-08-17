@@ -10,6 +10,9 @@
 // for JSON explicitly. All calls run in the MAIN process (no CORS, no secret in
 // the renderer).
 
+import { ExpectedError } from "./expectedError";
+import { networkError } from "./githubErrors";
+
 /** Public OAuth App Client ID — safe to embed (the secret is intentionally unused). */
 export const GITHUB_CLIENT_ID = "Ov23lizWuHbYyvQhkmwu";
 
@@ -22,6 +25,19 @@ export const GITHUB_SCOPES = "repo workflow read:org gist notifications project"
 
 const DEVICE_CODE_URL = "https://github.com/login/device/code";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
+
+/**
+ * Both endpoints answer JSON — but a captive portal or a GitHub error page
+ * answers HTML, and `res.json()` then threw a SyntaxError that read as a crash
+ * in GitStudio. An unparseable body is just "no fields", handled below.
+ */
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 
 export interface DeviceCode {
   deviceCode: string;
@@ -37,20 +53,34 @@ export type PollResult =
   | { state: "authorized"; accessToken: string; scope: string }
   | { state: "pending" | "slow_down" | "denied" | "expired" | "error"; message?: string };
 
-/** Step 1: ask GitHub for a device + user code. */
+/**
+ * Step 1: ask GitHub for a device + user code.
+ *
+ * Everything that can go wrong on this call is a condition, not a defect — the
+ * user is offline, or github.com is refusing the request — so it throws
+ * ExpectedError and stays out of the crash reporter. See main/githubErrors.ts
+ * for the policy.
+ */
 export async function requestDeviceCode(): Promise<DeviceCode> {
-  const res = await fetch(DEVICE_CODE_URL, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "User-Agent": "GitStudio",
-    },
-    body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, scope: GITHUB_SCOPES }),
-  });
-  const j = (await res.json()) as Record<string, unknown>;
+  let res: Response;
+  try {
+    res = await fetch(DEVICE_CODE_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "GitStudio",
+      },
+      body: JSON.stringify({ client_id: GITHUB_CLIENT_ID, scope: GITHUB_SCOPES }),
+    });
+  } catch {
+    throw networkError();
+  }
+  const j = await readJson(res);
   if (!res.ok || j.error) {
-    throw new Error(String(j.error_description || j.error || `GitHub returned ${res.status}.`));
+    throw new ExpectedError(
+      String(j.error_description || j.error || `GitHub returned ${res.status}.`),
+    );
   }
   return {
     deviceCode: String(j.device_code),
@@ -69,20 +99,25 @@ export async function requestDeviceCode(): Promise<DeviceCode> {
  * widens it on `slow_down`. Returns a discriminated result the bridge maps to IPC.
  */
 export async function pollForToken(deviceCode: string): Promise<PollResult> {
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "User-Agent": "GitStudio",
-    },
-    body: JSON.stringify({
-      client_id: GITHUB_CLIENT_ID,
-      device_code: deviceCode,
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-    }),
-  });
-  const j = (await res.json()) as Record<string, unknown>;
+  let res: Response;
+  try {
+    res = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "GitStudio",
+      },
+      body: JSON.stringify({
+        client_id: GITHUB_CLIENT_ID,
+        device_code: deviceCode,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      }),
+    });
+  } catch {
+    throw networkError();
+  }
+  const j = await readJson(res);
   if (j.access_token) {
     return { state: "authorized", accessToken: String(j.access_token), scope: String(j.scope || "") };
   }

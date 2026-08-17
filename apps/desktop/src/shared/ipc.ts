@@ -447,6 +447,8 @@ export interface NotificationThread {
 export interface NotificationActionResult {
   ok: boolean;
   message?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 // ── Organizations ──
@@ -568,6 +570,12 @@ export interface DeviceCodeInfo {
   /** Seconds until the code expires. */
   expiresIn?: number;
   message?: string;
+  /**
+   * `ok:false` because of a condition rather than a defect — offline, or
+   * github.com refusing to issue a code. Keeps the IPC wrapper's ok:false
+   * branch from filing a crash report. See main/expectedError.ts.
+   */
+  expected?: boolean;
 }
 
 /** One poll of the device-flow token endpoint. */
