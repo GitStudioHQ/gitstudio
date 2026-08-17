@@ -9,6 +9,31 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [1.2.0] - 2026-08-18
+
+### Added
+- **The Changes list keeps itself up to date.** Edit a file in your editor,
+  switch back to GitStudio, and the list was whatever it last read — you had to
+  hit Refresh or leave the view and come back. The app now watches the repository
+  and refreshes on its own, debounced, and again whenever the window regains
+  focus so changes made by any other tool show up too.
+  *(Reported by @wkornewald, #17.)*
+- **Check out a branch straight from the graph.** Right-clicking a commit offered
+  only "Checkout", which detached HEAD even when the row was a branch tip. The
+  refs on a row now head the menu — *Checkout main*, *Checkout origin/main* — so
+  a branch tip no longer sends you to the Branches view.
+  *(Reported by @wkornewald, #19.)*
+- **Commit without staging first**, with a confirmation, and an optional
+  **checkbox model** for the Changes view (one list, a tick per file) alongside
+  the Staged/Unstaged split. Toggle it from the Changes toolbar. *(#16.)*
+
+### Fixed
+- **Stashing when there is nothing to stash no longer reports success**, and
+  operations that git declines — reverting something already reverted, continuing
+  a rebase with conflicts unresolved — explain themselves instead of showing an
+  empty notification.
+- **Being mid-conflict is no longer filed as a crash report.**
+
 ## [1.1.2] - 2026-08-17
 
 ### Fixed

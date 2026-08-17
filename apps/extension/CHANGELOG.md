@@ -4,6 +4,32 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-18
+
+### Added
+- **Commit without staging first.** Hitting Commit with nothing staged used to be
+  refused; it now asks — *"Commit all 7 changed files?"* — and stages everything
+  on yes. The confirmation is the point: you see what is about to go in before it
+  does. *(Requested by @wkornewald, #16.)*
+- **A checkbox model for the Changes view.** Set
+  `gitstudio.changes.stagingModel` to `checkboxes` for one list with a tick per
+  file, JetBrains-style, instead of the Staged/Unstaged split. The tick *is* the
+  index — ticking stages, unticking unstages — so both models are the same Git
+  state seen two ways, and nothing can drift out of sync. The split remains the
+  default. *(#16.)*
+
+### Fixed
+- **Being mid-conflict is no longer reported as a crash.** Git refusing to switch
+  branches while you have unresolved conflicts is correct behaviour, not a
+  defect. It was shown as a red error and filed as a crash report; it now reads
+  as a warning that names how many files are still conflicted and what to do.
+- **"Checkout origin/…" no longer promises a dialog it stopped opening** — the
+  trailing ellipsis is gone now that the checkout happens immediately.
+- **Stashing when there is nothing to stash no longer reports success.** `git
+  stash` exits 0 with nothing saved, so GitStudio said "Stashed changes" over an
+  untouched working tree. It now says what actually happened — including the case
+  where the only changes are new files, which need *Include untracked files*.
+
 ## [1.6.0] - 2026-08-17
 
 ### Added
