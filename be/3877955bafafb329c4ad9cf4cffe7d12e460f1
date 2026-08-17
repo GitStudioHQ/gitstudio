@@ -1,0 +1,62 @@
+apps/extension/src/changes/commitView.ts
+  s_daa89ab6f34762::t_ed5c8d851ecefb 206-207
+  s_daa89ab6f34762::t_aef6c5724d7063 378-381
+  s_daa89ab6f34762::t_af14cc3f080897 247-259,275-277,279-282,284-302,304-310,312-317,321-323,327-347,349-352,359-360
+  s_daa89ab6f34762::t_5e2f2a1ccc949d 177-185
+  s_daa89ab6f34762::t_1519cc7cf40d06 303
+  s_daa89ab6f34762::t_53d6a782d3666f 311,318-320,324-326
+  s_daa89ab6f34762::t_33471a1e631930 4
+  s_daa89ab6f34762::t_67546ae5860a45 348,353-358
+  s_daa89ab6f34762::t_c6e5149a1020dd 204-205
+  s_daa89ab6f34762::t_51b1240b435fc1 490-496
+  s_daa89ab6f34762::t_4f6788d3c7595a 891-908,915-916,927,932
+  s_daa89ab6f34762::t_b7ec200e605fbf 3
+  s_daa89ab6f34762::t_dae95ec2f976bf 260-274,278,283
+  s_daa89ab6f34762::t_ad4a91a0e37b49 909-914,917-925
+packages/git-service/test/commitBlocker.test.ts
+  s_daa89ab6f34762::t_024c77fb0e7252 1-146
+apps/desktop/src/main/gitBridge.ts
+  s_daa89ab6f34762::t_e0615114b60941 517-529,533-537
+  s_daa89ab6f34762::t_78233197f51966 17
+  s_daa89ab6f34762::t_51366867b7ea32 493-516,530-532,538
+apps/extension/test/repoScope.test.ts
+  s_daa89ab6f34762::t_7f31754ff529f7 6,10-23,26-27,31,35,37-39,43-44,47-49,52-54,58-68,72-81,105-110
+  s_daa89ab6f34762::t_6e0645afff48f4 1-5,7-9,24-25,28-30,32-34,36,40-42,45-46,50-51,55-57,69-71,82-104,111
+apps/extension/src/git/repoManager.ts
+  s_daa89ab6f34762::t_00619f6514f704 395-400
+  s_daa89ab6f34762::t_cd41f327e04b38 6
+apps/desktop/src/renderer/renderer.ts
+  s_daa89ab6f34762::t_2f01a438463113 2718-2728
+apps/extension/src/util/repoScope.ts
+  s_daa89ab6f34762::t_2e86d3b49ea54b 1,4,7-8,21-22,24-29,42,46,61-63,65,67-80,82,84
+  s_daa89ab6f34762::t_00cbac55fbf084 2-3,5-6,9-20,23,30-41,43-45,47-60,64,66
+  s_daa89ab6f34762::t_5433e2350080c5 81,83
+packages/git-service/src/StagingProvider.ts
+  s_daa89ab6f34762::t_6a736e18f88bbf 25-29,31,33
+  s_daa89ab6f34762::t_478ad427abd2eb 30,32,34-52,54
+  s_daa89ab6f34762::t_e6874a3b4a8f4b 329-369
+  s_daa89ab6f34762::t_2568b61d30da1c 302
+  s_daa89ab6f34762::t_33439f8752a47a 382-389,391
+  s_daa89ab6f34762::t_c9c697ca9e222d 55-77
+  s_daa89ab6f34762::t_6da5003e3e2b01 53
+apps/extension/README.md
+  s_daa89ab6f34762::t_a37cb66a2f83cf 144
+apps/extension/package.json
+  s_daa89ab6f34762::t_9847f5f98bc9b7 885-889
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "be3877955bafafb329c4ad9cf4cffe7d12e460f1",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
