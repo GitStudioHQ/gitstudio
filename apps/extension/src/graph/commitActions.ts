@@ -3,6 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
 import { pausedForUser } from "../git/pausedForUser";
+import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 
@@ -315,7 +316,7 @@ async function cherryPick(
       );
       return true;
     }
-    showGitError("Cherry-pick failed", stderr);
+    await showGitError(ctx, "Cherry-pick failed", stderr);
     return true;
   });
 }
@@ -424,7 +425,7 @@ async function revert(
       );
       return true;
     }
-    showGitError("Revert failed", stderr);
+    await showGitError(ctx, "Revert failed", stderr);
     return true;
   });
 }
@@ -502,11 +503,45 @@ async function runGit(
     flash(successMessage);
     return true;
   }
-  showGitError(`git ${args[0]} failed`, result.stderr.trim());
+  await showGitError(ctx, `git ${args[0]} failed`, result.stderr.trim());
   return true;
 }
 
-function showGitError(title: string, stderr: string): void {
+/**
+ * Tell the user a git command failed — and decide whether it is worth reporting.
+ *
+ * Those were the same thing until crash report #9 arrived: "git checkout failed",
+ * stderr "error: you need to resolve your current index first". Nothing was
+ * broken. The user was mid-conflict, and git declined to move HEAD over an
+ * unmerged index, which is exactly what it should do. It was shown as a red error
+ * AND filed as a crash.
+ *
+ * So the question "is this OUR bug?" is asked separately now, with a
+ * locale-independent probe: does the index still have unmerged files? If so this
+ * is the repo's state, not a defect — say so as a warning, and file nothing.
+ *
+ * Deliberately NOT the operation markers (MERGE_HEAD and friends). A cherry-pick
+ * that turns out empty leaves CHERRY_PICK_HEAD behind with ZERO unmerged files,
+ * and that is the report that found the locale bug fixed in 1.5.2 — a
+ * marker-based test would have silenced the most valuable report we have had.
+ */
+async function showGitError(
+  ctx: GitContext,
+  title: string,
+  stderr: string,
+): Promise<void> {
+  let unmerged = 0;
+  try {
+    unmerged = await ctx.conflict.unmergedCount();
+  } catch {
+    unmerged = 0; // never let the probe turn a failure into a silent one
+  }
+  if (unmerged > 0) {
+    void vscode.window.showWarningMessage(
+      `${title} — ${unresolvedConflictsMessage(unmerged)}`,
+    );
+    return;
+  }
   void vscode.window.showErrorMessage(
     stderr ? `${title}: ${stderr}` : title,
   );

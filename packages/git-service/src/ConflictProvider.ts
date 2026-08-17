@@ -132,6 +132,15 @@ export class ConflictProvider {
     return parseUnmergedPaths(result.stdout).length > 0;
   }
 
+  /**
+   * How many files have unresolved conflicts. Used to decide whether a git
+   * command's refusal is explained by the repo's state — see
+   * `unresolvedConflictsMessage`.
+   */
+  async unmergedCount(opts?: ConflictReadOptions): Promise<number> {
+    return (await this.listConflicts(opts)).length;
+  }
+
   /** Repo-relative paths of all unmerged (conflicted) files. */
   async listConflicts(opts?: ConflictReadOptions): Promise<string[]> {
     const result = await this.proc.run(["status", "--porcelain=v2", "-z"], {
@@ -159,4 +168,25 @@ export function parseUnmergedPaths(porcelain: string): string[] {
     }
   }
   return paths;
+}
+
+/**
+ * What to tell the user when a git command refused because the index still has
+ * unresolved conflicts.
+ *
+ * Lives here, beside the provider that answers the question, so the extension and
+ * the desktop app cannot describe the same state differently — the same reason
+ * `commitBlockerMessage` sits beside `CommitBlocker`.
+ *
+ * This is a state the user is allowed to be in, not a defect: it is information
+ * or a warning, and it must never be filed as a crash report. The unmerged index
+ * is the locale-independent signal — deliberately NOT the operation marker refs.
+ * A cherry-pick that turns out empty leaves CHERRY_PICK_HEAD behind with ZERO
+ * unmerged files, and that case is a genuine report worth having (it is the one
+ * that found the locale bug fixed in 1.5.2), so a marker-based test would have
+ * silenced exactly the report we most wanted.
+ */
+export function unresolvedConflictsMessage(count: number): string {
+  const files = count === 1 ? "1 file" : `${count} files`;
+  return `${files} still ${count === 1 ? "has" : "have"} unresolved conflicts. Resolve them and commit, or abort, then try again.`;
 }

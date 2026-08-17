@@ -17,6 +17,7 @@ import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
+import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import type {
   CommitRecord,
   GitContext,
@@ -1060,6 +1061,23 @@ export class GitBridge {
    * "check out origin/x" means the same thing in both products: switch to a local
    * x if it exists, otherwise create it tracking the remote.
    */
+  /**
+   * Was this git failure explained by the repo still having unresolved conflicts?
+   *
+   * Then it is a state the user is in, not a defect: the message is worth showing
+   * and the crash report is not (gitstudio-reports#9). Deliberately keyed on the
+   * unmerged index and NOT on the operation markers — an empty cherry-pick leaves
+   * a marker with zero unmerged files, and that report is one we want.
+   */
+  private async conflictExplains(ctx: GitContext): Promise<string | undefined> {
+    try {
+      const n = await ctx.conflict.unmergedCount();
+      return n > 0 ? unresolvedConflictsMessage(n) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async checkoutRef(
     ctx: GitContext,
     req: CommitActionRequest,
@@ -1081,6 +1099,10 @@ export class GitBridge {
         return { ok: true, changed: true };
       }
       const stderr = r.stderr.trim();
+      const conflicts = await this.conflictExplains(ctx);
+      if (conflicts) {
+        return { ok: false, changed: false, expected: true, message: conflicts };
+      }
       return {
         ok: false,
         changed: false,
@@ -1201,6 +1223,10 @@ export class GitBridge {
           // arrive as a blank toast. It is git declining, not us failing.
           const stderr = result.stderr.trim();
           const stdout = result.stdout.trim();
+          const conflicts = await this.conflictExplains(ctx);
+          if (conflicts) {
+            return { ok: false, changed: false, expected: true, message: conflicts };
+          }
           return {
             ok: false,
             changed: false,
