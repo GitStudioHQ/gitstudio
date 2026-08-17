@@ -38,6 +38,7 @@ import type { WireRow, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG } from "./gutter";
 import { paletteForTheme, observeGraphTheme } from "./lanePalette";
 import { gravatarUrl, avatarHue, authorInitials } from "./avatar";
+import { RefTip, refTipStyles, tipAriaLabel, tipData } from "./refTip";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -127,6 +128,7 @@ export class CommitRail extends LitElement {
   static styles = [
     hostTokens,
     codiconStyles,
+    refTipStyles,
     css`
       :host {
         display: flex;
@@ -742,6 +744,10 @@ export class CommitRail extends LitElement {
   private virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement> | undefined;
   private cleanupVirtualizer: (() => void) | undefined;
   private boundScroller: HTMLDivElement | undefined;
+  /** The "+N" ref pill's hover card (see refTip.ts). */
+  private readonly refTip = new RefTip(() =>
+    this.renderRoot.querySelector(".reftip"),
+  );
   private palette: readonly string[] = paletteForTheme();
   private disposeTheme: (() => void) | undefined;
   private shaToIndex = new Map<string, number>();
@@ -881,6 +887,9 @@ export class CommitRail extends LitElement {
     const v = this.virtualizer;
     const sizer = this.renderRoot.querySelector<HTMLElement>(".sizer");
     if (!v || !sizer) return;
+    // The row DOM is replaced wholesale, so the pill the card is anchored to
+    // stops existing — a card left open would hang over a commit that moved.
+    this.refTip.hide();
     v._willUpdate();
     const items = v.getVirtualItems();
     sizer.style.height = `${v.getTotalSize()}px`;
@@ -1060,7 +1069,19 @@ export class CommitRail extends LitElement {
         `<span class="name">${esc(chip.label)}</span>${cloud}</span>`;
     }
     if (rest.length) {
-      out += `<span class="chip more" title="${esc(rest.map((c) => c.title).join("\n"))}">+${rest.length}</span>`;
+      // `title=""` is load-bearing, not a leftover. The ROW carries a title
+      // (sha, subject, author, date) and an ancestor's tooltip applies to every
+      // descendant, so the pill's own tooltip never won here — hovering it just
+      // produced the row's, a second later. An empty title is the only way to
+      // opt a descendant out. The card in refTip.ts renders from `data-more`.
+      const hidden = rest.map((c) => ({
+        name: c.label,
+        kind: c.kind,
+        remotes: c.remotes,
+      }));
+      out +=
+        `<span class="chip more" title="" data-more="${esc(tipData(hidden))}"` +
+        ` aria-label="${esc(tipAriaLabel(hidden))}">+${rest.length}</span>`;
     }
     return out + `</span>`;
   }
@@ -1074,6 +1095,18 @@ export class CommitRail extends LitElement {
     if (!el?.dataset.sha) return null;
     return { sha: el.dataset.sha, idx: Number(el.dataset.idx ?? -1) };
   }
+
+  private onPointerOver = (e: PointerEvent): void => {
+    this.refTip.handleOver(e);
+  };
+
+  private onPointerOut = (e: PointerEvent): void => {
+    this.refTip.handleOut(e);
+  };
+
+  private onPointerLeaveList = (): void => {
+    this.refTip.hide();
+  };
 
   private onScrollerClick = (e: MouseEvent): void => {
     const act = (e.composedPath()[0] as HTMLElement | null)?.closest?.(
@@ -1553,6 +1586,9 @@ export class CommitRail extends LitElement {
         @keydown=${this.onScrollerKeyDown}
         @load=${this.onImgLoadOptions}
         @error=${this.onImgErrorOptions}
+        @pointerover=${this.onPointerOver}
+        @pointerout=${this.onPointerOut}
+        @pointerleave=${this.onPointerLeaveList}
       >
         <div class="sizer"></div>
         <div class="tail">
@@ -1563,6 +1599,7 @@ export class CommitRail extends LitElement {
             : "· start of history ·"}
         </div>
       </div>
+      <div class="reftip" role="tooltip" hidden></div>
     `;
   }
 

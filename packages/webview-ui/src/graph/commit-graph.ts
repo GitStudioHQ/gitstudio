@@ -11,6 +11,7 @@
 import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { codiconStyles } from "../styles/codicons";
 import { hostTokens } from "../styles/hostTokens";
+import { RefTip, refTipStyles, tipAriaLabel, tipData } from "./refTip";
 import {
   Virtualizer,
   observeElementRect,
@@ -51,15 +52,17 @@ const MIN_GUTTER_WIDTH = 44;
 const MAX_GUTTER_COLUMNS = 16;
 /** Trigger a loadMore when within this many rows of the bottom. */
 const LOAD_MORE_THRESHOLD = 60;
-/** Cap ref chips shown inline before collapsing into a "+N" overflow pill. */
-const MAX_VISIBLE_REFS = 4;
-/** How each ref kind reads in the overflow pill's tooltip. */
-const REF_KIND_LABEL: Record<WireRef["kind"], string> = {
-  currentHead: "current HEAD",
-  head: "local branch",
-  remoteHead: "remote branch",
-  tag: "tag",
-};
+/**
+ * How many ref chips render inline is decided by WIDTH alone — see refsHtml.
+ * There is deliberately no count cap: one used to sit here at 4, applied before
+ * any width test, so a commit carrying five refs kept its fifth folded behind
+ * the "+N" pill no matter how far you dragged the column (issue #11). Widening
+ * the column is the obvious thing to try, and it silently did nothing.
+ *
+ * Nothing needs a count to stay bounded: the track is clamped to the `refs`
+ * spec's max (360px) on both drag and load, and a chip cannot estimate narrower
+ * than 44px, so the fit tops out around seven chips on its own.
+ */
 /** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) node. */
 const ZERO_SHA_RE = /^0{40}$/;
 
@@ -165,7 +168,7 @@ export class CommitGraph extends LitElement {
     commitMenu: { state: true },
   };
 
-  static styles = [hostTokens, codiconStyles, css`
+  static styles = [hostTokens, codiconStyles, refTipStyles, css`
     :host {
       display: flex;
       flex-direction: column;
@@ -1239,6 +1242,11 @@ export class CommitGraph extends LitElement {
     return this.renderRoot.querySelector(".scroller");
   }
 
+  /** The "+N" ref pill's hover card (see refTip.ts). */
+  private readonly refTip = new RefTip(() =>
+    this.renderRoot.querySelector(".reftip"),
+  );
+
   private virtualizer:
     | Virtualizer<HTMLDivElement, HTMLDivElement>
     | undefined;
@@ -1791,6 +1799,10 @@ export class CommitGraph extends LitElement {
     if (!v || !sizer) {
       return;
     }
+    // Every repaint replaces the row DOM wholesale, so the pill the card is
+    // anchored to stops existing — scrolling with a card open would otherwise
+    // leave it pinned to a commit that has moved.
+    this.refTip.hide();
     v._willUpdate();
     const items = v.getVirtualItems();
     const total = v.getTotalSize();
@@ -1975,6 +1987,9 @@ export class CommitGraph extends LitElement {
     // column edge would clip one mid-word; the rest collapse into a "+N" pill
     // whose tooltip lists them. The first chip always renders (CSS min-width +
     // ellipsis keep it legible even in a very narrow column).
+    //
+    // Width is the ONLY thing that decides — no count cap, deliberately, so that
+    // dragging the column wider always reveals more (issue #11).
     const colW = this.hiddenCols.has("refs")
       ? 0
       : (this.colWidths.refs ?? col("refs"));
@@ -1983,7 +1998,6 @@ export class CommitGraph extends LitElement {
     let shown = 0;
     let out = "";
     for (const entry of entries) {
-      if (shown >= MAX_VISIBLE_REFS) break;
       const w = estimateChipWidth(entry);
       const reserve = entries.length - shown - 1 > 0 ? 40 : 0; // room for "+N"
       if (shown > 0 && used + w + reserve > budget) break;
@@ -1996,13 +2010,17 @@ export class CommitGraph extends LitElement {
     // worse than none. In an ultra-narrow column the first chip (which can
     // shrink to its CSS min-width) wins the space.
     if (rest.length > 0 && used + 30 <= budget) {
-      // Name AND kind, one per line — a bare comma list left you guessing whether
-      // "1.1.0" was a tag or a branch, which is the thing people open the pill
-      // for. Matches the per-chip titles built by chipHtml.
-      const names = rest.map((e) => `${e.ref.name} (${REF_KIND_LABEL[e.ref.kind]})`).join("\n");
+      // `data-more` drives the hover card in refTip.ts. It replaced a native
+      // `title`, which took seconds of holding still to appear — on the one
+      // affordance that reveals what the column could not fit.
+      const hidden = rest.map((e) => ({
+        name: e.ref.name,
+        kind: e.ref.kind,
+        remotes: e.remotes,
+      }));
       out +=
-        `<span class="chip chip-overflow" title="${esc(names)}"` +
-        ` aria-label="${esc(`${rest.length} more: ${names.split("\n").join(", ")}`)}">` +
+        `<span class="chip chip-overflow" data-more="${esc(tipData(hidden))}"` +
+        ` aria-label="${esc(tipAriaLabel(hidden))}">` +
         `+${rest.length}</span>`;
     }
     return out;
@@ -2125,11 +2143,20 @@ export class CommitGraph extends LitElement {
   };
 
   private onPointerLeave = (): void => {
+    this.refTip.hide();
     if (this.focusColor !== undefined) {
       this.focusColor = undefined;
       this.scroller?.classList.remove("focusing");
       this.renderRows();
     }
+  };
+
+  private onPointerOver = (e: PointerEvent): void => {
+    this.refTip.handleOver(e);
+  };
+
+  private onPointerOut = (e: PointerEvent): void => {
+    this.refTip.handleOut(e);
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -2518,11 +2545,14 @@ export class CommitGraph extends LitElement {
         @keydown=${this.onKeyDown}
         @pointermove=${this.onPointerMove}
         @pointerleave=${this.onPointerLeave}
+        @pointerover=${this.onPointerOver}
+        @pointerout=${this.onPointerOut}
         @error=${this.onImgErrorOptions}
         @load=${this.onImgLoadOptions}
       >
         <div class="sizer"></div>
-      </div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;
+      </div>
+      <div class="reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;
   }
 
   /** The in-graph commit actions popover (fixed at the cursor, clamped). */
