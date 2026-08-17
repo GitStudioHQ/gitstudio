@@ -25,8 +25,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   on *stdout* rather than stderr — so reading stderr, as every other operation
   safely does, produced a failure with no text in it. GitStudio now says which
   situation you are actually in: changes waiting to be staged, only new untracked
-  files, or a genuinely clean tree. It asks git three yes/no questions to decide,
-  so the message is right on a translated git too, and it is shown as information
+  files, or a genuinely clean tree. It asks git rather than reading its wording, so
+  the message is right on a translated git too, and it is shown as information
   rather than as an error, because having staged nothing yet is not a mistake.
   *(Reported by @wkornewald, #16.)*
 - **Widening the Branch/Tag column now actually reveals more branches.** The

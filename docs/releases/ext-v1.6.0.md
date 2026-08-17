@@ -1,7 +1,8 @@
 # GitStudio 1.6.0 — the Changes list keeps up, and nothing fails silently
 
-Three of these came from @wkornewald and @wanzirong opening issues in the first
-week. Thank you — every one of them was a real thing.
+Two of these came from @wkornewald, and the Branch/Tag column fix closes out the
+last of what @gaganyadav80 reported. Thank you both — every one was a real thing,
+and two of them turned out to be the same thing wearing different clothes.
 
 ## The Changes list refreshes itself
 
@@ -34,8 +35,9 @@ thing to do everywhere else, produced a failure with nothing in it.
 
 GitStudio now tells you which situation you are actually in: changes waiting to
 be staged, only new files git has not been told about yet, or a genuinely clean
-tree. It works that out by asking git three yes/no questions rather than reading
-its wording, so it is still correct on a translated git. And it arrives as
+tree. It works that out by asking git plainly — counting what is staged, then what
+is modified, then what is untracked — rather than reading its wording, so it is
+still correct on a translated git. And it arrives as
 information rather than as an error, because not having staged anything yet is
 not a mistake.
 
@@ -83,8 +85,9 @@ continue or abort".
 
 This case needed more care than cherry-pick did. For merge and rebase a real
 failure and a pause can exit with the *same code*: an unknown branch name and a
-rebase over unstaged changes both exit the way a conflict does. So GitStudio asks
-two questions, not one — and the tests pin all of it against real git.
+rebase over unstaged changes both exit the way a conflict does. So the test is two
+conditions, not one — the exit code AND the marker ref git leaves behind — and the
+tests pin all of it against real git.
 
 *[#9](https://github.com/GitStudioHQ/gitstudio/issues/9).*
 
