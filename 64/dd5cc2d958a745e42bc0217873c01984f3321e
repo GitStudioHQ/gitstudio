@@ -1,0 +1,25 @@
+.gitignore
+  s_daa89ab6f34762::t_458245ef445f3b 11-14
+RELEASING.md
+  s_daa89ab6f34762::t_b6199a0842ea36 48-51,53
+  s_daa89ab6f34762::t_e59a7c3c8e0c40 71-72
+  s_daa89ab6f34762::t_e4f89dcb38c6b7 16
+package-lock.json
+  s_daa89ab6f34762::t_95e784b7e4e13b 26,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "64dd5cc2d958a745e42bc0217873c01984f3321e",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
