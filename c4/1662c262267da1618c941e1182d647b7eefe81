@@ -1,0 +1,46 @@
+apps/extension/test/opInProgress.test.ts
+  s_daa89ab6f34762::t_c6404bb8c6dc7d 81-84,86-91
+  s_daa89ab6f34762::t_77e3f4270bc3fc 7-10
+  s_daa89ab6f34762::t_61b60299e1d433 105,122,131,146,152,158,167,199,208,211,223
+  s_daa89ab6f34762::t_69f9ab45e3ca1a 12-13,21-29
+  s_daa89ab6f34762::t_00415130c806b9 224-347
+apps/extension/src/graph/commitActions.ts
+  s_daa89ab6f34762::t_bccac50af7100b 207-211
+  s_daa89ab6f34762::t_cd364f69482e8c 6
+  s_daa89ab6f34762::t_49e5f6e5495eb3 40-42
+  s_daa89ab6f34762::t_3a316225767530 404
+  s_daa89ab6f34762::t_4d1f6dd5ebf9ea 5
+  s_daa89ab6f34762::t_6220596c36f36a 306
+apps/extension/src/git/checkoutRemote.ts
+  s_daa89ab6f34762::t_6e7b56198b390e 1-78
+apps/extension/src/views/branchActions.ts
+  s_daa89ab6f34762::t_0c40e54248e7ed 129-136
+  s_daa89ab6f34762::t_6c9e3903e00097 160-167
+  s_daa89ab6f34762::t_b1c5b7274269de 6
+  s_daa89ab6f34762::t_f9c5ce87b08a31 524-533
+  s_daa89ab6f34762::t_6cef5047e66d7f 881-897,900,902,908,913,915-918
+  s_daa89ab6f34762::t_66c7f419b40362 2,5
+apps/extension/test/checkoutRemote.test.ts
+  s_daa89ab6f34762::t_483cbd328b1331 1-207
+apps/extension/src/git/pausedForUser.ts
+  s_daa89ab6f34762::t_06990e07fa9df2 1-63
+packages/git-service/src/BranchOps.ts
+  s_daa89ab6f34762::t_f50e9f194d8fcc 5-13
+  s_daa89ab6f34762::t_dfffef7a6eb998 53,67,85,105,151,165,176,189,201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c41662c262267da1618c941e1182d647b7eefe81",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
