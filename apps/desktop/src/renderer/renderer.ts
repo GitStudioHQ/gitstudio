@@ -110,6 +110,8 @@ class App {
   private viewHost!: HTMLElement;
   private navButtons: HTMLElement[] = [];
   private currentView = "code";
+  /** Guards re-entrant disk-triggered refreshes (see refreshFromDisk). */
+  private refreshingFromDisk = false;
   /**
    * The Changes composer's in-progress state, held on the instance because
    * every stage / unstage / discard rebuilds that whole subtree. Without it,
@@ -3158,6 +3160,17 @@ class App {
     host.on("app:notice", (n) => {
       toast(n.message, n.kind === "error" ? "error" : n.kind === "warn" ? "error" : "info");
     });
+    // Something changed on disk (issue #17). Already debounced in main.
+    host.on("repo:filesChanged", (info) => {
+      void this.refreshFromDisk(info?.gitDir ?? true);
+    });
+    // And when the window comes back to the front. This is the reported flow —
+    // edit in another app, switch to GitStudio — and it is also the safety net
+    // for when the watcher could not start at all (a huge tree on Linux can
+    // exhaust inotify), so it deliberately does not check whether one is running.
+    window.addEventListener("focus", () => {
+      void this.refreshFromDisk(true);
+    });
     host.on("menu:command", (msg) => {
       if (msg.command === "openRepo") void this.openRepo();
       else if (msg.command === "refresh") void this.refreshAll();
@@ -3177,6 +3190,43 @@ class App {
   }
   private async backToMenu(): Promise<void> {
     await host.invoke("repo:close", undefined);
+  }
+
+  /**
+   * Repaint after something changed on disk outside the app (issue #17).
+   *
+   * `gitDir` splits the cost. A file edit can only change the working tree, so
+   * there is no point re-reading refs or reloading the graph for it — during a
+   * build that would mean a graph reload every quarter second. A change under
+   * `.git` (a commit, a checkout, staging from the terminal) really can move
+   * history, and gets the full refresh.
+   *
+   * Never runs while a mutation of our own is in flight: our own commands already
+   * refresh when they finish, and refreshing underneath them makes the list flicker
+   * between two truths.
+   */
+  private async refreshFromDisk(gitDir: boolean): Promise<void> {
+    if (!this.currentRepo || this.refreshingFromDisk) {
+      return;
+    }
+    this.refreshingFromDisk = true;
+    try {
+      if (gitDir) {
+        await this.refreshAll();
+        return;
+      }
+      bust("status");
+      bust("diff");
+      if (this.currentView === "changes") {
+        await this.showChangesView();
+      } else if (this.currentView === "graph" && this.graph) {
+        // The graph carries an uncommitted-changes row, so it still cares — but
+        // only about that row, not about re-reading the history behind it.
+        this.routeView(this.currentView, true);
+      }
+    } finally {
+      this.refreshingFromDisk = false;
+    }
   }
 
   private async refreshAll(): Promise<void> {

@@ -29,6 +29,7 @@ import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./clone
 import { initAutoUpdate } from "./autoUpdate";
 import { ErrorReporter } from "./errorReporter";
 import { isExpectedError } from "./expectedError";
+import { RepoWatcher } from "./repoWatcher";
 import * as issuesApi from "./github/issues";
 import * as prsApi from "./github/prs";
 import * as actionsApi from "./github/actions";
@@ -58,6 +59,8 @@ let github: GitHubBridge;
 let rebase: RebaseBridge;
 let ai: AiBridge;
 let terminal: TerminalBridge;
+/** Filesystem watcher for the open repo; re-created whenever the repo changes. */
+let repoWatcher: RepoWatcher | undefined;
 
 /** Where the recent-repos list is persisted between sessions. */
 function statePath(): string {
@@ -167,6 +170,10 @@ async function createWindow(): Promise<void> {
   mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => {
     terminal?.killAll();
+    // Nothing left to notify, and holding a recursive watch on a directory after
+    // the window is gone is how a quit ends up waiting on the filesystem.
+    repoWatcher?.dispose();
+    repoWatcher = undefined;
     killActiveClones();
     mainWindow = undefined;
   });
@@ -763,6 +770,15 @@ async function boot(): Promise<void> {
   repos.onChange((info) => {
     send("repo:changed", info);
     buildMenu();
+    // Re-point the filesystem watcher at whatever is open now. Closing a repo
+    // (info === undefined) leaves no watcher, which also stops us holding a
+    // handle on a directory the user may be about to delete or unmount.
+    repoWatcher?.dispose();
+    repoWatcher = undefined;
+    const root = repos?.getContext()?.root;
+    if (root) {
+      repoWatcher = new RepoWatcher(root, (info) => send("repo:filesChanged", info));
+    }
   });
   // Stream every git command the open repo runs to the renderer's Output tab.
   let gitLogId = 0;

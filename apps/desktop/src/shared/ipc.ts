@@ -1047,6 +1047,18 @@ export type IpcResponse<C extends IpcChannel> = IpcChannels[C][1];
 export interface IpcEvents {
   /** The active repo changed (opened/closed) — the renderer reloads. */
   "repo:changed": RepoInfo | undefined;
+  /**
+   * Something changed on disk in the open repo — a file edited outside the app,
+   * or a git command run in another terminal (issue #17). Already debounced in
+   * the main process, so it is safe to act on every one of these.
+   *
+   * `gitDir` says whether the change was under `.git` (HEAD, the index, refs, an
+   * operation marker) rather than only in the working tree. It is the difference
+   * between "re-read the file list" and "the whole history may have moved": a
+   * save cannot change a commit, so a build churning files must not drag a graph
+   * reload behind every burst.
+   */
+  "repo:filesChanged": { gitDir: boolean };
   /** A message from the main process to show in-app (never a native alert). */
   "app:notice": { kind: "info" | "warn" | "error"; message: string };
   /** A menu item asks the renderer to do something it owns. */
