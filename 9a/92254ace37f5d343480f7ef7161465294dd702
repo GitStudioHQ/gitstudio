@@ -1,0 +1,29 @@
+apps/extension/src/changes/commitView.ts
+  s_daa89ab6f34762::t_9e9a43c234930a 3528-3534,3536-3542
+  s_daa89ab6f34762::t_31bb982ae4c278 76,80,781-820,835-836
+  s_daa89ab6f34762::t_424cc7eb79c3fe 5032
+  s_daa89ab6f34762::t_973a5b40de4b7f 5383-5385
+  s_daa89ab6f34762::t_bfe269c68b4c70 581,5015-5019,5027-5031,5033-5035,5037-5097
+  s_daa89ab6f34762::t_acbdf58c7e7eca 828,833,949-961,2694,5098
+  s_daa89ab6f34762::t_835ea929c36482 77-79,81,119,182-192,579-580,821-827,829-832,834,1819,2684-2693,2695-2697,3366,5036,5099
+"[1;90m-[0m [36m/private/tmp/claude-501/-Users-antonarnaudov-Developer-GitStudioHQ-gitstudio/ec0eee8e-423a-4cd6-9439-d123ace3245d/scratchpad/[1mamb.w34l[0m/wtB"
+  s_daa89ab6f34762::t_8c88fc8020edf1 1
+apps/extension/package.json
+  s_daa89ab6f34762::t_ad0fb06be0d5dd 885-897
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9a92254ace37f5d343480f7ef7161465294dd702",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
