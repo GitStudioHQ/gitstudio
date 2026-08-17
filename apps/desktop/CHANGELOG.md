@@ -9,6 +9,28 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [1.1.2] - 2026-08-17
+
+### Fixed
+- **Being offline, or having an expired token, is no longer treated as a crash.**
+  1.1.1 stopped filing "Not connected to GitHub." as a failure report; its
+  siblings kept arriving. Losing your connection, a revoked or expired token, a
+  permission you never granted, GitHub's rate limiter and GitHub being down are
+  all states you are allowed to be in — anyone on flaky wifi produced a stream of
+  reports. There is now one policy for the whole GitHub layer: our bugs get
+  reported, the network and your sign-in state do not. Nothing you see changes;
+  the same message reaches the same place.
+- **Committing with nothing staged showed an empty toast.** `git commit` reports
+  that particular refusal on *stdout* rather than stderr, so passing stderr
+  through produced a notification with no text in it. It now says which situation
+  you are in — changes waiting to be staged, only new untracked files, or a clean
+  tree — decided by asking git directly, so it reads correctly on a translated
+  git too.
+- **The Branch/Tag column reveals more branches as you widen it,** instead of
+  stopping at four however far you drag. And the "+N" badge opens its own hover
+  card immediately, naming each hidden ref's kind, rather than waiting on the
+  browser's tooltip delay.
+
 ## [1.1.1] - 2026-08-15
 
 ### Fixed
