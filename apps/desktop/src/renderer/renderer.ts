@@ -2556,7 +2556,7 @@ class App {
       const runOp = async (ch: "merge:abort" | "merge:continue" | "rebase:abort" | "rebase:continue"): Promise<void> => {
         try {
           const r = await host.invoke(ch, undefined);
-          if (!r.ok) toast(r.message || "Operation failed.", "error");
+          if (!r.ok) toast(r.message || "Operation failed.", r.expected ? "info" : "error");
           else toast("Done.", "success");
         } catch (e) {
           toast(cleanErr(e) || "Operation failed.", "error");
@@ -2979,7 +2979,7 @@ class App {
               ? await host.invoke("sync:push", undefined)
               : await host.invoke("sync:push", { setUpstream: true });
       if (!r.ok) {
-        toast(r.message ?? `${action} failed.`, "error");
+        toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
         return;
       }
       const verb =
@@ -3582,7 +3582,10 @@ class App {
     try {
       const result = await host.invoke("commit:action", req);
       if (!result.ok) {
-        toast(result.message ?? `Couldn't ${req.action.replace(/-/g, " ")}.`, "error");
+        toast(
+          result.message ?? `Couldn't ${req.action.replace(/-/g, " ")}.`,
+          result.expected ? "info" : "error",
+        );
         return;
       }
       const verbs: Record<string, string> = {

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { promptConfirm, promptInput, promptPickMany } from "../ui/dialogs";
 
 // The Stashes pillar — genuinely absent from free VS Code, so GitStudio makes it
@@ -141,6 +142,18 @@ export async function saveStash(
     void vscode.window.showErrorMessage(
       result.stderr.trim() || "GitStudio: stash failed.",
     );
+    return;
+  }
+  // A zero exit is not proof anything was stashed: `git stash push` with nothing
+  // to save exits 0 and says so on stdout. Flashing "Stashed changes" there told
+  // people their work was safely put away while it sat untouched in the working
+  // tree — and the untracked-only case is the one that bites, because they DO
+  // have changes, just not ones git was asked to take.
+  if (!result.created) {
+    void vscode.window.showInformationMessage(
+      `GitStudio: ${stashBlockerMessage(result.blocker ?? "cleanTree")}`,
+    );
+    refresh();
     return;
   }
   flash("Stashed changes");

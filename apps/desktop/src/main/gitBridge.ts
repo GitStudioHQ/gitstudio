@@ -15,6 +15,7 @@ import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/ap
 import type { LineRange } from "@gitstudio/engine/staging/applyLineChanges";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
+import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import type {
   CommitRecord,
   GitContext,
@@ -570,9 +571,32 @@ export class GitBridge {
     return this.staged(async (ctx) => ctx.stashes.drop(ref));
   }
   async stashSave(opts: { message?: string; includeUntracked?: boolean }): Promise<CommitActionResult> {
-    return this.staged(async (ctx) =>
-      ctx.stashes.save({ message: opts.message, includeUntracked: opts.includeUntracked }),
-    );
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { ok: false, changed: false, message: "No repository open." };
+    }
+    return this.serialize(async () => {
+      // NOT via `staged()`, which decides success from the exit code alone. `git
+      // stash push` with nothing to save exits 0, so that would report a stash
+      // that never happened — and then `changed: true` would refresh the views to
+      // show the work still sitting there, contradicting its own success toast.
+      const r = await ctx.stashes.save({
+        message: opts.message,
+        includeUntracked: opts.includeUntracked,
+      });
+      if (!r.ok) {
+        return { ok: false, changed: false, message: r.stderr.trim() || "The stash failed." };
+      }
+      if (!r.created) {
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: stashBlockerMessage(r.blocker ?? "cleanTree"),
+        };
+      }
+      return { ok: true, changed: true };
+    });
   }
 
   // ── Worktrees ─────────────────────────────────────────────────────────────────
@@ -1054,9 +1078,27 @@ export class GitBridge {
     return result;
   }
 
-  /** Run a working-tree mutation, mapping the git-service result to the IPC shape. */
+  /**
+   * Run a working-tree mutation, mapping the git-service result to the IPC shape.
+   *
+   * Falls back to STDOUT when stderr is empty, which is the only reason a failed
+   * mutation ever reached the renderer with nothing to say. A handful of git
+   * commands report a refusal on stdout — reverting something already reverted,
+   * `rebase --continue` with conflicts still unresolved, `commit --no-edit`
+   * finishing a merge that is not ready — and every one of those produced a blank
+   * toast, because `"" ?? fallback` is `""`.
+   *
+   * And when the message came ONLY from stdout, it is marked `expected`. That is
+   * the honest reading: git exiting non-zero while writing nothing to stderr is
+   * git DECLINING to do something, not GitStudio failing at it — a state of the
+   * user's repo. Without this, teaching these paths to speak would have turned
+   * every "nothing to do" into a crash report, which is exactly the trap the
+   * commit fix fell into first.
+   */
   private async staged(
-    op: (ctx: GitContext) => Promise<{ ok?: boolean; code?: number; stderr?: string }>,
+    op: (
+      ctx: GitContext,
+    ) => Promise<{ ok?: boolean; code?: number; stderr?: string; stdout?: string }>,
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
@@ -1066,7 +1108,17 @@ export class GitBridge {
       try {
         const r = await op(ctx);
         const ok = r.ok ?? r.code === 0;
-        return { ok, changed: ok, message: ok ? undefined : r.stderr?.trim() };
+        if (ok) {
+          return { ok, changed: true };
+        }
+        const stderr = r.stderr?.trim() ?? "";
+        const stdout = r.stdout?.trim() ?? "";
+        return {
+          ok: false,
+          changed: false,
+          message: stderr || stdout || "The operation failed.",
+          ...(stderr ? {} : { expected: true }),
+        };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
       }
@@ -1099,7 +1151,18 @@ export class GitBridge {
       try {
         const result = await ctx.process.run(args);
         if (result.code !== 0) {
-          return { ok: false, changed: false, message: result.stderr.trim() };
+          // Same stdout fallback and same `expected` rule as staged(): reverting
+          // a commit that is already reverted exits non-zero with stderr EMPTY
+          // and "nothing to commit, working tree clean" on stdout, which used to
+          // arrive as a blank toast. It is git declining, not us failing.
+          const stderr = result.stderr.trim();
+          const stdout = result.stdout.trim();
+          return {
+            ok: false,
+            changed: false,
+            message: stderr || stdout || "The operation failed.",
+            ...(stderr ? {} : { expected: true }),
+          };
         }
         return { ok: true, changed: true };
       } catch (err) {
@@ -1189,7 +1252,9 @@ export class GitBridge {
   private runResult(args: string[]): Promise<CommitActionResult> {
     return this.staged(async (ctx) => {
       const r = await ctx.process.run(args);
-      return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+      // stdout matters here: rebase --continue with unresolved conflicts, and
+      // merge-continue's `commit --no-edit`, both explain themselves there.
+      return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
     });
   }
 

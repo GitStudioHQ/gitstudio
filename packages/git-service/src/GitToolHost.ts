@@ -20,6 +20,8 @@ import type {
   ToolWriteResult,
 } from "@gitstudio/ai/gitTools";
 import type { GitContext } from "./GitContext";
+import { commitBlockerMessage } from "./StagingProvider";
+import { stashBlockerMessage } from "./StashProvider";
 
 /** Largest blob the read_file tool will return inline. */
 const FILE_CAP_BYTES = 256 * 1024;
@@ -254,7 +256,28 @@ class GitContextToolHost implements GitToolHost {
     if (!message.trim() && !amend) {
       return { ok: false, message: "A commit message is required." };
     }
-    return w(await this.ctx.staging.commit(message, { amend }));
+    const r = await this.ctx.staging.commit(message, { amend });
+    if (r.ok) {
+      return { ok: true };
+    }
+    // An agent needs the diagnosis at least as much as a human does: `git commit`
+    // with nothing staged leaves stderr empty, so `w()` handed back "git reported
+    // an error." — from which the only available next move is to guess. The real
+    // answer names the missing step, which is a tool call the agent already has.
+    const stderr = r.stderr.trim();
+    if (!stderr) {
+      const blocker = await this.ctx.staging.whyNothingToCommit();
+      if (blocker) {
+        return {
+          ok: false,
+          message:
+            blocker === "cleanTree"
+              ? commitBlockerMessage(blocker)
+              : `${commitBlockerMessage(blocker)} Use git_stage first.`,
+        };
+      }
+    }
+    return { ok: false, message: stderr || r.stdout.trim() || "git reported an error." };
   }
 
   async createBranch(name: string, checkout?: boolean): Promise<ToolWriteResult> {
@@ -275,7 +298,18 @@ class GitContextToolHost implements GitToolHost {
     if (message && /[\0\n]/.test(message)) {
       return UNSAFE;
     }
-    return w(await this.ctx.stashes.save({ message, includeUntracked }));
+    const r = await this.ctx.stashes.save({ message, includeUntracked });
+    if (!r.ok) {
+      return { ok: false, message: r.stderr.trim() || "git reported an error." };
+    }
+    // The worst version of this bug, because the caller is a machine: `git stash
+    // push` with nothing to save exits 0, so `w()` reported SUCCESS and an agent
+    // would carry on believing the working tree was safely parked — and then
+    // reasonably do something destructive next.
+    if (!r.created) {
+      return { ok: false, message: stashBlockerMessage(r.blocker ?? "cleanTree") };
+    }
+    return { ok: true };
   }
 
   // ── destructive ──
