@@ -1,0 +1,64 @@
+apps/desktop/src/main/github/gists.ts
+  s_daa89ab6f34762::t_d556c8fa4dc312 110,132,145
+  s_daa89ab6f34762::t_c7b72dd4d35d46 14
+apps/desktop/src/main/githubAuth.ts
+  s_daa89ab6f34762::t_d8324951892a58 102-120
+  s_daa89ab6f34762::t_0c24bdaac5608e 29-40
+  s_daa89ab6f34762::t_7886a288945a73 13-15
+  s_daa89ab6f34762::t_2707619a539394 56-63,65-79,81-83
+  s_daa89ab6f34762::t_983f32f10e0e4f 41
+apps/desktop/src/main/githubErrors.ts
+  s_daa89ab6f34762::t_3240c5ceec21ec 56-59,61-81
+  s_daa89ab6f34762::t_b01418a0ddf272 95-112
+  s_daa89ab6f34762::t_ac22f032f67fda 32
+  s_daa89ab6f34762::t_5542925a6dffa8 1-31,33-55,60,82-94
+apps/desktop/src/main/github/notifications.ts
+  s_daa89ab6f34762::t_c7b72dd4d35d46 13
+  s_daa89ab6f34762::t_d556c8fa4dc312 56,72
+apps/desktop/src/main/github/issues.ts
+  s_daa89ab6f34762::t_d556c8fa4dc312 185,207,221,266,289,306,334,356,378,400
+  s_daa89ab6f34762::t_c7b72dd4d35d46 17
+apps/desktop/src/main/github/prs.ts
+  s_daa89ab6f34762::t_d556c8fa4dc312 186,203,225,242,261,290,500,526,549,567,589,631,650
+  s_daa89ab6f34762::t_c7b72dd4d35d46 22
+apps/desktop/src/main/githubClient.ts
+  s_daa89ab6f34762::t_15576e97ec543e 8
+  s_daa89ab6f34762::t_ecb0d76eb62226 59,66,75-93,95,105-118,120,122-125,127-129
+apps/desktop/src/main/github/projects.ts
+  s_daa89ab6f34762::t_d556c8fa4dc312 213,237
+  s_daa89ab6f34762::t_c7b72dd4d35d46 16
+apps/desktop/src/shared/ipc.ts
+  s_daa89ab6f34762::t_f070bb19eacfe1 573-578
+  s_daa89ab6f34762::t_83687da2b5054c 450-451
+apps/desktop/test/githubErrors.test.ts
+  s_daa89ab6f34762::t_3fe987977a5696 5
+  s_daa89ab6f34762::t_b7f33aec216ca1 1-4,6-109,138-152
+  s_daa89ab6f34762::t_8a74dac155a518 110-137
+apps/desktop/src/main/github/actions.ts
+  s_daa89ab6f34762::t_3d2980ee4dc12c 186,195-197,200
+  s_daa89ab6f34762::t_c7b72dd4d35d46 21
+  s_daa89ab6f34762::t_d556c8fa4dc312 372
+apps/desktop/src/main/githubBridge.ts
+  s_daa89ab6f34762::t_210431148f2241 197-207,209
+  s_daa89ab6f34762::t_d556c8fa4dc312 208,219,385,416
+  s_daa89ab6f34762::t_c7b72dd4d35d46 19
+apps/desktop/src/main/github/releases.ts
+  s_daa89ab6f34762::t_c7b72dd4d35d46 14
+  s_daa89ab6f34762::t_d556c8fa4dc312 155,190,216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "6919549448c9f0d67fd7829603d3b678c3982c6a",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
