@@ -13,6 +13,7 @@ Two invariants the workflows enforce — don't work around them:
 
 - **The tag must equal the `version` in the product's `package.json`.** Both workflows fail fast on a mismatch (vsce and electron-builder ship whatever is in `package.json`, not what the tag says).
 - **Desktop releases own `/releases/latest`.** The in-app auto-updater resolves the repo's *latest* release for its feed, so extension releases are created with `--latest=false`. Never manually mark an `ext-v*` release as latest.
+- **The version bump includes `package-lock.json`.** The lock records a `version` for each workspace, and nothing in CI reads it — `npm ci` is happy either way, because every internal dependency is declared as `"*"`. So the drift is silent, and it accumulated across ext-v1.5.0/1.5.1 until the lock still said `1.4.0`. Run `npm install --package-lock-only` after the bump and stage the lock with the `package.json`, or the next unrelated `npm install` drops a surprise version diff into someone else's PR.
 
 ---
 
@@ -44,9 +45,12 @@ If a publish step failed because a secret was missing: add the secret, then re-r
 #    apps/extension/CHANGELOG.md
 #    (optional) docs/releases/ext-v1.0.0.md  ->  used as the Release notes
 
-# 2. Commit, tag, push THE ONE TAG (never `--tags`: that pushes every stale
+# 2. Refresh the lock's workspace version (see the invariant above)
+npm install --package-lock-only
+
+# 3. Commit, tag, push THE ONE TAG (never `--tags`: that pushes every stale
 #    local tag and can fire old release workflows)
-git add apps/extension/package.json apps/extension/CHANGELOG.md
+git add apps/extension/package.json apps/extension/CHANGELOG.md package-lock.json
 git commit -m "release(ext): 1.0.0"
 git tag ext-v1.0.0
 git push origin main ext-v1.0.0
@@ -64,7 +68,8 @@ code    --install-extension gitstudio.vsix --force
 ```bash
 # 1. Bump apps/desktop/package.json  ->  "version": "1.0.0"
 #    (optional) docs/releases/app-v1.0.0.md  ->  used as the Release notes
-git add apps/desktop/package.json
+npm install --package-lock-only
+git add apps/desktop/package.json package-lock.json
 git commit -m "release(app): 1.0.0"
 git tag app-v1.0.0
 git push origin main app-v1.0.0

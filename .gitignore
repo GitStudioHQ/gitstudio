@@ -8,3 +8,7 @@ release/
 
 # IDE dependency-graph plugin artifacts
 .dependencygraph/
+
+# Claude Code's per-repo scratch area. It holds nested git worktrees, so a single
+# `git add -A` would otherwise commit entire checkouts into this repo.
+.claude/
