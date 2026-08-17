@@ -14,6 +14,7 @@ import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import type { LineRange } from "@gitstudio/engine/staging/applyLineChanges";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
+import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import type {
   CommitRecord,
   GitContext,
@@ -489,7 +490,52 @@ export class GitBridge {
     }
     return this.serialize(async () => {
       const r = await ctx.staging.commit(req.message, { amend: req.amend });
-      return { ok: r.ok, changed: r.ok, message: r.ok ? undefined : r.stderr };
+      if (r.ok) {
+        return { ok: true, changed: true };
+      }
+      // git refuses a commit with nothing staged on exit 1, explains itself on
+      // STDOUT, and leaves stderr empty — so passing `r.stderr` through gave the
+      // renderer an error toast with no text in it (issue #16). An empty stderr
+      // is the cue to ask git what the situation is.
+      const stderr = r.stderr.trim();
+      const blocker = stderr
+        ? undefined
+        : await ctx.staging.whyNothingToCommit();
+      if (blocker) {
+        // `expected` matters here, and only became necessary once this path
+        // started returning a message at all: the IPC wrapper crash-reports any
+        // ok:false result that carries one, so giving "nothing is staged" a
+        // message would otherwise have filed a report every time someone hit
+        // Commit too early. See main/expectedError.ts.
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: commitBlockerMessage(blocker),
+        };
+      }
+      // `expected` here too, and this one is a fix for the fix: giving this
+      // branch a message at all made it crash-reportable, because the IPC
+      // wrapper files any ok:false result that carries one. A pre-commit hook
+      // that exits non-zero WITHOUT printing anything leaves both streams empty
+      // (verified against real git), so the fallback text below would have been
+      // filed as a GitStudio failure — for someone else's hook doing exactly
+      // what it was written to do.
+      //
+      // The policy that settles it: `git commit` exiting non-zero is never our
+      // defect. It means a hook rejected the commit, a signing key failed, files
+      // are unmerged, or nothing was staged — every one of them a state of the
+      // user's repo. Our own bugs in this path throw, and throws are still
+      // reported.
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          stderr ||
+          r.stdout.trim() ||
+          "git refused the commit without saying why. If this repository has a pre-commit hook, check its output.",
+      };
     });
   }
 

@@ -882,6 +882,11 @@
           "default": true,
           "description": "Show a count badge on the GitStudio activity-bar icon for changed files in the working tree (like the built-in Source Control badge). The tooltip also reports commits waiting to be pulled."
         },
+        "gitstudio.changes.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the Changes list up to date on its own — after you save a file, and when the window regains focus so edits made by other tools show up too. Turn this off on a very large repository to refresh only on demand."
+        },
         "gitstudio.blame.clickOpensCommit": {
           "type": "boolean",
           "default": true,

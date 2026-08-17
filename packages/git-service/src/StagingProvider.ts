@@ -23,6 +23,59 @@ export interface CommitResult {
 }
 
 /**
+ * `commit()` alone also carries stdout — every other staging operation reports
+ * failure on stderr like a well-behaved command, but `git commit` does not.
+ */
+export interface CommitOutcome extends CommitResult {
+  /**
+   * git's stdout, kept because a REFUSED commit says why there — not on stderr.
+   * "nothing to commit, working tree clean" and "no changes added to commit"
+   * both arrive here with stderr empty, so reading stderr alone produced an
+   * error dialog with no text in it at all (issue #16).
+   *
+   * Show it, never match on it: it is localised. `whyNothingToCommit` is the
+   * locale-independent way to decide WHICH message the user should get.
+   */
+  stdout: string;
+}
+
+/**
+ * Why a commit was refused when it had nothing to do. Locale-independent — each
+ * value comes from asking git a yes/no question, not from reading its prose.
+ */
+export type CommitBlocker =
+  /** Tracked files have been edited, but none of it is staged. */
+  | "unstagedChanges"
+  /** The only changes are new files git isn't tracking yet. */
+  | "untrackedOnly"
+  /** Genuinely nothing to do — the working tree matches HEAD. */
+  | "cleanTree";
+
+/**
+ * What to tell the user about a `CommitBlocker`.
+ *
+ * The sentence lives here, next to the enum it explains, so the extension and
+ * the desktop app cannot drift into describing the same state differently — the
+ * same operation should read the same wherever you start it. The PREFIX is the
+ * caller's business: the extension says "GitStudio: …" because it is a guest
+ * inside another editor, and the app does not because it is GitStudio.
+ *
+ * None of these are errors. Nothing staged is a state a user is allowed to be
+ * in, so callers should surface them as information/warning and must not file a
+ * crash report for them.
+ */
+export function commitBlockerMessage(blocker: CommitBlocker): string {
+  switch (blocker) {
+    case "unstagedChanges":
+      return "Nothing is staged — stage the changes you want to include, then commit.";
+    case "untrackedOnly":
+      return "Nothing is staged — the only changes are new files git isn't tracking yet. Stage them to include them in a commit.";
+    case "cleanTree":
+      return "Nothing to commit — the working tree is clean.";
+  }
+}
+
+/**
  * Host-agnostic git staging plumbing: stage/unstage/discard whole files, stage
  * arbitrary reconstructed content (the line/hunk-staging path), read index/HEAD
  * versions, and commit. Pure git CLI — never imports `vscode`, so it works
@@ -246,7 +299,7 @@ export class StagingProvider {
    * `amend` and an empty message is given, git reuses the previous message
    * (`--amend` with no `-F`).
    */
-  async commit(message: string, opts?: CommitOptions): Promise<CommitResult> {
+  async commit(message: string, opts?: CommitOptions): Promise<CommitOutcome> {
     const args = ["commit"];
     if (opts?.amend) {
       args.push("--amend");
@@ -273,7 +326,47 @@ export class StagingProvider {
       signal: opts?.signal,
       input: reuseMessage ? undefined : message,
     });
-    return { ok: r.code === 0, stderr: r.stderr };
+    return { ok: r.code === 0, stderr: r.stderr, stdout: r.stdout };
+  }
+
+  /**
+   * Why did a commit that FAILED have nothing to do?
+   *
+   * Call this only when the commit failed AND stderr was empty. That pairing is
+   * itself the signal: git reports a real refusal ("Committing is not possible
+   * because you have unmerged files", a rejecting hook, a bad gpg key) on
+   * stderr, and reports "there was nothing to do" on stdout with stderr empty.
+   * So a non-empty stderr always has a better answer than this function does,
+   * and unmerged files — which would otherwise look like "unstaged changes"
+   * here — never reach it.
+   *
+   * Returns undefined when something WAS staged, i.e. the commit failed for a
+   * reason this cannot explain; show git's own output in that case.
+   *
+   * Three single-purpose git questions instead of parsing `status --porcelain`
+   * XY codes: no locale, no rename records to skip, and each one says exactly
+   * what it is. `--exclude-standard` matters — without it every ignored build
+   * artefact would count as "untracked changes you could stage".
+   */
+  async whyNothingToCommit(
+    opts?: StagingOptions,
+  ): Promise<CommitBlocker | undefined> {
+    if ((await this.stagedCount(opts)) > 0) {
+      return undefined;
+    }
+    const [unstaged, untracked] = await Promise.all([
+      this.proc.run(["diff", "--name-only", "-z"], { signal: opts?.signal }),
+      this.proc.run(["ls-files", "--others", "--exclude-standard", "-z"], {
+        signal: opts?.signal,
+      }),
+    ]);
+    if (countNulSeparated(unstaged) > 0) {
+      return "unstagedChanges";
+    }
+    if (countNulSeparated(untracked) > 0) {
+      return "untrackedOnly";
+    }
+    return "cleanTree";
   }
 
   /** The number of staged entries that differ from HEAD (`git diff --cached
@@ -286,9 +379,16 @@ export class StagingProvider {
     if (r.code !== 0) {
       return 0;
     }
-    const names = r.stdout.split("\0").filter((s) => s.length > 0);
-    return names.length;
+    return countNulSeparated(r);
   }
+}
+
+/** Entries in a `-z` path list. A failed command counts as zero, not as junk. */
+function countNulSeparated(r: { code: number; stdout: string }): number {
+  if (r.code !== 0) {
+    return 0;
+  }
+  return r.stdout.split("\0").filter((s) => s.length > 0).length;
 }
 
 /**

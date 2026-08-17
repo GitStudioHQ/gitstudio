@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
+import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
+import { isWorkingTreeFileOf } from "../util/repoScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { Change } from "../git/git";
 import { getNonce } from "../webview/html";
@@ -172,6 +174,15 @@ export interface CommitMessageGenerator {
 
 const LAYOUT_KEY = "gitstudio.commit.layout";
 
+/**
+ * How long to wait after a file save (or the window regaining focus) before
+ * re-reading the working tree. Shorter than repoManager's 400ms firehose
+ * debounce because this one is a direct response to something the user just
+ * did — long enough to fold a Save All into one refresh, short enough that the
+ * list still reads as live rather than manually refreshed.
+ */
+const EXTERNAL_REFRESH_DEBOUNCE_MS = 300;
+
 /** Git's canonical empty-tree object — the "before" side when previewing the
  *  push of a branch whose oldest unpushed commit is a root commit. */
 const COMMIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -190,6 +201,10 @@ export class CommitViewProvider
 
   private view: vscode.WebviewView | undefined;
   private readonly disposables: vscode.Disposable[] = [];
+  /** Pending debounce for a working-tree change (see scheduleExternalRefresh). */
+  private externalRefresh: ReturnType<typeof setTimeout> | undefined;
+  /** Does the pending refresh need vscode.git to re-scan, or just a re-push? */
+  private externalRescan = false;
   private busy = false;
 
   /**
@@ -229,6 +244,120 @@ export class CommitViewProvider
     private readonly generator?: CommitMessageGenerator,
   ) {
     this.disposables.push(this.repos.onDidChange(() => void this.pushState()));
+
+    // Nothing in GitStudio watched the WORKING TREE (issue #17). The extension's
+    // only two file watchers are scoped to .git metadata, and there was no save
+    // or focus handler anywhere — so editing a file produced no signal at all,
+    // and the list kept showing whatever it last read. "Leave the view and come
+    // back" worked because visibility is the one thing that re-pushed
+    // (see resolveWebviewView), which is exactly the workaround the report
+    // describes.
+    //
+    // Two triggers, because they cover different worlds:
+    //   · a save in THIS window — the reported case, and the common one.
+    //   · the window regaining focus — an edit made by another tool entirely
+    //     (a CLI, a formatter, another editor), which no editor event can see.
+    // The two differ in ONE respect, and it matters more than it looks:
+    // whether they ask vscode.git to re-scan.
+    //
+    // A save does not. If vscode.git is attached it watches the working tree and
+    // will notice the save on its own; if it is not attached, resolveState reads
+    // the working tree itself, so a plain push already produces fresh data. And
+    // asking it to re-scan is expensive in a way that has nothing to do with
+    // this view: its status event feeds RepoManager's firehose, which thirteen
+    // subscribers listen to — including the Pull Requests view, which answers by
+    // reloading from the GitHub API. A file save cannot change a pull request,
+    // and paying a network round-trip per keystroke-save would be indefensible.
+    //
+    // Regaining focus does re-scan, because that is the case where something
+    // outside the editor may have changed the repo behind everyone's back — and
+    // it happens a few times an hour, not a few times a minute.
+    this.disposables.push(
+      vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (this.isInActiveRepo(doc.uri)) {
+          this.scheduleExternalRefresh(false);
+        }
+      }),
+      vscode.window.onDidChangeWindowState((state) => {
+        if (state.focused) {
+          this.scheduleExternalRefresh(true);
+        }
+      }),
+      new vscode.Disposable(() => this.cancelExternalRefresh()),
+    );
+  }
+
+  /**
+   * Is `uri` a file inside the active repository — and not git's own metadata?
+   *
+   * The `.git` exclusion matters because a save is not the only thing that lands
+   * there; the point of this hook is working-tree edits, and repoManager already
+   * watches the metadata that matters (HEAD, MERGE_HEAD, the index) with its own
+   * dedicated watchers.
+   */
+  private isInActiveRepo(uri: vscode.Uri): boolean {
+    if (uri.scheme !== "file") {
+      return false;
+    }
+    const root = this.repos.getActive()?.ctx.root;
+    return !!root && isWorkingTreeFileOf(uri.fsPath, root);
+  }
+
+  /**
+   * Coalesce a burst into one refresh: Save All over fifty files, or a
+   * format-on-save that writes the file a second time, are each one edit as far
+   * as the user is concerned.
+   */
+  private scheduleExternalRefresh(rescan: boolean): void {
+    const enabled = vscode.workspace
+      .getConfiguration("gitstudio")
+      .get<boolean>("changes.autoRefresh", true);
+    if (!enabled) {
+      return;
+    }
+    // A pending re-scan is never downgraded by a later save: if anything in the
+    // burst asked for the expensive read, the burst gets it.
+    this.externalRescan = this.externalRescan || rescan;
+    this.cancelExternalRefresh();
+    this.externalRefresh = setTimeout(() => {
+      this.externalRefresh = undefined;
+      const rescanNow = this.externalRescan;
+      this.externalRescan = false;
+      void this.refreshFromDisk(rescanNow);
+    }, EXTERNAL_REFRESH_DEBOUNCE_MS);
+  }
+
+  private cancelExternalRefresh(): void {
+    if (this.externalRefresh) {
+      clearTimeout(this.externalRefresh);
+      this.externalRefresh = undefined;
+    }
+  }
+
+  /**
+   * Re-scan, THEN push. The order is the whole fix, and it is the same lesson
+   * mutate() already carries: pushState reads vscode.git's IN-MEMORY state, so
+   * pushing without asking for a re-scan first just re-renders the stale list.
+   *
+   * Deliberately NOT gated on `view.visible`. The activity-bar badge is built
+   * from this same state, and a hidden panel is exactly when that badge is the
+   * only thing you can see — gating here would trade one stale surface for
+   * another. It is cheap enough: with vscode.git attached the state read costs no
+   * git processes, only the re-scan does.
+   */
+  private async refreshFromDisk(rescan = true): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry) {
+      return;
+    }
+    if (rescan) {
+      try {
+        await entry.repo?.status?.();
+      } catch {
+        // Best-effort — push anyway so we repaint from whatever we can read.
+      }
+    }
+    await this.pushState();
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -246,7 +375,10 @@ export class CommitViewProvider
     );
     view.onDidChangeVisibility(() => {
       if (view.visible) {
-        void this.pushState();
+        // Re-scan, not just re-push: "leave the view and come back" was the
+        // workaround people found for the stale list (issue #17), so of all the
+        // paths this is the one that must actually be true when it returns.
+        void this.refreshFromDisk();
       }
     });
     view.onDidDispose(() => {
@@ -355,7 +487,13 @@ export class CommitViewProvider
     switch (msg.type) {
       case "ready":
         this.markReady?.();
-        await this.pushState();
+        // The in-view Refresh button posts "ready" too, so this is also the
+        // user's manual escape hatch — and it was the WEAKEST path of all: it
+        // re-pushed vscode.git's cache without ever asking for a re-scan, so
+        // pressing Refresh on a stale list could repaint the same stale list.
+        // If anything earns the cost of a real re-scan, it is someone explicitly
+        // asking to be brought up to date.
+        await this.refreshFromDisk();
         return;
       case "amendToggled":
         await this.pushState(!!msg.amend);
@@ -750,13 +888,48 @@ export class CommitViewProvider
           ? await ledger.runWithUndo(entry, "Amend commit", doCommit)
           : await doCommit();
       if (!result.ok) {
+        const stderr = result.stderr.trim();
+        // Nothing staged is not a failure, and it used to read as one with no
+        // text at all: git refuses with exit 1, says why on STDOUT, and leaves
+        // stderr empty — so "commit failed — unknown error" was the whole
+        // message (issue #16). An empty stderr is the signal to ask git what the
+        // situation actually is, rather than to shrug.
+        const blocker = stderr
+          ? undefined
+          : await entry.ctx.staging.whyNothingToCommit();
+        if (blocker) {
+          const text = commitBlockerMessage(blocker);
+          // Information, not error: the user did nothing wrong.
+          void vscode.window.showInformationMessage(`GitStudio: ${text}`);
+          void this.view?.webview.postMessage({
+            type: "commitDone",
+            ok: false,
+            error: text,
+          });
+          // And repaint. Reaching this at all means the list was lying: the
+          // Commit button is disabled unless the pushed state says something is
+          // staged, so a stale list is what let the click through. Telling the
+          // user "nothing is staged" while the rows that contradict it are still
+          // on screen would be the same bug wearing a better message.
+          await this.refreshFromDisk();
+          return;
+        }
+        // A real failure. git explains most of them on stderr; stdout is next
+        // because `git commit` is the one command that puts a refusal there. A
+        // silent hook leaves BOTH empty — say so plainly rather than shrugging
+        // with "unknown error", since a rejecting hook is by far the likeliest
+        // way to get here with nothing to show.
+        const detail =
+          stderr ||
+          result.stdout.trim() ||
+          "git refused the commit without saying why. If this repository has a pre-commit hook, check its output.";
         void vscode.window.showErrorMessage(
-          `GitStudio: commit failed — ${result.stderr.trim() || "unknown error"}`,
+          `GitStudio: commit failed — ${detail}`,
         );
         void this.view?.webview.postMessage({
           type: "commitDone",
           ok: false,
-          error: result.stderr.trim(),
+          error: detail,
         });
         return;
       }

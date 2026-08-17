@@ -2715,7 +2715,17 @@ class App {
     try {
       const r = await host.invoke("commit", { message, amend: opts?.amend });
       if (!r.ok) {
-        toast(r.message ?? "Commit failed.", "error");
+        // `expected` marks a state the user is allowed to be in — nothing staged,
+        // a clean tree — so it reads as information, not as a red failure. It is
+        // the same flag the crash reporter reads, which keeps the two decisions
+        // ("do we report this?" / "does this look like an error?") from drifting.
+        toast(r.message || "Commit failed.", r.expected ? "info" : "error");
+        // Repaint either way: reaching "nothing is staged" means the list on
+        // screen disagreed with the repo, and leaving those rows up would
+        // contradict the message we just showed.
+        bust("status");
+        bust("diff");
+        if (this.currentView === "changes") void this.showChangesView();
         return;
       }
       if (push) {

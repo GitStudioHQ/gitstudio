@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { GitContext, GitProcess } from "@gitstudio/git-service/index";
 import type { API, Repository } from "./git";
 import { getBuiltInGitApi } from "./builtInGit";
+import { isSamePathOrInside } from "../util/repoScope";
 
 // Coalesce bursts of git activity (a rebase touches many ref files in quick
 // succession) into a single refresh, while still feeling instant on a branch
@@ -391,20 +392,12 @@ export class RepoManager implements vscode.Disposable {
 /** True when `filePath` sits at or below `dir` (path-boundary aware). Delegates
  * to isSamePathOrInside so it is separator- and case-tolerant: on Windows both
  * arguments are vscode fsPaths using "\", which the old forward-slash-only
- * boundary never matched — so the active repo fell back to the wrong root. */
+ * boundary never matched — so the active repo fell back to the wrong root.
+ *
+ * The implementation lives in util/repoScope.ts, where it is unit-tested. It
+ * used to be a private copy here; the Changes view then needed the same
+ * comparison and grew a second one that was case-SENSITIVE — the very bug this
+ * comment records, reintroduced a few files away. One copy now. */
 function isPathInside(filePath: string, dir: string): boolean {
   return isSamePathOrInside(filePath, dir);
-}
-
-/** Case-insensitive on macOS/Windows: is `child` the same path as, or inside,
- * `parent`? Used to detect whether git's symlink-resolved root already matches
- * the opened folder (vscode.git-compatible root resolution). */
-function isSamePathOrInside(child: string, parent: string): boolean {
-  const norm = (p: string): string => {
-    const noTrail = p.replace(/[\\/]+$/, "");
-    return process.platform === "linux" ? noTrail : noTrail.toLowerCase();
-  };
-  const c = norm(child);
-  const p = norm(parent);
-  return c === p || c.startsWith(p + "/") || c.startsWith(p + "\\");
 }
