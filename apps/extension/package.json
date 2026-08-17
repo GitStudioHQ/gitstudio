@@ -882,6 +882,19 @@
           "default": true,
           "description": "Show a count badge on the GitStudio activity-bar icon for changed files in the working tree (like the built-in Source Control badge). The tooltip also reports commits waiting to be pulled."
         },
+        "gitstudio.changes.stagingModel": {
+          "type": "string",
+          "enum": [
+            "split",
+            "checkboxes"
+          ],
+          "enumDescriptions": [
+            "Separate Staged and Unstaged groups \u2014 the clearest view of what is going into this commit.",
+            "One list with a tick per file, JetBrains-style. Ticking a file stages it, so both models are the same underlying Git state."
+          ],
+          "default": "split",
+          "description": "How the Changes view presents your work. Either way, committing with nothing ticked or staged offers to commit everything after asking."
+        },
         "gitstudio.changes.autoRefresh": {
           "type": "boolean",
           "default": true,

@@ -73,6 +73,12 @@ interface StatePayload {
   staged: FileEntry[];
   unstaged: FileEntry[];
   stagedCount: number;
+  /**
+   * How the file list is presented: "split" keeps the staged/unstaged groups,
+   * "checkboxes" shows one list with a tick per file (issue #16). The tick maps
+   * onto the index, so the two models are two views of the same git state.
+   */
+  stagingModel: "split" | "checkboxes";
   /** Branch name, or the short revision when HEAD is detached. */
   branch?: string;
   /** True when `branch` is a revision (detached HEAD), not a branch name. */
@@ -110,6 +116,7 @@ interface FromWebview {
     | "discard"
     | "openDiff"
     | "stageAll"
+    | "stageAllForCommit"
     | "unstageAll"
     | "discardAll"
     | "stageFolder"
@@ -170,6 +177,17 @@ interface FromWebview {
 export interface CommitMessageGenerator {
   isEnabled(): Promise<boolean>;
   draft(entry: RepoEntry): Promise<string | null>;
+}
+
+/**
+ * Which staging model the Changes view presents. Read per push rather than
+ * cached, so flipping the setting takes effect on the next repaint without a
+ * reload — the same idiom the other settings here use.
+ */
+function readStagingModel(): "split" | "checkboxes" {
+  return vscode.workspace
+    .getConfiguration("gitstudio")
+    .get<"split" | "checkboxes">("changes.stagingModel", "split");
 }
 
 const LAYOUT_KEY = "gitstudio.commit.layout";
@@ -558,6 +576,9 @@ export class CommitViewProvider
       case "stageAll":
         await this.doBulkStage(msg.group);
         return;
+      case "stageAllForCommit":
+        await this.doStageAllForCommit();
+        return;
       case "unstageAll":
         await this.doBulkUnstage();
         return;
@@ -757,6 +778,62 @@ export class CommitViewProvider
     }
   }
 
+  /**
+   * When nothing is staged, ask whether to commit everything — and stage it if
+   * so (issue #16).
+   *
+   * Returns "cancelled" when the user declined, otherwise "ok" (which includes
+   * the ordinary case where something WAS already staged and nothing was asked).
+   *
+   * Deliberately stages for real rather than committing with `-a`: `-a` skips
+   * untracked files and bypasses the index, so what got committed would not match
+   * what the list showed. Staging first means the thing you confirmed is exactly
+   * the thing that lands.
+   */
+  private async confirmCommitAll(entry: RepoEntry): Promise<"ok" | "cancelled"> {
+    const { merge, staged, unstaged } = await this.resolveState(entry);
+    if (staged.length > 0) {
+      return "ok"; // normal path — commit what is staged, as always
+    }
+    const candidates = [...merge, ...unstaged];
+    if (candidates.length === 0) {
+      return "ok"; // nothing anywhere; the commit will explain itself
+    }
+    const n = candidates.length;
+    const ok = await promptConfirm({
+      title: `Commit all ${n} changed file${n === 1 ? "" : "s"}?`,
+      message:
+        "Nothing is staged, so everything currently changed will be included — new files too. " +
+        "Stage individually first if you only want some of it.",
+      confirmLabel: `Commit all ${n}`,
+    });
+    if (!ok) {
+      return "cancelled";
+    }
+    const result = await entry.ctx.staging.stageFiles(candidates.map((e) => e.path));
+    if (!result.ok) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: couldn't stage the changes — ${result.stderr.trim() || "unknown error"}`,
+      );
+      return "cancelled";
+    }
+    return "ok";
+  }
+
+  /** Stage everything currently changed — the checklist's "check all". */
+  private async doStageAllForCommit(): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    const { merge, unstaged } = await this.resolveState(active);
+    const rels = [...merge, ...unstaged].map((e) => e.path);
+    if (rels.length === 0) {
+      return;
+    }
+    await this.mutate((e) => e.ctx.staging.stageFiles(rels));
+  }
+
   private async doBulkStage(group?: GroupKind): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
@@ -867,6 +944,19 @@ export class CommitViewProvider
       );
       void this.view?.webview.postMessage({ type: "commitDone", ok: false });
       return;
+    }
+
+    // Nothing staged, but there IS work? Offer to commit all of it rather than
+    // refusing (issue #16). VS Code and JetBrains both do this, and requiring a
+    // separate staging step for "commit what I just did" is friction with no
+    // payoff. The confirmation is the point — you see what is about to go in
+    // before it does, so nothing is committed that you did not look at.
+    if (!msg.amend) {
+      const included = await this.confirmCommitAll(entry);
+      if (included === "cancelled") {
+        void this.view?.webview.postMessage({ type: "commitDone", ok: false });
+        return;
+      }
     }
 
     this.busy = true;
@@ -1726,6 +1816,7 @@ export class CommitViewProvider
       staged,
       unstaged,
       stagedCount,
+      stagingModel: readStagingModel(),
       branch,
       detached,
       branches: this.lastBranches,
@@ -2590,6 +2681,20 @@ export class CommitViewProvider
     .groups { margin: 0 0 2px; }
     .group { margin-top: 4px; }
     .group.empty { display: none; }
+    /* Checkbox model (gitstudio.changes.stagingModel = "checkboxes"). The tick
+       is the only staging affordance in this mode, so it gets a real hit area
+       rather than the browser default. */
+    .ck {
+      flex: 0 0 auto;
+      width: 14px;
+      height: 14px;
+      margin: 0 6px 0 0;
+      accent-color: var(--gs-accent);
+      cursor: pointer;
+    }
+    .ck-master { margin-left: 2px; }
+    .group--all .row.is-file { padding-left: 20px; }
+
     .group-header {
       display: flex;
       align-items: center;
@@ -3258,6 +3363,7 @@ export class CommitViewProvider
     });
 
     let stagedCount = 0;
+    let stagingModel = "split";
     let aheadCount = 0;     // commits a push would send (drives the button label)
     let canPublish = false; // there IS somewhere to push/publish those commits
     let onUpstream = false; // branch tracks an upstream (Push) vs not (Publish)
@@ -3419,9 +3525,21 @@ export class CommitViewProvider
     function renderCommitButtons() {
       const verb = amend.checked ? "Amend" : "Commit";
       const hasStaged = stagedCount > 0 || amend.checked;
+      // Anything at all to commit? With nothing staged the host offers to commit
+      // everything after confirming (issue #16), so the button must be reachable —
+      // it used to be disabled, which is how a stale list could make it look like
+      // there was nothing to do.
+      const totalChanges =
+        (lastState ? lastState.merge.length + lastState.staged.length + lastState.unstaged.length : 0);
+      const canCommit = hasStaged || totalChanges > 0;
       // Commit button label + state.
-      if (!committing) commitLabel.textContent = hasStaged && stagedCount > 0 ? verb + " " + stagedCount : verb;
-      commitBtn.disabled = committing || hostBusy || !hasStaged;
+      if (!committing) {
+        commitLabel.textContent =
+          stagedCount > 0 ? verb + " " + stagedCount
+          : !amend.checked && totalChanges > 0 ? verb + " all " + totalChanges
+          : verb;
+      }
+      commitBtn.disabled = committing || hostBusy || !canCommit;
       // Primary action mode + label. "Push" is available whenever there are
       // unpushed commits — OR the branch has no upstream yet (publish), where the
       // ahead count reads 0 but there IS local work to send. Only a tracked
@@ -4894,11 +5012,89 @@ export class CommitViewProvider
       changesTotal.textContent = String(total);
       changesTotal.classList.toggle("visible", total > 0);
 
+      if (stagingModel === "checkboxes") {
+        groupsEl.appendChild(renderChecklist(data));
+        return;
+      }
+
       for (const def of GROUP_DEFS) {
         const list = data[def.kind];
         if (def.kind === "merge" && list.length === 0) continue;
         groupsEl.appendChild(renderGroup(def, list));
       }
+    }
+
+    // ── Checkbox model (gitstudio.changes.stagingModel = "checkboxes") ─────────
+    //
+    // One list, a tick per file, JetBrains-style — no staged/unstaged split to
+    // think about (issue #16).
+    //
+    // The tick IS the index. Ticking stages the file, unticking runs the unstage
+    // that already exists, and the checked state is read straight back from
+    // whether git reports the file as staged. That is the whole trick: no shadow
+    // selection to drift out of sync with the repository, nothing new to persist,
+    // and every other surface (the badge, the commit count, an external git add
+    // in a terminal) keeps agreeing with what you see.
+    function renderChecklist(data) {
+      const all = []
+        .concat(data.merge.map(function (e) { return { entry: e, staged: false, kind: "merge" }; }))
+        .concat(data.staged.map(function (e) { return { entry: e, staged: true, kind: "staged" }; }))
+        .concat(data.unstaged.map(function (e) { return { entry: e, staged: false, kind: "unstaged" }; }));
+      all.sort(function (a, b) { return a.entry.path.localeCompare(b.entry.path); });
+
+      const group = el("div", "group group--all" + (all.length === 0 ? " empty" : ""));
+      const header = el("div", "group-header");
+      const master = el("input", "ck ck-master");
+      master.type = "checkbox";
+      const checkedCount = all.filter(function (f) { return f.staged; }).length;
+      master.checked = checkedCount > 0 && checkedCount === all.length;
+      master.indeterminate = checkedCount > 0 && checkedCount < all.length;
+      master.title = master.checked ? "Uncheck all" : "Check all";
+      master.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        // Aim at the state the user is asking for, not at a toggle of each row:
+        // from indeterminate, one click should mean "include everything".
+        if (checkedCount === all.length && all.length > 0) {
+          queueGroup("staged", "unstage");
+          vscode.postMessage({ type: "unstageAll" });
+        } else {
+          queueGroup("unstaged", "stage");
+          vscode.postMessage({ type: "stageAllForCommit" });
+        }
+      });
+      const glabel = el("span", "glabel");
+      glabel.textContent = "Changes";
+      const gcount = el("span", "gcount");
+      gcount.textContent = String(all.length);
+      const actions = el("span", "group-actions");
+      actions.appendChild(makeIconBtn(ICON_DISCARD, "Discard All", function (ev) {
+        ev.stopPropagation();
+        vscode.postMessage({ type: "discardAll", group: "unstaged" });
+      }));
+      header.append(master, glabel, actions, gcount);
+      group.appendChild(header);
+
+      const body = el("div", "group-body");
+      for (const f of all) {
+        const def = f.kind === "merge" ? GROUP_DEFS[0] : f.staged ? GROUP_DEFS[1] : GROUP_DEFS[2];
+        const row = renderFileRow(def, f.entry, 1);
+        const ck = el("input", "ck");
+        ck.type = "checkbox";
+        ck.checked = f.staged;
+        ck.title = f.staged ? "Included in the commit" : "Not included";
+        ck.addEventListener("click", function (ev) {
+          // The row itself opens the diff; the tick must not.
+          ev.stopPropagation();
+          vscode.postMessage({
+            type: f.staged ? "unstage" : "stage",
+            path: f.entry.path,
+          });
+        });
+        row.insertBefore(ck, row.firstChild);
+        body.appendChild(row);
+      }
+      group.appendChild(body);
+      return group;
     }
 
     function renderGroup(def, list) {
@@ -5184,6 +5380,9 @@ export class CommitViewProvider
         reconcilePending(authState);
         lastState = applyPending(authState);
         stagedCount = lastState.staged.length;
+        // From the MESSAGE, not from lastState: applyPending() rebuilds lastState
+        // out of the three file lists, so anything else on the payload is dropped.
+        stagingModel = msg.stagingModel || "split";
         branchData = msg.branches || { local: [], remote: [], recent: [], tags: [] };
         // Only rebuild an OPEN branch menu when the branch data actually
         // changed. Every state push (and now the redundant 2nd post) would
