@@ -149,8 +149,15 @@ test("two identical stashes in the same second: BOTH are real, though git keeps 
   assert.equal(second.blocker, undefined, "so there is nothing to explain away");
   // Both times the working tree really was cleaned, which is the user's question.
   assert.equal(git("status", "--porcelain").trim(), "");
-  // And git's own bookkeeping collapsed them, which is git's business, not ours.
-  assert.equal(stashEntries(), 1, "git deduped the identical commit");
+  // How many entries git kept is git's business, and it is genuinely timing
+  // dependent: the two stash commits are byte identical ONLY while both land in
+  // the same second, so git collapses them to one — and if the clock ticks
+  // between the two pushes, there are two. Windows CI found exactly that.
+  //
+  // Which is the point. `created` is true either way, because it is answered
+  // BEFORE the push from "was there anything to stash?", not afterwards from a
+  // count that this race can move.
+  assert.ok([1, 2].includes(stashEntries()), "one entry if git deduped, two if the second ticked");
 });
 
 test("a stash of ONLY staged changes counts — a stash takes the index too", async () => {
