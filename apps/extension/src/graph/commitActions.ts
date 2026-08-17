@@ -55,13 +55,18 @@ export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
         icon: "git-branch",
       });
     } else if (ref.kind === "remoteHead") {
-      // Ellipsis: both of these ask something before they act.
+      // No ellipsis: as of 1.6.0 this acts immediately, landing you on a local
+      // branch that tracks the remote one. It used to open a rename prompt and
+      // was labelled "…" accordingly; leaving the ellipsis behind would promise
+      // a dialog that no longer exists, which is exactly the thing an ellipsis
+      // is for. The tag arm below keeps its ellipsis because it still asks.
       items.push({
         id: `${REF_ACTION}remoteHead:${ref.name}`,
-        label: `Checkout ${ref.name}…`,
+        label: `Checkout ${ref.name}`,
         icon: "cloud",
       });
     } else {
+      // Ellipsis: checking out a tag confirms first, because it detaches HEAD.
       items.push({
         id: `${REF_ACTION}tag:${ref.name}`,
         label: `Checkout ${ref.name}…`,
