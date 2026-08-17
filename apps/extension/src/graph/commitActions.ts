@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
+import { pausedForUser } from "../git/pausedForUser";
+import { planRemoteCheckout } from "../git/checkoutRemote";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
@@ -35,9 +37,9 @@ const REF_ACTION = "ref:";
  *
  * Built host-side from the refs the panel already holds rather than from the
  * clicked chip, which is deliberate: a row's local branch and its remote twin
- * render as ONE chip, and any ref past the fourth is folded into a "+N" pill, so
- * a chip-driven menu could never reach either. The name rides in the id, so this
- * needs no protocol change.
+ * render as ONE chip, and any ref that does not fit the column is folded into a
+ * "+N" pill, so a chip-driven menu could never reach either. The name rides in
+ * the id, so this needs no protocol change.
  */
 export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
   const items: GraphMenuItem[] = [];
@@ -202,20 +204,11 @@ async function checkoutRef(
   }
 
   if (kind === "remoteHead") {
-    // origin/feature → local "feature" tracking origin/feature.
-    const suggested = name.includes("/") ? name.slice(name.indexOf("/") + 1) : name;
-    const local = await promptInput({
-      title: `Check out ${name}`,
-      hint: `Creates a local branch tracking ${name}.`,
-      value: suggested,
-      confirmLabel: "Checkout",
-      validate: "refName",
-    });
-    if (!local) {
-      return false;
-    }
-    return withUndo(undo, `Checkout ${local}`, () =>
-      runGit(ctx, ["checkout", "-b", local, name], `Checked out ${local} (tracking ${name})`),
+    // Straight to the branch — no name prompt. "Checkout origin/x" now does what
+    // it says, the same as clicking a local branch does.
+    const plan = await planRemoteCheckout(ctx.process, name);
+    return withUndo(undo, plan.undoLabel, () =>
+      runGit(ctx, plan.args, plan.success),
     );
   }
 
@@ -310,7 +303,7 @@ async function cherryPick(
     // locale hit the empty-pick case, the /conflict/i test did not fire, and a
     // routine "this is already applied" was shown as a failure AND filed as a
     // crash report. The marker file says the same thing in every language.
-    if (await pausedForUser(ctx, result.code, "CHERRY_PICK_HEAD")) {
+    if (await pausedForUser(ctx.process, result.code, "CHERRY_PICK_HEAD")) {
       void vscode.window.showWarningMessage(
         `Cherry-pick of ${short(commit.sha)} needs a decision — resolve any ` +
           `conflicts and continue, skip this commit, or abort.`,
@@ -408,7 +401,7 @@ async function revert(
     const stderr = result.stderr.trim();
     // Same locale-independent test as cherryPick: REVERT_HEAD means git stopped
     // to ask, not that the revert failed.
-    if (await pausedForUser(ctx, result.code, "REVERT_HEAD")) {
+    if (await pausedForUser(ctx.process, result.code, "REVERT_HEAD")) {
       void vscode.window.showWarningMessage(
         `Revert of ${short(commit.sha)} needs a decision — resolve any ` +
           `conflicts and continue, or abort the revert.`,
@@ -506,36 +499,6 @@ async function runGit(
   }
   showGitError(`git ${args[0]} failed`, result.stderr.trim());
   return true;
-}
-
-/**
- * Did THIS operation stop to ask the user something?
- *
- * Two conditions, and both are load-bearing.
- *
- * The marker ref (CHERRY_PICK_HEAD / REVERT_HEAD) exists while an operation is
- * in progress — the same answer in every locale, unlike reading git's prose.
- *
- * But the marker alone is not enough: if a cherry-pick was ALREADY paused and
- * you start another one, git refuses ("you have unmerged files") while the old
- * marker is still there, pointing at the earlier commit. Reading the marker on
- * its own would announce that the commit you just picked "needs a decision",
- * naming a commit git never touched, and swallow the real reason.
- *
- * The exit code separates them cleanly: git exits 1 when it PAUSED (conflict, or
- * an empty pick) and 128 when it REFUSED (bad revision, dirty tree, an operation
- * already in progress). Verified against git 2.49 across all six cases.
- */
-async function pausedForUser(
-  ctx: GitContext,
-  code: number,
-  marker: string,
-): Promise<boolean> {
-  if (code !== 1) {
-    return false;
-  }
-  const r = await ctx.process.run(["rev-parse", "--verify", "--quiet", marker]);
-  return r.code === 0;
 }
 
 function showGitError(title: string, stderr: string): void {

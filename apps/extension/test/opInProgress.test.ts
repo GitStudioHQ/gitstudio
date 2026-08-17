@@ -4,9 +4,13 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  pausedForUser as isPaused,
+  type OperationMarker,
+} from "../src/git/pausedForUser";
 
-// A cherry-pick or revert that stops to ask the user is NOT a failure, but git
-// says so only in prose — and prose is localised.
+// A cherry-pick, revert, merge or rebase that stops to ask the user is NOT a
+// failure, but git says so only in prose — and prose is localised.
 //
 // A user on a Russian locale cherry-picked a commit whose change was already on
 // the branch. Git paused and explained (in Russian) that the pick was now empty
@@ -14,9 +18,15 @@ import { join } from "node:path";
 // was shown as "Cherry-pick failed" AND filed as a crash report.
 //
 // The marker refs are the locale-independent answer: git writes CHERRY_PICK_HEAD
-// / REVERT_HEAD while an operation is paused, and `rev-parse --verify --quiet`
-// exits 0 only then. These tests pin that contract against real git, because it
-// is git's behaviour we are relying on, not ours.
+// / REVERT_HEAD / MERGE_HEAD / REBASE_HEAD while an operation is paused, and
+// `rev-parse --verify --quiet` exits 0 only then. These tests pin that contract
+// against real git, because it is git's behaviour we are relying on, not ours.
+//
+// Merge and rebase (issue #9) need the pinning MORE than cherry-pick did, not
+// less: for them exit code 1 is genuinely ambiguous. `git merge nosuchref` and a
+// rebase refused over a dirty tree both exit 1 without pausing, so the marker is
+// the only thing keeping those two on the error path. The last four tests cover
+// exactly that.
 
 // Hermetic git, for the reason packages/git-service/test/hermetic.ts spells out:
 // against a developer's real global config, git inherits LFS filters, hooks, and
@@ -68,12 +78,17 @@ function cleanup(dir: string): void {
 }
 
 /**
- * Exactly what commitActions.ts's pausedForUser() decides: exit code 1 AND the
- * marker ref. Both conditions matter — see the "already paused" test below.
+ * The SHIPPED predicate — exit code 1 AND the marker ref — driven against real
+ * git in a real repo. Imported rather than reimplemented: a local copy would
+ * keep passing after the source drifted away from it, which is the one failure
+ * this file exists to prevent.
  */
-function pausedForUser(cwd: string, code: number, marker: string): boolean {
-  if (code !== 1) return false;
-  return git(cwd, "rev-parse", "--verify", "--quiet", marker).code === 0;
+function pausedForUser(
+  cwd: string,
+  code: number,
+  marker: OperationMarker,
+): Promise<boolean> {
+  return isPaused({ run: async (args) => git(cwd, ...args) }, code, marker);
 }
 
 function repo(): string {
@@ -87,7 +102,7 @@ function repo(): string {
   return dir;
 }
 
-test("an empty cherry-pick reads as paused, not failed", () => {
+test("an empty cherry-pick reads as paused, not failed", async () => {
   const dir = repo();
   try {
     git(dir, "checkout", "-qb", "side");
@@ -104,7 +119,7 @@ test("an empty cherry-pick reads as paused, not failed", () => {
     const r = git(dir, "cherry-pick", sha);
     assert.equal(r.code, 1, "a pause is exit 1");
     assert.equal(
-      pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"),
+      await pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"),
       true,
       "this is the case that was misreported as a crash on a non-English locale",
     );
@@ -113,7 +128,7 @@ test("an empty cherry-pick reads as paused, not failed", () => {
   }
 });
 
-test("a conflicting cherry-pick reads as paused", () => {
+test("a conflicting cherry-pick reads as paused", async () => {
   const dir = repo();
   try {
     git(dir, "checkout", "-qb", "side");
@@ -128,19 +143,19 @@ test("a conflicting cherry-pick reads as paused", () => {
 
     const r = git(dir, "cherry-pick", sha);
     assert.equal(r.code, 1, "a pause is exit 1");
-    assert.equal(pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"), true);
+    assert.equal(await pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"), true);
   } finally {
     cleanup(dir);
   }
 });
 
-test("a genuine cherry-pick failure is NOT paused, so it still reports", () => {
+test("a genuine cherry-pick failure is NOT paused, so it still reports", async () => {
   const dir = repo();
   try {
     const r = git(dir, "cherry-pick", "deadbeef".repeat(5));
     assert.equal(r.code, 128, "a refusal is exit 128");
     assert.equal(
-      pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"),
+      await pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"),
       false,
       "a bad revision is a real failure and must keep reaching the error path",
     );
@@ -149,7 +164,7 @@ test("a genuine cherry-pick failure is NOT paused, so it still reports", () => {
   }
 });
 
-test("a pick REFUSED because one is already paused is not treated as paused", () => {
+test("a pick REFUSED because one is already paused is not treated as paused", async () => {
   // The marker alone gets this wrong. With a pick already paused, starting
   // another one makes git refuse — but CHERRY_PICK_HEAD is still present, still
   // pointing at the EARLIER commit. Reading only the marker would announce that
@@ -181,7 +196,7 @@ test("a pick REFUSED because one is already paused is not treated as paused", ()
       "the stale marker is still there — which is exactly the trap",
     );
     assert.equal(
-      pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"),
+      await pausedForUser(dir, r.code, "CHERRY_PICK_HEAD"),
       false,
       "must fall through to the real error so git's reason reaches the user",
     );
@@ -190,10 +205,10 @@ test("a pick REFUSED because one is already paused is not treated as paused", ()
   }
 });
 
-test("a conflicting revert reads as paused, and a clean repo does not", () => {
+test("a conflicting revert reads as paused, and a clean repo does not", async () => {
   const dir = repo();
   try {
-    assert.equal(pausedForUser(dir, 1, "REVERT_HEAD"), false, "nothing in progress yet");
+    assert.equal(await pausedForUser(dir, 1, "REVERT_HEAD"), false, "nothing in progress yet");
 
     writeFileSync(join(dir, "f.txt"), "second\n");
     git(dir, "add", ".");
@@ -205,7 +220,131 @@ test("a conflicting revert reads as paused, and a clean repo does not", () => {
 
     const r = git(dir, "revert", "--no-edit", target);
     assert.equal(r.code, 1, "a pause is exit 1");
-    assert.equal(pausedForUser(dir, r.code, "REVERT_HEAD"), true);
+    assert.equal(await pausedForUser(dir, r.code, "REVERT_HEAD"), true);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+// ── Merge / rebase (issue #9) ────────────────────────────────────────────────
+//
+// branchActions.ts used to read `/conflict/i` off stderr for these two. Same
+// defect as the cherry-pick one, and the same fix — but the exit codes here are
+// messier than cherry-pick's clean 1-vs-128 split, which is why each case below
+// asserts the raw code as well as the verdict.
+
+/** A repo whose `side` branch conflicts with `main` on f.txt, HEAD on main. */
+function diverged(): string {
+  const dir = repo();
+  git(dir, "checkout", "-qb", "side");
+  writeFileSync(join(dir, "f.txt"), "SIDE\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-qm", "side edit");
+  git(dir, "checkout", "-q", "main");
+  writeFileSync(join(dir, "f.txt"), "MAIN\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-qm", "main edit");
+  return dir;
+}
+
+test("a conflicting merge reads as paused, not failed", async () => {
+  const dir = diverged();
+  try {
+    assert.equal(await pausedForUser(dir, 1, "MERGE_HEAD"), false, "nothing in progress yet");
+
+    const r = git(dir, "merge", "side");
+    assert.equal(r.code, 1, "a pause is exit 1");
+    assert.equal(
+      await pausedForUser(dir, r.code, "MERGE_HEAD"),
+      true,
+      "the user must get 'resolve, then continue or abort', not raw stderr",
+    );
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("a merge REFUSED is not paused — including the exit-1 refusals", async () => {
+  // The case that makes merge harder than cherry-pick: git exits 1 for an
+  // unknown ref too, so the exit code ALONE would call it a conflict and tell
+  // the user to go resolve something that was never started.
+  const dir = diverged();
+  try {
+    const unknown = git(dir, "merge", "nosuchref");
+    assert.equal(unknown.code, 1, "git exits 1 here as well — the trap");
+    assert.equal(
+      await pausedForUser(dir, unknown.code, "MERGE_HEAD"),
+      false,
+      "no MERGE_HEAD means nothing paused, whatever the exit code says",
+    );
+
+    // A merge onto a dirty tree: a third exit code again (2), still a refusal.
+    writeFileSync(join(dir, "f.txt"), "uncommitted\n");
+    const dirty = git(dir, "merge", "side");
+    assert.notEqual(dirty.code, 0, "git refuses to merge over local changes");
+    assert.equal(await pausedForUser(dir, dirty.code, "MERGE_HEAD"), false);
+    git(dir, "checkout", "--", ".");
+
+    // And the stale-marker trap: with a merge already paused, a second one is
+    // refused while MERGE_HEAD still stands from the first.
+    assert.equal(git(dir, "merge", "side").code, 1, "first merge pauses");
+    const second = git(dir, "merge", "side");
+    assert.notEqual(second.code, 1, "git REFUSES while a merge is in progress");
+    assert.equal(
+      git(dir, "rev-parse", "--verify", "--quiet", "MERGE_HEAD").code,
+      0,
+      "the stale marker is still there — which is exactly the trap",
+    );
+    assert.equal(
+      await pausedForUser(dir, second.code, "MERGE_HEAD"),
+      false,
+      "must fall through so git's real reason reaches the user",
+    );
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("a conflicting rebase reads as paused, not failed", async () => {
+  const dir = diverged();
+  try {
+    assert.equal(await pausedForUser(dir, 1, "REBASE_HEAD"), false, "nothing in progress yet");
+
+    const r = git(dir, "rebase", "side");
+    assert.equal(r.code, 1, "a pause is exit 1");
+    assert.equal(await pausedForUser(dir, r.code, "REBASE_HEAD"), true);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test("a rebase REFUSED is not paused, and a clean one leaves no marker", async () => {
+  const dir = diverged();
+  try {
+    // Unstaged changes: git refuses with exit 1 — again, the code alone lies.
+    writeFileSync(join(dir, "f.txt"), "uncommitted\n");
+    const dirty = git(dir, "rebase", "side");
+    assert.equal(dirty.code, 1, "a refusal that exits 1 — the trap");
+    assert.equal(
+      await pausedForUser(dir, dirty.code, "REBASE_HEAD"),
+      false,
+      "no REBASE_HEAD means nothing paused",
+    );
+    git(dir, "checkout", "--", ".");
+
+    // A rebase that succeeds must leave nothing behind that a LATER failed
+    // operation could mistake for its own pause.
+    git(dir, "checkout", "-qb", "clean", "main");
+    writeFileSync(join(dir, "unrelated.txt"), "x\n");
+    git(dir, "add", ".");
+    git(dir, "commit", "-qm", "unrelated");
+    const ok = git(dir, "rebase", "main");
+    assert.equal(ok.code, 0, "a clean rebase succeeds");
+    assert.equal(
+      git(dir, "rev-parse", "--verify", "--quiet", "REBASE_HEAD").code,
+      1,
+      "no marker survives a completed rebase",
+    );
   } finally {
     cleanup(dir);
   }

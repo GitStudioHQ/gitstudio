@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
+import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { pausedForUser, type OperationMarker } from "../git/pausedForUser";
+import { planRemoteCheckout } from "../git/checkoutRemote";
 import {
   promptConfirm,
   promptInput,
@@ -123,7 +126,14 @@ export async function mergeBranchIntoCurrent(
   }
   await withUndo(repos, a, `Merge ${ref.name}`, async () => {
     const result = await a.ctx.branches.merge(ref.name);
-    reportMergeLike(result, `Merged ${ref.name}`, "Merge", refresh);
+    await reportMergeLike(
+      a.ctx,
+      result,
+      `Merged ${ref.name}`,
+      "Merge",
+      "MERGE_HEAD",
+      refresh,
+    );
   });
 }
 
@@ -147,7 +157,14 @@ export async function rebaseCurrentOnto(
   }
   await withUndo(repos, a, `Rebase onto ${ref.name}`, async () => {
     const result = await a.ctx.branches.rebaseOnto(ref.name);
-    reportMergeLike(result, `Rebased onto ${ref.name}`, "Rebase", refresh);
+    await reportMergeLike(
+      a.ctx,
+      result,
+      `Rebased onto ${ref.name}`,
+      "Rebase",
+      "REBASE_HEAD",
+      refresh,
+    );
   });
 }
 
@@ -504,22 +521,16 @@ export async function checkoutRemoteBranch(
   if (!ref) {
     return;
   }
-  // origin/feature → local "feature" tracking origin/feature.
-  const local = ref.name.includes("/")
-    ? ref.name.slice(ref.name.indexOf("/") + 1)
-    : ref.name;
-  const name = await promptInput({
-    title: `Check out ${ref.name}`,
-    hint: `Creates a local branch tracking ${ref.name}.`,
-    value: local,
-    confirmLabel: "Checkout",
-    validate: "refName",
-  });
-  if (!name) {
-    return;
-  }
-  const result = await a.ctx.branches.checkoutNew(name, ref.name);
-  report(result, `Checked out ${name} (tracking ${ref.name})`, refresh);
+  // Straight to the branch — no name prompt. Renaming is a separate thing you
+  // can do afterwards, and "New Branch From Here…" already covers landing on a
+  // different name in one step.
+  const plan = await planRemoteCheckout(a.ctx.process, ref.name);
+  const result = await a.ctx.process.run(plan.args);
+  report(
+    { ok: result.code === 0, stderr: result.stderr },
+    plan.success,
+    refresh,
+  );
 }
 
 export async function deleteRemoteBranch(
@@ -867,29 +878,44 @@ function report(
   }
 }
 
-/** Like report, but a conflict in stderr is surfaced as a softer warning. */
-function reportMergeLike(
-  result: { ok: boolean; stderr: string },
+/**
+ * Like report, but an operation that merely PAUSED for a conflict is surfaced as
+ * a softer warning with a next step, not as a failure.
+ *
+ * This used to ask git's stderr — `/conflict/i` — which is the same defect that
+ * made a routine cherry-pick read as a crash on a Russian locale (fixed in
+ * 1.5.2). It asks git directly now: exit code 1 AND the operation's marker ref.
+ * `MERGE_HEAD` / `REBASE_HEAD` are spelled the same in every language.
+ *
+ * Both halves matter here even more than they do for cherry-pick, because for
+ * these two operations exit 1 is genuinely ambiguous: `git merge nosuchref` and
+ * a rebase refused over a dirty tree BOTH exit 1 without pausing. The marker is
+ * what keeps those on the error path.
+ */
+async function reportMergeLike(
+  ctx: GitContext,
+  result: { ok: boolean; code: number; stderr: string },
   success: string,
   verb: string,
+  marker: OperationMarker,
   refresh: () => void,
-): void {
+): Promise<void> {
   if (result.ok) {
     flash(success);
     refresh();
     return;
   }
-  const stderr = result.stderr.trim();
-  if (/conflict/i.test(stderr) || /after resolving/i.test(stderr)) {
+  if (await pausedForUser(ctx.process, result.code, marker)) {
     void vscode.window.showWarningMessage(
       `${verb} hit conflicts. Resolve them, then continue or abort.`,
     );
     refresh();
-  } else {
-    void vscode.window.showErrorMessage(
-      stderr ? `${verb} failed: ${stderr}` : `${verb} failed`,
-    );
+    return;
   }
+  const stderr = result.stderr.trim();
+  void vscode.window.showErrorMessage(
+    stderr ? `${verb} failed: ${stderr}` : `${verb} failed`,
+  );
 }
 
 /**
