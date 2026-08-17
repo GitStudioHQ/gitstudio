@@ -3779,8 +3779,15 @@ export class CommitViewProvider
     // Clicks in the editor/main area never reach this webview; blur is the only
     // signal that focus left it, so close the popover (JetBrains dismisses
     // popovers on any click anywhere in the IDE).
+    // blur does NOT bubble, but capture starts at window — so clicking inside
+    // the menu (moving focus off the focused row) fires this too. Only close
+    // when focus has genuinely left the webview: the setTimeout lets the focus
+    // move settle first, and the branchMenu-null guard keeps a stale callback
+    // from closing a menu that was already dismissed.
     function onBranchBlur() {
-      closeBranchMenu();
+      setTimeout(() => {
+        if (branchMenu && !document.hasFocus()) closeBranchMenu();
+      }, 0);
     }
     function onBranchKey(e) {
       if (e.key === "Escape") {
@@ -3914,7 +3921,9 @@ export class CommitViewProvider
     // this document. Blur is the only signal that focus left the webview, so
     // treat it like a click-outside (JetBrains dismisses popovers on any click).
     function onActionBlur() {
-      closeActionMenu();
+      setTimeout(() => {
+        if (actionMenuEl && !document.hasFocus()) closeActionMenu();
+      }, 0);
     }
     function onActionKey(e) {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeActionMenu(); }
@@ -4348,9 +4357,19 @@ export class CommitViewProvider
 
       // Clicks in the editor/main area never reach this webview; blur is the
       // only signal that focus left it, so dismiss the dialog like JetBrains
-      // does for any click outside. Closing answers "undefined" (cancelled) —
-      // safe for destructive confirms, which only act on the explicit OK.
-      dlgBlurHandler = function () { closeDialog(undefined); };
+      // does for any click outside. BUT blur does not bubble — capture starts
+      // at window — so a click INSIDE the dialog (focus moving off the input
+      // onto a row) fires this handler too. Only dismiss when focus has really
+      // left the webview: the setTimeout lets the focus move settle, and the
+      // dlgEl guard keeps a stale callback from closing a dialog that was
+      // already answered — or a newer one opened by the very choice that closed
+      // this one. Closing answers "undefined" (cancelled); destructive confirms
+      // still only act on the explicit OK.
+      dlgBlurHandler = function () {
+        setTimeout(function () {
+          if (dlgEl && !document.hasFocus()) closeDialog(undefined);
+        }, 0);
+      };
       window.addEventListener("blur", dlgBlurHandler, true);
 
       dlgEl = el("div", "rp-panel");
