@@ -1,0 +1,26 @@
+packages/git-service/src/ConflictProvider.ts
+  s_daa89ab6f34762::t_2ed229df22d561 135-143,172-191
+  s_daa89ab6f34762::t_dd2fa586ffded9 192
+apps/extension/src/graph/commitActions.ts
+  s_daa89ab6f34762::t_431dc228f59690 6,319,428,506,510-544
+apps/desktop/src/main/gitBridge.ts
+  s_daa89ab6f34762::t_8b9f599c833d88 20,1064-1080,1102-1105,1226-1229
+packages/git-service/test/unmergedSignal.test.ts
+  s_daa89ab6f34762::t_762869a1f8a4d1 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "57f6aabc21334b8129aa086deb9e22aad9c66a39",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
