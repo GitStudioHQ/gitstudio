@@ -1,0 +1,38 @@
+apps/extension/src/graph/commitActions.ts
+  s_daa89ab6f34762::t_6b8fb38c7f2f6b 6
+apps/extension/src/views/branchActions.ts
+  s_daa89ab6f34762::t_6b8fb38c7f2f6b 6
+apps/desktop/src/shared/ipc.ts
+  s_daa89ab6f34762::t_c1118e8f78508e 135,137-143,153,155-156
+apps/desktop/src/main/gitBridge.ts
+  s_daa89ab6f34762::t_e17437bf2602b2 19,1053-1092,1186-1188,1463-1465
+apps/desktop/src/renderer/refMenuItems.ts
+  s_daa89ab6f34762::t_bae1299e9aa646 1-61
+apps/desktop/test/refMenuItems.test.ts
+  s_daa89ab6f34762::t_0a3cd3218d9d26 1-77
+packages/git-service/test/checkoutRemote.test.ts
+  s_daa89ab6f34762::t_6b8fb38c7f2f6b 1-207
+packages/git-service/src/checkoutRemote.ts
+  s_daa89ab6f34762::t_6b8fb38c7f2f6b 1-84
+apps/desktop/src/renderer/contextMenu.ts
+  s_daa89ab6f34762::t_3ec54a1fa0c5eb 13-16,48-58,60
+  s_daa89ab6f34762::t_bae1299e9aa646 8,59,72-79
+apps/desktop/src/renderer/renderer.ts
+  s_daa89ab6f34762::t_11ad5bf3f60e27 2880,3208-3227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "48e6ea5f98af2dd9a53d985a39c3db1a2c462d79",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
