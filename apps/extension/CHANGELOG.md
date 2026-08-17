@@ -4,6 +4,59 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-08-17
+
+### Added
+- **The Changes list keeps itself up to date.** Editing a file and switching back
+  to GitStudio showed the list as it was, until you hit refresh or left the view
+  and came back — because nothing in GitStudio watched the working tree. Its two
+  file watchers only ever looked at git's own metadata, so a save produced no
+  signal at all, and the list's data source is a cache that was read but never
+  asked to refresh. It now updates after you save, and again whenever the window
+  regains focus so that edits made by another tool entirely — a CLI, a formatter,
+  another editor — appear as well. Bursts are folded together, so *Save All*
+  across fifty files is one refresh. Set `gitstudio.changes.autoRefresh` to
+  `false` on a very large repository to go back to refreshing on demand.
+  *(Reported by @wkornewald, #17.)*
+
+### Fixed
+- **Committing with nothing staged said nothing at all.** The error dialog was
+  empty. `git commit` is the one git command that reports this particular refusal
+  on *stdout* rather than stderr — so reading stderr, as every other operation
+  safely does, produced a failure with no text in it. GitStudio now says which
+  situation you are actually in: changes waiting to be staged, only new untracked
+  files, or a genuinely clean tree. It asks git three yes/no questions to decide,
+  so the message is right on a translated git too, and it is shown as information
+  rather than as an error, because having staged nothing yet is not a mistake.
+  *(Reported by @wkornewald, #16.)*
+- **Widening the Branch/Tag column now actually reveals more branches.** The
+  column stopped at four chips no matter how wide you dragged it — the limit was
+  a count applied before any width was measured, so the obvious thing to try
+  silently did nothing. Width is the only limit now, and the column reveals as
+  many as genuinely fit. *(#11, following on from #5.)*
+- **The "+N" badge explains itself immediately.** Hovering it used to mean
+  holding the pointer still for several seconds and hoping, because it relied on
+  the browser's own tooltip — whose delay restarts every time the pointer moves.
+  In the Commits sidebar it never appeared at all, since the row's tooltip won
+  over it. It is now GitStudio's own hover card, opens straight away on both
+  surfaces, and names each hidden ref's kind so you can tell a tag from a branch.
+- **A merge or rebase that stops for conflicts is no longer reported as a
+  failure.** The same defect 1.5.2 fixed for cherry-pick and revert: the two were
+  told apart by matching git's English output, so on a translated git a merge that
+  had merely paused was presented as an outright failure with raw stderr instead
+  of "resolve, then continue or abort". GitStudio asks git directly now. This case
+  needed more care than cherry-pick did, because for merge and rebase a plain
+  failure and a pause can share the same exit code — an unknown branch name and a
+  rebase over unstaged changes both exit the way a conflict does. *(#9.)*
+
+### Changed
+- **Checking out a remote branch just checks it out.** It used to open a dialog
+  asking you to name the local branch, pre-filled with the name it had already
+  worked out — so the answer was almost always "yes, that one". Picking
+  `origin/fix/login` now puts you on `fix/login`, tracking it, in one step; if a
+  local branch of that name already exists, you simply switch to it. To land on a
+  different name, use *New Branch From Here…*, or rename after checking out.
+
 ## [1.5.2] - 2026-08-15
 
 ### Fixed
