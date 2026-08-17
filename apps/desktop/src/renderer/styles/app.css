@@ -6036,3 +6036,15 @@ body.vscode-light .gh-label-chip {
   color: var(--status-warn);
   background: color-mix(in srgb, var(--status-warn) 16%, transparent);
 }
+
+/* Checkbox staging model (issue #16). The tick is the only staging affordance in
+   this mode, so it gets a real hit area rather than the browser default. */
+.dc-ck {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0 8px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.dc-ck-master { margin-left: 2px; }

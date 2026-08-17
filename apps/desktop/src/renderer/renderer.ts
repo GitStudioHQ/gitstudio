@@ -112,6 +112,8 @@ class App {
   private currentView = "code";
   /** Guards re-entrant disk-triggered refreshes (see refreshFromDisk). */
   private refreshingFromDisk = false;
+  /** "split" (staged/unstaged groups) or "checkboxes" (one ticked list) — issue #16. */
+  private stagingModelPref: "split" | "checkboxes" = "split";
   /**
    * The Changes composer's in-progress state, held on the instance because
    * every stage / unstage / discard rebuilds that whole subtree. Without it,
@@ -245,6 +247,9 @@ class App {
     }
     if (prefs.branchCatsCollapsed && typeof prefs.branchCatsCollapsed === "object") {
       this.branchCatsCollapsed = prefs.branchCatsCollapsed as Record<string, boolean>;
+    }
+    if (prefs.stagingModel === "checkboxes" || prefs.stagingModel === "split") {
+      this.stagingModelPref = prefs.stagingModel;
     }
     if (prefs.themeMode === "system" || prefs.themeMode === "light" || prefs.themeMode === "dark") {
       this.themeMode = prefs.themeMode;
@@ -643,6 +648,7 @@ class App {
   private persist(): void {
     savePrefs({
       currentView: this.currentView,
+      stagingModel: this.stagingModelPref,
       compareFileListW: this.compareFileListW,
       compareView: this.compareView,
       branchCatsCollapsed: this.branchCatsCollapsed,
@@ -2389,6 +2395,28 @@ class App {
     const tTitle = el("span", "dc-toolbar-title");
     tTitle.textContent = "Changes";
     const tSpacer = el("div", "topbar-spacer");
+    // Switch how this view presents staging (issue #16): the staged/unstaged
+    // split, or one list with a tick per file. A preference, not a migration —
+    // the split stays the default because the separation is clearer to read.
+    const modelBtn = el("button", "mini-btn dc-model");
+    const syncModelBtn = (): void => {
+      const checks = this.stagingModel() === "checkboxes";
+      modelBtn.replaceChildren(
+        glyph(checks ? "list-selection" : "list-flat"),
+        span(checks ? "Checkboxes" : "Staged / Unstaged"),
+      );
+      modelBtn.title = checks
+        ? "Showing one list with a tick per file — click for the staged/unstaged split"
+        : "Showing the staged/unstaged split — click for one list with checkboxes";
+    };
+    syncModelBtn();
+    modelBtn.addEventListener("click", () => {
+      this.stagingModelPref = this.stagingModel() === "checkboxes" ? "split" : "checkboxes";
+      this.persist();
+      syncModelBtn();
+      void this.showChangesView();
+    });
+
     const stageAllBtn = el("button", "mini-btn");
     stageAllBtn.append(glyph("check-all"), span("Stage all"));
     stageAllBtn.addEventListener("click", () => void this.changesAction("stageAll", undefined));
@@ -2454,7 +2482,7 @@ class App {
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showChangesView());
-    toolbar.append(tTitle, tSpacer, reviewBtn, createPrBtn, stageLinesBtn, wsBtn, stageAllBtn, refreshBtn);
+    toolbar.append(tTitle, tSpacer, modelBtn, reviewBtn, createPrBtn, stageLinesBtn, wsBtn, stageAllBtn, refreshBtn);
 
     const body = el("div", "dc-body");
     const lists = el("div", "dc-lists");
@@ -2632,6 +2660,50 @@ class App {
       );
       return;
     }
+    if (this.stagingModel() === "checkboxes") {
+      // One list, a tick per file (issue #16). The tick IS the index: ticking
+      // stages, unticking unstages, and the checked state is read back from what
+      // git reports — so there is no shadow selection able to drift away from the
+      // repository, and an external `git add` keeps agreeing with the UI.
+      const all = [
+        ...staged.map((f) => ({ f, staged: true })),
+        ...unstaged.map((f) => ({ f, staged: false })),
+      ].sort((a, b) => a.f.path.localeCompare(b.f.path));
+
+      const head = groupLabel(`Changes (${all.length})`);
+      const master = document.createElement("input");
+      master.type = "checkbox";
+      master.className = "dc-ck dc-ck-master";
+      master.checked = staged.length > 0 && unstaged.length === 0;
+      master.indeterminate = staged.length > 0 && unstaged.length > 0;
+      master.title = master.checked ? "Uncheck all" : "Check all";
+      master.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        // From a partial selection, one click means "include everything" — not a
+        // per-row toggle.
+        void this.changesAction(unstaged.length === 0 ? "unstageAll" : "stageAll", undefined);
+      });
+      head.insertBefore(master, head.firstChild);
+      lists.appendChild(head);
+
+      for (const { f, staged: isStaged } of all) {
+        const row = fileRow(f, isStaged ? "staged" : "unstaged");
+        const ck = document.createElement("input");
+        ck.type = "checkbox";
+        ck.className = "dc-ck";
+        ck.checked = isStaged;
+        ck.title = isStaged ? "Included in the commit" : "Not included";
+        ck.addEventListener("click", (ev) => {
+          // The row opens the diff; the tick must not.
+          ev.stopPropagation();
+          void this.changesAction(isStaged ? "unstage" : "stage", f.path);
+        });
+        row.insertBefore(ck, row.firstChild);
+        lists.appendChild(row);
+      }
+      return;
+    }
+
     if (staged.length) {
       lists.appendChild(groupLabel(`Staged (${staged.length})`));
       staged.forEach((f) => lists.appendChild(fileRow(f, "staged")));
@@ -2640,6 +2712,15 @@ class App {
       lists.appendChild(groupLabel(`Changes (${unstaged.length})`));
       unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
     }
+  }
+
+  /**
+   * Which staging model the Changes view presents: the staged/unstaged split, or
+   * one list with a tick per file (issue #16). Persisted with the other UI prefs
+   * and flipped from the View menu.
+   */
+  private stagingModel(): "split" | "checkboxes" {
+    return this.stagingModelPref;
   }
 
   private async openWorkingFile(diffPanel: DiffPanel, path: string): Promise<void> {
@@ -2668,16 +2749,21 @@ class App {
   }
 
   private async changesAction(
-    channel: "stage" | "unstage" | "discard" | "stageAll",
+    channel: "stage" | "unstage" | "discard" | "stageAll" | "unstageAll",
     path: string | undefined,
   ): Promise<void> {
     try {
       const r =
         channel === "stageAll"
           ? await host.invoke("stageAll", undefined)
-          : await host.invoke(channel, path ?? "");
+          : channel === "unstageAll"
+            ? await host.invoke("unstageAll", undefined)
+            : await host.invoke(channel, path ?? "");
       if (!r.ok) {
-        const verb = channel === "stageAll" ? "stage all changes" : `${channel} ${path ?? ""}`.trim();
+        const verb =
+          channel === "stageAll" ? "stage all changes"
+          : channel === "unstageAll" ? "unstage all changes"
+          : `${channel} ${path ?? ""}`.trim();
         toast(r.message || `Couldn't ${verb}.`, "error");
       }
     } catch (e) {
@@ -2715,6 +2801,36 @@ class App {
     if (trailers.length) message = `${message}\n\n${trailers.join("\n")}`;
     (btn as HTMLButtonElement).disabled = true;
     try {
+      // Nothing staged, but there IS work? Offer to commit all of it rather than
+      // refusing (issue #16) — VS Code and JetBrains both do this. The
+      // confirmation is the point: you see what is about to be included first.
+      if (!opts?.amend) {
+        const status = await host.invoke("status", undefined);
+        const stagedNow = status.filter((f) => f.staged);
+        const unstagedNow = status.filter((f) => !f.staged);
+        if (stagedNow.length === 0 && unstagedNow.length > 0) {
+          const n = unstagedNow.length;
+          const yes = await confirmDialog({
+            title: `Commit all ${n} changed file${n === 1 ? "" : "s"}?`,
+            message:
+              "Nothing is staged, so everything currently changed will be included — new files too. " +
+              "Stage individually first if you only want some of it.",
+            confirmLabel: `Commit all ${n}`,
+          });
+          if (!yes) {
+            (btn as HTMLButtonElement).disabled = false;
+            return;
+          }
+          // Stage for real rather than using commit -a: -a skips untracked files
+          // and bypasses the index, so what landed would not match the list.
+          const staged = await host.invoke("stageAll", undefined);
+          if (!staged.ok) {
+            toast(staged.message || "Couldn't stage the changes.", "error");
+            (btn as HTMLButtonElement).disabled = false;
+            return;
+          }
+        }
+      }
       const r = await host.invoke("commit", { message, amend: opts?.amend });
       if (!r.ok) {
         // `expected` marks a state the user is allowed to be in — nothing staged,
