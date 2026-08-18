@@ -120,3 +120,49 @@ test("parseWorktreePorcelain handles bare, detached, locked, and prunable", () =
   assert.equal(parsed[3].prunable, true);
   assert.equal(parsed[3].branch, "gone");
 });
+
+
+test("a differently-named branch from a remote start point gets no upstream unless told", async () => {
+  // A remote-tracking ref to start from. The hermetic env (test/hermetic.ts)
+  // blanks global config, so git's default branch.autoSetupMerge=true applies —
+  // exactly the situation WorktreeProvider.add()'s noTrack exists for.
+  const remoteDir = mkdtempSync(join(tmpdir(), "gitstudio-remote-"));
+  git(["init", "--bare", remoteDir]);
+  git(["remote", "add", "origin", remoteDir]);
+  git(["push", "-u", "origin", "main"]);
+  const paths: string[] = [];
+  try {
+    const noTrackPath = mkdtempSync(join(tmpdir(), "gitstudio-wt-notrack-"));
+    paths.push(noTrackPath);
+    rmSync(noTrackPath, { recursive: true, force: true }); // git wants a fresh path
+    const added = await ctx.worktrees.add(noTrackPath, "my-experiment", {
+      newBranch: true,
+      startPoint: "refs/remotes/origin/main",
+      noTrack: true,
+    });
+    assert.ok(added.ok, added.stderr);
+    // no upstream configured — a push would otherwise target origin/main.
+    assert.throws(() => git(["config", "--get", "branch.my-experiment.remote"]));
+
+    // Control: without noTrack, git's default tracks the differently-named
+    // branch — which is why callers must decide noTrack themselves.
+    const trackPath = mkdtempSync(join(tmpdir(), "gitstudio-wt-track-"));
+    paths.push(trackPath);
+    rmSync(trackPath, { recursive: true, force: true });
+    const control = await ctx.worktrees.add(trackPath, "control-track", {
+      newBranch: true,
+      startPoint: "refs/remotes/origin/main",
+    });
+    assert.ok(control.ok, control.stderr);
+    assert.equal(git(["config", "--get", "branch.control-track.remote"]).trim(), "origin");
+    assert.equal(
+      git(["config", "--get", "branch.control-track.merge"]).trim(),
+      "refs/heads/main",
+    );
+  } finally {
+    for (const p of paths) {
+      rmSync(p, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+    rmSync(remoteDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});

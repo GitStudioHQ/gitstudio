@@ -987,6 +987,11 @@
           "default": true,
           "description": "When force-pushing from GitStudio, use the safer --force-with-lease (which refuses to overwrite remote work you haven't seen) instead of a raw --force."
         },
+        "gitstudio.worktrees.prefixWithProjectName": {
+          "type": "boolean",
+          "default": false,
+          "description": "When creating a worktree, name its folder '<project>-<branch>' instead of just '<branch>', where '<project>' is the main repository's folder name (resolved from any linked worktree, so the prefix never compounds no matter where you create it)."
+        },
         "gitstudio.ai.provider": {
           "type": "string",
           "enum": [
