@@ -1,0 +1,21 @@
+packages/git-service/test/stageContentFilters.test.ts
+  s_daa89ab6f34762::t_857f6d847b7cdb 1-116
+packages/git-service/src/StagingProvider.ts
+  s_daa89ab6f34762::t_58bb4ca4784936 235-243,255-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "85c3c1dd594a5d02e761f1ef4ba60428c893d830",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
