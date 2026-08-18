@@ -1,0 +1,35 @@
+apps/extension/src/merge/diffPanel.ts
+  s_daa89ab6f34762::t_8291139f1985b6 5-8,35-43,47-48,467
+  s_daa89ab6f34762::t_37254ffab11d0a 338,468-480,482-499,501-516
+  s_daa89ab6f34762::t_40feb3c2800932 137-139,210-213,264-281,289-337
+  s_daa89ab6f34762::t_5e2b7acf2d01de 282-288
+  s_daa89ab6f34762::t_65864764812a6e 78,94,481,500
+  s_daa89ab6f34762::t_91f3953fdc25ce 428-432
+  s_daa89ab6f34762::t_6b01fb0e2aadf9 49,339
+apps/extension/src/views/worktreesView.ts
+  s_daa89ab6f34762::t_a4dcb9d8af0836 240
+apps/extension/src/pr/prDescriptionPanel.ts
+  s_daa89ab6f34762::t_a4dcb9d8af0836 665,672,717
+apps/extension/src/ai/aiCommands.ts
+  s_daa89ab6f34762::t_a4dcb9d8af0836 937,943
+apps/extension/test/noLiteralNulBytes.test.ts
+  s_daa89ab6f34762::t_eb1c30aca9dd76 1-83
+apps/extension/test/webviewTemplateEscapes.test.ts
+  s_daa89ab6f34762::t_ceda48963ffd22 105-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4157852a693f03e387f6bf09d3f80c3a53673fa6",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
