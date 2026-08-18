@@ -170,6 +170,16 @@ export interface CommitActionResult {
   expected?: boolean;
 }
 
+/** One tickable change within a file (see hunks:list). */
+export interface FileHunkWire {
+  index: number;
+  /** 0-based line range in the working-tree file. */
+  start: number;
+  end: number;
+  preview: string;
+  lineCount: number;
+}
+
 /** A stash entry for the Stashes view. */
 export interface StashInfo {
   sha: string;
@@ -829,6 +839,10 @@ export interface IpcChannels {
   "discard": [string, CommitActionResult];
   "stageAll": [void, CommitActionResult];
   "unstageAll": [void, CommitActionResult];
+  /** The still-unstaged changes within one file, for per-hunk ticks (#20). */
+  "hunks:list": [string, FileHunkWire[]];
+  /** Stage one of those changes, leaving the rest of the file unstaged. */
+  "hunks:stage": [{ path: string; index: number }, CommitActionResult];
   "commit": [{ message: string; amend?: boolean }, CommitActionResult];
   // ── Stashes ──
   "stash:list": [void, StashInfo[]];

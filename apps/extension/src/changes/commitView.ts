@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
+import { listUnstagedHunks, stageHunks, type FileHunk } from "@gitstudio/git-service/hunkStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { Change } from "../git/git";
@@ -117,6 +118,8 @@ interface FromWebview {
     | "openDiff"
     | "stageAll"
     | "stageAllForCommit"
+    | "requestHunks"
+    | "stageHunk"
     | "unstageAll"
     | "discardAll"
     | "stageFolder"
@@ -149,6 +152,8 @@ interface FromWebview {
   group?: GroupKind;
   /** File paths targeted by a folder-level stage/unstage/discard. */
   paths?: string[];
+  /** Which hunk of `path` a stageHunk targets (index from the last requestHunks). */
+  hunkIndex?: number;
   layout?: "tree" | "list";
   /** One-letter status of the file a `fileMenu` targets (M/A/D/R/U/!/…). */
   status?: string;
@@ -592,6 +597,12 @@ export class CommitViewProvider
       case "stageAllForCommit":
         await this.doStageAllForCommit();
         return;
+      case "requestHunks":
+        await this.sendHunks(msg.path ?? "");
+        return;
+      case "stageHunk":
+        await this.doStageHunk(msg.path ?? "", msg.hunkIndex ?? -1);
+        return;
       case "unstageAll":
         await this.doBulkUnstage();
         return;
@@ -831,6 +842,55 @@ export class CommitViewProvider
       return "cancelled";
     }
     return "ok";
+  }
+
+  /**
+   * The still-unstaged hunks of one file, for the checkbox model's per-hunk ticks
+   * (#20). Read from DISK rather than from an open editor buffer: git stages what
+   * is on disk, so an unsaved buffer would show hunks that ticking them would not
+   * actually stage.
+   */
+  private async sendHunks(rel: string): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry || !rel) {
+      return;
+    }
+    let hunks: FileHunk[] = [];
+    try {
+      const text = await this.workingTreeText(entry, rel);
+      hunks = await listUnstagedHunks(entry.ctx, rel, text);
+    } catch {
+      hunks = []; // binary, deleted, unreadable — the row just shows nothing
+    }
+    void this.view?.webview.postMessage({ type: "hunks", path: rel, hunks });
+  }
+
+  /** Tick one hunk: stage exactly that change, leaving the rest of the file alone. */
+  private async doStageHunk(rel: string, index: number): Promise<void> {
+    const entry = this.repos.getActive();
+    if (!entry || !rel || index < 0) {
+      return;
+    }
+    try {
+      const text = await this.workingTreeText(entry, rel);
+      const r = await stageHunks(entry.ctx, rel, text, [index]);
+      if (!r.ok) {
+        void vscode.window.showInformationMessage(`GitStudio: ${r.stderr}`);
+      }
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: couldn't stage that change — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    await this.mutate(async () => {});
+    await this.sendHunks(rel);
+  }
+
+  /** The file as git would stage it: what is on disk, not what is in a buffer. */
+  private async workingTreeText(entry: RepoEntry, rel: string): Promise<string> {
+    const uri = vscode.Uri.joinPath(vscode.Uri.file(entry.ctx.root), ...rel.split("/"));
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    return new TextDecoder().decode(bytes);
   }
 
   /** Stage everything currently changed — the checklist's "check all". */
@@ -2721,6 +2781,61 @@ export class CommitViewProvider
       cursor: pointer;
     }
     .ck-master { margin-left: 2px; }
+    /* Per-hunk ticks (#20): a file with unstaged work opens up to reveal its
+       individual changes, so partial staging survives the checkbox model. */
+    .hunk-twisty {
+      flex: 0 0 auto;
+      width: 14px;
+      height: 14px;
+      margin-right: 2px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--gs-fg-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transform: rotate(-90deg);
+      transition: transform var(--gs-motion-fast) var(--gs-ease);
+    }
+    .hunk-twisty.open { transform: none; }
+    .hunk-twisty .codicon { font-size: 11px; line-height: 1; }
+    .hunks {
+      display: flex;
+      flex-direction: column;
+      margin: 0 0 2px 44px;
+      border-left: 1px solid var(--gs-border-soft);
+    }
+    .hunk-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 1px 6px;
+      min-height: 20px;
+      font-size: 11.5px;
+      color: var(--gs-fg-muted);
+    }
+    .hunk-row:hover { background: var(--gs-hover); }
+    .hunk-lines {
+      flex: 0 0 auto;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.75;
+    }
+    .hunk-preview {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--vscode-editor-font-family, monospace);
+      color: var(--gs-fg);
+    }
+    .hunk-empty {
+      padding: 2px 8px;
+      font-size: 11.5px;
+      color: var(--gs-fg-subtle);
+    }
     .group--all .row.is-file { padding-left: 20px; }
 
     .group-header {
@@ -3392,6 +3507,12 @@ export class CommitViewProvider
 
     let stagedCount = 0;
     let stagingModel = "split";
+    // Per-hunk ticks (#20). expandedHunks holds the paths whose changes are
+    // showing; hunkCache holds what the host last said about each. Both are
+    // keyed by path, and the host re-sends after every stage because hunk
+    // indexes are positional — they mean nothing once the file's state moves.
+    const expandedHunks = new Set();
+    const hunkCache = new Map();
     let aheadCount = 0;     // commits a push would send (drives the button label)
     let canPublish = false; // there IS somewhere to push/publish those commits
     let onUpstream = false; // branch tracks an upstream (Push) vs not (Publish)
@@ -5113,16 +5234,87 @@ export class CommitViewProvider
         ck.addEventListener("click", function (ev) {
           // The row itself opens the diff; the tick must not.
           ev.stopPropagation();
+          // Ticking the file supersedes any hunk view of it — the indexes it was
+          // showing describe a state that no longer exists.
+          expandedHunks.delete(f.entry.path);
+          hunkCache.delete(f.entry.path);
           vscode.postMessage({
             type: f.staged ? "unstage" : "stage",
             path: f.entry.path,
           });
         });
         row.insertBefore(ck, row.firstChild);
+
+        // A file with unstaged work can be opened up to tick individual changes,
+        // so partial staging survives the move away from the staged/unstaged
+        // split. A fully staged file has nothing left to pick from.
+        const expandable = !f.staged && f.kind !== "merge";
+        if (expandable) {
+          const path = f.entry.path;
+          const open = expandedHunks.has(path);
+          const twist = el("button", "hunk-twisty" + (open ? " open" : ""), ICON_CHEVRON);
+          twist.title = open ? "Hide individual changes" : "Show individual changes";
+          twist.setAttribute("aria-expanded", open ? "true" : "false");
+          twist.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            if (expandedHunks.has(path)) {
+              expandedHunks.delete(path);
+              render();
+            } else {
+              expandedHunks.add(path);
+              // Ask every time rather than trusting the cache: the file may have
+              // changed on disk since it was last listed.
+              vscode.postMessage({ type: "requestHunks", path: path });
+              render();
+            }
+          });
+          row.insertBefore(twist, row.firstChild);
+        }
         body.appendChild(row);
+
+        if (expandable && expandedHunks.has(f.entry.path)) {
+          body.appendChild(renderHunks(f.entry.path));
+        }
       }
       group.appendChild(body);
       return group;
+    }
+
+    // The individual changes inside one file, each with its own tick (#20). These
+    // are the changes NOT yet staged — ticking one stages it, so it leaves the
+    // list on the next refresh, exactly like the file-level tick.
+    function renderHunks(path) {
+      const wrap = el("div", "hunks");
+      const hunks = hunkCache.get(path);
+      if (!hunks) {
+        wrap.appendChild(el("div", "hunk-empty", "Reading changes\u2026"));
+        return wrap;
+      }
+      if (hunks.length === 0) {
+        wrap.appendChild(el("div", "hunk-empty", "No separate changes to pick from."));
+        return wrap;
+      }
+      for (const h of hunks) {
+        const hrow = el("div", "hunk-row");
+        const hck = el("input", "ck");
+        hck.type = "checkbox";
+        hck.checked = false; // by construction: these are the UNSTAGED changes
+        hck.title = "Include this change in the commit";
+        hck.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          vscode.postMessage({ type: "stageHunk", path: path, hunkIndex: h.index });
+        });
+        const lines = el("span", "hunk-lines");
+        // 1-based, matching what the editor's gutter shows.
+        lines.textContent = h.lineCount > 1
+          ? "L" + (h.start + 1) + "\u2013" + (h.end + 1)
+          : "L" + (h.start + 1);
+        const prev = el("span", "hunk-preview");
+        prev.textContent = h.preview || "(whitespace only)";
+        hrow.append(hck, lines, prev);
+        wrap.appendChild(hrow);
+      }
+      return wrap;
     }
 
     function renderGroup(def, list) {
@@ -5385,6 +5577,11 @@ export class CommitViewProvider
         // closeDialog() owns that, and openDialog claims the id in the right
         // order (see startDialog).
         openDialog(msg.spec, msg.dialogId);
+        return;
+      }
+      if (msg.type === "hunks") {
+        hunkCache.set(msg.path, msg.hunks || []);
+        render();
         return;
       }
       if (msg.type === "state") {

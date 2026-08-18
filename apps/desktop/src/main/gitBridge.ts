@@ -17,6 +17,7 @@ import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
+import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import type {
   CommitRecord,
@@ -41,6 +42,7 @@ import type {
   HeadInfo,
   RefInfo,
   RepoFile,
+  FileHunkWire,
   RowStat,
   SshKey,
   StashInfo,
@@ -619,6 +621,57 @@ export class GitBridge {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.stashes.drop(ref));
   }
+  /**
+   * The changes inside one file that are not staged yet (#20), so the Changes
+   * view can offer a tick per change rather than only per file.
+   *
+   * Reads the file from DISK, because that is what git would stage.
+   */
+  async hunksList(rel: string): Promise<FileHunkWire[]> {
+    const ctx = this.ctx();
+    if (!ctx || !rel) {
+      return [];
+    }
+    const abs = containedPath(ctx.root, rel);
+    if (!abs) {
+      return [];
+    }
+    try {
+      const text = await readFile(abs, "utf8");
+      return await listUnstagedHunks(ctx, rel, text);
+    } catch {
+      return []; // binary, deleted, unreadable — the row simply offers nothing
+    }
+  }
+
+  async hunksStage(req: { path: string; index: number }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { ok: false, changed: false, message: "No repository open." };
+    }
+    const abs = containedPath(ctx.root, req.path);
+    if (!abs) {
+      return UNSAFE_REF_RESULT;
+    }
+    return this.serialize(async () => {
+      try {
+        const text = await readFile(abs, "utf8");
+        const r = await stageHunks(ctx, req.path, text, [req.index]);
+        if (!r.ok) {
+          // Positional indexes went stale — the file moved under the list.
+          return { ok: false, changed: false, expected: true, message: r.stderr };
+        }
+        return { ok: true, changed: true };
+      } catch (err) {
+        return {
+          ok: false,
+          changed: false,
+          message: err instanceof Error ? err.message : String(err),
+        };
+      }
+    });
+  }
+
   async stashSave(opts: { message?: string; includeUntracked?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {

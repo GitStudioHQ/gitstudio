@@ -502,6 +502,8 @@ function registerIpc(): void {
   handle("discard", (path) => bridge.discard(path));
   handle("stageAll", () => bridge.stageAll());
   handle("unstageAll", () => bridge.unstageAll());
+  handle("hunks:list", (path) => bridge.hunksList(path));
+  handle("hunks:stage", (req) => bridge.hunksStage(req));
   handle("commit", (req) => bridge.commit(req));
 
   // Stashes.

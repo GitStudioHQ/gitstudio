@@ -6048,3 +6048,52 @@ body.vscode-light .gh-label-chip {
   cursor: pointer;
 }
 .dc-ck-master { margin-left: 2px; }
+
+/* Per-hunk ticks in the checkbox staging model (#20). A file with unstaged work
+   opens up to reveal its individual changes, so partial staging survives the
+   move away from the staged/unstaged split. */
+.dc-hunk-twisty {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
+}
+.dc-hunk-twisty.open { transform: rotate(90deg); }
+.dc-hunk-twisty .codicon { font-size: 12px; line-height: 1; }
+.dc-hunks {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 4px 46px;
+  border-left: 1px solid var(--border-soft, var(--border));
+}
+.dc-hunk-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  min-height: 22px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.dc-hunk-row:hover { background: var(--hover); }
+.dc-hunk-lines { flex: 0 0 auto; font-variant-numeric: tabular-nums; opacity: 0.75; }
+.dc-hunk-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--fg);
+}
+.dc-hunk-empty { padding: 3px 10px; font-size: 12px; opacity: 0.7; }

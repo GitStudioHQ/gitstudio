@@ -114,6 +114,8 @@ class App {
   private refreshingFromDisk = false;
   /** "split" (staged/unstaged groups) or "checkboxes" (one ticked list) — issue #16. */
   private stagingModelPref: "split" | "checkboxes" = "split";
+  /** Paths whose individual changes are currently showing (#20). */
+  private expandedHunks = new Set<string>();
   /**
    * The Changes composer's in-progress state, held on the instance because
    * every stage / unstage / discard rebuilds that whole subtree. Without it,
@@ -2701,10 +2703,42 @@ class App {
         ck.addEventListener("click", (ev) => {
           // The row opens the diff; the tick must not.
           ev.stopPropagation();
+          // Ticking the whole file supersedes any hunk view of it: those indexes
+          // describe a state that is about to stop existing.
+          this.expandedHunks.delete(f.path);
           void this.changesAction(isStaged ? "unstage" : "stage", f.path);
         });
         row.insertBefore(ck, row.firstChild);
+
+        // A file with unstaged work opens up to tick individual changes (#20), so
+        // partial staging survives the move away from the staged/unstaged split.
+        const expandable = !isStaged;
+        if (expandable) {
+          const open = this.expandedHunks.has(f.path);
+          const tw = el("button", "dc-hunk-twisty" + (open ? " open" : ""));
+          tw.append(glyph("chevron-right"));
+          tw.title = open ? "Hide individual changes" : "Show individual changes";
+          tw.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            if (this.expandedHunks.has(f.path)) {
+              this.expandedHunks.delete(f.path);
+            } else {
+              this.expandedHunks.add(f.path);
+            }
+            void this.showChangesView();
+          });
+          row.insertBefore(tw, row.firstChild);
+        }
         lists.appendChild(row);
+
+        if (expandable && this.expandedHunks.has(f.path)) {
+          const holder = el("div", "dc-hunks");
+          holder.append(span("Reading changes…", "dc-hunk-empty"));
+          lists.appendChild(holder);
+          // Asked fresh every time: the file may have changed on disk since the
+          // list was built, and these indexes are positional.
+          void this.fillHunks(holder, f.path);
+        }
       }
       return;
     }
@@ -2724,6 +2758,50 @@ class App {
    * one list with a tick per file (issue #16). Persisted with the other UI prefs
    * and flipped from the View menu.
    */
+  /**
+   * Populate one file's tickable changes. Ticking one stages exactly that change
+   * and leaves the rest of the file — and the working tree — alone.
+   */
+  private async fillHunks(holder: HTMLElement, path: string): Promise<void> {
+    const hunks = await host.invoke("hunks:list", path);
+    if (!this.expandedHunks.has(path)) {
+      return; // collapsed again while we were reading
+    }
+    holder.replaceChildren();
+    if (hunks.length === 0) {
+      holder.append(span("No separate changes to pick from.", "dc-hunk-empty"));
+      return;
+    }
+    for (const h of hunks) {
+      const row = el("div", "dc-hunk-row");
+      const ck = document.createElement("input");
+      ck.type = "checkbox";
+      ck.className = "dc-ck";
+      ck.checked = false; // by construction these are the UNSTAGED changes
+      ck.title = "Include this change in the commit";
+      ck.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void (async () => {
+          const r = await host.invoke("hunks:stage", { path, index: h.index });
+          if (!r.ok) {
+            toast(r.message || "Couldn't stage that change.", r.expected ? "info" : "error");
+          }
+          bust("status");
+          bust("diff");
+          void this.showChangesView();
+        })();
+      });
+      // 1-based, matching what an editor's gutter shows.
+      const lines = span(
+        h.lineCount > 1 ? `L${h.start + 1}–${h.end + 1}` : `L${h.start + 1}`,
+        "dc-hunk-lines",
+      );
+      const preview = span(h.preview || "(whitespace only)", "dc-hunk-preview");
+      row.append(ck, lines, preview);
+      holder.append(row);
+    }
+  }
+
   private stagingModel(): "split" | "checkboxes" {
     return this.stagingModelPref;
   }
