@@ -237,6 +237,19 @@ export class CommitViewProvider
   // and re-posts refresh them once the git/LM probes resolve.
   private lastAiEnabled = false;
   private lastBranches: BranchesPayload | undefined;
+  /**
+   * Which repo `lastBranches` came from. The instant first post reuses the last
+   * known branch list so the menu is not empty while the slow for-each-ref probe
+   * runs — but branches are repo-scoped, so without this the view showed the
+   * PREVIOUS repo's branches for a moment after switching repos, and the active
+   * repo follows the active editor, so switching is routine rather than rare.
+   *
+   * `lastAiEnabled` deliberately has no equivalent: provider availability is a
+   * property of the machine, not of the repo, so carrying it across is correct.
+   */
+  private lastBranchesRoot: string | undefined;
+  /** Bumped by invalidateRefs so an in-flight listRefs cannot re-cache stale refs. */
+  private refsEpoch = 0;
 
   /**
    * Short-TTL cache of the raw ref list — the priciest part of a state push (a
@@ -1160,19 +1173,32 @@ export class CommitViewProvider
     ) {
       return cached.refs;
     }
+    // Which invalidation era this read belongs to. A branch op calls
+    // invalidateRefs() and then pushes state — but a listRefs() that was ALREADY
+    // in flight when that happened resolves afterwards holding pre-mutation refs,
+    // and writing those back re-caches them for most of the TTL. The invalidation
+    // is then defeated and the branch you just created or deleted keeps showing
+    // its old state for over a second. The firehose makes a push routinely
+    // in-flight across a branch action, so this is not a narrow window.
+    const era = this.refsEpoch;
     let refs: GitRef[];
     try {
       refs = await entry.ctx.refs.listRefs();
     } catch {
       refs = cached && cached.root === entry.root ? cached.refs : [];
     }
-    this.refsCache = { root: entry.root, at: now, refs };
+    if (era === this.refsEpoch) {
+      this.refsCache = { root: entry.root, at: now, refs };
+    }
     return refs;
   }
 
   /** Drop the cached ref list so the next push re-lists (post branch op). */
   private invalidateRefs(): void {
     this.refsCache = undefined;
+    // Also disowns any listRefs() already in flight, so it cannot write its
+    // pre-mutation answer back over this invalidation.
+    this.refsEpoch++;
   }
 
   /** Run a branch-menu action against the active repo, then refresh state. */
@@ -1819,7 +1845,8 @@ export class CommitViewProvider
       stagingModel: readStagingModel(),
       branch,
       detached,
-      branches: this.lastBranches,
+      // Only when it belongs to the repo now on screen.
+      branches: this.lastBranchesRoot === active?.root ? this.lastBranches : undefined,
       upstream,
       ahead,
       behind,
@@ -1848,6 +1875,7 @@ export class CommitViewProvider
     ]);
     this.lastAiEnabled = aiEnabled;
     this.lastBranches = branches;
+    this.lastBranchesRoot = active?.root;
     if (!this.view) {
       return;
     }

@@ -740,6 +740,11 @@ class App {
       this.viewHost.replaceChildren(cached);
       return;
     }
+    // Any soft-reload hook belongs to the view being replaced, and its captured
+    // routeGen can never match again (routeGen bumps on every route). Left in
+    // place it made refreshBranchesSoft await a function that returns
+    // immediately — so a fetch or pull silently refreshed nothing.
+    this.reloadBranchRows = null;
     if (id === "code") {
       void this.showCodeView();
     } else if (id === "graph") {
@@ -3370,6 +3375,11 @@ class App {
       return;
     }
     bust(); // drop the SWR cache so the re-render pulls fresh data
+    // …and the kept-alive view DOM with it. routeView(force) only drops the view
+    // being rebuilt, so a commit or a branch op made from Changes left the cached
+    // Branches DOM untouched — and returning to it re-attached that DOM verbatim
+    // without refetching, showing a branch list from before the change.
+    this.viewCache.clear();
     await this.refreshRefs();
     // The graph is only mounted while the graph view is showing; otherwise just
     // re-render whatever view is active (guards against `this.graph` being unset
@@ -3498,12 +3508,24 @@ class App {
   // ── Refs / HEAD (drives the branch switcher) ────────────────────────────────
 
   private async refreshRefs(): Promise<void> {
+    // Whose refs are these? Twelve call sites reach this, and a repo switch does
+    // not cancel one already in flight — so if the OUTGOING repo's request settles
+    // after the incoming one, `this.refs` and the top-bar branch label end up
+    // showing the repo you just left. Most likely when the old repo is large and
+    // cold and the new one is small.
+    //
+    // The cache's epoch guard is not enough on its own: it stops a superseded
+    // value being CACHED, but the pending promise still resolves with it here.
+    const gen = this.routeGen;
     // Cached: refs/head change rarely between view switches, so reuse a recent
     // result instead of re-running git on every navigation.
     const [refs, head] = await Promise.all([
       gget("refs:list", undefined),
       gget("head:get", undefined),
     ]);
+    if (gen !== this.routeGen) {
+      return; // a different repo is on screen now
+    }
     this.refs = refs;
     if (this.branchSwitchName) {
       const label = !head

@@ -100,6 +100,10 @@ export class GitBridge {
   private refsBySha = new Map<string, GitRef[]>();
   private currentHeadSha = "";
   private loadedRoot: string | undefined;
+  /** Serializes graph:load so two pages never interleave in the accumulator. */
+  private graphChain: Promise<unknown> = Promise.resolve();
+  /** Bumped by a fresh load so queued stale pages discard themselves. */
+  private graphGen = 0;
 
   constructor(private readonly repos: RepoStore) {}
 
@@ -116,7 +120,35 @@ export class GitBridge {
    * relayout the full loaded DAG so cross-page lanes stay continuous — exactly
    * the extension's loadInitial / loadMore behavior, server-side.
    */
+  /**
+   * Paging is a stateful accumulator (`loaded` / `records` / `loadedRoot`), and
+   * until now nothing stopped two `graph:load` calls interleaving in it.
+   *
+   * That is reachable, not theoretical: the renderer's adapter clears its
+   * `loading` flag on reset and immediately asks for page 0, so a refresh or a
+   * repo switch fires skip:0 while a skip:N is still streaming server-side. The
+   * two then interleave around the awaits below and build a gapped, out-of-order
+   * list — wrong lane routing and totalColumns, and duplicate rows once paging
+   * reaches a region already accumulated. The renderer's own generation guard
+   * (added with the Branches push work) only protects the renderer's copy; this
+   * state lives here.
+   *
+   * Two mechanisms, because they answer different questions:
+   *   · the chain serializes calls, so no two ever interleave in the accumulator;
+   *   · the generation lets a page that was already queued when a FRESH load
+   *     arrived discard itself instead of appending pre-reload commits.
+   */
   async graphLoad(opts: { skip?: number; maxCount?: number }): Promise<GraphPage> {
+    const run = this.graphChain.then(() => this.graphLoadInner(opts));
+    // Never let one failure poison the chain for every later page.
+    this.graphChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async graphLoadInner(opts: { skip?: number; maxCount?: number }): Promise<GraphPage> {
     const ctx = this.ctx();
     if (!ctx) {
       return { rows: [], head: "", totalColumns: 1, hasMore: false, nextSkip: 0 };
@@ -127,13 +159,28 @@ export class GitBridge {
     const fresh = skip === 0 || ctx.root !== this.loadedRoot;
 
     if (fresh) {
+      // Supersede anything queued behind us: those pages describe the history we
+      // are about to throw away.
+      this.graphGen++;
       this.records.clear();
       this.loaded = [];
       this.loadedRoot = ctx.root;
       await this.loadRefs(ctx);
     }
+    const gen = this.graphGen;
 
     const page = await this.readPage(ctx, fresh ? 0 : skip, maxCount);
+    if (gen !== this.graphGen) {
+      // A fresh load landed while we were streaming. Appending now would splice
+      // the old history into the new one.
+      return {
+        rows: [],
+        head: this.currentHeadSha,
+        totalColumns: 1,
+        hasMore: false,
+        nextSkip: this.loaded.length,
+      };
+    }
     const before = fresh ? 0 : this.loaded.length;
     this.loaded = fresh ? page : this.loaded.concat(page);
     const hasMore = page.length === maxCount;
