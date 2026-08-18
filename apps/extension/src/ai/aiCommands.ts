@@ -934,13 +934,13 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
       function inline(s) {
         var codes = [];
         // protect inline code spans from other transforms
-        s = s.replace(new RegExp(TICK + "([^" + TICK + "]+)" + TICK, "g"), function (m, c) { codes.push(c); return " " + (codes.length - 1) + " "; });
+        s = s.replace(new RegExp(TICK + "([^" + TICK + "]+)" + TICK, "g"), function (m, c) { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
         s = s.replace(/~~([^~]+)~~/g, "<del>$1</del>");
         s = s.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
         s = s.replace(/(^|[^*])\*([^*\n]+?)\*/g, "$1<em>$2</em>");
         s = s.replace(/(^|[^_])_([^_\n]+?)_/g, "$1<em>$2</em>");
         s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function (m, t, u) { return '<a href="' + safeUrl(u) + '" target="_blank" rel="noopener noreferrer">' + t + "</a>"; });
-        s = s.replace(/ (\d+) /g, function (m, i) {
+        s = s.replace(/\u0000(\d+)\u0000/g, function (m, i) {
           var c = codes[+i];
           var isPath = /[\\\/]/.test(c) || /\.[a-z0-9]+(:\d+)?$/i.test(c);
           return "<code" + (isPath ? ' class="path"' : "") + ">" + c + "</code>";

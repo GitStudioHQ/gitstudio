@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RepoWatcher, shouldRefreshFor } from "../src/main/repoWatcher";
+import { RepoWatcher, shouldRefreshFor, DEBOUNCE_MS } from "../src/main/repoWatcher";
 
 // The app never watched the filesystem, so editing a file elsewhere and switching
 // back showed a stale Changes list (issue #17). A watcher fixes that only if it
@@ -115,17 +115,43 @@ test("a file merely NAMED like an ignored directory still refreshes", () => {
 // half a pure unit test cannot show.
 
 /** Resolve on the watcher's next callback, or reject after `ms`. */
-function nextChange(
+/**
+ * Await the first reported change, re-doing `write` until one arrives.
+ *
+ * A single write races the watcher: `fs.watch` is not listening the instant the
+ * constructor returns — on macOS FSEvents in particular there is a real arming
+ * delay — so a write issued immediately can land before anything is watching and
+ * the test then waits out its whole timeout for an event that was never going to
+ * come. It failed roughly one run in ten, which is exactly the shape that breaks
+ * a release instead of a pull request.
+ *
+ * Repeating the write removes the race without weakening the assertion: what is
+ * being tested is that a change of this KIND is classified correctly, not that
+ * the watcher catches one specific syscall.
+ *
+ * The poke interval must EXCEED the watcher's debounce. Poking faster than it
+ * resets the debounce timer on every iteration, so the refresh it is waiting for
+ * can never fire and the helper written to remove a flake instead hangs every
+ * run — which is exactly what the first version of this did.
+ */
+const POKE_MS = DEBOUNCE_MS + 100;
+
+async function changeAfter(
   attach: (cb: (info: { gitDir: boolean }) => void) => void,
-  ms = 3000,
+  write: () => void,
+  ms = 5000,
 ): Promise<{ gitDir: boolean }> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`no change within ${ms}ms`)), ms);
-    attach((info) => {
-      clearTimeout(timer);
-      resolve(info);
-    });
+  let seen: { gitDir: boolean } | undefined;
+  attach((info) => {
+    seen ??= info;
   });
+  const deadline = Date.now() + ms;
+  while (!seen && Date.now() < deadline) {
+    write();
+    await new Promise((r) => setTimeout(r, POKE_MS));
+  }
+  if (!seen) throw new Error(`no change within ${ms}ms`);
+  return seen;
 }
 
 test("a working-tree edit fires, and is NOT reported as a git-dir change", async () => {
@@ -137,9 +163,10 @@ test("a working-tree edit fires, and is NOT reported as a git-dir change", async
     if (w.degraded) {
       return; // no recursive watch on this platform/kernel — the focus path covers it
     }
-    const seen = nextChange((cb) => (fire = cb));
-    writeFileSync(join(dir, "hello.txt"), "hi\n");
-    const info = await seen;
+    const info = await changeAfter(
+      (cb) => (fire = cb),
+      () => writeFileSync(join(dir, "hello.txt"), `hi ${process.hrtime.bigint()}\n`),
+    );
     assert.equal(info.gitDir, false, "a file edit must not drag a graph reload with it");
   } finally {
     w.dispose();
@@ -156,9 +183,11 @@ test("a .git change IS reported as one, so history gets re-read", async () => {
     if (w.degraded) {
       return;
     }
-    const seen = nextChange((cb) => (fire = cb));
-    writeFileSync(join(dir, ".git", "HEAD"), "ref: refs/heads/main\n");
-    assert.equal((await seen).gitDir, true);
+    const info = await changeAfter(
+      (cb) => (fire = cb),
+      () => writeFileSync(join(dir, ".git", "HEAD"), `ref: refs/heads/main\n`),
+    );
+    assert.equal(info.gitDir, true);
   } finally {
     w.dispose();
     rmSync(dir, { recursive: true, force: true });

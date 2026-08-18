@@ -115,6 +115,23 @@ export interface FileDiff {
   rightText: string;
   /** True when the file is conflicted — the renderer opens the 3-pane merge. */
   conflicted: boolean;
+  /**
+   * The INDEX version, sent only for working-tree diffs.
+   *
+   * The diff itself is HEAD vs the working tree; the index is the third text the
+   * staging ticks need to say whether each change is already staged. It rides
+   * along on this response rather than a second round trip so the ticks can
+   * never describe a different revision than the panes they sit between.
+   * Undefined for a commit diff, which has nothing to stage.
+   */
+  indexText?: string;
+}
+
+/** One change since HEAD, and how much of it the index already holds. */
+export interface ChangeBlockWire {
+  head: { start: number; end: number };
+  working: { start: number; end: number };
+  state: "staged" | "unstaged" | "partial";
 }
 
 /** The three sides of a conflicted file, for the shared MergeView. */
@@ -1006,6 +1023,15 @@ export interface IpcChannels {
   "conflict:list": [void, string[]];
   // ── Hunk / line staging (working ⇄ index) ──
   "stage:lines": [{ path: string; lines: number[]; reverse?: boolean }, CommitActionResult];
+  /**
+   * Stage or unstage exactly one change block. The renderer sends the block's
+   * content-derived ranges, never its position in a list, so a block that merely
+   * shifted still resolves and only one that genuinely vanished is refused.
+   */
+  "blocks:set": [
+    { path: string; block: ChangeBlockWire; staged: boolean },
+    CommitActionResult & { indexText?: string },
+  ];
   // ── Branch ops (engine-backed: merge / rebase / rename / upstream) ──
   "branch:merge": [{ name: string; noFf?: boolean }, CommitActionResult];
   "branch:rebase": [{ onto: string }, CommitActionResult];

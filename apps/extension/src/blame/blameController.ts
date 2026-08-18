@@ -611,6 +611,18 @@ export class BlameController implements vscode.Disposable {
   }
 
   /**
+   * Whether the blame annotation currently owns the column-0 strip of `uri`.
+   *
+   * Blame's `before` attachment physically occupies that strip, and its own
+   * click inference reads clicks there. Anything else that wants to infer a
+   * column-0 click has to yield while this is true, or one click fires two
+   * unrelated actions.
+   */
+  public ownsGutterStrip(uri: vscode.Uri): boolean {
+    return this.annotateAll || this.annotated.has(uri.toString());
+  }
+
+  /**
    * Clicking an annotation opens that commit in the Commit panel — the JetBrains
    * behaviour. VS Code gives decorations no click event, so we infer it: a MOUSE
    * selection change that lands collapsed on column 0 is a click in the gutter

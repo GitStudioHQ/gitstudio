@@ -42,12 +42,12 @@ export interface Hunk {
  * LineRange. A zero-width span (insertion / deletion point) yields `end < start`
  * (specifically `end === start - 1`), so callers can detect it via isEmptyRange.
  */
-function spanToRange(span: LineSpan): LineRange {
+export function spanToRange(span: LineSpan): LineRange {
   return { start: span.start - 1, end: span.endExclusive - 2 };
 }
 
 /** True for a zero-width (insertion-point) range, where end < start. */
-function isEmptyRange(range: LineRange): boolean {
+export function isEmptyRange(range: LineRange): boolean {
   return range.end < range.start;
 }
 
@@ -56,7 +56,7 @@ function isEmptyRange(range: LineRange): boolean {
  * point) is treated as covering the single line at its `start`, so a selection
  * landing on that line still picks the change up.
  */
-function rangesIntersect(a: LineRange, b: LineRange): boolean {
+export function rangesIntersect(a: LineRange, b: LineRange): boolean {
   const aEnd = isEmptyRange(a) ? a.start : a.end;
   const bEnd = isEmptyRange(b) ? b.start : b.end;
   return a.start <= bEnd && b.start <= aEnd;

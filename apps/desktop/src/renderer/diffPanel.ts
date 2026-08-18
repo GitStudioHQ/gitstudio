@@ -6,6 +6,8 @@
 
 import * as monaco from "monaco-editor";
 import { DiffView } from "@gitstudio/webview-ui/diffView";
+import type { TickRow } from "@gitstudio/webview-ui/stageTicks";
+import { selectedLineNumbers } from "./selectionLines";
 import { MergeView } from "@gitstudio/webview-ui/mergeView";
 import { languageForFile } from "@gitstudio/webview-ui/language";
 import { ensureNativeTheme, nativeFontOptions } from "@gitstudio/webview-ui/theme";
@@ -35,6 +37,8 @@ export class DiffPanel {
   private inlineModels: monaco.editor.ITextModel[] = [];
   /** The last-shown file, so the mode toggle can re-render it. */
   private lastFile?: FileDiff;
+  /** Fired after a tick changes the index, so the Changes list can refresh. */
+  public onStagingChanged?: () => void;
 
   constructor(private readonly container: HTMLElement) {
     bootMonaco();
@@ -94,9 +98,61 @@ export class DiffPanel {
         rightEditable: false,
       };
       this.diff = new DiffView(body);
+      this.diff.onToggleTick = (row, staged) => {
+        void this.toggleTick(file.path, row, staged);
+      };
       this.diff.render(payload);
+      // Staging ticks only where staging means something: a working-tree diff
+      // (HEAD on the left) that is not conflicted. A commit diff carries no
+      // index text and gets none.
+      this.diff.setStagingState(file.indexText);
     } else {
       this.renderInline(body, file);
+      if (file.indexText !== undefined) {
+        this.showInlineStagingHint(body);
+      }
+    }
+  }
+
+  /**
+   * Inline mode carries no ticks, and says so rather than looking broken.
+   *
+   * Monaco's unified view renders deleted lines as view zones with no model line
+   * behind them, so nothing — glyph margin or overlay — can put a control beside
+   * a pure deletion there. Inline is the reading mode; Split is the staging one.
+   */
+  private showInlineStagingHint(body: HTMLElement): void {
+    const hint = el("div", "diff-staging-hint");
+    hint.append(glyph("info"), span("Switch to Split to stage individual changes"));
+    body.parentElement?.insertBefore(hint, body);
+  }
+
+  /** Round-trips one tick to git, then repaints from the index git reports. */
+  private async toggleTick(path: string, row: TickRow, staged: boolean): Promise<void> {
+    const view = this.diff;
+    if (!view) return;
+    // Locked while in flight so a double click cannot stage twice.
+    view.setTicksBusy(true);
+    try {
+      const r = await host.invoke("blocks:set", {
+        path,
+        block: {
+          head: { start: row.block.leftSpan.start, end: row.block.leftSpan.endExclusive },
+          working: { start: row.block.rightSpan.start, end: row.block.rightSpan.endExclusive },
+          state: row.state,
+        },
+        staged,
+      });
+      if (!r.ok) {
+        toast(r.message ?? "Could not stage that change.", r.expected ? "info" : "error");
+        this.onStagingChanged?.();
+        return;
+      }
+      // Repaint from what git now holds, never from an optimistic guess.
+      view.setStagingState(r.indexText ?? "");
+      this.onStagingChanged?.();
+    } finally {
+      view.setTicksBusy(false);
     }
   }
 
@@ -215,16 +271,18 @@ export class DiffPanel {
   }
 
   /** The 1-based line numbers currently selected in the working (right) editor —
-   *  for line/hunk staging. Returns null when no real diff/selection is present. */
+   *  for line/hunk staging. Returns null when no real diff/selection is present.
+   *
+   *  ALL selections, not just the primary one: Monaco supports multi-cursor, and
+   *  reading getSelection() staged the first range and dropped the rest. */
   getSelectedLines(): number[] | null {
-    const ed = this.diff?.right;
+    // Both modes, not just split. `this.diff` is undefined in inline mode, and
+    // inline is the DEFAULT below 1000px of surface width — so on a narrow
+    // window "Stage lines" was reading from an editor that did not exist and
+    // reporting "select some lines first" over a live selection.
+    const ed = this.diff?.right ?? this.inline?.getModifiedEditor();
     if (!ed) return null;
-    const sel = ed.getSelection();
-    if (!sel) return null;
-    const lines: number[] = [];
-    // A zero-width selection (just a caret) still stages that one line.
-    for (let l = sel.startLineNumber; l <= sel.endLineNumber; l++) lines.push(l);
-    return lines;
+    return selectedLineNumbers(ed.getSelections());
   }
 
   /** Re-run the 2-pane diff with new whitespace / granularity options. */

@@ -511,3 +511,76 @@ body.vscode-high-contrast-light {
   .jb-gutter-btn,
   .jb-toolbar-btn { transition: none; }
 }
+
+/* ── Staging ticks ────────────────────────────────────────────────────────────
+ * One tri-state checkbox per change, in the centre gutter.
+ *
+ * The BUTTON spans the change's whole height so the hit target matches what the
+ * tick governs — click anywhere beside a six-line change and you get it. The BOX
+ * is drawn at a fixed size on the change's first line, because a checkbox that
+ * stretches to six lines tall stops reading as a checkbox and starts reading as
+ * a scrollbar thumb. Hit target and glyph want different sizes; only one of them
+ * is the control's appearance. */
+.jb-gutter-staging { pointer-events: auto; }
+
+.jb-stage-tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  /* The band itself is invisible; a faint wash on hover shows its extent. */
+  border-radius: 2px;
+}
+
+.jb-stage-tick::before {
+  content: "";
+  box-sizing: border-box;
+  margin-top: 3px;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  border: 1px solid var(--vscode-checkbox-border, #6f6f6f);
+  background: var(--vscode-checkbox-background, var(--vscode-editor-background));
+  flex: none;
+}
+
+.jb-stage-tick:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12)); }
+.jb-stage-tick:hover::before { border-color: var(--vscode-focusBorder); }
+.jb-stage-tick:focus-visible { outline: none; }
+.jb-stage-tick:focus-visible::before {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+.jb-stage-tick:disabled { opacity: 0.5; cursor: default; }
+
+/* Unstaged: an empty box. Staged: filled with a check. Partial: a filled bar,
+   the standard tri-state "some of this" mark — never an empty box, which would
+   read as "nothing staged here" over work the user has already staged. */
+.jb-tick-staged::before {
+  background: var(--vscode-inputOption-activeBackground, var(--vscode-focusBorder));
+  border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
+}
+.jb-tick-partial::before {
+  background: var(--vscode-editor-background);
+  border-color: var(--vscode-focusBorder);
+  /* The dash is drawn with a gradient so no extra element is needed. */
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0 5px,
+    var(--vscode-inputOption-activeBackground, var(--vscode-focusBorder)) 5px 8px,
+    transparent 8px 100%
+  );
+}
+
+/* Hovering a tick paints the change's extent in BOTH panes, so a deletion —
+   which has no lines of its own on the right — still shows what it governs. */
+.jb-tick-extent {
+  background: var(--vscode-editor-selectionHighlightBackground, rgba(128, 128, 128, 0.18));
+}

@@ -30,7 +30,7 @@ import { sep } from "node:path";
  * formatter-on-save produces another round; one refresh should cover all of it.
  * Long enough to coalesce a burst, short enough to feel immediate.
  */
-const DEBOUNCE_MS = 250;
+export const DEBOUNCE_MS = 250;
 
 /**
  * Directories whose contents can never change what the Changes list shows, but

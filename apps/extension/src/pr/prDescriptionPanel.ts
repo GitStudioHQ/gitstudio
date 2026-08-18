@@ -662,14 +662,14 @@ function renderMarkdownish(src: string): string {
   const blocks: string[] = [];
   let withFences = escaped.replace(/```([\s\S]*?)```/g, (_m, code: string) => {
     const idx = blocks.push(`<pre><code>${code.replace(/^\n/, "")}</code></pre>`) - 1;
-    return ` BLOCK${idx} `;
+    return `\u0000BLOCK${idx}\u0000`;
   });
 
   const lines = withFences.split("\n");
   const out: string[] = [];
   let inList = false;
   for (const raw of lines) {
-    const placeholder = /^ BLOCK\d+ $/.test(raw.trim());
+    const placeholder = /^\u0000BLOCK\d+\u0000$/.test(raw.trim());
     if (placeholder) {
       if (inList) {
         out.push("</ul>");
@@ -714,7 +714,7 @@ function renderMarkdownish(src: string): string {
 
   let html = out.join("\n");
   // Restore fenced code blocks.
-  html = html.replace(/ BLOCK(\d+) /g, (_m, i: string) => blocks[Number(i)] ?? "");
+  html = html.replace(/\u0000BLOCK(\d+)\u0000/g, (_m, i: string) => blocks[Number(i)] ?? "");
   return html;
 }
 

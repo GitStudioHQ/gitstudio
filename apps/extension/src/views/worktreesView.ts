@@ -237,7 +237,7 @@ export class WorktreesTreeProvider
     return list
       .map(
         (e) =>
-          `${e.path} ${e.head} ${e.branch ?? ""} ${e.bare ? 1 : 0}${e.locked ? 1 : 0}${e.prunable ? 1 : 0}`,
+          `${e.path}\u0000${e.head}\u0000${e.branch ?? ""}\u0000${e.bare ? 1 : 0}${e.locked ? 1 : 0}${e.prunable ? 1 : 0}`,
       )
       .join("");
   }

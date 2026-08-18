@@ -44,7 +44,8 @@ import { showLineHistory } from "./history/lineHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
 import { showReflog } from "./history/reflog";
 import { MergeEditorProvider } from "./merge/mergeEditorProvider";
-import { DiffPanel, compareCommand } from "./merge/diffPanel";
+import { DiffPanel, compareCommand, stageWithTicksCommand } from "./merge/diffPanel";
+import { StagedGutter } from "./changes/stagedGutter";
 import {
   AutoOpenConflicts,
   resolveInMergeEditor,
@@ -417,10 +418,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // After any staging op (line/hunk staging): re-push the commit webview's
     // state and invalidate open diffs. The webview owns the change lists now.
+    // Staging state in VS Code's own gutter. Constructed before stagingRefresh
+    // so every write path can repaint it.
+    const stagedGutter = new StagedGutter(context, repos, (uri) =>
+      blame.ownsGutterStrip(uri),
+    );
+
     const stagingRefresh: StagingRefresh = {
       refresh() {
         revisionContent.notifyChanged();
         commitProvider.requestState();
+        stagedGutter.refreshAll();
         // Nudge vscode.git to re-scan so the groups update promptly.
         const active = repos.getActive();
         void active?.repo?.status?.();
@@ -437,6 +445,26 @@ export function activate(context: vscode.ExtensionContext): void {
         { webviewOptions: { retainContextWhenHidden: true } },
       ),
       // Line / hunk staging in any file or diff editor.
+      stagedGutter,
+      vscode.commands.registerCommand(
+        "gitstudio.toggleStageAtLine",
+        (arg?: { lineNumber?: number; uri?: vscode.Uri }) => {
+          const editor = vscode.window.activeTextEditor;
+          if (!editor) return;
+          // The line-number menu hands over a 1-BASED lineNumber; a keybinding
+          // hands over nothing and means "where the cursor is".
+          const line =
+            typeof arg?.lineNumber === "number"
+              ? arg.lineNumber - 1
+              : editor.selection.active.line;
+          void stagedGutter.toggleAtLine(editor.document, line);
+        },
+      ),
+      vscode.commands.registerCommand(
+        "gitstudio.stageWithTicks",
+        (resource?: vscode.Uri | { resourceUri?: vscode.Uri }) =>
+          void stageWithTicksCommand(context, repos, resource, stagingRefresh),
+      ),
       vscode.commands.registerCommand("gitstudio.stageSelectedLines", () =>
         stageSelectedLines(repos, stagingRefresh),
       ),

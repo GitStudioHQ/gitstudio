@@ -12,6 +12,8 @@ import { chevronDoubleRight, iconElement, lockIcon } from "./icons";
 import { computeDiffAlignment, type Spacer } from "@gitstudio/engine/alignment";
 import { DiffRibbonOverlay } from "./ribbons";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
+import { StageTickLayer, type TickRow } from "./stageTicks";
+import { deriveTickStates } from "./tickState";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
 
@@ -74,6 +76,10 @@ export class DiffView {
 
   private gutter?: HTMLElement;
   private buttonLayer?: HTMLElement;
+  /** The staging ticks, built only in staging mode. */
+  private tickLayer?: StageTickLayer;
+  /** The index text the ticks are derived against; undefined = not staging. */
+  private indexText?: string;
 
   private leftLines: string[] = [];
   private payload?: DiffInitPayload;
@@ -93,6 +99,17 @@ export class DiffView {
   public onLargeFile?: (large: boolean) => void;
   /** Notified after every (re)diff with the current change count. */
   public onCountsChanged?: (changes: number) => void;
+  /**
+   * Staging mode: the left pane is HEAD and the right the working tree, and the
+   * centre gutter carries a tick per change instead of transfer arrows.
+   *
+   * The two cannot coexist. In staging mode "replace with the left side" would
+   * mean "throw this change away, including the part you already staged" sitting
+   * two pixels from a control that stages it — so the arrows are suppressed.
+   */
+  public staging = false;
+  /** Notified when a tick is toggled. The host performs the git write. */
+  public onToggleTick?: (row: TickRow, staged: boolean) => void;
 
   constructor(private readonly container: HTMLElement) {}
 
@@ -249,6 +266,7 @@ export class DiffView {
       showInner: this.renderOptions.showInner && !this.largeFile,
     });
     this.ribbons?.scheduleDraw();
+    this.refreshTicks(leftText, rightText);
     this.rebuildButtons();
     this.onCountsChanged?.(this.model.blocks.length);
   }
@@ -352,6 +370,12 @@ export class DiffView {
     if (!this.model || !this.left || !this.buttonLayer) {
       return;
     }
+    if (this.staging) {
+      // Ticks own the gutter in staging mode; the transfer arrows are not drawn
+      // at all rather than being drawn and ignored.
+      this.tickLayer?.render();
+      return;
+    }
     this.buttonLayer.replaceChildren();
     if (!this.payload?.rightEditable) {
       return;
@@ -369,6 +393,74 @@ export class DiffView {
       }
       this.buttonLayer.appendChild(this.makeTransfer(block, y + centerOffset));
     }
+  }
+
+  // --- staging ticks (one tri-state checkbox per change) ---
+
+  /**
+   * Enters (or refreshes) staging mode with the index text the ticks describe.
+   *
+   * Pass `undefined` to leave staging mode. Nothing is recomputed here beyond
+   * the tick states; the diff itself is HEAD-vs-working either way.
+   */
+  public setStagingState(indexText: string | undefined): void {
+    this.indexText = indexText;
+    this.staging = indexText !== undefined;
+    this.gutter?.classList.toggle("jb-gutter-staging", this.staging);
+    if (!this.staging) {
+      this.tickLayer?.dispose();
+      this.tickLayer = undefined;
+    }
+    const leftText = this.left?.getModel()?.getValue() ?? "";
+    const rightText = this.right?.getModel()?.getValue() ?? "";
+    this.refreshTicks(leftText, rightText);
+    this.rebuildButtons();
+  }
+
+  /** Blocks tick input while a stage/unstage round trip is outstanding. */
+  public setTicksBusy(busy: boolean): void {
+    this.tickLayer?.setBusy(busy);
+    this.rebuildButtons();
+  }
+
+  /**
+   * Recomputes the tick set from the current texts.
+   *
+   * Ticks are DERIVED state, recomputed on every diff rather than held and
+   * mutated, so there is no tick lifecycle that can drift out of step with the
+   * file — the class of bug this codebase keeps hitting. A large file gets no
+   * ticks at all, matching the existing inner-diff cutoff.
+   */
+  private refreshTicks(leftText: string, rightText: string): void {
+    if (!this.staging || this.indexText === undefined || !this.model) {
+      return;
+    }
+    if (this.largeFile) {
+      this.tickLayer?.setRows([]);
+      return;
+    }
+    this.tickLayer ??= new StageTickLayer({
+      left: () => this.left,
+      right: () => this.right,
+      layer: () => this.buttonLayer,
+      onToggle: (row, staged) => this.onToggleTick?.(row, staged),
+    });
+
+    const blocks = this.model.blocks;
+    const ticks = deriveTickStates(leftText, this.indexText, rightText, blocks.length);
+    if (!ticks.trustworthy) {
+      // The texts and the rendered blocks disagree — a repaint is mid-flight.
+      // Showing nothing beats pinning states onto the wrong changes.
+      this.tickLayer.setRows([]);
+      return;
+    }
+    this.tickLayer.setRows(
+      blocks.map((block, index): TickRow => ({
+        block,
+        index,
+        state: ticks.blocks[index].state,
+      })),
+    );
   }
 
   private makeTransfer(block: DiffBlock, y: number): HTMLElement {
@@ -591,6 +683,9 @@ export class DiffView {
     this.themeObserver = undefined;
     this.ribbons?.dispose();
     this.ribbons = undefined;
+    this.tickLayer?.dispose();
+    this.tickLayer = undefined;
+    this.indexText = undefined;
     this.decorations?.clear();
     this.decorations = undefined;
     this.model = undefined;

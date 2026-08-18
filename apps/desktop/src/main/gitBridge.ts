@@ -18,6 +18,7 @@ import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
+import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import type {
   CommitRecord,
@@ -33,6 +34,7 @@ import type {
   CompareCommit,
   CompareMode,
   CompareResult,
+  ChangeBlockWire,
   ConflictModel,
   FileDiff,
   GitIdentity,
@@ -85,7 +87,7 @@ const UNSAFE_REF_RESULT: CommitActionResult = {
  * renderer payload like `../../.zshenv` turns writeFile/readFile into an
  * arbitrary file write/read primitive outside the repo.
  */
-function containedPath(root: string, rel: string): string | undefined {
+export function containedPath(root: string, rel: string): string | undefined {
   const abs = resolve(root, rel);
   const base = resolve(root);
   if (abs === base || abs.startsWith(base + sep)) {
@@ -468,7 +470,46 @@ export class GitBridge {
       leftText: headText,
       rightText: workingText,
       conflicted,
+      // Read alongside HEAD and the working tree so the ticks describe the same
+      // revision as the panes. A conflicted file has no meaningful index entry
+      // to stage against, so it gets no ticks.
+      indexText: conflicted ? undefined : await ctx.staging.indexContent(rel).catch(() => ""),
     };
+  }
+
+  /** Stage or unstage exactly one change block of a working-tree file. */
+  async blocksSet(req: {
+    path: string;
+    block: ChangeBlockWire;
+    staged: boolean;
+  }): Promise<CommitActionResult & { indexText?: string }> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return { ok: false, changed: false, message: "No repository open." };
+    }
+    const abs = containedPath(ctx.root, req.path);
+    if (!abs) {
+      return UNSAFE_REF_RESULT;
+    }
+    return this.serialize(async () => {
+      try {
+        const working = await readFile(abs, "utf8");
+        const r = await setBlockStaged(ctx, req.path, working, req.block, req.staged);
+        if (!r.ok) {
+          // The file moved under the tick — a user state, not a crash report.
+          return { ok: false, changed: false, expected: true, message: r.stderr };
+        }
+        // Hand back the new index so the ticks repaint from the truth rather
+        // than from an optimistic guess about what the click did.
+        return {
+          ok: true,
+          changed: true,
+          indexText: await ctx.staging.indexContent(req.path).catch(() => ""),
+        };
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
   }
 
   /** The three sides of a conflicted file for the shared 3-pane MergeView. */
@@ -1463,6 +1504,12 @@ export class GitBridge {
   async stageLines(req: { path: string; lines: number[]; reverse?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    // Every other mutating path here proves the path stays inside the repo
+    // before touching it (hunksStage, hunksList, conflictResolve). This one
+    // wrote to the index from a renderer-supplied path without doing so.
+    if (!containedPath(ctx.root, req.path)) {
+      return UNSAFE_REF_RESULT;
+    }
     return this.serialize(async () => {
       try {
         const rel = req.path;

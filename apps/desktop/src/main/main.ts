@@ -683,6 +683,7 @@ function registerIpc(): void {
   handle("conflict:takeSide", (req) => bridge.conflictTakeSide(req));
   handle("conflict:list", () => bridge.conflictList());
   handle("stage:lines", (req) => bridge.stageLines(req));
+  handle("blocks:set", (req) => bridge.blocksSet(req));
   handle("branch:merge", (req) => bridge.branchMerge(req));
   handle("branch:rebase", (req) => bridge.branchRebase(req));
   handle("branch:rename", (req) => bridge.branchRename(req));

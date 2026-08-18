@@ -9,7 +9,8 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "check-types": "tsc --noEmit -p tsconfig.json"
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@gitstudio/engine": "*",

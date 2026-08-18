@@ -153,7 +153,7 @@ In the commit box, `Enter` commits and `Shift+Enter` inserts a newline. All bind
 
 ## Requirements
 
-**`git`** on your `PATH` (any recent version) — GitStudio talks to git directly, no other extension required — and **VS Code 1.74+**, Cursor, or VSCodium. A GitHub sign-in is optional (for pull requests), as is an AI provider. Everything else works fully offline.
+**`git`** on your `PATH` (any recent version) — GitStudio talks to git directly, no other extension required — and **VS Code 1.78+**, Cursor, or VSCodium. A GitHub sign-in is optional (for pull requests), as is an AI provider. Everything else works fully offline.
 
 ## Why GitStudio
 

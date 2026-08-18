@@ -45,7 +45,7 @@
     }
   ],
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.78.0"
   },
   "categories": [
     "SCM Providers",
@@ -825,6 +825,17 @@
         "title": "Show Commit Graph",
         "category": "GitStudio",
         "icon": "$(git-commit)"
+      },
+      {
+        "command": "gitstudio.stageWithTicks",
+        "title": "Stage Changes with Ticks",
+        "category": "GitStudio",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "gitstudio.toggleStageAtLine",
+        "title": "Stage or Unstage the Change at This Line",
+        "category": "GitStudio"
       }
     ],
     "keybindings": [
@@ -862,6 +873,12 @@
         "command": "gitstudio.undo",
         "key": "ctrl+alt+g z",
         "mac": "cmd+alt+g z"
+      },
+      {
+        "command": "gitstudio.toggleStageAtLine",
+        "key": "ctrl+alt+g t",
+        "mac": "cmd+alt+g t",
+        "when": "editorTextFocus && gitstudio.hasRepo"
       }
     ],
     "configuration": {
@@ -898,7 +915,7 @@
         "gitstudio.changes.autoRefresh": {
           "type": "boolean",
           "default": true,
-          "description": "Keep the Changes list up to date on its own — after you save a file, and when the window regains focus so edits made by other tools show up too. Turn this off on a very large repository to refresh only on demand."
+          "description": "Keep the Changes list up to date on its own \u2014 after you save a file, and when the window regains focus so edits made by other tools show up too. Turn this off on a very large repository to refresh only on demand."
         },
         "gitstudio.blame.clickOpensCommit": {
           "type": "boolean",
@@ -1113,6 +1130,16 @@
           "type": "string",
           "default": "https://gitstudio.dev/api/errors",
           "markdownDescription": "Collector URL that anonymous crash reports are POSTed to as a plain JSON body. Defaults to GitStudio's collector; point it at any endpoint you control, or **leave it blank to disable sending entirely**. If unreachable, reporting silently no-ops."
+        },
+        "gitstudio.staging.showGutterState": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show which changes are staged in the editor gutter. The glyph reports state only \u2014 VS Code's API does not allow an extension to make a gutter icon clickable. Toggle a change with the keybinding, by right-clicking its line number, or on GitStudio's own diff page."
+        },
+        "gitstudio.staging.clickGutterToggles": {
+          "type": "boolean",
+          "default": false,
+          "description": "Stage or unstage a change by clicking the gutter beside it. Off by default: VS Code gives decorations no click event, so this is inferred from a click landing at the start of a line \u2014 which is also how you place a caret. It never fires on a line without a change, and yields while blame annotations are shown."
         }
       }
     },
@@ -1304,6 +1331,11 @@
           "command": "gitstudio.toggleFileBlame",
           "when": "gitstudio.hasRepo && resourceScheme == file",
           "group": "navigation@-3"
+        },
+        {
+          "command": "gitstudio.stageWithTicks",
+          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "group": "navigation@9"
         }
       ],
       "scm/resourceState/context": [
@@ -1325,6 +1357,11 @@
           "command": "gitstudio.compare",
           "when": "gitstudio.hasRepo && resourceScheme == file && !explorerResourceIsFolder",
           "group": "3_compare@10"
+        },
+        {
+          "command": "gitstudio.stageWithTicks",
+          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "group": "gitstudio@2"
         }
       ],
       "editor/context": [
@@ -1788,6 +1825,14 @@
         {
           "command": "gitstudio.showCommitPanel",
           "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.stageWithTicks",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.toggleStageAtLine",
+          "when": "editorTextFocus && gitstudio.hasRepo"
         }
       ],
       "view/item/context": [
@@ -1898,6 +1943,11 @@
           "submenu": "gitstudio.blame.annotationsMenu",
           "when": "gitstudio.blameAnnotated",
           "group": "1_gitstudio@3"
+        },
+        {
+          "command": "gitstudio.toggleStageAtLine",
+          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "group": "1_gitstudio@2"
         }
       ],
       "gitstudio.blame.annotationsMenu": [
@@ -2108,7 +2158,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.19.42",
-    "@types/vscode": "1.74.0",
+    "@types/vscode": "1.78.0",
     "@vscode/codicons": "^0.0.45",
     "esbuild": "^0.28.1",
     "monaco-editor": "^0.55.1",

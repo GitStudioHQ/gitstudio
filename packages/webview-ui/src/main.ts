@@ -604,12 +604,31 @@ function startDiff(root: HTMLElement, first: DiffInitPayload & { type: "diffInit
   prevBtn.addEventListener("click", () => view.goToPrevChange());
   nextBtn.addEventListener("click", () => view.goToNextChange());
 
+  // A tick asks the HOST to change the index; the webview never guesses the
+  // outcome. The host writes, re-reads, and pushes a fresh stagingState — so
+  // what the ticks show is always what git actually holds.
+  view.onToggleTick = (row, staged) => {
+    view.setTicksBusy(true);
+    vscodeApi.postMessage({
+      type: "toggleTick",
+      block: {
+        head: { start: row.block.leftSpan.start, end: row.block.leftSpan.endExclusive },
+        working: { start: row.block.rightSpan.start, end: row.block.rightSpan.endExclusive },
+        state: row.state,
+      },
+      staged,
+    });
+  };
+
   const handle = (message: HostMessage) => {
     if (message?.type === "diffInit") {
       label.textContent = message.fileName
         ? message.fileName.split(/[\\/]/).pop() ?? "Diff"
         : "Diff";
       view.render(message);
+    } else if (message?.type === "stagingState") {
+      view.setStagingState(message.indexText);
+      view.setTicksBusy(false);
     } else if (message?.type === "persistState") {
       // Persist so the panel can be reconstructed after a window reload.
       vscodeApi.setState(message.state);

@@ -45,6 +45,18 @@ export interface DiffInitPayload {
   rightEditable: boolean;
 }
 
+/**
+ * One change since HEAD, identified by content-derived ranges rather than a
+ * position in a list — so a change that merely shifted because something above
+ * it was edited still resolves, and only one that genuinely vanished is refused.
+ * Spans are 1-based, end-exclusive, matching the engine's LineSpan.
+ */
+export interface StageBlockRef {
+  head: { start: number; end: number };
+  working: { start: number; end: number };
+  state: "staged" | "unstaged" | "partial";
+}
+
 /** Messages sent from the extension host to the webview. */
 export type HostMessage =
   | ({ type: "init" } & MergeInitPayload)
@@ -52,7 +64,13 @@ export type HostMessage =
   | ({ type: "diffInit" } & DiffInitPayload)
   // Opaque state the webview persists via setState() so a diff panel can be
   // restored after a window reload. The host owns its shape.
-  | { type: "persistState"; state: unknown };
+  | { type: "persistState"; state: unknown }
+  /**
+   * Enter (or refresh) staging mode. `indexText` is the third text the ticks
+   * need — the diff itself is HEAD vs the working tree, and the index decides
+   * which of those changes are already staged. Undefined leaves staging mode.
+   */
+  | { type: "stagingState"; indexText: string | undefined };
 
 /** Messages sent from the webview to the extension host. */
 export type WebviewMessage =
@@ -63,4 +81,6 @@ export type WebviewMessage =
   | { type: "cancel" }
   // Hand this conflict to the real JetBrains merge window and close the panel.
   | { type: "openInJetBrains" }
-  | { type: "diffChanged"; text: string };
+  | { type: "diffChanged"; text: string }
+  /** The user toggled a staging tick; the host performs the git write. */
+  | { type: "toggleTick"; block: StageBlockRef; staged: boolean };

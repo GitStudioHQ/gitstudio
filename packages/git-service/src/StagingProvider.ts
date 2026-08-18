@@ -232,8 +232,15 @@ export class StagingProvider {
    * Stage arbitrary reconstructed `content` for `rel` WITHOUT touching the
    * working tree — the core of line/hunk staging.
    *
-   * 1. `git hash-object -w --stdin` writes `content` as a loose blob, returns
-   *    its sha.
+   * 1. `git hash-object -w --stdin --path <rel>` writes `content` as a loose
+   *    blob, returns its sha. `--path` does NOT affect where anything is
+   *    written; it tells git which path's attributes decide the clean filters
+   *    to run first. Without it we skipped them, so in a repo with
+   *    `* text=auto` (or core.autocrlf) `git add` stored "one\ntwo\n" where
+   *    this stored "one\r\ntwo\r\n" — a DIFFERENT blob for the same file.
+   *    Staging a hunk then showed the whole file as changed, and committing
+   *    carried CRLF into a history that normalises to LF. Same for any
+   *    `filter=` (git-lfs and friends), which `git add` applies and we did not.
    * 2. Read the file's existing index mode (`git ls-files -s`), defaulting to
    *    100644 for a path not yet tracked.
    * 3. `git update-index --add --cacheinfo <mode>,<sha>,<rel>` repoints the
@@ -245,10 +252,10 @@ export class StagingProvider {
     opts?: StagingOptions,
   ): Promise<CommitResult> {
     const signal = opts?.signal;
-    const hashed = await this.proc.run(["hash-object", "-w", "--stdin"], {
-      signal,
-      input: content,
-    });
+    const hashed = await this.proc.run(
+      ["hash-object", "-w", "--stdin", "--path", rel],
+      { signal, input: content },
+    );
     if (hashed.code !== 0) {
       return { ok: false, stderr: hashed.stderr };
     }

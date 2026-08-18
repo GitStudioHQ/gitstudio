@@ -102,9 +102,11 @@ test("no invalid escape sequences in untagged template literals", async () => {
   const violations: string[] = [];
 
   for (const file of files) {
-    // readFile, not a text search: worktreesView.ts and aiCommands.ts embed
-    // literal NUL bytes as git delimiters, so rg/grep classify them as binary
-    // and skip them silently. Do not "optimise" this into a regex sweep.
+    // readFile, not a text search. Several files here once embedded literal NUL
+    // bytes as delimiters, which made rg/grep classify them as binary and skip
+    // them silently; those are now written as "\u0000" and noLiteralNulBytes
+    // .test.ts keeps them that way. Reading the file directly is still the right
+    // call: it cannot be defeated by whatever the next such byte turns out to be.
     const source = await readFile(file, "utf8");
     const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
     const rel = relative(REPO, file).split("\\").join("/");
