@@ -9,6 +9,26 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [1.3.0] - 2026-08-18
+
+### Changed
+- **The interactive-rebase list now reads newest-first, matching the Commits
+  list.** Git replays the plan bottom-to-top, and the view says so. `squash` and
+  `fixup` fold into the commit *below* them now, so a squash on the top row is
+  allowed where the first row previously could not fold into anything.
+  *(Reported by @wkornewald, #18.)*
+
+### Fixed
+- **The branch list and the top-bar branch name could show the repository you had
+  just switched away from.** A ref lookup already running for the old repository
+  would finish last and overwrite the new one's.
+- **Returning to Branches after committing showed the list as it was before the
+  commit,** with no refresh — and a later fetch or pull silently refreshed nothing
+  at all.
+- **Scrolling the graph while it reloaded could produce a jumbled history** —
+  duplicated rows and mis-drawn lanes — because a page still being read was
+  appended to history that had already been replaced.
+
 ## [1.2.0] - 2026-08-18
 
 ### Added

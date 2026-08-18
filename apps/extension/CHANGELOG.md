@@ -4,6 +4,37 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-08-18
+
+### Added
+- **Create a worktree from a remote branch or a tag,** not just a local branch —
+  and either check the ref out directly or use it as the starting point for a new
+  named branch. New Worktree offers all three kinds now.
+  Thanks to [@wanzirong](https://github.com/wanzirong) (#14).
+- **`gitstudio.worktrees.prefixWithProjectName`** — name the worktree folder
+  `<project>-<branch>` instead of `<branch>`, so a row of worktrees from different
+  repositories stays readable. Off by default. Also from #14.
+
+### Changed
+- **The interactive-rebase list now reads newest-first, matching the Commits
+  list.** Git replays the plan bottom-to-top, and the view says so. `squash` and
+  `fixup` therefore fold into the commit *below* — which means a squash on the top
+  row is now allowed, where the first row previously could not fold into anything.
+  The `git-rebase-todo` editor keeps git's own oldest-first order, since its rows
+  are that file's lines. *(Reported by @wkornewald, #18.)*
+
+### Fixed
+- **A new branch created in a worktree from a remote branch no longer adopts that
+  remote as its upstream** unless the names match. Git's default would set it, and
+  GitStudio's push targets a differently-named upstream explicitly — so pushing
+  from a worktree branch called `my-experiment` started from `origin/feature`
+  could have sent your commits to `origin/feature`.
+- **The branch menu no longer shows the previous repository's branches** for a
+  moment after switching repositories.
+- **A branch you just created or deleted no longer keeps showing its old state.**
+  A ref listing already in flight when the change landed could write its
+  pre-change answer back over the refresh.
+
 ## [1.7.0] - 2026-08-18
 
 ### Added
