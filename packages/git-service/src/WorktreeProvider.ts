@@ -22,6 +22,13 @@ export interface WorktreeAddOptions extends GitRunOptions {
   /** When `newBranch`, the ref the new branch starts from (`git worktree add
    *  -b <ref> <path> <startPoint>`). Defaults to the current HEAD when unset. */
   startPoint?: string;
+  /** When `newBranch`, suppress the new branch tracking its start point
+   *  (`--no-track`). Pass it whenever the branch's name differs from the start
+   *  point's short name: under git's default `branch.autoSetupMerge=true` a
+   *  `-b foo <path> origin/feature` would otherwise auto-track origin/feature,
+   *  and GitStudio's push then targets that remote branch. This implements
+   *  `branch.autoSetupMerge=simple` semantics ourselves. */
+  noTrack?: boolean;
 }
 
 export interface WorktreeRemoveOptions extends GitRunOptions {
@@ -57,15 +64,13 @@ export class WorktreeProvider {
    * `git worktree add [-b <ref>] <path> <ref>` — check out `ref` (or a new
    * branch named `ref`) into a fresh worktree at `path`.
    *
-   * Upstream is deliberately NOT forced here: whether `-b <ref> <path>
-   * <startPoint>` sets the new branch to track its start point is decided by
-   * the user's `branch.autoSetupMerge` config. With the default `true` a
-   * differently-named branch started from a remote-tracking ref would
-   * auto-track the source — which is surprising (a bare `git push` then
-   * refuses under push.default=simple, or SyncOps pushes HEAD onto the
-   * source branch). JetBrains never tracks on "New Branch from <remote>",
-   * so GitStudio matches that by recommending `branch.autoSetupMerge simple`
-   * (track only when the names match) instead of baking `--no-track` in.
+   * A new branch's upstream is decided HERE, not left to the user's
+   * `branch.autoSetupMerge`: git's default (`true`) makes a differently-named
+   * branch started from a remote-tracking ref auto-track it, and GitStudio's
+   * push then targets that remote branch — a commit the user never asked for.
+   * So `noTrack` should be set whenever the new branch's name differs from the
+   * start point's short name, keeping tracking only when the names match (the
+   * `simple` semantics, and what JetBrains' "New Branch from remote" does).
    */
   async add(
     path: string,
@@ -77,6 +82,9 @@ export class WorktreeProvider {
       args.push("-b", ref, path);
       if (opts.startPoint) {
         args.push(opts.startPoint);
+      }
+      if (opts.noTrack) {
+        args.push("--no-track");
       }
     } else {
       args.push(path, ref);

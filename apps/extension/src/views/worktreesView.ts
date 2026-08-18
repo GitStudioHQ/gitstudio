@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import * as path from "node:path";
 import type { WorktreeEntry, GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { bareName, shortNameOf, startPointOf } from "./worktreeRefs";
 
 // The Worktrees pillar — also absent from free VS Code. Each row is a linked (or
 // the main) worktree; actions cover open / add / remove / lock / unlock / prune.
@@ -371,7 +372,10 @@ export async function addWorktree(
     },
   ];
   for (const r of refs) {
-    if (r.type === "stash") {
+    // stash is not a worktree ref; "/HEAD" (origin/HEAD) is a symbolic pointer
+    // to the remote's default branch and checking it out detaches at whatever
+    // it points to — never offer it.
+    if (r.type === "stash" || r.name.endsWith("/HEAD")) {
       continue;
     }
     const key = r.fullName ?? r.name;
@@ -504,76 +508,23 @@ export async function worktreeFromRef(
   if (!name) {
     return;
   }
+
+  const startPoint = startPointOf(resolved);
+  // simple upstream semantics: track only when the new branch's name matches
+  // the start point's short name. A differently-named branch would otherwise
+  // auto-track the remote under git's default branch.autoSetupMerge, and
+  // GitStudio's push then targets that remote branch.
+  const short = startPoint ? shortNameOf(startPoint) : undefined;
   await pickFolderAndCreate(
     a,
-    { branchName: name, newBranch: true, startPoint: startPointOf(resolved) },
+    {
+      branchName: name,
+      newBranch: true,
+      startPoint,
+      noTrack: !!startPoint && short !== undefined && name !== short,
+    },
     refresh,
   );
-}
-
-/**
- * The bare short name for `ref`, with git's disambiguating type prefix removed.
- * When a local branch and a tag share a short name (git warns "refname 'v1.2'
- * is ambiguous"), `%(refname:short)` returns the name with the type prefixed —
- * "heads/v1.2" / "tags/v1.2" — and for remotes it can return "remotes/origin/x".
- * Checking a branch out by name or reconstructing `refs/<type>/<name>` needs the
- * prefix handled: an un-stripped "heads/v1.2" silently detaches, a double
- * prefix ("refs/tags/tags/v1.2") is a fatal.
- *
- * Derived from `fullName` when present (authoritative, never false-strips): a
- * genuine branch named "heads/x" and a collision-prefixed name are string-
- * identical, so name-based stripping alone would corrupt one of them. Only when
- * `fullName` is absent (branch-menu webview, before worktreeFromRef re-resolves
- * it) do we fall back to stripping a single type prefix from the short name.
- */
-function bareName(ref: GitRef): string {
-  if (ref.fullName) {
-    switch (ref.type) {
-      case "head":
-        return ref.fullName.slice("refs/heads/".length);
-      case "remote":
-        return ref.fullName.slice("refs/remotes/".length);
-      case "tag":
-        return ref.fullName.slice("refs/tags/".length);
-      default:
-        return ref.fullName;
-    }
-  }
-  switch (ref.type) {
-    case "head":
-      return ref.name.replace(/^heads\//, "");
-    case "remote":
-      return ref.name.replace(/^remotes\//, "");
-    case "tag":
-      return ref.name.replace(/^tags\//, "");
-    default:
-      return ref.name;
-  }
-}
-
-/**
- * The fully-qualified ref to start a new branch from. The Worktrees view builds
- * its refs from `listRefs()`, so `fullName` is set; the branch menu's webview
- * only sends `name` + `type` (no `fullName`). Reconstruct the FQN here so both
- * create paths pass an identical start point — otherwise the branch-menu path
- * falls back to "from HEAD", silently skipping the upstream tracking that the
- * Worktrees-view path sets up for a remote start point.
- */
-function startPointOf(ref: GitRef): string | undefined {
-  if (ref.fullName) {
-    return ref.fullName;
-  }
-  const name = bareName(ref);
-  switch (ref.type) {
-    case "head":
-      return `refs/heads/${name}`;
-    case "remote":
-      return `refs/remotes/${name}`;
-    case "tag":
-      return `refs/tags/${name}`;
-    default:
-      return undefined;
-  }
 }
 
 /**
@@ -583,7 +534,12 @@ function startPointOf(ref: GitRef): string | undefined {
  */
 async function pickFolderAndCreate(
   a: RepoEntry,
-  opts: { branchName: string; newBranch: boolean; startPoint?: string },
+  opts: {
+    branchName: string;
+    newBranch: boolean;
+    startPoint?: string;
+    noTrack?: boolean;
+  },
   refresh: () => void,
 ): Promise<void> {
   const folders = await vscode.window.showOpenDialog({
@@ -599,8 +555,9 @@ async function pickFolderAndCreate(
   }
   // Place the worktree in a subfolder named after the ref's last segment. When
   // gitstudio.worktrees.prefixWithProjectName is on, prefix it with the MAIN
-  // repository's folder name — resolved from the common git dir, so the prefix
-  // is stable no matter which (possibly linked) worktree initiated the add.
+  // repository's folder name — resolved from `git worktree list` (whose first
+  // entry is always the main checkout), so the prefix is stable no matter which
+  // (possibly linked) worktree initiated the add.
   const leaf = opts.branchName.split("/").pop() ?? opts.branchName;
   let dirName = leaf;
   const prefixEnabled = vscode.workspace
@@ -620,6 +577,7 @@ async function pickFolderAndCreate(
   const result = await a.ctx.worktrees.add(target.fsPath, opts.branchName, {
     newBranch: opts.newBranch,
     startPoint: opts.startPoint,
+    noTrack: opts.noTrack,
   });
   if (!result.ok) {
     void vscode.window.showErrorMessage(
