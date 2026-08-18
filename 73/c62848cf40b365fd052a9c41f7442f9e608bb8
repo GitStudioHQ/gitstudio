@@ -1,0 +1,32 @@
+packages/git-service/src/WorktreeProvider.ts
+  s_daa89ab6f34762::t_857301cadf10b0 22-31,66-73,83-88,96-111
+  s_daa89ab6f34762::t_753658e3c053fc 112-113
+packages/git-service/test/worktree.test.ts
+  s_daa89ab6f34762::t_857301cadf10b0 123-168
+apps/extension/src/views/worktreeRefs.ts
+  s_daa89ab6f34762::t_857301cadf10b0 1-89
+apps/extension/src/views/branchActions.ts
+  s_daa89ab6f34762::t_857301cadf10b0 13,461-463,474
+apps/extension/test/worktreeRefs.test.ts
+  s_daa89ab6f34762::t_857301cadf10b0 1-89
+apps/extension/package.json
+  s_daa89ab6f34762::t_857301cadf10b0 990-994
+apps/extension/src/views/worktreesView.ts
+  s_daa89ab6f34762::t_e7013bf72ef7ff 2-7,9,12,340,357,359-390,392-394,403,411-455,458-544,556-575,577-581
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "73c62848cf40b365fd052a9c41f7442f9e608bb8",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
