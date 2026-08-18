@@ -1,3 +1,11 @@
+// NOTE ON ORDERING: GitStudio's own rebase planners list commits newest-first,
+// matching the Commits list (issue #18). This editor deliberately does NOT — it
+// is a view of git's actual `git-rebase-todo` FILE, opened when git itself asks
+// for an editor, and its rows ARE the file's lines. Reversing them here would
+// mean rewriting a file whose passthrough directives (exec / label / merge /
+// update-ref) are pinned to absolute positions, and would disagree with what
+// every other rebase editor shows. The hint text says which order this is.
+
 import * as vscode from "vscode";
 import { promptConfirm } from "../ui/dialogs";
 import {

@@ -25,8 +25,8 @@ interface Row extends RebaseCommitInfo {
 const ACTIONS: ReadonlyArray<{ id: RebaseAction; label: string; hint: string }> = [
   { id: "pick", label: "Pick", hint: "Keep this commit as it is." },
   { id: "reword", label: "Reword", hint: "Keep the commit, rewrite its message." },
-  { id: "squash", label: "Squash", hint: "Merge into the commit above — keep both messages." },
-  { id: "fixup", label: "Fixup", hint: "Merge into the commit above — drop this message." },
+  { id: "squash", label: "Squash", hint: "Merge into the commit below it — keep both messages." },
+  { id: "fixup", label: "Fixup", hint: "Merge into the commit below it — drop this message." },
   { id: "edit", label: "Edit", hint: "Pause here so you can amend the commit." },
   { id: "drop", label: "Drop", hint: "Delete this commit." },
 ];
@@ -131,9 +131,14 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   // ── model helpers ──
   const firstKeptIndex = (): number => rows.findIndex((r) => r.action !== "drop");
 
-  /** The commit a squash/fixup folds INTO: the nearest kept commit above it. */
+  /**
+   * The commit a squash/fixup folds INTO. git melds into the entry BEFORE it in
+   * the todo file, and the list is newest-first (issue #18), so on screen that is
+   * the nearest kept commit BELOW. Scanning upward was right only while the list
+   * ran oldest-first.
+   */
   const foldTargetSubject = (i: number): string | null => {
-    for (let j = i - 1; j >= 0; j--) {
+    for (let j = i + 1; j < rows.length; j++) {
       const a = rows[j].action;
       if (a === "drop" || a === "squash" || a === "fixup") continue;
       return rows[j].subject;
@@ -365,7 +370,7 @@ function loadingCard(): HTMLElement {
 
 function hintBar(): HTMLElement {
   const h = el("div", "rb-hint");
-  h.append(glyph("info"), span("Commits replay top → bottom (oldest first). Drag to reorder."));
+  h.append(glyph("info"), span("Newest first, as in Commits; git replays them bottom → top. Drag to reorder."));
   return h;
 }
 
@@ -513,12 +518,12 @@ function inProgressCard(reload: () => void): HTMLElement {
 }
 
 function consequence(action: RebaseAction, target: string | null): { icon: string; text: string } | null {
-  const into = target ? `“${clip(target, 44)}”` : "the commit above";
+  const into = target ? `“${clip(target, 44)}”` : "the commit below it";
   switch (action) {
     case "squash":
-      return { icon: "fold-up", text: `Folds up into ${into} — keeps both messages` };
+      return { icon: "fold-down", text: `Folds down into ${into} — keeps both messages` };
     case "fixup":
-      return { icon: "fold-up", text: `Folds up into ${into} — drops this message` };
+      return { icon: "fold-down", text: `Folds down into ${into} — drops this message` };
     case "edit":
       return { icon: "debug-pause", text: "The rebase pauses here so you can amend this commit, then Continue" };
     case "drop":

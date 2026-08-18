@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { promptConfirm } from "../ui/dialogs";
+import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { promptRevision } from "../ui/refPrompt";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { UndoLedger } from "../undo/undoLedger";
@@ -159,25 +160,16 @@ export class RebaseWorkspacePanel {
     if (!active) {
       return;
     }
-    // Guard: the first surviving commit can't be squash/fixup (nothing precedes it).
-    const firstKept = rows.find((r) => r.action !== "drop");
-    if (firstKept && (firstKept.action === "squash" || firstKept.action === "fixup")) {
-      this.post({
-        type: "result",
-        outcome: { status: "failed", message: `The first commit can't be "${firstKept.action}" — there's nothing above it to fold into.` },
-      });
+    // The list is newest-first on screen; git's todo is oldest-first. That single
+    // reversal, the guards, and the reword queue all live in buildRebasePlan,
+    // shared with the desktop app precisely because every way to get this wrong
+    // is silent — the rebase would report success with the history rearranged.
+    const built = buildRebasePlan(rows);
+    if (!built.ok) {
+      this.post({ type: "result", outcome: { status: "failed", message: built.message } });
       return;
     }
-    if (!rows.some((r) => r.action !== "drop")) {
-      this.post({ type: "result", outcome: { status: "failed", message: "Dropping every commit would erase the whole range." } });
-      return;
-    }
-
-    const todo =
-      rows.map((r) => `${r.action} ${r.sha} ${r.subject}`.trimEnd()).join("\n") + "\n";
-    const rewordMessages = rows
-      .filter((r) => r.action === "reword")
-      .map((r) => (r.message ?? "").trim() || r.subject);
+    const { todo, rewordMessages } = built;
 
     await this.finish(() =>
       this.undo.runWithUndo(active, `Interactive rebase onto ${shortRef(this.base)}`, () =>
@@ -259,12 +251,12 @@ export class RebaseWorkspacePanel {
   </div>
   <div class="rb-explain" id="rb-explain">
     <button class="rb-explain-x" id="rb-explain-x" aria-label="Dismiss">&times;</button>
-    <div class="rb-explain-lead"><i class="codicon codicon-info"></i> <b>Tidy up your recent commits before you push.</b> Reorder them by dragging, or pick what happens to each one below. Oldest is at the top; they replay top&nbsp;→&nbsp;bottom. <b>Nothing changes until you press “Start Rebase,”</b> and Undo (⌘⌥G&nbsp;Z) reverses it.</div>
+    <div class="rb-explain-lead"><i class="codicon codicon-info"></i> <b>Tidy up your recent commits before you push.</b> Reorder them by dragging, or pick what happens to each one below. Newest is at the top, as in Commits; git replays them bottom&nbsp;→&nbsp;top. <b>Nothing changes until you press “Start Rebase,”</b> and Undo (⌘⌥G&nbsp;Z) reverses it.</div>
     <div class="rb-gloss">
       <span><b class="g-pick">Pick</b> keep the commit as it is</span>
       <span><b class="g-reword">Reword</b> keep it, but rewrite the message</span>
-      <span><b class="g-squash">Squash</b> merge into the commit above — keep both messages</span>
-      <span><b class="g-fixup">Fixup</b> merge into the commit above — drop this message</span>
+      <span><b class="g-squash">Squash</b> merge into the commit below it — keep both messages</span>
+      <span><b class="g-fixup">Fixup</b> merge into the commit below it — drop this message</span>
       <span><b class="g-edit">Edit</b> pause here so you can amend the commit</span>
       <span><b class="g-drop">Drop</b> delete the commit</span>
     </div>
@@ -327,7 +319,8 @@ async function loadCommits(active: RepoEntry, base: string): Promise<RebaseCommi
   const sep = "\x1f";
   const r = await active.ctx.process.run([
     "log",
-    "--reverse", // oldest first — git's todo order
+    // NEWEST FIRST, matching the Commits list (issue #18). git's todo file is the
+    // other way round; buildRebasePlan does that reversal in exactly one place.
     `--format=%H${sep}%h${sep}%an${sep}%at${sep}%s`,
     range,
   ]);
@@ -512,10 +505,12 @@ function el(t, c, h) { const n = document.createElement(t); if (c) n.className =
 function escText(s) { const d = document.createElement("span"); d.textContent = s == null ? "" : s; return d.innerHTML; }
 function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
 
-// The commit a squash/fixup folds INTO: the nearest kept commit above it
-// (skipping drops and other fold rows, which chain into the same base).
+// The commit a squash/fixup folds INTO: git melds into the entry BEFORE it in the
+// todo, and the list is newest-first, so on screen that is the nearest kept
+// commit BELOW (skipping drops and other fold rows, which chain into the same
+// base). Scanning upward was right only while the list ran oldest-first.
 function foldTargetSubject(i) {
-  for (let j = i - 1; j >= 0; j--) {
+  for (let j = i + 1; j < rows.length; j++) {
     const a = rows[j].action;
     if (a === "drop" || a === "squash" || a === "fixup") continue;
     return rows[j].subject;
@@ -523,10 +518,10 @@ function foldTargetSubject(i) {
   return null;
 }
 function consequenceHtml(action, targetSubj) {
-  const into = targetSubj ? ' <b>' + escText(clip(targetSubj, 44)) + '</b>' : ' the commit above';
+  const into = targetSubj ? ' <b>' + escText(clip(targetSubj, 44)) + '</b>' : ' the commit below it';
   switch (action) {
-    case "squash": return '<i class="codicon codicon-fold-up"></i> Folds up into' + into + ' — keeps both messages';
-    case "fixup":  return '<i class="codicon codicon-fold-up"></i> Folds up into' + into + ' — drops this message';
+    case "squash": return '<i class="codicon codicon-fold-down"></i> Folds down into' + into + ' — keeps both messages';
+    case "fixup":  return '<i class="codicon codicon-fold-down"></i> Folds down into' + into + ' — drops this message';
     case "edit":   return '<i class="codicon codicon-debug-pause"></i> The rebase pauses here so you can amend this commit, then Continue';
     case "drop":   return '<i class="codicon codicon-trash"></i> This commit will be deleted';
     default: return "";

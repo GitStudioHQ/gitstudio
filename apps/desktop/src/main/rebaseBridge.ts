@@ -1,4 +1,5 @@
 import { runRebasePlan, isRebaseInProgress } from "@gitstudio/git-service/RebaseRunner";
+import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import type { RepoStore } from "./repoStore";
 import type {
   RebaseApplyRequest,
@@ -115,7 +116,8 @@ export class RebaseBridge {
     const sep = "\x1f";
     const r = await ctx.process.run([
       "log",
-      "--reverse", // oldest first — git's todo order
+      // NEWEST FIRST, matching the Commits list (issue #18). git's todo file is
+      // the other way round; apply() does that reversal in exactly one place.
       // Hard cap: rebasing onto --root in a large repo would otherwise try to
       // render thousands of rows (and be a terrible idea to execute).
       `--max-count=${MAX_PLAN_COMMITS}`,
@@ -158,40 +160,13 @@ export class RebaseBridge {
     if (!rows.length) {
       return { status: "failed", message: "Nothing to rebase." };
     }
-    // The same two guards the extension enforces: you can't fold into nothing,
-    // and you can't drop the entire range.
-    const firstKept = rows.find((r) => r.action !== "drop");
-    if (firstKept && (firstKept.action === "squash" || firstKept.action === "fixup")) {
-      return {
-        status: "failed",
-        message: `The first commit can't be "${firstKept.action}" — there's nothing above it to fold into.`,
-      };
+    // Display order (newest first) becomes git's todo order in buildRebasePlan,
+    // shared with the extension because every way to get this wrong is silent.
+    const built = buildRebasePlan(rows);
+    if (!built.ok) {
+      return { status: "failed", message: built.message };
     }
-    if (!rows.some((r) => r.action !== "drop")) {
-      return { status: "failed", message: "Dropping every commit would erase the whole range." };
-    }
-
-    // The renderer is our own code, but this string becomes a git todo script:
-    // an unexpected action ("exec"), or a newline smuggled through `subject`,
-    // becomes a line git will RUN. TypeScript's union is erased at runtime, so
-    // validate here rather than trusting the type. Anything unrecognised is a
-    // bug in the caller, not something to paper over — fail loudly.
-    const bad = rows.find(
-      (r) => !TODO_ACTIONS.has(r.action) || !/^[0-9a-fA-F]{4,40}$/.test(r.sha),
-    );
-    if (bad) {
-      return {
-        status: "failed",
-        message: `Refusing to rebase: unrecognised plan entry ${JSON.stringify(bad.action)}.`,
-      };
-    }
-    const todo =
-      rows
-        .map((r) => `${r.action} ${r.sha} ${oneLineSubject(r.subject)}`.trimEnd())
-        .join("\n") + "\n";
-    const rewordMessages = rows
-      .filter((r) => r.action === "reword")
-      .map((r) => (r.message ?? "").trim() || r.subject);
+    const { todo, rewordMessages } = built;
 
     try {
       return await runRebasePlan(root, { base: req.base, todo, rewordMessages });

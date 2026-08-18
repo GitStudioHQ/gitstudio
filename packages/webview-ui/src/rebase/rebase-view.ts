@@ -31,8 +31,8 @@ const ACTIONS: ReadonlyArray<{
   { value: "pick", label: "pick", hint: "use the commit as-is" },
   { value: "reword", label: "reword", hint: "use commit, edit its message" },
   { value: "edit", label: "edit", hint: "stop to amend the commit" },
-  { value: "squash", label: "squash", hint: "meld into the previous commit" },
-  { value: "fixup", label: "fixup", hint: "meld in, drop this message" },
+  { value: "squash", label: "squash", hint: "meld into the commit above (the older one)" },
+  { value: "fixup", label: "fixup", hint: "meld into the commit above, drop this message" },
   { value: "drop", label: "drop", hint: "remove the commit" },
 ];
 
@@ -423,7 +423,7 @@ export class RebaseView extends LitElement {
           <kbd aria-label="Up arrow">${RebaseView.chevronUp}</kbd>
           <span aria-hidden="true">/</span>
           <kbd aria-label="Down arrow">${RebaseView.chevronDown}</kbd>
-          <span>to reorder. Topmost runs first; set each commit's action.</span>
+          <span>to reorder. Topmost runs first — this is git's todo file, oldest at the top; set each commit's action.</span>
         </div>
       </header>
 
