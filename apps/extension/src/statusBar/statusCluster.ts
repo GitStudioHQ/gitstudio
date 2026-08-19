@@ -1,29 +1,26 @@
 import * as vscode from "vscode";
 import type { RepoManager } from "../git/repoManager";
-import { changesLabel, changesTooltip } from "./changesLabel";
 
 /**
  * The GitStudio status-bar cluster: small, single-purpose segments that each go
  * straight where they belong.
  *
- * SyncStatusItem next door owns branch and ahead/behind, because that is one
- * thought — "where am I relative to the remote". These are the other things a
- * git client should be able to tell you at a glance without opening anything:
- * how much is changed, how much is stashed, and one-click routes to the graph
- * and a terminal already sitting in the repository.
+ * Two buttons, and deliberately no counters.
  *
- * Separate items rather than one rich one, deliberately. A single segment can
- * only have one click target, so every extra thing it reports becomes a thing
- * you must hover to reach. Segments cost a little width and buy a direct route
- * to each destination — and each can be switched off by anyone who disagrees.
+ * There were counters here — changed files and stashes — and they were the wrong
+ * thing twice over. The file count belongs to the branch, so it lives on
+ * SyncStatusItem as a dirty marker rather than as a segment of its own. The
+ * stash count belongs nowhere near the status bar: there is an entire sidebar
+ * view for stashes, and a number that duplicates it costs width to tell you
+ * something you were not asking.
+ *
+ * What is left are two routes that genuinely have no other one-click home.
  */
 
 const UPDATE_DEBOUNCE_MS = 500;
 
 /** Each segment, its setting key, and where it sits relative to sync (-5). */
 const SEGMENTS = {
-  changes: { setting: "showChanges", priority: -6 },
-  stashes: { setting: "showStashes", priority: -7 },
   graph: { setting: "showGraph", priority: -8 },
   terminal: { setting: "showTerminal", priority: -9 },
 } as const;
@@ -111,37 +108,7 @@ export class StatusCluster implements vscode.Disposable {
       else item.hide();
     }
 
-    const [status, stashes] = await Promise.all([
-      active.ctx.status.read().catch(() => undefined),
-      active.ctx.stashes.list().catch(() => []),
-    ]);
-    if (token !== this.token) return; // a newer update won
-
-    const changes = this.items.get("changes")!;
-    if (status && this.enabled("changes")) {
-      const staged = status.staged.length;
-      const unstaged = status.unstaged.length;
-      // A clean tree is worth saying, briefly — an empty segment would read as
-      // "this is broken" rather than "there is nothing to report".
-      changes.text = changesLabel(staged, unstaged);
-      changes.tooltip = changesTooltip(staged, unstaged);
-      changes.command = "gitstudio.commit.focus";
-      changes.show();
-    } else {
-      changes.hide();
-    }
-
-    const stash = this.items.get("stashes")!;
-    // Hidden at zero on purpose: an empty stash list is the normal state, and a
-    // permanent "0" is noise in a bar where width is the scarce resource.
-    if (stashes.length > 0 && this.enabled("stashes")) {
-      stash.text = `$(archive) ${stashes.length}`;
-      stash.tooltip = `GitStudio: ${stashes.length} stash${stashes.length === 1 ? "" : "es"}`;
-      stash.command = "gitstudio.stashes.focus";
-      stash.show();
-    } else {
-      stash.hide();
-    }
+    void token;
   }
 
   /**

@@ -1147,16 +1147,6 @@
           "default": false,
           "description": "Stage or unstage a change by clicking the gutter beside it. Off by default: VS Code gives decorations no click event, so this is inferred from a click landing at the start of a line \u2014 which is also how you place a caret. It never fires on a line without a change, and yields while blame annotations are shown."
         },
-        "gitstudio.statusBar.showChanges": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show a status-bar segment with the number of changed files. Click it to open the Changes view."
-        },
-        "gitstudio.statusBar.showStashes": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show a status-bar segment with the number of stashes. Hidden automatically when there are none."
-        },
         "gitstudio.statusBar.showGraph": {
           "type": "boolean",
           "default": true,

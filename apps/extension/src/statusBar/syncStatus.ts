@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
+import { branchChoices } from "./branchChoices";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
 // A compact left status-bar segment for the active repo's sync state:
@@ -87,6 +88,17 @@ export class SyncStatusItem implements vscode.Disposable {
       } else {
         parts.push("$(cloud-upload)");
       }
+      // A dirty marker rather than a segment of its own. It belongs to the
+      // branch — "main, with uncommitted work" is one thought — and the exact
+      // file count is already on the Changes view and its activity-bar badge, so
+      // repeating it in the status bar buys nothing but width.
+      const dirty = await this.dirtyCount(active);
+      if (token !== this.updateToken) {
+        return;
+      }
+      if (dirty > 0) {
+        parts.push(`$(pencil)${dirty}`);
+      }
       this.item.text = parts.join(" ");
       this.setTooltip(branch, upstream, counts.ahead, counts.behind);
       this.item.show();
@@ -98,18 +110,50 @@ export class SyncStatusItem implements vscode.Disposable {
   }
 
   /**
-   * Clicking the item performs the DEFAULT action directly: sync when there is
-   * an upstream, publish when there isn't. Deliberately not a QuickPick — the
-   * palette is a search box, not a menu, and a one-click control should just
-   * act. The other verbs are command links in the tooltip (see setTooltip).
+   * Clicking the item SWITCHES BRANCH, the way VS Code's own does.
+   *
+   * It used to sync. That reads as a dead button most of the time: on an
+   * up-to-date branch a sync fetches, pulls nothing and pushes nothing, so the
+   * only feedback is a brief flash — and syncing already has three obvious
+   * homes in the tooltip below. Switching branch is the thing this segment is
+   * NAMED after, and the thing there is no other one-click route to.
    */
   private async showMenu(): Promise<void> {
     const active = this.repos.getActive();
     if (!active) {
       return;
     }
-    const upstream = await active.ctx.sync.currentUpstream();
-    await this.runAction(active, upstream ? "sync" : "publish");
+    let refs;
+    try {
+      refs = await active.ctx.refs.listRefs();
+    } catch {
+      void vscode.window.showErrorMessage("GitStudio: could not read branches.");
+      return;
+    }
+    const choices = branchChoices(refs);
+    if (choices.length === 0) {
+      void vscode.window.showInformationMessage("GitStudio: no branches yet.");
+      return;
+    }
+    const picked = await promptPick({ title: "Switch branch", choices });
+    if (picked === undefined) {
+      return;
+    }
+    const target = refs.find((r) => r.name === picked);
+    if (!target || target.isCurrent) {
+      return;
+    }
+    const result = await active.ctx.branches.checkout(target.name);
+    if (!result.ok) {
+      void vscode.window.showErrorMessage(
+        result.stderr.trim() || "GitStudio: checkout failed.",
+      );
+    } else {
+      void vscode.window.setStatusBarMessage(
+        "$(check) Checked out " + target.name,
+        2500,
+      );
+    }
     this.scheduleUpdate();
   }
 
@@ -148,6 +192,19 @@ export class SyncStatusItem implements vscode.Disposable {
       md.appendMarkdown("[$(repo-fetch) Fetch](command:gitstudio.sync.fetch)");
     }
     this.item.tooltip = md;
+  }
+
+  /** How many files differ from HEAD, staged or not. 0 when it cannot be read. */
+  private async dirtyCount(active: RepoEntry): Promise<number> {
+    try {
+      const status = await active.ctx.status.read();
+      const paths = new Set<string>();
+      for (const f of status.staged) paths.add(f.path);
+      for (const f of status.unstaged) paths.add(f.path);
+      return paths.size;
+    } catch {
+      return 0;
+    }
   }
 
   private async runAction(active: RepoEntry, id: string): Promise<void> {
