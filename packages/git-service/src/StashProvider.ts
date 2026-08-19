@@ -24,6 +24,21 @@ export interface StashSaveOptions extends GitRunOptions {
   keepIndex?: boolean;
   /** `--include-untracked` — also stash untracked files. */
   includeUntracked?: boolean;
+  /**
+   * Restrict the stash to these repo-relative paths (`git stash push -- …`).
+   *
+   * Empty or omitted means the whole working tree. Paths are passed after `--`,
+   * so a file named like an option cannot be read as one.
+   */
+  paths?: readonly string[];
+  /**
+   * `--staged` — stash ONLY what is currently staged, leaving unstaged work in
+   * place.
+   *
+   * Cannot be combined with `paths`; see `save()` for why that combination is
+   * refused rather than passed through.
+   */
+  stagedOnly?: boolean;
 }
 
 export interface StashOpResult {
@@ -72,14 +87,34 @@ export type StashBlocker =
  * same reason `commitBlockerMessage` does: so the extension and the desktop app
  * cannot describe the same state differently. The caller adds any prefix.
  */
-export function stashBlockerMessage(blocker: StashBlocker): string {
+export function stashBlockerMessage(
+  blocker: StashBlocker,
+  /**
+   * What the user actually asked to stash, so the message describes THAT rather
+   * than the repository. "The working tree is clean" is a plain falsehood when
+   * the tree is full of changes and the three files they picked are not.
+   */
+  scope: StashScope = "tree",
+): string {
   switch (blocker) {
     case "cleanTree":
-      return "Nothing to stash — the working tree is clean.";
+      switch (scope) {
+        case "selection":
+          return "Nothing to stash — the files you selected have no changes.";
+        case "staged":
+          return "Nothing to stash — nothing is staged.";
+        default:
+          return "Nothing to stash — the working tree is clean.";
+      }
     case "untrackedOnly":
-      return "Nothing was stashed — the only changes are new files git isn't tracking yet. Stash again with \"Include untracked files\" to put those away too.";
+      return scope === "selection"
+        ? "Nothing was stashed — the files you selected are new ones git isn't tracking yet. Stash again with \"Include untracked files\" to put those away too."
+        : "Nothing was stashed — the only changes are new files git isn't tracking yet. Stash again with \"Include untracked files\" to put those away too.";
   }
 }
+
+/** What a stash was asked to cover, for reporting purposes only. */
+export type StashScope = "tree" | "selection" | "staged";
 
 /**
  * Host-agnostic `git stash` plumbing: list/save/apply/pop/drop/show/branch.
@@ -120,7 +155,31 @@ export class StashProvider {
    * 0 — see StashSaveOutcome for why those are different questions.
    */
   async save(opts?: StashSaveOptions): Promise<StashSaveOutcome> {
+    const paths = opts?.paths?.filter((p) => p.length > 0) ?? [];
+
+    // REFUSED, because git does the wrong thing silently. `git stash push
+    // --staged -- <path>` ignores the pathspec: the stash gets every staged
+    // change, and files outside the pathspec are left with their index entry
+    // intact but their working tree reverted — `MM` in status, with the working
+    // copy of work the user never selected quietly thrown away. Exit code 0, no
+    // warning. Verified against git 2.49.
+    //
+    // "The staged changes of just these files" is not expressible through
+    // `stash push` at all, so the caller has to pick one axis.
+    if (opts?.stagedOnly && paths.length > 0) {
+      return {
+        ok: false,
+        created: false,
+        stderr:
+          "Stashing the staged changes of specific files is not supported by git — " +
+          "stash the whole staged section, or stash those files entirely.",
+      };
+    }
+
     const args = ["stash", "push"];
+    if (opts?.stagedOnly) {
+      args.push("--staged");
+    }
     if (opts?.keepIndex) {
       args.push("--keep-index");
     }
@@ -129,6 +188,10 @@ export class StashProvider {
     }
     if (opts?.message) {
       args.push("-m", opts.message);
+    }
+    if (paths.length > 0) {
+      // After `--`, so a path that looks like an option cannot become one.
+      args.push("--", ...paths);
     }
     // Asked BEFORE the push, not after, and deliberately so.
     //
@@ -145,6 +208,23 @@ export class StashProvider {
     const blocker = await this.nothingToStash(opts);
     const r = await this.proc.run(args, { signal: opts?.signal });
     if (r.code !== 0) {
+      // Two of these "failures" are user states wearing an error's clothes, and
+      // only appear once a stash can be narrowed:
+      //
+      //   git stash push --staged            (nothing staged)  -> exit 1
+      //   git stash push -- <untracked path> (needs -u)        -> exit 1,
+      //       "pathspec ... did not match any file(s) known to git"
+      //
+      // The unscoped equivalent exits 0 and says "No local changes to save", so
+      // adding a pathspec would otherwise turn a calm "nothing to stash" into a
+      // red error quoting git's internal pathspec syntax at the user.
+      //
+      // The pre-flight already knows WHY nothing could be stashed, and it was
+      // asked before the push, so it is both the more accurate answer and the
+      // more useful one.
+      if (blocker) {
+        return { ok: true, created: false, stderr: r.stderr, blocker };
+      }
       return { ok: false, created: false, stderr: r.stderr };
     }
     return blocker
@@ -163,12 +243,29 @@ export class StashProvider {
   private async nothingToStash(
     opts?: StashSaveOptions,
   ): Promise<StashBlocker | undefined> {
+    // Every question is asked THROUGH the same pathspec the push will use.
+    // Without that, stashing a selection whose files happen to be clean would
+    // see the rest of the dirty tree, conclude there was something to stash, and
+    // report a stash that git declined to make — the exact lie this whole
+    // mechanism exists to prevent, just scoped down.
+    const paths = opts?.paths?.filter((p) => p.length > 0) ?? [];
+    const scope = paths.length > 0 ? ["--", ...paths] : [];
+
     const [worktree, index] = await Promise.all([
-      this.proc.run(["diff", "--name-only", "-z"], { signal: opts?.signal }),
-      this.proc.run(["diff", "--cached", "--name-only", "-z"], {
+      this.proc.run(["diff", "--name-only", "-z", ...scope], {
+        signal: opts?.signal,
+      }),
+      this.proc.run(["diff", "--cached", "--name-only", "-z", ...scope], {
         signal: opts?.signal,
       }),
     ]);
+
+    // `--staged` takes the index and nothing else, so unstaged work is not an
+    // answer to "is there anything to stash?" here.
+    if (opts?.stagedOnly) {
+      return countPaths(index) > 0 ? undefined : "cleanTree";
+    }
+
     if (countPaths(worktree) > 0 || countPaths(index) > 0) {
       return undefined;
     }
@@ -182,9 +279,10 @@ export class StashProvider {
 
   /** Are there untracked, non-ignored files? `--exclude-standard` is what keeps
    *  build output from counting as work the user meant to stash. */
-  private async hasUntracked(opts?: GitRunOptions): Promise<boolean> {
+  private async hasUntracked(opts?: StashSaveOptions): Promise<boolean> {
+    const paths = opts?.paths?.filter((p) => p.length > 0) ?? [];
     const r = await this.proc.run(
-      ["ls-files", "--others", "--exclude-standard", "-z"],
+      ["ls-files", "--others", "--exclude-standard", "-z", ...(paths.length > 0 ? ["--", ...paths] : [])],
       { signal: opts?.signal },
     );
     return countPaths(r) > 0;

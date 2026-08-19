@@ -199,3 +199,32 @@ test("both blockers read differently, and neither is empty", () => {
   // The untracked one must name the way out, since there is one.
   assert.match(untracked, /Include untracked/i);
 });
+
+test("blocker messages describe what the USER asked to stash, not the repo", () => {
+  // "The working tree is clean" over a tree full of changes, because the three
+  // files they picked happen not to be, is simply a false statement.
+  const tree = stashBlockerMessage("cleanTree", "tree");
+  const selection = stashBlockerMessage("cleanTree", "selection");
+  const staged = stashBlockerMessage("cleanTree", "staged");
+
+  assert.equal(new Set([tree, selection, staged]).size, 3, "three scopes, three messages");
+  assert.match(tree, /working tree/i);
+  assert.match(selection, /selected/i);
+  assert.doesNotMatch(selection, /working tree is clean/i);
+  assert.match(staged, /staged/i);
+
+  for (const m of [tree, selection, staged]) {
+    assert.match(m, /[.!]$/, "full sentences, like the rest of our copy");
+  }
+});
+
+test("the default scope is the whole tree, so existing callers are unchanged", () => {
+  assert.equal(stashBlockerMessage("cleanTree"), stashBlockerMessage("cleanTree", "tree"));
+  assert.equal(stashBlockerMessage("untrackedOnly"), stashBlockerMessage("untrackedOnly", "tree"));
+});
+
+test("the untracked message names the way out in every scope", () => {
+  for (const scope of ["tree", "selection"] as const) {
+    assert.match(stashBlockerMessage("untrackedOnly", scope), /Include untracked/i);
+  }
+});
