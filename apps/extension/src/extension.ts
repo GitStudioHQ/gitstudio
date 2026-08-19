@@ -24,6 +24,7 @@ import {
 } from "./views/worktreesView";
 import { ComparePanel } from "./compare/comparePanel";
 import { SyncStatusItem } from "./statusBar/syncStatus";
+import { StatusCluster } from "./statusBar/statusCluster";
 import * as branchActions from "./views/branchActions";
 import { CommitGraphPanel } from "./graph/graphPanel";
 import { CommitsGraphViewProvider } from "./graph/commitsGraphView";
@@ -418,17 +419,21 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // After any staging op (line/hunk staging): re-push the commit webview's
     // state and invalidate open diffs. The webview owns the change lists now.
-    // Staging state in VS Code's own gutter. Constructed before stagingRefresh
-    // so every write path can repaint it.
+    // Staging state in VS Code's own gutter, and the status-bar counts. Both are
+    // constructed before stagingRefresh, which closes over them: declaring them
+    // after it would leave a temporal dead zone that any refresh fired during
+    // activation would fall into.
     const stagedGutter = new StagedGutter(context, repos, (uri) =>
       blame.ownsGutterStrip(uri),
     );
+    const statusCluster = new StatusCluster(repos);
 
     const stagingRefresh: StagingRefresh = {
       refresh() {
         revisionContent.notifyChanged();
         commitProvider.requestState();
         stagedGutter.refreshAll();
+        statusCluster.refresh();
         // Nudge vscode.git to re-scan so the groups update promptly.
         const active = repos.getActive();
         void active?.repo?.status?.();
@@ -572,9 +577,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const refreshWorktrees = () => worktreesProvider.refresh();
     const refreshBranches = () => refsProvider.refresh();
 
-    // The status-bar sync segment.
+    // The status-bar sync segment. The cluster beside it is constructed earlier,
+    // next to stagedGutter, because stagingRefresh closes over both.
     const syncStatus = new SyncStatusItem(repos);
-    context.subscriptions.push(syncStatus);
+    context.subscriptions.push(syncStatus, statusCluster);
 
     context.subscriptions.push(
       worktreesView,

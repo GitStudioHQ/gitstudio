@@ -836,6 +836,12 @@
         "command": "gitstudio.toggleStageAtLine",
         "title": "Stage or Unstage the Change at This Line",
         "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.openTerminal",
+        "title": "Open Terminal at Repository Root",
+        "category": "GitStudio",
+        "icon": "$(terminal)"
       }
     ],
     "keybindings": [
@@ -1140,6 +1146,26 @@
           "type": "boolean",
           "default": false,
           "description": "Stage or unstage a change by clicking the gutter beside it. Off by default: VS Code gives decorations no click event, so this is inferred from a click landing at the start of a line \u2014 which is also how you place a caret. It never fires on a line without a change, and yields while blame annotations are shown."
+        },
+        "gitstudio.statusBar.showChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a status-bar segment with the number of changed files. Click it to open the Changes view."
+        },
+        "gitstudio.statusBar.showStashes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a status-bar segment with the number of stashes. Hidden automatically when there are none."
+        },
+        "gitstudio.statusBar.showGraph": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a status-bar button that opens the Commit Graph."
+        },
+        "gitstudio.statusBar.showTerminal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a status-bar button that opens a terminal already in the active repository's root \u2014 which is not necessarily the workspace root."
         }
       }
     },
@@ -1833,6 +1859,10 @@
         {
           "command": "gitstudio.toggleStageAtLine",
           "when": "editorTextFocus && gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.openTerminal",
+          "when": "gitstudio.hasRepo"
         }
       ],
       "view/item/context": [
