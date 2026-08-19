@@ -9,7 +9,7 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [Unreleased]
+## [1.4.0] - 2026-08-19
 
 ### Added
 - **Tick individual changes in a diff.** In Split view every change carries a
@@ -25,6 +25,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   stash UI.
 - **Stage, unstage or discard several files at once** from the row menu, with one
   refresh at the end rather than one per file.
+- **A stash button in the Changes toolbar** that follows your selection and says
+  what it will take — "Stash all changes…" against "Stash 3 selected files…".
 
 ### Fixed
 - **Partial staging wrote different bytes than `git add` would.** Staging lines

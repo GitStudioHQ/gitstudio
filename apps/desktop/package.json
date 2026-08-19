@@ -1,9 +1,9 @@
 {
   "name": "gitstudio-desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "license": "Apache-2.0",
-  "description": "GitStudio — the native cross-platform desktop app (Electron). Reuses @gitstudio/engine, git-service, webview-ui, and host-bridge behind host-agnostic seams.",
+  "description": "GitStudio \u2014 the native cross-platform desktop app (Electron). Reuses @gitstudio/engine, git-service, webview-ui, and host-bridge behind host-agnostic seams.",
   "author": "GitStudio <hello@gitstudio.dev>",
   "homepage": "https://gitstudio.dev",
   "main": "dist/main/main.js",

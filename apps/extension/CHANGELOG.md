@@ -4,7 +4,7 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.0] - 2026-08-19
 
 ### Added
 - **Tick individual changes in a diff.** Every change carries a tri-state tick —
@@ -25,12 +25,32 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   stash could only ever take the entire working tree.
 - **The stash button says what it will take** — "Stash all changes…" normally,
   "Stash 3 selected files…" when you have a selection.
-- **A status-bar cluster:** how many files have changed, how many stashes you
-  have, and one-click buttons for the Commit Graph and for a terminal already in
-  the repository's root — which is not the workspace root in a monorepo. Each
-  segment can be switched off under `gitstudio.statusBar`.
+- **A toggle for the staging model,** beside the tree/list one — the checkbox
+  view existed only as a setting, so finding it meant already knowing the
+  setting's name.
+- **Escape steps back one level.** It closes whatever is open — a menu, a
+  submenu, a dialog — and clears the file selection when nothing is.
+- **Status bar:** the branch now shows uncommitted work (`main ↑1 ✎3`) and opens
+  the branch menu when clicked. Beside it, one-click buttons for the Commit Graph
+  and for a terminal in the **repository's** root — which is not the workspace
+  root in a monorepo. The terminal button counts open terminals, lists them by
+  name on hover, and toggles. Both buttons can be switched off under
+  `gitstudio.statusBar`.
 
 ### Fixed
+- **A partly staged file appeared twice in the checkbox view,** once for its
+  staged part and once for its unstaged one. It is a single row now, with the
+  tick showing "partly staged"; clicking it stages the rest.
+- **Ticking a change made it disappear.** The per-file change list only showed
+  what was still unstaged, so staging a change removed it from its own list — and
+  staging the last one took the whole panel with it. Every change is now listed
+  with its state, ticks work both ways, and a file folds itself back once
+  everything in it is staged.
+- **A change could not be opened.** Clicking a file opens its diff; clicking one
+  of its individual changes did nothing. It now opens the diff at that change.
+- **The tree/list toggle did nothing in the checkbox view.**
+- **Checkboxes were the raw platform control,** rounded and blue on macOS and a
+  different shape on Windows, unlike every other checkbox in the editor.
 - **Partial staging wrote different bytes than `git add` would.** Staging lines
   or hunks bypassed the clean filters that `.gitattributes` and `core.autocrlf`
   apply, so in a repository normalising line endings, staging one hunk could show
