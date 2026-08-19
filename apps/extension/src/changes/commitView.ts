@@ -5570,6 +5570,61 @@ export class CommitViewProvider
         ev.stopPropagation();
         vscode.postMessage({ type: "discardAll", group: "unstaged" });
       }));
+      // Selecting a "section" in this model. There is only one list here — the
+      // split into Staged and Unstaged is exactly what the checkbox model does
+      // away with — so the sections the user means are the CHECKED rows and the
+      // UNCHECKED ones. Ctrl/cmd-click takes everything, matching the split
+      // model's headers; right-click offers the two halves by name, because
+      // there is no second header to modifier-click.
+      header.title = "Changes — Ctrl/Cmd-click to select every file, " +
+        "right-click to select just the checked or unchecked ones";
+      const selectKeys = function (keys) {
+        selectedRows.clear();
+        for (let i = 0; i < keys.length; i++) selectedRows.add(keys[i]);
+        selectionAnchor = keys.length > 0 ? keys[keys.length - 1] : null;
+        paintSelection();
+      };
+      const keysFor = function (which) {
+        const out = [];
+        for (const f of all) {
+          if (which === "checked" && !f.staged) continue;
+          if (which === "unchecked" && f.staged) continue;
+          const kind = f.kind === "merge" ? "merge" : f.staged ? "staged" : "unstaged";
+          out.push(rowKey(kind, f.entry.path));
+        }
+        return out;
+      };
+      header.addEventListener("click", function (ev) {
+        if (!(ev.ctrlKey || ev.metaKey)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const every = keysFor("all");
+        const allOn = every.length > 0 && every.every(function (k) { return selectedRows.has(k); });
+        selectKeys(allOn ? [] : every);
+      });
+      header.addEventListener("contextmenu", function (ev) {
+        ev.preventDefault();
+        const checked = keysFor("checked");
+        const unchecked = keysFor("unchecked");
+        const items = [];
+        items.push({ icon: "check-all", label: "Select All (" + all.length + ")",
+          fn: function () { selectKeys(keysFor("all")); } });
+        if (checked.length > 0) {
+          items.push({ icon: "check", label: "Select Checked (" + checked.length + ")",
+            fn: function () { selectKeys(checked); } });
+        }
+        if (unchecked.length > 0) {
+          items.push({ icon: "circle-outline", label: "Select Unchecked (" + unchecked.length + ")",
+            fn: function () { selectKeys(unchecked); } });
+        }
+        items.push({ sep: true });
+        items.push({ icon: "archive", label: "Stash Everything Staged",
+          fn: function () { vscode.postMessage({ type: "stashStaged" }); } });
+        items.push({ icon: "archive", label: "Stash All Changes",
+          fn: function () { vscode.postMessage({ type: "stash" }); } });
+        openActionMenu("Changes", items, header);
+      });
+
       header.append(master, glabel, actions, gcount);
       group.appendChild(header);
 

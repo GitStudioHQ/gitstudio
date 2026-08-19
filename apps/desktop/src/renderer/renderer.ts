@@ -133,6 +133,8 @@ class App {
   private rowOrder: string[] = [];
   /** Paths being dragged right now; empty when no drag is in progress. */
   private dragPaths: string[] = [];
+  /** Relabels the toolbar's stash button whenever the selection changes. */
+  private syncStashButton: (() => void) | undefined;
   /**
    * The Changes composer's in-progress state, held on the instance because
    * every stage / unstage / discard rebuilds that whole subtree. Without it,
@@ -2506,7 +2508,33 @@ class App {
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
     refreshBtn.addEventListener("click", () => void this.showChangesView());
-    toolbar.append(tTitle, tSpacer, modelBtn, reviewBtn, createPrBtn, stageLinesBtn, wsBtn, stageAllBtn, refreshBtn);
+    // A stash button that follows the selection and relabels itself, matching the
+    // extension. Without one, the toolbar could stage everything but never stash
+    // anything, and the only stash route was a right-click most people never try.
+    const stashBtn = el("button", "topbar-icon") as HTMLButtonElement;
+    stashBtn.appendChild(glyph("archive"));
+    const syncStashBtn = (): void => {
+      const n = this.selectionPaths().length;
+      const label =
+        n === 0
+          ? "Stash all changes\u2026"
+          : n === 1
+            ? "Stash 1 selected file\u2026"
+            : `Stash ${n} selected files\u2026`;
+      stashBtn.title = label;
+      stashBtn.setAttribute("aria-label", label);
+      stashBtn.classList.toggle("is-on", n > 0);
+    };
+    this.syncStashButton = syncStashBtn;
+    syncStashBtn();
+    stashBtn.addEventListener("click", () => {
+      // With a selection live it follows it; otherwise it means the whole tree,
+      // and the title has already said which.
+      const paths = this.selectionPaths();
+      void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar));
+    });
+
+    toolbar.append(tTitle, tSpacer, modelBtn, reviewBtn, createPrBtn, stageLinesBtn, wsBtn, stashBtn, stageAllBtn, refreshBtn);
 
     const body = el("div", "dc-body");
     const lists = el("div", "dc-lists");
@@ -2787,7 +2815,9 @@ class App {
         ...unstaged.map((f) => ({ f, staged: false })),
       ].sort((a, b) => a.f.path.localeCompare(b.f.path));
 
-      const head = groupLabel(`Changes (${all.length})`);
+      // Selecting a "section" here means the CHECKED rows or the UNCHECKED ones:
+      // this model deliberately has no Staged/Unstaged split to click on.
+      const head = this.checklistHeader(`Changes (${all.length})`, all, lists, selBar);
       const master = document.createElement("input");
       master.type = "checkbox";
       master.className = "dc-ck dc-ck-master";
@@ -2967,6 +2997,7 @@ class App {
     selBar.hidden = n === 0;
     const count = selBar.querySelector(".dc-selbar-count");
     if (count) count.textContent = n === 1 ? "1 file selected" : `${n} files selected`;
+    this.syncStashButton?.();
   }
 
   private clearSelection(lists: HTMLElement, selBar: HTMLElement): void {
@@ -3067,6 +3098,67 @@ class App {
       this.selectionAnchor = keys.length > 0 ? keys[keys.length - 1] : undefined;
       this.paintSelection(lists, selBar);
     });
+    return head;
+  }
+
+  /**
+   * The checkbox model's single header, with section selection on it.
+   *
+   * Ctrl/cmd-click takes everything, matching the split model's headers.
+   * Right-click names the two halves, because there is no second header to
+   * modifier-click — in this model "the sections" are checked and unchecked.
+   */
+  private checklistHeader(
+    text: string,
+    all: ReadonlyArray<{ f: ChangedFile; staged: boolean }>,
+    lists: HTMLElement,
+    selBar: HTMLElement,
+  ): HTMLElement {
+    const head = groupLabel(text);
+    head.title =
+      `${text} — Ctrl/Cmd-click to select every file, ` +
+      "right-click to select just the checked or unchecked ones";
+
+    const keysFor = (which: "all" | "checked" | "unchecked"): string[] =>
+      all
+        .filter((x) => which === "all" || (which === "checked") === x.staged)
+        .map((x) => rowKey(x.staged ? "staged" : "unstaged", x.f.path));
+
+    const selectKeys = (keys: string[]): void => {
+      this.selectedRows = new Set(keys);
+      this.selectionAnchor = keys.length > 0 ? keys[keys.length - 1] : undefined;
+      this.paintSelection(lists, selBar);
+    };
+
+    head.addEventListener("click", (ev) => {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault();
+      const every = keysFor("all");
+      const allOn = every.length > 0 && every.every((k) => this.selectedRows.has(k));
+      selectKeys(allOn ? [] : every);
+    });
+
+    head.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      const checked = keysFor("checked");
+      const unchecked = keysFor("unchecked");
+      const items: MenuItem[] = [
+        { label: `Select All (${all.length})`, icon: "check-all", onClick: () => selectKeys(keysFor("all")) },
+      ];
+      if (checked.length > 0) {
+        items.push({ label: `Select Checked (${checked.length})`, icon: "check", onClick: () => selectKeys(checked) });
+      }
+      if (unchecked.length > 0) {
+        items.push({ label: `Select Unchecked (${unchecked.length})`, icon: "circle-outline", onClick: () => selectKeys(unchecked) });
+      }
+      items.push({ separator: true });
+      items.push({
+        label: "Stash All Changes", icon: "archive",
+        onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
+      });
+      openMenu(head, items);
+    });
+
     return head;
   }
 
