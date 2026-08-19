@@ -1,0 +1,31 @@
+apps/extension/src/changes/commitView.ts
+  s_daa89ab6f34762::t_e1d744743d1150 537-552
+  s_daa89ab6f34762::t_2f04a0a68a7690 6176-6182
+apps/extension/src/extension.ts
+  s_daa89ab6f34762::t_b50ac743d78055 582-584
+apps/extension/src/statusBar/syncStatus.ts
+  s_daa89ab6f34762::t_f25514a53351db 118,120-127,130,133
+  s_daa89ab6f34762::t_b50ac743d78055 22-28
+apps/extension/src/statusBar/terminalBadge.ts
+  s_daa89ab6f34762::t_0c727bf9f37406 12,14-19,21
+apps/extension/test/terminalBadge.test.ts
+  s_daa89ab6f34762::t_0c727bf9f37406 3,9-13
+apps/extension/src/statusBar/statusCluster.ts
+  s_daa89ab6f34762::t_0c727bf9f37406 3,54-57,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "2caec888d51f574b4a3cd7e634eb9d6c4c1a42cb",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
