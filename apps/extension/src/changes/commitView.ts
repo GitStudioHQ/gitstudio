@@ -5800,10 +5800,57 @@ export class CommitViewProvider
     // and every other surface (the badge, the commit count, an external git add
     // in a terminal) keeps agreeing with what you see.
     function renderChecklist(data) {
-      const all = []
-        .concat(data.merge.map(function (e) { return { entry: e, staged: false, kind: "merge" }; }))
-        .concat(data.staged.map(function (e) { return { entry: e, staged: true, kind: "staged" }; }))
-        .concat(data.unstaged.map(function (e) { return { entry: e, staged: false, kind: "unstaged" }; }));
+      // ONE ROW PER FILE, merged by path.
+      //
+      // A partly staged file is in BOTH data.staged and data.unstaged — that is
+      // how git describes it — so concatenating the two lists gave it two rows,
+      // identical and side by side. That is wrong twice: this model exists to be
+      // one list with one tick per file, and two rows for one file cannot both
+      // be right about its state.
+      //
+      // Merged, the two memberships become the tick's three states: in staged
+      // only is checked, in unstaged only is empty, and in both is the
+      // indeterminate mark — "some of this file is staged", which is exactly
+      // what git is saying.
+      const byPath = new Map();
+      const note = function (e, kind, isStaged) {
+        const prev = byPath.get(e.path);
+        if (!prev) {
+          byPath.set(e.path, {
+            entry: e,
+            kind: kind,
+            inStaged: isStaged,
+            inUnstaged: !isStaged,
+          });
+          return;
+        }
+        prev.inStaged = prev.inStaged || isStaged;
+        prev.inUnstaged = prev.inUnstaged || !isStaged;
+        // A conflicted file outranks either list: it is not a staging question.
+        if (kind === "merge") prev.kind = "merge";
+        // Prefer the entry carrying a real status letter over a placeholder.
+        if (!prev.entry.status && e.status) prev.entry = e;
+      };
+      data.merge.forEach(function (e) { note(e, "merge", false); });
+      data.staged.forEach(function (e) { note(e, "staged", true); });
+      data.unstaged.forEach(function (e) { note(e, "unstaged", false); });
+
+      const all = [];
+      byPath.forEach(function (v) {
+        const state = v.kind === "merge"
+          ? "unstaged"
+          : v.inStaged && v.inUnstaged
+            ? "partial"
+            : v.inStaged ? "staged" : "unstaged";
+        all.push({
+          entry: v.entry,
+          kind: v.kind,
+          state: state,
+          // Kept for the row's own def and actions: a partly staged file still
+          // has work to stage, so it behaves as unstaged for those.
+          staged: state === "staged",
+        });
+      });
       all.sort(function (a, b) { return a.entry.path.localeCompare(b.entry.path); });
 
       const group = el("div", "group group--all" + (all.length === 0 ? " empty" : ""));
@@ -5897,9 +5944,11 @@ export class CommitViewProvider
       const pendingHunks = new Map();
       const stagedByPath = new Map();
       const kindByPath = new Map();
+      const stateByPath = new Map();
       for (const f of all) {
         stagedByPath.set(f.entry.path, f.staged);
         kindByPath.set(f.entry.path, f.kind);
+        stateByPath.set(f.entry.path, f.state);
       }
       const defForEntry = function (entry) {
         const kind = kindByPath.get(entry.path);
@@ -5915,10 +5964,19 @@ export class CommitViewProvider
           staged: !!stagedByPath.get(entry.path),
           kind: kindByPath.get(entry.path),
         };
+        const state = stateByPath.get(f.entry.path) || "unstaged";
         const ck = el("input", "ck");
         ck.type = "checkbox";
-        ck.checked = f.staged;
-        ck.title = f.staged ? "Included in the commit" : "Not included";
+        ck.checked = state === "staged";
+        // Some of this file is staged and some is not. An empty box would claim
+        // none of it is and a ticked one that all of it is; both are false, and
+        // showing it as two rows instead was worse than either.
+        ck.indeterminate = state === "partial";
+        ck.title = state === "staged"
+          ? "Included in the commit \u2014 click to remove it"
+          : state === "partial"
+            ? "Partly included \u2014 click to include the rest"
+            : "Not included \u2014 click to include it";
         ck.addEventListener("click", function (ev) {
           // The row itself opens the diff; the tick must not.
           ev.stopPropagation();
@@ -5926,8 +5984,11 @@ export class CommitViewProvider
           // showing describe a state that no longer exists.
           expandedHunks.delete(f.entry.path);
           hunkCache.delete(f.entry.path);
+          // Partial completes rather than reverting: the visible state is "not
+          // finished", so forward is the obvious direction, and unstaging would
+          // discard the part already staged.
           vscode.postMessage({
-            type: f.staged ? "unstage" : "stage",
+            type: state === "staged" ? "unstage" : "stage",
             path: f.entry.path,
           });
         });
