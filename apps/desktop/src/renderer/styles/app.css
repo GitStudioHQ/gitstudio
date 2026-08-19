@@ -6106,3 +6106,43 @@ body.vscode-light .gh-label-chip {
   padding: 6px 12px; color: var(--app-muted); font-size: 11.5px;
   border-bottom: 1px solid var(--app-border);
 }
+
+/* ---- Changes: multi-selection and drag-to-stash -------------------------- *
+ * Everything here is scoped to .dc-* because bare .file-row is shared with the
+ * compare view and the code browser, which have no notion of a selection. */
+.dc-listcol { display: flex; flex-direction: column; min-height: 0; }
+
+/* The accent bar is absolutely positioned, so the row must be a containing
+   block. .file-row itself is static and shared, so this is set here. */
+.dc-file { position: relative; }
+.dc-file.is-selected { background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
+.dc-file.is-selected::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--gs-accent);
+}
+.dc-file.dragging { opacity: 0.5; }
+
+.dc-selbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px; margin: 0;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-elevated);
+  font-size: 11.5px; flex: none;
+}
+.dc-selbar[hidden] { display: none; }
+.dc-selbar-count { font-weight: 600; }
+.dc-selbar-actions { margin-left: auto; display: flex; gap: 4px; }
+
+/* Revealed only mid-drag: a permanent strip would cost list height, which is
+   the scarce resource in this column. */
+.dc-stash-drop {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin: 6px 8px 8px; padding: 14px 10px; flex: none;
+  border: 1px dashed var(--gs-accent); border-radius: 8px;
+  color: var(--app-muted); font-size: 12px;
+}
+.dc-stash-drop[hidden] { display: none; }
+.dc-stash-drop.is-over {
+  background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
+  color: var(--app-text); border-style: solid;
+}

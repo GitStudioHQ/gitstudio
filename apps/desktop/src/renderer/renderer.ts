@@ -11,6 +11,7 @@
 // palette + gutter chrome, and the graph host-page frame. The renderer carries
 // the same look as the extension because it ships the same CSS.
 import "@gitstudio/webview-ui/styles/diff.css";
+import { clickIntent, rangeBetween, reconcile, selectionEntries, selectionPaths } from "./selection";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
@@ -116,6 +117,22 @@ class App {
   private stagingModelPref: "split" | "checkboxes" = "split";
   /** Paths whose individual changes are currently showing (#20). */
   private expandedHunks = new Set<string>();
+  /**
+   * Multi-selected file rows, for stashing / staging several at once.
+   *
+   * Keyed "kind:path", not path. In the split model a partly staged file appears
+   * TWICE — once under Staged, once under Changes — and those rows mean different
+   * things; keying by path alone would select both from one click and act on the
+   * wrong half. Instance state rather than DOM state because showChangesView()
+   * rebuilds the whole subtree on every mutation, exactly like expandedHunks.
+   */
+  private selectedRows = new Set<string>();
+  /** The row a shift-range extends from. */
+  private selectionAnchor: string | undefined;
+  /** Visual order of selectable rows, rebuilt on each repaint. */
+  private rowOrder: string[] = [];
+  /** Paths being dragged right now; empty when no drag is in progress. */
+  private dragPaths: string[] = [];
   /**
    * The Changes composer's in-progress state, held on the instance because
    * every stage / unstage / discard rebuilds that whole subtree. Without it,
@@ -2495,6 +2512,43 @@ class App {
     const lists = el("div", "dc-lists");
     lists.style.flex = `0 0 ${this.changesListW}px`;
     lists.appendChild(skeletonList(6));
+
+    // Selection bar — present only while a selection exists, so the view is
+    // unchanged for anyone who never selects.
+    const selBar = el("div", "dc-selbar");
+    selBar.hidden = true;
+    const selCount = el("span", "dc-selbar-count");
+    const selStash = textBtn("Stash", "Stash the selected files", () => {
+      const paths = this.selectionPaths();
+      if (paths.length === 0) return;
+      void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar));
+    });
+    const selClear = textBtn("Clear", "Clear the selection", () =>
+      this.clearSelection(lists, selBar),
+    );
+    const selActions = el("div", "dc-selbar-actions");
+    selActions.append(selStash, selClear);
+    selBar.append(selCount, selActions);
+
+    // The stash drop target, revealed only mid-drag.
+    const dropZone = el("div", "dc-stash-drop");
+    dropZone.hidden = true;
+    dropZone.append(glyph("archive"), span("Drop to stash", "dc-drop-label"));
+    // dragover must be cancelled or the browser refuses the drop entirely and
+    // the whole gesture silently does nothing.
+    dropZone.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      dropZone.classList.add("is-over");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("is-over"));
+    dropZone.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      const paths = this.dragPaths.slice();
+      this.hideStashDrop(dropZone);
+      if (paths.length === 0) return;
+      void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar));
+    });
     // A draggable divider between the file list and the diff (persisted width).
     const divider = el("div", "cmp-vsplit dc-vsplit");
     divider.append(el("div", "cmp-vsplit-grip"));
@@ -2530,7 +2584,13 @@ class App {
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
     });
-    body.append(lists, divider, surface);
+    // The list column carries its own selection bar and drop target beneath it,
+    // so both stay put while `lists` itself is cleared and refilled on repaint.
+    const listCol = el("div", "dc-listcol");
+    listCol.style.flex = `0 0 ${this.changesListW}px`;
+    lists.style.flex = "1 1 auto";
+    listCol.append(lists, selBar, dropZone);
+    body.append(listCol, divider, surface);
     wrap.append(composer, toolbar, body);
     this.viewHost.replaceChildren(wrap);
 
@@ -2648,7 +2708,20 @@ class App {
         );
       }
       row.appendChild(actions);
-      row.addEventListener("click", () => {
+
+      const key = `${kind}:${f.path}`;
+      row.dataset.path = f.path;
+      row.dataset.kind = kind;
+      row.dataset.key = key;
+      this.rowOrder.push(key);
+      if (this.selectedRows.has(key)) {
+        row.classList.add("is-selected");
+        row.setAttribute("aria-selected", "true");
+      }
+
+      row.addEventListener("click", (ev) => {
+        // A modifier click selects; a plain one opens the file, as before.
+        if (this.handleSelectionClick(ev, key, lists, selBar)) return;
         lists.querySelectorAll(".file-row.active").forEach((n) => n.classList.remove("active"));
         row.classList.add("active");
         openFile = { path: f.path, staged: !!f.staged };
@@ -2657,10 +2730,47 @@ class App {
         wsBtn.hidden = false;
         void this.openWorkingFile(diffPanel, f.path);
       });
+
+      row.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        // Right-clicking outside the selection acts on THAT row, so a menu can
+        // never quietly operate on files scrolled out of sight.
+        if (this.selectedRows.size > 0 && !this.selectedRows.has(key)) {
+          this.clearSelection(lists, selBar);
+        }
+        const multi = this.selectedRows.has(key) && this.selectedRows.size > 1;
+        openMenu(row, multi ? this.multiRowMenu(lists, selBar) : this.singleRowMenu(f, kind, lists, selBar));
+      });
+
+      // Drag a row — or the whole selection — onto the stash target.
+      row.draggable = true;
+      row.addEventListener("dragstart", (ev) => {
+        if (!this.selectedRows.has(key)) {
+          this.selectedRows.clear();
+          this.selectedRows.add(key);
+          this.selectionAnchor = key;
+          this.paintSelection(lists, selBar);
+        }
+        const paths = this.selectionPaths();
+        this.dragPaths = paths;
+        ev.dataTransfer?.setData("text/plain", paths.join("\n"));
+        if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+        row.classList.add("dragging");
+        this.showStashDrop(dropZone, paths.length);
+      });
+      row.addEventListener("dragend", () => {
+        this.dragPaths = [];
+        row.classList.remove("dragging");
+        this.hideStashDrop(dropZone);
+      });
+
       return row;
     };
 
     lists.replaceChildren();
+    // Rebuilt with the rows below, so a shift-range always covers what is on
+    // screen rather than what was there before the last stage.
+    this.rowOrder = [];
     if (files.length === 0) {
       lists.appendChild(
         emptyState("Working tree clean", "No changes to commit.", { icon: "check-all" }),
@@ -2751,6 +2861,7 @@ class App {
       lists.appendChild(groupLabel(`Changes (${unstaged.length})`));
       unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
     }
+    this.reconcileSelection(lists, selBar);
   }
 
   /**
@@ -2829,6 +2940,235 @@ class App {
       }
     }
     diffPanel.showDiff(diff);
+  }
+
+  /** Selection helpers — see selectedRows for why the key is kind:path. */
+  private selectionEntries(): Array<{ kind: string; path: string }> {
+    return selectionEntries(this.rowOrder, this.selectedRows);
+  }
+
+  /** Distinct paths in the selection — what git actually needs. */
+  private selectionPaths(): string[] {
+    return selectionPaths(this.rowOrder, this.selectedRows);
+  }
+
+  private paintSelection(lists: HTMLElement, selBar: HTMLElement): void {
+    lists.querySelectorAll<HTMLElement>(".dc-file").forEach((r) => {
+      const on = !!r.dataset.key && this.selectedRows.has(r.dataset.key);
+      r.classList.toggle("is-selected", on);
+      if (on) r.setAttribute("aria-selected", "true");
+      else r.removeAttribute("aria-selected");
+    });
+    const n = this.selectionPaths().length;
+    selBar.hidden = n === 0;
+    const count = selBar.querySelector(".dc-selbar-count");
+    if (count) count.textContent = n === 1 ? "1 file selected" : `${n} files selected`;
+  }
+
+  private clearSelection(lists: HTMLElement, selBar: HTMLElement): void {
+    this.selectedRows.clear();
+    this.selectionAnchor = undefined;
+    this.paintSelection(lists, selBar);
+  }
+
+  /**
+   * Returns true when the click was a SELECTION gesture, so the row's normal
+   * action should not also run. A plain click is not one: it clears the
+   * selection and opens the file, exactly as before.
+   */
+  private handleSelectionClick(
+    ev: MouseEvent,
+    key: string,
+    lists: HTMLElement,
+    selBar: HTMLElement,
+  ): boolean {
+    const intent = clickIntent(ev, this.selectionAnchor !== undefined);
+    if (intent === "range") {
+      const range = rangeBetween(this.rowOrder, this.selectionAnchor!, key);
+      if (range.length > 0) {
+        this.selectedRows = new Set(range);
+        this.paintSelection(lists, selBar);
+        return true;
+      }
+    }
+    if (intent === "toggle") {
+      if (this.selectedRows.has(key)) this.selectedRows.delete(key);
+      else this.selectedRows.add(key);
+      this.selectionAnchor = key;
+      this.paintSelection(lists, selBar);
+      return true;
+    }
+    if (this.selectedRows.size > 0) {
+      this.selectedRows.clear();
+      this.paintSelection(lists, selBar);
+    }
+    this.selectionAnchor = key;
+    return false;
+  }
+
+  private showStashDrop(zone: HTMLElement, count: number): void {
+    const label = zone.querySelector(".dc-drop-label");
+    if (label) {
+      label.textContent = count === 1 ? "Drop to stash 1 file" : `Drop to stash ${count} files`;
+    }
+    zone.hidden = false;
+  }
+
+  private hideStashDrop(zone: HTMLElement): void {
+    zone.hidden = true;
+    zone.classList.remove("is-over");
+  }
+
+  /**
+   * Drop selected rows that no longer exist, after a repaint.
+   *
+   * A file that was selected and has since been staged, committed or reverted is
+   * simply gone from the list; a selection still counting it would offer to
+   * stash files that are not there. rowOrder is everything the repaint emitted,
+   * so anything outside it is stale.
+   */
+  private reconcileSelection(lists: HTMLElement, selBar: HTMLElement): void {
+    this.selectedRows = reconcile(this.rowOrder, this.selectedRows);
+    if (this.selectionAnchor && !this.rowOrder.includes(this.selectionAnchor)) {
+      this.selectionAnchor = undefined;
+    }
+    this.paintSelection(lists, selBar);
+  }
+
+  /** The row menu for a single file. */
+  private singleRowMenu(
+    f: ChangedFile,
+    kind: "staged" | "unstaged",
+    lists: HTMLElement,
+    selBar: HTMLElement,
+  ): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (kind === "staged") {
+      items.push({
+        label: "Unstage", icon: "remove",
+        onClick: () => void this.changesAction("unstage", f.path),
+      });
+    } else {
+      items.push({
+        label: "Stage", icon: "add",
+        onClick: () => void this.changesAction("stage", f.path),
+      });
+    }
+    items.push({ separator: true });
+    items.push({
+      label: "Stash This File", icon: "archive",
+      onClick: () => void this.stashPaths([f.path]).then(() => this.clearSelection(lists, selBar)),
+    });
+    items.push({
+      label: "Stash All Changes", icon: "archive",
+      onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
+    });
+    if (kind !== "staged") {
+      items.push({ separator: true });
+      items.push({
+        label: "Discard Changes", icon: "discard",
+        onClick: () => {
+          void confirmDialog({
+            title: "Discard changes?",
+            message: `Discard your changes to ${f.path}? This can't be undone.`,
+            confirmLabel: "Discard",
+            danger: true,
+          }).then((ok) => {
+            if (ok) void this.changesAction("discard", f.path);
+          });
+        },
+      });
+    }
+    return items;
+  }
+
+  /** The row menu when several rows are selected. Counts are files, not rows. */
+  private multiRowMenu(lists: HTMLElement, selBar: HTMLElement): MenuItem[] {
+    const entries = this.selectionEntries();
+    const paths = this.selectionPaths();
+    const noun = (n: number) => (n === 1 ? "1 File" : `${n} Files`);
+    const stageable = entries.filter((e) => e.kind !== "staged");
+    const unstageable = entries.filter((e) => e.kind === "staged");
+
+    const items: MenuItem[] = [
+      {
+        label: `Stash ${noun(paths.length)}`, icon: "archive",
+        onClick: () => void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar)),
+      },
+      { separator: true },
+    ];
+    if (stageable.length > 0) {
+      items.push({
+        label: `Stage ${noun(stageable.length)}`, icon: "add",
+        onClick: () => void this.bulkAction("stage", stageable.map((e) => e.path), lists, selBar),
+      });
+    }
+    if (unstageable.length > 0) {
+      items.push({
+        label: `Unstage ${noun(unstageable.length)}`, icon: "remove",
+        onClick: () => void this.bulkAction("unstage", unstageable.map((e) => e.path), lists, selBar),
+      });
+    }
+    const discardable = entries.filter((e) => e.kind === "unstaged").map((e) => e.path);
+    if (discardable.length > 0) {
+      items.push({ separator: true });
+      items.push({
+        label: `Discard ${noun(discardable.length)}`, icon: "discard",
+        onClick: () => {
+          void confirmDialog({
+            title: "Discard changes?",
+            message:
+              discardable.length === 1
+                ? `Discard your changes to ${discardable[0]}? This can't be undone.`
+                : `Discard your changes to ${discardable.length} files? This can't be undone.`,
+            confirmLabel: "Discard",
+            danger: true,
+          }).then((ok) => {
+            if (ok) void this.bulkAction("discard", discardable, lists, selBar);
+          });
+        },
+      });
+    }
+    return items;
+  }
+
+  /**
+   * Apply one staging action to several paths, repainting ONCE at the end.
+   *
+   * changesAction repaints per call, so looping it over ten files rebuilds the
+   * view ten times — visibly, and with the list jumping under the cursor.
+   */
+  private async bulkAction(
+    channel: "stage" | "unstage" | "discard",
+    paths: string[],
+    lists: HTMLElement,
+    selBar: HTMLElement,
+  ): Promise<void> {
+    let failed = 0;
+    for (const path of paths) {
+      const r = await host.invoke(channel, path);
+      if (!r.ok) failed++;
+    }
+    if (failed > 0) {
+      toast(failed === paths.length ? "Nothing could be applied." : `${failed} of ${paths.length} failed.`, "error");
+    }
+    this.clearSelection(lists, selBar);
+    bust("status");
+    bust("diff");
+    void this.showChangesView();
+  }
+
+  /** Stash the given paths, then refresh. Empty means the whole tree. */
+  private async stashPaths(paths: string[]): Promise<void> {
+    const r = await host.invoke("stash:save", { paths, message: undefined });
+    if (!r.ok) {
+      toast(r.message ?? "Could not stash.", r.expected ? "info" : "error");
+      return;
+    }
+    toast(paths.length === 1 ? "Stashed 1 file." : `Stashed ${paths.length} files.`);
+    bust("status");
+    bust("diff");
+    void this.showChangesView();
   }
 
   private async changesAction(
