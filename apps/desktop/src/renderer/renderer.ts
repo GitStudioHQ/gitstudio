@@ -11,7 +11,7 @@
 // palette + gutter chrome, and the graph host-page frame. The renderer carries
 // the same look as the extension because it ships the same CSS.
 import "@gitstudio/webview-ui/styles/diff.css";
-import { clickIntent, rangeBetween, reconcile, selectionEntries, selectionPaths } from "./selection";
+import { clickIntent, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
@@ -2709,7 +2709,7 @@ class App {
       }
       row.appendChild(actions);
 
-      const key = `${kind}:${f.path}`;
+      const key = rowKey(kind, f.path);
       row.dataset.path = f.path;
       row.dataset.kind = kind;
       row.dataset.key = key;
@@ -2854,11 +2854,15 @@ class App {
     }
 
     if (staged.length) {
-      lists.appendChild(groupLabel(`Staged (${staged.length})`));
+      lists.appendChild(
+        this.sectionHeader(`Staged (${staged.length})`, "staged", staged, lists, selBar),
+      );
       staged.forEach((f) => lists.appendChild(fileRow(f, "staged")));
     }
     if (unstaged.length) {
-      lists.appendChild(groupLabel(`Changes (${unstaged.length})`));
+      lists.appendChild(
+        this.sectionHeader(`Changes (${unstaged.length})`, "unstaged", unstaged, lists, selBar),
+      );
       unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
     }
     this.reconcileSelection(lists, selBar);
@@ -3033,6 +3037,37 @@ class App {
       this.selectionAnchor = undefined;
     }
     this.paintSelection(lists, selBar);
+  }
+
+  /**
+   * A group label that also selects its whole section on ctrl/cmd-click.
+   *
+   * Same modifier the rows use, so there is one convention rather than a second
+   * mechanism beside it. Clicking again clears the section, which is what makes
+   * it a toggle rather than a trap.
+   */
+  private sectionHeader(
+    text: string,
+    kind: "staged" | "unstaged",
+    files: readonly ChangedFile[],
+    lists: HTMLElement,
+    selBar: HTMLElement,
+  ): HTMLElement {
+    const head = groupLabel(text);
+    head.title = `${text} — Ctrl/Cmd-click to select every file in this section`;
+    head.addEventListener("click", (ev) => {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault();
+      const keys = files.map((f) => rowKey(kind, f.path));
+      const allOn = keys.length > 0 && keys.every((k) => this.selectedRows.has(k));
+      for (const k of keys) {
+        if (allOn) this.selectedRows.delete(k);
+        else this.selectedRows.add(k);
+      }
+      this.selectionAnchor = keys.length > 0 ? keys[keys.length - 1] : undefined;
+      this.paintSelection(lists, selBar);
+    });
+    return head;
   }
 
   /** The row menu for a single file. */
