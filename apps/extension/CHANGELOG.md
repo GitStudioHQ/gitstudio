@@ -4,6 +4,42 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Tick individual changes in a diff.** Every change carries a tri-state tick —
+  staged, unstaged, or partly staged — and clicking it stages or unstages exactly
+  that change, leaving the rest of the file alone. *Stage Changes with Ticks*
+  opens a file this way; VS Code's own diff editor stays the default so your
+  keybindings, settings and other extensions are untouched.
+- **See what is staged without leaving the editor.** A gutter mark on every
+  change since your last commit, toggled with `Ctrl/Cmd+Alt+G T` or by
+  right-clicking the line number. The mark reports state only — VS Code gives
+  extensions no way to make a gutter icon clickable — so the tick itself lives on
+  GitStudio's diff page, one command away.
+- **Select files in the Changes view.** Shift-click for a range, Ctrl/Cmd-click
+  to pick individual files, Ctrl/Cmd-click a section header for everything in it.
+  A plain click still opens the diff, so nothing changes if you never select.
+- **Stash a selection.** Drag the selected files onto the stash target that
+  appears while dragging, use the selection bar, or right-click. Previously a
+  stash could only ever take the entire working tree.
+- **The stash button says what it will take** — "Stash all changes…" normally,
+  "Stash 3 selected files…" when you have a selection.
+- **A status-bar cluster:** how many files have changed, how many stashes you
+  have, and one-click buttons for the Commit Graph and for a terminal already in
+  the repository's root — which is not the workspace root in a monorepo. Each
+  segment can be switched off under `gitstudio.statusBar`.
+
+### Fixed
+- **Partial staging wrote different bytes than `git add` would.** Staging lines
+  or hunks bypassed the clean filters that `.gitattributes` and `core.autocrlf`
+  apply, so in a repository normalising line endings, staging one hunk could show
+  the whole file as modified and a commit could carry CRLF into an LF history.
+
+### Changed
+- **Requires VS Code 1.78 or later** (was 1.74), for the line-number context
+  menu. Cursor and VSCodium builds based on 1.78+ are unaffected.
+
 ## [1.8.0] - 2026-08-18
 
 ### Added

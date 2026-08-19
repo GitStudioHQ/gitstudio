@@ -9,6 +9,33 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Added
+- **Tick individual changes in a diff.** In Split view every change carries a
+  tri-state tick — staged, unstaged, or partly staged — and clicking it stages or
+  unstages exactly that change, leaving the rest of the file untouched. Inline
+  view says where to find them: Monaco draws deleted lines with no line of their
+  own there, so a deletion has nothing to attach a tick to.
+- **Select files in the Changes list.** Shift-click for a range, Ctrl/Cmd-click
+  for individual files, Ctrl/Cmd-click a section header for the whole section. A
+  plain click still opens the file.
+- **Stash a selection** — drag it onto the stash target that appears while
+  dragging, use the selection bar, or right-click a row. This is the app's first
+  stash UI.
+- **Stage, unstage or discard several files at once** from the row menu, with one
+  refresh at the end rather than one per file.
+
+### Fixed
+- **Partial staging wrote different bytes than `git add` would.** Staging lines
+  bypassed the clean filters `.gitattributes` and `core.autocrlf` apply, so in a
+  repository normalising line endings, staging one hunk could show the whole file
+  as modified and a commit could carry CRLF into an LF history.
+- **"Stage lines" did nothing in Inline view** — which is the default on a narrow
+  window — because it read the side-by-side editor that mode does not create.
+- **"Stage lines" ignored every cursor but the first.** Alt-clicking several
+  scattered lines staged only one of them, with nothing to say so.
+
 ## [1.3.0] - 2026-08-18
 
 ### Changed
