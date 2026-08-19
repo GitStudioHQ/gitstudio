@@ -129,6 +129,7 @@ interface FromWebview {
     | "reviewChanges"
     | "connectAI"
     | "stash"
+    | "setStagingModel"
     | "stashPaths"
     | "stashStaged"
     | "setLayout"
@@ -157,6 +158,8 @@ interface FromWebview {
   /** Which hunk of `path` a stageHunk targets (index from the last requestHunks). */
   hunkIndex?: number;
   layout?: "tree" | "list";
+  /** Which staging model the Changes view should present. */
+  stagingModel?: "split" | "checkboxes";
   /** One-letter status of the file a `fileMenu` targets (M/A/D/R/U/!/…). */
   status?: string;
   message?: string;
@@ -282,6 +285,16 @@ export class CommitViewProvider
     private readonly generator?: CommitMessageGenerator,
   ) {
     this.disposables.push(this.repos.onDidChange(() => void this.pushState()));
+    // The staging model is a setting, and the toolbar toggle is a shortcut to
+    // it. Without this, changing it in the Settings UI leaves the view showing
+    // the other model until something unrelated happens to refresh it.
+    this.disposables.push(
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration("gitstudio.changes.stagingModel")) {
+          void this.pushState();
+        }
+      }),
+    );
 
     // Nothing in GitStudio watched the WORKING TREE (issue #17). The extension's
     // only two file watchers are scoped to .git metadata, and there was no save
@@ -647,6 +660,20 @@ export class CommitViewProvider
         } catch {
           // best-effort; the firehose reconciles the list either way
         }
+        break;
+      }
+      case "setStagingModel": {
+        // Persisted as a real setting, so the choice survives a reload and stays
+        // editable from Settings — the toggle is a shortcut to it, not a
+        // second, competing source of truth.
+        const model = msg.stagingModel === "checkboxes" ? "checkboxes" : "split";
+        await vscode.workspace
+          .getConfiguration("gitstudio")
+          .update(
+            "changes.stagingModel",
+            model,
+            vscode.ConfigurationTarget.Global,
+          );
         break;
       }
       case "stashStaged":
@@ -2792,6 +2819,14 @@ export class CommitViewProvider
     body.layout-tree .icon-btn.layout .to-list { display: inline-flex; }
 
     /* ---- Groups -------------------------------------------------------- */
+    /* The staging-model toggle, built exactly like the tree/list one above: two
+       glyphs, and the one showing is the mode you would switch TO. Same idiom,
+       same weight in the toolbar — it is the same kind of choice. */
+    .icon-btn.model .to-checks { display: inline-flex; }
+    .icon-btn.model .to-split { display: none; }
+    body.model-checkboxes .icon-btn.model .to-checks { display: none; }
+    body.model-checkboxes .icon-btn.model .to-split { display: inline-flex; }
+
     .groups { margin: 0 0 2px; }
 
     /* ---- Multi-selection, drag-to-stash ---------------------------------- */
@@ -3464,6 +3499,11 @@ export class CommitViewProvider
         <i class="codicon codicon-list-tree to-tree" aria-hidden="true"></i>
         <i class="codicon codicon-list-flat to-list" aria-hidden="true"></i>
       </button>
+      <button class="icon-btn model" id="model-toggle" type="button"
+        title="Switch to checkboxes" aria-label="Switch to checkboxes">
+        <i class="codicon codicon-checklist to-checks" aria-hidden="true"></i>
+        <i class="codicon codicon-list-selection to-split" aria-hidden="true"></i>
+      </button>
       <button class="icon-btn stage-all-top" id="stage-all-top" type="button"
         title="Stage All Changes" aria-label="Stage All Changes">
         <i class="codicon codicon-add" aria-hidden="true"></i>
@@ -3550,6 +3590,7 @@ export class CommitViewProvider
     const stashDropLabel = $("stash-drop-label");
     const emptyEl = $("empty-state");
     const layoutToggle = $("layout-toggle");
+    const modelToggle = $("model-toggle");
     const collapseAllBtn = $("collapse-all");
     const stageAllTopBtn = $("stage-all-top");
     const stashChangesBtn = $("stash-changes");
@@ -3815,6 +3856,30 @@ export class CommitViewProvider
       clearSelection();
     });
     $("selbar-clear").addEventListener("click", clearSelection);
+
+    /**
+     * Escape = one step back, and the selection is the OUTERMOST step.
+     *
+     * Every nested surface already closes itself on Escape and consumes the
+     * event — dialogs with stopImmediatePropagation on a capture-phase window
+     * listener, the action menu the same way, and the branch menu closing its
+     * submenu before itself. This listener is deliberately last in that chain:
+     * bubble phase, so anything open wins, and it additionally checks the DOM so
+     * a surface that forgets to stop propagation still cannot have its Escape
+     * stolen to clear a selection the user cannot even see behind it.
+     */
+    function anyOverlayOpen() {
+      return !!document.querySelector(
+        ".action-menu, .branch-submenu, .rp-panel, .rp-backdrop, .push-modal",
+      );
+    }
+    window.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      if (anyOverlayOpen()) return;
+      if (selectedRows.size === 0) return;
+      ev.preventDefault();
+      clearSelection();
+    });
 
     // Clicking empty space in the list clears the selection, the way a file
     // manager does. Rows stop the event, so this only fires on the background.
@@ -4152,6 +4217,29 @@ export class CommitViewProvider
       applyLayoutClass();
       vscode.postMessage({ type: "setLayout", layout });
       render();
+    });
+
+    // Staging model, beside the tree/list toggle because it is the same KIND of
+    // choice: how this list is arranged, not what it does. It existed only as a
+    // setting, which meant the checkbox model was effectively undiscoverable —
+    // you had to know the setting's name to find out it was there at all.
+    function applyModelToggleLabel() {
+      const inChecks = stagingModel === "checkboxes";
+      document.body.classList.toggle("model-checkboxes", inChecks);
+      const label = inChecks ? "Switch to staged / unstaged" : "Switch to checkboxes";
+      modelToggle.dataset.tip = label;
+      modelToggle.setAttribute("aria-label", label);
+    }
+    applyModelToggleLabel();
+    modelToggle.addEventListener("click", () => {
+      stagingModel = stagingModel === "checkboxes" ? "split" : "checkboxes";
+      applyModelToggleLabel();
+      // Selection keys are kind:path and the two models group differently, so a
+      // selection carried across the switch would point at rows that no longer
+      // exist in that arrangement.
+      clearSelection();
+      render();
+      vscode.postMessage({ type: "setStagingModel", stagingModel });
     });
     collapseAllBtn.addEventListener("click", () => {
       // Collapse every folder row in the current tree render.
@@ -5457,7 +5545,11 @@ export class CommitViewProvider
     // group's paths/statuses). Used to skip a rebuild when nothing changed.
     let lastRenderSig = null;
     function stateSig() {
-      let s = layout;
+      // The staging model belongs in the signature: it changes how these exact
+      // files are ARRANGED, and without it a model switch made in Settings —
+      // where the file list is identical — is skipped as "nothing changed" and
+      // the view keeps showing the other model.
+      let s = layout + "|" + stagingModel;
       for (const k of ["merge", "staged", "unstaged"]) {
         const list = lastState[k] || [];
         s += "|" + k + ":";
@@ -6094,6 +6186,7 @@ export class CommitViewProvider
         // From the MESSAGE, not from lastState: applyPending() rebuilds lastState
         // out of the three file lists, so anything else on the payload is dropped.
         stagingModel = msg.stagingModel || "split";
+        applyModelToggleLabel();
         branchData = msg.branches || { local: [], remote: [], recent: [], tags: [] };
         // Only rebuild an OPEN branch menu when the branch data actually
         // changed. Every state push (and now the redundant 2nd post) would
