@@ -579,7 +579,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // The status-bar sync segment. The cluster beside it is constructed earlier,
     // next to stagedGutter, because stagingRefresh closes over both.
-    const syncStatus = new SyncStatusItem(repos);
+    const syncStatus = new SyncStatusItem(repos, () =>
+      commitProvider.openBranchMenu(),
+    );
     context.subscriptions.push(syncStatus, statusCluster);
 
     context.subscriptions.push(

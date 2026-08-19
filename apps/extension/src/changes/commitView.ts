@@ -534,6 +534,22 @@ export class CommitViewProvider
     void this.pushState();
   }
 
+  /**
+   * Reveal the Changes view and open its branch menu — the branch surface this
+   * extension already has, reached from the status bar.
+   *
+   * The view has to be revealed and given a moment first: a webview that has
+   * never been resolved has no document to post into, and the message would be
+   * dropped silently.
+   */
+  async openBranchMenu(): Promise<void> {
+    await vscode.commands.executeCommand("gitstudio.commit.focus");
+    for (let i = 0; i < 20 && !this.view; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    void this.view?.webview.postMessage({ type: "openBranchMenu" });
+  }
+
   private async onMessage(msg: FromWebview): Promise<void> {
     switch (msg.type) {
       case "ready":
@@ -6155,6 +6171,13 @@ export class CommitViewProvider
         // closeDialog() owns that, and openDialog claims the id in the right
         // order (see startDialog).
         openDialog(msg.spec, msg.dialogId);
+        return;
+      }
+      if (msg.type === "openBranchMenu") {
+        // The status bar asked for the branch UI. This is the same menu the
+        // branch pill opens — one branch surface, not a second one that has to
+        // be kept in step with it.
+        openBranchMenu();
         return;
       }
       if (msg.type === "hunks") {

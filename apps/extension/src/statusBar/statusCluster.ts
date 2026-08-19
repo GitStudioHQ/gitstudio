@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { RepoManager } from "../git/repoManager";
-import { shellIcon, terminalLabel, terminalTooltip } from "./terminalBadge";
+import { terminalIcon, terminalLabel, terminalTooltip } from "./terminalBadge";
 
 /**
  * The GitStudio status-bar cluster: small, single-purpose segments that each go
@@ -51,7 +51,10 @@ export class StatusCluster implements vscode.Disposable {
 
     // The two that never change content are configured once.
     const graph = this.items.get("graph")!;
-    graph.text = "$(git-merge)";
+    // The same glyph gitstudio.showCommitGraph already declares. It was
+    // $(git-merge), which is both inconsistent with that command and simply
+    // wrong: a merge arrow means merging, not history.
+    graph.text = "$(git-commit)";
     graph.command = "gitstudio.showCommitGraph";
     graph.tooltip = "GitStudio: Commit Graph";
 
@@ -135,11 +138,7 @@ export class StatusCluster implements vscode.Disposable {
     const item = this.items.get("terminal");
     if (!item) return;
     const terminals = vscode.window.terminals;
-    const shell =
-      vscode.env.shell ||
-      process.env.SHELL ||
-      (process.platform === "win32" ? "powershell" : undefined);
-    item.text = terminalLabel(shellIcon(shell), terminals.length);
+    item.text = terminalLabel(terminalIcon(), terminals.length);
     item.tooltip = terminalTooltip(
       terminals.map((t) => t.name),
       this.wouldHide(),

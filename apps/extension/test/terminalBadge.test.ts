@@ -1,30 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shellIcon, terminalLabel, terminalTooltip } from "../src/statusBar/terminalBadge";
+import { terminalIcon, terminalLabel, terminalTooltip } from "../src/statusBar/terminalBadge";
 
 // The terminal status-bar button. Modelled on krish-r's Toggle Terminal and
 // improving on the two things that extension documents about itself: no count,
 // and terminal names hidden behind an experimental opt-in.
 
-test("the icon follows the shell, so it says WHICH shell you will get", () => {
-  assert.equal(shellIcon("/bin/zsh"), "terminal-bash");
-  assert.equal(shellIcon("/bin/bash"), "terminal-bash");
-  assert.equal(shellIcon("/usr/bin/fish"), "terminal-bash");
-  assert.equal(shellIcon("C:\\Program Files\\PowerShell\\pwsh.exe"), "terminal-powershell");
-  assert.equal(shellIcon("C:\\Windows\\System32\\cmd.exe"), "terminal-cmd");
-  assert.equal(shellIcon("C:\\Program Files\\Git\\bin\\git-bash.exe"), "terminal-git-bash");
-  assert.equal(shellIcon("/usr/bin/tmux"), "terminal-tmux");
-});
-
-test("an unknown or missing shell falls back to a real icon, never a blank", () => {
-  // A codicon name that does not exist renders as an empty box in the bar.
-  assert.equal(shellIcon(undefined), "terminal");
-  assert.equal(shellIcon(""), "terminal");
-  assert.equal(shellIcon("/opt/weird/nushell-x"), "terminal");
-});
-
-test("git-bash is matched before bash, since its path contains both", () => {
-  assert.equal(shellIcon("/c/Program Files/Git/git-bash.exe"), "terminal-git-bash");
+test("the glyph is the plain terminal one, not a shell variant", () => {
+  // The shell-specific codicons put a shell mark inside an already small box;
+  // at status-bar size that reads as clutter, and the shell is not something
+  // worth being told every time you glance down.
+  assert.equal(terminalIcon(), "terminal");
 });
 
 test("one terminal shows no number; two or more do", () => {

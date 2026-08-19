@@ -8,29 +8,17 @@
  * so its own README tells you to click twice.
  */
 
-/** Codicons that exist for shells, so an unknown shell cannot produce a blank. */
-const SHELL_ICONS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/git-?bash/i, "terminal-git-bash"],
-  [/powershell|pwsh/i, "terminal-powershell"],
-  [/cmd\.exe$|^cmd$/i, "terminal-cmd"],
-  [/tmux/i, "terminal-tmux"],
-  [/bash|zsh|sh$|fish/i, "terminal-bash"],
-  [/ubuntu/i, "terminal-ubuntu"],
-  [/debian/i, "terminal-debian"],
-];
-
 /**
- * The codicon for a shell path, e.g. "/bin/zsh" -> "terminal-bash".
+ * The terminal glyph.
  *
- * Shell-specific rather than the generic glyph, because at a glance it also
- * tells you WHICH shell you are about to get — the generic one says only that
- * a terminal exists, which you can already see.
+ * Deliberately the plain one. The shell-specific codicons (terminal-bash,
+ * terminal-powershell, …) carry a shell mark inside an already small box, and at
+ * status-bar size that reads as clutter rather than as information — and the
+ * shell is not something you need told twelve times an hour. The clean glyph is
+ * the one VS Code uses for the terminal everywhere else, which is also the point:
+ * a button that opens a terminal should look like the terminal.
  */
-export function shellIcon(shellPath: string | undefined): string {
-  if (!shellPath) return "terminal";
-  for (const [pattern, icon] of SHELL_ICONS) {
-    if (pattern.test(shellPath)) return icon;
-  }
+export function terminalIcon(): string {
   return "terminal";
 }
 

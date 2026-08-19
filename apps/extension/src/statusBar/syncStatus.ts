@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
-import { branchChoices } from "./branchChoices";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
 // A compact left status-bar segment for the active repo's sync state:
@@ -20,7 +19,13 @@ export class SyncStatusItem implements vscode.Disposable {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private updateToken = 0;
 
-  constructor(private readonly repos: RepoManager) {
+  constructor(
+    private readonly repos: RepoManager,
+    /** Opens the Changes view's branch menu — the extension's real branch UI. */
+    private readonly openBranchUi: () => Promise<void> = async () => {
+      await vscode.commands.executeCommand("gitstudio.commit.focus");
+    },
+  ) {
     this.item = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
       // A small negative priority keeps us just to the right of vscode.git's
@@ -110,50 +115,22 @@ export class SyncStatusItem implements vscode.Disposable {
   }
 
   /**
-   * Clicking the item SWITCHES BRANCH, the way VS Code's own does.
+   * Clicking opens the BRANCH MENU in the Changes view.
    *
-   * It used to sync. That reads as a dead button most of the time: on an
-   * up-to-date branch a sync fetches, pulls nothing and pushes nothing, so the
-   * only feedback is a brief flash — and syncing already has three obvious
-   * homes in the tooltip below. Switching branch is the thing this segment is
-   * NAMED after, and the thing there is no other one-click route to.
+   * This went through two worse answers first. It used to sync, which on an
+   * up-to-date branch reads as a dead button. Then it opened a picker of its
+   * own — which worked, but meant two different branch UIs in one extension,
+   * with the smaller one having none of what the real one offers: creating,
+   * merging, rebasing, deleting, publishing, tracking state per row.
+   *
+   * The branch pill in Changes already IS the branch surface. The status bar
+   * should take you to it, not reimplement a worse copy of it beside it.
    */
   private async showMenu(): Promise<void> {
-    const active = this.repos.getActive();
-    if (!active) {
+    if (!this.repos.getActive()) {
       return;
     }
-    let refs;
-    try {
-      refs = await active.ctx.refs.listRefs();
-    } catch {
-      void vscode.window.showErrorMessage("GitStudio: could not read branches.");
-      return;
-    }
-    const choices = branchChoices(refs);
-    if (choices.length === 0) {
-      void vscode.window.showInformationMessage("GitStudio: no branches yet.");
-      return;
-    }
-    const picked = await promptPick({ title: "Switch branch", choices });
-    if (picked === undefined) {
-      return;
-    }
-    const target = refs.find((r) => r.name === picked);
-    if (!target || target.isCurrent) {
-      return;
-    }
-    const result = await active.ctx.branches.checkout(target.name);
-    if (!result.ok) {
-      void vscode.window.showErrorMessage(
-        result.stderr.trim() || "GitStudio: checkout failed.",
-      );
-    } else {
-      void vscode.window.setStatusBarMessage(
-        "$(check) Checked out " + target.name,
-        2500,
-      );
-    }
+    await this.openBranchUi();
     this.scheduleUpdate();
   }
 
