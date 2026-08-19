@@ -3006,14 +3006,60 @@ export class CommitViewProvider
     /* Checkbox model (gitstudio.changes.stagingModel = "checkboxes"). The tick
        is the only staging affordance in this mode, so it gets a real hit area
        rather than the browser default. */
+    /* Drawn, not native. A bare <input type=checkbox> renders as the platform
+       control — rounded and blue on macOS, a different shape on Windows — which
+       is conspicuously not what every other checkbox in the editor looks like.
+       These use VS Code's own checkbox tokens and its mark, so they belong. */
     .ck {
       flex: 0 0 auto;
-      width: 14px;
-      height: 14px;
-      margin: 0 6px 0 0;
-      accent-color: var(--gs-accent);
+      appearance: none;
+      -webkit-appearance: none;
+      position: relative;
+      width: 16px;
+      height: 16px;
+      margin: 0 7px 0 0;
+      border-radius: 3px;
+      border: 1px solid var(--vscode-checkbox-border, var(--gs-border, #6f6f6f));
+      background: var(--vscode-checkbox-background, var(--vscode-editor-background));
       cursor: pointer;
+      transition: background 90ms ease, border-color 90ms ease;
     }
+    .ck:hover { border-color: var(--vscode-focusBorder); }
+    .ck:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 1px;
+    }
+    .ck:checked,
+    .ck:indeterminate {
+      background: var(--vscode-inputOption-activeBackground, var(--gs-accent));
+      border-color: var(--vscode-inputOption-activeBorder, var(--gs-accent));
+    }
+    /* The tick: two borders rotated into a check, so it needs no font or asset
+       and stays crisp at any zoom. */
+    .ck:checked::after {
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 1.5px;
+      width: 4px;
+      height: 8px;
+      border: solid var(--vscode-inputOption-activeForeground, #ffffff);
+      border-width: 0 1.6px 1.6px 0;
+      transform: rotate(43deg);
+    }
+    /* Indeterminate is a bar, the standard "some of this" mark — never an empty
+       box, which would read as "nothing here" over work already staged. */
+    .ck:indeterminate::after {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 6.2px;
+      width: 8px;
+      height: 2px;
+      border-radius: 1px;
+      background: var(--vscode-inputOption-activeForeground, #ffffff);
+    }
+    .ck:disabled { opacity: 0.5; cursor: default; }
     .ck-master { margin-left: 2px; }
     /* Per-hunk ticks (#20): a file with unstaged work opens up to reveal its
        individual changes, so partial staging survives the checkbox model. */
@@ -5848,9 +5894,27 @@ export class CommitViewProvider
       group.appendChild(header);
 
       const body = el("div", "group-body");
+      const pendingHunks = new Map();
+      const stagedByPath = new Map();
+      const kindByPath = new Map();
       for (const f of all) {
-        const def = f.kind === "merge" ? GROUP_DEFS[0] : f.staged ? GROUP_DEFS[1] : GROUP_DEFS[2];
-        const row = renderFileRow(def, f.entry, 1);
+        stagedByPath.set(f.entry.path, f.staged);
+        kindByPath.set(f.entry.path, f.kind);
+      }
+      const defForEntry = function (entry) {
+        const kind = kindByPath.get(entry.path);
+        return kind === "merge"
+          ? GROUP_DEFS[0]
+          : stagedByPath.get(entry.path) ? GROUP_DEFS[1] : GROUP_DEFS[2];
+      };
+
+      /** Prepends the tick (and the changes twisty) to one already-built row. */
+      const decorate = function (row, entry, container) {
+        const f = {
+          entry,
+          staged: !!stagedByPath.get(entry.path),
+          kind: kindByPath.get(entry.path),
+        };
         const ck = el("input", "ck");
         ck.type = "checkbox";
         ck.checked = f.staged;
@@ -5869,10 +5933,15 @@ export class CommitViewProvider
         });
         row.insertBefore(ck, row.firstChild);
 
-        // A file with unstaged work can be opened up to tick individual changes,
-        // so partial staging survives the move away from the staged/unstaged
-        // split. A fully staged file has nothing left to pick from.
-        const expandable = !f.staged && f.kind !== "merge";
+        // Any file with changes can be opened up to tick them individually.
+        //
+        // This used to exclude fully staged files, on the reasoning that they
+        // had "nothing left to pick from" — true when the list held only
+        // UNSTAGED changes, and false now that a listed change can be unticked.
+        // The effect was that staging the last change removed the twisty and the
+        // open list in one go, so the whole panel evaporated at exactly the
+        // moment the user finished with it.
+        const expandable = f.kind !== "merge";
         if (expandable) {
           const path = f.entry.path;
           const open = expandedHunks.has(path);
@@ -5894,12 +5963,36 @@ export class CommitViewProvider
           });
           row.insertBefore(twist, row.firstChild);
         }
-        body.appendChild(row);
-
+        // The tree appends the row itself after this runs, so the changes panel
+        // is queued to follow it rather than appended here.
         if (expandable && expandedHunks.has(f.entry.path)) {
-          body.appendChild(renderHunks(f.entry.path));
+          pendingHunks.set(row, f.entry.path);
+        }
+        void container;
+      };
+
+      // Both layouts, so the tree/list toggle keeps working in this model. It
+      // used to build a flat list unconditionally, which left that toggle
+      // visible and inert whenever the checkbox model was on.
+      if (layout === "tree") {
+        renderTreeInto(body, GROUP_DEFS[2], all.map(function (f) { return f.entry; }), {
+          defFor: defForEntry,
+          decorate: decorate,
+        });
+      } else {
+        for (const f of all) {
+          const row = renderFileRow(defForEntry(f.entry), f.entry, 1);
+          decorate(row, f.entry, body);
+          body.appendChild(row);
         }
       }
+      // Insert each open changes panel directly after its file row, wherever the
+      // layout ended up putting that row.
+      pendingHunks.forEach(function (path, row) {
+        if (row.parentNode) row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
+      });
+      pendingHunks.clear();
+
       group.appendChild(body);
       return group;
     }
@@ -6056,9 +6149,18 @@ export class CommitViewProvider
       return group;
     }
 
-    function renderTreeInto(body, def, list) {
+    /**
+     * The opts argument lets the checkbox model reuse this tree.
+     *
+     * That model merges staged and unstaged files into one list, so each FILE
+     * needs its own def for its row buttons (defFor) and each row needs its tick
+     * prepended (decorate) — while the folder rows keep the single def they are
+     * given. Without this the tree/list toggle was visible but inert in checkbox
+     * mode, because the checklist only ever built a flat list.
+     */
+    function renderTreeInto(body, def, list, opts) {
       const tree = buildTree(list);
-      renderNode(body, def, tree, 1);
+      renderNode(body, def, tree, 1, opts);
     }
 
     // Flatten every file path under a folder node (direct + nested) so a
@@ -6069,7 +6171,7 @@ export class CommitViewProvider
       return out;
     }
 
-    function renderNode(container, def, node, depth) {
+    function renderNode(container, def, node, depth, opts) {
       // Folders first (alphabetical), then files.
       const dirs = [...node.dirs.values()].sort((a, b) =>
         a.name.localeCompare(b.name));
@@ -6119,11 +6221,14 @@ export class CommitViewProvider
           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
         });
         container.appendChild(row);
-        if (!isCollapsed) renderNode(container, def, dir, depth + 1);
+        if (!isCollapsed) renderNode(container, def, dir, depth + 1, opts);
       }
       for (const f of node.files.slice().sort((a, b) =>
         a.name.localeCompare(b.name))) {
-        container.appendChild(renderFileRowTree(def, f, depth));
+        const rowDef = opts && opts.defFor ? opts.defFor(f.entry) : def;
+        const fileRow = renderFileRowTree(rowDef, f, depth);
+        if (opts && opts.decorate) opts.decorate(fileRow, f.entry, container);
+        container.appendChild(fileRow);
       }
     }
 
@@ -6325,7 +6430,20 @@ export class CommitViewProvider
         return;
       }
       if (msg.type === "hunks") {
-        hunkCache.set(msg.path, msg.hunks || []);
+        const rows = msg.hunks || [];
+        const had = hunkCache.get(msg.path);
+        hunkCache.set(msg.path, rows);
+        // Everything in this file is now staged: fold it back. The file is
+        // finished, so leaving it open is a panel of ticked boxes taking up the
+        // list. It stays expandable, so reopening to untick is one click away —
+        // this is a deliberate collapse, not the contents disappearing.
+        const allStaged =
+          rows.length > 0 && rows.every(function (h) { return h.state === "staged"; });
+        const wasIncomplete =
+          !had || had.some(function (h) { return h.state !== "staged"; });
+        if (allStaged && wasIncomplete) {
+          expandedHunks.delete(msg.path);
+        }
         render();
         return;
       }
