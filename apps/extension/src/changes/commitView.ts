@@ -129,6 +129,8 @@ interface FromWebview {
     | "reviewChanges"
     | "connectAI"
     | "stash"
+    | "stashPaths"
+    | "stashStaged"
     | "setLayout"
     | "amendToggled"
     | "branchAction"
@@ -631,6 +633,30 @@ export class CommitViewProvider
       case "connectAI":
         await vscode.commands.executeCommand("gitstudio.ai.connect");
         return;
+      case "stashPaths": {
+        // A drag onto the stash target, or the selection bar's Stash button.
+        // Same flow as the whole-tree stash, scoped — and the prompt names the
+        // scope, so it is clear what is about to move before it moves.
+        const paths = msg.paths ?? [];
+        if (paths.length === 0) {
+          break;
+        }
+        await vscode.commands.executeCommand("gitstudio.stash.paths", { paths });
+        try {
+          await this.repos.getActive()?.repo?.status?.();
+        } catch {
+          // best-effort; the firehose reconciles the list either way
+        }
+        break;
+      }
+      case "stashStaged":
+        await vscode.commands.executeCommand("gitstudio.stash.staged");
+        try {
+          await this.repos.getActive()?.repo?.status?.();
+        } catch {
+          // best-effort; the firehose reconciles the list either way
+        }
+        break;
       case "stash":
         // Runs the shared stash flow (message + options quick-pick), then
         // re-scans so the working tree list clears immediately.
@@ -2767,6 +2793,52 @@ export class CommitViewProvider
 
     /* ---- Groups -------------------------------------------------------- */
     .groups { margin: 0 0 2px; }
+
+    /* ---- Multi-selection, drag-to-stash ---------------------------------- */
+    /* Defined after the :hover rules below so a selected row stays visibly
+       selected while the pointer is over it. */
+    .row.is-file.is-selected { background: var(--vscode-list-inactiveSelectionBackground); }
+    .row.is-file.is-selected:hover { background: var(--vscode-list-hoverBackground); }
+    .row.is-file.is-selected::after {
+      content: "";
+      position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+      background: var(--vscode-focusBorder);
+    }
+    body.is-dragging-files .row.is-file { cursor: grabbing; }
+
+    .selbar {
+      display: flex; align-items: center; gap: 8px;
+      margin: 2px 0 4px; padding: 4px 10px;
+      background: var(--vscode-list-inactiveSelectionBackground);
+      border-radius: 4px; font-size: 11.5px;
+    }
+    .selbar[hidden] { display: none; }
+    .selbar-count { color: var(--vscode-foreground); font-weight: 600; }
+    .selbar-actions { margin-left: auto; display: flex; gap: 4px; }
+    .selbar-btn {
+      font: inherit; color: var(--vscode-foreground);
+      background: transparent; border: 1px solid var(--vscode-contrastBorder, transparent);
+      border-radius: 3px; padding: 1px 8px; cursor: pointer;
+    }
+    .selbar-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
+    .selbar-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+
+    /* The drop target only exists mid-drag. A permanently visible strip would
+       cost vertical space in a view that is already short. */
+    .stash-drop {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      margin: 6px 0; padding: 14px 10px;
+      border: 1px dashed var(--vscode-focusBorder);
+      border-radius: 6px;
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+    }
+    .stash-drop[hidden] { display: none; }
+    .stash-drop.is-over {
+      background: var(--vscode-list-dropBackground, var(--vscode-list-hoverBackground));
+      color: var(--vscode-foreground);
+      border-style: solid;
+    }
     .group { margin-top: 4px; }
     .group.empty { display: none; }
     /* Checkbox model (gitstudio.changes.stagingModel = "checkboxes"). The tick
@@ -3413,6 +3485,24 @@ export class CommitViewProvider
 
   <div class="groups" id="groups"></div>
 
+  <!-- Selection bar: only present while a multi-selection exists, so the view
+       is unchanged for anyone who never selects. -->
+  <div class="selbar" id="selbar" hidden>
+    <span class="selbar-count" id="selbar-count"></span>
+    <span class="selbar-actions">
+      <button type="button" class="selbar-btn" id="selbar-stash">Stash</button>
+      <button type="button" class="selbar-btn" id="selbar-stage">Stage</button>
+      <button type="button" class="selbar-btn" id="selbar-clear">Clear</button>
+    </span>
+  </div>
+
+  <!-- The stash drop target. Hidden until a drag starts, so it costs no layout
+       until it means something. -->
+  <div class="stash-drop" id="stash-drop" hidden>
+    <i class="codicon codicon-archive" aria-hidden="true"></i>
+    <span id="stash-drop-label">Drop to stash</span>
+  </div>
+
   <div class="empty-state" id="empty-state">
     <span class="badge">
       <i class="codicon codicon-check" aria-hidden="true"></i>
@@ -3454,6 +3544,10 @@ export class CommitViewProvider
     const commitLabel = $("commit-label");
     const authorToggle = $("author-toggle");
     const groupsEl = $("groups");
+    const selbarEl = $("selbar");
+    const selbarCount = $("selbar-count");
+    const stashDropEl = $("stash-drop");
+    const stashDropLabel = $("stash-drop-label");
     const emptyEl = $("empty-state");
     const layoutToggle = $("layout-toggle");
     const collapseAllBtn = $("collapse-all");
@@ -3513,6 +3607,217 @@ export class CommitViewProvider
     // indexes are positional — they mean nothing once the file's state moves.
     const expandedHunks = new Set();
     const hunkCache = new Map();
+    // Multi-selection, for stashing / staging several files at once.
+    //
+    // Keyed by "kind:path", not by path. In the split model a partly staged file
+    // appears TWICE — once under Staged, once under Unstaged — and those two rows
+    // mean different things: staging one is a no-op, stashing the other is not.
+    // A path-keyed set would select both from one click and act on the wrong half.
+    //
+    // Held here rather than in the DOM because render() clears groupsEl and
+    // rebuilds from scratch on every host push, exactly like expandedHunks.
+    const selectedRows = new Set();
+    // The row a shift-range extends FROM. Null until something is clicked.
+    let selectionAnchor = null;
+    // Visual order of selectable rows, rebuilt by render(), so a shift-range
+    // covers what the user actually sees — tree or flat, one group or three.
+    let rowOrder = [];
+    const rowKey = (kind, path) => kind + ":" + path;
+
+    /** Paint selection onto the DOM without a full render(), so clicks feel instant. */
+    function paintSelection() {
+      const rows = groupsEl.querySelectorAll(".row.is-file");
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const on = selectedRows.has(r.dataset.key);
+        r.classList.toggle("is-selected", on);
+        if (on) r.setAttribute("aria-selected", "true");
+        else r.removeAttribute("aria-selected");
+      }
+      updateSelectionBar();
+    }
+
+    function clearSelection() {
+      selectedRows.clear();
+      selectionAnchor = null;
+      paintSelection();
+    }
+
+    /** The selected rows as {path, kind}, in the order they appear on screen. */
+    function selectionEntries() {
+      const out = [];
+      for (let i = 0; i < rowOrder.length; i++) {
+        const k = rowOrder[i];
+        if (!selectedRows.has(k)) continue;
+        const cut = k.indexOf(":");
+        out.push({ kind: k.slice(0, cut), path: k.slice(cut + 1) });
+      }
+      return out;
+    }
+
+    /** Distinct paths in the selection — what git actually needs. */
+    function selectionPaths() {
+      const seen = [];
+      const entries = selectionEntries();
+      for (let i = 0; i < entries.length; i++) {
+        if (seen.indexOf(entries[i].path) === -1) seen.push(entries[i].path);
+      }
+      return seen;
+    }
+
+    /**
+     * Selection on click, with the modifiers everyone already expects.
+     *
+     * Returns true when the click was a SELECTION gesture and the row's normal
+     * action (opening the diff) should not also happen. A plain click is not a
+     * selection gesture: it clears any selection and opens, exactly as before,
+     * so nothing about the view changes for anyone who never shift-clicks.
+     */
+    function handleSelectionClick(ev, key) {
+      if (ev.shiftKey && selectionAnchor) {
+        const a = rowOrder.indexOf(selectionAnchor);
+        const b = rowOrder.indexOf(key);
+        if (a !== -1 && b !== -1) {
+          selectedRows.clear();
+          const lo = Math.min(a, b), hi = Math.max(a, b);
+          for (let i = lo; i <= hi; i++) selectedRows.add(rowOrder[i]);
+          paintSelection();
+          return true;
+        }
+      }
+      if (ev.ctrlKey || ev.metaKey) {
+        if (selectedRows.has(key)) selectedRows.delete(key);
+        else selectedRows.add(key);
+        selectionAnchor = key;
+        paintSelection();
+        return true;
+      }
+      // Plain click: the selection is over.
+      if (selectedRows.size > 0) {
+        selectedRows.clear();
+        paintSelection();
+      }
+      selectionAnchor = key;
+      return false;
+    }
+
+    /** Paths being dragged right now; empty when no drag is in progress. */
+    let dragPaths = [];
+
+    /** The context menu for a multi-row selection. Counts are files, not rows. */
+    function multiItems() {
+      const entries = selectionEntries();
+      const paths = selectionPaths();
+      const n = paths.length;
+      const label = n === 1 ? "1 File" : String(n) + " Files";
+      const stageable = entries.filter((en) => en.kind !== "staged");
+      const unstageable = entries.filter((en) => en.kind === "staged");
+      const items = [];
+      items.push({ icon: "archive", label: "Stash " + label,
+        fn: () => { vscode.postMessage({ type: "stashPaths", paths: paths }); clearSelection(); } });
+      items.push({ sep: true });
+      if (stageable.length > 0) {
+        items.push({ icon: "add", label: "Stage " + (stageable.length === 1 ? "1 File" : String(stageable.length) + " Files"),
+          fn: () => {
+            for (let i = 0; i < stageable.length; i++) {
+              queueOp(stageable[i].path, "stage");
+              vscode.postMessage({ type: "stage", path: stageable[i].path });
+            }
+            clearSelection();
+          } });
+      }
+      if (unstageable.length > 0) {
+        items.push({ icon: "remove", label: "Unstage " + (unstageable.length === 1 ? "1 File" : String(unstageable.length) + " Files"),
+          fn: () => {
+            for (let i = 0; i < unstageable.length; i++) {
+              queueOp(unstageable[i].path, "unstage");
+              vscode.postMessage({ type: "unstage", path: unstageable[i].path });
+            }
+            clearSelection();
+          } });
+      }
+      const discardable = entries.filter((en) => en.kind === "unstaged");
+      if (discardable.length > 0) {
+        items.push({ sep: true });
+        // The host confirms before discarding; this only asks for it.
+        items.push({ icon: "discard", label: "Discard " + (discardable.length === 1 ? "1 File" : String(discardable.length) + " Files"), danger: true,
+          fn: () => {
+            for (let i = 0; i < discardable.length; i++) {
+              vscode.postMessage({ type: "discard", path: discardable[i].path });
+            }
+            clearSelection();
+          } });
+      }
+      items.push({ sep: true });
+      items.push({ icon: "close", label: "Clear Selection", fn: clearSelection });
+      return items;
+    }
+
+    function updateSelectionBar() {
+      const n = selectedRows.size;
+      selbarEl.hidden = n === 0;
+      if (n === 0) return;
+      const files = selectionPaths().length;
+      selbarCount.textContent = files === 1 ? "1 file selected" : String(files) + " files selected";
+    }
+
+    function showDropZone(count) {
+      stashDropLabel.textContent =
+        count === 1 ? "Drop to stash 1 file" : "Drop to stash " + count + " files";
+      stashDropEl.hidden = false;
+    }
+
+    function hideDropZone() {
+      stashDropEl.hidden = true;
+      stashDropEl.classList.remove("is-over");
+    }
+
+    // dragover must be cancelled for a drop to be allowed at all — without the
+    // preventDefault the browser refuses the drop and the whole gesture silently
+    // does nothing.
+    stashDropEl.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      stashDropEl.classList.add("is-over");
+    });
+    stashDropEl.addEventListener("dragleave", () => {
+      stashDropEl.classList.remove("is-over");
+    });
+    stashDropEl.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      const paths = dragPaths.slice();
+      hideDropZone();
+      document.body.classList.remove("is-dragging-files");
+      if (paths.length === 0) return;
+      vscode.postMessage({ type: "stashPaths", paths: paths });
+      clearSelection();
+    });
+
+    // The selection bar's actions operate on the whole selection.
+    $("selbar-stash").addEventListener("click", () => {
+      const paths = selectionPaths();
+      if (paths.length === 0) return;
+      vscode.postMessage({ type: "stashPaths", paths: paths });
+      clearSelection();
+    });
+    $("selbar-stage").addEventListener("click", () => {
+      const entries = selectionEntries();
+      for (let i = 0; i < entries.length; i++) {
+        const en = entries[i];
+        // Staged rows are already where this would put them.
+        if (en.kind === "staged") continue;
+        queueOp(en.path, "stage");
+        vscode.postMessage({ type: "stage", path: en.path });
+      }
+      clearSelection();
+    });
+    $("selbar-clear").addEventListener("click", clearSelection);
+
+    // Clicking empty space in the list clears the selection, the way a file
+    // manager does. Rows stop the event, so this only fires on the background.
+    groupsEl.addEventListener("click", (ev) => {
+      if (ev.target === groupsEl && selectedRows.size > 0) clearSelection();
+    });
     let aheadCount = 0;     // commits a push would send (drives the button label)
     let canPublish = false; // there IS somewhere to push/publish those commits
     let onUpstream = false; // branch tracks an upstream (Push) vs not (Publish)
@@ -5146,10 +5451,32 @@ export class CommitViewProvider
       if (stateSig() === lastRenderSig) return;
       render();
     }
+
+    /**
+     * render() with the selection reconciled afterwards.
+     *
+     * A file that was selected and has since been staged, committed or reverted
+     * is simply gone from the list, and a selection still counting it would
+     * offer to stash files that are not there. Everything render() can reach is
+     * in rowOrder, so anything outside it no longer exists.
+     */
     function render() {
+      renderRows();
+      let dropped = false;
+      selectedRows.forEach((k) => {
+        if (rowOrder.indexOf(k) === -1) { selectedRows.delete(k); dropped = true; }
+      });
+      if (dropped && selectionAnchor && rowOrder.indexOf(selectionAnchor) === -1) {
+        selectionAnchor = null;
+      }
+      updateSelectionBar();
+    }
+
+    function renderRows() {
       lastRenderSig = stateSig();
       groupsEl.textContent = "";
       folderKeyAccumulator = [];
+      rowOrder = [];
       const data = {
         merge: lastState.merge,
         staged: lastState.staged,
@@ -5474,6 +5801,18 @@ export class CommitViewProvider
       row.tabIndex = 0;
       row.setAttribute("role", "button");
       row.title = e.path;
+      // The path is not otherwise recoverable from the DOM: the title attribute
+      // is moved to data-tip and removed by upgradeTips, so a delegated handler
+      // or a drop target has nothing to read without these.
+      const key = rowKey(def.kind, e.path);
+      row.dataset.path = e.path;
+      row.dataset.kind = def.kind;
+      row.dataset.key = key;
+      rowOrder.push(key);
+      if (selectedRows.has(key)) {
+        row.classList.add("is-selected");
+        row.setAttribute("aria-selected", "true");
+      }
 
       row.appendChild(el("span", "file-icon", ICON_FILE));
       const name = el("span", "name");
@@ -5523,6 +5862,17 @@ export class CommitViewProvider
       });
       const menu = (ev) => {
         ev.preventDefault();
+        // Right-clicking a row OUTSIDE the selection acts on that row, and
+        // replaces the selection — otherwise the menu would quietly operate on
+        // files scrolled off screen that the user has forgotten selecting.
+        if (selectedRows.size > 0 && !selectedRows.has(key)) {
+          clearSelection();
+        }
+        const multi = selectedRows.has(key) && selectedRows.size > 1;
+        if (multi) {
+          openActionMenu(String(selectionPaths().length) + " files", multiItems(), row);
+          return;
+        }
         const items = [
           { icon: "git-compare", label: "Open Changes", fn: open },
         ];
@@ -5542,12 +5892,50 @@ export class CommitViewProvider
               fn: () => vscode.postMessage({ type: "discard", path: e.path }) });
           }
         }
+        items.push({ sep: true });
+        items.push({ icon: "archive", label: "Stash This File",
+          fn: () => vscode.postMessage({ type: "stashPaths", paths: [e.path] }) });
+        items.push({ icon: "archive", label: def.staged ? "Stash Everything Staged" : "Stash All Changes",
+          fn: () => vscode.postMessage(
+            def.staged ? { type: "stashStaged" } : { type: "stash" }) });
         openActionMenu(fileName, items, row);
       };
-      row.addEventListener("click", open);
+      row.addEventListener("click", (ev) => {
+        // A modifier click selects; a plain one opens, as it always has.
+        if (handleSelectionClick(ev, key)) return;
+        open();
+      });
       // Double-click OR right-click a file → an actions menu (open / stage / discard).
       row.addEventListener("dblclick", menu);
       row.addEventListener("contextmenu", menu);
+
+      // Drag a row (or the whole selection) onto the stash target.
+      row.draggable = true;
+      row.addEventListener("dragstart", (ev) => {
+        // Right-clicking or dragging an unselected row acts on THAT row, not on
+        // a selection the user has forgotten about somewhere off screen.
+        if (!selectedRows.has(key)) {
+          selectedRows.clear();
+          selectedRows.add(key);
+          selectionAnchor = key;
+          paintSelection();
+        }
+        const paths = selectionPaths();
+        dragPaths = paths;
+        if (ev.dataTransfer) {
+          ev.dataTransfer.effectAllowed = "move";
+          // Plain text too, so dragging into a terminal or editor pastes
+          // something sensible rather than nothing.
+          ev.dataTransfer.setData("text/plain", paths.join("\n"));
+        }
+        document.body.classList.add("is-dragging-files");
+        showDropZone(paths.length);
+      });
+      row.addEventListener("dragend", () => {
+        dragPaths = [];
+        document.body.classList.remove("is-dragging-files");
+        hideDropZone();
+      });
       row.addEventListener("keydown", (ev) => {
         // Don't hijack Enter aimed at a focused stage/unstage/discard button.
         if (ev.target !== row) return;

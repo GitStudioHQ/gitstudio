@@ -713,10 +713,23 @@ export class GitBridge {
     });
   }
 
-  async stashSave(opts: { message?: string; includeUntracked?: boolean }): Promise<CommitActionResult> {
+  async stashSave(opts: {
+    message?: string;
+    includeUntracked?: boolean;
+    /** Repo-relative paths to stash; omitted or empty means the whole tree. */
+    paths?: string[];
+    /** Stash only what is staged. Cannot be combined with `paths` — see below. */
+    stagedOnly?: boolean;
+  }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
       return { ok: false, changed: false, message: "No repository open." };
+    }
+    // Every path is proved to be inside the repository before it reaches git,
+    // like every other mutating handler here. A stash pathspec is a write.
+    const paths = (opts.paths ?? []).filter((p) => p.length > 0);
+    if (paths.some((p) => !containedPath(ctx.root, p))) {
+      return UNSAFE_REF_RESULT;
     }
     return this.serialize(async () => {
       // NOT via `staged()`, which decides success from the exit code alone. `git
@@ -726,6 +739,8 @@ export class GitBridge {
       const r = await ctx.stashes.save({
         message: opts.message,
         includeUntracked: opts.includeUntracked,
+        paths,
+        stagedOnly: opts.stagedOnly,
       });
       if (!r.ok) {
         return { ok: false, changed: false, message: r.stderr.trim() || "The stash failed." };
@@ -735,7 +750,12 @@ export class GitBridge {
           ok: false,
           changed: false,
           expected: true,
-          message: stashBlockerMessage(r.blocker ?? "cleanTree"),
+          // Scoped, so a selection that turned out to be clean does not claim
+          // "the working tree is clean" over a tree full of other changes.
+          message: stashBlockerMessage(
+            r.blocker ?? "cleanTree",
+            opts.stagedOnly ? "staged" : paths.length > 0 ? "selection" : "tree",
+          ),
         };
       }
       return { ok: true, changed: true };

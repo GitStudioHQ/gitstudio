@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { describeStashScope, listForHint, type StashRequest } from "./stashScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { promptConfirm, promptInput, promptPickMany } from "../ui/dialogs";
@@ -92,14 +93,24 @@ export async function showStash(
 export async function saveStash(
   repos: RepoManager,
   refresh: () => void,
+  request?: StashRequest,
 ): Promise<void> {
   const a = active(repos);
   if (!a) {
     return;
   }
+  const paths = (request?.paths ?? []).filter((p) => p.length > 0);
+  const stagedOnly = request?.stagedOnly === true;
+  const scope = describeStashScope(request);
+
   const message = await promptInput({
-    title: "Stash changes",
-    hint: "A label to recognise this stash by later. Optional — press Enter to skip.",
+    // The title carries the scope, so "which files is this about to take?" is
+    // answered before anything is typed rather than after it has happened.
+    title: `Stash ${scope}`,
+    hint:
+      paths.length > 0
+        ? `${listForHint(paths)} — a label to recognise this stash by later. Optional.`
+        : "A label to recognise this stash by later. Optional — press Enter to skip.",
     placeholder: "WIP: …",
     confirmLabel: "Continue",
     // No validator: a stash message is free text, and an empty one is fine.
@@ -108,26 +119,36 @@ export async function saveStash(
     return; // cancelled
   }
 
+  const choices = [
+    {
+      id: "untracked",
+      label: "Include untracked files",
+      icon: "file",
+      detail: "--include-untracked",
+      description: "Brand-new files are stashed too, instead of being left behind.",
+    },
+    // --keep-index means "leave the index alone", which is a contradiction when
+    // the index IS what is being stashed. Offering it there would be offering a
+    // switch that cannot do anything.
+    ...(stagedOnly
+      ? []
+      : [
+          {
+            id: "keep",
+            label: "Keep staged changes staged",
+            icon: "check",
+            detail: "--keep-index",
+            description:
+              "The index survives the stash, so a partially staged commit stays ready.",
+          },
+        ]),
+  ];
+
   const options = await promptPickMany({
-    title: "Stash options",
+    title: `Stash ${scope}`,
     hint: "Neither is required — plain `git stash` is the common case.",
     confirmLabel: "Stash",
-    choices: [
-      {
-        id: "untracked",
-        label: "Include untracked files",
-        icon: "file",
-        detail: "--include-untracked",
-        description: "Brand-new files are stashed too, instead of being left behind.",
-      },
-      {
-        id: "keep",
-        label: "Keep staged changes staged",
-        icon: "check",
-        detail: "--keep-index",
-        description: "The index survives the stash, so a partially staged commit stays ready.",
-      },
-    ],
+    choices,
   });
   if (options === undefined) {
     return; // cancelled
@@ -137,6 +158,8 @@ export async function saveStash(
     message: message || undefined,
     includeUntracked: options.includes("untracked"),
     keepIndex: options.includes("keep"),
+    paths,
+    stagedOnly,
   });
   if (!result.ok) {
     void vscode.window.showErrorMessage(
@@ -151,12 +174,15 @@ export async function saveStash(
   // have changes, just not ones git was asked to take.
   if (!result.created) {
     void vscode.window.showInformationMessage(
-      `GitStudio: ${stashBlockerMessage(result.blocker ?? "cleanTree")}`,
+      `GitStudio: ${stashBlockerMessage(
+        result.blocker ?? "cleanTree",
+        stagedOnly ? "staged" : paths.length > 0 ? "selection" : "tree",
+      )}`,
     );
     refresh();
     return;
   }
-  flash("Stashed changes");
+  flash(`Stashed ${scope}`);
   refresh();
 }
 

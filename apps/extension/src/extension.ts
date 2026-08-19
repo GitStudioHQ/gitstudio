@@ -607,6 +607,17 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.registerCommand("gitstudio.stash.save", () =>
         saveStash(repos, refreshStashes),
       ),
+      // Scoped stashes. Not in the palette: both take an argument, and a palette
+      // entry that silently stashes everything when invoked without one would be
+      // worse than no entry at all.
+      vscode.commands.registerCommand(
+        "gitstudio.stash.paths",
+        (arg?: { paths?: string[] }) =>
+          saveStash(repos, refreshStashes, { paths: arg?.paths ?? [] }),
+      ),
+      vscode.commands.registerCommand("gitstudio.stash.staged", () =>
+        saveStash(repos, refreshStashes, { stagedOnly: true }),
+      ),
 
       // ── Worktrees ──────────────────────────────────────────────────────────
       vscode.commands.registerCommand("gitstudio.worktrees.refresh", () =>

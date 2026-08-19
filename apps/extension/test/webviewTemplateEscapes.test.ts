@@ -143,3 +143,46 @@ test("no invalid escape sequences in untagged template literals", async () => {
     `Template literals must not swallow backslashes — tag the literal String.raw:\n\n${violations.join("\n\n")}\n`,
   );
 });
+
+// A stray BACKTICK inside one of these literals ends the string early. tsc does
+// notice — but as a cascade of "';' expected" a hundred lines further down, at
+// whatever code happens to follow, which reads as anything except "you typed a
+// backtick in a comment". It has cost real time three separate times.
+//
+// Every one of these literals builds a complete HTML document, so a truncated
+// one is trivially detectable: it stops containing its own closing tag.
+test("no webview HTML literal is truncated by a stray backtick", async () => {
+  const files = (await Promise.all(ROOTS.map(tsFiles))).flat();
+  const violations: string[] = [];
+
+  for (const file of files) {
+    const source = await readFile(file, "utf8");
+    if (!source.includes("<!DOCTYPE html>")) continue;
+    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const rel = relative(REPO, file).split("\\").join("/");
+
+    const visit = (node: ts.Node): void => {
+      // The WHOLE literal, not its chunks. A literal with ${...} in it is a
+      // TemplateExpression whose head holds the doctype and whose tail holds the
+      // closing tag, so testing head and tail separately reports every one of
+      // them as truncated.
+      if (
+        node.kind === ts.SyntaxKind.NoSubstitutionTemplateLiteral ||
+        ts.isTemplateExpression(node)
+      ) {
+        const text = source.slice(node.getStart(sf), node.getEnd());
+        if (text.includes("<!DOCTYPE html>") && !text.includes("</html>")) {
+          const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          violations.push(
+            `${rel}:${line + 1} — an HTML literal opens but never reaches </html>. ` +
+              `Something closed it early; a backtick in a comment is the usual cause.`,
+          );
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+
+  assert.deepEqual(violations, [], `\n${violations.join("\n")}\n`);
+});

@@ -866,7 +866,21 @@ export interface IpcChannels {
   "stash:apply": [string, CommitActionResult];
   "stash:pop": [string, CommitActionResult];
   "stash:drop": [string, CommitActionResult];
-  "stash:save": [{ message?: string; includeUntracked?: boolean }, CommitActionResult];
+  /**
+   * Stash the whole tree, a selection of paths, or just the index.
+   *
+   * `paths` and `stagedOnly` are mutually exclusive — git silently mangles the
+   * combination (see StashProvider.save), so the git-service layer refuses it.
+   */
+  "stash:save": [
+    {
+      message?: string;
+      includeUntracked?: boolean;
+      paths?: string[];
+      stagedOnly?: boolean;
+    },
+    CommitActionResult,
+  ];
   // ── Worktrees ──
   "worktree:list": [void, WorktreeInfo[]];
   "worktree:add": [{ ref: string; newBranch?: boolean }, CommitActionResult];
