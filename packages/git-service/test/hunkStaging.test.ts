@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { listUnstagedHunks, stageHunks } from "../src/hunkStaging";
+import { removeTempRepo } from "./tmpRepo";
 
 // Hunk-level staging driven from a PATH rather than from the active editor, so
 // the Changes view can offer a tick per hunk (issue #20). Without it the checkbox
@@ -42,7 +43,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 /** Edit lines 1 and 9, leaving a gap so they are two distinct hunks. */

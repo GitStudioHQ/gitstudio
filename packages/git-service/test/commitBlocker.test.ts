@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { commitBlockerMessage } from "../src/StagingProvider";
+import { removeTempRepo } from "./tmpRepo";
 
 // `git commit` with nothing staged is the one refusal that says NOTHING on
 // stderr. It exits 1 and writes its explanation to STDOUT, so the Changes view
@@ -47,7 +48,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 test("the reported bug: a refused commit carries NO stderr, only stdout", async () => {

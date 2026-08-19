@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { stashBlockerMessage } from "../src/StashProvider";
+import { removeTempRepo } from "./tmpRepo";
 
 // `git stash push` with nothing to save does not fail — it exits **0** and says
 // "No local changes to save" on stdout. Deciding success from the exit code
@@ -57,7 +58,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 test("the reported bug: stashing a clean tree does NOT fail, it succeeds emptily", async () => {

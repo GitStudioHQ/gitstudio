@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
+import { removeTempRepo } from "./tmpRepo";
 
 // Stashing a SELECTION rather than the whole tree. Two things make this worth
 // real-git tests rather than argument-shape ones: git's emptiness reporting is
@@ -43,7 +44,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 test("stashing a selection takes those files and leaves the rest alone", async () => {

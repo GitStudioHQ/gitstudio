@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { listChangeBlocks, setBlockStaged, isStageableText } from "../src/blockStaging";
+import { removeTempRepo } from "./tmpRepo";
 
 // Against real git, because the only definition of "staged" that matters is
 // git's. The engine tests pin the maths; these pin that the maths and git agree.
@@ -48,7 +49,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 test("a clean file has no blocks", async () => {

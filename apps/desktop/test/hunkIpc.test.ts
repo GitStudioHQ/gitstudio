@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { GitContext } from "@gitstudio/git-service/index";
 import { GitBridge } from "../src/main/gitBridge";
 import type { RepoStore } from "../src/main/repoStore";
+import { removeTempRepo } from "./tmpRepo";
 
 // The desktop half of per-hunk ticks (#20), driven through the same bridge
 // methods the IPC channels call.
@@ -35,7 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 function twoEdits(): void {

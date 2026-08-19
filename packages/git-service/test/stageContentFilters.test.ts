@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
+import { removeTempRepo } from "./tmpRepo";
 
 // Line/hunk staging writes a blob directly with `git hash-object` instead of
 // going through `git add`, because it stages reconstructed content that never
@@ -51,7 +52,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 test("the reported bug: our blob is byte-identical to what `git add` writes", async () => {

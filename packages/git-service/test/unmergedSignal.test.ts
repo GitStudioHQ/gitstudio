@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
 import { unresolvedConflictsMessage } from "../src/ConflictProvider";
+import { removeTempRepo } from "./tmpRepo";
 
 // Crash report #9: "git checkout failed — error: you need to resolve your current
 // index first". Nothing was broken. The user was mid-conflict and git declined to
@@ -54,7 +55,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx?.dispose?.();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 /** Leave the repo mid-merge with a real conflict. */
