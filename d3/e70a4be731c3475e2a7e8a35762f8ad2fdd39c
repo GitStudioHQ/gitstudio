@@ -1,0 +1,29 @@
+apps/extension/src/statusBar/statusCluster.ts
+  s_daa89ab6f34762::t_cf1a91e6c9dcf2 1-123,128-173
+  s_daa89ab6f34762::t_74d9da6aea9568 124-127
+apps/extension/src/extension.ts
+  s_daa89ab6f34762::t_25963141266dd8 422-425,429,436,580-581
+  s_daa89ab6f34762::t_3bb2f9a873c972 27,583
+apps/extension/test/changesLabel.test.ts
+  s_daa89ab6f34762::t_633b9ec35856de 1-39
+apps/extension/package.json
+  s_daa89ab6f34762::t_074f64fa702457 839-844,1149-1168,1862-1865
+apps/extension/src/statusBar/changesLabel.ts
+  s_daa89ab6f34762::t_d8652699e90e5e 1-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d3e70a4be731c3475e2a7e8a35762f8ad2fdd39c",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
