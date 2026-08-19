@@ -1,9 +1,25 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
-import { listUnstagedHunks, stageHunks, type FileHunk } from "@gitstudio/git-service/hunkStaging";
+import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+
+/**
+ * One change of a file, as the Changes list shows it.
+ *
+ * Every change since HEAD, not only the unstaged ones — `state` is what lets a
+ * ticked change stay in the list instead of vanishing the moment it is staged.
+ */
+interface HunkRow {
+  index: number;
+  /** 0-based line range in the working-tree text. */
+  start: number;
+  end: number;
+  state: "staged" | "unstaged" | "partial";
+  preview: string;
+  lineCount: number;
+}
 import type { Change } from "../git/git";
 import { getNonce } from "../webview/html";
 import {
@@ -158,6 +174,8 @@ interface FromWebview {
   /** Which hunk of `path` a stageHunk targets (index from the last requestHunks). */
   hunkIndex?: number;
   layout?: "tree" | "list";
+  /** 0-based line to reveal when opening a diff at a particular change. */
+  line?: number;
   /** Which staging model the Changes view should present. */
   stagingModel?: "split" | "checkboxes";
   /** One-letter status of the file a `fileMenu` targets (M/A/D/R/U/!/…). */
@@ -529,6 +547,28 @@ export class CommitViewProvider
     this.dialogWaiters.clear();
   }
 
+  /**
+   * Scroll the diff that is about to open to `line` (0-based).
+   *
+   * The editor does not exist yet when the open is requested, and there is no
+   * "diff opened" event to await, so this waits for the active editor to become
+   * one whose document is a file and then reveals. It gives up quietly: landing
+   * on the right line is a nicety, and failing to must never stop the diff
+   * itself from opening.
+   */
+  private async revealAfterOpen(line: number): Promise<void> {
+    for (let i = 0; i < 30; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) continue;
+      const target = Math.min(Math.max(0, line), Math.max(0, editor.document.lineCount - 1));
+      const range = new vscode.Range(target, 0, target, 0);
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+      editor.selection = new vscode.Selection(range.start, range.start);
+      return;
+    }
+  }
+
   /** Re-push state (staged count + change lists) after an external op. */
   requestState(): void {
     void this.pushState();
@@ -620,7 +660,7 @@ export class CommitViewProvider
         await this.doDiscard(msg.path ?? "");
         return;
       case "openDiff":
-        this.doOpenDiff(msg.path ?? "", !!msg.staged);
+        this.doOpenDiff(msg.path ?? "", !!msg.staged, msg.line);
         return;
       case "stageAll":
         await this.doBulkStage(msg.group);
@@ -818,7 +858,12 @@ export class CommitViewProvider
     await this.discardEntries(await this.entriesForPaths(active, [path]));
   }
 
-  private doOpenDiff(path: string, staged: boolean): void {
+  private doOpenDiff(path: string, staged: boolean, line?: number): void {
+    if (typeof line === "number" && line >= 0) {
+      // Opening at a specific change: reveal it once the diff editor exists.
+      // Fire-and-forget so the diff still opens if the reveal cannot land.
+      void this.revealAfterOpen(line);
+    }
     const active = this.repos.getActive();
     if (!active || !path) {
       return;
@@ -919,22 +964,56 @@ export class CommitViewProvider
    * is on disk, so an unsaved buffer would show hunks that ticking them would not
    * actually stage.
    */
+  /**
+   * Every change in `rel` since HEAD, each with its own tick state.
+   *
+   * It used to list only the UNSTAGED hunks, which made ticking one look like a
+   * bug: the change you just picked vanished from the list, because it was no
+   * longer unstaged. Listing every change against HEAD and labelling each one
+   * staged / unstaged / partial means a tick changes a checkbox and nothing
+   * else moves — which is what a checkbox is supposed to do.
+   */
   private async sendHunks(rel: string): Promise<void> {
     const entry = this.repos.getActive();
     if (!entry || !rel) {
       return;
     }
-    let hunks: FileHunk[] = [];
+    let hunks: HunkRow[] = [];
     try {
       const text = await this.workingTreeText(entry, rel);
-      hunks = await listUnstagedHunks(entry.ctx, rel, text);
+      const lines = text.split("\n");
+      const blocks = await listChangeBlocks(entry.ctx, rel, text);
+      hunks = blocks.map((b, index) => {
+        // A pure deletion has a zero-width span on the working side; report it
+        // as its anchor line rather than as an empty range.
+        const start = b.working.start;
+        const end = b.working.end < b.working.start ? b.working.start : b.working.end;
+        const firstChanged = lines
+          .slice(start, end + 1)
+          .find((l) => l.trim().length > 0);
+        return {
+          index,
+          start,
+          end,
+          state: b.state,
+          preview: (firstChanged ?? "").trim().slice(0, 120),
+          lineCount: Math.max(1, end - start + 1),
+        };
+      });
     } catch {
       hunks = []; // binary, deleted, unreadable — the row just shows nothing
     }
     void this.view?.webview.postMessage({ type: "hunks", path: rel, hunks });
   }
 
-  /** Tick one hunk: stage exactly that change, leaving the rest of the file alone. */
+  /**
+   * Toggle one change: stage it, or unstage it if it is already staged.
+   *
+   * It only ever staged before, because the list only ever held unstaged
+   * changes — so a tick was a one-way door and unticking was impossible. Now
+   * that every change is listed with its state, the tick has to work both ways
+   * or it is not a checkbox.
+   */
   private async doStageHunk(rel: string, index: number): Promise<void> {
     const entry = this.repos.getActive();
     if (!entry || !rel || index < 0) {
@@ -942,7 +1021,23 @@ export class CommitViewProvider
     }
     try {
       const text = await this.workingTreeText(entry, rel);
-      const r = await stageHunks(entry.ctx, rel, text, [index]);
+      const blocks = await listChangeBlocks(entry.ctx, rel, text);
+      const block = blocks[index];
+      if (!block) {
+        // The file moved under the list between render and click.
+        await this.sendHunks(rel);
+        return;
+      }
+      // A partial change completes rather than reverting: the visible state is
+      // "not finished", so forward is the obvious direction, and unstaging
+      // would throw away work already staged.
+      const r = await setBlockStaged(
+        entry.ctx,
+        rel,
+        text,
+        block,
+        block.state !== "staged",
+      );
       if (!r.ok) {
         void vscode.window.showInformationMessage(`GitStudio: ${r.stderr}`);
       }
@@ -2842,6 +2937,22 @@ export class CommitViewProvider
     .icon-btn.model .to-split { display: none; }
     body.model-checkboxes .icon-btn.model .to-checks { display: none; }
     body.model-checkboxes .icon-btn.model .to-split { display: inline-flex; }
+
+    /* Hunk rows are clickable now — they open the diff at that change — so they
+       need to look it, and a staged one needs to look different from a pending
+       one while both stay in the list. */
+    .hunk-row { cursor: pointer; border-radius: 3px; }
+    .hunk-row:hover { background: var(--vscode-list-hoverBackground); }
+    .hunk-row:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: -1px;
+    }
+    /* A staged change stays listed, dimmed — present, accounted for, done. */
+    .hunk-row.hunk-staged .hunk-lines,
+    .hunk-row.hunk-staged .hunk-preview { opacity: 0.55; }
+    /* Held only between the click and the host's answer, so a slow git call
+       cannot be mistaken for a click that did not register. */
+    .hunk-row.is-busy { opacity: 0.7; }
 
     .groups { margin: 0 0 2px; }
 
@@ -5808,13 +5919,28 @@ export class CommitViewProvider
         return wrap;
       }
       for (const h of hunks) {
-        const hrow = el("div", "hunk-row");
+        const state = h.state || "unstaged";
+        const hrow = el("div", "hunk-row hunk-" + state);
         const hck = el("input", "ck");
         hck.type = "checkbox";
-        hck.checked = false; // by construction: these are the UNSTAGED changes
-        hck.title = "Include this change in the commit";
+        // The real state, so a ticked change STAYS in the list showing itself as
+        // ticked. It used to be hard-coded false because the list only ever held
+        // unstaged changes, which made ticking one look like it deleted the row.
+        hck.checked = state === "staged";
+        hck.indeterminate = state === "partial";
+        hck.title = state === "staged"
+          ? "Staged \u2014 click to unstage this change"
+          : state === "partial"
+            ? "Partly staged \u2014 click to stage the rest"
+            : "Include this change in the commit";
         hck.addEventListener("click", function (ev) {
           ev.stopPropagation();
+          // Paint the new state immediately. The host round trip re-reads git
+          // and repaints authoritatively a moment later; without this the tick
+          // sits visibly unchanged until then, which reads as lag.
+          if (state === "staged") { hck.checked = false; hck.indeterminate = false; }
+          else { hck.checked = true; hck.indeterminate = false; }
+          hrow.classList.add("is-busy");
           vscode.postMessage({ type: "stageHunk", path: path, hunkIndex: h.index });
         });
         const lines = el("span", "hunk-lines");
@@ -5825,6 +5951,24 @@ export class CommitViewProvider
         const prev = el("span", "hunk-preview");
         prev.textContent = h.preview || "(whitespace only)";
         hrow.append(hck, lines, prev);
+
+        // Clicking the row opens the file's diff at THIS change — the same way
+        // clicking the file opens its diff. Without it a change is something you
+        // can tick but never actually look at, which is backwards.
+        hrow.tabIndex = 0;
+        hrow.setAttribute("role", "button");
+        hrow.dataset.tip = "Open this change in the diff";
+        const openHunk = function () {
+          vscode.postMessage({
+            type: "openDiff", path: path, staged: false, line: h.start,
+          });
+        };
+        hrow.addEventListener("click", openHunk);
+        hrow.addEventListener("keydown", function (ev) {
+          if (ev.target !== hrow) return;
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openHunk(); }
+        });
+
         wrap.appendChild(hrow);
       }
       return wrap;
