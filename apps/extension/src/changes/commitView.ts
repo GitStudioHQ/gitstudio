@@ -6487,6 +6487,12 @@ export class CommitViewProvider
         // The status bar asked for the branch UI. This is the same menu the
         // branch pill opens — one branch surface, not a second one that has to
         // be kept in step with it.
+        //
+        // Take focus first, so the menu is usable from the keyboard the moment
+        // it appears — the request came from the status bar, so focus is not in
+        // this webview yet.
+        window.focus();
+        branchPill.focus();
         openBranchMenu();
         return;
       }
