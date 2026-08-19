@@ -3469,7 +3469,7 @@ export class CommitViewProvider
         <i class="codicon codicon-add" aria-hidden="true"></i>
       </button>
       <button class="icon-btn stash-btn" id="stash-changes" type="button"
-        title="Stash Changes…" aria-label="Stash Changes">
+        title="Stash all changes…" aria-label="Stash all changes…">
         <i class="codicon codicon-archive" aria-hidden="true"></i>
       </button>
       <button class="icon-btn collapse-all" id="collapse-all" type="button"
@@ -3635,6 +3635,7 @@ export class CommitViewProvider
         else r.removeAttribute("aria-selected");
       }
       updateSelectionBar();
+      updateSelectionChrome();
     }
 
     function clearSelection() {
@@ -3760,6 +3761,8 @@ export class CommitViewProvider
       const files = selectionPaths().length;
       selbarCount.textContent = files === 1 ? "1 file selected" : String(files) + " files selected";
     }
+
+    function updateSelectionChrome() { syncStashButtonLabel(); }
 
     function showDropZone(count) {
       stashDropLabel.textContent =
@@ -4162,8 +4165,28 @@ export class CommitViewProvider
       vscode.postMessage({ type: "stageAll" });
     });
     stashChangesBtn.addEventListener("click", () => {
+      // With a selection live, the toolbar button follows it. Ignoring the
+      // selection here would mean the same icon does two different things
+      // depending on nothing the user can see.
+      const paths = selectionPaths();
+      if (paths.length > 0) {
+        vscode.postMessage({ type: "stashPaths", paths: paths });
+        clearSelection();
+        return;
+      }
       vscode.postMessage({ type: "stash" });
     });
+
+    /** Keeps the toolbar button honest about what it is about to take. */
+    function syncStashButtonLabel() {
+      const n = selectionPaths().length;
+      const label = n === 0
+        ? "Stash all changes\u2026"
+        : (n === 1 ? "Stash 1 selected file\u2026" : "Stash " + n + " selected files\u2026");
+      stashChangesBtn.dataset.tip = label;
+      stashChangesBtn.setAttribute("aria-label", label);
+      stashChangesBtn.classList.toggle("is-scoped", n > 0);
+    }
     refreshBtn.addEventListener("click", () => {
       vscode.postMessage({ type: "ready" });
     });
@@ -5658,8 +5681,28 @@ export class CommitViewProvider
       const gdot = el("span", "gdot");
       const glabel = el("span", "glabel");
       glabel.textContent = def.label;
+      header.title = def.label + " \u2014 click to collapse, " +
+        "Ctrl/Cmd-click to select every file in it";
       const gcount = el("span", "gcount");
       gcount.textContent = String(list.length);
+
+      // Select the whole section. Ctrl/cmd-click matches the row modifier, and a
+      // stash button that already follows the selection then means "stash this
+      // whole section" without a second mechanism for it.
+      header.addEventListener("click", (ev) => {
+        if (!(ev.ctrlKey || ev.metaKey)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const keys = [];
+        for (let i = 0; i < list.length; i++) keys.push(rowKey(def.kind, list[i].path));
+        const allOn = keys.length > 0 && keys.every((k) => selectedRows.has(k));
+        for (let i = 0; i < keys.length; i++) {
+          if (allOn) selectedRows.delete(keys[i]);
+          else selectedRows.add(keys[i]);
+        }
+        selectionAnchor = keys.length > 0 ? keys[keys.length - 1] : null;
+        paintSelection();
+      });
 
       const actions = el("span", "group-actions");
       if (def.kind === "staged") {
