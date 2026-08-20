@@ -15,7 +15,13 @@ const PRETTY_FORMAT =
   `${FIELD_SEP}%s${FIELD_SEP}%b${RECORD_SEP}`;
 
 export interface StreamCommitsOptions {
-  /** A rev range / single rev (default "HEAD"), or "--all" for every ref. */
+  /**
+   * A rev range / single rev (default "HEAD"), or "--all" for the whole graph.
+   *
+   * "--all" here means every BRANCH, TAG, REMOTE and HEAD — not git's literal
+   * `--all`, which also sweeps in refs/notes/* and refs/stash. See the traversal
+   * below for why those must not appear as history.
+   */
   revRange?: string;
   maxCount?: number;
   skip?: number;
@@ -41,7 +47,26 @@ export class LogProvider {
 
     const revRange = opts?.revRange ?? "HEAD";
     if (revRange === "--all") {
-      args.push("--all");
+      // NOT `--all`, which means every ref under refs/ — including refs/notes/*
+      // and refs/stash. Those are not history, and putting them in the graph is
+      // not a cosmetic problem:
+      //
+      //   * Note commits are dated when the note was WRITTEN, so they sort to
+      //     the top of a date-ordered log and push real commits down. They carry
+      //     no subject, so the graph shows rows that are blank.
+      //   * They are numerous. This repository had 163 of them against 202 real
+      //     commits — 45% of the graph was notes.
+      //   * They break skip-based paging. Page boundaries are positions in that
+      //     polluted list, so writing a note between two page reads shifts every
+      //     later page, and a real commit falls into the gap and is never shown.
+      //     That is the "graph silently omits a commit" report, and why it looked
+      //     load-dependent rather than reproducible.
+      //
+      // Anything that writes notes does this: `git notes`, CI annotators, review
+      // tools, AI assistants. HEAD is listed explicitly because --branches does
+      // not cover a DETACHED head, and dropping the commit you are sitting on
+      // would be a worse bug than the one being fixed.
+      args.push("--branches", "--tags", "--remotes", "HEAD");
     } else {
       args.push(revRange);
     }
