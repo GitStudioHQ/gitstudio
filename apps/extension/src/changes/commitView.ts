@@ -4506,6 +4506,7 @@ export class CommitViewProvider
       branchPill.setAttribute("aria-expanded", "false");
       document.removeEventListener("mousedown", onBranchDocDown, true);
       document.removeEventListener("keydown", onBranchKey, true);
+      window.removeEventListener("blur", onBranchBlur, true);
     }
     function closeBranchSubmenu() {
       if (branchSubmenu) { branchSubmenu.remove(); branchSubmenu = null; }
@@ -4517,6 +4518,19 @@ export class CommitViewProvider
       const onPill = branchPill.contains(e.target);
       if (inSub || inMenu || onPill) return;
       closeBranchMenu();
+    }
+    // Clicks in the editor/main area never reach this webview; blur is the only
+    // signal that focus left it, so close the popover (JetBrains dismisses
+    // popovers on any click anywhere in the IDE).
+    // blur does NOT bubble, but capture starts at window — so clicking inside
+    // the menu (moving focus off the focused row) fires this too. Only close
+    // when focus has genuinely left the webview: the setTimeout lets the focus
+    // move settle first, and the branchMenu-null guard keeps a stale callback
+    // from closing a menu that was already dismissed.
+    function onBranchBlur() {
+      setTimeout(() => {
+        if (branchMenu && !document.hasFocus()) closeBranchMenu();
+      }, 0);
     }
     function onBranchKey(e) {
       if (e.key === "Escape") {
@@ -4641,9 +4655,18 @@ export class CommitViewProvider
       if (actionMenuEl) { actionMenuEl.remove(); actionMenuEl = null; }
       document.removeEventListener("mousedown", onActionDocDown, true);
       document.removeEventListener("keydown", onActionKey, true);
+      window.removeEventListener("blur", onActionBlur, true);
     }
     function onActionDocDown(e) {
       if (actionMenuEl && !actionMenuEl.contains(e.target)) closeActionMenu();
+    }
+    // The webview cannot see clicks in the editor/main area — those never reach
+    // this document. Blur is the only signal that focus left the webview, so
+    // treat it like a click-outside (JetBrains dismisses popovers on any click).
+    function onActionBlur() {
+      setTimeout(() => {
+        if (actionMenuEl && !document.hasFocus()) closeActionMenu();
+      }, 0);
     }
     function onActionKey(e) {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeActionMenu(); }
@@ -4681,6 +4704,7 @@ export class CommitViewProvider
       menu.style.top = Math.round(top) + "px";
       document.addEventListener("mousedown", onActionDocDown, true);
       document.addEventListener("keydown", onActionKey, true);
+      window.addEventListener("blur", onActionBlur, true);
       const first = list.querySelector(".bm-subaction");
       if (first) first.focus();
     }
@@ -5617,6 +5641,7 @@ export class CommitViewProvider
       setTimeout(() => {
         document.addEventListener("mousedown", onBranchDocDown, true);
         document.addEventListener("keydown", onBranchKey, true);
+        window.addEventListener("blur", onBranchBlur, true);
       }, 0);
     }
     branchPill.addEventListener("click", openBranchMenu);
