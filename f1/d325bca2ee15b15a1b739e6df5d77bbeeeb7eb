@@ -1,0 +1,69 @@
+packages/webview-ui/src/graph/commit-graph.ts
+  s_daa89ab6f34762::t_1ddf32b3be65bd 2995-3001
+  s_daa89ab6f34762::t_7cd4436300cb0d 48,75-76,79,81,83
+  s_daa89ab6f34762::t_d071c9b6695da3 71-74,1922-1934,1936
+  s_daa89ab6f34762::t_8eba0bbe155112 544-551,628-630,632-635,637-644,646-649,651-655,657
+  s_daa89ab6f34762::t_1693506cd18605 757-762,767,773,776-792
+  s_daa89ab6f34762::t_9c9db5a4518f79 132-135,217-221,736,1114,1136,1172,1180,1192
+  s_daa89ab6f34762::t_40a273d3f541d9 556-557,689-690
+  s_daa89ab6f34762::t_55b07e0ffca803 19
+  s_daa89ab6f34762::t_9a1a37ac7e15a2 967-968,989-992,994,997-1002,1115
+  s_daa89ab6f34762::t_7eb93d52b9106a 64-70,598,631,636,645,650,1613-1680,1950-1952
+  s_daa89ab6f34762::t_2b99076586bcc3 51-58,1369-1370,1887-1894,1906,1939-1940,1948-1949,1953-1954,2218
+  s_daa89ab6f34762::t_b16081d5ac73d0 15,210,627,1399-1405,2138,2185-2217,2324-2325,2340,2485,2495,2500,2896-2897
+  s_daa89ab6f34762::t_5f0d2f93ae72e2 17-18,20-23,1895-1898,1903-1905,2338
+  s_daa89ab6f34762::t_ac0dd6d1d953f1 673-688,693-704
+  s_daa89ab6f34762::t_13d47ee0b8a7d7 1156,1166,1169
+  s_daa89ab6f34762::t_8abbb0b7135ee2 1371,1447-1458,1464-1465
+  s_daa89ab6f34762::t_a732f3d8e64be8 2316-2321
+  s_daa89ab6f34762::t_b6927ed9972ae8 600-609,617-620,625-626,665-667
+  s_daa89ab6f34762::t_18e88b71733aeb 518,1693-1697,1862,1864-1886,1907,2335
+  s_daa89ab6f34762::t_8b7dbb7510b36d 59-63,1908-1921,1935,1937-1938,2336
+  s_daa89ab6f34762::t_f60721204636dd 713-716,737-741,745,766,768-769
+  s_daa89ab6f34762::t_7a91cfec5b53f8 2341-2350
+  s_daa89ab6f34762::t_b9a6d69207e3a1 3057-3069,3074-3076,3081,3083,3085,3087
+  s_daa89ab6f34762::t_dd297249d692a3 1899-1902,1941-1947
+  s_daa89ab6f34762::t_6a2235ad3c169f 582-586
+  s_daa89ab6f34762::t_1195a899d86d0b 144-148
+  s_daa89ab6f34762::t_fccff350299016 131
+  s_daa89ab6f34762::t_53fef42dc39f15 1175-1177,2326-2327
+  s_daa89ab6f34762::t_8242326d502af8 16,149,2219,3056
+packages/webview-ui/src/styles/hostTokens.ts
+  s_daa89ab6f34762::t_13d47ee0b8a7d7 44-48
+packages/webview-ui/src/graph/authorTip.ts
+  s_daa89ab6f34762::t_8feb6162393181 1-90,94-124,131-133,135-140,142-174,178-203,206,208-231
+  s_daa89ab6f34762::t_c06fbafa0dbcf2 91-93,125-130,134,204-205,207
+  s_daa89ab6f34762::t_eff1918a41b556 141,175-177
+packages/webview-ui/src/graph/commit-rail.ts
+  s_daa89ab6f34762::t_708fb6c65e5778 1041-1042,1100-1107,1109-1110
+  s_daa89ab6f34762::t_7cd4436300cb0d 45-47,49,53,55,57
+  s_daa89ab6f34762::t_8ad1b60cc8965a 491-497,500-505,509-516,521-539
+packages/webview-ui/src/graph/gutter.ts
+  s_daa89ab6f34762::t_7cd4436300cb0d 40,178
+packages/webview-ui/src/graph/refTip.ts
+  s_daa89ab6f34762::t_7db1acf73e29f9 91-97,100-103,148-156,166-178,183-184,269,287-288,298-302,305-315
+  s_daa89ab6f34762::t_ba10ae96b58508 159,220,225,236,254
+  s_daa89ab6f34762::t_2ddbf6a34cfc57 179-182,185-203
+packages/webview-ui/src/styles/tokens.css
+  s_daa89ab6f34762::t_13d47ee0b8a7d7 81-92,97
+packages/webview-ui/test/refLayout.test.ts
+  s_daa89ab6f34762::t_c5d8a35e9a56bd 1-138
+packages/webview-ui/src/graph/refLayout.ts
+  s_daa89ab6f34762::t_c3df8caf1646f7 1-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f1d325bca2ee15b15a1b739e6df5d77bbeeeb7eb",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
