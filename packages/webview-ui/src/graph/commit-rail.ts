@@ -42,19 +42,19 @@ import { RefTip, refTipStyles, tipAriaLabel, tipData } from "./refTip";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
-/** Horizontal pitch between rail lanes — sparse enough that a 14px avatar
- * reads unambiguously on ITS lane (adjacent lines stay 16px away). */
-const PITCH = 16;
+/** Horizontal pitch between rail lanes — sparse enough that the avatar
+ * reads unambiguously on ITS lane (adjacent lines stay a pitch away). */
+const PITCH = 20;
 /** Mini author avatar diameter, px — sits ON the commit node. */
-const AVATAR_SIZE = 14;
+const AVATAR_SIZE = 17;
 /** The rendered strip covers this many lanes at most; deeper lanes clip at
  * its edge (real geometry, honestly cut — never remapped). */
 const MAX_RAIL_LANES = 12;
-const NODE_RADIUS = 3;
+const NODE_RADIUS = 3.75;
 /** Left inset so a lane-0 avatar isn't clipped (avatar half + 1). */
-const RAIL_INSET = 8;
+const RAIL_INSET = 10;
 /** Right breathing room between a row's last active lane and its text. */
-const RAIL_GAP = 7;
+const RAIL_GAP = 8;
 const OVERSCAN = 14;
 /** Trigger a loadMore when within this many rows of the bottom. */
 const LOAD_MORE_THRESHOLD = 60;
@@ -488,22 +488,55 @@ export class CommitRail extends LitElement {
       /* ── Hover actions (VS Code tree idiom): fade in over a scrim ──────── */
       .acts {
         position: absolute;
-        right: 2px;
-        top: 2px;
+        right: 3px;
+        /* Full height + centred, NOT pinned to the top. At top:2px they landed
+           on line 1 — the commit subject — so the two most-read characters of
+           every hovered row sat under a pair of icons. Centred, they straddle
+           the gap between the subject and the meta line instead. */
+        top: 0;
+        bottom: 0;
         display: none;
         align-items: center;
-        gap: 1px;
-        padding: 1px 2px 1px 14px;
+        gap: 2px;
+        padding: 0 1px 0 28px;
+        /* Fade the row content out behind them rather than overprinting it.
+           Keyed to the HOVER background because .acts only ever shows on hover;
+           the old scrim used the row's resting colour, so on a hovered row it
+           was the wrong shade and the text stayed visible through it. */
         background: linear-gradient(
           to right,
           transparent,
-          var(--gs-graph-node-hole) 12px
+          var(--vscode-list-hoverBackground, var(--gs-graph-node-hole)) 26px
+        );
+      }
+      .row.selected .acts {
+        background: linear-gradient(
+          to right,
+          transparent,
+          var(--vscode-list-activeSelectionBackground, var(--gs-graph-node-hole)) 26px
         );
       }
       .row:hover .acts,
       .row:focus-within .acts { display: inline-flex; }
-      .acts .ibtn { width: 19px; height: 19px; color: var(--gs-fg-muted); }
-      .acts .ibtn .codicon { font-size: 12px; }
+      /* Legible at rest, not just on their own hover: these were --gs-fg-muted
+         on a scrim, which is two dimmings stacked. */
+      .acts .ibtn {
+        width: 22px;
+        height: 22px;
+        border-radius: 4px;
+        color: var(--vscode-foreground);
+        opacity: 0.8;
+      }
+      .acts .ibtn:hover {
+        opacity: 1;
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+      .acts .ibtn:focus-visible {
+        opacity: 1;
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: -1px;
+      }
+      .acts .ibtn .codicon { font-size: 13px; }
 
       /* ── Search: matches pop, the rest recede ──────────────────────────── */
       .row.is-nomatch { opacity: 0.35; }
@@ -1005,7 +1038,8 @@ export class CommitRail extends LitElement {
       `style="transform:translateY(${item.start}px)">` +
       `<div class="rail" style="width:${railW}px">${rail}${avatar}</div>` +
       `<div class="body">` +
-      `<div class="l1"><span class="subject">${subject}</span></div>` +
+      `<div class="l1"><span class="subject" title="" data-text="${esc(row.subject)}"` +
+      `>${subject}</span></div>` +
       `<div class="l2">${chips}<span class="who">${who}</span><span class="age">${age}</span></div>` +
       `</div>` +
       acts +
@@ -1063,8 +1097,17 @@ export class CommitRail extends LitElement {
         chip.remotes.length > 0
           ? `<span class="codicon codicon-cloud cloud" aria-hidden="true"></span>`
           : "";
+      // Same hover card the "+N" pill uses, so a chip the rail had to
+      // ellipsize can still be read. `title=""` for the reason spelled out
+      // below: the ROW's tooltip covers every descendant, and an empty title is
+      // the only way to opt one out — without it the row's slow native tooltip
+      // is what you get, which is exactly what it looked like before.
+      const tip = esc(
+        tipData([{ name: chip.label, kind: chip.kind, remotes: chip.remotes }]),
+      );
       out +=
-        `<span class="${cls}" title="${esc(chip.title)}">` +
+        `<span class="${cls}" title="" data-more="${tip}"` +
+        ` aria-label="${esc(chip.title)}">` +
         `<span class="codicon codicon-${icon}" aria-hidden="true"></span>` +
         `<span class="name">${esc(chip.label)}</span>${cloud}</span>`;
     }

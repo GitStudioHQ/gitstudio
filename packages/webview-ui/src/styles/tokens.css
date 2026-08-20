@@ -78,14 +78,23 @@
   --gs-chip-bg: var(--vscode-badge-background);
   --gs-chip-fg: var(--vscode-badge-foreground);
 
-  --gs-status-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
-  --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
-  --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
+  /* Added / modified / deleted have to be tellable apart AT A GLANCE -- as a
+     4px bar in the graph's Changes column, and as a single letter in a dense
+     file list. VS Code's own gitDecoration palette is not: "added" is a sage
+     green (#81b88b) and "modified" a tan (#E2C08D), and at that size the two
+     read as the same warm grey-green. So the triad is pinned to the
+     widest-separation hues instead -- green / blue / red, which is also the
+     JetBrains and GitHub Desktop convention. charts-* is used rather than a raw
+     hex because those ARE theme-tuned per light/dark (and unlike charts-yellow,
+     none of these three fails AA on light themes). */
+  --gs-status-added: var(--vscode-charts-green, #3fb950);
+  --gs-status-modified: var(--vscode-charts-blue, #58a6ff);
+  --gs-status-deleted: var(--vscode-charts-red, #f85149);
   /* Extended working-tree states (upstreamed from the Changes view so every
      surface names them identically). Untracked reads green like an add; a
      rename reads blue; a conflict reads red; ignored reads muted. */
   --gs-status-untracked: var(--vscode-gitDecoration-untrackedResourceForeground, var(--vscode-charts-green));
-  --gs-status-renamed: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-blue));
+  --gs-status-renamed: var(--vscode-charts-purple, #bc8cff);
   --gs-status-conflict: var(--vscode-gitDecoration-conflictingResourceForeground, var(--vscode-charts-red));
   --gs-status-ignored: var(--vscode-gitDecoration-ignoredResourceForeground, var(--gs-fg-muted));
   /* Raw charts-yellow as small text fails AA on light themes (≈3:1); the

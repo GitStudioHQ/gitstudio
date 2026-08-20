@@ -88,9 +88,19 @@ export class RefTip {
    *  stale exactly when the list repopulates. */
   constructor(private readonly find: () => HTMLElement | null) {}
 
-  /** Pointer entered something. Opens only for a "+N" pill; ignores the rest. */
+  /**
+   * Pointer entered something. Opens for a "+N" pill (always — its whole job is
+   * standing in for refs you cannot see), and for any element carrying
+   * `data-more` / `data-text` whose text is actually CLIPPED. The clipping test
+   * is what keeps this from firing on every chip and every commit message you
+   * merely sweep the pointer across.
+   */
   handleOver(e: Event): void {
     const pill = pillOf(e);
+    if (pill && !shouldOpen(pill)) {
+      if (this.anchor) this.hide();
+      return;
+    }
     if (!pill) {
       // Moving OFF a pill onto anything else closes: pointerout alone misses
       // the case where the pill is removed from under the pointer mid-scroll.
@@ -135,20 +145,62 @@ export class RefTip {
     if (!el || !pill.isConnected) {
       return;
     }
-    const refs = parse(pill.dataset.more);
-    if (!refs.length) {
-      return;
+    const text = pill.dataset.text;
+    if (text !== undefined) {
+      el.innerHTML = `<div class="tip-text">${escapeTip(text)}</div>`;
+    } else {
+      const refs = parse(pill.dataset.more);
+      if (!refs.length) {
+        return;
+      }
+      el.innerHTML = refs.map(rowHtml).join("");
     }
-    el.innerHTML = refs.map(rowHtml).join("");
     el.hidden = false;
-    place(el, pill);
+    placeCard(el, pill);
   }
 }
 
 /** The "+N" pill under an event, if any (works through shadow boundaries). */
 function pillOf(e: Event): HTMLElement | null {
   const target = e.composedPath()[0] as HTMLElement | null;
-  return (target?.closest?.("[data-more]") as HTMLElement | null) ?? null;
+  return (
+    (target?.closest?.("[data-more],[data-text]") as HTMLElement | null) ?? null
+  );
+}
+
+/**
+ * Whether this anchor has anything worth revealing.
+ *
+ * The "+N" pill always does. Everything else earns a card only when its text is
+ * genuinely cut off — otherwise the card just restates what is already legible,
+ * and pops up every time the pointer crosses the column.
+ */
+function shouldOpen(el: HTMLElement): boolean {
+  // The "+N" pill always opens — standing in for refs you cannot see IS its job.
+  // Two surfaces spell it differently: the graph's chip-overflow, the rail's
+  // "more".
+  if (el.classList.contains("chip-overflow") || el.classList.contains("more")) {
+    return true;
+  }
+  // Otherwise: is anything here actually cut off? The clipped node is the
+  // anchor itself for a commit subject, but a NESTED label span for a chip —
+  // and the two surfaces name that span differently (.nm in the graph, .name in
+  // the rail). Walking the subtree avoids hardcoding either, which is what made
+  // the rail's chips silently never open: the probe measured the chip box,
+  // which is not the element that clips.
+  if (isClipped(el)) {
+    return true;
+  }
+  for (const child of el.querySelectorAll<HTMLElement>("*")) {
+    if (isClipped(child)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isClipped(el: HTMLElement): boolean {
+  return el.scrollWidth > el.clientWidth + 1;
 }
 
 function parse(raw: string | undefined): TipRef[] {
@@ -165,12 +217,12 @@ function parse(raw: string | undefined): TipRef[] {
 
 function rowHtml(ref: TipRef): string {
   const also = ref.remotes?.length
-    ? `<span class="tip-also">· also on ${escape(ref.remotes.join(", "))}</span>`
+    ? `<span class="tip-also">· also on ${escapeTip(ref.remotes.join(", "))}</span>`
     : "";
   return (
     `<div class="tip-row tip-${ref.kind}">` +
     `<span class="codicon codicon-${KIND_ICON[ref.kind]}" aria-hidden="true"></span>` +
-    `<span class="tip-name">${escape(ref.name)}</span>` +
+    `<span class="tip-name">${escapeTip(ref.name)}</span>` +
     `<span class="tip-kind">${REF_KIND_LABEL[ref.kind]}</span>` +
     `${also}</div>`
   );
@@ -181,7 +233,7 @@ function rowHtml(ref: TipRef): string {
  * is closer than the card is tall. Measured AFTER the content is in, because a
  * card listing eight refs and a card listing one differ by 150px.
  */
-function place(el: HTMLElement, pill: HTMLElement): void {
+export function placeCard(el: HTMLElement, pill: HTMLElement): void {
   // Neutralize any previous placement before measuring, or the second open
   // measures a card still clamped by the first one's position.
   el.style.left = "0px";
@@ -199,7 +251,7 @@ function place(el: HTMLElement, pill: HTMLElement): void {
   el.style.top = `${Math.round(Math.max(GAP, top))}px`;
 }
 
-function escape(text: string): string {
+export function escapeTip(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -214,7 +266,7 @@ export const refTipStyles = css`
     z-index: 40;
     left: 0;
     top: 0;
-    max-width: 320px;
+    max-width: 440px;
     padding: 5px 0;
     border: 1px solid var(--gs-border, var(--vscode-widget-border, transparent));
     border-radius: 6px;
@@ -232,7 +284,8 @@ export const refTipStyles = css`
   }
   .tip-row {
     display: flex;
-    align-items: center;
+    align-items: baseline;
+    flex-wrap: wrap;
     gap: 5px;
     padding: 1px 9px;
     white-space: nowrap;
@@ -242,10 +295,24 @@ export const refTipStyles = css`
     flex: 0 0 auto;
     opacity: 0.9;
   }
+  /* WRAPS, never ellipsizes. This card exists to show what the row could not
+     fit; truncating here reproduces the exact problem it was opened to solve —
+     a 40-character branch name came out as "aksdjlaksjdlkasjdlakjwdlkajdsl…"
+     in the row AND in the card. overflow-wrap:anywhere because a long ref has
+     no spaces to break at. */
   .tip-name {
     font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* Plain-text card (a clipped commit subject) — same chrome, no ref furniture. */
+  .tip-text {
+    padding: 1px 10px;
+    max-width: 420px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
   }
   .tip-kind,
   .tip-also {

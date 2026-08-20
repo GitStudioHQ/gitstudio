@@ -12,6 +12,15 @@ import { LitElement, html, css, nothing, type PropertyValues } from "lit";
 import { codiconStyles } from "../styles/codicons";
 import { hostTokens } from "../styles/hostTokens";
 import { RefTip, refTipStyles, tipAriaLabel, tipData } from "./refTip";
+import { AuthorTip, authorTipData, authorTipStyles } from "./authorTip";
+import {
+  type ChipEntry,
+  fitRefs,
+  foldRefs,
+  fitRefsWidth,
+  wantedRefsWidth,
+  REF_CHIP_GAP,
+} from "./refLayout";
 import {
   Virtualizer,
   observeElementRect,
@@ -36,18 +45,42 @@ import {
 } from "./avatar";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
-const ROW_HEIGHT = 30;
+const ROW_HEIGHT = 34;
 /** The commit subject never shrinks below this — metadata columns yield first. */
 const SUBJECT_MIN_WIDTH = 220;
-const COL_WIDTH = 20;
-const NODE_RADIUS = 3.5;
+/**
+ * The width at which a commit message stops feeling cramped. Above the hard
+ * SUBJECT_MIN_WIDTH floor: the Branch/Tag track auto-fits only with whatever is
+ * left over ONCE the message has this much, so a wide window shows full refs
+ * and a narrow one spends its pixels on the message instead of on a track that
+ * most rows leave empty.
+ */
+const SUBJECT_COMFORT_WIDTH = 420;
+/**
+ * Below this the refs stop being a column and flow INLINE before the message —
+ * see the container query in the styles. Must match it.
+ */
+const INLINE_REFS_BELOW = 620;
+/** Compact ladder breakpoints, and the message floor each one uses. */
+const COMPACT_DROP_DATE_AT = 580;
+const COMPACT_DROP_AUTHOR_AT = 430;
+const SUBJECT_MIN_COMPACT_MID = 150;
+const SUBJECT_MIN_COMPACT_TIGHT = 120;
+/** Below this, column mode drops its Date and SHA tracks. */
+const COLUMN_DROP_TAIL_AT = 760;
+/** `:host([compact]) .content .refs { max-width }` — a share of the MESSAGE track. */
+const COMPACT_REFS_SHARE = 0.44;
+/** The sidebar rule's `.content .refs { max-width }` — a share of the row. */
+const SIDEBAR_REFS_SHARE = 0.58;
+const COL_WIDTH = 26;
+const NODE_RADIUS = 5;
 const OVERSCAN = 12;
 /** Author avatar diameter, px — sits ON the commit node, GitKraken-style. */
-const AVATAR_SIZE = 18;
+const AVATAR_SIZE = 23;
 /** Left inset added to every lane so a node avatar at lane 0 isn't clipped. */
-const NODE_INSET = 13;
+const NODE_INSET = 16;
 /** Min gutter width so even a linear history reserves room for the avatar. */
-const MIN_GUTTER_WIDTH = 44;
+const MIN_GUTTER_WIDTH = 56;
 /** Cap the *rendered* gutter width so a pathological fan-out can't eat the row. */
 const MAX_GUTTER_COLUMNS = 16;
 /** Trigger a loadMore when within this many rows of the bottom. */
@@ -95,11 +128,11 @@ const COLUMN_SPECS: readonly ColumnSpec[] = [
   // Branch/Tag is a fixed, resizable track (not auto-fit) so subjects start at
   // the same x on every row — a real scanability win, GitLens-style. Default is
   // lean so empty-ref rows don't waste width; drag wider for busy ref sets.
-  { id: "refs", label: "Branch / Tag", cssVar: "--col-refs-w", def: 200, min: 60, max: 360 },
-  { id: "changes", label: "Changes", cssVar: "--col-changes-w", def: 108, min: 72, max: 220 },
-  { id: "author", label: "Author", cssVar: "--col-author-w", def: 132, min: 72, max: 240 },
-  { id: "date", label: "Date", cssVar: "--col-date-w", def: 88, min: 44, max: 170 },
-  { id: "sha", label: "SHA", cssVar: "--col-sha-w", def: 62, min: 48, max: 140 },
+  { id: "refs", label: "Branch / Tag", cssVar: "--col-refs-w", def: 260, min: 60, max: 640 },
+  { id: "changes", label: "Changes", cssVar: "--col-changes-w", def: 100, min: 76, max: 220 },
+  { id: "author", label: "Author", cssVar: "--col-author-w", def: 112, min: 76, max: 240 },
+  { id: "date", label: "Date", cssVar: "--col-date-w", def: 84, min: 58, max: 170 },
+  { id: "sha", label: "SHA", cssVar: "--col-sha-w", def: 66, min: 58, max: 140 },
 ];
 const COLUMN_BY_ID = new Map<string, ColumnSpec>(
   COLUMN_SPECS.map((c) => [c.id, c]),
@@ -108,6 +141,12 @@ const COLUMN_BY_ID = new Map<string, ColumnSpec>(
 function col(id: ColumnSpec["id"]): number {
   return COLUMN_BY_ID.get(id)!.def;
 }
+/** Max width (px) for a column id — the grid clamps its track to this. */
+function colMax(id: ColumnSpec["id"]): number {
+  return COLUMN_BY_ID.get(id)!.max;
+}
+
+
 
 /** localStorage keys (work in both the Electron renderer and VS Code webviews). */
 const LS_COL_WIDTHS = "gitstudio.graph.cols.widths";
@@ -168,13 +207,18 @@ export class CommitGraph extends LitElement {
     commitMenu: { state: true },
   };
 
-  static styles = [hostTokens, codiconStyles, refTipStyles, css`
+  static styles = [hostTokens, codiconStyles, refTipStyles, authorTipStyles, css`
     :host {
       display: flex;
       flex-direction: column;
       height: 100%;
       width: 100%;
       overflow: hidden;
+      /* Left inset shared by a header label and the cell under it, so text
+         never sits flush against the column divider AND the two stay aligned.
+         Applied to both or neither — putting it on the header alone drifts the
+         labels off the data they name. */
+      --gs-cell-inset: 9px;
       /* Hole color punched through graph nodes = the surface behind the row.
          Falls through to the editor bg; hover/selected rows override it so the
          node hole tracks the row tint. (The --gs-* scale is inherited from the
@@ -471,7 +515,7 @@ export class CommitGraph extends LitElement {
          message down to "mai…" on a wide window. */
       --gs-grid:
         var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
-        minmax(0, clamp(0px, var(--col-refs-w, ${col("refs")}px), 360px))
+        minmax(0, clamp(0px, var(--col-refs-w, ${col("refs")}px), ${colMax("refs")}px))
         minmax(${SUBJECT_MIN_WIDTH}px, 1fr)
         minmax(0, var(--col-changes-w, ${col("changes")}px))
         minmax(0, var(--col-author-w, ${col("author")}px))
@@ -497,15 +541,20 @@ export class CommitGraph extends LitElement {
     :host([compact]) .colhead .ch-refs,
     :host([compact]) .colhead .ch-sha,
     :host([compact]) .row .sha { display: none; }
-    /* Column grips would sit on the wrong boundaries once refs leaves the grid,
-       and a five-track panel does not need them. */
-    :host([compact]) .col-resize { display: none; }
+    /* Compact's tracks are graph | message | changes | author | date, so four
+       of the six grips land on a real boundary and stay draggable. (The claim
+       they "would sit on the wrong boundaries" only held for the refs grip,
+       whose cell is hidden here anyway — and a short panel is precisely where
+       width is scarce and re-balancing matters most.) */
+    :host([compact]) .col-resize[data-col="refs"] { display: none; }
+    /* Date is compact's last track: its right-edge grip divides nothing. */
+    :host([compact]) .col-resize[data-col="date"] { display: none; }
     :host([compact]) .content {
       display: flex; align-items: center; gap: 7px; min-width: 0;
     }
     :host([compact]) .content .refs {
-      display: inline-flex; flex: 0 1 auto; min-width: 0;
-      max-width: 44%; margin: 0; padding: 0;
+      display: inline-flex; flex: 0 0 auto; min-width: 0;
+      max-width: ${Math.round(COMPACT_REFS_SHARE * 100)}%; margin: 0; padding: 0;
     }
     /* The row carrying the current HEAD gets a wider ref budget. At 44% the
        cell clipped the current-branch chip mid-glyph (no ellipsis — the chip is
@@ -530,7 +579,11 @@ export class CommitGraph extends LitElement {
     :host([compact]) .row .author,
     :host([compact]) .row .date { font-size: 11px; opacity: 0.72; }
     :host([compact]) .colhead { font-size: 10px; letter-spacing: 0.06em; opacity: 0.66; }
-    :host([compact]) .row { padding-right: 10px; }
+    /* The header and the rows must share a padding-right, or their grid tracks
+       resolve against different widths and every compact column sits 2px off
+       the label naming it. */
+    :host([compact]) .row,
+    :host([compact]) .colhead { padding-right: 10px; }
 
     /* refs + subject share a wrapper. In column mode it is display:contents so
        they behave as their own grid tracks; in the sidebar (inline) mode it
@@ -542,10 +595,18 @@ export class CommitGraph extends LitElement {
        able to READ commit messages even in a slim sidebar — the graph, refs and
        subject stay; date → sha → author → changes fall away as it narrows. The
        hidden data is still on the row's hover tooltip and in the details dock. */
-    @container (max-width: 760px) {
+    @container (max-width: ${COLUMN_DROP_TAIL_AT}px) {
       /* NB: declared on the consumers, not :host — :host is the query container
-         and an element cannot match its own container query. */
-      .colhead, .row {
+         and an element cannot match its own container query.
+         :host(:not([compact])) is NOT optional. Compact is its own responsive
+         design and defines --gs-grid on :host; a custom property declared on
+         the ELEMENT beats one inherited from the host, so without this guard
+         these rules silently replaced the compact grid with one that still had
+         a Branch/Tag track — while compact hides the Branch/Tag CELL. Every
+         column then sat one track to the left: the commit message rendered
+         inside the ~60px ref track and CHANGES took the 1fr. */
+      :host(:not([compact])) .colhead,
+      :host(:not([compact])) .row {
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
           minmax(0, clamp(0px, var(--col-refs-w, ${col("refs")}px), 300px))
@@ -553,15 +614,47 @@ export class CommitGraph extends LitElement {
           minmax(0, var(--col-changes-w, ${col("changes")}px))
           minmax(0, var(--col-author-w, ${col("author")}px));
       }
-      .colhead .ch-date, .colhead .ch-sha,
-      .row .date, .row .sha { display: none; }
+      :host(:not([compact])) .colhead .ch-date,
+      :host(:not([compact])) .colhead .ch-sha,
+      :host(:not([compact])) .row .date,
+      :host(:not([compact])) .row .sha { display: none; }
       /* The cells are gone, but their grips are absolutely positioned inside
          them and survived as 0x0 hit targets — a handle you can see the cursor
          change on but can never drag. Author becomes the last visible column
          here, so it must not keep a trailing grip either. */
-      .colhead .col-resize[data-col="date"],
-      .colhead .col-resize[data-col="author"] { display: none; }
+      :host(:not([compact])) .colhead .col-resize[data-col="date"],
+      :host(:not([compact])) .colhead .col-resize[data-col="author"] { display: none; }
     }
+    /* Compact narrowing, on compact's OWN grid — date goes first, then author,
+       so the message keeps the width. Mirrors the column-mode ladder above
+       without ever reintroducing a Branch/Tag track (refs flow inline here). */
+    @container (max-width: ${COMPACT_DROP_DATE_AT}px) {
+      :host([compact]) .colhead,
+      :host([compact]) .row {
+        --gs-grid:
+          var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+          minmax(${SUBJECT_MIN_COMPACT_MID}px, 1fr)
+          minmax(0, var(--col-changes-w, 84px))
+          minmax(0, var(--col-author-w, 112px));
+      }
+      :host([compact]) .colhead .ch-date,
+      :host([compact]) .row .date { display: none; }
+      /* Author is last now, so its grip divides nothing. */
+      :host([compact]) .col-resize[data-col="author"] { display: none; }
+    }
+    @container (max-width: ${COMPACT_DROP_AUTHOR_AT}px) {
+      :host([compact]) .colhead,
+      :host([compact]) .row {
+        --gs-grid:
+          var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+          minmax(${SUBJECT_MIN_COMPACT_TIGHT}px, 1fr)
+          minmax(0, var(--col-changes-w, 84px));
+      }
+      :host([compact]) .colhead .ch-author,
+      :host([compact]) .row .author { display: none; }
+      :host([compact]) .col-resize[data-col="changes"][data-invert="0"] { display: none; }
+    }
+
     /* ── Sidebar (inline) mode ──────────────────────────────────────────────
        Below ~620px (every practical sidebar width) the refs stop being a fixed
        column — they flow INLINE right before the message, so a commit with no
@@ -569,25 +662,46 @@ export class CommitGraph extends LitElement {
        The column header, resize handles and all trailing columns fall away; it
        reads as a clean commit list, not a cramped spreadsheet. */
     @container (max-width: 620px) {
-      /* Same reason as above: set the grid on the consumers, not the container. */
-      .colhead, .row {
+      /* Same reasons as above, compact guard included. */
+      :host(:not([compact])) .colhead,
+      :host(:not([compact])) .row {
         --gs-grid:
           var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
           minmax(0, 1fr);
       }
       /* :host-qualified so these beat the later base .colhead/.col-resize
-         rules on specificity, not just source order. */
-      :host .colhead { display: none; }
-      :host .col-resize { display: none; }
-      .row .changes, .row .author, .row .date, .row .sha { display: none; }
-      .content { display: flex; align-items: center; gap: 7px; }
-      .content .refs {
-        display: inline-flex; flex: 0 1 auto; min-width: 0;
-        max-width: 58%; margin: 0; padding: 0;
+         rules on specificity, not just source order.
+         Compact is excluded: it is a deliberate COLUMN layout that happens to be
+         short, and it keeps its header (and therefore its resize levers) down to
+         its own floor — see the compact ladder above. Dropping the header here
+         took every lever with it, which is what made the panel look like it had
+         none at all. */
+      :host(:not([compact])) .colhead { display: none; }
+      :host(:not([compact])) .col-resize { display: none; }
+      :host(:not([compact])) .row .changes,
+      :host(:not([compact])) .row .author,
+      :host(:not([compact])) .row .date,
+      :host(:not([compact])) .row .sha { display: none; }
+      :host(:not([compact])) .content {
+        display: flex; align-items: center; gap: 7px;
+      }
+      :host(:not([compact])) .content .refs {
+        display: inline-flex; flex: 0 0 auto; min-width: 0;
+        max-width: ${Math.round(SIDEBAR_REFS_SHARE * 100)}%; margin: 0; padding: 0;
       }
       /* No refs → no chip box → no leading gap: the message starts at the edge. */
-      .content .refs:empty { display: none; }
-      .content .subject { flex: 1 1 auto; min-width: 0; }
+      :host(:not([compact])) .content .refs:empty { display: none; }
+      :host(:not([compact])) .content .subject { flex: 1 1 auto; min-width: 0; }
+    }
+    /* Compact's own floor: below this even three columns are too many, so it
+       becomes the same clean one-line list the sidebar uses. */
+    @container (max-width: 330px) {
+      :host([compact]) .colhead { display: none; }
+      :host([compact]) .col-resize { display: none; }
+      :host([compact]) .colhead, :host([compact]) .row {
+        --gs-grid: var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px) minmax(0, 1fr);
+      }
+      :host([compact]) .row .changes { display: none; }
     }
 
     /* ── Column header row (aligned to the row grid) ──────────────────── */
@@ -596,8 +710,10 @@ export class CommitGraph extends LitElement {
       flex: 0 0 auto;
       display: grid;
       grid-template-columns: var(--gs-grid);
-      align-items: center;
-      height: 24px;
+      /* stretch, NOT center: the cells are the grips' containing blocks, and a
+         centred grid item is only as tall as its text. See .col-resize. */
+      align-items: stretch;
+      height: 26px;
       padding-right: 12px;
       /* Mirror the rows' selection border so header cells sit exactly over
          their column content. */
@@ -617,10 +733,16 @@ export class CommitGraph extends LitElement {
       position: relative;
       overflow: visible;
       white-space: nowrap;
-      padding-left: 2px;
+      padding-left: var(--gs-cell-inset);
+      /* The cell fills the header's height (see align-items:stretch above) so
+         its grip is full-height; the label re-centres itself within it. */
+      display: flex;
+      align-items: center;
+      min-width: 0;
     }
     .colhead .ch-label {
       display: block;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -632,29 +754,42 @@ export class CommitGraph extends LitElement {
     /* ── Column resize handles (grab strips on the right edge of headers) ──
        Pinned flush to the column's right edge, fully inside the track so the
        parent span's box never clips them. A hairline brightens on hover/drag. */
+    /* The GRAB ZONE is the element: wide, full-height, and invisible. The MARK
+       is a pseudo-element, and it is deliberately a short centred tick rather
+       than a full-height rule — with the header's own bottom border, a
+       full-height line at every boundary turns the row of labels into a boxed
+       spreadsheet. The tick says "there is a handle here"; it grows to the full
+       height and takes the accent only while you are pointing at it. */
     .col-resize {
       position: absolute;
       top: 0;
-      right: 0;
-      width: 9px;
+      /* Straddle the boundary rather than hugging the inside of it, so the grab
+         zone is symmetric and the mark lands exactly on the column edge. */
+      right: -6px;
+      width: 13px;
       height: 100%;
       cursor: col-resize;
       z-index: 4;
-      background:
-        linear-gradient(to right, transparent 4px,
-          color-mix(in srgb, var(--vscode-foreground) 16%, transparent) 4px,
-          color-mix(in srgb, var(--vscode-foreground) 16%, transparent) 5px,
-          transparent 5px);
-      transition: background 120ms ease;
+      background: none;
       touch-action: none;
     }
-    .col-resize:hover,
-    .col-resize.dragging {
-      background:
-        linear-gradient(to right, transparent 4px,
-          var(--vscode-focusBorder) 4px,
-          var(--vscode-focusBorder) 5px,
-          transparent 5px);
+    .col-resize::after {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 50%;
+      width: 1px;
+      height: 11px;
+      transform: translateY(-50%);
+      border-radius: 1px;
+      background: color-mix(in srgb, var(--vscode-foreground) 20%, transparent);
+      transition: height 110ms ease, background 110ms ease, width 110ms ease;
+    }
+    .col-resize:hover::after,
+    .col-resize.dragging::after {
+      width: 2px;
+      height: 100%;
+      background: var(--vscode-focusBorder);
     }
     .col-resize:focus-visible {
       outline: 1px solid var(--vscode-focusBorder);
@@ -829,8 +964,8 @@ export class CommitGraph extends LitElement {
     .refs {
       display: flex;
       align-items: center;
-      gap: 5px;
-      padding: 0 8px 0 6px;
+      gap: 6px;
+      padding: 0 12px 0 6px;
       min-width: 0;
       overflow: hidden;
       white-space: nowrap;
@@ -851,16 +986,20 @@ export class CommitGraph extends LitElement {
          NB: never put backticks in these comments — this CSS is a JS template
          literal, and a stray backtick ends the string and still compiles. */
       box-sizing: border-box;
-      height: 16px;
-      padding: 0 6px;
-      border-radius: 4px;
-      font-size: 10.5px;
+      height: 19px;
+      padding: 0 8px;
+      border-radius: 5px;
+      font-size: 11px;
       font-weight: 550;
-      line-height: 16px;
+      line-height: 19px;
       /* Cap a single long ref so it can't hog the whole column; no min-width, so
          short refs (a 3-char branch, a tag) pack tight instead of each reserving
-         a wide slot and pushing the rest into a "+N". */
-      max-width: 132px;
+         a wide slot and pushing the rest into a "+N".
+         RELATIVE to the track, never a fixed px: a fixed 132px cap was the same
+         trap as the old count cap (#11) -- "origin/feat/diff-tick-staging" needs
+         ~185px, so it ellipsized at EVERY column width, and dragging the column
+         wider (the obvious thing to try) silently did nothing. */
+      max-width: max(132px, calc(var(--col-refs-w, 260px) - 22px));
       overflow: hidden;
       white-space: nowrap;
       /* Deliberately BORDERLESS. A border + a tinted fill + a coloured label is
@@ -972,7 +1111,8 @@ export class CommitGraph extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      padding-right: 12px;
+      padding-left: var(--gs-cell-inset);
+      padding-right: 16px;
       font-size: 13px;
       transition: opacity 150ms ease;
     }
@@ -993,6 +1133,7 @@ export class CommitGraph extends LitElement {
       display: flex;
       align-items: center;
       gap: 7px;
+      padding-left: var(--gs-cell-inset);
       padding-right: 12px;
       overflow: hidden;
       color: var(--vscode-descriptionForeground, #9aa0a6);
@@ -1012,7 +1153,7 @@ export class CommitGraph extends LitElement {
        bars, so the two surfaces speak the same language. */
     .changes .ch-bar {
       display: inline-flex;
-      height: 4px;
+      height: 5px;
       border-radius: 2px;
       overflow: hidden;
       flex: 0 0 auto;
@@ -1022,16 +1163,21 @@ export class CommitGraph extends LitElement {
       height: 100%;
     }
     .changes .ch-bar i.a {
-      background: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green, #89d185));
+      background: var(--gs-status-added, var(--vscode-charts-green, #3fb950));
     }
     .changes .ch-bar i.d {
-      background: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red, #f14c4c));
+      background: var(--gs-status-deleted, var(--vscode-charts-red, #f85149));
     }
     .author {
+      padding-left: var(--gs-cell-inset);
       padding-right: 12px;
     }
+    /* The name is truncated and ambiguous on its own; the card is where the
+       identity lives, so the cell advertises that it is worth hovering. */
+    .author[data-author] { cursor: help; }
     /* Every column is left-aligned (Git Graph-style) — one reading axis. */
     .date {
+      padding-left: var(--gs-cell-inset);
       padding-right: 12px;
       font-variant-numeric: tabular-nums;
     }
@@ -1043,6 +1189,7 @@ export class CommitGraph extends LitElement {
       align-items: center;
       justify-content: flex-start;
       gap: 4px;
+      padding-left: var(--gs-cell-inset);
       min-width: 0;
       overflow: hidden;
       white-space: nowrap;
@@ -1219,6 +1366,9 @@ export class CommitGraph extends LitElement {
 
   /** Per-column widths (px), keyed by column id; persisted to localStorage. */
   private colWidths: Partial<Record<ColumnSpec["id"], number>> = {};
+  /** Memoised auto-fit for the refs track, keyed on row count + host width. */
+  private autoRefs = { n: -1, host: -1, w: 0 };
+  private resizeObs: ResizeObserver | undefined;
   /** Hidden column ids; persisted to localStorage. */
   private hiddenCols = new Set<ColumnSpec["id"]>();
   /** Live column-drag bookkeeping (null when not dragging). */
@@ -1246,6 +1396,13 @@ export class CommitGraph extends LitElement {
   private readonly refTip = new RefTip(() =>
     this.renderRoot.querySelector(".reftip"),
   );
+  /** The AUTHOR cell's identity card (see authorTip.ts). */
+  private readonly authorTip = new AuthorTip(() =>
+    this.renderRoot.querySelector(".authortip"),
+  );
+  /** Per-email tallies over the loaded rows, rebuilt when the row count moves. */
+  private authorFacts = new Map<string, { c: number; f: number; l: number }>();
+  private authorFactsFor = -1;
 
   private virtualizer:
     | Virtualizer<HTMLDivElement, HTMLDivElement>
@@ -1287,11 +1444,25 @@ export class CommitGraph extends LitElement {
       this.palette = palette;
       this.renderRows();
     });
+    // The Branch/Tag auto-fit is a function of the host width (see
+    // autoRefsWidth), and the CSS container queries that handle the rest of the
+    // responsive behaviour never call back into JS. Without this the track
+    // keeps whatever width the last Lit update computed, so a plain window
+    // resize leaves it stale until something else happens to re-render.
+    this.resizeObs = new ResizeObserver(() => {
+      if (this.colWidths.refs !== undefined) return; // user-set: nothing to fit
+      const before = this.autoRefs.w;
+      this.applyColumnStyles();
+      if (this.autoRefs.w !== before) this.renderRows(); // re-fold the chips
+    });
+    this.resizeObs.observe(this);
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this.teardownVirtualizer();
+    this.resizeObs?.disconnect();
+    this.resizeObs = undefined;
     this.disposeTheme?.();
     this.disposeTheme = undefined;
     this.endColumnDrag();
@@ -1439,7 +1610,74 @@ export class CommitGraph extends LitElement {
   }
 
   private clampCol(spec: ColumnSpec, w: number): number {
-    return Math.round(Math.max(spec.min, Math.min(spec.max, w)));
+    const own = Math.max(spec.min, Math.min(spec.max, w));
+    return Math.round(Math.min(own, this.availableColWidth(spec)));
+  }
+
+  /**
+   * The widest this column may become before it starts eating its neighbours.
+   *
+   * WHY THIS EXISTS. The clamp used to bound a column by its OWN min/max only,
+   * with nothing watching the total. Every metadata track is `minmax(0, …)`, so
+   * once the widths summed past the host they did not push back — they
+   * collapsed, and Changes / Author / Date crushed down to "C A D" while the
+   * message kept the space. Dragging any one divider could wreck every column
+   * to its right.
+   *
+   * The budget is the host minus every OTHER visible track minus the floor the
+   * commit message is entitled to, so a drag stops at the point where something
+   * else would have to give.
+   */
+  private availableColWidth(spec: ColumnSpec): number {
+    const host = this.clientWidth;
+    if (host <= 0) return spec.max;
+    let others = 0;
+    for (const id of this.visibleTrackIds()) {
+      if (id === spec.id) continue;
+      const other = COLUMN_BY_ID.get(id)!;
+      others +=
+        id === "graph"
+          ? (this.colWidths.graph ?? this.gutterWidth())
+          : (this.colWidths[id] ?? this.defaultColWidth(other));
+    }
+    return Math.max(spec.min, host - others - this.subjectFloor());
+  }
+
+  /**
+   * Which column tracks are actually on screen — the user's hidden set AND the
+   * responsive ladder, which drops trailing columns via container queries that
+   * never call back into JS.
+   */
+  private visibleTrackIds(): ColumnSpec["id"][] {
+    const host = this.clientWidth;
+    const compact = this.hasAttribute("compact");
+    const out: ColumnSpec["id"][] = [];
+    for (const spec of COLUMN_SPECS) {
+      if (this.hiddenCols.has(spec.id)) continue;
+      if (compact) {
+        // Compact has no Branch/Tag track (chips flow inline) and no SHA track.
+        if (spec.id === "refs" || spec.id === "sha") continue;
+        if (host > 0 && host <= COMPACT_DROP_DATE_AT && spec.id === "date") continue;
+        if (host > 0 && host <= COMPACT_DROP_AUTHOR_AT && spec.id === "author") continue;
+      } else if (
+        host > 0 &&
+        host <= COLUMN_DROP_TAIL_AT &&
+        (spec.id === "date" || spec.id === "sha")
+      ) {
+        continue;
+      }
+      out.push(spec.id);
+    }
+    return out;
+  }
+
+  /** The floor the message track is entitled to at this width — matches the CSS. */
+  private subjectFloor(): number {
+    const host = this.clientWidth;
+    if (!this.hasAttribute("compact")) return SUBJECT_MIN_WIDTH;
+    if (host > 0 && host <= COMPACT_DROP_AUTHOR_AT) return SUBJECT_MIN_COMPACT_TIGHT;
+    if (host > 0 && host <= COMPACT_DROP_DATE_AT) return SUBJECT_MIN_COMPACT_MID;
+    return SUBJECT_MIN_WIDTH;
   }
 
   /** Reflect column widths (as :host CSS vars) + hidden set (as :host classes).
@@ -1452,7 +1690,11 @@ export class CommitGraph extends LitElement {
       // The graph track is owned by applyGutterWidth (auto-size + override).
       if (spec.id === "graph") continue;
       const hidden = this.hiddenCols.has(spec.id);
-      const w = this.colWidths[spec.id];
+      // refs falls back to its auto-fit rather than to the CSS literal, so the
+      // track, the chip cap and the fold all read the same number.
+      const w =
+        this.colWidths[spec.id] ??
+        (spec.id === "refs" ? this.autoRefsWidth() : undefined);
       if (hidden) {
         this.style.setProperty(spec.cssVar, "0px");
       } else if (w !== undefined) {
@@ -1617,9 +1859,99 @@ export class CommitGraph extends LitElement {
     this.columnsOpen = false;
   };
 
-  /** Effective default width — the graph column's default is its auto-size. */
+  /** Effective default width — graph and refs both default to their auto-size. */
   private defaultColWidth(spec: ColumnSpec): number {
-    return spec.id === "graph" ? this.gutterWidth() : spec.def;
+    if (spec.id === "graph") return this.gutterWidth();
+    if (spec.id === "refs") return this.autoRefsWidth();
+    return spec.def;
+  }
+
+  /**
+   * Auto-fit width for the Branch/Tag track: enough for the busiest ref row
+   * that is actually loaded, clamped to the column's own min/max. A user drag
+   * overrides it (dbl-click / Home on the grip restores auto), exactly as it
+   * works for the graph gutter.
+   *
+   * WHY THIS EXISTS. The track used to sit at a fixed default whatever the
+   * repo held, and the grid handed every spare pixel to the subject's 1fr. On a
+   * wide window that produced the worst of both: a one-line commit message
+   * floating in ~700px of nothing, next to an "origin/feat/..." chip clipped by
+   * a column that had no idea it was too narrow. Refs are content, not
+   * metadata, so they get measured and the subject takes what is left.
+   *
+   * A ref-less repo returns the MINIMUM, giving the whole track to the subject
+   * rather than reserving an empty column.
+   */
+  private autoRefsWidth(): number {
+    const spec = COLUMN_BY_ID.get("refs")!;
+    // O(rows), and re-entered on every Lit update, so memoise. The key is
+    // (row count, host width): the ref set cannot change without the rows
+    // changing, and the budget cannot change without a resize.
+    const host = this.clientWidth;
+    if (this.autoRefs.n === this.rows.length && this.autoRefs.host === host) {
+      return this.autoRefs.w;
+    }
+
+    const fitted = fitRefsWidth({
+      wanted: wantedRefsWidth(this.rows, spec.max, spec.min),
+      host,
+      nonRefs: this.nonRefsWidth(),
+      // A flat 420px comfort floor is most of a narrow host, which starved the
+      // refs track to its minimum on any window under ~1000px. Scale it: the
+      // message still leads, but it stops claiming the entire surface.
+      comfort: Math.min(SUBJECT_COMFORT_WIDTH, Math.round(host * 0.42)),
+      min: spec.min,
+      max: spec.max,
+    });
+    this.autoRefs = { n: this.rows.length, host, w: fitted };
+    return fitted;
+  }
+
+  /**
+   * The width the ref chips actually get — which is NOT always the column.
+   *
+   * In compact mode, and in any host under INLINE_REFS_BELOW, the refs are not
+   * a track at all: they flow inline before the message under a CSS max-width.
+   * Folding against the column figure there would budget against a number that
+   * is not on screen — too generous in a sidebar (chips clipped with no "+N"
+   * to explain them) and too mean once the auto-fit is allowed to shrink.
+   */
+  private refsBudget(): number {
+    if (this.hiddenCols.has("refs")) return 0;
+    const host = this.clientWidth;
+    if (host <= 0) return this.colWidths.refs ?? this.autoRefsWidth();
+
+    if (this.hasAttribute("compact")) {
+      // Compact keeps its columns; the refs share the MESSAGE track with the
+      // subject, capped at COMPACT_REFS_SHARE of it. Budgeting against the whole
+      // row instead (which is what "content area" used to mean here) was nearly
+      // double the real cap, so the fold kept two chips the CSS then clipped to
+      // "0.." — a clipped chip and no "+N" to say anything was hidden.
+      const track = host - this.nonRefsWidth();
+      return Math.max(0, Math.round(track * COMPACT_REFS_SHARE));
+    }
+    if (host < INLINE_REFS_BELOW) {
+      // Sidebar: no columns at all, the refs flow inline across the whole row.
+      const content = host - (this.colWidths.graph ?? this.gutterWidth());
+      return Math.max(0, Math.round(content * SIDEBAR_REFS_SHARE));
+    }
+    return this.colWidths.refs ?? this.autoRefsWidth();
+  }
+
+  /**
+   * Total width of every track except Branch/Tag and the message itself.
+   *
+   * Columns the RESPONSIVE ladder has dropped are excluded as well as ones the
+   * user hid: below 760px date and sha are not on screen, and counting them
+   * charged the refs budget ~130px of width that nothing was occupying.
+   */
+  private nonRefsWidth(): number {
+    let w = this.colWidths.graph ?? this.gutterWidth();
+    for (const id of this.visibleTrackIds()) {
+      if (id === "graph" || id === "refs") continue;
+      w += this.colWidths[id] ?? COLUMN_BY_ID.get(id)!.def;
+    }
+    return w;
   }
 
   // ── Show / hide columns ────────────────────────────────────────────────────
@@ -1803,6 +2135,7 @@ export class CommitGraph extends LitElement {
     // anchored to stops existing — scrolling with a card open would otherwise
     // leave it pinned to a commit that has moved.
     this.refTip.hide();
+    this.authorTip.hide();
     v._willUpdate();
     const items = v.getVirtualItems();
     const total = v.getTotalSize();
@@ -1847,6 +2180,41 @@ export class CommitGraph extends LitElement {
       this.pendingStats.delete(s.sha);
     }
     this.renderRows();
+  }
+
+  /**
+   * Everything the author card shows, for one row.
+   *
+   * The tallies are over the LOADED rows only — the graph pages, so a total
+   * over all history would need a round trip per hovered author. `partial`
+   * says so out loud ("12 commits in view+") rather than quietly implying the
+   * number is complete.
+   */
+  private authorTipData(row: WireRow): string {
+    if (this.authorFactsFor !== this.rows.length) {
+      this.authorFacts.clear();
+      for (const r of this.rows) {
+        const key = r.authorEmail || r.author;
+        const cur = this.authorFacts.get(key);
+        if (!cur) {
+          this.authorFacts.set(key, { c: 1, f: r.authorDate, l: r.authorDate });
+        } else {
+          cur.c++;
+          if (r.authorDate < cur.f) cur.f = r.authorDate;
+          if (r.authorDate > cur.l) cur.l = r.authorDate;
+        }
+      }
+      this.authorFactsFor = this.rows.length;
+    }
+    const f = this.authorFacts.get(row.authorEmail || row.author);
+    return authorTipData({
+      name: row.author,
+      email: row.authorEmail,
+      commits: f?.c ?? 0,
+      firstSeen: f?.f ?? 0,
+      lastSeen: f?.l ?? 0,
+      partial: this.hasMore,
+    });
   }
 
   /** The CHANGES cell: file count + a green/red add/del proportion bar. */
@@ -1945,10 +2313,18 @@ export class CommitGraph extends LitElement {
       `<div class="gutter">${gutter}${avatar}</div>` +
       `<div class="content">` +
         `<div class="refs">${refs}</div>` +
-        `<div class="subject" title="${esc(row.subject)}">${esc(row.subject)}</div>` +
+        // data-text drives the same hover card the ref chips use, and it opens
+        // ONLY when the subject is actually clipped (see shouldOpen in
+        // refTip.ts). It replaces a native title for the same reason the chips
+        // dropped theirs: a second of holding still to read a message the row
+        // had to cut off is not a way to read commit messages.
+        `<div class="subject" data-text="${esc(row.subject)}">${esc(row.subject)}</div>` +
       `</div>` +
       `<div class="changes">${isWip ? "" : this.changesHtml(row.sha)}</div>` +
-      `<div class="meta author" title="${esc(row.author)} <${esc(row.authorEmail)}>">${isWip ? "" : esc(row.author)}</div>` +
+      (isWip
+        ? `<div class="meta author"></div>`
+        : `<div class="meta author" data-author="${esc(this.authorTipData(row))}"` +
+          ` aria-label="${esc(row.author)} <${esc(row.authorEmail)}>">${esc(row.author)}</div>`) +
       `<div class="meta date" title="${esc(absTime(row.authorDate))}">${isWip ? "now" : esc(dateLabel(row.authorDate))}</div>` +
       shaCellHtml(row.sha, row.shortSha, isWip) +
       `</div>`
@@ -1956,60 +2332,22 @@ export class CommitGraph extends LitElement {
   }
 
   private refsHtml(refs: WireRef[]): string {
-    // Fold each remote-tracking twin ("origin/foo") into its same-named local
-    // branch chip ("foo" gains a cloud tail) — GitKraken-style. This halves the
-    // chip clutter on the common local+remote row without losing information
-    // (the tooltip names the remotes).
-    const locals = new Map<string, ChipEntry>();
-    for (const ref of refs) {
-      if (ref.kind === "head" || ref.kind === "currentHead") {
-        locals.set(ref.name, { ref, remotes: [] });
-      }
-    }
-    const entries: ChipEntry[] = [];
-    for (const ref of refs) {
-      if (ref.kind === "remoteHead") {
-        const slash = ref.name.indexOf("/");
-        const local = slash > 0 ? locals.get(ref.name.slice(slash + 1)) : undefined;
-        if (local) {
-          local.remotes.push(ref.name.slice(0, slash));
-          continue;
-        }
-        entries.push({ ref, remotes: [] });
-      } else if (ref.kind === "head" || ref.kind === "currentHead") {
-        entries.push(locals.get(ref.name)!);
-      } else {
-        entries.push({ ref, remotes: [] });
-      }
-    }
-
-    // Width-aware fit: estimate each chip's rendered width and stop BEFORE the
-    // column edge would clip one mid-word; the rest collapse into a "+N" pill
-    // whose tooltip lists them. The first chip always renders (CSS min-width +
-    // ellipsis keep it legible even in a very narrow column).
-    //
-    // Width is the ONLY thing that decides — no count cap, deliberately, so that
-    // dragging the column wider always reveals more (issue #11).
-    const colW = this.hiddenCols.has("refs")
-      ? 0
-      : (this.colWidths.refs ?? col("refs"));
-    const budget = colW - 14; // .refs horizontal padding
-    let used = 0;
-    let shown = 0;
+    const entries = foldRefs(refs);
+    const { shown, overflow: rest } = fitRefs(entries, this.refsBudget());
     let out = "";
-    for (const entry of entries) {
-      const w = estimateChipWidth(entry);
-      const reserve = entries.length - shown - 1 > 0 ? 40 : 0; // room for "+N"
-      if (shown > 0 && used + w + reserve > budget) break;
+    for (const entry of entries.slice(0, shown)) {
       out += chipHtml(entry.ref, entry.remotes);
-      used += w + 5; // + .refs flex gap
-      shown++;
     }
-    const rest = entries.slice(shown);
-    // The "+N" pill renders only when it genuinely fits — a clipped pill looks
-    // worse than none. In an ultra-narrow column the first chip (which can
-    // shrink to its CSS min-width) wins the space.
-    if (rest.length > 0 && used + 30 <= budget) {
+    // The "+N" pill is UNCONDITIONAL whenever anything was dropped.
+    //
+    // It used to render only if it still fit (`used + 30 <= budget`), on the
+    // reasoning that a clipped pill looks worse than none. It does not: losing
+    // the pill loses the only evidence that the row has more refs, so a commit
+    // on both origin/HEAD and origin/main drew ONE chip and looked like a commit
+    // with one ref. Silently dropping data always beats looking slightly worse.
+    // The pill is flex:0 0 auto and the chips before it are flex:0 1 auto, so
+    // they ellipsize to make room for it rather than the other way round.
+    if (rest.length > 0) {
       // `data-more` drives the hover card in refTip.ts. It replaced a native
       // `title`, which took seconds of holding still to appear — on the one
       // affordance that reveals what the column could not fit.
@@ -2144,6 +2482,7 @@ export class CommitGraph extends LitElement {
 
   private onPointerLeave = (): void => {
     this.refTip.hide();
+    this.authorTip.hide();
     if (this.focusColor !== undefined) {
       this.focusColor = undefined;
       this.scroller?.classList.remove("focusing");
@@ -2153,10 +2492,12 @@ export class CommitGraph extends LitElement {
 
   private onPointerOver = (e: PointerEvent): void => {
     this.refTip.handleOver(e);
+    this.authorTip.handleOver(e);
   };
 
   private onPointerOut = (e: PointerEvent): void => {
     this.refTip.handleOut(e);
+    this.authorTip.handleOut(e);
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
@@ -2552,7 +2893,8 @@ export class CommitGraph extends LitElement {
       >
         <div class="sizer"></div>
       </div>
-      <div class="reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;
+      <div class="reftip" role="tooltip" hidden></div>
+      <div class="authortip reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;
   }
 
   /** The in-graph commit actions popover (fixed at the cursor, clamped). */
@@ -2650,6 +2992,13 @@ export class CommitGraph extends LitElement {
       aria-label=${invert
         ? "Resize Commit message / Changes divider"
         : `Resize ${spec.label} column`}
+      /* A divider resizes the column to its LEFT, which is the table
+         convention but is not self-evident when the label you are standing
+         next to is the one on the RIGHT ("I dragged Author and Changes
+         moved"). Name the column out loud. */
+      title=${invert
+        ? "Drag to resize Commit message / Changes"
+        : `Drag to resize ${spec.label}  ·  double-click to reset`}
       aria-valuenow=${Math.round(w)}
       aria-valuemin=${spec.min}
       aria-valuemax=${spec.max}
@@ -2672,12 +3021,6 @@ const BRANCH_ICON = '<span class="ico codicon codicon-git-branch" aria-hidden="t
 const CURRENT_DOT = '<span class="dot" aria-hidden="true"></span>';
 
 /** A ref chip to render: the ref plus any remotes folded into it. */
-interface ChipEntry {
-  ref: WireRef;
-  /** Remote names ("origin") whose same-named branch was merged into this chip. */
-  remotes: string[];
-}
-
 /** Cloud tail marking a local chip that also exists on the listed remotes. */
 function tailHtml(remotes: string[]): string {
   return remotes.length
@@ -2709,26 +3052,39 @@ function refNameHtml(ref: WireRef): string {
  * 132px max). Over-estimating here silently folds chips that would have fit
  * into a "+N", which looks like a layout bug rather than a metrics drift.
  */
-function estimateChipWidth(entry: ChipEntry): number {
-  const w = 14 + 14 + entry.ref.name.length * 5.8 + (entry.remotes.length ? 14 : 0);
-  return Math.max(44, Math.min(132, Math.ceil(w)));
-}
 
+
+/**
+ * One ref chip.
+ *
+ * Every chip carries the SAME `data-more` payload the "+N" pill uses, so the
+ * hover card in refTip.ts opens for it with no extra wiring. That is what
+ * reveals a name the column had to ellipsize ("aksdjlaksjdlkasj…") — and it
+ * replaces the native `title` these used to carry, for the reason refTip.ts
+ * was written in the first place: a title needs seconds of holding still, on
+ * the one affordance that exists to show you what you cannot read.
+ *
+ * `aria-label` carries what the title used to say, so nothing is lost to
+ * assistive tech.
+ */
 function chipHtml(ref: WireRef, remotes: string[] = []): string {
   const nm = refNameHtml(ref);
   const tail = tailHtml(remotes);
   const also = remotes.length ? ` · also on ${esc(remotes.join(", "))}` : "";
+  const tip = esc(tipData([{ name: ref.name, kind: ref.kind, remotes }]));
+  const attrs = (cls: string, what: string) =>
+    `class="${cls}" data-more="${tip}" aria-label="${esc(ref.name)} (${what}${also})"`;
   switch (ref.kind) {
     case "currentHead":
       // No leading dot: the filled accent already marks the current branch, and
       // the dot + name + cloud tail read as clutter at chip size.
-      return `<span class="chip chip-current" title="${esc(ref.name)} (current HEAD${also})">${BRANCH_ICON}${nm}${tail}</span>`;
+      return `<span ${attrs("chip chip-current", "current HEAD")}>${BRANCH_ICON}${nm}${tail}</span>`;
     case "head":
-      return `<span class="chip chip-head" title="${esc(ref.name)} (local branch${also})">${BRANCH_ICON}${nm}${tail}</span>`;
+      return `<span ${attrs("chip chip-head", "local branch")}>${BRANCH_ICON}${nm}${tail}</span>`;
     case "remoteHead":
-      return `<span class="chip chip-remote" title="${esc(ref.name)} (remote branch)">${REMOTE_ICON}${nm}</span>`;
+      return `<span ${attrs("chip chip-remote", "remote branch")}>${REMOTE_ICON}${nm}</span>`;
     case "tag":
-      return `<span class="chip chip-tag" title="${esc(ref.name)} (tag)">${TAG_ICON}${nm}</span>`;
+      return `<span ${attrs("chip chip-tag", "tag")}>${TAG_ICON}${nm}</span>`;
   }
 }
 

@@ -37,7 +37,7 @@ export interface GutterOptions {
 }
 
 /** Lane stroke width — thin enough to feel native, thick enough to read. */
-const STROKE_WIDTH = 1.75;
+const STROKE_WIDTH = 2.1;
 /** Dimmed opacity for unrelated lanes when a lane is focused. */
 const DIM_OPACITY = 0.2;
 
@@ -175,7 +175,7 @@ export function renderRowGutterSVG(
       `<circle cx="${cx}" cy="${cy}" r="${halo + 0.4}" ` +
       `fill="var(--gs-graph-node-hole)"${nodeOpacity}/>` +
       `<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--gs-graph-node-hole)" ` +
-      `stroke="${nodeColor}" stroke-width="2.1"${nodeOpacity}/>`;
+      `stroke="${nodeColor}" stroke-width="2.4"${nodeOpacity}/>`;
   } else {
     // Filled dot with a faint same-background halo so adjacent lane lines never
     // visually fuse into the node.

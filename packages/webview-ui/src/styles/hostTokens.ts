@@ -41,10 +41,11 @@ export const hostTokens = css`
     --gs-motion: 170ms;
     --gs-motion-fast: 110ms;
     --gs-ease: cubic-bezier(0.2, 0, 0, 1);
-    --gs-status-added: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-charts-green));
-    --gs-status-modified: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
-    --gs-status-deleted: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-charts-red));
-    --gs-status-renamed: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-blue));
+    /* Kept in lockstep with tokens.css -- see the rationale there. */
+    --gs-status-added: var(--vscode-charts-green, #3fb950);
+    --gs-status-modified: var(--vscode-charts-blue, #58a6ff);
+    --gs-status-deleted: var(--vscode-charts-red, #f85149);
+    --gs-status-renamed: var(--vscode-charts-purple, #bc8cff);
   }
   /* Match tokens.css: dark themes ship a near-invisible list-hover, so layer a
      foreground tint on top (firmer in dark) — via :host-context so a shadow-DOM
