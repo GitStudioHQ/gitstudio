@@ -9,6 +9,44 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [1.5.0] - 2026-08-21
+
+The commit graph is shared with the extension, so this release is mostly that
+work arriving here.
+
+### Added
+- **The commit graph fits what is in it.** The Branch/Tag column measures the
+  busiest row you have loaded rather than sitting at a fixed width, and a chip
+  may grow with the column — so a long remote branch renders in full instead of
+  ellipsizing at every width. It only spends width that is spare, so a narrow
+  window gives it back to the commit message.
+- **Hover cards for anything a row had to cut off.** A clipped ref chip or commit
+  message shows in full on hover, wrapped. Hovering an author shows who they are
+  — full name, the address the commits are keyed on, how much of the loaded
+  history is theirs, and when.
+- **Resizable columns you can find.** The dividers are visible at rest, take the
+  accent while you drag one, and the grab zone is the full header height.
+
+### Changed
+- Added, modified and deleted are green, blue and red. The previous palette made
+  "added" a sage green and "modified" a tan, which at the size of a 4px bar or a
+  single letter read as the same warm grey.
+- The graph's lanes, nodes and avatars are larger, and the lane strokes heavier.
+- Author, Changes, Date and SHA are narrower, and every column's text is inset
+  from its divider rather than butting against it.
+
+### Fixed
+- **The graph counted git notes as history.** `git log --all` includes
+  `refs/notes/*` and `refs/stash`, so notes commits were rows in the graph and
+  shifted the page boundaries under paging — commits went missing as you
+  scrolled.
+- **A commit on two remotes drew one chip and no `+N`.** The overflow pill
+  rendered only if it still fit, and missed by two pixels at some widths — so the
+  row claimed to have one ref.
+- **Dragging a divider could wreck the columns.** The resize was bounded by each
+  column's own limits with nothing watching the total, so the trailing columns
+  collapsed to nothing once the widths overflowed.
+
 ## [1.4.0] - 2026-08-19
 
 ### Added

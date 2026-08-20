@@ -4,6 +4,66 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-08-21
+
+### Added
+- **The commit graph fits what is in it.** The Branch/Tag column measures the
+  busiest row you have loaded instead of sitting at a fixed width, and a chip may
+  grow with the column — so `origin/feat/diff-tick-staging` renders in full
+  rather than ellipsizing at every width. It only spends width that is spare, so
+  a narrow window gives it back to the commit message.
+- **Hover cards for anything a row had to cut off.** A clipped ref chip or commit
+  message shows in full on hover, wrapped, in both the Commit Graph and the
+  Commits sidebar. Hovering an author shows who they are — full name, the address
+  the commits are keyed on, how much of the loaded history is theirs, and when.
+- **Checking out a branch tip checks out the branch.** One short dialog offers
+  both outcomes — switch to the branch, or detach here — and asks which when a
+  commit is the tip of more than one. *Detach HEAD Here…* is a menu action in its
+  own right, so the old behaviour is one click away.
+- **Paste a ticket title as a branch name.** When a name is rejected, the dialog
+  offers the corrected form — `SPS-1234 ALA baLa 12/02/21 thing` becomes
+  `SPS-1234-ALA-baLa-12-02-21-thing` — with **Use** to swap it in and **Copy** to
+  take it elsewhere. A slash between words is kept, because `feature/x` means
+  something; a slash between digits is flattened, because a date is not a
+  hierarchy and a slash there would permanently block the prefixes from ever
+  being branches.
+- **Resizable columns you can find.** The dividers are visible at rest and take
+  the accent while you drag one, the grab zone is the full header height, and
+  each says which column it resizes. Compact mode has them now too.
+
+### Changed
+- Added, modified and deleted are green, blue and red. VS Code's own palette
+  makes "added" a sage green and "modified" a tan, which at the size of a 4px bar
+  or a single letter read as the same warm grey.
+- The graph's lanes, nodes and avatars are larger in both the Commit Graph and
+  the Commits sidebar, and the lane strokes heavier.
+- Author, Changes, Date and SHA are narrower, and every column's text is inset
+  from its divider rather than butting against it.
+
+### Fixed
+- **The graph counted git notes as history.** `git log --all` includes
+  `refs/notes/*` and `refs/stash`, so notes commits were rows in the graph and
+  shifted the page boundaries under paging — 163 of them against 202 real
+  commits in one repo, and commits went missing as you scrolled.
+- **A commit on two remotes drew one chip and no `+N`.** The overflow pill
+  rendered only if it still fit, and missed by two pixels at some widths — so the
+  row claimed to have one ref. It now always renders.
+- **Compact mode had every column one place to the left.** The commit message
+  rendered inside the ref track while CHANGES took the space meant for it.
+- **Dragging a divider could wreck the columns.** The resize was bounded by each
+  column's own limits with nothing watching the total, so Changes, Author and
+  Date collapsed to nothing once the widths overflowed.
+- **Expanding a file in the Changes view was slow and lost your place.** It
+  rebuilt the entire view to open one file, and again when the changes arrived.
+- The branch menu's *New Branch* and the push modal's used their own copies of
+  the branch-name rules; the push-modal copy checked only for spaces, so it
+  accepted names git then refused.
+- Branch popovers dismiss when focus leaves the webview, while dialogs keep what
+  you typed when you switch to another application. Thanks to
+  [@wanzirong](https://github.com/wanzirong) ([#22]).
+
+[#22]: https://github.com/GitStudioHQ/gitstudio/pull/22
+
 ## [1.9.0] - 2026-08-19
 
 ### Added
