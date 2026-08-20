@@ -1,0 +1,32 @@
+apps/extension/src/graph/commitActions.ts
+  s_daa89ab6f34762::t_089772abec2499 9
+  s_daa89ab6f34762::t_bebe41cac99fbe 276-280,331-333,344-356
+  s_daa89ab6f34762::t_0d10e820253b2c 16-21,138,170-171,318-319,329-330
+  s_daa89ab6f34762::t_9d017230134c52 284-305,307,309-311,313-315,320-327
+  s_daa89ab6f34762::t_74bd4f6c81f9da 306,308,312
+  s_daa89ab6f34762::t_392e9d480a0f11 108-112,254-271,281-283,316-317,328,358
+apps/extension/test/checkoutTarget.test.ts
+  s_daa89ab6f34762::t_e10059204ca5cc 1-3,5-62,78
+  s_daa89ab6f34762::t_089772abec2499 4,63-77
+apps/extension/src/graph/checkoutTarget.ts
+  s_daa89ab6f34762::t_e10059204ca5cc 1-47
+  s_daa89ab6f34762::t_089772abec2499 48-64
+apps/extension/src/graph/graphPanel.ts
+  s_daa89ab6f34762::t_1f26e6e232ac55 579-580,850-851
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "01fc6e0d012450225f2b6919f7ea7d6cf61075d7",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
