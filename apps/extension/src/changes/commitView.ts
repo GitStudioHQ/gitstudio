@@ -4249,7 +4249,6 @@ export class CommitViewProvider
     var dlgEl = null;
     var dlgBackdrop = null;
     var dlgKeyHandler = null;
-    var dlgBlurHandler = null;
     var dlgReturnFocus = null;
     /** Correlation id of a host-requested dialog, so we can answer exactly once. */
     var dlgHostId = null;
@@ -4265,10 +4264,6 @@ export class CommitViewProvider
       if (dlgKeyHandler) {
         window.removeEventListener("keydown", dlgKeyHandler, true);
         dlgKeyHandler = null;
-      }
-      if (dlgBlurHandler) {
-        window.removeEventListener("blur", dlgBlurHandler, true);
-        dlgBlurHandler = null;
       }
       if (dlgBackdrop) { dlgBackdrop.remove(); dlgBackdrop = null; }
       if (dlgEl) { dlgEl.remove(); dlgEl = null; }
@@ -4354,23 +4349,6 @@ export class CommitViewProvider
         }
       };
       window.addEventListener("keydown", dlgKeyHandler, true);
-
-      // Clicks in the editor/main area never reach this webview; blur is the
-      // only signal that focus left it, so dismiss the dialog like JetBrains
-      // does for any click outside. BUT blur does not bubble — capture starts
-      // at window — so a click INSIDE the dialog (focus moving off the input
-      // onto a row) fires this handler too. Only dismiss when focus has really
-      // left the webview: the setTimeout lets the focus move settle, and the
-      // dlgEl guard keeps a stale callback from closing a dialog that was
-      // already answered — or a newer one opened by the very choice that closed
-      // this one. Closing answers "undefined" (cancelled); destructive confirms
-      // still only act on the explicit OK.
-      dlgBlurHandler = function () {
-        setTimeout(function () {
-          if (dlgEl && !document.hasFocus()) closeDialog(undefined);
-        }, 0);
-      };
-      window.addEventListener("blur", dlgBlurHandler, true);
 
       dlgEl = el("div", "rp-panel");
       dlgEl.setAttribute("role", "dialog");
