@@ -2528,6 +2528,33 @@ export class CommitViewProvider
     }
     .rp-inputwrap input:focus { border-color: var(--gs-accent); box-shadow: var(--gs-glow); }
     .rp-err { padding: 0 11px 7px; font-size: 11px; color: var(--gs-danger, #f14c4c); }
+    /* The corrected ref name, offered under the error that prompted it. */
+    .rp-sug {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      margin: 0 11px 9px; padding: 6px 8px;
+      border: 1px solid var(--gs-border-soft); border-radius: 5px;
+      background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
+      font-size: 11px;
+    }
+    .rp-sug-lead { color: var(--gs-fg-subtle); flex: 0 0 auto; }
+    .rp-sug-name {
+      flex: 1 1 auto; min-width: 0;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+      color: var(--vscode-foreground);
+    }
+    .rp-sug-btn {
+      flex: 0 0 auto;
+      padding: 2px 8px; border-radius: 4px;
+      border: 1px solid var(--gs-border-soft);
+      background: transparent; color: var(--vscode-foreground);
+      font-size: 11px; cursor: pointer;
+    }
+    .rp-sug-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
+    .rp-sug-btn:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px;
+    }
     .rp-list { max-height: 260px; overflow-y: auto; border-top: 1px solid var(--gs-border-soft); }
     .rp-row {
       display: flex; align-items: center; gap: 7px;
@@ -3821,6 +3848,12 @@ export class CommitViewProvider
     // indexes are positional — they mean nothing once the file's state moves.
     const expandedHunks = new Set();
     const hunkCache = new Map();
+    // path -> a function that rebuilds JUST that file's open changes panel in
+    // place. The host's "hunks" reply used to call render(), rebuilding the
+    // entire Changes view to fill in one panel — which is why the first click
+    // on a file lagged even though opening it is now local: the click was
+    // instant, and then the reply repainted everything.
+    const hunkPanels = new Map();
     // Multi-selection, for stashing / staging several files at once.
     //
     // Keyed by "kind:path", not by path. In the split model a partly staged file
@@ -4812,13 +4845,7 @@ export class CommitViewProvider
               confirmLabel: "Create Branch",
               candidates: [],
               allowFreeText: true,
-              validate: function (v) {
-                if (/\s/.test(v)) return "Branch names cannot contain spaces.";
-                if (/^[-.]|[.]{2}|[~^:?*\[\\]|[.]$|[/]$/.test(v)) {
-                  return "Not a valid branch name.";
-                }
-                return null;
-              },
+              validate: "refName",
               onConfirm: function (v) {
                 vscode.postMessage({ type: "branchAction", action: "new", ref: v });
               },
@@ -5013,6 +5040,60 @@ export class CommitViewProvider
       },
     };
 
+    /**
+     * Turn free text into a name git will accept.
+     *
+     * Pasting a ticket title is the normal way people name a branch --
+     * "SPS-1234 ALA baLa 12/02/21 something" -- and every one of those spaces
+     * is a hard rejection. Rather than just refusing, offer the corrected form.
+     *
+     * A forward slash is KEPT where it separates words, because git allows it
+     * and it is the conventional hierarchy separator (feature/x) -- rewriting
+     * that would destroy meaning the other replacements do not.
+     *
+     * But a slash between DIGITS is flattened, because that is a date, not a
+     * hierarchy. Keeping it is not merely ugly: a slash makes a directory under
+     * refs/heads, so "...-10/11/2345-now" permanently blocks "...-10" and
+     * "...-10/11" from ever being branches ("cannot lock ref ... exists").
+     * Pasting a ticket title would silently reserve names nobody asked for.
+     *
+     * Case is kept: it is a preference, not a validity problem, and silently
+     * lowercasing someone's ticket id would be a surprise.
+     */
+    var DLG_SANITIZE = {
+      refName: function (v) {
+        var s = String(v);
+        // Everything git forbids outright, plus control characters.
+        s = s.replace(/[\u0000-\u001F\u007F~^:?*\[\\]/g, "-");
+        s = s.replace(/@\{/g, "-");
+        // Any run of whitespace becomes ONE hyphen.
+        s = s.replace(/\s+/g, "-");
+        // A slash BETWEEN DIGITS is a date or a fraction, never a ref
+        // hierarchy -- see the note above on refs/heads directories.
+        s = s.replace(/(\d)\/(\d)/g, "$1-$2");
+        // Sequences git rejects, and repeats that read as typos.
+        s = s.replace(/\.{2,}/g, ".");
+        s = s.replace(/\/{2,}/g, "/");
+        s = s.replace(/-{2,}/g, "-");
+        // Per path component: may not start with a dot, end with a dot, or
+        // end with ".lock". Empty components collapse away.
+        var parts = s.split("/");
+        var kept = [];
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i]
+            .replace(/^[.]+/, "")
+            .replace(/[.]+$/, "")
+            .replace(/[.]lock$/i, "")
+            .replace(/^-+/, "")
+            .replace(/-+$/, "");
+          if (part) kept.push(part);
+        }
+        s = kept.join("/");
+        if (s === "@") return "";
+        return s;
+      },
+    };
+
     /** Shell shared by every dialog kind: scrim, panel, Escape, focus return. */
     function beginDialog(spec) {
       teardownDialog();
@@ -5096,6 +5177,11 @@ export class CommitViewProvider
       err.style.display = "none";
       panel.appendChild(err);
 
+      // The corrected form of what was typed, offered rather than imposed.
+      var sug = el("div", "rp-sug");
+      sug.style.display = "none";
+      panel.appendChild(sug);
+
       var list = el("div", "rp-list");
       panel.appendChild(list);
 
@@ -5122,6 +5208,60 @@ export class CommitViewProvider
         return null;
       }
 
+      function showSuggestion(v, msg) {
+        sug.textContent = "";
+        sug.style.display = "none";
+        // Only for ref names, only when what was typed is actually a problem,
+        // and only when the fix is itself valid and different.
+        if (spec.validate !== "refName" || !v || !msg) return;
+        var fix = DLG_SANITIZE.refName(v);
+        if (!fix || fix === v || problem(fix)) return;
+
+        sug.appendChild(el("span", "rp-sug-lead", "Use instead"));
+        // textContent, never el()'s innerHTML: a ref name may contain < > &.
+        var nameEl = el("code", "rp-sug-name");
+        nameEl.textContent = fix;
+        sug.appendChild(nameEl);
+
+        var useBtn = el("button", "rp-sug-btn");
+        useBtn.type = "button";
+        useBtn.textContent = "Use";
+        useBtn.title = "Replace what you typed with this";
+        useBtn.addEventListener("click", function () {
+          input.value = fix;
+          input.focus();
+          if (input.setSelectionRange) input.setSelectionRange(fix.length, fix.length);
+          validate();
+          renderList();
+        });
+        sug.appendChild(useBtn);
+
+        var copyBtn = el("button", "rp-sug-btn");
+        copyBtn.type = "button";
+        copyBtn.textContent = "Copy";
+        copyBtn.title = "Copy it to edit somewhere else";
+        copyBtn.addEventListener("click", function () {
+          var done = function () {
+            copyBtn.textContent = "Copied";
+            setTimeout(function () { copyBtn.textContent = "Copy"; }, 1200);
+          };
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(fix).then(done, function () {});
+              return;
+            }
+          } catch (e) { /* fall through */ }
+          // No clipboard API: select it so the usual copy shortcut works.
+          input.value = fix;
+          input.focus();
+          if (input.select) input.select();
+          validate();
+        });
+        sug.appendChild(copyBtn);
+
+        sug.style.display = "";
+      }
+
       function validate() {
         var v = currentValue();
         var msg = v ? problem(v) : null;
@@ -5131,6 +5271,7 @@ export class CommitViewProvider
         } else {
           err.style.display = "none";
         }
+        showSuggestion(v, msg);
         // An empty value is only refusable, never an error message — the field
         // starts empty and shouting at someone before they type is hostile.
         ok.disabled = !v || !!msg;
@@ -5610,10 +5751,7 @@ export class CommitViewProvider
           confirmLabel: "Create Branch",
           candidates: [],
           allowFreeText: true,
-          validate: function (v) {
-            if (/\s/.test(v)) return "Branch names cannot contain spaces.";
-            return null;
-          },
+          validate: "refName",
           onConfirm: function (v) {
             vscode.postMessage({ type: "newBranchFromPush", ref: v });
           },
@@ -6011,15 +6149,32 @@ export class CommitViewProvider
           twist.setAttribute("aria-expanded", open ? "true" : "false");
           twist.addEventListener("click", function (ev) {
             ev.stopPropagation();
-            if (expandedHunks.has(path)) {
+            // Toggle ONE row in place. This used to call render(), which
+            // rebuilt every group and every row of the whole Changes view to
+            // open a single file -- the lag -- and threw away scroll position
+            // and focus while doing it, which is the glitching. Nothing outside
+            // this row changes, so nothing outside this row is rebuilt.
+            const isOpen = expandedHunks.has(path);
+            const next = !isOpen;
+            twist.classList.toggle("open", next);
+            twist.setAttribute("aria-expanded", next ? "true" : "false");
+            twist.title = next ? "Hide individual changes" : "Show individual changes";
+            const after = row.nextSibling;
+            const panel =
+              after && after.classList && after.classList.contains("hunks")
+                ? after
+                : null;
+            if (isOpen) {
               expandedHunks.delete(path);
-              render();
-            } else {
-              expandedHunks.add(path);
-              // Ask every time rather than trusting the cache: the file may have
-              // changed on disk since it was last listed.
-              vscode.postMessage({ type: "requestHunks", path: path });
-              render();
+              if (panel) panel.remove();
+              return;
+            }
+            expandedHunks.add(path);
+            // Ask every time rather than trusting the cache: the file may have
+            // changed on disk since it was last listed.
+            vscode.postMessage({ type: "requestHunks", path: path });
+            if (!panel && row.parentNode) {
+              row.parentNode.insertBefore(renderHunks(path), row.nextSibling);
             }
           });
           row.insertBefore(twist, row.firstChild);
@@ -6062,6 +6217,23 @@ export class CommitViewProvider
     // are the changes NOT yet staged — ticking one stages it, so it leaves the
     // list on the next refresh, exactly like the file-level tick.
     function renderHunks(path) {
+      const wrap = buildHunks(path);
+      // Register the in-place updater for this panel. Rebuilding calls
+      // renderHunks again, so the map always points at the live element; a
+      // panel that has been detached (a full render, or the file collapsed)
+      // reports false and forgets itself.
+      hunkPanels.set(path, function () {
+        if (!wrap.parentNode) {
+          hunkPanels.delete(path);
+          return false;
+        }
+        wrap.parentNode.replaceChild(renderHunks(path), wrap);
+        return true;
+      });
+      return wrap;
+    }
+
+    function buildHunks(path) {
       const wrap = el("div", "hunks");
       const hunks = hunkCache.get(path);
       if (!hunks) {
@@ -6509,7 +6681,18 @@ export class CommitViewProvider
         const wasIncomplete =
           !had || had.some(function (h) { return h.state !== "staged"; });
         if (allStaged && wasIncomplete) {
+          // The file folds away — that IS a structural change, so a full
+          // render is the honest thing to do (and it is rare).
           expandedHunks.delete(msg.path);
+          hunkPanels.delete(msg.path);
+          render();
+          return;
+        }
+        // Otherwise only this one panel's contents changed. Swap it and leave
+        // every other row, the scroll position and the focus exactly alone.
+        const refresh = hunkPanels.get(msg.path);
+        if (refresh && refresh()) {
+          return;
         }
         render();
         return;
