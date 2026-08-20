@@ -1,0 +1,31 @@
+apps/extension/test/refNameSanitize.test.ts
+  s_daa89ab6f34762::t_cddc95121f655d 50-51,54,79-80,84-85,89-90,99-100,106-107,114-115,122-123,128-129,136-137,145-146
+  s_daa89ab6f34762::t_648007fa390434 166-183
+  s_daa89ab6f34762::t_bad9613e71c667 1-49,52-53,55,57,77-78,81-83,86-88,91-98,101-105,108-113,116-121,124-127,130-135,138-144,147-165
+  s_daa89ab6f34762::t_f98ad845b4c6d4 56,58-76
+apps/extension/src/changes/commitView.ts
+  s_daa89ab6f34762::t_433c72284d2798 5180-5184,5211-5264,5274
+  s_daa89ab6f34762::t_df4b97d86a60da 6152-6167,6169-6177
+  s_daa89ab6f34762::t_da80fce0603976 4848,5754
+  s_daa89ab6f34762::t_e243d127b54f93 5043-5049,5062-5070,5074-5093
+  s_daa89ab6f34762::t_e1f69aa999c1d4 3851-3856,6220-6236,6684-6685,6687-6695
+  s_daa89ab6f34762::t_98c7c4a70afee5 2531-2557
+  s_daa89ab6f34762::t_751b1dcf6676ed 5050-5061,5071-5073
+  s_daa89ab6f34762::t_99a247ba29b6b0 5094-5096
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "d04c0001d0e57f5684a13101a97003a1482162e8",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
