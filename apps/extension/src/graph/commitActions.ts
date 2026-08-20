@@ -6,12 +6,19 @@ import { pausedForUser } from "../git/pausedForUser";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
+import { ellipsizeMiddle, resolveCheckoutTarget } from "./checkoutTarget";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction. */
 export function commitMenuItems(): GraphMenuItem[] {
   return [
     { id: "checkout", label: "Checkout Commit", icon: "git-commit" },
+    // Detaching stays a FIRST-CLASS action. "Checkout Commit" prefers the
+    // branch a commit sits on (see checkout()), which is right for the common
+    // case but silently removed the ability to detach at a commit that has one
+    // — the old behaviour, and the whole point of checking a commit out for
+    // some workflows. Making it a separate item keeps both reachable.
+    { id: "detach", label: "Detach HEAD Here…", icon: "git-commit" },
     { id: "branch", label: "Create Branch Here…", icon: "git-branch" },
     { id: "tag", label: "Create Tag Here…", icon: "tag" },
     { id: "cherryPick", label: "Cherry-Pick Commit", icon: "git-pull-request" },
@@ -98,6 +105,11 @@ interface CommitContext {
   readonly sha: string;
   /** Commit subject, for friendlier prompts/messages. */
   readonly subject: string;
+  /**
+   * The refs sitting on this commit, when the caller knows them. Checkout uses
+   * them to land you on a BRANCH rather than a detached HEAD — see checkout().
+   */
+  readonly refs?: readonly WireRef[];
 }
 
 /**
@@ -123,6 +135,7 @@ export interface CommitActionItem extends vscode.QuickPickItem {
 export function commitActionItems(): CommitActionItem[] {
   return [
     { id: "checkout", label: "$(git-commit) Checkout Commit" },
+    { id: "detach", label: "$(git-commit) Detach HEAD Here…" },
     { id: "branch", label: "$(git-branch) Create Branch Here…" },
     { id: "tag", label: "$(tag) Create Tag Here…" },
     { id: "cherryPick", label: "$(git-pull-request) Cherry-Pick Commit" },
@@ -154,6 +167,8 @@ export async function runCommitAction(
   switch (id) {
     case "checkout":
       return checkout(ctx, commit, undo);
+    case "detach":
+      return detachHere(ctx, commit, undo);
     case "branch":
       return createBranch(ctx, commit);
     case "tag":
@@ -236,7 +251,83 @@ async function checkoutRef(
   return false;
 }
 
+/**
+ * Check out a commit — as a BRANCH whenever this commit is one.
+ *
+ * Checking out the tip of `main` by sha lands you on a detached HEAD at a
+ * commit that git would happily have called `main`. It is technically what was
+ * asked for and almost never what was meant: the next commit belongs to no
+ * branch, and the UI has to start explaining detached HEAD for a click that
+ * looked routine. So when the commit carries local branches:
+ *
+ *  - exactly one, and it is not already current → switch to it, no warning
+ *    needed, because nothing surprising happens;
+ *  - more than one → ask WHICH, since the sha alone cannot say;
+ *  - already the current branch → say so instead of re-running a no-op.
+ *
+ * Detaching stays available in the "more than one" picker and remains the
+ * behaviour for a commit with no local branch on it, which is the only case
+ * where detaching is what the user actually asked for.
+ */
 async function checkout(
+  ctx: GitContext,
+  commit: CommitContext,
+  undo?: UndoRunner,
+): Promise<boolean> {
+  const target = resolveCheckoutTarget(commit.refs);
+
+  if (target.kind === "already") {
+    flash(`Already on ${target.name}`);
+    return false;
+  }
+
+  // ONE short dialog that offers both outcomes, rather than a wall of prose
+  // asking yes/no to just one of them. The previous version named the branch
+  // twice — once in the title, once in the body — which on a long ref filled
+  // the dialog with the same string wrapped over six lines and still did not
+  // let you pick the other option.
+  if (target.kind === "branch" || target.kind === "choose") {
+    const branches = target.kind === "branch" ? [target.name] : target.branches;
+    const picked = await promptPick({
+      title: `Check out ${short(commit.sha)}`,
+      choices: [
+        ...branches.map((name) => ({
+          id: name,
+          label: `Switch to ${ellipsizeMiddle(name)}`,
+          icon: "git-branch",
+        })),
+        {
+          id: DETACH_CHOICE,
+          label: "Detach HEAD here",
+          icon: "git-commit",
+          description: "Not on any branch",
+        },
+      ],
+    });
+    if (!picked) {
+      return false;
+    }
+    if (picked === DETACH_CHOICE) {
+      return detachAt(ctx, commit, undo);
+    }
+    // Choosing a name IS the confirmation — do not ask twice.
+    return withUndo(undo, `Checkout ${picked}`, () =>
+      runGit(ctx, ["checkout", picked], `Switched to ${picked}`),
+    );
+  }
+
+  return detachHere(ctx, commit, undo);
+}
+
+/**
+ * Sentinel for the "detach" row, safe to sit in the same id space as ref names:
+ * git forbids ".." anywhere in a ref name, and unlike a NUL it survives JSON and
+ * a DOM attribute without surprises.
+ */
+const DETACH_CHOICE = "..detach";
+
+/** Detach HEAD at this commit, confirming first. Its own menu action. */
+async function detachHere(
   ctx: GitContext,
   commit: CommitContext,
   undo?: UndoRunner,
@@ -250,8 +341,21 @@ async function checkout(
   if (!ok) {
     return false;
   }
+  return detachAt(ctx, commit, undo);
+}
+
+/**
+ * Explicitly `--detach`. The bare `git checkout <sha>` this used to run detaches
+ * too, but only because a sha is not a branch name — say it outright so the
+ * command cannot be re-read as an ordinary checkout.
+ */
+function detachAt(
+  ctx: GitContext,
+  commit: CommitContext,
+  undo?: UndoRunner,
+): Promise<boolean> {
   return withUndo(undo, `Checkout ${short(commit.sha)}`, () =>
-    runGit(ctx, ["checkout", commit.sha], "Checked out"),
+    runGit(ctx, ["checkout", "--detach", commit.sha], "Checked out"),
   );
 }
 

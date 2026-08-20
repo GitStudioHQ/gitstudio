@@ -576,7 +576,8 @@ export class CommitGraphPanel {
     const changed = await runCommitAction(
       id,
       active.ctx,
-      { sha, subject: record?.subject ?? "" },
+      // refs let "Checkout Commit" land on the branch rather than detaching.
+      { sha, subject: record?.subject ?? "", refs: this.refsToWire(sha) },
       undo,
     );
     if (changed) {
@@ -846,7 +847,8 @@ export class CommitGraphPanel {
     const changed = await runCommitAction(
       mapped,
       active.ctx,
-      { sha, subject: record?.subject ?? "" },
+      // refs let "Checkout Commit" land on the branch rather than detaching.
+      { sha, subject: record?.subject ?? "", refs: this.refsToWire(sha) },
       undo,
     );
     if (changed) {
