@@ -19,6 +19,10 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { commitMenuItems, refMenuItems, runCommitAction } from "./commitActions";
+import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
+import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
+import { runRebasePlan, isRebaseInProgress } from "../rebase/rebaseRunner";
+import { promptPick } from "../ui/dialogs";
 import { openRevisionDiff } from "../history/revisionContentProvider";
 import { commitWebUrl } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
@@ -207,6 +211,9 @@ export class CommitGraphPanel {
       case "refresh":
         void this.loadInitial();
         break;
+      case "reorderCommits":
+        void this.reorderCommits(msg.order, msg.updateRefs);
+        break;
       case "selectCommit":
       case "openCommit":
         this.shown = msg.sha;
@@ -360,6 +367,10 @@ export class CommitGraphPanel {
         this.pendingReveal = undefined;
         this.reveal(sha);
       }
+      // Which commits may be reordered by dragging (issue #18). Sent after
+      // graphInit so the rows exist to mark, and NOT awaited into the load path
+      // — it is one local rev-list, but the graph must never wait on it.
+      void this.sendRebaseChain(active, controller.signal);
       // Real author photos (GitHub) land asynchronously and replace the
       // Gravatar/initials placeholders in place — never blocking the graph.
       void this.loadAuthorAvatars(active, controller.signal);
@@ -445,6 +456,222 @@ export class CommitGraphPanel {
         this.loadController = undefined;
       }
     }
+  }
+
+  /**
+   * Tell the webview which commits it may reorder.
+   *
+   * Failure is silent by design: no chain means nothing is draggable, which is
+   * exactly the state of a surface that never asked. A repo with no commits, no
+   * upstream, or a git that predates the `update-ref` todo command all land
+   * here, and none of them is worth an error banner over a feature the user may
+   * not be reaching for.
+   */
+  /**
+   * Local branches that may be CARRIED along a rewrite of `sha`.
+   *
+   * The branch being rebased is excluded, and that is not a nicety: git moves
+   * it itself at the end, and naming it in an update-ref line makes the whole
+   * rebase fail —
+   *
+   *   error: update_ref failed for ref 'refs/heads/main': cannot lock ref
+   *   Failed to update the following refs with --update-refs: refs/heads/main
+   *
+   * HEAD's branch is always the top of the chain, so without this the option
+   * would fail every single time it was used.
+   */
+  private carryableBranches(sha: string): string[] {
+    return (this.refsBySha.get(sha) ?? [])
+      .filter((r) => r.type === "head" && !r.isCurrent)
+      .map((r) => r.name);
+  }
+
+  private async sendRebaseChain(
+    active: RepoEntry,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      const chain = await readRewritableChain(active.ctx.process, {
+        signal,
+        // A branch with thousands of unpushed commits does not need all of them
+        // draggable; the cap only ever shortens the chain.
+        maxCount: 500,
+      });
+      if (signal.aborted) {
+        return;
+      }
+      // Local branch tips sitting on a rewritable commit, so the webview can
+      // offer to carry them along. Remote-tracking refs and tags are excluded:
+      // update-ref moves local branches, and moving a tag silently would be a
+      // surprise nobody asked for.
+      const branches: Record<string, string[]> = {};
+      for (const sha of chain.shas) {
+        const names = this.carryableBranches(sha);
+        if (names.length > 0) {
+          branches[sha] = names;
+        }
+      }
+      this.post({
+        type: "rebaseChain",
+        shas: chain.shas,
+        stop: chain.stop,
+        base: chain.base,
+        branches,
+      });
+    } catch {
+      // See above — absent is a valid answer.
+    }
+  }
+
+  /**
+   * Apply a drag-reorder from the Commits list as a real rebase.
+   *
+   * Every guard here exists because this rewrites history from a POINTER
+   * GESTURE. The order arrives from a webview that may have been looking at a
+   * stale graph, so nothing it says is trusted: the chain is re-read from git
+   * at this moment and the requested order must be exactly a permutation of it.
+   * If a commit landed, a branch moved, or a fetch changed what is published
+   * between the drag starting and the drop, the sets differ and this refuses
+   * rather than rebasing something the user never saw.
+   */
+  private async reorderCommits(order: string[], mayUpdateRefs: boolean): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+
+    if (await isRebaseInProgress(active.root)) {
+      void vscode.window.showWarningMessage(
+        "GitStudio: a rebase is already in progress — finish or abort it first.",
+      );
+      return;
+    }
+
+    // Re-read rather than trust. See the note above.
+    const chain = await readRewritableChain(active.ctx.process, { maxCount: 500 });
+    const same =
+      chain.shas.length === order.length &&
+      new Set(chain.shas).size === order.length &&
+      order.every((sha) => chain.shas.includes(sha));
+    if (!same) {
+      void vscode.window.showWarningMessage(
+        "GitStudio: the history changed while you were dragging — nothing was reordered.",
+      );
+      void this.loadInitial();
+      return;
+    }
+    if (order.every((sha, i) => sha === chain.shas[i])) {
+      return; // dropped back where it started
+    }
+
+    // A dirty tree makes git refuse mid-flight, which is a worse place to find
+    // out. Say it before anything is rewritten.
+    const status = await active.ctx.status.read();
+    if (status.staged.length > 0 || status.unstaged.length > 0) {
+      void vscode.window.showWarningMessage(
+        "GitStudio: commit or stash your changes before reordering — a rebase needs a clean working tree.",
+      );
+      return;
+    }
+
+    const branches = order.flatMap((sha) => this.carryableBranches(sha));
+    const carry = mayUpdateRefs && branches.length > 0
+      ? await this.askCarryBranches(order.length, branches)
+      : await this.askReorder(order.length);
+    if (carry === undefined) {
+      return; // cancelled
+    }
+
+    const rows = order.map((sha) => ({
+      sha,
+      action: "pick",
+      subject: this.records.get(sha)?.subject ?? "",
+      branches: carry ? this.carryableBranches(sha) : undefined,
+    }));
+    const built = buildRebasePlan(rows, { updateRefs: carry });
+    if (!built.ok) {
+      void vscode.window.showErrorMessage(`GitStudio: ${built.message}`);
+      return;
+    }
+
+    const ledger = this.repos.getUndoLedger();
+    const run = () =>
+      runRebasePlan(active.root, {
+        base: chain.base ?? "--root",
+        todo: built.todo,
+        rewordMessages: built.rewordMessages,
+      });
+    const outcome = ledger
+      ? await ledger.runWithUndo(active, `Reorder ${order.length} commits`, run)
+      : await run();
+
+    if (outcome.status === "done") {
+      vscode.window.setStatusBarMessage("$(check) Reordered", 3000);
+    } else if (outcome.status === "stopped") {
+      // Reordering can genuinely conflict — two commits touching the same lines
+      // in the other order. git leaves the rebase open for the user to finish.
+      void vscode.window.showWarningMessage(
+        outcome.reason === "conflict"
+          ? "GitStudio: reordering hit a conflict — resolve it, then continue or abort the rebase."
+          : "GitStudio: the rebase stopped and needs you — continue or abort it.",
+      );
+    } else {
+      void vscode.window.showErrorMessage(
+        `GitStudio: reorder failed${outcome.message ? ` — ${outcome.message}` : ""}`,
+      );
+    }
+    this.scheduleRefresh();
+  }
+
+  /** Confirm a reorder that touches only this branch. */
+  private async askReorder(count: number): Promise<boolean | undefined> {
+    const picked = await promptPick({
+      title: `Reorder ${count} commit${count === 1 ? "" : "s"}?`,
+      hint: "They are rewritten, so they get new identities. Undo is available afterwards.",
+      choices: [
+        { id: "go", label: "Reorder", icon: "git-commit" },
+        { id: "no", label: "Cancel", icon: "close" },
+      ],
+    });
+    return picked === "go" ? false : undefined;
+  }
+
+  /**
+   * Confirm, and ask whether other branches should come along.
+   *
+   * Worth asking rather than assuming either way: leaving them behind is not
+   * "no change" — they end up pointing at commits that are no longer in this
+   * branch's history — but moving refs the user did not name is not something
+   * to do silently either.
+   */
+  private async askCarryBranches(
+    count: number,
+    branches: string[],
+  ): Promise<boolean | undefined> {
+    const names = branches.slice(0, 3).join(", ") +
+      (branches.length > 3 ? ` and ${branches.length - 3} more` : "");
+    const picked = await promptPick({
+      title: `Reorder ${count} commit${count === 1 ? "" : "s"}?`,
+      hint: `${names} point into this range.`,
+      choices: [
+        {
+          id: "carry",
+          label: "Reorder and move those branches",
+          icon: "git-branch",
+          description: "They follow onto the rewritten commits.",
+        },
+        {
+          id: "only",
+          label: "Reorder this branch only",
+          icon: "git-commit",
+          description: "They keep pointing at the commits as they are now.",
+        },
+        { id: "no", label: "Cancel", icon: "close" },
+      ],
+    });
+    if (picked === "carry") return true;
+    if (picked === "only") return false;
+    return undefined;
   }
 
   private async readPage(

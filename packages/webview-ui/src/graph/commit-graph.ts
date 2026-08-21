@@ -14,6 +14,12 @@ import { hostTokens } from "../styles/hostTokens";
 import { RefTip, refTipStyles, tipAriaLabel, tipData } from "./refTip";
 import { AuthorTip, authorTipData, authorTipStyles } from "./authorTip";
 import {
+  legalGaps,
+  moveToGap,
+  isRealMove,
+  stopReason,
+} from "@gitstudio/engine/rebase/chain";
+import {
   type ChipEntry,
   fitRefs,
   foldRefs,
@@ -176,7 +182,12 @@ export type GraphAction =
   | { type: "menuAction"; sha: string; id: string }
   | { type: "loadMore" }
   | { type: "refresh" }
-  | { type: "requestStats"; shas: string[] };
+  | { type: "requestStats"; shas: string[] }
+  /**
+   * A drag reordered the rewritable chain. `order` is the WHOLE chain in its
+   * new display order — not a delta — so the host never replays the drag.
+   */
+  | { type: "reorder"; order: string[] };
 
 /** One item in the in-graph commit actions popover (from the host). */
 export interface CommitMenuItem {
@@ -824,6 +835,40 @@ export class CommitGraph extends LitElement {
     :host(.hide-sha.hide-date.hide-author)
       .col-resize[data-col="changes"][data-invert="0"] { display: none; }
 
+    /* The drop target: a line BETWEEN two commits, never a highlighted row —
+       a reorder inserts at a boundary, and showing it as a boundary is what
+       makes "above this one" unambiguous without a dialog afterwards. */
+    .insert-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      margin-top: -1px;
+      background: var(--gs-brand, var(--vscode-focusBorder));
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--gs-brand, var(--vscode-focusBorder)) 35%, transparent);
+      pointer-events: none;
+      z-index: 6;
+    }
+    .insert-line[hidden] { display: none; }
+    .insert-line::before {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: -3px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--gs-brand, var(--vscode-focusBorder));
+    }
+    /* While a drag is live the whole surface stops selecting text and shows the
+       grab cursor, so the pointer never looks like it is doing something else. */
+    :host(.row-dragging) .scroller,
+    :host(.row-dragging) .row { user-select: none; cursor: grabbing; }
+    .row.is-dragged { opacity: 0.45; }
+    /* A row that CAN be dragged says so on hover, and only then — a permanent
+       grab cursor on every row would promise it everywhere. */
+    .row.can-reorder:hover { cursor: grab; }
+
     .scroller {
       flex: 1 1 auto;
       width: 100%;
@@ -1366,6 +1411,31 @@ export class CommitGraph extends LitElement {
 
   /** Per-column widths (px), keyed by column id; persisted to localStorage. */
   private colWidths: Partial<Record<ColumnSpec["id"], number>> = {};
+  /**
+   * Which commits may be reordered by dragging (issue #18), newest first.
+   * Empty until the host says otherwise — a host that never sends the chain
+   * simply has no drag, rather than a broken one.
+   */
+  private chainShas: string[] = [];
+  private chainStop: "merge" | "published" | "root" = "root";
+  private chainBranches: Record<string, string[]> = {};
+  /** Fast membership + position lookups for the row renderer. */
+  private chainIndex = new Map<string, number>();
+  /** The live drag, or undefined. */
+  private drag2:
+    | {
+        sha: string;
+        /** Index within chainShas. */
+        from: number;
+        /** Where the pointer went down, to apply a movement threshold. */
+        startY: number;
+        /** The gap the insertion line is currently snapped to, or -1. */
+        gap: number;
+        started: boolean;
+        pointerId: number;
+      }
+    | undefined;
+
   /** Memoised auto-fit for the refs track, keyed on row count + host width. */
   private autoRefs = { n: -1, host: -1, w: 0 };
   private resizeObs: ResizeObserver | undefined;
@@ -2173,6 +2243,27 @@ export class CommitGraph extends LitElement {
     }
   }
 
+  /**
+   * The rewritable chain, from the host. Repaints so the affected rows pick up
+   * their draggable/inert state.
+   */
+  setRebaseChain(chain: {
+    shas: string[];
+    stop: "merge" | "published" | "root";
+    branches?: Record<string, string[]>;
+  }): void {
+    this.chainShas = chain.shas.slice();
+    this.chainStop = chain.stop;
+    this.chainBranches = chain.branches ?? {};
+    this.chainIndex = new Map(this.chainShas.map((sha, i) => [sha, i]));
+    this.renderRows();
+  }
+
+  /** Local branches sitting on chain commits — drives the carry-along option. */
+  get rebaseBranches(): Record<string, string[]> {
+    return this.chainBranches;
+  }
+
   /** Merge in CHANGES-column stats and repaint the visible rows. */
   setRowStats(stats: RowStat[]): void {
     for (const s of stats) {
@@ -2258,11 +2349,15 @@ export class CommitGraph extends LitElement {
     const searching = this.searchQuery.trim().length > 0;
     const isMatch = searching && this.matchSet.has(item.index);
     const isWip = ZERO_SHA_RE.test(row.sha);
+    // A row is draggable only if it is in the rewritable chain AND the chain
+    // has somewhere to move it to. One reorderable commit is not reorderable.
+    const canReorder = !isWip && this.chainShas.length > 1 && this.chainIndex.has(row.sha);
     const cls =
       "row" +
       (selected ? " selected" : "") +
       (focusOn ? " focus-on" : "") +
       (isWip ? " is-wip" : "") +
+      (canReorder ? " can-reorder" : "") +
       (searching ? (isMatch ? " is-match" : " is-nomatch") : "");
     const gutter = renderRowGutterSVG(
       row,
@@ -2308,6 +2403,10 @@ export class CommitGraph extends LitElement {
     );
     return (
       `<div class="${cls}" role="row" data-sha="${row.sha}" ` +
+      (canReorder ? `title="Drag to reorder" ` : "") +
+      (this.chainShas.length > 0 && this.isFirstInert(row.sha)
+        ? `data-inert-why="${esc(stopReason(this.chainStop))}" `
+        : "") +
       `aria-selected="${selected ? "true" : "false"}" aria-label="${label}" ` +
       `style="transform:translateY(${item.start}px)">` +
       `<div class="gutter">${gutter}${avatar}</div>` +
@@ -2373,7 +2472,16 @@ export class CommitGraph extends LitElement {
     return el?.dataset.sha;
   }
 
+  /** Set by a completed drag; consumed by the very next click. */
+  private suppressNextClick = false;
+
   private onClick = (e: MouseEvent): void => {
+    if (this.suppressNextClick) {
+      this.suppressNextClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     const target = e.target as HTMLElement | null;
     // A click on a copyable SHA cell copies the FULL sha and must NOT select or
     // open the row. Only real sha cells carry [data-sha-cell] (the WIP row's sha
@@ -2489,6 +2597,163 @@ export class CommitGraph extends LitElement {
       this.renderRows();
     }
   };
+
+  /**
+   * Begin a possible reorder drag.
+   *
+   * Only a chain row starts one, and only after the pointer has moved past a
+   * threshold — otherwise every click on a commit would arm a history rewrite,
+   * and a shaky hand would fire one. Selection still happens on click, because
+   * the drag never starts unless the pointer actually travels.
+   */
+  private onRowPointerDown = (e: PointerEvent): void => {
+    if (e.button !== 0 || this.chainShas.length < 2) return;
+    const target = e.composedPath()[0] as HTMLElement | null;
+    // Never hijack a control: the sha copy cell, a ref chip, the action menu.
+    if (target?.closest?.("[data-sha-cell],[data-more],.chip,button")) return;
+    const row = target?.closest?.(".row") as HTMLElement | null;
+    const sha = row?.dataset.sha;
+    if (!sha) return;
+    const from = this.chainIndex.get(sha);
+    if (from === undefined) return;
+
+    this.drag2 = {
+      sha, from, startY: e.clientY, gap: -1, started: false, pointerId: e.pointerId,
+    };
+    window.addEventListener("pointermove", this.onDragMove, true);
+    window.addEventListener("pointerup", this.onDragEnd, true);
+    window.addEventListener("pointercancel", this.onDragCancel, true);
+  };
+
+  /** How far the pointer must travel before a click becomes a drag. */
+  private static readonly DRAG_THRESHOLD = 6;
+
+  private onDragMove = (e: PointerEvent): void => {
+    const d = this.drag2;
+    if (!d || e.pointerId !== d.pointerId) return;
+    if (!d.started) {
+      if (Math.abs(e.clientY - d.startY) < CommitGraph.DRAG_THRESHOLD) return;
+      d.started = true;
+      this.classList.add("row-dragging");
+      const row = this.rowElementFor(d.sha);
+      row?.classList.add("is-dragged");
+    }
+    // Suppress text selection and native scrolling while dragging.
+    e.preventDefault();
+    const gap = this.gapAtY(e.clientY, d.from);
+    if (gap !== d.gap) {
+      d.gap = gap;
+      this.paintInsertLine(gap);
+    }
+  };
+
+  private onDragEnd = (e: PointerEvent): void => {
+    const d = this.drag2;
+    if (!d || e.pointerId !== d.pointerId) return;
+    const { from, gap, started } = d;
+    if (started) {
+      // A completed drag still delivers a click on pointerup. Without this the
+      // gesture that reordered history ALSO selects the row and opens the
+      // details dock — two things the user did not ask for, on top of one they
+      // did. Swallowed once, at capture, so nothing downstream sees it.
+      this.suppressNextClick = true;
+    }
+    this.endDrag();
+    if (!started || gap < 0 || !isRealMove(from, gap)) {
+      return;
+    }
+    const order = moveToGap(this.chainShas, from, gap);
+    this.onAction({ type: "reorder", order });
+  };
+
+  private onDragCancel = (e: PointerEvent): void => {
+    if (this.drag2 && e.pointerId === this.drag2.pointerId) this.endDrag();
+  };
+
+  private endDrag(): void {
+    const d = this.drag2;
+    this.drag2 = undefined;
+    window.removeEventListener("pointermove", this.onDragMove, true);
+    window.removeEventListener("pointerup", this.onDragEnd, true);
+    window.removeEventListener("pointercancel", this.onDragCancel, true);
+    this.classList.remove("row-dragging");
+    if (d) this.rowElementFor(d.sha)?.classList.remove("is-dragged");
+    this.paintInsertLine(-1);
+  }
+
+  /**
+   * Is this the first row the chain does NOT reach?
+   *
+   * That one row carries the explanation — "already pushed", "stops at a merge"
+   * — because it is the boundary the user is pushing against. Repeating it on
+   * every row below would be noise.
+   */
+  private isFirstInert(sha: string): boolean {
+    if (this.chainIndex.has(sha)) return false;
+    const oldest = this.chainShas[this.chainShas.length - 1];
+    if (oldest === undefined) return false;
+    const i = this.rows.findIndex((r) => r.sha === oldest);
+    return i >= 0 && this.rows[i + 1]?.sha === sha;
+  }
+
+  private rowElementFor(sha: string): HTMLElement | null {
+    return (
+      (this.renderRoot.querySelector(
+        `.row[data-sha="${CSS.escape(sha)}"]`,
+      ) as HTMLElement | null) ?? null
+    );
+  }
+
+  /**
+   * The legal gap nearest the pointer, or -1 when there is none.
+   *
+   * Gaps are the boundaries BETWEEN chain rows, and only chain rows count —
+   * this is what makes a drag past a commit belonging to another branch snap
+   * over it rather than land in it. The nearest legal gap wins, so the line
+   * never sits somewhere the drop would be refused.
+   */
+  private gapAtY(clientY: number, from: number): number {
+    const legal = legalGaps(this.chainShas.length, from);
+    if (legal.length === 0) return -1;
+    let best = -1;
+    let bestDist = Infinity;
+    for (const gap of legal) {
+      const y = this.gapY(gap);
+      if (y === undefined) continue;
+      const dist = Math.abs(clientY - y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = gap;
+      }
+    }
+    return best;
+  }
+
+  /** Viewport y of a gap: the top of the row below it, or the bottom of the last. */
+  private gapY(gap: number): number | undefined {
+    if (gap < this.chainShas.length) {
+      const el = this.rowElementFor(this.chainShas[gap]);
+      return el ? el.getBoundingClientRect().top : undefined;
+    }
+    const last = this.rowElementFor(this.chainShas[this.chainShas.length - 1]);
+    return last ? last.getBoundingClientRect().bottom : undefined;
+  }
+
+  private paintInsertLine(gap: number): void {
+    const line = this.renderRoot.querySelector(".insert-line") as HTMLElement | null;
+    if (!line) return;
+    const scroller = this.scroller;
+    const y = gap < 0 ? undefined : this.gapY(gap);
+    if (y === undefined || !scroller) {
+      line.hidden = true;
+      return;
+    }
+    // Positioned inside the scroller, so it must be expressed in its scrolled
+    // coordinate space rather than the viewport's.
+    const box = scroller.getBoundingClientRect();
+    line.style.top = `${Math.round(y - box.top + scroller.scrollTop)}px`;
+    line.hidden = false;
+  }
 
   private onPointerOver = (e: PointerEvent): void => {
     this.refTip.handleOver(e);
@@ -2884,6 +3149,7 @@ export class CommitGraph extends LitElement {
         @dblclick=${this.onDblClick}
         @contextmenu=${this.onContextMenu}
         @keydown=${this.onKeyDown}
+        @pointerdown=${this.onRowPointerDown}
         @pointermove=${this.onPointerMove}
         @pointerleave=${this.onPointerLeave}
         @pointerover=${this.onPointerOver}
@@ -2892,6 +3158,7 @@ export class CommitGraph extends LitElement {
         @load=${this.onImgLoadOptions}
       >
         <div class="sizer"></div>
+        <div class="insert-line" hidden></div>
       </div>
       <div class="reftip" role="tooltip" hidden></div>
       <div class="authortip reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;

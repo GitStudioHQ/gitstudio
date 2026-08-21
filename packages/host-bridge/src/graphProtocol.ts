@@ -152,7 +152,32 @@ export type GraphHostMessage =
   | GraphAuthorAvatarsMessage
   | GraphCommitMenuMessage
   | GraphCommitContainsMessage
+  | GraphRebaseChainMessage
   | GraphErrorMessage;
+
+/**
+ * Which commits the Commits list may reorder (issue #18).
+ *
+ * The webview cannot work this out: its rows carry `isMerge` but no parents,
+ * and no notion of what is published. So the host answers once per load and
+ * sends it down. An empty `shas` means nothing is draggable, which is also what
+ * a host that never sends this message produces — so the feature is simply
+ * absent rather than broken on a surface that has not opted in.
+ */
+export interface GraphRebaseChainMessage {
+  type: "rebaseChain";
+  /** Rewritable commits, NEWEST FIRST, matching the list's own order. */
+  shas: string[];
+  /** Why the chain ends where it does — shown on the first inert row. */
+  stop: "merge" | "published" | "root";
+  /** The commit a rebase would run onto. Absent means `--root`. */
+  base?: string;
+  /**
+   * Local branches whose tip is each sha. Drives the opt-in that carries them
+   * along with the rewrite; absent means no branch sits on that commit.
+   */
+  branches?: Record<string, string[]>;
+}
 
 /** The graph failed to load — a real git error, distinct from an empty repo
  * (which stays a "graphInit" with no rows). Drives the error placeholder. */
@@ -193,6 +218,17 @@ export type GraphWebviewMessage =
   | { type: "openFile"; sha: string; path: string; wip?: boolean }
   /** A commit action from the details panel's toolbar. */
   | { type: "commitAction"; action: string; sha: string }
+  /**
+   * A drag in the Commits list reordered the rewritable chain (issue #18).
+   * `order` is the WHOLE chain in its new display order, newest first — not a
+   * delta — so the host never has to replay the drag to know what was meant.
+   */
+  | {
+      type: "reorderCommits";
+      order: string[];
+      /** Carry local branches pointing into the range along with the rewrite. */
+      updateRefs: boolean;
+    }
   /** The user picked an item from the in-graph commit actions popover. */
   | { type: "commitMenuAction"; sha: string; id: string }
   /** Copy text to the clipboard (host-side, CSP-safe). */

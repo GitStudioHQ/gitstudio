@@ -151,8 +151,30 @@ async function rebaseInProgress(
   return /rebase in progress|interactive rebase in progress/i.test(stdout);
 }
 
+/**
+ * The line worth showing the user out of git's output.
+ *
+ * Not literally the first one. git writes rebase progress to stderr as
+ * carriage-return-separated "Rebasing (1/4)" updates, so a naive first line
+ * reported "Successfully rebased and updated refs/heads/main." as the message
+ * of a FAILED rebase — the reassuring half of output that also contained
+ * "error: update_ref failed ... cannot lock ref".
+ *
+ * So: split on CR as well as LF, prefer a line that announces a problem, and
+ * fall back to the first line that is not progress noise.
+ */
 function firstLine(s: string): string {
-  return (s || "").split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  const lines = (s || "")
+    .split(/[\r\n]+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  const problem = lines.find((l) =>
+    /^(error|fatal|warning):|could not|cannot |failed to|CONFLICT/i.test(l),
+  );
+  if (problem) {
+    return problem;
+  }
+  return lines.find((l) => !/^Rebasing \(\d+\/\d+\)$/.test(l)) ?? "";
 }
 
 /** Spawn git directly (the shared pool can't carry per-call env). */

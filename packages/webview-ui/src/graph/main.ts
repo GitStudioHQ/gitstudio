@@ -100,6 +100,20 @@ function start(root: HTMLElement): void {
       case "menuAction":
         vscode.postMessage({ type: "commitMenuAction", sha: action.sha, id: action.id });
         break;
+      case "reorder": {
+        // Which local branches sit on the commits being rewritten. Sent with
+        // the request so the host can offer to carry them along without asking
+        // git a second time for something the graph already knows.
+        const branches = graph.rebaseBranches;
+        const touched = action.order.some((sha) => (branches[sha] ?? []).length > 0);
+        vscode.postMessage({
+          type: "reorderCommits",
+          order: action.order,
+          // The host asks; this only says whether the question is worth asking.
+          updateRefs: touched,
+        });
+        break;
+      }
       case "loadMore":
         vscode.postMessage({ type: "loadMore" });
         break;
@@ -241,6 +255,14 @@ function handle(
     }
     case "rowStats": {
       graph.setRowStats(message.stats);
+      break;
+    }
+    case "rebaseChain": {
+      graph.setRebaseChain({
+        shas: message.shas,
+        stop: message.stop,
+        branches: message.branches,
+      });
       break;
     }
     case "revealCommit": {
