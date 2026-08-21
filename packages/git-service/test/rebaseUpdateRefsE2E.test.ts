@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildRebasePlan } from "../src/rebasePlan";
+import { runRebasePlan } from "../src/RebaseRunner";
 
 const ENV = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
 
@@ -15,7 +16,7 @@ const ENV = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
 // of it. Worth having separately, because the first hand-written attempt at
 // this produced a todo git accepted and then moved a branch onto the commit
 // BEFORE the range — a silent wrong answer, not an error.
-test("end to end: the plan builder's todo really moves the branches", () => {
+test("end to end: the plan builder's todo really moves the branches", async () => {
   const d = mkdtempSync(join(tmpdir(), "gs-e2e-"));
   const g = (a: string[]) => execFileSync("git", a, { cwd: d, encoding: "utf8", env: ENV }).trim();
   try {
@@ -34,11 +35,17 @@ test("end to end: the plan builder's todo really moves the branches", () => {
     ], { updateRefs: true });
     assert.ok(plan.ok, "plan must build");
 
-    const seq = join(d, "seq.sh");
-    writeFileSync(seq, `#!/bin/sh\ncat > "$1" <<'EOF'\n${plan.todo}EOF\n`, { mode: 0o755 });
-    execFileSync("git", ["rebase", "-i", "main~3"], {
-      cwd: d, env: { ...ENV, GIT_SEQUENCE_EDITOR: seq }, encoding: "utf8",
+    // Drive it through the SHIPPING runner rather than a hand-written editor.
+    // The first version wrote a seq.sh and let git exec it, which works on unix
+    // and fails on Windows with "there was a problem with the editor" — there is
+    // no shell to run it. runRebasePlan installs the todo with node for exactly
+    // that reason, so using it here tests the real path AND is portable.
+    const out = await runRebasePlan(d, {
+      base: "main~3",
+      todo: plan.todo,
+      rewordMessages: plan.rewordMessages,
     });
+    assert.equal(out.status, "done", JSON.stringify(out));
 
     // Display order passed above was C, A, B — A moved ABOVE B — so git applies
     // B then A then C, and main reads back newest-first as C, A, B, base.
