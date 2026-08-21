@@ -6,6 +6,16 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 
 ## [Unreleased]
 
+### Changed
+- **Stashing is one dialog again.** It used to ask for a message, then ask about
+  options, before anything happened — and neither screen ever showed which files
+  were about to move. Now the files themselves are the confirmation: they are
+  listed, already ticked, and **Stash** puts them away. Untick a row to leave it
+  in the working tree. Untracked files appear in the list, so nothing is left
+  behind by accident and nobody has to know `--include-untracked` exists. A
+  message is one opt-in tick away, and *Keep staged changes staged* appears only
+  when there is an index for it to keep.
+
 ### Fixed
 - **Amending a commit you had already pushed could not be pushed.** Rewriting a
   commit leaves the branch ahead *and* behind its upstream, so git refuses an

@@ -89,7 +89,19 @@ export async function showStash(
   await vscode.window.showTextDocument(doc, { preview: true });
 }
 
-/** `gitstudio.stash.save` — name the stash, choose options, then stash. */
+/**
+ * `gitstudio.stash.save` — confirm the files, then stash.
+ *
+ * This used to be two dialogs before anything happened: type a message, then
+ * pick options. Three interactions to put work aside, and neither screen ever
+ * showed WHICH files were about to move. Now that a stash can be narrowed to a
+ * selection, the list IS the confirmation: one dialog, everything ticked, press
+ * Stash. Untick a row and it stays in the working tree, so adjusting the scope
+ * costs nothing extra.
+ *
+ * Nothing was removed. A message is one opt-in tick away, and `--keep-index`
+ * appears only when there is an index for it to keep.
+ */
 export async function saveStash(
   repos: RepoManager,
   refresh: () => void,
@@ -99,66 +111,129 @@ export async function saveStash(
   if (!a) {
     return;
   }
-  const paths = (request?.paths ?? []).filter((p) => p.length > 0);
+  const requested = (request?.paths ?? []).filter((p) => p.length > 0);
   const stagedOnly = request?.stagedOnly === true;
-  const scope = describeStashScope(request);
 
-  const message = await promptInput({
-    // The title carries the scope, so "which files is this about to take?" is
-    // answered before anything is typed rather than after it has happened.
-    title: `Stash ${scope}`,
-    hint:
-      paths.length > 0
-        ? `${listForHint(paths)} — a label to recognise this stash by later. Optional.`
-        : "A label to recognise this stash by later. Optional — press Enter to skip.",
-    placeholder: "WIP: …",
-    confirmLabel: "Continue",
-    // No validator: a stash message is free text, and an empty one is fine.
-  });
-  if (message === undefined) {
-    return; // cancelled
+  // What this stash would take, so the dialog can show it rather than describe
+  // it. `stagedOnly` is its own git mode and cannot be narrowed per path, so it
+  // is confirmed by count instead of by list.
+  const status = await a.ctx.status.read();
+  const inScope = stagedOnly
+    ? status.staged
+    : [...status.staged, ...status.unstaged].filter(
+        (f) => requested.length === 0 || requested.includes(f.path),
+      );
+
+  if (inScope.length === 0) {
+    void vscode.window.showInformationMessage(
+      "GitStudio: nothing to stash — the working tree is clean.",
+    );
+    return;
   }
 
-  const choices = [
-    {
-      id: "untracked",
-      label: "Include untracked files",
-      icon: "file",
-      detail: "--include-untracked",
-      description: "Brand-new files are stashed too, instead of being left behind.",
-    },
-    // --keep-index means "leave the index alone", which is a contradiction when
-    // the index IS what is being stashed. Offering it there would be offering a
-    // switch that cannot do anything.
-    ...(stagedOnly
+  // Ids are PREFIXED rather than sentinel-valued. A bare sentinel has to be a
+  // string no path can equal, and every candidate for that is either a legal
+  // path on some platform or a control character — and a NUL in an id travels
+  // through JSON into a DOM attribute, which is its own quiet trap. A prefix
+  // makes the collision structurally impossible instead of merely unlikely.
+  const FILE = "f:";
+  const OPT_MESSAGE = "o:message";
+  const OPT_KEEP = "o:keep";
+  // Untracked files are the ones people lose to a stash: plain `git stash`
+  // leaves them behind. Listing them means the tick decides, so nobody has to
+  // know that --include-untracked exists.
+  const untracked = new Set(
+    status.unstaged.filter((f) => f.status === "?" || f.status === "U").map((f) => f.path),
+  );
+
+  const fileChoices = stagedOnly
+    ? []
+    : inScope.map((f) => ({
+        id: FILE + f.path,
+        label: f.path,
+        icon: untracked.has(f.path) ? "new-file" : "file",
+        detail: untracked.has(f.path) ? "new" : undefined,
+        picked: true,
+      }));
+
+  const extras = [
+    ...(stagedOnly || status.staged.length === 0
       ? []
       : [
           {
-            id: "keep",
+            id: OPT_KEEP,
             label: "Keep staged changes staged",
             icon: "check",
             detail: "--keep-index",
-            description:
-              "The index survives the stash, so a partially staged commit stays ready.",
+            description: "The index survives, so a partly staged commit stays ready.",
           },
         ]),
+    {
+      id: OPT_MESSAGE,
+      label: "Add a message\u2026",
+      icon: "pencil",
+      description: "Otherwise git labels it with the branch and its last commit.",
+    },
   ];
 
-  const options = await promptPickMany({
-    title: `Stash ${scope}`,
-    hint: "Neither is required — plain `git stash` is the common case.",
+  const picked = await promptPickMany({
+    title: stagedOnly
+      ? `Stash everything staged (${inScope.length} ${inScope.length === 1 ? "file" : "files"})`
+      : `Stash ${inScope.length} ${inScope.length === 1 ? "file" : "files"}`,
+    hint: stagedOnly
+      // No tickable rows for this mode, so the files are named here instead.
+      // `git stash push --staged` with a pathspec silently mangles files
+      // OUTSIDE the pathspec and still exits 0, so StashProvider refuses the
+      // combination — offering per-file ticks here would be offering a choice
+      // that cannot be honoured.
+      ? `${listForHint(inScope.map((f) => f.path))} — the index is stashed whole; `
+        + "the working tree is left alone."
+      : "Everything here is going. Untick anything you want to keep.",
     confirmLabel: "Stash",
-    choices,
+    choices: [...fileChoices, ...extras],
   });
-  if (options === undefined) {
+  if (picked === undefined) {
     return; // cancelled
   }
 
+  const chosenPaths = picked
+    .filter((id) => id.startsWith(FILE))
+    .map((id) => id.slice(FILE.length));
+  if (!stagedOnly && chosenPaths.length === 0) {
+    void vscode.window.showInformationMessage(
+      "GitStudio: nothing stashed — every file was unticked.",
+    );
+    return;
+  }
+
+  let message = "";
+  if (picked.includes(OPT_MESSAGE)) {
+    const typed = await promptInput({
+      title: "Name this stash",
+      hint: "A label to recognise it by later.",
+      placeholder: "WIP: \u2026",
+      confirmLabel: "Stash",
+    });
+    if (typed === undefined) {
+      return; // cancelled
+    }
+    message = typed;
+  }
+
+  // Narrow only when the user actually narrowed it. Passing every path
+  // explicitly would turn a whole-tree stash into a pathspec one, which behaves
+  // differently for untracked files and for anything git considers unchanged.
+  const narrowed =
+    !stagedOnly && chosenPaths.length < inScope.length ? chosenPaths : requested;
+  const scope = describeStashScope({ paths: narrowed, stagedOnly });
+
   const result = await a.ctx.stashes.save({
     message: message || undefined,
-    includeUntracked: options.includes("untracked"),
-    keepIndex: options.includes("keep"),
-    paths,
+    // Derived from the list rather than asked as a separate question: if an
+    // untracked file is ticked, the user means to stash it.
+    includeUntracked: chosenPaths.some((p) => untracked.has(p)),
+    keepIndex: picked.includes(OPT_KEEP),
+    paths: narrowed,
     stagedOnly,
   });
   if (!result.ok) {
@@ -176,7 +251,7 @@ export async function saveStash(
     void vscode.window.showInformationMessage(
       `GitStudio: ${stashBlockerMessage(
         result.blocker ?? "cleanTree",
-        stagedOnly ? "staged" : paths.length > 0 ? "selection" : "tree",
+        stagedOnly ? "staged" : narrowed.length > 0 ? "selection" : "tree",
       )}`,
     );
     refresh();
