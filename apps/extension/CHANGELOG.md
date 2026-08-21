@@ -4,7 +4,23 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.11.0] - 2026-08-22
+
+### Added
+- **Reorder commits by dragging them in the Commit Graph.** Drag a commit, an
+  insertion line shows where it will land, and a confirmation runs the rebase —
+  the drag alone never changes anything. Only commits that are safe to rewrite
+  can move: unpushed, on your current branch, and above any merge. Everything
+  else stays put and says why on hover. Because the graph shows every branch at
+  once, the line skips over commits belonging to other branches rather than
+  letting you drop between them.
+  - Branches sitting on the commits you move can come along, so they end up on
+    the rewritten history instead of pointing at commits that are no longer part
+    of it. GitStudio asks which you want; it never moves a branch you did not
+    name.
+  - Reordering can conflict, exactly as a rebase can. GitStudio leaves it where
+    git does, so you can resolve and continue, or abort and be back where you
+    started. Undo covers it either way.
 
 ### Changed
 - **Stashing is one dialog again.** It used to ask for a message, then ask about

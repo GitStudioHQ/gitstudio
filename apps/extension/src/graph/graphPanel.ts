@@ -575,9 +575,15 @@ export class CommitGraphPanel {
     }
 
     const branches = order.flatMap((sha) => this.carryableBranches(sha));
-    const carry = mayUpdateRefs && branches.length > 0
-      ? await this.askCarryBranches(order.length, branches)
-      : await this.askReorder(order.length);
+    // The HOST decides whether the carry question is worth asking. The webview
+    // sends its own view of this, but its refs can be a graph-load behind — and
+    // if they are, silently not offering to carry a branch that exists is worse
+    // than asking a question that turns out to be easy.
+    void mayUpdateRefs;
+    const carry =
+      branches.length > 0
+        ? await this.askCarryBranches(order.length, branches)
+        : await this.askReorder(order.length);
     if (carry === undefined) {
       return; // cancelled
     }

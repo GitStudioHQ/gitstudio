@@ -9,7 +9,7 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [Unreleased]
+## [1.5.1] - 2026-08-22
 
 ### Fixed
 - **Amending a commit you had already pushed could not be pushed.** Rewriting a
