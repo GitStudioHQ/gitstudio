@@ -1,0 +1,23 @@
+packages/git-service/test/rebasePlanUpdateRefs.test.ts
+  s_daa89ab6f34762::t_615230edf90664 1-99
+packages/git-service/src/rebasePlan.ts
+  s_daa89ab6f34762::t_de208a0242e7b6 29-54,64-80,92-95,127-144
+packages/git-service/test/rebaseUpdateRefsE2E.test.ts
+  s_daa89ab6f34762::t_e2cad3f0df4482 1-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "69d451445d42796c761e22601c1979bc7bff57bc",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
