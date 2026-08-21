@@ -1,0 +1,41 @@
+packages/webview-ui/src/graph/main.ts
+  s_daa89ab6f34762::t_bc52ed91d2ee8f 103-116,260-265
+  s_daa89ab6f34762::t_2bc46a9e1f9ad2 266-267
+apps/extension/src/graph/graphPanel.ts
+  s_daa89ab6f34762::t_146359d519d1e7 608,610-612,614-616
+  s_daa89ab6f34762::t_2100dc9b7c1c5f 23-25,214-216,523-576,578-588,590-607,609,613,617-675
+  s_daa89ab6f34762::t_400fb551abf7f1 22,370-373,461-469,489-508,510-522
+  s_daa89ab6f34762::t_2f8eba7d01ef2b 470-488,509,577,589
+  s_daa89ab6f34762::t_f88bd02cf0d0c8 676
+packages/host-bridge/src/graphProtocol.ts
+  s_daa89ab6f34762::t_75644635a04260 155,158-181,221-231
+packages/git-service/test/reorderE2E.test.ts
+  s_daa89ab6f34762::t_2f8eba7d01ef2b 68,74-76,79
+  s_daa89ab6f34762::t_68237cfad74d2d 270-313
+  s_daa89ab6f34762::t_1ccd87f9071c2b 1-67,69-73,77-78,80-269
+packages/git-service/src/RebaseRunner.ts
+  s_daa89ab6f34762::t_247edfc826ec43 154-165,167-177
+packages/webview-ui/src/graph/commit-graph.ts
+  s_daa89ab6f34762::t_33d3d4b769bd32 17-21,185-190,1414-1438,2246-2264
+  s_daa89ab6f34762::t_fb749a40395f8a 838-871
+  s_daa89ab6f34762::t_3c24c35635908d 2475-2477,2479-2484,2654-2660
+  s_daa89ab6f34762::t_e82e55f72745d0 2352-2354,2360,2406-2409,2682-2696
+  s_daa89ab6f34762::t_fd2c98cec1b5b9 2265,2601-2653,2661-2681,2697-2757,3152,3161
+  s_daa89ab6f34762::t_03bd2bce2e52a4 16,2266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "f261c3fcf041477411b6a6ed26afce4c8c63fdf8",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
