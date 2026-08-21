@@ -1,0 +1,50 @@
+apps/extension/src/views/branchActions.ts
+  s_daa89ab6f34762::t_af29665955c112 262-263,351-352,367-369
+apps/desktop/src/main/gitBridge.ts
+  s_daa89ab6f34762::t_af44179a8c7a98 1094-1105
+  s_daa89ab6f34762::t_af29665955c112 1151-1152,1170
+apps/extension/src/pr/createPr.ts
+  s_daa89ab6f34762::t_af29665955c112 198
+apps/extension/src/changes/commitView.ts
+  s_daa89ab6f34762::t_b2dfc6688cc9c2 1485-1491,1499-1501,1503
+  s_daa89ab6f34762::t_51469552e2bfd6 3539-3550,5883-5889,5891-5895
+  s_daa89ab6f34762::t_a953941a33e124 1770-1800
+  s_daa89ab6f34762::t_fc57f2d6d6b7bf 185-186,623,5796-5806
+  s_daa89ab6f34762::t_2fd0a9968d4840 1820-1821
+  s_daa89ab6f34762::t_9bc8c41fbe4b1f 1492-1498
+  s_daa89ab6f34762::t_6bd3868a01153c 5735-5738,5890,5906,5925-5940,5944
+  s_daa89ab6f34762::t_d63aa910fa330d 1612-1617,1678-1681,1691,1764-1769,1801,1811
+apps/desktop/src/shared/ipc.ts
+  s_daa89ab6f34762::t_af44179a8c7a98 893
+apps/extension/test/pushForceCallSites.test.ts
+  s_daa89ab6f34762::t_5ef3b981ad2441 1-52,57-71
+  s_daa89ab6f34762::t_9b7c6b01c233f7 53-56
+packages/git-service/test/amendPush.test.ts
+  s_daa89ab6f34762::t_19abbc794971d5 1-170
+apps/desktop/src/main/main.ts
+  s_daa89ab6f34762::t_af29665955c112 526-527
+apps/extension/src/statusBar/syncStatus.ts
+  s_daa89ab6f34762::t_2fd0a9968d4840 228-230
+  s_daa89ab6f34762::t_b2dfc6688cc9c2 200-219,374-410
+  s_daa89ab6f34762::t_af29665955c112 257-258,327-328
+  s_daa89ab6f34762::t_1fd93342b151b1 411-412
+apps/desktop/src/renderer/renderer.ts
+  s_daa89ab6f34762::t_af44179a8c7a98 3400,3404-3410,3412,3414-3421
+  s_daa89ab6f34762::t_b3d52fafe78947 3411,3413
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "49ce9713513a98052ad939b3e98325a279a99814",
+  "prompts": {},
+  "sessions": {
+    "s_daa89ab6f34762": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec0eee8e-423a-4cd6-9439-d123ace3245d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
