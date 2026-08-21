@@ -890,19 +890,27 @@ export class GitBridge {
     if (!ctx) {
       return undefined;
     }
+    // The separator has TWO spellings and they are not interchangeable.
+    // In the ARGUMENT it must be git's escape `%x00`: node's spawn() refuses
+    // any argv entry containing a literal NUL, and it throws rather than
+    // failing the command — which the catch below swallowed, so headCommit
+    // returned undefined on every single call and nothing downstream knew.
+    // In the OUTPUT it is a real NUL, which is what we split on.
     const SEP = "\x00";
     try {
       const r = await ctx.process.run([
         "log",
         "-1",
         "--no-color",
-        `--format=%H${SEP}%h${SEP}%an${SEP}%ae${SEP}%at${SEP}%s`,
+        // %B (whole message) LAST: it is the only field containing newlines,
+        // and the fields are NUL-separated, so it cannot run into another.
+        "--format=%H%x00%h%x00%an%x00%ae%x00%at%x00%s%x00%B",
         "HEAD",
       ]);
       if (r.code !== 0 || !r.stdout.trim()) {
         return undefined;
       }
-      const [sha, shortSha, author, authorEmail, at, subject] = r.stdout
+      const [sha, shortSha, author, authorEmail, at, subject, message] = r.stdout
         .replace(/\n$/, "")
         .split(SEP);
       let total = 0;
@@ -917,6 +925,8 @@ export class GitBridge {
         authorEmail: authorEmail ?? "",
         date: parseInt(at ?? "", 10) || 0,
         subject: subject ?? "",
+        // git pads %B with a trailing newline, and --format adds one more.
+        message: (message ?? "").replace(/\n+$/, ""),
         total,
       };
     } catch {

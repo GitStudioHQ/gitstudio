@@ -86,6 +86,13 @@ export interface HeadCommit {
   /** Authored timestamp, epoch seconds. */
   date: number;
   subject: string;
+  /**
+   * The complete message — subject, blank line, body, trailers. Amend prefills
+   * from THIS, never from `subject`: committing back a subject-only message
+   * deletes the body and every trailer (Co-Authored-By, Signed-off-by) with no
+   * warning, because that is exactly what the user appears to have typed.
+   */
+  message: string;
   /** Total commits reachable from HEAD. */
   total: number;
 }

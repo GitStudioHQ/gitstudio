@@ -9,6 +9,21 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Fixed
+- **Amending a commit you had already pushed could not be pushed.** Rewriting a
+  commit leaves the branch ahead *and* behind its upstream, so git refuses an
+  ordinary push. Committing with Amend ticked reported "Committed, but push
+  failed" and left you there; it now offers a force push using
+  `--force-with-lease`, which still refuses if someone else has pushed.
+- **The commit box stayed empty when you ticked Amend.** It was meant to prefill
+  with the commit you are amending. The command that fetched it passed a NUL
+  byte as a field separator, which Node refuses to put in a process argument —
+  so the call threw on every attempt, the error was swallowed, and the box was
+  simply always blank. The message now prefills in full, body and trailers
+  included, so editing a subject no longer means retyping the rest.
+
 ## [1.5.0] - 2026-08-21
 
 The commit graph is shared with the extension, so this release is mostly that

@@ -2374,7 +2374,11 @@ class App {
       // Prefill the last commit message when amending an empty composer.
       if (amend && !textarea.value.trim()) {
         void host.invoke("repo:headCommit", undefined).then((hc) => {
-          if (amend && hc?.subject && !textarea.value.trim()) textarea.value = hc.subject;
+          // The WHOLE message. Prefilling only the subject meant that ticking
+          // Amend and pressing commit silently deleted the body and every
+          // trailer — the box looked like the commit, so nothing warned you.
+          const prefill = hc?.message || hc?.subject;
+          if (amend && prefill && !textarea.value.trim()) textarea.value = prefill;
         });
       }
     });

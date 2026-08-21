@@ -4,6 +4,22 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Amending a commit you had already pushed could not be pushed.** Rewriting a
+  commit leaves the branch ahead *and* behind its upstream, so git refuses an
+  ordinary push — but every push button offered one anyway, and the only hint on
+  screen was "1 behind — pull first". After an amend that advice is destructive:
+  pulling either merges the old commit back beside the corrected one, or (with
+  `pull.rebase`) drops your amended commit as "previously applied" and silently
+  restores the original message. GitStudio now recognises the state and offers
+  the one thing that works — a force push using `--force-with-lease`, which
+  still refuses if someone else has pushed in the meantime. Sync asks instead of
+  pulling over your rewrite, and a push git rejects offers the force rather than
+  the same doomed button again. "N behind — pull first" is unchanged for the
+  case it was written for, where the remote genuinely moved.
+
 ## [1.10.0] - 2026-08-21
 
 ### Added
