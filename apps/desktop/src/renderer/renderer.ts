@@ -3397,10 +3397,28 @@ class App {
         return;
       }
       if (push) {
-        const p = await host.invoke(
+        let p = await host.invoke(
           "sync:push",
           this.syncStatus?.noUpstream ? { setUpstream: true } : undefined,
         );
+        // Amending a commit the remote already has leaves the branch diverged,
+        // and a plain push is then refused every time. Rather than report a
+        // dead end, offer the one thing that can work — with the lease, so a
+        // colleague's commits are still safe.
+        if (!p.ok && /non-fast-forward|fetch first|behind its remote/i.test(p.message ?? "")) {
+          const forced = await confirmDialog({
+            title: "Force push?",
+            message:
+              "The remote still has the version of this commit you rewrote, so a "
+              + "normal push was refused. Force pushing uses --force-with-lease, "
+              + "which still refuses if someone else has pushed.",
+            confirmLabel: "Force push",
+            danger: true,
+          });
+          if (forced) {
+            p = await host.invoke("sync:push", { force: true });
+          }
+        }
         // The commit already happened — be explicit if only the push failed.
         if (!p.ok) {
           toast(`Committed, but push failed: ${p.message ?? "unknown error"}`, "error");

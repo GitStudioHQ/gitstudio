@@ -259,6 +259,8 @@ async function reconcileUpstreamAfterRename(
     return;
   }
 
+  // push-force-reviewed: publishes an unpublished branch (the user just
+  // chose a remote for it), so no remote history exists to overwrite.
   const pushed = await a.ctx.sync.push({
     remote,
     branch: newName,
@@ -346,6 +348,8 @@ export async function pushBranch(
     if (!remote) {
       return;
     }
+    // push-force-reviewed: publish with --set-upstream; nothing on the
+    // remote yet.
     const result = await a.ctx.sync.push({
       remote,
       branch: ref.name,
@@ -360,6 +364,9 @@ export async function pushBranch(
   const slash = upstream.indexOf("/");
   const remote = slash > 0 ? upstream.slice(0, slash) : undefined;
   const result = remote
+    // push-force-reviewed: pushes ANOTHER branch, not the checked-out one,
+    // so an amend of HEAD cannot put it in a diverged state. A force here
+    // would need its own ahead/behind check against that branch's upstream.
     ? await a.ctx.sync.push({ remote, branch: ref.name })
     : await a.ctx.sync.push();
   report(result, `Pushed ${ref.name}`, refresh);

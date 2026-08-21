@@ -197,6 +197,26 @@ export class SyncStatusItem implements vscode.Disposable {
           reportSync(fetched, "Fetch");
           return;
         }
+        // Do NOT pull over a rewrite of our own tip. After amending a pushed
+        // commit the branch is ahead AND behind, and pulling is destructive
+        // either way: with pull.rebase git drops the amended commit as
+        // "previously applied" and the corrected message is silently lost,
+        // and without it you get a merge that puts the pre-amend commit back
+        // beside the new one. Force-with-lease is the only correct move, and
+        // the lease still refuses if the remote really did move.
+        const ab = await active.ctx.sync.aheadBehind();
+        if (ab.ahead > 0 && ab.behind > 0) {
+          const forced = await this.askRewrite(ab);
+          if (forced === undefined) {
+            return;
+          }
+          reportSync(
+            await active.ctx.sync.push({ force: forced }),
+            "Push",
+            "Pushed",
+          );
+          break;
+        }
         const pull = await active.ctx.sync.pull();
         if (!pull.ok) {
           if (await this.offerUpstreamRepair(active, pull.stderr)) {
@@ -205,6 +225,9 @@ export class SyncStatusItem implements vscode.Disposable {
           reportSync(pull, "Pull");
           return;
         }
+        // push-force-reviewed: only reached once the pull above fast-forwarded
+        // us onto the remote tip, so this push is a fast-forward by
+        // construction. The rewrite case returned before ever getting here.
         reportSync(await active.ctx.sync.push(), "Push", "Synced");
         break;
       }
@@ -231,6 +254,8 @@ export class SyncStatusItem implements vscode.Disposable {
           return;
         }
         reportSync(
+          // push-force-reviewed: publish — the remote has no such branch yet, so
+          // there is nothing there to overwrite.
           await active.ctx.sync.push({ remote, branch, setUpstream: true }),
           "Publish",
           `Published ${branch}`,
@@ -299,6 +324,8 @@ export class SyncStatusItem implements vscode.Disposable {
         return true;
       }
       reportSync(
+        // push-force-reviewed: publish — the remote has no such branch yet, so
+        // there is nothing there to overwrite.
         await active.ctx.sync.push({ remote, branch, setUpstream: true }),
         "Publish",
         `Published ${branch}`,
@@ -342,6 +369,45 @@ export class SyncStatusItem implements vscode.Disposable {
       ],
     });
     return choice === undefined ? undefined : choice === "rebase";
+  }
+
+  /**
+   * The branch diverged because WE rewrote its tip, not because the remote
+   * moved on. Offering "pull" here would be actively wrong, so this asks the
+   * only question that has a right answer.
+   */
+  private async askRewrite(ab: {
+    ahead: number;
+    behind: number;
+  }): Promise<boolean | undefined> {
+    const choice = await promptPick({
+      title: "This branch was rewritten",
+      hint:
+        `Your ${ab.ahead === 1 ? "commit" : "commits"} replaced ` +
+        `${ab.behind === 1 ? "the version" : "versions"} the remote still has ` +
+        "— amending a pushed commit does this. Pulling would bring the old " +
+        "one back.",
+      choices: [
+        {
+          id: "force",
+          label: "Force push",
+          icon: "repo-force-push",
+          danger: true,
+          description:
+            "Uses --force-with-lease, which still refuses if someone else pushed.",
+        },
+        {
+          id: "cancel",
+          label: "Leave it alone",
+          icon: "close",
+          description: "Nothing is pushed and nothing is pulled.",
+        },
+      ],
+    });
+    if (choice === undefined || choice === "cancel") {
+      return undefined;
+    }
+    return true;
   }
 
   private async askForce(): Promise<boolean | undefined> {

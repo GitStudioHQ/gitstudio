@@ -523,6 +523,8 @@ function registerIpc(): void {
   handle("sync:status", () => bridge.syncStatus());
   handle("sync:fetch", () => bridge.syncFetch());
   handle("sync:pull", () => bridge.syncPull());
+  // push-force-reviewed: pure forwarder — the renderer decides about force
+  // and it rides through in opts.
   handle("sync:push", (opts) => bridge.syncPush(opts || undefined));
   handle("branch:push", (a) => bridge.branchPush(a.name));
 

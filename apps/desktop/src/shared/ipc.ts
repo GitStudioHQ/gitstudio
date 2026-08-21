@@ -890,7 +890,7 @@ export interface IpcChannels {
   "sync:status": [void, SyncStatus];
   "sync:fetch": [void, CommitActionResult];
   "sync:pull": [void, CommitActionResult];
-  "sync:push": [{ setUpstream?: boolean } | void, CommitActionResult];
+  "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, CommitActionResult];
   /** Push (or publish) ONE named branch, not just the checked-out one. */
   "branch:push": [{ name: string }, CommitActionResult];
   // ── Branch management ──

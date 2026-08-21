@@ -1091,8 +1091,18 @@ export class GitBridge {
   async syncPull(): Promise<CommitActionResult> {
     return this.staged((ctx) => ctx.sync.pull());
   }
-  async syncPush(opts: { setUpstream?: boolean } | undefined): Promise<CommitActionResult> {
-    return this.staged((ctx) => ctx.sync.push({ setUpstream: opts?.setUpstream }));
+  /**
+   * `force` becomes `--force-with-lease`, never a bare `--force` — the lease
+   * still refuses when the remote moved since the last fetch. Required after
+   * amending a commit that was already pushed, where a plain push can only ever
+   * be rejected non-fast-forward.
+   */
+  async syncPush(
+    opts: { setUpstream?: boolean; force?: boolean } | undefined,
+  ): Promise<CommitActionResult> {
+    return this.staged((ctx) =>
+      ctx.sync.push({ setUpstream: opts?.setUpstream, force: opts?.force }),
+    );
   }
 
   /** Fast-forward a local branch straight from its upstream WITHOUT checking it
@@ -1138,6 +1148,8 @@ export class GitBridge {
       const slash = upstream.indexOf("/");
       if (slash > 0) {
         // Tracked: push it to the remote it already tracks.
+        // push-force-reviewed: a named OTHER branch, not the checked-out
+        // one; see the extension's branchActions for the same reasoning.
         return ctx.sync.push({ remote: upstream.slice(0, slash), branch: name });
       }
       // Unpublished: pick a remote and set upstream. Prefer origin, else the
@@ -1155,6 +1167,7 @@ export class GitBridge {
               : `Several remotes are configured — publish '${name}' from the branch's Set upstream… action.`,
         };
       }
+      // push-force-reviewed: publish — nothing on the remote to overwrite.
       return ctx.sync.push({ remote, branch: name, setUpstream: true });
     });
   }

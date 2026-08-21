@@ -182,6 +182,8 @@ interface FromWebview {
   status?: string;
   message?: string;
   amend?: boolean;
+  /** confirmPush: push with --force-with-lease (see confirmPush). */
+  force?: boolean;
   signoff?: boolean;
   author?: string;
   push?: boolean;
@@ -618,7 +620,7 @@ export class CommitViewProvider
         await this.sendPushPreview();
         return;
       case "confirmPush":
-        await this.confirmPush();
+        await this.confirmPush(!!msg.force);
         return;
       case "discardLocalCommits":
         await this.discardLocalCommits();
@@ -1480,9 +1482,25 @@ export class CommitViewProvider
         case "pullRebase":
           result = await entry.ctx.sync.pull({ rebase: true });
           break;
-        case "push":
-          result = await entry.ctx.sync.push();
+        case "push": {
+          // Same rule as the push modal: a branch that diverged both ways can
+          // only be pushed with the lease, so ask rather than fail.
+          const ab = await entry.ctx.sync.aheadBehind();
+          const force =
+            ab.ahead > 0 && ab.behind > 0 ? await this.askRewritePush() : false;
+          if (force === undefined) {
+            // Backing out must still tell the webview the op is over. A bare
+            // return would skip the branchActionDone below and leave the ahead
+            // pill disabled, spinning on a push that is never coming.
+            void this.view?.webview.postMessage({
+              type: "branchActionDone",
+              action: msg.action,
+            });
+            return;
+          }
+          result = await entry.ctx.sync.push(force ? { force: true } : undefined);
           break;
+        }
         case "fetch":
           result = await entry.ctx.sync.fetch();
           break;
@@ -1591,6 +1609,12 @@ export class CommitViewProvider
     reason?: string;
     ahead: number;
     behind: number;
+    /**
+     * The upstream is NOT an ancestor of HEAD, so a plain push cannot succeed —
+     * the local tip rewrote history the remote already has. Amending a pushed
+     * commit is the everyday way to get here.
+     */
+    needsForce: boolean;
     additions: number;
     deletions: number;
     commits: Array<{ sha: string; subject: string; author: string; date: number }>;
@@ -1651,6 +1675,10 @@ export class CommitViewProvider
       if (f.deletions > 0) deletions += f.deletions;
     }
     const canPush = upstream ? true : remotes.length > 0;
+    // Diverged in BOTH directions means our tip is not a descendant of the
+    // upstream, which is exactly when git refuses a fast-forward. Derived from
+    // the ahead/behind we already have — no fetch, no network.
+    const needsForce = !!upstream && ab.ahead > 0 && ab.behind > 0;
     return {
       hasUpstream: !!upstream,
       target,
@@ -1660,6 +1688,7 @@ export class CommitViewProvider
       reason: canPush ? undefined : "No remote is configured for this repository.",
       ahead: upstream ? ab.ahead : commitRecords.length,
       behind: upstream ? ab.behind : 0,
+      needsForce,
       additions,
       deletions,
       commits: commitRecords.map((c) => ({
@@ -1732,7 +1761,44 @@ export class CommitViewProvider
   }
 
   /** Run the actual push (after the user confirms in the modal). */
-  private async confirmPush(): Promise<void> {
+  /**
+   * `force` comes from the modal, which only offers it when the branch diverged
+   * in both directions (see needsForce). It becomes `--force-with-lease`, never
+   * a bare `--force`: the lease still refuses when the remote moved since our
+   * last fetch, so a colleague's commits cannot be overwritten by this button.
+   */
+  /**
+   * Ask before force-pushing a branch whose tip we rewrote. Returns undefined
+   * when the user backs out, so the caller pushes nothing at all rather than
+   * falling through to a push that cannot succeed.
+   */
+  private async askRewritePush(): Promise<boolean | undefined> {
+    const choice = await promptPick({
+      title: "This branch was rewritten",
+      hint:
+        "The remote still has the commits you replaced — amending a pushed " +
+        "commit does this. A normal push will be refused.",
+      choices: [
+        {
+          id: "force",
+          label: "Force push",
+          icon: "repo-force-push",
+          danger: true,
+          description:
+            "Uses --force-with-lease, which still refuses if someone else pushed.",
+        },
+        {
+          id: "cancel",
+          label: "Cancel",
+          icon: "close",
+          description: "Nothing is pushed.",
+        },
+      ],
+    });
+    return choice === "force" ? true : undefined;
+  }
+
+  private async confirmPush(force = false): Promise<void> {
     const entry = this.repos.getActive();
     if (!entry) {
       return;
@@ -1742,7 +1808,7 @@ export class CommitViewProvider
       const head = await entry.ctx.refs.getHead();
       const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
       if (upstream) {
-        result = await entry.ctx.sync.push();
+        result = await entry.ctx.sync.push(force ? { force: true } : undefined);
       } else {
         const remotes = await entry.ctx.remotes.list();
         const remote =
@@ -1751,6 +1817,8 @@ export class CommitViewProvider
         if (!remote || !branch) {
           result = { ok: false, stderr: "No remote is configured to publish to." };
         } else {
+          // push-force-reviewed: publishes a branch the remote does not have
+          // yet, so there is nothing to fast-forward over and nothing to force.
           result = await entry.ctx.sync.push({ setUpstream: true, remote, branch });
         }
       }
@@ -3468,6 +3536,18 @@ export class CommitViewProvider
     .pm-stat b { color: var(--gs-fg); font-variant-numeric: tabular-nums; }
     .pm-add { color: var(--gs-status-added); font-variant-numeric: tabular-nums; font-weight: 600; }
     .pm-del { color: var(--gs-status-deleted); font-variant-numeric: tabular-nums; font-weight: 600; }
+    /* A rewrite is a warning, not a "you're behind" nudge — different colour,
+       different icon, different remedy. */
+    .pm-rewrite {
+      display: inline-flex; align-items: center; gap: 4px;
+      color: var(--gs-amber, var(--vscode-gitDecoration-modifiedResourceForeground));
+      font-weight: 600;
+    }
+    .pm-btn.primary.danger {
+      background: var(--gs-danger, #c74e39);
+      border-color: transparent;
+      color: #fff;
+    }
     .pm-behind {
       margin-left: auto; color: var(--gs-amber); font-weight: 600;
       display: inline-flex; align-items: center; gap: 4px;
@@ -5652,6 +5732,10 @@ export class CommitViewProvider
     // the machine, with a confirmational Push and an "undo local commits" escape
     // hatch that returns the committed work to staged / unstaged changes.
     let pushModal = null, pushBackdrop = null, pushBusy = false;
+    // Whether the modal's primary button pushes with --force-with-lease. Set
+    // when the branch is known to have diverged, and again if git rejects a
+    // plain push as non-fast-forward (see pushModalError).
+    let pushForce = false;
     function closePushModal() {
       if (pushBackdrop) { pushBackdrop.remove(); pushBackdrop = null; }
       if (pushModal) { pushModal.remove(); pushModal = null; }
@@ -5709,8 +5793,17 @@ export class CommitViewProvider
       if (data.additions) stats.appendChild(el("span", "pm-add", "+" + data.additions));
       if (data.deletions) stats.appendChild(el("span", "pm-del", "−" + data.deletions));
       if (data.behind > 0) {
-        const b = el("span", "pm-behind", '<i class="codicon codicon-arrow-down"></i>');
-        b.appendChild(document.createTextNode(data.behind + " behind — pull first"));
+        // "pull first" is the right remedy only when the remote genuinely moved
+        // ahead of us. When WE rewrote our own tip (amending a pushed commit is
+        // the everyday case) pulling is actively destructive: with pull.rebase
+        // it drops the amended commit as "previously applied" and silently
+        // reverts the message, and without it you get a merge that puts the old
+        // commit back beside the new one. Say what actually happened instead.
+        const b = el("span", data.needsForce ? "pm-rewrite" : "pm-behind",
+          '<i class="codicon codicon-' + (data.needsForce ? "warning" : "arrow-down") + '"></i>');
+        b.appendChild(document.createTextNode(data.needsForce
+          ? "Rewrites the remote branch"
+          : data.behind + " behind — pull first"));
         stats.appendChild(b);
       }
       modal.appendChild(stats);
@@ -5787,8 +5880,19 @@ export class CommitViewProvider
       const cancel = el("button", "pm-btn secondary", "Cancel");
       cancel.addEventListener("click", () => { if (!pushBusy) closePushModal(); });
       foot.appendChild(cancel);
-      const pushB = el("button", "pm-btn primary", '<i class="codicon codicon-arrow-up"></i>');
-      pushB.appendChild(document.createTextNode("Push"));
+      // A plain push CANNOT succeed once the branch diverged in both
+      // directions — git refuses the non-fast-forward. Offering it anyway is
+      // what made amending look broken: the button was enabled, focused, and
+      // doomed. In that state the button becomes the force, and says so.
+      const pushB = el("button", "pm-btn primary" + (data.needsForce ? " danger" : ""),
+        '<i class="codicon codicon-' + (data.needsForce ? "repo-force-push" : "arrow-up") + '"></i>');
+      pushB.appendChild(document.createTextNode(data.needsForce ? "Force push" : "Push"));
+      pushForce = !!data.needsForce;
+      if (data.needsForce) {
+        pushB.title =
+          "You rewrote a commit the remote already has, so a normal push is refused. "
+          + "This uses --force-with-lease, which still refuses if someone else pushed.";
+      }
       if (!data.canPush) { pushB.disabled = true; pushB.title = data.reason || "Cannot push"; }
       pushB.addEventListener("click", () => {
         if (pushBusy || !data.canPush) return;
@@ -5799,7 +5903,7 @@ export class CommitViewProvider
         pushB.classList.add("loading");
         const i = pushB.querySelector(".codicon");
         if (i) i.className = "codicon codicon-loading codicon-modifier-spin";
-        vscode.postMessage({ type: "confirmPush" });
+        vscode.postMessage({ type: "confirmPush", force: pushForce });
       });
       foot.appendChild(pushB);
       modal.appendChild(foot);
@@ -5818,10 +5922,26 @@ export class CommitViewProvider
       err.textContent = text || "Operation failed.";
       pushModal.querySelectorAll(".pm-btn").forEach((b) => { b.disabled = false; });
       const pushB = pushModal.querySelector(".pm-btn.primary");
+      // A rejection git blames on fast-forward means the same push will be
+      // refused every time. Re-enabling the identical button invites the user
+      // to press it again forever; promote it to the force instead, which is
+      // the only thing that CAN work from here.
+      const rejected = /non-fast-forward|fetch first|behind its remote/i.test(text || "");
+      if (pushB && rejected && !pushB.classList.contains("danger")) {
+        pushB.classList.add("danger");
+        pushB.textContent = "";
+        const ic = el("i", "codicon codicon-repo-force-push");
+        pushB.appendChild(ic);
+        pushB.appendChild(document.createTextNode("Force push"));
+        pushB.title =
+          "The remote refused a normal push. This uses --force-with-lease, "
+          + "which still refuses if someone else pushed.";
+        pushForce = true;
+      }
       if (pushB) {
         pushB.classList.remove("loading");
         const i = pushB.querySelector(".codicon");
-        if (i) i.className = "codicon codicon-arrow-up";
+        if (i && !rejected) i.className = "codicon codicon-arrow-up";
       }
       err.scrollIntoView({ block: "nearest" });
     }

@@ -195,6 +195,7 @@ async function ensurePushed(
   const result = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Pushing ${branch}…` },
     () =>
+      // push-force-reviewed: publishes the PR's branch for the first time.
       ctx.sync.push({
         remote,
         branch,
