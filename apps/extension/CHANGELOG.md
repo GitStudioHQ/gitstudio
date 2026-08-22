@@ -4,6 +4,14 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2026-08-22
+
+No change to GitStudio itself. 1.11.0 was tagged from a commit whose build was
+still running, and it went red: a test used a shell script as git's sequence
+editor, which has no shell on Windows. Tests are not part of the published
+extension, so 1.11.0 behaves identically — this re-releases the same code from a
+commit that builds green on every platform.
+
 ## [1.11.0] - 2026-08-22
 
 ### Added
