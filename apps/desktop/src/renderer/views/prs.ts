@@ -1,17 +1,17 @@
-// The Pull Requests section view — a full, GitHub-grade two-pane PR workspace.
-//
-// Left: the open-PR list. Right: the selected PR's detail with Conversation /
-// Commits / Pipelines / Files sub-tabs and the full action cluster (Checkout,
-// Approve, Review ▾, Mark ready, Merge ▾, Open on GitHub, ⋯). The header carries
-// a primary "New PR" action that opens a multi-field create modal.
+// The Pull Requests section — a full, GitHub-grade PR workspace on the
+// section-page system (docs/desktop-redesign.md): a full-width list page whose
+// rows navigate to a full-page detail (routed via `target.number`), with the
+// PR's properties in an inline-editable right rail and Conversation / Commits /
+// Pipelines / Files sub-tabs in the content column. The Files tab widens to the
+// whole window (the rail hides) — diffs get the space they deserve.
 //
 // Everything routes through `host.invoke` against the typed IPC contract. Reads
-// that fail render an errorState with Retry; every mutation disables its trigger,
-// confirms destructive ops, toasts success/error, and re-renders the affected
-// surface (the list and/or the detail) — never the local git graph, since none
-// of these PR API writes touch the working tree.
+// that fail render an errorState with Retry; every mutation disables its
+// trigger, confirms destructive ops, toasts success/error, busts the SWR cache
+// and re-renders the affected surface.
 
 import { host } from "../bridge";
+import { peek as cachePeek, gget, bust, prime } from "../cache";
 import {
   el,
   span,
@@ -26,26 +26,56 @@ import {
   copyText,
   cleanErr,
   openMenu,
-  ghRow,
   avatar,
   labelChip,
   statBit,
   statePill,
   stateLead,
 } from "../ui";
-import { toast, confirmDialog, promptInline, editForm } from "../dialogs";
+import { toast, confirmDialog, promptInline, editForm, openModal } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { openAssistantTab, aiEnabled } from "../aiAssist";
 import { DiffPanel } from "../diffPanel";
-import { ghGate, ghHeader, ghTwoPane, peoplePickerModal, searchField, trapTab, type SectionRender, type SectionNav, type SectionTarget } from "./common";
+import {
+  associationBadge,
+  facetBar,
+  harvestValues,
+  swatch,
+  type FacetState,
+  associationLabel,
+  reactionRow,
+  avatarStack,
+  capNotice,
+  detailPage,
+  ghGate,
+  ghHeader,
+  LIST_CAPS,
+  peoplePickerModal,
+  personChip,
+  propAddBtn,
+  propNone,
+  propSection,
+  searchField,
+  secRow,
+  sectionList,
+  type GhGate,
+  type SectionRender,
+  type SectionNav,
+  type SectionTarget,
+} from "./common";
+import { wireProseNav } from "../proseNav";
+import { openPeek } from "../peek";
+import { memberCard } from "./orgs";
 import type {
   BranchRef,
   FileDiff,
   PrComment,
   PrDetail,
   PrFile,
+  PrReviewEvent,
   PrReviewThread,
   PullRequest,
+  ReactionSummary,
   RepoCollaborator,
   RepoLabel,
 } from "../../shared/ipc";
@@ -53,9 +83,20 @@ import type {
 // Persist the active sub-tab across re-renders so a comment / state change keeps
 // the user on the tab they were reading.
 let activeSubTab = "conversation";
+/** The section's router, captured at mount so detail components (branch chips,
+ *  author profile, check rows) can navigate — mirrors the other module state. */
+let sectionNav: SectionNav | undefined;
 // The file selected within the Files tab, persisted so re-rendering the detail
 // (after a mutation) keeps the same diff open.
 let activeFilePath: string | undefined;
+/** Which PR the detail page last showed — tab state resets when it changes. */
+let lastDetailNumber: number | undefined;
+/** The list page's live search query — survives list ⇄ detail round trips. */
+let query = "";
+/** Client-side PR facets, kept across list ⇄ detail round trips. */
+const prFacets: FacetState = {};
+/** Unsent comment drafts, per PR — navigating away must never eat one. */
+const commentDrafts = new Map<number, string>();
 
 // ── Monaco diff lifecycle (self-contained; we can't touch renderer.ts) ─────────
 //
@@ -87,95 +128,96 @@ function watchDiffDetach(surface: HTMLElement): void {
   prDiffDetachObs = obs;
 }
 
+/** The PR's display state: merged beats closed beats draft beats open. */
+function prKind(pr: PullRequest): "open-pr" | "draft" | "merged" | "closed" {
+  if (pr.mergedAt) return "merged";
+  if (pr.state === "closed") return "closed";
+  if (pr.draft) return "draft";
+  return "open-pr";
+}
+function prKindLabel(kind: ReturnType<typeof prKind>): string {
+  return kind === "open-pr" ? "Open" : kind === "draft" ? "Draft" : kind === "merged" ? "Merged" : "Closed";
+}
+
 export const renderPrs: SectionRender = (wrap, nav, target) => {
   void mount(wrap, nav, target);
 };
 
-const refresher = (wrap: HTMLElement, nav: SectionNav) => () => renderPrs(wrap, nav);
-
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
+  sectionNav = nav;
   // A re-render replaces the whole view subtree — drop any live Monaco diff from
   // the previous render so it can't leak or write into detached DOM.
   disposePrDiff();
-  const gate = await ghGate(wrap, nav, true);
+  const refresh = (): void => {
+    bust("pr");
+    renderPrs(wrap, nav, target);
+  };
+  const gate = await ghGate(wrap, nav, true, refresh);
   if (!gate) return;
-  const refresh = refresher(wrap, nav);
 
+  if (target?.number != null) {
+    showDetailPage(wrap, nav, target.number);
+    return;
+  }
+  await listPage(wrap, nav, gate);
+}
+
+// ── The list page ────────────────────────────────────────────────────────────
+
+async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const refresh = (): void => {
+    bust("pr");
+    renderPrs(wrap, nav);
+  };
+
+  const { view, listEl } = sectionList();
   const header = ghHeader("Pull Requests", gate.login, refresh);
-  // A primary "New PR" action lives left of the account cluster in the head row.
-  const newBtn = el("button", "mini-btn gh-head-action");
+  const tools = el("div", "gh-head-tools");
+  const facetSlot = el("div", "gh-facet-slot");
+  const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("git-pull-request"), span("New PR"));
   newBtn.title = "Open a new pull request";
   newBtn.addEventListener("click", () => void openCreatePr(refresh));
-  const acct = header.querySelector(".gh-acct");
-  if (acct) acct.before(newBtn);
-  else header.appendChild(newBtn);
+  tools.append(facetSlot, newBtn);
+  header.querySelector(".gh-acct")?.before(tools);
+  view.append(header, listEl);
+  wrap.replaceChildren(view);
 
-  const { view, listEl, detailEl } = ghTwoPane();
-  wrap.replaceChildren(header, view);
-  const idleEmpty = (): void => {
-    detailEl.replaceChildren(
-      emptyState(
-        "Pull requests",
-        "Select a pull request to read its description, review the diff, and check CI.",
-        { icon: "git-pull-request", hint: "Tip: open one to approve, merge, or check out the branch." },
-      ),
-    );
-  };
-  idleEmpty();
-
-  listEl.replaceChildren(skeletonList(5));
-  let prs: PullRequest[];
-  try {
-    prs = await host.invoke("pr:list", undefined);
-  } catch (e) {
-    listEl.replaceChildren(
-      errorState("Couldn't load pull requests", cleanErr(e) || "GitHub request failed.", refresh),
-    );
-    return;
-  }
-  header.setCount?.(prs.length);
-  listEl.replaceChildren();
-  if (prs.length === 0) {
-    listEl.appendChild(
-      emptyState("No open pull requests", "You're all caught up — nothing to review right now.", {
-        icon: "git-pull-request",
-        action: { label: "New pull request", icon: "git-pull-request", onClick: () => void openCreatePr(refresh) },
-      }),
-    );
-    return;
-  }
-
-  const select = (pr: PullRequest, row: HTMLElement): void => {
-    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-    row.classList.add("active");
-    void showDetail(detailEl, pr, refresh);
-  };
+  let prs: PullRequest[] | undefined = cachePeek("pr:list", undefined);
+  if (!prs) listEl.replaceChildren(skeletonList(5));
 
   const buildRow = (pr: PullRequest): HTMLElement => {
-    const kind = pr.draft ? "draft" : "open-pr";
-    const chips = pr.labels.map((l) => labelChip(l.name, l.color));
-    const stats: HTMLElement[] = [];
-    if (typeof pr.comments === "number" && pr.comments > 0) stats.push(statBit("comment", pr.comments));
-    if (typeof pr.additions === "number") stats.push(statBit("", `+${pr.additions}`, "add"));
-    if (typeof pr.deletions === "number") stats.push(statBit("", `−${pr.deletions}`, "del"));
-    const updated = relTimeISO(pr.updatedAt);
-    const row = ghRow({
+    const kind = prKind(pr);
+    const meta: HTMLElement[] = [];
+    if (typeof pr.additions === "number" || typeof pr.deletions === "number") {
+      const stat = el("span", "sec-diffstat");
+      if (typeof pr.additions === "number") stat.appendChild(span(`+${pr.additions}`, "add"));
+      if (typeof pr.deletions === "number") stat.appendChild(span(`−${pr.deletions}`, "del"));
+      meta.push(stat);
+    }
+    if (typeof pr.comments === "number" && pr.comments > 0) meta.push(statBit("comment", pr.comments));
+    if (pr.user?.login) meta.push(avatarStack([{ login: pr.user.login, avatarUrl: pr.user.avatarUrl }], 1));
+    const row = secRow({
       lead: stateLead(kind),
+      num: `#${pr.number}`,
       title: pr.title,
-      titleSuffix: pr.draft ? [statePill("Draft", "draft")] : [],
-      meta: `#${pr.number} ${pr.head.ref} → ${pr.base.ref} · ${pr.user?.login ?? "unknown"}${updated ? ` · ${updated}` : ""}`,
-      metaTitle: pr.updatedAt ? `Updated ${absTimeISO(pr.updatedAt)}` : undefined,
-      chips,
-      stats,
+      titleSuffix: [
+        ...(pr.draft ? [statePill("Draft", "draft")] : []),
+        // A PR from a fork runs someone else's branch through your CI — a fact
+        // worth seeing in the LIST, not only after you open it.
+        ...(pr.headRepoFullName ? [forkChip(pr.headRepoFullName)] : []),
+      ],
+      chips: pr.labels.map((l) => labelChip(l.name, l.color)),
+      meta,
+      time: relTimeISO(pr.updatedAt),
+      timeTitle: pr.updatedAt ? `Updated ${absTimeISO(pr.updatedAt)}` : undefined,
       ariaLabel: `Pull request #${pr.number}: ${pr.title}`,
+      onOpen: () => nav("prs", { number: pr.number }),
     });
     row.dataset.num = String(pr.number);
-    row.addEventListener("click", () => select(pr, row));
     return row;
   };
 
-  // Case-insensitive match over the fields a user would search by.
   const matches = (pr: PullRequest, q: string): boolean => {
     const hay = `${pr.title} #${pr.number} ${pr.head.ref} ${pr.base.ref} ${pr.user?.login ?? ""} ${pr.labels
       .map((l) => l.name)
@@ -183,313 +225,231 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     return hay.includes(q);
   };
 
-  let autoSelected = false;
-  const renderList = (items: PullRequest[], q = ""): void => {
+  // Client-side facets: the PR list is one fetch of open PRs, so narrowing it
+  // is honest filtering of what's already here — no re-fetch, no cache key.
+  const facets = facetBar<PullRequest>({
+    specs: [
+      {
+        key: "author",
+        label: "Author",
+        icon: "account",
+        anyLabel: "Anyone",
+        harvest: (items) => {
+          const seen = new Map<string, string | null>();
+          for (const pr of items) if (pr.user && !seen.has(pr.user.login)) seen.set(pr.user.login, pr.user.avatarUrl);
+          return [...seen].map(([login, avatarUrl]) => ({
+            value: login,
+            label: `@${login}`,
+            iconEl: () => avatar(login, avatarUrl, 18),
+          }));
+        },
+        predicate: (pr, v) => pr.user?.login === v,
+      },
+      {
+        key: "label",
+        label: "Label",
+        icon: "tag",
+        anyLabel: "All labels",
+        harvest: (items) => {
+          const seen = new Map<string, string>();
+          for (const pr of items) for (const l of pr.labels) if (!seen.has(l.name)) seen.set(l.name, l.color);
+          return [...seen].map(([name, color]) => ({ value: name, iconEl: () => swatch(color) }));
+        },
+        predicate: (pr, v) => pr.labels.some((l) => l.name === v),
+      },
+      {
+        key: "base",
+        label: "Base",
+        icon: "git-branch",
+        anyLabel: "Any base",
+        harvest: harvestValues<PullRequest>((pr) => pr.base.ref),
+        predicate: (pr, v) => pr.base.ref === v,
+      },
+      {
+        key: "draft",
+        label: "State",
+        icon: "git-pull-request",
+        anyLabel: "Any state",
+        options: [
+          { value: "ready", label: "Ready for review", icon: "git-pull-request" },
+          { value: "draft", label: "Draft", icon: "git-pull-request-draft" },
+          { value: "fork", label: "From a fork", icon: "repo-forked" },
+        ],
+        predicate: (pr, v) =>
+          v === "draft" ? pr.draft : v === "fork" ? !!pr.headRepoFullName : !pr.draft,
+      },
+    ],
+    state: prFacets,
+    items: prs ?? [],
+    onChange: () => renderList(),
+  });
+  facetSlot.replaceChildren(facets.el);
+
+  const renderList = (): void => {
+    if (!prs) return;
+    facets.sync(prs);
+    header.setCount?.(prs.length);
+    const q = query.toLowerCase();
+    const items = prs.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true));
     listEl.replaceChildren();
-    if (items.length === 0) {
+    if (prs.length === 0) {
       listEl.appendChild(
-        emptyState("No matching pull requests", `Nothing matches “${q}”.`, { icon: "search" }),
+        emptyState("No open pull requests", "You're all caught up — nothing to review right now.", {
+          icon: "git-pull-request",
+          action: { label: "New pull request", icon: "git-pull-request", onClick: () => void openCreatePr(refresh) },
+        }),
       );
       return;
     }
-    for (const pr of items) listEl.appendChild(buildRow(pr));
-    // Auto-select the first PR once (initial render) so the detail isn't a void;
-    // don't hijack the selection on every keystroke while filtering.
-    if (!autoSelected) {
-      autoSelected = true;
-      const first = items[0];
-      const firstRow = listEl.firstElementChild as HTMLElement | null;
-      if (first && firstRow) select(first, firstRow);
+    if (items.length === 0) {
+      const empty = emptyState(
+        "No matching pull requests",
+        query ? `Nothing matches “${query}”.` : "No pull request matches these filters.",
+        { icon: "search" },
+      );
+      if (facets.activeCount() > 0) {
+        const clear = el("button", "btn btn-soft list-empty-action");
+        clear.append(glyph("clear-all"), span("Clear filters"));
+        clear.addEventListener("click", () => facets.clear());
+        empty.appendChild(clear);
+      }
+      listEl.appendChild(empty);
+      return;
     }
+    for (const pr of items) listEl.appendChild(buildRow(pr));
+    const cap = capNotice(prs.length, LIST_CAPS.prs);
+    if (cap) listEl.appendChild(cap);
   };
 
-  // A header search/filter — on the LEFT, next to the title (client-side, instant).
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
       placeholder: "Search pull requests…",
-      onInput: (q) => renderList(q ? prs.filter((pr) => matches(pr, q.toLowerCase())) : prs, q),
+      initial: query,
+      onInput: (q) => {
+        query = q;
+        renderList();
+      },
     }),
   );
 
-  // Deep-link: open a specific PR on entry (e.g. from the project board) rather
-  // than the auto-selected first — keep it in-app, never open GitHub.
-  if (target?.number != null) autoSelected = true;
-  renderList(prs);
-  if (target?.number != null) {
-    const n = target.number;
-    const inList = prs.find((pr) => pr.number === n);
-    const row = listEl.querySelector(`[data-num="${n}"]`) as HTMLElement | null;
-    if (inList && row) {
-      select(inList, row);
-      row.scrollIntoView({ block: "nearest" });
-    } else {
-      // Not in the current list (e.g. a closed PR) — fetch it and open its detail.
-      void (async () => {
-        try {
-          const d = await host.invoke("pr:detail", n);
-          if (d) void showDetail(detailEl, d.pr, refresh);
-        } catch {
-          /* leave the idle empty state if the PR can't be loaded */
-        }
-      })();
+  if (prs) renderList();
+
+  try {
+    const fresh = await gget("pr:list", undefined, 15000);
+    if (!view.isConnected) return;
+    prs = fresh;
+    renderList();
+  } catch (e) {
+    if (!view.isConnected) return;
+    if (!prs) {
+      listEl.replaceChildren(
+        errorState("Couldn't load pull requests", cleanErr(e) || "GitHub request failed.", refresh),
+      );
     }
   }
 }
 
-// ── Detail panel ──────────────────────────────────────────────────────────────
+// ── The detail page ──────────────────────────────────────────────────────────
 
-async function showDetail(
-  detail: HTMLElement,
-  pr: PullRequest,
-  refreshList: () => void,
-): Promise<void> {
-  // Switching PRs (or reloading this one) must drop the prior file's Monaco diff.
+function showDetailPage(wrap: HTMLElement, nav: SectionNav, n: number): void {
+  sectionNav = nav;
   disposePrDiff();
-  detail.replaceChildren(loadingState());
-  let d: PrDetail | undefined;
-  try {
-    d = await host.invoke("pr:detail", pr.number);
-  } catch (e) {
-    detail.replaceChildren(
-      errorState("Couldn't load this pull request", cleanErr(e) || "GitHub request failed.", () =>
-        void showDetail(detail, pr, refreshList),
-      ),
-    );
-    return;
+  // A DIFFERENT PR starts on Conversation with no file pre-selected — the
+  // module-scoped tab used to leak: open PR B and land on PR A's Files tab.
+  if (lastDetailNumber !== n) {
+    lastDetailNumber = n;
+    activeSubTab = "conversation";
+    activeFilePath = undefined;
   }
-  const full = d?.pr ?? pr;
-  detail.replaceChildren();
-
-  const head = el("div", "gh-detail-head");
-  // Title + an inline edit (pencil) affordance, mirroring the Issues view.
-  const titleRow = el("div", "gh-detail-titlerow");
-  titleRow.style.display = "flex";
-  titleRow.style.alignItems = "center";
-  titleRow.style.gap = "8px";
-  const h = el("div", "gh-detail-title");
-  h.textContent = full.title;
-  h.style.flex = "1 1 auto";
-  h.style.minWidth = "0";
-  const editTitleBtn = el("button", "mini-btn gh-icon-btn gh-title-edit");
-  editTitleBtn.append(glyph("pencil"));
-  editTitleBtn.title = "Edit title & description";
-  editTitleBtn.setAttribute("aria-label", "Edit pull request title and description");
-  editTitleBtn.addEventListener("click", () => void doEdit(detail, full, refreshList));
-  titleRow.append(h, editTitleBtn);
-
-  const meta = el("div", "gh-detail-meta");
-  const statePill = pill(full.draft ? "draft" : full.state);
-  statePill.classList.add(full.draft ? "gh-state-draft" : `gh-state-${full.state}`);
-  meta.append(
-    statePill,
-    span(`  #${full.number}`),
-    span(`  ${full.user?.login ?? ""}`),
-    span(`  ${full.head.ref} → ${full.base.ref}`),
-  );
-  if (d) meta.appendChild(span(`  ${d.files.length} file${d.files.length === 1 ? "" : "s"}`));
-  if (d?.checks) {
-    const c = pill(`checks: ${d.checks}`);
-    c.classList.add(`gh-checks-${d.checks}`);
-    meta.append(span("  "), c);
-  }
-
-  const actions = buildActions(detail, full, d, refreshList);
-  head.append(titleRow, meta, actions);
-  detail.appendChild(head);
-
-  // Live label chips (data already on the PR) with an inline "edit labels" pill.
-  const labelRow = el("div", "gh-detail-labels");
-  for (const l of full.labels) labelRow.appendChild(labelChip(l.name, l.color));
-  const editLabels = el("button", "mini-btn gh-icon-btn gh-inline-edit");
-  editLabels.append(glyph("tag"));
-  editLabels.title = "Edit labels";
-  editLabels.setAttribute("aria-label", "Edit labels");
-  editLabels.addEventListener("click", () => void doLabels(editLabels, detail, full, refreshList));
-  labelRow.appendChild(editLabels);
-  detail.appendChild(labelRow);
-
-  // Sub-tabs: Conversation · Commits · Pipelines · Files (mirrors github.com).
-  const subBar = el("div", "gh-subtabs");
-  const content = el("div", "gh-subcontent");
-  const subDefs = [
-    { id: "conversation", label: "Conversation", icon: "comment-discussion" },
-    { id: "commits", label: "Commits", icon: "git-commit" },
-    { id: "checks", label: "Pipelines", icon: "play" },
-    { id: "files", label: d ? `Files (${d.files.length})` : "Files", icon: "code" },
-  ];
-  const subBtns: HTMLElement[] = [];
-  const selectSub = (id: string): void => {
-    // Leaving the Files tab tears the Monaco diff down (only Files mounts one).
-    if (activeSubTab === "files" && id !== "files") disposePrDiff();
-    activeSubTab = id;
-    for (const b of subBtns) b.classList.toggle("active", b.dataset.sub === id);
-    void renderSubTab(content, full, d, id);
+  const back = (): void => nav("prs", { list: true });
+  const reload = (): void => {
+    bust("pr");
+    showDetailPage(wrap, nav, n);
   };
-  for (const t of subDefs) {
-    const b = el("button", "gh-subtab");
-    b.dataset.sub = t.id;
-    b.append(glyph(t.icon), span(t.label));
-    b.addEventListener("click", () => selectSub(t.id));
-    subBtns.push(b);
-    subBar.appendChild(b);
-  }
-  detail.append(subBar, content);
-  selectSub(subDefs.some((s) => s.id === activeSubTab) ? activeSubTab : "conversation");
+
+  const { view, main, rail, topActions } = detailPage({
+    backLabel: "Pull Requests",
+    crumb: `#${n}`,
+    onBack: back,
+  });
+  main.appendChild(skeletonList(4, false));
+  wrap.replaceChildren(view);
+
+  // While CI is PENDING, quietly re-fetch and repaint when something changed —
+  // the checks pill and Pipelines tab keep themselves honest. Stands down while
+  // the Files tab is open (a repaint would tear down the Monaco diff mid-read).
+  let lastSig = "";
+  const schedulePoll = (current: PrDetail): void => {
+    if (current.checks !== "pending") return;
+    window.setTimeout(() => {
+      if (!view.isConnected) return;
+      if (activeSubTab === "files") {
+        schedulePoll(current);
+        return;
+      }
+      host
+        .invoke("pr:detail", n)
+        .then((fresh) => {
+          if (!view.isConnected || !fresh) return;
+          prime("pr:detail", n, fresh);
+          const sig = JSON.stringify(fresh);
+          if (sig !== lastSig) {
+            lastSig = sig;
+            buildDetail({ view, main, rail, topActions, d: fresh, nav, reload });
+          }
+          schedulePoll(fresh);
+        })
+        .catch(() => schedulePoll(current)); // transient failure — keep watching
+    }, 15000);
+  };
+
+  void (async () => {
+    let d: PrDetail | undefined;
+    try {
+      d = await gget("pr:detail", n, 8000);
+    } catch (e) {
+      if (!view.isConnected) return;
+      main.replaceChildren(
+        errorState("Couldn't load this pull request", cleanErr(e) || "GitHub request failed.", reload),
+      );
+      return;
+    }
+    if (!view.isConnected) return;
+    if (!d) {
+      main.replaceChildren(emptyState("Pull request unavailable", "This pull request couldn't be loaded."));
+      return;
+    }
+    lastSig = JSON.stringify(d);
+    buildDetail({ view, main, rail, topActions, d, nav, reload });
+    schedulePoll(d);
+  })();
 }
 
-function buildActions(
-  detail: HTMLElement,
-  full: PullRequest,
-  d: PrDetail | undefined,
-  refreshList: () => void,
-): HTMLElement {
-  const actions = el("div", "gh-detail-actions");
-  const reload = (): void => void showDetail(detail, full, refreshList);
+interface DetailCtx {
+  view: HTMLElement;
+  main: HTMLElement;
+  rail: HTMLElement;
+  topActions: HTMLElement;
+  d: PrDetail;
+  nav: SectionNav;
+  reload: () => void;
+}
 
-  const checkoutBtn = el("button", "mini-btn");
-  checkoutBtn.append(glyph("git-branch"), span("Checkout"));
-  checkoutBtn.title = `Fetch and check out this PR as pr/${full.number}`;
-  checkoutBtn.addEventListener("click", () => void doCheckout(full.number, checkoutBtn));
+function buildDetail(ctx: DetailCtx): void {
+  const { view, main, rail, topActions, d, nav, reload } = ctx;
+  const full = d.pr;
+  const kind = prKind(full);
+  main.replaceChildren();
+  rail.replaceChildren();
 
-  const approveBtn = el("button", "mini-btn");
-  approveBtn.append(glyph("check"), span("Approve"));
-  approveBtn.title = "Approve this pull request";
-  approveBtn.addEventListener("click", () => void doApprove(full.number, approveBtn, refreshList));
+  // ── top-bar action cluster ──
+  const actions: HTMLElement[] = [];
 
-  const reviewBtn = el("button", "mini-btn");
-  reviewBtn.append(glyph("comment"), span("Review"), glyph("chevron-down"));
-  reviewBtn.title = "Submit a review";
-  reviewBtn.addEventListener("click", () =>
-    openMenu(reviewBtn, [
-      {
-        label: "Comment",
-        icon: "comment",
-        onClick: () => void doReview(full.number, "COMMENT", reviewBtn, refreshList),
-      },
-      {
-        label: "Request changes",
-        icon: "request-changes",
-        onClick: () => void doReview(full.number, "REQUEST_CHANGES", reviewBtn, refreshList),
-      },
-      { separator: true },
-      {
-        label: "Approve",
-        icon: "check",
-        onClick: () => void doApprove(full.number, approveBtn, refreshList),
-      },
-    ]),
-  );
-
-  // "Mark ready" appears ONLY for drafts.
-  let readyBtn: HTMLElement | undefined;
-  if (full.draft) {
-    readyBtn = el("button", "mini-btn");
-    readyBtn.append(glyph("eye"), span("Mark ready"));
-    readyBtn.title = "Convert this draft to ready for review";
-    const rb = readyBtn;
-    readyBtn.addEventListener("click", () => void doMarkReady(full.number, rb, reload, refreshList));
-  }
-
-  const mergeBtn = el("button", "btn btn-primary gh-merge-btn");
-  mergeBtn.append(glyph("git-merge"), span("Merge"), glyph("chevron-down"));
-  // A closed/merged PR can't be merged — disable rather than letting the user
-  // open the menu and hit a confusing error toast.
-  const mergeable = full.state === "open" && !full.draft;
-  (mergeBtn as HTMLButtonElement).disabled = !mergeable;
-  mergeBtn.title = mergeable
-    ? "Merge this pull request"
-    : full.draft
-      ? "Mark the draft ready before merging"
-      : "This pull request is closed";
-  mergeBtn.addEventListener("click", () => {
-    if (!mergeable) return;
-    openMenu(mergeBtn, [
-      { label: "Create a merge commit", icon: "git-merge", onClick: () => void doMerge(full.number, "merge", refreshList) },
-      { label: "Squash and merge", icon: "git-commit", onClick: () => void doMerge(full.number, "squash", refreshList) },
-      { label: "Rebase and merge", icon: "git-compare", onClick: () => void doMerge(full.number, "rebase", refreshList) },
-    ]);
-  });
-
-  // "Update branch" — merge the latest base into the PR head. We don't know the
-  // behind-state here, so it's always shown for an open, non-draft PR; a no-op
-  // (already up to date) just toasts the API's verbatim message. It sits in the
-  // merge area as a secondary action, left of the primary Merge button.
-  let updateBtn: HTMLElement | undefined;
-  if (full.state === "open") {
-    updateBtn = el("button", "mini-btn");
-    updateBtn.append(glyph("git-merge"), span("Update branch"));
-    updateBtn.title = "Merge the latest changes from the base branch into this PR";
-    const ub = updateBtn;
-    updateBtn.addEventListener("click", () => void doUpdateBranch(full.number, reload, refreshList, ub));
-  }
-
-  const moreBtn = el("button", "mini-btn gh-icon-btn");
-  moreBtn.append(glyph("ellipsis"));
-  moreBtn.title = "More actions";
-  moreBtn.addEventListener("click", () =>
-    openMenu(moreBtn, [
-      {
-        label: "Add a comment",
-        icon: "comment",
-        onClick: () => void doComment(full.number, detail, full, refreshList),
-      },
-      {
-        label: "Edit title & description",
-        icon: "pencil",
-        onClick: () => void doEdit(detail, full, refreshList),
-      },
-      { separator: true },
-      {
-        label: "Labels",
-        icon: "tag",
-        onClick: () => void doLabels(moreBtn, detail, full, refreshList),
-      },
-      {
-        label: "Assignees",
-        icon: "person",
-        onClick: () => void doAssignees(moreBtn, detail, full, refreshList),
-      },
-      {
-        label: "Request reviewers",
-        icon: "organization",
-        onClick: () => void doRequestReviewers(full.number),
-      },
-      {
-        label: "Re-request review",
-        icon: "sync",
-        onClick: () => void doRequestReviewers(full.number, true),
-      },
-      { separator: true },
-      {
-        label: "Update branch",
-        icon: "git-merge",
-        onClick: () => void doUpdateBranch(full.number, reload, refreshList),
-      },
-      full.state === "open"
-        ? {
-            label: "Close pull request",
-            icon: "git-pull-request-closed",
-            onClick: () => void doSetState(full.number, "closed", reload, refreshList),
-          }
-        : {
-            label: "Reopen pull request",
-            icon: "git-pull-request",
-            onClick: () => void doSetState(full.number, "open", reload, refreshList),
-          },
-      { separator: true },
-      { label: "Copy link", icon: "copy", onClick: () => void copyText(full.htmlUrl, "Copied PR link.") },
-      { label: "Open on GitHub", icon: "link-external", onClick: () => window.open(full.htmlUrl, "_blank") },
-    ]),
-  );
-
-  // ✨ AI: explain / review the PR's diff, or draft a comment — each opens a
-  // conversational chat tab in the footer. Hidden until a model is connected.
+  // ✨ AI: explain / review the PR's diff, or draft a comment. Hidden until a
+  // model is connected. SHAs, not branch names — they resolve once fetched.
   const aiBtn = el("button", "mini-btn ai-mini");
   aiBtn.hidden = true;
   aiBtn.append(glyph("sparkle"), span("AI"), glyph("chevron-down"));
-  // Use the commit SHAs, not the branch names: a PR's head branch usually isn't a
-  // local ref (you'd have origin/<branch>), but the SHA resolves whenever the
-  // object has been fetched — so the diff is exact when it can be gathered at all.
   const diffCmd = `git diff ${full.base.sha}..${full.head.sha}`;
   aiBtn.addEventListener("click", () =>
     openMenu(aiBtn, [
@@ -524,25 +484,283 @@ function buildActions(
     ]),
   );
   void aiEnabled().then((ok) => (aiBtn.hidden = !ok));
+  actions.push(aiBtn);
 
-  actions.append(
-    checkoutBtn,
-    approveBtn,
-    reviewBtn,
-    ...(readyBtn ? [readyBtn] : []),
-    aiBtn,
-    ...(updateBtn ? [updateBtn] : []),
-    mergeBtn,
-    moreBtn,
+  const checkoutBtn = el("button", "mini-btn");
+  checkoutBtn.append(glyph("git-branch"), span("Checkout"));
+  checkoutBtn.title = `Fetch and check out this PR as pr/${full.number}`;
+  checkoutBtn.addEventListener("click", () => void doCheckout(full.number, checkoutBtn));
+  actions.push(checkoutBtn);
+
+  const approveBtn = el("button", "mini-btn");
+  approveBtn.append(glyph("check"), span("Approve"));
+  approveBtn.title = "Approve this pull request";
+  approveBtn.addEventListener("click", () => void doApprove(full.number, approveBtn, reload));
+
+  const reviewBtn = el("button", "mini-btn");
+  reviewBtn.append(glyph("comment"), span("Review"), glyph("chevron-down"));
+  reviewBtn.title = "Submit a review";
+  reviewBtn.addEventListener("click", () =>
+    openMenu(reviewBtn, [
+      { label: "Comment", icon: "comment", onClick: () => void doReview(full.number, "COMMENT", reviewBtn, reload) },
+      { label: "Request changes", icon: "request-changes", onClick: () => void doReview(full.number, "REQUEST_CHANGES", reviewBtn, reload) },
+      { separator: true },
+      { label: "Approve", icon: "check", onClick: () => void doApprove(full.number, approveBtn, reload) },
+    ]),
   );
-  return actions;
+  if (kind === "open-pr" || kind === "draft") actions.push(approveBtn, reviewBtn);
+
+  // The primary slot: Merge for an open PR, Mark ready for a draft.
+  if (kind === "draft") {
+    const readyBtn = el("button", "btn btn-primary");
+    readyBtn.append(glyph("eye"), span("Mark ready"));
+    readyBtn.title = "Convert this draft to ready for review";
+    readyBtn.addEventListener("click", () => void doMarkReady(full.number, readyBtn, reload));
+    actions.push(readyBtn);
+  } else if (kind === "open-pr") {
+    const mergeBtn = el("button", "btn btn-primary gh-merge-btn");
+    mergeBtn.append(glyph("git-merge"), span("Merge"), glyph("chevron-down"));
+    mergeBtn.title = "Merge this pull request";
+    mergeBtn.addEventListener("click", () =>
+      openMenu(mergeBtn, [
+        { label: "Create a merge commit", icon: "git-merge", onClick: () => void doMerge(full.number, "merge", reload) },
+        { label: "Squash and merge", icon: "git-commit", onClick: () => void doMerge(full.number, "squash", reload) },
+        { label: "Rebase and merge", icon: "git-compare", onClick: () => void doMerge(full.number, "rebase", reload) },
+      ]),
+    );
+    actions.push(mergeBtn);
+  }
+
+  const moreBtn = el("button", "mini-btn gh-icon-btn");
+  moreBtn.append(glyph("ellipsis"));
+  moreBtn.title = "More actions";
+  moreBtn.addEventListener("click", () =>
+    openMenu(moreBtn, [
+      { label: "Edit title & description", icon: "pencil", onClick: () => void doEdit(full, reload) },
+      { label: "Update branch", icon: "git-merge", onClick: () => void doUpdateBranch(full.number, reload) },
+      { separator: true },
+      full.state === "open"
+        ? { label: "Close pull request", icon: "git-pull-request-closed", onClick: () => void doSetState(full.number, "closed", reload) }
+        : { label: "Reopen pull request", icon: "git-pull-request", onClick: () => void doSetState(full.number, "open", reload) },
+      { separator: true },
+      { label: "Copy link", icon: "copy", onClick: () => void copyText(full.htmlUrl, "Copied PR link.") },
+    ]),
+  );
+  actions.push(moreBtn);
+
+  const openBtn = el("button", "mini-btn gh-icon-btn");
+  openBtn.append(glyph("link-external"));
+  openBtn.title = "Open this pull request on GitHub";
+  openBtn.setAttribute("aria-label", openBtn.title);
+  openBtn.addEventListener("click", () => window.open(full.htmlUrl, "_blank"));
+  actions.push(openBtn);
+
+  topActions.replaceChildren(...actions);
+
+  // ── title block ──
+  const titleRow = el("div", "det-title-row");
+  titleRow.appendChild(statePill(prKindLabel(kind), kind));
+  const h = el("h1", "det-title");
+  h.append(span(full.title), span(`  #${full.number}`, "det-title-num"));
+  titleRow.appendChild(h);
+  const editTitleBtn = el("button", "mini-btn gh-icon-btn det-title-edit");
+  editTitleBtn.append(glyph("pencil"));
+  editTitleBtn.title = "Edit title & description";
+  editTitleBtn.setAttribute("aria-label", "Edit pull request title and description");
+  editTitleBtn.addEventListener("click", () => void doEdit(full, reload));
+  titleRow.appendChild(editTitleBtn);
+  main.appendChild(titleRow);
+
+  const sub = el("div", "det-sub");
+  const author = full.user;
+  if (author?.login) {
+    const who = el("button", "gh-meta-author");
+    who.append(avatar(author.login, author.avatarUrl, 18), span(author.login));
+    who.title = `View @${author.login}'s profile`;
+    who.addEventListener("click", () =>
+      openPeek(memberCard({ login: author.login, avatarUrl: author.avatarUrl, htmlUrl: `https://github.com/${author.login}` })),
+    );
+    sub.appendChild(who);
+  }
+  const when = el("span");
+  when.textContent = `opened ${relTimeISO(full.createdAt)} · updated ${relTimeISO(full.updatedAt)}`;
+  when.title = full.updatedAt ? `Updated ${absTimeISO(full.updatedAt)}` : "";
+  sub.appendChild(when);
+  main.appendChild(sub);
+
+  // ── sub-tabs ──
+  const subBar = el("div", "gh-subtabs");
+  const content = el("div", "gh-subcontent");
+  const subDefs = [
+    { id: "conversation", label: "Conversation", icon: "comment-discussion" },
+    { id: "commits", label: "Commits", icon: "git-commit" },
+    { id: "checks", label: "Pipelines", icon: "play" },
+    { id: "files", label: `Files (${d.files.length})`, icon: "code" },
+  ];
+  const subBtns: HTMLElement[] = [];
+  const selectSub = (id: string): void => {
+    if (activeSubTab === "files" && id !== "files") disposePrDiff();
+    activeSubTab = id;
+    for (const b of subBtns) b.classList.toggle("active", b.dataset.sub === id);
+    // Files mode: the rail hides and the content column stretches to the full
+    // window — a review surface, not a document.
+    view.classList.toggle("det-files-mode", id === "files");
+    void renderSubTab(content, full, d, id, reload);
+  };
+  for (const t of subDefs) {
+    const b = el("button", "gh-subtab");
+    b.dataset.sub = t.id;
+    b.append(glyph(t.icon), span(t.label));
+    b.addEventListener("click", () => selectSub(t.id));
+    subBtns.push(b);
+    subBar.appendChild(b);
+  }
+  main.append(subBar, content);
+
+  // ── property rail ──
+  const reviewersProp = propSection("Reviewers", {
+    onEdit: () => void doRequestReviewers(full.number),
+    editTitle: "Request reviewers",
+  });
+  // Who was ASKED but hasn't answered — the single most useful thing a PR rail
+  // can tell you, and previously invisible (the section only offered "add").
+  if (full.requestedReviewers?.length) {
+    for (const r of full.requestedReviewers) {
+      const chip = personChip(r.login, r.avatarUrl, () =>
+        openPeek(memberCard({ login: r.login, avatarUrl: r.avatarUrl, htmlUrl: `https://github.com/${r.login}` })),
+      );
+      chip.title = `@${r.login} — review requested, not yet submitted`;
+      chip.classList.add("is-pending");
+      reviewersProp.body.appendChild(chip);
+    }
+  }
+  reviewersProp.body.appendChild(propAddBtn("Request review", () => void doRequestReviewers(full.number)));
+
+  const assignProp = propSection("Assignees", {
+    onEdit: () => void doAssignees(full, reload),
+    editTitle: "Edit assignees",
+  });
+  if (full.assignees?.length) {
+    for (const a of full.assignees) {
+      assignProp.body.appendChild(
+        personChip(a.login, a.avatarUrl, () =>
+          openPeek(memberCard({ login: a.login, avatarUrl: a.avatarUrl, htmlUrl: `https://github.com/${a.login}` })),
+        ),
+      );
+    }
+  } else {
+    assignProp.body.appendChild(propAddBtn("Assign", () => void doAssignees(full, reload)));
+  }
+
+  const labelProp = propSection("Labels", {
+    onEdit: (anchor) => void doLabels(anchor, full, reload),
+    editTitle: "Edit labels",
+  });
+  if (full.labels.length) {
+    for (const l of full.labels) labelProp.body.appendChild(labelChip(l.name, l.color));
+  } else {
+    labelProp.body.appendChild(propAddBtn("Add labels", () => void doLabels(labelProp.root, full, reload)));
+  }
+
+  const branchesProp = propSection("Branches");
+  const branchChip = (ref: string): HTMLElement => {
+    const b = el("button", "gh-branch-chip");
+    b.append(glyph("git-branch"), span(ref));
+    b.title = `Show ${ref} in Branches`;
+    b.addEventListener("click", () => sectionNav?.("branches", { ref }));
+    return b;
+  };
+  const flow = el("span", "gh-meta-flow");
+  flow.append(branchChip(full.head.ref), span("→", "gh-meta-arrow"), branchChip(full.base.ref));
+  branchesProp.body.appendChild(flow);
+
+  const checksProp = propSection("Checks");
+  if (d.checks) {
+    const c = el("button", "gh-pill det-checks-pill");
+    c.classList.add(`gh-checks-${d.checks}`);
+    c.textContent = d.checks;
+    c.title = "Open the Pipelines tab";
+    c.addEventListener("click", () => selectSub("checks"));
+    checksProp.body.appendChild(c);
+  } else {
+    checksProp.body.appendChild(propNone("No checks"));
+  }
+
+  // Who pressed merge — often NOT the author, and the answer to "who shipped
+  // this?" that used to require opening github.com.
+  const mergedProp = full.mergedBy ? propSection("Merged by") : undefined;
+  if (mergedProp && full.mergedBy) {
+    const mb = full.mergedBy;
+    mergedProp.body.appendChild(
+      personChip(mb.login, mb.avatarUrl, () =>
+        openPeek(memberCard({ login: mb.login, avatarUrl: mb.avatarUrl, htmlUrl: `https://github.com/${mb.login}` })),
+      ),
+    );
+  }
+
+  const msProp = full.milestone ? propSection("Milestone") : undefined;
+  if (msProp && full.milestone) {
+    const chip = el("span", "gh-pill det-milestone-chip");
+    chip.append(glyph("milestone"), span(full.milestone.title));
+    msProp.body.appendChild(chip);
+  }
+
+  const about = propSection("About");
+  about.body.classList.add("det-prop-facts");
+  const fact = (k: string, v: string, title?: string): HTMLElement => {
+    const row = el("div", "det-fact");
+    const val = el("span", "det-fact-v");
+    val.textContent = v;
+    if (title) val.title = title;
+    row.append(span(k, "det-fact-k"), val);
+    return row;
+  };
+  about.body.appendChild(fact("Files changed", String(d.files.length)));
+  if (typeof full.additions === "number" || typeof full.deletions === "number") {
+    about.body.appendChild(fact("Lines", `+${full.additions ?? 0} −${full.deletions ?? 0}`));
+  }
+  if (typeof full.commits === "number") about.body.appendChild(fact("Commits", String(full.commits)));
+  if (typeof full.reviewComments === "number" && full.reviewComments > 0) {
+    about.body.appendChild(fact("Review comments", String(full.reviewComments)));
+  }
+  if (full.headRepoFullName) {
+    // A PR from a fork runs CI from someone else's branch — worth saying out loud.
+    about.body.appendChild(fact("From fork", full.headRepoFullName, full.headRepoFullName));
+  }
+  if (full.authorAssociation && full.authorAssociation !== "NONE") {
+    about.body.appendChild(fact("Author is", associationLabel(full.authorAssociation)));
+  }
+  about.body.appendChild(fact("Created", relTimeISO(full.createdAt), absTimeISO(full.createdAt)));
+  about.body.appendChild(fact("Updated", relTimeISO(full.updatedAt), absTimeISO(full.updatedAt)));
+  if (full.mergedAt) {
+    about.body.appendChild(fact("Merged", relTimeISO(full.mergedAt), absTimeISO(full.mergedAt)));
+  } else if (full.closedAt) {
+    about.body.appendChild(fact("Closed", relTimeISO(full.closedAt), absTimeISO(full.closedAt)));
+  }
+
+  // People → classification → where it lands → how it's doing → the facts.
+  rail.append(
+    reviewersProp.root,
+    assignProp.root,
+    ...(mergedProp ? [mergedProp.root] : []),
+    labelProp.root,
+    ...(msProp ? [msProp.root] : []),
+    branchesProp.root,
+    checksProp.root,
+    about.root,
+  );
+
+  selectSub(subDefs.some((s) => s.id === activeSubTab) ? activeSubTab : "conversation");
 }
+
+// ── Sub-tab content ──────────────────────────────────────────────────────────
 
 async function renderSubTab(
   content: HTMLElement,
   full: PullRequest,
-  d: PrDetail | undefined,
+  d: PrDetail,
   id: string,
+  reload: () => void,
 ): Promise<void> {
   content.replaceChildren(loadingState());
   if (id === "conversation") {
@@ -554,15 +772,42 @@ async function renderSubTab(
     }
     if (activeSubTab !== id) return; // a newer tab was selected mid-fetch
     content.replaceChildren();
+    const timeline = el("div", "gh-subcontent");
+    wireProseNav(timeline, sectionNav);
     if (full.body && full.body.trim()) {
-      content.appendChild(commentCard(full.user?.login ?? "author", "description", full.body, undefined));
+      timeline.appendChild(
+        commentCard(full.user?.login ?? "author", "description", full.body, undefined, {
+          association: full.authorAssociation,
+          reactions: full.reactions,
+        }),
+      );
     }
     for (const c of conv) {
-      content.appendChild(commentCard(c.author, undefined, c.body, c.kind === "review" ? c.state : undefined));
+      timeline.appendChild(commentCard(c.author, undefined, c.body, c.kind === "review" ? c.state : undefined));
     }
     if ((!full.body || !full.body.trim()) && conv.length === 0) {
-      content.appendChild(emptyState("No conversation yet", "No description or comments on this PR."));
+      timeline.appendChild(emptyState("No conversation yet", "No description or comments on this PR."));
     }
+    content.appendChild(timeline);
+
+    // A real composer (not a prompt) — same pattern as the Issues detail.
+    const composer = el("div", "gh-composer");
+    const ta = document.createElement("textarea");
+    ta.className = "gh-composer-input";
+    ta.placeholder = "Leave a comment…";
+    ta.rows = 3;
+    ta.value = commentDrafts.get(full.number) ?? "";
+    ta.addEventListener("input", () => {
+      if (ta.value.trim()) commentDrafts.set(full.number, ta.value);
+      else commentDrafts.delete(full.number);
+    });
+    const crow = el("div", "gh-composer-actions");
+    const send = el("button", "btn btn-primary");
+    send.append(glyph("comment"), span("Comment"));
+    send.addEventListener("click", () => void doComment(full.number, ta, send, reload));
+    crow.appendChild(send);
+    composer.append(ta, crow);
+    content.appendChild(composer);
   } else if (id === "commits") {
     let commits;
     try {
@@ -613,14 +858,25 @@ async function renderSubTab(
       row.append(dot, name, st);
       if (c.detailsUrl) {
         row.classList.add("is-link");
-        row.addEventListener("click", () => window.open(c.detailsUrl!, "_blank"));
+        // GitHub-Actions checks land on the RUN PAGE with the job's log pane
+        // expanded — the full surface, not a modal. External CI keeps the browser.
+        const gha = /\/actions\/runs\/(\d+)(?:\/jobs?\/(\d+))?/.exec(c.detailsUrl);
+        row.title = gha ? "Open the run's logs in-app" : "Open check details";
+        row.addEventListener("click", () => {
+          if (gha) {
+            const jobId = gha[2] ? Number(gha[2]) : undefined;
+            sectionNav?.("actions", { number: Number(gha[1]), jobId });
+          } else {
+            window.open(c.detailsUrl!, "_blank");
+          }
+        });
       }
       content.appendChild(row);
     }
   } else {
-    // ── Files = a real master/detail review surface ──────────────────────────
+    // ── Files = the full-width review surface ──
     content.replaceChildren();
-    const files = d?.files ?? [];
+    const files = d.files;
     if (files.length === 0) {
       content.appendChild(emptyState("No files changed", "This PR doesn't change any files."));
       return;
@@ -630,10 +886,11 @@ async function renderSubTab(
 }
 
 /**
- * The Files tab: a left file list (master) and a right pane (detail) showing the
- * selected file's real Monaco diff with its inline review threads beneath it.
- * Clicking a file fetches `pr:fileDiff`; the threads come from `pr:reviewThreads`
- * filtered to that file. A composer adds a new inline comment at a chosen line.
+ * The Files tab: a left file list and the selected file's real Monaco diff with
+ * its inline review threads beneath it. Clicking a file fetches `pr:fileDiff`;
+ * the threads come from `pr:reviewThreads` filtered to that file. In files mode
+ * the whole page column stretches, so the diff gets real height. Layout comes
+ * from the .pr-files* CSS — no inline styles.
  */
 function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]): void {
   const layout = el("div", "pr-files");
@@ -641,25 +898,9 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
   const detail = el("div", "pr-files-detail");
   layout.append(list, detail);
   content.appendChild(layout);
-  // Structural layout is applied inline so the master/detail + Monaco surface size
-  // correctly even before the integrator adds the polished .pr-files* CSS. Visual
-  // theming (borders, colors, radii) is left to those classes.
-  layout.style.display = "flex";
-  layout.style.gap = "12px";
-  layout.style.minHeight = "420px";
-  layout.style.height = "60vh";
-  list.style.flex = "0 0 240px";
-  list.style.overflowY = "auto";
-  list.style.minWidth = "0";
-  detail.style.flex = "1 1 auto";
-  detail.style.minWidth = "0";
-  detail.style.display = "flex";
-  detail.style.flexDirection = "column";
-  detail.style.overflow = "hidden";
 
   // Threads are (re)fetched on each file open so a just-added comment / resolve
-  // shows immediately. A failure is non-fatal — the diff still renders; we just
-  // show no existing comments.
+  // shows immediately. A failure is non-fatal — the diff still renders.
   const loadThreads = async (): Promise<PrReviewThread[]> => {
     try {
       return await host.invoke("pr:reviewThreads", full.number);
@@ -701,10 +942,9 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
 
 /**
  * Render one file's diff (left = base, right = head) into a shared DiffPanel,
- * with a threads panel beneath it. The DiffPanel is module-owned so it survives
- * re-renders of the threads panel but is disposed by the lifecycle hooks above.
- * `loadThreads` is re-invoked (not the diff) whenever a review action lands, so
- * the comments refresh in place without the Monaco editor flickering.
+ * with a threads panel beneath it. `loadThreads` is re-invoked (not the diff)
+ * whenever a review action lands, so the comments refresh in place without the
+ * Monaco editor flickering.
  */
 async function showFileDiff(
   detail: HTMLElement,
@@ -712,29 +952,16 @@ async function showFileDiff(
   f: PrFile,
   loadThreads: () => Promise<PrReviewThread[]>,
 ): Promise<void> {
-  // Build the stable shell ONCE per file open: a diff surface + a threads slot.
   const surface = el("div", "diff-surface pr-diff-surface");
   const threadsSlot = el("div", "pr-threads");
-  // Structural sizing inline (theming via the classes): the diff fills the upper
-  // half, the threads panel scrolls below it.
-  surface.style.flex = "1 1 60%";
-  surface.style.minHeight = "200px";
-  threadsSlot.style.flex = "0 1 auto";
-  threadsSlot.style.overflowY = "auto";
-  threadsSlot.style.maxHeight = "40%";
-  threadsSlot.style.marginTop = "10px";
   detail.replaceChildren(surface, threadsSlot);
   threadsSlot.replaceChildren(loadingState("Loading diff…"));
 
-  // (Re)create the Monaco panel against the fresh surface and arm the detach
-  // watcher so it's torn down if the view goes away.
   disposePrDiff();
   const panel = new DiffPanel(surface);
   prDiffPanel = panel;
   watchDiffDetach(surface);
 
-  // Refresh ONLY the threads panel (re-fetch + re-render) after a review action —
-  // the diff itself is unchanged, so leave the Monaco editor untouched.
   const refreshThreads = async (): Promise<void> => {
     if (prDiffPanel !== panel) return; // the file/view changed under us
     threadsSlot.replaceChildren(loadingState("Refreshing comments…"));
@@ -749,7 +976,6 @@ async function showFileDiff(
   try {
     diff = await host.invoke("pr:fileDiff", { number: full.number, path: f.filename });
   } catch (e) {
-    // Surface the error inside the diff area; the file list stays usable.
     if (prDiffPanel !== panel) return; // superseded by another open
     panel.showEmpty(cleanErr(e) || "Couldn't load this file's diff.");
     threadsSlot.replaceChildren();
@@ -782,16 +1008,9 @@ function renderThreadsPanel(
     .sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 
   const head = el("div", "pr-threads-head");
-  // Flex row with the add-comment action pushed to the right (structural inline).
-  head.style.display = "flex";
-  head.style.alignItems = "center";
-  head.style.gap = "8px";
-  head.style.margin = "4px 0 8px";
   const title = span(`Review comments (${mine.length})`, "pr-threads-title");
-  title.style.fontWeight = "600";
   head.append(glyph("comment-discussion"), title);
-  const addBtn = el("button", "mini-btn");
-  addBtn.style.marginLeft = "auto";
+  const addBtn = el("button", "mini-btn pr-threads-add");
   addBtn.append(glyph("comment"), span("Add a comment"));
   addBtn.title = "Comment on a line of this file";
   addBtn.addEventListener("click", () => void addInlineComment(full.number, f.filename, addBtn, reloadFile));
@@ -807,12 +1026,9 @@ function renderThreadsPanel(
   for (const t of mine) slot.appendChild(threadCard(full.number, t, reloadFile));
 }
 
-/** One review thread: a line anchor + its comments + resolve / reply controls.
- *  Built on the existing `.gh-comment` shell (border / radius) for instant polish,
- *  with `.pr-thread*` hooks the integrator can theme further. */
+/** One review thread: a line anchor + its comments + resolve / reply controls. */
 function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void): HTMLElement {
   const card = el("div", `gh-comment pr-thread${t.isResolved ? " is-resolved" : ""}`);
-  if (t.isResolved) card.style.opacity = "0.72";
 
   const hd = el("div", "gh-comment-head pr-thread-head");
   const anchor = el("span", "pr-thread-anchor");
@@ -823,8 +1039,7 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
   statusPill.classList.add(t.isResolved ? "gh-review-approved" : "gh-thread-open");
   hd.appendChild(statusPill);
 
-  const resolveBtn = el("button", "mini-btn gh-inline-edit");
-  resolveBtn.style.marginLeft = "auto";
+  const resolveBtn = el("button", "mini-btn gh-inline-edit pr-thread-resolve");
   resolveBtn.append(glyph(t.isResolved ? "issue-reopened" : "check"), span(t.isResolved ? "Unresolve" : "Resolve"));
   resolveBtn.addEventListener("click", () =>
     void toggleResolve(t.id, !t.isResolved, resolveBtn, reloadFile),
@@ -834,13 +1049,7 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
 
   for (const c of t.comments) {
     const cm = el("div", "pr-thread-comment");
-    cm.style.padding = "8px 12px";
-    cm.style.borderTop = "1px solid var(--app-border)";
     const ch = el("div", "pr-thread-comment-head");
-    ch.style.display = "flex";
-    ch.style.alignItems = "center";
-    ch.style.gap = "7px";
-    ch.style.marginBottom = "4px";
     ch.append(avatar(c.author.login, c.author.avatarUrl, 20), span(c.author.login, "pr-thread-author"));
     if (c.createdAt) {
       const when = span(relTimeISO(c.createdAt), "gh-comment-when");
@@ -848,9 +1057,7 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
       ch.appendChild(when);
     }
     cm.appendChild(ch);
-    const bd = el("div", "gh-body-md");
-    bd.style.margin = "0";
-    bd.style.padding = "0";
+    const bd = el("div", "gh-body-md pr-thread-body");
     if (c.body.trim()) {
       try {
         bd.innerHTML = renderMarkdown(c.body);
@@ -868,14 +1075,8 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
 
   // Reply box (inline) — Enter submits, Shift+Enter for a newline.
   const replyRow = el("div", "pr-thread-reply");
-  replyRow.style.display = "flex";
-  replyRow.style.gap = "8px";
-  replyRow.style.alignItems = "flex-end";
-  replyRow.style.padding = "8px 12px";
-  replyRow.style.borderTop = "1px solid var(--app-border)";
   const ta = document.createElement("textarea");
   ta.className = "gh-composer-input pr-reply-input";
-  ta.style.flex = "1 1 auto";
   ta.placeholder = "Reply…";
   ta.rows = 2;
   const replyBtn = el("button", "btn btn-primary");
@@ -892,12 +1093,28 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
   return card;
 }
 
-function commentCard(author: string, suffix: string | undefined, body: string, reviewState?: string): HTMLElement {
+/** "fork" marker naming the head repo — hover for the full owner/repo. */
+function forkChip(headRepo: string): HTMLElement {
+  const c = el("span", "gh-fork-chip");
+  c.append(glyph("repo-forked"), span("fork"));
+  c.title = `Head branch lives in ${headRepo}`;
+  return c;
+}
+
+function commentCard(
+  author: string,
+  suffix: string | undefined,
+  body: string,
+  reviewState?: string,
+  extra: { association?: string; reactions?: ReactionSummary } = {},
+): HTMLElement {
   const card = el("div", "gh-comment");
   const hd = el("div", "gh-comment-head");
   const who = el("span", "gh-comment-author");
-  who.textContent = suffix ? `${author} · ${suffix}` : author;
+  who.append(avatar(author, `https://github.com/${author}.png`, 18), span(suffix ? `${author} · ${suffix}` : author));
   hd.appendChild(who);
+  const assoc = associationBadge(extra.association);
+  if (assoc) hd.appendChild(assoc);
   if (reviewState) {
     const badge = pill(reviewState.toLowerCase().replace(/_/g, " "));
     badge.classList.add(`gh-review-${reviewState.toLowerCase()}`);
@@ -909,10 +1126,12 @@ function commentCard(author: string, suffix: string | undefined, body: string, r
     bd.innerHTML = renderMarkdown(body);
     card.appendChild(bd);
   }
+  const reactions = reactionRow(extra.reactions);
+  if (reactions) card.appendChild(reactions);
   return card;
 }
 
-// ── Mutations ─────────────────────────────────────────────────────────────────
+// ── Mutations (disable trigger → toast → bust cache → re-render) ──────────────
 
 async function doCheckout(n: number, btn: HTMLElement): Promise<void> {
   (btn as HTMLButtonElement).disabled = true;
@@ -930,7 +1149,7 @@ async function doCheckout(n: number, btn: HTMLElement): Promise<void> {
   }
 }
 
-async function doApprove(n: number, btn: HTMLElement, refreshList: () => void): Promise<void> {
+async function doApprove(n: number, btn: HTMLElement, reload: () => void): Promise<void> {
   (btn as HTMLButtonElement).disabled = true;
   try {
     const r = await host.invoke("pr:approve", n);
@@ -938,9 +1157,8 @@ async function doApprove(n: number, btn: HTMLElement, refreshList: () => void): 
       toast(r.message ?? "Couldn't approve the PR.", "error");
       return;
     }
-    btn.replaceChildren(glyph("check"), span("Approved"));
     toast(`Approved pull request #${n}.`, "success");
-    refreshList();
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't approve the PR.", "error");
   } finally {
@@ -948,34 +1166,33 @@ async function doApprove(n: number, btn: HTMLElement, refreshList: () => void): 
   }
 }
 
+/**
+ * The review modal — verdict (Comment / Approve / Request changes) + a real
+ * multi-line body in ONE surface, GitHub-style, instead of the old one-line
+ * prompt. `event` preselects the verdict the caller chose; the user can still
+ * change it here. A body is required only for "Request changes".
+ */
 async function doReview(
   n: number,
-  event: "COMMENT" | "REQUEST_CHANGES",
+  event: PrReviewEvent,
   btn: HTMLElement,
-  refreshList: () => void,
+  reload: () => void,
 ): Promise<void> {
-  const verb = event === "COMMENT" ? "Comment" : "Request changes";
-  const body = await promptInline(
-    `${verb} on PR #${n}`,
-    event === "COMMENT" ? "Leave a comment…" : "Describe the changes you'd like…",
-    "",
-    "Submit",
-    true, // allowEmpty: distinguish an empty submit ("") from a cancel (null)
-  );
-  if (body === null) return; // cancelled
-  if (!body && event === "REQUEST_CHANGES") {
-    toast("A comment is required to request changes.", "error");
-    return;
-  }
+  const choice = await reviewModal(n, event);
+  if (!choice) return; // cancelled
   (btn as HTMLButtonElement).disabled = true;
   try {
-    const r = await host.invoke("pr:review", { number: n, event, body: body || undefined });
+    const r = await host.invoke("pr:review", {
+      number: n,
+      event: choice.event,
+      body: choice.body || undefined,
+    });
     if (!r.ok) {
       toast(r.message ?? "Couldn't submit the review.", "error");
       return;
     }
     toast(`Review submitted on PR #${n}.`, "success");
-    refreshList();
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't submit the review.", "error");
   } finally {
@@ -983,14 +1200,120 @@ async function doReview(
   }
 }
 
+const REVIEW_VERDICTS: ReadonlyArray<{ event: PrReviewEvent; label: string; icon: string; hint: string }> = [
+  { event: "COMMENT", label: "Comment", icon: "comment", hint: "Feedback without an explicit approval" },
+  { event: "APPROVE", label: "Approve", icon: "check", hint: "The change is good to merge" },
+  { event: "REQUEST_CHANGES", label: "Request changes", icon: "request-changes", hint: "Must be addressed before merging" },
+];
+
+function reviewModal(
+  n: number,
+  initial: PrReviewEvent,
+): Promise<{ event: PrReviewEvent; body: string } | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    openModal((close) => {
+      const finish = (v: { event: PrReviewEvent; body: string } | null): void => {
+        if (settled) return;
+        settled = true;
+        resolve(v);
+        close();
+      };
+
+      const card = el("div", "modal-card gh-pr-form review-modal");
+      const h = el("div", "modal-title");
+      h.textContent = `Review pull request #${n}`;
+      card.appendChild(h);
+
+      let selected: PrReviewEvent = initial;
+      const verdictRows: HTMLElement[] = [];
+      const verdicts = el("div", "review-verdicts");
+      const syncVerdicts = (): void => {
+        verdictRows.forEach((r) => r.classList.toggle("is-selected", r.dataset.event === selected));
+        submitLabel.textContent =
+          selected === "APPROVE" ? "Approve" : selected === "REQUEST_CHANGES" ? "Request changes" : "Submit review";
+      };
+      for (const v of REVIEW_VERDICTS) {
+        const row = el("button", "review-verdict");
+        (row as HTMLButtonElement).type = "button";
+        row.dataset.event = v.event;
+        const lead = el("span", "review-verdict-lead");
+        lead.appendChild(glyph(v.icon));
+        const text = el("span", "review-verdict-text");
+        const l = el("span", "review-verdict-label");
+        l.textContent = v.label;
+        const hint = el("span", "review-verdict-hint");
+        hint.textContent = v.hint;
+        text.append(l, hint);
+        row.append(lead, text, glyph("check"));
+        row.addEventListener("click", () => {
+          selected = v.event;
+          syncVerdicts();
+        });
+        verdictRows.push(row);
+        verdicts.appendChild(row);
+      }
+      card.appendChild(verdicts);
+
+      const ta = document.createElement("textarea");
+      ta.className = "gh-form-textarea";
+      ta.placeholder = "Leave a review comment… (required for Request changes)";
+      ta.rows = 5;
+      card.appendChild(ta);
+
+      const actions = el("div", "modal-actions");
+      const cancel = el("button", "mini-btn");
+      cancel.textContent = "Cancel";
+      const ok = el("button", "btn btn-primary modal-ok");
+      const submitLabel = span("Submit review");
+      ok.appendChild(submitLabel);
+      actions.append(cancel, ok);
+      card.appendChild(actions);
+      syncVerdicts();
+
+      const submit = (): void => {
+        const body = ta.value.trim();
+        if (!body && selected === "REQUEST_CHANGES") {
+          ta.focus();
+          toast("A comment is required to request changes.", "error");
+          return;
+        }
+        finish({ event: selected, body });
+      };
+      cancel.addEventListener("click", () => finish(null));
+      ok.addEventListener("click", submit);
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          submit();
+        }
+      });
+
+      return {
+        card,
+        focusEl: ta,
+        label: `Review pull request #${n}`,
+        onClose: () => {
+          if (!settled) resolve(null);
+        },
+      };
+    });
+  });
+}
+
 async function doComment(
   n: number,
-  detail: HTMLElement,
-  pr: PullRequest,
-  refreshList: () => void,
+  ta: HTMLTextAreaElement,
+  btn: HTMLElement,
+  reload: () => void,
 ): Promise<void> {
-  const body = await promptInline(`Comment on PR #${n}`, "Write a comment…", "", "Comment");
-  if (!body) return;
+  const body = ta.value.trim();
+  if (!body) {
+    toast("Write a comment first.", "info");
+    return;
+  }
+  (btn as HTMLButtonElement).disabled = true;
+  ta.disabled = true;
   try {
     const r = await host.invoke("pr:comment", { number: n, body });
     if (!r.ok) {
@@ -998,20 +1321,18 @@ async function doComment(
       return;
     }
     toast(`Commented on PR #${n}.`, "success");
-    // re-render the detail so the Conversation tab reloads with the new comment
+    commentDrafts.delete(n);
     activeSubTab = "conversation";
-    void showDetail(detail, pr, refreshList);
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't post the comment.", "error");
+  } finally {
+    (btn as HTMLButtonElement).disabled = false;
+    ta.disabled = false;
   }
 }
 
-async function doSetState(
-  n: number,
-  state: "open" | "closed",
-  reload: () => void,
-  refreshList: () => void,
-): Promise<void> {
+async function doSetState(n: number, state: "open" | "closed", reload: () => void): Promise<void> {
   if (state === "closed") {
     const ok = await confirmDialog({
       title: `Close pull request #${n}?`,
@@ -1028,19 +1349,13 @@ async function doSetState(
       return;
     }
     toast(state === "closed" ? `Closed PR #${n}.` : `Reopened PR #${n}.`, "success");
-    reload(); // refetch + re-render the detail so the action cluster flips
-    if (state === "closed") refreshList(); // a closed PR leaves the open list
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't update the pull request.", "error");
   }
 }
 
-async function doMarkReady(
-  n: number,
-  btn: HTMLElement,
-  reload: () => void,
-  refreshList: () => void,
-): Promise<void> {
+async function doMarkReady(n: number, btn: HTMLElement, reload: () => void): Promise<void> {
   (btn as HTMLButtonElement).disabled = true;
   try {
     const r = await host.invoke("pr:markReady", n);
@@ -1049,8 +1364,7 @@ async function doMarkReady(
       return;
     }
     toast(`PR #${n} is ready for review.`, "success");
-    reload(); // the draft pill + "Mark ready" button disappear
-    refreshList();
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't mark the PR ready.", "error");
   } finally {
@@ -1058,11 +1372,7 @@ async function doMarkReady(
   }
 }
 
-async function doMerge(
-  n: number,
-  method: "merge" | "squash" | "rebase",
-  refreshList: () => void,
-): Promise<void> {
+async function doMerge(n: number, method: "merge" | "squash" | "rebase", reload: () => void): Promise<void> {
   const ok = await confirmDialog({
     title: `Merge pull request #${n}?`,
     message: `This performs a ${method} merge on GitHub and can't be undone here.`,
@@ -1076,7 +1386,7 @@ async function doMerge(
       return;
     }
     toast(`Merged pull request #${n}.`, "success");
-    refreshList();
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Merge failed.", "error");
   }
@@ -1087,7 +1397,7 @@ async function doMerge(
 async function doRequestReviewers(n: number, reRequest = false): Promise<void> {
   let people: RepoCollaborator[] = [];
   try {
-    people = await host.invoke("pr:reviewers", undefined);
+    people = await gget("pr:reviewers", undefined, 60000);
   } catch {
     /* fall through to the free-text path */
   }
@@ -1122,10 +1432,8 @@ async function doRequestReviewers(n: number, reRequest = false): Promise<void> {
   }
 }
 
-// ── PR review-depth mutations (edit · labels · assignees · update · inline) ─────
-
 /** Edit the PR's title + body in one unified form, then PATCH via pr:edit. */
-async function doEdit(detail: HTMLElement, pr: PullRequest, refreshList: () => void): Promise<void> {
+async function doEdit(pr: PullRequest, reload: () => void): Promise<void> {
   const res = await editForm({
     title: `Edit pull request #${pr.number}`,
     okLabel: "Save",
@@ -1144,22 +1452,17 @@ async function doEdit(detail: HTMLElement, pr: PullRequest, refreshList: () => v
     }
     toast(`Updated pull request #${pr.number}.`, "success");
     activeSubTab = "conversation"; // the description card reflects the new body
-    void showDetail(detail, pr, refreshList);
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't edit the pull request.", "error");
   }
 }
 
 /** A toggle-menu of the repo's labels (current ones checked) → pr:setLabels. */
-async function doLabels(
-  anchor: HTMLElement,
-  detail: HTMLElement,
-  pr: PullRequest,
-  refreshList: () => void,
-): Promise<void> {
+async function doLabels(anchor: HTMLElement, pr: PullRequest, reload: () => void): Promise<void> {
   let repoLabels: RepoLabel[] = [];
   try {
-    repoLabels = await host.invoke("pr:labels", undefined);
+    repoLabels = await gget("pr:labels", undefined, 60000);
   } catch (e) {
     toast(cleanErr(e) || "Couldn't load labels.", "error");
     return;
@@ -1179,19 +1482,14 @@ async function doLabels(
         const next = new Set(current);
         if (next.has(l.name)) next.delete(l.name);
         else next.add(l.name);
-        void applyLabels(detail, pr, [...next], refreshList);
+        void applyLabels(pr, [...next], reload);
       },
     })),
     { searchable: true },
   );
 }
 
-async function applyLabels(
-  detail: HTMLElement,
-  pr: PullRequest,
-  labelsList: string[],
-  refreshList: () => void,
-): Promise<void> {
+async function applyLabels(pr: PullRequest, labelsList: string[], reload: () => void): Promise<void> {
   try {
     const r = await host.invoke("pr:setLabels", { number: pr.number, labels: labelsList });
     if (!r.ok) {
@@ -1199,31 +1497,26 @@ async function applyLabels(
       return;
     }
     toast("Labels updated.", "success");
-    void showDetail(detail, pr, refreshList);
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't update labels.", "error");
   }
 }
 
 /** Edit the PR's assignees via the avatar-rich people picker → pr:setAssignees. */
-async function doAssignees(
-  anchor: HTMLElement,
-  detail: HTMLElement,
-  pr: PullRequest,
-  refreshList: () => void,
-): Promise<void> {
-  void anchor;
+async function doAssignees(pr: PullRequest, reload: () => void): Promise<void> {
   let people: RepoCollaborator[] = [];
   try {
-    people = await host.invoke("pr:reviewers", undefined);
+    people = await gget("pr:reviewers", undefined, 60000);
   } catch {
     /* fall through to the free-text path */
   }
+  const current = (pr.assignees ?? []).map((a) => a.login);
   let assignees: string[] | null;
   if (people.length) {
-    assignees = await peoplePickerModal({ title: "Assignees", okLabel: "Save", people, selected: [] });
+    assignees = await peoplePickerModal({ title: "Assignees", okLabel: "Save", people, selected: current });
   } else {
-    const csv = await promptInline("Assignees", "comma-separated logins, e.g. octocat, hubot", "", "Save");
+    const csv = await promptInline("Assignees", "comma-separated logins, e.g. octocat, hubot", current.join(", "), "Save");
     assignees =
       csv === null ? null : csv.split(",").map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
   }
@@ -1235,19 +1528,14 @@ async function doAssignees(
       return;
     }
     toast("Assignees updated.", "success");
-    void showDetail(detail, pr, refreshList);
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't update assignees.", "error");
   }
 }
 
 /** Merge the latest base into the PR head (pr:updateBranch). */
-async function doUpdateBranch(
-  n: number,
-  reload: () => void,
-  refreshList: () => void,
-  btn?: HTMLElement,
-): Promise<void> {
+async function doUpdateBranch(n: number, reload: () => void, btn?: HTMLElement): Promise<void> {
   if (btn) (btn as HTMLButtonElement).disabled = true;
   try {
     const r = await host.invoke("pr:updateBranch", n);
@@ -1257,7 +1545,6 @@ async function doUpdateBranch(
     }
     toast(`Updated PR #${n} with the base branch.`, "success");
     reload(); // the head SHA moved — refetch the detail (files / checks change)
-    refreshList();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't update the branch.", "error");
   } finally {
@@ -1405,6 +1692,7 @@ export async function openCreatePr(
       return;
     }
     toast(`Created pull request ${r.message ?? ""}.`.trim(), "success");
+    bust("pr");
     refresh();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't create the pull request.", "error");
@@ -1428,92 +1716,77 @@ function createPrModal(opts: {
 }): Promise<CreatePrResult | null> {
   return new Promise((resolve) => {
     let settled = false;
-    const overlay = el("div", "modal-overlay");
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "New pull request");
-    const card = el("div", "modal-card gh-pr-form");
-    const h = el("div", "modal-title");
-    h.textContent = "New pull request";
+    openModal((close) => {
+      const card = el("div", "modal-card gh-pr-form");
+      const h = el("div", "modal-title");
+      h.textContent = "New pull request";
 
-    const mkSelect = (label: string, selected: string): { row: HTMLElement; sel: HTMLSelectElement } => {
-      const row = el("label", "gh-form-row");
-      row.append(span(label, "gh-form-label"));
-      const sel = document.createElement("select");
-      sel.className = "gh-form-select";
-      for (const b of opts.branches) {
-        const o = document.createElement("option");
-        o.value = b.name;
-        o.textContent = b.name + (b.isDefault ? "  (default)" : "");
-        if (b.name === selected) o.selected = true;
-        sel.appendChild(o);
-      }
-      row.appendChild(sel);
-      return { row, sel };
-    };
-    const head = mkSelect("Compare (head)", opts.defaultHead);
-    const base = mkSelect("Into (base)", opts.defaultBase);
+      const mkSelect = (label: string, selected: string): { row: HTMLElement; sel: HTMLSelectElement } => {
+        const row = el("label", "gh-form-row");
+        row.append(span(label, "gh-form-label"));
+        const sel = document.createElement("select");
+        sel.className = "gh-form-select";
+        for (const b of opts.branches) {
+          const o = document.createElement("option");
+          o.value = b.name;
+          o.textContent = b.name + (b.isDefault ? "  (default)" : "");
+          if (b.name === selected) o.selected = true;
+          sel.appendChild(o);
+        }
+        row.appendChild(sel);
+        return { row, sel };
+      };
+      const head = mkSelect("Compare (head)", opts.defaultHead);
+      const base = mkSelect("Into (base)", opts.defaultBase);
 
-    const titleRow = el("label", "gh-form-row");
-    titleRow.append(span("Title", "gh-form-label"));
-    const title = document.createElement("input");
-    title.className = "modal-input";
-    title.placeholder = "Pull request title";
-    titleRow.appendChild(title);
+      const titleRow = el("label", "gh-form-row");
+      titleRow.append(span("Title", "gh-form-label"));
+      const title = document.createElement("input");
+      title.className = "modal-input";
+      title.placeholder = "Pull request title";
+      titleRow.appendChild(title);
 
-    const bodyRow = el("label", "gh-form-row");
-    bodyRow.append(span("Description", "gh-form-label"));
-    const body = document.createElement("textarea");
-    body.className = "gh-form-textarea";
-    body.placeholder = "Describe the change… (optional)";
-    body.rows = 5;
-    bodyRow.appendChild(body);
+      const bodyRow = el("label", "gh-form-row");
+      bodyRow.append(span("Description", "gh-form-label"));
+      const body = document.createElement("textarea");
+      body.className = "gh-form-textarea";
+      body.placeholder = "Describe the change… (optional)";
+      body.rows = 5;
+      bodyRow.appendChild(body);
 
-    const draftRow = el("label", "gh-form-check");
-    const draft = document.createElement("input");
-    draft.type = "checkbox";
-    draftRow.append(draft, span("Create as draft"));
+      const draftRow = el("label", "gh-form-check");
+      const draft = document.createElement("input");
+      draft.type = "checkbox";
+      draftRow.append(draft, span("Create as draft"));
 
-    const actions = el("div", "modal-actions");
-    const cancel = el("button", "mini-btn");
-    cancel.textContent = "Cancel";
-    const ok = el("button", "btn btn-primary modal-ok");
-    ok.append(span("Create pull request"));
-    actions.append(cancel, ok);
-    card.append(h, head.row, base.row, titleRow, bodyRow, draftRow, actions);
+      const actions = el("div", "modal-actions");
+      const cancel = el("button", "mini-btn");
+      cancel.textContent = "Cancel";
+      const ok = el("button", "btn btn-primary modal-ok");
+      ok.append(span("Create pull request"));
+      actions.append(cancel, ok);
+      card.append(h, head.row, base.row, titleRow, bodyRow, draftRow, actions);
 
-    const finish = (v: CreatePrResult | null): void => {
-      if (settled) return;
-      settled = true;
-      overlay.remove();
-      document.removeEventListener("keydown", onKey, true);
-      resolve(v);
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        finish(null);
-        return;
-      }
-      trapTab(e, card);
-    };
-    cancel.addEventListener("click", () => finish(null));
-    ok.addEventListener("click", () =>
-      finish({
-        title: title.value,
-        head: head.sel.value,
-        base: base.sel.value,
-        body: body.value,
-        draft: draft.checked,
-      }),
-    );
-    overlay.addEventListener("mousedown", (e) => {
-      if (e.target === overlay) finish(null);
+      cancel.addEventListener("click", close);
+      ok.addEventListener("click", () => {
+        settled = true;
+        resolve({
+          title: title.value,
+          head: head.sel.value,
+          base: base.sel.value,
+          body: body.value,
+          draft: draft.checked,
+        });
+        close();
+      });
+      return {
+        card,
+        focusEl: title,
+        label: "New pull request",
+        onClose: () => {
+          if (!settled) resolve(null);
+        },
+      };
     });
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    document.addEventListener("keydown", onKey, true);
-    setTimeout(() => title.focus(), 0);
   });
 }
-

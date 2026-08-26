@@ -180,6 +180,9 @@ export type GraphAction =
   | { type: "open"; sha: string }
   | { type: "context"; sha: string; x: number; y: number }
   | { type: "menuAction"; sha: string; id: string }
+  /** A ref chip (branch / remote / tag label) was clicked — hosts navigate to
+   *  that ref instead of treating the click as a row selection. */
+  | { type: "refClick"; sha: string; name: string; kind: string }
   | { type: "loadMore" }
   | { type: "refresh" }
   | { type: "requestStats"; shas: string[] }
@@ -1122,6 +1125,8 @@ export class CommitGraph extends LitElement {
     /* The "+N" overflow pill must never shrink or ellipsize — it's the count. */
     /* "+2" is a footnote, not a peer of the branch chips — no box, just a quiet
        count so the eye lands on the actual ref names. */
+    .chip[data-ref] { cursor: pointer; }
+    .chip[data-ref]:hover { filter: brightness(1.18); text-decoration: underline; }
     .chip-overflow {
       color: var(--vscode-descriptionForeground);
       background: transparent;
@@ -2495,6 +2500,25 @@ export class CommitGraph extends LitElement {
       }
       return;
     }
+    // A ref chip is a LINK to that branch/tag, not a row selection — the
+    // labels used to be purely decorative, which made the graph's richest
+    // data its least useful.
+    const chip = target?.closest(".chip[data-ref]") as HTMLElement | null;
+    if (chip) {
+      const row = chip.closest(".row") as HTMLElement | null;
+      const name = chip.dataset.ref;
+      if (name && row?.dataset.sha) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.onAction({
+          type: "refClick",
+          sha: row.dataset.sha,
+          name,
+          kind: chip.dataset.kind ?? "head",
+        });
+        return;
+      }
+    }
     const sha = this.rowShaFromEvent(e);
     if (!sha) {
       return;
@@ -3340,7 +3364,8 @@ function chipHtml(ref: WireRef, remotes: string[] = []): string {
   const also = remotes.length ? ` · also on ${esc(remotes.join(", "))}` : "";
   const tip = esc(tipData([{ name: ref.name, kind: ref.kind, remotes }]));
   const attrs = (cls: string, what: string) =>
-    `class="${cls}" data-more="${tip}" aria-label="${esc(ref.name)} (${what}${also})"`;
+    `class="${cls}" data-ref="${esc(ref.name)}" data-kind="${ref.kind}" ` +
+    `data-more="${tip}" role="button" aria-label="${esc(ref.name)} (${what}${also})"`;
   switch (ref.kind) {
     case "currentHead":
       // No leading dot: the filled accent already marks the current branch, and

@@ -1035,12 +1035,26 @@ export class GitBridge {
     if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
       return { ok: false, changed: false, message: "Name and email can't start with “-”." };
     }
+    if (!name && !email) {
+      return { ok: false, changed: false, message: "Enter a name or an email to save." };
+    }
     try {
-      if (name) {
-        await ctx.process.run(["config", "--global", "user.name", name]);
-      }
-      if (email) {
-        await ctx.process.run(["config", "--global", "user.email", email]);
+      const writes: Array<[string, string]> = [];
+      if (name) writes.push(["user.name", name]);
+      if (email) writes.push(["user.email", email]);
+      for (const [key, value] of writes) {
+        const r = await ctx.process.run(["config", "--global", key, value]);
+        // `git config` exits non-zero WITHOUT throwing (run() resolves with the
+        // code) — e.g. a read-only or locked ~/.gitconfig, or a broken include.
+        // This used to fall through to "updated ✓" while writing nothing.
+        if (r.code !== 0) {
+          return {
+            ok: false,
+            changed: false,
+            message:
+              r.stderr.trim() || `git config --global ${key} failed (exit ${r.code}).`,
+          };
+        }
       }
       return { ok: true, changed: true };
     } catch (err) {
@@ -1222,6 +1236,32 @@ export class GitBridge {
       });
     }
     return branches;
+  }
+
+  /** Recent commits reachable from one ref — the browsable history a peek card
+   *  shows for a branch/remote/tag without loading the whole graph. */
+  async refLog(req: { ref: string; maxCount?: number }): Promise<CompareCommit[]> {
+    const ctx = this.ctx();
+    if (!ctx || !safeArg(req.ref)) {
+      return [];
+    }
+    const max = Math.min(Math.max(req.maxCount ?? 25, 1), 100);
+    const out: CompareCommit[] = [];
+    try {
+      for await (const c of ctx.log.streamCommits({ revRange: req.ref, maxCount: max })) {
+        out.push({
+          sha: c.sha,
+          shortSha: c.sha.slice(0, 7),
+          subject: c.subject,
+          author: c.author,
+          date: c.authorDate,
+        });
+      }
+    } catch {
+      // An unknown/unborn ref is a state, not an error — the peek shows empty.
+      return [];
+    }
+    return out;
   }
 
   async branchCreate(req: { name: string; checkout?: boolean }): Promise<CommitActionResult> {

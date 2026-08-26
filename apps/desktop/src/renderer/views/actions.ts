@@ -1,21 +1,23 @@
-// The Actions section view — GitHub Actions runs, jobs/steps, workflows, and a
-// manual `workflow_dispatch` flow. Repo-scoped (NEEDS_REPO=true). Renders the
-// same two-pane shell as Pull Requests / Issues: a runs list on the left, a
-// detail pane on the right (run → jobs → steps, or the workflows list, or the
-// dispatch form). Reuses every shared primitive; adds no new modal API — the
-// dispatch form renders INTO the detail pane (dialogs.ts's promptInline is
-// single-field only).
+// The Actions section — GitHub Actions runs, jobs/steps, workflows, and the
+// manual `workflow_dispatch` flow, on the section-page system
+// (docs/desktop-redesign.md): a full-width list page (Runs | Workflows segment)
+// whose run rows navigate to a full-page run detail (routed via `target.number`
+// = the run id), with the run's facts in the right rail and jobs, steps, and
+// artifacts in the content column. Dispatch is a modal; logs stay in the
+// in-app viewer overlay; the Secrets & Variables manager stays a modal.
 //
-// Re-render contract: the view re-renders itself by calling `renderActions`.
-// READ invokes are wrapped in try/catch → errorState + Retry; MUTATION invokes
-// return `{ ok, message }` and toast.
+// READ invokes go through the SWR cache (peek → instant paint, gget →
+// revalidate); MUTATIONS return `{ ok, message }`, toast, bust("actions") and
+// re-render.
 
 import { host } from "../bridge";
+import { peek as cachePeek, gget, bust } from "../cache";
 import {
+  avatar,
   el,
   span,
+  subLink,
   glyph,
-  pill,
   relTimeISO,
   absTimeISO,
   loadingState,
@@ -26,20 +28,34 @@ import {
   copyText,
   formatBytes,
   openMenu,
-  ghRow,
-  statBit,
 } from "../ui";
-import { toast, confirmDialog, promptInline } from "../dialogs";
+import { toast, confirmDialog, promptInline, openModal } from "../dialogs";
 import {
+  facetBar,
+  harvestValues,
+  segmented,
+  type FacetBar,
+  type FacetState,
+  capNotice,
   comboField,
+  detailPage,
   ghGate,
   ghHeader,
-  ghListResizer,
+  LIST_CAPS,
+  personChip,
+  propSection,
   searchField,
-  trapTab,
+  secRow,
+  sectionList,
+  type GhGate,
+  type SectionNav,
   type SectionRender,
+  type SectionTarget,
 } from "./common";
+import { prime } from "../cache";
+import { createLogPane, type LogPane } from "../logView";
 import type {
+  ActionsRunsFilter,
   ArtifactInfo,
   RepoSecretInfo,
   RepoVariableInfo,
@@ -58,155 +74,365 @@ const isLive = (status: string): boolean => LIVE_STATUSES.has(status);
 const btn = (className = ""): HTMLButtonElement =>
   el("button", className) as HTMLButtonElement;
 
-const emptyDetail = (detail: HTMLElement): void => {
-  detail.replaceChildren(
-    emptyState(
-      "Workflow runs",
-      "Select a run to inspect its jobs, steps, and status — or re-run, cancel, and open it on GitHub.",
-      { icon: "play", hint: "Tip: use “Run workflow” to dispatch one manually." },
-    ),
-  );
+/** "3m 42s" between two ISO stamps. For a LIVE run pass `end` empty — the
+ *  duration runs to now (each poll repaint refreshes it). "" when unknown. */
+function fmtDuration(startIso: string, endIso: string): string {
+  const start = Date.parse(startIso);
+  if (!Number.isFinite(start)) return "";
+  const end = endIso ? Date.parse(endIso) : Date.now();
+  if (!Number.isFinite(end)) return "";
+  const s = Math.max(0, Math.round((end - start) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+/** A run's wall-clock duration: runStartedAt → updatedAt (or now while live). */
+function runDuration(r: WorkflowRun): string {
+  if (!r.runStartedAt) return "";
+  return fmtDuration(r.runStartedAt, isLive(r.status) ? "" : r.updatedAt);
+}
+
+/** The section's router, captured at mount so branch chips can navigate. */
+let sectionNav: SectionNav | undefined;
+/** Which list the section shows: workflow runs, or the workflow files. */
+let actionsTab: "runs" | "workflows" = "runs";
+/** The list page's live search query — survives list ⇄ detail round trips. */
+let query = "";
+/** Server-side run filters, kept across re-renders (like `query`). */
+const runFacetState: FacetState = {};
+
+export const renderActions: SectionRender = (wrap, nav, target): void => {
+  sectionNav = nav;
+  void mount(wrap, nav, target);
 };
 
-export const renderActions: SectionRender = (wrap, nav): void => {
-  void mount(wrap, nav);
-};
-
-async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<void> {
-  const refresh = (): void => renderActions(wrap, nav);
-
-  const gate = await ghGate(wrap, nav, true);
+async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
+  const refresh = (): void => {
+    bust("actions");
+    renderActions(wrap, nav, target);
+  };
+  const gate = await ghGate(wrap, nav, true, refresh);
   if (!gate) return;
 
-  const view = el("div", "gh-view");
+  if (target?.number != null) {
+    showRunDetailPage(wrap, nav, target.number, target.jobId);
+    return;
+  }
+  await listPage(wrap, nav, gate);
+}
+
+// ── The list page (Runs | Workflows) ─────────────────────────────────────────
+
+async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const refresh = (): void => {
+    bust("actions");
+    renderActions(wrap, nav);
+  };
+
+  const { view, listEl } = sectionList();
+  // Every facet here is SERVER-side: GitHub filters runs by workflow, branch,
+  // actor, event and status, so narrowing fetches a different (and deeper)
+  // slice rather than hiding rows from the 200 already on screen. The filter
+  // object IS the cache key, so each combination caches independently.
+  const runFilter = (): ActionsRunsFilter | undefined => {
+    const v = runFacetState;
+    const f: ActionsRunsFilter = {};
+    if (v.workflowId) f.workflowId = Number(v.workflowId);
+    if (v.branch) f.branch = v.branch;
+    if (v.actor) f.actor = v.actor;
+    if (v.event) f.event = v.event;
+    if (v.status) f.status = v.status;
+    return Object.keys(f).length ? f : undefined;
+  };
   const header = ghHeader("Actions", gate.login, refresh);
 
-  // Toolbar: "Workflows" (list) + "Run workflow" (dispatch). Slotted to the left
-  // of the account cluster so it reads right-to-left: tools · @login · refresh.
   const tools = el("div", "gh-head-tools");
-  const wfBtn = el("button", "mini-btn");
-  wfBtn.append(glyph("list-unordered"), span("Workflows"));
-  wfBtn.title = "List this repo's workflows";
+  const seg = segmented<"runs" | "workflows">({
+    options: [
+      { value: "runs", label: "Runs" },
+      { value: "workflows", label: "Workflows" },
+    ],
+    value: actionsTab,
+    ariaLabel: "Actions view",
+    onChange: (v) => {
+      actionsTab = v;
+      renderActions(wrap, nav);
+    },
+  });
+
   const secretsBtn = el("button", "mini-btn");
   secretsBtn.append(glyph("lock"), span("Secrets"));
   secretsBtn.title = "Manage this repo's Actions secrets and variables";
+  secretsBtn.addEventListener("click", () => openSecretsManager());
+
   const runBtn = el("button", "btn btn-primary gh-run-btn");
   runBtn.append(glyph("play"), span("Run workflow"));
   runBtn.title = "Manually trigger a workflow_dispatch";
-  tools.append(wfBtn, secretsBtn, runBtn);
-  header.insertBefore(tools, header.querySelector(".gh-acct"));
+  runBtn.addEventListener("click", () => void openDispatch(runBtn, refresh));
 
-  const body = el("div", "gh-body");
-  const listEl = el("div", "gh-list");
-  const detail = el("div", "gh-detail");
-  body.append(listEl, ghListResizer(listEl), detail);
-  view.append(header, body);
+  tools.append(seg, secretsBtn, runBtn);
+  header.querySelector(".gh-acct")?.before(tools);
+  view.append(header, listEl);
   wrap.replaceChildren(view);
-  emptyDetail(detail);
 
-  wfBtn.addEventListener("click", () => void showWorkflowsList(detail));
-  secretsBtn.addEventListener("click", () => openSecretsManager());
-  runBtn.addEventListener("click", () => void openDispatch(view, detail));
-
-  // ── Runs list ──
-  listEl.replaceChildren(skeletonList(5));
-  let runs: WorkflowRun[];
-  try {
-    runs = await host.invoke("actions:runs", undefined);
-  } catch (e) {
-    listEl.replaceChildren(
-      errorState("Couldn't load workflow runs", cleanErr(e) || "GitHub request failed.", refresh),
-    );
-    return;
-  }
-  header.setCount?.(runs.length);
-  listEl.replaceChildren();
-  if (runs.length === 0) {
-    listEl.appendChild(
-      emptyState("No workflow runs", "No GitHub Actions runs found for this repository.", {
-        icon: "play",
-        action: {
-          label: "Run workflow",
-          icon: "play",
-          onClick: () => void openDispatch(view, detail),
-        },
-      }),
-    );
-    return;
-  }
-
-  const select = (r: WorkflowRun, row: HTMLElement): void => {
-    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-    row.classList.add("active");
-    void showRunDetail(detail, r);
-  };
-
-  const buildRow = (r: WorkflowRun): HTMLElement => {
-    const row = runRow(r);
-    row.addEventListener("click", () => select(r, row));
-    return row;
-  };
-
-  // Case-insensitive match over the fields a user would search by.
-  const matches = (r: WorkflowRun, q: string): boolean => {
-    const hay = `${r.name} ${r.branch} ${r.event} #${r.id}`.toLowerCase();
-    return hay.includes(q);
-  };
-
-  let autoSelected = false;
-  const renderList = (items: WorkflowRun[], q = ""): void => {
-    listEl.replaceChildren();
-    if (items.length === 0) {
-      listEl.appendChild(
-        emptyState("No matching runs", `Nothing matches “${q}”.`, { icon: "search" }),
-      );
-      return;
-    }
-    for (const r of items) listEl.appendChild(buildRow(r));
-    // Auto-select the first run once (initial render) so the jobs panel shows;
-    // don't hijack the selection on every keystroke while filtering.
-    if (!autoSelected) {
-      autoSelected = true;
-      const first = items[0];
-      const firstRow = listEl.firstElementChild as HTMLElement | null;
-      if (first && firstRow) select(first, firstRow);
-    }
-  };
-
-  // A header search/filter — on the LEFT, next to the title (client-side, instant).
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: "Search runs…",
-      onInput: (q) => renderList(q ? runs.filter((r) => matches(r, q.toLowerCase())) : runs, q),
+      placeholder: actionsTab === "runs" ? "Search runs…" : "Search workflows…",
+      initial: query,
+      onInput: (q) => {
+        query = q;
+        rerenderList();
+      },
     }),
   );
 
-  renderList(runs);
-}
 
-/** One rich run row: a colored status lead icon, the run name + #id, then a
- *  muted branch · event · when line. */
-function runRow(r: WorkflowRun): HTMLElement {
-  const state = r.conclusion || r.status || "";
-  const when = relTimeISO(r.createdAt);
-  const meta = [r.branch, r.event].filter(Boolean).join(" · ") + (when ? ` · ${when}` : "");
-  return ghRow({
-    lead: runLead(state),
-    title: `${r.name} #${r.id}`,
-    stats: [statBit("", prettyState(state) || "—")],
-    meta,
-    metaTitle: r.createdAt ? `Created ${absTimeISO(r.createdAt)}` : undefined,
-    ariaLabel: `Workflow run ${r.name} #${r.id}: ${prettyState(state) || "unknown"}`,
-  });
+  let facets: FacetBar<WorkflowRun> | undefined;
+
+  /** Re-fetch after a server-side facet change (skeleton while it lands). */
+  const reloadRuns = async (): Promise<void> => {
+    listEl.replaceChildren(skeletonList(6));
+    try {
+      const fresh = await gget("actions:runs", runFilter(), 10000);
+      if (!view.isConnected) return;
+      runs = fresh;
+      facets?.sync(runs);
+      rerenderList();
+      scheduleListPoll();
+    } catch (e) {
+      if (!view.isConnected) return;
+      listEl.replaceChildren(
+        errorState("Couldn't load workflow runs", cleanErr(e) || "GitHub request failed.", () => void reloadRuns()),
+      );
+    }
+  };
+
+  // ── data ──
+  let runs: WorkflowRun[] | undefined =
+    actionsTab === "runs" ? cachePeek("actions:runs", runFilter()) : undefined;
+  let workflows: WorkflowInfo[] | undefined =
+    actionsTab === "workflows" ? cachePeek("actions:workflows", undefined) : undefined;
+  if ((actionsTab === "runs" && !runs) || (actionsTab === "workflows" && !workflows)) {
+    listEl.replaceChildren(skeletonList(6));
+  }
+
+  // Runs only — "filter workflows by branch" means nothing.
+  if (actionsTab === "runs") {
+    facets = facetBar<WorkflowRun>({
+      specs: [
+        {
+          key: "workflowId",
+          label: "Workflow",
+          icon: "play-circle",
+          // The rows carry a workflow NAME but the API wants its id, and a
+          // filtered list can't name workflows it excluded — so load them.
+          load: async () => {
+            const list = await gget("actions:workflows", undefined, 60000);
+            return list.map((w) => ({ value: String(w.id), label: w.name }));
+          },
+        },
+        { key: "branch", label: "Branch", icon: "git-branch", harvest: harvestValues<WorkflowRun>((r) => r.branch) },
+        { key: "actor", label: "Actor", icon: "person", harvest: harvestValues<WorkflowRun>((r) => r.actor?.login) },
+        { key: "event", label: "Event", icon: "zap", harvest: harvestValues<WorkflowRun>((r) => r.event) },
+        {
+          key: "status",
+          label: "Status",
+          icon: "pulse",
+          options: [
+            { value: "success", label: "Success" },
+            { value: "failure", label: "Failure" },
+            { value: "in_progress", label: "In progress" },
+            { value: "queued", label: "Queued" },
+            { value: "cancelled", label: "Cancelled" },
+          ],
+        },
+      ],
+      state: runFacetState,
+      items: runs ?? [],
+      onChange: () => {
+        // A server facet changes WHAT WE ASK FOR, so re-fetch rather than
+        // re-filter — the point is to reach runs the unfiltered page never had.
+        void reloadRuns();
+      },
+    });
+    tools.insertBefore(facets.el, secretsBtn);
+  }
+
+  const runMatches = (r: WorkflowRun, q: string): boolean =>
+    `${r.name} ${r.displayTitle} ${r.branch} ${r.event} ${r.actor?.login ?? ""} #${r.runNumber}`
+      .toLowerCase()
+      .includes(q);
+  const wfMatches = (w: WorkflowInfo, q: string): boolean =>
+    `${w.name} ${w.path}`.toLowerCase().includes(q);
+
+  const buildRunRow = (r: WorkflowRun): HTMLElement => {
+    const state = r.conclusion || r.status || "";
+    // The workflow's name rides as a muted suffix after the run's own title —
+    // GitHub-style "<commit subject> · Desktop CI".
+    const suffix: HTMLElement[] = [span(r.name, "sec-run-wf")];
+    if (r.runAttempt > 1) {
+      const att = el("span", "gh-pill sec-attempt");
+      att.textContent = `attempt ${r.runAttempt}`;
+      att.title = "This run was re-run";
+      suffix.push(att);
+    }
+    const meta: HTMLElement[] = [];
+    if (r.actor) meta.push(avatar(r.actor.login, r.actor.avatarUrl, 18));
+    if (r.branch) {
+      meta.push(
+        subLink(r.branch, `Show ${r.branch} in Branches`, () =>
+          sectionNav?.("branches", { ref: r.branch }),
+        ),
+      );
+    }
+    if (r.event) meta.push(span(r.event));
+    const dur = runDuration(r);
+    if (dur) meta.push(span(dur, "sec-run-dur"));
+    meta.push(span(prettyState(state) || "—", "sec-run-state"));
+    const row = secRow({
+      lead: runLead(state),
+      num: `#${r.runNumber || r.id}`,
+      title: r.displayTitle,
+      titleSuffix: suffix,
+      meta,
+      time: relTimeISO(r.createdAt),
+      timeTitle: r.createdAt ? `Created ${absTimeISO(r.createdAt)}` : undefined,
+      ariaLabel: `Workflow run ${r.name} #${r.runNumber}: ${prettyState(state) || "unknown"}`,
+      onOpen: () => nav("actions", { number: r.id }),
+    });
+    row.dataset.num = String(r.id);
+    return row;
+  };
+
+  const buildWfRow = (w: WorkflowInfo): HTMLElement => {
+    const disabled = w.state !== "active";
+    const meta: HTMLElement[] = [span(w.path)];
+    if (disabled) meta.push(span(w.state.replace(/_/g, " ")));
+    return secRow({
+      lead: (() => {
+        const s = el("span", "gh-lead-icon");
+        s.appendChild(glyph("play-circle"));
+        if (disabled) s.classList.add("is-muted");
+        return s;
+      })(),
+      title: w.name,
+      meta,
+      ariaLabel: `Workflow ${w.name}${disabled ? " (disabled)" : ""}`,
+      onOpen: () => {
+        if (disabled) {
+          toast("This workflow is disabled on GitHub.", "info");
+          return;
+        }
+        void showDispatchModal(w, refresh);
+      },
+    });
+  };
+
+  const rerenderList = (): void => {
+    if (runs) facets?.sync(runs);
+    const q = query.toLowerCase();
+    listEl.replaceChildren();
+    if (actionsTab === "runs") {
+      if (!runs) return;
+      header.setCount?.(runs.length);
+      if (runs.length === 0) {
+        listEl.appendChild(
+          emptyState("No workflow runs", "No GitHub Actions runs found for this repository.", {
+            icon: "play",
+            action: { label: "Run workflow", icon: "play", onClick: () => void openDispatch(runBtn, refresh) },
+          }),
+        );
+        return;
+      }
+      const items = q ? runs.filter((r) => runMatches(r, q)) : runs;
+      if (items.length === 0) {
+        listEl.appendChild(emptyState("No matching runs", `Nothing matches “${query}”.`, { icon: "search" }));
+        return;
+      }
+      for (const r of items) listEl.appendChild(buildRunRow(r));
+      // "server": the runs list IS GitHub's answer to the current filter, so
+      // telling the user to "search to narrow" would be a lie — the filters
+      // above are what reach further back.
+      const cap = capNotice(runs.length, LIST_CAPS.runs, "server");
+      if (cap) listEl.appendChild(cap);
+    } else {
+      if (!workflows) return;
+      header.setCount?.(workflows.length);
+      if (workflows.length === 0) {
+        listEl.appendChild(
+          emptyState("No workflows", "This repo has no .github/workflows files.", { icon: "play" }),
+        );
+        return;
+      }
+      const items = q ? workflows.filter((w) => wfMatches(w, q)) : workflows;
+      if (items.length === 0) {
+        listEl.appendChild(emptyState("No matching workflows", `Nothing matches “${query}”.`, { icon: "search" }));
+        return;
+      }
+      for (const w of items) listEl.appendChild(buildWfRow(w));
+    }
+  };
+
+  if (runs || workflows) rerenderList();
+
+  // While any run is LIVE, quietly re-fetch the list every 12s and repaint in
+  // place — a CI dashboard that only updates on manual refresh isn't one.
+  const scheduleListPoll = (): void => {
+    if (actionsTab !== "runs" || !runs?.some((r) => isLive(r.status))) return;
+    window.setTimeout(() => {
+      if (!view.isConnected || actionsTab !== "runs") return;
+      // The poll must ask the SAME question the view is showing — polling
+      // unfiltered would quietly replace a filtered list with everything.
+      const f = runFilter();
+      host
+        .invoke("actions:runs", f)
+        .then((fresh) => {
+          if (!view.isConnected) return;
+          prime("actions:runs", f, fresh);
+          runs = fresh;
+          facets?.sync(runs);
+          rerenderList();
+          scheduleListPoll();
+        })
+        .catch(() => scheduleListPoll()); // transient failure — keep watching
+    }, 12000);
+  };
+
+  try {
+    if (actionsTab === "runs") {
+      const fresh = await gget("actions:runs", runFilter(), 10000);
+      if (!view.isConnected) return;
+      runs = fresh;
+      facets?.sync(runs);
+    } else {
+      const fresh = await gget("actions:workflows", undefined, 60000);
+      if (!view.isConnected) return;
+      workflows = fresh;
+    }
+    rerenderList();
+    scheduleListPoll();
+  } catch (e) {
+    if (!view.isConnected) return;
+    if (!runs && !workflows) {
+      listEl.replaceChildren(
+        errorState(
+          actionsTab === "runs" ? "Couldn't load workflow runs" : "Couldn't load workflows",
+          cleanErr(e) || "GitHub request failed.",
+          refresh,
+        ),
+      );
+    }
+  }
 }
 
 /** A colored leading status icon for a run, keyed off its conclusion/status. */
 function runLead(state: string): HTMLElement {
   let icon = "sync";
-  let color = "var(--status-mod)"; // in_progress / queued / pending → blue/amber
+  let cls = "is-running"; // in_progress / queued / pending
   if (state === "success") {
     icon = "pass-filled";
-    color = "var(--status-add)";
+    cls = "is-success";
   } else if (
     state === "failure" ||
     state === "error" ||
@@ -217,106 +443,472 @@ function runLead(state: string): HTMLElement {
     state === "stale"
   ) {
     icon = "error";
-    color = "var(--status-del)";
+    cls = "is-failure";
   } else if (state === "skipped" || state === "neutral") {
     icon = "circle-slash";
-    color = "var(--app-muted)";
+    cls = "is-muted";
   }
-  const s = el("span", "gh-lead-icon");
-  s.style.color = color;
+  const s = el("span", `gh-lead-icon run-lead ${cls}`);
   s.appendChild(glyph(icon));
   return s;
 }
 
-// ── Run detail ────────────────────────────────────────────────────────────────
+// ── The run detail page ──────────────────────────────────────────────────────
 
-async function showRunDetail(detail: HTMLElement, run: WorkflowRun): Promise<void> {
-  detail.replaceChildren(loadingState());
-  let d: WorkflowRunDetail | undefined;
-  try {
-    d = await host.invoke("actions:runDetail", run.id);
-  } catch (e) {
-    detail.replaceChildren(
-      errorState("Couldn't load the run", cleanErr(e) || "GitHub request failed.", () =>
-        void showRunDetail(detail, run),
-      ),
-    );
-    return;
+/** Job cards the user expanded, per run — preserved across live-poll repaints. */
+const expandedJobs = new Set<number>();
+let lastRunDetailId: number | undefined;
+let lastRunAttempt = 0;
+
+// ── Log panes (one per job, surviving the 8s detail repaints) ────────────────
+interface JobLogEntry {
+  pane: LogPane;
+  /** Renderer-side offset into the server log (next chunk starts here). */
+  offset: number;
+  open: boolean;
+  loaded: boolean;
+  tailing: boolean;
+  unchangedPolls: number;
+}
+const logPanes = new Map<number, JobLogEntry>();
+/** The freshest job list from the detail poll — tail loops read status here. */
+let latestJobs: WorkflowJob[] = [];
+const TAIL_LIMIT = 3;
+let activeTails = 0;
+
+function jobStatus(jobId: number): string {
+  return latestJobs.find((j) => j.id === jobId)?.status ?? "";
+}
+
+function destroyLogPanes(): void {
+  for (const [, e] of logPanes) e.pane.destroy();
+  logPanes.clear();
+  latestJobs = [];
+  activeTails = 0;
+  logIO?.disconnect();
+  logIO = undefined;
+  lazyLoadJobs.clear();
+}
+
+/** Get-or-create the pane entry for a job. */
+function paneFor(j: WorkflowJob): JobLogEntry {
+  let e = logPanes.get(j.id);
+  if (!e) {
+    const pane = createLogPane({
+      ariaLabel: `Log for ${j.name}`,
+      onCopy: () => host.invoke("actions:jobLog", { jobId: j.id }),
+      onDownload: () => {
+        void host.invoke("actions:saveLog", { jobId: j.id, name: j.name }).then((r) => {
+          toast(r.ok ? (r.message ?? "Log saved.") : (r.message ?? "Couldn't save the log."), r.ok ? "success" : "error");
+        });
+      },
+    });
+    e = { pane, offset: 0, open: false, loaded: false, tailing: false, unchangedPolls: 0 };
+    logPanes.set(j.id, e);
   }
-  const full = d?.run ?? run;
+  return e;
+}
+
+/** First fetch (or refetch after reset) of a job's log into its pane. */
+async function loadJobLog(j: WorkflowJob): Promise<void> {
+  const e = paneFor(j);
+  try {
+    const d = await host.invoke("actions:jobLogChunk", { jobId: j.id, offset: e.offset });
+    if (!e.pane.el.isConnected && !e.open) return;
+    if (d.reset || !e.loaded) e.pane.reset(d.text, { truncated: d.truncated });
+    else e.pane.append(d.text);
+    e.offset = d.totalLength;
+    e.loaded = true;
+    if (jobStatus(j.id) !== "in_progress") e.pane.finish();
+  } catch (err) {
+    if (!e.loaded) e.pane.reset(`[logs unavailable: ${cleanErr(err) || "request failed"}]`);
+  }
+}
+
+/** The live tail: poll deltas every 4s while the job runs; back off to 8s
+ *  after two unchanged polls; at most TAIL_LIMIT concurrent tails. A final
+ *  fetch runs once the job concludes, then the loop ends. */
+function startTail(jobId: number): void {
+  const e = logPanes.get(jobId);
+  if (!e || e.tailing) return;
+  e.tailing = true;
+  const tick = (): void => {
+    const delay = e.unchangedPolls >= 2 ? 8000 : 4000;
+    window.setTimeout(() => {
+      void (async () => {
+        if (!e.pane.el.isConnected) {
+          e.tailing = false;
+          return;
+        }
+        const live = jobStatus(jobId) === "in_progress";
+        if (activeTails >= TAIL_LIMIT) {
+          tick(); // queue behind the running tails
+          return;
+        }
+        activeTails++;
+        try {
+          const d = await host.invoke("actions:jobLogChunk", { jobId, offset: e.offset });
+          if (d.reset) e.pane.reset(d.text, { truncated: d.truncated });
+          else if (d.text) e.pane.append(d.text);
+          e.unchangedPolls = d.text ? 0 : e.unchangedPolls + 1;
+          e.offset = d.totalLength;
+          e.loaded = true;
+        } catch {
+          e.unchangedPolls++;
+        } finally {
+          activeTails--;
+        }
+        if (live) tick();
+        else {
+          e.tailing = false;
+          e.pane.finish();
+        }
+      })();
+    }, delay);
+  };
+  tick();
+}
+
+/** Lazy open used by run-level "View logs": panes materialize as they scroll
+ *  into view, so a 40-job matrix doesn't fire 40 fetches at once. */
+let logIO: IntersectionObserver | undefined;
+const lazyLoadJobs = new Map<Element, WorkflowJob>();
+function ensureLogIO(): IntersectionObserver {
+  if (!logIO) {
+    logIO = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) {
+          if (!en.isIntersecting) continue;
+          const j = lazyLoadJobs.get(en.target);
+          if (!j) continue;
+          lazyLoadJobs.delete(en.target);
+          logIO?.unobserve(en.target);
+          void loadJobLog(j).then(() => {
+            if (jobStatus(j.id) === "in_progress") startTail(j.id);
+          });
+        }
+      },
+      { rootMargin: "200px" },
+    );
+  }
+  return logIO;
+}
+function openJobLogLazy(j: WorkflowJob, slot: HTMLElement): void {
+  const e = paneFor(j);
+  if (e.open) return;
+  e.open = true;
+  slot.appendChild(e.pane.el);
+  if (!e.loaded) {
+    lazyLoadJobs.set(e.pane.el, j);
+    ensureLogIO().observe(e.pane.el);
+  } else if (jobStatus(j.id) === "in_progress") {
+    startTail(j.id);
+  }
+}
+
+/** Toggle a job's inline log pane open/closed (lazy first fetch + tail). */
+function toggleJobLog(j: WorkflowJob, slot: HTMLElement): void {
+  const e = paneFor(j);
+  e.open = !e.open;
+  if (e.open) {
+    e.pane.saveViewport();
+    slot.appendChild(e.pane.el);
+    e.pane.restoreViewport();
+    if (!e.loaded) void loadJobLog(j).then(() => {
+      if (jobStatus(j.id) === "in_progress") startTail(j.id);
+    });
+    else if (jobStatus(j.id) === "in_progress") startTail(j.id);
+  } else {
+    e.pane.saveViewport();
+    e.pane.el.remove();
+  }
+}
+
+function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number, revealJobId?: number): void {
+  if (lastRunDetailId !== id) {
+    lastRunDetailId = id;
+    lastRunAttempt = 0;
+    expandedJobs.clear();
+    destroyLogPanes();
+  }
+  const back = (): void => nav("actions", { list: true });
+  const reload = (): void => {
+    bust("actions");
+    showRunDetailPage(wrap, nav, id);
+  };
+
+  const { view, main, rail, topActions } = detailPage({
+    backLabel: "Actions",
+    crumb: `#${id}`,
+    onBack: back,
+  });
+  main.appendChild(skeletonList(4, false));
+  wrap.replaceChildren(view);
+
+  // A LIVE run keeps its page honest: re-fetch every 8s and repaint only when
+  // something actually changed (job/step states), stopping once it concludes.
+  let lastSig = "";
+  const schedulePoll = (current: WorkflowRunDetail): void => {
+    if (!isLive(current.run.status)) return;
+    window.setTimeout(() => {
+      if (!view.isConnected) return;
+      host
+        .invoke("actions:runDetail", id)
+        .then((fresh) => {
+          if (!view.isConnected || !fresh) return;
+          prime("actions:runDetail", id, fresh);
+          const sig = JSON.stringify(fresh);
+          if (sig !== lastSig) {
+            lastSig = sig;
+            buildRunDetail({ main, rail, topActions, d: fresh, reload });
+          }
+          schedulePoll(fresh);
+        })
+        .catch(() => schedulePoll(current)); // transient failure — keep watching
+    }, 8000);
+  };
+
+  void (async () => {
+    let d: WorkflowRunDetail | undefined;
+    try {
+      d = await gget("actions:runDetail", id, 5000);
+    } catch (e) {
+      if (!view.isConnected) return;
+      main.replaceChildren(
+        errorState("Couldn't load the run", cleanErr(e) || "GitHub request failed.", reload),
+      );
+      return;
+    }
+    if (!view.isConnected) return;
+    if (!d) {
+      main.replaceChildren(emptyState("Run unavailable", "This workflow run couldn't be loaded."));
+      return;
+    }
+    lastSig = JSON.stringify(d);
+    buildRunDetail({ main, rail, topActions, d, reload });
+    schedulePoll(d);
+    // Deep link from PR checks: expand the target job's log and scroll to it.
+    if (revealJobId != null) {
+      const j = d.jobs.find((x) => x.id === revealJobId);
+      if (j) {
+        expandedJobs.add(j.id);
+        const card = main.querySelector(`[data-job-id="${j.id}"]`);
+        const slot = card?.querySelector<HTMLElement>(".gh-job-logslot");
+        const e = paneFor(j);
+        if (slot && !e.open) toggleJobLog(j, slot);
+        card?.scrollIntoView({ block: "start" });
+      }
+    }
+  })();
+}
+
+interface RunDetailCtx {
+  main: HTMLElement;
+  rail: HTMLElement;
+  topActions: HTMLElement;
+  d: WorkflowRunDetail;
+  reload: () => void;
+}
+
+function buildRunDetail(ctx: RunDetailCtx): void {
+  const { main, rail, topActions, d, reload } = ctx;
+  const full = d.run;
   const state = full.conclusion || full.status || "";
   const live = isLive(full.status);
-  detail.replaceChildren();
+  // A re-run attempt REPLACES the logs — every pane restarts from zero.
+  if (lastRunAttempt && full.runAttempt !== lastRunAttempt) destroyLogPanes();
+  lastRunAttempt = full.runAttempt;
+  latestJobs = d.jobs;
+  // Detach live panes before the repaint wipes main (they re-slot below).
+  for (const [, e] of logPanes) {
+    if (e.open && e.pane.el.isConnected) {
+      e.pane.saveViewport();
+      e.pane.el.remove();
+    }
+  }
+  main.replaceChildren();
+  rail.replaceChildren();
 
-  const head = el("div", "gh-detail-head");
-  const h = el("div", "gh-detail-title");
-  h.textContent = full.name;
-  const meta = el("div", "gh-detail-meta");
-  const when = relTimeISO(full.createdAt);
-  const metaParts = [`#${full.id}`, full.branch, full.event].filter(Boolean);
-  if (when) metaParts.push(when);
-  const metaText = el("span", "gh-meta-text");
-  metaText.textContent = metaParts.join(" · ") + " · ";
-  meta.appendChild(metaText);
-  const statePill = pill(prettyState(state) || "—");
-  statePill.classList.add(`gh-checks-${state}`);
-  meta.appendChild(statePill);
-
-  const actions = el("div", "gh-detail-actions");
-
+  // ── top-bar actions ──
   const rerunBtn = btn("mini-btn");
   rerunBtn.append(glyph("refresh"), span("Re-run"));
   rerunBtn.title = "Re-run all jobs in this run";
   rerunBtn.disabled = live;
-  rerunBtn.addEventListener("click", () => void rerunRun(full.id, rerunBtn, detail, run));
+  rerunBtn.addEventListener("click", () => void rerunRun(full.id, rerunBtn, reload));
 
   const rerunFailedBtn = btn("mini-btn");
   rerunFailedBtn.append(glyph("debug-restart"), span("Re-run failed"));
   rerunFailedBtn.title = "Re-run only the failed jobs";
   rerunFailedBtn.disabled = full.conclusion === "success" || live;
-  rerunFailedBtn.addEventListener("click", () => void rerunFailed(full.id, rerunFailedBtn, detail, run));
+  rerunFailedBtn.addEventListener("click", () => void rerunFailed(full.id, rerunFailedBtn, reload));
 
   const cancelBtn = btn("mini-btn danger");
   cancelBtn.append(glyph("circle-slash"), span("Cancel"));
   cancelBtn.title = "Cancel this in-progress run";
   cancelBtn.disabled = !live;
-  cancelBtn.addEventListener("click", () => void cancelRun(full.id, cancelBtn, detail, run));
+  cancelBtn.addEventListener("click", () => void cancelRun(full.id, cancelBtn, reload));
 
-  // In-app logs: stream the whole run's aggregated logs into a viewer overlay —
-  // no browser hop. github.com stays reachable as a secondary link in the viewer.
-  const logsBtn = btn("mini-btn");
-  logsBtn.append(glyph("output"), span("View logs"));
-  logsBtn.title = "View this run's logs in-app";
-  logsBtn.addEventListener("click", () =>
-    openLogViewer({
-      title: `Logs · ${full.name} #${full.id}`,
-      htmlUrl: full.htmlUrl,
-      load: () => host.invoke("actions:runLog", { runId: full.id }),
-    }),
-  );
+  const logsBtn = btn("btn btn-primary");
+  logsBtn.append(glyph("output"), span("View all logs"));
+  logsBtn.title = "Expand every job's log inline (they load as you scroll)";
+  logsBtn.addEventListener("click", () => {
+    for (const j of d.jobs) {
+      expandedJobs.add(j.id);
+      const card = main.querySelector<HTMLElement>(`[data-job-id="${j.id}"]`);
+      if (!card) continue;
+      card.querySelector(".gh-job-steps")?.classList.remove("hidden");
+      card.querySelector(".gh-job-head")?.classList.add("open");
+      const slot = card.querySelector<HTMLElement>(".gh-job-logslot");
+      if (slot) openJobLogLazy(j, slot);
+      const logBtn = card.querySelector<HTMLElement>(".gh-job-log");
+      if (logBtn) {
+        logBtn.textContent = "Hide logs";
+        logBtn.title = "Collapse this job's log";
+      }
+    }
+  });
 
-  actions.append(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn);
-  head.append(h, meta, actions);
-  detail.appendChild(head);
+  const openBtn = btn("mini-btn gh-icon-btn");
+  openBtn.append(glyph("link-external"));
+  openBtn.title = "Open this run on GitHub";
+  openBtn.setAttribute("aria-label", openBtn.title);
+  openBtn.disabled = !full.htmlUrl;
+  openBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
 
-  const jobs = d?.jobs ?? [];
+  topActions.replaceChildren(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn, openBtn);
+
+  // ── title block ──
+  const titleRow = el("div", "det-title-row");
+  titleRow.appendChild(runStatePill(state));
+  const h = el("h1", "det-title");
+  h.append(span(full.displayTitle), span(`  #${full.runNumber || full.id}`, "det-title-num"));
+  titleRow.appendChild(h);
+  if (full.runAttempt > 1) {
+    const att = el("span", "gh-pill sec-attempt det-attempt");
+    att.textContent = `attempt ${full.runAttempt}`;
+    titleRow.appendChild(att);
+  }
+  main.appendChild(titleRow);
+
+  const sub = el("div", "det-sub");
+  if (full.branch) {
+    const chip = el("button", "gh-branch-chip");
+    chip.append(glyph("git-branch"), span(full.branch));
+    chip.title = `Show ${full.branch} in Branches`;
+    chip.addEventListener("click", () => sectionNav?.("branches", { ref: full.branch }));
+    sub.appendChild(chip);
+  }
+  // The commit this run built — one click from its row in the graph.
+  if (full.headSha) {
+    const commit = el("button", "gh-branch-chip det-commit-chip");
+    const subject = full.headCommitMessage.split("\n", 1)[0];
+    commit.append(glyph("git-commit"), span(full.headSha.slice(0, 7)));
+    commit.title = subject
+      ? `${subject} — reveal in Commits`
+      : "Reveal this commit in the Commits view";
+    commit.addEventListener("click", () => sectionNav?.("graph", { sha: full.headSha }));
+    sub.appendChild(commit);
+  }
+  const subText = el("span");
+  subText.textContent = `${full.event ? `${full.event} · ` : ""}started ${relTimeISO(full.runStartedAt || full.createdAt)}`;
+  subText.title = absTimeISO(full.runStartedAt || full.createdAt);
+  sub.appendChild(subText);
+  main.appendChild(sub);
+
+  // ── jobs ──
+  const jobs = d.jobs;
   if (jobs.length === 0) {
-    detail.appendChild(emptyState("No jobs", "This run reported no jobs yet."));
+    main.appendChild(emptyState("No jobs", "This run reported no jobs yet."));
   } else {
     const jobsWrap = el("div", "gh-jobs");
     for (const j of jobs) jobsWrap.appendChild(jobCard(j));
-    detail.appendChild(jobsWrap);
+    main.appendChild(jobsWrap);
   }
 
-  // Artifacts produced by this run — listed below the jobs, lazily loaded.
-  void showArtifacts(detail, full.id);
+  // Artifacts produced by this run — below the jobs, lazily loaded.
+  void showArtifacts(main, full.id);
+
+  // ── rail ──
+  const statusProp = propSection("Status");
+  statusProp.body.appendChild(runStatePill(state));
+  if (live) {
+    const liveNote = span("running now", "det-prop-none");
+    statusProp.body.appendChild(liveNote);
+  }
+
+  // WHO: the run's actor — and the re-runner, when someone else re-ran it.
+  const whoProp = propSection(full.triggeringActor && full.actor && full.triggeringActor.login !== full.actor.login ? "Actor · re-run by" : "Actor");
+  if (full.actor) {
+    whoProp.body.appendChild(
+      personChip(full.actor.login, full.actor.avatarUrl),
+    );
+  } else {
+    whoProp.body.appendChild(span("—", "det-prop-none"));
+  }
+  if (full.triggeringActor && full.actor && full.triggeringActor.login !== full.actor.login) {
+    whoProp.body.appendChild(personChip(full.triggeringActor.login, full.triggeringActor.avatarUrl));
+  }
+
+  const aboutProp = propSection("About");
+  aboutProp.body.classList.add("det-prop-facts");
+  const fact = (k: string, v: string, title?: string): HTMLElement => {
+    const row = el("div", "det-fact");
+    const val = el("span", "det-fact-v");
+    val.textContent = v;
+    if (title) val.title = title;
+    row.append(span(k, "det-fact-k"), val);
+    return row;
+  };
+  if (full.name) aboutProp.body.appendChild(fact("Workflow", full.name, full.workflowPath || undefined));
+  if (full.event) aboutProp.body.appendChild(fact("Trigger", full.event));
+  if (full.branch) aboutProp.body.appendChild(fact("Branch", full.branch));
+  if (full.runAttempt > 1) aboutProp.body.appendChild(fact("Attempt", String(full.runAttempt)));
+  aboutProp.body.appendChild(fact("Jobs", String(jobs.length)));
+  const dur = runDuration(full);
+  if (dur) aboutProp.body.appendChild(fact("Duration", dur));
+  aboutProp.body.appendChild(fact("Queued", relTimeISO(full.createdAt), absTimeISO(full.createdAt)));
+  if (full.runStartedAt) {
+    aboutProp.body.appendChild(fact("Started", relTimeISO(full.runStartedAt), absTimeISO(full.runStartedAt)));
+  }
+
+  // Linked PRs — each one click from its full workspace.
+  let prsProp: { root: HTMLElement; body: HTMLElement } | undefined;
+  if (full.pullRequests.length) {
+    prsProp = propSection("Pull requests");
+    for (const pr of full.pullRequests) {
+      const b = btn("det-mono-btn");
+      b.append(glyph("git-pull-request"), span(`#${pr.number}`));
+      b.title = `Open pull request #${pr.number}`;
+      b.addEventListener("click", () => sectionNav?.("prs", { number: pr.number }));
+      prsProp.body.appendChild(b);
+    }
+  }
+
+  const idProp = propSection("Run ID");
+  const idBtn = btn("det-mono-btn");
+  idBtn.append(glyph("copy"), span(String(full.id)));
+  idBtn.title = "Copy the run id";
+  idBtn.addEventListener("click", () => void copyText(String(full.id), "Run id copied."));
+  idProp.body.appendChild(idBtn);
+
+  rail.append(statusProp.root, whoProp.root, aboutProp.root, ...(prsProp ? [prsProp.root] : []), idProp.root);
 }
 
-/** One expandable job card: header row (dot + name + state + Logs) + its steps. */
+/** A run's status as a tinted state pill (success/failure/running/neutral). */
+function runStatePill(state: string): HTMLElement {
+  const label = prettyState(state) || "unknown";
+  const p = el("span", `gh-state-pill gh-checks-${state}`);
+  p.textContent = label;
+  return p;
+}
+
+/** One expandable job card: header row (dot + name + state + Logs) + its steps.
+ *  Expansion is remembered in `expandedJobs` so live-poll repaints keep it. */
 function jobCard(j: WorkflowJob): HTMLElement {
   const card = el("div", "gh-job");
   const state = j.conclusion || j.status || "";
-  const head = el("button", "gh-job-head");
+  const open = expandedJobs.has(j.id);
+  const head = el("button", "gh-job-head" + (open ? " open" : ""));
   const chevron = glyph("chevron-right");
   chevron.classList.add("gh-job-chevron");
   const dot = el("span", `gh-check-dot gh-checks-${state}`);
@@ -326,155 +918,108 @@ function jobCard(j: WorkflowJob): HTMLElement {
   st.textContent = prettyState(state);
   head.append(chevron, dot, name, st);
 
-  const steps = el("div", "gh-job-steps hidden");
+  const steps = el("div", "gh-job-steps" + (open ? "" : " hidden"));
+  // WHERE it ran + how long it waited: runner name (or the requested labels
+  // when GitHub omits it) and the queue latency, under the job header.
+  const runnerBits: string[] = [];
+  if (j.runnerName) runnerBits.push(j.runnerName);
+  else if (j.labels.length) runnerBits.push(j.labels.join(", "));
+  if (j.runnerGroupName && j.runnerGroupName !== "Default") runnerBits.push(j.runnerGroupName);
+  const queue = j.createdAt && j.startedAt ? fmtDuration(j.createdAt, j.startedAt) : "";
+  if (runnerBits.length || queue) {
+    const metaLine = el("div", "gh-job-meta");
+    if (runnerBits.length) {
+      const r = el("span", "gh-job-runner");
+      r.append(glyph("vm"), span(runnerBits.join(" · ")));
+      r.title = j.labels.length ? `Requested labels: ${j.labels.join(", ")}` : "Runner";
+      metaLine.appendChild(r);
+    }
+    if (queue) {
+      const q = el("span", "gh-job-queue");
+      q.textContent = `queued ${queue}`;
+      q.title = "Time between queueing and the runner picking the job up";
+      metaLine.appendChild(q);
+    }
+    steps.appendChild(metaLine);
+  }
   if (j.steps.length === 0) {
     const none = el("div", "gh-step-row gh-step-empty");
     none.textContent = "No steps reported.";
     steps.appendChild(none);
   }
-  for (const s of j.steps) {
+  // Per-step durations + a proportional timeline bar (widths relative to the
+  // longest step, via a --w custom property — layout stays in CSS).
+  const stepSecs = j.steps.map((s) => {
+    const a = Date.parse(s.startedAt);
+    const b = Date.parse(s.completedAt);
+    return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, (b - a) / 1000) : 0;
+  });
+  const maxSec = Math.max(1, ...stepSecs);
+  j.steps.forEach((s, i) => {
     const row = el("div", "gh-step-row");
     const sState = s.conclusion || s.status || "";
     const sdot = el("span", `gh-check-dot gh-checks-${sState}`);
     const sname = el("span", "gh-check-name");
     sname.textContent = s.name || "(step)";
+    const bar = el("span", "gh-step-bar");
+    bar.style.setProperty("--w", `${Math.max(2, Math.round((stepSecs[i] / maxSec) * 100))}%`);
+    const sdur = el("span", "gh-step-dur");
+    sdur.textContent = s.startedAt && s.completedAt ? fmtDuration(s.startedAt, s.completedAt) : "";
     const sst = el("span", "gh-check-state");
     sst.textContent = prettyState(sState);
-    row.append(sdot, sname, sst);
+    row.append(sdot, sname, bar, sdur, sst);
     steps.appendChild(row);
-  }
+  });
 
   head.addEventListener("click", () => {
     const nowHidden = steps.classList.toggle("hidden");
     head.classList.toggle("open", !nowHidden);
+    if (nowHidden) expandedJobs.delete(j.id);
+    else expandedJobs.add(j.id);
   });
 
+  const logSlot = el("div", "gh-job-logslot");
   const log = el("button", "row-btn gh-job-log");
-  log.textContent = "Logs";
-  log.title = "View this job's logs in-app";
+  const entry = logPanes.get(j.id);
+  const syncLogBtn = (): void => {
+    const isOpen = !!logPanes.get(j.id)?.open;
+    log.textContent = isOpen ? "Hide logs" : "Logs";
+    log.title = isOpen ? "Collapse this job's log" : "View this job's log inline";
+  };
   log.addEventListener("click", (e) => {
     e.stopPropagation();
-    openLogViewer({
-      title: `Logs · ${j.name}`,
-      htmlUrl: j.htmlUrl,
-      load: () => host.invoke("actions:jobLog", { jobId: j.id }),
-    });
+    toggleJobLog(j, logSlot);
+    syncLogBtn();
   });
   head.appendChild(log);
-  card.append(head, steps);
+  card.dataset.jobId = String(j.id);
+  card.append(head, steps, logSlot);
+  // A pane left open across the 8s repaint re-slots into the fresh card with
+  // its scroll position intact — a live tail must never visibly reset.
+  if (entry?.open) {
+    logSlot.appendChild(entry.pane.el);
+    entry.pane.restoreViewport();
+  }
+  syncLogBtn();
   return card;
 }
 
-// ── In-app log viewer (overlay; reused for run + job logs) ─────────────────────
+// ── In-app log viewer (overlay; reused for run + job logs, and by prs.ts) ──────
 
-/**
- * A scrollable, terminal-styled log overlay. Fetches the text lazily (run or job)
- * with a loading/error state, and offers Copy + Open-on-GitHub. Self-contained on
- * the shared `.modal-overlay` scaffold (ESC / backdrop / focus-trap), matching the
- * people-picker pattern — no new modal API.
- */
-function openLogViewer(opts: {
-  title: string;
-  htmlUrl?: string;
-  load: () => Promise<string>;
-}): void {
-  let settled = false;
-  const overlay = el("div", "modal-overlay");
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", opts.title);
 
-  const card = el("div", "modal-card actions-log-card");
-  const head = el("div", "actions-log-head");
-  const h = el("div", "modal-title actions-log-title");
-  h.textContent = opts.title;
-  h.title = opts.title;
-
-  const headActions = el("div", "actions-log-headactions");
-  const copyBtn = btn("mini-btn");
-  copyBtn.append(glyph("copy"), span("Copy"));
-  copyBtn.title = "Copy the full log to the clipboard";
-  copyBtn.disabled = true; // enabled once the text loads
-  if (opts.htmlUrl) {
-    const ghBtn = el("button", "mini-btn");
-    ghBtn.append(glyph("link-external"), span("GitHub"));
-    ghBtn.title = "Open these logs on github.com";
-    ghBtn.addEventListener("click", () => opts.htmlUrl && window.open(opts.htmlUrl, "_blank"));
-    headActions.appendChild(ghBtn);
-  }
-  const closeBtn = el("button", "icon-btn actions-log-close");
-  closeBtn.appendChild(glyph("close"));
-  closeBtn.title = "Close (Esc)";
-  closeBtn.setAttribute("aria-label", "Close logs");
-  headActions.append(copyBtn, closeBtn);
-  head.append(h, headActions);
-
-  const body = el("div", "actions-log-body");
-  body.appendChild(loadingState("Fetching logs…"));
-  card.append(head, body);
-
-  const finish = (): void => {
-    if (settled) return;
-    settled = true;
-    overlay.remove();
-    document.removeEventListener("keydown", onKey, true);
-  };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      finish();
-      return;
-    }
-    trapTab(e, card);
-  };
-  closeBtn.addEventListener("click", finish);
-  overlay.addEventListener("mousedown", (e) => {
-    if (e.target === overlay) finish();
-  });
-
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-  document.addEventListener("keydown", onKey, true);
-  closeBtn.focus();
-
-  const fetchLogs = (): void => {
-    body.replaceChildren(loadingState("Fetching logs…"));
-    copyBtn.disabled = true;
-    opts
-      .load()
-      .then((text) => {
-        if (settled) return;
-        const content = text && text.trim().length ? text : "(no log output)";
-        const pre = el("pre", "actions-log") as HTMLPreElement;
-        pre.textContent = content;
-        body.replaceChildren(pre);
-        if (text && text.trim().length) {
-          copyBtn.disabled = false;
-          copyBtn.onclick = () => void copyText(content, "Log copied.");
-        }
-      })
-      .catch((e) => {
-        if (settled) return;
-        body.replaceChildren(
-          errorState("Couldn't load logs", cleanErr(e) || "GitHub request failed.", fetchLogs),
-        );
-      });
-  };
-  fetchLogs();
-}
 
 // ── Artifacts (in the run detail, below the jobs) ──────────────────────────────
 
 /** Load + render a run's artifacts as a labelled section under the jobs. Silent
- *  on zero artifacts (the common case) so the detail pane isn't cluttered. */
-async function showArtifacts(detail: HTMLElement, runId: number): Promise<void> {
+ *  on zero artifacts (the common case) so the detail column isn't cluttered. */
+async function showArtifacts(container: HTMLElement, runId: number): Promise<void> {
   let items: ArtifactInfo[];
   try {
     items = await host.invoke("actions:artifacts", runId);
   } catch {
     return; // best-effort: a failed artifacts read never breaks the run detail
   }
-  if (!detail.isConnected || items.length === 0) return;
+  if (!container.isConnected || items.length === 0) return;
 
   const section = el("div", "gh-artifacts");
   const label = el("div", "gh-artifacts-head");
@@ -504,7 +1049,7 @@ async function showArtifacts(detail: HTMLElement, runId: number): Promise<void> 
     row.append(info, dl);
     section.appendChild(row);
   }
-  detail.appendChild(section);
+  container.appendChild(section);
 }
 
 /** Download one artifact zip → toast the saved path (or the error). */
@@ -530,8 +1075,9 @@ async function downloadArtifactZip(a: ArtifactInfo, btnEl: HTMLButtonElement): P
 /**
  * A two-section manager overlay: repo Actions secrets (names only — values are
  * write-only) and variables (name + value). Add/edit via `promptInline`, delete
- * via `confirmDialog`. Each section reloads itself after a mutation. Built on the
- * shared `.modal-overlay` scaffold (ESC / backdrop / focus-trap).
+ * via `confirmDialog` — those stack ABOVE this modal, and the shared scaffold's
+ * modal stack keeps Esc scoped to the topmost. Each section reloads itself
+ * after a mutation.
  *
  * Secret *creation* may be unsupported by the backend (it needs libsodium, which
  * isn't bundled); when so, the backend returns a clear message and we surface it
@@ -539,10 +1085,6 @@ async function downloadArtifactZip(a: ArtifactInfo, btnEl: HTMLButtonElement): P
  */
 function openSecretsManager(): void {
   let settled = false;
-  const overlay = el("div", "modal-overlay");
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Secrets and variables");
 
   const card = el("div", "modal-card actions-secrets-card");
   const head = el("div", "actions-secrets-head");
@@ -554,35 +1096,23 @@ function openSecretsManager(): void {
   closeBtn.setAttribute("aria-label", "Close");
   head.append(h, closeBtn);
 
-  const finish = (): void => {
-    if (settled) return;
-    settled = true;
-    overlay.remove();
-    document.removeEventListener("keydown", onKey, true);
-  };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      finish();
-      return;
-    }
-    trapTab(e, card);
-  };
-  closeBtn.addEventListener("click", finish);
-  overlay.addEventListener("mousedown", (e) => {
-    if (e.target === overlay) finish();
-  });
-
   const secretsSection = el("div", "actions-secrets-section");
   const variablesSection = el("div", "actions-secrets-section");
   card.append(head, secretsSection, variablesSection);
 
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-  document.addEventListener("keydown", onKey, true);
-  closeBtn.focus();
+  openModal((close) => {
+    closeBtn.addEventListener("click", close);
+    return {
+      card,
+      focusEl: closeBtn,
+      label: "Secrets and variables",
+      onClose: () => {
+        settled = true;
+      },
+    };
+  });
 
-  const alive = (): boolean => !settled && overlay.isConnected;
+  const alive = (): boolean => !settled && card.isConnected;
   void renderSecretsSection(secretsSection, alive);
   void renderVariablesSection(variablesSection, alive);
 }
@@ -827,14 +1357,9 @@ async function deleteVariable(
   }
 }
 
-// ── Run mutations (disable → invoke → toast → re-render detail) ────────────────
+// ── Run mutations (disable → invoke → toast → bust + re-render) ────────────────
 
-async function rerunRun(
-  id: number,
-  btn: HTMLButtonElement,
-  detail: HTMLElement,
-  run: WorkflowRun,
-): Promise<void> {
+async function rerunRun(id: number, btn: HTMLButtonElement, reload: () => void): Promise<void> {
   btn.disabled = true;
   try {
     const r = await host.invoke("actions:rerun", id);
@@ -844,19 +1369,14 @@ async function rerunRun(
       return;
     }
     toast(`Re-running run #${id}.`, "success");
-    void showRunDetail(detail, run);
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't re-run.", "error");
     btn.disabled = false;
   }
 }
 
-async function rerunFailed(
-  id: number,
-  btn: HTMLButtonElement,
-  detail: HTMLElement,
-  run: WorkflowRun,
-): Promise<void> {
+async function rerunFailed(id: number, btn: HTMLButtonElement, reload: () => void): Promise<void> {
   btn.disabled = true;
   try {
     const r = await host.invoke("actions:rerunFailed", id);
@@ -866,19 +1386,14 @@ async function rerunFailed(
       return;
     }
     toast(`Re-running failed jobs for run #${id}.`, "success");
-    void showRunDetail(detail, run);
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't re-run failed jobs.", "error");
     btn.disabled = false;
   }
 }
 
-async function cancelRun(
-  id: number,
-  btn: HTMLButtonElement,
-  detail: HTMLElement,
-  run: WorkflowRun,
-): Promise<void> {
+async function cancelRun(id: number, btn: HTMLButtonElement, reload: () => void): Promise<void> {
   const confirmed = await confirmDialog({
     title: `Cancel run #${id}?`,
     message: "This stops the in-progress run on GitHub.",
@@ -895,79 +1410,23 @@ async function cancelRun(
       return;
     }
     toast(`Cancelled run #${id}.`, "success");
-    void showRunDetail(detail, run);
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't cancel the run.", "error");
     btn.disabled = false;
   }
 }
 
-// ── Workflows list (in the detail pane via the toolbar) ───────────────────────
-
-async function showWorkflowsList(detail: HTMLElement): Promise<void> {
-  detail.replaceChildren(loadingState());
-  let wfs: WorkflowInfo[];
-  try {
-    wfs = await host.invoke("actions:workflows", undefined);
-  } catch (e) {
-    detail.replaceChildren(
-      errorState("Couldn't load workflows", cleanErr(e) || "GitHub request failed.", () =>
-        void showWorkflowsList(detail),
-      ),
-    );
-    return;
-  }
-  detail.replaceChildren();
-  const head = el("div", "gh-detail-head");
-  const h = el("div", "gh-detail-title");
-  h.textContent = "Workflows";
-  const meta = el("div", "gh-detail-meta");
-  meta.textContent = `${wfs.length} workflow${wfs.length === 1 ? "" : "s"}`;
-  head.append(h, meta);
-  detail.appendChild(head);
-
-  if (wfs.length === 0) {
-    detail.appendChild(emptyState("No workflows", "This repo has no .github/workflows files."));
-    return;
-  }
-  const list = el("div", "gh-wf-list");
-  for (const w of wfs) {
-    const row = el("div", "gh-wf-row");
-    const info = el("div", "row-meta");
-    const t = el("div", "row-meta-title");
-    t.textContent = w.name;
-    const sub = el("div", "row-meta-sub");
-    const stateSuffix = w.state && w.state !== "active" ? " · " + w.state.replace(/_/g, " ") : "";
-    sub.textContent = `${w.path}${stateSuffix}`;
-    info.append(t, sub);
-
-    const runW = btn("mini-btn");
-    runW.append(glyph("play"), span("Run"));
-    runW.title = "Trigger this workflow (workflow_dispatch)";
-    runW.disabled = w.state !== "active";
-    runW.addEventListener("click", () => void showDispatchForm(detail, w));
-
-    const openW = btn("row-btn");
-    openW.textContent = "Open";
-    openW.disabled = !w.htmlUrl;
-    openW.addEventListener("click", () => w.htmlUrl && window.open(w.htmlUrl, "_blank"));
-
-    row.append(info, runW, openW);
-    list.appendChild(row);
-  }
-  detail.appendChild(list);
-}
-
-// ── Dispatch flow ─────────────────────────────────────────────────────────────
+// ── Dispatch flow (modal) ─────────────────────────────────────────────────────
 
 /**
  * Open the dispatch flow from the toolbar: pop a picker of active workflows
- * (anchored on the Run button), then render that workflow's form into `detail`.
+ * (anchored on the Run button), then open that workflow's dispatch modal.
  */
-async function openDispatch(view: HTMLElement, detail: HTMLElement): Promise<void> {
+async function openDispatch(anchor: HTMLElement, refresh: () => void): Promise<void> {
   let wfs: WorkflowInfo[];
   try {
-    wfs = await host.invoke("actions:workflows", undefined);
+    wfs = await gget("actions:workflows", undefined, 60000);
   } catch (e) {
     toast(cleanErr(e) || "Couldn't load workflows.", "error");
     return;
@@ -978,154 +1437,132 @@ async function openDispatch(view: HTMLElement, detail: HTMLElement): Promise<voi
     return;
   }
   if (active.length === 1) {
-    void showDispatchForm(detail, active[0]);
+    void showDispatchModal(active[0], refresh);
     return;
   }
-  const anchor = view.querySelector<HTMLElement>(".gh-run-btn");
-  if (!anchor) return;
   openMenu(
     anchor,
     active.map((w) => ({
       label: w.name,
       sub: w.path,
       icon: "play",
-      onClick: () => void showDispatchForm(detail, w),
+      onClick: () => void showDispatchModal(w, refresh),
     })),
   );
 }
 
-/** Render a dispatch form (ref + parsed inputs) into the detail pane. */
-async function showDispatchForm(detail: HTMLElement, w: WorkflowInfo): Promise<void> {
-  detail.replaceChildren(loadingState("Loading inputs…"));
+/** The dispatch form (ref picker + parsed inputs) as a modal card. */
+async function showDispatchModal(w: WorkflowInfo, refresh: () => void): Promise<void> {
   let inputs: WorkflowDispatchInput[];
   try {
     inputs = await host.invoke("actions:dispatchInputs", w.id);
   } catch (e) {
-    detail.replaceChildren(
-      errorState("Couldn't read workflow inputs", cleanErr(e) || "GitHub request failed.", () =>
-        void showDispatchForm(detail, w),
-      ),
-    );
+    toast(cleanErr(e) || "Couldn't read the workflow's inputs.", "error");
     return;
   }
-
-  detail.replaceChildren();
-  const head = el("div", "gh-detail-head");
-  const h = el("div", "gh-detail-title");
-  h.textContent = `Run “${w.name}”`;
-  const meta = el("div", "gh-detail-meta");
-  meta.textContent = w.path;
-  head.append(h, meta);
-  detail.appendChild(head);
-
-  const form = el("div", "gh-dispatch-form");
-
-  // Ref field — a searchable picker over the repo's branches + tags, defaulting
-  // to the current branch (best-effort). The user can still type any ref.
   const [refOptions, currentRef] = await Promise.all([loadRefOptions(), currentBranchName()]);
-  const refField = comboField({
-    label: "Branch or tag (ref)",
-    placeholder: "Search branches and tags…",
-    value: currentRef,
-    options: refOptions,
-  });
-  form.appendChild(refField.row);
 
-  const getters: { name: string; get: () => string }[] = [];
-  for (const inp of inputs) {
-    const label = inp.name + (inp.required ? " *" : "");
-    if (inp.options && inp.options.length) {
-      const row = el("div", "gh-dispatch-row");
-      const lab = el("label", "gh-dispatch-label");
-      lab.textContent = label;
-      const sel = document.createElement("select");
-      sel.className = "gh-dispatch-input";
-      for (const opt of inp.options) {
-        const o = document.createElement("option");
-        o.value = opt;
-        o.textContent = opt;
-        if (opt === inp.default) o.selected = true;
-        sel.appendChild(o);
+  openModal((close) => {
+    const card = el("div", "modal-card gh-pr-form actions-dispatch-card");
+    const h = el("div", "modal-title");
+    h.textContent = `Run “${w.name}”`;
+    const sub = el("div", "actions-dispatch-path");
+    sub.textContent = w.path;
+    card.append(h, sub);
+
+    const refField = comboField({
+      label: "Branch or tag (ref)",
+      placeholder: "Search branches and tags…",
+      value: currentRef,
+      options: refOptions,
+      rowClass: "gh-form-row",
+      labelClass: "gh-form-label",
+      inputClass: "modal-input",
+    });
+    card.appendChild(refField.row);
+
+    const getters: { name: string; get: () => string }[] = [];
+    for (const inp of inputs) {
+      const label = inp.name + (inp.required ? " *" : "");
+      if (inp.options && inp.options.length) {
+        const row = el("label", "gh-form-row");
+        row.append(span(label, "gh-form-label"));
+        const sel = document.createElement("select");
+        sel.className = "gh-form-select";
+        for (const opt of inp.options) {
+          const o = document.createElement("option");
+          o.value = opt;
+          o.textContent = opt;
+          if (opt === inp.default) o.selected = true;
+          sel.appendChild(o);
+        }
+        if (inp.description) sel.title = inp.description;
+        row.appendChild(sel);
+        card.appendChild(row);
+        getters.push({ name: inp.name, get: () => sel.value });
+      } else {
+        const row = el("label", "gh-form-row");
+        row.append(span(label, "gh-form-label"));
+        const input = document.createElement("input");
+        input.className = "modal-input";
+        input.placeholder =
+          inp.type === "boolean" ? "true / false" : inp.description || inp.name;
+        input.value = inp.default ?? "";
+        if (inp.description) input.title = inp.description;
+        row.appendChild(input);
+        card.appendChild(row);
+        getters.push({ name: inp.name, get: () => input.value.trim() });
       }
-      if (inp.description) sel.title = inp.description;
-      row.append(lab, sel);
-      form.appendChild(row);
-      getters.push({ name: inp.name, get: () => sel.value });
-    } else if (inp.type === "boolean") {
-      const f = dispatchField(label, "true / false", inp.default || "false");
-      if (inp.description) f.input.title = inp.description;
-      form.appendChild(f.row);
-      getters.push({ name: inp.name, get: () => f.input.value.trim() });
-    } else {
-      const f = dispatchField(label, inp.description || inp.name, inp.default);
-      form.appendChild(f.row);
-      getters.push({ name: inp.name, get: () => f.input.value.trim() });
     }
-  }
-
-  if (inputs.length === 0) {
-    const note = el("div", "gh-dispatch-note");
-    note.textContent =
-      "This workflow declares no inputs. It will run on the ref you choose above.";
-    form.appendChild(note);
-  }
-
-  const actions = el("div", "gh-detail-actions");
-  const submit = btn("btn btn-primary");
-  submit.append(glyph("play"), span("Run workflow"));
-  const cancel = btn("mini-btn");
-  cancel.append(span("Cancel"));
-  cancel.addEventListener("click", () => emptyDetail(detail));
-
-  submit.addEventListener("click", async () => {
-    const ref = refField.input.value.trim();
-    if (!ref) {
-      refField.input.focus();
-      toast("A ref (branch or tag) is required.", "error");
-      return;
+    if (inputs.length === 0) {
+      const note = el("div", "gh-dispatch-note");
+      note.textContent = "This workflow declares no inputs. It will run on the ref you choose above.";
+      card.appendChild(note);
     }
-    const map: Record<string, string> = {};
-    for (const g of getters) {
-      const v = g.get();
-      if (v !== "") map[g.name] = v;
-    }
-    submit.disabled = true;
-    try {
-      const r = await host.invoke("actions:dispatch", { workflowId: w.id, ref, inputs: map });
-      if (!r.ok) {
-        toast(r.message ?? "Couldn't start the workflow.", "error");
-        submit.disabled = false;
+
+    const actions = el("div", "modal-actions");
+    const cancel = btn("mini-btn");
+    cancel.append(span("Cancel"));
+    cancel.addEventListener("click", close);
+    const submit = btn("btn btn-primary modal-ok");
+    submit.append(glyph("play"), span("Run workflow"));
+    submit.addEventListener("click", () => {
+      const ref = refField.input.value.trim();
+      if (!ref) {
+        refField.input.focus();
+        toast("A ref (branch or tag) is required.", "error");
         return;
       }
-      toast(`Dispatched “${w.name}” on ${ref}. Refresh to see the new run.`, "success");
-      emptyDetail(detail);
-    } catch (e) {
-      toast(cleanErr(e) || "Couldn't start the workflow.", "error");
-      submit.disabled = false;
-    }
+      const map: Record<string, string> = {};
+      for (const g of getters) {
+        const v = g.get();
+        if (v !== "") map[g.name] = v;
+      }
+      submit.disabled = true;
+      void (async () => {
+        try {
+          const r = await host.invoke("actions:dispatch", { workflowId: w.id, ref, inputs: map });
+          if (!r.ok) {
+            toast(r.message ?? "Couldn't start the workflow.", "error");
+            submit.disabled = false;
+            return;
+          }
+          toast(`Dispatched “${w.name}” on ${ref}.`, "success");
+          close();
+          bust("actions");
+          actionsTab = "runs";
+          refresh();
+        } catch (e) {
+          toast(cleanErr(e) || "Couldn't start the workflow.", "error");
+          submit.disabled = false;
+        }
+      })();
+    });
+    actions.append(cancel, submit);
+    card.appendChild(actions);
+
+    return { card, focusEl: refField.input, label: `Run workflow ${w.name}`, onClose: () => {} };
   });
-
-  actions.append(submit, cancel);
-  form.appendChild(actions);
-  detail.appendChild(form);
-  refField.input.focus();
-}
-
-/** A labeled text input for the dispatch form. */
-function dispatchField(
-  label: string,
-  placeholder: string,
-  value: string,
-): { row: HTMLElement; input: HTMLInputElement } {
-  const row = el("div", "gh-dispatch-row");
-  const lab = el("label", "gh-dispatch-label");
-  lab.textContent = label;
-  const input = document.createElement("input");
-  input.className = "gh-dispatch-input";
-  input.placeholder = placeholder;
-  input.value = value ?? "";
-  row.append(lab, input);
-  return { row, input };
 }
 
 /** Best-effort current branch name from the open repo's HEAD; "main" fallback. */

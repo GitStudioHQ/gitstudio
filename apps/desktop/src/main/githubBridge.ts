@@ -5,8 +5,8 @@
 // same `status/connect` surface; the renderer only knows about connect/disconnect
 // plus the data calls.
 
-import { app, safeStorage } from "electron";
-import { readFile, unlink, access } from "node:fs/promises";
+import { app } from "electron";
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { SecretStore } from "@gitstudio/secret-store/secretStore";
 
@@ -16,6 +16,10 @@ import { GitHubClient } from "./githubClient";
 import { requestDeviceCode, pollForToken } from "./githubAuth";
 import type { RepoStore } from "./repoStore";
 import { ExpectedError } from "./expectedError";
+import { parseGitHubRemote } from "./githubRemote";
+
+// Re-exported so existing importers (and their tests) keep their seam.
+export { parseGitHubRemote } from "./githubRemote";
 import { errorFields } from "./githubErrors";
 import type {
   CheckRun,
@@ -33,6 +37,7 @@ import type {
   PullRequest,
   WorkflowRun,
 } from "../shared/ipc";
+
 
 export class GitHubBridge {
   private token: string | undefined;
@@ -63,61 +68,54 @@ export class GitHubBridge {
     this.loaded = true;
     this.token = await this.secrets().get(TOKEN_SECRET);
     if (this.token === undefined) {
-      this.token = await this.adoptLegacyToken();
+      // NO KEYRING, EVER. A pre-1.4 safeStorage blob could only be read
+      // through the OS keychain, whose ACL is bound to the app's code
+      // signature -- so every rebuilt/re-signed binary raised the macOS
+      // password prompt again, and declining it made sign-in look broken.
+      // That migration is gone: any leftover blob is deleted unread, and the
+      // user signs in once more through the (now prompt-free) device flow.
+      await unlink(this.legacyTokenPath()).catch(() => {});
     }
   }
 
-  /**
-   * Move a pre-1.4 safeStorage token into the keychain-free store, once.
-   *
-   * The only remaining path that can raise an OS password prompt, and it is
-   * reached only from `ensureLoaded`, which callers now invoke exclusively
-   * before a real GitHub request — never from `status()`, never at launch. After
-   * a successful adopt the legacy blob is deleted, so this costs at most one
-   * prompt, ever. Declining it just leaves GitHub disconnected for the session.
-   */
-  private async adoptLegacyToken(): Promise<string | undefined> {
-    let buf: Buffer;
-    try {
-      buf = await readFile(this.legacyTokenPath());
-    } catch {
-      return undefined; // no stored token — the keyring is never touched
-    }
-    // We never persisted a plaintext token, so a blob we can't decrypt is junk.
-    if (!safeStorage.isEncryptionAvailable()) {
-      return undefined;
-    }
-    let token: string;
-    try {
-      token = safeStorage.decryptString(buf);
-    } catch {
-      return undefined; // stored by a different machine/user
-    }
-    await this.secrets().set(TOKEN_SECRET, token);
-    await unlink(this.legacyTokenPath()).catch(() => {});
-    return token;
-  }
 
-  /** Resolve owner/repo from `git remote get-url origin` (cached per repo root). */
+  /** Resolve owner/repo from the repo's remotes (positive result cached per
+   *  root). Tries `origin`, then `upstream`, then every other remote — a fork
+   *  checked out with only an `upstream` remote used to be refused outright.
+   *  A miss is NOT cached: adding a remote after opening the repo starts
+   *  working on the very next call instead of after a repo switch. */
   private async resolveOwnerRepo(): Promise<{ owner: string; repo: string } | undefined> {
     const ctx = this.repos.getContext();
     if (!ctx) {
       return undefined;
     }
-    if (this.ownerRepoRoot === ctx.root) {
+    if (this.ownerRepoRoot === ctx.root && this.cachedOwnerRepo) {
       return this.cachedOwnerRepo;
     }
-    let url = "";
-    try {
-      const r = await ctx.process.run(["remote", "get-url", "origin"]);
-      url = r.stdout.trim();
-    } catch {
-      url = "";
+    const tryRemote = async (name: string): Promise<{ owner: string; repo: string } | undefined> => {
+      try {
+        const r = await ctx.process.run(["remote", "get-url", name]);
+        return r.code === 0 ? parseGitHubRemote(r.stdout.trim()) : undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    let hit = (await tryRemote("origin")) ?? (await tryRemote("upstream"));
+    if (!hit) {
+      try {
+        const r = await ctx.process.run(["remote"]);
+        for (const name of r.stdout.split("\n").map((s) => s.trim()).filter(Boolean)) {
+          if (name === "origin" || name === "upstream") continue;
+          hit = await tryRemote(name);
+          if (hit) break;
+        }
+      } catch {
+        // no remotes at all
+      }
     }
-    const m = url.match(/github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/i);
     this.ownerRepoRoot = ctx.root;
-    this.cachedOwnerRepo = m ? { owner: m[1], repo: m[2] } : undefined;
-    return this.cachedOwnerRepo;
+    this.cachedOwnerRepo = hit;
+    return hit;
   }
 
   async status(): Promise<GitHubStatus> {
@@ -143,17 +141,12 @@ export class GitHubBridge {
     return { connected: false, repo };
   }
 
-  /** Is there a stored token, WITHOUT decrypting it? */
+  /** Is there a stored token, WITHOUT decrypting it? Only the keychain-free
+   *  store counts — a leftover pre-1.4 keyring blob is unreadable by design
+   *  (see ensureLoaded), so treating it as "connected" showed a signed-in UI
+   *  whose every real request then failed. */
   private async hasStoredToken(): Promise<boolean> {
-    if (this.secrets().has(TOKEN_SECRET)) {
-      return true;
-    }
-    try {
-      await access(this.legacyTokenPath());
-      return true;
-    } catch {
-      return false;
-    }
+    return this.secrets().has(TOKEN_SECRET);
   }
 
   async connect(pat: string): Promise<{ ok: boolean; login?: string; message?: string }> {
@@ -416,12 +409,6 @@ export class GitHubBridge {
       return { ok: false, changed: false, ...errorFields(err) };
     }
   }
-  async actionsRuns(): Promise<WorkflowRun[]> {
-    const r = await this.resolveOwnerRepo();
-    if (!r || !this.token) return [];
-    return this.client.listWorkflowRuns(r.owner, r.repo);
-  }
-
   async issueList(): Promise<IssueInfo[]> {
     const r = await this.resolveOwnerRepo();
     if (!r || !this.token) {

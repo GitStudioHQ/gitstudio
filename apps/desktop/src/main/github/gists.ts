@@ -11,6 +11,7 @@
 // can select it after a refresh.
 
 import { GitHubClient, enc, mapUser, RawUser } from "../githubClient";
+import { PAGE_CAPS } from "../githubPaging";
 import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
@@ -82,7 +83,7 @@ function mapGist(g: RawGist): GistInfo {
  *  The list payload carries file METADATA only — file `content` is null here, so
  *  the detail view re-fetches the full gist via `getGist`. */
 export async function listGists(client: GitHubClient): Promise<GistInfo[]> {
-  const raw = await client.request<RawGist[]>("GET", "/gists?per_page=100");
+  const raw = await client.requestPaged<RawGist>("/gists?per_page=100", PAGE_CAPS.account);
   return raw.map(mapGist);
 }
 

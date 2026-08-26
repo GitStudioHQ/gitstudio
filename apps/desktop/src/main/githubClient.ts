@@ -6,6 +6,8 @@
 
 import { ExpectedError } from "./expectedError";
 import { githubHttpError, graphqlError, networkError } from "./githubErrors";
+import { nextPagePath, PAGE_CAPS } from "./githubPaging";
+import { mapIssue, mapPull, mapUser, type RawIssue, type RawPull, type RawUser } from "./github/maps";
 import type {
   CheckRun,
   GitHubUser,
@@ -31,17 +33,24 @@ export type TokenGetter = () => string | undefined;
 export class GitHubClient {
   constructor(private readonly getToken: TokenGetter) {}
 
-  /** REST call returning the parsed JSON body. `body` (POST/PATCH/PUT) is sent as
-   *  JSON. Throws a clean Error on non-2xx or network failure. Public so the
-   *  per-section modules under ./github can call it. */
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** The shared fetch under `request`/`requestPaged`: auth headers, timeout,
+   *  network-error wrapping, non-2xx → githubHttpError. Returns the RESPONSE so
+   *  paged callers can read the `Link` header. */
+  private async fetchRes(
+    method: string,
+    path: string,
+    body?: unknown,
+    opts?: { accept?: string },
+  ): Promise<Response> {
     const token = this.getToken();
     if (!token) {
       throw new ExpectedError("Not connected to GitHub.");
     }
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
+      // Some endpoints need a different media type to return the good stuff —
+      // code search only includes match fragments under text-match+json.
+      Accept: opts?.accept ?? "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       "User-Agent": "GitStudio",
     };
@@ -54,16 +63,123 @@ export class GitHubClient {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        // A hung request used to hang every gated section on its skeleton
+        // forever — the API must fail fast enough for the UI to say so.
+        signal: AbortSignal.timeout(20_000),
       });
     } catch {
       throw networkError();
     }
-    if (res.ok) {
-      if (res.status === 204) return undefined as T;
-      const text = await res.text();
-      return (text.length > 0 ? JSON.parse(text) : undefined) as T;
+    if (!res.ok) {
+      throw await githubHttpError(res);
     }
-    throw await githubHttpError(res);
+    return res;
+  }
+
+  /** REST call returning the parsed JSON body. `body` (POST/PATCH/PUT) is sent as
+   *  JSON. Throws a clean Error on non-2xx or network failure. Public so the
+   *  per-section modules under ./github can call it. */
+  async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    opts?: { accept?: string },
+  ): Promise<T> {
+    const res = await this.fetchRes(method, path, body, opts);
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    return (text.length > 0 ? JSON.parse(text) : undefined) as T;
+  }
+
+  /**
+   * GET an ARRAY-bodied list endpoint, following the `Link: rel="next"` chain
+   * up to `maxPages` pages and concatenating the results. The first page's
+   * failure throws; a FOLLOW-UP page's failure returns what was gathered so far
+   * (a partial long list beats an error state the user already had data for).
+   */
+  async requestPaged<T>(path: string, maxPages: number): Promise<T[]> {
+    const out: T[] = [];
+    let next: string | undefined = path;
+    for (let page = 0; next && page < maxPages; page++) {
+      let res: Response;
+      try {
+        res = await this.fetchRes("GET", next);
+      } catch (e) {
+        if (page === 0) throw e;
+        break;
+      }
+      const text = await res.text();
+      const chunk = (text.length > 0 ? JSON.parse(text) : []) as T[];
+      out.push(...chunk);
+      next = nextPagePath(res.headers.get("link"), API_BASE);
+    }
+    return out;
+  }
+
+  /**
+   * As {@link requestPaged}, for OBJECT-bodied list endpoints (`{ total_count,
+   * workflow_runs: [...] }` and friends) — `key` names the array to gather.
+   */
+  async requestPagedKey<T>(path: string, key: string, maxPages: number): Promise<T[]> {
+    const out: T[] = [];
+    let next: string | undefined = path;
+    for (let page = 0; next && page < maxPages; page++) {
+      let res: Response;
+      try {
+        res = await this.fetchRes("GET", next);
+      } catch (e) {
+        if (page === 0) throw e;
+        break;
+      }
+      const text = await res.text();
+      const body = (text.length > 0 ? JSON.parse(text) : {}) as Record<string, unknown>;
+      const chunk = body[key];
+      if (Array.isArray(chunk)) out.push(...(chunk as T[]));
+      next = nextPagePath(res.headers.get("link"), API_BASE);
+    }
+    return out;
+  }
+
+  /**
+   * Upload one release asset (binary) to uploads.github.com — a different host
+   * than the API base, hence its own fetch. Generous timeout: installers are
+   * hundreds of megabytes.
+   */
+  async uploadReleaseAsset(
+    owner: string,
+    repo: string,
+    releaseId: number,
+    name: string,
+    data: Uint8Array,
+    contentType: string,
+  ): Promise<void> {
+    const token = this.getToken();
+    if (!token) {
+      throw new ExpectedError("Not connected to GitHub.");
+    }
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://uploads.github.com/repos/${enc(owner)}/${enc(repo)}/releases/${releaseId}/assets?name=${encodeURIComponent(name)}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "GitStudio",
+            "Content-Type": contentType,
+          },
+          body: data as unknown as RequestInit["body"],
+          signal: AbortSignal.timeout(300_000),
+        },
+      );
+    } catch {
+      throw networkError();
+    }
+    if (!res.ok) {
+      throw await githubHttpError(res);
+    }
   }
 
   /** REST call that ignores the response body (fire-and-forget mutations). */
@@ -79,6 +195,7 @@ export class GitHubClient {
     try {
       res = await fetch(`${API_BASE}${path}`, {
         method,
+        signal: AbortSignal.timeout(30_000),
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "application/vnd.github+json",
@@ -143,9 +260,9 @@ export class GitHubClient {
 
   // ── Pull requests ──
   async listOpenPulls(owner: string, repo: string): Promise<PullRequest[]> {
-    const raw = await this.request<RawPull[]>(
-      "GET",
-      `/repos/${enc(owner)}/${enc(repo)}/pulls?state=open&sort=updated&direction=desc&per_page=50`,
+    const raw = await this.requestPaged<RawPull>(
+      `/repos/${enc(owner)}/${enc(repo)}/pulls?state=open&sort=updated&direction=desc&per_page=100`,
+      PAGE_CAPS.list,
     );
     return raw.map(mapPull);
   }
@@ -153,9 +270,9 @@ export class GitHubClient {
     return mapPull(await this.request<RawPull>("GET", `/repos/${enc(owner)}/${enc(repo)}/pulls/${n}`));
   }
   async getPullFiles(owner: string, repo: string, n: number): Promise<PrFile[]> {
-    const raw = await this.request<RawFile[]>(
-      "GET",
+    const raw = await this.requestPaged<RawFile>(
       `/repos/${enc(owner)}/${enc(repo)}/pulls/${n}/files?per_page=100`,
+      PAGE_CAPS.detail,
     );
     return raw.map((f) => ({
       filename: f.filename,
@@ -171,9 +288,9 @@ export class GitHubClient {
     await this.requestBody("POST", `/repos/${enc(owner)}/${enc(repo)}/pulls/${n}/reviews`, { event: "APPROVE" });
   }
   async listPrCommits(owner: string, repo: string, n: number): Promise<PrCommitInfo[]> {
-    const raw = await this.request<RawPrCommit[]>(
-      "GET",
+    const raw = await this.requestPaged<RawPrCommit>(
       `/repos/${enc(owner)}/${enc(repo)}/pulls/${n}/commits?per_page=100`,
+      PAGE_CAPS.detail,
     );
     return raw.map((c) => ({
       sha: c.sha,
@@ -186,8 +303,8 @@ export class GitHubClient {
   /** The conversation = issue comments + reviews, merged chronologically. */
   async listConversation(owner: string, repo: string, n: number): Promise<PrComment[]> {
     const [comments, reviews] = await Promise.all([
-      this.request<RawComment[]>("GET", `/repos/${enc(owner)}/${enc(repo)}/issues/${n}/comments?per_page=100`).catch(() => []),
-      this.request<RawReview[]>("GET", `/repos/${enc(owner)}/${enc(repo)}/pulls/${n}/reviews?per_page=100`).catch(() => []),
+      this.requestPaged<RawComment>(`/repos/${enc(owner)}/${enc(repo)}/issues/${n}/comments?per_page=100`, PAGE_CAPS.detail).catch(() => []),
+      this.requestPaged<RawReview>(`/repos/${enc(owner)}/${enc(repo)}/pulls/${n}/reviews?per_page=100`, PAGE_CAPS.detail).catch(() => []),
     ]);
     const out: PrComment[] = [];
     for (const c of comments) {
@@ -216,26 +333,6 @@ export class GitHubClient {
       return [];
     }
   }
-  async listWorkflowRuns(owner: string, repo: string): Promise<WorkflowRun[]> {
-    try {
-      const raw = await this.request<{ workflow_runs?: RawRun[] }>(
-        "GET",
-        `/repos/${enc(owner)}/${enc(repo)}/actions/runs?per_page=30`,
-      );
-      return (raw.workflow_runs ?? []).map((r) => ({
-        id: r.id,
-        name: r.name ?? r.display_title ?? "(run)",
-        status: r.status ?? "",
-        conclusion: r.conclusion ?? "",
-        branch: r.head_branch ?? "",
-        event: r.event ?? "",
-        createdAt: r.created_at ?? "",
-        htmlUrl: r.html_url ?? "",
-      }));
-    } catch {
-      return [];
-    }
-  }
   async getCombinedStatus(owner: string, repo: string, ref: string): Promise<CombinedStatus> {
     try {
       const raw = await this.request<{ state?: string; total_count?: number }>(
@@ -250,9 +347,9 @@ export class GitHubClient {
 
   // ── Issues (the issues endpoint also returns PRs — filter them out) ──
   async listOpenIssues(owner: string, repo: string): Promise<IssueInfo[]> {
-    const raw = await this.request<RawIssue[]>(
-      "GET",
-      `/repos/${enc(owner)}/${enc(repo)}/issues?state=open&sort=updated&direction=desc&per_page=50`,
+    const raw = await this.requestPaged<RawIssue>(
+      `/repos/${enc(owner)}/${enc(repo)}/issues?state=open&sort=updated&direction=desc&per_page=100`,
+      PAGE_CAPS.list,
     );
     return raw.filter((i) => !i.pull_request).map(mapIssue);
   }
@@ -288,51 +385,19 @@ export function enc(part: string): string {
   return encodeURIComponent(part);
 }
 
-export interface RawUser {
-  login: string;
-  avatar_url?: string;
-}
+// RawUser + mapUser live in github/maps.ts now (imported above) — re-exported
+// here so the per-section modules' existing `import { mapUser } from
+// "../githubClient"` keeps working.
+export { mapUser, type RawUser };
 interface RawRef {
   ref: string;
   sha: string;
-}
-interface RawPull {
-  number: number;
-  title: string;
-  body: string | null;
-  state: string;
-  draft?: boolean;
-  html_url: string;
-  user: RawUser | null;
-  created_at: string;
-  updated_at: string;
-  head: RawRef;
-  base: RawRef;
-  labels?: { name: string; color: string }[];
-  comments?: number;
-  additions?: number;
-  deletions?: number;
-  changed_files?: number;
 }
 interface RawFile {
   filename: string;
   status: string;
   additions: number;
   deletions: number;
-}
-interface RawIssue {
-  number: number;
-  title: string;
-  body: string | null;
-  state: string;
-  html_url: string;
-  user: RawUser | null;
-  created_at: string;
-  updated_at: string;
-  comments: number;
-  labels?: ({ name: string; color: string } | string)[];
-  assignees?: RawUser[];
-  pull_request?: unknown;
 }
 interface RawPrCommit {
   sha: string;
@@ -356,17 +421,6 @@ interface RawCheck {
   conclusion?: string;
   details_url?: string;
 }
-interface RawRun {
-  id: number;
-  name?: string;
-  display_title?: string;
-  status?: string;
-  conclusion?: string;
-  head_branch?: string;
-  event?: string;
-  created_at?: string;
-  html_url?: string;
-}
 interface RawProjectsData {
   repository?: {
     projectsV2?: {
@@ -384,45 +438,3 @@ interface RawProjectsData {
   };
 }
 
-export function mapUser(u: RawUser | null | undefined): GitHubUser | null {
-  return u ? { login: u.login, avatarUrl: u.avatar_url ?? null } : null;
-}
-function mapPull(p: RawPull): PullRequest {
-  return {
-    number: p.number,
-    title: p.title,
-    body: p.body,
-    state: p.state,
-    draft: p.draft ?? false,
-    htmlUrl: p.html_url,
-    user: mapUser(p.user),
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
-    head: { ref: p.head.ref, sha: p.head.sha },
-    base: { ref: p.base.ref, sha: p.base.sha },
-    labels: (p.labels ?? []).map((l) => ({ name: l.name, color: l.color })),
-    comments: p.comments,
-    additions: p.additions,
-    deletions: p.deletions,
-    changedFiles: p.changed_files,
-  };
-}
-function mapIssue(i: RawIssue): IssueInfo {
-  return {
-    number: i.number,
-    title: i.title,
-    body: i.body,
-    state: i.state,
-    htmlUrl: i.html_url,
-    user: mapUser(i.user),
-    createdAt: i.created_at,
-    updatedAt: i.updated_at,
-    comments: i.comments,
-    labels: (i.labels ?? []).map((l) =>
-      typeof l === "string" ? { name: l, color: "888888" } : { name: l.name, color: l.color },
-    ),
-    assignees: (i.assignees ?? [])
-      .map(mapUser)
-      .filter((u): u is GitHubUser => u !== null),
-  };
-}

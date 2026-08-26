@@ -11,6 +11,10 @@
 
 import { dialog } from "electron";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { validateTargetName } from "../shared/cloneName";
+
+export { validateTargetName };
 import { join } from "node:path";
 import type { CloneProgress, CloneRequest, CloneResult, GhRepoBrief } from "../shared/ipc";
 import type { GitHubClient } from "./githubClient";
@@ -28,17 +32,19 @@ export function killActiveClones(): void {
   activeClones.clear();
 }
 
-/** Native "choose a folder" dialog; returns the absolute path or undefined. */
-export async function pickCloneDir(): Promise<string | undefined> {
+/** Native "choose a folder" dialog; returns the absolute path or undefined.
+ *  `defaultPath` (the configured clone folder) is where it opens. */
+export async function pickCloneDir(defaultPath?: string): Promise<string | undefined> {
   const r = await dialog.showOpenDialog({
     properties: ["openDirectory", "createDirectory"],
     title: "Choose a folder to clone into",
+    ...(defaultPath ? { defaultPath } : {}),
   });
   return r.canceled || !r.filePaths[0] ? undefined : r.filePaths[0];
 }
 
 /** Derive the target folder name from an explicit override or the URL's last segment. */
-function targetName(req: CloneRequest): string {
+export function targetName(req: CloneRequest): string {
   const explicit = req.name?.trim();
   if (explicit) return explicit;
   // Strip a trailing slash, then a trailing ".git", and take the last path segment.
@@ -69,11 +75,24 @@ export async function startClone(
   }
   const name = targetName(req);
   if (!name) {
-    return { ok: false, message: "Couldn't derive a folder name from the URL." };
+    return { ok: false, code: "bad-name", message: "Couldn't derive a folder name from the URL." };
+  }
+  const nameProblem = validateTargetName(name);
+  if (nameProblem) {
+    return { ok: false, code: "bad-name", message: nameProblem };
   }
   // A target dir starting with "-" would be read by git as an option, not a path.
   if (name.startsWith("-")) {
-    return { ok: false, message: "Couldn't derive a safe folder name from the URL." };
+    return { ok: false, code: "bad-name", message: "Couldn't derive a safe folder name from the URL." };
+  }
+  // Pre-check the destination so a collision is a clean, coded failure instead
+  // of git's stderr (which the UI used to have to string-match).
+  if (existsSync(join(req.parentDir, name))) {
+    return {
+      ok: false,
+      code: "dest-exists",
+      message: `${join(req.parentDir, name)} already exists — pick another folder name or destination.`,
+    };
   }
 
   return new Promise<CloneResult>((resolve) => {

@@ -26,10 +26,10 @@ import { DiffPanel } from "./diffPanel";
 import { CompareDiff } from "./compareDiff";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
-import { renderAssistant } from "./assistant";
+import { renderAssistant, seedAssistantGoal } from "./assistant";
 import { aiModelsCard, agentAccessCard } from "./aiSettings";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
-import { toast, confirmDialog, promptInline } from "./dialogs";
+import { toast, confirmDialog, promptInline, openModal } from "./dialogs";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
 import { gget, peek, bust, setCacheScope } from "./cache";
@@ -62,13 +62,24 @@ import {
   wireResizerKeys,
 } from "./ui";
 import type { MenuItem } from "./ui";
+import { closePeek } from "./peek";
+import { openBranchPeek, openRefPeek, openStashPeek } from "./peeks";
+import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu } from "./contextMenu";
+import { wireListNav } from "./views/common";
+import { resolveRelative, wireProseNav } from "./proseNav";
+import { refreshHighlightTheme } from "./highlight";
+import { openCommandPalette, paletteIsOpen } from "./commandPalette";
+import type { PaletteGroup, PaletteItem } from "./commandPalette";
 import type { SectionRender, SectionTarget } from "./views/common";
-import { renderIssues } from "./views/issues";
+import { renderIssues, openNewIssue } from "./views/issues";
+import { renderMyWork } from "./views/mywork";
 import { renderPrs, openCreatePr } from "./views/prs";
 import { renderActions } from "./views/actions";
 import { renderReleases } from "./views/releases";
-import { openNotificationsPanel, fetchUnreadCount } from "./views/notifications";
+import { openNotificationsPanel, fetchUnreadCount, renderNotifications } from "./views/notifications";
+import { renderExplore } from "./views/explore";
+import { repoRouteId, searchTargetId } from "./exploreRoutes";
 import { renderOrgs } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
@@ -83,6 +94,8 @@ import type {
   HeadCommit,
   IssueInfo,
   MergeMethod,
+  AppSettingsView,
+  LocalCopy,
   PrDetail,
   ProjectInfo,
   PullRequest,
@@ -90,6 +103,7 @@ import type {
   GitHubStatus,
   RepoInfo,
   SshKey,
+  StashInfo,
   SyncStatus,
 } from "../shared/ipc";
 
@@ -101,6 +115,10 @@ class App {
   private detailsEl?: HTMLElement;
   /** The commit-details column beside the graph (commits view). */
   private graphDetailsPane?: HTMLElement;
+  /** The kept-alive Commits view DOM — re-attached on return, never rebuilt. */
+  private graphViewWrap?: HTMLElement;
+  /** The repo changed while the graph was parked — reload in place on return. */
+  private graphDirty = false;
   private diffSurfaceEl?: HTMLElement;
   private repoSwitchName?: HTMLElement;
   private branchSwitchName?: HTMLElement;
@@ -152,6 +170,15 @@ class App {
   /** A pending deep-link target for the next section mount (e.g. an issue number
    *  to open from the project board). Consumed + cleared by mountSection. */
   private sectionTarget?: SectionTarget;
+  /** In-app navigation history — every routed view (with its deep-link target)
+   *  lands here so ⌘[/⌘] and the top-bar chevrons walk back/forward like a real
+   *  app. Reset on repo switch (entries would point into the previous repo). */
+  private navHistory: Array<{ view: string; target?: SectionTarget }> = [];
+  private navPos = -1;
+  /** True while back/forward drives routeView, so the travel isn't re-recorded. */
+  private navTravel = false;
+  private navBackBtn?: HTMLButtonElement;
+  private navFwdBtn?: HTMLButtonElement;
   /** Current directory inside the Code (repo browser) view; "" = repo root. */
   private codePath = "";
   /** Branches view: per-category collapse memory (label → collapsed), persisted
@@ -190,6 +217,7 @@ class App {
   /** Views safe to keep alive (no Monaco surface / dispose lifecycle of their own). */
   private static readonly KEEPALIVE = new Set([
     "branches",
+    "explore",
     "settings",
     "assistant",
     "prs",
@@ -199,6 +227,8 @@ class App {
     "orgs",
     "projects",
     "gists",
+    "notifications",
+    "mywork",
   ]);
   /** True while a fetch/pull/push is in flight — locks the sync trigger. */
   private syncing = false;
@@ -254,6 +284,49 @@ class App {
       } else if (e.key === "`") {
         e.preventDefault();
         this.toggleTerminal();
+      } else if (e.key === "[") {
+        e.preventDefault();
+        this.navBack();
+      } else if (e.key === "]") {
+        e.preventDefault();
+        this.navForward();
+      } else if (e.key === "k" || e.key === "p") {
+        // The Linear move: everything — sections, branches, PRs, repos,
+        // actions — one keystroke away, from anywhere. One carve-out: on
+        // macOS, Ctrl+K/Ctrl+P are kill-line / previous-line inside text
+        // fields — leave those to the field (⌘K still opens the palette).
+        const t = e.target as HTMLElement | null;
+        const editable =
+          !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+        if (editable && e.ctrlKey && !e.metaKey && navigator.platform.toLowerCase().includes("mac")) {
+          return;
+        }
+        e.preventDefault();
+        if (!paletteIsOpen()) this.openPalette();
+      }
+    });
+
+    // "?" opens the keyboard cheat sheet — the j/k/e/Esc layer is worthless
+    // if nobody can discover it.
+    window.addEventListener("keydown", (e) => {
+      if (e.key !== "?" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!this.currentRepo) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      openShortcutsHelp();
+    });
+
+    // Mouse back/forward buttons (buttons 3/4) walk the same history — the
+    // muscle memory every browser user brings to a mouse with side buttons.
+    window.addEventListener("mouseup", (e) => {
+      if (!this.currentRepo) return;
+      if (e.button === 3) {
+        e.preventDefault();
+        this.navBack();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        this.navForward();
       }
     });
 
@@ -303,6 +376,9 @@ class App {
       if (this.themeMode === "system") {
         applyTheme(osTheme);
         this.rerenderForTheme();
+        // Monaco's token classes are global — without this, every highlighted
+        // code block keeps the OLD theme's colors after an OS light/dark flip.
+        refreshHighlightTheme();
         this.terminalDock?.applyTheme();
         // An "auto" dock icon must follow the OS flip too.
         this.syncDockIcon();
@@ -423,6 +499,10 @@ class App {
     this.routeGen++; // a repo switch supersedes the previous repo's in-flight work
     // A new repo invalidates every kept-alive view (they hold the old repo's DOM).
     this.viewCache.clear();
+    // …and the navigation history: its entries (and deep-link targets) belong
+    // to the previous repo's sections.
+    this.navHistory = [];
+    this.navPos = -1;
     // Namespace (and wipe) the SWR cache so the previous repo's branches/status/
     // graph can never bleed into this one.
     setCacheScope(info.root);
@@ -432,6 +512,7 @@ class App {
     // never reloads stale history.
     this.graph?.dispose();
     this.graph = undefined;
+    this.graphViewWrap = undefined;
     // Tear down the previous repo's terminal sessions — a new repo means a new
     // working directory, so its shells start fresh.
     this.terminalDock?.dispose();
@@ -484,7 +565,14 @@ class App {
     // (commit / branch / compare) instead of a generic list glyph.
     { id: "rebase", label: "Rebase", icon: "git-merge" },
     { id: "compare", label: "Compare", icon: "git-compare" },
-    { id: "prs", label: "Pull Requests", icon: "git-pull-request", divider: true },
+    // Inbox first in the GitHub group — the "what needs me" surface (Linear's
+    // Inbox translated): review requests, mentions, assignments, CI failures.
+    // The top-bar bell stays for a quick glance; this is the full triage page.
+    { id: "notifications", label: "Inbox", icon: "inbox", divider: true },
+    // "What needs me?" answered in one page: review requests, assignments,
+    // your own PRs, mentions — each row one click from acting on it.
+    { id: "mywork", label: "My Work", icon: "person" },
+    { id: "prs", label: "Pull Requests", icon: "git-pull-request" },
     // `issues` (the list glyph) rather than `issue-opened`, which reads as a
     // single issue's OPEN state and clashed with per-issue status icons.
     { id: "issues", label: "Issues", icon: "issues" },
@@ -492,6 +580,9 @@ class App {
     { id: "actions", label: "Actions", icon: "play-circle" },
     { id: "releases", label: "Releases", icon: "tag" },
     { id: "projects", label: "Projects", icon: "project" },
+    // Account-scoped (not repo-scoped) surfaces get their own quiet group.
+    // Explore leads it: discovery comes before the things you already have.
+    { id: "explore", label: "Explore", icon: "telescope", divider: true, dividerLabel: "Account" },
     { id: "orgs", label: "Organizations", icon: "organization" },
     // `gist` — was `code`, a duplicate of the Code tab's glyph.
     { id: "gists", label: "Gists", icon: "gist" },
@@ -656,7 +747,9 @@ class App {
     if (!this.mainStackEl || this.terminalDock) return this.terminalDock;
     this.terminalDock = new TerminalDock(this.mainStackEl, {
       expanded: this.terminalExpanded,
-      height: this.terminalHeight,
+      // Never let a restored dock eat the window — the screenshot that
+      // triggered this fix had it at ~60% height, drowning the actual app.
+      height: Math.min(this.terminalHeight, Math.round(window.innerHeight * 0.4)),
       onStateChange: ({ expanded, height }) => {
         this.terminalExpanded = expanded;
         this.terminalHeight = height;
@@ -665,8 +758,13 @@ class App {
     });
     // Shrinking the window must not leave the dock covering the whole view.
     window.addEventListener("resize", () => this.terminalDock?.handleWindowResize());
-    // The ✨ inline AI actions open their chat tabs in this dock.
-    registerAssistantTab((req) => this.terminalDock?.openChat(req));
+    // The ✨ inline AI actions land in the ASSISTANT SECTION — one AI surface,
+    // full height, instead of a chat tab splitting the window in half from
+    // the bottom dock.
+    registerAssistantTab((req) => {
+      seedAssistantGoal(req.goal);
+      this.routeView("assistant", true);
+    });
     return this.terminalDock;
   }
 
@@ -694,6 +792,8 @@ class App {
     this.themeMode = mode;
     applyTheme(resolveTheme(mode));
     this.rerenderForTheme();
+    // Recolor every highlighted code block for the new palette.
+    refreshHighlightTheme();
     this.terminalDock?.applyTheme();
     // An "auto" dock icon follows the new theme.
     this.syncDockIcon();
@@ -717,18 +817,89 @@ class App {
     void host.invoke("appearance:dockIcon", { variant: this.dockVariant() }).catch(() => {});
   }
 
+  /** Step back in the in-app navigation history (⌘[ / topbar chevron). */
+  private navBack(): void {
+    if (this.navPos <= 0) return;
+    this.navPos--;
+    this.navTravelTo(this.navHistory[this.navPos]);
+  }
+
+  /** Step forward in the in-app navigation history (⌘] / topbar chevron). */
+  private navForward(): void {
+    if (this.navPos >= this.navHistory.length - 1) return;
+    this.navPos++;
+    this.navTravelTo(this.navHistory[this.navPos]);
+  }
+
+  private navTravelTo(entry: { view: string; target?: SectionTarget }): void {
+    this.navTravel = true;
+    try {
+      // Same-view travel must FORCE: without it routeView's "already showing"
+      // early-return swallowed the hop (navPos moved, nothing on screen
+      // changed — Back looked dead). Cross-view travel stays unforced so
+      // kept-alive views restore from cache.
+      this.routeView(entry.view, entry.view === this.currentView, entry.target);
+    } finally {
+      this.navTravel = false;
+    }
+    this.updateNavButtons();
+  }
+
+  /** Enable/disable the top-bar back/forward chevrons to match the stack. */
+  private updateNavButtons(): void {
+    if (this.navBackBtn) this.navBackBtn.disabled = this.navPos <= 0;
+    if (this.navFwdBtn) this.navFwdBtn.disabled = this.navPos >= this.navHistory.length - 1;
+  }
+
   /** Swap the main area to the chosen view's surface. `target` deep-links a
    *  specific item in a section view (e.g. opening an issue from the project
    *  board) — keeping navigation inside the app instead of bouncing to GitHub. */
   private routeView(id: string, force = false, target?: SectionTarget): void {
+    // Any route change dismisses an open peek — the popup belongs to the view
+    // (and moment) that opened it.
+    closePeek();
     // Deep-linking an item must rebuild the section so it can select that item —
-    // never restore a stale cached view (which wouldn't have it open).
-    if (target) force = true;
+    // never restore a stale cached view (which wouldn't have it open). The ONE
+    // exception: a sha-only graph reveal, which works against the live
+    // kept-alive mount — forcing would tear it down and refetch history for a
+    // scroll that needs nothing rebuilt.
+    const shaOnlyGraphReveal =
+      id === "graph" &&
+      !!target?.sha &&
+      target.number === undefined &&
+      target.ref === undefined &&
+      target.path === undefined;
+    if (target && !shaOnlyGraphReveal) force = true;
     this.sectionTarget = target;
     // Re-clicking the section you're already on (or navigating to it) should do
     // nothing — the view is already there. Only an explicit refresh rebuilds.
     if (!force && id === this.currentView && this.viewHost.firstChild) {
+      if (shaOnlyGraphReveal && target?.sha) this.revealWhenReady(target.sha);
       return;
+    }
+    // The Code browser's identity includes its folder: a plain "code" route is
+    // normalized to carry the CURRENT folder, so its history entry restores the
+    // exact place on back/forward instead of whatever codePath happens to be.
+    if (id === "code" && !target) target = { path: this.codePath };
+    // Record real navigation (not back/forward travel) in the history stack.
+    // A forward-truncate on push gives browser semantics: navigating after
+    // going back discards the abandoned forward entries.
+    if (!this.navTravel) {
+      this.navHistory.splice(this.navPos + 1);
+      const last = this.navHistory[this.navPos];
+      const same = (a?: SectionTarget, b?: SectionTarget): boolean =>
+        a?.number === b?.number &&
+        a?.jobId === b?.jobId &&
+        a?.id === b?.id &&
+        a?.sha === b?.sha &&
+        a?.path === b?.path &&
+        a?.ref === b?.ref &&
+        (a?.list ?? false) === (b?.list ?? false);
+      if (!last || last.view !== id || (target && !same(last.target, target))) {
+        this.navHistory.push({ view: id, target });
+        this.navPos = this.navHistory.length - 1;
+      }
+      this.updateNavButtons();
     }
     // Stash the OUTGOING view if it's keep-alive-able, so returning to it later
     // restores the rendered DOM (scroll, expanded state) instead of refetching.
@@ -751,7 +922,7 @@ class App {
     // Done AFTER disposing the Monaco diff (which lives in its surface) so we
     // never remove a surface with a live editor in it.
     if (id !== "graph") {
-      this.closeDiffTab();
+      this.closeGraphDiff();
       this.detailsEl = undefined;
     }
     for (const btn of this.navButtons) {
@@ -773,11 +944,17 @@ class App {
     // immediately — so a fetch or pull silently refreshed nothing.
     this.reloadBranchRows = null;
     if (id === "code") {
+      // A path target deep-links a folder — that's how the Code browser's own
+      // folder hops travel, so ⌘[/⌘] walk the folder trail like a browser.
+      if (target?.path !== undefined) this.codePath = target.path;
       void this.showCodeView();
     } else if (id === "graph") {
-      this.showGraphView();
+      this.showGraphView(force);
+      // A sha target deep-links a commit: scroll to + select it once the rows
+      // stream in (e.g. "View in Commits" from a peek, or a tag detail).
+      if (target?.sha) this.revealWhenReady(target.sha);
     } else if (id === "branches") {
-      void this.showBranchesView();
+      void this.showBranchesView(target?.ref);
     } else if (id === "changes") {
       void this.showChangesView();
     } else if (id === "compare") {
@@ -790,10 +967,16 @@ class App {
       this.mountSection(renderPrs);
     } else if (id === "issues") {
       this.mountSection(renderIssues);
+    } else if (id === "notifications") {
+      this.mountSection(renderNotifications);
+    } else if (id === "mywork") {
+      this.mountSection(renderMyWork);
     } else if (id === "actions") {
       this.mountSection(renderActions);
     } else if (id === "releases") {
       this.mountSection(renderReleases);
+    } else if (id === "explore") {
+      this.mountSection(renderExplore);
     } else if (id === "orgs") {
       this.mountSection(renderOrgs);
     } else if (id === "projects") {
@@ -812,6 +995,10 @@ class App {
    *  DOM (harmless) once the user navigates on. */
   private mountSection(render: SectionRender): void {
     const wrap = el("div", "view-host-inner");
+    // Paint a content-shaped skeleton NOW — sections gate on github:status
+    // before their first render, and that await used to leave a blank pane
+    // (blank → skeleton → content, three stages on every visit).
+    wrap.appendChild(skeletonList(6));
     this.viewHost.replaceChildren(wrap);
     const target = this.sectionTarget;
     this.sectionTarget = undefined;
@@ -819,15 +1006,16 @@ class App {
   }
 
   /** A real branch manager: local branches with upstream + ahead/behind + last
-   *  commit, plus remotes and tags — checkout, new, delete. */
-  private async showBranchesView(): Promise<void> {
+   *  commit, plus remotes, tags and stashes. `highlightRef` deep-links one row:
+   *  its group builds expanded and the row scrolls into view with a flash. */
+  private async showBranchesView(highlightRef?: string): Promise<void> {
     const wrap = el("div", "list-view");
     const headRow = el("div", "list-head list-head-row");
     const filterInput = document.createElement("input");
     filterInput.className = "list-filter";
     filterInput.type = "text";
-    filterInput.placeholder = "Filter branches & tags…";
-    filterInput.setAttribute("aria-label", "Filter branches and tags");
+    filterInput.placeholder = "Filter branches, tags & stashes…";
+    filterInput.setAttribute("aria-label", "Filter branches, tags and stashes");
     const newBtn = el("button", "mini-btn");
     newBtn.append(glyph("add"), span("New branch"));
     newBtn.addEventListener("click", () => void this.newBranch());
@@ -836,16 +1024,40 @@ class App {
     // Content-shaped skeleton paints immediately; replaced once data lands.
     body.appendChild(skeletonList(8));
     wrap.append(headRow, body);
+    wireListNav(body, ".list-row");
     this.viewHost.replaceChildren(wrap);
 
     const gen = this.routeGen;
     await this.refreshRefs();
     let locals = await gget("branches:list", undefined);
     if (gen !== this.routeGen) return;
+    // Stashes join the ref manager: they're refs too, and this is the only
+    // browsable surface they have (the peek offers apply / pop / drop).
+    let stashes: StashInfo[] = [];
+    try {
+      stashes = await host.invoke("stash:list", undefined);
+    } catch {
+      stashes = [];
+    }
+    if (gen !== this.routeGen) return;
     // Recomputed on every render so a live reload (fetch from the branch menu)
     // picks up new remote branches/tags without rebuilding the whole view.
     let remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
     let tags = this.refs.filter((r) => r.type === "tag");
+
+    // A deep-linked ref must be visible: un-collapse its group before render.
+    if (highlightRef) {
+      const grp = locals.some((b) => b.name === highlightRef)
+        ? "Local"
+        : remotes.some((r) => r.name === highlightRef)
+          ? "Remote"
+          : tags.some((r) => r.name === highlightRef)
+            ? "Tags"
+            : stashes.some((s) => s.ref === highlightRef)
+              ? "Stashes"
+              : undefined;
+      if (grp) this.branchCatsCollapsed[grp] = false;
+    }
 
     // A collapsible category: a clickable header (chevron + label + count) over a
     // body div holding its rows. Collapse state lives on the App instance so it
@@ -891,7 +1103,12 @@ class App {
         group(label, rows.length, (host) => {
           for (const r of rows) {
             const row = el("button", "list-row ref-row");
-            row.setAttribute("aria-label", `Check out ${label.toLowerCase()} ${r.name}`);
+            row.dataset.ref = r.name;
+            // Clicking now INSPECTS (peek with history + a deliberate Checkout
+            // action) — it used to check the ref out on the spot, the only rows
+            // in the app where a plain click mutated the repo.
+            row.setAttribute("aria-label", `Inspect ${label.toLowerCase()} ${r.name}`);
+            row.setAttribute("aria-haspopup", "dialog");
             row.append(glyph(icon));
             const nm = el("span", "list-row-name");
             nm.textContent = r.name;
@@ -910,9 +1127,34 @@ class App {
         });
       };
       refSection("Remote", remotes, "cloud", (r) =>
-        void this.checkoutRef(r.name.split("/").slice(1).join("/") || r.name),
+        openRefPeek(this.peekHost(), r, r.name.split("/").slice(1).join("/") || r.name),
       );
-      refSection("Tags", tags, "tag", (r) => void this.checkoutRef(r.name));
+      refSection("Tags", tags, "tag", (r) => openRefPeek(this.peekHost(), r, r.name));
+
+      // Stashes — browsable at last: the peek shows the stashed files and
+      // offers apply / pop / drop. (stash:list existed in the IPC contract all
+      // along; no surface ever called it.)
+      const stashRows = stashes.filter((s) => match(s.message) || match(s.ref));
+      group("Stashes", stashRows.length, (host) => {
+        for (const s of stashRows) {
+          const row = el("button", "list-row ref-row stash-row");
+          row.dataset.ref = s.ref;
+          row.setAttribute("aria-label", `Inspect stash ${s.ref}`);
+          row.setAttribute("aria-haspopup", "dialog");
+          row.append(glyph("archive"));
+          const meta = el("div", "row-meta");
+          const top = el("div", "row-meta-title");
+          top.textContent = s.message || s.ref;
+          meta.appendChild(top);
+          const sub = el("div", "row-meta-sub");
+          sub.textContent = [s.ref, s.time ? relTime(s.time) : ""].filter(Boolean).join("  ·  ");
+          if (s.time) sub.title = absTime(s.time);
+          meta.appendChild(sub);
+          row.appendChild(meta);
+          row.addEventListener("click", () => openStashPeek(this.peekHost(), s));
+          host.appendChild(row);
+        }
+      });
 
       if (!body.children.length) {
         body.appendChild(
@@ -925,6 +1167,21 @@ class App {
     filterInput.addEventListener("input", render);
     render();
 
+    // Deep-link: scroll the target row into view and flash it, like GitHub's
+    // anchor highlight — the reader's eye lands exactly where the link pointed.
+    if (highlightRef) {
+      const row = Array.from(body.querySelectorAll<HTMLElement>(".list-row")).find(
+        (r) => r.dataset.ref === highlightRef,
+      );
+      if (row) {
+        row.scrollIntoView({ block: "center" });
+        row.classList.add("row-flash");
+        row.addEventListener("animationend", () => row.classList.remove("row-flash"), {
+          once: true,
+        });
+      }
+    }
+
     // Live row reload — refreshes counts/refs IN PLACE (no skeleton, and an
     // open branch-actions menu survives) after fetch/pull. Stale-guarded by
     // the route generation; cleared implicitly when another view renders.
@@ -932,6 +1189,11 @@ class App {
       if (gen !== this.routeGen) return;
       await this.refreshRefs();
       locals = await gget("branches:list", undefined);
+      try {
+        stashes = await host.invoke("stash:list", undefined);
+      } catch {
+        /* keep the stashes we had */
+      }
       if (gen !== this.routeGen) return;
       remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
       tags = this.refs.filter((r) => r.type === "tag");
@@ -941,6 +1203,32 @@ class App {
 
   /** Set while the Branches view is live — see showBranchesView. */
   private reloadBranchRows: (() => Promise<void>) | null = null;
+
+  /** The App-side operations handed to peek cards (peeks.ts). Every mutation a
+   *  peek can trigger routes through the same helpers the views use, so toasts,
+   *  cache busting, and refreshes behave identically everywhere. */
+  private peekHost(): GitPeekHost {
+    return {
+      checkout: (ref) => void this.checkoutRef(ref),
+      branchMenu: (b, anchor) => this.openBranchActions(b, anchor),
+      compareWith: (head) => {
+        const current = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
+        this.compareBase = current ?? "HEAD";
+        this.compareHead = head;
+        this.routeView("compare", true);
+      },
+      revealInGraph: (sha) => this.revealInGraph(sha),
+      openBranch: (ref) => this.routeView("branches", false, { ref }),
+      openCommitFile: (file, sha) => void this.openFile({ path: file.path, status: file.status }, sha),
+      stashesChanged: () => {
+        // Applying/popping a stash changes the working tree; dropping changes
+        // the list. Bust the SWR cache and refresh whatever's showing.
+        bust();
+        void this.refreshBranchesSoft();
+        void this.updateSync();
+      },
+    };
+  }
 
   /** Refresh branch rows in place when the Branches view is up, else fully. */
   private async refreshBranchesSoft(): Promise<void> {
@@ -953,6 +1241,7 @@ class App {
 
   private localBranchRow(b: BranchInfo): HTMLElement {
     const row = el("div", "list-row branch-row" + (b.current ? " is-current" : ""));
+    row.dataset.ref = b.name;
     row.appendChild(glyph(b.current ? "check" : "git-branch"));
     const meta = el("div", "row-meta");
     const top = el("div", "row-meta-title branch-title");
@@ -997,21 +1286,20 @@ class App {
         textBtn("Delete", "Delete this branch", () => void this.deleteBranch(b.name), true),
       );
     }
-    // Clicking a row opens the branch-actions dialog (same one as the ⋯
-    // button) — deliberate actions live there; a stray click can no longer
-    // check out a branch. A double-click's second click hits the same handler,
-    // so single and double click land on the SAME dialog. The row contains
-    // buttons, so it can't BE a <button> — role + keyboard contract instead.
+    // Clicking a row opens the branch's PEEK — a browsable card with its recent
+    // commits, tracking state, and actions — never a stray checkout. The ⋯
+    // button keeps the quick-actions menu for one-click operations. The row
+    // contains buttons, so it can't BE a <button> — role + keyboard contract.
     row.setAttribute("role", "button");
     row.tabIndex = 0;
-    row.setAttribute("aria-label", `Branch actions for ${b.name}`);
-    row.setAttribute("aria-haspopup", "menu");
+    row.setAttribute("aria-label", `Inspect branch ${b.name}`);
+    row.setAttribute("aria-haspopup", "dialog");
     row.classList.add("is-clickable");
-    row.addEventListener("click", () => this.openBranchActions(b, row));
+    row.addEventListener("click", () => openBranchPeek(this.peekHost(), b));
     row.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        this.openBranchActions(b, row);
+        openBranchPeek(this.peekHost(), b);
       }
     });
     const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
@@ -1120,12 +1408,7 @@ class App {
     items.push({
       label: "Copy branch name",
       icon: "copy",
-      onClick: () => {
-        void navigator.clipboard.writeText(b.name).then(
-          () => toast(`Copied “${b.name}”.`, "success"),
-          () => toast("Couldn't copy to the clipboard.", "error"),
-        );
-      },
+      onClick: () => void copyText(b.name, `Copied “${b.name}”.`),
     });
     items.push({
       label: "Rename…",
@@ -1461,9 +1744,29 @@ class App {
     filesTab.appendChild(filesCount);
     seg.append(commitsTab, filesTab);
     const summary = el("div", "cmp-summary");
+    // The one action GitHub makes PRIMARY on a comparison was missing entirely:
+    // you could line up base…head, read every commit and file — and then had
+    // to rebuild the same comparison on github.com to open the PR. The button
+    // carries this exact base/head into the create form.
+    const prBtn = el("button", "mini-btn cmp-pr-btn") as HTMLButtonElement;
+    prBtn.append(glyph("git-pull-request"), span("Create pull request"));
+    prBtn.title = "Open a pull request from this comparison";
+    prBtn.hidden = true;
+    prBtn.addEventListener("click", () =>
+      void openCreatePr(() => this.routeView("prs", true), {
+        base: this.compareBase,
+        head: this.compareHead,
+      }),
+    );
+    void host
+      .invoke("github:status", undefined)
+      .then((s) => {
+        prBtn.hidden = !(s.connected && !!s.repo);
+      })
+      .catch(() => {});
     // The Explain / Review actions live on the right of the results row — they act
     // on the comparison's diff, so they belong with the results, not the pickers.
-    viewBar.append(seg, summary, aiWrap);
+    viewBar.append(seg, summary, prBtn, aiWrap);
 
     const body = el("div", "cmp-body");
     wrap.append(bar, viewBar, body);
@@ -1711,6 +2014,7 @@ class App {
     scroll.append(
       this.settingsAppearanceCard(),
       this.settingsAccountCard(),
+      this.settingsRepositoriesCard(),
       aiModelsCard(),
       agentAccessCard(),
       this.settingsIdentityCard(),
@@ -1816,6 +2120,198 @@ class App {
     }
     body.append(label, sub, seg);
     return card;
+  }
+
+  private settingsRepositoriesCard(): HTMLElement {
+    const { card, body } = settingsCard("Repositories", "repo");
+    const sub = el("div", "settings-sub");
+    sub.textContent = "Where one-click opens and clones from GitHub land on disk.";
+
+    const row = el("div", "settings-clonedir-row");
+    const rowText = el("div", "settings-clonedir-text");
+    const rowLabel = el("div", "settings-field-label");
+    rowLabel.textContent = "Default clone folder";
+    const rowValue = el("div", "settings-clonedir-path");
+    rowValue.textContent = "Loading…";
+    rowText.append(rowLabel, rowValue);
+    const rowBtns = el("div", "settings-clonedir-btns");
+    const changeBtn = el("button", "mini-btn");
+    changeBtn.append(glyph("folder-opened"), span("Change…"));
+    const resetBtn = el("button", "mini-btn");
+    resetBtn.textContent = "Reset";
+    resetBtn.hidden = true;
+    rowBtns.append(changeBtn, resetBtn);
+    row.append(rowText, rowBtns);
+
+    const askRow = el("label", "settings-check settings-ask-row");
+    const askBox = document.createElement("input");
+    askBox.type = "checkbox";
+    askBox.setAttribute("aria-label", "Ask where to put each clone");
+    const askText = el("div", "settings-check-text");
+    const askTitle = el("div", "settings-field-label");
+    askTitle.textContent = "Ask where to put each clone";
+    const askSub = el("div", "settings-sub");
+    askSub.textContent = "Every one-click open shows the destination sheet first.";
+    askText.append(askTitle, askSub);
+    askRow.append(askBox, askText);
+
+    const apply = (v: AppSettingsView): void => {
+      rowValue.textContent = v.cloneDirDisplay;
+      rowValue.title = v.cloneDir;
+      resetBtn.hidden = v.cloneDirIsDefault;
+      askBox.checked = v.askWhereEveryTime;
+    };
+    changeBtn.addEventListener("click", () => {
+      void host
+        .invoke("settings:pickCloneDir", undefined)
+        .then((v) => v && apply(v))
+        .catch((e) => toast(cleanErr(e) || "Couldn't choose a folder.", "error"));
+    });
+    resetBtn.addEventListener("click", () => {
+      void host
+        .invoke("settings:update", { cloneDir: null })
+        .then(apply)
+        .catch((e) => toast(cleanErr(e) || "Couldn't reset the folder.", "error"));
+    });
+    askBox.addEventListener("change", () => {
+      void host
+        .invoke("settings:update", { askWhereEveryTime: askBox.checked })
+        .then(apply)
+        .catch((e) => {
+          askBox.checked = !askBox.checked;
+          toast(cleanErr(e) || "Couldn't save the setting.", "error");
+        });
+    });
+    void host
+      .invoke("settings:get", undefined)
+      .then(apply)
+      .catch(() => {
+        rowValue.textContent = "Unavailable";
+      });
+
+    // ── the local-copies manager ──────────────────────────────────────────
+    const listHead = el("div", "settings-field-label settings-copies-head");
+    listHead.textContent = "On this machine";
+    const listSub = el("div", "settings-sub");
+    listSub.textContent =
+      "Every clone GitStudio knows about — the ones in your clone folder plus anything you've opened.";
+    const list = el("div", "settings-copies");
+    list.appendChild(loadingState("Looking for local copies…"));
+
+    const renderCopies = (copies: LocalCopy[]): void => {
+      list.replaceChildren();
+      if (!copies.length) {
+        const none = el("div", "settings-sub");
+        none.textContent = "No local copies yet — open or clone a repository and it'll show up here.";
+        list.appendChild(none);
+        return;
+      }
+      for (const c of copies) list.appendChild(this.localCopyRow(c, renderCopies));
+    };
+    const loadCopies = (): void => {
+      void host
+        .invoke("repos:local", undefined)
+        .then(renderCopies)
+        .catch((e) => {
+          list.replaceChildren(
+            emptyState("Couldn't list local copies", cleanErr(e) || "Try again in a moment."),
+          );
+        });
+    };
+    loadCopies();
+
+    body.append(sub, row, askRow, listHead, listSub, list);
+    return card;
+  }
+
+  /** One row in the local-copies manager: what it is, where it lives, and the
+   *  actions that only make sense for THAT copy (a missing folder can't be
+   *  opened; an unmanaged one can't be deleted from here). */
+  private localCopyRow(c: LocalCopy, refresh: (copies: LocalCopy[]) => void): HTMLElement {
+    const row = el("div", "settings-copy" + (c.missing ? " is-missing" : "") + (c.current ? " is-current" : ""));
+    row.appendChild(glyph(c.missing ? "warning" : "repo"));
+
+    const meta = el("div", "settings-copy-meta");
+    const top = el("div", "settings-copy-name");
+    top.textContent = c.name;
+    if (c.origin) {
+      const chip = span(c.origin, "settings-copy-origin");
+      chip.title = `origin → github.com/${c.origin}`;
+      top.appendChild(chip);
+    }
+    for (const [label, on] of [
+      ["Open", c.current],
+      ["Managed", c.managed && !c.current],
+      ["Recent", c.recent && !c.managed && !c.current],
+      ["Missing", c.missing],
+    ] as Array<[string, boolean]>) {
+      if (on) top.appendChild(span(label, "settings-copy-badge"));
+    }
+    const bottom = el("div", "settings-copy-path");
+    bottom.textContent = c.root;
+    bottom.title = c.root;
+    meta.append(top, bottom);
+    row.appendChild(meta);
+
+    const acts = el("div", "settings-copy-acts");
+    const iconBtn = (icon: string, title: string, run: () => void): HTMLElement => {
+      const b = el("button", "icon-btn");
+      b.title = title;
+      b.setAttribute("aria-label", title);
+      b.appendChild(glyph(icon));
+      b.addEventListener("click", run);
+      return b;
+    };
+    if (!c.missing && !c.current) {
+      acts.appendChild(
+        iconBtn("folder-opened", `Open ${c.name} in GitStudio`, () => void this.openPath(c.root)),
+      );
+      acts.appendChild(
+        iconBtn("link-external", "Reveal in Finder", () => {
+          void host.invoke("repos:reveal", c.root).catch(() => toast("Couldn't reveal that folder.", "error"));
+        }),
+      );
+    }
+    acts.appendChild(iconBtn("copy", "Copy path", () => void copyText(c.root, "Path copied.")));
+    if (c.recent) {
+      acts.appendChild(
+        iconBtn("close", "Remove from recents (keeps the folder)", () => {
+          void host
+            .invoke("repos:removeRecent", c.root)
+            .then(refresh)
+            .catch((e) => toast(cleanErr(e) || "Couldn't update the list.", "error"));
+        }),
+      );
+    }
+    if (c.managed && !c.current && !c.missing) {
+      const del = iconBtn("trash", `Delete this clone from disk`, () => {
+        void (async () => {
+          const ok = await confirmDialog({
+            title: `Delete ${c.name}?`,
+            message: `${c.root} moves to the Trash. Anything not pushed to ${c.origin ?? "a remote"} is gone with it.`,
+            confirmLabel: "Move to Trash",
+            danger: true,
+            requireTyped: c.name,
+          });
+          if (!ok) return;
+          try {
+            const r = await host.invoke("repos:trash", c.root);
+            if (!r.ok) {
+              toast(r.message || "Couldn't delete that clone.", "error");
+              return;
+            }
+            toast(`Moved ${c.name} to the Trash.`, "success");
+            refresh(await host.invoke("repos:local", undefined));
+          } catch (e) {
+            toast(cleanErr(e) || "Couldn't delete that clone.", "error");
+          }
+        })();
+      });
+      del.classList.add("danger");
+      acts.appendChild(del);
+    }
+    row.appendChild(acts);
+    return row;
   }
 
   private settingsAccountCard(): HTMLElement {
@@ -1976,16 +2472,68 @@ class App {
     const { card, body } = settingsCard("About", "info");
     const sub = el("div", "settings-sub");
     sub.textContent = "GitStudio — an open-source, JetBrains-grade Git client.";
+    const versionRow = el("div", "settings-sub settings-version");
+    versionRow.textContent = "…";
+    void host
+      .invoke("app:info", undefined)
+      .then((i) => {
+        versionRow.textContent = `Version ${i.version}`;
+      })
+      .catch(() => {
+        versionRow.textContent = "";
+      });
+
+    // Check for updates — the manual end of the same poll→confirm→pull flow
+    // the background check drives. The status line doubles as the live
+    // download-progress label while a pull is running.
+    const updRow = el("div", "settings-update-row");
+    const checkBtn = el("button", "mini-btn") as HTMLButtonElement;
+    checkBtn.append(glyph("sync"), span("Check for updates"));
+    const status = el("span", "settings-sub settings-update-status");
+    this.updateProgressEl = status;
+    updRow.append(checkBtn, status);
+    checkBtn.addEventListener("click", async () => {
+      checkBtn.disabled = true;
+      status.textContent = "Checking…";
+      try {
+        const r = await host.invoke("update:check", undefined);
+        if (r.status === "uptodate") {
+          status.textContent = `You're on the latest version (${r.current}).`;
+        } else if (r.status === "available" && r.version) {
+          status.textContent = `GitStudio ${r.version} is available.`;
+          void this.promptUpdateAvailable({ version: r.version, current: r.current }, true);
+        } else if (r.status === "downloading") {
+          status.textContent = "An update is downloading…";
+        } else if (r.status === "ready" && r.version) {
+          status.textContent = `GitStudio ${r.version} is ready to install.`;
+          void host.invoke("update:download", undefined); // re-announces update:ready
+        } else {
+          status.textContent = r.message || "Couldn't check for updates.";
+        }
+      } catch (e) {
+        status.textContent = cleanErr(e) || "Couldn't check for updates.";
+      } finally {
+        checkBtn.disabled = false;
+      }
+    });
+
     const repo = el("button", "gh-link");
     repo.append(glyph("github"), span("View the project on GitHub"));
     repo.addEventListener("click", () =>
       window.open("https://github.com/GitStudioHQ/gitstudio", "_blank"),
     );
-    body.append(sub, repo);
+    body.append(sub, versionRow, updRow, repo);
     return card;
   }
 
   // ── Code view (GitHub-style repo browser: breadcrumb + listing + README) ─────
+
+  /** Every folder hop routes through here (not a bare codePath mutation), so
+   *  each one is a navigation-history entry — back/forward walk the folder
+   *  trail exactly like a browser. */
+  private goCodePath(path: string): void {
+    this.routeView("code", false, { path });
+  }
 
   private async showCodeView(): Promise<void> {
     // Returning to the browser (Back / folder nav) bypasses routeView, so drop
@@ -2000,10 +2548,7 @@ class App {
       const btn = el("button", "code-crumb" + (isLast ? " is-current" : ""));
       btn.append(glyph(path === "" ? "repo" : "folder"), span(label));
       if (!isLast) {
-        btn.addEventListener("click", () => {
-          this.codePath = path;
-          void this.showCodeView();
-        });
+        btn.addEventListener("click", () => this.goCodePath(path));
       }
       crumbs.appendChild(btn);
       if (!isLast) crumbs.appendChild(span("/", "code-crumb-sep"));
@@ -2093,10 +2638,9 @@ class App {
     if (this.codePath) {
       const up = el("button", "file-row code-row is-dir code-up");
       up.append(glyph("arrow-up"), span("..", "file-path"), el("span", "code-row-size"));
-      up.addEventListener("click", () => {
-        this.codePath = this.codePath.split("/").slice(0, -1).join("/");
-        void this.showCodeView();
-      });
+      up.addEventListener("click", () =>
+        this.goCodePath(this.codePath.split("/").slice(0, -1).join("/")),
+      );
       listing.appendChild(up);
     }
 
@@ -2115,12 +2659,8 @@ class App {
       const label = span(e.name, "file-path");
       row.append(glyph(fileIcon(e.name, isDir)), label, size);
       row.addEventListener("click", () => {
-        if (isDir) {
-          this.codePath = e.path;
-          void this.showCodeView();
-        } else {
-          void this.openCodeFile(e.path);
-        }
+        if (isDir) this.goCodePath(e.path);
+        else void this.openCodeFile(e.path);
       });
       listing.appendChild(row);
       rows.push({ el: row, name: e.name, label });
@@ -2202,8 +2742,7 @@ class App {
         this.codePath
       ) {
         ev.preventDefault();
-        this.codePath = this.codePath.split("/").slice(0, -1).join("/");
-        void this.showCodeView();
+        this.goCodePath(this.codePath.split("/").slice(0, -1).join("/"));
       }
     });
 
@@ -2240,6 +2779,19 @@ class App {
         // README can never abort the surrounding Code-view render.
         try {
           bodyEl.innerHTML = renderMarkdown(text);
+          // README links to this repo's issues/PRs/commits stay IN the app —
+          // and RELATIVE links ("./docs/x.md") open in the Code browser.
+          const baseDir = this.codePath;
+          wireProseNav(
+            bodyEl,
+            (v, t) => this.routeView(v, false, t),
+            undefined,
+            (rel) => {
+              const p = resolveRelative(baseDir, rel);
+              if (/\.[A-Za-z0-9]{1,8}$/.test(p.split("/").pop() ?? "")) void this.openCodeFile(p);
+              else this.goCodePath(p);
+            },
+          );
         } catch {
           bodyEl.classList.add("code-md-plain");
           bodyEl.textContent = text;
@@ -3525,9 +4077,18 @@ class App {
     copyBtn.appendChild(glyph("copy"));
     copyBtn.addEventListener("click", () => void copyText(dc.userCode!, "Code copied."));
     codeRow.append(code, copyBtn);
+    // ONE explicit action, nothing automatic. Auto-copying + auto-opening the
+    // browser yanked users to GitHub before they'd even read the screen — most
+    // didn't know the code was "already on the clipboard". Now the user reads
+    // the code, then clicks: the click copies (a real user gesture, so the
+    // clipboard write always lands) and opens GitHub. The code stays on screen
+    // the whole time for retyping if the clipboard is lost.
     const openBtn = el("button", "btn btn-primary gh-device-open");
-    openBtn.append(glyph("link-external"), span("Open GitHub to authorize"));
-    openBtn.addEventListener("click", () => window.open(openUrl, "_blank"));
+    openBtn.append(glyph("link-external"), span("Copy code & open GitHub"));
+    openBtn.addEventListener("click", () => {
+      void copyText(dc.userCode!, "Code copied — paste it on GitHub.");
+      window.open(openUrl, "_blank");
+    });
     const status = el("div", "gh-device-status");
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
@@ -3535,42 +4096,72 @@ class App {
     card.append(step, codeRow, openBtn, status);
     flow.replaceChildren(card);
 
-    // Smooth the path: copy the code and open GitHub automatically.
-    void copyText(dc.userCode, "Code copied — paste it on GitHub.");
-    window.open(openUrl, "_blank");
-
-    this.pollDeviceFlow(wrap, dc.deviceCode, dc.interval ?? 5, dc.expiresIn ?? 900, status, onConnected);
+    this.pollDeviceFlow(wrap, dc.deviceCode, dc.interval ?? 5, dc.expiresIn ?? 900, status, signIn, onConnected);
   }
 
-  /** Poll the device-flow token endpoint until authorized / expired / dismissed. */
+  /** Poll the device-flow token endpoint until authorized / expired / dismissed.
+   *  Also polls IMMEDIATELY when the window regains focus: the user authorizes
+   *  in the browser and switches back, and the old fixed 5-second cadence made
+   *  that moment feel laggy — now success lands the instant they return. */
   private pollDeviceFlow(
     wrap: HTMLElement,
     deviceCode: string,
     interval: number,
     expiresIn: number,
     status: HTMLElement,
+    signIn: HTMLElement,
     onConnected: () => void,
   ): void {
     const deadline = Date.now() + expiresIn * 1000;
     let intervalSec = interval;
+    let timer = 0;
+    let inFlight = false;
+    let done = false;
+    const cleanup = (): void => {
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
+    };
     const fail = (msg: string): void => {
+      cleanup();
       status.replaceChildren(span(msg));
       status.classList.add("gh-device-failed");
+      // Every failure message says "try again" — the button must be pressable.
+      (signIn as HTMLButtonElement).disabled = false;
+    };
+    const interrupted = (): void => {
+      // The settings DOM was detached (view switch) — polling must stop, but
+      // the card may be RESTORED from the keep-alive cache later. Leave an
+      // actionable message instead of an eternal spinner.
+      fail("Sign-in was interrupted — click “Sign in with GitHub” to try again.");
     };
     const tick = async (): Promise<void> => {
-      if (!wrap.isConnected) return; // panel was replaced — stop polling
+      if (done) return;
+      if (!wrap.isConnected) {
+        interrupted();
+        return;
+      }
       if (Date.now() > deadline) {
         fail("The code expired. Click “Sign in with GitHub” to try again.");
         return;
       }
+      if (inFlight) return; // a focus-poll raced the timer — one at a time
+      inFlight = true;
       let r;
       try {
         r = await host.invoke("github:devicePoll", { deviceCode });
       } catch {
         r = { state: "pending" as const };
+      } finally {
+        inFlight = false;
       }
-      if (!wrap.isConnected) return;
+      if (done) return;
+      if (!wrap.isConnected) {
+        interrupted();
+        return;
+      }
       if (r.state === "authorized") {
+        cleanup();
         toast(`Signed in as @${r.login}.`, "success");
         onConnected();
         return;
@@ -3580,14 +4171,36 @@ class App {
         return;
       }
       if (r.state === "slow_down") intervalSec += 5;
-      window.setTimeout(() => void tick(), intervalSec * 1000);
+      timer = window.setTimeout(() => void tick(), intervalSec * 1000);
     };
-    window.setTimeout(() => void tick(), intervalSec * 1000);
+    const onFocus = (): void => {
+      if (done || inFlight) return;
+      window.clearTimeout(timer);
+      void tick();
+    };
+    window.addEventListener("focus", onFocus);
+    timer = window.setTimeout(() => void tick(), intervalSec * 1000);
   }
 
 
   /** The commit graph + a collapsible / drag-resizable commit-details panel. */
-  private showGraphView(): void {
+  private showGraphView(force = false): void {
+    // KEEP-ALIVE: the graph is the most expensive surface in the app, and it
+    // used to be torn down and refetched on EVERY tab switch — leave Commits
+    // for two seconds and coming back cost a full reload, a loading flash, and
+    // your scroll position. The mount owns no Monaco (the diff lives in the
+    // dock; the details panel is a plain custom element), so the live DOM can
+    // simply be re-attached. `graphDirty` re-syncs data in place when the repo
+    // changed underneath while another view was showing.
+    if (!force && this.graphViewWrap && this.graph) {
+      this.viewHost.replaceChildren(this.graphViewWrap);
+      this.detailsEl = this.graphDetailsPane;
+      if (this.graphDirty) {
+        this.graphDirty = false;
+        void this.graph.reload();
+      }
+      return;
+    }
     // Graph LEFT, commit details RIGHT — the same side-by-side arrangement the
     // extension's commit panel uses. Details used to live in the bottom dock,
     // which stacked them under the graph and left the dock competing with the
@@ -3598,6 +4211,8 @@ class App {
     this.graphDetailsPane = detailsPane;
     wrap.append(graphHost, this.graphSplitResizer(wrap), detailsPane);
     this.viewHost.replaceChildren(wrap);
+    this.graphViewWrap = wrap;
+    this.graphDirty = false;
 
     this.detailsEl = detailsPane;
     this.showDetailsPlaceholder();
@@ -3607,8 +4222,11 @@ class App {
       onSelect: (sha) => void this.selectCommit(sha),
       onOpen: (sha) => void this.selectCommit(sha),
       onContext: (sha, x, y) => this.contextMenu.open(sha, x, y, this.refsOn(sha)),
+      // Ref labels are LINKS now: click a branch/tag chip in the graph and land
+      // on that ref in Branches, scrolled + flashed.
+      onRefClick: (name) => this.routeView("branches", false, { ref: name }),
       // Show the pane again WITHOUT re-selecting: selectCommit() would call
-      // closeDiffTab() and dispose a diff the user still has open.
+      // closeGraphDiff() and dispose a diff the user still has open.
       onShowDetails: () => this.setGraphDetailsVisible(true),
     });
     this.graph = graph;
@@ -3746,6 +4364,201 @@ class App {
     openMenu(anchor, items);
   }
 
+  /** ⌘K — one fuzzy search over sections, branches/tags, recent repos, open
+   *  PRs/issues, and the headline actions. Local groups are instant; the
+   *  GitHub groups stream in as they resolve. */
+  private openPalette(): void {
+    if (!this.currentRepo) return;
+    const go = (v: string, t?: SectionTarget): void => this.routeView(v, false, t);
+    openCommandPalette({
+      local: (): PaletteGroup[] => {
+        const views: PaletteItem[] = App.TABS.map((t) => ({
+          icon: t.icon,
+          label: t.label,
+          hint: "view",
+          keywords: t.id,
+          run: () => go(t.id),
+        }));
+        views.push({ icon: "gear", label: "Settings", hint: "view", run: () => go("settings") });
+
+        const refs: PaletteItem[] = [
+          ...this.refs
+            .filter((r) => r.type === "head")
+            .map((r): PaletteItem => ({
+              icon: "git-branch",
+              label: r.name,
+              hint: r.isCurrent ? "current branch" : "branch",
+              keywords: `branch ${r.name}`,
+              run: () => go("branches", { ref: r.name }),
+            })),
+          ...this.refs
+            .filter((r) => r.type === "tag")
+            .map((r): PaletteItem => ({
+              icon: "tag",
+              label: r.name,
+              hint: "tag",
+              keywords: `tag ${r.name}`,
+              run: () => go("branches", { ref: r.name }),
+            })),
+        ];
+
+        const actions: PaletteItem[] = [
+          { icon: "add", label: "New branch…", run: () => void this.newBranch() },
+          {
+            icon: "git-pull-request",
+            label: "New pull request…",
+            run: () => void openCreatePr(() => this.routeView("prs", true)),
+          },
+          { icon: "issues", label: "New issue…", run: () => void openNewIssue(go) },
+          { icon: "sync", label: "Fetch", run: () => void this.doSync("fetch") },
+          { icon: "arrow-down", label: "Pull", run: () => void this.doSync("pull") },
+          { icon: "arrow-up", label: "Push", run: () => void this.doSync("push") },
+          {
+            icon: "repo-clone",
+            label: "Clone repository…",
+            run: () => openCloneDialog((root) => void this.openPath(root)),
+          },
+          { icon: "folder-opened", label: "Open repository…", run: () => void this.openRepo() },
+          { icon: "terminal", label: "Toggle terminal", keywords: "dock shell", run: () => this.toggleTerminal() },
+          { icon: "color-mode", label: "Theme: System", keywords: "theme auto", run: () => this.setThemeMode("system") },
+          { icon: "color-mode", label: "Theme: Light", keywords: "theme", run: () => this.setThemeMode("light") },
+          { icon: "color-mode", label: "Theme: Dark", keywords: "theme", run: () => this.setThemeMode("dark") },
+          {
+            icon: "cloud-download",
+            label: "Check for updates",
+            run: () => {
+              void host.invoke("update:check", undefined).then((r) => {
+                if (r.status === "uptodate") toast(`You're on the latest version (${r.current}).`, "success");
+                else if (r.status === "available" && r.version)
+                  void this.promptUpdateAvailable({ version: r.version, current: r.current }, true);
+                else if (r.message) toast(r.message, "info");
+              });
+            },
+          },
+        ];
+
+        return [
+          { title: "Go to", items: views },
+          { title: "Branches & tags", items: refs },
+          { title: "Actions", items: actions },
+        ];
+      },
+      remote: () => {
+        // ONE status call shared by every GitHub group. This used to fire
+        // three times per palette open — same answer, three round trips.
+        const status = host.invoke("github:status", undefined).catch(() => undefined);
+        return [
+        host
+          .invoke("repo:recent", undefined)
+          .then((rs): PaletteGroup | undefined => {
+            const others = rs.filter((r) => r.root !== this.currentRepo?.root);
+            return others.length
+              ? {
+                  title: "Recent repositories",
+                  items: others.map((r) => ({
+                    icon: "repo",
+                    label: r.name,
+                    hint: r.root,
+                    keywords: r.root,
+                    run: () => void this.openPath(r.root),
+                  })),
+                }
+              : undefined;
+          }),
+        status.then(async (st): Promise<PaletteGroup | undefined> => {
+          if (!st?.connected || !st.repo) return undefined;
+          const prs = await host.invoke("pr:list", undefined).catch(() => []);
+          return prs.length
+            ? {
+                title: "Pull requests",
+                items: prs.slice(0, 30).map((pr) => ({
+                  icon: "git-pull-request",
+                  label: pr.title,
+                  hint: `#${pr.number}`,
+                  keywords: `#${pr.number} pr ${pr.user?.login ?? ""} ${pr.head.ref}`,
+                  run: () => go("prs", { number: pr.number }),
+                })),
+              }
+            : undefined;
+        }),
+        status.then(async (st): Promise<PaletteGroup | undefined> => {
+          if (!st?.connected || !st.repo) return undefined;
+          const issues = await host.invoke("issue:list", { state: "open" }).catch(() => []);
+          return issues.length
+            ? {
+                title: "Issues",
+                items: issues.slice(0, 30).map((it) => ({
+                  icon: "issues",
+                  label: it.title,
+                  hint: `#${it.number}`,
+                  keywords: `#${it.number} issue ${it.user?.login ?? ""}`,
+                  run: () => go("issues", { number: it.number }),
+                })),
+              }
+            : undefined;
+        }),
+        ];
+      },
+
+      // ── query-driven: global GitHub search, from ⌘K ──
+      //
+      // The pinned row is always first and always fires, so ⌘K → type →
+      // Enter reaches Explore even when nothing else matched. The two result
+      // groups share Explore's EXACT gget cache keys, so opening the full
+      // page after previewing here costs nothing — and code search is never
+      // called from the palette (10/min is too small to spend on typing).
+      search: (query: string) => [
+        Promise.resolve<PaletteGroup>({
+          title: "Search GitHub",
+          pinned: true,
+          items: [
+            {
+              icon: "telescope",
+              label: `Search GitHub for “${query}”`,
+              hint: "Explore",
+              run: () => go("explore", { id: searchTargetId("repos", query) }),
+            },
+          ],
+        }),
+        gget("search:repos", { query, sort: "best", page: 1 }, 60_000)
+          .then((page): PaletteGroup | undefined =>
+            page.items.length
+              ? {
+                  title: "Repositories on GitHub",
+                  pinned: true,
+                  items: page.items.slice(0, 3).map((r) => ({
+                    icon: "repo",
+                    label: r.fullName,
+                    hint: r.language ?? "",
+                    run: () => go("explore", { id: repoRouteId({ fullName: r.fullName }) }),
+                  })),
+                }
+              : undefined,
+          )
+          .catch(() => undefined),
+        gget("search:users", { query, kind: "users", page: 1 }, 60_000)
+          .then((page): PaletteGroup | undefined =>
+            page.items.length
+              ? {
+                  title: "People on GitHub",
+                  pinned: true,
+                  items: page.items.slice(0, 3).map((u) => ({
+                    icon: "person",
+                    label: u.login,
+                    hint: u.type === "Organization" ? "org" : "person",
+                    run: () =>
+                      go("explore", {
+                        id: `${u.type === "Organization" ? "org" : "user"}/${u.login}`,
+                      }),
+                  })),
+                }
+              : undefined,
+          )
+          .catch(() => undefined),
+      ],
+    });
+  }
+
   private topbar(info: RepoInfo): HTMLElement {
     const bar = el("header", "topbar");
 
@@ -3760,6 +4573,24 @@ class App {
     home.setAttribute("aria-label", "Back to main menu");
     home.appendChild(brandMark());
     home.addEventListener("click", () => void this.backToMenu());
+
+    // Back / forward chevrons — the in-app history walkers (⌘[ / ⌘], and the
+    // mouse's back/forward buttons). What makes section-hopping feel like a
+    // real app instead of a set of disconnected tabs.
+    const mod = navigator.platform.toLowerCase().includes("mac") ? "⌘" : "Ctrl+";
+    const backBtn = el("button", "topbar-icon topbar-nav") as HTMLButtonElement;
+    backBtn.title = `Back  (${mod}[)`;
+    backBtn.setAttribute("aria-label", "Back");
+    backBtn.appendChild(glyph("arrow-left"));
+    backBtn.addEventListener("click", () => this.navBack());
+    this.navBackBtn = backBtn;
+    const fwdBtn = el("button", "topbar-icon topbar-nav") as HTMLButtonElement;
+    fwdBtn.title = `Forward  (${mod}])`;
+    fwdBtn.setAttribute("aria-label", "Forward");
+    fwdBtn.appendChild(glyph("arrow-right"));
+    fwdBtn.addEventListener("click", () => this.navForward());
+    this.navFwdBtn = fwdBtn;
+    this.updateNavButtons();
 
     const repoSwitch = el("button", "topbar-switch");
     const repoName = el("span", "switch-name");
@@ -3779,13 +4610,24 @@ class App {
     // Left cluster: brand + repo + branch, with the sync (fetch/pull/push)
     // widget sitting right next to the branch switcher.
     const left = el("div", "topbar-left");
-    left.append(home, sidebarToggle, repoSwitch, branchSwitch, this.buildSyncWidget());
+    left.append(home, sidebarToggle, backBtn, fwdBtn, repoSwitch, branchSwitch, this.buildSyncWidget());
     this.syncRailToggle();
 
     // Right edge: the notifications center (bell + unread badge) sitting right
     // next to the GitHub account chip — both pinned to the far right of the bar.
     const right = el("div", "topbar-right");
-    right.append(this.buildAssistantLauncher(), this.buildNotifBell(), this.buildAccountChip());
+    const cmdk = el("button", "topbar-cmdk");
+    // The palette now searches GitHub itself, so the affordance says so —
+    // "Jump to…" undersold a box that reaches every repo on github.com.
+    cmdk.title = "Jump anywhere, or search GitHub  (⌘K)";
+    cmdk.setAttribute("aria-label", "Open the command palette");
+    cmdk.append(
+      glyph("search"),
+      span("Search anything…", "topbar-cmdk-label"),
+      span("⌘K", "topbar-cmdk-kbd"),
+    );
+    cmdk.addEventListener("click", () => this.openPalette());
+    right.append(cmdk, this.buildAssistantLauncher(), this.buildNotifBell(), this.buildAccountChip());
 
     bar.append(left, right);
     return bar;
@@ -3886,6 +4728,12 @@ class App {
         void this.showWelcome();
       }
     });
+    // Forgetting or trashing a clone changes the welcome screen's recent list
+    // (and the repo switcher, which re-reads on open) — repaint the one surface
+    // that renders it eagerly, and only when it's actually showing.
+    host.on("repo:recentChanged", () => {
+      if (!this.currentRepo) void this.showWelcome();
+    });
     host.on("app:notice", (n) => {
       toast(n.message, n.kind === "error" ? "error" : n.kind === "warn" ? "error" : "info");
     });
@@ -3907,6 +4755,72 @@ class App {
       else if (msg.command === "toggleTerminal") this.toggleTerminal();
       else if (msg.command === "cloneRepo") openCloneDialog((root) => void this.openPath(root));
     });
+    // App updates: the main process polls; the USER decides. Nothing downloads
+    // or installs without a confirm here.
+    host.on("update:available", (u) => void this.promptUpdateAvailable(u));
+    host.on("update:ready", (r) => void this.promptUpdateReady(r));
+    host.on("update:progress", (p) => {
+      if (this.updateProgressEl) this.updateProgressEl.textContent = `Downloading… ${p.percent}%`;
+    });
+  }
+
+  // ── App updates (confirm → pull → apply) ────────────────────────────────────
+
+  /** Live label updated by update:progress while a download runs (the About
+   *  card's status line when Settings is open; harmlessly detached otherwise). */
+  private updateProgressEl?: HTMLElement;
+  /** Versions the user already saw a prompt for this session. */
+  private readonly updatePrompted = new Set<string>();
+
+  private async promptUpdateAvailable(
+    u: { version: string; current: string },
+    force = false,
+  ): Promise<void> {
+    if (!force && this.updatePrompted.has(u.version)) return;
+    this.updatePrompted.add(u.version);
+    const mac = navigator.platform.toLowerCase().includes("mac");
+    const ok = await confirmDialog({
+      title: `GitStudio ${u.version} is available`,
+      message: mac
+        ? `You're on ${u.current}. Download the update now? The installer lands in your Downloads folder — one drag to Applications finishes it.`
+        : `You're on ${u.current}. Download the update now? You'll confirm again before it restarts.`,
+      confirmLabel: "Download update",
+    });
+    if (!ok) return;
+    const r = await host.invoke("update:download", undefined);
+    if (!r.ok) {
+      toast(r.message || "Couldn't download the update.", "error");
+      return;
+    }
+    toast(`Downloading GitStudio ${u.version}…`, "info");
+  }
+
+  private async promptUpdateReady(r: {
+    version: string;
+    kind: "restart" | "installer";
+  }): Promise<void> {
+    if (this.updateProgressEl) this.updateProgressEl.textContent = "";
+    if (r.kind === "restart") {
+      const ok = await confirmDialog({
+        title: `GitStudio ${r.version} is ready`,
+        message: "Restart now to finish updating? If not, it's applied the next time you quit.",
+        confirmLabel: "Restart now",
+      });
+      if (!ok) {
+        toast("The update will be applied when you quit GitStudio.", "info");
+        return;
+      }
+    } else {
+      const ok = await confirmDialog({
+        title: `GitStudio ${r.version} downloaded`,
+        message:
+          "The installer is in your Downloads folder. Open it now? Drag GitStudio to Applications to finish.",
+        confirmLabel: "Open installer",
+      });
+      if (!ok) return;
+    }
+    const res = await host.invoke("update:install", undefined);
+    if (!res.ok) toast(res.message || "Couldn't apply the update.", "error");
   }
 
   // ── Repo lifecycle (screen transitions are driven by repo:changed) ──────────
@@ -3970,8 +4884,12 @@ class App {
         await this.showChangesView();
       } else if (this.currentView === "graph" && this.graph) {
         // The graph carries an uncommitted-changes row, so it still cares — but
-        // only about that row, not about re-reading the history behind it.
-        this.routeView(this.currentView, true);
+        // only about that row. Reload IN PLACE: rebuilding the whole view here
+        // (the old behavior) threw away the live mount on every disk change.
+        await this.graph.reload();
+      } else if (this.graph) {
+        // Parked graph: its WIP row is stale now — re-sync on return.
+        this.graphDirty = true;
       }
     } finally {
       this.refreshingFromDisk = false;
@@ -3988,10 +4906,20 @@ class App {
     // Branches DOM untouched — and returning to it re-attached that DOM verbatim
     // without refetching, showing a branch list from before the change.
     this.viewCache.clear();
+    // A parked (kept-alive) graph is now stale too — mark it before ANY early
+    // return below, so returning to Commits always re-syncs in place.
+    if (this.graph && this.currentView !== "graph") this.graphDirty = true;
     await this.refreshRefs();
-    // The graph is only mounted while the graph view is showing; otherwise just
-    // re-render whatever view is active (guards against `this.graph` being unset
-    // on a refresh fired from a non-graph screen — Cmd+R, sync, commit).
+    // Settings shows NOTHING derived from the repo's disk state — and this runs
+    // on every window FOCUS. Rebuilding it here destroyed the GitHub device-flow
+    // card the instant the user came back from authorizing in the browser: the
+    // code vanished and the token poll died, so sign-in could never complete.
+    if (this.currentView === "settings") {
+      return;
+    }
+    // The graph reloads in place when showing; when it's PARKED (kept alive
+    // behind another view) it's only marked dirty, so returning to Commits
+    // re-syncs the data without ever tearing the mount down.
     if (this.currentView === "graph" && this.graph) {
       await this.graph.reload();
     } else {
@@ -4031,6 +4959,11 @@ class App {
     }
     items.push({ separator: true });
     items.push({
+      label: "Manage Repositories…",
+      icon: "repo",
+      onClick: () => this.routeView("settings", true),
+    });
+    items.push({
       label: "Back to Main Menu",
       icon: "home",
       onClick: () => void this.backToMenu(),
@@ -4040,16 +4973,23 @@ class App {
 
   /** Jump to a commit in the graph, switching to the graph view first if the
    *  graph isn't currently mounted (the branch switcher is available on every
-   *  screen, so `this.graph` may not exist yet). */
+   *  screen, so `this.graph` may not exist yet). Routing with a sha TARGET puts
+   *  the jump in the navigation history, so back/forward reproduces it. */
   private revealInGraph(sha: string): void {
     if (this.currentView === "graph" && this.graph) {
       this.graph.reveal(sha);
+      void this.selectCommit(sha);
       return;
     }
-    this.routeView("graph");
-    // The graph mounts and loads its first page asynchronously; reveal once it's
-    // had a frame, and retry briefly so the scroll lands even if the page is
-    // still streaming in (reveal is a no-op until the row exists).
+    this.routeView("graph", false, { sha });
+  }
+
+  /** Scroll to + select a commit once the freshly-mounted graph has rows. The
+   *  graph loads its first page asynchronously, so retry briefly — reveal is a
+   *  no-op until the row exists. The details pane loads immediately (it's
+   *  IPC-driven, not row-driven). */
+  private revealWhenReady(sha: string): void {
+    void this.selectCommit(sha);
     let tries = 0;
     const tryReveal = (): void => {
       this.graph?.reveal(sha);
@@ -4191,7 +5131,7 @@ class App {
     });
     panel.addEventListener("gs-copy", (e) => {
       const detail = (e as CustomEvent).detail as { text: string };
-      void navigator.clipboard?.writeText(detail.text).catch(() => {});
+      void copyText(detail.text, "Copied.");
     });
     panel.addEventListener("gs-action", (e) => {
       const detail = (e as CustomEvent).detail as { id: string; sha: string };
@@ -4223,29 +5163,31 @@ class App {
       this.setGraphDetailsVisible(false);
     });
 
-    // No diff surface here any more: the file diff opens in the bottom dock's
-    // "Diff" tab, so this column is purely the commit's metadata + file list.
+    // The file diff mounts INTO this split (`.details-diff`, see openFile),
+    // so the whole commit — metadata, files, editor — lives in ONE place.
     wrap.append(panel);
 
     if (!this.detailsEl) return;
     this.detailsEl.replaceChildren(wrap);
     // Selecting another commit makes any open diff stale — it belonged to the
     // previous commit's file. Drop the tab rather than leaving the wrong diff up.
-    this.closeDiffTab();
+    this.closeGraphDiff();
     // Make sure the details column beside the graph is showing.
     this.setGraphDetailsVisible(true);
   }
 
 
-  /** Remove the dock's Diff tab and dispose the editor living in it. */
-  private closeDiffTab(): void {
+  /** Tear down the in-view commit diff: dispose the editor, drop the pane,
+   *  give the graph its width back. */
+  private closeGraphDiff(): void {
     this.diffPanel?.dispose();
     this.diffPanel = undefined;
     if (this.activeMonacoView) {
       this.activeMonacoView = undefined;
     }
     this.diffSurfaceEl = undefined;
-    this.terminalDock?.setDetailsVisible(false);
+    this.graphViewWrap?.classList.remove("diff-open");
+    this.detailsEl?.querySelector(".details-diff")?.remove();
   }
 
   /** Show/hide the commit-details column beside the graph. */
@@ -4339,16 +5281,37 @@ class App {
   }
 
   private async openFile(file: ChangedFile, sha?: string): Promise<void> {
-    // The diff opens in the bottom dock's "Diff" tab — the commit metadata
-    // stays put beside the graph instead of being shoved aside by the editor.
-    this.terminalDock?.setDetailsVisible(true);
-    this.diffSurfaceEl = this.terminalDock?.detailsSurface();
-    // Lazily spin up the Monaco diff the first time a file is opened.
+    // The diff opens INSIDE the Commits view: the details column widens and
+    // the editor sits right beside the commit's file list. It used to open in
+    // the bottom dock's "Diff" tab — graph left, details right, diff BOTTOM —
+    // three regions for one task, the literal "split screen" complaint.
+    const split = this.detailsEl?.querySelector(".details-split") as HTMLElement | null;
+    if (!split) return;
+    let pane = split.querySelector(".details-diff") as HTMLElement | null;
+    if (!pane) {
+      pane = el("div", "details-diff");
+      const head = el("div", "details-diff-head");
+      head.append(glyph(fileIcon(file.path.split("/").pop() ?? "")), el("span", "details-diff-name"));
+      const close = el("button", "peek-nav-btn details-diff-close");
+      close.title = "Close diff";
+      close.setAttribute("aria-label", "Close diff");
+      close.appendChild(glyph("close"));
+      close.addEventListener("click", () => this.closeGraphDiff());
+      head.appendChild(close);
+      const surface = el("div", "details-diff-surface");
+      pane.append(head, surface);
+      split.appendChild(pane);
+      this.diffSurfaceEl = surface;
+    }
+    const nameEl = pane.querySelector(".details-diff-name") as HTMLElement;
+    nameEl.textContent = file.path;
+    nameEl.title = file.path;
+    // Widen the details side so the editor has real room; the graph yields.
+    this.graphViewWrap?.classList.add("diff-open");
     if (!this.diffPanel && this.diffSurfaceEl) {
       this.diffPanel = new DiffPanel(this.diffSurfaceEl);
       this.activeMonacoView = this.diffPanel;
     }
-    this.terminalDock?.openDetails(); // activate the Diff tab + expand the dock
     // Capture the panel — re-reading `this.diffPanel` after an await threw
     // "cannot read showDiff of undefined" when the user picked another commit
     // mid-load and the panel was disposed. `gen` discards a stale result rather
@@ -4426,6 +5389,73 @@ class App {
 }
 
 const PREFS_KEY = "gitstudio.ui.prefs";
+
+/** The "?" keyboard cheat sheet — every shortcut the app answers to, grouped
+ *  the way the muscle memory works: global chrome, lists, detail pages. */
+function openShortcutsHelp(): void {
+  const mac = navigator.platform.toLowerCase().includes("mac");
+  const mod = mac ? "⌘" : "Ctrl+";
+  const groups: Array<{ title: string; rows: Array<[string, string]> }> = [
+    {
+      title: "Everywhere",
+      rows: [
+        [`${mod}K`, "Jump anywhere — sections, branches, PRs, actions"],
+        [`${mod}1–8`, "Switch between the first eight sections"],
+        [`${mod}[  ${mod}]`, "Back / forward through your navigation"],
+        [`${mod}\``, "Toggle the terminal dock"],
+        [`${mod},`, "Settings"],
+        ["?", "This cheat sheet"],
+      ],
+    },
+    {
+      title: "Lists",
+      rows: [
+        ["↑ ↓  or  j k", "Move between rows"],
+        ["Enter", "Open the focused row"],
+        ["Home / End", "Jump to the first / last row"],
+        ["e", "Inbox: mark the focused thread read"],
+      ],
+    },
+    {
+      title: "Detail pages",
+      rows: [
+        ["Esc  or  ←", "Back to the list"],
+        [`${mod}Enter`, "Submit the open form / modal"],
+      ],
+    },
+  ];
+  openModal((close) => {
+    const card = el("div", "modal-card shortcuts-card");
+    const h = el("div", "modal-title");
+    h.textContent = "Keyboard shortcuts";
+    card.appendChild(h);
+    const cols = el("div", "shortcuts-cols");
+    for (const g of groups) {
+      const col = el("div", "shortcuts-group");
+      const t = el("div", "shortcuts-group-title");
+      t.textContent = g.title;
+      col.appendChild(t);
+      for (const [keys, what] of g.rows) {
+        const row = el("div", "shortcuts-row");
+        const k = el("kbd", "shortcuts-keys");
+        k.textContent = keys;
+        const w = el("span", "shortcuts-what");
+        w.textContent = what;
+        row.append(k, w);
+        col.appendChild(row);
+      }
+      cols.appendChild(col);
+    }
+    card.appendChild(cols);
+    const actions = el("div", "modal-actions");
+    const ok = el("button", "btn btn-primary modal-ok");
+    ok.appendChild(span("Done"));
+    ok.addEventListener("click", close);
+    actions.appendChild(ok);
+    card.appendChild(actions);
+    return { card, focusEl: ok, label: "Keyboard shortcuts", onClose: () => {} };
+  });
+}
 
 /** Load persisted UI preferences (best-effort; never throws). */
 function loadPrefs(): Record<string, unknown> {

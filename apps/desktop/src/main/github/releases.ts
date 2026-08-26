@@ -11,6 +11,7 @@
 // surfaces a 403 from the mutation calls as a normal error message.
 
 import { GitHubClient, enc, mapUser, type RawUser } from "../githubClient";
+import { PAGE_CAPS } from "../githubPaging";
 import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
@@ -90,9 +91,9 @@ export async function listReleases(
   owner: string,
   repo: string,
 ): Promise<ReleaseInfo[]> {
-  const raw = await client.request<RawRelease[]>(
-    "GET",
-    `/repos/${enc(owner)}/${enc(repo)}/releases?per_page=50`,
+  const raw = await client.requestPaged<RawRelease>(
+    `/repos/${enc(owner)}/${enc(repo)}/releases?per_page=100`,
+    PAGE_CAPS.list,
   );
   return raw.map(mapRelease);
 }
@@ -215,5 +216,38 @@ export async function deleteRelease(
       changed: false,
       ...errorFields(err),
     };
+  }
+}
+
+/** Upload ONE asset's bytes to a release. Mutation-shaped: never throws. */
+export async function uploadAssetData(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  releaseId: number,
+  name: string,
+  data: Uint8Array,
+  contentType: string,
+): Promise<CommitActionResult> {
+  try {
+    await client.uploadReleaseAsset(owner, repo, releaseId, name, data, contentType);
+    return { ok: true, changed: false };
+  } catch (err) {
+    return { ok: false, changed: false, ...errorFields(err) };
+  }
+}
+
+/** Delete one release asset by id. Mutation-shaped: never throws. */
+export async function deleteAsset(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  assetId: number,
+): Promise<CommitActionResult> {
+  try {
+    await client.request("DELETE", `/repos/${enc(owner)}/${enc(repo)}/releases/assets/${assetId}`);
+    return { ok: true, changed: false };
+  } catch (err) {
+    return { ok: false, changed: false, ...errorFields(err) };
   }
 }

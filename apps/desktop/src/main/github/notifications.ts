@@ -10,7 +10,9 @@
 // scope is needed; the existing `request`/`requestBody` primitives set Bearer.
 
 import { GitHubClient, enc } from "../githubClient";
+import { PAGE_CAPS } from "../githubPaging";
 import { errorFields } from "../githubErrors";
+import { mapNotification, type RawNotification } from "./maps";
 import type { NotificationActionResult, NotificationThread } from "../../shared/ipc";
 
 /** Options for the inbox listing (mirrors the IPC request shape). */
@@ -34,8 +36,11 @@ export async function listNotifications(
   const qs = new URLSearchParams();
   if (opts.all) qs.set("all", "true");
   if (opts.participating) qs.set("participating", "true");
-  qs.set("per_page", "50");
-  const raw = await client.request<RawNotification[]>("GET", `/notifications?${qs.toString()}`);
+  qs.set("per_page", "50"); // the notifications endpoint caps per_page at 50
+  const raw = await client.requestPaged<RawNotification>(
+    `/notifications?${qs.toString()}`,
+    PAGE_CAPS.notifications,
+  );
   return raw.map(mapNotification);
 }
 
@@ -75,57 +80,5 @@ export async function markAllNotificationsRead(
 
 // ── Raw API shapes + mappers ─────────────────────────────────────────────────
 
-interface RawNotificationOwner {
-  avatar_url?: string | null;
-}
-interface RawNotificationSubject {
-  title: string;
-  type: string;
-  url: string | null;
-  latest_comment_url: string | null;
-}
-interface RawNotificationRepository {
-  full_name: string;
-  html_url: string;
-  owner?: RawNotificationOwner | null;
-}
-interface RawNotification {
-  id: string;
-  unread: boolean;
-  reason: string;
-  updated_at: string;
-  subject: RawNotificationSubject;
-  repository: RawNotificationRepository;
-}
 
-function mapNotification(n: RawNotification): NotificationThread {
-  return {
-    id: n.id,
-    title: n.subject?.title ?? "(untitled)",
-    type: n.subject?.type ?? "",
-    reason: n.reason ?? "",
-    repo: n.repository?.full_name ?? "",
-    repoAvatarUrl: n.repository?.owner?.avatar_url ?? null,
-    updatedAt: n.updated_at ?? "",
-    unread: n.unread ?? false,
-    htmlUrl: subjectHtmlUrl(n),
-  };
-}
 
-/**
- * GitHub's notification subject `url` is an API url
- * (api.github.com/repos/o/r/pulls/123) with no `html_url`. Rewrite pulls/issues
- * to a github.com web url; Releases / Commits / Discussions lack a clean
- * numbered subject url, so fall back to the repository's html_url.
- */
-function subjectHtmlUrl(n: RawNotification): string {
-  const api = n.subject?.url ?? "";
-  if (api) {
-    const m = api.match(/repos\/([^/]+)\/([^/]+)\/(pulls|issues)\/(\d+)/);
-    if (m) {
-      const kind = m[3] === "pulls" ? "pull" : "issues";
-      return `https://github.com/${m[1]}/${m[2]}/${kind}/${m[4]}`;
-    }
-  }
-  return n.repository?.html_url ?? "";
-}

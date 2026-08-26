@@ -1,11 +1,13 @@
-// The Organizations section view (read-only). Pick an org from a searchable
-// dropdown (with avatars) in the title bar, and its detail pane — Repositories /
-// Teams / Members sub-tabs, each lazy-loaded on demand — fills the whole pane
-// below. No left list pane, so the detail gets the full width.
+// The Organizations section view. Pick an org from a searchable dropdown (with
+// avatars) in the title bar, and its detail pane — Repositories / Teams /
+// Members sub-tabs, each lazy-loaded on demand — fills the whole pane below.
+// No left list pane, so the detail gets the full width.
 //
-// Read-only by design (the "Mostly read v1" bar): the only interactions are
-// open-on-GitHub (window.open) and copy-to-clipboard. There is no create/update/
-// delete, so no confirms or mutation toasts beyond the copy feedback.
+// Every row is browsable IN-APP: a repo opens a peek (full record + Clone…
+// straight into the app), a team opens a peek listing its members (drillable to
+// their profiles), a member opens their profile peek. "Open on GitHub" stays
+// available on each peek as a deliberate action — a plain click never leaves
+// the app any more. Still read-only toward GitHub (no create/update/delete).
 //
 // Orgs are USER-scoped, not repo-scoped, so this view gates on the token only
 // (ghGate with needsRepo=false) — it works even when the open repo's origin is
@@ -25,10 +27,30 @@ import {
   relTimeISO,
   absTimeISO,
   span,
+  textBtn,
   type MenuItem,
 } from "../ui";
-import { ghGate, ghHeader, headerPicker, type SectionRender } from "./common";
-import type { OrgInfo, OrgMember, OrgRepo, OrgTeam } from "../../shared/ipc";
+import {
+  openPeek,
+  peekChip,
+  peekMetaGrid,
+  peekSection,
+  type PeekCard,
+} from "../peek";
+import { openCloneDialog } from "../cloneDialog";
+import { repoDirCard } from "../repoBrowser";
+import { openGhRepoInApp, openGhRepoChooseLocation } from "../ghOpen";
+import { peek as cachePeek, gget, bust } from "../cache";
+import {
+  ghGate,
+  ghHeader,
+  headerPicker,
+  searchField,
+  wireListNav,
+  type SectionNav,
+  type SectionRender,
+} from "./common";
+import type { GhUserInfo, OrgInfo, OrgMember, OrgRepo, OrgRepoDetail, OrgTeam } from "../../shared/ipc";
 
 // ── In-session state (in-memory only, like prSubTab — not persisted) ──────────
 
@@ -36,6 +58,10 @@ import type { OrgInfo, OrgMember, OrgRepo, OrgTeam } from "../../shared/ipc";
 let selectedOrg: string | undefined;
 /** The active detail sub-tab; persists across orgs within a session. */
 let orgSubTab: SubTabId = "repos";
+/** The live filter over the active sub-tab (a big org has hundreds of repos). */
+let query = "";
+/** Re-renders the active sub-tab — the search field's hook into the detail. */
+let rerenderActiveTab: (() => void) | null = null;
 
 /**
  * A monotonically increasing token. Every full render bumps it; in-flight async
@@ -78,16 +104,25 @@ function orgAvatar(url: string | null, alt: string, size = 18): HTMLElement {
 
 // ── The section entry point ───────────────────────────────────────────────────
 
+/** The routed nav, kept module-level so deep hover actions (Browse → the full
+ *  Explore repository page) can reach it without threading it through every
+ *  row builder. */
+let sectionNav: SectionNav | undefined;
+
 export const renderOrgs: SectionRender = (wrap, nav) => {
+  sectionNav = nav;
   void mount(wrap, nav);
 };
 
 async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<void> {
-  const refresh = (): void => renderOrgs(wrap, nav);
+  const refresh = (): void => {
+    bust("orgs");
+    renderOrgs(wrap, nav);
+  };
 
   // Gate first — orgs are user-scoped, so needsRepo stays false (works even when
   // the open repo isn't on github.com). On no token → ghGate renders the prompt.
-  const gate = await ghGate(wrap, nav, false);
+  const gate = await ghGate(wrap, nav, false, refresh);
   if (!gate) return;
 
   const gen = ++renderGen;
@@ -95,23 +130,36 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   const header = ghHeader("Organizations", gate.login, refresh);
   const view = el("div", "gh-view");
   view.appendChild(header);
+  // The live filter over whichever sub-tab is showing (repos / teams / members).
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: "Filter repos, teams, members…",
+      initial: query,
+      onInput: (q) => {
+        query = q;
+        rerenderActiveTab?.();
+      },
+    }),
+  );
   // One full-width pane: the selected org's detail (head + sub-tabs) lives here.
   const detail = el("div", "gh-detail gh-solo");
   view.appendChild(detail);
   wrap.replaceChildren(view);
 
-  detail.replaceChildren(loadingState());
-  let orgs: OrgInfo[];
+  let orgs: OrgInfo[] | undefined = cachePeek("orgs:list", undefined);
+  if (!orgs) detail.replaceChildren(loadingState());
   try {
-    orgs = await host.invoke("orgs:list", undefined);
+    orgs = await gget("orgs:list", undefined, 60000);
   } catch (e) {
     if (gen !== renderGen) return;
-    detail.replaceChildren(
-      errorState("Couldn't load organizations", cleanErr(e) || "GitHub request failed.", refresh),
-    );
-    return;
+    if (!orgs) {
+      detail.replaceChildren(
+        errorState("Couldn't load organizations", cleanErr(e) || "GitHub request failed.", refresh),
+      );
+      return;
+    }
   }
-  if (gen !== renderGen) return;
+  if (gen !== renderGen || !orgs) return;
 
   header.setCount?.(orgs.length);
   if (orgs.length === 0) {
@@ -163,13 +211,15 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
   meta.textContent = `@${org.login}`;
 
   const actions = el("div", "gh-detail-actions");
-  const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("link-external"), span("Open on GitHub"));
-  openBtn.addEventListener("click", () => window.open(org.htmlUrl, "_blank"));
   const copyBtn = el("button", "mini-btn");
   copyBtn.append(glyph("copy"), span("Copy login"));
   copyBtn.addEventListener("click", () => void copyText(org.login, "Org login copied."));
-  actions.append(openBtn, copyBtn);
+  const openBtn = el("button", "mini-btn gh-icon-btn");
+  openBtn.append(glyph("link-external"));
+  openBtn.title = "Open this organization on GitHub";
+  openBtn.setAttribute("aria-label", openBtn.title);
+  openBtn.addEventListener("click", () => window.open(org.htmlUrl, "_blank"));
+  actions.append(copyBtn, openBtn);
 
   head.append(titleRow, meta, actions);
   detail.appendChild(head);
@@ -184,6 +234,7 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
   // grid so it fills the full-width pane instead of a narrow column of rows.
   const subBar = el("div", "gh-subtabs");
   const content = el("div", "gh-subcontent gh-org-grid");
+  wireListNav(content, ".list-row");
   const subDefs: ReadonlyArray<{ id: SubTabId; label: string; icon: string }> = [
     { id: "repos", label: "Repositories", icon: "repo" },
     { id: "teams", label: "Teams", icon: "organization" },
@@ -195,6 +246,8 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
     for (const b of subBtns) b.classList.toggle("active", b.dataset.sub === id);
     void renderSubTab(content, org.login, id, gen);
   };
+  // Hook the header search into whichever tab is active right now.
+  rerenderActiveTab = () => selectSub(orgSubTab);
   for (const t of subDefs) {
     const b = el("button", "gh-subtab");
     b.dataset.sub = t.id;
@@ -221,21 +274,26 @@ async function renderSubTab(
   id: SubTabId,
   gen: number,
 ): Promise<void> {
-  content.replaceChildren(loadingState());
   const retry = (): void => void renderSubTab(content, org, id, gen);
+  const q = query.trim().toLowerCase();
+  const noMatches = (): HTMLElement =>
+    emptyState("No matches", `Nothing matches “${query.trim()}”.`, { icon: "search" });
 
   if (id === "repos") {
-    let repos: OrgRepo[];
+    let repos: OrgRepo[] | undefined = cachePeek("orgs:repos", org);
+    if (!repos) content.replaceChildren(loadingState());
     try {
-      repos = await host.invoke("orgs:repos", org);
+      repos = await gget("orgs:repos", org, 60000);
     } catch (e) {
       if (isStale(org, gen)) return;
-      content.replaceChildren(
-        errorState("Couldn't load repositories", cleanErr(e) || "GitHub request failed.", retry),
-      );
-      return;
+      if (!repos) {
+        content.replaceChildren(
+          errorState("Couldn't load repositories", cleanErr(e) || "GitHub request failed.", retry),
+        );
+        return;
+      }
     }
-    if (isStale(org, gen)) return;
+    if (isStale(org, gen) || !repos) return;
     content.replaceChildren();
     if (repos.length === 0) {
       content.appendChild(
@@ -243,22 +301,34 @@ async function renderSubTab(
       );
       return;
     }
-    for (const r of repos) renderRepoRow(content, r);
+    const shown = q
+      ? repos.filter((r) =>
+          `${r.name} ${r.description ?? ""} ${r.language ?? ""}`.toLowerCase().includes(q),
+        )
+      : repos;
+    if (shown.length === 0) {
+      content.appendChild(noMatches());
+      return;
+    }
+    for (const r of shown) renderRepoRow(content, r);
     return;
   }
 
   if (id === "teams") {
-    let teams: OrgTeam[];
+    let teams: OrgTeam[] | undefined = cachePeek("orgs:teams", org);
+    if (!teams) content.replaceChildren(loadingState());
     try {
-      teams = await host.invoke("orgs:teams", org);
+      teams = await gget("orgs:teams", org, 60000);
     } catch (e) {
       if (isStale(org, gen)) return;
-      content.replaceChildren(
-        errorState("Couldn't load teams", cleanErr(e) || "GitHub request failed.", retry),
-      );
-      return;
+      if (!teams) {
+        content.replaceChildren(
+          errorState("Couldn't load teams", cleanErr(e) || "GitHub request failed.", retry),
+        );
+        return;
+      }
     }
-    if (isStale(org, gen)) return;
+    if (isStale(org, gen) || !teams) return;
     content.replaceChildren();
     if (teams.length === 0) {
       content.appendChild(
@@ -266,22 +336,32 @@ async function renderSubTab(
       );
       return;
     }
-    for (const t of teams) renderTeamRow(content, t);
+    const shown = q
+      ? teams.filter((t) => `${t.name} ${t.slug} ${t.description ?? ""}`.toLowerCase().includes(q))
+      : teams;
+    if (shown.length === 0) {
+      content.appendChild(noMatches());
+      return;
+    }
+    for (const t of shown) renderTeamRow(content, org, t);
     return;
   }
 
   // members
-  let members: OrgMember[];
+  let members: OrgMember[] | undefined = cachePeek("orgs:members", org);
+  if (!members) content.replaceChildren(loadingState());
   try {
-    members = await host.invoke("orgs:members", org);
+    members = await gget("orgs:members", org, 60000);
   } catch (e) {
     if (isStale(org, gen)) return;
-    content.replaceChildren(
-      errorState("Couldn't load members", cleanErr(e) || "GitHub request failed.", retry),
-    );
-    return;
+    if (!members) {
+      content.replaceChildren(
+        errorState("Couldn't load members", cleanErr(e) || "GitHub request failed.", retry),
+      );
+      return;
+    }
   }
-  if (isStale(org, gen)) return;
+  if (isStale(org, gen) || !members) return;
   content.replaceChildren();
   if (members.length === 0) {
     content.appendChild(
@@ -289,13 +369,25 @@ async function renderSubTab(
     );
     return;
   }
-  for (const u of members) renderMemberRow(content, u);
+  const shown = q ? members.filter((u) => u.login.toLowerCase().includes(q)) : members;
+  if (shown.length === 0) {
+    content.appendChild(noMatches());
+    return;
+  }
+  for (const u of shown) renderMemberRow(content, u);
 }
 
 // ── Row builders ──────────────────────────────────────────────────────────────
 
 function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
-  const row = el("button", "list-row gh-org-repo");
+  // CLICK = OPEN. An org repo IS a repo — one click puts you inside it (Code,
+  // Commits, Branches, PRs, everything), cloning itself into ~/GitStudio
+  // first if needed. No interstitial card in the way: the info peek and the
+  // no-clone browser are hover actions for when you want them.
+  const row = el("div", "list-row gh-org-repo is-clickable");
+  row.setAttribute("role", "button");
+  row.tabIndex = 0;
+  row.setAttribute("aria-label", `Open ${r.fullName} in GitStudio`);
   row.appendChild(glyph(r.fork ? "repo-forked" : "repo"));
   const m = el("div", "row-meta");
   const t = el("div", "row-meta-title");
@@ -303,7 +395,7 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   const sub = el("div", "row-meta-sub");
   const bits = [r.private ? "private" : "public"];
   if (r.language) bits.push(r.language);
-  if (r.stargazersCount) bits.push(`★ ${r.stargazersCount}`);
+  if (r.stargazersCount) bits.push(`★ ${r.stargazersCount.toLocaleString()}`);
   if (r.archived) bits.push("archived");
   const when = relTimeISO(r.pushedAt);
   if (when) bits.push(`updated ${when}`);
@@ -311,13 +403,35 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   if (r.pushedAt) sub.title = `Last pushed ${absTimeISO(r.pushedAt)}`;
   m.append(t, sub);
   row.appendChild(m);
-  if (r.description) row.title = r.description;
-  // Clicking a repo opens it on GitHub (read v1 — no local clone yet).
-  row.addEventListener("click", () => window.open(r.htmlUrl, "_blank"));
+  row.title = r.description
+    ? `${r.description}\n\nClick to open in GitStudio`
+    : `Click to open ${r.fullName} in GitStudio`;
+  row.addEventListener("click", () => openGhRepoInApp(r.fullName));
+  row.addEventListener("keydown", (e) => {
+    // Only the ROW itself: Enter on a nested hover button (Details/Browse)
+    // must activate THAT button, not silently start a clone.
+    if (e.target !== row) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openGhRepoInApp(r.fullName);
+    }
+  });
+  const actions = el("div", "row-actions");
+  actions.append(
+    textBtn("Details", `About ${r.name} — stars, license, activity`, () => openRepoPeek(r)),
+    // The full page, not the peek: browsing a repo you might adopt deserves
+    // breadcrumbs, a ref switcher and go-to-file. "Details" keeps the glance.
+    textBtn("Browse", `Read ${r.name}'s files and README without opening it`, () =>
+      sectionNav
+        ? sectionNav("explore", { id: `repo/${r.fullName}` })
+        : openPeek(repoDirCard(r.fullName, "")),
+    ),
+  );
+  row.appendChild(actions);
   content.appendChild(row);
 }
 
-function renderTeamRow(content: HTMLElement, t: OrgTeam): void {
+function renderTeamRow(content: HTMLElement, org: string, t: OrgTeam): void {
   const row = el("button", "list-row gh-org-team");
   row.appendChild(glyph(t.privacy === "secret" ? "lock" : "organization"));
   const m = el("div", "row-meta");
@@ -327,7 +441,8 @@ function renderTeamRow(content: HTMLElement, t: OrgTeam): void {
   sub.textContent = t.description || `@${t.slug}${t.privacy ? " · " + t.privacy : ""}`;
   m.append(ttl, sub);
   row.appendChild(m);
-  if (t.htmlUrl) row.addEventListener("click", () => window.open(t.htmlUrl, "_blank"));
+  row.setAttribute("aria-haspopup", "dialog");
+  row.addEventListener("click", () => openTeamPeek(org, t));
   content.appendChild(row);
 }
 
@@ -339,6 +454,211 @@ function renderMemberRow(content: HTMLElement, u: OrgMember): void {
   t.textContent = u.login;
   m.appendChild(t);
   row.appendChild(m);
-  row.addEventListener("click", () => window.open(u.htmlUrl, "_blank"));
+  row.setAttribute("aria-haspopup", "dialog");
+  row.addEventListener("click", () => openPeek(memberCard(u)));
   content.appendChild(row);
+}
+
+// ── Peeks: the in-app drill-ins behind every row ──────────────────────────────
+
+/** A homepage/website value rendered as a real link, not inert text. */
+function extLink(url: string): HTMLElement {
+  const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  const a = document.createElement("a");
+  a.href = href;
+  a.textContent = url;
+  a.className = "peek-ext-link";
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    window.open(href, "_blank");
+  });
+  return a;
+}
+
+/** The repo peek: the full record, with Clone… as the primary action — the org
+ *  browser stops being a launcher for github.com and becomes a way IN. */
+function openRepoPeek(r: OrgRepo): void {
+  const chips = [peekChip(r.private ? "private" : "public", r.private ? "warn" : "muted")];
+  if (r.fork) chips.push(peekChip("fork", "muted"));
+  if (r.archived) chips.push(peekChip("archived", "warn"));
+  openPeek({
+    icon: r.fork ? "repo-forked" : "repo",
+    title: r.name,
+    chips,
+    subtitle: r.fullName,
+    actions: [
+      {
+        label: "Open on GitHub",
+        icon: "link-external",
+        onClick: () => window.open(r.htmlUrl, "_blank"),
+      },
+      {
+        label: "Clone…",
+        icon: "repo-clone",
+        title: "Clone this repository and open it in GitStudio",
+        onClick: (ctx) => {
+          ctx.close();
+          openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+            url: `${r.htmlUrl}.git`,
+          });
+        },
+      },
+      {
+        // Browsing beats bouncing: read the code + README right here, no
+        // clone, no github.com.
+        label: "Browse files",
+        icon: "folder-opened",
+        onClick: (ctx) => ctx.push(repoDirCard(r.fullName, "")),
+      },
+      {
+        label: "Choose location…",
+        icon: "folder-opened",
+        title: `Pick the folder ${r.fullName} is cloned into, then open it`,
+        onClick: () => openGhRepoChooseLocation(r.fullName),
+      },
+      {
+        // THE action: open this like any local repo — Code, Commits,
+        // Branches, PRs, everything. Reuses an existing clone or makes one
+        // in the configured clone folder, no questions asked.
+        label: "Open",
+        icon: "folder-library",
+        primary: true,
+        title: `Open ${r.fullName} in GitStudio as a full repo`,
+        onClick: () => openGhRepoInApp(r.fullName),
+      },
+    ],
+    async render(body) {
+      const d: OrgRepoDetail = await host.invoke("orgs:repoDetail", r.fullName);
+      body.replaceChildren();
+      if (d.description) {
+        const p = el("p", "peek-desc");
+        p.textContent = d.description;
+        body.appendChild(p);
+      }
+      const meta: Array<[string, string | HTMLElement]> = [
+        ["Language", d.language ?? ""],
+        // Real zeros — hiding "0 stars" made new repos look broken, not new.
+        ["Stars", d.stargazersCount.toLocaleString()],
+        ["Forks", d.forksCount.toLocaleString()],
+        ["Open issues", d.openIssuesCount.toLocaleString()],
+        ["Default branch", d.defaultBranch],
+        ["License", d.license ?? ""],
+        ["Last pushed", d.pushedAt ? relTimeISO(d.pushedAt) : ""],
+        ["Created", d.createdAt ? relTimeISO(d.createdAt) : ""],
+        ["Homepage", d.homepage ? extLink(d.homepage) : ""],
+      ];
+      body.appendChild(peekMetaGrid(meta));
+      if (d.topics.length) {
+        const topics = el("div", "peek-topics");
+        for (const topic of d.topics) topics.appendChild(peekChip(topic, "accent"));
+        body.appendChild(topics);
+      }
+    },
+  });
+}
+
+/** The team peek: description + the member list, each member drillable. */
+function openTeamPeek(org: string, t: OrgTeam): void {
+  openPeek({
+    icon: t.privacy === "secret" ? "lock" : "organization",
+    title: t.name,
+    chips: t.privacy ? [peekChip(t.privacy, "muted")] : [],
+    subtitle: `@${org}/${t.slug}`,
+    actions: t.htmlUrl
+      ? [
+          {
+            label: "Open on GitHub",
+            icon: "link-external",
+            onClick: () => window.open(t.htmlUrl, "_blank"),
+          },
+        ]
+      : [],
+    async render(body, ctx) {
+      const members = await host.invoke("orgs:teamMembers", { org, slug: t.slug });
+      body.replaceChildren();
+      if (t.description) {
+        const p = el("p", "peek-desc");
+        p.textContent = t.description;
+        body.appendChild(p);
+      }
+      const { root, body: mbody } = peekSection("Members", members.length);
+      for (const m of members) {
+        const row = el("button", "peek-row");
+        row.appendChild(orgAvatar(m.avatarUrl, m.login, 22));
+        const main = el("div", "peek-row-main");
+        const title = el("div", "peek-row-title");
+        title.textContent = m.login;
+        main.appendChild(title);
+        row.appendChild(main);
+        const side = el("div", "peek-row-side");
+        const chev = glyph("chevron-right");
+        chev.classList.add("peek-row-chev");
+        side.appendChild(chev);
+        row.appendChild(side);
+        row.addEventListener("click", () => ctx.push(memberCard(m)));
+        mbody.appendChild(row);
+      }
+      if (!members.length) {
+        const none = el("div", "peek-row");
+        none.appendChild(span("No members visible to you.", "peek-row-sub"));
+        mbody.appendChild(none);
+      }
+      body.appendChild(root);
+    },
+  });
+}
+
+/** The member/profile card — openable directly or pushed from a team peek. */
+export function memberCard(u: OrgMember): PeekCard {
+  return {
+    icon: "account",
+    iconEl: u.avatarUrl ? avatar(u.login, u.avatarUrl, 22) : undefined,
+    title: u.login,
+    subtitle: "GitHub profile",
+    actions: [
+      {
+        label: "Copy login",
+        icon: "copy",
+        onClick: () => void copyText(u.login, "Login copied."),
+      },
+      // The peek is a glance; the full page is where their repositories are.
+      // Every person chip in the app opens this peek, so this one action makes
+      // every author, assignee and reviewer a doorway into Explore.
+      {
+        label: "View full profile",
+        icon: "person",
+        primary: true,
+        title: `Open @${u.login}'s profile page in Explore`,
+        onClick: (ctx) => {
+          ctx.close();
+          sectionNav?.("explore", { id: `user/${u.login}` });
+        },
+      },
+      {
+        label: "Open on GitHub",
+        icon: "link-external",
+        onClick: () => window.open(u.htmlUrl, "_blank"),
+      },
+    ],
+    async render(body, ctx) {
+      const info: GhUserInfo = await host.invoke("github:userInfo", u.login);
+      body.replaceChildren();
+      ctx.retitle(info.name || info.login, `@${info.login}`);
+      if (info.bio) {
+        const p = el("p", "peek-desc");
+        p.textContent = info.bio;
+        body.appendChild(p);
+      }
+      body.appendChild(
+        peekMetaGrid([
+          ["Company", info.company ?? ""],
+          ["Location", info.location ?? ""],
+          ["Website", info.blog ? extLink(info.blog) : ""],
+          ["Followers", typeof info.followers === "number" ? info.followers.toLocaleString() : ""],
+          ["Public repos", typeof info.publicRepos === "number" ? info.publicRepos.toLocaleString() : ""],
+          ["Joined", info.createdAt ? relTimeISO(info.createdAt) : ""],
+        ]),
+      );
+    },
+  };
 }

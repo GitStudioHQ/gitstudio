@@ -13,7 +13,16 @@
 // Everything here is REST (Issues live under the OAuth `repo` scope, same as
 // PRs); GraphQL is only needed for Projects v2, which lives elsewhere.
 
-import { GitHubClient, enc, mapUser, type RawUser } from "../githubClient";
+import { GitHubClient, enc } from "../githubClient";
+import {
+  mapComment,
+  mapIssue,
+  mapUser,
+  type RawIssue,
+  type RawIssueComment,
+  type RawUser,
+} from "./maps";
+import { PAGE_CAPS } from "../githubPaging";
 import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
@@ -27,30 +36,6 @@ import type {
 
 // ── Raw GitHub payloads (only what we read) ──────────────────────────────────
 
-interface RawLabelRef {
-  name: string;
-  color: string;
-}
-interface RawIssue {
-  number: number;
-  title: string;
-  body: string | null;
-  state: string;
-  html_url: string;
-  user: RawUser | null;
-  created_at: string;
-  updated_at: string;
-  comments: number;
-  labels?: (RawLabelRef | string)[];
-  assignees?: RawUser[];
-  pull_request?: unknown;
-}
-interface RawIssueComment {
-  id: number;
-  user?: RawUser | null;
-  body?: string | null;
-  created_at: string;
-}
 interface RawRepoLabel {
   name: string;
   color: string;
@@ -67,34 +52,7 @@ interface RawMilestone {
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
 
-function mapIssue(i: RawIssue): IssueInfo {
-  return {
-    number: i.number,
-    title: i.title,
-    body: i.body,
-    state: i.state,
-    htmlUrl: i.html_url,
-    user: mapUser(i.user),
-    createdAt: i.created_at,
-    updatedAt: i.updated_at,
-    comments: i.comments,
-    labels: (i.labels ?? []).map((l) =>
-      typeof l === "string" ? { name: l, color: "888888" } : { name: l.name, color: l.color },
-    ),
-    assignees: (i.assignees ?? [])
-      .map(mapUser)
-      .filter((u): u is GitHubUser => u !== null),
-  };
-}
 
-function mapComment(c: RawIssueComment): IssueComment {
-  return {
-    id: c.id,
-    author: mapUser(c.user ?? null),
-    body: c.body ?? "",
-    createdAt: c.created_at,
-  };
-}
 
 function mapLabel(l: RawRepoLabel): RepoLabel {
   return { name: l.name, color: l.color, description: l.description ?? null };
@@ -123,9 +81,9 @@ export async function listIssues(
   repo: string,
   state: "open" | "closed" | "all" = "open",
 ): Promise<IssueInfo[]> {
-  const raw = await client.request<RawIssue[]>(
-    "GET",
-    `/repos/${enc(owner)}/${enc(repo)}/issues?state=${state}&sort=updated&direction=desc&per_page=50`,
+  const raw = await client.requestPaged<RawIssue>(
+    `/repos/${enc(owner)}/${enc(repo)}/issues?state=${state}&sort=updated&direction=desc&per_page=100`,
+    PAGE_CAPS.list,
   );
   return raw.filter((i) => !i.pull_request).map(mapIssue);
 }
@@ -145,9 +103,9 @@ export async function getIssueDetail(
     await client.request<RawIssue>("GET", `/repos/${enc(owner)}/${enc(repo)}/issues/${n}`),
   );
   const comments = await client
-    .request<RawIssueComment[]>(
-      "GET",
+    .requestPaged<RawIssueComment>(
       `/repos/${enc(owner)}/${enc(repo)}/issues/${n}/comments?per_page=100`,
+      PAGE_CAPS.detail,
     )
     .then((raw) => raw.map(mapComment))
     .catch(() => [] as IssueComment[]);
@@ -160,9 +118,9 @@ export async function listLabels(
   owner: string,
   repo: string,
 ): Promise<RepoLabel[]> {
-  const raw = await client.request<RawRepoLabel[]>(
-    "GET",
+  const raw = await client.requestPaged<RawRepoLabel>(
     `/repos/${enc(owner)}/${enc(repo)}/labels?per_page=100`,
+    PAGE_CAPS.detail,
   );
   return raw.map(mapLabel);
 }

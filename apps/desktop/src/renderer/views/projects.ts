@@ -3,11 +3,11 @@
 // cards) fills the whole pane below — no left list pane, so the board gets the
 // full width.
 //
-// The board is gh-board / gh-col / gh-card. Reads throw → errorState + Retry; the
-// move mutation toasts + re-renders. The whole view re-renders by calling
-// renderProjects again; module-local `selectedProjectId` makes the picker
-// re-select the project the user was on, so a move reloads its board with the
-// card in its new column — the same refresh-after-mutation UX the PR view gets.
+// Cards move two ways: DRAG one onto another column (optimistic — the card
+// lands instantly and reverts on failure), or the kebab's "Move to" menu (the
+// keyboard path). Issues peek in a slide-over drawer hosting the full live
+// issue detail; PRs open their full workspace. Reads go through the SWR cache;
+// the move mutation toasts + busts.
 
 import { host } from "../bridge";
 import {
@@ -16,7 +16,6 @@ import {
   glyph,
   pill,
   relTimeISO,
-  absTimeISO,
   loadingState,
   errorState,
   emptyState,
@@ -24,6 +23,7 @@ import {
   cleanErr,
   type MenuItem,
 } from "../ui";
+import { peek as cachePeek, gget, bust } from "../cache";
 import { toast } from "../dialogs";
 import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
 import { renderIssueDetailInto } from "./issues";
@@ -38,10 +38,12 @@ export const renderProjects: SectionRender = (wrap, nav) => {
 };
 
 async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<void> {
-  const gate = await ghGate(wrap, nav, true);
+  const refresh = (): void => {
+    bust("project");
+    renderProjects(wrap, nav);
+  };
+  const gate = await ghGate(wrap, nav, true, refresh);
   if (!gate) return;
-
-  const refresh = (): void => renderProjects(wrap, nav);
 
   const header = ghHeader("Projects", gate.login, refresh);
   const view = el("div", "gh-view");
@@ -51,16 +53,20 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   view.appendChild(board);
   wrap.replaceChildren(view);
 
-  board.replaceChildren(loadingState());
-  let projects: ProjectInfo[];
+  let projects: ProjectInfo[] | undefined = cachePeek("project:list", undefined);
+  if (!projects) board.replaceChildren(loadingState());
   try {
-    projects = await host.invoke("project:list", undefined);
+    projects = await gget("project:list", undefined, 30000);
   } catch (e) {
-    board.replaceChildren(
-      errorState("Couldn't load projects", cleanErr(e) || "GitHub request failed.", refresh),
-    );
-    return;
+    if (!view.isConnected) return;
+    if (!projects) {
+      board.replaceChildren(
+        errorState("Couldn't load projects", cleanErr(e) || "GitHub request failed.", refresh),
+      );
+      return;
+    }
   }
+  if (!view.isConnected || !projects) return;
   header.setCount?.(projects.length);
 
   if (projects.length === 0) {
@@ -73,6 +79,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
     return;
   }
 
+  const all = projects;
   const select = (p: ProjectInfo): void => {
     selectedProjectId = p.id;
     picker.set(glyph("project"), p.title);
@@ -83,7 +90,7 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   // loads its board full-width below.
   const picker = headerPicker({
     onOpen: (anchor) => {
-      const items: MenuItem[] = projects.map((p) => ({
+      const items: MenuItem[] = all.map((p) => ({
         label: p.title,
         sub:
           `#${p.number} · ${p.itemCount} item${p.itemCount === 1 ? "" : "s"}` +
@@ -98,15 +105,15 @@ async function renderProjectsAsync(wrap: HTMLElement, nav: SectionNav): Promise<
   header.querySelector(".gh-head-titlewrap")?.appendChild(picker.el);
 
   // Reopen the project the user was on (else the first) so the board is never a void.
-  const initial = projects.find((p) => p.id === selectedProjectId) ?? projects[0];
+  const initial = all.find((p) => p.id === selectedProjectId) ?? all[0];
   select(initial);
 }
 
 /**
- * The detail pane: a header (title + meta + "Open on GitHub") above a horizontal
+ * The board: a header (title + meta + "Open on GitHub") above a horizontal
  * scroller of columns — one per Status option, plus a leading "No Status" bucket
  * for unset items. Projects with no Status single-select field fall back to a
- * single "All items" column.
+ * single "All items" column. Columns are drop targets; cards are draggable.
  */
 async function showProjectBoard(
   detail: HTMLElement,
@@ -114,18 +121,22 @@ async function showProjectBoard(
   refresh: () => void,
   nav: SectionNav,
 ): Promise<void> {
-  detail.replaceChildren(loadingState());
-  let board: ProjectBoard;
+  let board: ProjectBoard | undefined = cachePeek("project:board", p.id);
+  if (!board) detail.replaceChildren(loadingState());
   try {
-    board = await host.invoke("project:board", p.id);
+    board = await gget("project:board", p.id, 15000);
   } catch (e) {
-    detail.replaceChildren(
-      errorState("Couldn't load board", cleanErr(e) || "GitHub request failed.", () =>
-        void showProjectBoard(detail, p, refresh, nav),
-      ),
-    );
-    return;
+    if (!board) {
+      detail.replaceChildren(
+        errorState("Couldn't load board", cleanErr(e) || "GitHub request failed.", () =>
+          void showProjectBoard(detail, p, refresh, nav),
+        ),
+      );
+      return;
+    }
   }
+  if (!detail.isConnected || !board || selectedProjectId !== p.id) return;
+  const b = board;
   detail.replaceChildren();
 
   const head = el("div", "gh-detail-head");
@@ -133,12 +144,13 @@ async function showProjectBoard(
   h.textContent = p.title;
   const meta = el("div", "gh-detail-meta");
   meta.textContent =
-    `#${p.number} · ${board.items.length} item${board.items.length === 1 ? "" : "s"}` +
-    `${board.field ? "" : " · no Status field"}`;
+    `#${p.number} · ${b.items.length} item${b.items.length === 1 ? "" : "s"}` +
+    `${b.field ? "" : " · no Status field"}`;
   const actions = el("div", "gh-detail-actions");
-  const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("link-external"), span("Open on GitHub"));
+  const openBtn = el("button", "mini-btn gh-icon-btn");
+  openBtn.append(glyph("link-external"));
   openBtn.title = "Open this project on github.com";
+  openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(p.url, "_blank"));
   actions.appendChild(openBtn);
   head.append(h, meta, actions);
@@ -146,43 +158,128 @@ async function showProjectBoard(
 
   // Columns = Status options, with a leading "No Status" bucket. With no Status
   // field, a single "All items" column holds everything.
-  const columns: { id: string | null; name: string }[] = board.field
-    ? [{ id: null, name: "No Status" }, ...board.field.options.map((o) => ({ id: o.id, name: o.name }))]
+  const columns: { id: string | null; name: string }[] = b.field
+    ? [{ id: null, name: "No Status" }, ...b.field.options.map((o) => ({ id: o.id, name: o.name }))]
     : [{ id: null, name: "All items" }];
+
+  const itemsById = new Map(b.items.map((it) => [it.id, it]));
+  const cardsById = new Map<string, HTMLElement>();
+  const cols = new Map<string | null, { el: HTMLElement; body: HTMLElement; count: HTMLElement }>();
+
+  /** Keep each column's count pill honest after an optimistic move. */
+  const syncCounts = (): void => {
+    for (const [, c] of cols) {
+      c.count.textContent = String(c.body.querySelectorAll(".gh-card").length);
+    }
+  };
+
+  /** The optimistic drop: land the card in the target column immediately, then
+   *  confirm with the API; revert (full re-render) + toast on failure. */
+  const dropItem = async (itemId: string, targetId: string | null): Promise<void> => {
+    const field = b.field;
+    if (!field) return;
+    const it = itemsById.get(itemId);
+    const card = cardsById.get(itemId);
+    const target = cols.get(targetId);
+    if (!it || !card || !target || it.statusOptionId === targetId) return;
+    const fromId = it.statusOptionId;
+    target.body.appendChild(card);
+    it.statusOptionId = targetId;
+    syncCounts();
+    card.classList.add("is-moving");
+    try {
+      const r = await host.invoke("project:moveItem", {
+        projectId: p.id,
+        itemId: it.id,
+        fieldId: field.id,
+        optionId: targetId,
+      });
+      if (!r.ok) {
+        toast(r.message ?? "Couldn't move the item.", "error");
+        it.statusOptionId = fromId;
+        void showProjectBoard(detail, p, refresh, nav); // revert to the truth
+        return;
+      }
+      card.classList.remove("is-moving");
+      bust("project"); // the next board read refetches the confirmed state
+    } catch (e) {
+      toast(cleanErr(e) || "Couldn't move the item.", "error");
+      it.statusOptionId = fromId;
+      void showProjectBoard(detail, p, refresh, nav);
+    }
+  };
 
   const boardEl = el("div", "gh-board");
   for (const col of columns) {
-    const items = board.items.filter((it) => (board.field ? it.statusOptionId === col.id : true));
+    const items = b.items.filter((it) => (b.field ? it.statusOptionId === col.id : true));
     const colEl = el("div", "gh-col");
     const colHead = el("div", "gh-col-head");
     const colName = el("span", "gh-col-name");
     colName.textContent = col.name;
     colName.title = col.name;
-    colHead.append(colName, pill(String(items.length)));
+    const count = pill(String(items.length));
+    colHead.append(colName, count);
     colEl.appendChild(colHead);
     const colBody = el("div", "gh-col-body");
-    if (items.length === 0) {
-      colBody.appendChild(el("div", "gh-col-empty"));
-    }
+    // The empty placeholder is ALWAYS present (CSS shows it via :only-child), so
+    // a column emptied by a drag keeps a visible drop zone.
+    colBody.appendChild(el("div", "gh-col-empty"));
     for (const it of items) {
-      colBody.appendChild(projectCard(p, board, it, refresh, nav));
+      colBody.insertBefore(
+        projectCard(p, b, it, refresh, nav, cardsById),
+        colBody.querySelector(".gh-col-empty"),
+      );
     }
     colEl.appendChild(colBody);
+    cols.set(col.id, { el: colEl, body: colBody, count });
+
+    // Drop target wiring (only meaningful with a Status field to write to).
+    if (b.field) {
+      colEl.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        colEl.classList.add("is-drop");
+      });
+      colEl.addEventListener("dragleave", (e) => {
+        if (!colEl.contains(e.relatedTarget as Node)) colEl.classList.remove("is-drop");
+      });
+      colEl.addEventListener("drop", (e) => {
+        e.preventDefault();
+        colEl.classList.remove("is-drop");
+        const id = e.dataTransfer?.getData("text/plain");
+        if (id) void dropItem(id, col.id);
+      });
+    }
     boardEl.appendChild(colEl);
   }
   detail.appendChild(boardEl);
+  syncCounts();
 }
 
 /** One board card: a state dot + title + number/author/updated meta + a type pill,
- *  plus a kebab to move/open the item. Clicking the body opens the issue/PR. */
+ *  plus a kebab to move/open the item. Clicking the body opens the issue/PR;
+ *  dragging it onto another column moves it. */
 function projectCard(
   p: ProjectInfo,
   board: ProjectBoard,
   it: ProjectItem,
   refresh: () => void,
   nav: SectionNav,
+  registry?: Map<string, HTMLElement>,
 ): HTMLElement {
   const card = el("div", "gh-card");
+  registry?.set(it.id, card);
+
+  // Draggable between Status columns (the kebab menu stays as the keyboard path).
+  if (board.field) {
+    card.draggable = true;
+    card.addEventListener("dragstart", (e) => {
+      e.dataTransfer?.setData("text/plain", it.id);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      card.classList.add("is-dragging");
+    });
+    card.addEventListener("dragend", () => card.classList.remove("is-dragging"));
+  }
 
   const top = el("div", "gh-card-top");
   const stateKey = it.state ? it.state.toLowerCase() : "";
@@ -247,7 +344,7 @@ function projectCard(
  * to hand off to the Issues screen to read, comment on, or triage an item. The
  * drawer hosts the full issue detail (body, timeline, composer, action cluster),
  * all of whose mutations re-render inside it. "Open in Issues" escalates to the
- * two-pane workspace when you want the list alongside.
+ * full-page issue workspace when you want the section around it.
  */
 function openIssueDrawer(number: number, nav: SectionNav): void {
   const opener = document.activeElement as HTMLElement | null;
@@ -262,8 +359,8 @@ function openIssueDrawer(number: number, nav: SectionNav): void {
   eyebrow.append(glyph("issue-opened"), span(`Issue #${number}`));
   const headActions = el("div", "gh-drawer-actions");
   const openFull = el("button", "mini-btn");
-  openFull.append(glyph("link-external"), span("Open in Issues"));
-  openFull.title = "Open this issue in the full Issues workspace";
+  openFull.append(glyph("issues"), span("Open in Issues"));
+  openFull.title = "Open this issue as a full page in the Issues section";
   const closeBtn = el("button", "gh-drawer-close");
   closeBtn.setAttribute("aria-label", "Close");
   closeBtn.title = "Close  (Esc)";
@@ -304,7 +401,8 @@ function openIssueDrawer(number: number, nav: SectionNav): void {
   void renderIssueDetailInto(body, number, nav);
 }
 
-/** Kebab menu: "Open on GitHub" + "Move to → <Status option>" (the write path). */
+/** Kebab menu: "Open on GitHub" + "Move to → <Status option>" (the keyboard
+ *  path for what drag-and-drop does with the pointer). */
 function projectItemMenu(
   anchor: HTMLElement,
   p: ProjectInfo,

@@ -17,9 +17,13 @@ import { access, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { GitHubClient, enc, type TokenGetter } from "../githubClient";
+import { mapJob, mapRun, type RawJob, type RawRun } from "./maps";
+import { sliceLogDelta, type LogDelta } from "./logTail";
+import { PAGE_CAPS } from "../githubPaging";
 import { ExpectedError } from "../expectedError";
 import { errorFields, githubHttpError, networkError } from "../githubErrors";
 import type {
+  ActionsRunsFilter,
   ArtifactInfo,
   CommitActionResult,
   RepoSecretInfo,
@@ -35,33 +39,6 @@ const API_BASE = "https://api.github.com";
 
 // ── Raw GitHub REST shapes (only the fields we map) ──────────────────────────
 
-interface RawRun {
-  id: number;
-  name?: string;
-  display_title?: string;
-  status?: string;
-  conclusion?: string;
-  head_branch?: string;
-  event?: string;
-  created_at?: string;
-  html_url?: string;
-}
-interface RawStep {
-  name?: string;
-  status?: string;
-  conclusion?: string;
-  number?: number;
-}
-interface RawJob {
-  id: number;
-  name?: string;
-  status?: string;
-  conclusion?: string;
-  html_url?: string;
-  started_at?: string;
-  completed_at?: string;
-  steps?: RawStep[];
-}
 interface RawWorkflow {
   id: number;
   name?: string;
@@ -88,35 +65,6 @@ interface RawVariable {
 
 // ── Mappers (Raw* → public ipc types) ────────────────────────────────────────
 
-function mapRun(r: RawRun): WorkflowRun {
-  return {
-    id: r.id,
-    name: r.name ?? r.display_title ?? "(run)",
-    status: r.status ?? "",
-    conclusion: r.conclusion ?? "",
-    branch: r.head_branch ?? "",
-    event: r.event ?? "",
-    createdAt: r.created_at ?? "",
-    htmlUrl: r.html_url ?? "",
-  };
-}
-function mapJob(j: RawJob): WorkflowJob {
-  return {
-    id: j.id,
-    name: j.name ?? "(job)",
-    status: j.status ?? "",
-    conclusion: j.conclusion ?? "",
-    htmlUrl: j.html_url ?? "",
-    startedAt: j.started_at ?? "",
-    completedAt: j.completed_at ?? "",
-    steps: (j.steps ?? []).map((s) => ({
-      name: s.name ?? "",
-      status: s.status ?? "",
-      conclusion: s.conclusion ?? "",
-      number: s.number ?? 0,
-    })),
-  };
-}
 function mapWorkflow(w: RawWorkflow): WorkflowInfo {
   return {
     id: w.id,
@@ -178,10 +126,20 @@ function ghHeaders(token: string): Record<string, string> {
  * (the signed URL needs none, and GitHub rejects a forwarded Bearer). A direct 2xx
  * is returned as-is. Throws a clean Error on any non-OK status.
  */
-async function fetchSignedRedirect(token: string, path: string): Promise<Response> {
+async function fetchSignedRedirect(
+  token: string,
+  path: string,
+  timeoutMs = 30_000,
+): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, { headers: ghHeaders(token), redirect: "manual" });
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: ghHeaders(token),
+      redirect: "manual",
+      // This used to be the app's ONLY un-timed network path — a hung blob
+      // fetch pinned a log pane on its spinner forever.
+      signal: AbortSignal.timeout(timeoutMs),
+    });
   } catch {
     throw networkError();
   }
@@ -190,7 +148,7 @@ async function fetchSignedRedirect(token: string, path: string): Promise<Respons
     const loc = res.headers.get("location");
     if (!loc) throw new Error("GitHub returned a redirect with no location.");
     try {
-      res = await fetch(loc);
+      res = await fetch(loc, { signal: AbortSignal.timeout(timeoutMs) });
     } catch {
       throw networkError(
         "Couldn't download from GitHub's storage. Check your network connection.",
@@ -203,13 +161,29 @@ async function fetchSignedRedirect(token: string, path: string): Promise<Respons
 
 // ── Reads (throw on API error) ───────────────────────────────────────────────
 
-/** Recent workflow runs for the repo (capped at 30, newest first). */
-export async function listRuns(client: GitHubClient, owner: string, repo: string): Promise<WorkflowRun[]> {
-  const raw = await client.request<{ workflow_runs?: RawRun[] }>(
-    "GET",
-    `/repos/${enc(owner)}/${enc(repo)}/actions/runs?per_page=30`,
+/** Recent workflow runs for the repo (paged, newest first). `filter` narrows
+ *  SERVER-SIDE: workflowId switches to the per-workflow endpoint; branch /
+ *  actor / event / status ride as query params GitHub filters itself. */
+export async function listRuns(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  filter?: ActionsRunsFilter,
+): Promise<WorkflowRun[]> {
+  const base = filter?.workflowId
+    ? `/repos/${enc(owner)}/${enc(repo)}/actions/workflows/${filter.workflowId}/runs`
+    : `/repos/${enc(owner)}/${enc(repo)}/actions/runs`;
+  const qs = new URLSearchParams({ per_page: "100" });
+  if (filter?.branch) qs.set("branch", filter.branch);
+  if (filter?.actor) qs.set("actor", filter.actor);
+  if (filter?.event) qs.set("event", filter.event);
+  if (filter?.status) qs.set("status", filter.status);
+  const raw = await client.requestPagedKey<RawRun>(
+    `${base}?${qs.toString()}`,
+    "workflow_runs",
+    PAGE_CAPS.runs,
   );
-  return (raw.workflow_runs ?? []).map(mapRun);
+  return raw.map(mapRun);
 }
 
 /** A single run plus its jobs (GET /actions/runs/{id} + /jobs), for the detail pane. */
@@ -223,11 +197,12 @@ export async function getRunDetail(
     "GET",
     `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${id}`,
   );
-  const jobsRaw = await client.request<{ jobs?: RawJob[] }>(
-    "GET",
+  const jobsRaw = await client.requestPagedKey<RawJob>(
     `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${id}/jobs?per_page=100`,
+    "jobs",
+    PAGE_CAPS.detail,
   );
-  return { run: mapRun(run), jobs: (jobsRaw.jobs ?? []).map(mapJob) };
+  return { run: mapRun(run), jobs: jobsRaw.map(mapJob) };
 }
 
 /** All workflows declared in this repo (GET /actions/workflows). */
@@ -291,36 +266,36 @@ export async function jobLog(
 }
 
 /**
- * Plain-text logs for a WHOLE run, assembled from its jobs. The native
- * `…/runs/{id}/logs` endpoint returns a ZIP (heavy + needs unzip in-process);
- * instead we fetch the run's jobs and concatenate each job's `jobLog` under a
- * `=== job name ===` banner — the same text, streamable straight into the viewer.
- * One job's failure is annotated inline rather than failing the whole aggregate.
+ * Incremental log delta for ONE job — the live-tail workhorse. GitHub's log
+ * endpoint has no offset support, so we re-fetch the full text and ship only
+ * what the renderer hasn't seen (see logTail.sliceLogDelta for the reset /
+ * truncation semantics).
  */
-export async function runLog(
+export async function jobLogChunk(
   client: GitHubClient,
   owner: string,
   repo: string,
-  req: { runId: number },
-): Promise<string> {
-  const jobsRaw = await client.request<{ jobs?: RawJob[] }>(
-    "GET",
-    `/repos/${enc(owner)}/${enc(repo)}/actions/runs/${req.runId}/jobs?per_page=100`,
-  );
-  const jobs = jobsRaw.jobs ?? [];
-  if (jobs.length === 0) return "This run reported no jobs.";
-  const parts: string[] = [];
-  for (const j of jobs) {
-    const name = j.name ?? `job ${j.id}`;
-    parts.push(`=== ${name} ===`);
-    try {
-      parts.push((await jobLog(client, owner, repo, { jobId: j.id })).trimEnd());
-    } catch (err) {
-      parts.push(`[logs unavailable: ${err instanceof Error ? err.message : String(err)}]`);
-    }
-    parts.push(""); // blank line between jobs
+  req: { jobId: number; offset: number },
+): Promise<LogDelta> {
+  const full = await jobLog(client, owner, repo, { jobId: req.jobId });
+  return sliceLogDelta(full, Math.max(0, req.offset));
+}
+
+/** Save one job's full log to ~/Downloads as a .log file. Mutation-shaped. */
+export async function saveLog(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { jobId: number; name: string },
+): Promise<CommitActionResult> {
+  try {
+    const text = await jobLog(client, owner, repo, { jobId: req.jobId });
+    const dest = await uniqueDownloadPath(safeFileName(req.name || `job-${req.jobId}`) + ".log");
+    await writeFile(dest, text, "utf8");
+    return { ok: true, changed: false, message: `Saved to ${dest}` };
+  } catch (err) {
+    return { ok: false, changed: false, ...errorFields(err) };
   }
-  return parts.join("\n");
 }
 
 /** Artifacts produced by a run (GET /actions/runs/{id}/artifacts). */

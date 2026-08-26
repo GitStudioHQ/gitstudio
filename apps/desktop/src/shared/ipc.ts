@@ -288,6 +288,24 @@ export interface PrRef {
   ref: string;
   sha: string;
 }
+/** The emoji reaction tallies GitHub keeps on issues, PRs, and comments.
+ *  Only non-zero buckets are rendered, so a quiet item shows nothing. */
+export interface ReactionSummary {
+  total: number;
+  plusOne: number;
+  minusOne: number;
+  laugh: number;
+  hooray: number;
+  confused: number;
+  heart: number;
+  rocket: number;
+  eyes: number;
+}
+
+/** How the author relates to the repo (OWNER / MEMBER / CONTRIBUTOR / …) —
+ *  GitHub badges this next to a name and it's real signal about who's talking. */
+export type AuthorAssociation = string;
+
 export interface PullRequest {
   number: number;
   title: string;
@@ -305,6 +323,26 @@ export interface PullRequest {
   additions?: number;
   deletions?: number;
   changedFiles?: number;
+  /** Assigned users, so the detail rail can SHOW them (not just set them). */
+  assignees?: GitHubUser[];
+  /** Set when the PR was merged — "closed" and "merged" are different states. */
+  mergedAt?: string | null;
+  /** When it closed (merged or not). */
+  closedAt?: string | null;
+  /** Who actually pressed merge — often NOT the author. */
+  mergedBy?: GitHubUser | null;
+  /** Review-thread comment count (distinct from `comments`, the conversation). */
+  reviewComments?: number;
+  /** Commits in the PR. */
+  commits?: number;
+  /** Reviewers who were asked but haven't reviewed yet. */
+  requestedReviewers?: GitHubUser[];
+  milestone?: { number: number; title: string } | null;
+  authorAssociation?: AuthorAssociation;
+  /** "owner/repo" of the HEAD branch's repo — set when the PR comes from a
+   *  fork, which changes how much you trust its CI. */
+  headRepoFullName?: string | null;
+  reactions?: ReactionSummary;
 }
 export interface PrFile {
   filename: string;
@@ -331,6 +369,15 @@ export interface IssueInfo {
   comments: number;
   labels: PrLabel[];
   assignees: GitHubUser[];
+  /** The issue's milestone, so the detail rail can SHOW it (not just set it). */
+  milestone?: { number: number; title: string } | null;
+  closedAt?: string | null;
+  closedBy?: GitHubUser | null;
+  /** "completed" | "not_planned" | "reopened" — GitHub renders a closed issue
+   *  differently depending on WHY, and so must we (purple vs gray). */
+  stateReason?: string | null;
+  authorAssociation?: AuthorAssociation;
+  reactions?: ReactionSummary;
 }
 export interface ProjectInfo {
   /** GraphQL node id (ProjectV2) — the handle for item queries + mutations. */
@@ -355,12 +402,31 @@ export interface IssueComment {
   author: GitHubUser | null;
   body: string;
   createdAt: string;
+  /** Later than createdAt ⇒ the comment was edited after posting. */
+  updatedAt?: string;
+  authorAssociation?: AuthorAssociation;
+  reactions?: ReactionSummary;
 }
 export interface IssueDetail {
   issue: IssueInfo;
   comments: IssueComment[];
   assignees: string[];
 }
+/** One entry on the My Work page: something in this repo that involves YOU —
+ *  a review you were asked for, an item assigned to you, a PR you authored, or
+ *  a mention. The workday-first surface (docs/desktop-redesign.md). */
+export interface MyWorkItem {
+  kind: "review-requested" | "assigned" | "my-prs" | "mentions";
+  type: "issue" | "pr";
+  number: number;
+  title: string;
+  state: string;
+  draft: boolean;
+  updatedAt: string;
+  comments: number;
+  author: string | null;
+}
+
 /** A unified, read-only issue/PR snapshot from ANY repo — for viewing a
  *  cross-repo notification subject in-app rather than opening github.com. */
 export interface ExternalItemDetail {
@@ -405,16 +471,48 @@ export interface WorkflowStep {
   status: string;
   conclusion: string;
   number: number;
+  /** Step timing — the raw material for the per-step duration timeline. */
+  startedAt: string;
+  completedAt: string;
 }
 export interface WorkflowJob {
   id: number;
+  /** The run this job belongs to (deep-link key). */
+  runId: number;
+  runAttempt: number;
   name: string;
   status: string;
   conclusion: string;
   htmlUrl: string;
+  /** Queued time — `startedAt − createdAt` is the queue latency. */
+  createdAt: string;
   startedAt: string;
   completedAt: string;
   steps: WorkflowStep[];
+  /** WHERE it ran: the runner's name ("GitHub Actions 12") + group. */
+  runnerName: string;
+  runnerGroupName: string;
+  /** The requested runner labels ("ubuntu-latest", "self-hosted"…). */
+  labels: string[];
+  workflowName: string;
+  headBranch: string;
+}
+/** One increment of a job's log for the live-tail pipeline (see
+ *  main/github/logTail.ts for the append/reset/truncate semantics). */
+export interface LogDelta {
+  text: string;
+  totalLength: number;
+  reset: boolean;
+  truncated: boolean;
+}
+/** Server-side filters for the runs list — GitHub filters these at the API. */
+export interface ActionsRunsFilter {
+  workflowId?: number;
+  branch?: string;
+  actor?: string;
+  /** Status OR conclusion (GitHub treats the param as either). */
+  status?: string;
+  event?: string;
 }
 export interface WorkflowRunDetail {
   run: WorkflowRun;
@@ -487,6 +585,15 @@ export interface NotificationThread {
   updatedAt: string;
   unread: boolean;
   htmlUrl: string;
+  /** When you last read this thread (null = never). */
+  lastReadAt?: string | null;
+  /** The subject, parsed from subject.url — the key to deep-linking IN-APP
+   *  instead of bouncing to github.com. See `subjectRef()` in github/maps.ts. */
+  subjectKind?: "issue" | "pull" | "release" | "commit" | "discussion" | "other";
+  /** Issue/PR/release number, when the subject has one. */
+  subjectNumber?: number;
+  /** Commit sha, for Commit subjects. */
+  subjectSha?: string;
 }
 export interface NotificationActionResult {
   ok: boolean;
@@ -526,6 +633,62 @@ export interface OrgMember {
   login: string;
   avatarUrl: string | null;
   htmlUrl: string;
+}
+/** The full repo record behind an org-repo peek (GET /repos/{owner}/{repo}). */
+export interface OrgRepoDetail {
+  fullName: string;
+  description: string | null;
+  htmlUrl: string;
+  cloneUrl: string;
+  sshUrl: string;
+  defaultBranch: string;
+  openIssuesCount: number;
+  forksCount: number;
+  stargazersCount: number;
+  topics: string[];
+  license: string | null;
+  language: string | null;
+  private: boolean;
+  archived: boolean;
+  fork: boolean;
+  pushedAt: string;
+  createdAt: string;
+  homepage: string | null;
+}
+/** One entry when browsing a REMOTE repo in-app (no clone needed). */
+export interface GhRepoEntry {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  size?: number;
+}
+/** A remote repo file's text (or why it can't be shown inline). */
+export interface GhRepoFile {
+  path: string;
+  text: string;
+  /** Too large for an inline look (the contents API caps at 1MB anyway). */
+  truncated: boolean;
+  binary: boolean;
+  size: number;
+}
+/** A user profile for the member peek (GET /users/{login}). */
+export interface GhUserInfo {
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  bio: string | null;
+  company: string | null;
+  location: string | null;
+  blog: string | null;
+  htmlUrl: string;
+  followers: number;
+  following: number;
+  publicRepos: number;
+  createdAt: string;
+  /** "User" or "Organization" — an account page renders differently for each. */
+  type: string;
+  twitter: string | null;
+  email: string | null;
 }
 
 // ── Projects v2 (board) ──
@@ -593,6 +756,125 @@ export interface GistUpdate {
 }
 
 export type MergeMethod = "merge" | "squash" | "rebase";
+
+/** One branch of a remote repo (the Explore ref switcher). */
+export interface GhRepoBranch {
+  name: string;
+  sha: string;
+  protected: boolean;
+}
+
+/** Every blob path in a remote repo — the go-to-file index. */
+export interface GhRepoPaths {
+  paths: string[];
+  /** GitHub truncated the tree, or we capped it. Say so; never pretend. */
+  truncated: boolean;
+  /** How many blobs the tree actually had (before our cap). */
+  total: number;
+}
+
+/** One branch of a remote repo (the Explore ref switcher). */
+export interface GhRepoBranch {
+  name: string;
+  sha: string;
+  protected: boolean;
+}
+
+/** Every blob path in a remote repo — the go-to-file index. */
+export interface GhRepoPaths {
+  paths: string[];
+  /** GitHub truncated the tree, or we capped it. Say so; never pretend. */
+  truncated: boolean;
+  /** How many blobs the tree actually had (before our cap). */
+  total: number;
+}
+
+// ── Global GitHub search (Explore) ──
+
+/** One repository in a search result. */
+export interface SearchRepoItem {
+  id: number;
+  fullName: string;
+  owner: string;
+  ownerAvatarUrl: string | null;
+  description: string | null;
+  language: string | null;
+  stars: number;
+  forks: number;
+  openIssues: number;
+  updatedAt: string;
+  pushedAt: string;
+  private: boolean;
+  fork: boolean;
+  archived: boolean;
+  topics: string[];
+  license: string | null;
+  htmlUrl: string;
+  defaultBranch: string;
+}
+
+/** One person or organization in a search result. */
+export interface SearchUserItem {
+  login: string;
+  avatarUrl: string | null;
+  htmlUrl: string;
+  /** "User" or "Organization". */
+  type: string;
+}
+
+/** One code hit. GitHub's code search returns the FILE, plus optional
+ *  text-match fragments when the text-match media type is requested. */
+export interface SearchCodeItem {
+  name: string;
+  path: string;
+  repoFullName: string;
+  htmlUrl: string;
+  /** Matching line fragments, when GitHub returned them. */
+  fragments: string[];
+}
+
+/** One page of results, plus the honesty the UI needs to render it. */
+export interface SearchPage<T> {
+  items: T[];
+  /** What GitHub says matched — can exceed what's reachable (1000 cap). */
+  totalCount: number;
+  /** GitHub gave up early and the results are partial. */
+  incomplete: boolean;
+  /** True when another page exists AND is within the 1000-result ceiling. */
+  hasMore: boolean;
+  /** Set instead of items when the local rate budget is spent. */
+  limited?: { retryInMs: number };
+}
+
+export type SearchSort = "best" | "stars" | "updated";
+
+/** One repository copy on this machine (Settings → Repositories manager). */
+export interface LocalCopy {
+  /** Absolute repo root. */
+  root: string;
+  /** Folder name — the display label. */
+  name: string;
+  /** "owner/repo" from the origin remote, when it's a GitHub remote. */
+  origin?: string;
+  /** Sits inside the configured clone folder (so GitStudio may delete it). */
+  managed: boolean;
+  /** Present in the recent-repositories list. */
+  recent: boolean;
+  /** The repo currently open in the app. */
+  current: boolean;
+  /** The folder is gone (a recent someone deleted outside GitStudio). */
+  missing: boolean;
+}
+
+/** The app-wide preferences (Settings → Repositories card). */
+export interface AppSettingsView {
+  /** Effective absolute default clone parent. */
+  cloneDir: string;
+  /** "~/GitStudio"-style rendering for UI copy. */
+  cloneDirDisplay: string;
+  cloneDirIsDefault: boolean;
+  askWhereEveryTime: boolean;
+}
 
 /** Connection state for the GitHub-backed views. */
 export interface GitHubStatus {
@@ -738,6 +1020,8 @@ export interface CloneResult {
   /** Absolute path of the cloned repo on success. */
   root?: string;
   message?: string;
+  /** Machine-readable failure mode (the dialog focuses the right field). */
+  code?: "dest-exists" | "bad-name";
 }
 
 /** A commit in a PR's Commits tab. */
@@ -771,13 +1055,31 @@ export interface CheckRun {
 /** A GitHub Actions workflow run for the Actions tab. */
 export interface WorkflowRun {
   id: number;
+  /** The user-facing "#42" (NOT the internal id). */
+  runNumber: number;
+  runAttempt: number;
+  /** The workflow's name ("Desktop CI"). */
   name: string;
+  /** The run's own title (commit subject / PR title). */
+  displayTitle: string;
   status: string;
   conclusion: string;
   branch: string;
+  headSha: string;
   event: string;
   createdAt: string;
+  updatedAt: string;
+  /** When execution actually began (createdAt→this = queue time). */
+  runStartedAt: string;
   htmlUrl: string;
+  /** WHO: the run's actor, and the re-runner when different. */
+  actor: GitHubUser | null;
+  triggeringActor: GitHubUser | null;
+  workflowId: number;
+  workflowPath: string;
+  headCommitMessage: string;
+  headCommitAuthor: string;
+  pullRequests: { number: number }[];
 }
 
 // ── Interactive rebase (the Rebase view) ────────────────────────────────────
@@ -902,6 +1204,9 @@ export interface IpcChannels {
   "branch:push": [{ name: string }, CommitActionResult];
   // ── Branch management ──
   "branches:list": [void, BranchInfo[]];
+  /** Recent commits reachable from ONE ref (branch / remote / tag / stash sha) —
+   *  feeds the peek cards so any ref is browsable without loading the graph. */
+  "ref:log": [{ ref: string; maxCount?: number }, CompareCommit[]];
   "branch:create": [{ name: string; checkout?: boolean }, CommitActionResult];
   "branch:delete": [{ name: string; force?: boolean }, CommitActionResult];
   /** Fast-forward a local branch straight from its upstream WITHOUT checking
@@ -924,6 +1229,46 @@ export interface IpcChannels {
   // Settings: git identity + local SSH keys.
   "git:identity": [void, GitIdentity];
   "git:setIdentity": [GitIdentity, CommitActionResult];
+  /** Write text to the system clipboard via the MAIN process. The renderer's
+   *  navigator.clipboard needs focus + a user gesture; this path never does —
+   *  it's the fallback that makes auto-copies (device-flow code) reliable. */
+  "clipboard:write": [string, void];
+  // ── App settings (Settings → Repositories) ──
+  "settings:get": [void, AppSettingsView];
+  /** Patch settings; `cloneDir: null` resets to the built-in default. */
+  "settings:update": [{ cloneDir?: string | null; askWhereEveryTime?: boolean }, AppSettingsView];
+  /** Native picker for the default clone folder; persists on choice. */
+  "settings:pickCloneDir": [void, AppSettingsView | undefined];
+  // ── Accounts (Explore profile pages) ──
+  "users:repos": [string, OrgRepo[]];
+  "users:orgs": [string, OrgInfo[]];
+  // ── Remote repository browsing (Explore entity pages) ──
+  /** Branches of any repo — the Explore ref switcher. */
+  "ghrepo:branches": [string, GhRepoBranch[]];
+  /** Every blob path at a ref, for go-to-file. */
+  "ghrepo:paths": [{ fullName: string; ref?: string }, GhRepoPaths];
+  // ── Global GitHub search (Explore) ──
+  "search:repos": [{ query: string; sort?: SearchSort; page?: number }, SearchPage<SearchRepoItem>];
+  "search:users": [{ query: string; kind: "users" | "orgs"; page?: number }, SearchPage<SearchUserItem>];
+  "search:code": [{ query: string; page?: number }, SearchPage<SearchCodeItem>];
+  // ── Local repository copies (Settings → Repositories manager) ──
+  /** Every clone GitStudio knows about: the clone folder ∪ recents. */
+  "repos:local": [void, LocalCopy[]];
+  /** Reveal a root in Finder/Explorer. */
+  "repos:reveal": [string, boolean];
+  /** Forget a root from the recent list (never touches disk). */
+  "repos:removeRecent": [string, LocalCopy[]];
+  /** Move a managed clone to the trash. Refuses anything outside the clone
+   *  folder, and the repo that's currently open. */
+  "repos:trash": [string, CommitActionResult];
+  // ── App info + updates ──
+  "app:info": [void, { version: string; platform: string }];
+  /** Poll the release feed now (the Settings "Check for updates" button). */
+  "update:check": [void, UpdateCheckResult];
+  /** Start the user-confirmed download; completion arrives as update:ready. */
+  "update:download": [void, { ok: boolean; message?: string }];
+  /** Apply a ready update: restart into it, or open the macOS installer. */
+  "update:install": [void, { ok: boolean; message?: string }];
   "ssh:keys": [void, SshKey[]];
   "pr:list": [void, PullRequest[]];
   "pr:detail": [number, PrDetail | undefined];
@@ -943,7 +1288,7 @@ export interface IpcChannels {
   "pr:branches": [void, BranchRef[]];
   "pr:reviewers": [void, RepoCollaborator[]];
   // Actions control.
-  "actions:runs": [void, WorkflowRun[]];
+  "actions:runs": [ActionsRunsFilter | undefined, WorkflowRun[]];
   "actions:runDetail": [number, WorkflowRunDetail | undefined];
   "actions:workflows": [void, WorkflowInfo[]];
   "actions:dispatchInputs": [number, WorkflowDispatchInput[]];
@@ -961,6 +1306,9 @@ export interface IpcChannels {
   "issue:labels": [void, RepoLabel[]];
   "issue:setLabels": [{ number: number; labels: string[] }, CommitActionResult];
   "issue:setAssignees": [{ number: number; assignees: string[] }, CommitActionResult];
+  /** Everything in the current repo that involves the signed-in user (search
+   *  API, @me qualifiers): review requests, assignments, own PRs, mentions. */
+  "github:myWork": [void, MyWorkItem[]];
   // Read-only fetch of an issue/PR from ANY repo (used to open notifications for
   // OTHER repositories in-app instead of bouncing to github.com).
   "github:externalItem": [
@@ -979,6 +1327,9 @@ export interface IpcChannels {
   "release:create": [ReleaseInput, CommitActionResult];
   "release:update": [ReleaseInput, CommitActionResult];
   "release:delete": [number, CommitActionResult];
+  /** Pick local files (native dialog in MAIN) and upload them as assets. */
+  "release:uploadAssets": [{ id: number }, CommitActionResult];
+  "release:deleteAsset": [number, CommitActionResult];
   // Notifications.
   "notifications:list": [{ all?: boolean; participating?: boolean }, NotificationThread[]];
   /** Unread count for the top-bar badge. AMBIENT: never unlocks the stored
@@ -992,6 +1343,32 @@ export interface IpcChannels {
   "orgs:repos": [string, OrgRepo[]];
   "orgs:teams": [string, OrgTeam[]];
   "orgs:members": [string, OrgMember[]];
+  /** Full record for one repo ("owner/repo") — the org-repo peek's body. */
+  "orgs:repoDetail": [string, OrgRepoDetail];
+  /** A team's members — the team peek's drill-in list. */
+  "orgs:teamMembers": [{ org: string; slug: string }, OrgMember[]];
+  /** A user's public profile — the member peek's body. */
+  "github:userInfo": [string, GhUserInfo];
+  // ── Remote repo browsing (look inside ANY GitHub repo without cloning) ──
+  /** `ref` is optional everywhere: omitted means the default branch, which is
+   *  what every existing caller already meant. */
+  "ghrepo:tree": [{ fullName: string; path: string; ref?: string }, GhRepoEntry[]];
+  "ghrepo:file": [{ fullName: string; path: string; ref?: string }, GhRepoFile];
+  "ghrepo:readme": [{ fullName: string; ref?: string } | string, { name: string; text: string } | undefined];
+  /** Open "owner/repo" as a NORMAL repo: reuse any existing local clone, else
+   *  clone into `dest` (or the configured default folder), then open. Success
+   *  flips the whole app to that repo via repo:changed. `code` makes failure
+   *  modes machine-readable — no more matching on message text. */
+  "ghrepo:open": [
+    { fullName: string; dest?: string; name?: string },
+    {
+      ok: boolean;
+      root?: string;
+      cloned?: boolean;
+      message?: string;
+      code?: "collision" | "clone-failed" | "open-failed" | "bad-name";
+    },
+  ];
   // Gists.
   "gist:list": [void, GistInfo[]];
   "gist:detail": [string, GistInfo | undefined];
@@ -1004,7 +1381,7 @@ export interface IpcChannels {
   "terminal:resize": [{ id: string; cols: number; rows: number }, void];
   "terminal:kill": [{ id: string }, void];
   // Clone / browse repos. Clone progress streams via the clone:progress event.
-  "clone:pickDir": [void, string | undefined];
+  "clone:pickDir": [{ defaultPath?: string } | void, string | undefined];
   "clone:start": [CloneRequest, CloneResult];
   "github:repos": [{ search?: string } | void, GhRepoBrief[]];
   // ── AI / Agent / MCP (optional, off until a model connection is configured) ──
@@ -1095,7 +1472,10 @@ export interface IpcChannels {
   "label:delete": [string, CommitActionResult];
   // ── Actions depth: logs + artifacts + secrets/variables ──
   "actions:jobLog": [{ jobId: number }, string];
-  "actions:runLog": [{ runId: number }, string];
+  /** Incremental tail: refetch + slice from `offset` (see LogDelta). */
+  "actions:jobLogChunk": [{ jobId: number; offset: number }, LogDelta];
+  /** Save one job's full log to ~/Downloads. */
+  "actions:saveLog": [{ jobId: number; name: string }, CommitActionResult];
   "actions:artifacts": [number, ArtifactInfo[]];
   "actions:downloadArtifact": [{ id: number; name: string }, CommitActionResult];
   "actions:secrets": [void, RepoSecretInfo[]];
@@ -1118,6 +1498,9 @@ export type IpcResponse<C extends IpcChannel> = IpcChannels[C][1];
 export interface IpcEvents {
   /** The active repo changed (opened/closed) — the renderer reloads. */
   "repo:changed": RepoInfo | undefined;
+  /** The recent-repositories list changed (forgotten or trashed elsewhere in
+   *  the app) — the repo switcher and the manager both re-render off this. */
+  "repo:recentChanged": RepoInfo[];
   /**
    * Something changed on disk in the open repo — a file edited outside the app,
    * or a git command run in another terminal (issue #17). Already debounced in
@@ -1148,6 +1531,39 @@ export interface IpcEvents {
   "ai:agentEvent": AgentEventWire;
   /** The agent wants the user to approve a write/destructive action before it runs. */
   "ai:confirmRequest": AgentConfirmRequest;
+  /** A newer app version exists — the renderer asks the user before anything
+   *  downloads (background polls announce a version at most once per session). */
+  "update:available": UpdateAvailable;
+  /** Download progress for a user-confirmed update, in whole percent. */
+  "update:progress": { percent: number };
+  /** The confirmed update is downloaded and ready to apply. */
+  "update:ready": UpdateReady;
+}
+
+// ── App updates (poll → confirm → pull → apply) ───────────────────────────────
+
+export interface UpdateAvailable {
+  /** The newer version waiting on the release feed. */
+  version: string;
+  /** The version currently running. */
+  current: string;
+}
+export interface UpdateReady {
+  version: string;
+  /** How update:install applies it: "restart" relaunches into the new version
+   *  (electron-updater); "installer" opens the downloaded macOS DMG. */
+  kind: "restart" | "installer";
+  /** For "installer": where the download landed (~/Downloads). */
+  path?: string;
+}
+export interface UpdateCheckResult {
+  status: "uptodate" | "available" | "downloading" | "ready" | "disabled" | "error";
+  /** The version currently running. */
+  current: string;
+  /** For available/downloading/ready: the newer version in question. */
+  version?: string;
+  /** For error/disabled: why. */
+  message?: string;
 }
 
 export type IpcEvent = keyof IpcEvents;

@@ -9,6 +9,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -17,7 +18,7 @@ import {
 } from "electron";
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from "electron";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { join } from "node:path";
+import { join, basename, extname } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { RepoStore } from "./repoStore";
 import { GitBridge } from "./gitBridge";
@@ -26,21 +27,29 @@ import { RebaseBridge } from "./rebaseBridge";
 import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
 import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
+import { AppSettings } from "./appSettings";
+import { LocalRepoScanner, samePath, trashRefusalResolved } from "./localRepos";
+import { openGitHubRepo, managedReposDir } from "./ghRepoOpen";
 import { initAutoUpdate } from "./autoUpdate";
+import type { UpdateManager } from "./autoUpdate";
 import { ErrorReporter } from "./errorReporter";
 import { isExpectedError } from "./expectedError";
 import { RepoWatcher } from "./repoWatcher";
 import * as issuesApi from "./github/issues";
+import * as myWorkApi from "./github/myWork";
 import * as prsApi from "./github/prs";
 import * as actionsApi from "./github/actions";
 import * as releasesApi from "./github/releases";
 import * as notificationsApi from "./github/notifications";
 import * as orgsApi from "./github/orgs";
+import * as repoBrowseApi from "./github/repoBrowse";
+import * as searchApi from "./github/search";
 import * as projectsApi from "./github/projects";
 import * as gistsApi from "./github/gists";
 import type {
   CommitActionResult,
   IpcChannel,
+  LocalCopy,
   IpcEvents,
   IpcRequest,
   IpcResponse,
@@ -53,7 +62,11 @@ import type {
 app.setName("GitStudio");
 
 let mainWindow: BrowserWindow | undefined;
+/** The poll→confirm→pull update manager; set once at startup. */
+let updates: UpdateManager | undefined;
 let repos: RepoStore;
+let appSettings: AppSettings;
+const localRepos = new LocalRepoScanner();
 let bridge: GitBridge;
 let github: GitHubBridge;
 let rebase: RebaseBridge;
@@ -129,8 +142,12 @@ function hardenWebContents(contents: WebContents): void {
     }
   });
   contents.on("will-attach-webview", (event) => event.preventDefault());
-  contents.session.setPermissionRequestHandler((_wc, _permission, callback) =>
-    callback(false),
+  // Deny every permission request EXCEPT plain clipboard writes — the blanket
+  // deny made navigator.clipboard.writeText reject, so every Copy button
+  // (including the GitHub device-flow confirmation code) errored instead of
+  // copying. Writes only; clipboard READS stay denied.
+  contents.session.setPermissionRequestHandler((_wc, permission, callback) =>
+    callback(permission === "clipboard-sanitized-write"),
   );
 }
 
@@ -412,6 +429,7 @@ function actionLabel(channel: string): string {
     "sync:push": "Push",
     "branch:push": "Push branch",
     "branches:list": "List branches",
+    "ref:log": "Read ref history",
     "branch:create": "Create branch",
     "branch:delete": "Delete branch",
     "branch:pullFf": "Pull branch",
@@ -421,6 +439,10 @@ function actionLabel(channel: string): string {
     "repo:file": "Read file",
     "repo:open": "Open repository",
     "repo:openPath": "Open repository",
+    "repos:local": "List local repositories",
+    "repos:reveal": "Reveal repository",
+    "repos:removeRecent": "Forget repository",
+    "repos:trash": "Delete clone",
     "clone:start": "Clone",
     "pr:checkout": "Checkout PR",
     "git:identity": "Read identity",
@@ -473,6 +495,53 @@ function registerIpc(): void {
   handle("repo:open", () => openRepoDialog());
   handle("repo:openPath", (path) => openRepoPath(path));
   handle("repo:recent", async () => repos.recentRepos());
+  handle("search:repos", (req) => github.withClient((c) => searchApi.searchRepos(c, req)));
+  handle("search:users", (req) => github.withClient((c) => searchApi.searchUsers(c, req)));
+  handle("search:code", (req) => github.withClient((c) => searchApi.searchCode(c, req)));
+  handle("repos:local", () => scanLocalCopies());
+  handle("repos:reveal", async (root) => {
+    // Only reveal something the app already lists. `showItemInFolder` on an
+    // arbitrary renderer-supplied string is the one shell call here with no
+    // natural bound, and every real caller passes a row from this same scan.
+    const known = (await scanLocalCopies()).some((c) => samePath(c.root, root));
+    if (!known) return false;
+    shell.showItemInFolder(root);
+    return true;
+  });
+  handle("repos:removeRecent", async (root) => {
+    if (repos.removeRecent(root)) {
+      void saveState();
+      localRepos.invalidate();
+      buildMenu(); // the Recent Repositories submenu is built from this list
+      send("repo:recentChanged", repos.recentRepos());
+    }
+    return scanLocalCopies();
+  });
+  handle("repos:trash", async (root) => {
+    // Deleting someone's working copy is the most destructive thing this app
+    // can do, so the rule lives in ONE pure function and is enforced HERE —
+    // never in the renderer, which can't be trusted to be the only caller.
+    const refusal = await trashRefusalResolved(root, {
+      cloneDir: appSettings.effectiveCloneDir(),
+      current: repos.current()?.root,
+    });
+    if (refusal) return { ok: false, changed: false, expected: true, message: refusal };
+    try {
+      await shell.trashItem(root);
+    } catch (e) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: e instanceof Error ? e.message : "Couldn't move that folder to the trash.",
+      };
+    }
+    if (repos.removeRecent(root)) void saveState();
+    localRepos.invalidate();
+    buildMenu();
+    send("repo:recentChanged", repos.recentRepos());
+    return { ok: true, changed: true };
+  });
   handle("repo:current", async () => repos.current());
   handle("repo:close", async () => {
     closeRepo();
@@ -530,6 +599,7 @@ function registerIpc(): void {
 
   // Branch management.
   handle("branches:list", () => bridge.branchesList());
+  handle("ref:log", (req) => bridge.refLog(req));
   handle("branch:create", (req) => bridge.branchCreate(req));
   handle("branch:delete", (req) => bridge.branchDelete(req));
   handle("branch:pullFf", (req) => bridge.branchPullFf(req.name));
@@ -552,7 +622,7 @@ function registerIpc(): void {
   handle("terminal:kill", async (req) => terminal.kill(req.id));
 
   // Clone / browse repos.
-  handle("clone:pickDir", () => pickCloneDir());
+  handle("clone:pickDir", (req) => pickCloneDir(req?.defaultPath ?? appSettings.effectiveCloneDir()));
   handle("clone:start", (req) => startClone(req, (p) => send("clone:progress", p)));
   handle("github:repos", (req) =>
     github.withClient((c) => listGhRepos(c, req?.search)),
@@ -568,6 +638,34 @@ function registerIpc(): void {
   // Settings: git identity + local SSH keys.
   handle("git:identity", () => bridge.gitIdentity());
   handle("git:setIdentity", (req) => bridge.setGitIdentity(req));
+  handle("clipboard:write", async (text) => {
+    clipboard.writeText(typeof text === "string" ? text : String(text ?? ""));
+  });
+
+  // App info + updates (poll → confirm → pull → apply).
+  handle("app:info", async () => ({ version: app.getVersion(), platform: process.platform }));
+  handle("settings:get", () => Promise.resolve(appSettings.view()));
+  handle("settings:update", (patch) => appSettings.update(patch));
+  handle("settings:pickCloneDir", async () => {
+    const r = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+      title: "Choose the default clone folder",
+      defaultPath: appSettings.effectiveCloneDir(),
+    });
+    if (r.canceled || !r.filePaths[0]) return undefined;
+    return appSettings.update({ cloneDir: r.filePaths[0] });
+  });
+  handle("update:check", async () =>
+    updates
+      ? updates.check(true)
+      : { status: "disabled" as const, current: app.getVersion(), message: "Updater not ready." },
+  );
+  handle("update:download", async () =>
+    updates ? updates.download() : { ok: false, message: "Updater not ready." },
+  );
+  handle("update:install", async () =>
+    updates ? updates.install() : { ok: false, message: "Updater not ready." },
+  );
   handle("ssh:keys", () => bridge.sshKeys());
   handle("pr:list", () => github.prList());
   handle("pr:detail", (n) => github.prDetail(n));
@@ -577,7 +675,7 @@ function registerIpc(): void {
   handle("pr:conversation", (n) => github.prConversation(n));
   handle("pr:checks", (n) => github.prChecks(n));
   handle("pr:approve", (n) => github.prApprove(n));
-  handle("actions:runs", () => github.actionsRuns());
+  handle("actions:runs", (req) => github.withRepo((c, o, r) => actionsApi.listRuns(c, o, r, req)));
   handle("issue:list", (req) => github.withRepo((c, o, r) => issuesApi.listIssues(c, o, r, req?.state ?? "open")));
 
   // ── Section modules: full CRUD for issues / PRs / actions / releases /
@@ -586,6 +684,7 @@ function registerIpc(): void {
   handle("issue:detail", (n) => github.withRepo((c, o, r) => issuesApi.getIssueDetail(c, o, r, n)));
   // Cross-repo read-only item view (notifications for OTHER repos open in-app).
   handle("github:externalItem", (req) => github.externalItem(req));
+  handle("github:myWork", () => github.withRepo((c, o, r) => myWorkApi.myWork(c, o, r)));
   handle("issue:create", (req) => github.withRepo((c, o, r) => issuesApi.createIssue(c, o, r, req)));
   handle("issue:comment", (req) => github.withRepo((c, o, r) => issuesApi.commentIssue(c, o, r, req)));
   handle("issue:setState", (req) => github.withRepo((c, o, r) => issuesApi.setIssueState(c, o, r, req)));
@@ -617,6 +716,30 @@ function registerIpc(): void {
   handle("release:create", (input) => github.withRepo((c, o, r) => releasesApi.createRelease(c, o, r, input)));
   handle("release:update", (input) => github.withRepo((c, o, r) => releasesApi.updateRelease(c, o, r, input)));
   handle("release:delete", (id) => github.withRepo((c, o, r) => releasesApi.deleteRelease(c, o, r, id)));
+  handle("release:uploadAssets", async (req) => {
+    // The file dialog lives HERE (main) — the renderer has no filesystem.
+    const picked = await dialog.showOpenDialog({
+      title: "Attach assets to the release",
+      buttonLabel: "Upload",
+      properties: ["openFile", "multiSelections"],
+    });
+    if (picked.canceled || picked.filePaths.length === 0) {
+      return { ok: false, changed: false, message: "No files selected.", expected: true };
+    }
+    return github.withRepo(async (c, o, r) => {
+      for (const fp of picked.filePaths) {
+        const name = basename(fp);
+        const data = await readFile(fp);
+        const res = await releasesApi.uploadAssetData(c, o, r, req.id, name, data, assetContentType(name));
+        if (!res.ok) {
+          return { ...res, message: `${name}: ${res.message ?? "upload failed"}` };
+        }
+      }
+      const n = picked.filePaths.length;
+      return { ok: true, changed: false, message: `Uploaded ${n} asset${n === 1 ? "" : "s"}.` };
+    });
+  });
+  handle("release:deleteAsset", (id) => github.withRepo((c, o, r) => releasesApi.deleteAsset(c, o, r, id)));
   // Notifications (user-level).
   handle("notifications:list", (opts) => github.withClient((c) => notificationsApi.listNotifications(c, opts)));
   // Ambient: polls on launch, so it must NOT unlock the token (that prompted for
@@ -634,6 +757,40 @@ function registerIpc(): void {
   handle("orgs:repos", (org) => github.withClient((c) => orgsApi.listOrgRepos(c, org)));
   handle("orgs:teams", (org) => github.withClient((c) => orgsApi.listOrgTeams(c, org)));
   handle("orgs:members", (org) => github.withClient((c) => orgsApi.listOrgMembers(c, org)));
+  handle("orgs:repoDetail", (fullName) => github.withClient((c) => orgsApi.getOrgRepoDetail(c, fullName)));
+  handle("ghrepo:open", (req) =>
+    openGitHubRepo(
+      req.fullName,
+      repos,
+      (p) => send("clone:progress", p),
+      appSettings.effectiveCloneDir(),
+      req.dest,
+      req.name,
+    ),
+  );
+  handle("ghrepo:tree", (req) =>
+    github.withClient((c) => repoBrowseApi.listRepoDir(c, req.fullName, req.path, req.ref)),
+  );
+  handle("ghrepo:file", (req) =>
+    github.withClient((c) => repoBrowseApi.readRepoFile(c, req.fullName, req.path, req.ref)),
+  );
+  handle("ghrepo:readme", (req) =>
+    github.withClient((c) =>
+      typeof req === "string"
+        ? repoBrowseApi.readRepoReadme(c, req)
+        : repoBrowseApi.readRepoReadme(c, req.fullName, req.ref),
+    ),
+  );
+  handle("ghrepo:branches", (fullName) =>
+    github.withClient((c) => repoBrowseApi.listRepoBranches(c, fullName)),
+  );
+  handle("ghrepo:paths", (req) =>
+    github.withClient((c) => repoBrowseApi.listRepoPaths(c, req.fullName, req.ref)),
+  );
+  handle("orgs:teamMembers", (req) => github.withClient((c) => orgsApi.listTeamMembers(c, req.org, req.slug)));
+  handle("github:userInfo", (login) => github.withClient((c) => orgsApi.getUserInfo(c, login)));
+  handle("users:repos", (login) => github.withClient((c) => orgsApi.listUserRepos(c, login)));
+  handle("users:orgs", (login) => github.withClient((c) => orgsApi.listUserOrgs(c, login)));
   // Projects v2.
   handle("project:list", () => github.withRepo((c, o, r) => projectsApi.listProjects(c, o, r)));
   handle("project:board", (id) => github.withRepo((c, o, r) => projectsApi.getProjectBoard(c, o, r, id)));
@@ -718,7 +875,8 @@ function registerIpc(): void {
   handle("label:update", (req) => github.withRepo((c, o, r) => issuesApi.updateLabel(c, o, r, req)));
   handle("label:delete", (name) => github.withRepo((c, o, r) => issuesApi.deleteLabel(c, o, r, name)));
   handle("actions:jobLog", (req) => github.withRepo((c, o, r) => actionsApi.jobLog(c, o, r, req)));
-  handle("actions:runLog", (req) => github.withRepo((c, o, r) => actionsApi.runLog(c, o, r, req)));
+  handle("actions:jobLogChunk", (req) => github.withRepo((c, o, r) => actionsApi.jobLogChunk(c, o, r, req)));
+  handle("actions:saveLog", (req) => github.withRepo((c, o, r) => actionsApi.saveLog(c, o, r, req)));
   handle("actions:artifacts", (id) => github.withRepo((c, o, r) => actionsApi.artifacts(c, o, r, id)));
   handle("actions:downloadArtifact", (req) => github.withRepo((c, o, r) => actionsApi.downloadArtifact(c, o, r, req)));
   handle("actions:secrets", () => github.withRepo((c, o, r) => actionsApi.secrets(c, o, r)));
@@ -768,6 +926,10 @@ async function boot(): Promise<void> {
 
   const state = await loadState();
   repos = new RepoStore(state.recent);
+  appSettings = await AppSettings.load(app.getPath("userData"), {
+    defaultCloneDir: managedReposDir(),
+    home: app.getPath("home"),
+  });
   bridge = new GitBridge(repos);
   github = new GitHubBridge(repos);
   rebase = new RebaseBridge(repos);
@@ -809,7 +971,7 @@ async function boot(): Promise<void> {
   // tile before the renderer reports its (possibly overridden) theme.
   setDockIcon(nativeTheme.shouldUseDarkColors ? "dark" : "light");
   await createWindow();
-  initAutoUpdate({ isDev: !app.isPackaged });
+  updates = initAutoUpdate({ isDev: !app.isPackaged, send });
 
   // Re-open the last repo, if any, so the window lands on real history.
   if (state.current) {
@@ -854,3 +1016,25 @@ app.on("before-quit", () => {
   ai?.dispose();
   repos?.dispose();
 });
+
+/** MIME type for a release-asset upload, from the file extension. GitHub only
+ *  uses it for the download response's Content-Type — octet-stream is fine. */
+function assetContentType(name: string): string {
+  switch (extname(name).toLowerCase()) {
+    case ".dmg": return "application/x-apple-diskimage";
+    case ".zip": case ".vsix": case ".nupkg": return "application/zip";
+    case ".gz": case ".tgz": return "application/gzip";
+    case ".txt": case ".md": return "text/plain";
+    case ".json": return "application/json";
+    default: return "application/octet-stream";
+  }
+}
+
+/** The Settings → Repositories manager's list: the clone folder ∪ recents. */
+function scanLocalCopies(): Promise<LocalCopy[]> {
+  return localRepos.scan({
+    cloneDir: appSettings.effectiveCloneDir(),
+    recents: repos.recentRepos().map((r) => r.root),
+    current: repos.current()?.root,
+  });
+}

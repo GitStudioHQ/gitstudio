@@ -2,6 +2,7 @@
 // including the per-section view modules under ./views. Pure functions (plus a
 // clipboard helper that toasts); no App state, so any module can import them.
 
+import { host } from "./bridge";
 import { toast } from "./dialogs";
 
 // ── tiny DOM helpers ─────────────────────────────────────────────────────────
@@ -284,10 +285,37 @@ export function labelChip(name: string, hexColor: string): HTMLElement {
 
 /** A small trailing-stat bit: an optional icon + a number/label (comments,
  *  files, +/- lines). Pass an empty icon to render text-only (e.g. "+612"). */
-export function statBit(icon: string, text: string | number, cls = ""): HTMLElement {
+export function statBit(icon: string, text: string | number, cls = "", label?: string): HTMLElement {
   const s = el("span", `gh-stat ${cls}`.trim());
   if (icon) s.appendChild(glyph(icon));
-  s.appendChild(span(String(text)));
+  s.appendChild(span(typeof text === "number" ? text.toLocaleString() : String(text)));
+  // A bare "3" next to an icon is a guess; the tooltip names what it counts.
+  const known: Record<string, string> = { comment: "comments", file: "files", "cloud-download": "downloads" };
+  const title = label ?? known[icon];
+  if (title) {
+    s.title = typeof text === "number" ? `${text.toLocaleString()} ${title}` : title;
+  }
+  return s;
+}
+
+/** A clickable fragment INSIDE a row's meta line (branch, author, repo). Rows
+ *  are click targets themselves, so this stops propagation and stays a span. */
+export function subLink(text: string, title: string, onClick: () => void): HTMLElement {
+  const s = el("span", "gh-sub-link");
+  s.textContent = text;
+  s.title = title;
+  s.setAttribute("role", "button");
+  s.tabIndex = 0;
+  s.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onClick();
+  });
+  s.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.stopPropagation();
+      onClick();
+    }
+  });
   return s;
 }
 
@@ -296,6 +324,14 @@ export function statePill(label: string, kind: string): HTMLElement {
   const p = el("span", `gh-state-pill gh-state-${kind}`);
   p.append(glyph(stateIconName(kind)), span(label));
   return p;
+}
+
+/** The state kind for an issue: closed-as-not-planned is its OWN state, not a
+ *  shade of closed — GitHub renders it gray, and so must we. `stateReason`
+ *  comes straight off the wire type. */
+export function issueStateKind(state: string, stateReason?: string | null): string {
+  if (state !== "closed") return "open";
+  return stateReason === "not_planned" ? "not-planned" : "closed";
 }
 
 /** A colored leading state icon for a list row (open=green, closed=red, …). */
@@ -310,6 +346,9 @@ export function stateIconName(kind: string): string {
   switch (kind) {
     case "merged": return "git-merge";
     case "closed": return "issue-closed";
+    // GitHub distinguishes closed-as-completed from closed-as-not-planned:
+    // a purple check vs a gray "skip" circle. Same word, different outcome.
+    case "not-planned": return "circle-slash";
     case "draft": return "git-pull-request-draft";
     case "open-pr": return "git-pull-request";
     case "latest": return "verified-filled";
@@ -328,6 +367,10 @@ export interface GhRowOpts {
   title: string;
   titleSuffix?: HTMLElement[];
   meta?: string;
+  /** LIVE meta: segments joined with " · " — strings render muted, elements
+   *  (e.g. a clickable branch/author/repo) render as handed. Takes precedence
+   *  over `meta`; this is what turned ~40 inert row-meta strings into links. */
+  metaSegments?: Array<string | HTMLElement>;
   /** Tooltip for the meta line (e.g. an absolute date behind a relative time). */
   metaTitle?: string;
   chips?: HTMLElement[];
@@ -350,7 +393,16 @@ export function ghRow(o: GhRowOpts): HTMLElement {
   head.appendChild(title);
   for (const s of o.titleSuffix ?? []) head.appendChild(s);
   body.appendChild(head);
-  if (o.meta) {
+  if (o.metaSegments?.length) {
+    const sub = el("div", "gh-row-sub");
+    o.metaSegments.forEach((seg, i) => {
+      if (i > 0) sub.appendChild(span(" · ", "gh-sub-sep"));
+      if (typeof seg === "string") sub.appendChild(span(seg));
+      else sub.appendChild(seg);
+    });
+    if (o.metaTitle) sub.title = o.metaTitle;
+    body.appendChild(sub);
+  } else if (o.meta) {
     const sub = el("div", "gh-row-sub");
     sub.textContent = o.meta;
     if (o.metaTitle) sub.title = o.metaTitle;
@@ -446,14 +498,24 @@ export function settingsField(
   return { row, input };
 }
 
-/** Copy text to the clipboard with toast feedback. */
+/** Copy text to the clipboard with toast feedback.
+ *
+ *  navigator.clipboard.writeText rejects without focus or a user gesture (the
+ *  device-flow AUTO-copy has no gesture), and used to reject on permission too
+ *  — so Copy buttons "hard-errored". The main-process clipboard has none of
+ *  those constraints; fall back to it over IPC before declaring failure. */
 export async function copyText(text: string, successMsg = "Copied."): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
-    toast(successMsg, "success");
   } catch {
-    toast("Couldn't copy to the clipboard.", "error");
+    try {
+      await host.invoke("clipboard:write", text);
+    } catch {
+      toast("Couldn't copy to the clipboard.", "error");
+      return;
+    }
   }
+  toast(successMsg, "success");
 }
 
 /** Clean a user-facing message from an error / rejection (unwraps the IPC prefix). */
@@ -500,6 +562,11 @@ export function condenseGitOutput(text: string): string {
  */
 export function isBenignError(message: string, source?: string): boolean {
   const m = message || "";
+  // Errors from Monaco's blob-wrapped worker reach window.onerror MASKED by
+  // cross-origin rules as a bare "Script error." — zero information, nothing
+  // actionable, yet it toasted "Something went wrong" over every diff open.
+  // The unmasked originals are the known-benign worker noise matched below.
+  if (/^Script error\.?$/i.test(m.trim())) return true;
   if (/Missing requestHandler or method/i.test(m)) return true;
   if (/ResizeObserver loop/i.test(m)) return true;
   if (/Canceled|Canceled: Canceled/i.test(m)) return true;

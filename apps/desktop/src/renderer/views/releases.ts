@@ -1,39 +1,57 @@
-// GitHub Releases — the section view. A two-pane (list + detail) surface mirroring
-// the PR / Issue views: the left pane toggles between Releases and raw git Tags;
-// the right pane shows a release's rendered notes, assets, tag/target/dates, and
-// Edit / Delete / Open actions. Full CRUD: New release, Edit, Delete (confirmed),
-// and "cut a release from a tag" by clicking a tag row.
+// GitHub Releases — the section view, on the section-page system
+// (docs/desktop-redesign.md): a full-width list (Releases | Tags segment) whose
+// release rows navigate to a full-page detail (routed via `target.number` = the
+// release id) with rendered notes + assets in the content column and the
+// release's facts in the rail. Tags open a lightweight peek (commit info +
+// draft-a-release), matching how refs peek everywhere else in the app.
 //
-// The module is self-contained per the section contract: it gates first, renders
-// into the handed `wrap`, and re-renders by calling itself. The multi-field
-// release form is a local modal (dialogs.ts only exports a single-field prompt),
-// built on the shared .modal-* CSS so it matches the rest of the app.
+// Full CRUD: New release, Edit, Delete (confirmed) — the multi-field form is a
+// local modal on the shared .modal-* CSS.
 
 import { host } from "../bridge";
 import {
   el,
   span,
   glyph,
-  pill,
+  relTime,
+  absTime,
   relTimeISO,
   absTimeISO,
-  loadingState,
+  copyText,
   skeletonList,
   errorState,
   emptyState,
   cleanErr,
   groupLabel,
-  ghRow,
+  openMenu,
   statBit,
   statePill,
 } from "../ui";
-import { toast, confirmDialog } from "../dialogs";
+import { peek as cachePeek, gget, bust } from "../cache";
+import { toast, confirmDialog, openModal } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { ghGate, ghHeader, ghListResizer, searchField, type SectionRender } from "./common";
-import type { ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
+import { wireProseNav } from "../proseNav";
+import { openPeek } from "../peek";
+import {
+  detailPage,
+  ghGate,
+  ghHeader,
+  personChip,
+  propSection,
+  searchField,
+  secRow,
+  sectionList,
+  type GhGate,
+  type SectionNav,
+  type SectionRender,
+  type SectionTarget,
+} from "./common";
+import type { CommitDetailsPayload, ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
 
-/** Which sub-list the left pane is showing. Module-scoped so it survives a re-render. */
+/** Which sub-list the section shows. Module-scoped so it survives re-renders. */
 let releaseTab: "releases" | "tags" = "releases";
+/** The list page's live search query — survives list ⇄ detail round trips. */
+let query = "";
 
 /** Human file size for release assets. */
 function fmtBytes(n: number): string {
@@ -43,336 +61,516 @@ function fmtBytes(n: number): string {
   return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
-export const renderReleases: SectionRender = (wrap, nav) => {
-  void mount(wrap, nav);
+export const renderReleases: SectionRender = (wrap, nav, target) => {
+  void mount(wrap, nav, target);
 };
 
-async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<void> {
-  const refresh = (): void => renderReleases(wrap, nav);
-
-  const gate = await ghGate(wrap, nav, true);
+async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
+  const refresh = (): void => {
+    bust("release");
+    renderReleases(wrap, nav, target);
+  };
+  const gate = await ghGate(wrap, nav, true, refresh);
   if (!gate) return;
 
-  const view = el("div", "gh-view");
-
-  // Header: title + @login + refresh, with a Releases|Tags segment and a
-  // "New release" action injected into its right-hand cluster.
-  const header = ghHeader("Releases", gate.login, refresh);
-  const acct = header.querySelector(".gh-acct");
-  if (acct instanceof HTMLElement) {
-    const seg = el("div", "gh-seg");
-    const relBtn = el("button", "gh-seg-btn");
-    relBtn.textContent = "Releases";
-    relBtn.classList.toggle("active", releaseTab === "releases");
-    relBtn.addEventListener("click", () => {
-      releaseTab = "releases";
-      refresh();
-    });
-    const tagBtn = el("button", "gh-seg-btn");
-    tagBtn.textContent = "Tags";
-    tagBtn.classList.toggle("active", releaseTab === "tags");
-    tagBtn.addEventListener("click", () => {
-      releaseTab = "tags";
-      refresh();
-    });
-    seg.append(relBtn, tagBtn);
-
-    const newBtn = el("button", "mini-btn");
-    newBtn.append(glyph("plus"), span("New release"));
-    newBtn.title = "Draft a new release";
-    newBtn.addEventListener("click", () => void createRelease(refresh, ""));
-
-    acct.prepend(seg, newBtn);
-  }
-  view.appendChild(header);
-
-  const body = el("div", "gh-body");
-  const listEl = el("div", "gh-list");
-  const detail = el("div", "gh-detail");
-  body.append(listEl, ghListResizer(listEl), detail);
-  view.appendChild(body);
-  wrap.replaceChildren(view);
-
-  if (releaseTab === "tags") {
-    detail.replaceChildren(
-      emptyState(
-        "Tags",
-        "Every git tag in this repository. Cut a release from one with “New release”.",
-        { icon: "tag", hint: "Tip: click a tag to draft a release from it." },
-      ),
-    );
-    await loadTags(listEl, header, refresh, nav);
+  if (target?.number != null) {
+    showReleaseDetailPage(wrap, nav, target.number);
     return;
   }
-
-  await loadReleases(listEl, detail, header, refresh, nav);
+  await listPage(wrap, nav, gate);
 }
 
-// ── The Releases list (left pane) ──
+// ── The list page (Releases | Tags) ──────────────────────────────────────────
 
-async function loadReleases(
-  listEl: HTMLElement,
-  detail: HTMLElement,
-  header: HTMLElement & { setCount?: (n: number) => void },
-  refresh: () => void,
-  nav: (view: string) => void,
-): Promise<void> {
-  detail.replaceChildren(
-    emptyState("Releases", "Select a release to read its notes, browse assets, and inspect the tag.", {
-      icon: "tag",
-      hint: "Tip: open one to edit, delete, or download its assets.",
-    }),
-  );
-  listEl.replaceChildren(skeletonList(5));
-
-  let releases: ReleaseInfo[];
-  try {
-    releases = await host.invoke("release:list", undefined);
-  } catch (e) {
-    listEl.replaceChildren(
-      errorState("Couldn't load releases", cleanErr(e) || "GitHub request failed.", refresh),
-    );
-    return;
-  }
-
-  header.setCount?.(releases.length);
-  listEl.replaceChildren();
-  if (releases.length === 0) {
-    listEl.appendChild(
-      emptyState("No releases yet", "Publish your first release to share builds and notes.", {
-        icon: "tag",
-        action: { label: "New release", icon: "plus", onClick: () => void createRelease(refresh, "") },
-      }),
-    );
-    return;
-  }
-
-  const select = (rel: ReleaseInfo, row: HTMLElement): void => {
-    listEl.querySelectorAll(".gh-row.active").forEach((n) => n.classList.remove("active"));
-    row.classList.add("active");
-    void showReleaseDetail(detail, rel, refresh);
+async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promise<void> {
+  const refresh = (): void => {
+    bust("release");
+    renderReleases(wrap, nav);
   };
 
-  // "Latest" marks the first non-draft (published) release, mirroring github.com.
-  // Anchored to the unique id of the true latest published release (computed over
-  // the whole loaded list), so the badge renders correctly on every filtered
-  // render too — no cross-render latch.
-  const latestId = releases.find((r) => !r.draft)?.id;
+  const { view, listEl } = sectionList();
+  const header = ghHeader("Releases", gate.login, refresh);
 
-  const buildRow = (rel: ReleaseInfo): HTMLElement => {
+  const tools = el("div", "gh-head-tools");
+  const seg = el("div", "gh-seg");
+  const segBtn = (label: string, value: "releases" | "tags"): HTMLElement => {
+    const b = el("button", "gh-seg-btn");
+    b.textContent = label;
+    b.classList.toggle("active", releaseTab === value);
+    b.setAttribute("aria-pressed", String(releaseTab === value));
+    b.addEventListener("click", () => {
+      if (releaseTab === value) return;
+      releaseTab = value;
+      renderReleases(wrap, nav);
+    });
+    return b;
+  };
+  seg.append(segBtn("Releases", "releases"), segBtn("Tags", "tags"));
+
+  const newBtn = el("button", "btn btn-primary gh-new-btn");
+  newBtn.append(glyph("plus"), span("New release"));
+  newBtn.title = "Draft a new release";
+  newBtn.addEventListener("click", () => void createRelease(refresh, ""));
+
+  tools.append(seg, newBtn);
+  header.querySelector(".gh-acct")?.before(tools);
+  view.append(header, listEl);
+  wrap.replaceChildren(view);
+
+  header.querySelector(".gh-head-titlewrap")?.appendChild(
+    searchField({
+      placeholder: releaseTab === "releases" ? "Search releases…" : "Search tags…",
+      initial: query,
+      onInput: (q) => {
+        query = q;
+        rerenderList();
+      },
+    }),
+  );
+
+  // ── data ──
+  let releases: ReleaseInfo[] | undefined =
+    releaseTab === "releases" ? cachePeek("release:list", undefined) : undefined;
+  let tags: TagInfo[] | undefined =
+    releaseTab === "tags" ? cachePeek("release:tags", undefined) : undefined;
+  if ((releaseTab === "releases" && !releases) || (releaseTab === "tags" && !tags)) {
+    listEl.replaceChildren(skeletonList(5));
+  }
+
+  const buildReleaseRow = (rel: ReleaseInfo, latestId: number | undefined): HTMLElement => {
     const lead = el("span", "gh-lead-icon gh-lead-merged");
     lead.appendChild(glyph("tag"));
 
     const suffix: HTMLElement[] = [];
     if (rel.draft) suffix.push(statePill("Draft", "draft"));
     if (rel.prerelease) suffix.push(statePill("Pre-release", "prerelease"));
-    if (!rel.draft && rel.id === latestId) {
-      suffix.push(statePill("Latest", "latest"));
-    }
+    if (!rel.draft && rel.id === latestId) suffix.push(statePill("Latest", "latest"));
 
-    const when = rel.publishedAt ? `published ${relTimeISO(rel.publishedAt)}` : "draft";
-    const author = rel.author?.login ? ` · ${rel.author.login}` : "";
-
-    const stats: HTMLElement[] = [];
-    if (rel.assets.length) stats.push(statBit("file", rel.assets.length));
+    const meta: HTMLElement[] = [span(rel.tagName, "sec-mono")];
+    if (rel.author?.login) meta.push(span(rel.author.login));
+    if (rel.assets.length) meta.push(statBit("file", rel.assets.length, "", "assets"));
     const downloads = rel.assets.reduce((sum, a) => sum + (a.downloadCount || 0), 0);
-    if (downloads > 0) stats.push(statBit("cloud-download", downloads));
+    if (downloads > 0) meta.push(statBit("cloud-download", downloads));
 
-    const row = ghRow({
+    const row = secRow({
       lead,
       title: rel.name || rel.tagName,
       titleSuffix: suffix,
-      meta: `${rel.tagName} · ${when}${author}`,
-      metaTitle: rel.publishedAt ? `Published ${absTimeISO(rel.publishedAt)}` : undefined,
-      stats,
+      meta,
+      time: rel.publishedAt ? relTimeISO(rel.publishedAt) : "draft",
+      timeTitle: rel.publishedAt ? `Published ${absTimeISO(rel.publishedAt)}` : "Unpublished draft",
       ariaLabel: `Release ${rel.name || rel.tagName}`,
+      onOpen: () => nav("releases", { number: rel.id }),
     });
-    row.addEventListener("click", () => select(rel, row));
+    row.dataset.num = String(rel.id);
     return row;
   };
 
-  // Case-insensitive match over the fields a user would search by.
-  const matches = (rel: ReleaseInfo, q: string): boolean => {
-    const hay = `${rel.name} ${rel.tagName}`.toLowerCase();
-    return hay.includes(q);
+  const buildTagRow = (t: TagInfo): HTMLElement =>
+    secRow({
+      lead: (() => {
+        const s = el("span", "gh-lead-icon is-muted");
+        s.appendChild(glyph("tag"));
+        return s;
+      })(),
+      title: t.name,
+      meta: [span(t.sha.slice(0, 7), "sec-mono")],
+      ariaLabel: `Tag ${t.name}`,
+      onOpen: () => openTagPeek(t, nav, refresh),
+    });
+
+  const rerenderList = (): void => {
+    const q = query.toLowerCase();
+    listEl.replaceChildren();
+    if (releaseTab === "releases") {
+      if (!releases) return;
+      header.setCount?.(releases.length);
+      if (releases.length === 0) {
+        listEl.appendChild(
+          emptyState("No releases yet", "Publish your first release to share builds and notes.", {
+            icon: "tag",
+            action: { label: "New release", icon: "plus", onClick: () => void createRelease(refresh, "") },
+          }),
+        );
+        return;
+      }
+      // "Latest" marks the first non-draft (published) release, like github.com.
+      const latestId = releases.find((r) => !r.draft)?.id;
+      const items = q
+        ? releases.filter((rel) => `${rel.name} ${rel.tagName}`.toLowerCase().includes(q))
+        : releases;
+      if (items.length === 0) {
+        listEl.appendChild(emptyState("No matching releases", `Nothing matches “${query}”.`, { icon: "search" }));
+        return;
+      }
+      for (const rel of items) listEl.appendChild(buildReleaseRow(rel, latestId));
+    } else {
+      if (!tags) return;
+      header.setCount?.(tags.length);
+      if (tags.length === 0) {
+        listEl.appendChild(emptyState("No tags", "This repository has no git tags yet.", { icon: "tag" }));
+        return;
+      }
+      const items = q ? tags.filter((t) => t.name.toLowerCase().includes(q)) : tags;
+      if (items.length === 0) {
+        listEl.appendChild(emptyState("No matching tags", `Nothing matches “${query}”.`, { icon: "search" }));
+        return;
+      }
+      for (const t of items) listEl.appendChild(buildTagRow(t));
+    }
   };
 
-  let autoSelected = false;
-  const renderList = (items: ReleaseInfo[], q = ""): void => {
-    listEl.replaceChildren();
-    if (items.length === 0) {
-      listEl.appendChild(
-        emptyState("No matching releases", `Nothing matches “${q}”.`, { icon: "search" }),
+  if (releases || tags) rerenderList();
+
+  try {
+    if (releaseTab === "releases") {
+      const fresh = await gget("release:list", undefined, 30000);
+      if (!view.isConnected) return;
+      releases = fresh;
+    } else {
+      const fresh = await gget("release:tags", undefined, 30000);
+      if (!view.isConnected) return;
+      tags = fresh;
+    }
+    rerenderList();
+  } catch (e) {
+    if (!view.isConnected) return;
+    if (!releases && !tags) {
+      listEl.replaceChildren(
+        errorState(
+          releaseTab === "releases" ? "Couldn't load releases" : "Couldn't load tags",
+          cleanErr(e) || "GitHub request failed.",
+          refresh,
+        ),
+      );
+    }
+  }
+}
+
+// ── The tag peek (commit info + deliberate actions) ──────────────────────────
+
+/** A tag's lightweight drill-in: what it points at (from the LOCAL clone, when
+ *  fetched) + Draft release / View in Commits / Copy SHA. */
+function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
+  openPeek({
+    icon: "tag",
+    title: t.name,
+    subtitle: t.sha ? `at ${t.sha.slice(0, 7)}` : undefined,
+    actions: [
+      {
+        label: "Copy SHA",
+        icon: "copy",
+        onClick: () => void copyText(t.sha, "Tag SHA copied."),
+      },
+      {
+        label: "View in Commits",
+        icon: "git-commit",
+        title: "Reveal this tag's commit in the Commits view",
+        onClick: (ctx) => {
+          ctx.close();
+          nav("graph", { sha: t.sha });
+        },
+      },
+      {
+        label: "Draft release",
+        icon: "plus",
+        primary: true,
+        title: `Draft a new release from ${t.name}`,
+        onClick: (ctx) => {
+          ctx.close();
+          void createRelease(refresh, t.name);
+        },
+      },
+    ],
+    async render(body) {
+      // The tag's commit, read from the local clone — the sha comes from GitHub,
+      // so an unfetched tag simply isn't inspectable yet (a state, not an error).
+      let d: CommitDetailsPayload | undefined;
+      try {
+        d = t.sha ? await host.invoke("commit:details", t.sha) : undefined;
+      } catch {
+        d = undefined;
+      }
+      body.replaceChildren();
+      if (!d) {
+        body.appendChild(
+          emptyState(
+            "Commit not in the local clone",
+            "Fetch from the remote to inspect what this tag points at.",
+            { icon: "cloud-download" },
+          ),
+        );
+        return;
+      }
+      const card = el("div", "gh-tag-commit-card");
+      const subj = el("div", "gh-tag-commit-subject");
+      subj.textContent = d.subject;
+      const who = el("div", "gh-tag-commit-meta");
+      who.textContent = `${d.author} · ${relTime(d.authorDate)} · ${d.files.length} file${d.files.length === 1 ? "" : "s"} changed`;
+      who.title = absTime(d.authorDate);
+      card.append(subj, who);
+      if (d.body) {
+        const msg = el("pre", "gh-tag-commit-body");
+        msg.textContent = d.body;
+        card.appendChild(msg);
+      }
+      body.appendChild(card);
+    },
+  });
+}
+
+// ── The release detail page ──────────────────────────────────────────────────
+
+function showReleaseDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void {
+  const back = (): void => nav("releases", { list: true });
+  const reload = (): void => {
+    bust("release");
+    showReleaseDetailPage(wrap, nav, id);
+  };
+
+  const { view, main, rail, topActions } = detailPage({
+    backLabel: "Releases",
+    onBack: back,
+  });
+  main.appendChild(skeletonList(4, false));
+  wrap.replaceChildren(view);
+
+  void (async () => {
+    let full: ReleaseInfo | undefined;
+    try {
+      full = await gget("release:detail", id, 15000);
+    } catch (e) {
+      if (!view.isConnected) return;
+      main.replaceChildren(
+        errorState("Couldn't load the release", cleanErr(e) || "GitHub request failed.", reload),
       );
       return;
     }
-    for (const rel of items) listEl.appendChild(buildRow(rel));
-    // Auto-select the first release once (initial render) so the detail isn't a
-    // void; don't hijack the selection on every keystroke while filtering.
-    if (!autoSelected) {
-      autoSelected = true;
-      const first = items[0];
-      const firstRow = listEl.firstElementChild as HTMLElement | null;
-      if (first && firstRow) select(first, firstRow);
+    if (!view.isConnected) return;
+    if (!full) {
+      main.replaceChildren(emptyState("Release unavailable", "This release couldn't be loaded."));
+      return;
     }
-  };
-
-  // A header search/filter over the loaded list (client-side, instant). Inserted
-  // at the front of the action cluster (the .gh-acct that already holds the
-  // Releases|Tags segment and the New-release button), mirroring the Issues view.
-  // A header search/filter — on the LEFT, next to the title (client-side, instant).
-  header.querySelector(".gh-head-titlewrap")?.appendChild(
-    searchField({
-      placeholder: "Search releases…",
-      onInput: (q) =>
-        renderList(q ? releases.filter((rel) => matches(rel, q.toLowerCase())) : releases, q),
-    }),
-  );
-
-  renderList(releases);
-  void nav; // nav reserved for symmetry with the tags loader
+    buildReleaseDetail({ main, rail, topActions, rel: full, nav, reload, back });
+  })();
 }
 
-// ── The Tags sub-list (left pane) ──
-
-async function loadTags(
-  listEl: HTMLElement,
-  header: HTMLElement & { setCount?: (n: number) => void },
-  refresh: () => void,
-  nav: (view: string) => void,
-): Promise<void> {
-  listEl.replaceChildren(skeletonList(5));
-
-  let tags: TagInfo[];
-  try {
-    tags = await host.invoke("release:tags", undefined);
-  } catch (e) {
-    listEl.replaceChildren(
-      errorState("Couldn't load tags", cleanErr(e) || "GitHub request failed.", refresh),
-    );
-    return;
-  }
-
-  header.setCount?.(tags.length);
-  listEl.replaceChildren();
-  if (tags.length === 0) {
-    listEl.appendChild(
-      emptyState("No tags", "This repository has no git tags yet.", { icon: "tag" }),
-    );
-    return;
-  }
-
-  for (const t of tags) {
-    const row = el("button", "gh-row");
-    const top = el("div", "gh-row-title");
-    top.append(glyph("tag"), span(t.name));
-    const sub = el("div", "gh-row-sub");
-    sub.textContent = t.sha.slice(0, 7);
-    row.append(top, sub);
-    row.title = `Draft a release from ${t.name}`;
-    // A tag row drafts a release from that tag (prefilled).
-    row.addEventListener("click", () => void createRelease(refresh, t.name));
-    listEl.appendChild(row);
-  }
-  void nav;
+interface ReleaseDetailCtx {
+  main: HTMLElement;
+  rail: HTMLElement;
+  topActions: HTMLElement;
+  rel: ReleaseInfo;
+  nav: SectionNav;
+  reload: () => void;
+  back: () => void;
 }
 
-// ── The detail (right pane) ──
+function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
+  const { main, rail, topActions, rel, nav, reload, back } = ctx;
+  main.replaceChildren();
+  rail.replaceChildren();
+  wireProseNav(main, nav);
 
-async function showReleaseDetail(
-  detail: HTMLElement,
-  rel: ReleaseInfo,
-  refresh: () => void,
-): Promise<void> {
-  detail.replaceChildren(loadingState());
-
-  // Refetch the single release so body/assets are guaranteed complete; fall back
-  // to the list-row data if the detail fetch fails so the pane never blanks.
-  let full: ReleaseInfo;
-  try {
-    full = (await host.invoke("release:detail", rel.id)) ?? rel;
-  } catch {
-    full = rel;
-  }
-  detail.replaceChildren();
-
-  const head = el("div", "gh-detail-head");
-  const h = el("div", "gh-detail-title");
-  h.textContent = full.name || full.tagName;
-
-  const meta = el("div", "gh-detail-meta");
-  const when = full.publishedAt
-    ? `published ${relTimeISO(full.publishedAt)}`
-    : "unpublished draft";
-  const target = full.targetCommitish ? ` ← ${full.targetCommitish}` : "";
-  const author = full.author?.login ? ` · ${full.author.login}` : "";
-  meta.textContent = `${full.tagName}${target}${author} · ${when}`;
-  if (full.draft) {
-    meta.appendChild(document.createTextNode("  "));
-    meta.appendChild(pill("Draft", "gh-pill-draft"));
-  }
-  if (full.prerelease) {
-    meta.appendChild(document.createTextNode("  "));
-    meta.appendChild(pill("Pre-release", "gh-state-prerelease"));
-  }
-
-  const actions = el("div", "gh-detail-actions");
+  // ── top-bar actions ──
   const editBtn = el("button", "mini-btn");
   editBtn.append(glyph("pencil"), span("Edit"));
   editBtn.title = "Edit this release";
-  editBtn.addEventListener("click", () => void editRelease(full, detail, refresh));
+  editBtn.addEventListener("click", () => void editRelease(rel, reload));
 
-  const delBtn = el("button", "mini-btn danger");
-  delBtn.append(glyph("trash"), span("Delete"));
-  delBtn.title = "Delete this release";
-  delBtn.addEventListener("click", () => void deleteRelease(full, delBtn, refresh));
+  const moreBtn = el("button", "mini-btn gh-icon-btn");
+  moreBtn.append(glyph("ellipsis"));
+  moreBtn.title = "More actions";
+  moreBtn.addEventListener("click", () =>
+    openMenu(moreBtn, [
+      { label: "Copy link", icon: "copy", onClick: () => void copyText(rel.htmlUrl, "Copied release link.") },
+      { separator: true },
+      {
+        label: "Delete release",
+        icon: "trash",
+        onClick: () => void deleteRelease(rel, moreBtn, back),
+      },
+    ]),
+  );
 
-  const openBtn = el("button", "mini-btn");
-  openBtn.append(glyph("link-external"), span("Open on GitHub"));
-  openBtn.title = "Open this release on github.com";
-  openBtn.addEventListener("click", () => window.open(full.htmlUrl, "_blank"));
+  const openBtn = el("button", "mini-btn gh-icon-btn");
+  openBtn.append(glyph("link-external"));
+  openBtn.title = "Open this release on GitHub";
+  openBtn.setAttribute("aria-label", openBtn.title);
+  openBtn.addEventListener("click", () => window.open(rel.htmlUrl, "_blank"));
 
-  actions.append(editBtn, delBtn, openBtn);
-  head.append(h, meta, actions);
-  detail.appendChild(head);
+  topActions.replaceChildren(editBtn, moreBtn, openBtn);
 
-  // Notes — rendered markdown (renderMarkdown sanitizes/escapes, so innerHTML is
-  // the intended path here, matching the commit-body renderer).
-  if (full.body && full.body.trim()) {
+  // ── title block ──
+  const titleRow = el("div", "det-title-row");
+  titleRow.appendChild(
+    rel.draft
+      ? statePill("Draft", "draft")
+      : rel.prerelease
+        ? statePill("Pre-release", "prerelease")
+        : statePill("Published", "latest"),
+  );
+  const h = el("h1", "det-title");
+  h.textContent = rel.name || rel.tagName;
+  titleRow.appendChild(h);
+  main.appendChild(titleRow);
+
+  const sub = el("div", "det-sub");
+  const tagChip = el("button", "gh-branch-chip");
+  tagChip.append(glyph("tag"), span(rel.tagName));
+  tagChip.title = "Copy the tag name";
+  tagChip.addEventListener("click", () => void copyText(rel.tagName, "Tag name copied."));
+  sub.appendChild(tagChip);
+  const when = el("span");
+  when.textContent = rel.publishedAt
+    ? `published ${relTimeISO(rel.publishedAt)}`
+    : "unpublished draft";
+  if (rel.publishedAt) when.title = absTimeISO(rel.publishedAt);
+  sub.appendChild(when);
+  main.appendChild(sub);
+
+  // ── notes ──
+  if (rel.body && rel.body.trim()) {
     const notes = el("div", "gh-body-md");
-    notes.innerHTML = renderMarkdown(full.body);
-    detail.appendChild(notes);
+    notes.innerHTML = renderMarkdown(rel.body);
+    main.appendChild(notes);
   } else {
-    detail.appendChild(emptyState("No release notes", "This release has no description."));
+    main.appendChild(emptyState("No release notes", "This release has no description."));
   }
 
-  // Assets table.
-  if (full.assets.length) {
-    detail.appendChild(groupLabel(`Assets (${full.assets.length})`));
+  // ── assets (download / upload / delete — no browser round-trips) ──
+  const assetsHead = el("div", "rel-assets-head");
+  assetsHead.appendChild(groupLabel(`Assets (${rel.assets.length})`));
+  const uploadBtn = el("button", "mini-btn");
+  uploadBtn.append(glyph("cloud-upload"), span("Upload assets…"));
+  uploadBtn.title = "Attach local files to this release";
+  uploadBtn.addEventListener("click", () => void uploadAssets(rel, uploadBtn, reload));
+  assetsHead.appendChild(uploadBtn);
+  main.appendChild(assetsHead);
+  if (rel.assets.length) {
     const list = el("div", "rel-assets");
-    for (const a of full.assets) {
+    for (const a of rel.assets) {
       const row = el("button", "list-row");
       row.appendChild(glyph("package"));
       const m = el("div", "row-meta");
       const t = el("div", "row-meta-title");
       t.textContent = a.label || a.name;
-      const sub = el("div", "row-meta-sub");
-      sub.textContent = `${fmtBytes(a.size)} · ${a.downloadCount} download${a.downloadCount === 1 ? "" : "s"}`;
-      m.append(t, sub);
+      const subT = el("div", "row-meta-sub");
+      subT.textContent = `${fmtBytes(a.size)} · ${a.downloadCount} download${a.downloadCount === 1 ? "" : "s"}`;
+      m.append(t, subT);
+      row.append(m);
+      const acts = el("span", "rel-asset-acts");
+      const del = el("button", "icon-btn rel-asset-del");
+      del.appendChild(glyph("trash"));
+      del.title = `Delete ${a.name} from this release`;
+      del.setAttribute("aria-label", del.title);
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void deleteAsset(a.id, a.name, del, reload);
+      });
       const dl = el("span", "gh-adds");
       dl.appendChild(glyph("cloud-download"));
-      row.append(m, dl);
+      acts.append(del, dl);
+      row.appendChild(acts);
       row.title = `Download ${a.name}`;
       row.addEventListener("click", () => window.open(a.downloadUrl, "_blank"));
       list.appendChild(row);
     }
-    detail.appendChild(list);
+    main.appendChild(list);
+  } else {
+    const none = el("div", "rel-assets-none");
+    none.textContent = "No assets on this release yet.";
+    main.appendChild(none);
+  }
+
+  // ── rail ──
+  const tagProp = propSection("Tag");
+  const tagBtn = el("button", "det-mono-btn");
+  tagBtn.append(glyph("copy"), span(rel.tagName));
+  tagBtn.title = "Copy the tag name";
+  tagBtn.addEventListener("click", () => void copyText(rel.tagName, "Tag name copied."));
+  tagProp.body.appendChild(tagBtn);
+
+  const authorProp = propSection("Author");
+  if (rel.author?.login) {
+    authorProp.body.appendChild(personChip(rel.author.login, rel.author.avatarUrl));
+  } else {
+    authorProp.body.appendChild(span("—", "det-prop-none"));
+  }
+
+  const about = propSection("About");
+  about.body.classList.add("det-prop-facts");
+  const fact = (k: string, v: string, title?: string): HTMLElement => {
+    const row = el("div", "det-fact");
+    const val = el("span", "det-fact-v");
+    val.textContent = v;
+    if (title) val.title = title;
+    row.append(span(k, "det-fact-k"), val);
+    return row;
+  };
+  if (rel.targetCommitish) about.body.appendChild(fact("Target", rel.targetCommitish));
+  about.body.appendChild(fact("Assets", String(rel.assets.length)));
+  const downloads = rel.assets.reduce((sum, a) => sum + (a.downloadCount || 0), 0);
+  if (downloads > 0) about.body.appendChild(fact("Downloads", downloads.toLocaleString()));
+  about.body.appendChild(fact("Created", relTimeISO(rel.createdAt), absTimeISO(rel.createdAt)));
+  if (rel.publishedAt) {
+    about.body.appendChild(fact("Published", relTimeISO(rel.publishedAt), absTimeISO(rel.publishedAt)));
+  }
+
+  rail.append(tagProp.root, authorProp.root, about.root);
+}
+
+/** Pick local files (native dialog, in MAIN) and upload them as release assets. */
+async function uploadAssets(rel: ReleaseInfo, btn: HTMLElement, reload: () => void): Promise<void> {
+  const b = btn as HTMLButtonElement;
+  b.disabled = true;
+  try {
+    const r = await host.invoke("release:uploadAssets", { id: rel.id });
+    if (!r.ok) {
+      // A cancelled picker is a non-event, not an error toast.
+      if (!r.expected) toast(r.message ?? "Couldn't upload the assets.", "error");
+      return;
+    }
+    toast(r.message ?? "Assets uploaded.", "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't upload the assets.", "error");
+  } finally {
+    b.disabled = false;
+  }
+}
+
+async function deleteAsset(
+  id: number,
+  name: string,
+  btn: HTMLElement,
+  reload: () => void,
+): Promise<void> {
+  const ok = await confirmDialog({
+    title: `Delete asset ${name}?`,
+    message: "This permanently removes the file from the release on GitHub.",
+    confirmLabel: "Delete asset",
+    danger: true,
+  });
+  if (!ok) return;
+  (btn as HTMLButtonElement).disabled = true;
+  try {
+    const r = await host.invoke("release:deleteAsset", id);
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't delete the asset.", "error");
+      return;
+    }
+    toast(`Deleted ${name}.`, "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn't delete the asset.", "error");
+  } finally {
+    (btn as HTMLButtonElement).disabled = false;
   }
 }
 
 // ── CRUD actions ──
 
-/** Draft a new release; `prefillTag` comes from a Tags-row click. */
+/** Draft a new release; `prefillTag` comes from a tag peek. */
 async function createRelease(refresh: () => void, prefillTag: string): Promise<void> {
   const input = await releaseFormDialog("New release", {
     tagName: prefillTag,
@@ -390,6 +588,7 @@ async function createRelease(refresh: () => void, prefillTag: string): Promise<v
       return;
     }
     toast(`Created release ${input.tagName}.`, "success");
+    bust("release");
     releaseTab = "releases";
     refresh();
   } catch (e) {
@@ -397,11 +596,7 @@ async function createRelease(refresh: () => void, prefillTag: string): Promise<v
   }
 }
 
-async function editRelease(
-  rel: ReleaseInfo,
-  detail: HTMLElement,
-  refresh: () => void,
-): Promise<void> {
+async function editRelease(rel: ReleaseInfo, reload: () => void): Promise<void> {
   const input = await releaseFormDialog("Edit release", {
     id: rel.id,
     tagName: rel.tagName,
@@ -419,18 +614,13 @@ async function editRelease(
       return;
     }
     toast(`Updated release ${input.tagName}.`, "success");
-    refresh();
-    void showReleaseDetail(detail, rel, refresh); // keep the detail open with fresh data
+    reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't update the release.", "error");
   }
 }
 
-async function deleteRelease(
-  rel: ReleaseInfo,
-  btn: HTMLElement,
-  refresh: () => void,
-): Promise<void> {
+async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => void): Promise<void> {
   const ok = await confirmDialog({
     title: `Delete release ${rel.name || rel.tagName}?`,
     message: `This permanently deletes the release on GitHub. The git tag ${rel.tagName} is not removed. This can't be undone.`,
@@ -446,7 +636,8 @@ async function deleteRelease(
       return;
     }
     toast(`Deleted release ${rel.name || rel.tagName}.`, "success");
-    refresh();
+    bust("release");
+    back(); // the detail's subject no longer exists — land on the list
   } catch (e) {
     toast(cleanErr(e) || "Couldn't delete the release.", "error");
   } finally {
@@ -470,149 +661,122 @@ function mkDialogEl(tag: string, cls = ""): HTMLElement {
 function releaseFormDialog(title: string, init: ReleaseInput): Promise<ReleaseInput | null> {
   return new Promise((resolve) => {
     let settled = false;
-    const prevFocus = document.activeElement as HTMLElement | null;
-    const overlay = mkDialogEl("div", "modal-overlay");
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-modal", "true");
+    openModal((close) => {
+      const finish = (value: ReleaseInput | null): void => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+        close();
+      };
 
-    const finish = (value: ReleaseInput | null): void => {
-      if (settled) return;
-      settled = true;
-      overlay.remove();
-      document.removeEventListener("keydown", onKey, true);
-      prevFocus?.focus?.();
-      resolve(value);
-    };
+      const card = mkDialogEl("div", "modal-card modal-form");
+      const h = mkDialogEl("div", "modal-title");
+      h.textContent = title;
 
-    const card = mkDialogEl("div", "modal-card modal-form");
-    const h = mkDialogEl("div", "modal-title");
-    h.textContent = title;
+      const field = (label: string, ctrl: HTMLElement): HTMLElement => {
+        const f = mkDialogEl("label", "modal-field");
+        const l = mkDialogEl("span", "modal-field-label");
+        l.textContent = label;
+        f.append(l, ctrl);
+        return f;
+      };
 
-    const field = (label: string, ctrl: HTMLElement): HTMLElement => {
-      const f = mkDialogEl("label", "modal-field");
-      const l = mkDialogEl("span", "modal-field-label");
-      l.textContent = label;
-      f.append(l, ctrl);
-      return f;
-    };
+      const tag = document.createElement("input");
+      tag.className = "modal-input";
+      tag.placeholder = "v1.0.0";
+      tag.value = init.tagName ?? "";
 
-    const tag = document.createElement("input");
-    tag.className = "modal-input";
-    tag.placeholder = "v1.0.0";
-    tag.value = init.tagName ?? "";
+      const target = document.createElement("input");
+      target.className = "modal-input";
+      target.placeholder = "main (target branch or commit)";
+      target.value = init.targetCommitish ?? "";
 
-    const target = document.createElement("input");
-    target.className = "modal-input";
-    target.placeholder = "main (target branch or commit)";
-    target.value = init.targetCommitish ?? "";
+      const name = document.createElement("input");
+      name.className = "modal-input";
+      name.placeholder = "Release title";
+      name.value = init.name ?? "";
 
-    const name = document.createElement("input");
-    name.className = "modal-input";
-    name.placeholder = "Release title";
-    name.value = init.name ?? "";
+      const bodyInput = document.createElement("textarea");
+      bodyInput.className = "modal-input modal-textarea";
+      bodyInput.rows = 6;
+      bodyInput.placeholder = "Release notes (Markdown supported)…";
+      bodyInput.value = init.body ?? "";
 
-    const bodyInput = document.createElement("textarea");
-    bodyInput.className = "modal-input modal-textarea";
-    bodyInput.rows = 6;
-    bodyInput.placeholder = "Release notes (Markdown supported)…";
-    bodyInput.value = init.body ?? "";
+      const draft = document.createElement("input");
+      draft.type = "checkbox";
+      draft.checked = !!init.draft;
+      const pre = document.createElement("input");
+      pre.type = "checkbox";
+      pre.checked = !!init.prerelease;
 
-    const draft = document.createElement("input");
-    draft.type = "checkbox";
-    draft.checked = !!init.draft;
-    const pre = document.createElement("input");
-    pre.type = "checkbox";
-    pre.checked = !!init.prerelease;
+      const checks = mkDialogEl("div", "modal-checks");
+      const checkWrap = (cb: HTMLInputElement, text: string): HTMLElement => {
+        const w = mkDialogEl("label", "modal-check");
+        const t = mkDialogEl("span");
+        t.textContent = text;
+        w.append(cb, t);
+        return w;
+      };
+      checks.append(
+        checkWrap(draft, "Draft (don't publish yet)"),
+        checkWrap(pre, "Pre-release"),
+      );
 
-    const checks = mkDialogEl("div", "modal-checks");
-    const checkWrap = (cb: HTMLInputElement, text: string): HTMLElement => {
-      const w = mkDialogEl("label", "modal-check");
-      const t = mkDialogEl("span");
-      t.textContent = text;
-      w.append(cb, t);
-      return w;
-    };
-    checks.append(
-      checkWrap(draft, "Draft (don't publish yet)"),
-      checkWrap(pre, "Pre-release"),
-    );
+      const actions = mkDialogEl("div", "modal-actions");
+      const cancel = mkDialogEl("button", "mini-btn");
+      cancel.textContent = "Cancel";
+      const ok = mkDialogEl("button", "btn btn-primary modal-ok");
+      const okSpan = mkDialogEl("span");
+      okSpan.textContent = init.id === undefined ? "Create" : "Save";
+      ok.appendChild(okSpan);
+      actions.append(cancel, ok);
 
-    const actions = mkDialogEl("div", "modal-actions");
-    const cancel = mkDialogEl("button", "mini-btn");
-    cancel.textContent = "Cancel";
-    const ok = mkDialogEl("button", "btn btn-primary modal-ok");
-    const okSpan = mkDialogEl("span");
-    okSpan.textContent = init.id === undefined ? "Create" : "Save";
-    ok.appendChild(okSpan);
-    actions.append(cancel, ok);
+      card.append(
+        h,
+        field("Tag", tag),
+        field("Target", target),
+        field("Title", name),
+        field("Notes", bodyInput),
+        checks,
+        actions,
+      );
 
-    card.append(
-      h,
-      field("Tag", tag),
-      field("Target", target),
-      field("Title", name),
-      field("Notes", bodyInput),
-      checks,
-      actions,
-    );
+      const submit = (): void => {
+        const tagName = tag.value.trim();
+        if (!tagName) {
+          tag.focus();
+          return;
+        }
+        finish({
+          id: init.id,
+          tagName,
+          targetCommitish: target.value.trim() || undefined,
+          name: name.value.trim(),
+          body: bodyInput.value,
+          draft: draft.checked,
+          prerelease: pre.checked,
+        });
+      };
 
-    const submit = (): void => {
-      const tagName = tag.value.trim();
-      if (!tagName) {
-        tag.focus();
-        return;
-      }
-      finish({
-        id: init.id,
-        tagName,
-        targetCommitish: target.value.trim() || undefined,
-        name: name.value.trim(),
-        body: bodyInput.value,
-        draft: draft.checked,
-        prerelease: pre.checked,
+      cancel.addEventListener("click", () => finish(null));
+      ok.addEventListener("click", submit);
+      // ⌘/Ctrl+Enter submits from anywhere in the form (textarea included).
+      // On the card, not document — openModal owns Escape and the Tab trap.
+      card.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+          e.preventDefault();
+          submit();
+        }
       });
-    };
 
-    cancel.addEventListener("click", () => finish(null));
-    ok.addEventListener("click", submit);
-    overlay.addEventListener("mousedown", (e) => {
-      if (e.target === overlay) finish(null);
+      return {
+        card,
+        focusEl: tag,
+        label: title,
+        onClose: () => {
+          if (!settled) resolve(null);
+        },
+      };
     });
-    // ⌘/Ctrl+Enter submits from anywhere in the form (textarea included).
-    card.addEventListener("keydown", (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        submit();
-      }
-    });
-
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        finish(null);
-        return;
-      }
-      if (e.key !== "Tab") return;
-      const focusables = Array.from(
-        card.querySelectorAll<HTMLElement>(
-          "button, input, textarea, [tabindex]:not([tabindex='-1'])",
-        ),
-      ).filter((n) => !n.hasAttribute("disabled"));
-      if (!focusables.length) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    document.addEventListener("keydown", onKey, true);
-    setTimeout(() => tag.focus(), 0);
   });
 }

@@ -5,13 +5,57 @@
 // app feels like one product.
 
 import { host } from "../bridge";
-import { el, glyph, span, emptyState, wireResizerKeys, avatar } from "../ui";
+import { gget } from "../cache";
+import { openModal } from "../dialogs";
+import {
+  cleanErr,
+  el,
+  errorState,
+  glyph,
+  span,
+  emptyState,
+  avatar,
+  openMenu,
+  type MenuItem,
+} from "../ui";
+import type { ReactionSummary } from "../../shared/ipc";
+import {
+  facetActiveCount,
+  facetPasses,
+  facetServerValues,
+  harvestValues,
+} from "../facetModel";
+import type { FacetOption, FacetSpec, FacetState } from "../facetModel";
+
+// The pure facet rules live in ../facetModel (node-testable); views import
+// everything from here so there is still one facet import site.
+export { harvestValues };
+export type { FacetOption, FacetSpec, FacetState };
 
 /** An item another view asked this section to open on entry (e.g. the project
- *  board opening an issue/PR by number — keeps everything in-app, never GitHub). */
+ *  board opening an issue/PR by number, or a tag detail revealing its commit in
+ *  the graph — keeps everything in-app, never GitHub). */
 export interface SectionTarget {
   /** The issue / PR number to auto-open in the destination section. */
-  number: number;
+  number?: number;
+  /** A string-keyed item to open (gist id, project id) — the string-shaped
+   *  sibling of `number` for sections whose items aren't numbered. */
+  id?: string;
+  /** A workflow JOB to reveal + expand on the Actions run page (rides along
+   *  with `number` = the run id — how PR checks land on their logs). */
+  jobId?: number;
+  /** A commit to reveal on entry (the Commits view scrolls to + selects it). */
+  sha?: string;
+  /** A folder for the Code view to open ("" = repo root). Routing every folder
+   *  hop through this puts the browser's history behind ⌘[/⌘] too. */
+  path?: string;
+  /** A ref (branch / remote / tag / stash selector) for the Branches view to
+   *  scroll to and flash on entry. */
+  ref?: string;
+  /** Explicitly route to the section's ROOT (its list page). This is how a
+   *  detail page's ← / Esc gets back: routeView's "already showing this view"
+   *  no-op would otherwise swallow a target-less same-view navigation. */
+  list?: boolean;
 }
 
 /** Routes to another sidebar view; pass a target to deep-link a specific item
@@ -42,20 +86,37 @@ export async function ghGate(
   wrap: HTMLElement,
   nav: (view: string) => void,
   needsRepo = false,
+  retry?: () => void,
 ): Promise<GhGate | null> {
   let status: { connected: boolean; login?: string; repo?: { owner: string; repo: string } };
   try {
-    status = await host.invoke("github:status", undefined);
-  } catch {
-    status = { connected: false };
+    // Cached (12s TTL): a detail-page → list-page hop re-gates the section, and
+    // that round trip must never make Back feel like a page load.
+    status = await gget("github:status", undefined, 12000);
+  } catch (e) {
+    // A failed/timed-out status check is an ERROR with a Retry — it used to
+    // masquerade as "not connected" (misleading) or, before the client got
+    // request timeouts, hang the section on its skeleton forever.
+    wrap.replaceChildren(
+      errorState("Couldn't reach GitHub", cleanErr(e) || "The request timed out.", retry),
+    );
+    return null;
   }
   if (!status.connected) {
     wrap.replaceChildren(connectPrompt(nav));
     return null;
   }
   if (needsRepo && !status.repo) {
+    // A wall with a WHY and a way out — not a dead end. (This used to say
+    // "Not a GitHub repository" even for forks with only an `upstream`
+    // remote and for SSH-alias remotes; both resolve now, so reaching this
+    // genuinely means no remote points at github.com.)
     wrap.replaceChildren(
-      emptyState("Not a GitHub repository", "This repo's origin remote isn't on github.com."),
+      emptyState(
+        "No GitHub remote found",
+        "None of this repository's remotes point at github.com, so pull requests, issues, and CI can't attach here. Add one (git remote add origin …) and this section lights up on the next visit.",
+        { icon: "github", hint: "origin, upstream, and SSH aliases like git@github.com-work:… are all recognized." },
+      ),
     );
     return null;
   }
@@ -104,14 +165,19 @@ export function ghHeader(
     countPill.hidden = false;
   };
 
-  // The account + refresh that used to live here are gone — the account now sits
-  // once in the top bar, and refresh is handled by view-switch/mutation reloads.
-  // `.gh-acct` stays as the (empty) right-side anchor each view inserts its own
-  // action cluster (New PR / New Issue / …) before. `login`/`onRefresh` are kept
-  // in the signature because views still use them internally.
+  // The account chip lives once in the top bar; `.gh-acct` is the right-side
+  // anchor each view inserts its own action cluster (New PR / New Issue / …)
+  // before. It carries ONE shared control: a quiet refresh button — with the
+  // SWR caches making section data sticky, an explicit "get me fresh data now"
+  // affordance is honesty, not clutter.
   void login;
-  void onRefresh;
   const right = el("div", "gh-acct");
+  const refreshBtn = el("button", "icon-btn gh-refresh");
+  refreshBtn.title = "Refresh";
+  refreshBtn.setAttribute("aria-label", "Refresh this view");
+  refreshBtn.appendChild(glyph("refresh"));
+  refreshBtn.addEventListener("click", () => onRefresh());
+  right.appendChild(refreshBtn);
   headRow.append(left, right);
   return headRow;
 }
@@ -155,6 +221,14 @@ export function searchField(opts: {
   placeholder: string;
   onInput: (query: string) => void;
   initial?: string;
+  /** Debounce for onInput, ms (default 110). Explore's code tab sets a large
+   *  value and relies on `onEnter` instead — each code search costs 1/10th of
+   *  a minute's budget, so it must be deliberate. */
+  debounceMs?: number;
+  /** Fired on Enter with the current value. */
+  onEnter?: (query: string) => void;
+  /** Focus the input as soon as it mounts (search-first pages). */
+  autofocus?: boolean;
 }): HTMLElement {
   const wrap = el("div", "gh-search");
   const icon = glyph("search");
@@ -174,7 +248,7 @@ export function searchField(opts: {
   const fire = (): void => {
     clear.hidden = !input.value;
     window.clearTimeout(timer);
-    timer = window.setTimeout(() => opts.onInput(input.value.trim()), 110);
+    timer = window.setTimeout(() => opts.onInput(input.value.trim()), opts.debounceMs ?? 110);
   };
   input.addEventListener("input", fire);
   input.addEventListener("keydown", (e) => {
@@ -182,6 +256,12 @@ export function searchField(opts: {
       e.stopPropagation();
       input.value = "";
       fire();
+      return;
+    }
+    if (e.key === "Enter" && opts.onEnter) {
+      e.preventDefault();
+      window.clearTimeout(timer);
+      opts.onEnter(input.value.trim());
     }
   });
   clear.addEventListener("click", () => {
@@ -190,6 +270,7 @@ export function searchField(opts: {
     input.focus();
   });
   wrap.append(icon, input, clear);
+  if (opts.autofocus) setTimeout(() => input.focus(), 0);
   return wrap;
 }
 
@@ -383,139 +464,597 @@ export function peoplePickerModal(opts: {
   return new Promise((resolve) => {
     let settled = false;
     const pre = new Set(opts.selected ?? []);
-    const overlay = el("div", "modal-overlay");
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", opts.title);
-    const card = el("div", "modal-card modal-card-form people-picker");
-    const h = el("div", "modal-title");
-    h.textContent = opts.title;
+    openModal((close) => {
+      const card = el("div", "modal-card modal-card-form people-picker");
+      const h = el("div", "modal-title");
+      h.textContent = opts.title;
 
-    const search = document.createElement("input");
-    search.className = "modal-input";
-    search.placeholder = "Filter people…";
-    search.setAttribute("aria-label", "Filter people");
+      const search = document.createElement("input");
+      search.className = "modal-input";
+      search.placeholder = "Filter people…";
+      search.setAttribute("aria-label", "Filter people");
 
-    const list = el("div", "people-list");
-    const boxes: { login: string; cb: HTMLInputElement; row: HTMLElement }[] = [];
-    for (const p of opts.people) {
-      const row = el("label", "people-row");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = pre.has(p.login);
-      row.append(cb, avatar(p.login, p.avatarUrl ?? null, 22), span(p.login, "people-login"));
-      list.appendChild(row);
-      boxes.push({ login: p.login, cb, row });
-    }
-    const empty = el("div", "people-empty");
-    empty.textContent = "No people match.";
-    empty.hidden = true;
-    list.appendChild(empty);
-    const filter = (): void => {
-      const q = search.value.trim().toLowerCase();
-      let shown = 0;
-      for (const b of boxes) {
-        const ok = !q || b.login.toLowerCase().includes(q);
-        b.row.hidden = !ok;
-        if (ok) shown++;
+      const list = el("div", "people-list");
+      const boxes: { login: string; cb: HTMLInputElement; row: HTMLElement }[] = [];
+      for (const p of opts.people) {
+        const row = el("label", "people-row");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = pre.has(p.login);
+        row.append(cb, avatar(p.login, p.avatarUrl ?? null, 22), span(p.login, "people-login"));
+        list.appendChild(row);
+        boxes.push({ login: p.login, cb, row });
       }
-      empty.hidden = shown > 0;
-    };
-    search.addEventListener("input", filter);
+      const empty = el("div", "people-empty");
+      empty.textContent = "No people match.";
+      empty.hidden = true;
+      list.appendChild(empty);
+      const filter = (): void => {
+        const q = search.value.trim().toLowerCase();
+        let shown = 0;
+        for (const b of boxes) {
+          const ok = !q || b.login.toLowerCase().includes(q);
+          b.row.hidden = !ok;
+          if (ok) shown++;
+        }
+        empty.hidden = shown > 0;
+      };
+      search.addEventListener("input", filter);
 
-    const actions = el("div", "modal-actions");
-    const cancel = el("button", "mini-btn");
-    cancel.textContent = "Cancel";
-    const ok = el("button", "btn btn-primary modal-ok");
-    ok.append(span(opts.okLabel));
-    actions.append(cancel, ok);
-    card.append(h, search, list, actions);
+      const actions = el("div", "modal-actions");
+      const cancel = el("button", "mini-btn");
+      cancel.textContent = "Cancel";
+      const ok = el("button", "btn btn-primary modal-ok");
+      ok.append(span(opts.okLabel));
+      actions.append(cancel, ok);
+      card.append(h, search, list, actions);
 
-    const finish = (v: string[] | null): void => {
-      if (settled) return;
-      settled = true;
-      overlay.remove();
-      document.removeEventListener("keydown", onKey, true);
-      resolve(v);
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        finish(null);
-        return;
-      }
-      trapTab(e, card);
-    };
-    cancel.addEventListener("click", () => finish(null));
-    ok.addEventListener("click", () => finish(boxes.filter((b) => b.cb.checked).map((b) => b.login)));
-    overlay.addEventListener("mousedown", (e) => {
-      if (e.target === overlay) finish(null);
+      cancel.addEventListener("click", close);
+      ok.addEventListener("click", () => {
+        settled = true;
+        resolve(boxes.filter((b) => b.cb.checked).map((b) => b.login));
+        close();
+      });
+      return {
+        card,
+        focusEl: search,
+        label: opts.title,
+        onClose: () => {
+          if (!settled) resolve(null);
+        },
+      };
     });
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-    document.addEventListener("keydown", onKey, true);
-    setTimeout(() => search.focus(), 0);
   });
 }
 
-/** A list-left / detail-right scaffold matching the PR & Issue views. */
-/** Make a `.gh-list` pane user-resizable + keyboard-operable. Returns the divider
- *  element to place BETWEEN the list and the detail in a `.gh-body`. The width
- *  persists across sessions AND across every section view (one shared key), so a
- *  PR, an issue and a release all honour the same chosen proportion. */
-export function ghListResizer(listEl: HTMLElement): HTMLElement {
-  const MIN = 280;
-  const MAX = 720;
-  const saved = Number(localStorage.getItem("gitstudio.ghListW"));
-  let w = Number.isFinite(saved) && saved > 0 ? Math.min(MAX, Math.max(MIN, saved)) : 430;
-  const apply = (): void => {
-    listEl.style.flex = `0 0 ${w}px`;
-    listEl.style.minWidth = `${MIN}px`;
-    listEl.style.maxWidth = `${MAX}px`;
-  };
-  const setW = (n: number): void => {
-    w = Math.min(MAX, Math.max(MIN, Math.round(n)));
-    apply();
-  };
-  apply();
+// ── SECTION PAGES — the list ⇄ detail system (docs/desktop-redesign.md) ──────
+// (ghTwoPane / ghListResizer — the old master/detail split — lived here until
+// every section converted; the last user disappeared with the Gists rewrite.)
+// Full-width list pages and full-page details, replacing the ghTwoPane split
+// view by view. `sec-*` classes are the list page, `det-*` the detail page.
 
-  const split = el("div", "cmp-vsplit gh-vsplit");
-  split.append(el("div", "cmp-vsplit-grip"));
-  wireResizerKeys(split, {
-    orientation: "vertical",
-    label: "Resize the list pane",
-    min: MIN,
-    max: () => MAX,
-    get: () => w,
-    set: setW,
-    onCommit: () => localStorage.setItem("gitstudio.ghListW", String(w)),
-  });
-  split.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = w;
-    document.body.classList.add("resizing-h");
-    const move = (ev: PointerEvent): void => setW(startW + (ev.clientX - startX));
-    const up = (): void => {
-      document.body.classList.remove("resizing-h");
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      localStorage.setItem("gitstudio.ghListW", String(w));
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  });
-  return split;
-}
-
-/** The master/detail shell shared by every GitHub section view. The list⇄detail
- *  split is user-resizable (see ghListResizer). */
-export function ghTwoPane(): { view: HTMLElement; listEl: HTMLElement; detailEl: HTMLElement } {
+/** The full-width list page shell: the caller appends its own header (ghHeader
+ *  + toolbar cluster) and then fills `listEl` with `secRow`s. */
+export function sectionList(): { view: HTMLElement; listEl: HTMLElement } {
   const view = el("div", "gh-view");
-  const body = el("div", "gh-body");
-  const listEl = el("div", "gh-list");
-  const detailEl = el("div", "gh-detail");
-  body.append(listEl, ghListResizer(listEl), detailEl);
-  view.appendChild(body);
-  return { view, listEl, detailEl };
+  const listEl = el("div", "sec-list");
+  wireListNav(listEl, ".sec-row");
+  return { view, listEl };
+}
+
+/** One single-line row on a section list page: state icon, muted #number,
+ *  strong truncating title, inline label chips, then a right-aligned meta
+ *  cluster and a relative time. Fixed height — the density that lets a list
+ *  read like a tracker instead of a stack of cards. */
+export interface SecRowOpts {
+  lead?: HTMLElement;
+  /** The muted leading id, e.g. "#31". */
+  num?: string;
+  title: string;
+  /** Pills rendered right after the title (Draft, prerelease…). */
+  titleSuffix?: HTMLElement[];
+  /** Inline chips after the title (labels). Clipped, never wrapped. */
+  chips?: HTMLElement[];
+  /** Right-aligned cluster (avatars, stats). */
+  meta?: HTMLElement[];
+  /** Right-edge relative time (tabular figures, fixed slot). */
+  time?: string;
+  timeTitle?: string;
+  onOpen: () => void;
+  ariaLabel?: string;
+}
+export function secRow(o: SecRowOpts): HTMLElement {
+  const row = el("button", "sec-row");
+  if (o.ariaLabel) row.setAttribute("aria-label", o.ariaLabel);
+  if (o.lead) {
+    const lead = el("span", "sec-row-lead");
+    lead.appendChild(o.lead);
+    row.appendChild(lead);
+  }
+  if (o.num) {
+    const num = el("span", "sec-row-num");
+    num.textContent = o.num;
+    row.appendChild(num);
+  }
+  const title = el("span", "sec-row-title");
+  title.textContent = o.title;
+  title.title = o.title;
+  row.appendChild(title);
+  for (const s of o.titleSuffix ?? []) row.appendChild(s);
+  if (o.chips?.length) {
+    const chips = el("span", "sec-row-chips");
+    for (const c of o.chips) chips.appendChild(c);
+    row.appendChild(chips);
+  }
+  row.appendChild(el("span", "sec-row-spring"));
+  if (o.meta?.length) {
+    const meta = el("span", "sec-row-meta");
+    for (const m of o.meta) meta.appendChild(m);
+    row.appendChild(meta);
+  }
+  if (o.time !== undefined) {
+    const t = el("span", "sec-row-time");
+    t.textContent = o.time;
+    if (o.timeTitle) t.title = o.timeTitle;
+    row.appendChild(t);
+  }
+  row.addEventListener("click", o.onOpen);
+  return row;
+}
+
+/** An overlapping avatar stack for a row's meta cluster (up to `max`). */
+export function avatarStack(
+  people: Array<{ login: string; avatarUrl?: string | null }>,
+  max = 3,
+  size = 18,
+): HTMLElement {
+  const wrap = el("span", "sec-avs");
+  for (const p of people.slice(0, max)) wrap.appendChild(avatar(p.login, p.avatarUrl ?? null, size));
+  if (people.length > max) {
+    const more = el("span", "sec-avs-more");
+    more.textContent = `+${people.length - max}`;
+    wrap.appendChild(more);
+  }
+  return wrap;
+}
+
+/** Esc on a detail page = back to the list. Stands down whenever another layer
+ *  consumed the key (peek/modal/palette/menu all preventDefault their Esc) or
+ *  the focus is in a text surface; self-unhooks once the page leaves the DOM. */
+function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
+  const onKey = (e: KeyboardEvent): void => {
+    if (!view.isConnected) {
+      document.removeEventListener("keydown", onKey);
+      return;
+    }
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    if (document.querySelector(".peek-overlay, .modal-overlay, .cmdk-overlay, .dropdown")) return;
+    e.preventDefault();
+    document.removeEventListener("keydown", onKey);
+    onBack();
+  };
+  document.addEventListener("keydown", onKey);
+}
+
+export interface DetailPageOpts {
+  /** The ← button's label — the section name ("Issues", "Pull Requests"). */
+  backLabel: string;
+  /** Muted crumb after the back button, e.g. "#31". */
+  crumb?: string;
+  onBack: () => void;
+  /** The top-bar action cluster (rightmost); one primary action at most. */
+  actions?: HTMLElement[];
+}
+
+/** The full-page detail shell: a slim top bar (← back · crumb · actions) over
+ *  a scrolling body of `main` (measure-capped content column) + `rail` (the
+ *  sticky properties column). Esc goes back (see wireDetailEsc). */
+export function detailPage(o: DetailPageOpts): {
+  view: HTMLElement;
+  main: HTMLElement;
+  rail: HTMLElement;
+  topActions: HTMLElement;
+} {
+  const view = el("div", "det-view");
+  const bar = el("div", "det-topbar");
+  const back = el("button", "det-back");
+  back.append(glyph("arrow-left"), span(o.backLabel));
+  back.title = `Back to ${o.backLabel}  (Esc)`;
+  back.setAttribute("aria-label", back.title);
+  back.addEventListener("click", o.onBack);
+  bar.appendChild(back);
+  if (o.crumb) {
+    const crumb = el("span", "det-crumb");
+    crumb.textContent = o.crumb;
+    bar.appendChild(crumb);
+  }
+  const topActions = el("div", "det-tb-actions");
+  for (const a of o.actions ?? []) topActions.appendChild(a);
+  bar.appendChild(topActions);
+  const scroll = el("div", "det-scroll");
+  const body = el("div", "det-body");
+  const main = el("div", "det-main");
+  const rail = el("div", "det-rail");
+  body.append(main, rail);
+  scroll.appendChild(body);
+  view.append(bar, scroll);
+  wireDetailEsc(view, o.onBack);
+  return { view, main, rail, topActions };
+}
+
+/** One property in the detail rail: an uppercase label (with a hover-revealed
+ *  edit affordance when `onEdit` is given) over a small value body. */
+export function propSection(
+  label: string,
+  opts: { onEdit?: (anchor: HTMLElement) => void; editTitle?: string } = {},
+): { root: HTMLElement; body: HTMLElement } {
+  const root = el("div", "det-prop");
+  const head = el("div", "det-prop-label");
+  head.appendChild(span(label));
+  if (opts.onEdit) {
+    const b = el("button", "det-prop-edit");
+    b.appendChild(glyph("edit"));
+    b.title = opts.editTitle ?? `Edit ${label.toLowerCase()}`;
+    b.setAttribute("aria-label", b.title);
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      opts.onEdit!(b);
+    });
+    head.appendChild(b);
+  }
+  const body = el("div", "det-prop-body");
+  root.append(head, body);
+  return { root, body };
+}
+
+/** A person chip for the rail (avatar + login); clickable when given onClick. */
+export function personChip(
+  login: string,
+  avatarUrl: string | null | undefined,
+  onClick?: () => void,
+): HTMLElement {
+  const chip = el(onClick ? "button" : "span", "det-person");
+  chip.append(avatar(login, avatarUrl ?? null, 20), span(login));
+  if (onClick) {
+    chip.title = `View @${login}'s profile`;
+    chip.addEventListener("click", onClick);
+  }
+  return chip;
+}
+
+// ── Author association + reactions ───────────────────────────────────────────
+
+/** GitHub's SCREAMING_CASE association, in words a person would use.
+ *  "OWNER" tells you the repo owner is talking; "FIRST_TIME_CONTRIBUTOR" tells
+ *  you to be welcoming. Both are signal the app used to throw away. */
+export function associationLabel(a: string): string {
+  switch (a) {
+    case "OWNER": return "Owner";
+    case "MEMBER": return "Member";
+    case "COLLABORATOR": return "Collaborator";
+    case "CONTRIBUTOR": return "Contributor";
+    case "FIRST_TIME_CONTRIBUTOR": return "First-time contributor";
+    case "FIRST_TIMER": return "First-time on GitHub";
+    case "MANNEQUIN": return "Mannequin";
+    default: return a.toLowerCase().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  }
+}
+
+/** The small badge GitHub puts beside a commenter's name. Only for
+ *  associations that actually MEAN something — a plain "NONE"/"CONTRIBUTOR"
+ *  badge on every comment is noise, not information. */
+export function associationBadge(a: string | undefined): HTMLElement | undefined {
+  if (!a || a === "NONE" || a === "CONTRIBUTOR") return undefined;
+  const b = span(associationLabel(a), "gh-assoc-badge");
+  b.title = `This person is a repository ${associationLabel(a).toLowerCase()}`;
+  return b;
+}
+
+const REACTION_EMOJI: Array<[keyof ReactionSummary, string, string]> = [
+  ["plusOne", "👍", "+1"],
+  ["minusOne", "👎", "-1"],
+  ["laugh", "😄", "laugh"],
+  ["hooray", "🎉", "hooray"],
+  ["confused", "😕", "confused"],
+  ["heart", "❤️", "heart"],
+  ["rocket", "🚀", "rocket"],
+  ["eyes", "👀", "eyes"],
+];
+
+/** A read-only reaction strip — only the buckets someone actually used.
+ *  Undefined when nobody reacted, so callers append conditionally. */
+export function reactionRow(r: ReactionSummary | undefined): HTMLElement | undefined {
+  if (!r || r.total <= 0) return undefined;
+  const row = el("div", "gh-reactions");
+  for (const [key, emoji, name] of REACTION_EMOJI) {
+    const n = r[key] as number;
+    if (!n) continue;
+    const chip = span("", "gh-reaction");
+    chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
+    chip.title = `${n} ${name}`;
+    row.appendChild(chip);
+  }
+  return row.childElementCount ? row : undefined;
+}
+
+/** The dashed "add / set" affordance used by empty rail properties. */
+export function propAddBtn(label: string, onClick: () => void): HTMLElement {
+  const b = el("button", "det-prop-add");
+  b.append(glyph("add"), span(label));
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+/** A muted placeholder value for an empty rail property ("None"). */
+export function propNone(text = "None"): HTMLElement {
+  return span(text, "det-prop-none");
+}
+
+/**
+ * The list caps the paged fetches stop at (mirrors main/githubPaging PAGE_CAPS
+ * × per_page). When a list arrives at exactly its cap it PROBABLY has more —
+ * append `capNotice` so the UI says "first N" instead of lying by omission.
+ */
+export const LIST_CAPS = {
+  issues: 300,
+  prs: 300,
+  runs: 200,
+  notifications: 150,
+} as const;
+
+/** A quiet end-of-list note for a capped list; null when under the cap.
+ *
+ *  `mode` keeps the wording HONEST. When the narrowing happens on GitHub's
+ *  side ("server"), "search to narrow" is a lie — the list you're looking at
+ *  is already the server's answer, and the fix is a filter, not a search box. */
+export function capNotice(
+  shown: number,
+  cap: number,
+  mode: "client" | "server" = "client",
+): HTMLElement | null {
+  if (shown < cap) return null;
+  const note = el("div", "sec-cap-note");
+  note.append(
+    glyph("info"),
+    span(
+      mode === "server"
+        ? `Showing the ${cap} most recent from GitHub — narrow with the filters above to see further back.`
+        : `Showing the ${cap} most recently updated — search to narrow the list.`,
+    ),
+  );
+  return note;
+}
+
+// ── Facets: one filter vocabulary for every section ──────────────────────────
+
+/** A tiny round color swatch for a label (menu leading element). */
+export function swatch(hexColor: string): HTMLElement {
+  const sw = el("span", "gh-label-swatch");
+  sw.style.background = `#${(hexColor || "888888").replace(/^#/, "")}`;
+  return sw;
+}
+
+
+export interface FacetBar<T> {
+  el: HTMLElement;
+  /** True when `item` survives every ACTIVE client-side facet. */
+  passes: (item: T) => boolean;
+  /** Active values for server-side facets (those with no predicate). */
+  serverValues: () => Record<string, string>;
+  /** How many facets are currently narrowing the list. */
+  activeCount: () => number;
+  /** Clear every facet (fires onChange once). */
+  clear: () => void;
+  /** Re-render the buttons — call after the item list changes so harvested
+   *  options reflect what's actually loaded. */
+  sync: (items: T[]) => void;
+}
+
+/**
+ * Build a facet bar. The bar owns its buttons and menus; the VIEW owns the
+ * state object and decides what a change means (re-filter locally, or re-fetch
+ * with `serverValues()`).
+ */
+export function facetBar<T>(o: {
+  specs: FacetSpec<T>[];
+  /** Mutated in place, so a view can seed it from a route target. */
+  state: FacetState;
+  items: T[];
+  onChange: () => void;
+}): FacetBar<T> {
+  const bar = el("div", "gh-facets");
+  let items = o.items;
+  const loaded = new Map<string, FacetOption[]>();
+
+  const optionsFor = (spec: FacetSpec<T>): FacetOption[] => {
+    if (spec.options) return spec.options;
+    if (spec.harvest) return spec.harvest(items);
+    return loaded.get(spec.key) ?? [];
+  };
+
+  const openFacetMenu = (spec: FacetSpec<T>, btn: HTMLElement): void => {
+    const build = (opts: FacetOption[]): void => {
+      const current = o.state[spec.key];
+      const items_: MenuItem[] = [
+        {
+          label: spec.anyLabel ?? `Any ${spec.label.toLowerCase()}`,
+          icon: current == null ? "check" : undefined,
+          onClick: () => {
+            delete o.state[spec.key];
+            render();
+            o.onChange();
+          },
+        },
+      ];
+      if (opts.length) items_.push({ separator: true });
+      for (const opt of opts) {
+        const selected = current === opt.value;
+        items_.push({
+          label: opt.label ?? opt.value,
+          icon: selected ? "check" : opt.iconEl ? undefined : opt.icon,
+          iconEl: selected ? undefined : opt.iconEl?.(),
+          current: selected,
+          onClick: () => {
+            o.state[spec.key] = opt.value;
+            render();
+            o.onChange();
+          },
+        });
+      }
+      if (!opts.length) {
+        items_.push({ label: `No ${spec.label.toLowerCase()} to filter by`, disabled: true });
+      }
+      // Long option lists get the menu's own filter box — scrolling 40 branches
+      // to find one is not filtering, it's searching by hand.
+      openMenu(btn, items_, { searchable: opts.length > 8 });
+    };
+
+    if (spec.load && !loaded.has(spec.key)) {
+      // Show something immediately; replace it when the load lands. A menu
+      // that opens empty and never updates is worse than a slow one.
+      void spec
+        .load()
+        .then((opts) => {
+          loaded.set(spec.key, opts);
+          build(opts);
+        })
+        .catch(() => {
+          loaded.set(spec.key, []);
+          build([]);
+        });
+      return;
+    }
+    build(optionsFor(spec));
+  };
+
+  const render = (): void => {
+    bar.replaceChildren();
+    for (const spec of o.specs) {
+      const value = o.state[spec.key];
+      const btn = el("button", "mini-btn gh-facet-btn") as HTMLButtonElement;
+      const shown =
+        value == null
+          ? undefined
+          : optionsFor(spec).find((x) => x.value === value)?.label ?? value;
+      btn.classList.toggle("is-active", value != null);
+      btn.append(
+        glyph(spec.icon),
+        span(shown != null ? `${spec.label}: ${shown}` : spec.label),
+        glyph("chevron-down"),
+      );
+      btn.title =
+        shown != null
+          ? `Filtering by ${spec.label.toLowerCase()} “${shown}” — click to change`
+          : `Filter by ${spec.label.toLowerCase()}`;
+      btn.setAttribute("aria-label", btn.title);
+      btn.addEventListener("click", () => openFacetMenu(spec, btn));
+      bar.appendChild(btn);
+    }
+    if (activeCount() > 0) {
+      const clearBtn = el("button", "mini-btn gh-facet-clear") as HTMLButtonElement;
+      clearBtn.append(glyph("clear-all"), span("Clear"));
+      clearBtn.title = "Clear every filter";
+      clearBtn.addEventListener("click", () => api.clear());
+      bar.appendChild(clearBtn);
+    }
+  };
+
+  const activeCount = (): number => facetActiveCount(o.specs, o.state);
+
+  const api: FacetBar<T> = {
+    el: bar,
+    passes: (item: T) => facetPasses(o.specs, o.state, item),
+    serverValues: () => facetServerValues(o.specs, o.state),
+    activeCount,
+    clear: () => {
+      for (const spec of o.specs) delete o.state[spec.key];
+      render();
+      o.onChange();
+    },
+    sync: (next: T[]) => {
+      items = next;
+      render();
+    },
+  };
+
+  render();
+  return api;
+}
+
+
+/** The segmented control (Open / Closed / All), extracted from the two views
+ *  that each had their own copy. Returns the element; the caller owns state. */
+export function segmented<V extends string>(o: {
+  options: Array<{ value: V; label: string; icon?: string }>;
+  value: V;
+  ariaLabel: string;
+  onChange: (value: V) => void;
+}): HTMLElement {
+  const seg = el("div", "gh-seg");
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", o.ariaLabel);
+  for (const opt of o.options) {
+    const b = el("button", "gh-seg-btn" + (opt.value === o.value ? " active" : ""));
+    if (opt.icon) b.appendChild(glyph(opt.icon));
+    b.appendChild(span(opt.label));
+    b.setAttribute("aria-pressed", String(opt.value === o.value));
+    b.addEventListener("click", () => {
+      if (opt.value === o.value) return;
+      o.onChange(opt.value);
+    });
+    seg.appendChild(b);
+  }
+  return seg;
+}
+
+/**
+ * Arrow-key traversal for a list of row buttons: ↑/↓ move focus between the
+ * visible rows, Home/End jump to the edges, and Enter activates (native, since
+ * rows are buttons). Delegated on the container so re-rendered rows need no
+ * re-wiring. Typing surfaces (a filter input inside the container) are left
+ * alone. Every browsable list wires this — it's what makes the sections feel
+ * keyboard-first instead of Tab-only.
+ */
+export function wireListNav(container: HTMLElement, selector = ".gh-row"): void {
+  container.addEventListener("keydown", (e) => {
+    // j/k are first-class aliases for ↓/↑ — the muscle memory every
+    // Linear/Vim/Gmail hand brings to a list.
+    const down = e.key === "ArrowDown" || e.key === "j";
+    const up = e.key === "ArrowUp" || e.key === "k";
+    const isNav = down || up || e.key === "Home" || e.key === "End";
+    if (!isNav && e.key !== "Enter") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const rows = Array.from(container.querySelectorAll<HTMLElement>(selector)).filter(
+      (r) => r.offsetParent !== null,
+    );
+    if (!rows.length) return;
+    const cur = rows.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "Enter") {
+      // Rows are mostly plain <div>s with click listeners — Enter must mean
+      // "activate this row" for them too, not just for real <button>s (whose
+      // native Enter→click still works and is de-duplicated by this guard).
+      if (cur >= 0 && !(rows[cur] instanceof HTMLButtonElement)) {
+        e.preventDefault();
+        rows[cur].click();
+      }
+      return;
+    }
+    let next: number;
+    if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = rows.length - 1;
+    else if (cur === -1) next = down ? 0 : rows.length - 1;
+    else if (down) next = Math.min(cur + 1, rows.length - 1);
+    else next = Math.max(cur - 1, 0);
+    e.preventDefault();
+    const target = rows[next];
+    // ghRow builds non-focusable <div>s (no caller passes onClick) — .focus()
+    // was a silent no-op and arrow navigation was DEAD on every gh-row list.
+    if (target.tabIndex < 0 && !(target instanceof HTMLButtonElement)) target.tabIndex = -1;
+    target.focus();
+    target.scrollIntoView({ block: "nearest" });
+  });
 }

@@ -14,6 +14,14 @@ import { runAgentTurn, addBubble, markdownBlock, errorBlock, connectPrompt, elTe
 import type { SectionRender } from "./views/common";
 import type { AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
 
+/** A goal handed in from elsewhere (✨ actions in PR/issue views) — consumed
+ *  by the next render. The ✨ flow used to open a CHAT TAB in the bottom dock,
+ *  which split the screen in half; now it lands here, in the one AI surface. */
+let pendingGoal: string | null = null;
+export function seedAssistantGoal(goal: string): void {
+  pendingGoal = goal;
+}
+
 /** Agent write permission, remembered across navigations within a session. */
 let permission: "read" | "write" | "destructive" = "read";
 /** The explicit model id the user picked (from the provider's models). */
@@ -295,4 +303,12 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       void runGoal(input.value);
     }
   });
+
+  // A goal seeded from another view (✨ Explain / Review / …) starts running
+  // the moment this surface is up.
+  if (pendingGoal) {
+    const goal = pendingGoal;
+    pendingGoal = null;
+    void runGoal(goal);
+  }
 };

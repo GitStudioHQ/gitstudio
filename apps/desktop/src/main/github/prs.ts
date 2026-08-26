@@ -18,7 +18,9 @@
 // the client keeps private (RawPull/mapPull) are redefined locally so this
 // module is self-contained.
 
-import { GitHubClient, enc, mapUser, RawUser } from "../githubClient";
+import { GitHubClient, enc } from "../githubClient";
+import { mapPull, mapUser, type RawPull, type RawUser } from "./maps";
+import { PAGE_CAPS } from "../githubPaging";
 import { errorFields } from "../githubErrors";
 import type {
   BranchRef,
@@ -36,28 +38,6 @@ import type {
 
 // ── Raw API shapes (snake_case, GitHub REST) ──────────────────────────────────
 
-interface RawRef {
-  ref: string;
-  sha: string;
-}
-interface RawPull {
-  number: number;
-  title: string;
-  body: string | null;
-  state: string;
-  draft?: boolean;
-  html_url: string;
-  user: RawUser | null;
-  created_at: string;
-  updated_at: string;
-  head: RawRef;
-  base: RawRef;
-  labels?: { name: string; color: string }[];
-  comments?: number;
-  additions?: number;
-  deletions?: number;
-  changed_files?: number;
-}
 interface RawBranch {
   name: string;
 }
@@ -77,26 +57,6 @@ interface RawContents {
   size?: number;
 }
 
-function mapPull(p: RawPull): PullRequest {
-  return {
-    number: p.number,
-    title: p.title,
-    body: p.body,
-    state: p.state,
-    draft: p.draft ?? false,
-    htmlUrl: p.html_url,
-    user: mapUser(p.user),
-    createdAt: p.created_at,
-    updatedAt: p.updated_at,
-    head: { ref: p.head.ref, sha: p.head.sha },
-    base: { ref: p.base.ref, sha: p.base.sha },
-    labels: (p.labels ?? []).map((l) => ({ name: l.name, color: l.color })),
-    comments: p.comments,
-    additions: p.additions,
-    deletions: p.deletions,
-    changedFiles: p.changed_files,
-  };
-}
 
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -303,7 +263,7 @@ export async function prBranches(
   repo: string,
 ): Promise<BranchRef[]> {
   const [branches, def] = await Promise.all([
-    client.request<RawBranch[]>("GET", `/repos/${enc(owner)}/${enc(repo)}/branches?per_page=100`),
+    client.requestPaged<RawBranch>(`/repos/${enc(owner)}/${enc(repo)}/branches?per_page=100`, PAGE_CAPS.account),
     client
       .request<RawRepoMeta>("GET", `/repos/${enc(owner)}/${enc(repo)}`)
       .then((m) => m.default_branch ?? "main")
@@ -323,9 +283,9 @@ export async function prReviewers(
   repo: string,
 ): Promise<RepoCollaborator[]> {
   try {
-    const raw = await client.request<RawUser[]>(
-      "GET",
+    const raw = await client.requestPaged<RawUser>(
       `/repos/${enc(owner)}/${enc(repo)}/collaborators?per_page=100`,
+      PAGE_CAPS.account,
     );
     return raw.map((u) => ({ login: u.login, avatarUrl: u.avatar_url ?? null }));
   } catch {
@@ -443,9 +403,9 @@ export async function labels(
   owner: string,
   repo: string,
 ): Promise<RepoLabel[]> {
-  const raw = await client.request<RawLabel[]>(
-    "GET",
+  const raw = await client.requestPaged<RawLabel>(
     `/repos/${enc(owner)}/${enc(repo)}/labels?per_page=100`,
+    PAGE_CAPS.detail,
   );
   return raw.map((l) => ({ name: l.name, color: l.color, description: l.description ?? null }));
 }

@@ -10,6 +10,7 @@
 import { host } from "./bridge";
 import { el, span, glyph } from "./ui";
 import { renderMarkdown } from "./markdown";
+import { highlightProse } from "./highlight";
 import { confirmDialog, toast } from "./dialogs";
 import type { AgentConfirmRequest, AgentEventWire } from "../shared/ipc";
 
@@ -128,7 +129,7 @@ export async function runAgentTurn(
 /** Append a streamed text delta and re-render the block as Markdown (live). */
 export function onDelta(state: TurnState, delta: string): void {
   if (!state.stream) {
-    state.stream = el("div", "assistant-msg is-streaming");
+    state.stream = el("div", "assistant-msg gh-body-md is-streaming");
     state.turn.insertBefore(state.stream, state.thinking);
     state.raw = "";
   }
@@ -222,8 +223,9 @@ export function addBubble(transcript: HTMLElement, who: "user", text: string): v
 }
 
 export function markdownBlock(md: string): HTMLElement {
-  const block = el("div", "assistant-msg");
+  const block = el("div", "assistant-msg gh-body-md");
   block.innerHTML = renderMarkdown(md);
+  highlightProse(block);
   return block;
 }
 

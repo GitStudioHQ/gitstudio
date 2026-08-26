@@ -15,9 +15,8 @@
 // the trade-off that replaces it, and migrateLegacyKeys() for the one-way import
 // of keys written by the old scheme.
 
-import { app, safeStorage } from "electron";
+import { app } from "electron";
 import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { SecretStore } from "@gitstudio/secret-store/secretStore";
@@ -149,7 +148,10 @@ export class AiBridge {
    * row, so it runs whenever the settings view renders — it must never decrypt.
    */
   private hasKeyFile(id: string): boolean {
-    return this.secrets().has(id) || existsSync(this.legacyKeyPath(id));
+    // Only the keychain-free store counts: a leftover pre-1.4 keyring blob is
+    // unreadable by design (see loadKey), so it must not make a connection
+    // look `usable` when every real request would then fail.
+    return this.secrets().has(id);
   }
 
   private async loadKey(id: string): Promise<string | undefined> {
@@ -157,39 +159,13 @@ export class AiBridge {
     if (current !== undefined) {
       return current;
     }
-    return this.adoptLegacyKey(id);
-  }
-
-  /**
-   * Move a pre-1.4 safeStorage key into the keychain-free store, once.
-   *
-   * This is the last code path in the app that can raise an OS password prompt,
-   * so it is deliberately confined to `loadKey` — reached only when the user
-   * runs an AI task or opens the model picker, never from a status probe or
-   * startup. After it succeeds the legacy blob is deleted, so a given key can
-   * cost at most one prompt, ever. If the user dismisses that prompt the
-   * decrypt throws and AI just stays unavailable; nothing is lost and the next
-   * attempt can try again.
-   */
-  private async adoptLegacyKey(id: string): Promise<string | undefined> {
-    const legacy = this.legacyKeyPath(id);
-    let buf: Buffer;
-    try {
-      buf = await readFile(legacy);
-    } catch {
-      return undefined; // no key at all
-    }
-    let key: string;
-    try {
-      key = safeStorage.isEncryptionAvailable()
-        ? safeStorage.decryptString(buf)
-        : buf.toString("utf8");
-    } catch {
-      return undefined;
-    }
-    await this.secrets().set(id, key);
-    await unlink(legacy).catch(() => {});
-    return key;
+    // NO KEYRING, EVER. A pre-1.4 safeStorage blob could only be read through
+    // the OS keychain, whose ACL is bound to the app's code signature — every
+    // rebuilt/re-signed binary raised the macOS password prompt again. That
+    // migration is gone: any leftover blob is deleted unread; re-enter the key
+    // once in Settings → AI models and it lands in the prompt-free store.
+    await unlink(this.legacyKeyPath(id)).catch(() => {});
+    return undefined;
   }
 
   private async storeKey(id: string, key: string): Promise<void> {

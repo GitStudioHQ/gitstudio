@@ -22,15 +22,28 @@ import {
   openMenu,
   textBtn,
   ghRow,
+  subLink,
   parseGitHubItemUrl,
 } from "../ui";
-import { toast, confirmDialog } from "../dialogs";
+import { toast, confirmDialog, openModal } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { ghGate, ghHeader, type SectionRender, type SectionNav } from "./common";
+import { openRemoteRepoBrowser } from "../repoBrowser";
+import {
+  facetBar,
+  ghGate,
+  ghHeader,
+  harvestValues,
+  wireListNav,
+  type FacetState,
+  type SectionRender,
+  type SectionNav,
+} from "./common";
 import type { NotificationThread } from "../../shared/ipc";
 
 /** Persisted across re-renders of this view: include already-read threads? */
 let notifAll = false;
+/** Inbox facets (type / reason / repo), kept across refreshes. */
+const notifFacets: FacetState = {};
 
 /** The dismiss handle for the open notifications popover (so the bell toggles). */
 let closePanel: (() => void) | null = null;
@@ -40,11 +53,10 @@ export const renderNotifications: SectionRender = (wrap, nav) => {
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
-  // Gate first (NEEDS_REPO = false — the inbox is account-wide).
-  const gate = await ghGate(wrap, nav, false);
-  if (!gate) return;
-
   const refresh = (): void => renderNotifications(wrap, nav);
+  // Gate first (NEEDS_REPO = false — the inbox is account-wide).
+  const gate = await ghGate(wrap, nav, false, refresh);
+  if (!gate) return;
 
   // The in-app issue/PR views are scoped to the CURRENT repo, so a notification
   // can only deep-link in-app when it belongs to that repo (else it's genuinely
@@ -62,7 +74,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // Header: title + signed-in @login + a refresh, then splice in the inbox-wide
   // action cluster (toggle + mark-all-read) so the chrome matches the other
   // section views while exposing the actions unique to a list-of-actions view.
-  const header = ghHeader("Notifications", gate.login, refresh);
+  const header = ghHeader("Inbox", gate.login, refresh);
   const actions = el("div", "notif-actions");
 
   const toggleBtn = el("button", "row-btn notif-toggle");
@@ -78,7 +90,41 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   markAllBtn.title = "Mark all read";
   markAllBtn.addEventListener("click", () => void markAllRead(markAllBtn, refresh));
 
-  actions.append(toggleBtn, markAllBtn);
+  // Type / reason facets over the fetched inbox — triage is exactly "show me
+  // only the review requests", and scrolling for them is not triage.
+  const facets = facetBar<NotificationThread>({
+    specs: [
+      {
+        key: "type",
+        label: "Type",
+        icon: "inbox",
+        anyLabel: "Anything",
+        harvest: harvestValues<NotificationThread>((t) => t.type),
+        predicate: (t, v) => t.type === v,
+      },
+      {
+        key: "reason",
+        label: "Reason",
+        icon: "question",
+        anyLabel: "Any reason",
+        harvest: harvestValues<NotificationThread>((t) => t.reason),
+        predicate: (t, v) => t.reason === v,
+      },
+      {
+        key: "repo",
+        label: "Repo",
+        icon: "repo",
+        anyLabel: "All repos",
+        harvest: harvestValues<NotificationThread>((t) => t.repo),
+        predicate: (t, v) => t.repo === v,
+      },
+    ],
+    state: notifFacets,
+    items: [],
+    onChange: () => renderThreads(),
+  });
+
+  actions.append(facets.el, toggleBtn, markAllBtn);
   // ghHeader returns a flex row: [title] [.gh-acct]. Insert the action cluster
   // just before the account block so it reads: title … [actions] @login ↻.
   const acct = header.querySelector(".gh-acct");
@@ -89,6 +135,21 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   const body = el("div", "list-body notif-body");
   view.appendChild(body);
   wrap.replaceChildren(view);
+
+  // Keyboard triage: ↑/↓ move, Enter opens (wireListNav), and `e` archives —
+  // marks the focused row's thread read, the way every inbox does it.
+  wireListNav(body, ".notif-row");
+  const rowThreads = new Map<HTMLElement, NotificationThread>();
+  body.addEventListener("keydown", (ev) => {
+    if (ev.key !== "e" || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    const target = ev.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+    const row = (document.activeElement as HTMLElement | null)?.closest?.(".notif-row") as HTMLElement | null;
+    const t = row ? rowThreads.get(row) : undefined;
+    if (!row || !t || !t.unread) return;
+    ev.preventDefault();
+    void markRead(t, row, body, refresh);
+  });
 
   // Load.
   body.replaceChildren(skeletonList(6));
@@ -112,6 +173,33 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   (markAllBtn as HTMLButtonElement).disabled = unreadCount === 0;
   // The header count reflects what's actionable: unread threads.
   header.setCount?.(unreadCount);
+  facets.sync(threads);
+
+  const renderThreads = (): void => {
+    const shown = threads.filter((t) => facets.passes(t));
+    body.replaceChildren();
+    if (shown.length === 0) {
+      const empty = emptyState(
+        "No matching notifications",
+        "Nothing in your inbox matches these filters.",
+        { icon: "filter" },
+      );
+      const clear = el("button", "btn btn-soft list-empty-action");
+      clear.append(glyph("clear-all"), span("Clear filters"));
+      clear.addEventListener("click", () => facets.clear());
+      empty.appendChild(clear);
+      body.appendChild(empty);
+      return;
+    }
+    body.appendChild(notifSummary(shown.length, shown.filter((t) => t.unread).length));
+    for (const t of shown) {
+      const row = notificationRow(t, body, refresh, nav, currentRepo);
+      rowThreads.set(row, t);
+      // Rows are plain divs — focusable so ↑/↓ traversal and `e` work on them.
+      row.tabIndex = -1;
+      body.appendChild(row);
+    }
+  };
 
   if (threads.length === 0) {
     body.replaceChildren(
@@ -126,11 +214,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     return;
   }
 
-  body.replaceChildren();
-  body.appendChild(notifSummary(threads.length, unreadCount));
-  for (const t of threads) {
-    body.appendChild(notificationRow(t, body, refresh, nav, currentRepo));
-  }
+  renderThreads();
 }
 
 // ── Top-bar notification center (the bell popover, next to the profile) ────────
@@ -230,19 +314,18 @@ export function openExternalItem(o: {
   kind: "issue" | "pull";
   htmlUrl: string;
 }): void {
-  const overlay = el("div", "modal-overlay");
   const card = el("div", "modal-card modal-card-form ext-item");
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-  const close = (): void => {
-    overlay.remove();
-    document.removeEventListener("keydown", onKey, true);
-  };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") { e.preventDefault(); close(); }
-  };
-  document.addEventListener("keydown", onKey, true);
-  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
+  card.tabIndex = -1;
+  let close = (): void => {};
+  openModal((c) => {
+    close = c;
+    return {
+      card,
+      focusEl: card,
+      label: `${o.owner}/${o.repo} #${o.number}`,
+      onClose: () => {},
+    };
+  });
 
   card.appendChild(loadingState("Loading…"));
   void (async () => {
@@ -254,7 +337,7 @@ export function openExternalItem(o: {
     } catch {
       /* fall through to the unavailable state */
     }
-    if (!overlay.isConnected) return;
+    if (!card.isConnected) return;
     card.replaceChildren();
     if (!item) {
       card.appendChild(
@@ -342,38 +425,81 @@ function notificationRow(
   lead.appendChild(glyph(notifIcon(t.type)));
 
   const when = relTimeISO(t.updatedAt);
-  const meta =
-    `${t.repo}` +
-    (t.reason ? ` · ${notifReasonLabel(t.reason)}` : "") +
-    (when ? ` · ${when}` : "");
+  const aria = `${notifTypeLabel(t.type)} notification: ${t.title || "(untitled)"}${t.unread ? " (unread)" : ""}`;
+  // The repo name is a door, not a label: browse that repo in-app.
+  const repoLink = (): HTMLElement =>
+    // The full Explore page, not the peek stack: from an inbox row, "what IS
+    // this repo?" deserves breadcrumbs, a README and a way to open it.
+    subLink(t.repo, `Explore ${t.repo} in GitStudio`, () =>
+      nav ? nav("explore", { id: `repo/${t.repo}` }) : openRemoteRepoBrowser(t.repo),
+    );
 
-  const row = ghRow({
-    lead,
-    title: t.title || "(untitled)",
-    titleSuffix: t.type ? [pill(notifTypeLabel(t.type), "notif-type")] : [],
-    meta,
-    metaTitle: t.updatedAt ? `Updated ${absTimeISO(t.updatedAt)}` : undefined,
-    ariaLabel: `${notifTypeLabel(t.type)} notification: ${t.title || "(untitled)"}${t.unread ? " (unread)" : ""}`,
-  });
-  // ghRow returns a <div> here (no onClick passed). Tag it as an inbox row so the
-  // read/unread emphasis CSS applies, and as a .list-row so the existing
-  // `.list-row:hover .row-actions` reveal lights up the Open / Mark-read cluster
-  // (gh-row-rich's later layout rules still win on padding/radius/alignment).
-  row.classList.add("notif-row", "list-row");
-  if (!t.unread) {
-    row.classList.add("notif-read");
-    row.style.opacity = "0.72";
+  // Two shapes, one behavior: the FULL inbox page gets a dense single line
+  // (title · type ······ repo · reason · time); the 424px bell POPOVER keeps
+  // the two-line card, which reads better at that width.
+  const compact = !!body.closest(".notif-pop");
+  let row: HTMLElement;
+  if (compact) {
+    const segments: Array<string | HTMLElement> = [repoLink()];
+    if (t.reason) segments.push(notifReasonLabel(t.reason));
+    if (when) segments.push(when);
+    row = ghRow({
+      lead,
+      title: t.title || "(untitled)",
+      titleSuffix: t.type ? [pill(notifTypeLabel(t.type), "notif-type")] : [],
+      metaSegments: segments,
+      metaTitle: t.updatedAt ? `Updated ${absTimeISO(t.updatedAt)}` : undefined,
+      ariaLabel: aria,
+    });
+  } else {
+    row = el("div", "notif-line");
+    row.setAttribute("aria-label", aria);
+    row.appendChild(lead);
+    const title = el("span", "notif-line-title");
+    title.textContent = t.title || "(untitled)";
+    title.title = t.title;
+    row.appendChild(title);
+    if (t.type) row.appendChild(pill(notifTypeLabel(t.type), "notif-type"));
+    row.appendChild(el("span", "sec-row-spring"));
+    const meta = el("span", "sec-row-meta");
+    meta.appendChild(repoLink());
+    if (t.reason) meta.appendChild(span(notifReasonLabel(t.reason)));
+    row.appendChild(meta);
+    const time = el("span", "sec-row-time");
+    time.textContent = when;
+    if (t.updatedAt) time.title = `Updated ${absTimeISO(t.updatedAt)}`;
+    row.appendChild(time);
   }
+  // .notif-row = the inbox read/unread emphasis; .list-row = the shared
+  // `.list-row:hover .row-actions` reveal for the Open / Mark-read cluster.
+  row.classList.add("notif-row", "list-row");
+  if (!t.unread) row.classList.add("notif-read");
 
-  // Open the subject IN-APP. Current-repo issues/PRs deep-link into the full
-  // Issues/PRs view (you can act on them); OTHER repos open a read-only in-app
-  // viewer. Only genuinely non-issue/PR subjects (commits/discussions/releases)
-  // fall back to github.com.
+  // Open the subject IN-APP.
+  //
+  // The thread now carries what it's ABOUT (subjectKind + subjectNumber/Sha,
+  // parsed from the API subject url in github/maps.ts), so Releases and
+  // Commits — which used to bounce to github.com because their web urls don't
+  // look like issue links — route in-app too:
+  //   issue / pull   → this repo's Issues|PRs page, or the read-only viewer
+  //                    for another repo
+  //   release        → the Releases detail page (subjectNumber IS the id)
+  //   commit         → reveal in the graph
+  // Anything genuinely unsupported (Discussions) still opens on GitHub, and
+  // the row SAYS so rather than promising an in-app open.
   const item = parseGitHubItemUrl(t.htmlUrl);
-  const sameRepo = item && currentRepo && item.repo === currentRepo;
-  const openable = !!item; // any issue/PR can be read in-app
+  const threadRepo = (t.repo || "").toLowerCase();
+  const sameRepo = !!currentRepo && threadRepo === currentRepo;
+  const kind = t.subjectKind;
+  const inAppRelease = sameRepo && kind === "release" && t.subjectNumber != null;
+  const inAppCommit = sameRepo && kind === "commit" && !!t.subjectSha;
+  const openable = !!item || inAppRelease || inAppCommit;
   const open = (): void => {
-    if (sameRepo && item) {
+    if (inAppRelease) {
+      nav("releases", { number: t.subjectNumber });
+    } else if (inAppCommit) {
+      nav("graph", { sha: t.subjectSha });
+    } else if (item && sameRepo) {
       nav(item.kind, { number: item.number });
     } else if (item) {
       const [owner, repo] = item.repo.split("/");
@@ -403,7 +529,18 @@ function notificationRow(
   row.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     openMenu(row, [
-      { label: "Open on GitHub", icon: "link-external", onClick: open },
+      openable
+        ? { label: "Open in GitStudio", icon: "arrow-right", onClick: open }
+        : { label: "Open on GitHub", icon: "link-external", onClick: open },
+      ...(openable && t.htmlUrl
+        ? [
+            {
+              label: "Open on GitHub",
+              icon: "link-external",
+              onClick: () => window.open(t.htmlUrl, "_blank", "noopener"),
+            },
+          ]
+        : []),
       ...(t.unread
         ? [{ label: "Mark as read", icon: "mail-read", onClick: () => void markRead(t, row, body, refresh) }]
         : []),
@@ -437,7 +574,6 @@ async function markRead(
       // "Show all" → flip the row to its read style in place: recede it, drop
       // the unread dot, and remove the now-irrelevant "Mark read" action.
       row.classList.add("notif-read");
-      row.style.opacity = "0.72";
       row.querySelector(".notif-dot")?.remove();
       row.querySelectorAll<HTMLElement>(".row-actions .row-btn").forEach((b) => {
         if (b.textContent === "Mark read") b.remove();

@@ -4,7 +4,7 @@
 // Electron-specific beyond the persistence path, so the data layer stays the
 // same one the extension uses.
 
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import { GitContext, NodeGitAdapter } from "@gitstudio/git-service/index";
 import type { GitRunHook } from "@gitstudio/git-service/index";
 import type { RepoInfo } from "../shared/ipc";
@@ -100,6 +100,18 @@ export class RepoStore {
     this.context?.dispose();
     this.context = undefined;
     this.listeners.clear();
+  }
+
+  /** Forget a root (Settings → Repositories). Returns true when it was there —
+   *  main.ts persists only on a real change. Never touches disk or the open
+   *  repo: forgetting a repo you're standing in is a list edit, nothing more. */
+  removeRecent(root: string): boolean {
+    const before = this.recent.length;
+    // Compare RESOLVED paths: the manager hands back realpath'd roots, and a
+    // recent stored through a symlink would otherwise never match — the click
+    // would report success and change nothing.
+    this.recent = this.recent.filter((r) => resolve(r) !== resolve(root));
+    return this.recent.length !== before;
   }
 
   private promoteRecent(root: string): void {

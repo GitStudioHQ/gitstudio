@@ -26,6 +26,13 @@
   /* Motion — one easing + two durations the whole app shares. */
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Radius scale — the audit found 10 hardcoded radii in the wild; NEW work
+     uses these tokens and legacy values migrate as surfaces get touched. */
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 14px;
   --dur-1: 120ms;
   --dur-2: 180ms;
 
@@ -35,6 +42,16 @@
      that want more room before centering. Replaces scattered 760/820/900px one-offs. */
   --measure-read: 820px;
   --measure-wide: 1100px;
+
+  /* Spacing scale — new work (the sec-*/det-* section pages) sizes every gap
+     and padding from this; legacy px values migrate as surfaces get touched. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -212,6 +229,38 @@ body {
   user-select: none;
   -webkit-font-smoothing: antialiased;
 }
+
+/* ── CONTENT IS SELECTABLE ───────────────────────────────────────────────────
+   The body-level user-select:none is right for app chrome (rails, buttons,
+   list rows) — but it also covered every piece of CONTENT, so you couldn't
+   copy a stack trace from a CI log, a snippet from a README, a commit
+   subject, or the sign-in code. Not being able to copy text is by itself a
+   reason to leave for github.com. Everything a person reads is re-enabled
+   here; everything they click stays unselectable. */
+.gh-body-md, .code-md, .code-md-plain, .assistant-msg,
+.gist-content, .actions-log, .ghfile,
+.ext-item-scroll, .ext-item-title,
+.gh-detail-title, .gh-detail-meta, .gh-comment,
+.peek-msg, .peek-meta, .peek-subtitle,
+.gh-tag-commit-card, .gh-device-code,
+.settings-version, .settings-sub,
+.row-meta-sub, .gh-row-sub {
+  user-select: text;
+}
+/* Row meta stays copyable but must never hijack the row's click. */
+.gh-row-sub, .row-meta-sub { cursor: default; }
+/* Clickable fragments INSIDE a row's meta line (branch / author / repo). */
+.gh-sub-link {
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color var(--dur-1) var(--ease);
+}
+.gh-sub-link:hover {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  text-decoration: underline;
+}
+.gh-sub-sep { opacity: 0.7; }
 
 #root {
   display: flex;
@@ -654,6 +703,16 @@ html.is-mac .topbar { padding-left: 78px; }
   cursor: pointer;
 }
 .topbar-icon:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+/* Back / forward history chevrons — grouped tight, right after the sidebar
+   toggle. Disabled = end of the stack in that direction (kept visible so the
+   affordance is learnable, like a browser's). */
+.topbar-nav { margin: 0 -1px; }
+.topbar-nav .codicon { font-size: 15px; }
+.topbar-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
 /* Sidebar toggle — sits flush at the far left, a hair before the brand. */
 .topbar-sidebar { margin-right: 2px; }
 .topbar-sidebar .codicon { font-size: 17px; }
@@ -843,6 +902,12 @@ html.is-mac .topbar { padding-left: 78px; }
   display: flex;
   flex-direction: column;
 }
+/* Soft view entrance — a 110ms settle instead of a hard DOM pop on every tab
+   switch. Opacity only: a transform here would give the graph's virtualizer a
+   containing block mid-animation. */
+.view-host > * { animation: gs-view-in 110ms var(--ease) both; }
+@keyframes gs-view-in { from { opacity: 0.3; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .view-host > * { animation: none; } }
 .graph-view {
   flex: 1 1 auto;
   min-height: 0;
@@ -1316,6 +1381,517 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
   padding: 9px 11px;
 }
 
+/* ── Peek: the Linear-style drill-in popup (peek.ts) ─────────────────────────
+   One overlay hosts a stack of cards (branch → commit → …) with a ← back in
+   the header. Reuses the modal overlay treatment so every layer of the app
+   dims and blurs identically. */
+.peek-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1900; /* under .modal-overlay (2000): confirms opened FROM a peek stack above it */
+  display: flex;
+  align-items: safe center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--app-bg) 58%, transparent);
+  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  animation: gs-overlay-in 140ms var(--ease) both;
+  -webkit-app-region: no-drag;
+  overflow: auto;
+  padding: 40px 24px;
+}
+.peek-card {
+  width: min(700px, 94vw);
+  max-height: min(78vh, 860px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground));
+  border: 1px solid var(--app-border);
+  box-shadow: var(--sheen), var(--shadow-pop);
+  animation: gs-card-in 160ms var(--ease-out) both;
+  outline: none;
+  overflow: hidden;
+}
+.peek-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px 12px 16px;
+  border-bottom: 1px solid var(--app-border);
+  flex: 0 0 auto;
+}
+.peek-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 8px;
+  color: var(--app-muted);
+  flex: 0 0 auto;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.peek-nav-btn:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+.peek-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  flex: 0 0 auto;
+}
+.peek-badge .glyph { color: var(--gs-accent-ink, var(--gs-accent)); font-size: 15px; }
+.peek-badge img { width: 22px; height: 22px; border-radius: 50%; }
+/* A quiet description paragraph inside a peek body (repo/user bios). */
+.peek-desc {
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--vscode-foreground);
+  margin: 0;
+}
+.peek-topics { display: flex; flex-wrap: wrap; gap: 6px; }
+.peek-titlewrap { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.peek-titlerow { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.peek-title {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.peek-subtitle {
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.peek-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+}
+.peek-chip-accent {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--gs-accent) 26%, transparent);
+}
+.peek-chip-ok {
+  color: var(--status-add);
+  background: color-mix(in srgb, var(--status-add) 13%, transparent);
+  border-color: color-mix(in srgb, var(--status-add) 28%, transparent);
+}
+.peek-chip-warn {
+  color: var(--status-warn);
+  background: color-mix(in srgb, var(--status-warn) 13%, transparent);
+  border-color: color-mix(in srgb, var(--status-warn) 28%, transparent);
+}
+.peek-chip-muted {
+  color: var(--app-muted);
+  background: color-mix(in srgb, var(--app-muted) 12%, transparent);
+  border-color: color-mix(in srgb, var(--app-muted) 22%, transparent);
+}
+.peek-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.peek-act { height: 28px; }
+.peek-act.btn { height: 28px; padding: 0 12px; font-size: var(--text-sm); }
+.peek-act-danger { color: var(--gs-danger); }
+.peek-act-danger:hover { border-color: color-mix(in srgb, var(--gs-danger) 45%, var(--app-border)); }
+.peek-close { margin-left: 2px; }
+.peek-body {
+  flex: 1 1 auto;
+  min-height: 80px;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+/* Content-heavy cards (remote repo browsing, file quick-looks). */
+.peek-card-wide { width: min(980px, 96vw); max-height: min(86vh, 940px); }
+/* Remote file quick-look: mono text with a line-number gutter, one shared
+   scroll surface so the gutter never desyncs from the code. */
+.ghfile-outer { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.ghfile {
+  display: flex;
+  align-items: flex-start;
+  overflow: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-panel);
+  max-height: 62vh;
+}
+.ghfile pre {
+  margin: 0;
+  padding: 12px 0;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.ghfile-gutter {
+  flex: 0 0 auto;
+  position: sticky;
+  left: 0;
+  padding: 12px 10px 12px 14px !important;
+  text-align: right;
+  color: var(--app-muted);
+  opacity: 0.65;
+  background: var(--app-panel);
+  border-right: 1px solid var(--app-border);
+  user-select: none;
+}
+.ghfile-code { flex: 1 1 auto; padding: 12px 16px !important; }
+.ghfile-more { font-size: var(--text-xs); color: var(--app-muted); }
+/* README inside a peek section: give the prose room to breathe. */
+.peek-readme { padding: 18px 22px; }
+
+.peek-skel { display: flex; flex-direction: column; gap: 4px; padding: 4px 0; }
+.peek-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 12px;
+  color: var(--app-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.peek-empty .glyph { font-size: 22px; opacity: 0.75; }
+.peek-section { display: flex; flex-direction: column; gap: 6px; }
+.peek-section-head { display: flex; align-items: center; gap: 7px; }
+.peek-section-label {
+  font-size: var(--text-xs);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--app-muted);
+}
+.peek-section-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--app-muted);
+  background: color-mix(in srgb, var(--app-muted) 12%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.peek-section-body {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-panel);
+  overflow: hidden;
+}
+.peek-meta {
+  display: grid;
+  grid-template-columns: minmax(84px, max-content) 1fr;
+  gap: 5px 16px;
+  font-size: var(--text-sm);
+}
+.peek-meta-key { color: var(--app-muted); white-space: nowrap; }
+.peek-meta-val {
+  color: var(--vscode-foreground);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Rows inside a peek section (commits, changed files) — quieter than list-view
+   rows; the whole row is a click target when it drills deeper. */
+.peek-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px;
+  border: none;
+  background: none;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  color: var(--vscode-foreground);
+  border-bottom: 1px solid color-mix(in srgb, var(--app-border) 55%, transparent);
+  cursor: default;
+}
+.peek-row:last-child { border-bottom: none; }
+button.peek-row { cursor: pointer; transition: background var(--dur-1) var(--ease); }
+button.peek-row:hover { background: var(--app-hover); }
+button.peek-row:focus-visible { outline: none; box-shadow: inset var(--ring); }
+.peek-row .glyph { color: var(--app-muted); flex: 0 0 auto; }
+.peek-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.peek-row-title {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.peek-row-sub {
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.peek-row-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  font-family: var(--vscode-editor-font-family);
+}
+/* Drill affordance: a chevron that appears on hover, like Linear's rows. */
+.peek-row-chev { opacity: 0; transition: opacity var(--dur-1) var(--ease); }
+button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-chev { opacity: 0.9; }
+/* Commit body inside the commit card: rendered as quiet monospace prose. */
+.peek-msg {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--vscode-foreground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 0;
+}
+/* File-status letter (A/M/D/R) tinted like the changes view. */
+.peek-fstat {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  font-weight: 700;
+  width: 16px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+.peek-fstat.add { color: var(--status-add); }
+.peek-fstat.mod { color: var(--status-mod); }
+.peek-fstat.del { color: var(--status-del); }
+.peek-fstat.ren { color: var(--status-warn); }
+.peek-diffstat { display: inline-flex; gap: 6px; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+.peek-diffstat .plus { color: var(--status-add); }
+.peek-diffstat .minus { color: var(--status-del); }
+.peek-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  flex: 0 0 auto;
+  user-select: none;
+}
+.peek-mono { font-family: var(--vscode-editor-font-family); font-size: 12px; }
+.peek-parent {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11.5px;
+  color: var(--gs-accent-ink, var(--gs-accent));
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--gs-accent) 24%, transparent);
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin-right: 6px;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease);
+}
+.peek-parent:hover { border-color: color-mix(in srgb, var(--gs-accent) 55%, transparent); }
+/* A clickable wrapper around a ref chip (navigates to Branches). Bare-button
+   reset is mandatory: app.css has no global button reset. */
+.peek-refchip {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-right: 6px;
+  cursor: pointer;
+  display: inline-flex;
+}
+.peek-refchip:hover .peek-chip { border-color: color-mix(in srgb, var(--gs-accent) 60%, transparent); }
+/* Homepage/website values in peek meta grids — real links. */
+.peek-ext-link { color: var(--gs-accent-ink, var(--gs-accent)); text-decoration: none; }
+.peek-ext-link:hover { text-decoration: underline; }
+/* Comment authors carry a real avatar now (initials tile when the image 404s). */
+.gh-comment-author { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+
+/* Settings → About: version line + the check-for-updates row. */
+.settings-version { font-family: var(--vscode-editor-font-family); font-size: 12px; }
+.settings-update-row { display: flex; align-items: center; gap: 10px; }
+.settings-update-status { min-height: 1em; }
+
+/* ── ⌘K command palette ──────────────────────────────────────────────────────
+   Top-anchored, Linear-style: one fuzzy search over sections, refs, repos,
+   PRs/issues, and actions. Sits above peeks and modals — it IS navigation. */
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 14vh 24px 24px;
+  background: color-mix(in srgb, var(--app-bg) 52%, transparent);
+  backdrop-filter: blur(4px) saturate(1.1);
+  -webkit-backdrop-filter: blur(4px) saturate(1.1);
+  animation: gs-overlay-in 120ms var(--ease) both;
+  -webkit-app-region: no-drag;
+}
+.cmdk-card {
+  width: min(640px, 92vw);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground));
+  border: 1px solid var(--app-border);
+  box-shadow: var(--sheen), var(--shadow-pop);
+  animation: gs-card-in 140ms var(--ease-out) both;
+  overflow: hidden;
+}
+.cmdk-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 14px;
+  border-bottom: 1px solid var(--app-border);
+}
+.cmdk-input-row .glyph { color: var(--app-muted); }
+.cmdk-input {
+  flex: 1 1 auto;
+  height: 46px;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 14.5px;
+}
+.cmdk-input::placeholder { color: var(--app-muted); opacity: 0.8; }
+.cmdk-esc {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--app-muted);
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.cmdk-list { max-height: min(52vh, 480px); overflow-y: auto; padding: 6px; }
+.cmdk-group {
+  font-size: var(--text-2xs, 10.5px);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: var(--track-label);
+  color: var(--app-muted);
+  padding: 10px 10px 4px;
+}
+.cmdk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: var(--text-base);
+  color: var(--vscode-foreground);
+}
+.cmdk-row .glyph { color: var(--app-muted); flex: 0 0 auto; }
+.cmdk-row.is-selected { background: var(--app-active); }
+.cmdk-row.is-selected .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+.cmdk-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-hint {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.cmdk-empty { padding: 26px 12px; text-align: center; color: var(--app-muted); font-size: var(--text-sm); }
+
+/* Topbar ⌘K affordance — quiet, discoverable, out of the way. */
+.topbar-cmdk {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 10px;
+  margin-right: 4px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-panel);
+  color: var(--app-muted);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.topbar-cmdk:hover { color: var(--vscode-foreground); border-color: color-mix(in srgb, var(--gs-accent) 40%, var(--app-border)); }
+.topbar-cmdk .glyph .codicon { font-size: 13px; }
+.topbar-cmdk-kbd {
+  font-size: 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  opacity: 0.85;
+}
+@media (max-width: 1100px) { .topbar-cmdk-label { display: none; } }
+
+/* Deep-link landing flash — a fading accent wash on the row a navigation
+   pointed at (branches ref targets), like GitHub's anchor highlight. */
+@keyframes gs-row-flash {
+  0% { background: color-mix(in srgb, var(--gs-accent) 28%, transparent); }
+  100% { background: transparent; }
+}
+.row-flash { animation: gs-row-flash 1.6s var(--ease) both; }
+@media (prefers-reduced-motion: reduce) { .row-flash { animation: none; } }
+
+/* Tag detail (Releases → Tags): the commit card under the tag header. */
+.gh-tag-commit { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.gh-tag-commit-card {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-panel);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gh-tag-commit-subject { font-size: var(--text-md); font-weight: 600; color: var(--vscode-foreground); }
+.gh-tag-commit-meta { font-size: var(--text-xs); color: var(--app-muted); }
+.gh-tag-commit-body {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--vscode-foreground);
+  margin: 4px 0 0;
+}
+
 /* Destructive primary button (delete / discard / force ops). */
 .btn-danger {
   display: inline-flex;
@@ -1675,55 +2251,18 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
 .code-readme-head .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 
 /* Rendered README markdown (GitHub-ish typography). */
+/* README surface layout — the prose rules themselves live in THE prose system
+   (see ".gh-body-md, .code-md" further down), so a README here and a PR body
+   there can never drift apart again. */
 .code-md {
-  padding: 20px 22px;
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--vscode-foreground);
+  padding: 24px 28px;
   max-width: 920px;
-  word-wrap: break-word;
 }
 .code-md-plain {
   white-space: pre-wrap;
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: 12.5px;
 }
-.code-md > :first-child { margin-top: 0; }
-.code-md h1, .code-md h2 { border-bottom: 1px solid var(--app-border); padding-bottom: 6px; }
-.code-md h1 { font-size: 1.6em; margin: 0.6em 0 0.4em; }
-.code-md h2 { font-size: 1.35em; margin: 0.85em 0 0.4em; }
-.code-md h3 { font-size: 1.15em; margin: 0.8em 0 0.3em; }
-.code-md h4, .code-md h5, .code-md h6 { margin: 0.8em 0 0.3em; }
-.code-md p { margin: 0.55em 0; }
-.code-md ul, .code-md ol { margin: 0.45em 0; padding-left: 1.5em; }
-.code-md li { margin: 0.15em 0; }
-.code-md blockquote {
-  margin: 0.6em 0;
-  padding: 0.1em 1em;
-  border-left: 3px solid color-mix(in srgb, var(--gs-accent) 22%, var(--app-border));
-  background: color-mix(in srgb, var(--app-elevated) 50%, transparent);
-  color: var(--app-muted);
-}
-.code-md hr { border: none; border-top: 1px solid var(--app-border); margin: 1.4em 0; }
-.code-md code {
-  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: 0.88em;
-  background: var(--app-elevated);
-  border: 1px solid var(--app-border);
-  border-radius: 5px;
-  padding: 1px 5px;
-}
-.code-md pre {
-  margin: 0.8em 0;
-  padding: 12px 14px;
-  overflow-x: auto;
-  background: var(--app-elevated);
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-}
-.code-md pre code { background: none; border: none; padding: 0; font-size: 12.5px; }
-.code-md a { color: var(--gs-accent-ink, var(--gs-accent)); text-decoration: none; }
-.code-md a:hover { text-decoration: underline; }
 
 /* File viewer (read-only Monaco over the listing). */
 .code-file-view .code-file-name {
@@ -2315,15 +2854,6 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: var(--app-bg); }
 .gh-acct { display: flex; align-items: center; gap: 8px; }
 .gh-who { font-size: 12px; color: var(--app-muted); }
-.gh-body { flex: 1 1 auto; min-height: 0; display: flex; }
-.gh-list {
-  flex: 0 0 40%;
-  min-width: 280px;
-  max-width: 560px;
-  overflow-y: auto;
-  padding: 6px;
-  border-right: 1px solid var(--app-border);
-}
 .gh-row {
   display: flex;
   flex-direction: column;
@@ -2427,7 +2957,47 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-drawer-body { flex: 1 1 auto; min-height: 0; }
 .gh-detail-head { display: flex; flex-direction: column; gap: 7px; padding-bottom: 12px; border-bottom: 1px solid var(--app-border); }
 .gh-detail-title { font-size: 18px; font-weight: 650; color: var(--vscode-foreground); }
-.gh-detail-meta { font-size: 12px; color: var(--app-muted); display: flex; align-items: center; flex-wrap: wrap; }
+.gh-detail-meta { font-size: 12px; color: var(--app-muted); display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+/* The LIVE meta row: author opens the profile card; branches land in Branches. */
+.gh-meta-bit { flex: 0 0 auto; }
+.gh-meta-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 2px 6px 2px 3px;
+  margin: -2px 0;
+  border-radius: 999px;
+  color: var(--vscode-foreground);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease);
+}
+.gh-meta-author:hover { background: var(--app-hover); }
+.gh-meta-flow { display: inline-flex; align-items: center; gap: 6px; }
+.gh-meta-arrow { color: var(--app-muted); }
+.gh-branch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 1px 8px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-panel);
+  color: var(--gs-accent-ink, var(--gs-accent));
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.gh-branch-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-branch-chip .glyph { color: inherit; font-size: 12px; }
+.gh-branch-chip:hover {
+  border-color: color-mix(in srgb, var(--gs-accent) 50%, var(--app-border));
+  background: var(--accent-soft);
+}
 .gh-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; row-gap: 8px; margin-top: 6px; }
 .gh-detail-actions > * { flex-shrink: 0; }
 .gh-merge-btn { height: 30px; padding: 0 14px; }
@@ -2436,45 +3006,171 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-checks-pending { color: var(--status-mod); background: color-mix(in srgb, var(--status-mod) 16%, transparent); }
 .gh-body-md {
   margin: 14px 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--vscode-foreground);
   max-width: var(--measure-read);
+}
+/* ── THE prose system ────────────────────────────────────────────────────────
+   ONE reading experience for every rendered-markdown surface — README cards,
+   PR/issue bodies, comments, release notes, external items. There used to be
+   two divergent stylesheets (13px .gh-body-md, 14px .code-md, different
+   heading scales, tables/images/task-lists unstyled anywhere), which is why
+   the same README read WORSE here than on github.com. GitHub renders prose at
+   16px/1.5 with a real heading hierarchy; this matches that reading comfort
+   inside a 13px-chrome app: 15px/1.65, full-scale headings with h1/h2 rules,
+   and every GFM construct styled. */
+.gh-body-md, .code-md {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--vscode-foreground);
   word-wrap: break-word;
 }
-/* renderMarkdown emits block tags — give them the SAME tight rhythm as .code-md
-   (NO white-space:pre-wrap, which double-spaced every block by preserving the
-   inter-block newlines on top of the margins). */
-.gh-body-md > :first-child { margin-top: 0; }
-.gh-body-md > :last-child { margin-bottom: 0; }
-.gh-body-md h1, .gh-body-md h2, .gh-body-md h3,
-.gh-body-md h4, .gh-body-md h5, .gh-body-md h6 {
-  font-size: 1em; font-weight: 650; margin: 0.8em 0 0.3em; line-height: 1.35;
+.gh-body-md > :first-child, .code-md > :first-child { margin-top: 0; }
+.gh-body-md > :last-child, .code-md > :last-child { margin-bottom: 0; }
+.gh-body-md h1, .gh-body-md h2, .gh-body-md h3, .gh-body-md h4, .gh-body-md h5, .gh-body-md h6,
+.code-md h1, .code-md h2, .code-md h3, .code-md h4, .code-md h5, .code-md h6 {
+  font-weight: 650;
+  margin: 1.1em 0 0.45em;
+  line-height: 1.3;
 }
-.gh-body-md h1 { font-size: 1.3em; }
-.gh-body-md h2 { font-size: 1.15em; }
-.gh-body-md p { margin: 0.5em 0; }
-.gh-body-md ul, .gh-body-md ol { margin: 0.4em 0; padding-left: 1.4em; }
-.gh-body-md li { margin: 0.15em 0; }
-.gh-body-md code {
+.gh-body-md h1, .code-md h1 {
+  font-size: 1.7em;
+  border-bottom: 1px solid var(--app-border);
+  padding-bottom: 0.25em;
+}
+.gh-body-md h2, .code-md h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--app-border);
+  padding-bottom: 0.25em;
+}
+.gh-body-md h3, .code-md h3 { font-size: 1.17em; }
+.gh-body-md h4, .code-md h4 { font-size: 1.02em; }
+.gh-body-md h5, .code-md h5 { font-size: 0.95em; }
+.gh-body-md h6, .code-md h6 { font-size: 0.9em; color: var(--app-muted); }
+.gh-body-md p, .code-md p { margin: 0.6em 0; }
+.gh-body-md ul, .gh-body-md ol, .code-md ul, .code-md ol { margin: 0.5em 0; padding-left: 1.7em; }
+.gh-body-md li, .code-md li { margin: 0.2em 0; }
+.gh-body-md li > p, .code-md li > p { margin: 0.25em 0; }
+.gh-body-md code, .code-md code {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: 0.88em; background: var(--app-elevated);
-  border: 1px solid var(--app-border); border-radius: 5px; padding: 1px 5px;
+  font-size: 0.85em;
+  background: color-mix(in srgb, var(--app-muted) 13%, transparent);
+  border-radius: 6px;
+  padding: 2px 6px;
 }
-.gh-body-md pre {
-  margin: 0.7em 0; padding: 12px 14px; overflow-x: auto;
-  background: var(--app-elevated); border: 1px solid var(--app-border); border-radius: 8px;
+.gh-body-md pre, .code-md pre {
+  margin: 0.8em 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  line-height: 1.5;
 }
-.gh-body-md pre code { background: none; border: none; padding: 0; }
-.gh-body-md blockquote {
-  margin: 0.6em 0; padding: 0.1em 1em;
-  border-left: 3px solid color-mix(in srgb, var(--gs-accent) 22%, var(--app-border));
-  background: color-mix(in srgb, var(--app-elevated) 50%, transparent);
+.gh-body-md pre code, .code-md pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.8px;
+}
+.gh-body-md blockquote, .code-md blockquote {
+  margin: 0.7em 0;
+  padding: 0.15em 1.1em;
+  border-left: 3px solid color-mix(in srgb, var(--gs-accent) 30%, var(--app-border));
   color: var(--app-muted);
 }
-.gh-body-md a { color: var(--gs-accent-ink, var(--gs-accent)); text-decoration: none; }
-.gh-body-md a:hover { text-decoration: underline; }
-.gh-body-md hr { border: none; border-top: 1px solid var(--app-border); margin: 1.2em 0; }
+.gh-body-md a, .code-md a { color: var(--gs-accent-ink, var(--gs-accent)); text-decoration: none; }
+.gh-body-md a:hover, .code-md a:hover { text-decoration: underline; }
+.gh-body-md hr, .code-md hr { border: none; border-top: 2px solid var(--app-border); margin: 1.6em 0; }
+.gh-body-md img, .code-md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+/* GFM tables — bordered cells, header band, row zebra (github.com's table look). */
+.gh-body-md table, .code-md table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  margin: 0.8em 0;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: 0.93em;
+}
+.gh-body-md th, .gh-body-md td, .code-md th, .code-md td {
+  border: 1px solid var(--app-border);
+  padding: 6px 13px;
+}
+.gh-body-md th, .code-md th { font-weight: 650; background: var(--app-panel); }
+.gh-body-md tbody tr:nth-child(2n), .code-md tbody tr:nth-child(2n) {
+  background: color-mix(in srgb, var(--app-panel) 55%, transparent);
+}
+.gh-body-md .md-center, .code-md .md-center { text-align: center; }
+.gh-body-md .md-right, .code-md .md-right { text-align: right; }
+.gh-body-md .md-left, .code-md .md-left { text-align: left; }
+/* Task lists — real-looking checkboxes, no list bullets. */
+.gh-body-md ul.md-task-list, .code-md ul.md-task-list { list-style: none; padding-left: 0.4em; }
+.gh-body-md .md-task, .code-md .md-task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-right: 7px;
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  background: var(--app-panel);
+  font-size: 10px;
+  line-height: 1;
+  color: transparent;
+  vertical-align: -2px;
+}
+.gh-body-md .md-task-done, .code-md .md-task-done {
+  color: #fff;
+  background: var(--gs-accent);
+  border-color: var(--gs-accent);
+}
+/* <details>/<summary> — GitHub's disclosure pattern, everywhere in READMEs. */
+.gh-body-md details, .code-md details {
+  margin: 0.6em 0;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--app-panel) 55%, transparent);
+}
+.gh-body-md summary, .code-md summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 9px 0;
+  user-select: none;
+}
+.gh-body-md details[open] > summary, .code-md details[open] > summary {
+  border-bottom: 1px solid var(--app-border);
+  margin-bottom: 8px;
+}
+.gh-body-md kbd, .code-md kbd {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 0.82em;
+  padding: 2px 6px;
+  border: 1px solid var(--app-border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--app-panel);
+}
+.gh-body-md mark, .code-md mark {
+  background: color-mix(in srgb, var(--status-warn) 30%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.gh-body-md figure, .code-md figure { margin: 0.8em 0; }
+/* Plain-text fallbacks (a non-markdown README, a render failure) stay mono at
+   code size — the unified block above outranked the earlier rule by order. */
+.gh-body-md.code-md-plain, .code-md.code-md-plain { font-size: 12.5px; }
+.gh-body-md figcaption, .code-md figcaption {
+  font-size: 0.85em;
+  color: var(--app-muted);
+  text-align: center;
+  margin-top: 4px;
+}
 .gh-files .file-row { cursor: default; }
 .gh-adds { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--app-muted); margin-left: auto; }
 
@@ -2663,7 +3359,10 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 /* ── Dropdown menus (repo / branch switchers) ───────────────────────────────── */
 .dropdown {
   position: fixed;
-  z-index: 1000;
+  /* Above the peek overlay (1900) AND the modal overlay (2000): a menu is
+     always anchored to the surface that opened it, so it must never render
+     underneath that surface — e.g. the branch ⋯ menu inside a branch peek. */
+  z-index: 2100;
   min-width: 230px;
   max-width: 440px;
   max-height: 72vh;
@@ -2807,7 +3506,7 @@ gitstudio-graph {
   font-family: var(--vscode-editor-font-family);
   font-size: 12px;
   white-space: pre-wrap;
-  max-height: 140px;
+  max-height: 40vh;
   overflow: auto;
   color: var(--vscode-foreground);
   user-select: text;
@@ -2962,8 +3661,52 @@ gitstudio-graph {
   min-width: 0;
   min-height: 0;
 }
-/* The file diff lives in the bottom dock's "Diff" tab now, so this column is
-   details-only — no inner split, no divider. */
+/* ── In-view commit diff ─────────────────────────────────────────────────────
+   Opening a file docks the commit panel to a fixed-width left rail and the
+   Monaco diff fills the rest of the (widened) details column — the whole
+   commit lives in ONE region. The graph narrows but never below its column
+   breakpoint's floor. */
+.graph-view.diff-open .graph-host-full { flex: 0 1 34%; min-width: 300px; }
+.graph-view.diff-open .graph-details { flex: 1 1 auto; }
+.graph-view.diff-open .details-split .details-panel {
+  flex: 0 0 340px;
+  border-right: 1px solid var(--app-border);
+}
+.details-diff {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+}
+.details-diff-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.details-diff-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* long paths keep their FILENAME visible, not their prefix */
+  text-align: left;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  user-select: text;
+}
+/* Same hosting contract as the dock's old diff surface: the panel's wrap
+   flexes to fill (Monaco needs a real box, not absolute hacks). */
+.details-diff-surface { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.details-diff-surface > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
 
 .diff-empty {
   display: flex;
@@ -3181,11 +3924,11 @@ gitstudio-graph {
 
 /* State pill in the detail meta: it lives in a horizontal flex row, so cancel
    the base .gh-pill margin-top and give it a touch more presence. */
-.gh-detail-meta { gap: 0 4px; }
 .gh-detail-meta .gh-pill { margin-top: 0; align-self: center; }
 .gh-state-open { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .gh-state-closed { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
 .gh-state-merged { color: var(--gs-accent); background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
+.gh-state-not-planned { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 16%, transparent); }
 .gh-state-draft { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 20%, transparent); }
 /* Semantic variants so Releases/Gists pills stop collapsing into gray "draft". */
 .gh-state-prerelease { color: var(--status-warn); background: color-mix(in srgb, var(--status-warn) 18%, transparent); }
@@ -4320,6 +5063,433 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 .clone-choose { flex: 0 0 auto; }
 
+/* Folder-name override (clone dialog) + the destination sheet. */
+.clone-name-row .clone-dest-text { display: flex; flex-direction: column; gap: 4px; }
+.clone-name-input,
+.dest-name-input {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+}
+.clone-name-input.is-invalid,
+.dest-name-input.is-invalid {
+  border-color: var(--vscode-editorError-foreground, #e5534b);
+}
+.dest-name-error {
+  font-size: var(--text-xs);
+  color: var(--vscode-editorError-foreground, #e5534b);
+}
+.dest-card { width: min(480px, 92vw); display: flex; flex-direction: column; gap: 12px; }
+.dest-card .modal-actions { margin-top: 2px; }
+.dest-name-label {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+  margin-bottom: -6px;
+}
+
+/* Settings → Repositories card. */
+.settings-clonedir-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-panel);
+}
+.settings-clonedir-text { flex: 1 1 auto; min-width: 0; }
+.settings-clonedir-path {
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-clonedir-btns { display: flex; gap: 6px; flex: 0 0 auto; }
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  margin-top: 10px;
+}
+.settings-check input[type="checkbox"] { margin-top: 3px; accent-color: var(--app-accent, #4a8df8); }
+.settings-check-text { display: flex; flex-direction: column; gap: 2px; }
+.settings-check-text .settings-sub { margin: 0; }
+
+/* Settings → Repositories: the local-copies manager. */
+.settings-copies-head { margin-top: 14px; }
+.settings-copies { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.settings-copy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 9px;
+  background: var(--app-panel);
+}
+.settings-copy.is-missing { opacity: 0.55; }
+.settings-copy.is-current { border-color: color-mix(in srgb, var(--app-accent, #6c5cf7) 55%, var(--app-border)); }
+.settings-copy-meta { flex: 1 1 auto; min-width: 0; }
+.settings-copy-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.settings-copy-origin {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--app-muted);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+}
+.settings-copy-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.settings-copy-path {
+  font-size: 11px;
+  color: var(--app-muted);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-copy-acts { display: flex; gap: 2px; flex: 0 0 auto; }
+.settings-copy-acts .icon-btn.danger:hover { color: var(--vscode-editorError-foreground, #e5534b); }
+
+/* A3 metadata: association badges, reactions, edited markers, rail extras. */
+.gh-assoc-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  flex: 0 0 auto;
+}
+.gh-comment-edited {
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  font-style: italic;
+}
+.gh-reactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.gh-reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-panel);
+  font-size: var(--text-xs);
+}
+.gh-reaction-emoji { font-size: 12px; line-height: 1; }
+.gh-reaction-n { color: var(--app-muted); font-variant-numeric: tabular-nums; }
+/* A requested-but-not-yet-submitted reviewer reads as pending, not done. */
+.det-person.is-pending { opacity: 0.75; border-style: dashed; }
+.det-milestone-chip { align-self: flex-start; }
+.det-prop-when { font-size: var(--text-xs); color: var(--app-muted); align-self: center; }
+.gh-fork-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--app-muted);
+}
+
+/* ── Explore: global GitHub search ─────────────────────────────────────────
+   A search-FIRST page: the field is the hero, tabs sit under it, and results
+   reuse the shared .sec-row density so Explore reads like every other list. */
+.explore-view { display: flex; flex-direction: column; min-height: 0; }
+.explore-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: 28px 24px 14px;
+  border-bottom: 1px solid var(--app-border);
+}
+.explore-title { font-size: 22px; font-weight: 650; margin: 0; color: var(--vscode-foreground); }
+.explore-sub { font-size: var(--text-sm); color: var(--app-muted); margin-top: -6px; }
+.explore-search { max-width: 720px; width: 100%; }
+.explore-search .gh-search-input { height: 38px; font-size: var(--text-base); }
+.explore-tools { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.explore-tabs { display: inline-flex; gap: 2px; }
+.explore-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: var(--app-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.explore-tab:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+.explore-tab.active {
+  background: var(--app-active);
+  color: var(--gs-accent-ink, var(--gs-accent));
+  font-weight: 600;
+}
+.explore-sort { margin-left: auto; }
+.explore-desc {
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore-lang { font-size: var(--text-xs); color: var(--app-muted); }
+.explore-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  font-variant-numeric: tabular-nums;
+}
+.explore-pill { align-self: center; }
+/* Explore rows carry a second line (description / repo), so they grow instead
+   of holding the single-line section height. */
+.explore-row { height: auto; align-items: flex-start; padding-top: 10px; padding-bottom: 10px; }
+.explore-row-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.explore-row-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.explore-row .sec-row-meta,
+.explore-row .sec-row-time { align-self: center; }
+/* Multi-line rows: the leading icon belongs beside the FIRST line, not
+   floating in the middle of a tall row. */
+.explore-row .sec-row-lead { align-self: flex-start; margin-top: 2px; }
+.explore-code-row .sec-row-title {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-sm);
+}
+.explore-code-frag {
+  margin: 6px 0 0;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--app-panel);
+  border: 1px solid var(--app-border);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--app-muted);
+  overflow-x: auto;
+  white-space: pre;
+}
+.explore-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 18px 12px 26px;
+}
+.explore-footer-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.explore-loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 14px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.explore-loading-more .codicon { animation: gs-spin 1.1s linear infinite; }
+
+/* ── Explore entity pages: repository + account ────────────────────────────── */
+.det-split { display: inline-flex; align-items: stretch; padding: 0; overflow: hidden; }
+.det-split-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+.det-split-more {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  cursor: pointer;
+  border-left: 1px solid color-mix(in srgb, #000 22%, transparent);
+}
+.det-split-more:hover { background: color-mix(in srgb, #000 14%, transparent); }
+
+.explore-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-sm);
+}
+.explore-crumb {
+  border: none;
+  background: transparent;
+  color: var(--gs-accent-ink, var(--gs-accent));
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+.explore-crumb:hover { background: var(--app-hover); }
+.explore-crumb.is-current { color: var(--vscode-foreground); cursor: default; }
+.explore-crumb-sep { color: var(--app-muted); }
+
+.explore-repo-content { display: flex; flex-direction: column; gap: var(--sp-4); }
+.explore-tree {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--app-panel);
+}
+.explore-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.explore-tree-row + .explore-tree-row { border-top: 1px solid var(--app-border); }
+.explore-tree-row:hover { background: var(--app-hover); }
+.explore-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.explore-tree-spring { flex: 1 1 auto; }
+.explore-tree-size { font-size: 11px; color: var(--app-muted); font-variant-numeric: tabular-nums; }
+
+.explore-readme {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--app-panel);
+}
+.explore-readme-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--app-border);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--app-muted);
+}
+.explore-readme .gh-body-md { padding: 20px 24px 26px; }
+
+.explore-file {
+  display: flex;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  overflow: auto;
+  background: var(--app-panel);
+  max-height: 72vh;
+}
+.explore-file-gutter {
+  flex: 0 0 auto;
+  padding: 12px 10px;
+  text-align: right;
+  color: var(--app-muted);
+  background: color-mix(in srgb, var(--app-muted) 7%, transparent);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+  user-select: none;
+}
+.explore-file-code {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 12px 16px;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+.explore-file-prose { padding: 4px 2px 20px; }
+.explore-topic { margin: 0 4px 4px 0; }
+
+/* Go to file */
+.gotofile-card { width: min(640px, 92vw); display: flex; flex-direction: column; gap: 10px; }
+.gotofile-input { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
+.gotofile-list { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; }
+.gotofile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.gotofile-row:hover { background: var(--app-hover); }
+.gotofile-dir { color: var(--app-muted); }
+.gotofile-empty, .gotofile-note { font-size: var(--text-xs); color: var(--app-muted); padding: 4px 2px; }
+
+/* Account page */
+.explore-account-head { display: flex; align-items: center; gap: 14px; margin-bottom: var(--sp-3); }
+.explore-account-names { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.explore-account-title { font-size: 20px; font-weight: 650; margin: 0; }
+.explore-account-login { color: var(--app-muted); font-size: var(--text-sm); }
+.explore-account-bio { margin: 0 0 var(--sp-4); color: var(--vscode-foreground); max-width: 70ch; }
+.explore-account-repos-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.explore-account-count { font-size: var(--text-xs); font-weight: 600; color: var(--app-muted); }
+.explore-account-repo { align-items: flex-start; padding: 10px 12px; }
+.explore-account-repo-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.explore-account-link { display: inline-flex; align-items: center; gap: 6px; }
+.det-prop-text { font-size: var(--text-sm); color: var(--vscode-foreground); line-height: 1.5; }
+.det-prop-none { font-size: var(--text-xs); color: var(--app-muted); }
+
+/* Typed confirmation (irreversible actions). */
+.confirm-typed-hint { margin-bottom: -4px; }
+.confirm-typed-input { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
+
 .clone-progress { display: flex; flex-direction: column; gap: 7px; }
 .clone-progress-phase { font-size: var(--text-xs); color: var(--app-muted); font-variant-numeric: tabular-nums; }
 .clone-progress-bar {
@@ -4435,7 +5605,6 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 
 /* ── Rich list row (the new gh-row) ────────────────────────────────────────── */
-.gh-list { padding: 7px; }
 .gh-row-rich {
   display: flex;
   flex-direction: row; /* override .gh-row's column — else the lead stacks above the body */
@@ -4474,6 +5643,9 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .gh-lead-closed { color: var(--status-del); }
 .gh-lead-merged { color: var(--gs-accent-ink, var(--gs-accent)); }
 .gh-lead-draft { color: var(--app-muted); }
+/* Closed as not-planned: gray, like GitHub — "we're not doing this" reads
+   differently from "done", and the color is the whole signal. */
+.gh-lead-not-planned { color: var(--app-muted); }
 .gh-row-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .gh-row-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .gh-row-rich .gh-row-title {
@@ -4631,8 +5803,7 @@ body.vscode-light .gh-label-chip {
 /* Single full-width pane (no left list): the picked project/org board+data. */
 .gh-solo { flex: 1 1 auto; min-width: 0; border-left: none; }
 
-/* Wider list pane so the detail isn't a 60% void; lift the detail surface. */
-.gh-list { flex: 0 0 42%; min-width: 300px; max-width: 600px; }
+/* Lift the (single-pane) detail surface — orgs / projects still sit on it. */
 .gh-detail { background: var(--app-bg); }
 
 /* ── Premium empty state (also the detail pane's "nothing selected") ────────── */
@@ -5000,7 +6171,14 @@ body.vscode-light .gh-label-chip {
   color: var(--vscode-foreground); font-size: 13px; line-height: 1.5; white-space: pre-wrap;
 }
 .assistant-turn { align-self: flex-start; max-width: min(760px, 94%); display: flex; flex-direction: column; gap: 8px; }
-.assistant-msg { font-size: 13px; line-height: 1.6; color: var(--vscode-foreground); }
+/* AI chat prose rides THE prose system (chatRender adds .gh-body-md to every
+   .assistant-msg container), scaled down to bubble size. The old standalone
+   ruleset here collapsed h3–h6 to 1em and skipped tables/links/details — the
+   same markdown rendered differently in chat than in a PR body. */
+.assistant-msg { font-size: 13.5px; }
+.assistant-msg h1 { font-size: 1.35em; }
+.assistant-msg h2 { font-size: 1.2em; }
+.assistant-msg pre code { font-size: 12px; }
 /* The live stream renders Markdown as it arrives; a soft blinking caret trails
    the last rendered element until the step completes. */
 .assistant-msg.is-streaming > *:last-child::after {
@@ -5009,25 +6187,6 @@ body.vscode-light .gh-label-chip {
   opacity: 0.75; animation: ai-caret 1s steps(2) infinite;
 }
 @keyframes ai-caret { 50% { opacity: 0; } }
-.assistant-msg p { margin: 0 0 8px; }
-.assistant-msg p:last-child { margin-bottom: 0; }
-.assistant-msg code { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 12px; background: var(--app-elevated); padding: 1px 5px; border-radius: 5px; }
-.assistant-msg pre { background: var(--app-bg); border: 1px solid var(--app-border); border-radius: 9px; padding: 10px 12px; overflow-x: auto; }
-.assistant-msg ul, .assistant-msg ol { margin: 4px 0 8px; padding-left: 20px; }
-.assistant-msg li { margin: 2px 0; }
-.assistant-msg h1, .assistant-msg h2, .assistant-msg h3,
-.assistant-msg h4, .assistant-msg h5, .assistant-msg h6 {
-  font-weight: 650; line-height: 1.35; margin: 0.7em 0 0.3em;
-}
-.assistant-msg h1 { font-size: 1.25em; }
-.assistant-msg h2 { font-size: 1.12em; }
-.assistant-msg h3, .assistant-msg h4, .assistant-msg h5, .assistant-msg h6 { font-size: 1em; }
-.assistant-msg > :first-child { margin-top: 0; }
-.assistant-msg blockquote {
-  margin: 0.5em 0; padding: 0.1em 0.9em;
-  border-left: 3px solid color-mix(in srgb, var(--gs-accent) 22%, var(--app-border));
-  color: var(--app-muted);
-}
 
 .assistant-thinking { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--app-muted); padding: 3px 0; }
 /* Three pulsing dots that read as "actively thinking". */
@@ -5179,26 +6338,11 @@ body.vscode-light .gh-label-chip {
   display: inline-flex; align-items: center; justify-content: center;
 }
 
-/* GFM tables from the Markdown renderer — used across every AI surface. */
-.md-table {
-  border-collapse: collapse; margin: 8px 0; font-size: 12.5px;
-  display: block; max-width: 100%; overflow-x: auto;
-}
-.md-table th, .md-table td { border: 1px solid var(--app-border); padding: 5px 9px; text-align: left; vertical-align: top; }
-.md-table th { background: var(--app-elevated); font-weight: 650; white-space: nowrap; }
-.md-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--app-elevated) 45%, transparent); }
-.md-left { text-align: left; }
-.md-center { text-align: center; }
-.md-right { text-align: right; }
-
-/* Shared Markdown element styling across every surface that renders it:
-   the Code-view README, GitHub issue/PR/release bodies, and AI chat. */
-.code-md img, .gh-body-md img, .assistant-msg img {
-  max-width: 100%;
-  height: auto;
-  border-radius: 6px;
-  vertical-align: middle;
-}
+/* ── Prose supplements ───────────────────────────────────────────────────────
+   The element rules live in THE prose system (".gh-body-md, .code-md" earlier
+   in this file — a legacy duplicate block here used to OVERRIDE it by source
+   order, which is why tables/kbd/details looked different per surface). Only
+   the bits the unified system deliberately leaves out remain here. */
 /* Badge rows (shields.io et al) sit inline and shouldn't gain a card look. */
 .code-md a img, .gh-body-md a img, .assistant-msg a img {
   border-radius: 3px;
@@ -5206,41 +6350,23 @@ body.vscode-light .gh-label-chip {
 }
 /* GitHub-style centered headers: <p align="center"> is legacy HTML the
    sanitizer keeps, but flex/grid children ignore it — force it here. */
-.code-md [align="center"], .gh-body-md [align="center"] { text-align: center; }
-.code-md [align="right"], .gh-body-md [align="right"] { text-align: right; }
-
-/* Task lists — inert glyphs (never real <input>), aligned like GitHub's. */
-.md-task-list { list-style: none; padding-left: 1.1em; }
-.md-task-item { position: relative; }
-.md-task {
-  display: inline-block;
-  width: 1.1em;
-  margin-right: 0.25em;
-  color: var(--app-muted);
-  font-size: 0.95em;
-}
-.md-task-done { color: var(--gs-accent-ink, var(--gs-accent)); }
-
+.code-md [align="center"], .gh-body-md [align="center"], .assistant-msg [align="center"] { text-align: center; }
+.code-md [align="right"], .gh-body-md [align="right"], .assistant-msg [align="right"] { text-align: right; }
 .code-md del, .gh-body-md del, .assistant-msg del { opacity: 0.68; }
-.code-md kbd, .gh-body-md kbd, .assistant-msg kbd {
-  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: 0.82em;
-  padding: 1px 5px;
-  border: 1px solid var(--app-border);
-  border-bottom-width: 2px;
-  border-radius: 5px;
-  background: var(--app-elevated);
-  white-space: nowrap;
-}
-.code-md details, .gh-body-md details {
-  margin: 0.6em 0;
-  padding: 8px 12px;
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--app-elevated) 45%, transparent);
-}
-.code-md summary, .gh-body-md summary { cursor: pointer; font-weight: 600; }
+.code-md kbd, .gh-body-md kbd { white-space: nowrap; }
 .gh-body-md pre, .assistant-msg pre { overflow-x: auto; max-width: 100%; }
+/* Elements the sanitizer allows that had NO styling anywhere (fell back to
+   ugly UA defaults): definition lists, footnote marks, quiet inline HTML. */
+.gh-body-md dl, .code-md dl { margin: 0.6em 0; }
+.gh-body-md dt, .code-md dt { font-weight: 650; margin-top: 0.5em; }
+.gh-body-md dd, .code-md dd { margin: 0.15em 0 0.15em 1.4em; color: var(--app-muted); }
+.gh-body-md sup, .gh-body-md sub, .code-md sup, .code-md sub { font-size: 0.75em; }
+.gh-body-md caption, .code-md caption {
+  caption-side: bottom;
+  font-size: 0.85em;
+  color: var(--app-muted);
+  padding: 4px 0;
+}
 
 /* Code view: instant in-folder filter + keyboard navigation affordances. */
 .code-filter {
@@ -6146,3 +7272,758 @@ body.vscode-light .gh-label-chip {
   background: color-mix(in srgb, var(--gs-accent) 14%, transparent);
   color: var(--app-text); border-style: solid;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION PAGES — the list ⇄ detail system (docs/desktop-redesign.md).
+   `sec-*` is the full-width list page; `det-*` the full-page detail. This block
+   is the ONE home for these styles — views never inject CSS or inline layout.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── The list page ── */
+.sec-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-1) var(--sp-4) var(--sp-5);
+}
+.sec-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: var(--text-base);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-1) var(--ease);
+}
+.sec-row:hover { background: var(--app-hover); }
+.sec-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline-offset: -2px;
+}
+/* Hairline between rows, inset past the leading icon — density with structure. */
+.sec-row + .sec-row { position: relative; }
+.sec-row + .sec-row::before {
+  content: "";
+  position: absolute;
+  top: -0.5px;
+  left: var(--sp-3);
+  right: var(--sp-3);
+  height: 1px;
+  background: color-mix(in srgb, var(--app-border) 55%, transparent);
+  pointer-events: none;
+}
+.sec-row:hover + .sec-row::before, .sec-row + .sec-row:hover::before { background: transparent; }
+.sec-row-lead {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+}
+.sec-row-lead .codicon { font-size: 15px; }
+.sec-row-num {
+  flex: 0 0 auto;
+  min-width: 34px;
+  color: var(--app-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.sec-row-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+  color: var(--vscode-foreground);
+}
+/* Inline chips ride after the title and CLIP rather than wrap — one-line rows. */
+.sec-row-chips {
+  flex: 0 1 auto;
+  display: inline-flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sec-row-chips > * { flex: 0 0 auto; }
+.sec-row-spring { flex: 1 1 0; min-width: var(--sp-2); }
+.sec-row-meta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--app-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.sec-row-time {
+  flex: 0 0 auto;
+  min-width: 42px;
+  text-align: right;
+  color: var(--app-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+/* Overlapping avatar stack in a row's meta cluster. */
+.sec-avs { display: inline-flex; align-items: center; }
+.sec-avs .av { margin-left: -6px; outline: 2px solid var(--app-bg); border-radius: 999px; }
+.sec-avs .av:first-child { margin-left: 0; }
+.sec-avs-more { margin-left: 3px; font-size: var(--text-2xs); color: var(--app-muted); }
+/* The row is one flat click target; the empty/loading states center themselves. */
+.sec-list > .list-empty, .sec-list > .list-loading, .sec-list > .sk-list { margin-top: var(--sp-6); }
+
+/* ── The detail page ── */
+.det-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+}
+.det-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-panel) 55%, var(--app-bg));
+}
+.det-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 7px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--app-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.det-back:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+.det-back .codicon { font-size: 14px; }
+.det-crumb {
+  color: var(--app-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.det-tb-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.det-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.det-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-8);
+  padding: var(--sp-5) var(--sp-6) var(--sp-8);
+  max-width: 1280px;
+}
+.det-main { flex: 1 1 auto; min-width: 0; max-width: 860px; }
+.det-rail {
+  flex: 0 0 264px;
+  position: sticky;
+  top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding-bottom: var(--sp-6);
+}
+@media (max-width: 980px) {
+  .det-body { flex-direction: column; gap: var(--sp-4); }
+  .det-rail { position: static; flex: none; width: 100%; flex-direction: row; flex-wrap: wrap; gap: var(--sp-5) var(--sp-8); }
+}
+
+/* Title block at the top of det-main. */
+.det-title-row { display: flex; align-items: flex-start; gap: var(--sp-3); margin: 2px 0 6px; }
+.det-title-row .gh-state-pill { margin-top: 4px; flex: 0 0 auto; }
+.det-title {
+  font-size: 21px;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  color: var(--vscode-foreground);
+  overflow-wrap: anywhere;
+}
+.det-title-num { color: var(--app-muted); font-weight: 500; }
+.det-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-bottom: var(--sp-4);
+  font-size: var(--text-sm);
+  color: var(--app-muted);
+}
+.det-sub .gh-meta-author { font-weight: 600; }
+
+/* Rail properties. */
+.det-prop { display: flex; flex-direction: column; gap: 7px; min-width: 148px; }
+.det-prop-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.det-prop-edit {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.det-prop:hover .det-prop-edit, .det-prop-edit:focus-visible { opacity: 1; }
+.det-prop-edit:hover { background: var(--app-hover); color: var(--vscode-foreground); }
+.det-prop-edit .codicon { font-size: 12px; }
+.det-prop-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--vscode-foreground);
+}
+.det-prop-none { color: var(--app-muted); }
+.det-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 8px 2px 3px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+button.det-person { cursor: pointer; transition: background var(--dur-1) var(--ease); }
+button.det-person:hover { background: var(--app-hover); }
+.det-prop-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px 0 6px;
+  border: 1px dashed color-mix(in srgb, var(--app-muted) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--app-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.det-prop-add:hover {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent) 55%, transparent);
+  background: var(--accent-soft);
+}
+.det-prop-add .codicon { font-size: 12px; }
+/* A key→value line for quiet facts (created / updated). */
+.det-prop-facts { flex-direction: column; align-items: stretch; }
+.det-fact { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--text-xs); }
+.det-fact-k { color: var(--app-muted); }
+.det-fact-v { color: var(--vscode-foreground); font-variant-numeric: tabular-nums; }
+.det-milestone { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); }
+.det-milestone .codicon { font-size: 13px; color: var(--app-muted); }
+/* Drawer variant: the action cluster rides above the title. */
+.det-drawer-actions { margin: 0 0 var(--sp-3); justify-content: flex-end; }
+
+/* Detail top-bar buttons stay slim (match .mini-btn height). */
+.det-tb-actions .btn { height: 28px; padding: 0 12px; font-size: var(--text-sm); border-radius: var(--r-sm); gap: 6px; }
+.det-tb-actions .mini-btn { border-radius: var(--r-sm); }
+
+/* The timeline inside det-main reuses .gh-comment cards; give the column its
+   rhythm without per-view margins. */
+.det-main .gh-subcontent { display: flex; flex-direction: column; gap: var(--sp-3); }
+.det-main .gh-composer { margin-top: var(--sp-4); max-width: none; }
+
+/* Toolbar facet buttons (Label / Assignee / Milestone) — shared by the list
+   pages. Previously injected from issues.ts at runtime; now they live here. */
+.gh-facets { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.gh-facet-btn { max-width: 220px; }
+.gh-facet-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-facet-btn .codicon-chevron-down { font-size: 13px; opacity: 0.65; margin-left: -1px; }
+.gh-facet-btn.is-active {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: var(--accent-line, var(--gs-accent));
+  background: var(--app-active);
+}
+.gh-facet-btn.is-active .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+/* "Clear" only appears while something is actually filtered, so it never
+   competes with the facets for attention in the resting state. */
+.gh-facet-clear { color: var(--app-muted); }
+.gh-facet-clear:hover { color: var(--vscode-foreground); }
+.gh-label-swatch {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 22%, transparent);
+  flex: 0 0 auto;
+}
+/* Compact property strip used where a detail renders WITHOUT the rail (the
+   Projects drawer): label chips + people inline under the title. */
+.det-inline-props { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 var(--sp-3); }
+
+/* ── PR specifics on the section-page system ── */
+
+/* A row's compact +/− diffstat in the meta cluster. */
+.sec-diffstat { display: inline-flex; gap: 6px; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.sec-diffstat .add { color: var(--status-add); }
+.sec-diffstat .del { color: var(--status-del); }
+
+/* The small pencil beside a detail title (quiet until hovered). */
+.det-title-edit { align-self: flex-start; margin-top: 3px; opacity: 0.55; }
+.det-title-edit:hover { opacity: 1; }
+
+/* The rail's checks pill is a real button (jumps to the Pipelines tab). */
+.det-checks-pill { margin-top: 0; border: none; cursor: pointer; font: inherit; font-size: var(--text-2xs); font-weight: 600; }
+
+/* Files mode: the rail hides and the content column stretches to the full
+   window height — a review surface, not a document. */
+.det-view.det-files-mode .det-scroll { display: flex; flex-direction: column; overflow: hidden; }
+.det-view.det-files-mode .det-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  padding-bottom: var(--sp-4);
+}
+.det-view.det-files-mode .det-rail { display: none; }
+.det-view.det-files-mode .det-main {
+  max-width: none;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.det-view.det-files-mode .det-main > .gh-subcontent {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Threads panel bits that used to be inline styles in prs.ts. */
+.pr-threads-add { margin-left: auto; }
+.pr-thread-resolve { margin-left: auto; }
+.pr-thread-body { margin: 0; padding: 0; }
+
+/* ── Actions on the section-page system ── */
+
+/* Run-status lead icons (used to be inline color styles). */
+.run-lead.is-success { color: var(--status-add); }
+.run-lead.is-failure { color: var(--status-del); }
+.run-lead.is-running { color: var(--status-mod); }
+.gh-lead-icon.is-muted, .run-lead.is-muted { color: var(--app-muted); }
+.gh-lead-icon.is-accent { color: var(--gs-accent-ink, var(--gs-accent)); }
+/* Monospace fragments in a row's meta cluster (tag names, short SHAs). */
+.sec-mono { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: var(--text-2xs); }
+/* The status word in a run row's meta cluster — a fixed slot so rows align. */
+.sec-run-state { min-width: 72px; }
+/* The workflow's name as a muted suffix after a run row's title. */
+.sec-run-wf {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-muted);
+  font-size: var(--text-xs);
+}
+/* Re-run attempt badge (rows + detail title). */
+.sec-attempt {
+  margin-top: 0;
+  align-self: center;
+  color: var(--status-mod);
+  background: color-mix(in srgb, var(--status-mod) 16%, transparent);
+}
+.det-attempt { flex: 0 0 auto; margin-top: 6px; }
+.sec-run-dur { font-variant-numeric: tabular-nums; }
+
+/* Job meta line: runner + queue latency, tucked at the top of the steps box. */
+.gh-job-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: 6px 12px 2px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.gh-job-runner { display: inline-flex; align-items: center; gap: 5px; }
+.gh-job-runner .codicon { font-size: 13px; }
+.gh-job-queue { font-variant-numeric: tabular-nums; }
+
+/* Per-step duration timeline: a thin proportional bar + a tabular duration. */
+.gh-step-bar {
+  flex: 0 0 90px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-muted) 14%, transparent);
+  position: relative;
+  overflow: hidden;
+}
+.gh-step-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--w, 0%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gs-accent) 55%, transparent);
+}
+.gh-step-dur {
+  flex: 0 0 52px;
+  text-align: right;
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The dispatch modal's workflow-path subtitle. */
+.actions-dispatch-path {
+  margin: -8px 0 2px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+}
+
+/* The run-id copy chip in the detail rail. */
+.det-mono-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-sm);
+  background: var(--app-elevated);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.det-mono-btn:hover { border-color: var(--accent-line); background: var(--app-hover); }
+.det-mono-btn .codicon { font-size: 12px; color: var(--app-muted); }
+
+/* Jobs / artifacts inherit their existing styles inside det-main; give the
+   column its rhythm. */
+.det-main .gh-jobs { margin-top: var(--sp-2); }
+.det-main .gh-artifacts { margin-top: var(--sp-5); }
+
+/* ── Project board drag-and-drop ── */
+.gh-board .gh-card[draggable="true"] { cursor: grab; }
+.gh-board .gh-card.is-dragging { opacity: 0.45; cursor: grabbing; }
+.gh-board .gh-col.is-drop {
+  outline: 2px dashed color-mix(in srgb, var(--gs-accent) 55%, transparent);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--gs-accent) 6%, transparent);
+  border-radius: var(--r-md);
+}
+/* The placeholder is always in the DOM so an emptied column keeps a drop zone;
+   it only SHOWS when it's the column's sole child. */
+.gh-col-body .gh-col-empty { display: none; }
+.gh-col-body .gh-col-empty:only-child { display: block; }
+
+/* ── The "?" keyboard cheat sheet ── */
+.shortcuts-card { width: min(760px, 94vw); }
+.shortcuts-cols { display: flex; gap: var(--sp-8); flex-wrap: wrap; }
+.shortcuts-group { flex: 1 1 200px; min-width: 200px; display: flex; flex-direction: column; gap: 7px; }
+.shortcuts-group-title {
+  margin-bottom: 3px;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.shortcuts-row { display: flex; align-items: baseline; gap: var(--sp-3); font-size: var(--text-sm); }
+.shortcuts-keys {
+  flex: 0 0 auto;
+  min-width: 86px;
+  padding: 2px 7px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-sm);
+  background: var(--app-elevated);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  text-align: center;
+  color: var(--vscode-foreground);
+}
+.shortcuts-what { color: var(--app-muted); }
+
+/* ── Release assets: upload header + hover delete ── */
+.rel-assets-head { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); }
+.rel-assets-head .group-label { margin: 0; }
+.rel-assets-none { padding: var(--sp-2) 0 0; color: var(--app-muted); font-size: var(--text-sm); }
+.rel-asset-acts { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.rel-asset-del { opacity: 0; color: var(--app-muted); transition: opacity var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.list-row:hover .rel-asset-del, .rel-asset-del:focus-visible { opacity: 1; }
+.rel-asset-del:hover { color: var(--status-del); }
+
+/* ── The log pane (virtualized, ANSI, foldable, live-tail) ── */
+.log-pane {
+  --log-line-h: 20px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: var(--sp-2) 0 var(--sp-1);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  background: var(--log-bg, #0b0e14);
+  overflow: hidden;
+  height: 380px;
+}
+.log-pane.log-max { height: min(78vh, 900px); }
+.log-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.log-toolbar-spring { flex: 1 1 auto; }
+.log-toolbar .gh-search { min-width: 130px; max-width: 200px; height: 24px; }
+.log-match-count { font-size: var(--text-2xs); color: var(--app-muted); font-variant-numeric: tabular-nums; }
+.log-tool.is-on { color: var(--gs-accent-ink, var(--gs-accent)); background: var(--accent-soft); }
+.log-chip-err {
+  border: none;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font: inherit;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  cursor: pointer;
+  color: var(--status-del);
+  background: color-mix(in srgb, var(--status-del) 16%, transparent);
+}
+.log-banner {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: var(--text-2xs);
+  color: var(--status-warn);
+  background: color-mix(in srgb, var(--status-warn) 10%, transparent);
+  border-bottom: 1px solid var(--app-border);
+}
+.log-scroll { flex: 1 1 auto; overflow: auto; }
+.log-window { min-width: max-content; }
+.log-line {
+  display: flex;
+  align-items: center;
+  height: var(--log-line-h);
+  padding: 0 10px 0 0;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: var(--log-line-h);
+  white-space: pre;
+  color: var(--log-fg, #c8ccd4);
+}
+.log-num {
+  flex: 0 0 auto;
+  width: 56px;
+  padding-right: 10px;
+  text-align: right;
+  color: color-mix(in srgb, var(--log-fg, #c8ccd4) 32%, transparent);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.log-ts { flex: 0 0 auto; margin-right: 10px; color: color-mix(in srgb, var(--log-fg, #c8ccd4) 40%, transparent); }
+.log-text { flex: 0 0 auto; }
+.log-chev { flex: 0 0 auto; margin-right: 4px; font-size: 12px; color: var(--app-muted); }
+.log-groupline { cursor: pointer; font-weight: 600; }
+.log-groupline:hover { background: color-mix(in srgb, var(--log-fg, #fff) 6%, transparent); }
+.log-k-error { background: color-mix(in srgb, var(--status-del) 14%, transparent); }
+.log-k-error .log-text { color: var(--status-del); }
+.log-k-warning { background: color-mix(in srgb, var(--status-warn) 10%, transparent); }
+.log-k-warning .log-text { color: var(--status-warn); }
+.log-k-notice .log-text { color: var(--gs-accent-2); }
+.log-k-command .log-text, .log-k-section .log-text { color: color-mix(in srgb, var(--log-fg, #c8ccd4) 62%, transparent); }
+.log-k-debug .log-text { color: color-mix(in srgb, var(--log-fg, #c8ccd4) 45%, transparent); font-style: italic; }
+.log-hit { background: color-mix(in srgb, var(--gs-accent) 45%, transparent); border-radius: 2px; }
+.log-jump {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-elevated);
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+.log-jump .codicon { font-size: 12px; }
+.gh-job-logslot:empty { display: none; }
+.gh-job-logslot { padding: 0 10px 10px; }
+
+/* ANSI 16-color palette — terminal-legible on the pane's own dark ground. */
+.log-pane {
+  --log-bg: #0d1016;
+  --log-fg: #c9ced8;
+  --log-c0: #3b4048; --log-c1: #e06c75; --log-c2: #98c379; --log-c3: #d19a66;
+  --log-c4: #61afef; --log-c5: #c678dd; --log-c6: #56b6c2; --log-c7: #abb2bf;
+  --log-c8: #5c6370; --log-c9: #ff7a85; --log-c10: #b5e890; --log-c11: #e5c07b;
+  --log-c12: #8ac6ff; --log-c13: #de9df3; --log-c14: #6fdbe8; --log-c15: #ffffff;
+}
+body.vscode-light .log-pane {
+  --log-bg: #fafbfc;
+  --log-fg: #24292f;
+  --log-c0: #24292f; --log-c1: #cf222e; --log-c2: #116329; --log-c3: #953800;
+  --log-c4: #0969da; --log-c5: #8250df; --log-c6: #1b7c83; --log-c7: #57606a;
+  --log-c8: #6e7781; --log-c9: #a40e26; --log-c10: #1a7f37; --log-c11: #9a6700;
+  --log-c12: #218bff; --log-c13: #a475f9; --log-c14: #3192aa; --log-c15: #24292f;
+}
+.log-fg-0 { color: var(--log-c0); } .log-fg-1 { color: var(--log-c1); }
+.log-fg-2 { color: var(--log-c2); } .log-fg-3 { color: var(--log-c3); }
+.log-fg-4 { color: var(--log-c4); } .log-fg-5 { color: var(--log-c5); }
+.log-fg-6 { color: var(--log-c6); } .log-fg-7 { color: var(--log-c7); }
+.log-fg-8 { color: var(--log-c8); } .log-fg-9 { color: var(--log-c9); }
+.log-fg-10 { color: var(--log-c10); } .log-fg-11 { color: var(--log-c11); }
+.log-fg-12 { color: var(--log-c12); } .log-fg-13 { color: var(--log-c13); }
+.log-fg-14 { color: var(--log-c14); } .log-fg-15 { color: var(--log-c15); }
+.log-bg-0 { background: var(--log-c0); } .log-bg-1 { background: var(--log-c1); }
+.log-bg-2 { background: var(--log-c2); } .log-bg-3 { background: var(--log-c3); }
+.log-bg-4 { background: var(--log-c4); } .log-bg-5 { background: var(--log-c5); }
+.log-bg-6 { background: var(--log-c6); } .log-bg-7 { background: var(--log-c7); }
+.log-b { font-weight: 700; } .log-dim { opacity: 0.6; }
+.log-i { font-style: italic; } .log-u { text-decoration: underline; }
+
+/* ── The PR review modal (verdict picker + body) ── */
+.review-modal { width: min(520px, 92vw); }
+.review-verdicts { display: flex; flex-direction: column; gap: 6px; }
+.review-verdict {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  background: var(--app-panel);
+  color: var(--vscode-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.review-verdict:hover { background: var(--app-hover); }
+.review-verdict.is-selected {
+  border-color: var(--accent-line, var(--gs-accent));
+  background: var(--accent-soft);
+}
+.review-verdict-lead { flex: 0 0 auto; display: inline-flex; color: var(--app-muted); }
+.review-verdict.is-selected .review-verdict-lead { color: var(--gs-accent-ink, var(--gs-accent)); }
+.review-verdict-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.review-verdict-label { font-size: var(--text-base); font-weight: 600; }
+.review-verdict-hint { font-size: var(--text-xs); color: var(--app-muted); }
+/* The trailing check only shows on the selected verdict. */
+.review-verdict > .glyph:last-child { opacity: 0; color: var(--gs-accent-ink, var(--gs-accent)); }
+.review-verdict.is-selected > .glyph:last-child { opacity: 1; }
+
+/* ── My Work group headers ── */
+.mywork-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: var(--sp-5) 0 var(--sp-2);
+  padding: 0 var(--sp-3);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.sec-list > .mywork-group:first-child { margin-top: var(--sp-2); }
+.mywork-group .codicon { font-size: 13px; }
+.mywork-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-muted) 18%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+/* A group header interrupts the row run — suppress the hairline right below it. */
+.mywork-group + .sec-row::before { background: transparent; }
+
+/* ── Inbox single-line rows (the full page; the bell popover keeps cards) ── */
+.notif-row.notif-line {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.notif-line .notif-line-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.notif-line.notif-read .notif-line-title { font-weight: 450; color: var(--app-muted); }
+/* The base .gh-pill self-aligns to flex-start (for card layouts) — in a
+   single-line row it must center like everything else. */
+.notif-line .gh-pill { margin-top: 0; flex: 0 0 auto; align-self: center; }
+.notif-line .row-actions { flex: 0 0 auto; }
+/* Time keeps a fixed right slot so rows align like the section lists. */
+.notif-line .sec-row-time { min-width: 46px; }
+
+/* End-of-list note for capped (paged) lists. */
+.sec-cap-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: var(--sp-3) 0 var(--sp-2);
+  color: var(--app-muted);
+  font-size: var(--text-xs);
+}
+.sec-cap-note .codicon { font-size: 13px; }

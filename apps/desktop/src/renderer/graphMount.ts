@@ -15,6 +15,8 @@ export interface GraphCallbacks {
   onContext(sha: string, x: number, y: number): void;
   /** The already-selected row was clicked again — reveal the details pane. */
   onShowDetails(sha: string): void;
+  /** A branch/remote/tag chip on a row was clicked — navigate to that ref. */
+  onRefClick(name: string, kind: string): void;
 }
 
 export class GraphMount {
@@ -39,6 +41,9 @@ export class GraphMount {
           break;
         case "context":
           cb.onContext(action.sha, action.x, action.y);
+          break;
+        case "refClick":
+          cb.onRefClick(action.name, action.kind);
           break;
         case "loadMore":
           this.adapter.loadMore().catch(() => {

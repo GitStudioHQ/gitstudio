@@ -13,7 +13,7 @@
 // `modal()` in ./dialogs (which isn't exported), so this self-contained module
 // matches that a11y behaviour exactly.
 
-import { toast } from "./dialogs";
+import { toast, openModal } from "./dialogs";
 import { host } from "./bridge";
 import {
   el,
@@ -25,56 +25,22 @@ import {
   cleanErr,
 } from "./ui";
 import type { GhRepoBrief } from "../shared/ipc";
+import { deriveNameFromUrl, validateTargetName } from "../shared/cloneName";
 
 type Tab = "url" | "github";
 type Scheme = "https" | "ssh";
 
-/** Open the clone modal. On a successful clone, `onCloned(root)` is called. */
-export function openCloneDialog(onCloned: (root: string) => void): void {
-  // ── modal scaffold (mirrors ./dialogs modal(): focus-trap, Esc, backdrop) ──
-  const prevFocus = document.activeElement as HTMLElement | null;
-  const overlay = el("div", "modal-overlay");
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-label", "Clone a repository");
-
+/** Open the clone modal. On a successful clone, `onCloned(root)` is called.
+ *  `opts.url` prefills the URL tab (e.g. cloning straight from an org's repo
+ *  peek) — the user still picks the destination folder. */
+export function openCloneDialog(
+  onCloned: (root: string) => void,
+  opts: { url?: string } = {},
+): void {
+  // ── modal scaffold: the shared openModal (focus-trap, Esc, backdrop) ──────
   const card = el("div", "modal-card clone-card");
-
-  let closed = false;
-  const close = (): void => {
-    if (closed) return;
-    closed = true;
-    if (offProgress) offProgress();
-    overlay.remove();
-    document.removeEventListener("keydown", onKey, true);
-    prevFocus?.focus?.();
-  };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") {
-      // While a clone is in flight, dismissing would orphan the clone and still
-      // fire onCloned() on completion — match the busy-guarded backdrop click.
-      if (busy) return;
-      e.preventDefault();
-      close();
-      return;
-    }
-    if (e.key !== "Tab") return;
-    const f = Array.from(
-      card.querySelectorAll<HTMLElement>(
-        "button, input, [tabindex]:not([tabindex='-1'])",
-      ),
-    ).filter((n) => !n.hasAttribute("disabled") && n.offsetParent !== null);
-    if (!f.length) return;
-    const first = f[0];
-    const last = f[f.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
+  /** Bound by openModal at mount; wrapped so earlier listeners see the real one. */
+  let close = (): void => {};
 
   // ── state ────────────────────────────────────────────────────────────────
   let tab: Tab = "url";
@@ -161,6 +127,24 @@ export function openCloneDialog(onCloned: (root: string) => void): void {
   destText.append(destLabel, destValue);
   destRow.append(destText, chooseBtn);
 
+  // Folder-name override — blank means "use the name derived from the URL"
+  // (shown as the placeholder, so what will happen is never a mystery).
+  const nameRow = el("div", "clone-dest clone-name-row");
+  const nameText = el("div", "clone-dest-text");
+  const nameLabel = el("div", "clone-dest-label");
+  nameLabel.textContent = "Folder name";
+  const nameInput = document.createElement("input");
+  nameInput.className = "modal-input clone-name-input";
+  nameInput.placeholder = "Derived from the URL";
+  nameInput.spellcheck = false;
+  nameInput.autocapitalize = "off";
+  nameInput.setAttribute("aria-label", "Folder name (optional)");
+  nameInput.addEventListener("input", refreshClone);
+  nameText.append(nameLabel, nameInput);
+  nameRow.append(nameText);
+  const nameError = el("div", "dest-name-error clone-name-error");
+  nameError.hidden = true;
+
   const progress = el("div", "clone-progress");
   progress.hidden = true;
   const progBar = el("div", "clone-progress-bar");
@@ -174,7 +158,7 @@ export function openCloneDialog(onCloned: (root: string) => void): void {
   const actions = el("div", "modal-actions clone-actions");
   const cancel = el("button", "mini-btn");
   cancel.textContent = "Cancel";
-  cancel.addEventListener("click", close);
+  cancel.addEventListener("click", () => close());
   const primary = el("button", "btn btn-primary modal-ok clone-go");
   const primaryLabel = span("Clone");
   primary.append(primaryLabel);
@@ -182,8 +166,7 @@ export function openCloneDialog(onCloned: (root: string) => void): void {
   primary.addEventListener("click", () => void runClone());
   actions.append(cancel, primary);
 
-  card.append(h, tabs, urlPanel, ghPanel, destRow, progress, actions);
-  overlay.appendChild(card);
+  card.append(h, tabs, urlPanel, ghPanel, destRow, nameRow, nameError, progress, actions);
 
   // ── tab switching ──────────────────────────────────────────────────────────
   function setTab(next: Tab): void {
@@ -334,16 +317,15 @@ export function openCloneDialog(onCloned: (root: string) => void): void {
     return scheme === "ssh" ? selectedRepo.sshUrl : selectedRepo.cloneUrl;
   }
 
-  /** Derive the target folder name from the URL (so it's stable + predictable). */
+  /** The folder name a clone would use: the override, else derived. */
   function targetName(url: string): string | undefined {
-    const m = url.match(/([^/:]+?)(?:\.git)?\/?\s*$/);
-    return m ? m[1] : undefined;
+    return nameInput.value.trim() || deriveNameFromUrl(url);
   }
 
   async function pickDir(): Promise<void> {
     if (busy) return;
     try {
-      const dir = await host.invoke("clone:pickDir", undefined);
+      const dir = await host.invoke("clone:pickDir", parentDir ? { defaultPath: parentDir } : undefined);
       if (dir) {
         parentDir = dir;
         destValue.textContent = dir;
@@ -356,7 +338,13 @@ export function openCloneDialog(onCloned: (root: string) => void): void {
   }
 
   function refreshClone(): void {
-    const ready = !busy && !!chosenUrl() && !!parentDir;
+    const url = chosenUrl();
+    nameInput.placeholder = (url && deriveNameFromUrl(url)) || "Derived from the URL";
+    const problem = validateTargetName(nameInput.value);
+    nameError.textContent = problem ?? "";
+    nameError.hidden = !problem;
+    nameInput.classList.toggle("is-invalid", !!problem);
+    const ready = !busy && !!url && !!parentDir && !problem;
     if (ready) primary.removeAttribute("disabled");
     else primary.setAttribute("disabled", "true");
   }
@@ -385,6 +373,7 @@ export function openCloneDialog(onCloned: (root: string) => void): void {
       httpsBtn,
       sshBtn,
       chooseBtn,
+      nameInput,
       cancel,
     ]) {
       if (on) ctl.setAttribute("disabled", "true");
@@ -437,16 +426,45 @@ export function openCloneDialog(onCloned: (root: string) => void): void {
       toast(res.message || "Clone failed.", "error");
       progress.hidden = true;
       setBusy(false);
+      // A destination collision is fixed right here: point at the name field.
+      if (res.code === "dest-exists" || res.code === "bad-name") {
+        nameInput.focus();
+        nameInput.select();
+      }
     }
   }
 
   // ── mount ──────────────────────────────────────────────────────────────────
-  document.body.appendChild(overlay);
-  overlay.addEventListener("mousedown", (e) => {
-    if (e.target === overlay && !busy) close();
+  openModal((c) => {
+    close = c;
+    return {
+      card,
+      focusEl: urlInput,
+      label: "Clone a repository",
+      // While a clone is in flight, dismissing (Esc/backdrop) would orphan the
+      // clone and still fire onCloned() on completion — keep the modal up.
+      canDismiss: () => !busy,
+      onClose: () => {
+        if (offProgress) offProgress();
+      },
+    };
   });
-  document.addEventListener("keydown", onKey, true);
+  if (opts.url) urlInput.value = opts.url;
   setTab("url");
+
+  // Prefill the configured default clone folder so Clone is one paste away —
+  // Choose… still overrides per-clone.
+  void host
+    .invoke("settings:get", undefined)
+    .then((v) => {
+      if (!parentDir) {
+        parentDir = v.cloneDir;
+        destValue.textContent = v.cloneDirDisplay;
+        destValue.title = v.cloneDir;
+        refreshClone();
+      }
+    })
+    .catch(() => {});
 }
 
 /** A tiny inline badge appended to a repo's name (Private / Fork). */

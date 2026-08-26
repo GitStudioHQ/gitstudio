@@ -51,18 +51,32 @@ export function toast(message: string, kind: ToastKind = "info", timeoutMs?: num
   timer = window.setTimeout(dismiss, timeoutMs ?? (kind === "error" ? 7000 : 4000));
 }
 
-interface ModalSpec {
+export interface ModalSpec {
   card: HTMLElement;
   focusEl: HTMLElement;
   /** Accessible name for the dialog (announced by screen readers). */
   label?: string;
   /** Called on ANY close (button or dismiss) — resolve a default if needed. */
   onClose: () => void;
+  /** Veto Esc/backdrop dismissal (return false to keep the modal up — e.g. a
+   *  clone mid-flight). The explicit close() handed to build() always works. */
+  canDismiss?: () => boolean;
 }
 
-/** Focus-trapping modal scaffold shared by confirmDialog + promptInline. */
-function modal(build: (close: () => void) => ModalSpec): void {
+/** Open-modal stack — Esc must dismiss only the TOPMOST modal, not every one
+ *  listening on document (a prompt over the secrets manager used to take the
+ *  manager down with it). */
+const modalStack: symbol[] = [];
+
+/**
+ * THE focus-trapping modal scaffold — overlay, Esc, Tab trap, backdrop
+ * dismissal, previous-focus restore. Every modal in the app builds on this
+ * (confirm/prompt/edit here; the section views' form modals via the export) so
+ * the dismissal contract can never drift between surfaces.
+ */
+export function openModal(build: (close: () => void) => ModalSpec): void {
   const prevFocus = document.activeElement as HTMLElement | null;
+  const token = Symbol("modal");
   const overlay = mk("div", "modal-overlay");
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
@@ -71,21 +85,31 @@ function modal(build: (close: () => void) => ModalSpec): void {
   const close = (): void => {
     if (closed) return;
     closed = true;
+    const i = modalStack.indexOf(token);
+    if (i >= 0) modalStack.splice(i, 1);
     spec.onClose();
     overlay.remove();
     document.removeEventListener("keydown", onKey, true);
     prevFocus?.focus?.();
   };
+  const dismiss = (): void => {
+    if (spec.canDismiss && !spec.canDismiss()) return;
+    close();
+  };
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
+      if (modalStack[modalStack.length - 1] !== token) return; // a newer modal owns Esc
+      if (document.body.classList.contains("cmdk-open")) return; // the palette owns Esc
       e.preventDefault();
-      close();
+      dismiss();
       return;
     }
     if (e.key !== "Tab") return;
     const f = Array.from(
-      spec.card.querySelectorAll<HTMLElement>("button, input, [tabindex]:not([tabindex='-1'])"),
-    ).filter((n) => !n.hasAttribute("disabled"));
+      spec.card.querySelectorAll<HTMLElement>(
+        "button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])",
+      ),
+    ).filter((n) => !n.hasAttribute("disabled") && n.offsetParent !== null);
     if (!f.length) return;
     const first = f[0];
     const last = f[f.length - 1];
@@ -101,12 +125,16 @@ function modal(build: (close: () => void) => ModalSpec): void {
   if (spec.label) overlay.setAttribute("aria-label", spec.label);
   overlay.appendChild(spec.card);
   document.body.appendChild(overlay);
+  modalStack.push(token);
   overlay.addEventListener("mousedown", (e) => {
-    if (e.target === overlay) close();
+    if (e.target === overlay) dismiss();
   });
   document.addEventListener("keydown", onKey, true);
   setTimeout(() => spec.focusEl.focus(), 0);
 }
+
+/** Internal alias — the pre-export name the local wrappers were written against. */
+const modal = openModal;
 
 /** A styled confirmation dialog (replaces native confirm()); resolves true/false. */
 export function confirmDialog(opts: {
@@ -114,6 +142,9 @@ export function confirmDialog(opts: {
   message: string;
   confirmLabel?: string;
   danger?: boolean;
+  /** Demand this exact text before enabling Confirm — for irreversible,
+   *  disk-destroying actions where a mis-aimed click must not be enough. */
+  requireTyped?: string;
 }): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
@@ -131,20 +162,47 @@ export function confirmDialog(opts: {
       okLabel.textContent = opts.confirmLabel ?? "Confirm";
       ok.appendChild(okLabel);
       actions.append(cancel, ok);
-      card.append(h, body, actions);
+      card.append(h, body);
+      let typedInput: HTMLInputElement | undefined;
+      if (opts.requireTyped) {
+        const hint = mk("div", "modal-message confirm-typed-hint");
+        hint.textContent = `Type ${opts.requireTyped} to confirm.`;
+        typedInput = document.createElement("input");
+        typedInput.className = "modal-input confirm-typed-input";
+        typedInput.placeholder = opts.requireTyped;
+        typedInput.spellcheck = false;
+        typedInput.autocapitalize = "off";
+        typedInput.setAttribute("aria-label", `Type ${opts.requireTyped} to confirm`);
+        const sync = (): void => {
+          const match = typedInput!.value.trim() === opts.requireTyped;
+          if (match) ok.removeAttribute("disabled");
+          else ok.setAttribute("disabled", "true");
+        };
+        typedInput.addEventListener("input", sync);
+        typedInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !ok.hasAttribute("disabled")) {
+            e.preventDefault();
+            ok.click();
+          }
+        });
+        sync();
+        card.append(hint, typedInput);
+      }
+      card.append(actions);
       cancel.addEventListener("click", () => {
         settled = true;
         resolve(false);
         close();
       });
       ok.addEventListener("click", () => {
+        if (ok.hasAttribute("disabled")) return;
         settled = true;
         resolve(true);
         close();
       });
       return {
         card,
-        focusEl: ok,
+        focusEl: typedInput ?? ok,
         label: opts.title,
         onClose: () => {
           if (!settled) resolve(false);
