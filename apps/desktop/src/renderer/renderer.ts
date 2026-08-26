@@ -115,6 +115,8 @@ class App {
   private refreshingFromDisk = false;
   /** "split" (staged/unstaged groups) or "checkboxes" (one ticked list) — issue #16. */
   private stagingModelPref: "split" | "checkboxes" = "split";
+  /** Fetch with --prune so branches deleted on the remote drop out — issue #23. */
+  private pruneOnFetchPref = true;
   /** Paths whose individual changes are currently showing (#20). */
   private expandedHunks = new Set<string>();
   /**
@@ -271,6 +273,9 @@ class App {
     }
     if (prefs.stagingModel === "checkboxes" || prefs.stagingModel === "split") {
       this.stagingModelPref = prefs.stagingModel;
+    }
+    if (typeof prefs.pruneOnFetch === "boolean") {
+      this.pruneOnFetchPref = prefs.pruneOnFetch;
     }
     if (prefs.themeMode === "system" || prefs.themeMode === "light" || prefs.themeMode === "dark") {
       this.themeMode = prefs.themeMode;
@@ -670,6 +675,7 @@ class App {
     savePrefs({
       currentView: this.currentView,
       stagingModel: this.stagingModelPref,
+      pruneOnFetch: this.pruneOnFetchPref,
       compareFileListW: this.compareFileListW,
       compareView: this.compareView,
       branchCatsCollapsed: this.branchCatsCollapsed,
@@ -1187,7 +1193,7 @@ class App {
     itemEl?.classList.add("is-busy-item");
     g?.classList.add("spin");
     try {
-      const r = await host.invoke("sync:fetch", undefined);
+      const r = await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref });
       if (!r.ok) {
         toast(r.message || "Fetch failed.", "error");
         return;
@@ -1708,6 +1714,7 @@ class App {
       aiModelsCard(),
       agentAccessCard(),
       this.settingsIdentityCard(),
+      this.settingsGitCard(),
       this.settingsSshCard(),
       this.settingsAboutCard(),
     );
@@ -1774,6 +1781,40 @@ class App {
     logoRow.append(logoSeg, preview);
 
     body.append(sub, seg, logoLabel, logoSub, logoRow);
+    return card;
+  }
+
+  /** Fetch behavior (issue #23): whether fetch passes --prune. Default on —
+   *  stale remote-tracking branches silently pile up otherwise, and pruning
+   *  only ever drops refs the remote itself already deleted. */
+  private settingsGitCard(): HTMLElement {
+    const { card, body } = settingsCard("Fetch", "sync");
+    const label = el("div", "settings-field-label");
+    label.textContent = "Prune deleted remote branches";
+    const sub = el("div", "settings-sub");
+    sub.textContent =
+      "When fetching, drop remote-tracking branches that were deleted on the remote so the branch list never goes stale. Local branches are never touched.";
+    const seg = el("div", "settings-seg");
+    const modes: Array<{ prune: boolean; label: string }> = [
+      { prune: true, label: "Prune on fetch" },
+      { prune: false, label: "Keep stale branches" },
+    ];
+    const btns: HTMLElement[] = [];
+    for (const m of modes) {
+      const b = el(
+        "button",
+        "settings-seg-btn" + (this.pruneOnFetchPref === m.prune ? " active" : ""),
+      );
+      b.append(span(m.label));
+      b.addEventListener("click", () => {
+        this.pruneOnFetchPref = m.prune;
+        this.persist();
+        btns.forEach((x) => x.classList.toggle("active", x === b));
+      });
+      btns.push(b);
+      seg.appendChild(b);
+    }
+    body.append(label, sub, seg);
     return card;
   }
 
@@ -3662,7 +3703,7 @@ class App {
     try {
       const r =
         action === "fetch"
-          ? await host.invoke("sync:fetch", undefined)
+          ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
           : action === "pull"
             ? await host.invoke("sync:pull", undefined)
             : action === "push"

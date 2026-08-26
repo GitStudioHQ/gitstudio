@@ -244,3 +244,25 @@ test("push() publishes a branch whose name collides with a tag", async () => {
   await ctx.tags.delete("collide");
   await ctx.branches.checkout("main");
 });
+
+// Issue #23: fetch({prune}) must drop remote-tracking refs whose branch was
+// deleted on the remote — and a plain fetch must leave them alone, so the
+// prune setting is a real choice rather than a no-op.
+test("fetch({prune}) removes a remote-tracking ref deleted on the remote", async () => {
+  await ctx.branches.checkout("main");
+  clik(["push", "origin", "main:doomed"]);
+  const fetched = await ctx.sync.fetch({});
+  assert.ok(fetched.ok, fetched.stderr);
+  assert.match(clik(["branch", "-r"]), /origin\/doomed/);
+
+  // Delete on the remote; a non-pruning fetch keeps the stale ref.
+  clik(["push", "origin", "--delete", "doomed"]);
+  clik(["update-ref", "refs/remotes/origin/doomed", clik(["rev-parse", "main"]).trim()]);
+  const plain = await ctx.sync.fetch({});
+  assert.ok(plain.ok, plain.stderr);
+  assert.match(clik(["branch", "-r"]), /origin\/doomed/);
+
+  const pruned = await ctx.sync.fetch({ prune: true });
+  assert.ok(pruned.ok, pruned.stderr);
+  assert.doesNotMatch(clik(["branch", "-r"]), /origin\/doomed/);
+});

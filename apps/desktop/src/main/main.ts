@@ -521,7 +521,7 @@ function registerIpc(): void {
 
   // Sync (control remote changes).
   handle("sync:status", () => bridge.syncStatus());
-  handle("sync:fetch", () => bridge.syncFetch());
+  handle("sync:fetch", (opts) => bridge.syncFetch(opts || undefined));
   handle("sync:pull", () => bridge.syncPull());
   // push-force-reviewed: pure forwarder — the renderer decides about force
   // and it rides through in opts.

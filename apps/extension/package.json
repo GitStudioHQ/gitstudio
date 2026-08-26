@@ -890,6 +890,11 @@
     "configuration": {
       "title": "GitStudio",
       "properties": {
+        "gitstudio.fetch.prune": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pass --prune when fetching, so remote-tracking branches deleted on the remote disappear from the branch list instead of lingering as stale entries. Never touches local branches."
+        },
         "gitstudio.blame.inlineEnabled": {
           "type": "boolean",
           "default": true,

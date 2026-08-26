@@ -1095,8 +1095,8 @@ export class GitBridge {
     return { branch, upstream, ahead: ab.ahead, behind: ab.behind, noUpstream: false };
   }
 
-  async syncFetch(): Promise<CommitActionResult> {
-    return this.staged((ctx) => ctx.sync.fetch());
+  async syncFetch(opts?: { prune?: boolean }): Promise<CommitActionResult> {
+    return this.staged((ctx) => ctx.sync.fetch({ prune: opts?.prune }));
   }
   async syncPull(): Promise<CommitActionResult> {
     return this.staged((ctx) => ctx.sync.pull());

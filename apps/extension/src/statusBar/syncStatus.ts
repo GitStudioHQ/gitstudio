@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
+import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
 // A compact left status-bar segment for the active repo's sync state:
@@ -192,7 +193,7 @@ export class SyncStatusItem implements vscode.Disposable {
         // git reports the useless "your configuration specifies to merge with
         // the ref 'refs/heads/X' ... but no such ref was fetched" instead of the
         // actual failure. Doing it in two steps surfaces the real error.
-        const fetched = await active.ctx.sync.fetch({ prune: true });
+        const fetched = await active.ctx.sync.fetch({ prune: pruneOnFetch() });
         if (!fetched.ok) {
           reportSync(fetched, "Fetch");
           return;
@@ -264,7 +265,7 @@ export class SyncStatusItem implements vscode.Disposable {
       }
       case "fetch":
         reportSync(
-          await active.ctx.sync.fetch({ prune: true }),
+          await active.ctx.sync.fetch({ prune: pruneOnFetch() }),
           "Fetch",
           "Fetched",
         );

@@ -11,6 +11,7 @@ import {
   type DialogChoice,
 } from "../ui/dialogs";
 import { worktreeFromRef } from "./worktreesView";
+import { pruneOnFetch } from "../git/fetchOptions";
 
 // Branch / remote / tag context-menu actions for the Branches view. Each runs a
 // real git op via the GitContext provider methods, confirms destructive ops, and
@@ -637,7 +638,7 @@ export async function fetchAll(
   if (!a) {
     return;
   }
-  const result = await a.ctx.sync.fetch({ all: true, prune: true });
+  const result = await a.ctx.sync.fetch({ all: true, prune: pruneOnFetch() });
   report(result, "Fetched all remotes", refresh);
 }
 
@@ -739,7 +740,7 @@ export async function manageRemotes(
   switch (action) {
     case "fetch":
       report(
-        await a.ctx.remotes.fetch(remote.name, { prune: true }),
+        await a.ctx.remotes.fetch(remote.name, { prune: pruneOnFetch() }),
         `Fetched ${remote.name}`,
         refresh,
       );

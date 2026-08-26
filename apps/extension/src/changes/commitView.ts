@@ -4,6 +4,7 @@ import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { pruneOnFetch } from "../git/fetchOptions";
 
 /**
  * One change of a file, as the Changes list shows it.
@@ -1502,7 +1503,7 @@ export class CommitViewProvider
           break;
         }
         case "fetch":
-          result = await entry.ctx.sync.fetch();
+          result = await entry.ctx.sync.fetch({ prune: pruneOnFetch() });
           break;
         case "pullFf": {
           // Fast-forward a NON-checked-out local straight from its upstream:
