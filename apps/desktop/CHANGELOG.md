@@ -9,6 +9,15 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [1.6.0] - 2026-08-26
+
+### Added
+- **Prune deleted remote branches on fetch.** Fetch now passes `--prune` by
+  default, so remote-tracking branches deleted on the remote drop out of the
+  branch list instead of lingering as stale entries. Only stale remote-tracking
+  refs are removed — your local branches are never touched. Toggle it in
+  Settings → Fetch. (#23)
+
 ## [1.5.1] - 2026-08-22
 
 ### Fixed

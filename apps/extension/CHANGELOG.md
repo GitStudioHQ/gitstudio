@@ -4,6 +4,15 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-08-26
+
+### Added
+- **Prune deleted remote branches on fetch.** Fetch now passes `--prune` by
+  default, so remote-tracking branches that were deleted on the remote drop out
+  of the branch list instead of lingering as stale entries. Only stale
+  remote-tracking refs are removed — your local branches are never touched. Turn
+  it off with the new `gitstudio.fetch.prune` setting. (#23)
+
 ## [1.11.1] - 2026-08-22
 
 No change to GitStudio itself. 1.11.0 was tagged from a commit whose build was
