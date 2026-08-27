@@ -92,25 +92,48 @@ export async function gget<C extends IpcChannel>(
   const startedScope = scope;
   /** Was the cache invalidated (or the repo switched) while we were waiting? */
   const superseded = (): boolean => epoch !== startedEpoch || scope !== startedScope;
-  const pending = host.invoke(channel, payload).then(
+
+  let pending!: Promise<unknown>;
+  /**
+   * Retire OUR in-flight marker when the request settles.
+   *
+   * Clearing the marker and PUBLISHING the answer are two different decisions,
+   * and conflating them was a real bug. `gget` short-circuits on `e.pending`
+   * before it ever looks at the TTL, so an entry left holding a settled promise
+   * is pinned to that one answer for the rest of the session. That is what
+   * happened whenever an unrelated prefix bust — staging a file fires
+   * `bust("status")` and `bust("diff")` — landed while a GitHub list was
+   * loading: the list froze on whatever it had, and Refresh did nothing.
+   * If the request had FAILED, the entry served that rejection forever instead.
+   *
+   * So: always clear the marker; only publish the value when nothing has
+   * invalidated the cache meanwhile.
+   *
+   * The identity check matters too. If a bust cleared our entry and a newer
+   * request took its place — or `prime()` seeded a value from an event that is
+   * newer than the read we started earlier — that entry is not ours to touch.
+   */
+  const settle = (next?: Entry): void => {
+    const cur = store.get(key);
+    if (!cur || cur.pending !== pending) return;
+    if (next) {
+      store.set(key, next);
+    } else if (cur.value !== undefined) {
+      // Keep the last-known-good readable via `peek`, with its ORIGINAL
+      // timestamp so the next `gget` still treats it as stale and refetches.
+      store.set(key, { value: cur.value, at: cur.at });
+    } else {
+      store.delete(key);
+    }
+  };
+
+  pending = host.invoke(channel, payload).then(
     (value) => {
-      // Only publish if nothing invalidated the cache meanwhile — otherwise this
-      // answer predates the mutation that busted it.
-      if (!superseded()) {
-        store.set(key, { value, at: Date.now() });
-      }
+      settle(superseded() ? undefined : { value, at: Date.now() });
       return value;
     },
     (err) => {
-      // Drop the failed in-flight marker so a retry can re-fetch; keep any prior
-      // good value in place (callers can still `peek` the last-known-good).
-      if (!superseded()) {
-        const prev = store.get(key);
-        if (prev && prev.pending) {
-          if (prev.value !== undefined) store.set(key, { value: prev.value, at: prev.at });
-          else store.delete(key);
-        }
-      }
+      settle(undefined);
       throw err;
     },
   );
