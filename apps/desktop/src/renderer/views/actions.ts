@@ -31,6 +31,7 @@ import {
 } from "../ui";
 import { toast, confirmDialog, promptInline, openModal } from "../dialogs";
 import {
+  blankable,
   facetBar,
   harvestValues,
   segmented,
@@ -287,18 +288,22 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       att.title = "This run was re-run";
       suffix.push(att);
     }
+    // Same column contract as the other lists: every optional slot is
+    // reserved, so a run without a branch doesn't slide the durations out of
+    // line with the row above it.
     const meta: HTMLElement[] = [];
-    if (r.actor) meta.push(avatar(r.actor.login, r.actor.avatarUrl, 18));
-    if (r.branch) {
-      meta.push(
-        subLink(r.branch, `Show ${r.branch} in Branches`, () =>
+    meta.push(blankable(avatar(r.actor?.login ?? "?", r.actor?.avatarUrl ?? null, 18, "Actor"), !!r.actor));
+    meta.push(
+      blankable(
+        subLink(r.branch || "—", `Show ${r.branch} in Branches`, () =>
           sectionNav?.("branches", { ref: r.branch }),
         ),
-      );
-    }
-    if (r.event) meta.push(span(r.event.replace(/_/g, " ")));
+        !!r.branch,
+      ),
+    );
+    meta.push(blankable(span(r.event.replace(/_/g, " "), "sec-run-event"), !!r.event));
     const dur = runDuration(r);
-    if (dur) meta.push(span(dur, "sec-run-dur"));
+    meta.push(blankable(span(dur || "—", "sec-run-dur"), !!dur));
     // The status word is dropped: the coloured lead icon already says it, and
     // it carried a 72px min-width that pushed everything else out of line. The
     // icon and the row's aria-label keep it available to a screen reader.

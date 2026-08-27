@@ -2639,6 +2639,10 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
    hover or let the two groups reserve different widths (which is why the M/A
    letters sat ~50px apart and could not be scanned as a column). */
 .dc-file .row-actions { flex: 0 0 140px; justify-content: flex-end; }
+/* Staged rows have no disclosure twisty, so their content started ~29px left
+   of the unstaged rows and the list had two left edges. The cell is always
+   there; only its ink is conditional. */
+.dc-hunk-twisty.is-spacer { visibility: hidden; pointer-events: none; }
 .dc-file .file-status {
   flex: 0 0 auto;
   width: 18px;
@@ -7184,15 +7188,14 @@ body.vscode-light .gh-label-chip {
 .dc-chip-x:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: 1px; }
 /* The "Create pull request" CTA in the Changes toolbar — a .mini-btn with a quiet
    accent lean so it reads as the forward action without shouting like a primary. */
-.dc-createpr {
-  color: var(--gs-accent-ink, var(--gs-accent));
-  border-color: color-mix(in srgb, var(--gs-accent) 38%, var(--app-border));
-}
+/* Was the only accent-coloured control in the Changes toolbar, which made a
+   GitHub navigation action the loudest thing on a screen whose whole job is
+   staging and committing. It reads as a peer of Stage all now. */
 .dc-createpr .glyph,
-.dc-createpr .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+.dc-createpr .codicon { color: var(--app-muted); }
 .dc-createpr:hover {
-  background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
-  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
+  background: var(--app-hover);
+  border-color: var(--app-border);
 }
 
 /* ── 6 · Op-state banner — merge/rebase in progress (Changes view) ──────────── */
@@ -7598,6 +7601,11 @@ body.vscode-light .gh-label-chip {
 .sec-row-meta > .sec-avs { min-width: 54px; justify-content: flex-end; }
 .sec-row-meta > .sec-diffstat { min-width: 104px; justify-content: flex-end; }
 .sec-row-meta > .gh-stat { min-width: 44px; justify-content: flex-end; }
+/* Actions run rows: branch, event and duration each keep their column so the
+   list can be scanned down rather than read row by row. */
+.sec-row-meta > .sec-run-event { min-width: 76px; text-align: right; }
+.sec-row-meta > .sec-run-dur { min-width: 62px; text-align: right; }
+.sec-row-meta > .gh-sublink { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sec-row-time {
   flex: 0 0 auto;
   /* "5h ago" and "16h ago" must end on the same edge. */

@@ -165,6 +165,29 @@
       );
     },
 
+    "changes-rows-share-left-edge": (f) => {
+      const c = check(f);
+      const names = $$(".dc-file .dc-file-name");
+      c.ok(names.length >= 4, "need several files");
+      const xs = [...new Set(names.map(left))];
+      c.eq(xs.length, 1, `staged and unstaged rows must share one left edge (found ${xs.join(", ")})`);
+    },
+    "changes-toolbar-stable": (f) => {
+      const c = check(f);
+      // Selection must not reflow the toolbar: hidden controls used to slide
+      // every button to their left ~160px sideways.
+      const btn = $(".dc-createpr");
+      c.ok(!!btn, "Create pull request exists");
+      const x = btn ? left(btn) : 0;
+      window.__gsToolbarX = x;
+      c.ok(x > 0, "toolbar rendered");
+      for (const sel of [".dc-stagelines", ".dc-ws"]) {
+        const el_ = $(sel);
+        c.ok(!!el_, `${sel} must stay in the layout`);
+        c.ok(el_ ? !el_.hidden : false, `${sel} must be disabled rather than hidden`);
+      }
+    },
+
     // ── the log pane ─────────────────────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

@@ -3132,7 +3132,10 @@ class App {
     let openFile: { path: string; staged: boolean } | null = null;
     let whitespaceIgnored = false;
     const stageLinesBtn = el("button", "mini-btn dc-stagelines") as HTMLButtonElement;
-    stageLinesBtn.hidden = true;
+    // Disabled, not hidden: hiding these two made every button to their left
+    // slide ~160px sideways the instant you clicked a file — the control you
+    // were aiming at moved out from under the cursor.
+    stageLinesBtn.disabled = true;
     const stageLinesLabel = span("Stage lines");
     stageLinesBtn.append(glyph("list-selection"), stageLinesLabel);
     stageLinesBtn.title = "Stage (or unstage) the lines selected in the diff";
@@ -3159,7 +3162,7 @@ class App {
       if (this.currentView === "changes") void this.showChangesView();
     });
     const wsBtn = el("button", "topbar-icon dc-ws") as HTMLButtonElement;
-    wsBtn.hidden = true;
+    wsBtn.disabled = true;
     wsBtn.title = "Ignore whitespace in the diff";
     wsBtn.setAttribute("aria-label", "Ignore whitespace");
     wsBtn.appendChild(glyph("whitespace"));
@@ -3176,8 +3179,10 @@ class App {
     // A stash button that follows the selection and relabels itself, matching the
     // extension. Without one, the toolbar could stage everything but never stash
     // anything, and the only stash route was a right-click most people never try.
-    const stashBtn = el("button", "topbar-icon") as HTMLButtonElement;
-    stashBtn.appendChild(glyph("archive"));
+    // Stashing moves your working tree; its only affordance used to be an
+    // unlabelled archive glyph sitting between two text buttons. Label it.
+    const stashBtn = el("button", "mini-btn") as HTMLButtonElement;
+    stashBtn.append(glyph("archive"), span("Stash"));
     const syncStashBtn = (): void => {
       const n = this.selectionPaths().length;
       const label =
@@ -3419,8 +3424,8 @@ class App {
         row.classList.add("active");
         openFile = { path: f.path, staged: !!f.staged };
         stageLinesLabel.textContent = f.staged ? "Unstage lines" : "Stage lines";
-        stageLinesBtn.hidden = false;
-        wsBtn.hidden = false;
+        stageLinesBtn.disabled = false;
+        wsBtn.disabled = false;
         void this.openWorkingFile(diffPanel, f.path);
       });
 
@@ -3533,6 +3538,13 @@ class App {
             void this.showChangesView();
           });
           row.insertBefore(tw, row.firstChild);
+        } else {
+          // Staged rows have no twisty, so without a spacer their content
+          // started ~29px left of the unstaged rows and the list read as two
+          // ragged columns. The cell is always there; only its ink isn't.
+          const spacer = el("span", "dc-hunk-twisty is-spacer");
+          spacer.setAttribute("aria-hidden", "true");
+          row.insertBefore(spacer, row.firstChild);
         }
         lists.appendChild(row);
 

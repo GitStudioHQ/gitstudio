@@ -36,6 +36,8 @@ const CASES = [
   ["issues-closed-facet-shown-on-closed", "issues~text:Closed"],
   ["commit-disabled-when-empty", "changes"],
   ["commit-enabled-after-typing", "changes~click:.dc-message~type:fix%3A%20a%20thing"],
+  ["changes-rows-share-left-edge", "changes"],
+  ["changes-toolbar-stable", "changes"],
   ["compare-no-self-compare", "compare"],
   ["changes-status-column", "changes"],
   ["log-no-blank-endgroup-rows", "actions~open9100~click:.gh-job-log"],
