@@ -357,6 +357,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           query ? `Nothing matches “${query}”.` : "No pull request matches these filters.",
           {
             icon: "search",
+          anchor: "inline",
           secondary: facets.activeCount() > 0
             ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
             : undefined,

@@ -444,10 +444,10 @@ class App {
 
     const actions = el("div", "welcome-actions");
     const open = el("button", "btn btn-primary welcome-open");
-    open.append(glyph("folder-opened"), span("Open Repository…"));
+    open.append(glyph("folder-opened"), span("Open repository…"));
     open.addEventListener("click", () => void this.openRepo());
     const clone = el("button", "btn btn-soft welcome-clone");
-    clone.append(glyph("cloud-download"), span("Clone…"));
+    clone.append(glyph("cloud-download"), span("Clone repository…"));
     clone.addEventListener("click", () =>
       openCloneDialog((root) => void this.openPath(root)),
     );
@@ -1874,7 +1874,11 @@ class App {
         n === 0 && m === 0
           ? `${this.compareHead} is up to date with ${this.compareBase}.`
           : `${n} commit${n === 1 ? "" : "s"} · ${m} file${m === 1 ? "" : "s"} changed` +
-            (res.behind > 0 ? ` · ${this.compareBase} is ${res.behind} ahead` : "");
+            // "redesign/issues-detail is 2 ahead" made the reader work out
+            // whose commits those were; say it straight.
+            (res.behind > 0
+              ? ` · ${res.behind} commit${res.behind === 1 ? "" : "s"} only on ${this.compareBase}`
+              : "");
       renderBody();
     };
     void runCompare();
@@ -1963,12 +1967,19 @@ class App {
     };
 
     res.files.forEach((f, i) => {
-      const row = el("button", `file-row status-${f.status}`);
+      // Same two-line treatment the Changes list uses: the FILE NAME, then its
+      // directory. One path printed whole in a 370px column truncated from the
+      // right, which ate the only part that tells two files apart
+      // ("apps/desktop/src/renderer/diffPan…").
+      const row = el("button", `file-row dc-file status-${f.status}`);
       const st = el("span", "file-status");
       st.textContent = f.status;
-      const path = el("span", "file-path");
-      path.textContent = f.path;
-      row.append(st, path);
+      const cut = f.path.lastIndexOf("/");
+      const meta = el("div", "dc-file-meta");
+      meta.appendChild(span(cut < 0 ? f.path : f.path.slice(cut + 1), "dc-file-name"));
+      if (cut > 0) meta.appendChild(span(f.path.slice(0, cut), "dc-file-dir"));
+      row.append(st, meta);
+      row.title = f.path;
       row.addEventListener("click", () => open(f.path, row));
       fileScroll.appendChild(row);
       if (i === 0) open(f.path, row); // auto-open the first file

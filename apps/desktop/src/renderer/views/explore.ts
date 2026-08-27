@@ -215,6 +215,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       listEl.replaceChildren(startState());
       return;
     }
+    // People and organizations are a DIRECTORY, not documents: a 40px row
+    // holding a login in a 1350px pane read ~93% empty. Same treatment the
+    // organization's Members tab uses — compact chips that wrap from the left.
+    listEl.classList.toggle("is-people", tab === "users" || tab === "orgs");
     if (!append) listEl.replaceChildren(skeletonList(6));
     else listEl.appendChild(loadingMore());
 
@@ -248,7 +252,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     const items = result.items;
     if (first && items.length === 0) {
       listEl.replaceChildren(
-        emptyState("No results", `Nothing on GitHub matches “${query}”.`, { icon: "search" }),
+        emptyState("No results", `Nothing on GitHub matches “${query}”.`, {
+          icon: "search",
+          anchor: "inline",
+        }),
       );
       return;
     }
@@ -428,10 +435,18 @@ function codeRow(c: SearchCodeItem, nav: SectionNav): HTMLElement {
     ],
   });
   const body = row.querySelector(".explore-row-body");
-  for (const f of c.fragments.slice(0, 3)) {
+  // ONE code block, not one box per matched line. Three separate bordered
+  // <pre>s stitched by :has() sibling rules still read as three boxes (the
+  // row body's gap sat between them), so a single hit looked like three hits.
+  // Non-adjacent fragments are separated the way a diff separates hunks.
+  const frags = c.fragments.slice(0, 3);
+  if (frags.length && body) {
     const pre = el("pre", "explore-code-frag");
-    pre.textContent = f;
-    body?.appendChild(pre);
+    frags.forEach((f, i) => {
+      if (i > 0) pre.appendChild(span("⋯", "explore-code-gap"));
+      pre.appendChild(span(f, "explore-code-line"));
+    });
+    body.appendChild(pre);
   }
   return row;
 }

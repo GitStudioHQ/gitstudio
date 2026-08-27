@@ -24,8 +24,8 @@ interface MenuItem {
 
 const ITEMS: MenuItem[] = [
   { label: "Checkout", action: "checkout", confirm: "Checkout this commit (detached HEAD)?" },
-  { label: "Create Branch Here…", action: "branch", prompt: "feature/my-branch" },
-  { label: "Create Tag Here…", action: "tag", prompt: "v1.0.0" },
+  { label: "Create branch here…", action: "branch", prompt: "feature/my-branch" },
+  { label: "Create tag here…", action: "tag", prompt: "v1.0.0" },
   { label: "Cherry-pick", action: "cherry-pick" },
   { label: "Revert", action: "revert", confirm: "Create a revert commit for this commit?" },
   { label: "Reset (soft)", action: "reset-soft", confirm: "Move HEAD here, keep index & working tree?" },

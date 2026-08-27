@@ -35,6 +35,7 @@ import { openPeek } from "../peek";
 import {
   segmented,
   detailPage,
+  blankable,
   ghGate,
   ghHeader,
   personChip,
@@ -55,6 +56,12 @@ let releaseTab: "releases" | "tags" = "releases";
 let query = "";
 
 /** Human file size for release assets. */
+/** Tag an element with an extra class and return it — for column widths. */
+function withClass(node: HTMLElement, cls: string): HTMLElement {
+  node.classList.add(cls);
+  return node;
+}
+
 function fmtBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -145,11 +152,24 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (rel.prerelease) suffix.push(statePill("Pre-release", "prerelease"));
     if (!rel.draft && rel.id === latestId) suffix.push(statePill("Latest", "latest"));
 
-    const meta: HTMLElement[] = [span(rel.tagName, "sec-mono")];
-    if (rel.author?.login) meta.push(span(rel.author.login));
-    if (rel.assets.length) meta.push(statBit("file", rel.assets.length, "", "assets"));
+    // The meta cluster packs right-to-left, so an unpublished draft (no assets,
+    // no downloads) used to shove its tag and author 90px right of every other
+    // row's. Each datum keeps its column and goes invisible instead of absent.
     const downloads = rel.assets.reduce((sum, a) => sum + (a.downloadCount || 0), 0);
-    if (downloads > 0) meta.push(statBit("cloud-download", downloads));
+    const meta: HTMLElement[] = [
+      span(rel.tagName, "sec-mono rel-tag"),
+      blankable(span(rel.author?.login ?? "", "rel-author"), !!rel.author?.login),
+      withClass(
+        blankable(statBit("file", rel.assets.length, "", "assets"), rel.assets.length > 0),
+        "rel-assets",
+      ),
+      // Download counts run from "12" to "1,240"; without a floor the column
+      // moved every element to its LEFT by the difference.
+      withClass(
+        blankable(statBit("cloud-download", downloads), downloads > 0),
+        "rel-downloads",
+      ),
+    ];
 
     const row = secRow({
       lead,

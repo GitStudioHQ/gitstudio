@@ -235,13 +235,21 @@ export interface EmptyOpts {
   secondary?: { label: string; icon?: string; onClick: () => void };
   /** A muted hint line under the action (e.g. a keyboard shortcut). */
   hint?: string;
+  /**
+   * `hero` (the default) centres the block in the pane — right for "there is
+   * nothing here at all". `inline` anchors it to the top-left of the content,
+   * for "your query matched nothing": that answer belongs beside the control
+   * that produced it, not floating 290px below and 600px to the right of the
+   * search box you are still looking at.
+   */
+  anchor?: "hero" | "inline";
 }
 
 /** A composed, premium empty state: an accent-tinted icon badge, a title, a
  *  description, and an optional CTA + hint. Used for empty lists AND for the
  *  detail pane when nothing is selected, so no surface is ever a bare void. */
 export function emptyState(title: string, desc: string, opts: EmptyOpts = {}): HTMLElement {
-  const wrap = el("div", "list-empty");
+  const wrap = el("div", "list-empty" + (opts.anchor === "inline" ? " is-inline" : ""));
   const badge = el("div", "list-empty-badge");
   badge.appendChild(glyph(opts.icon ?? "inbox"));
   const t = el("div", "list-empty-title");

@@ -160,7 +160,7 @@ async function showProjectBoard(
   // Columns = Status options, with a leading "No Status" bucket. With no Status
   // field, a single "All items" column holds everything.
   const columns: { id: string | null; name: string }[] = b.field
-    ? [{ id: null, name: "No Status" }, ...b.field.options.map((o) => ({ id: o.id, name: o.name }))]
+    ? [{ id: null, name: "No status" }, ...b.field.options.map((o) => ({ id: o.id, name: o.name }))]
     : [{ id: null, name: "All items" }];
 
   const itemsById = new Map(b.items.map((it) => [it.id, it]));
@@ -213,7 +213,10 @@ async function showProjectBoard(
   const boardEl = el("div", "gh-board");
   for (const col of columns) {
     const items = b.items.filter((it) => (b.field ? it.statusOptionId === col.id : true));
-    const colEl = el("div", "gh-col");
+    // An empty bucket is still a drop target, but it must not claim an equal
+    // quarter of the board: "No status · 0" was a 400px column of nothing
+    // beside three columns holding the actual work.
+    const colEl = el("div", "gh-col" + (items.length === 0 ? " is-empty" : ""));
     const colHead = el("div", "gh-col-head");
     const colName = el("span", "gh-col-name");
     colName.textContent = col.name;
@@ -422,7 +425,7 @@ function projectItemMenu(
     if (items.length) items.push({ separator: true, label: "Move to" });
     // "No Status" target (clears the field).
     items.push({
-      label: "No Status",
+      label: "No status",
       current: it.statusOptionId === null,
       onClick: () => void projectMoveItem(p, field.id, it, null, refresh, card),
     });

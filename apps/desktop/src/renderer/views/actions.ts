@@ -298,14 +298,17 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // line with the row above it.
     const meta: HTMLElement[] = [];
     meta.push(blankable(avatar(r.actor?.login ?? "?", r.actor?.avatarUrl ?? null, 18, "Actor"), !!r.actor));
-    meta.push(
-      blankable(
-        subLink(r.branch || "—", `Show ${r.branch} in Branches`, () =>
-          sectionNav?.("branches", { ref: r.branch }),
-        ),
-        !!r.branch,
+    // Branch names run from "main" to "redesign/issues-detail"; without a floor
+    // the column moved the ACTOR AVATAR to its left by the difference, so the
+    // avatars zig-zagged down the list.
+    const branchEl = blankable(
+      subLink(r.branch || "—", `Show ${r.branch} in Branches`, () =>
+        sectionNav?.("branches", { ref: r.branch }),
       ),
+      !!r.branch,
     );
+    branchEl.classList.add("sec-run-branch");
+    meta.push(branchEl);
     meta.push(blankable(span(r.event.replace(/_/g, " "), "sec-run-event"), !!r.event));
     const dur = runDuration(r);
     meta.push(blankable(span(dur || "—", "sec-run-dur"), !!dur));

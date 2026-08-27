@@ -99,7 +99,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
 
   const head = el("div", "rb-head");
   const title = el("div", "rb-title");
-  title.append(glyph("list-ordered"), span("Interactive Rebase"));
+  title.append(glyph("list-ordered"), span("Interactive rebase"));
   const sub = el("div", "rb-sub");
   const branchB = el("b", "rb-branch");
   branchB.textContent = state.branch;
@@ -121,7 +121,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   resetBtn.append(glyph("discard"), span("Reset plan"));
   const preview = span("", "rb-preview");
   const applyBtn = el("button", "rb-btn primary") as HTMLButtonElement;
-  const applyLabel = span("Start Rebase");
+  const applyLabel = span("Start rebase");
   applyBtn.append(glyph("play"), applyLabel);
   foot.append(resetBtn, el("span", "rb-spacer"), preview, applyBtn);
 
@@ -292,7 +292,12 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     const row = el("div", "rb-row rb-base");
     const rail = el("div", "rb-rail");
     rail.appendChild(el("span", "rb-node"));
-    row.append(rail, span("onto", "rb-onto"));
+    // The anchor row occupies the SAME columns as a commit row — an invisible
+    // grip, then the ONTO badge in the action slot — so its subject starts on
+    // the same left edge as every subject above it instead of 80px earlier.
+    const grip = el("span", "rb-grip is-spacer");
+    grip.appendChild(glyph("gripper"));
+    row.append(rail, grip, span("onto", "rb-onto"));
     const main = el("div", "rb-main");
     const line = el("div", "rb-line");
     const subj = span(state.baseCommit?.subject ?? short(state.base), "rb-subj");
@@ -328,7 +333,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
           `This rewrites ${rewritten} commit${rewritten === 1 ? "" : "s"} on ${state.branch}` +
           (dropped ? `, deleting ${dropped}` : "") +
           `. If the branch is already pushed you'll need to force-push afterwards.`,
-        confirmLabel: "Start Rebase",
+        confirmLabel: "Start rebase",
       });
       if (!ok) return;
 
@@ -359,7 +364,7 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
         busy = false;
         applyBtn.classList.remove("busy");
         applyBtn.disabled = false;
-        applyLabel.textContent = "Start Rebase";
+        applyLabel.textContent = "Start rebase";
       }
     })();
   });
@@ -401,7 +406,7 @@ function buildExplainer(): HTMLElement {
     glyph("lightbulb"),
     strong,
     span(
-      " Reorder by dragging, or pick what happens to each commit below. Nothing changes until you press Start Rebase.",
+      " Reorder by dragging, or pick what happens to each commit below. Nothing changes until you press Start rebase.",
     ),
   );
   const gloss = el("div", "rb-gloss");

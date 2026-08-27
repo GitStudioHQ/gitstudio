@@ -31,6 +31,7 @@ import { registerLayer } from "../overlays";
 import { openRemoteRepoBrowser } from "../repoBrowser";
 import {
   facetBar,
+  blankable,
   ghGate,
   segmented,
   ghHeader,
@@ -236,6 +237,9 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
               : "No unread notifications right now — nothing needs your attention.",
           {
             icon: filtered ? "filter" : "bell",
+            // A filtered-empty inbox answers a question you asked in the
+            // toolbar; an unfiltered-empty one is the whole view's state.
+            anchor: filtered ? "inline" : "hero",
           secondary: facets.activeCount() > 0
             ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
             : undefined,
@@ -517,8 +521,14 @@ function notificationRow(
     lead.setAttribute("aria-label", notifTypeLabel(t.type));
     row.appendChild(el("span", "sec-row-spring"));
     const meta = el("span", "sec-row-meta");
-    meta.appendChild(repoLink());
-    if (t.reason) meta.appendChild(span(notifReasonLabel(t.reason)));
+    const repo = repoLink();
+    repo.classList.add("notif-repo");
+    meta.appendChild(repo);
+    // The reason keeps its column even when absent, or a thread without one
+    // slid its repo name out of line with the rows around it.
+    meta.appendChild(
+      blankable(span(t.reason ? notifReasonLabel(t.reason) : "", "notif-reason"), !!t.reason),
+    );
     row.appendChild(meta);
     const time = el("span", "sec-row-time");
     time.textContent = when;

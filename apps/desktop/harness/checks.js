@@ -324,19 +324,36 @@
     "row-meta-columns-align": (f) => {
       const c = check(f);
       // A row missing an optional datum must not slide its neighbours into a
-      // different column — the meta cluster packs right-to-left.
-      const rows = $$(".sec-row[data-num]");
-      c.ok(rows.length >= 4, "need several rows");
-      const avatarXs = new Set();
+      // different column — the meta cluster packs right-to-left, so a dropped
+      // element shifts everything to its LEFT. Works for any list: whatever
+      // kinds of meta a list carries, each kind holds one column.
+      // Not every list stamps data-num (the Inbox keys by thread id).
+      const rows = $$(".sec-row, .notif-line").filter((r) => r.querySelector(".sec-row-meta"));
+      c.ok(rows.length >= 2, `the list renders rows (${rows.length})`);
+      if (rows.length < 2) return;
+      /** class-name → the right edges seen for it, one per row that has it. */
+      const byKind = new Map();
+      let counted = 0;
       for (const r of rows) {
-        const av = r.querySelector(".sec-avs");
-        if (av) avatarXs.add(left(av));
+        // Rows can carry two of a kind (an author stack AND an assignee
+        // stack), so the Nth of a kind is its own column.
+        const seen = new Map();
+        for (const m of $$(".sec-row-meta > *", r)) {
+          const cls = m.className || m.tagName;
+          const n = (seen.get(cls) || 0) + 1;
+          seen.set(cls, n);
+          const kind = n === 1 ? cls : `${cls} #${n}`;
+          if (!byKind.has(kind)) byKind.set(kind, new Set());
+          byKind.get(kind).add(Math.round(m.getBoundingClientRect().right));
+          counted++;
+        }
       }
-      c.eq(
-        avatarXs.size,
-        1,
-        `author avatars must share one x across rows (found ${[...avatarXs].join(", ")})`,
-      );
+      c.ok(counted > 0, "rows carry meta at all");
+      for (const [kind, edges] of byKind) {
+        // A kind only ONE row has can't be misaligned.
+        if (edges.size <= 1) continue;
+        c.eq(edges.size, 1, `"${kind}" must hold one column (right edges ${[...edges].join(", ")})`);
+      }
       // The time column is right-aligned, so its RIGHT edge is the column.
       const timeXs = new Set(
         rows
@@ -344,7 +361,7 @@
           .filter(Boolean)
           .map((el) => Math.round(el.getBoundingClientRect().right)),
       );
-      c.eq(timeXs.size, 1, `times must share one right edge (found ${[...timeXs].join(", ")})`);
+      c.ok(timeXs.size <= 1, `times must share one right edge (found ${[...timeXs].join(", ")})`);
     },
 
     // ── Pull requests ────────────────────────────────────────────────────────
@@ -681,6 +698,262 @@
         );
       });
       c.eq(forks.length, 0, "no rail entry wears a borrowed fork glyph");
+    },
+
+    // ── overlays: one form shape ────────────────────────────────────────────
+    "clone-form-one-field-shape": (f) => {
+      const c = check(f);
+      const fields = $$(".clone-card .clone-field").filter((n) => n.offsetParent !== null);
+      c.ok(fields.length >= 3, `the clone form renders its fields (${fields.length})`);
+      if (fields.length < 3) return;
+      const lefts = new Set();
+      const gaps = new Set();
+      for (const fl of fields) {
+        const cap = fl.querySelector(".clone-field-label");
+        const ctrl = fl.children[1];
+        const name = (cap?.textContent || "?").trim();
+        c.ok(!!cap, `${name} has a caption`);
+        c.ok(!!ctrl, `${name} has a control`);
+        if (!cap || !ctrl) continue;
+        const cr = cap.getBoundingClientRect(), tr = ctrl.getBoundingClientRect();
+        lefts.add(Math.round(cr.left));
+        lefts.add(Math.round(tr.left));
+        gaps.add(Math.round(tr.top - cr.bottom));
+        // The caption is ABOVE its control in every field — one row used to
+        // put the label to the LEFT of its value, beside a button.
+        c.ok(cr.bottom <= tr.top + 1, `${name}'s caption sits above its control`);
+        const st = getComputedStyle(cap);
+        c.eq(st.textTransform, "uppercase", `${name}'s caption uses the one caption style`);
+      }
+      c.eq(lefts.size, 1, `every caption and control shares one left edge (${[...lefts].join(", ")})`);
+      c.eq(gaps.size, 1, `every caption sits the same distance above its control (${[...gaps].join(", ")})`);
+      // …and no field is a bordered card holding another bordered box.
+      for (const fl of fields) {
+        c.eq(
+          getComputedStyle(fl).borderTopWidth,
+          "0px",
+          "a field is not a card wrapped around its own control",
+        );
+      }
+    },
+
+    // ── empty states answer where the question was asked ────────────────────
+    "search-empty-sits-with-the-search": (f) => {
+      const c = check(f);
+      const empty = $(".list-empty.is-inline");
+      const search = $(".ex-search input, .gh-search input, input[type='text']");
+      c.ok(!!empty, "the no-results state renders inline, not as a centred hero");
+      c.ok(!!search, "the search box is on screen");
+      if (!empty || !search) return;
+      const e = empty.getBoundingClientRect(), s2 = search.getBoundingClientRect();
+      const title = empty.querySelector(".list-empty-title");
+      const t = (title || empty).getBoundingClientRect();
+      // It used to be centred: ~600px right of the box you typed in and ~290px
+      // below it.
+      c.ok(
+        Math.abs(t.left - s2.left) <= 24,
+        `it lines up with the search box (${Math.round(t.left - s2.left)}px off)`,
+      );
+      c.ok(
+        t.top - s2.bottom <= 200,
+        `it sits near the control that emptied the list (${Math.round(t.top - s2.bottom)}px below)`,
+      );
+      c.ok(!empty.querySelector(".list-empty-badge")?.offsetParent, "no hero badge inline");
+      c.eq(getComputedStyle(empty).textAlign, "left", "inline copy reads left-aligned");
+    },
+
+    // ── menus: the keyboard ring must be visible ────────────────────────────
+    "menu-focus-ring-is-not-clipped": async (f) => {
+      const c = check(f);
+      const menu = $(".dropdown");
+      c.ok(!!menu, "a menu is open");
+      if (!menu) return;
+      // Arrow down so focus arrives from the keyboard — :focus-visible (which
+      // is what paints the ring) only applies then.
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+      );
+      await settle(60);
+      const item = document.activeElement;
+      c.ok(!!item && item.classList.contains("dropdown-item"), "an item takes keyboard focus");
+      if (!item || !item.classList.contains("dropdown-item")) return;
+      const st = getComputedStyle(item);
+      const w = parseFloat(st.outlineWidth) || 0;
+      const off = parseFloat(st.outlineOffset) || 0;
+      c.ok(w > 0, `the focused item paints a ring (outline-width ${st.outlineWidth})`);
+      const reach = w + Math.max(0, off);
+      const i = item.getBoundingClientRect();
+      // The scrollport clips at the menu's PADDING box, so the ring has to fit
+      // inside the padding on every side it can reach.
+      const ms = getComputedStyle(menu);
+      const m = menu.getBoundingClientRect();
+      const pad = {
+        l: parseFloat(ms.paddingLeft) || 0,
+        r: parseFloat(ms.paddingRight) || 0,
+        t: parseFloat(ms.paddingTop) || 0,
+        b: parseFloat(ms.paddingBottom) || 0,
+      };
+      const bw = parseFloat(ms.borderLeftWidth) || 0;
+      c.ok(
+        i.left - reach >= m.left + bw - 0.5,
+        `the ring's left edge is inside the menu (needs ${reach}px, has ${Math.round(i.left - m.left - bw)}px)`,
+      );
+      c.ok(
+        i.right + reach <= m.right - bw + 0.5,
+        `the ring's right edge is inside the menu (needs ${reach}px, has ${Math.round(m.right - bw - i.right)}px)`,
+      );
+      const first = $$(".dropdown-item", menu)[0];
+      if (first === item) {
+        c.ok(
+          reach <= pad.t + 0.5,
+          `the first item's ring fits above it (needs ${reach}px, padding is ${pad.t}px)`,
+        );
+      }
+      void pad.b;
+    },
+
+    // ── rebase: one plan, one set of columns ────────────────────────────────
+    "rebase-rows-share-their-columns": (f) => {
+      const c = check(f);
+      const rows = $$(".rb-row");
+      c.ok(rows.length >= 3, `the plan renders (${rows.length} rows)`);
+      const base = $(".rb-row.rb-base");
+      c.ok(!!base, "the anchor row renders");
+      if (!base || rows.length < 3) return;
+      const subjLefts = new Set(
+        rows.map((r) => Math.round(r.querySelector(".rb-subj").getBoundingClientRect().left)),
+      );
+      c.eq(subjLefts.size, 1, `every subject shares a left edge (${[...subjLefts].join(", ")})`);
+      // The ONTO badge stands in the action select's column, same width.
+      const onto = base.querySelector(".rb-onto").getBoundingClientRect();
+      const act = rows[0].querySelector(".rb-action").getBoundingClientRect();
+      c.eq(Math.round(onto.left), Math.round(act.left), "the anchor badge uses the action column");
+      c.ok(
+        Math.abs(onto.width - act.width) <= 24,
+        `and roughly its width (${Math.round(onto.width)} vs ${Math.round(act.width)})`,
+      );
+    },
+    "rebase-legend-does-not-wrap": (f) => {
+      const c = check(f);
+      const items = $$(".rb-gloss > span");
+      c.ok(items.length >= 5, `the legend explains every action (${items.length})`);
+      if (items.length < 5) return;
+      const hs = new Set(items.map((i) => Math.round(i.getBoundingClientRect().height)));
+      c.eq(hs.size, 1, `no gloss wraps to a second line (heights ${[...hs].join(", ")})`);
+    },
+    // The view says what the button says.
+    "rebase-names-its-action-once": (f) => {
+      const c = check(f);
+      const btn = $$("button").find((b) => /start rebase/i.test(b.textContent || ""));
+      c.ok(!!btn, "the start button exists");
+      if (!btn) return;
+      const label = btn.textContent.trim();
+      const lead = ($(".rb-explain-lead")?.textContent || "").trim();
+      c.ok(
+        !lead || lead.includes(label),
+        `the explainer must name the button exactly ("${label}" not found)`,
+      );
+    },
+
+    // ── compare: paths keep the part that identifies them ───────────────────
+    "compare-file-rows-name-first": (f) => {
+      const c = check(f);
+      const rows = $$(".cmp-file-scroll .file-row");
+      c.ok(rows.length >= 4, `the changed-file list renders (${rows.length})`);
+      if (rows.length < 4) return;
+      const lefts = new Set();
+      for (const r of rows) {
+        const name = r.querySelector(".dc-file-name");
+        c.ok(!!name, "each row leads with the file name");
+        if (!name) continue;
+        lefts.add(Math.round(name.getBoundingClientRect().left));
+        // The name is the part that tells two files apart, so it never clips.
+        c.ok(
+          name.scrollWidth <= name.clientWidth + 1,
+          `"${name.textContent}" is not truncated (${name.scrollWidth} > ${name.clientWidth})`,
+        );
+        c.ok(!!r.title && r.title.includes("/"), "the full path stays available as a title");
+      }
+      c.eq(lefts.size, 1, `names share a left edge (${[...lefts].join(", ")})`);
+    },
+    "compare-counts-are-filled": (f) => {
+      const c = check(f);
+      const tabs = $$(".cmp-seg-btn");
+      c.eq(tabs.length, 2, "the view toggle offers Commits and Changed files");
+      for (const t of tabs) {
+        const n = t.querySelector(".cmp-seg-count");
+        const label = (t.textContent || "").replace(/\d+/g, "").trim();
+        // An empty count badge is a box that says nothing.
+        c.ok(!!n && /\d/.test(n.textContent || ""), `"${label}" carries its count`);
+      }
+      c.ok(!!$(".cmp-seg-btn.active"), "one tab reads as active");
+    },
+
+    // ── project board: width goes where the work is ─────────────────────────
+    "board-empty-column-yields-its-width": (f) => {
+      const c = check(f);
+      const cols = $$(".gh-col");
+      c.ok(cols.length >= 3, `the board renders columns (${cols.length})`);
+      const empty = $$(".gh-col.is-empty");
+      const full = cols.filter((k) => !k.classList.contains("is-empty"));
+      c.ok(empty.length >= 1 && full.length >= 2, "the fixture has both empty and filled columns");
+      if (!empty.length || !full.length) return;
+      const ew = empty[0].getBoundingClientRect().width;
+      const fw = Math.min(...full.map((k) => k.getBoundingClientRect().width));
+      c.ok(ew < fw, `an empty column is narrower than a filled one (${Math.round(ew)} vs ${Math.round(fw)})`);
+      // …but it is still a drop target, so it keeps a body and a placeholder.
+      c.ok(!!empty[0].querySelector(".gh-col-empty"), "the empty column keeps its drop zone");
+      // Column names read like the rest of the app.
+      for (const n of $$(".gh-col-name")) {
+        const t = n.textContent.trim();
+        c.ok(
+          !/^[A-Z][a-z]+ [A-Z][a-z]/.test(t),
+          `"${t}" should be sentence case like every other label`,
+        );
+      }
+    },
+
+    // ── explore: people read as people, hits read as one hit ────────────────
+    "explore-people-are-a-directory": (f) => {
+      const c = check(f);
+      const list = $(".sec-list");
+      const rows = $$(".explore-person-row");
+      c.ok(!!list && rows.length >= 3, `people results render (${rows.length})`);
+      if (!list || !rows.length) return;
+      const lw = list.getBoundingClientRect().width;
+      for (const r of rows) {
+        const w = r.getBoundingClientRect().width;
+        // A 40px row holding one login across a 1350px pane is ~93% empty.
+        c.ok(w <= Math.max(280, lw * 0.4), `a person chip stays compact (${Math.round(w)}px)`);
+      }
+      // Several fit on one line — that is what makes it a directory.
+      const tops = new Set(rows.map((r) => Math.round(r.getBoundingClientRect().top)));
+      c.ok(tops.size < rows.length, "chips share rows instead of stacking one per line");
+      const foot = $(".explore-footer-note");
+      if (foot) {
+        c.ok(
+          Math.abs(foot.getBoundingClientRect().left - rows[0].getBoundingClientRect().left) <= 24,
+          "the match count lines up with the results it counts",
+        );
+      }
+    },
+    "explore-code-hit-is-one-block": (f) => {
+      const c = check(f);
+      const rows = $$(".explore-code-row");
+      c.ok(rows.length >= 1, `code results render (${rows.length})`);
+      if (!rows.length) return;
+      for (const r of rows) {
+        const pres = $$(".explore-code-frag", r);
+        // One hit, one block: three bordered boxes read as three hits.
+        c.eq(pres.length, 1, "each hit shows a single code block");
+      }
+      const multi = rows.find((r) => $$(".explore-code-line", r).length > 1);
+      if (multi) {
+        c.ok(
+          !!multi.querySelector(".explore-code-gap"),
+          "non-adjacent fragments are separated the way a diff separates hunks",
+        );
+      }
     },
 
     // ── settings ─────────────────────────────────────────────────────────────

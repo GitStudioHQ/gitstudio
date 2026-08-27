@@ -1112,6 +1112,21 @@ html.is-mac .topbar { padding-left: 78px; }
   padding: 48px 24px;
   text-align: center;
 }
+/* The answer to "why did my search return nothing?" sits where the search is:
+   at the top, at the content's left edge, one row's height below the control —
+   not centred in the pane, which put it ~290px down and ~600px across from the
+   box the user is still looking at. */
+.list-empty.is-inline {
+  min-height: 0;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  padding: var(--sp-5) var(--sp-4);
+  gap: var(--sp-2);
+}
+.list-empty.is-inline .list-empty-badge { display: none; }
+.list-empty.is-inline .list-empty-desc { max-width: var(--measure-read, 820px); }
 .list-empty-title { font-size: 15px; font-weight: 600; color: var(--vscode-foreground); }
 .list-empty-desc { font-size: 12.5px; color: var(--app-muted); max-width: 360px; line-height: 1.5; }
 /* `.list-empty-badge` (and the `.list-empty-*` companions) get their final,
@@ -4450,6 +4465,11 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   gap: 8px;
 }
 .gh-col-empty { min-height: 40px; }
+/* An empty column shrinks to a lane and steps back, so the board's width goes
+   to the columns that have something in it. It stays a drop target. */
+.gh-col.is-empty { flex: 0 1 auto; min-width: 172px; opacity: 0.68; }
+.gh-col.is-empty:hover,
+.gh-col.is-empty.drag-over { opacity: 1; }
 
 .gh-card {
   display: flex;
@@ -5189,16 +5209,24 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .clone-scheme { align-self: flex-start; }
 .clone-scheme .gh-seg-btn { height: 26px; padding: 0 12px; }
 
-.clone-dest {
+/* One field shape: caption, then control, all on one left edge. The rows used
+   to be three different things — a bare input, a bordered card holding a
+   label-value-button row, and a bordered card holding a caption above a
+   BORDERED input. */
+.clone-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.clone-field > .modal-input { width: 100%; }
+.clone-dest-control {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  min-height: 34px;
+  padding: 0 6px 0 12px;
   border: 1px solid var(--app-border);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--app-panel);
 }
-.clone-dest-text { flex: 1 1 auto; min-width: 0; }
+.clone-dest-control > .clone-dest-path { flex: 1 1 auto; min-width: 0; }
+.clone-field-label,
 .clone-dest-label {
   font-size: var(--text-2xs);
   font-weight: 700;
@@ -5217,7 +5245,6 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .clone-choose { flex: 0 0 auto; }
 
 /* Folder-name override (clone dialog) + the destination sheet. */
-.clone-name-row .clone-dest-text { display: flex; flex-direction: column; gap: 4px; }
 .clone-name-input,
 .dest-name-input {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
@@ -5474,6 +5501,33 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-row .sec-row-lead { align-self: flex-start; margin-top: 2px; }
 /* A people result is a face and a handle — one line, read as a tight list
    rather than a stack of mostly-empty cards. */
+/* The People / Organizations results wrap as a directory of chips. */
+.sec-list.is-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(212px, 250px));
+  justify-content: start;
+  align-content: start;
+  gap: 8px;
+}
+.sec-list.is-people > .explore-person-row {
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  background: var(--app-elevated);
+  padding: 8px 10px;
+}
+.sec-list.is-people > .explore-person-row:hover {
+  border-color: color-mix(in srgb, var(--gs-accent) 32%, var(--app-border));
+  background: color-mix(in srgb, var(--gs-accent) 5%, var(--app-elevated));
+}
+/* Full-width children of the grid — the empty state, the footer, a skeleton. */
+.sec-list.is-people > .list-empty,
+.sec-list.is-people > .list-error,
+.sec-list.is-people > .explore-footer,
+.sec-list.is-people > .explore-loading-more,
+.sec-list.is-people > .skeleton-list { grid-column: 1 / -1; }
+/* A chip has no room for a hover action cluster; the whole chip is the door. */
+.sec-list.is-people > .explore-person-row .row-actions,
+.sec-list.is-people > .explore-person-row .sec-row-actions { display: none; }
 .explore-person-row { padding-top: 7px; padding-bottom: 7px; align-items: center; }
 .explore-person-row .sec-row-lead { align-self: center; margin-top: 0; }
 .explore-person-row .sec-row-title { font-size: var(--text-md); font-weight: 600; }
@@ -5481,15 +5535,15 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-sm);
 }
-.explore-code-frag + .explore-code-frag {
-  margin-top: 0;
-  border-top: 0;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-.explore-code-frag:has(+ .explore-code-frag) {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+/* One block per hit. The stitched-sibling rules this replaces could not close
+   the gap the row body's own `gap` put between the boxes. */
+.explore-code-line { display: block; }
+.explore-code-gap {
+  display: block;
+  color: var(--app-muted);
+  opacity: 0.65;
+  letter-spacing: 0.2em;
+  user-select: none;
 }
 .explore-code-frag {
   margin: 6px 0 0;
@@ -5504,10 +5558,12 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   overflow-x: auto;
   white-space: pre;
 }
+/* Left-aligned with the rows it summarises: "3 matches" used to sit centred
+   ~600px right of the last row's text. */
 .explore-footer {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--sp-3);
   padding: 18px 12px 26px;
 }
@@ -6688,9 +6744,13 @@ body.vscode-light .gh-label-chip {
 }
 .rb-explain-x:hover { background: var(--app-hover); color: var(--app-text); }
 .rb-gloss {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 3px 18px; margin-top: 10px; font-size: 11.5px; color: var(--app-muted);
+  /* Wide enough for the longest gloss ("Squash — merge into the commit below
+     it, keep both messages") to sit on ONE line: two of six used to wrap, so
+     the legend had a ragged two-height bottom edge. */
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 4px 18px; margin-top: 10px; font-size: 11.5px; color: var(--app-muted);
 }
+.rb-gloss > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rb-gloss b { font-weight: 650; margin-right: 2px; }
 .rb-gloss .g-pick { color: var(--app-text); }
 .rb-gloss .g-reword { color: #4a9eda; }
@@ -6729,10 +6789,15 @@ body.vscode-light .gh-label-chip {
 .rb-row.rb-base .rb-rail::before { bottom: 50%; }
 .rb-row.rb-base { opacity: 0.72; }
 .rb-onto {
-  align-self: center; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  /* Sized and aligned like the action select it stands in for. */
+  align-self: flex-start; margin-top: 1px;
+  flex: 0 0 auto; min-width: 88px; text-align: center;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; line-height: 20px;
   text-transform: uppercase; color: var(--app-muted);
-  border: 1px solid var(--app-border); border-radius: 5px; padding: 1px 5px;
+  border: 1px solid var(--app-border); border-radius: 6px; padding: 0 6px;
 }
+/* Reserves the grip's column on the anchor row, which has nothing to drag. */
+.rb-grip.is-spacer { visibility: hidden; pointer-events: none; opacity: 1; }
 
 .rb-grip { display: flex; align-items: center; color: var(--app-muted); cursor: grab; opacity: 0; }
 .rb-row:hover .rb-grip, .rb-row:focus-within .rb-grip { opacity: 1; }
@@ -7642,8 +7707,24 @@ body.vscode-light .gh-label-chip {
 .sec-row-meta > .sec-avs { min-width: 54px; justify-content: flex-end; }
 .sec-row-meta > .sec-diffstat { min-width: 104px; justify-content: flex-end; }
 .sec-row-meta > .gh-stat { min-width: 44px; justify-content: flex-end; }
+.sec-row-meta > .gist-filecount { min-width: 54px; text-align: right; }
+.sec-row-meta > .notif-repo { min-width: 190px; text-align: right; justify-content: flex-end; }
+.sec-row-meta > .notif-reason { min-width: 114px; text-align: right; }
+.sec-row-meta > .rel-tag { min-width: 148px; text-align: right; }
+.sec-row-meta > .rel-author { min-width: 110px; text-align: right; }
+.sec-row-meta > .rel-assets { min-width: 42px; justify-content: flex-end; }
+.sec-row-meta > .rel-downloads { min-width: 76px; justify-content: flex-end; }
 /* Actions run rows: branch, event and duration each keep their column so the
    list can be scanned down rather than read row by row. */
+.sec-row-meta > .sec-run-branch {
+  min-width: 168px;
+  max-width: 240px;
+  justify-content: flex-end;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sec-row-meta > .sec-run-event { min-width: 76px; text-align: right; }
 .sec-row-meta > .sec-run-dur { min-width: 62px; text-align: right; }
 .sec-row-meta > .gh-sublink { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -8335,7 +8416,10 @@ body.vscode-light .log-pane {
 /* The base .gh-pill self-aligns to flex-start (for card layouts) — in a
    single-line row it must center like everything else. */
 .notif-line .gh-pill { margin-top: 0; flex: 0 0 auto; align-self: center; }
-.notif-line .row-actions { flex: 0 0 auto; }
+/* The hover cluster is Open, plus Mark read only while a thread is unread —
+   two widths, so a read row's time, reason and repo columns landed ~79px right
+   of an unread one's. The cluster reserves the wider of the two. */
+.notif-line .row-actions { flex: 0 0 138px; justify-content: flex-end; }
 /* Time keeps a fixed right slot so rows align like the section lists. */
 .notif-line .sec-row-time { min-width: 46px; }
 

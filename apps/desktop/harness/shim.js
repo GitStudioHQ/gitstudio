@@ -205,6 +205,40 @@
     "refs:list": branches.map((b) => ({ type: "head", name: b.name, fullName: "refs/heads/" + b.name, sha: "abc123", isCurrent: b.current, upstream: b.upstream })),
     "head:get": { detached: false, branch: "main", sha: "9f8e7d6" },
     "branches:list": branches,
+    // The Rebase view had no fixture, so every screenshot of it was its ERROR
+    // state — the one surface nobody could actually look at.
+    // Compare had no fixture either — every shot of it was "Couldn't compare
+    // these refs".
+    "compare:refs": {
+      ahead: 5,
+      behind: 2,
+      commits: [
+        { sha: "18c9d0e1f2736485a1b2", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", date: S(20 * 60) },
+        { sha: "27b8c9d0e1f263748596", shortSha: "27b8c9d", subject: "engine: split a hunk on a selection boundary", author: "Anton Arnaudov", date: S(18 * 60) },
+        { sha: "36a7b8c9d0e152637485", shortSha: "36a7b8c", subject: "changes: stage the lines a selection touches", author: "Sora Ohta", date: S(9 * 60) },
+      ],
+      files: [
+        { path: "packages/engine/src/hunks.ts", status: "M" },
+        { path: "packages/engine/src/hunkSplit.ts", status: "A" },
+        { path: "apps/desktop/src/renderer/diffPanel.ts", status: "M" },
+        { path: "apps/desktop/src/renderer/legacyHunks.ts", status: "D" },
+        { path: "packages/engine/test/hunkSplit.test.ts", status: "A" },
+      ],
+    },
+    "rebase:load": {
+      ok: true,
+      base: "origin/main",
+      branch: "feat/line-staging",
+      inProgress: false,
+      baseCommit: { shortSha: "9f8e7d6", subject: "release: extension 1.11.1" },
+      commits: [
+        { sha: "18c9d0e1f2736485a1b2", shortSha: "18c9d0e", author: "Mira Holt", subject: "engine: hunk splitting groundwork", rel: "20h ago" },
+        { sha: "27b8c9d0e1f263748596", shortSha: "27b8c9d", author: "Anton Arnaudov", subject: "engine: split a hunk on a selection boundary", rel: "18h ago" },
+        { sha: "36a7b8c9d0e152637485", shortSha: "36a7b8c", author: "Anton Arnaudov", subject: "fixup! engine: split a hunk on a selection boundary", rel: "16h ago" },
+        { sha: "45968797c9d041526374", shortSha: "4596879", author: "Sora Ohta", subject: "changes: stage the lines a selection touches", rel: "9h ago" },
+        { sha: "5485767869c930415263", shortSha: "5485767", author: "Anton Arnaudov", subject: "wip: notes to self", rel: "2h ago" },
+      ],
+    },
     "stash:list": [ { sha: "77aa88", ref: "stash@{0}", message: "WIP: palette streaming groups", time: S(30) } ],
     "status": changedFiles,
     "diff:files": changedFiles,

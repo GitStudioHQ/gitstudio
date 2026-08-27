@@ -83,7 +83,12 @@ export function openCloneDialog(
       void runClone();
     }
   });
-  urlPanel.append(urlInput);
+  // One field shape for the whole form. These three rows used to have three
+  // different structures — a bare placeholder-only input, a label-value-button
+  // row inside a bordered card, and a caption above an input inside a SECOND
+  // bordered card — so three consecutive fields had three left edges and three
+  // ideas of where a label goes.
+  urlPanel.append(cloneField("Repository URL", urlInput, "clone-url-field"));
 
   // ── GitHub panel ───────────────────────────────────────────────────────────
   const ghPanel = el("div", "clone-panel clone-gh");
@@ -112,27 +117,20 @@ export function openCloneDialog(
   schemeSeg.append(httpsBtn, sshBtn);
   schemeSeg.hidden = true;
 
-  ghPanel.append(ghSearch, ghList, schemeSeg);
+  ghPanel.append(cloneField("Your repositories", ghSearch), ghList, schemeSeg);
 
   // ── footer: destination + progress + actions ───────────────────────────────
-  const destRow = el("div", "clone-dest");
-  const destLabel = el("div", "clone-dest-label");
-  destLabel.textContent = "Destination";
   const destValue = el("div", "clone-dest-path");
   destValue.textContent = "No folder chosen";
   const chooseBtn = el("button", "mini-btn clone-choose");
   chooseBtn.append(glyph("folder-opened"), span("Choose…"));
   chooseBtn.addEventListener("click", () => void pickDir());
-  const destText = el("div", "clone-dest-text");
-  destText.append(destLabel, destValue);
-  destRow.append(destText, chooseBtn);
+  const destControl = el("div", "clone-dest-control");
+  destControl.append(destValue, chooseBtn);
+  const destRow = cloneField("Destination", destControl);
 
   // Folder-name override — blank means "use the name derived from the URL"
   // (shown as the placeholder, so what will happen is never a mystery).
-  const nameRow = el("div", "clone-dest clone-name-row");
-  const nameText = el("div", "clone-dest-text");
-  const nameLabel = el("div", "clone-dest-label");
-  nameLabel.textContent = "Folder name";
   const nameInput = document.createElement("input");
   nameInput.className = "modal-input clone-name-input";
   nameInput.placeholder = "Derived from the URL";
@@ -140,8 +138,7 @@ export function openCloneDialog(
   nameInput.autocapitalize = "off";
   nameInput.setAttribute("aria-label", "Folder name (optional)");
   nameInput.addEventListener("input", refreshClone);
-  nameText.append(nameLabel, nameInput);
-  nameRow.append(nameText);
+  const nameRow = cloneField("Folder name", nameInput);
   const nameError = el("div", "dest-name-error clone-name-error");
   nameError.hidden = true;
 
@@ -472,6 +469,26 @@ export function openCloneDialog(
 }
 
 /** A tiny inline badge appended to a repo's name (Private / Fork). */
+/**
+ * One field: a caption above its control, on the form's single left edge. The
+ * caption is a real <label> when the control can take focus, so clicking the
+ * word lands the caret in the box.
+ */
+function cloneField(label: string, control: HTMLElement, cls?: string): HTMLElement {
+  const wrap = el("div", "clone-field" + (cls ? ` ${cls}` : ""));
+  const isInput = control instanceof HTMLInputElement;
+  const cap = document.createElement(isInput ? "label" : "div");
+  cap.className = "clone-field-label";
+  cap.textContent = label;
+  if (isInput) {
+    if (!control.id) control.id = `clone-f-${++fieldSeq}`;
+    (cap as HTMLLabelElement).htmlFor = control.id;
+  }
+  wrap.append(cap, control);
+  return wrap;
+}
+let fieldSeq = 0;
+
 function badge(text: string): HTMLElement {
   const b = span(text, "clone-repo-badge");
   return b;

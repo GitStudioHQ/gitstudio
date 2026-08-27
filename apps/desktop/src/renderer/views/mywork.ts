@@ -160,6 +160,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
           query.trim() ? `Nothing matches “${query.trim()}”.` : "Nothing matches these filters.",
           {
             icon: "search",
+          anchor: "inline",
           secondary: facets.activeCount() > 0
             ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
             : undefined,

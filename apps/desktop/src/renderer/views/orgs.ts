@@ -295,7 +295,10 @@ async function renderSubTab(
   content.classList.toggle("is-people", id === "members");
   const q = query.trim().toLowerCase();
   const noMatches = (): HTMLElement =>
-    emptyState("No matches", `Nothing matches “${query.trim()}”.`, { icon: "search" });
+    emptyState("No matches", `Nothing matches “${query.trim()}”.`, {
+      icon: "search",
+      anchor: "inline",
+    });
 
   if (id === "repos") {
     let repos: OrgRepo[] | undefined = cachePeek("orgs:repos", org);

@@ -27,6 +27,7 @@ import { confirmDialog, openModal, toast } from "../dialogs";
 import { highlightCode } from "../highlight";
 import {
   detailPage,
+  blankable,
   ghGate,
   ghHeader,
   personChip,
@@ -102,8 +103,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const buildRow = (g: GistInfo): HTMLElement => {
     // A gist has no real title — use the description or the first filename.
     const title = g.description || g.files[0]?.filename || "Untitled gist";
-    const meta: HTMLElement[] = [span(`${g.fileCount} file${g.fileCount === 1 ? "" : "s"}`)];
-    if (typeof g.comments === "number" && g.comments > 0) meta.push(statBit("comment", g.comments));
+    // The comment count keeps its column even at zero: dropping the element
+    // slid "1 file" 69px between a gist with comments and one without, so the
+    // list had no meta columns at all.
+    const meta: HTMLElement[] = [
+      span(`${g.fileCount} file${g.fileCount === 1 ? "" : "s"}`, "gist-filecount"),
+      blankable(statBit("comment", g.comments ?? 0), (g.comments ?? 0) > 0),
+    ];
     const lead = el("span", "gh-lead-icon is-accent");
     lead.appendChild(glyph("code"));
     const row = secRow({

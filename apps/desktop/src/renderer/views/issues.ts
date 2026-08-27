@@ -182,7 +182,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   const facetSlot = el("div", "gh-facet-slot");
   const newBtn = el("button", "btn btn-primary gh-new-btn");
-  newBtn.append(glyph("add"), span("New Issue"));
+  newBtn.append(glyph("add"), span("New issue"));
   newBtn.addEventListener("click", () => void openNewIssue(nav));
   tools.append(seg, facetSlot, newBtn);
   header.querySelector(".gh-acct")?.before(tools);
@@ -279,6 +279,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       listEl.appendChild(
         emptyState("No matching issues", desc, {
           icon: "search",
+          anchor: "inline",
         secondary: facets.activeCount() > 0
           ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
           : undefined,
