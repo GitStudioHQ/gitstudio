@@ -1,0 +1,36 @@
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_f23683ea4ab712 238
+apps/desktop/test/sanitizerFailsClosed.ts
+  s_26f5e669d3043c::t_e1d4ee6ac7c211 1
+apps/desktop/test/cache.test.ts
+  s_26f5e669d3043c::t_e8d9f9b1fe95f4 12,44-47,53-63
+  s_26f5e669d3043c::t_b395aed20970a1 1-11,13-43,48-52,64-159,163-168,170-215
+  s_26f5e669d3043c::t_5a529d9d575845 160-162,169
+apps/desktop/src/main/repoStore.ts
+  s_26f5e669d3043c::t_f23683ea4ab712 14-43,59-66,102-108,110-111,158,163
+apps/desktop/test/repoStore.test.ts
+  s_26f5e669d3043c::t_475535021b3920 1-67
+apps/desktop/src/renderer/cache.ts
+  s_26f5e669d3043c::t_f26d1d79e514e3 95-130,132,136
+apps/desktop/src/renderer/markdown.ts
+  s_26f5e669d3043c::t_90850fd23bbc1b 22-24,181-183,198-202,210,212-216,218-219,223-239
+apps/desktop/test/sanitizerFailsClosed.test.ts
+  s_26f5e669d3043c::t_cf1d92d1306a68 103,105-107,109,112
+  s_26f5e669d3043c::t_4b6b639be67cf2 1-102,104,108,110-111,113-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c3b083a836a7177268d20254801e9d3861371608",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
