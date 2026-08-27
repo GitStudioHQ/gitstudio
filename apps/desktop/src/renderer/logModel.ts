@@ -49,6 +49,34 @@ export function emptyLogDoc(): LogDoc {
   return { lines: [], groups: [], danglingTail: "" };
 }
 
+/**
+ * Apply carriage returns the way a terminal does: `\r` returns the cursor to
+ * column 0 and what follows OVERWRITES what was there.
+ *
+ * Every CI tool that draws a progress bar — npm, pip, docker, gradle, cargo —
+ * rewrites one logical line in place and terminates it with a single newline.
+ * Keeping the raw text meant the pane rendered
+ *   "Downloading  0%\rDownloading 25%\rDownloading 60%\rDownloading 100%"
+ * as one line, and since a `\r` paints as nothing in HTML the reader saw all
+ * four states run together. This leaves the final state, which is what the same
+ * output looks like in a terminal.
+ *
+ * It is a real overwrite, not "take the last segment": a short redraw over a
+ * long line leaves the tail of the long one, exactly as a terminal would
+ * ("abcdef" then "\rxy" is "xycdef"). It also drops the stray trailing `\r`
+ * that CRLF logs leave on every single line.
+ */
+function applyCarriageReturns(raw: string): string {
+  if (!raw.includes("\r")) {
+    return raw;
+  }
+  let out = "";
+  for (const seg of raw.split("\r")) {
+    out = seg + out.slice(seg.length);
+  }
+  return out;
+}
+
 function classify(raw: string): LogLine {
   let text = raw;
   let ts = "";
@@ -57,6 +85,9 @@ function classify(raw: string): LogLine {
     ts = tm[1];
     text = text.slice(tm[0].length);
   }
+  // AFTER the timestamp is taken off: the log service stamps once per newline,
+  // so a redraw segment must not be allowed to overwrite the stamp.
+  text = applyCarriageReturns(text);
   const cm = CMD_RE.exec(text);
   if (cm) {
     return { text: cm[2], ts, kind: cm[1] as LineKind };

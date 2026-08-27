@@ -105,3 +105,56 @@ test("truecolor maps to a nearby palette slot", () => {
   const spans = parseAnsi("[38;2;255;40;40mred[0m");
   assert.match(spans[0].cls, /log-fg-9/);
 });
+
+// ── carriage returns ─────────────────────────────────────────────────────────
+//
+// Every CI tool that draws a progress bar rewrites one logical line in place
+// with `\r` and terminates it with a single `\n`. Keeping the raw text meant
+// the pane rendered every intermediate state at once, run together, because a
+// `\r` paints as nothing in HTML.
+
+const CR = String.fromCharCode(13);
+
+test("a progress line shows its final state, not all of them at once", () => {
+  const doc = parseLog(
+    `Downloading  0%${CR}Downloading 25%${CR}Downloading 60%${CR}Downloading 100%\nDone\n`,
+  );
+  assert.equal(doc.lines.length, 2);
+  assert.equal(doc.lines[0].text, "Downloading 100%");
+  assert.equal(doc.lines[1].text, "Done");
+});
+
+test("a carriage return overwrites rather than truncating", () => {
+  // A terminal returns the cursor to column 0 and paints over; a short redraw
+  // leaves the tail of the longer line behind.
+  const doc = parseLog(`abcdef${CR}xy\n`);
+  assert.equal(doc.lines[0].text, "xycdef");
+});
+
+test("a CRLF log does not leave a stray return on every line", () => {
+  const doc = parseLog("alpha\r\nbeta\r\n");
+  assert.deepEqual(
+    doc.lines.map((l) => l.text),
+    ["alpha", "beta"],
+  );
+});
+
+test("the timestamp survives a redraw on the same line", () => {
+  // GitHub stamps once per newline, so the stamp sits before the first segment.
+  // Applying the overwrite to the whole raw line would let a later segment
+  // paint over the timestamp.
+  const doc = parseLog(`2026-08-25T10:00:42.1234567Z step  0%${CR}step 99%\n`);
+  assert.equal(doc.lines[0].ts, "2026-08-25T10:00:42.1234567Z");
+  assert.equal(doc.lines[0].text, "step 99%");
+});
+
+test("a workflow command still classifies after a redraw", () => {
+  const doc = parseLog(`junk${CR}##[error]Process completed with exit code 1.\n`);
+  assert.equal(doc.lines[0].kind, "error");
+  assert.equal(doc.lines[0].text, "Process completed with exit code 1.");
+});
+
+test("text with no carriage return is returned untouched", () => {
+  const doc = parseLog("plain line\n");
+  assert.equal(doc.lines[0].text, "plain line");
+});
