@@ -774,6 +774,29 @@
     await wait(600);
     // Functional mode: run the named assertion and publish the verdict in the
     // title, which is the one channel --dump-dom always carries back.
+    // Probe mode: evaluate an arbitrary expression against the driven scene and
+    // publish the result in the title. This is how an investigator inspects a
+    // surface — geometry, computed styles, aria, focus — without having to add
+    // a named case to the shared checks file first.
+    const probe = params.get("probe");
+    if (probe) {
+      let out;
+      try {
+        // eslint-disable-next-line no-new-func
+        out = await new Function(`"use strict"; return (async () => { ${probe} })()`)();
+      } catch (e) {
+        out = { error: String((e && e.stack) || e) };
+      }
+      let text;
+      try {
+        text = JSON.stringify(out === undefined ? null : out);
+      } catch {
+        text = JSON.stringify(String(out));
+      }
+      document.title = "PROBE " + (text.length > 60000 ? text.slice(0, 60000) + "…" : text);
+      return;
+    }
+
     const checkId = params.get("check");
     if (checkId) {
       const suite = window.__GS_CHECKS || {};
