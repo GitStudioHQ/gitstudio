@@ -20,6 +20,7 @@ import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from
 import { AsyncLocalStorage } from "node:async_hooks";
 import { join, basename, extname } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore } from "./repoStore";
 import { GitBridge } from "./gitBridge";
 import { GitHubBridge } from "./githubBridge";
@@ -951,14 +952,19 @@ async function boot(): Promise<void> {
   let gitLogId = 0;
   repos.onGitRun = (e) => {
     const action = actionCtx.getStore();
+    // The Output tab is a surface the user reads, copies and pastes into bug
+    // reports, and `git remote add origin https://user:ghp_…@github.com/org/repo`
+    // puts a token straight into argv. Only the credential is removed — the
+    // command has to stay legible to be worth showing at all.
+    const args = e.args.map(redactCredentials);
     send("git:log", {
       id: ++gitLogId,
-      args: e.args,
-      command: `git ${e.args.join(" ")}`,
+      args,
+      command: `git ${args.join(" ")}`,
       durationMs: e.durationMs,
       exitCode: e.exitCode,
       failed: e.failed,
-      ...(e.stderr ? { stderr: e.stderr } : {}),
+      ...(e.stderr ? { stderr: redactCredentials(e.stderr) } : {}),
       ...(action ? { actionId: action.id, action: action.label } : {}),
       at: Date.now(),
     });

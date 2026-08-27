@@ -142,6 +142,40 @@ export function scrubGitMessage(input: string): string {
   );
 }
 
+/**
+ * Redact CREDENTIALS only, keeping everything else readable.
+ *
+ * `scrub()` is for crash reports and is deliberately merciless — it removes
+ * paths, repo names and hosts, which is right when the text is leaving the
+ * machine and wrong when it is the app's own git-command log. That log is a
+ * surface the user is invited to read, copy and paste into a bug report, and
+ * `git remote add origin https://user:ghp_…@github.com/org/repo` puts a token
+ * straight into it.
+ *
+ * So this keeps the command legible and takes out only the secret: the
+ * password half of a URL's userinfo, and any bare GitHub token.
+ */
+export function redactCredentials(input: string): string {
+  if (!input) {
+    return "";
+  }
+  return (
+    input
+      // scheme://user:secret@host -> scheme://user:***@host. The user half
+      // stays: it is usually "oauth2" or "x-access-token" and knowing which
+      // is the point of reading the log at all.
+      .replace(
+        /(\b[a-z][a-z0-9+.-]*:\/\/)([^/\s:@"']+):([^/\s@"']+)@/gi,
+        (_m, scheme: string, user: string) => `${scheme}${user}:***@`,
+      )
+      // scheme://secret@host — userinfo with no colon is itself the token.
+      .replace(/(\b[a-z][a-z0-9+.-]*:\/\/)([^/\s:@"']+)@/gi, "$1***@")
+      // Bare GitHub tokens, wherever they appear (argv, stderr, a header echo).
+      .replace(/\bgh[posur]_[A-Za-z0-9]{16,}/g, "<token>")
+      .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}/g, "<token>")
+  );
+}
+
 export function safeHome(): string {
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
   return proc?.env?.HOME || proc?.env?.USERPROFILE || "";

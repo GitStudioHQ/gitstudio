@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import * as os from "node:os";
-import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage } from "../src/scrub";
+import { randomId, safeShort, scrub, scrubExtra, scrubGitMessage, redactCredentials } from "../src/scrub";
 
 // The scrubber is the last line of defense before an anonymous crash report
 // leaves a user's machine, so every identifying shape it must catch is pinned
@@ -206,4 +206,49 @@ test("IPv6 redaction does not eat timestamps or line:col", () => {
   assert.match(scrub("at 01:23:45 the build failed"), /01:23:45/);
   assert.match(scrub("~/x/y.ts:42:5"), /:42:5/);
   assert.match(scrub("took 1:30:00"), /1:30:00/);
+});
+
+// ── redactCredentials: the git-command log ───────────────────────────────────
+//
+// A different job from scrub(). That log is shown to the user, so it has to
+// stay readable; only the secret comes out.
+
+test("a password in a remote URL is redacted, the rest of the command survives", () => {
+  const out = redactCredentials(
+    "git remote add origin https://oauth2:ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA@github.com/Acme/repo.git",
+  );
+  assert.equal(out.includes("ghp_"), false, "the token must not survive");
+  assert.match(out, /oauth2:\*\*\*@github\.com/, "but WHICH user, and which host, still read");
+  assert.match(out, /Acme\/repo\.git/, "and the repo, or the log says nothing useful");
+  assert.match(out, /^git remote add origin/, "and the command itself");
+});
+
+test("userinfo with no colon is treated as the secret", () => {
+  const out = redactCredentials("fetch https://ghp_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB@github.com/x/y");
+  assert.equal(out.includes("ghp_"), false);
+  assert.match(out, /https:\/\/\*\*\*@github\.com\/x\/y/);
+});
+
+test("a bare token anywhere is redacted", () => {
+  for (const t of [
+    "ghp_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+    "gho_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+    "github_pat_EEEEEEEEEEEEEEEEEEEEEE",
+  ]) {
+    const out = redactCredentials(`remote: bad credentials for ${t}`);
+    assert.equal(out.includes(t), false, `${t} survived`);
+    assert.match(out, /<token>/);
+  }
+});
+
+test("an ordinary command is left completely alone", () => {
+  for (const cmd of [
+    "git status --porcelain=v1 -z",
+    "git log --format=%H -n 50 main",
+    "git remote add origin https://github.com/Acme/repo.git",
+    "git push origin feature/x",
+    "git clone git@github.com:Acme/repo.git",
+  ]) {
+    assert.equal(redactCredentials(cmd), cmd, `${cmd} was altered`);
+  }
 });
