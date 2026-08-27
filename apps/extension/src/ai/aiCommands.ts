@@ -928,8 +928,17 @@ function resultHtml(nonce: string, title: string, subtitle: string): string {
         copyText(text).then(function (ok) { flash(b, ok, kind); });
       });
 
-      function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-      function safeUrl(u) { return /^(https?:|mailto:)/i.test(u) ? u : "#"; }
+      // Escapes the QUOTE too, like every other esc() in this extension. Without
+      // it a markdown link URL walks straight out of the href it is written
+      // into: [t](https://a"onmouseover="alert(1)) rendered as
+      //   <a href="https://a"onmouseover="alert(1" ...>
+      // i.e. a live event handler on the anchor. The webview CSP has no
+      // 'unsafe-inline' so it would not have run, but the markup should never
+      // have been built in the first place.
+      function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
+      // A prefix check says what a URL STARTS with, not what it contains — a
+      // quote anywhere in it ends the attribute early, so reject those outright.
+      function safeUrl(u) { return /^(https?:|mailto:)/i.test(u) && !/["'<>]/.test(u) ? u : "#"; }
 
       function inline(s) {
         var codes = [];
