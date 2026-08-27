@@ -5205,7 +5205,38 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   cursor: pointer;
   margin-top: 10px;
 }
-.settings-check input[type="checkbox"] { margin-top: 3px; accent-color: var(--app-accent, #4a8df8); }
+/* A native checkbox renders as a bright white box — on a dark settings page it
+   was the highest-contrast element on screen, louder than every heading. Draw
+   it from the app's own tokens instead. */
+.settings-check input[type="checkbox"] {
+  appearance: none;
+  margin: 3px 0 0;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  background: var(--app-panel);
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.settings-check input[type="checkbox"]:hover { border-color: var(--accent-line, var(--gs-accent)); }
+.settings-check input[type="checkbox"]:checked {
+  background: var(--gs-accent);
+  border-color: var(--gs-accent);
+}
+.settings-check input[type="checkbox"]:checked::after {
+  content: "";
+  width: 9px;
+  height: 5px;
+  border: 2px solid #fff;
+  border-top: 0;
+  border-right: 0;
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+.settings-check input[type="checkbox"]:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: 2px; }
 .settings-check-text { display: flex; flex-direction: column; gap: 2px; }
 .settings-check-text .settings-sub { margin: 0; }
 
