@@ -1073,6 +1073,81 @@
       );
     },
 
+    // ── the composer's amend state is one state ─────────────────────────────
+    "amend-prefill-enables-committing": (f) => {
+      const c = check(f);
+      const msg = $(".dc-message");
+      const commit = $(".dc-commit");
+      const push = $(".dc-push");
+      c.ok(!!msg && !!commit, "the composer renders");
+      if (!msg || !commit) return;
+      // Ticking Amend prefills the previous message. Assigning `.value` fires
+      // no input event, so the buttons stayed greyed out telling you to write
+      // a message that was already sitting in front of you.
+      c.ok(msg.value.trim().length > 0, "amending an empty composer prefills the last message");
+      c.eq(text(".dc-commit-label"), "Amend commit", "and the button says what it will do");
+      c.eq(commit.disabled, false, "Commit is available");
+      if (push) c.eq(push.disabled, false, "and so is Commit & Push — both hang off the same sync");
+      c.eq(commit.title, "", "with no stale 'write a message first' tooltip");
+    },
+    "amend-survives-a-repaint": (f) => {
+      const c = check(f);
+      // Staging a file re-runs showChangesView(), which rebuilds this subtree.
+      // The label used to be rewritten unconditionally afterwards, so the
+      // toggle stayed lit while the button read "Commit to main" — and the
+      // click still sent amend:true. The button promised a new commit and
+      // rewrote the last one.
+      const toggle = $(".dc-toggle");
+      c.ok(!!toggle, "the amend toggle renders");
+      c.eq(toggle?.classList.contains("is-on"), true, "amend is still on after the repaint");
+      c.eq(
+        text(".dc-commit-label"),
+        "Amend commit",
+        "so the button must still say Amend — a label that disagrees with the flag rewrites history silently",
+      );
+      c.ok(($(".dc-message")?.value || "").trim().length > 0, "and the prefilled message survived");
+    },
+
+    // ── nothing in this app carries an inline event handler ─────────────────
+    "no-inline-event-handlers-anywhere": (f) => {
+      const c = check(f);
+      // The app wires everything with addEventListener, so an `onclick=` in the
+      // DOM means one of two things, both bad: an innerHTML template that
+      // interpolated something, or markup that reached the DOM without passing
+      // the sanitizer. The markdown sanitizer had exactly that hole.
+      const bad = [];
+      for (const el of $$("*")) {
+        for (const a of el.attributes) {
+          if (/^on[a-z]+$/i.test(a.name)) bad.push(`${el.tagName.toLowerCase()}[${a.name}]`);
+        }
+      }
+      c.eq(bad.length, 0, `inline handlers found: ${bad.slice(0, 6).join(", ")}`);
+    },
+
+    // ── route churn must not accumulate DOM ─────────────────────────────────
+    "route-churn-leaks-nothing": async (f) => {
+      const c = check(f);
+      const nav = (name) => $$(".nav-item").find((n) => (n.textContent || "").trim() === name);
+      const views = ["Issues", "Actions", "Code"];
+      c.ok(views.every((v) => !!nav(v)), "the rail offers the views this walks");
+      const perRound = [];
+      for (let round = 0; round < 3; round++) {
+        const counts = {};
+        for (const v of views) {
+          nav(v)?.click();
+          await settle(200);
+          counts[v] = document.querySelectorAll("*").length;
+        }
+        perRound.push(counts);
+      }
+      // A view rendered for the third time must weigh exactly what it did the
+      // first time. Anything else is a node the route change did not take away.
+      for (const v of views) {
+        const sizes = [...new Set(perRound.map((r) => r[v]))];
+        c.eq(sizes.length, 1, `${v} renders the same DOM every time (saw ${sizes.join(", ")})`);
+      }
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
     "settings-has-a-rhythm": (f) => {
       const c = check(f);

@@ -3018,6 +3018,19 @@ class App {
     textarea.addEventListener("input", () => {
       this.composerDraft.message = textarea.value;
     });
+    /**
+     * Put text in the composer the way a keystroke would.
+     *
+     * Assigning `.value` fires no `input` event, so everything hanging off that
+     * event goes stale: the surviving draft, and — worse — the commit buttons'
+     * enabled state. Ticking "Amend last commit" prefilled the previous
+     * message and then left BOTH Commit and Commit & Push greyed out, insisting
+     * you "write a commit message first" while it sat in front of you.
+     */
+    const setMessage = (text: string): void => {
+      textarea.value = text;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    };
     msgWrap.append(textarea);
     // ✨ Write the message from the staged diff — sits up in the branch header row
     // (right-aligned), not inside the textarea. Shown only when a model is connected.
@@ -3087,7 +3100,7 @@ class App {
       this.composerDraft.amend = amend;
       amendToggle.classList.toggle("is-on", amend);
       amendToggle.setAttribute("aria-checked", amend ? "true" : "false");
-      commitLabel.textContent = amend ? "Amend commit" : curBranch ? `Commit to ${curBranch}` : "Commit";
+      syncCommitLabel();
       // Prefill the last commit message when amending an empty composer.
       if (amend && !textarea.value.trim()) {
         void host.invoke("repo:headCommit", undefined).then((hc) => {
@@ -3095,7 +3108,7 @@ class App {
           // Amend and pressing commit silently deleted the body and every
           // trailer — the box looked like the commit, so nothing warned you.
           const prefill = hc?.message || hc?.subject;
-          if (amend && prefill && !textarea.value.trim()) textarea.value = prefill;
+          if (amend && prefill && !textarea.value.trim()) setMessage(prefill);
         });
       }
     });
@@ -3128,6 +3141,22 @@ class App {
     const commitBtn = el("button", "btn btn-primary dc-commit");
     const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit", "dc-commit-label");
     commitBtn.append(glyph("git-commit"), commitLabel);
+    /**
+     * The primary button's label, from the one state that decides it.
+     *
+     * It used to be written in two places, and the second one — the repaint
+     * after status loads — did not consult `amend`. So staging a file with
+     * Amend on left the toggle lit, the label reading "Commit to main", and a
+     * click still sending `amend: true`. The button promised a new commit and
+     * rewrote the last one.
+     */
+    const syncCommitLabel = (): void => {
+      commitLabel.textContent = amend
+        ? "Amend commit"
+        : curBranch
+          ? `Commit to ${curBranch}`
+          : "Commit";
+    };
     commitBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, commitBtn, false, getOpts()));
     const pushBtn = el("button", "btn dc-commit dc-push");
     pushBtn.append(glyph("arrow-up"), span("Commit & Push"));
@@ -3378,7 +3407,7 @@ class App {
     }
     const staged = files.filter((f) => f.staged);
     const unstaged = files.filter((f) => !f.staged);
-    commitLabel.textContent = curBranch ? `Commit to ${curBranch}` : "Commit";
+    syncCommitLabel();
     // A quiet context line: how many changes are staged vs. still to stage.
     const sumBits: string[] = [];
     sumBits.push(staged.length ? `${staged.length} staged` : "nothing staged");

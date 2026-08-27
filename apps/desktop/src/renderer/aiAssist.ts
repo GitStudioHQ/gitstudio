@@ -118,6 +118,10 @@ export async function streamInto(
     textarea.value = res.text;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   }
+  // The trim is a programmatic write like any other: if the model returned
+  // only whitespace this empties the box, and without the event the commit
+  // buttons would stay enabled over an empty message.
   textarea.value = textarea.value.trim();
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
   textarea.focus();
 }
