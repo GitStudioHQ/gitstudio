@@ -11,6 +11,36 @@ import type { RepoInfo } from "../shared/ipc";
 
 const MAX_RECENT = 12;
 
+/**
+ * How two repo roots are compared, everywhere.
+ *
+ * `removeRecent` already established that raw string equality is the wrong
+ * rule — the repo manager hands back realpath'd roots, so a recent stored
+ * through a symlink would never match and "Forget" would silently do nothing.
+ * The same argument applies to ADDING: the recents file is plain JSON that
+ * survives upgrades and can be hand-edited, so a stored "/x/repo/" and a
+ * freshly discovered "/x/repo" are the same repo listed twice.
+ */
+export function sameRoot(a: string, b: string): boolean {
+  return resolve(a) === resolve(b);
+}
+
+/**
+ * The recents list after opening `root`: most recent first, no duplicates
+ * (compared by {@link sameRoot}), capped. Pure, so the ordering rules are
+ * testable without a git repo on disk.
+ *
+ * The freshly opened spelling of the path wins, so a list that accumulated an
+ * odd variant heals the next time you open that repo.
+ */
+export function promoteRecentList(
+  recent: readonly string[],
+  root: string,
+  max = MAX_RECENT,
+): string[] {
+  return [root, ...recent.filter((r) => !sameRoot(r, root))].slice(0, max);
+}
+
 export class RepoStore {
   private readonly adapter = new NodeGitAdapter();
   private context: GitContext | undefined;
@@ -26,7 +56,14 @@ export class RepoStore {
   private readonly listeners = new Set<(info: RepoInfo | undefined) => void>();
 
   constructor(recent: string[] = []) {
-    this.recent = recent.slice(0, MAX_RECENT);
+    // The persisted list is plain JSON that outlives upgrades, so de-duplicate
+    // on the way in rather than trusting it. Order is preserved; the first
+    // spelling of each root wins.
+    const seen: string[] = [];
+    for (const r of recent) {
+      if (r && !seen.some((k) => sameRoot(k, r))) seen.push(r);
+    }
+    this.recent = seen.slice(0, MAX_RECENT);
   }
 
   onChange(fn: (info: RepoInfo | undefined) => void): void {
@@ -62,8 +99,16 @@ export class RepoStore {
     // A newer open() began while we were discovering the root — let it win, and
     // touch no shared state here (otherwise we'd leave the UI on one repo and the
     // active context on another).
+    //
+    // What we RETURN matters too. Handing back the root we discovered would tell
+    // our caller "you opened A" while the active context is B, so the window
+    // would render A's branches against B's repo. Report whatever is actually
+    // open instead; if nothing is yet (the winner is still discovering), fall
+    // back to our root so the caller doesn't raise a false "not a Git
+    // repository" — the winner's change event corrects the view a moment later.
     if (seq !== this.openSeq) {
-      return root ? toInfo(root) : undefined;
+      if (!root) return undefined;
+      return this.current() ?? toInfo(root);
     }
     if (!root) {
       return undefined;
@@ -110,15 +155,12 @@ export class RepoStore {
     // Compare RESOLVED paths: the manager hands back realpath'd roots, and a
     // recent stored through a symlink would otherwise never match — the click
     // would report success and change nothing.
-    this.recent = this.recent.filter((r) => resolve(r) !== resolve(root));
+    this.recent = this.recent.filter((r) => !sameRoot(r, root));
     return this.recent.length !== before;
   }
 
   private promoteRecent(root: string): void {
-    this.recent = [root, ...this.recent.filter((r) => r !== root)].slice(
-      0,
-      MAX_RECENT,
-    );
+    this.recent = promoteRecentList(this.recent, root);
   }
 
   private emit(info: RepoInfo | undefined): void {

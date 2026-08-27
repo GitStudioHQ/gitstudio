@@ -235,7 +235,7 @@ function buildMenu(): void {
       click: () => void openRepoPath(r.root),
     }));
   if (recentSubmenu.length === 0) {
-    recentSubmenu.push({ label: "No Recent Repositories", enabled: false });
+    recentSubmenu.push({ label: "No recent repositories", enabled: false });
   }
 
   const template: MenuItemConstructorOptions[] = [
