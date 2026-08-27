@@ -119,6 +119,8 @@ class App {
   private graphDetailsPane?: HTMLElement;
   /** The kept-alive Commits view DOM — re-attached on return, never rebuilt. */
   private graphViewWrap?: HTMLElement;
+  /** Re-clamps the graph/details split when the pane's box changes. */
+  private graphSplitRO?: ResizeObserver;
   /** The repo changed while the graph was parked — reload in place on return. */
   private graphDirty = false;
   private diffSurfaceEl?: HTMLElement;
@@ -3356,7 +3358,7 @@ class App {
       get: () => this.changesListW,
       set: (w) => {
         this.changesListW = w;
-        lists.style.flex = `0 0 ${w}px`;
+        listCol.style.flex = `0 1 ${w}px`;
       },
       onCommit: () => this.persist(),
     });
@@ -3382,7 +3384,11 @@ class App {
     // The list column carries its own selection bar and drop target beneath it,
     // so both stay put while `lists` itself is cleared and refilled on repaint.
     const listCol = el("div", "dc-listcol");
-    listCol.style.flex = `0 0 ${this.changesListW}px`;
+    // `0 1` — the basis is the width the user chose, but the column SHRINKS
+    // before the diff does. Pinned at `0 0` it held that width at every window
+    // size and the diff paid for all of it: 529px of file names beside a 254px
+    // diff pane at 1000px, which cannot show a diff at all.
+    listCol.style.flex = `0 1 ${this.changesListW}px`;
     lists.style.flex = "1 1 auto";
     listCol.append(lists, selBar, dropZone);
     body.append(listCol, divider, surface);
@@ -5422,17 +5428,42 @@ class App {
     const maxFor = (): number =>
       Math.max(MIN, Math.min(900, Math.round(wrap.getBoundingClientRect().width) - GRAPH_FLOOR));
     const saved = Number(localStorage.getItem(KEY));
-    let w = Number.isFinite(saved) && saved > 0 ? saved : 420;
-    const apply = (): void => wrap.style.setProperty("--graph-details-w", `${w}px`);
+    /**
+     * What the user ASKED for, kept apart from what currently fits.
+     *
+     * These used to be one variable, and clamping wrote back into it. The first
+     * clamp runs while `wrap` is still detached — `graphSplitResizer(wrap)` is
+     * called inside `wrap.append(...)` — so its width is 0, maxFor() collapses
+     * to the 320px floor, and the 420px default was destroyed on the way in.
+     * The resize handler then re-clamped 320 against every later width, so the
+     * column could only ever shrink: the pane opened at its hard minimum every
+     * time, and a width you dragged to 600px came back as 320. The comment
+     * promising "width persists across sessions" could not have been true.
+     */
+    let desired = Number.isFinite(saved) && saved > 0 ? saved : 420;
+    let applied = desired;
+    const apply = (): void => {
+      applied = Math.min(maxFor(), Math.max(MIN, Math.round(desired)));
+      wrap.style.setProperty("--graph-details-w", `${applied}px`);
+    };
     const setW = (n: number): void => {
-      w = Math.min(maxFor(), Math.max(MIN, Math.round(n)));
+      desired = Math.max(MIN, Math.round(n));
       apply();
     };
-    setW(w); // clamp the restored value against the CURRENT window
+    apply();
 
-    // Re-clamp when the window changes, so narrowing it starves the details
-    // column rather than the graph.
-    window.addEventListener("resize", () => setW(w));
+    // Re-apply whenever the pane's own box changes — which covers both the
+    // window resize (narrowing starves the details column rather than the
+    // graph) and the first real layout after `wrap` is attached. Clamping from
+    // `desired` every time means widening the window grows the column back
+    // toward what was asked for instead of leaving it stuck at the floor.
+    this.graphSplitRO?.disconnect();
+    if (typeof ResizeObserver !== "undefined") {
+      this.graphSplitRO = new ResizeObserver(() => apply());
+      this.graphSplitRO.observe(wrap);
+    } else {
+      window.addEventListener("resize", () => apply());
+    }
 
     const split = el("div", "cmp-vsplit graph-vsplit");
     split.append(el("div", "cmp-vsplit-grip"));
@@ -5441,14 +5472,14 @@ class App {
       label: "Resize the commit details column",
       min: MIN,
       max: maxFor,
-      get: () => w,
+      get: () => applied,
       set: setW,
-      onCommit: () => localStorage.setItem(KEY, String(w)),
+      onCommit: () => localStorage.setItem(KEY, String(desired)),
     });
     split.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       const startX = e.clientX;
-      const startW = w;
+      const startW = applied;
       document.body.classList.add("resizing-h");
       // Dragging LEFT widens the details column (it is the right-hand pane).
       const move = (ev: PointerEvent): void => setW(startW - (ev.clientX - startX));
@@ -5456,7 +5487,7 @@ class App {
         document.body.classList.remove("resizing-h");
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
-        localStorage.setItem(KEY, String(w));
+        localStorage.setItem(KEY, String(desired));
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);

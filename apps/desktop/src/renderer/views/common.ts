@@ -572,6 +572,39 @@ export interface SecRowOpts {
   onOpen: () => void;
   ariaLabel?: string;
 }
+/**
+ * Mark a label strip that has run out of room, so it can fade its last chip
+ * instead of guillotining it.
+ *
+ * Chips are `flex: 0 0 auto` inside an `overflow: hidden` strip, so when the
+ * window is narrow the last one is sliced by a hard vertical edge partway
+ * through a word: a rounded pill with a flat cut side, which reads as a
+ * half-drawn element rather than as "there is more". CSS cannot ask "am I
+ * overflowing", so one shared observer answers it.
+ *
+ * Shared deliberately — a list can hold hundreds of rows, and an observer each
+ * would cost more than the thing it is styling.
+ */
+let chipOverflowObserver: ResizeObserver | undefined;
+function watchChipOverflow(chips: HTMLElement): void {
+  const sync = (el_: Element): void => {
+    const n = el_ as HTMLElement;
+    n.classList.toggle("is-clipped", n.scrollWidth > n.clientWidth + 1);
+  };
+  if (typeof ResizeObserver === "undefined") {
+    // No observer (older host): fall back to a one-shot measure after layout.
+    requestAnimationFrame(() => sync(chips));
+    return;
+  }
+  if (!chipOverflowObserver) {
+    chipOverflowObserver = new ResizeObserver((entries) => {
+      for (const e of entries) sync(e.target);
+    });
+  }
+  chipOverflowObserver.observe(chips);
+  requestAnimationFrame(() => sync(chips));
+}
+
 export function secRow(o: SecRowOpts): HTMLElement {
   const row = el("button", "sec-row");
   if (o.ariaLabel) row.setAttribute("aria-label", o.ariaLabel);
@@ -594,6 +627,7 @@ export function secRow(o: SecRowOpts): HTMLElement {
     const chips = el("span", "sec-row-chips");
     for (const c of o.chips) chips.appendChild(c);
     row.appendChild(chips);
+    watchChipOverflow(chips);
   }
   row.appendChild(el("span", "sec-row-spring"));
   if (o.meta?.length) {

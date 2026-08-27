@@ -2404,6 +2404,10 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 }
 .cmp-seg {
   display: inline-flex;
+  /* Same reason as .gh-seg: clipped, not compressed. Below ~1100px the active
+     tab read "Changed fil" and lost its count, while the summary sentence
+     beside it — which wraps perfectly well — kept all the room it wanted. */
+  flex: 0 0 auto;
   border: 1px solid var(--app-border);
   border-radius: 8px;
   overflow: hidden;
@@ -2642,9 +2646,16 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Below ~1005px this row simply rendered past the window edge — no scrollbar,
+     no overflow menu, nothing. "Stage all" and "Stash", the two primary actions
+     of the view, were unreachable. Wrapping costs a row of height and keeps
+     every control on screen. */
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--app-border);
 }
+.dc-toolbar > * { flex: 0 0 auto; }
 .dc-toolbar-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; color: var(--app-muted); }
 .dc-body { flex: 1 1 auto; min-height: 0; display: flex; }
 .dc-lists {
@@ -2987,6 +2998,9 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-row-sub { font-size: 11px; color: var(--app-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-pill {
   align-self: flex-start;
+  /* "attempt 2" broke between the word and the number below 1150px, doubling
+     the pill's height and pushing its whole row taller than its neighbours. */
+  white-space: nowrap;
   margin-top: 3px;
   font-size: var(--text-2xs);
   font-weight: 600;
@@ -3297,6 +3311,11 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* A tab label never wraps: "Files (3)" put its count on a second line at
+     1000px, overflowing the 34px tab box and leaving the icon aligned to
+     neither line. */
+  white-space: nowrap;
+  flex: 0 0 auto;
   height: 34px;
   padding: 0 12px;
   border: none;
@@ -4159,7 +4178,14 @@ gitstudio-graph {
   .gh-head-titlewrap { flex: 1 1 100%; }
   .gh-head-tools { flex: 1 1 100%; justify-content: flex-start; margin-left: 0; }
 }
-.gh-head { align-items: center; row-gap: 8px; }
+/* The ≤1280px rule below gives .gh-head-titlewrap and .gh-head-tools a basis of
+   100% each, which only means "take your own line" if this container WRAPS.
+   Without it both were simply shrunk to half a line, so crossing the breakpoint
+   made the header TALLER and more cramped than it was one pixel earlier
+   (Issues: 53px at 1600, 87px at 1281, 123px at 1280). row-gap has been sitting
+   here unused for the same reason. align-items goes to flex-start so the title
+   stops floating in the vertical middle of a four-row toolbar. */
+.gh-head { align-items: flex-start; row-gap: 8px; flex-wrap: wrap; }
 
 /* Run row: status dot inline with an ellipsised title. */
 .gh-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4287,7 +4313,17 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
    .row-meta-* / .group-label / .gh-adds / .modal-* are all reused as-is. */
 
 /* Releases|Tags segmented switch, injected into the header action cluster. */
-.gh-seg { display: inline-flex; border: 1px solid var(--app-border); border-radius: 7px; overflow: hidden; }
+/* NEVER shrinks. It is `overflow: hidden`, so shrinking does not compress the
+   options — it deletes them. Below 1280px the Inbox's Unread/All control was
+   squeezed from 105px to 54px and "All" was not painted at all, leaving no way
+   to see anything but unread threads on a narrow window. */
+.gh-seg {
+  display: inline-flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  overflow: hidden;
+}
 .gh-seg-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 26px; padding: 0 11px; border: none; background: transparent;
@@ -6078,6 +6114,14 @@ body.vscode-light .gh-label-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* Badges give ground before the title does, and never wrap: "Pre-release"
+     used to break onto a second line and double its row's height rather than
+     shrink by a single pixel. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 650;
   padding: 2px 9px 2px 8px;
@@ -6090,7 +6134,7 @@ body.vscode-light .gh-label-chip {
 .gh-state-pill.gh-state-draft { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 16%, transparent); }
 
 /* ── Header: live count pill + tighter layout ──────────────────────────────── */
-.gh-head { align-items: center; }
+.gh-head { align-items: flex-start; }
 .gh-head-titlewrap { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .gh-head-count {
   display: inline-flex;
@@ -7627,6 +7671,9 @@ body.vscode-light .gh-label-chip {
  * Everything here is scoped to .dc-* because bare .file-row is shared with the
  * compare view and the code browser, which have no notion of a selection. */
 .dc-listcol { display: flex; flex-direction: column; min-height: 0; }
+/* The file column is sized in pixels from a persisted preference, so it needs a
+   floor to shrink toward — see the `0 1` basis set on it in renderer.ts. */
+.dc-listcol { min-width: 220px; }
 
 /* The accent bar is absolutely positioned, so the row must be a containing
    block. .file-row itself is static and shared, so this is set here. */
@@ -7728,7 +7775,11 @@ body.vscode-light .gh-label-chip {
 }
 .sec-row-title {
   flex: 0 1 auto;
-  min-width: 0;
+  /* A floor, so the row's IDENTITY outlives its badges. With min-width:0 the
+     title shrank to nothing while the pills beside it refused to give up a
+     pixel — at 1000px a draft release read "D…" next to full-size Draft and
+     Pre-release pills. The name is the one thing the row cannot do without. */
+  min-width: 8ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -7745,6 +7796,17 @@ body.vscode-light .gh-label-chip {
   white-space: nowrap;
 }
 .sec-row-chips > * { flex: 0 0 auto; }
+/* When there is not room for every label, the last one fades out instead of
+   being guillotined mid-character. A pill with a flat sliced edge reads as a
+   half-drawn element; a fade reads as "there is more". */
+.sec-row-chips {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+}
+.sec-row-chips:not(.is-clipped) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 .sec-row-spring { flex: 1 1 0; min-width: var(--sp-2); }
 .sec-row-meta {
   flex: 0 0 auto;

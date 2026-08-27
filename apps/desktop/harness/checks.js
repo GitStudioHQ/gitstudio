@@ -1148,6 +1148,75 @@
       }
     },
 
+    // ── a narrow window loses room, never controls ──────────────────────────
+    "nothing-runs-off-the-window": (f) => {
+      const c = check(f);
+      // Run narrow (see check.mjs). Below ~1005px the Changes toolbar simply
+      // rendered past the window edge — no scrollbar, no overflow menu — so
+      // "Stage all" and "Stash", the view's primary actions, were unreachable.
+      const off = $$("button, .gh-search, .gh-facet-btn, .gh-seg, .cmp-seg")
+        .filter((n) => {
+          const r = n.getBoundingClientRect();
+          return r.width > 0 && (r.right > innerWidth + 1 || r.left < -1);
+        })
+        .map((n) => `${(n.textContent || "").trim().slice(0, 18) || n.className}@${Math.round(n.getBoundingClientRect().right)}`);
+      c.eq(off.length, 0, `off-screen controls at ${innerWidth}px: ${off.slice(0, 6).join(", ")}`);
+      c.ok(
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+        `the page must not scroll sideways (${document.documentElement.scrollWidth} > ${document.documentElement.clientWidth})`,
+      );
+    },
+    "segmented-controls-never-clip": (f) => {
+      const c = check(f);
+      const segs = $$(".gh-seg, .cmp-seg");
+      c.ok(segs.length > 0, "the view has a segmented control");
+      for (const s of segs) {
+        // These are `overflow: hidden`, so shrinking does not compress the
+        // options — it deletes them. The Inbox's "All" was not painted at all
+        // below 1280px, leaving no way off the Unread filter.
+        c.ok(
+          s.scrollWidth <= s.clientWidth + 1,
+          `a segmented control is clipped (${s.scrollWidth} into ${s.clientWidth}) — an option is unreachable`,
+        );
+      }
+    },
+    "a-row-keeps-its-name-before-its-badges": (f) => {
+      const c = check(f);
+      const rows = $$(".sec-row").filter((r) => r.querySelector(".gh-state-pill"));
+      c.ok(rows.length > 0, "a row with badges renders");
+      for (const r of rows) {
+        const t = r.querySelector(".sec-row-title");
+        if (!t) continue;
+        const w = t.getBoundingClientRect().width;
+        // A release collapsed to "D…" beside full-size Draft and Pre-release
+        // pills: the row stopped saying which release it was.
+        c.ok(w >= 50, `"${(t.textContent || "").slice(0, 20)}" shrank to ${Math.round(w)}px`);
+      }
+    },
+    "status-pills-never-wrap": (f) => {
+      const c = check(f);
+      const pills = $$(".gh-pill, .gh-state-pill");
+      c.ok(pills.length > 0, "the view shows pills");
+      for (const p of pills) {
+        const r = p.getBoundingClientRect();
+        // "attempt 2" broke between the word and the number and doubled its
+        // row's height. A status chip shrinks or truncates; it never wraps.
+        c.ok(r.height <= 24, `"${(p.textContent || "").trim().slice(0, 16)}" is ${Math.round(r.height)}px tall — it wrapped`);
+      }
+    },
+    "graph-details-opens-at-its-intended-width": async (f) => {
+      const c = check(f);
+      await settle(400);
+      const d = $(".graph-details");
+      c.ok(!!d, "the details column renders");
+      if (!d) return;
+      // It clamped its own default away against a container that had not been
+      // laid out yet, then could only ever shrink — so it opened at its 320px
+      // floor every time, and a width you dragged to never came back.
+      const w = Math.round(d.getBoundingClientRect().width);
+      c.ok(w > 320, `the column opens at its default, not its floor (got ${w}px)`);
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
     "settings-has-a-rhythm": (f) => {
       const c = check(f);
