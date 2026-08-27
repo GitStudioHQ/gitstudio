@@ -640,6 +640,16 @@
       const off = Math.max(0, req.offset || 0);
       return { text: full.slice(off), totalLength: full.length, reset: off > full.length, truncated: false };
     },
+    // The graph's CHANGES column asks for these lazily, per visible row. With
+    // no fixture the column header sat over five empty cells — a labelled
+    // column promising data that never came.
+    "commit:rowStats": (shas) =>
+      (shas || []).map((sha, i) => ({
+        sha,
+        files: [3, 1, 11, 6, 2, 8, 4, 17, 5, 1][i % 10],
+        additions: [64, 9, 402, 121, 18, 233, 77, 918, 145, 4][i % 10],
+        deletions: [12, 0, 96, 340, 3, 41, 512, 77, 22, 1][i % 10],
+      })),
     "pr:fileDiff": (req) => ({
       path: req.path,
       leftLabel: "main",

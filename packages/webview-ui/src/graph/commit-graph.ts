@@ -1194,8 +1194,12 @@ export class CommitGraph extends LitElement {
     .changes .ch-count {
       display: inline-flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 3px;
-      flex: 0 0 auto;
+      /* A fixed slot so 3, 11 and 17 right-align and every bar starts on the
+         same x — otherwise the meters step right as the counts get longer and
+         a column of proportions is no longer comparable at a glance. */
+      flex: 0 0 34px;
     }
     .changes .ch-count .codicon { font-size: 12px; opacity: 0.75; }
     /* A slim proportional meter: length ~ size of the change (log scale),

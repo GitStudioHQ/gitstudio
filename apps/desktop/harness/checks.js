@@ -956,6 +956,26 @@
       }
     },
 
+    // ── commits: the CHANGES column is comparable ───────────────────────────
+    "graph-change-bars-share-a-left-edge": (f) => {
+      const c = check(f);
+      // The graph is a Lit custom element; its rows live in a shadow root.
+      const host = $("gitstudio-graph");
+      c.ok(!!host, "the graph element is mounted");
+      const root = host?.shadowRoot;
+      if (!root) return;
+      const counts = [...root.querySelectorAll(".changes .ch-count")];
+      const bars = [...root.querySelectorAll(".changes .ch-bar")];
+      c.ok(counts.length >= 5, `the CHANGES column carries data (${counts.length} rows)`);
+      if (counts.length < 5) return;
+      // Counts run 1 → 17; left-aligned they stepped every bar right, so a
+      // column of proportion meters could not be compared down the page.
+      const lefts = new Set(bars.map((b) => Math.round(b.getBoundingClientRect().left)));
+      c.eq(lefts.size, 1, `every bar starts on one x (${[...lefts].join(", ")})`);
+      const rights = new Set(counts.map((n) => Math.round(n.getBoundingClientRect().right)));
+      c.eq(rights.size, 1, `every count ends on one x (${[...rights].join(", ")})`);
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
     "settings-checkbox-styled": (f) => {
       const c = check(f);
