@@ -4045,8 +4045,15 @@ gitstudio-graph {
   justify-content: flex-end;
   min-width: 0;
 }
-.gh-head-titlewrap { min-width: 0; }
-.gh-head-titlewrap .gh-search { min-width: 120px; }
+.gh-head-titlewrap { min-width: 0; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; row-gap: 8px; }
+/* The search field must keep a floor and its own line when the row is tight —
+   below ~1200px it used to collide with the first facet pill, losing its right
+   border and running its placeholder under the neighbouring control. */
+.gh-head-titlewrap .gh-search { min-width: 180px; flex: 1 1 180px; max-width: 320px; }
+@media (max-width: 1280px) {
+  .gh-head-titlewrap { flex: 1 1 100%; }
+  .gh-head-tools { flex: 1 1 100%; justify-content: flex-start; margin-left: 0; }
+}
 .gh-head { align-items: center; row-gap: 8px; }
 
 /* Run row: status dot inline with an ellipsised title. */
@@ -5288,7 +5295,17 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   white-space: nowrap;
 }
 .settings-copy-acts { display: flex; gap: 2px; flex: 0 0 auto; }
-.settings-copy-acts .icon-btn.danger:hover { color: var(--vscode-editorError-foreground, #e5534b); }
+/* Deleting a clone from disk sat in the same neutral grey, same size and same
+   2px spacing as "Copy path". It is set apart and reads as destructive before
+   you hover it. */
+.settings-copy-acts .icon-btn.danger {
+  color: color-mix(in srgb, var(--status-del) 72%, var(--app-muted));
+  margin-left: 6px;
+}
+.settings-copy-acts .icon-btn.danger:hover {
+  color: var(--status-del);
+  background: color-mix(in srgb, var(--status-del) 14%, transparent);
+}
 
 /* A3 metadata: association badges, reactions, edited markers, rail extras. */
 .gh-assoc-badge {
@@ -5389,6 +5406,9 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 /* Explore rows carry a second line (description / repo), so they grow instead
    of holding the single-line section height. */
 .explore-row { height: auto; align-items: flex-start; padding-top: 10px; padding-bottom: 10px; }
+/* People and org results carried only an avatar and a login in a 1350px row.
+   Give the identity room to breathe rather than stranding it at the far left. */
+.explore-row .sec-row-title { font-size: var(--text-base); }
 .explore-row-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .explore-row-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .explore-row .sec-row-meta,
@@ -5399,6 +5419,16 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-code-row .sec-row-title {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-sm);
+}
+.explore-code-frag + .explore-code-frag {
+  margin-top: 0;
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.explore-code-frag:has(+ .explore-code-frag) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 .explore-code-frag {
   margin: 6px 0 0;
@@ -5439,7 +5469,9 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-loading-more .codicon { animation: gs-spin 1.1s linear infinite; }
 
 /* ── Explore entity pages: repository + account ────────────────────────────── */
-.det-split { display: inline-flex; align-items: stretch; padding: 0; overflow: hidden; }
+/* The primary button's shadow bled downward past the toolbar's hairline into
+   the content area. Keep the lift, contain the bleed. */
+.det-split { display: inline-flex; align-items: stretch; padding: 0; overflow: hidden; box-shadow: none; }
 .det-split-main {
   display: inline-flex;
   align-items: center;
@@ -7733,7 +7765,10 @@ button.det-person:hover { background: var(--app-hover); }
 
 /* Toolbar facet buttons (Label / Assignee / Milestone) — shared by the list
    pages. Previously injected from issues.ts at runtime; now they live here. */
-.gh-facets { display: inline-flex; align-items: center; gap: var(--sp-2); }
+/* The facet GROUP is one flex item in the tools row, so without its own wrap
+   it stayed a single unbreakable line and ran off the right edge at narrow
+   widths however much the parent wrapped. */
+.gh-facets { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; row-gap: 8px; min-width: 0; }
 .gh-facet-btn { max-width: 220px; }
 .gh-facet-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-facet-btn .codicon-chevron-down { font-size: 13px; opacity: 0.65; margin-left: -1px; }
@@ -7972,7 +8007,10 @@ button.det-person:hover { background: var(--app-hover); }
   min-height: 120px;
   max-height: 380px;
 }
-.log-pane.log-max { max-height: min(78vh, 900px); height: min(78vh, 900px); }
+/* Capped to the visible viewport so the expanded pane's toolbar, body and
+   "Jump to latest" pill all stay reachable — 78vh from a pane already 320px
+   down the page ran off the bottom of the window. */
+.log-pane.log-max { max-height: min(70vh, 820px); height: min(70vh, 820px); }
 .log-toolbar {
   flex: 0 0 auto;
   display: flex;

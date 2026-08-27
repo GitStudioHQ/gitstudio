@@ -904,7 +904,7 @@ export function facetBar<T>(o: {
       const items_: MenuItem[] = [
         {
           label: spec.anyLabel ?? `Any ${spec.label.toLowerCase()}`,
-          icon: current == null ? "check" : undefined,
+          icon: current == null ? "check" : "blank",
           onClick: () => {
             delete o.state[spec.key];
             render();
@@ -917,7 +917,11 @@ export function facetBar<T>(o: {
         const selected = current === opt.value;
         items_.push({
           label: opt.label ?? opt.value,
-          icon: selected ? "check" : opt.iconEl ? undefined : opt.icon,
+          // "blank" is a zero-ink glyph that still occupies the icon slot: with
+          // only the selected row getting a check and nothing reserving the
+          // gutter for the rest, the label column jumped 25px depending on
+          // what was selected.
+          icon: selected ? "check" : opt.iconEl ? undefined : (opt.icon ?? "blank"),
           iconEl: selected ? undefined : opt.iconEl?.(),
           current: selected,
           onClick: () => {

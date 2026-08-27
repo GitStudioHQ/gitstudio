@@ -96,6 +96,7 @@ import type {
   IssueInfo,
   MergeMethod,
   AppSettingsView,
+  HeadInfo,
   LocalCopy,
   PrDetail,
   ProjectInfo,
@@ -124,6 +125,9 @@ class App {
   private repoSwitchName?: HTMLElement;
   private branchSwitchName?: HTMLElement;
   private notifBellBadge?: HTMLElement;
+  /** The resolved HEAD from `head:get` — the authoritative answer to "which
+   *  branch am I on?", and the one the top bar already uses. */
+  private headInfo?: HeadInfo;
   private selectedSha?: string;
   private currentRepo?: RepoInfo;
   private refs: RefInfo[] = [];
@@ -2916,12 +2920,17 @@ class App {
     const wrap = el("div", "changes-view");
 
     const composer = el("div", "dc-composer");
-    // `refs` is filled by a fire-and-forget refreshRefs(), so on FIRST paint it
-    // is empty — and falling back to "detached HEAD" there told the user they
-    // were detached while the top bar said "main" one row above. Until the ref
-    // is actually known, say nothing rather than something false.
-    const refsKnown = this.refs.length > 0;
-    const curBranch = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
+    // Built from the awaited `head:get` (what the top bar uses), not from
+    // `refs`, which is filled by a fire-and-forget refreshRefs() and is empty
+    // on first paint — the old fallback told you that you were on a detached
+    // HEAD while the top bar said "main" one row above. When HEAD is not known
+    // yet the label is a placeholder that syncComposerBranch() fills in.
+    const head = this.headInfo;
+    const refsKnown = !!head;
+    const curBranch =
+      head && !head.detached
+        ? head.branch
+        : this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
     const branchLine = el("div", "dc-branch");
     const branchSummary = span("", "dc-branch-sum");
     branchLine.append(
@@ -3049,7 +3058,7 @@ class App {
 
     const commitRow = el("div", "dc-commit-row");
     const commitBtn = el("button", "btn btn-primary dc-commit");
-    const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit");
+    const commitLabel = span(curBranch ? `Commit to ${curBranch}` : "Commit", "dc-commit-label");
     commitBtn.append(glyph("git-commit"), commitLabel);
     commitBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, commitBtn, false, getOpts()));
     const pushBtn = el("button", "btn dc-commit dc-push");
@@ -4731,12 +4740,31 @@ class App {
     return bell;
   }
 
+  /** Fill in the commit composer's branch once HEAD resolves. Without this the
+   *  placeholder stayed "…" forever, which is worse than the wrong answer it
+   *  replaced. */
+  private syncComposerBranch(): void {
+    const head = this.headInfo;
+    if (!head) return;
+    const name = head.detached ? "detached HEAD" : (head.branch ?? "HEAD");
+    const nameEl = document.querySelector<HTMLElement>(".dc-branch-name");
+    if (nameEl) nameEl.textContent = name;
+    const label = document.querySelector<HTMLElement>(".dc-commit .dc-commit-label");
+    if (label) label.textContent = head.detached ? "Commit" : `Commit to ${name}`;
+  }
+
   /** Pull the unread count and reflect it on the bell badge (hidden at zero). */
   private async refreshNotifBadge(): Promise<void> {
-    const badge = this.notifBellBadge;
-    if (!badge) return;
     const count = await fetchUnreadCount();
-    if (!badge.isConnected) return;
+    this.setNotifBadge(count);
+  }
+
+  /** Paint a known unread count onto the bell. The Inbox broadcasts what it
+   *  actually loaded (gs:unread), so the badge and the panel header can never
+   *  disagree — they used to differ by one, 200px apart. */
+  private setNotifBadge(count: number): void {
+    const badge = this.notifBellBadge;
+    if (!badge || !badge.isConnected) return;
     const bell = badge.parentElement;
     if (count > 0) {
       badge.textContent = count > 99 ? "99+" : String(count);
@@ -4795,6 +4823,12 @@ class App {
     // Forgetting or trashing a clone changes the welcome screen's recent list
     // (and the repo switcher, which re-reads on open) — repaint the one surface
     // that renders it eagerly, and only when it's actually showing.
+    // The Inbox tells the shell what it actually loaded, so the bell badge and
+    // the panel header can't drift apart.
+    window.addEventListener("gs:unread", (e) => {
+      const n = (e as CustomEvent<number>).detail;
+      if (typeof n === "number") this.setNotifBadge(n);
+    });
     host.on("repo:recentChanged", () => {
       if (!this.currentRepo) void this.showWelcome();
     });
@@ -5139,6 +5173,8 @@ class App {
       return; // a different repo is on screen now
     }
     this.refs = refs;
+    this.headInfo = head;
+    this.syncComposerBranch();
     if (this.branchSwitchName) {
       const label = !head
         ? "HEAD"

@@ -203,6 +203,9 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // Keep the "Mark all read" affordance honest: nothing unread → nothing to do.
   const unreadCount = threads.filter((t) => t.unread).length;
   (markAllBtn as HTMLButtonElement).disabled = unreadCount === 0;
+  // Keep the top-bar bell in step with what the Inbox actually loaded — the
+  // badge said 3 while the panel header said 4, 200px apart.
+  window.dispatchEvent(new CustomEvent("gs:unread", { detail: unreadCount }));
   facets.sync(threads);
 
   const renderThreads = (): void => {
@@ -508,7 +511,10 @@ function notificationRow(
     title.textContent = t.title || "(untitled)";
     title.title = t.title;
     row.appendChild(title);
-    if (t.type) row.appendChild(pill(notifTypeLabel(t.type), "notif-type"));
+    // The leading glyph already encodes the type; a pill repeating it made
+    // every row say "Issue" twice. The glyph carries the word on hover.
+    lead.title = notifTypeLabel(t.type);
+    lead.setAttribute("aria-label", notifTypeLabel(t.type));
     row.appendChild(el("span", "sec-row-spring"));
     const meta = el("span", "sec-row-meta");
     meta.appendChild(repoLink());

@@ -96,6 +96,11 @@ export function createLogPane(o: {
   });
   const dlBtn = o.onDownload ? toolBtn("cloud-download", "Save the full log to Downloads", o.onDownload) : null;
   const expandBtn = toolBtn("screen-full", "Expand the pane", () => {
+    // Resizing the pane changes its scroll height, which the scroll listener
+    // reads as "the user scrolled away from the bottom" and silently turns
+    // follow OFF, dumping you into the middle of the log. Resizing is not
+    // scrolling: remember the mode and restore it.
+    const wasFollowing = follow;
     const max = root.classList.toggle("log-max");
     expandBtn.title = max ? "Shrink the pane" : "Expand the pane";
     expandBtn.setAttribute("aria-label", expandBtn.title);
@@ -104,6 +109,7 @@ export function createLogPane(o: {
     // tail — the error line, the toolbar's own controls — below the fold, so
     // "expand" made the thing you wanted LESS visible. Bring it into view.
     if (max) root.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (wasFollowing) setFollow(true);
   });
   bar.append(errChip, search, matchCounter, span("", "log-toolbar-spring"), tsBtn, followBtn, copyBtn);
   if (dlBtn) bar.appendChild(dlBtn);
