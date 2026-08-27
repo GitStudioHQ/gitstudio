@@ -517,7 +517,6 @@ button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
 .assistant-chip:focus-visible,
 .ai-chip:focus-visible,
 .assistant-send:focus-visible,
-.notif-toggle:focus-visible,
 .dock-chevron:focus-visible,
 .tab:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
@@ -4234,7 +4233,6 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
    alongside the .gh-acct block (ghHeader is a space-between flex row, so
    margin-left:auto pins title left and groups actions+account on the right). */
 .notif-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.notif-toggle { height: 28px; padding: 0 11px; border-radius: 8px; font-size: 12.5px; }
 
 /* A muted count line above the list. */
 .notif-summary {
@@ -5676,6 +5674,16 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 .modal-actions .mini-btn:hover { color: var(--vscode-foreground); background: var(--app-hover); }
 .modal-ok[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+/* Card rhythm: every block was separated by the same gap with a few ad-hoc
+   margins layered on top, so hierarchy read flat. A heading gets air above it;
+   its own explanatory line stays tight to it. (The body's flex/gap is defined
+   with .settings-card-body above — this only adjusts the rhythm.) */
+.settings-card-body > .settings-field-label { margin-top: var(--sp-3); }
+.settings-card-body > .settings-field-label + .settings-sub { margin-top: calc(var(--sp-3) * -1 + 3px); }
+.settings-card-body > *:first-child { margin-top: 0; }
+
+.cmp-swap { flex: 0 0 auto; }
 
 /* Typed confirmation (irreversible actions). */
 .confirm-typed-hint { margin-bottom: -4px; }
@@ -7881,7 +7889,6 @@ button.det-person:hover { background: var(--app-hover); }
 /* Monospace fragments in a row's meta cluster (tag names, short SHAs). */
 .sec-mono { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: var(--text-2xs); }
 /* The status word in a run row's meta cluster — a fixed slot so rows align. */
-.sec-run-state { min-width: 72px; }
 /* The workflow's name as a muted suffix after a run row's title. */
 .sec-run-wf {
   flex: 0 1 auto;

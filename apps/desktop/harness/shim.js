@@ -121,11 +121,11 @@
     headCommitAuthor: "Anton Arnaudov", pullRequests: [],
   }, o);
   const runs = [
-    mkRun({ id: 9101, runNumber: 412, name: "Desktop CI", displayTitle: "issues: full-page detail as a routed state", status: "in_progress", conclusion: "", branch: "redesign/issues-detail", event: "push", createdAt: ISO(0.4), updatedAt: ISO(0.1), runStartedAt: ISO(0.39), htmlUrl: "", actor: u(me) }),
-    mkRun({ id: 9100, runNumber: 411, name: "Desktop CI", displayTitle: "release: extension 1.11.1", status: "completed", conclusion: "success", branch: "main", event: "push", createdAt: ISO(3), updatedAt: ISO(2.8), runStartedAt: ISO(2.99), htmlUrl: "", actor: u(me), pullRequests: [{ number: 106 }] }),
-    mkRun({ id: 9099, runNumber: 233, name: "Extension CI", displayTitle: "test: drive update-refs end-to-end", status: "completed", conclusion: "success", branch: "main", event: "push", createdAt: ISO(5), updatedAt: ISO(4.9), htmlUrl: "", actor: u("mira-holt") }),
-    mkRun({ id: 9097, runNumber: 410, runAttempt: 2, name: "Desktop CI", displayTitle: "actions: stream job logs over IPC", status: "completed", conclusion: "failure", branch: "fix/log-stream", event: "pull_request", createdAt: ISO(8), updatedAt: ISO(7.7), htmlUrl: "", actor: u("s-ohta"), triggeringActor: u(me), pullRequests: [{ number: 104 }] }),
-    mkRun({ id: 9095, runNumber: 88, name: "Nightly release", displayTitle: "Nightly release", status: "completed", conclusion: "success", branch: "main", event: "schedule", createdAt: ISO(26), updatedAt: ISO(25.7), htmlUrl: "", actor: u("renderbot") }),
+    mkRun({ id: 9101, runNumber: 412, name: "Desktop CI", workflowId: 1, displayTitle: "issues: full-page detail as a routed state", status: "in_progress", conclusion: "", branch: "redesign/issues-detail", event: "push", createdAt: ISO(0.4), updatedAt: ISO(0.1), runStartedAt: ISO(0.39), htmlUrl: "", actor: u(me) }),
+    mkRun({ id: 9100, runNumber: 411, name: "Desktop CI", workflowId: 1, displayTitle: "release: extension 1.11.1", status: "completed", conclusion: "success", branch: "main", event: "push", createdAt: ISO(3), updatedAt: ISO(2.8), runStartedAt: ISO(2.99), htmlUrl: "", actor: u(me), pullRequests: [{ number: 106 }] }),
+    mkRun({ id: 9099, runNumber: 233, name: "Extension CI", workflowId: 2, displayTitle: "test: drive update-refs end-to-end", status: "completed", conclusion: "success", branch: "main", event: "push", createdAt: ISO(5), updatedAt: ISO(4.9), htmlUrl: "", actor: u("mira-holt") }),
+    mkRun({ id: 9097, runNumber: 410, runAttempt: 2, name: "Desktop CI", workflowId: 1, displayTitle: "actions: stream job logs over IPC", status: "completed", conclusion: "failure", branch: "fix/log-stream", event: "pull_request", createdAt: ISO(8), updatedAt: ISO(7.7), htmlUrl: "", actor: u("s-ohta"), triggeringActor: u(me), pullRequests: [{ number: 104 }] }),
+    mkRun({ id: 9095, runNumber: 88, name: "Nightly release", workflowId: 3, displayTitle: "Nightly release", status: "completed", conclusion: "success", branch: "main", event: "schedule", createdAt: ISO(26), updatedAt: ISO(25.7), htmlUrl: "", actor: u("renderbot") }),
   ];
 
   const notifications = [

@@ -263,6 +263,18 @@
       }
     },
 
+    "workflow-rows-carry-state": (f) => {
+      const c = check(f);
+      const rows = $$(".sec-row");
+      c.ok(rows.length >= 3, "workflow rows render");
+      for (const r of rows) {
+        const meta = r.querySelector(".sec-row-meta")?.textContent?.trim() ?? "";
+        c.ok(meta.length > 0, `a workflow row must say something about its last run: "${r.textContent.trim().slice(0, 40)}"`);
+        // "never run" is only honest once the runs are actually loaded.
+        c.ok(!/never run/.test(meta), `"never run" claimed while runs were loaded: ${meta}`);
+      }
+    },
+
     // ── Inbox ────────────────────────────────────────────────────────────────
     "inbox-search-filters": (f) => {
       const c = check(f);

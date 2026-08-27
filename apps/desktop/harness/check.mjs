@@ -47,6 +47,7 @@ const CASES = [
   ["run-detail-no-duplicate-status", "actions~open9100"],
   ["run-detail-failed-shows-rerun", "actions~open9097"],
   ["step-bars-share-one-scale", "actions~open9097"],
+  ["workflow-rows-carry-state", "actions~text:Workflows"],
   ["inbox-search-filters", "notifications~click:.gh-search-input~type:xterm"],
   ["inbox-rows-share-left-edge", "notifications"],
   ["inbox-state-segment", "notifications"],

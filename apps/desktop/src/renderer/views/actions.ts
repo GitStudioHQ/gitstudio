@@ -319,8 +319,18 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   const buildWfRow = (w: WorkflowInfo): HTMLElement => {
     const disabled = w.state !== "active";
-    const meta: HTMLElement[] = [span(w.path)];
-    if (disabled) meta.push(span(w.state.replace(/_/g, " ")));
+    // A workflow row was a name at the far left and a path at the far right
+    // with ~1000px of nothing between them, and carried no state at all — you
+    // could not tell from this list whether a workflow had ever run.
+    const last = runs?.find((r) => r.workflowId === w.id);
+    const meta: HTMLElement[] = [];
+    if (last) {
+      meta.push(runLead(last.conclusion || last.status || "", prettyState(last.conclusion || last.status || "")));
+      meta.push(span(`#${last.runNumber || last.id}`, "sec-run-dur"));
+    } else if (runs) {
+      meta.push(span("never run"));
+    }
+    if (disabled) meta.push(span(w.state.replace(/_/g, " "), "gh-pill"));
     return secRow({
       lead: (() => {
         const s = el("span", "gh-lead-icon");
@@ -329,7 +339,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         return s;
       })(),
       title: w.name,
+      // The file name identifies a workflow; the ".github/workflows/" prefix
+      // is the same on every row and was eating the width.
+      titleSuffix: [span(w.path.split("/").pop() ?? w.path, "sec-run-wf")],
       meta,
+      time: last ? relTimeISO(last.createdAt) : undefined,
       ariaLabel: `Workflow ${w.name}${disabled ? " (disabled)" : ""}`,
       onOpen: () => {
         if (disabled) {
@@ -418,9 +432,17 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       runs = fresh;
       facets?.sync(runs);
     } else {
-      const fresh = await gget("actions:workflows", undefined, 60000);
+      const [fresh, recent] = await Promise.all([
+        gget("actions:workflows", undefined, 60000),
+        // The workflow rows show each workflow's last run. This shares the
+        // Runs tab's cache key, so switching tabs is free after the first
+        // load — and without it the rows would have to claim "never run"
+        // when the truth is only that we had not looked.
+        gget("actions:runs", undefined, 10000).catch(() => [] as WorkflowRun[]),
+      ]);
       if (!view.isConnected) return;
       workflows = fresh;
+      runs = recent;
     }
     rerenderList();
     scheduleListPoll();
