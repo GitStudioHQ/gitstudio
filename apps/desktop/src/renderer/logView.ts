@@ -100,6 +100,10 @@ export function createLogPane(o: {
     expandBtn.title = max ? "Shrink the pane" : "Expand the pane";
     expandBtn.setAttribute("aria-label", expandBtn.title);
     render();
+    // Expanding to 78vh while the pane sits ~320px down the page pushed its
+    // tail — the error line, the toolbar's own controls — below the fold, so
+    // "expand" made the thing you wanted LESS visible. Bring it into view.
+    if (max) root.scrollIntoView({ block: "start", behavior: "smooth" });
   });
   bar.append(errChip, search, matchCounter, span("", "log-toolbar-spring"), tsBtn, followBtn, copyBtn);
   if (dlBtn) bar.appendChild(dlBtn);

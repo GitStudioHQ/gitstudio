@@ -292,11 +292,27 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
       }
       body.replaceChildren();
       if (!d) {
+        // The copy told you to fetch and then offered no way to do it — an
+        // instruction with no affordance is a dead end.
         body.appendChild(
           emptyState(
             "Commit not in the local clone",
             "Fetch from the remote to inspect what this tag points at.",
-            { icon: "cloud-download" },
+            {
+              icon: "cloud-download",
+              action: {
+                label: "Fetch",
+                icon: "sync",
+                onClick: () => {
+                  void host
+                    .invoke("sync:fetch", undefined)
+                    .then(() => {
+                      toast("Fetched. Reopen the tag to inspect its commit.", "success");
+                    })
+                    .catch((e) => toast(cleanErr(e) || "Fetch failed.", "error"));
+                },
+              },
+            },
           ),
         );
         return;
