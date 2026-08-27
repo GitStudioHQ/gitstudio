@@ -788,6 +788,11 @@ export class GitBridge {
     return this.staged(async (ctx) => ctx.worktrees.add(path, ref, { newBranch }));
   }
   async worktreeRemove(opts: { path: string; force?: boolean }): Promise<CommitActionResult> {
+    // `git worktree remove` builds its argv as ["worktree", "remove", path]
+    // with no `--`, so a path beginning with "-" would reach git as an option.
+    // The paths come from git's own worktree list today, but this is the same
+    // guard every other ref-taking mutation on this bridge already applies.
+    if (!safeArg(opts.path)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.worktrees.remove(opts.path, { force: opts.force }));
   }
 
