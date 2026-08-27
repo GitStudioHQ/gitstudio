@@ -35,6 +35,7 @@ import {
   segmented,
   ghHeader,
   harvestValues,
+  searchField,
   wireListNav,
   type FacetState,
   type SectionRender,
@@ -44,6 +45,8 @@ import type { NotificationThread } from "../../shared/ipc";
 
 /** Persisted across re-renders of this view: include already-read threads? */
 let notifAll = false;
+/** Inbox text query — the only one of the four lists that had no search. */
+let notifQuery = "";
 /** Inbox facets (type / reason / repo), kept across refreshes. */
 const notifFacets: FacetState = {};
 
@@ -138,6 +141,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // pushed the refresh button onto a second line, leaving a 40px band that was
   // 90% empty — and filtering is not what a glance at the bell is for.
   const inPopover = !!wrap.closest(".notif-pop");
+  // Every sibling list has a search field; the Inbox's header was a title on
+  // the far left and a control cluster on the far right with a gap between.
+  if (!inPopover) {
+    header.querySelector(".gh-head-titlewrap")?.appendChild(
+      searchField({
+        placeholder: "Search notifications…",
+        initial: notifQuery,
+        onInput: (q) => {
+          notifQuery = q;
+          renderThreads();
+        },
+      }),
+    );
+  }
   if (!inPopover) actions.appendChild(facets.el);
   actions.append(toggleBtn, markAllBtn);
   // ghHeader returns a flex row: [title] [.gh-acct]. Insert the action cluster
@@ -189,17 +206,28 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   facets.sync(threads);
 
   const renderThreads = (): void => {
-    const shown = threads.filter((t) => facets.passes(t));
+    const q = notifQuery.trim().toLowerCase();
+    const shown = threads.filter(
+      (t) =>
+        facets.passes(t) &&
+        (q
+          ? `${t.title} ${t.repo} ${notifReasonLabel(t.reason)} ${notifTypeLabel(t.type)}`
+              .toLowerCase()
+              .includes(q)
+          : true),
+    );
     // Same contract as every other list: the badge counts what's on screen.
     header.setCount?.(shown.length, threads.length);
     body.replaceChildren();
     if (shown.length === 0) {
-      const filtered = facets.activeCount() > 0;
+      const filtered = facets.activeCount() > 0 || !!q;
       body.appendChild(
         emptyState(
           filtered ? "No matching notifications" : notifAll ? "Inbox zero" : "You're all caught up",
           filtered
-            ? "Nothing in your inbox matches these filters."
+            ? q
+              ? `Nothing in your inbox matches “${notifQuery.trim()}”.`
+              : "Nothing in your inbox matches these filters."
             : notifAll
               ? "You have no notifications."
               : "No unread notifications right now — nothing needs your attention.",

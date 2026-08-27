@@ -176,7 +176,10 @@ export function confirmDialog(opts: {
         hint.textContent = `Type ${opts.requireTyped} to confirm.`;
         typedInput = document.createElement("input");
         typedInput.className = "modal-input confirm-typed-input";
-        typedInput.placeholder = opts.requireTyped;
+        // NOT the required text: using it as the placeholder showed the answer
+        // inside the box you had to type it into, which teaches you to copy
+        // what is already on screen and defeats the point of the safeguard.
+        typedInput.placeholder = "Type the name to confirm";
         typedInput.spellcheck = false;
         typedInput.autocapitalize = "off";
         typedInput.setAttribute("aria-label", `Type ${opts.requireTyped} to confirm`);

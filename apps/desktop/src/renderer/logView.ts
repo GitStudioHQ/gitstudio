@@ -79,9 +79,15 @@ export function createLogPane(o: {
   });
   search.classList.add("log-search");
   const matchCounter = span("", "log-match-count");
-  const tsBtn = toolBtn("history", "Show timestamps", () => {
+  // These were five identical unlabelled squares, and their titles never
+  // changed with their state — "Show timestamps" still read "Show timestamps"
+  // while timestamps were showing. The clock-with-arrow icon also universally
+  // means "history", not "timestamps".
+  const tsBtn = toolBtn("watch", "Show timestamps", () => {
     showTs = !showTs;
     tsBtn.classList.toggle("is-on", showTs);
+    tsBtn.title = showTs ? "Hide timestamps" : "Show timestamps";
+    tsBtn.setAttribute("aria-label", tsBtn.title);
     render();
   });
   const followBtn = toolBtn("fold-down", "Follow the newest output", () => setFollow(!follow));
@@ -90,7 +96,9 @@ export function createLogPane(o: {
   });
   const dlBtn = o.onDownload ? toolBtn("cloud-download", "Save the full log to Downloads", o.onDownload) : null;
   const expandBtn = toolBtn("screen-full", "Expand the pane", () => {
-    root.classList.toggle("log-max");
+    const max = root.classList.toggle("log-max");
+    expandBtn.title = max ? "Shrink the pane" : "Expand the pane";
+    expandBtn.setAttribute("aria-label", expandBtn.title);
     render();
   });
   bar.append(errChip, search, matchCounter, span("", "log-toolbar-spring"), tsBtn, followBtn, copyBtn);
@@ -126,6 +134,8 @@ export function createLogPane(o: {
   function setFollow(on: boolean): void {
     follow = on;
     followBtn.classList.toggle("is-on", on);
+    followBtn.title = on ? "Following the newest output" : "Follow the newest output";
+    followBtn.setAttribute("aria-label", followBtn.title);
     jumpPill.hidden = on || visible.length === 0;
     if (on) {
       scroll.scrollTop = scroll.scrollHeight;
@@ -193,8 +203,12 @@ export function createLogPane(o: {
     rebuildVisible();
     const pos = visible.indexOf(docIdx);
     if (pos < 0) return;
+    // A search or error jump turns following off — so the way BACK to the tail
+    // has to appear, or you are stranded mid-log with no affordance.
     follow = false;
     followBtn.classList.remove("is-on");
+    followBtn.title = "Follow the newest output";
+    jumpPill.hidden = visible.length === 0;
     scroll.scrollTop = Math.max(0, pos * LINE_H - scroll.clientHeight / 2);
     render();
   }

@@ -4248,7 +4248,9 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 /* Org Repos/Teams/Members as a responsive card grid that uses the full pane. */
 .gh-org-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* 280px could not hold "public · TypeScript · ★ 2,140 · updated 1h ago", so
+     every card clipped mid-number ("★ 2,1…"). */
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
   gap: 8px;
   align-content: start;
 }
@@ -4269,10 +4271,35 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   transform: translateY(-1px);
 }
 .gh-org-grid > .list-row:active { transform: translateY(0); }
+/* Card meta wraps to a second line instead of truncating: in a grid there is
+   vertical room, and the numbers are the point. */
+.gh-org-grid .row-meta-sub {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+}
+.gh-org-grid .row-meta { min-width: 0; }
 /* The org sub-tab rows are clickable (open on GitHub) — restore the pointer the
    shared .list-row sets to `default`, and let the avatar/icon sit inline. */
 .gh-org-repo, .gh-org-team, .gh-org-member { cursor: pointer; }
 .gh-org-member .row-meta-title { font-size: 13px; }
+
+/* Organization header: identity (avatar · name · @login · description) on the
+   left, actions on the right — one block instead of four stacked bands split
+   by a rule. */
+.gh-org-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-4);
+}
+.gh-org-identity { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; flex: 1 1 auto; }
+.gh-org-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gh-org-head .gh-detail-title { font-size: var(--text-xl); }
+.gh-org-head .gh-detail-meta { color: var(--app-muted); font-size: var(--text-sm); }
+.gh-org-desc { margin-top: 6px; color: var(--vscode-foreground); max-width: 70ch; }
+.gh-org-head .gh-detail-actions { flex: 0 0 auto; display: flex; gap: var(--sp-2); align-items: center; }
 
 /* ── projects ── */
 /* ── Projects board (append after the .gh-check-* block, ~line 1726 in app.css).
@@ -6601,7 +6628,17 @@ body.vscode-light .gh-label-chip {
 .rb-btn.busy .glyph { animation: rb-spin 1s linear infinite; }
 @keyframes rb-spin { to { transform: rotate(360deg); } }
 
-.rb-loading { display: flex; align-items: center; gap: 8px; padding: 24px; color: var(--app-muted); }
+/* Was flush to the top-left corner of an otherwise blank 1600x1000 pane, with
+   nothing to anchor it. Centre it the way every other loading state sits. */
+.rb-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  min-height: min(100%, 320px);
+  color: var(--app-muted);
+}
 .rb-loading .glyph { animation: rb-spin 1s linear infinite; }
 .rb-basebar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* One-click range presets so a rebase can start without typing a ref. */
@@ -7858,9 +7895,12 @@ button.det-person:hover { background: var(--app-hover); }
   border-radius: var(--r-md);
   background: var(--log-bg, #0b0e14);
   overflow: hidden;
-  height: 380px;
+  /* Was a fixed 380px, so a three-line log still reserved the full height. */
+  height: auto;
+  min-height: 120px;
+  max-height: 380px;
 }
-.log-pane.log-max { height: min(78vh, 900px); }
+.log-pane.log-max { max-height: min(78vh, 900px); height: min(78vh, 900px); }
 .log-toolbar {
   flex: 0 0 auto;
   display: flex;
@@ -7868,7 +7908,11 @@ button.det-person:hover { background: var(--app-hover); }
   gap: 6px;
   padding: 5px 8px;
   border-bottom: 1px solid var(--app-border);
-  background: var(--app-panel);
+  /* Sits ON the pane, not on app chrome — the toolbar used to be --app-panel,
+     which is why the pane's top edge vanished in light theme. */
+  background: color-mix(in srgb, var(--log-fg) 7%, var(--log-bg));
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 .log-toolbar-spring { flex: 1 1 auto; }
 .log-toolbar .gh-search { min-width: 130px; max-width: 200px; height: 24px; }
@@ -7951,7 +7995,10 @@ button.det-person:hover { background: var(--app-hover); }
 
 /* ANSI 16-color palette — terminal-legible on the pane's own dark ground. */
 .log-pane {
-  --log-bg: #0d1016;
+  /* Was #0d1016 — byte-identical to --app-bg, so the terminal had no ground of
+     its own and dissolved into the page. A shade darker than the app reads as
+     "this is output", the way a terminal does. */
+  --log-bg: #06080d;
   --log-fg: #c9ced8;
   --log-c0: #3b4048; --log-c1: #e06c75; --log-c2: #98c379; --log-c3: #d19a66;
   --log-c4: #61afef; --log-c5: #c678dd; --log-c6: #56b6c2; --log-c7: #abb2bf;
@@ -7959,7 +8006,9 @@ button.det-person:hover { background: var(--app-hover); }
   --log-c12: #8ac6ff; --log-c13: #de9df3; --log-c14: #6fdbe8; --log-c15: #ffffff;
 }
 body.vscode-light .log-pane {
-  --log-bg: #fafbfc;
+  /* Was #fafbfc against a #f7f9fb toolbar — a 1/255 difference, so the pane,
+     its toolbar and the page were one flat field. */
+  --log-bg: #ffffff;
   --log-fg: #24292f;
   --log-c0: #24292f; --log-c1: #cf222e; --log-c2: #116329; --log-c3: #953800;
   --log-c4: #0969da; --log-c5: #8250df; --log-c6: #1b7c83; --log-c7: #57606a;

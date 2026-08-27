@@ -15,23 +15,39 @@ test("parseLog strips timestamps and classifies workflow commands", () => {
   const doc = parseLog(
     `${TS}##[group]Run npm ci\n${TS}npm output line\n${TS}##[endgroup]\n${TS}##[error]exit code 1\n`,
   );
-  assert.equal(doc.lines.length, 4);
+  // `##[endgroup]` carries no payload, so giving it a line of its own rendered
+  // a blank NUMBERED row for every group — output the raw log does not
+  // contain. It closes its group without occupying a line.
+  assert.equal(doc.lines.length, 3);
   assert.equal(doc.lines[0].kind, "group");
   assert.equal(doc.lines[0].text, "Run npm ci");
   assert.equal(doc.lines[0].ts, TS.trim());
   assert.equal(doc.lines[1].kind, "plain");
   assert.equal(doc.lines[1].text, "npm output line");
-  assert.equal(doc.lines[2].kind, "endgroup");
-  assert.equal(doc.lines[3].kind, "error");
-  assert.deepEqual(doc.groups, [{ start: 0, end: 2 }]);
+  assert.equal(doc.lines[2].kind, "error");
+  assert.equal(
+    doc.lines.some((l) => l.kind === "endgroup"),
+    false,
+    "no endgroup line is emitted",
+  );
+  // The group ends at its last REAL line, so collapsing it hides exactly the
+  // lines that belong to it.
+  assert.deepEqual(doc.groups, [{ start: 0, end: 1 }]);
 });
 
 test("unbalanced groups: an unclosed group stays open; stray endgroup is tolerated", () => {
   const doc = parseLog(`##[group]outer\nline\n##[endgroup]\n##[endgroup]\n##[group]tail\nmore\n`);
+  assert.deepEqual(doc.lines.map((l) => l.text), ["outer", "line", "tail", "more"]);
   assert.deepEqual(doc.groups, [
-    { start: 0, end: 2 },
-    { start: 4, end: -1 },
+    { start: 0, end: 1 },
+    { start: 2, end: -1 },
   ]);
+});
+
+test("an empty group closes on its own header rather than before it", () => {
+  const doc = parseLog(`##[group]nothing inside\n##[endgroup]\nafter\n`);
+  assert.deepEqual(doc.groups, [{ start: 0, end: 0 }]);
+  assert.deepEqual(doc.lines.map((l) => l.text), ["nothing inside", "after"]);
 });
 
 test("appendLog re-parses a line split across two deltas", () => {

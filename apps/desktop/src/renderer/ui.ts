@@ -4,6 +4,7 @@
 
 import { host } from "./bridge";
 import { registerLayer } from "./overlays";
+export { middleTruncate } from "./textFit";
 import { toast } from "./dialogs";
 
 // ── tiny DOM helpers ─────────────────────────────────────────────────────────

@@ -60,6 +60,7 @@ import {
   brandMark,
   openMenu,
   wireResizerKeys,
+  middleTruncate,
 } from "./ui";
 import type { MenuItem } from "./ui";
 import { dismissLayers } from "./overlays";
@@ -4501,7 +4502,9 @@ class App {
                   items: others.map((r) => ({
                     icon: "repo",
                     label: r.name,
-                    hint: r.root,
+                    // Middle-truncated: the right-hand ellipsis ate the repo
+                    // folder, which is the only part that tells two clones apart.
+                    hint: middleTruncate(r.root, 46),
                     keywords: r.root,
                     run: () => void this.openPath(r.root),
                   })),
@@ -4976,12 +4979,12 @@ class App {
     const recent = await host.invoke("repo:recent", undefined);
     const items: MenuItem[] = [
       {
-        label: "Open Repository…",
+        label: "Open repository…",
         icon: "folder-opened",
         onClick: () => void this.openRepo(),
       },
       {
-        label: "Clone Repository…",
+        label: "Clone repository…",
         icon: "cloud-download",
         onClick: () => openCloneDialog((root) => void this.openPath(root)),
       },
@@ -4994,7 +4997,7 @@ class App {
       for (const r of others) {
         items.push({
           label: r.name,
-          sub: r.root,
+          sub: middleTruncate(r.root, 40),
           icon: "folder",
           onClick: () => void this.openPath(r.root),
         });
@@ -5002,12 +5005,12 @@ class App {
     }
     items.push({ separator: true });
     items.push({
-      label: "Manage Repositories…",
+      label: "Manage repositories…",
       icon: "repo",
       onClick: () => this.routeView("settings", true),
     });
     items.push({
-      label: "Back to Main Menu",
+      label: "Back to the main menu",
       icon: "home",
       onClick: () => void this.backToMenu(),
     });

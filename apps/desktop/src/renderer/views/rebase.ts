@@ -44,10 +44,17 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   let state: RebasePlanState;
   try {
     state = await host.invoke("rebase:load", {});
+    // The shape check belongs INSIDE the try: reading `state.ok` outside it
+    // meant an unexpected response threw past the error path and left the
+    // loading spinner on screen forever, with no message and no retry.
+    if (!state || typeof state.ok !== "boolean") {
+      throw new Error("The rebase plan came back in an unexpected shape.");
+    }
   } catch (err) {
     wrap.replaceChildren(
       emptyState("Couldn't load the rebase plan", cleanErr(err), {
         icon: "warning",
+        action: { label: "Try again", icon: "refresh", onClick: () => void mount(wrap, nav) },
       }),
     );
     return;

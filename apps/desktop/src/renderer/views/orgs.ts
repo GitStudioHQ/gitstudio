@@ -133,7 +133,8 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   // The live filter over whichever sub-tab is showing (repos / teams / members).
   header.querySelector(".gh-head-titlewrap")?.appendChild(
     searchField({
-      placeholder: "Filter repos, teams, members…",
+      // Was "Filter repos, teams, members…" — clipped to "Filter repos, teams, mer".
+      placeholder: "Filter this organization…",
       initial: query,
       onInput: (q) => {
         query = q;
@@ -204,31 +205,40 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
   detail.replaceChildren();
 
-  const head = el("div", "gh-detail-head");
+  // Identity first, then what it is, then what you can do with it. The old
+  // order was name → @login → buttons → a full-width rule → description, so
+  // the description was separated from the thing it described by the actions
+  // and a divider, and "Copy login" — a trivial action — led the page.
+  const head = el("div", "gh-detail-head gh-org-head");
+  const identity = el("div", "gh-org-identity");
+  identity.appendChild(orgAvatar(org.avatarUrl, org.login, 44));
+  const names = el("div", "gh-org-names");
   const titleRow = el("div", "gh-detail-title gh-org-title");
-  titleRow.append(orgAvatar(org.avatarUrl, org.login, 28), span(org.name || org.login, ""));
+  titleRow.append(span(org.name || org.login, ""));
   const meta = el("div", "gh-detail-meta");
   meta.textContent = `@${org.login}`;
+  names.append(titleRow, meta);
+  if (org.description) {
+    const d = el("div", "gh-org-desc");
+    d.textContent = org.description;
+    names.appendChild(d);
+  }
+  identity.appendChild(names);
 
   const actions = el("div", "gh-detail-actions");
-  const copyBtn = el("button", "mini-btn");
-  copyBtn.append(glyph("copy"), span("Copy login"));
-  copyBtn.addEventListener("click", () => void copyText(org.login, "Org login copied."));
-  const openBtn = el("button", "mini-btn gh-icon-btn");
-  openBtn.append(glyph("link-external"));
+  const openBtn = el("button", "mini-btn");
+  openBtn.append(glyph("link-external"), span("GitHub"));
   openBtn.title = "Open this organization on GitHub";
-  openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(org.htmlUrl, "_blank"));
-  actions.append(copyBtn, openBtn);
+  const copyBtn = el("button", "mini-btn gh-icon-btn");
+  copyBtn.append(glyph("copy"));
+  copyBtn.title = `Copy @${org.login}`;
+  copyBtn.setAttribute("aria-label", copyBtn.title);
+  copyBtn.addEventListener("click", () => void copyText(org.login, "Org login copied."));
+  actions.append(openBtn, copyBtn);
 
-  head.append(titleRow, meta, actions);
+  head.append(identity, actions);
   detail.appendChild(head);
-
-  if (org.description) {
-    const d = el("div", "gh-body-md");
-    d.textContent = org.description;
-    detail.appendChild(d);
-  }
 
   // Sub-tabs: Repositories · Teams · Members. The content is a responsive card
   // grid so it fills the full-width pane instead of a narrow column of rows.

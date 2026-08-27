@@ -54,7 +54,7 @@ export function openCloneDialog(
 
   // ── header: title + segmented tab switch ───────────────────────────────────
   const h = el("div", "modal-title");
-  h.textContent = "Clone a repository";
+  h.textContent = "Clone repository";
 
   const tabs = el("div", "gh-seg clone-tabs");
   tabs.setAttribute("role", "tablist");
@@ -440,7 +440,7 @@ export function openCloneDialog(
     return {
       card,
       focusEl: urlInput,
-      label: "Clone a repository",
+      label: "Clone repository",
       // While a clone is in flight, dismissing (Esc/backdrop) would orphan the
       // clone and still fire onCloned() on completion — keep the modal up.
       canDismiss: () => !busy,

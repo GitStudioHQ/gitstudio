@@ -76,18 +76,23 @@ export function appendLog(doc: LogDoc, delta: string): LogDoc {
   doc.danglingTail = parts.pop() ?? "";
   for (const raw of parts) {
     const line = classify(raw);
+    if (line.kind === "endgroup") {
+      // `##[endgroup]` carries no payload, so pushing it emitted a blank
+      // numbered row for every group — the log looked peppered with empty
+      // lines that the raw output does not contain. Close the group at the
+      // last real line instead of giving the marker a row of its own.
+      for (let g = doc.groups.length - 1; g >= 0; g--) {
+        if (doc.groups[g].end === -1) {
+          doc.groups[g].end = Math.max(doc.groups[g].start, doc.lines.length - 1);
+          break;
+        }
+      }
+      continue;
+    }
     const idx = doc.lines.length;
     doc.lines.push(line);
     if (line.kind === "group") {
       doc.groups.push({ start: idx, end: -1 });
-    } else if (line.kind === "endgroup") {
-      // Close the most recent open group; a stray endgroup is tolerated.
-      for (let g = doc.groups.length - 1; g >= 0; g--) {
-        if (doc.groups[g].end === -1) {
-          doc.groups[g].end = idx;
-          break;
-        }
-      }
     }
   }
   return doc;
