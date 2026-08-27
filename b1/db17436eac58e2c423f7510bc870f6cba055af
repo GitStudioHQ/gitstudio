@@ -1,0 +1,39 @@
+apps/desktop/src/renderer/commandPalette.ts
+  s_26f5e669d3043c::t_df47dabbb9bfb4 196-200
+apps/desktop/src/renderer/views/gists.ts
+  s_26f5e669d3043c::t_87ae5724cd2b50 274-276
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_a9a7687404f0cc 979-1075
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_876c6e6985b3d9 1452-1456,1493,1543
+  s_26f5e669d3043c::t_c28fa3214f3a92 1829-1839
+  s_26f5e669d3043c::t_f3489cd7f0b115 2825-2828
+  s_26f5e669d3043c::t_1e1b7f0615b7b6 3529-3533
+  s_26f5e669d3043c::t_40d3eaadb0da63 4723,4725-4729
+apps/desktop/src/renderer/views/orgs.ts
+  s_26f5e669d3043c::t_876c6e6985b3d9 636-639
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_40d3eaadb0da63 638-642
+  s_26f5e669d3043c::t_008a0bfb4b4e20 2526,2538,2583-2587,2591-2592
+  s_26f5e669d3043c::t_a39914a7b316d2 4492,4500-4501,4630
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_a9a7687404f0cc 95-98
+apps/desktop/src/renderer/views/actions.ts
+  s_26f5e669d3043c::t_0d2782e0e25c2a 256-259,261-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b1db17436eac58e2c423f7510bc870f6cba055af",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
