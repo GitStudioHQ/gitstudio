@@ -1,0 +1,25 @@
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_cf173de832ec36 141-150
+~/.npm/_logs/2026-08-27T15_01_41_931Z-debug-0.log
+  s_26f5e669d3043c::t_5147f4203ace9b 1-18
+~/.npm/_logs/2026-08-27T15_03_35_345Z-debug-0.log
+  s_26f5e669d3043c::t_b4ecf21bf3998d 1-18
+~/.npm/_logs/2026-08-27T15_02_35_435Z-debug-0.log
+  s_26f5e669d3043c::t_fa8154895ce840 1-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "747b8871c8d56f7ad18bce6546c5b048c6f72f35",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
