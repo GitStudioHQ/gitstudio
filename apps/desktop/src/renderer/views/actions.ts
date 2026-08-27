@@ -1051,6 +1051,15 @@ function jobCard(j: WorkflowJob): HTMLElement {
   log.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleJobLog(j, logSlot);
+    // Opening a log used to leave the card's chevron pointing right and its
+    // steps hidden, so the two ways in (this button and "View all logs") left
+    // the same card in visibly different states.
+    const nowOpen = !!logPanes.get(j.id)?.open;
+    if (nowOpen) {
+      steps.classList.remove("hidden");
+      head.classList.add("open");
+      expandedJobs.add(j.id);
+    }
     syncLogBtn();
   });
   head.appendChild(log);
@@ -1506,7 +1515,10 @@ async function openDispatch(anchor: HTMLElement, refresh: () => void): Promise<v
     anchor,
     active.map((w) => ({
       label: w.name,
-      sub: w.path,
+      // The full path truncated exactly where the rows stop being identical,
+      // so every one read ".github/workflows/…". The file name is the part
+      // that distinguishes them.
+      sub: w.path.split("/").pop() ?? w.path,
       icon: "play",
       onClick: () => void showDispatchModal(w, refresh),
     })),

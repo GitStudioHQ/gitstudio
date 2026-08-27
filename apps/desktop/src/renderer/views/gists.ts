@@ -125,9 +125,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   const renderList = (): void => {
     if (!gists) return;
-    header.setCount?.(gists.length);
     listEl.replaceChildren();
     if (gists.length === 0) {
+      header.setCount?.(0);
       listEl.appendChild(
         emptyState("No gists yet", "Create your first snippet with a new gist.", {
           icon: "code",
@@ -138,6 +138,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     }
     const q = query.toLowerCase();
     const items = q ? gists.filter((g) => matches(g, q)) : gists;
+    // Same contract as the other lists: the badge counts what is on screen, so
+    // it can't read "2" above "No matching gists".
+    header.setCount?.(items.length, gists.length);
     if (items.length === 0) {
       listEl.appendChild(emptyState("No matching gists", `Nothing matches “${query}”.`, { icon: "search" }));
       return;

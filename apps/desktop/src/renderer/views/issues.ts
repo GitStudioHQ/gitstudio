@@ -202,10 +202,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       lead: stateLead(issueStateKind(it.state, it.stateReason)),
       num: `#${it.number}`,
       title: it.title,
-      titleSuffix:
-        issueStateKind(it.state, it.stateReason) === "not-planned"
-          ? [statePill("Not planned", "not-planned")]
-          : [],
+      // The leading slash-circle icon already says "not planned" two glyphs
+      // away; a pill repeating it was the same fact twice on one row. The icon
+      // carries the words in its tooltip instead.
+      titleSuffix: [],
       chips: it.labels.map((l) => labelChip(l.name, l.color)),
       meta,
       time: relTimeISO(it.createdAt),

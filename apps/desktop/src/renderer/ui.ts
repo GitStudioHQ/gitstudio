@@ -369,11 +369,28 @@ export function issueStateKind(state: string, stateReason?: string | null): stri
 }
 
 /** A colored leading state icon for a list row (open=green, closed=red, …). */
-export function stateLead(kind: string): HTMLElement {
+export function stateLead(kind: string, label?: string): HTMLElement {
   const s = el("span", `gh-lead-icon gh-lead-${kind}`);
+  // When the icon is the ONLY statement of state (no pill beside it), it has
+  // to be readable by hover and by a screen reader.
+  const text = label ?? STATE_WORDS[kind];
+  if (text) {
+    s.title = text;
+    s.setAttribute("aria-label", text);
+    s.setAttribute("role", "img");
+  }
   s.appendChild(glyph(stateIconName(kind)));
   return s;
 }
+
+const STATE_WORDS: Record<string, string> = {
+  open: "Open",
+  "open-pr": "Open",
+  closed: "Closed",
+  "not-planned": "Closed as not planned",
+  merged: "Merged",
+  draft: "Draft",
+};
 
 /** Codicon name for a PR/issue state. */
 export function stateIconName(kind: string): string {

@@ -128,7 +128,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   const title = el("h1", "explore-title");
   title.textContent = "Explore GitHub";
   const sub = el("div", "explore-sub");
-  sub.textContent = "Search every public repository, person, organization and file — then open it here.";
+  sub.textContent = "Repositories, people, organizations and code — all of GitHub, opened here.";
 
   const field = searchField({
     placeholder:
@@ -348,6 +348,8 @@ function exploreRow(o: {
 function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
   const meta: HTMLElement[] = [];
   if (r.language) meta.push(span(r.language, "explore-lang"));
+  // Formatted: the footer on the same screen writes "1,284 matches" while the
+  // rows printed "48200".
   if (r.stars > 0) meta.push(statBit("star-full", r.stars));
   if (r.forks > 0) meta.push(statBit("repo-forked", r.forks));
 
@@ -437,7 +439,7 @@ function pill(text: string): HTMLElement {
 
 function statBit(icon: string, n: number): HTMLElement {
   const s = span("", "explore-stat");
-  s.append(glyph(icon), span(String(n)));
+  s.append(glyph(icon), span(n.toLocaleString()));
   return s;
 }
 
@@ -457,11 +459,10 @@ function rowActions(actions: Array<{ label: string; title: string; run: () => vo
 }
 
 function startState(): HTMLElement {
-  return emptyState(
-    "Search GitHub",
-    "Repositories, people, organizations and code — everything opens here, not in a browser.",
-    { icon: "telescope" },
-  );
+  // The header subtitle already makes the pitch; this says what to DO.
+  return emptyState("Start typing to search", "Try a name, an owner, or a qualifier like stars:>1000.", {
+    icon: "telescope",
+  });
 }
 
 function loadingMore(): HTMLElement {

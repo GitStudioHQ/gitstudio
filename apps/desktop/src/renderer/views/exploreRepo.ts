@@ -103,11 +103,18 @@ async function mount(
   gotoBtn.title = "Fuzzy-search every file in this repository";
   gotoBtn.addEventListener("click", () => void openGoToFile(fullName, ref, (p) => goto({ path: p, kind: "blob" })));
 
+  // Filled in from the repo detail once it lands (the rail fetches it anyway).
+  let defaultBranchLabel = "default branch";
   const refBtn = el("button", "mini-btn explore-ref-btn");
-  refBtn.append(glyph("git-branch"), span(ref ?? "default branch"), glyph("chevron-down"));
+  // "default branch" described the KIND of thing selected rather than the
+  // selection; the rail says the default is "main", so the button said one
+  // thing and the rail another.
+  refBtn.append(glyph("git-branch"), span(ref ?? defaultBranchLabel, "explore-ref-name"), glyph("chevron-down"));
   refBtn.title = "Switch branch";
   refBtn.addEventListener("click", () => void openRefMenu(refBtn, fullName, ref, (r) => goto({ ref: r, path })));
 
+  // The page had no title at all — the only place the repo was named was 13px
+  // of breadcrumb in the toolbar.
   const { view, main, rail } = detailPage({
     backLabel: "Explore",
     crumb: fullName,
@@ -140,6 +147,14 @@ async function mount(
     main.appendChild(crumbs);
   }
 
+  // The page named itself only in 13px of toolbar breadcrumb.
+  const pageHead = el("div", "explore-repo-head");
+  const h1 = el("h1", "explore-repo-title");
+  const [ownerName, repoName] = fullName.split("/", 2);
+  h1.append(span(`${ownerName}/`, "explore-repo-owner"), span(repoName ?? fullName));
+  pageHead.appendChild(h1);
+  main.appendChild(pageHead);
+
   const content = el("div", "explore-repo-content");
   content.appendChild(skeletonList(6));
   main.appendChild(content);
@@ -150,6 +165,12 @@ async function mount(
       const d: OrgRepoDetail = await gget("orgs:repoDetail", fullName, 120_000);
       if (!rail.isConnected) return;
       renderRepoRail(rail, d, fullName);
+      // Name the branch the button is actually on.
+      if (!ref && d.defaultBranch) {
+        defaultBranchLabel = d.defaultBranch;
+        const nameEl = refBtn.querySelector(".explore-ref-name");
+        if (nameEl) nameEl.textContent = d.defaultBranch;
+      }
     } catch {
       /* the rail is context, never the point — silence beats a broken column */
     }

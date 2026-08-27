@@ -339,7 +339,11 @@ export function openCloneDialog(
 
   function refreshClone(): void {
     const url = chosenUrl();
-    nameInput.placeholder = (url && deriveNameFromUrl(url)) || "Derived from the URL";
+    // On the GitHub tab there is no URL field, so "Derived from the URL" named
+    // a control the user cannot see.
+    nameInput.placeholder =
+      (url && deriveNameFromUrl(url)) ||
+      (tab === "github" ? "Same as the repository" : "Derived from the URL");
     const problem = validateTargetName(nameInput.value);
     nameError.textContent = problem ?? "";
     nameError.hidden = !problem;

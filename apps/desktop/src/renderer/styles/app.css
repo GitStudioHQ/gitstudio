@@ -5477,6 +5477,14 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-crumb.is-current { color: var(--vscode-foreground); cursor: default; }
 .explore-crumb-sep { color: var(--app-muted); }
 
+.explore-repo-head { margin-bottom: var(--sp-4); }
+.explore-repo-title {
+  font-size: var(--text-xl);
+  font-weight: 650;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.explore-repo-owner { color: var(--app-muted); font-weight: 500; }
 .explore-repo-content { display: flex; flex-direction: column; gap: var(--sp-4); }
 .explore-tree {
   border: 1px solid var(--app-border);

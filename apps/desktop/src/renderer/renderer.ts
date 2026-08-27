@@ -1674,10 +1674,14 @@ class App {
     baseLbl.textContent = "base";
     const headLbl = el("span", "compare-lbl");
     headLbl.textContent = "compare";
-    const swap = el("button", "topbar-icon");
+    // Was a bare `topbar-icon` glyph with no border or fill, wedged between two
+    // bordered ref pickers — it read as a decorative separator, like the tiny
+    // BASE/COMPARE labels around it. And `git-compare` is the view's own icon,
+    // not "swap"; the two-way arrow says what the button does.
+    const swap = el("button", "mini-btn gh-icon-btn cmp-swap");
     swap.title = "Swap base and compare";
     swap.setAttribute("aria-label", "Swap base and compare");
-    swap.appendChild(glyph("git-compare"));
+    swap.appendChild(glyph("arrow-swap"));
     swap.addEventListener("click", () => {
       [this.compareBase, this.compareHead] = [this.compareHead, this.compareBase];
       setLabel(baseBtn, this.compareBase!);
@@ -2455,7 +2459,12 @@ class App {
       }
       body.replaceChildren();
       const sub = el("div", "settings-sub");
-      sub.textContent = "Public keys found in ~/.ssh on this machine.";
+      // The card used to state "Public keys found in ~/.ssh" and then, on the
+      // very next line, "No SSH keys found in ~/.ssh" — contradicting itself.
+      // Describe the card, and let the body report what was actually found.
+      sub.textContent = keys.length
+        ? `Public keys in ~/.ssh on this machine.`
+        : "GitStudio looks for public keys in ~/.ssh on this machine.";
       body.appendChild(sub);
       if (failed) {
         const none = el("div", "settings-empty");
@@ -4429,7 +4438,6 @@ class App {
         const views: PaletteItem[] = App.TABS.map((t) => ({
           icon: t.icon,
           label: t.label,
-          hint: "view",
           keywords: t.id,
           run: () => go(t.id),
         }));
