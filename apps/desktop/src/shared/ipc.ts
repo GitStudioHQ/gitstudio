@@ -1270,7 +1270,9 @@ export interface IpcChannels {
   /** Apply a ready update: restart into it, or open the macOS installer. */
   "update:install": [void, { ok: boolean; message?: string }];
   "ssh:keys": [void, SshKey[]];
-  "pr:list": [void, PullRequest[]];
+  /** `state` mirrors GitHub's open|closed|all. Merged PRs come back under
+   *  `closed` (they carry `mergedAt`), so the renderer narrows those locally. */
+  "pr:list": [{ state?: "open" | "closed" | "all" } | void, PullRequest[]];
   "pr:detail": [number, PrDetail | undefined];
   "pr:checkout": [number, CommitActionResult];
   "pr:merge": [{ number: number; method: MergeMethod }, CommitActionResult];

@@ -277,7 +277,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     const state = r.conclusion || r.status || "";
     // The workflow's name rides as a muted suffix after the run's own title —
     // GitHub-style "<commit subject> · Desktop CI".
-    const suffix: HTMLElement[] = [span(r.name, "sec-run-wf")];
+    // A scheduled run's title IS its workflow name, so the suffix printed the
+    // same string twice in a row ("Nightly release  Nightly release").
+    const suffix: HTMLElement[] = r.name && r.name !== r.displayTitle ? [span(r.name, "sec-run-wf")] : [];
     if (r.runAttempt > 1) {
       const att = el("span", "gh-pill sec-attempt");
       att.textContent = `attempt ${r.runAttempt}`;
@@ -293,12 +295,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         ),
       );
     }
-    if (r.event) meta.push(span(r.event));
+    if (r.event) meta.push(span(r.event.replace(/_/g, " ")));
     const dur = runDuration(r);
     if (dur) meta.push(span(dur, "sec-run-dur"));
-    meta.push(span(prettyState(state) || "—", "sec-run-state"));
+    // The status word is dropped: the coloured lead icon already says it, and
+    // it carried a 72px min-width that pushed everything else out of line. The
+    // icon and the row's aria-label keep it available to a screen reader.
     const row = secRow({
-      lead: runLead(state),
+      lead: runLead(state, prettyState(state) || "unknown"),
       num: `#${r.runNumber || r.id}`,
       title: r.displayTitle,
       titleSuffix: suffix,
@@ -434,7 +438,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 }
 
 /** A colored leading status icon for a run, keyed off its conclusion/status. */
-function runLead(state: string): HTMLElement {
+function runLead(state: string, label?: string): HTMLElement {
   let icon = "sync";
   let cls = "is-running"; // in_progress / queued / pending
   if (state === "success") {
@@ -456,6 +460,13 @@ function runLead(state: string): HTMLElement {
     cls = "is-muted";
   }
   const s = el("span", `gh-lead-icon run-lead ${cls}`);
+  // The icon is now the only place the status is stated, so it has to be
+  // readable — by hover and by a screen reader.
+  if (label) {
+    s.title = label;
+    s.setAttribute("aria-label", label);
+    s.setAttribute("role", "img");
+  }
   s.appendChild(glyph(icon));
   return s;
 }
@@ -646,7 +657,10 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number, revea
 
   const { view, main, rail, topActions } = detailPage({
     backLabel: "Actions",
-    crumb: `#${id}`,
+    // The run NUMBER is the run's identity — the crumb used to show the
+    // internal id ("#9100") while the title showed "#411", giving one run two
+    // numbers on one screen. Set once the run loads (see paint()).
+    crumb: "Run",
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));
@@ -720,6 +734,11 @@ interface RunDetailCtx {
 function buildRunDetail(ctx: RunDetailCtx): void {
   const { main, rail, topActions, d, reload } = ctx;
   const full = d.run;
+  // One identity for this run, everywhere on the page: the run NUMBER. The
+  // crumb used to carry the internal id ("#9100") while the title showed
+  // "#411" — the same run wearing two numbers 40px apart.
+  const crumbEl = main.closest(".det-view")?.querySelector<HTMLElement>(".det-crumb");
+  if (crumbEl) crumbEl.textContent = `#${full.runNumber || full.id}`;
   const state = full.conclusion || full.status || "";
   const live = isLive(full.status);
   // A re-run attempt REPLACES the logs — every pane restarts from zero.
@@ -746,19 +765,49 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   const rerunFailedBtn = btn("mini-btn");
   rerunFailedBtn.append(glyph("debug-restart"), span("Re-run failed"));
   rerunFailedBtn.title = "Re-run only the failed jobs";
-  rerunFailedBtn.disabled = full.conclusion === "success" || live;
+  // Nothing failed, so there is nothing to re-run: don't show a dead control.
+  rerunFailedBtn.hidden = full.conclusion === "success" || live;
+  rerunFailedBtn.disabled = rerunFailedBtn.hidden;
   rerunFailedBtn.addEventListener("click", () => void rerunFailed(full.id, rerunFailedBtn, reload));
 
   const cancelBtn = btn("mini-btn danger");
   cancelBtn.append(glyph("circle-slash"), span("Cancel"));
   cancelBtn.title = "Cancel this in-progress run";
+  // A run that finished an hour ago cannot be cancelled; a greyed-out Cancel
+  // sitting there permanently is just noise.
+  cancelBtn.hidden = !live;
   cancelBtn.disabled = !live;
   cancelBtn.addEventListener("click", () => void cancelRun(full.id, cancelBtn, reload));
 
   const logsBtn = btn("btn btn-primary");
-  logsBtn.append(glyph("output"), span("View all logs"));
+  const logsLabel = span("View all logs");
+  logsBtn.append(glyph("output"), logsLabel);
   logsBtn.title = "Expand every job's log inline (they load as you scroll)";
+  // It used to be one-way: after expanding everything it kept the same label
+  // and the same primary weight, offering to do what it had already done.
+  const allLogsOpen = (): boolean => d.jobs.length > 0 && d.jobs.every((j) => logPanes.get(j.id)?.open);
+  const syncLogsBtn = (): void => {
+    const open = allLogsOpen();
+    logsLabel.textContent = open ? "Hide all logs" : "View all logs";
+    logsBtn.title = open
+      ? "Collapse every job's log"
+      : "Expand every job's log inline (they load as you scroll)";
+  };
   logsBtn.addEventListener("click", () => {
+    if (allLogsOpen()) {
+      for (const j of d.jobs) {
+        const card = main.querySelector<HTMLElement>(`[data-job-id="${j.id}"]`);
+        const slot = card?.querySelector<HTMLElement>(".gh-job-logslot");
+        if (slot && logPanes.get(j.id)?.open) toggleJobLog(j, slot);
+        const logBtn = card?.querySelector<HTMLElement>(".gh-job-log");
+        if (logBtn) {
+          logBtn.textContent = "Logs";
+          logBtn.title = "View this job's log inline";
+        }
+      }
+      syncLogsBtn();
+      return;
+    }
     for (const j of d.jobs) {
       expandedJobs.add(j.id);
       const card = main.querySelector<HTMLElement>(`[data-job-id="${j.id}"]`);
@@ -773,6 +822,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
         logBtn.title = "Collapse this job's log";
       }
     }
+    syncLogsBtn();
   });
 
   const openBtn = btn("mini-btn gh-icon-btn");
@@ -836,11 +886,13 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   void showArtifacts(main, full.id);
 
   // ── rail ──
-  const statusProp = propSection("Status");
-  statusProp.body.appendChild(runStatePill(state));
-  if (live) {
-    const liveNote = span("running now", "det-prop-none");
-    statusProp.body.appendChild(liveNote);
+  // No Status section: the pill sits beside the title 900px away, and the rail
+  // repeating it was the same word twice on one screen. A LIVE run still says
+  // so here, because that is news rather than a restatement.
+  const statusProp = live ? propSection("Status") : undefined;
+  if (statusProp) {
+    statusProp.body.appendChild(runStatePill(state));
+    statusProp.body.appendChild(span("running now", "det-prop-none"));
   }
 
   // WHO: the run's actor — and the re-runner, when someone else re-ran it.
@@ -867,8 +919,8 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     return row;
   };
   if (full.name) aboutProp.body.appendChild(fact("Workflow", full.name, full.workflowPath || undefined));
-  if (full.event) aboutProp.body.appendChild(fact("Trigger", full.event));
-  if (full.branch) aboutProp.body.appendChild(fact("Branch", full.branch));
+  // (Branch and Trigger are the chips under the title — printing them again
+  //  here made the rail read as an echo of the header.)
   if (full.runAttempt > 1) aboutProp.body.appendChild(fact("Attempt", String(full.runAttempt)));
   aboutProp.body.appendChild(fact("Jobs", String(jobs.length)));
   const dur = runDuration(full);
@@ -898,7 +950,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   idBtn.addEventListener("click", () => void copyText(String(full.id), "Run id copied."));
   idProp.body.appendChild(idBtn);
 
-  rail.append(statusProp.root, whoProp.root, aboutProp.root, ...(prsProp ? [prsProp.root] : []), idProp.root);
+  rail.append(...(statusProp ? [statusProp.root] : []), whoProp.root, aboutProp.root, ...(prsProp ? [prsProp.root] : []), idProp.root);
 }
 
 /** A run's status as a tinted state pill (success/failure/running/neutral). */
@@ -914,7 +966,10 @@ function runStatePill(state: string): HTMLElement {
 function jobCard(j: WorkflowJob): HTMLElement {
   const card = el("div", "gh-job");
   const state = j.conclusion || j.status || "";
-  const open = expandedJobs.has(j.id);
+  // Steps are the content of this page. They used to be collapsed by default,
+  // so a run detail was two hollow rows in an empty page — you had to click
+  // every job to see what actually ran.
+  const open = expandedJobs.size === 0 || expandedJobs.has(j.id);
   const head = el("button", "gh-job-head" + (open ? " open" : ""));
   const chevron = glyph("chevron-right");
   chevron.classList.add("gh-job-chevron");

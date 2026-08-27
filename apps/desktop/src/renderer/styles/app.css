@@ -4001,7 +4001,25 @@ gitstudio-graph {
    colours are added below. */
 
 /* Header toolbar (Workflows + Run workflow) sits left of the account cluster. */
-.gh-head-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; margin-right: 12px; }
+/* The tools row carries up to a dozen controls (Actions: a segment, five
+   facets, Clear, Secrets, Run workflow). With no wrap and no min-width it
+   could only squash — clipping the search field and the facet labels. Now it
+   wraps onto a second line instead, and the search field is what gives up
+   space first. */
+.gh-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  margin-right: 12px;
+  flex-wrap: wrap;
+  row-gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.gh-head-titlewrap { min-width: 0; }
+.gh-head-titlewrap .gh-search { min-width: 120px; }
+.gh-head { align-items: center; row-gap: 8px; }
 
 /* Run row: status dot inline with an ellipsised title. */
 .gh-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

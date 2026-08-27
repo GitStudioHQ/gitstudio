@@ -667,7 +667,7 @@ function registerIpc(): void {
     updates ? updates.install() : { ok: false, message: "Updater not ready." },
   );
   handle("ssh:keys", () => bridge.sshKeys());
-  handle("pr:list", () => github.prList());
+  handle("pr:list", (req) => github.prList(req?.state ?? "open"));
   handle("pr:detail", (n) => github.prDetail(n));
   handle("pr:checkout", (n) => github.prCheckout(n));
   handle("pr:merge", (req) => github.prMerge(req));

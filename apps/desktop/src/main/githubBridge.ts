@@ -236,7 +236,7 @@ export class GitHubBridge {
     }
   }
 
-  async prList(): Promise<PullRequest[]> {
+  async prList(state: "open" | "closed" | "all" = "open"): Promise<PullRequest[]> {
     await this.ensureLoaded();
     const r = await this.resolveOwnerRepo();
     if (!r || !this.token) {
@@ -244,7 +244,7 @@ export class GitHubBridge {
     }
     // Let API errors (rate limit / auth / network) propagate so the renderer can
     // show a real error state instead of a misleading "no pull requests".
-    return this.client.listOpenPulls(r.owner, r.repo);
+    return this.client.listPulls(r.owner, r.repo, state);
   }
 
   /**

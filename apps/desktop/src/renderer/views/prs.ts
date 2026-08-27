@@ -40,6 +40,7 @@ import {
   associationBadge,
   facetBar,
   harvestValues,
+  segmented,
   swatch,
   type FacetState,
   associationLabel,
@@ -93,6 +94,9 @@ let activeFilePath: string | undefined;
 let lastDetailNumber: number | undefined;
 /** The list page's live search query — survives list ⇄ detail round trips. */
 let query = "";
+/** Which PRs to fetch. GitHub has no "merged" state — merged PRs arrive under
+ *  `closed` carrying `mergedAt` — so "merged" asks for closed and narrows here. */
+let prState: "open" | "closed" | "merged" | "all" = "open";
 /** Client-side PR facets, kept across list ⇄ detail round trips. */
 const prFacets: FacetState = {};
 /** Unsent comment drafts, per PR — navigating away must never eat one. */
@@ -173,17 +177,35 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const { view, listEl } = sectionList();
   const header = ghHeader("Pull Requests", gate.login, refresh);
   const tools = el("div", "gh-head-tools");
+  // Pull Requests was permanently open-only while Issues had a state control
+  // one rail item away. "Merged" is a fourth option because it is the state
+  // people actually look for, even though GitHub does not have it.
+  const stateSeg = segmented<"open" | "closed" | "merged" | "all">({
+    options: [
+      { value: "open", label: "Open" },
+      { value: "merged", label: "Merged" },
+      { value: "closed", label: "Closed" },
+      { value: "all", label: "All" },
+    ],
+    value: prState,
+    ariaLabel: "Pull request state",
+    onChange: (v) => {
+      prState = v;
+      renderPrs(wrap, nav);
+    },
+  });
   const facetSlot = el("div", "gh-facet-slot");
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("git-pull-request"), span("New PR"));
   newBtn.title = "Open a new pull request";
   newBtn.addEventListener("click", () => void openCreatePr(refresh));
-  tools.append(facetSlot, newBtn);
+  tools.append(stateSeg, facetSlot, newBtn);
   header.querySelector(".gh-acct")?.before(tools);
   view.append(header, listEl);
   wrap.replaceChildren(view);
 
-  let prs: PullRequest[] | undefined = cachePeek("pr:list", undefined);
+  const fetchState = prState === "merged" ? "closed" : prState;
+  let prs: PullRequest[] | undefined = cachePeek("pr:list", { state: fetchState });
   if (!prs) listEl.replaceChildren(skeletonList(5));
 
   const buildRow = (pr: PullRequest): HTMLElement => {
@@ -228,6 +250,15 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     return hay.includes(q);
   };
 
+  /** Narrows the fetched page to the segment. "Closed" means closed-and-not-
+   *  merged, so Merged and Closed are disjoint rather than one containing the
+   *  other — which is what people mean when they pick one. */
+  const stateMatches = (pr: PullRequest): boolean => {
+    if (prState === "merged") return !!pr.mergedAt;
+    if (prState === "closed") return pr.state === "closed" && !pr.mergedAt;
+    return true;
+  };
+
   // Client-side facets: the PR list is one fetch of open PRs, so narrowing it
   // is honest filtering of what's already here — no re-fetch, no cache key.
   const facets = facetBar<PullRequest>({
@@ -268,18 +299,29 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         harvest: harvestValues<PullRequest>((pr) => pr.base.ref),
         predicate: (pr, v) => pr.base.ref === v,
       },
+      // Was called "State" and contained no states — draft-ness and where the
+      // head branch lives are two different questions, and neither is a state.
       {
         key: "draft",
-        label: "State",
+        label: "Review",
         icon: "git-pull-request",
-        anyLabel: "Any state",
+        anyLabel: "Ready and draft",
         options: [
           { value: "ready", label: "Ready for review", icon: "git-pull-request" },
           { value: "draft", label: "Draft", icon: "git-pull-request-draft" },
+        ],
+        predicate: (pr, v) => (v === "draft" ? pr.draft : !pr.draft),
+      },
+      {
+        key: "origin",
+        label: "Origin",
+        icon: "repo-forked",
+        anyLabel: "Anywhere",
+        options: [
+          { value: "same", label: "This repository", icon: "repo" },
           { value: "fork", label: "From a fork", icon: "repo-forked" },
         ],
-        predicate: (pr, v) =>
-          v === "draft" ? pr.draft : v === "fork" ? !!pr.headRepoFullName : !pr.draft,
+        predicate: (pr, v) => (v === "fork" ? !!pr.headRepoFullName : !pr.headRepoFullName),
       },
     ],
     state: prFacets,
@@ -292,7 +334,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     if (!prs) return;
     facets.sync(prs);
     const q = query.toLowerCase();
-    const items = prs.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true));
+    const items = prs.filter(
+      (pr) =>
+        stateMatches(pr) && facets.passes(pr) && (q ? matches(pr, q) : true),
+    );
     header.setCount?.(items.length, prs.length);
     listEl.replaceChildren();
     if (prs.length === 0) {
@@ -338,7 +383,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   if (prs) renderList();
 
   try {
-    const fresh = await gget("pr:list", undefined, 15000);
+    const fresh = await gget("pr:list", { state: fetchState }, 15000);
     if (!view.isConnected) return;
     prs = fresh;
     renderList();

@@ -259,9 +259,12 @@ export class GitHubClient {
   }
 
   // ── Pull requests ──
-  async listOpenPulls(owner: string, repo: string): Promise<PullRequest[]> {
+  /** `state` is GitHub's: open | closed | all. "merged" is not a state upstream
+   *  — a merged PR is closed with `merged_at` set — so the renderer asks for
+   *  `closed` and narrows locally. */
+  async listPulls(owner: string, repo: string, state: "open" | "closed" | "all" = "open"): Promise<PullRequest[]> {
     const raw = await this.requestPaged<RawPull>(
-      `/repos/${enc(owner)}/${enc(repo)}/pulls?state=open&sort=updated&direction=desc&per_page=100`,
+      `/repos/${enc(owner)}/${enc(repo)}/pulls?state=${state}&sort=updated&direction=desc&per_page=100`,
       PAGE_CAPS.list,
     );
     return raw.map(mapPull);
