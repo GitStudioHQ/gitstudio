@@ -138,7 +138,16 @@ export class GraphMount {
     if (action) {
       const btn = document.createElement("button");
       btn.className = `${action.primary ? "btn btn-primary" : "mini-btn"} list-empty-action`;
-      btn.innerHTML = `<span class="glyph codicon codicon-${action.icon}"></span><span>${action.label}</span>`;
+      // Built as nodes, not as an HTML string. Both callers pass literals today,
+      // so this is not a live hole — but a template that interpolates a label
+      // straight into innerHTML becomes one the moment somebody passes a branch
+      // name or an error string through it, and the label right above this is
+      // already `desc`, which IS remote text.
+      const gi = document.createElement("span");
+      gi.className = `glyph codicon codicon-${action.icon}`;
+      const gl = document.createElement("span");
+      gl.textContent = action.label;
+      btn.append(gi, gl);
       btn.addEventListener("click", action.onClick);
       wrap.appendChild(btn);
     }

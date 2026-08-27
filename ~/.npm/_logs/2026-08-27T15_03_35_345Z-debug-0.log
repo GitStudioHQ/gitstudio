@@ -1,0 +1,18 @@
+0 verbose cli /Users/antonarnaudov/.nvm/versions/node/v22.16.0/bin/node /Users/antonarnaudov/.nvm/versions/node/v22.16.0/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.9.2
+2 info using node@v22.16.0
+3 silly config load:file:/Users/antonarnaudov/.nvm/versions/node/v22.16.0/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/antonarnaudov/Developer/GitStudioHQ/gitstudio/.npmrc
+5 silly config load:file:/Users/antonarnaudov/Developer/GitStudioHQ/gitstudio/~/.npmrc
+6 silly config load:file:/Users/antonarnaudov/.nvm/versions/node/v22.16.0/etc/npmrc
+7 verbose title npm exec tsx /private/tmp/claude-501/-Users-antonarnaudov-Developer-GitStudioHQ-gitstudio/***/scratchpad/scrubwin.ts
+8 verbose argv "exec" "--" "tsx" "/private/tmp/claude-501/-Users-antonarnaudov-Developer-GitStudioHQ-gitstudio/***/scratchpad/scrubwin.ts"
+9 verbose logfile logs-max:10 dir:/Users/antonarnaudov/Developer/GitStudioHQ/gitstudio/~/.npm/_logs/2026-08-27T15_03_35_345Z-
+10 verbose logfile /Users/antonarnaudov/Developer/GitStudioHQ/gitstudio/~/.npm/_logs/2026-08-27T15_03_35_345Z-debug-0.log
+11 silly logfile done cleaning log files
+12 verbose cwd /Users/antonarnaudov/Developer/GitStudioHQ/gitstudio
+13 verbose os Darwin 25.6.0
+14 verbose node v22.16.0
+15 verbose npm  v10.9.2
+16 verbose exit 0
+17 info ok
