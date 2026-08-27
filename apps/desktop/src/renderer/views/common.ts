@@ -149,9 +149,9 @@ export function ghHeader(
   login: string | undefined,
   onRefresh: () => void,
   count?: number,
-): HTMLElement & { setCount?: (n: number) => void } {
+): HTMLElement & { setCount?: (shown: number, total?: number) => void } {
   const headRow = el("div", "list-head list-head-row gh-head") as HTMLElement & {
-    setCount?: (n: number) => void;
+    setCount?: (shown: number, total?: number) => void;
   };
   const left = el("div", "gh-head-titlewrap");
   const t = el("div", "list-head-title");
@@ -160,8 +160,17 @@ export function ghHeader(
   if (typeof count === "number") countPill.textContent = String(count);
   else countPill.hidden = true;
   left.append(t, countPill);
-  headRow.setCount = (n: number): void => {
-    countPill.textContent = String(n);
+  // The badge reports what is ON SCREEN. It used to report the fetched page
+  // size and never move, so filtering to two rows still read "8" — and an
+  // empty result still read "8" above an empty state. When a filter is
+  // narrowing the list, say so: "2 of 8".
+  headRow.setCount = (shown: number, total?: number): void => {
+    const narrowed = typeof total === "number" && total !== shown;
+    countPill.textContent = narrowed ? `${shown} of ${total}` : String(shown);
+    countPill.title = narrowed
+      ? `${shown} shown of ${total} loaded`
+      : `${shown} ${shown === 1 ? "item" : "items"}`;
+    countPill.classList.toggle("is-narrowed", narrowed);
     countPill.hidden = false;
   };
 
@@ -607,13 +616,28 @@ export function avatarStack(
   people: Array<{ login: string; avatarUrl?: string | null }>,
   max = 3,
   size = 18,
+  /** What these people ARE — "Assignee", "Author". Rendered into each avatar's
+   *  tooltip and the stack's own label, because the same circle in the same
+   *  slot used to mean assignees on Issues and the author on PRs, unlabelled. */
+  role?: string,
 ): HTMLElement {
   const wrap = el("span", "sec-avs");
-  for (const p of people.slice(0, max)) wrap.appendChild(avatar(p.login, p.avatarUrl ?? null, size));
+  for (const p of people.slice(0, max)) {
+    wrap.appendChild(avatar(p.login, p.avatarUrl ?? null, size, role));
+  }
   if (people.length > max) {
+    const rest = people.slice(max);
     const more = el("span", "sec-avs-more");
-    more.textContent = `+${people.length - max}`;
+    more.textContent = `+${rest.length}`;
+    // The overflow chip used to hide who it stood for.
+    more.title = rest.map((p) => `@${p.login}`).join(", ");
     wrap.appendChild(more);
+  }
+  if (role) {
+    wrap.setAttribute(
+      "aria-label",
+      `${role}${people.length === 1 ? "" : "s"}: ${people.map((p) => p.login).join(", ")}`,
+    );
   }
   return wrap;
 }

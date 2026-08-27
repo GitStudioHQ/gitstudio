@@ -3,6 +3,7 @@
 // clipboard helper that toasts); no App state, so any module can import them.
 
 import { host } from "./bridge";
+import { registerLayer } from "./overlays";
 import { toast } from "./dialogs";
 
 // ── tiny DOM helpers ─────────────────────────────────────────────────────────
@@ -118,9 +119,19 @@ export function formatBytes(n?: number): string {
 
 /** Up to two uppercase initials from a display name, for avatar fallbacks. */
 export function initials(name: string): string {
-  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  // GitHub logins are not names: "s-ohta" split on whitespace is one part, and
+  // the first two characters were "s-", so the tile rendered punctuation. Treat
+  // dashes, dots and underscores as word breaks the way a login actually reads.
+  const parts = (name || "")
+    .trim()
+    .split(/[\s._-]+/)
+    .filter(Boolean);
   if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  if (parts.length === 1) {
+    // Alphanumerics only, so "s-" can never survive as a second character.
+    const clean = parts[0].replace(/[^A-Za-z0-9]/g, "");
+    return (clean.slice(0, 2) || "?").toUpperCase();
+  }
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
@@ -217,6 +228,10 @@ export interface EmptyOpts {
   icon?: string;
   /** A primary call-to-action button. */
   action?: { label: string; icon?: string; onClick: () => void };
+  /** A quieter second action — "Clear filters" and friends. Without this the
+   *  same five lines got hand-appended after the fact in four views (and
+   *  unguarded in one, which offered to clear filters that weren't set). */
+  secondary?: { label: string; icon?: string; onClick: () => void };
   /** A muted hint line under the action (e.g. a keyboard shortcut). */
   hint?: string;
 }
@@ -240,6 +255,13 @@ export function emptyState(title: string, desc: string, opts: EmptyOpts = {}): H
     btn.addEventListener("click", opts.action.onClick);
     wrap.appendChild(btn);
   }
+  if (opts.secondary) {
+    const b = el("button", "btn btn-soft list-empty-action");
+    if (opts.secondary.icon) b.appendChild(glyph(opts.secondary.icon));
+    b.appendChild(span(opts.secondary.label));
+    b.addEventListener("click", opts.secondary.onClick);
+    wrap.appendChild(b);
+  }
   if (opts.hint) {
     const h = el("div", "list-empty-hint");
     h.textContent = opts.hint;
@@ -250,10 +272,20 @@ export function emptyState(title: string, desc: string, opts: EmptyOpts = {}): H
 
 /** An avatar: the real image when available, else a deterministic initials tile.
  *  Works fully offline (the stub/real null avatars fall back gracefully). */
-export function avatar(login: string, url: string | null | undefined, size = 22): HTMLElement {
+export function avatar(
+  login: string,
+  url: string | null | undefined,
+  size = 22,
+  /** What this person IS here — "Author", "Assignee". The same 18px circle in
+   *  the same slot meant a different role on every list and said so nowhere. */
+  role?: string,
+): HTMLElement {
+  const label = role ? `${role}: @${login}` : `@${login}`;
   const fallback = (): HTMLElement => {
     const s = el("span", "av av-fallback");
     s.textContent = initials(login || "?");
+    s.title = label;
+    s.setAttribute("aria-label", label);
     s.style.setProperty("--av", avatarHue(login || "?"));
     s.style.width = s.style.height = `${size}px`;
     s.style.fontSize = `${Math.round(size * 0.42)}px`;
@@ -263,7 +295,8 @@ export function avatar(login: string, url: string | null | undefined, size = 22)
     const img = document.createElement("img");
     img.className = "av av-img";
     img.src = url;
-    img.alt = login;
+    img.alt = label;
+    img.title = label;
     img.referrerPolicy = "no-referrer";
     img.style.width = img.style.height = `${size}px`;
     // If the avatar can't load (offline / 404), swap in the initials tile so the
@@ -626,8 +659,19 @@ export interface MenuOpts {
 }
 
 /** A lightweight popover menu anchored below `anchor`; full keyboard support. */
+/** The currently open menu's close fn. Removing the previous menu's ELEMENT
+ *  (which is all this used to do) left its capture-phase document listeners
+ *  attached and its anchor stuck at aria-expanded="true" — a stale handler that
+ *  still answered Escape and refocused a detached anchor. */
+let liveMenuClose: ((restoreFocus?: boolean) => void) | null = null;
+
+/** Close an open dropdown, if any. */
+export function closeMenu(): void {
+  liveMenuClose?.(false);
+}
+
 export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts = {}): void {
-  document.querySelectorAll(".dropdown").forEach((n) => n.remove());
+  closeMenu();
   const menu = el("div", "dropdown");
   menu.setAttribute("role", "menu");
   const rect = anchor.getBoundingClientRect();
@@ -640,12 +684,17 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   const seps: HTMLElement[] = [];
 
   const close = (restoreFocus = true): void => {
+    if (liveMenuClose === close) liveMenuClose = null;
+    layer.release();
     menu.remove();
     document.removeEventListener("mousedown", onDoc, true);
     document.removeEventListener("keydown", onKey, true);
     anchor.setAttribute("aria-expanded", "false");
-    if (restoreFocus) anchor.focus();
+    // Don't pull focus back to an anchor that a route change already detached.
+    if (restoreFocus && anchor.isConnected) anchor.focus();
   };
+  liveMenuClose = close;
+  const layer = registerLayer(() => close(false));
   const onDoc = (e: MouseEvent): void => {
     if (!menu.contains(e.target as Node)) close(false);
   };

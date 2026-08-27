@@ -62,7 +62,7 @@ import {
   wireResizerKeys,
 } from "./ui";
 import type { MenuItem } from "./ui";
-import { closePeek } from "./peek";
+import { dismissLayers } from "./overlays";
 import { openBranchPeek, openRefPeek, openStashPeek } from "./peeks";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu } from "./contextMenu";
@@ -855,9 +855,12 @@ class App {
    *  specific item in a section view (e.g. opening an issue from the project
    *  board) — keeping navigation inside the app instead of bouncing to GitHub. */
   private routeView(id: string, force = false, target?: SectionTarget): void {
-    // Any route change dismisses an open peek — the popup belongs to the view
-    // (and moment) that opened it.
-    closePeek();
+    // Any route change dismisses every floating layer — a peek, a menu, a
+    // modal, the palette, the notifications popover. They all mount on
+    // document.body, so a view swap cannot take them with it: an Inbox facet
+    // menu used to survive navigation and hover over the next view, filtering
+    // a list that was no longer on screen.
+    dismissLayers();
     // Deep-linking an item must rebuild the section so it can select that item —
     // never restore a stale cached view (which wouldn't have it open). The ONE
     // exception: a sha-only graph reveal, which works against the live
@@ -1628,12 +1631,16 @@ class App {
     await this.refreshRefs();
     const current = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
     this.compareHead = this.compareHead ?? current ?? "HEAD";
+    // The base must never default to the ref we're already comparing FROM.
+    // It used to fall back to "main" unconditionally, so standing on main —
+    // the common case — opened this view on main…main and rendered an error
+    // the user could do nothing about.
+    const head = this.compareHead;
+    const heads = this.refs.filter((r) => r.type === "head");
     this.compareBase =
       this.compareBase ??
-      this.refs.find((r) => r.type === "head" && r.name === "main")?.name ??
-      this.refs.find((r) => r.type === "head" && !r.isCurrent)?.name ??
-      current ??
-      "HEAD";
+      heads.find((r) => (r.name === "main" || r.name === "master") && r.name !== head)?.name ??
+      heads.find((r) => !r.isCurrent && r.name !== head)?.name;
 
     const wrap = el("div", "compare-view");
 
@@ -1644,7 +1651,9 @@ class App {
     const setLabel = (btn: HTMLElement, ref: string): void => {
       btn.replaceChildren(glyph("git-branch"), span(ref), glyph("chevron-down"));
     };
-    setLabel(baseBtn, this.compareBase);
+    // With no second ref in the repo the picker says so rather than naming a
+    // ref that would compare against itself.
+    setLabel(baseBtn, this.compareBase ?? "Choose a base…");
     setLabel(headBtn, this.compareHead);
     baseBtn.addEventListener("click", () =>
       this.pickRef(baseBtn, (r) => {
@@ -1795,8 +1804,25 @@ class App {
 
     const runCompare = async (): Promise<void> => {
       body.replaceChildren(loadingState(`Comparing ${this.compareBase} … ${this.compareHead}`));
+      // Nothing to compare yet (a single-branch repo, or base === head):
+      // prompt for a second ref instead of running a doomed comparison.
+      if (!this.compareBase || this.compareBase === this.compareHead) {
+        summary.textContent = "";
+        commitsCount.textContent = "";
+        filesCount.textContent = "";
+        body.replaceChildren(
+          emptyState(
+            "Pick two refs to compare",
+            this.compareBase
+              ? `Base and compare are both ${this.compareHead}. Choose a different ref on either side.`
+              : "This repository has only one branch. Compare needs a second ref — create or fetch one first.",
+            { icon: "git-compare" },
+          ),
+        );
+        return;
+      }
       const res = await host.invoke("compare:refs", {
-        base: this.compareBase!,
+        base: this.compareBase,
         head: this.compareHead!,
         mode: this.compareMode,
       });
@@ -2874,12 +2900,17 @@ class App {
     const wrap = el("div", "changes-view");
 
     const composer = el("div", "dc-composer");
+    // `refs` is filled by a fire-and-forget refreshRefs(), so on FIRST paint it
+    // is empty — and falling back to "detached HEAD" there told the user they
+    // were detached while the top bar said "main" one row above. Until the ref
+    // is actually known, say nothing rather than something false.
+    const refsKnown = this.refs.length > 0;
     const curBranch = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
     const branchLine = el("div", "dc-branch");
     const branchSummary = span("", "dc-branch-sum");
     branchLine.append(
       glyph("git-branch"),
-      span(curBranch ?? "detached HEAD", "dc-branch-name"),
+      span(curBranch ?? (refsKnown ? "detached HEAD" : "…"), "dc-branch-name"),
       branchSummary,
     );
     const msgWrap = el("div", "dc-message-wrap");
@@ -3009,6 +3040,18 @@ class App {
     pushBtn.append(glyph("arrow-up"), span("Commit & Push"));
     pushBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, pushBtn, true, getOpts()));
     commitRow.append(commitBtn, pushBtn);
+    // A commit needs a message, so the buttons must LOOK unavailable until
+    // there is one. They used to sit in full accent and swallow the click in
+    // silence — the app's most important action, dead on arrival.
+    const syncCommitEnabled = (): void => {
+      const ready = textarea.value.trim().length > 0;
+      for (const b of [commitBtn, pushBtn]) {
+        b.toggleAttribute("disabled", !ready);
+        b.title = ready ? "" : "Write a commit message first";
+      }
+    };
+    textarea.addEventListener("input", syncCommitEnabled);
+    syncCommitEnabled();
     // Commit options on the left, the commit buttons up on the right — one row.
     const actionsRow = el("div", "dc-actions");
     actionsRow.append(optsRow, commitRow);

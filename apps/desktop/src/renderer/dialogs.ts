@@ -4,6 +4,8 @@
 // These replace the native alert()/confirm()/prompt(), which are jarring (and,
 // for prompt(), unsupported) in an Electron renderer.
 
+import { registerLayer } from "./overlays";
+
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -85,6 +87,7 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
   const close = (): void => {
     if (closed) return;
     closed = true;
+    layer.release();
     const i = modalStack.indexOf(token);
     if (i >= 0) modalStack.splice(i, 1);
     spec.onClose();
@@ -92,6 +95,10 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
     document.removeEventListener("keydown", onKey, true);
     prevFocus?.focus?.();
   };
+  // A route change dismisses the modal like Esc would — but through `close`,
+  // not `dismiss`, so a modal that refuses dismissal mid-clone still tears down
+  // rather than being orphaned above a view it no longer belongs to.
+  const layer = registerLayer(close);
   const dismiss = (): void => {
     if (spec.canDismiss && !spec.canDismiss()) return;
     close();

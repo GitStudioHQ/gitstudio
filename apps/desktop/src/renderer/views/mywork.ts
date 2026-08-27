@@ -20,6 +20,7 @@ import {
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
 import {
+  avatarStack,
   facetBar,
   type FacetState,
   ghGate,
@@ -81,15 +82,15 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     specs: [
       {
         key: "kind",
-        label: "Kind",
+        label: "Why it's here",
         icon: "list-filter",
-        anyLabel: "Everything",
+        anyLabel: "Any reason",
         options: GROUPS.map((g) => ({ value: g.kind, label: g.label, icon: g.icon })),
         predicate: (it, v) => it.kind === v,
       },
       {
         key: "type",
-        label: "Type",
+        label: "Kind",
         icon: "git-pull-request",
         anyLabel: "Issues and PRs",
         options: [
@@ -110,8 +111,10 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     const kind =
       it.type === "pr" ? (it.draft ? "draft" : it.state === "closed" ? "closed" : "open-pr")
       : it.state === "closed" ? "closed" : "open";
+    // Same meta contract as Issues and PRs — this list showed the author as
+    // bare text while its siblings showed an avatar in the same slot.
     const meta: HTMLElement[] = [];
-    if (it.author) meta.push(span(it.author));
+    if (it.author) meta.push(avatarStack([{ login: it.author }], 1, 18, "Author"));
     if (it.comments > 0) meta.push(statBit("comment", it.comments));
     const row = secRow({
       lead: stateLead(kind),
@@ -137,7 +140,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         (q ? `${it.title} #${it.number} ${it.author ?? ""}`.toLowerCase().includes(q) : true),
     );
     facets.sync(items);
-    header.setCount?.(items.length);
+    header.setCount?.(shown.length, items.length);
     listEl.replaceChildren();
     if (items.length === 0) {
       listEl.appendChild(
@@ -150,18 +153,18 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       return;
     }
     if (shown.length === 0) {
-      const empty = emptyState(
-        "No matches",
-        query.trim() ? `Nothing matches “${query.trim()}”.` : "Nothing matches these filters.",
-        { icon: "search" },
+      listEl.appendChild(
+        emptyState(
+          "No matches",
+          query.trim() ? `Nothing matches “${query.trim()}”.` : "Nothing matches these filters.",
+          {
+            icon: "search",
+          secondary: facets.activeCount() > 0
+            ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+            : undefined,
+          },
+        ),
       );
-      if (facets.activeCount() > 0) {
-        const clear = el("button", "btn btn-soft list-empty-action");
-        clear.append(glyph("clear-all"), span("Clear filters"));
-        clear.addEventListener("click", () => facets.clear());
-        empty.appendChild(clear);
-      }
-      listEl.appendChild(empty);
       return;
     }
     for (const g of GROUPS) {

@@ -7,6 +7,8 @@
 // can open a peek. Cards render lazily and may be async; the body shows a
 // skeleton until the renderer resolves.
 
+import { registerLayer } from "./overlays";
+
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -98,11 +100,13 @@ export function openPeek(card: PeekCard): void {
   const dispose = (): void => {
     if (live?.overlay !== overlay) return;
     live = null;
+    layer.release();
     renderGen++;
     overlay.remove();
     document.removeEventListener("keydown", onKey, true);
     prevFocus?.focus?.();
   };
+  const layer = registerLayer(dispose);
 
   const ctx: PeekContext = {
     push(next) {

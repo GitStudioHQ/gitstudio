@@ -33,6 +33,7 @@ import { renderMarkdown } from "../markdown";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";
 import {
+  segmented,
   detailPage,
   ghGate,
   ghHeader,
@@ -92,20 +93,18 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const header = ghHeader("Releases", gate.login, refresh);
 
   const tools = el("div", "gh-head-tools");
-  const seg = el("div", "gh-seg");
-  const segBtn = (label: string, value: "releases" | "tags"): HTMLElement => {
-    const b = el("button", "gh-seg-btn");
-    b.textContent = label;
-    b.classList.toggle("active", releaseTab === value);
-    b.setAttribute("aria-pressed", String(releaseTab === value));
-    b.addEventListener("click", () => {
-      if (releaseTab === value) return;
-      releaseTab = value;
+  const seg = segmented<"releases" | "tags">({
+    options: [
+      { value: "releases", label: "Releases" },
+      { value: "tags", label: "Tags" },
+    ],
+    value: releaseTab,
+    ariaLabel: "Releases view",
+    onChange: (v) => {
+      releaseTab = v;
       renderReleases(wrap, nav);
-    });
-    return b;
-  };
-  seg.append(segBtn("Releases", "releases"), segBtn("Tags", "tags"));
+    },
+  });
 
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("plus"), span("New release"));

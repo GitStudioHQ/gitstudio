@@ -103,3 +103,29 @@ test("activeCount counts both kinds — it drives the Clear button", () => {
 test("an unset facet passes everything", () => {
   assert.equal(facetPasses(SPECS, {}, { author: "anyone" }), true);
 });
+
+// ── humanized option labels ──────────────────────────────────────────────────
+//
+// A facet menu that lists raw API values ("subscribed", "PullRequest") beside
+// rows that render humanized ones ("watching", "PR") never matches what the
+// reader is looking at. The label mapper is what keeps the two in step.
+
+test("without a mapper the option label is the raw value", () => {
+  const rows: Row[] = [{ author: "review_requested" }];
+  const opts = harvestValues<Row>((r) => r.author)(rows);
+  assert.deepEqual(opts, [{ value: "review_requested", label: undefined }]);
+});
+
+test("a mapper labels the option while the VALUE stays the API value", () => {
+  const rows: Row[] = [{ author: "review_requested" }];
+  const [opt] = harvestValues<Row>((r) => r.author, (v) => v.replace(/_/g, " "))(rows);
+  assert.equal(opt.value, "review_requested", "the predicate still matches on the raw value");
+  assert.equal(opt.label, "review requested");
+});
+
+test("options sort by the LABEL, which is the order the reader sees", () => {
+  const rows: Row[] = [{ author: "zeta" }, { author: "alpha" }];
+  const labels = { zeta: "Aardvark", alpha: "Zebra" } as Record<string, string>;
+  const opts = harvestValues<Row>((r) => r.author, (v) => labels[v])(rows);
+  assert.deepEqual(opts.map((o) => o.label), ["Aardvark", "Zebra"]);
+});

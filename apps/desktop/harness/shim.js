@@ -237,7 +237,47 @@
     ],
     "app:info": { version: "1.5.1", platform: "darwin" },
     "github:userInfo": { login: "antonarnaudov", name: "Anton Arnaudov", avatarUrl: null, bio: "Building GitStudio — the open-source Git workspace.", company: "@GitStudioHQ", location: "Sofia, Bulgaria", blog: "gistudio.dev", htmlUrl: "https://github.com/antonarnaudov", followers: 412, following: 63, publicRepos: 24, createdAt: ISO(3000), type: "User", twitter: "antonarnaudov", email: null },
-    "graph:load": { rows: [], head: "9f8e7d6", totalColumns: 1, hasMore: false, nextSkip: 0 },
+    // The graph is the app's centrepiece and was unreviewable with an empty
+    // fixture. This is a realistic small history: a merged feature branch, a
+    // second lane still open, ref chips on the tips, and a tagged release.
+    "graph:load": (() => {
+      const seg = (from, to, color) => ({ fromColumn: from, toColumn: to, color });
+      const ref = (name, kind) => ({ name, kind });
+      const row = (o) => ({
+        sha: o.sha,
+        shortSha: o.sha.slice(0, 7),
+        column: o.column || 0,
+        color: o.color || 0,
+        isMerge: !!o.isMerge,
+        segments: o.segments || [seg(o.column || 0, o.column || 0, o.color || 0)],
+        subject: o.subject,
+        author: o.author || "Anton Arnaudov",
+        authorEmail: "anton@gitstudio.dev",
+        authorDate: Math.floor(Date.now() / 1000) - (o.h || 1) * 3600,
+        refs: o.refs || [],
+      });
+      const rows = [
+        row({ sha: "9f8e7d6c5b4a39281706", subject: "release: extension 1.11.1", h: 1,
+              refs: [ref("main", "currentHead"), ref("origin/main", "remoteHead"), ref("ext-v1.11.1", "tag")] }),
+        row({ sha: "a1b2c3d4e5f60718293a", subject: "Merge pull request #106 from redesign/issues-detail", h: 3,
+              isMerge: true, segments: [seg(0, 0, 0), seg(1, 0, 1)] }),
+        row({ sha: "b2c3d4e5f6a71829304b", subject: "issues: full-page detail as a routed state", h: 5,
+              column: 1, color: 1, segments: [seg(0, 0, 0), seg(1, 1, 1)],
+              refs: [ref("redesign/issues-detail", "head")] }),
+        row({ sha: "c3d4e5f6a7b829304c5d", subject: "common: sectionList + secRow primitives", h: 8,
+              column: 1, color: 1, segments: [seg(0, 0, 0), seg(1, 1, 1)], author: "Mira Holt" }),
+        row({ sha: "d4e5f6a7b8c930415d6e", subject: "actions: stream job logs with backpressure", h: 26,
+              segments: [seg(0, 0, 0), seg(1, 1, 1)], author: "S. Ohta" }),
+        row({ sha: "e5f6a7b8c9d041526e7f", subject: "engine: hunk splitting groundwork", h: 30,
+              segments: [seg(0, 0, 0), seg(1, 1, 1)], author: "D. Kovachev" }),
+        row({ sha: "f6a7b8c9d0e152637f80", subject: "release: extension 1.11.0, desktop 1.5.1", h: 48,
+              refs: [ref("desktop-v1.5.1", "tag")] }),
+        row({ sha: "07b8c9d0e1f263748091", subject: "feat(ext): drag a commit in the graph to reorder it", h: 52 }),
+        row({ sha: "18c9d0e1f2736485a1b2", subject: "feat(git-service): let a rebase carry other branches with it", h: 70, author: "Mira Holt" }),
+        row({ sha: "29d0e1f2837495b2c3d4", subject: "fix(graph): avatars blur on non-retina displays", h: 96, author: "J. Parks" }),
+      ];
+      return { rows, head: "9f8e7d6c5b4a39281706", totalColumns: 2, hasMore: false, nextSkip: rows.length };
+    })(),
     "repo:headCommit": { sha: "9f8e7d6", shortSha: "9f8e7d", author: "Anton Arnaudov", authorEmail: "anton@gitstudio.dev", date: S(40), subject: "release: extension 1.11.1", message: "release: extension 1.11.1", total: 512 },
     "repo:tree": [],
     "ssh:keys": [],

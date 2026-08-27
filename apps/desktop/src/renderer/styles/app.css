@@ -43,8 +43,18 @@
   --measure-read: 820px;
   --measure-wide: 1100px;
 
-  /* Spacing scale — new work (the sec-*/det-* section pages) sizes every gap
-     and padding from this; legacy px values migrate as surfaces get touched. */
+  /* Modal widths — three sizes, not eleven. Dialogs opened seconds apart used
+     to be 420/480/520/540/560/640/760px wide with no structural reason.
+     sm = a question (confirm, prompt, a destination). md = a form.
+     lg = content you read or scan (shortcuts, a file list, a foreign issue). */
+  --modal-sm: 440px;
+  --modal-md: 560px;
+  --modal-lg: 720px;
+
+  /* Spacing scale — new work (the sec- and det- section pages) sizes every gap
+     and padding from this; legacy px values migrate as surfaces get touched.
+     NB: never write a star-slash pair inside a comment — a selector glob like
+     "sec-<star>/det-" closes it early and silently eats the next declaration. */
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -1091,10 +1101,10 @@ html.is-mac .topbar { padding-left: 78px; }
 }
 .list-empty {
   flex: 1 1 auto;
-  /* Fill the pane so the empty state is vertically centered regardless of whether
-     the parent is a flex container — keeps the list-pane and detail-pane empties
-     aligned across every section view (e.g. Projects' list vs its board detail). */
-  min-height: 100%;
+  /* Anchored high rather than centred in the whole pane: the answer to "why is
+     this list empty?" belongs near the filter that emptied it, not 400px below
+     the fold. `justify-content` below still centres within this shorter box. */
+  min-height: min(100%, 380px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1296,7 +1306,7 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
 }
 @keyframes gs-overlay-in { from { opacity: 0; } to { opacity: 1; } }
 .modal-card {
-  width: min(420px, 86vw);
+  width: min(var(--modal-sm), 92vw);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1333,9 +1343,9 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
    the label isn't cramped/optically mis-centred in the smaller box. */
 .modal-ok { height: 30px; padding: 0 16px; font-size: var(--text-sm); }
 /* A wider form modal (issue/PR edit) with a real body textarea. */
-.modal-card-form { width: min(560px, 92vw); }
+.modal-card-form { width: min(var(--modal-md), 92vw); }
 /* Searchable, avatar-rich people picker (PR reviewers + issue assignees). */
-.people-picker { width: min(480px, 92vw); }
+.people-picker { width: min(var(--modal-sm), 92vw); }
 .people-list {
   display: flex;
   flex-direction: column;
@@ -1361,7 +1371,7 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
 .people-login { font-size: 13px; color: var(--vscode-foreground); }
 .people-empty { padding: 12px; text-align: center; color: var(--app-muted); font-size: 12.5px; }
 /* Read-only cross-repo issue/PR viewer (a notification for another repo). */
-.ext-item { width: min(640px, 94vw); max-height: min(82vh, 760px); gap: 9px; }
+.ext-item { width: min(var(--modal-lg), 92vw); max-height: min(82vh, 760px); gap: 9px; }
 .ext-item-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .ext-item-sub { font-size: 12px; color: var(--app-muted); }
 .ext-item-title { font-size: 17px; font-weight: 650; color: var(--vscode-foreground); line-height: 1.3; }
@@ -1755,7 +1765,7 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   -webkit-app-region: no-drag;
 }
 .cmdk-card {
-  width: min(640px, 92vw);
+  width: min(var(--modal-lg), 92vw);
   display: flex;
   flex-direction: column;
   border-radius: 14px;
@@ -2906,7 +2916,7 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-drawer {
   display: flex;
   flex-direction: column;
-  width: min(760px, 94vw);
+  width: min(var(--modal-lg), 92vw);
   height: 100%;
   min-height: 0;
   background: var(--app-bg);
@@ -3940,7 +3950,7 @@ gitstudio-graph {
 .gh-check-row.is-link { cursor: pointer; }
 
 /* Multi-field Create-PR + reviewer modals (extend the shared .modal-card). */
-.gh-pr-form { width: min(540px, 92vw); gap: 14px; }
+.gh-pr-form { width: min(var(--modal-md), 92vw); gap: 14px; }
 .gh-form-row { display: flex; flex-direction: column; gap: 5px; }
 .gh-form-label { font-size: 11.5px; font-weight: 600; color: var(--app-muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .gh-form-select {
@@ -3985,10 +3995,10 @@ gitstudio-graph {
 
 /* ── actions ── */
 /* ── GitHub Actions section ─────────────────────────────────────────────────
-   Append to styles/app.css. Most classes (.gh-view/.gh-list/.gh-row/.gh-detail*
-   /.gh-checks-*/.gh-check-*/.mini-btn/.btn/.row-btn/.row-meta*) already exist and
-   are reused verbatim — only the NEW Actions classes + 4 missing codicon
-   codepoints + the extra Actions status colours are added below. */
+   Most classes already exist and are reused verbatim: gh-view, gh-list, gh-row,
+   gh-detail, gh-checks, gh-check, mini-btn, btn, row-btn, row-meta. Only the NEW
+   Actions classes, 4 missing codicon codepoints, and the extra Actions status
+   colours are added below. */
 
 /* Header toolbar (Workflows + Run workflow) sits left of the account cluster. */
 .gh-head-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; margin-right: 12px; }
@@ -4141,7 +4151,7 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .rel-assets .gh-adds .codicon { font-size: 14px; color: var(--gs-accent-ink, var(--gs-accent)); }
 
 /* Multi-field release form (reuses .modal-overlay / .modal-input / .modal-actions). */
-.modal-form { width: min(520px, 92vw); display: flex; flex-direction: column; gap: 12px; }
+.modal-form { width: min(var(--modal-md), 92vw); display: flex; flex-direction: column; gap: 12px; }
 .modal-field { display: flex; flex-direction: column; gap: 5px; }
 .modal-field-label { font-size: 11.5px; font-weight: 600; color: var(--app-muted); }
 .modal-textarea { resize: vertical; min-height: 96px; font-family: var(--vscode-editor-font-family); line-height: 1.5; }
@@ -4184,6 +4194,8 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   background: var(--gs-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 22%, transparent);
 }
+/* Keeps the slot, drops the mark — one left edge for read and unread alike. */
+.notif-dot.is-read { visibility: hidden; box-shadow: none; }
 /* Read rows recede — dim the title + icon so unread stands out. */
 .notif-read .row-meta-title { font-weight: 500; color: var(--app-muted); }
 .notif-read .notif-lead .glyph { opacity: 0.55; }
@@ -4407,7 +4419,7 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 
 /* Create / edit gist modal — sits on the shared .modal-overlay scaffold. */
 .gist-modal {
-  width: min(560px, 92vw);
+  width: min(var(--modal-md), 92vw);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -4977,7 +4989,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .outputs-row.is-open .outputs-stderr { display: block; }
 
 /* ── Clone dialog ──────────────────────────────────────────────────────────── */
-.clone-card { width: min(560px, 92vw); gap: 14px; }
+.clone-card { width: min(var(--modal-md), 92vw); gap: 14px; }
 .clone-tabs { align-self: flex-start; }
 .clone-tabs .gh-seg-btn { height: 30px; padding: 0 14px; }
 .clone-panel { display: flex; flex-direction: column; gap: 10px; }
@@ -5077,7 +5089,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   font-size: var(--text-xs);
   color: var(--vscode-editorError-foreground, #e5534b);
 }
-.dest-card { width: min(480px, 92vw); display: flex; flex-direction: column; gap: 12px; }
+.dest-card { width: min(var(--modal-sm), 92vw); display: flex; flex-direction: column; gap: 12px; }
 .dest-card .modal-actions { margin-top: 2px; }
 .dest-name-label {
   font-size: var(--text-2xs);
@@ -5433,7 +5445,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-topic { margin: 0 4px 4px 0; }
 
 /* Go to file */
-.gotofile-card { width: min(640px, 92vw); display: flex; flex-direction: column; gap: 10px; }
+.gotofile-card { width: min(var(--modal-lg), 92vw); display: flex; flex-direction: column; gap: 10px; }
 .gotofile-input { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
 .gotofile-list { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; }
 .gotofile-row {
@@ -5485,6 +5497,12 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-account-link { display: inline-flex; align-items: center; gap: 6px; }
 .det-prop-text { font-size: var(--text-sm); color: var(--vscode-foreground); line-height: 1.5; }
 .det-prop-none { font-size: var(--text-xs); color: var(--app-muted); }
+
+/* These two carried no width rule and inherited whatever preceded them —
+   the open-progress card landed on the base size by luck, and the dispatch
+   form borrowed the PR form's. State both. */
+.ghopen-card { width: min(var(--modal-sm), 92vw); }
+.actions-dispatch-card { width: min(var(--modal-md), 92vw); }
 
 /* Typed confirmation (irreversible actions). */
 .confirm-typed-hint { margin-bottom: -4px; }
@@ -5969,7 +5987,9 @@ body.vscode-light .gh-label-chip {
 .notif-pop {
   position: fixed;
   z-index: 1000;
-  width: 424px;
+  /* 424px could not hold a title, a type pill, a repo, a reason and a time —
+     so every row clipped mid-word ("Split views make Issu…"). */
+  width: 520px;
   max-width: calc(100vw - 24px);
   max-height: min(560px, calc(100vh - 80px));
   display: flex;
@@ -5994,6 +6014,16 @@ body.vscode-light .gh-label-chip {
    clipped under overflow:hidden. Let the header wrap (never clip) and compact the
    mark-all action to an icon so the title + toggle fit on one line. */
 .notif-pop .list-head-row { flex-wrap: wrap; row-gap: 8px; align-items: center; }
+/* A glance should read the whole subject: let popover titles take a second
+   line instead of clipping mid-word. ghRow titles are .gh-row-title. */
+.notif-pop .gh-row-title,
+.notif-pop .row-meta-title {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .notif-pop .notif-actions { flex: 0 0 auto; }
 .notif-pop .notif-markall span { display: none; }
 .notif-pop .notif-markall { padding: 0 9px; }
@@ -6078,7 +6108,7 @@ body.vscode-light .gh-label-chip {
 }
 @keyframes ai-fade { from { opacity: 0; } to { opacity: 1; } }
 .ai-gallery-panel {
-  width: min(640px, 92vw); max-height: 80vh; overflow: auto;
+  width: min(var(--modal-lg), 92vw); max-height: 80vh; overflow: auto;
   background: var(--app-panel); border: 1px solid var(--app-border);
   border-radius: 14px; box-shadow: var(--shadow-lg, 0 18px 50px rgba(0,0,0,0.4));
 }
@@ -7379,7 +7409,10 @@ body.vscode-light .gh-label-chip {
 .sec-avs .av:first-child { margin-left: 0; }
 .sec-avs-more { margin-left: 3px; font-size: var(--text-2xs); color: var(--app-muted); }
 /* The row is one flat click target; the empty/loading states center themselves. */
-.sec-list > .list-empty, .sec-list > .list-loading, .sec-list > .sk-list { margin-top: var(--sp-6); }
+/* No top margin on the empty state: `.list-empty` is already `min-height:100%`
+   of the scroller, so a margin pushed it past the bottom, made the pane scroll,
+   and left the four lists' empties at different heights. */
+.sec-list > .list-loading, .sec-list > .sk-list { margin-top: var(--sp-6); }
 
 /* ── The detail page ── */
 .det-view {
@@ -7434,9 +7467,13 @@ body.vscode-light .gh-label-chip {
   align-items: flex-start;
   gap: var(--sp-8);
   padding: var(--sp-5) var(--sp-6) var(--sp-8);
-  max-width: 1280px;
+  /* main + gap + rail. CENTERED: uncentered, a capped column on a wide window
+     hugs the left and strands ~400px of dead gutter on the right — the exact
+     thing --measure-* was introduced to stop. */
+  max-width: calc(var(--measure-read) + var(--sp-8) + 264px + var(--sp-6) * 2);
+  margin-inline: auto;
 }
-.det-main { flex: 1 1 auto; min-width: 0; max-width: 860px; }
+.det-main { flex: 1 1 auto; min-width: 0; max-width: var(--measure-read); }
 .det-rail {
   flex: 0 0 264px;
   position: sticky;
@@ -7757,7 +7794,7 @@ button.det-person:hover { background: var(--app-hover); }
 .gh-col-body .gh-col-empty:only-child { display: block; }
 
 /* ── The "?" keyboard cheat sheet ── */
-.shortcuts-card { width: min(760px, 94vw); }
+.shortcuts-card { width: min(var(--modal-lg), 92vw); }
 .shortcuts-cols { display: flex; gap: var(--sp-8); flex-wrap: wrap; }
 .shortcuts-group { flex: 1 1 200px; min-width: 200px; display: flex; flex-direction: column; gap: 7px; }
 .shortcuts-group-title {
@@ -7927,7 +7964,7 @@ body.vscode-light .log-pane {
 .log-i { font-style: italic; } .log-u { text-decoration: underline; }
 
 /* ── The PR review modal (verdict picker + body) ── */
-.review-modal { width: min(520px, 92vw); }
+.review-modal { width: min(var(--modal-md), 92vw); }
 .review-verdicts { display: flex; flex-direction: column; gap: 6px; }
 .review-verdict {
   display: flex;

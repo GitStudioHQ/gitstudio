@@ -6,6 +6,7 @@
 import type { CommitActionRequest } from "../shared/ipc";
 import { confirmDialog, promptInline } from "./dialogs";
 import { refMenuItems, type RowRef } from "./refMenuItems";
+import { registerLayer } from "./overlays";
 
 interface MenuItem {
   label: string;
@@ -38,6 +39,8 @@ export class CommitContextMenu {
   private prevFocus?: HTMLElement | null;
   private rows: HTMLElement[] = [];
   private readonly onDocClick = (): void => this.close();
+  /** Registry handle, so a route change closes this menu with everything else. */
+  private layer?: { release: () => void };
   private readonly onKey = (e: KeyboardEvent): void => this.handleKey(e);
 
   constructor(
@@ -59,6 +62,7 @@ export class CommitContextMenu {
     refs: readonly RowRef[] = [],
   ): void {
     this.close();
+    this.layer = registerLayer(() => this.close(false));
     this.prevFocus = document.activeElement as HTMLElement | null;
     const menu = document.createElement("div");
     menu.className = "ctx-menu";
@@ -169,6 +173,8 @@ export class CommitContextMenu {
   }
 
   private close(restoreFocus = true): void {
+    this.layer?.release();
+    this.layer = undefined;
     document.removeEventListener("keydown", this.onKey, true);
     document.removeEventListener("click", this.onDocClick);
     this.menu?.remove();

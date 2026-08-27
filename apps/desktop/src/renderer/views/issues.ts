@@ -39,6 +39,7 @@ import {
   harvestValues,
   segmented,
   swatch,
+  type FacetSpec,
   type FacetState,
   reactionRow,
   avatarStack,
@@ -192,8 +193,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   if (!issues) listEl.replaceChildren(skeletonList(6));
 
   const buildRow = (it: IssueInfo): HTMLElement => {
+    // One order across every list: who wrote it, who owns it, then the counts.
     const meta: HTMLElement[] = [];
-    if (it.assignees.length) meta.push(avatarStack(it.assignees));
+    if (it.user) meta.push(avatarStack([it.user], 1, 18, "Author"));
+    if (it.assignees.length) meta.push(avatarStack(it.assignees, 3, 18, "Assignee"));
     if (it.comments > 0) meta.push(statBit("comment", it.comments));
     const row = secRow({
       lead: stateLead(issueStateKind(it.state, it.stateReason)),
@@ -228,9 +231,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // Re-harvest before painting: the bar is built before the first fetch
     // lands, and a facet menu that offers nothing is worse than no facet.
     facets.sync(issues);
-    header.setCount?.(issues.length);
     const q = query.toLowerCase();
     const items = issues.filter((it) => passesFacets(it) && (q ? matches(it, q) : true));
+    header.setCount?.(items.length, issues.length);
     listEl.replaceChildren();
     if (issues.length === 0) {
       const emptyCopy: Record<typeof issueState, { title: string; desc: string; icon: string }> = {
@@ -267,14 +270,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     }
     if (items.length === 0) {
       const desc = query ? `Nothing matches “${query}”.` : "No issues match the active filters.";
-      const empty = emptyState("No matching issues", desc, { icon: "search" });
-      if (facetsActive()) {
-        const clear = el("button", "btn btn-soft list-empty-action");
-        clear.append(glyph("clear-all"), span("Clear filters"));
-        clear.addEventListener("click", () => facets.clear());
-        empty.appendChild(clear);
-      }
-      listEl.appendChild(empty);
+      listEl.appendChild(
+        emptyState("No matching issues", desc, {
+          icon: "search",
+        secondary: facets.activeCount() > 0
+          ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+          : undefined,
+        }),
+      );
       return;
     }
     for (const it of items) listEl.appendChild(buildRow(it));
@@ -295,6 +298,23 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     .catch(() => {
       /* best-effort — the label facet falls back to in-list label names */
     });
+
+  // Only meaningful for closed issues, so it is left out entirely on the Open
+  // tab rather than offered as a filter that can only ever match zero rows.
+  const closedReasonSpec: FacetSpec<IssueInfo> = {
+    key: "reason",
+    label: "Closed as",
+    icon: "circle-slash",
+    anyLabel: "Any reason",
+    options: [
+      { value: "completed", label: "Completed", icon: "issue-closed" },
+      { value: "not_planned", label: "Not planned", icon: "circle-slash" },
+    ],
+    predicate: (it, v) =>
+      v === "completed"
+        ? it.state === "closed" && it.stateReason !== "not_planned"
+        : it.stateReason === "not_planned",
+  };
 
   const facets = facetBar<IssueInfo>({
     specs: [
@@ -351,20 +371,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         },
         predicate: (it, v) => it.user?.login === v,
       },
-      {
-        key: "reason",
-        label: "Reason",
-        icon: "issue-closed",
-        anyLabel: "Any reason",
-        options: [
-          { value: "completed", label: "Completed", icon: "issue-closed" },
-          { value: "not_planned", label: "Not planned", icon: "circle-slash" },
-        ],
-        predicate: (it, v) =>
-          v === "completed"
-            ? it.state === "closed" && it.stateReason !== "not_planned"
-            : it.stateReason === "not_planned",
-      },
+      // Only meaningful for closed issues, so it is hidden entirely on the Open
+      // tab rather than offered there as a filter that can only ever match zero
+      // rows. GitHub calls this "closed as"; "Reason" said nothing next to the
+      // Open/Closed/All segment.
+      ...(issueState === "open" ? [] : [closedReasonSpec]),
     ],
     state: issueFacets,
     items: issues ?? [],

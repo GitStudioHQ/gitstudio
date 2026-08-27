@@ -78,8 +78,17 @@ export function facetActiveCount<T>(specs: FacetSpec<T>[], state: FacetState): n
 
 /** Distinct values off the loaded items, sorted — the usual `harvest`.
  *  Empty and nullish values are dropped: an option nothing matches is a dead
- *  row in the menu. */
-export function harvestValues<T>(pick: (item: T) => string | string[] | null | undefined) {
+ *  row in the menu.
+ *
+ *  `label` is what the menu SHOWS. Without it a facet offers the raw API value
+ *  — "subscribed", "PullRequest" — beside rows that render the humanized form
+ *  ("watching", "PR"), so the filter never matches what you are reading. Pass
+ *  the same mapper the rows use. Sorting follows the label, since that is the
+ *  order the reader perceives. */
+export function harvestValues<T>(
+  pick: (item: T) => string | string[] | null | undefined,
+  label?: (value: string) => string,
+) {
   return (items: T[]): FacetOption[] => {
     const seen = new Set<string>();
     for (const it of items) {
@@ -87,6 +96,8 @@ export function harvestValues<T>(pick: (item: T) => string | string[] | null | u
       if (!v) continue;
       for (const one of Array.isArray(v) ? v : [v]) if (one) seen.add(one);
     }
-    return [...seen].sort((a, b) => a.localeCompare(b)).map((value) => ({ value }));
+    return [...seen]
+      .map((value) => ({ value, label: label ? label(value) : undefined }))
+      .sort((a, b) => (a.label ?? a.value).localeCompare(b.label ?? b.value));
   };
 }

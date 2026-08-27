@@ -27,10 +27,12 @@ import {
 } from "../ui";
 import { toast, confirmDialog, openModal } from "../dialogs";
 import { renderMarkdown } from "../markdown";
+import { registerLayer } from "../overlays";
 import { openRemoteRepoBrowser } from "../repoBrowser";
 import {
   facetBar,
   ghGate,
+  segmented,
   ghHeader,
   harvestValues,
   wireListNav,
@@ -77,12 +79,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   const header = ghHeader("Inbox", gate.login, refresh);
   const actions = el("div", "notif-actions");
 
-  const toggleBtn = el("button", "row-btn notif-toggle");
-  toggleBtn.textContent = notifAll ? "Unread only" : "Show all";
-  toggleBtn.title = notifAll ? "Show only unread threads" : "Include already-read threads";
-  toggleBtn.addEventListener("click", () => {
-    notifAll = !notifAll;
-    refresh();
+  // A segment shows which mode you are IN. The old button was labelled with the
+  // action it would perform ("Show all"), styled identically in both states, so
+  // nothing on screen said whether you were looking at everything or not.
+  const toggleBtn = segmented<"unread" | "all">({
+    options: [
+      { value: "unread", label: "Unread" },
+      { value: "all", label: "All" },
+    ],
+    value: notifAll ? "all" : "unread",
+    ariaLabel: "Which notifications to show",
+    onChange: (v) => {
+      notifAll = v === "all";
+      refresh();
+    },
   });
 
   const markAllBtn = el("button", "mini-btn notif-markall");
@@ -99,7 +109,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         label: "Type",
         icon: "inbox",
         anyLabel: "Anything",
-        harvest: harvestValues<NotificationThread>((t) => t.type),
+        harvest: harvestValues<NotificationThread>((t) => t.type, notifTypeLabel),
         predicate: (t, v) => t.type === v,
       },
       {
@@ -107,7 +117,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         label: "Reason",
         icon: "question",
         anyLabel: "Any reason",
-        harvest: harvestValues<NotificationThread>((t) => t.reason),
+        harvest: harvestValues<NotificationThread>((t) => t.reason, notifReasonLabel),
         predicate: (t, v) => t.reason === v,
       },
       {
@@ -124,7 +134,12 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     onChange: () => renderThreads(),
   });
 
-  actions.append(facets.el, toggleBtn, markAllBtn);
+  // The facet bar belongs to the full Inbox page. In the 520px bell popover it
+  // pushed the refresh button onto a second line, leaving a 40px band that was
+  // 90% empty — and filtering is not what a glance at the bell is for.
+  const inPopover = !!wrap.closest(".notif-pop");
+  if (!inPopover) actions.appendChild(facets.el);
+  actions.append(toggleBtn, markAllBtn);
   // ghHeader returns a flex row: [title] [.gh-acct]. Insert the action cluster
   // just before the account block so it reads: title … [actions] @login ↻.
   const acct = header.querySelector(".gh-acct");
@@ -171,27 +186,35 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // Keep the "Mark all read" affordance honest: nothing unread → nothing to do.
   const unreadCount = threads.filter((t) => t.unread).length;
   (markAllBtn as HTMLButtonElement).disabled = unreadCount === 0;
-  // The header count reflects what's actionable: unread threads.
-  header.setCount?.(unreadCount);
   facets.sync(threads);
 
   const renderThreads = (): void => {
     const shown = threads.filter((t) => facets.passes(t));
+    // Same contract as every other list: the badge counts what's on screen.
+    header.setCount?.(shown.length, threads.length);
     body.replaceChildren();
     if (shown.length === 0) {
-      const empty = emptyState(
-        "No matching notifications",
-        "Nothing in your inbox matches these filters.",
-        { icon: "filter" },
+      const filtered = facets.activeCount() > 0;
+      body.appendChild(
+        emptyState(
+          filtered ? "No matching notifications" : notifAll ? "Inbox zero" : "You're all caught up",
+          filtered
+            ? "Nothing in your inbox matches these filters."
+            : notifAll
+              ? "You have no notifications."
+              : "No unread notifications right now — nothing needs your attention.",
+          {
+            icon: filtered ? "filter" : "bell",
+          secondary: facets.activeCount() > 0
+            ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+            : undefined,
+          },
+        ),
       );
-      const clear = el("button", "btn btn-soft list-empty-action");
-      clear.append(glyph("clear-all"), span("Clear filters"));
-      clear.addEventListener("click", () => facets.clear());
-      empty.appendChild(clear);
-      body.appendChild(empty);
       return;
     }
-    body.appendChild(notifSummary(shown.length, shown.filter((t) => t.unread).length));
+    // (The "N threads · M unread" summary line used to live here; the header
+    // badge already says how many are shown, so it was the same fact twice.)
     for (const t of shown) {
       const row = notificationRow(t, body, refresh, nav, currentRepo);
       rowThreads.set(row, t);
@@ -276,6 +299,7 @@ export function openNotificationsPanel(
     }
   };
   const close = (): void => {
+    layer.release();
     panel.remove();
     document.removeEventListener("mousedown", onDoc, true);
     document.removeEventListener("keydown", onKey, true);
@@ -285,6 +309,7 @@ export function openNotificationsPanel(
     onClose?.();
   };
   closePanel = close;
+  const layer = registerLayer(close);
 
   anchor.setAttribute("aria-haspopup", "dialog");
   anchor.setAttribute("aria-expanded", "true");
@@ -397,15 +422,6 @@ export function openExternalItem(o: {
   })();
 }
 
-/** A small count summary above the list (e.g. "12 threads · 3 unread"). */
-function notifSummary(total: number, unread: number): HTMLElement {
-  const row = el("div", "notif-summary");
-  row.appendChild(glyph(unread > 0 ? "bell-dot" : "inbox"));
-  const parts = `${total} ${total === 1 ? "thread" : "threads"}` + (unread > 0 ? ` · ${unread} unread` : "");
-  row.appendChild(span(parts, "notif-summary-text"));
-  return row;
-}
-
 /** One inbox row in the rich `ghRow` shape: an accent-wrapped subject-type icon
  *  (prefixed by an unread dot), a bold/muted title, a `repo · reason · time` meta
  *  line, a subject-type pill, and a hover-revealed Open / Mark-read cluster.
@@ -421,7 +437,12 @@ function notificationRow(
   // existing .notif-lead/.notif-dot styling so unread emphasis + the read-state
   // icon dimming keep working inside the gh-row lead slot.
   const lead = el("span", "notif-lead");
-  if (t.unread) lead.appendChild(el("span", "notif-dot"));
+  // The unread dot ALWAYS takes its space — hidden, not absent, on read rows.
+  // Omitting it shifted every read row 14px left of its unread neighbours, so
+  // the list had two different left edges.
+  const dot = el("span", "notif-dot");
+  if (!t.unread) dot.classList.add("is-read");
+  lead.appendChild(dot);
   lead.appendChild(glyph(notifIcon(t.type)));
 
   const when = relTimeISO(t.updatedAt);
@@ -650,7 +671,7 @@ function notifIcon(type: string): string {
 }
 
 /** A short human label for a subject type. */
-function notifTypeLabel(type: string): string {
+export function notifTypeLabel(type: string): string {
   switch (type) {
     case "PullRequest":
       return "PR";
@@ -668,7 +689,7 @@ function notifTypeLabel(type: string): string {
 }
 
 /** A human label for GitHub's notification `reason`. */
-function notifReasonLabel(reason: string): string {
+export function notifReasonLabel(reason: string): string {
   switch (reason) {
     case "assign":
       return "assigned";

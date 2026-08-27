@@ -10,6 +10,7 @@
 
 import { el, span, glyph } from "./ui";
 import { createSearchScheduler } from "./searchDebounce";
+import { registerLayer } from "./overlays";
 
 export interface PaletteItem {
   /** Codicon for the row. */
@@ -114,6 +115,7 @@ export function openCommandPalette(providers: PaletteProviders): void {
   const dispose = (): void => {
     if (live?.overlay !== overlay) return;
     live = null;
+    layer.release();
     scheduler?.cancel();
     document.body.classList.remove("cmdk-open");
     overlay.remove();
@@ -135,11 +137,22 @@ export function openCommandPalette(providers: PaletteProviders): void {
     hit.item.run();
   };
 
+  /** Set when query-driven groups change shape, so the highlight resets to the
+   *  top instead of tracking an item that just got pushed down the list. */
+  let resetSelection = false;
+
   const render = (): void => {
     const q = input.value.trim();
     // A streamed group (PRs/issues) landing mid-navigation must not snap the
     // highlight back to the top — re-select the same ITEM after rebuilding.
-    const keep = flat[selected]?.item;
+    //
+    // But SEARCH groups are PREPENDED, so keeping the item meant the selection
+    // slid downward with every result that arrived above it, ending on the
+    // bottom row — which is what Enter then fired. Identity is preserved only
+    // for groups appended below (remote()); a change to the search groups
+    // returns the highlight to the first row.
+    const keep = resetSelection ? undefined : flat[selected]?.item;
+    resetSelection = false;
     list.replaceChildren();
     flat = [];
     for (const group of [...searchGroups, ...groups]) {
@@ -207,6 +220,7 @@ export function openCommandPalette(providers: PaletteProviders): void {
         // A new generation replaces the previous answers immediately, so the
         // list never mixes results from two different queries.
         searchGroups = [];
+        resetSelection = true;
         for (const p of provider(query)) {
           void p
             .then((group) => {
@@ -215,6 +229,7 @@ export function openCommandPalette(providers: PaletteProviders): void {
               if (!group || live?.overlay !== overlay) return;
               if (!scheduler?.isCurrent(generation)) return;
               searchGroups = [...searchGroups, group];
+              resetSelection = true;
               render();
             })
             .catch(() => {
@@ -231,13 +246,17 @@ export function openCommandPalette(providers: PaletteProviders): void {
       scheduler.queue(q);
       // Clear stale results the moment the query changes — showing the last
       // query's hits under a different query is worse than showing none.
-      if (q !== scheduler.lastQuery()) searchGroups = [];
+      if (q !== scheduler.lastQuery()) {
+        searchGroups = [];
+        resetSelection = true;
+      }
     }
     render();
   });
   overlay.addEventListener("mousedown", (e) => {
     if (e.target === overlay) dispose();
   });
+  const layer = registerLayer(dispose);
   document.addEventListener("keydown", onKey, true);
   document.body.appendChild(overlay);
   // Marks the palette open for OTHER document-level Esc handlers (peeks,

@@ -188,7 +188,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   const buildRow = (pr: PullRequest): HTMLElement => {
     const kind = prKind(pr);
+    // One order across every list: who wrote it, who owns it, then the counts.
     const meta: HTMLElement[] = [];
+    if (pr.user) meta.push(avatarStack([pr.user], 1, 18, "Author"));
+    if (pr.assignees?.length) meta.push(avatarStack(pr.assignees, 3, 18, "Assignee"));
     if (typeof pr.additions === "number" || typeof pr.deletions === "number") {
       const stat = el("span", "sec-diffstat");
       if (typeof pr.additions === "number") stat.appendChild(span(`+${pr.additions}`, "add"));
@@ -196,7 +199,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       meta.push(stat);
     }
     if (typeof pr.comments === "number" && pr.comments > 0) meta.push(statBit("comment", pr.comments));
-    if (pr.user?.login) meta.push(avatarStack([{ login: pr.user.login, avatarUrl: pr.user.avatarUrl }], 1));
+
     const row = secRow({
       lead: stateLead(kind),
       num: `#${pr.number}`,
@@ -288,9 +291,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const renderList = (): void => {
     if (!prs) return;
     facets.sync(prs);
-    header.setCount?.(prs.length);
     const q = query.toLowerCase();
     const items = prs.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true));
+    header.setCount?.(items.length, prs.length);
     listEl.replaceChildren();
     if (prs.length === 0) {
       listEl.appendChild(
@@ -302,18 +305,18 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       return;
     }
     if (items.length === 0) {
-      const empty = emptyState(
-        "No matching pull requests",
-        query ? `Nothing matches “${query}”.` : "No pull request matches these filters.",
-        { icon: "search" },
+      listEl.appendChild(
+        emptyState(
+          "No matching pull requests",
+          query ? `Nothing matches “${query}”.` : "No pull request matches these filters.",
+          {
+            icon: "search",
+          secondary: facets.activeCount() > 0
+            ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+            : undefined,
+          },
+        ),
       );
-      if (facets.activeCount() > 0) {
-        const clear = el("button", "btn btn-soft list-empty-action");
-        clear.append(glyph("clear-all"), span("Clear filters"));
-        clear.addEventListener("click", () => facets.clear());
-        empty.appendChild(clear);
-      }
-      listEl.appendChild(empty);
       return;
     }
     for (const pr of items) listEl.appendChild(buildRow(pr));

@@ -234,7 +234,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         },
         { key: "branch", label: "Branch", icon: "git-branch", harvest: harvestValues<WorkflowRun>((r) => r.branch) },
         { key: "actor", label: "Actor", icon: "person", harvest: harvestValues<WorkflowRun>((r) => r.actor?.login) },
-        { key: "event", label: "Event", icon: "zap", harvest: harvestValues<WorkflowRun>((r) => r.event) },
+        {
+          key: "event",
+          label: "Event",
+          icon: "zap",
+          // "pull_request" in the menu beside "pull request" on the row was the
+          // same mismatch the Inbox had.
+          harvest: harvestValues<WorkflowRun>((r) => r.event, (v) => v.replace(/_/g, " ")),
+        },
         {
           key: "status",
           label: "Status",
