@@ -91,6 +91,7 @@ const CASES = [
   ["explore-code-hit-is-one-block", "explore~type:git~key:Enter~click:.explore-tab%3Anth-of-type(4)"],
   ["graph-change-bars-share-a-left-edge", "graph"],
   ["row-meta-columns-align", "mywork"],
+  ["settings-has-a-rhythm", "code~text:Settings"],
   ["settings-checkbox-styled", "code~text:Settings"],
   ["settings-local-copies", "code~text:Settings~scroll:.settings-copies"],
   ["settings-copy-actions-one-shape", "code~text:Settings~scroll:.settings-copies"],

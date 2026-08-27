@@ -977,6 +977,36 @@
     },
 
     // ── settings ─────────────────────────────────────────────────────────────
+    "settings-has-a-rhythm": (f) => {
+      const c = check(f);
+      const labels = $$(".settings-card-body > .settings-field-label");
+      c.ok(labels.length >= 1, `a card groups its fields under labels (${labels.length})`);
+      for (const lab of labels) {
+        const prev = lab.previousElementSibling;
+        const next = lab.nextElementSibling;
+        if (!prev || !next) continue;
+        const name = lab.textContent.trim();
+        const above = lab.getBoundingClientRect().top - prev.getBoundingClientRect().bottom;
+        const below = next.getBoundingClientRect().top - lab.getBoundingClientRect().bottom;
+        // "App icon" used to sit as far from the sentence explaining it as
+        // that sentence sat from the control above: a flat list, no groups.
+        c.ok(
+          above > below + 2,
+          `"${name}" must sit closer to what it introduces than to what precedes it (${Math.round(above)} above, ${Math.round(below)} below)`,
+        );
+      }
+      // The column is a form's width; the prose inside keeps a reading one.
+      const scroll = $(".settings-scroll");
+      const card = $(".settings-card");
+      if (scroll && card) {
+        const cw = card.getBoundingClientRect().width;
+        c.ok(cw >= 900, `the card column is a form's width, not an article's (${Math.round(cw)}px)`);
+      }
+      for (const p of $$(".settings-sub")) {
+        const w = p.getBoundingClientRect().width;
+        c.ok(w <= 780, `a settings paragraph keeps a reading measure (${Math.round(w)}px)`);
+      }
+    },
     "settings-checkbox-styled": (f) => {
       const c = check(f);
       const box = $('.settings-check input[type="checkbox"]');

@@ -41,6 +41,11 @@
      comfortable prose/detail column; `wide` is for data-dense panes (orgs/members)
      that want more room before centering. Replaces scattered 760/820/900px one-offs. */
   --measure-read: 820px;
+  /* Settings is a FORM, not an article: its rows carry paths, badges and
+     action clusters that a 820px reading measure squeezed, while leaving
+     ~255px of gutter on each side at 1600px. Prose inside keeps its own
+     measure (see .settings-sub). */
+  --measure-settings: 1040px;
   --measure-wide: 1100px;
 
   /* Modal widths — three sizes, not eleven. Dialogs opened seconds apart used
@@ -2771,7 +2776,7 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   /* Span the full pane so the bottom border runs edge-to-edge, but pad the title
      in with the same centering math as the scroll body below — so the title sits
      directly above the card column instead of floating in a left gutter. */
-  padding: 16px max(22px, calc((100% - var(--measure-read)) / 2));
+  padding: 16px max(22px, calc((100% - var(--measure-settings)) / 2));
   border-bottom: 1px solid var(--app-border);
 }
 .settings-title { font-size: 19px; font-weight: 700; color: var(--vscode-foreground); }
@@ -2783,7 +2788,7 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px max(22px, calc((100% - var(--measure-read)) / 2)) 40px;
+  padding: 20px max(22px, calc((100% - var(--measure-settings)) / 2)) 40px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2816,10 +2821,33 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .settings-card-body {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* The card used to space EVERY child 12px apart, so "App icon" sat as far
+     from the sentence explaining it as that sentence sat from the control
+     above — a flat list with no groups in it. Related lines sit close; a new
+     field pushes off from the one before it. */
+  gap: 6px;
   padding: 16px;
 }
-.settings-sub { font-size: 12.5px; line-height: 1.5; color: var(--app-muted); }
+.settings-card-body > * + .settings-field-label,
+.settings-card-body > * + .settings-seg,
+.settings-card-body > * + .settings-check,
+.settings-card-body > * + .settings-actions,
+.settings-card-body > * + .settings-logo-row,
+.settings-card-body > * + .settings-copies,
+.settings-card-body > * + .settings-row,
+.settings-card-body > * + .btn,
+.settings-card-body > * + .btn-primary,
+.settings-card-body > * + .btn-danger { margin-top: 10px; }
+/* …but a control that a label introduces stays with its label. */
+.settings-card-body > .settings-field-label + * { margin-top: 0; }
+/* Prose keeps a reading measure even though the column is wider than one:
+   a settings paragraph at the full 1040px would run ~130 characters. */
+.settings-sub {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--app-muted);
+  max-width: 68ch;
+}
 .settings-warn {
   color: var(--vscode-gitDecoration-modifiedResourceForeground, #c89b3c);
 }
