@@ -740,7 +740,11 @@
       }
       const fails = [];
       try {
-        fn(fails);
+        // A check may return a promise: some assertions have to CLICK something
+        // and wait, and several of the views re-render behind an await (a
+        // ghGate, a fetch), so a synchronous measurement right after a click
+        // reads the OLD dom and passes for the wrong reason.
+        await fn(fails);
       } catch (e) {
         fails.push("threw: " + (e && e.message ? e.message : String(e)));
       }

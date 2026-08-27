@@ -62,9 +62,22 @@ const CASES = [
   ["explore-repo-page", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
   ["orgs-cards-not-clipped", "orgs"],
   ["orgs-header-order", "orgs"],
+  ["actions-segment-does-not-slide", "actions"],
+  ["facets-do-not-shunt-their-neighbours", "issues"],
+  ["log-toolbar-toggles-are-labelled", "actions~open9100~click:.gh-job-log"],
   ["toolbar-no-overflow", "actions", { width: 1150 }],
+  ["branch-divergence-paired", "branches"],
+  ["branch-pull-is-an-action", "branches"],
+  ["org-members-are-people", "orgs~text:Members"],
+  ["org-people-are-chips", "orgs~text:Members"],
+  ["org-cards-fill-their-row", "orgs~text:Teams"],
+  ["dock-tabs-share-a-content-origin", "code~click:.term-tab.is-output"],
+  ["dock-empty-log-offers-nothing-inert", "code~click:.term-tab.is-output"],
+  ["rail-icons-are-distinguishable", "code"],
   ["settings-checkbox-styled", "code~text:Settings"],
   ["settings-local-copies", "code~text:Settings~scroll:.settings-copies"],
+  ["settings-copy-actions-one-shape", "code~text:Settings~scroll:.settings-copies"],
+  ["settings-icon-preview-is-not-a-control", "code~text:Settings"],
 ];
 
 function run(scene, checkId, opts = {}) {

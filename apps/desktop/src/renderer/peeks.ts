@@ -238,8 +238,10 @@ export function commitCard(gp: GitPeekHost, sha: string, brief?: CompareCommit):
 export function openBranchPeek(gp: GitPeekHost, b: BranchInfo): void {
   const chips: HTMLElement[] = [];
   if (b.current) chips.push(peekChip("current", "accent"));
+  // Same wording and same pairing as the branch list, so a branch does not
+  // describe its divergence one way in the list and another in its own card.
   if (b.ahead) chips.push(peekChip(`↑ ${b.ahead}`, "ok"));
-  if (b.behind) chips.push(peekChip(`↓ ${b.behind}`, "warn"));
+  if (b.behind) chips.push(peekChip(`↓ ${b.behind}`, "ok"));
   const actions: PeekCard["actions"] = [];
   if (!b.current) {
     actions.push({

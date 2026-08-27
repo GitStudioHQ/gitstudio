@@ -83,14 +83,23 @@ export function createLogPane(o: {
   // changed with their state — "Show timestamps" still read "Show timestamps"
   // while timestamps were showing. The clock-with-arrow icon also universally
   // means "history", not "timestamps".
+  //
+  // The two STATE toggles now carry their names, because a toggle you can't
+  // read is a toggle you can't trust — "is this log showing timestamps?" has
+  // to be answerable without hovering. The three transient verbs (copy, save,
+  // expand) stay icons: they're momentary, universally drawn, and grouped
+  // behind a hairline so the bar reads as [state] | [actions].
   const tsBtn = toolBtn("watch", "Show timestamps", () => {
     showTs = !showTs;
     tsBtn.classList.toggle("is-on", showTs);
     tsBtn.title = showTs ? "Hide timestamps" : "Show timestamps";
     tsBtn.setAttribute("aria-label", tsBtn.title);
+    tsBtn.setAttribute("aria-pressed", String(showTs));
     render();
-  });
-  const followBtn = toolBtn("fold-down", "Follow the newest output", () => setFollow(!follow));
+  }, "Timestamps");
+  tsBtn.setAttribute("aria-pressed", "false");
+  const followBtn = toolBtn("fold-down", "Follow the newest output", () => setFollow(!follow), "Follow");
+  followBtn.setAttribute("aria-pressed", "false");
   const copyBtn = toolBtn("copy", "Copy the full log", () => {
     void Promise.resolve(o.onCopy()).then((t) => navigator.clipboard.writeText(t).catch(() => {}));
   });
@@ -111,7 +120,16 @@ export function createLogPane(o: {
     if (max) root.scrollIntoView({ block: "start", behavior: "smooth" });
     if (wasFollowing) setFollow(true);
   });
-  bar.append(errChip, search, matchCounter, span("", "log-toolbar-spring"), tsBtn, followBtn, copyBtn);
+  bar.append(
+    errChip,
+    search,
+    matchCounter,
+    span("", "log-toolbar-spring"),
+    tsBtn,
+    followBtn,
+    el("span", "log-toolbar-div"),
+    copyBtn,
+  );
   if (dlBtn) bar.appendChild(dlBtn);
   bar.appendChild(expandBtn);
   root.appendChild(bar);
@@ -132,11 +150,18 @@ export function createLogPane(o: {
   jumpPill.addEventListener("click", () => setFollow(true));
   root.appendChild(jumpPill);
 
-  function toolBtn(icon: string, title: string, onClick: () => void): HTMLElement {
-    const b = el("button", "icon-btn log-tool");
+  /** An icon button; pass `label` to spell the control out beside its glyph. */
+  function toolBtn(
+    icon: string,
+    title: string,
+    onClick: () => void,
+    label?: string,
+  ): HTMLElement {
+    const b = el("button", "icon-btn log-tool" + (label ? " has-label" : ""));
     b.title = title;
     b.setAttribute("aria-label", title);
     b.appendChild(glyph(icon));
+    if (label) b.appendChild(span(label, "log-tool-label"));
     b.addEventListener("click", onClick);
     return b;
   }
@@ -146,6 +171,7 @@ export function createLogPane(o: {
     followBtn.classList.toggle("is-on", on);
     followBtn.title = on ? "Following the newest output" : "Follow the newest output";
     followBtn.setAttribute("aria-label", followBtn.title);
+    followBtn.setAttribute("aria-pressed", String(on));
     jumpPill.hidden = on || visible.length === 0;
     if (on) {
       scroll.scrollTop = scroll.scrollHeight;

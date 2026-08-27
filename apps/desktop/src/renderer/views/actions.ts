@@ -173,7 +173,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   runBtn.title = "Manually trigger a workflow_dispatch";
   runBtn.addEventListener("click", () => void openDispatch(runBtn, refresh));
 
-  tools.append(seg, secretsBtn, runBtn);
+  // The facet slot is ALWAYS in the row, empty on Workflows. It is what holds
+  // the row's slack, so the segment stays at the row's left edge and the verbs
+  // stay at its right whichever tab you're on — without it, Workflows (which
+  // has no facets) let flex-end shove the segment 620px right.
+  const facetSlot = el("div", "gh-facet-slot");
+  tools.append(seg, facetSlot, secretsBtn, runBtn);
   header.querySelector(".gh-acct")?.before(tools);
   view.append(header, listEl);
   wrap.replaceChildren(view);
@@ -265,7 +270,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         void reloadRuns();
       },
     });
-    tools.insertBefore(facets.el, secretsBtn);
+    facetSlot.replaceChildren(facets.el);
   }
 
   const runMatches = (r: WorkflowRun, q: string): boolean =>

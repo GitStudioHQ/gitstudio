@@ -45,8 +45,17 @@ interface ActionCtx {
 }
 
 export class OutputsPanel {
-  /** The tab surface: sticky toolbar + scrolling list. */
+  /** The tab surface — the scrolling list ALONE. */
   readonly el: HTMLElement;
+  /**
+   * The panel's controls, for the dock to mount in its footer's action slot.
+   *
+   * These used to be a sticky bar on top of `el`, which gave Output a 40px
+   * chrome row that Terminal did not have — so the dock's content origin
+   * jumped as you switched tabs. The dock already owns one horizontal control
+   * row (its footer); this is that row's Output half.
+   */
+  readonly bar: HTMLElement;
   private readonly scroller: HTMLElement;
   private readonly list: HTMLElement;
   private readonly empty: HTMLElement;
@@ -56,6 +65,8 @@ export class OutputsPanel {
   private total = 0;
   private failed = 0;
   private failuresOnly = false;
+  /** Filter + clear — hidden while there is nothing to filter or clear. */
+  private readonly controls: HTMLButtonElement[];
   private ctx: ActionCtx | null = null;
   /** The last CLOSED single-command action, for cross-action ×N coalescing. */
   private lastSingle: {
@@ -68,8 +79,9 @@ export class OutputsPanel {
   constructor() {
     this.el = el("div", "outputs-wrap");
 
-    // ── Sticky toolbar: totals · failures filter · clear ──────────────────
+    // ── Controls: totals · failures filter · clear ────────────────────────
     const bar = el("div", "outputs-bar");
+    this.bar = bar;
     this.countEl = el("span", "outputs-count");
     const failBtn = el("button", "mini-btn outputs-failbtn") as HTMLButtonElement;
     failBtn.append(glyph("error"), span("Errors only"));
@@ -86,7 +98,10 @@ export class OutputsPanel {
     clearBtn.append(glyph("clear-all"), span("Clear"));
     clearBtn.title = "Clear the log";
     clearBtn.addEventListener("click", () => this.clear());
-    bar.append(this.countEl, el("span", "outputs-bar-spacer"), failBtn, clearBtn);
+    bar.append(this.countEl, failBtn, clearBtn);
+    // Nothing logged yet means nothing to filter and nothing to clear. The
+    // controls used to sit there enabled beside a defiant "0 commands".
+    this.controls = [failBtn, clearBtn];
 
     // ── Scrolling log ──────────────────────────────────────────────────────
     this.scroller = el("div", "outputs-panel");
@@ -97,7 +112,7 @@ export class OutputsPanel {
     );
     this.list = el("div", "outputs-list");
     this.scroller.append(this.empty, this.list);
-    this.el.append(bar, this.scroller);
+    this.el.append(this.scroller);
     this.renderCount();
 
     // Stick to the bottom only when the user is already near it.
@@ -110,6 +125,13 @@ export class OutputsPanel {
   }
 
   private renderCount(): void {
+    // An empty log says so once, in the empty state below — not twice, and not
+    // as a count of nothing beside two controls that would do nothing.
+    for (const b of this.controls) b.hidden = this.total === 0;
+    if (this.total === 0) {
+      this.countEl.replaceChildren();
+      return;
+    }
     this.countEl.replaceChildren(
       span(`${this.total} command${this.total === 1 ? "" : "s"}`, "outputs-count-n"),
     );

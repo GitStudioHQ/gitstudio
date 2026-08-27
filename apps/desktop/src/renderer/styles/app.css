@@ -2838,14 +2838,17 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 }
 
 /* App-icon control: segmented picker with a small live preview of the mark. */
-.settings-logo-row { display: flex; align-items: center; gap: 12px; }
+.settings-logo-row { display: flex; align-items: center; gap: var(--sp-4); }
+/* No border: a bordered box beside a bordered segmented control is a fourth
+   segment. A soft inset plinth says "this is a preview", not "press me". */
 .settings-logo-preview {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
-  border: 1px solid var(--app-border);
-  background: var(--app-elevated);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+  padding: 4px;
   object-fit: contain;
+  pointer-events: none;
 }
 
 /* Account */
@@ -3420,6 +3423,15 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   background: color-mix(in srgb, var(--app-elevated) 96%, var(--vscode-foreground));
   border: 1px solid var(--app-border);
   box-shadow: var(--sheen), var(--shadow-pop);
+}
+/* A destructive menu item reads destructive — the icon-button clusters these
+   menus replaced had a red trash button, and losing that signal in the move to
+   a menu would have made Delete look like Copy path. */
+.dropdown-item.is-danger,
+.dropdown-item.is-danger .dropdown-label { color: var(--gs-danger, #ff8585); }
+.dropdown-item.is-danger:hover,
+.dropdown-item.is-danger:focus-visible {
+  background: color-mix(in srgb, var(--gs-danger, #ff8585) 14%, transparent);
 }
 .dropdown-sep {
   height: 1px;
@@ -4048,13 +4060,30 @@ gitstudio-graph {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
+  /* The tools row spans from the title block to the right edge and pins its
+     ends: the view segment at the left, the verbs at the right. It used to be
+     one right-anchored cluster, so ANY width change inside it slid everything
+     to its left — switching Actions from Runs to Workflows dropped five facet
+     pills and the segment jumped ~730px; picking an Issues author widened one
+     pill and shunted the rest. The slack now lives in the facet region. */
+  flex: 1 1 auto;
+  margin-left: var(--sp-4);
   margin-right: 12px;
   flex-wrap: wrap;
   row-gap: 8px;
   justify-content: flex-end;
   min-width: 0;
 }
+/* The facet region absorbs the row's slack, so pills grow and disappear into
+   free space instead of pushing their neighbours. */
+.gh-head-tools > .gh-facets,
+.gh-head-tools > .gh-facet-slot {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  min-width: 0;
+}
+/* Present even when empty — an empty slot is the row's spring. */
+.gh-facet-slot { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .gh-head-titlewrap { min-width: 0; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; row-gap: 8px; }
 /* The search field must keep a floor and its own line when the row is tight —
    below ~1200px it used to collide with the first facet pill, losing its right
@@ -4294,10 +4323,22 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   display: grid;
   /* 280px could not hold "public · TypeScript · ★ 2,140 · updated 1h ago", so
      every card clipped mid-number ("★ 2,1…"). */
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  /* auto-FIT, not auto-fill: with three repos or one team the empty tracks
+     collapse and the cards stretch into the full-width rows every other list
+     in the app uses, instead of huddling at the left edge of a wide pane. */
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   gap: 8px;
   align-content: start;
 }
+/* People are a directory, not documents: fixed-width chips that wrap from the
+   left, so five members read as five people and not as five stretched cards. */
+.gh-org-grid.is-people {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 230px));
+  justify-content: start;
+}
+.gh-org-grid.is-people > .list-empty,
+.gh-org-grid.is-people > .list-loading,
+.gh-org-grid.is-people > .list-error { justify-self: stretch; }
 .gh-org-grid > .list-empty, .gh-org-grid > .list-loading, .gh-org-grid > .list-error {
   grid-column: 1 / -1;
 }
@@ -4938,18 +4979,18 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   display: flex;
   flex-direction: column;
 }
+/* The Output controls now sit in the dock's own footer beside the tabs, so
+   Output and Terminal share one content origin instead of Output carrying a
+   32px chrome row of its own. */
 .outputs-bar {
-  flex: 0 0 auto;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 10px 0 12px;
-  border-bottom: 1px solid var(--app-border);
+  padding-right: 6px;
 }
+.outputs-bar[hidden] { display: none; }
 .outputs-count { font-size: var(--text-xs); color: var(--app-muted); display: inline-flex; gap: 4px; }
 .outputs-count-f { color: var(--gs-danger, #ff8585); font-weight: 600; }
-.outputs-bar-spacer { flex: 1 1 auto; }
 .outputs-failbtn.is-on {
   color: var(--gs-danger, #ff8585);
   border-color: color-mix(in srgb, var(--gs-danger, #ff8585) 42%, transparent);
@@ -8080,6 +8121,22 @@ button.det-person:hover { background: var(--app-hover); }
 .log-toolbar .gh-search { min-width: 130px; max-width: 200px; height: 24px; }
 .log-match-count { font-size: var(--text-2xs); color: var(--app-muted); font-variant-numeric: tabular-nums; }
 .log-tool.is-on { color: var(--gs-accent-ink, var(--gs-accent)); background: var(--accent-soft); }
+/* A state toggle spells itself out; the transient verbs stay glyphs, split off
+   by a hairline so the bar reads as [state] | [actions] rather than as five
+   identical unlabelled squares. */
+.log-tool.has-label {
+  width: auto;
+  gap: 5px;
+  padding: 0 8px;
+}
+.log-tool-label { font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.01em; }
+.log-toolbar-div {
+  flex: 0 0 auto;
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 3px;
+  background: color-mix(in srgb, var(--log-fg) 16%, transparent);
+}
 .log-chip-err {
   border: none;
   border-radius: 999px;

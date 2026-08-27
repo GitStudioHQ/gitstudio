@@ -79,6 +79,9 @@ type SubTabId = "repos" | "teams" | "members";
  * codicon when the URL is missing or fails to load — so a null avatar or a
  * CSP-blocked image never leaves a broken-image glyph in the UI.
  */
+/** The ORGANIZATION's own avatar. People use {@link avatar} instead — its
+ *  fallback is initials, where this one's is the three-person org glyph, which
+ *  on a member row said "this person is an organization". */
 function orgAvatar(url: string | null, alt: string, size = 18): HTMLElement {
   if (!url) {
     const g = glyph("organization");
@@ -285,6 +288,11 @@ async function renderSubTab(
   gen: number,
 ): Promise<void> {
   const retry = (): void => void renderSubTab(content, org, id, gen);
+  // Each sub-tab holds a different DENSITY of card, and one grid track size
+  // suited none of them: a lone team card sat in a 330px column with 1200px of
+  // dead space beside it, and a member card — a 20px avatar and a login — was
+  // 90% empty at the same width. The tab tells the grid what it is holding.
+  content.classList.toggle("is-people", id === "members");
   const q = query.trim().toLowerCase();
   const noMatches = (): HTMLElement =>
     emptyState("No matches", `Nothing matches “${query.trim()}”.`, { icon: "search" });
@@ -458,7 +466,7 @@ function renderTeamRow(content: HTMLElement, org: string, t: OrgTeam): void {
 
 function renderMemberRow(content: HTMLElement, u: OrgMember): void {
   const row = el("button", "list-row gh-org-member");
-  row.appendChild(orgAvatar(u.avatarUrl, u.login, 20));
+  row.appendChild(avatar(u.login, u.avatarUrl, 20, "Member"));
   const m = el("div", "row-meta");
   const t = el("div", "row-meta-title");
   t.textContent = u.login;
@@ -594,7 +602,7 @@ function openTeamPeek(org: string, t: OrgTeam): void {
       const { root, body: mbody } = peekSection("Members", members.length);
       for (const m of members) {
         const row = el("button", "peek-row");
-        row.appendChild(orgAvatar(m.avatarUrl, m.login, 22));
+        row.appendChild(avatar(m.login, m.avatarUrl, 22, "Member"));
         const main = el("div", "peek-row-main");
         const title = el("div", "peek-row-title");
         title.textContent = m.login;

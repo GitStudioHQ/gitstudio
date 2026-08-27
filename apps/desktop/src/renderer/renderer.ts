@@ -561,14 +561,20 @@ class App {
     dividerLabel?: string;
   }> = [
     { id: "code", label: "Code", icon: "code" },
-    // `source-control` (not `request-changes`, a PR-review verdict icon) — this
-    // is the working tree.
-    { id: "changes", label: "Changes", icon: "source-control" },
+    // Five rail entries — Changes, Branches, Rebase, Compare, Pull Requests —
+    // used to be five variations on the same fork-with-two-nodes motif, which
+    // at 16px in a single column is no icon at all. `git-branch`, `git-compare`
+    // and `git-pull-request` have the strongest claim on that shape and keep
+    // it (and are separated in the rail); the other two take glyphs that say
+    // what those screens actually are.
+    //
+    // Changes is a set of pending file diffs, not the SCM view's fork.
+    { id: "changes", label: "Changes", icon: "diff-multiple" },
     { id: "graph", label: "Commits", icon: "git-commit" },
     { id: "branches", label: "Branches", icon: "git-branch" },
-    // `git-merge` keeps Rebase in the same visual family as the other git tabs
-    // (commit / branch / compare) instead of a generic list glyph.
-    { id: "rebase", label: "Rebase", icon: "git-merge" },
+    // Rebase here IS an ordered list of commits you reorder and replay — a
+    // truer picture than `git-merge`, which is a different operation besides.
+    { id: "rebase", label: "Rebase", icon: "list-ordered" },
     { id: "compare", label: "Compare", icon: "git-compare" },
     // Inbox first in the GitHub group — the "what needs me" surface (Linear's
     // Inbox translated): review requests, mentions, assignments, CI failures.
@@ -1256,25 +1262,20 @@ class App {
     const nm = el("span", "branch-name-txt");
     nm.textContent = b.name;
     top.appendChild(nm);
+    // Ahead and behind are the same KIND of fact and read as one pair — the
+    // divergence of this branch from its upstream. They used to be a static
+    // green count beside a blue button labelled "Pull 5", so a one-click
+    // action was styled as a passive number sitting next to a passive number.
     if (b.ahead) {
       const p = el("span", "ab-pill ahead");
-      p.textContent = `↑${b.ahead}`;
+      p.textContent = `↑ ${b.ahead}`;
       p.title = `${b.ahead} commit(s) to push to ${b.upstream ?? "upstream"}`;
       top.appendChild(p);
     }
     if (b.behind) {
-      // The behind count IS the pull button: click pulls those commits live
-      // (fast-forwarding the branch in place when it isn't checked out).
-      const p = el("button", "ab-pill behind ab-btn") as HTMLButtonElement;
-      p.append(glyph("arrow-down"), span(`Pull ${b.behind}`, "ab-lbl"));
-      p.title = b.current
-        ? `Pull ${b.behind} commit(s) from ${b.upstream ?? "upstream"}`
-        : `Pull ${b.behind} commit(s) into ${b.name} — fast-forward, no checkout`;
-      p.setAttribute("aria-label", p.title);
-      p.addEventListener("click", (e) => {
-        e.stopPropagation();
-        void this.pullBranchLive(b, p);
-      });
+      const p = el("span", "ab-pill behind");
+      p.textContent = `↓ ${b.behind}`;
+      p.title = `${b.behind} commit(s) to pull from ${b.upstream ?? "upstream"}`;
       top.appendChild(p);
     }
     meta.appendChild(top);
@@ -1288,6 +1289,22 @@ class App {
     meta.appendChild(sub);
     row.appendChild(meta);
     const actions = el("div", "row-actions");
+    // The pull ACTION lives with the other verbs rather than masquerading as a
+    // count in the badge row.
+    if (b.behind) {
+      const pull = textBtn(
+        "Pull",
+        b.current
+          ? `Pull ${b.behind} commit(s) from ${b.upstream ?? "upstream"}`
+          : `Pull ${b.behind} commit(s) into ${b.name} — fast-forward, no checkout`,
+        () => {},
+      ) as HTMLButtonElement;
+      pull.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void this.pullBranchLive(b, pull);
+      });
+      actions.appendChild(pull);
+    }
     if (!b.current) {
       actions.append(
         textBtn("Checkout", "Check out this branch", () => void this.checkoutRef(b.name)),
@@ -2095,9 +2112,11 @@ class App {
     const logoSeg = el("div", "settings-seg");
     // A small live preview of the mark that will actually be shown on the dock.
     const preview = el("img", "settings-logo-preview") as HTMLImageElement;
-    preview.alt = "";
     const syncLogoPreview = (): void => {
-      preview.src = this.dockVariant() === "light" ? "./icon-light.png" : "./icon.png";
+      const light = this.dockVariant() === "light";
+      preview.src = light ? "./icon-light.png" : "./icon.png";
+      preview.alt = `Dock icon preview — the ${light ? "light" : "dark"} mark`;
+      preview.title = preview.alt;
     };
     const logoModes: Array<{ id: LogoMode; label: string }> = [
       { id: "auto", label: "Auto" },
@@ -2117,6 +2136,10 @@ class App {
       logoSeg.appendChild(b);
     }
     syncLogoPreview();
+    // The preview trails the segment so the card's two segmented controls keep
+    // one left edge. What made it read as a fourth segment was its BORDER —
+    // a bordered, rounded box a hair from three bordered, rounded buttons —
+    // so it lost the border, gained a plinth, and stands off by --sp-4.
     logoRow.append(logoSeg, preview);
 
     body.append(sub, seg, logoLabel, logoSub, logoRow);
@@ -2288,63 +2311,88 @@ class App {
     meta.append(top, bottom);
     row.appendChild(meta);
 
+    // ONE shape for every row: the thing you'd actually do, spelled out, plus
+    // an overflow menu for the rest. The cluster used to be two to five
+    // unlabelled icons whose set changed with an invisible flag — two rows
+    // both badged MANAGED offered different buttons because one happened to
+    // also be in recents. A toolbar that changes shape per row can't be
+    // scanned; a menu whose ITEMS vary by what's possible can.
     const acts = el("div", "settings-copy-acts");
-    const iconBtn = (icon: string, title: string, run: () => void): HTMLElement => {
-      const b = el("button", "icon-btn");
-      b.title = title;
-      b.setAttribute("aria-label", title);
-      b.appendChild(glyph(icon));
-      b.addEventListener("click", run);
-      return b;
-    };
     if (!c.missing && !c.current) {
       acts.appendChild(
-        iconBtn("folder-opened", `Open ${c.name} in GitStudio`, () => void this.openPath(c.root)),
-      );
-      acts.appendChild(
-        iconBtn("link-external", "Reveal in Finder", () => {
-          void host.invoke("repos:reveal", c.root).catch(() => toast("Couldn't reveal that folder.", "error"));
-        }),
+        textBtn("Open", `Open ${c.name} in GitStudio`, () => void this.openPath(c.root)),
       );
     }
-    acts.appendChild(iconBtn("copy", "Copy path", () => void copyText(c.root, "Path copied.")));
+
+    const items: MenuItem[] = [];
+    if (!c.missing) {
+      items.push({
+        label: "Reveal in Finder",
+        icon: "link-external",
+        onClick: () => {
+          void host
+            .invoke("repos:reveal", c.root)
+            .catch(() => toast("Couldn't reveal that folder.", "error"));
+        },
+      });
+    }
+    items.push({
+      label: "Copy path",
+      icon: "copy",
+      onClick: () => void copyText(c.root, "Path copied."),
+    });
     if (c.recent) {
-      acts.appendChild(
-        iconBtn("close", "Remove from recents (keeps the folder)", () => {
+      items.push({
+        label: "Remove from recents",
+        sub: "Keeps the folder on disk",
+        icon: "close",
+        onClick: () => {
           void host
             .invoke("repos:removeRecent", c.root)
             .then(refresh)
             .catch((e) => toast(cleanErr(e) || "Couldn't update the list.", "error"));
-        }),
-      );
+        },
+      });
     }
     if (c.managed && !c.current && !c.missing) {
-      const del = iconBtn("trash", `Delete this clone from disk`, () => {
-        void (async () => {
-          const ok = await confirmDialog({
-            title: `Delete ${c.name}?`,
-            message: `${c.root} moves to the Trash. Anything not pushed to ${c.origin ?? "a remote"} is gone with it.`,
-            confirmLabel: "Move to Trash",
-            danger: true,
-            requireTyped: c.name,
-          });
-          if (!ok) return;
-          try {
-            const r = await host.invoke("repos:trash", c.root);
-            if (!r.ok) {
-              toast(r.message || "Couldn't delete that clone.", "error");
-              return;
+      items.push({ separator: true });
+      items.push({
+        label: "Delete from disk",
+        sub: `Moves ${c.name} to the Trash`,
+        icon: "trash",
+        danger: true,
+        onClick: () => {
+          void (async () => {
+            const ok = await confirmDialog({
+              title: `Delete ${c.name}?`,
+              message: `${c.root} moves to the Trash. Anything not pushed to ${c.origin ?? "a remote"} is gone with it.`,
+              confirmLabel: "Move to Trash",
+              danger: true,
+              requireTyped: c.name,
+            });
+            if (!ok) return;
+            try {
+              const r = await host.invoke("repos:trash", c.root);
+              if (!r.ok) {
+                toast(r.message || "Couldn't delete that clone.", "error");
+                return;
+              }
+              toast(`Moved ${c.name} to the Trash.`, "success");
+              refresh(await host.invoke("repos:local", undefined));
+            } catch (e) {
+              toast(cleanErr(e) || "Couldn't delete that clone.", "error");
             }
-            toast(`Moved ${c.name} to the Trash.`, "success");
-            refresh(await host.invoke("repos:local", undefined));
-          } catch (e) {
-            toast(cleanErr(e) || "Couldn't delete that clone.", "error");
-          }
-        })();
+          })();
+        },
       });
-      del.classList.add("danger");
-      acts.appendChild(del);
     }
+    const more = el("button", "icon-btn settings-copy-more");
+    more.title = `More actions for ${c.name}`;
+    more.setAttribute("aria-label", more.title);
+    more.appendChild(glyph("kebab-horizontal"));
+    more.addEventListener("click", () => openMenu(more, items));
+    acts.appendChild(more);
+
     row.appendChild(acts);
     return row;
   }

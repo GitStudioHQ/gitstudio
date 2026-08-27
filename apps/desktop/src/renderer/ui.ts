@@ -662,6 +662,8 @@ export interface MenuItem {
   current?: boolean;
   disabled?: boolean;
   separator?: boolean;
+  /** A destructive item — reads red, like the danger buttons it replaced. */
+  danger?: boolean;
   /** Don't close the menu on click — for in-place live actions (e.g. Fetch,
    *  which spins its own icon and refreshes the view behind the open menu). */
   keepOpen?: boolean;
@@ -767,7 +769,10 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     }
     const row = el(
       "button",
-      "dropdown-item" + (it.current ? " is-current" : "") + (it.disabled ? " is-disabled" : ""),
+      "dropdown-item" +
+        (it.current ? " is-current" : "") +
+        (it.disabled ? " is-disabled" : "") +
+        (it.danger ? " is-danger" : ""),
     );
     row.setAttribute("role", "menuitem");
     row.tabIndex = -1;

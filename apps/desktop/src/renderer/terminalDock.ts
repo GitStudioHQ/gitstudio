@@ -103,6 +103,10 @@ export class TerminalDock {
     this.outputs = new OutputsPanel();
     this.outputs.el.style.display = "none";
     this.dock.bodyEl.appendChild(this.outputs.el);
+    // The Output tab's controls live in the dock's footer action slot — the
+    // one horizontal control row the dock already has — rather than in a bar
+    // of Output's own, which made the body start 32px lower than Terminal's.
+    this.dock.actionsEl.appendChild(this.outputs.bar);
 
     // ── Terminal group: stage (surfaces) + side list. ──
     this.termGroup = el("div", "term-group");
@@ -352,6 +356,7 @@ export class TerminalDock {
   /** Show the active top surface; within the Terminal, the active shell. */
   private showActive(): void {
     this.outputs.el.style.display = this.active === "output" ? "" : "none";
+    this.outputs.bar.hidden = this.active !== "output";
     if (this.detailsEl) this.detailsEl.style.display = this.active === "commit-details" ? "" : "none";
     this.termGroup.style.display = this.active === "terminal" ? "" : "none";
 

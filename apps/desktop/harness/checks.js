@@ -14,7 +14,9 @@
 
 (function () {
   const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => [...document.querySelectorAll(sel)];
+  const $$ = (sel, root) => [...(root || document).querySelectorAll(sel)];
+  /** Let a click that re-renders behind an await actually land. */
+  const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
   const text = (sel) => ($(sel)?.textContent ?? "").trim();
   const left = (el) => Math.round(el.getBoundingClientRect().left);
 
@@ -407,6 +409,97 @@
       }
     },
 
+    // ── header controls hold their ground ───────────────────────────────────
+    "actions-segment-does-not-slide": async (f) => {
+      const c = check(f);
+      const segNow = () => $(".gh-head-tools .gh-seg, .gh-head-tools .seg");
+      const optNow = (label) =>
+        $$(".gh-head-tools button").find((b) => (b.textContent || "").trim() === label);
+      c.ok(!!segNow(), "the Runs/Workflows segment renders in the tools row");
+      c.ok($$(".gh-facet-btn").length >= 3, "the Runs tab carries its facet pills");
+      if (!segNow()) return;
+      const before = segNow().getBoundingClientRect().left;
+      const wf = optNow("Workflows");
+      c.ok(!!wf, "the Workflows option is a button");
+      if (!wf) return;
+      wf.click();
+      // renderActions re-renders behind an await, so measuring now would read
+      // the tab we just left.
+      await settle();
+      const seg2 = segNow();
+      c.ok(!!seg2, "the segment survives the tab switch");
+      if (!seg2) return;
+      c.eq($$(".gh-facet-btn").length, 0, "Workflows drops the run facets");
+      // …and the segment must not travel with them.
+      const after = seg2.getBoundingClientRect().left;
+      c.ok(
+        Math.abs(after - before) <= 2,
+        `the segment must stay put across tabs (moved ${Math.round(after - before)}px)`,
+      );
+    },
+    "facets-do-not-shunt-their-neighbours": async (f) => {
+      const c = check(f);
+      const tools = $(".gh-head-tools");
+      const btns = $$(".gh-facet-btn");
+      c.ok(!!tools && btns.length >= 2, `the facet bar renders (${btns.length} pills)`);
+      if (!tools || btns.length < 2) return;
+      const seg = () => $(".gh-head-tools .gh-seg, .gh-head-tools .seg");
+      const prim = () => $(".gh-head-tools .btn-primary");
+      // Offsets measured from the tools ROW, not the viewport: the row itself
+      // may shift when the title block's content changes (the count badge goes
+      // from "8" to "2 of 8"), and that is the count telling the truth. What
+      // must not happen is the row's own controls sliding past each other.
+      const snap = () => {
+        const t = tools.getBoundingClientRect();
+        return {
+          row: t.left,
+          seg: seg() ? seg().getBoundingClientRect().left - t.left : null,
+          pill: $$(".gh-facet-btn")[0].getBoundingClientRect().left - t.left,
+          prim: prim() ? t.right - prim().getBoundingClientRect().right : null,
+        };
+      };
+      const before = snap();
+      const author = btns.find((b) => (b.textContent || "").includes("Author"));
+      c.ok(!!author, "an Author facet exists");
+      if (!author) return;
+      author.click();
+      await settle(60);
+      const opt = $$(".dropdown-item").find((r) => (r.textContent || "").includes("mira-holt"));
+      c.ok(!!opt, "the menu lists an author");
+      opt?.click();
+      await settle();
+      // Prove the click DID something before asserting what didn't move.
+      c.ok(!!$(".gh-facet-btn.is-active"), "the author facet reads as active");
+      const after = snap();
+      c.eq(Math.round(after.seg), Math.round(before.seg), "the state segment holds its place");
+      c.eq(Math.round(after.pill), Math.round(before.pill), "the first pill holds its place");
+      c.eq(Math.round(after.prim), Math.round(before.prim), "the primary action holds its place");
+      // The row used to be one right-anchored cluster: a widened pill shoved
+      // everything left of it. A small shift from the count badge is fine; a
+      // hundred-pixel one is the old defect coming back.
+      c.ok(
+        Math.abs(after.row - before.row) <= 40,
+        `the row barely moves (${Math.round(after.row - before.row)}px)`,
+      );
+    },
+    "log-toolbar-toggles-are-labelled": (f) => {
+      const c = check(f);
+      const bar = $(".log-toolbar");
+      c.ok(!!bar, "the log toolbar renders");
+      if (!bar) return;
+      const labels = $$(".log-tool.has-label", bar).map((b) => b.textContent.trim());
+      c.ok(labels.includes("Timestamps"), "the timestamps toggle is named");
+      c.ok(labels.includes("Follow"), "the follow toggle is named");
+      for (const b of $$(".log-tool.has-label", bar)) {
+        c.ok(b.hasAttribute("aria-pressed"), `${b.textContent.trim()} reports its state`);
+      }
+      // The transient verbs stay glyphs, split off by a rule.
+      c.ok(!!$(".log-toolbar-div", bar), "state and actions are visually separated");
+      const bare = $$(".log-tool", bar).filter((b) => !b.classList.contains("has-label"));
+      c.ok(bare.length <= 3, `at most three unlabelled glyph verbs (${bare.length})`);
+      for (const b of bare) c.ok(!!b.title, "every glyph verb still carries a title");
+    },
+
     // ── toolbars survive narrow windows ──────────────────────────────────────
     "toolbar-no-overflow": (f) => {
       const c = check(f);
@@ -423,6 +516,173 @@
       }
     },
 
+    // ── branches: divergence is ONE fact, not two designs ───────────────────
+    "branch-divergence-paired": (f) => {
+      const c = check(f);
+      const row = $$(".branch-row, .list-row").find(
+        (r) => (r.textContent || "").includes("feat/line-staging"),
+      );
+      c.ok(!!row, "the diverged branch row renders");
+      if (!row) return;
+      const pills = [...row.querySelectorAll(".ab-pill")];
+      c.eq(pills.length, 2, "ahead and behind are both shown");
+      if (pills.length !== 2) return;
+      // Neither may be a button: a count that is secretly a one-click network
+      // action is the defect this pair replaced.
+      for (const p of pills) {
+        c.ok(p.tagName !== "BUTTON", `an ${p.className} count must not be a button`);
+      }
+      const [a, b] = pills.map((p) => p.getBoundingClientRect());
+      c.eq(Math.round(a.height), Math.round(b.height), "the pair shares a height");
+      const sa = getComputedStyle(pills[0]), sb = getComputedStyle(pills[1]);
+      c.eq(sa.fontSize, sb.fontSize, "the pair shares a font size");
+      c.eq(sa.borderRadius, sb.borderRadius, "the pair shares a corner radius");
+      c.ok(b.left - a.right < 12, `the pair sits together (gap ${Math.round(b.left - a.right)}px)`);
+      // …and beside the name, not stranded at the far end of a wide row.
+      const name = row.querySelector(".branch-name-txt");
+      if (name) {
+        const n = name.getBoundingClientRect();
+        c.ok(a.left - n.right < 24, `the counts sit with the name (${Math.round(a.left - n.right)}px away)`);
+      }
+    },
+    "branch-pull-is-an-action": (f) => {
+      const c = check(f);
+      const row = $$(".branch-row, .list-row").find(
+        (r) => (r.textContent || "").includes("feat/line-staging"),
+      );
+      if (!row) return check(f).ok(false, "the diverged branch row renders");
+      const pull = [...row.querySelectorAll(".row-actions button")].find(
+        (b) => (b.textContent || "").trim() === "Pull",
+      );
+      c.ok(!!pull, "Pull lives with Checkout and Delete in the row's actions");
+      const clean = $$(".branch-row, .list-row").find(
+        (r) => (r.textContent || "").includes("redesign/issues-detail"),
+      );
+      if (clean) {
+        c.ok(
+          ![...clean.querySelectorAll(".row-actions button")].some(
+            (b) => (b.textContent || "").trim() === "Pull",
+          ),
+          "an up-to-date branch offers no Pull",
+        );
+      }
+    },
+
+    // ── organizations: people look like people ──────────────────────────────
+    "org-members-are-people": (f) => {
+      const c = check(f);
+      const rows = $$(".gh-org-member");
+      c.ok(rows.length >= 3, `members render (${rows.length})`);
+      for (const r of rows) {
+        const who = (r.textContent || "").trim().slice(0, 20);
+        c.ok(
+          !r.querySelector(".gh-avatar-fallback"),
+          `${who} must not fall back to the organization glyph`,
+        );
+        c.ok(!!r.querySelector(".av"), `${who} has a person avatar`);
+      }
+      // Distinct people get distinct fallback hues, so a directory of
+      // avatarless members is still scannable.
+      const hues = new Set(
+        $$(".gh-org-member .av-fallback").map((a) => getComputedStyle(a).backgroundColor),
+      );
+      c.ok(hues.size > 1 || hues.size === 0, "fallback avatars are not all one colour");
+    },
+    "org-cards-fill-their-row": (f) => {
+      const c = check(f);
+      const grid = $(".gh-org-grid");
+      const cards = $$(".gh-org-grid > .list-row");
+      c.ok(!!grid && cards.length > 0, "the grid renders cards");
+      if (!grid || !cards.length) return;
+      const g = grid.getBoundingClientRect();
+      // One team must not huddle in a 330px column beside 1200px of nothing.
+      const widest = Math.max(...cards.map((k) => k.getBoundingClientRect().width));
+      c.ok(
+        widest >= g.width * 0.9,
+        `a lone card should span the row (${Math.round(widest)} of ${Math.round(g.width)}px)`,
+      );
+    },
+    "org-people-are-chips": (f) => {
+      const c = check(f);
+      const grid = $(".gh-org-grid");
+      const cards = $$(".gh-org-member");
+      if (!grid || !cards.length) return c.ok(false, "member chips render");
+      const g = grid.getBoundingClientRect();
+      for (const k of cards) {
+        const w = k.getBoundingClientRect().width;
+        c.ok(w <= 260, `a member chip stays compact (${Math.round(w)}px)`);
+      }
+      // …and they wrap from the left edge, sharing it with every other list.
+      c.eq(
+        Math.round(cards[0].getBoundingClientRect().left),
+        Math.round(g.left),
+        "the first chip starts at the grid's left edge",
+      );
+    },
+
+    // ── the bottom dock: one shell for every tab ────────────────────────────
+    "dock-tabs-share-a-content-origin": async (f) => {
+      const c = check(f);
+      const tabs = $$(".term-tab");
+      const out = tabs.find((t) => (t.textContent || "").includes("Output"));
+      const term = tabs.find((t) => (t.textContent || "").includes("Terminal"));
+      c.ok(!!out && !!term, "the dock offers Output and Terminal");
+      if (!out || !term) return;
+      out.click();
+      await settle(60);
+      const outTop = $(".outputs-panel")?.getBoundingClientRect().top;
+      term.click();
+      await settle(60);
+      const termTop = $(".term-group")?.getBoundingClientRect().top;
+      c.ok(outTop != null && termTop != null, "both surfaces measure");
+      if (outTop == null || termTop == null) return;
+      // Output used to carry a 32px bar of its own, so the dock's content
+      // origin slid down as you switched to it.
+      c.ok(
+        Math.abs(outTop - termTop) <= 1,
+        `switching tabs must not move the content origin (${Math.round(outTop)} vs ${Math.round(termTop)})`,
+      );
+    },
+    "dock-empty-log-offers-nothing-inert": async (f) => {
+      const c = check(f);
+      const out = $$(".term-tab").find((t) => (t.textContent || "").includes("Output"));
+      c.ok(!!out, "the Output tab exists");
+      out?.click();
+      await settle(60);
+      c.ok(!!$(".outputs-empty"), "the empty log explains itself");
+      // No "0 commands", and no filter/clear for a log with nothing in it.
+      c.eq(($(".outputs-count")?.textContent || "").trim(), "", "no count of nothing");
+      for (const b of $$(".outputs-bar .mini-btn")) {
+        c.ok(
+          b.hidden || b.getBoundingClientRect().width === 0,
+          `"${b.textContent.trim()}" must not be offered on an empty log`,
+        );
+      }
+    },
+    "rail-icons-are-distinguishable": (f) => {
+      const c = check(f);
+      const items = $$(".nav-item, .rail-item, .side-item").filter((n) =>
+        n.querySelector(".codicon"),
+      );
+      c.ok(items.length >= 8, `the rail renders (${items.length} items)`);
+      const seen = new Map();
+      for (const n of items) {
+        const g = n.querySelector(".codicon");
+        const name = [...g.classList].find((k) => k.startsWith("codicon-"));
+        const label = (n.textContent || "").trim();
+        if (seen.has(name)) c.ok(false, `${label} reuses ${name} (also ${seen.get(name)})`);
+        seen.set(name, label);
+      }
+      // The fork motif is fine on the entries that own it, and nowhere else.
+      const forks = items.filter((n) => {
+        const g = n.querySelector(".codicon");
+        return ["codicon-source-control", "codicon-git-merge", "codicon-git-fork"].some((k) =>
+          g.classList.contains(k),
+        );
+      });
+      c.eq(forks.length, 0, "no rail entry wears a borrowed fork glyph");
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
     "settings-checkbox-styled": (f) => {
       const c = check(f);
@@ -433,13 +693,75 @@
     },
     "settings-local-copies": (f) => {
       const c = check(f);
-      c.ok($$(".settings-copy").length >= 4, "local copies list renders");
+      const rows = $$(".settings-copy");
+      c.ok(rows.length >= 4, "local copies list renders");
       const open = $(".settings-copy.is-current");
       c.ok(!!open, "the open repo is marked");
-      c.ok(!open?.querySelector(".icon-btn.danger"), "the open repo must not offer Delete");
+      c.ok(!open?.querySelector('button[title^="Open "]'), "the open repo must not offer Open");
       const missing = $(".settings-copy.is-missing");
       c.ok(!!missing, "a missing clone is listed rather than dropped");
-      c.ok(!missing?.querySelector(".icon-btn.danger"), "a missing clone must not offer Delete");
+      c.ok(!missing?.querySelector('button[title^="Open "]'), "a missing clone must not offer Open");
+    },
+    // Every row's actions have the SAME shape, whatever the row's state: two
+    // rows both badged MANAGED used to carry different icon sets because one
+    // was also, invisibly, in recents.
+    "settings-copy-actions-one-shape": (f) => {
+      const c = check(f);
+      const rows = $$(".settings-copy");
+      if (!rows.length) return c.ok(false, "local copies render");
+      const kebabs = [];
+      for (const r of rows) {
+        const acts = r.querySelector(".settings-copy-acts");
+        const who = (r.querySelector(".settings-copy-name")?.textContent || "").trim().slice(0, 24);
+        const more = acts?.querySelector(".settings-copy-more");
+        c.ok(!!more, `${who} has an overflow menu`);
+        if (more) kebabs.push(more.getBoundingClientRect().right);
+        // No icon-only verb clusters: one labelled action plus the menu.
+        const bare = [...(acts?.querySelectorAll("button") || [])].filter(
+          (b) => !b.classList.contains("settings-copy-more") && !b.textContent.trim(),
+        );
+        c.eq(bare.length, 0, `${who} offers no unlabelled icon buttons`);
+      }
+      // Two rows with the same badge offer the same actions.
+      const shapeOf = (r) =>
+        [...r.querySelectorAll(".settings-copy-acts button")]
+          .map((b) => b.textContent.trim() || "more")
+          .join("|");
+      const byBadge = new Map();
+      for (const r of rows) {
+        // The WHOLE badge set — a row can be RECENT *and* MISSING, and those
+        // two facts together are what licenses a different action set.
+        const badge = $$(".settings-copy-badge", r).map((b) => b.textContent.trim()).join(" ");
+        if (!badge) continue;
+        if (byBadge.has(badge)) {
+          c.eq(shapeOf(r), byBadge.get(badge), `both ${badge} rows offer the same actions`);
+        } else byBadge.set(badge, shapeOf(r));
+      }
+      c.ok(
+        new Set(kebabs.map(Math.round)).size === 1,
+        `the overflow buttons form one column (${[...new Set(kebabs.map(Math.round))].join(", ")})`,
+      );
+    },
+    "settings-icon-preview-is-not-a-control": (f) => {
+      const c = check(f);
+      const prev = $(".settings-logo-preview");
+      const seg = $(".settings-logo-row .settings-seg");
+      c.ok(!!prev && !!seg, "the app-icon row renders");
+      if (!prev || !seg) return;
+      const s = getComputedStyle(prev);
+      c.eq(s.borderTopWidth, "0px", "a preview must not be bordered like the buttons beside it");
+      c.eq(s.pointerEvents, "none", "a preview must not be clickable");
+      const p = prev.getBoundingClientRect(), g = seg.getBoundingClientRect();
+      c.ok(p.left - g.right >= 14, `it stands off the segment (${Math.round(p.left - g.right)}px)`);
+      // The card's two segmented controls keep one left edge.
+      const themeSeg = $$(".settings-seg")[0];
+      if (themeSeg && themeSeg !== seg) {
+        c.eq(
+          Math.round(themeSeg.getBoundingClientRect().left),
+          Math.round(g.left),
+          "both segmented controls share a left edge",
+        );
+      }
     },
   };
 })();
