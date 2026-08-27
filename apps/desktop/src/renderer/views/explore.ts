@@ -389,10 +389,15 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
 
 function userRow(u: SearchUserItem, nav: SectionNav): HTMLElement {
   const isOrg = u.type === "Organization";
+  // A 40px row with a small avatar in a 1350px pane read as ~93% empty. The
+  // answer is a DENSER row, not filler: the search API gives a login, an
+  // avatar and a type, and a sub-line repeating "Person on GitHub" on every
+  // row would be the same word thirty times. Bigger avatar, tighter row.
   return exploreRow({
-    lead: avatar(u.login, u.avatarUrl, 20),
+    lead: avatar(u.login, u.avatarUrl, 28),
     title: u.login,
     titleSuffix: isOrg ? [pill("org")] : [],
+    extraClass: "explore-person-row",
     ariaLabel: `${isOrg ? "Organization" : "User"} ${u.login}`,
     onOpen: () => nav("explore", { id: `${isOrg ? "org" : "user"}/${u.login}` }),
     actions: [

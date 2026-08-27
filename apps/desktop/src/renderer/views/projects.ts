@@ -147,10 +147,11 @@ async function showProjectBoard(
     `#${p.number} · ${b.items.length} item${b.items.length === 1 ? "" : "s"}` +
     `${b.field ? "" : " · no Status field"}`;
   const actions = el("div", "gh-detail-actions");
-  const openBtn = el("button", "mini-btn gh-icon-btn");
-  openBtn.append(glyph("link-external"));
+  // Labelled, like the Organizations header: a lone unlabelled glyph on its own
+  // row is a guess, and this is the page's only action.
+  const openBtn = el("button", "mini-btn");
+  openBtn.append(glyph("link-external"), span("GitHub"));
   openBtn.title = "Open this project on github.com";
-  openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(p.url, "_blank"));
   actions.appendChild(openBtn);
   head.append(h, meta, actions);

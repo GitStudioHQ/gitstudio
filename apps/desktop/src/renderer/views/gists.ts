@@ -256,10 +256,13 @@ function buildGistDetail(ctx: GistDetailCtx): void {
 
   // ── title block ──
   const titleRow = el("div", "det-title-row");
-  titleRow.appendChild(statePill(g.public ? "Public" : "Secret", g.public ? "public" : "private"));
   const h = el("h1", "det-title");
   h.textContent = g.description || g.files[0]?.filename || "(no description)";
   titleRow.appendChild(h);
+  // After the title, not before it: a leading pill pushed the H1 ~110px right
+  // of the page's left rule, so the heading no longer started where every
+  // other heading starts.
+  titleRow.appendChild(statePill(g.public ? "Public" : "Secret", g.public ? "public" : "private"));
   main.appendChild(titleRow);
 
   const sub = el("div", "det-sub");

@@ -5427,6 +5427,11 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 /* Multi-line rows: the leading icon belongs beside the FIRST line, not
    floating in the middle of a tall row. */
 .explore-row .sec-row-lead { align-self: flex-start; margin-top: 2px; }
+/* A people result is a face and a handle — one line, read as a tight list
+   rather than a stack of mostly-empty cards. */
+.explore-person-row { padding-top: 7px; padding-bottom: 7px; align-items: center; }
+.explore-person-row .sec-row-lead { align-self: center; margin-top: 0; }
+.explore-person-row .sec-row-title { font-size: var(--text-md); font-weight: 600; }
 .explore-code-row .sec-row-title {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-sm);
