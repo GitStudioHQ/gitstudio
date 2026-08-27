@@ -9,9 +9,10 @@
 
 /**
  * Remove anything that could identify a user or their work: private keys, home
- * dirs, absolute paths (POSIX, Windows, and UNC) INCLUDING the file/project
- * names in the tail, remote URLs (creds AND org/repo), SSH remotes, emails, IPs,
- * JWTs, cloud/access tokens, and SHAs.
+ * dirs, absolute paths (POSIX, Windows, and UNC — with or without spaces in
+ * them) INCLUDING the file/project names in the tail, remote URLs (creds AND
+ * org/repo), SSH remotes, emails, IPv4 and IPv6 addresses, JWTs, cloud/access
+ * tokens, and SHAs.
  *
  * Order matters — each step assumes the earlier ones already ran:
  *   - private-key blocks are nuked whole, before anything can partially match;
@@ -44,8 +45,14 @@ export function scrub(input: string): string {
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "<email>")
     // POSIX home/user paths: anonymize the user AND redact the tail (file and
     // project names), keeping any :line:col suffix (the tail stops at ':').
+    //
+    // The tail accepts a BACKSLASH too. `safeHome()` collapses the user's home
+    // to `~` before this runs, and on Windows that home is followed by `\`, not
+    // `/` — so a forward-slash-only tail left every Windows crash stack
+    // reporting `~\Projects\acme-secret\src\billing.ts`: the project and file
+    // names this function's contract says it removes.
     .replace(
-      /(~|\/Users\/[^/\s"':]+|\/home\/[^/\s"':]+)(\/[^\s"':]*)?/g,
+      /(~|\/Users\/[^/\s"':]+|\/home\/[^/\s"':]+)([/\\][^\s"':]*)?/g,
       (_m, prefix: string, tail: string | undefined) => {
         const p = prefix.startsWith("/Users/")
           ? "/Users/<user>"
@@ -58,8 +65,33 @@ export function scrub(input: string): string {
     // Windows drive paths and UNC paths -> redact whole (keeps :line:col)
     .replace(/\b[A-Za-z]:\\[^\s"':]+/g, "<path>")
     .replace(/\\\\[^\s"':]+/g, "<path>")
+    // Env-var-rooted Windows paths (%USERPROFILE%\Projects\x) — the variable
+    // name is not identifying, everything after it is.
+    .replace(/(%[A-Za-z_][A-Za-z0-9_]*%)[/\\][^\s"':]*/g, "$1\\<path>")
+    // A path can contain SPACES — "C:\\Users\\John Smith\\…", "\\\\FS01\\Team Share\\…",
+    // "/Users/John Smith/…" — and every pattern above stops at the first one,
+    // leaving the surname and the whole project path in the report. Redact what
+    // trails a marker ONLY when it still contains a separator, so a genuine
+    // sentence ("/Users/bob is not a repository") keeps its words.
+    .replace(/(<user>|<path>|~)((?: [^\s"':]+)+)/g, (_m, tag: string, rest: string) =>
+      /[/\\]/.test(rest) ? `${tag}/<path>` : `${tag}${rest}`,
+    )
     // IPv4 addresses
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "<ip>")
+    // IPv6 — the full eight-group form, and the compressed form which must
+    // actually contain `::`.
+    //
+    // Deliberately NOT "two or more colon-separated hex groups": that redacts
+    // every 01:23:45 timestamp in a log, and — worse here — the `:42:5` line
+    // and column this function goes out of its way to preserve so a crash stack
+    // stays locatable. The compressed rule therefore requires a literal `::`
+    // ahead of it, and refuses to start immediately after a word character, so
+    // `billing.ts:42:5` is never a candidate in the first place.
+    .replace(/\b(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}\b/gi, "<ip>")
+    .replace(
+      /(?<![\w:])(?=[0-9a-f:]{0,45}::)[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}(?![\w:])/gi,
+      "<ip>",
+    )
     // JWTs (always start with the base64 of `{"` -> eyJ)
     .replace(/\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g, "<jwt>")
     // AWS access key ids

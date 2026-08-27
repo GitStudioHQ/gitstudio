@@ -132,3 +132,78 @@ test("scrubGitMessage redacts a conflicted path", () => {
 test("scrubGitMessage is empty-safe", () => {
   assert.equal(scrubGitMessage(""), "");
 });
+
+// ── paths that contain spaces, and the Windows tail ──────────────────────────
+//
+// The contract above the function says it removes absolute paths "INCLUDING the
+// file/project names in the tail". It did not, in the two places real users
+// actually live: Windows, and any path with a space in it.
+
+test("a Windows crash stack from the user's own machine keeps nothing but the line", () => {
+  // safeHome() collapses the home directory to `~` first, and on Windows what
+  // follows it is a BACKSLASH. The tail rule only accepted a forward slash, so
+  // every Windows report shipped the project and file names intact.
+  const home = process.env.USERPROFILE;
+  process.env.USERPROFILE = "C:\\Users\\John Smith";
+  const prevHome = process.env.HOME;
+  delete process.env.HOME;
+  try {
+    const out = scrub(
+      "at load (C:\\Users\\John Smith\\Projects\\acme-secret\\src\\billing.ts:42:11)",
+    );
+    assert.equal(out.includes("acme-secret"), false, "the project name must not survive");
+    assert.equal(out.includes("billing"), false, "nor the file name");
+    assert.equal(out.includes("John"), false, "nor the user");
+    assert.match(out, /:42:11/, "but the line and column stay, so the crash is locatable");
+  } finally {
+    if (home === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = home;
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+  }
+});
+
+test("a space in a path does not end the redaction", () => {
+  for (const input of [
+    "at x (C:\\Users\\John Smith\\projects\\acme-secret\\index.ts:12:5)",
+    "/Users/John Smith/Work/AcmeCorp/secret.ts",
+    "\\\\CORP-FS01\\Team Share\\acme\\plan.docx",
+  ]) {
+    const out = scrub(input);
+    for (const secret of ["Smith", "acme", "Acme", "AcmeCorp", "secret", "plan"]) {
+      assert.equal(
+        out.includes(secret),
+        false,
+        `"${secret}" survived scrubbing of ${JSON.stringify(input)} -> ${JSON.stringify(out)}`,
+      );
+    }
+  }
+});
+
+test("but a sentence after a path keeps its words", () => {
+  // The space rule must only swallow a trailing run that is actually a path —
+  // otherwise diagnostics turn into "<user>/<path>" and say nothing.
+  const out = scrub("/Users/bob is not a repository");
+  assert.match(out, /is not a repository/);
+});
+
+test("an env-var-rooted Windows path redacts everything after the variable", () => {
+  const out = scrub("%USERPROFILE%\\Documents\\AcmeSecret");
+  assert.equal(out.includes("AcmeSecret"), false);
+  assert.match(out, /%USERPROFILE%/, "the variable name itself identifies nobody");
+});
+
+// ── IPv6 ─────────────────────────────────────────────────────────────────────
+
+test("IPv6 addresses are redacted, in both forms", () => {
+  assert.match(scrub("connect to 2001:0db8:85a3:0000:0000:8a2e:0370:7334 failed"), /<ip>/);
+  assert.match(scrub("bound ::1"), /<ip>/);
+  assert.match(scrub("host fe80::1 unreachable"), /<ip>/);
+});
+
+test("IPv6 redaction does not eat timestamps or line:col", () => {
+  // The loose "colon-separated hex groups" reading of IPv6 destroys both, and
+  // line:col is the one thing a crash report has to keep.
+  assert.match(scrub("at 01:23:45 the build failed"), /01:23:45/);
+  assert.match(scrub("~/x/y.ts:42:5"), /:42:5/);
+  assert.match(scrub("took 1:30:00"), /1:30:00/);
+});
