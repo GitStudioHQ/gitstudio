@@ -976,6 +976,103 @@
       c.eq(rights.size, 1, `every count ends on one x (${[...rights].join(", ")})`);
     },
 
+    // ── the rail keeps its groups when it loses its words ───────────────────
+    "rail-groups-survive-collapse": (f) => {
+      const c = check(f);
+      const rail = $(".nav-rail");
+      c.ok(!!rail && rail.classList.contains("collapsed"), "the rail is collapsed to icons");
+      if (!rail) return;
+      const seps = $$(".nav-divider", rail);
+      c.ok(seps.length >= 2, `the three groups are still separated (${seps.length} rules)`);
+      for (const sep of seps) {
+        const after = getComputedStyle(sep, "::after");
+        // Hiding the label AND the rule left nothing but a slightly bigger gap.
+        c.ok(after.display !== "none", "a collapsed divider still draws its rule");
+        c.ok(!!sep.title, "and names its group on hover");
+      }
+      // …and the icons are distinguishable, which is the other half of reading
+      // fifteen destinations as icons alone.
+      const names = $$(".nav-item .codicon", rail).map(
+        (g) => [...g.classList].find((k) => k.startsWith("codicon-")),
+      );
+      c.eq(new Set(names).size, names.length, "no two rail icons are the same glyph");
+    },
+
+    // ── the Status filter shows the states it filters by ────────────────────
+    "status-facet-shows-its-states": (f) => {
+      const c = check(f);
+      const items = $$(".dropdown-item");
+      c.ok(items.length >= 5, `the Status menu opened (${items.length} items)`);
+      const named = items.filter((i) => /Success|Failure|In progress|Queued|Cancelled/.test(i.textContent || ""));
+      c.eq(named.length, 5, "all five states are listed");
+      const hues = new Set();
+      for (const i of named) {
+        const lead = i.querySelector(".run-lead .codicon, .run-lead");
+        const label = (i.textContent || "").trim();
+        c.ok(!!lead, `"${label}" carries the same lead icon the rows use`);
+        if (lead) hues.add(getComputedStyle(lead).color);
+      }
+      // Success green, failure red, running blue — grey for all five would mean
+      // the menu had been repainted by the generic muted-glyph rule.
+      c.ok(hues.size >= 3, `the states keep their colours (${hues.size} distinct)`);
+      const lefts = new Set(named.map((i) => Math.round(i.querySelector(".dropdown-label").getBoundingClientRect().left)));
+      c.eq(lefts.size, 1, `the labels form one column (${[...lefts].join(", ")})`);
+    },
+
+    // ── the palette's hint column says something new ────────────────────────
+    "palette-hints-are-not-echoes": (f) => {
+      const c = check(f);
+      const rows = $$(".cmdk-row");
+      c.ok(rows.length >= 5, `the palette lists results (${rows.length})`);
+      // A hint that restates its own group header is noise: "branch" three
+      // times under BRANCHES & TAGS, "view" six times under GO TO.
+      let group = "";
+      for (const n of $(".cmdk-list").children) {
+        if (n.classList.contains("cmdk-group")) { group = n.textContent.trim().toLowerCase(); continue; }
+        const hint = (n.querySelector(".cmdk-hint")?.textContent || "").trim().toLowerCase();
+        if (!hint) continue;
+        c.ok(
+          !group.includes(hint),
+          `"${hint}" just repeats its group header (${group})`,
+        );
+      }
+      // The list fades rather than slicing its last row in half.
+      const list = $(".cmdk-list");
+      const scrolls = list.scrollHeight > list.clientHeight + 1;
+      const masked = getComputedStyle(list).webkitMaskImage !== "none";
+      c.eq(masked, scrolls, scrolls ? "a scrollable list fades its edge" : "a short list must not fade");
+    },
+
+    // ── a peek is about its subject, not its buttons ────────────────────────
+    "peek-identity-gets-room": (f) => {
+      const c = check(f);
+      const head = $(".peek-head");
+      c.ok(!!head, "a peek is open");
+      if (!head) return;
+      const id = head.querySelector(".peek-titlewrap");
+      const acts = head.querySelector(".peek-actions");
+      c.ok(!!id && !!acts, "the header has an identity and an action cluster");
+      if (!id || !acts) return;
+      const i = id.getBoundingClientRect(), a = acts.getBoundingClientRect();
+      // Three buttons plus a close X used to take ~540px of a 700px card.
+      c.ok(
+        i.width >= 260,
+        `the identity keeps a floor (${Math.round(i.width)}px beside ${Math.round(a.width)}px of actions)`,
+      );
+      const title = head.querySelector(".peek-title");
+      if (title) {
+        c.ok(
+          title.scrollWidth <= title.clientWidth + 1,
+          `"${title.textContent}" is not truncated by its own buttons`,
+        );
+      }
+      // The face is the subject's, not a generic account glyph.
+      c.ok(
+        !!head.querySelector(".av"),
+        "the peek shows the same avatar as the row that opened it",
+      );
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
     "settings-has-a-rhythm": (f) => {
       const c = check(f);

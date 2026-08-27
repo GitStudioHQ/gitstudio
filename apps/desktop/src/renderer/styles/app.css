@@ -1449,6 +1449,11 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
   padding: 13px 14px 12px 16px;
   border-bottom: 1px solid var(--app-border);
   flex: 0 0 auto;
+  /* Three buttons plus a close X took ~540px of a 700px card, leaving the
+     identity — the thing the card is ABOUT — around 230. The actions wrap to
+     their own line rather than squeezing the name. */
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 .peek-nav-btn {
   display: inline-flex;
@@ -1485,7 +1490,7 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
   margin: 0;
 }
 .peek-topics { display: flex; flex-wrap: wrap; gap: 6px; }
-.peek-titlewrap { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.peek-titlewrap { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .peek-titlerow { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .peek-title {
   font-size: 14.5px;
@@ -1535,7 +1540,7 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
   background: color-mix(in srgb, var(--app-muted) 12%, transparent);
   border-color: color-mix(in srgb, var(--app-muted) 22%, transparent);
 }
-.peek-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.peek-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; margin-left: auto; }
 .peek-act { height: 28px; }
 .peek-act.btn { height: 28px; padding: 0 12px; font-size: var(--text-sm); }
 .peek-act-danger { color: var(--gs-danger); }
@@ -1821,7 +1826,17 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   border-radius: 5px;
   padding: 2px 6px;
 }
-.cmdk-list { max-height: min(52vh, 480px); overflow-y: auto; padding: 6px; }
+.cmdk-list {
+  max-height: min(52vh, 480px);
+  overflow-y: auto;
+  padding: 6px;
+  /* A row sliced exactly in half at the card's edge reads as a rendering bug.
+     A fade over the last few pixels says "there is more below" instead. */
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 22px), transparent);
+}
+/* A short list never scrolls, so it must not fade its own last row. */
+.cmdk-list.is-short { -webkit-mask-image: none; mask-image: none; }
 .cmdk-group {
   font-size: var(--text-2xs, 10.5px);
   font-weight: 650;
@@ -2807,7 +2822,10 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
    ugly bar — the body is a flex column (align-items:stretch by default). */
 .settings-card-body > .btn,
 .settings-card-body > .btn-primary,
-.settings-card-body > .btn-danger { align-self: flex-start; }
+.settings-card-body > .btn-danger,
+/* …and a mini-btn, which now stands in for the bare text links these cards
+   used to mix in — stretched, it read as a full-width banner. */
+.settings-card-body > .mini-btn { align-self: flex-start; }
 .settings-card-head {
   display: flex;
   align-items: center;
@@ -3508,6 +3526,11 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 }
 .dropdown-item:hover { background: var(--app-hover); }
 .dropdown-item .glyph { color: var(--app-muted); flex: 0 0 auto; }
+/* A leading element that carries its OWN colour keeps it — the muted rule
+   above turned the run-status icons in the Status filter grey, which is the
+   one thing they must not be. */
+.dropdown-item .run-lead .glyph,
+.dropdown-item .gh-lead-icon .glyph { color: inherit; }
 .dropdown-item.is-current { color: var(--gs-accent-ink, var(--gs-accent)); font-weight: 600; background: var(--accent-soft); }
 .dropdown-item.is-current .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .dropdown-item.is-disabled { color: var(--app-muted); cursor: default; opacity: 0.5; }
@@ -4697,9 +4720,13 @@ body.resizing-h .nav-rail { transition: none; }
 }
 .nav-rail.collapsed .nav-label { display: none; }
 .nav-rail.collapsed .nav-item.active::before { left: -8px; }
-.nav-rail.collapsed .nav-divider { margin: 10px 6px 4px; justify-content: center; }
+.nav-rail.collapsed .nav-divider { margin: 9px 10px 8px; justify-content: center; }
 .nav-rail.collapsed .nav-divider-label { display: none; }
-.nav-rail.collapsed .nav-divider::after { display: none; }
+/* Collapsed, the label goes but the RULE stays: hiding both left the three
+   groups (Local · GitHub · Account) separated by nothing but a slightly bigger
+   gap, so fifteen icons read as one undifferentiated column. The group's name
+   moves to the divider's tooltip. */
+.nav-rail.collapsed .nav-divider::after { flex: 1 1 auto; height: 1px; }
 
 /* ── The rail's right edge: a pure drag-to-resize handle ───────────────────── */
 .rail-resizer {

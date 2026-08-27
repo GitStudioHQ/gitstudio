@@ -271,12 +271,9 @@ function buildGistDetail(ctx: GistDetailCtx): void {
   titleRow.appendChild(statePill(g.public ? "Public" : "Secret", g.public ? "public" : "private"));
   main.appendChild(titleRow);
 
-  const sub = el("div", "det-sub");
-  const when = el("span");
-  when.textContent = `updated ${relTimeISO(g.updatedAt)}`;
-  when.title = absTimeISO(g.updatedAt);
-  sub.appendChild(when);
-  main.appendChild(sub);
+  // No sub-line: it read "updated 2d ago" directly above an About rail whose
+  // Updated row says "2d ago". The rail is where a detail page's facts live —
+  // repeating one of them under the title is the same fact twice.
 
   if (g.files.length === 0) {
     main.appendChild(emptyState("Empty gist", "This gist has no files."));

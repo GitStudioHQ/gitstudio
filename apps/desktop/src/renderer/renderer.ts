@@ -640,6 +640,11 @@ class App {
     App.TABS.forEach((it, i) => {
       if (it.divider) {
         const sep = el("div", "nav-divider");
+        // Collapsed to icons the label is hidden, so the group's name lives on
+        // the rule itself.
+        sep.title = it.dividerLabel ?? "GitHub";
+        sep.setAttribute("role", "separator");
+        sep.setAttribute("aria-label", sep.title);
         sep.setAttribute("aria-hidden", "true");
         sep.append(span(it.dividerLabel ?? "GitHub", "nav-divider-label"));
         nav.appendChild(sep);
@@ -2559,7 +2564,7 @@ class App {
         }
         body.appendChild(list);
       }
-      const manage = el("button", "gh-link");
+      const manage = el("button", "mini-btn") as HTMLButtonElement;
       manage.append(glyph("link-external"), span("Manage SSH keys on GitHub"));
       manage.addEventListener("click", () => window.open("https://github.com/settings/keys", "_blank"));
       body.appendChild(manage);
@@ -2571,7 +2576,7 @@ class App {
     const { card, body } = settingsCard("About", "info");
     const sub = el("div", "settings-sub");
     sub.textContent = "GitStudio — an open-source, JetBrains-grade Git client.";
-    const versionRow = el("div", "settings-sub settings-version");
+    const versionRow = el("div", "settings-sub");
     versionRow.textContent = "…";
     void host
       .invoke("app:info", undefined)
@@ -2616,12 +2621,16 @@ class App {
       }
     });
 
-    const repo = el("button", "gh-link");
-    repo.append(glyph("github"), span("View the project on GitHub"));
+    // One action language per card: a bordered button beside a bare purple
+    // text link made two peers look like a control and a footnote. Leaving the
+    // app is a mini-btn with an external glyph everywhere else in the product.
+    const repo = el("button", "mini-btn") as HTMLButtonElement;
+    repo.append(glyph("link-external"), span("View the project on GitHub"));
     repo.addEventListener("click", () =>
       window.open("https://github.com/GitStudioHQ/gitstudio", "_blank"),
     );
-    body.append(sub, versionRow, updRow, repo);
+    updRow.insertBefore(repo, status);
+    body.append(sub, versionRow, updRow);
     return card;
   }
 
@@ -4521,7 +4530,7 @@ class App {
           keywords: t.id,
           run: () => go(t.id),
         }));
-        views.push({ icon: "gear", label: "Settings", hint: "view", run: () => go("settings") });
+        views.push({ icon: "gear", label: "Settings", run: () => go("settings") });
 
         const refs: PaletteItem[] = [
           ...this.refs
@@ -4529,7 +4538,8 @@ class App {
             .map((r): PaletteItem => ({
               icon: "git-branch",
               label: r.name,
-              hint: r.isCurrent ? "current branch" : "branch",
+              // Only the fact you can't see: which one you're on.
+              hint: r.isCurrent ? "current" : "",
               keywords: `branch ${r.name}`,
               run: () => go("branches", { ref: r.name }),
             })),
@@ -4538,7 +4548,6 @@ class App {
             .map((r): PaletteItem => ({
               icon: "tag",
               label: r.name,
-              hint: "tag",
               keywords: `tag ${r.name}`,
               run: () => go("branches", { ref: r.name }),
             })),
@@ -4659,7 +4668,7 @@ class App {
             {
               icon: "telescope",
               label: `Search GitHub for “${query}”`,
-              hint: "Explore",
+              hint: "",
               run: () => go("explore", { id: searchTargetId("repos", query) }),
             },
           ],

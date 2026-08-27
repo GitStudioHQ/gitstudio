@@ -633,7 +633,10 @@ function openTeamPeek(org: string, t: OrgTeam): void {
 export function memberCard(u: OrgMember): PeekCard {
   return {
     icon: "account",
-    iconEl: u.avatarUrl ? avatar(u.login, u.avatarUrl, 22) : undefined,
+    // Always the PERSON's avatar — initials and a per-login hue when there is
+    // no image — so the peek shows the same face as the row that opened it
+    // instead of a generic account glyph.
+    iconEl: avatar(u.login, u.avatarUrl, 22),
     title: u.login,
     subtitle: "GitHub profile",
     actions: [

@@ -193,6 +193,11 @@ export function openCommandPalette(providers: PaletteProviders): void {
     }
     const kept = keep ? flat.findIndex((f) => f.item === keep) : -1;
     select(kept >= 0 ? kept : 0);
+    // The bottom fade means "there is more below"; a list that fits must not
+    // wear it, or its own last row looks cut off.
+    requestAnimationFrame(() => {
+      list.classList.toggle("is-short", list.scrollHeight <= list.clientHeight + 1);
+    });
   };
 
   const onKey = (e: KeyboardEvent): void => {

@@ -253,12 +253,16 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           key: "status",
           label: "Status",
           icon: "pulse",
+          // The five states are drawn with a colour and a glyph on every run
+          // row, every job card and every step; in this menu they were plain
+          // text, so the one place you PICK a state was the one place it had
+          // no shape. Same lead icon the rows use.
           options: [
-            { value: "success", label: "Success" },
-            { value: "failure", label: "Failure" },
-            { value: "in_progress", label: "In progress" },
-            { value: "queued", label: "Queued" },
-            { value: "cancelled", label: "Cancelled" },
+            { value: "success", label: "Success", iconEl: () => runLead("success") },
+            { value: "failure", label: "Failure", iconEl: () => runLead("failure") },
+            { value: "in_progress", label: "In progress", iconEl: () => runLead("in_progress") },
+            { value: "queued", label: "Queued", iconEl: () => runLead("queued") },
+            { value: "cancelled", label: "Cancelled", iconEl: () => runLead("cancelled") },
           ],
         },
       ],
