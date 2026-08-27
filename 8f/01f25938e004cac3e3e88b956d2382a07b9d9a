@@ -1,0 +1,23 @@
+packages/host-bridge/src/scrub.ts
+  s_26f5e669d3043c::t_8da33406f2bb6b 145-178
+packages/host-bridge/test/scrub.test.ts
+  s_26f5e669d3043c::t_319bae1e7e4c7a 4,210-254
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_720f98bb0f7a70 23,955-959,962-963,967
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8f01f25938e004cac3e3e88b956d2382a07b9d9a",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
