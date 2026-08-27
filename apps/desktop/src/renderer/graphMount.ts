@@ -17,6 +17,9 @@ export interface GraphCallbacks {
   onShowDetails(sha: string): void;
   /** A branch/remote/tag chip on a row was clicked — navigate to that ref. */
   onRefClick(name: string, kind: string): void;
+  /** The history is empty (or stopped being). Lets the shell stand the details
+   *  pane down instead of asking you to select a commit that doesn't exist. */
+  onEmpty?(empty: boolean): void;
 }
 
 export class GraphMount {
@@ -76,8 +79,10 @@ export class GraphMount {
             // A genuinely empty history gets the crafted tile, not the shared
             // element's bare "No commits yet" — consistent with every other view.
             this.renderEmpty();
+            cb.onEmpty?.(true);
           } else {
             this.element.status = message.rows.length === 0 ? "empty" : "ready";
+            cb.onEmpty?.(false);
           }
           break;
         case "graphAppend":

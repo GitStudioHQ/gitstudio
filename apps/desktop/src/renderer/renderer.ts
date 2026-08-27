@@ -2580,12 +2580,18 @@ class App {
       crumbs.appendChild(btn);
       if (!isLast) crumbs.appendChild(span("/", "code-crumb-sep"));
     };
+    // At the ROOT the repo crumb carries nothing the top-bar switcher does not
+    // already show 45px above it, both with a folder-ish icon. Deeper in, it
+    // earns its place as the way back to the root.
     const repoName = this.currentRepo?.name ?? "repo";
     const parts = this.codePath ? this.codePath.split("/") : [];
-    seg(repoName, "", parts.length === 0);
+    if (parts.length > 0) seg(repoName, "", false);
     parts.forEach((p, i) => {
       seg(p, parts.slice(0, i + 1).join("/"), i === parts.length - 1);
     });
+    // At the root there is no trail to draw; the folder listing below already
+    // says where you are.
+    if (parts.length === 0) crumbs.hidden = true;
 
     const countChip = el("span", "code-count");
     countChip.hidden = true;
@@ -3532,7 +3538,10 @@ class App {
     }
     if (unstaged.length) {
       lists.appendChild(
-        this.sectionHeader(`Changes (${unstaged.length})`, "unstaged", unstaged, lists, selBar),
+        // "Changes" already names the view and the pane; this group is the
+        // UNSTAGED half, and calling it "Changes" beside "Staged" made the two
+        // read as unrelated rather than as a pair.
+        this.sectionHeader(`Unstaged (${unstaged.length})`, "unstaged", unstaged, lists, selBar),
       );
       unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
     }
@@ -4272,6 +4281,7 @@ class App {
       // Show the pane again WITHOUT re-selecting: selectCommit() would call
       // closeGraphDiff() and dispose a diff the user still has open.
       onShowDetails: () => this.setGraphDetailsVisible(true),
+      onEmpty: (empty) => this.setDetailsEmptyForNoHistory(empty),
     });
     this.graph = graph;
     void graph.reload();
@@ -5387,7 +5397,7 @@ class App {
     const wrap = el("div", "details details-empty");
     wrap.appendChild(
       this.currentRepo
-        ? emptyState("Commit details", "Select a commit in the graph to inspect its message, author, and changed files.", {
+        ? emptyState("Commit details", "Select a commit to inspect its message, author, and changed files.", {
             icon: "git-commit",
           })
         : emptyState("No repository open", "Open a repository to start exploring its history.", {
@@ -5395,6 +5405,13 @@ class App {
           }),
     );
     this.detailsEl.replaceChildren(wrap);
+  }
+
+  /** With no commits there is nothing to select, so the details pane must not
+   *  sit beside "No commits yet" telling you to select one — two competing
+   *  empty states, the second contradicting the first. */
+  private setDetailsEmptyForNoHistory(noHistory: boolean): void {
+    this.graphViewWrap?.classList.toggle("graph-no-history", noHistory);
   }
 
   // ── Commit actions (context menu) ────────────────────────────────────────────
