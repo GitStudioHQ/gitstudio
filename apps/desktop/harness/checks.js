@@ -67,6 +67,30 @@
       c.eq(idx, 0, "index of the selected row");
       c.match(rows[0]?.textContent, /Search GitHub for/, "first row");
     },
+    "palette-selection-visible": (f) => {
+      const c = check(f);
+      const sel = $(".cmdk-row.is-selected");
+      c.ok(!!sel, "a row is selected");
+      if (!sel) return;
+      const parse = (rgb) => (rgb.match(/\d+/g) || []).slice(0, 3).map(Number);
+      const lum = (rgb) => {
+        const [r, g, b] = parse(rgb).map((v) => {
+          const x = v / 255;
+          return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const rowBg = getComputedStyle(sel).backgroundColor;
+      const panelBg = getComputedStyle($(".cmdk-card")).backgroundColor;
+      const a = lum(rowBg) + 0.05;
+      const b = lum(panelBg) + 0.05;
+      const ratio = a > b ? a / b : b / a;
+      const bar = getComputedStyle(sel).boxShadow;
+      c.ok(
+        ratio >= 1.35 || /inset/.test(bar),
+        `selection must be visible: ${ratio.toFixed(2)}:1 against the panel and no accent bar`,
+      );
+    },
     "palette-min-chars": (f) => {
       const groups = $$(".cmdk-group").map((g) => g.textContent);
       check(f).ok(
@@ -258,6 +282,32 @@
       c.ok(seg.includes("Unread") && seg.includes("All"), `expected an Unread|All segment, got ${seg.join(", ")}`);
       const active = $$(".gh-seg-btn.active").map((b) => b.textContent.trim());
       c.ok(active.length >= 1, "the segment must show which mode is active");
+    },
+
+    "row-meta-columns-align": (f) => {
+      const c = check(f);
+      // A row missing an optional datum must not slide its neighbours into a
+      // different column — the meta cluster packs right-to-left.
+      const rows = $$(".sec-row[data-num]");
+      c.ok(rows.length >= 4, "need several rows");
+      const avatarXs = new Set();
+      for (const r of rows) {
+        const av = r.querySelector(".sec-avs");
+        if (av) avatarXs.add(left(av));
+      }
+      c.eq(
+        avatarXs.size,
+        1,
+        `author avatars must share one x across rows (found ${[...avatarXs].join(", ")})`,
+      );
+      // The time column is right-aligned, so its RIGHT edge is the column.
+      const timeXs = new Set(
+        rows
+          .map((r) => r.querySelector(".sec-row-time"))
+          .filter(Boolean)
+          .map((el) => Math.round(el.getBoundingClientRect().right)),
+      );
+      c.eq(timeXs.size, 1, `times must share one right edge (found ${[...timeXs].join(", ")})`);
     },
 
     // ── Pull requests ────────────────────────────────────────────────────────

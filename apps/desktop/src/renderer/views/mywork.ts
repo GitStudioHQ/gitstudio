@@ -21,6 +21,7 @@ import {
 import { peek as cachePeek, gget, bust } from "../cache";
 import {
   avatarStack,
+  blankable,
   facetBar,
   type FacetState,
   ghGate,
@@ -115,7 +116,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     // bare text while its siblings showed an avatar in the same slot.
     const meta: HTMLElement[] = [];
     if (it.author) meta.push(avatarStack([{ login: it.author }], 1, 18, "Author"));
-    if (it.comments > 0) meta.push(statBit("comment", it.comments));
+    meta.push(blankable(statBit("comment", it.comments), it.comments > 0));
     const row = secRow({
       lead: stateLead(kind),
       num: `#${it.number}`,

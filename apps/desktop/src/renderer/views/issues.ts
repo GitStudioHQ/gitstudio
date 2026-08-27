@@ -35,6 +35,7 @@ import { memberCard } from "./orgs";
 import { aiChip, openAssistantTab, streamInto, aiEnabled } from "../aiAssist";
 import {
   associationBadge,
+  blankable,
   facetBar,
   harvestValues,
   segmented,
@@ -196,8 +197,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // One order across every list: who wrote it, who owns it, then the counts.
     const meta: HTMLElement[] = [];
     if (it.user) meta.push(avatarStack([it.user], 1, 18, "Author"));
-    if (it.assignees.length) meta.push(avatarStack(it.assignees, 3, 18, "Assignee"));
-    if (it.comments > 0) meta.push(statBit("comment", it.comments));
+    // Reserved even when empty, so the author avatar keeps its column on rows
+    // that happen to have no assignee.
+    meta.push(blankable(avatarStack(it.assignees, 3, 18, "Assignee"), it.assignees.length > 0));
+    // Rendered even at zero (blanked, not omitted): the meta cluster packs
+    // right-to-left, so an absent count used to slide the avatars into the
+    // column where every other row shows its comments.
+    meta.push(blankable(statBit("comment", it.comments), it.comments > 0));
     const row = secRow({
       lead: stateLead(issueStateKind(it.state, it.stateReason)),
       num: `#${it.number}`,

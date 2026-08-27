@@ -38,6 +38,7 @@ import { openAssistantTab, aiEnabled } from "../aiAssist";
 import { DiffPanel } from "../diffPanel";
 import {
   associationBadge,
+  blankable,
   facetBar,
   harvestValues,
   segmented,
@@ -213,14 +214,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // One order across every list: who wrote it, who owns it, then the counts.
     const meta: HTMLElement[] = [];
     if (pr.user) meta.push(avatarStack([pr.user], 1, 18, "Author"));
-    if (pr.assignees?.length) meta.push(avatarStack(pr.assignees, 3, 18, "Assignee"));
+    meta.push(blankable(avatarStack(pr.assignees ?? [], 3, 18, "Assignee"), !!pr.assignees?.length));
     if (typeof pr.additions === "number" || typeof pr.deletions === "number") {
       const stat = el("span", "sec-diffstat");
       if (typeof pr.additions === "number") stat.appendChild(span(`+${pr.additions}`, "add"));
       if (typeof pr.deletions === "number") stat.appendChild(span(`−${pr.deletions}`, "del"));
       meta.push(stat);
     }
-    if (typeof pr.comments === "number" && pr.comments > 0) meta.push(statBit("comment", pr.comments));
+    meta.push(blankable(statBit("comment", pr.comments ?? 0), (pr.comments ?? 0) > 0));
 
     const row = secRow({
       lead: stateLead(kind),

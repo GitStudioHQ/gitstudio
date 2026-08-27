@@ -853,6 +853,17 @@ export function capNotice(
 
 // ── Facets: one filter vocabulary for every section ──────────────────────────
 
+/** Keep an element's SPACE while hiding its ink. Row meta packs right-to-left,
+ *  so omitting an optional slot shifts everything left of it into a different
+ *  column and the eye can no longer scan down the list. */
+export function blankable(el_: HTMLElement, show: boolean): HTMLElement {
+  if (!show) {
+    el_.style.visibility = "hidden";
+    el_.setAttribute("aria-hidden", "true");
+  }
+  return el_;
+}
+
 /** A tiny round color swatch for a label (menu leading element). */
 export function swatch(hexColor: string): HTMLElement {
   const sw = el("span", "gh-label-swatch");
