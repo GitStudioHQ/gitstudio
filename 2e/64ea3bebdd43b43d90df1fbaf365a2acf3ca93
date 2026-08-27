@@ -1,0 +1,23 @@
+apps/desktop/src/renderer/cache.ts
+  s_26f5e669d3043c::t_f26d1d79e514e3 95-130,132,136
+apps/desktop/test/cache.test.ts
+  s_26f5e669d3043c::t_b395aed20970a1 1-11,13-43,48-52,64-159,163-168,170-215
+  s_26f5e669d3043c::t_e8d9f9b1fe95f4 12,44-47,53-63
+  s_26f5e669d3043c::t_5a529d9d575845 160-162,169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2e64ea3bebdd43b43d90df1fbaf365a2acf3ca93",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
