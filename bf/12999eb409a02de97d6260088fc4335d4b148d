@@ -1,0 +1,51 @@
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_3b83a1758ce3c3 48-49,144-157,209-218,223,228-230
+  s_26f5e669d3043c::t_f8b667e0f6626c 38
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_9ecca18305cb4b 47-52,57
+apps/desktop/src/renderer/views/orgs.ts
+  s_26f5e669d3043c::t_ad77d0c77ab044 136-137
+  s_26f5e669d3043c::t_36d556a8177508 208-215,217,220-226,229-230,233-238,240
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_2270cc81e4e024 179-182
+apps/desktop/src/renderer/logModel.ts
+  s_26f5e669d3043c::t_03f5faed24e774 79-83,86,90-95
+apps/desktop/test/truncate.test.ts
+  s_26f5e669d3043c::t_8909f266ab034c 3
+  s_26f5e669d3043c::t_e926a097d1b5dc 1-2,4-33
+apps/desktop/src/renderer/textFit.ts
+  s_26f5e669d3043c::t_8909f266ab034c 1-19
+apps/desktop/test/logModel.test.ts
+  s_26f5e669d3043c::t_6f1f3b75e3d4a4 18-21,27-35,40,42-43,47-50
+  s_26f5e669d3043c::t_801f1e6ccb27c6 51-52
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_71a429ab2398b0 63,4941,4946,4967,4972
+  s_26f5e669d3043c::t_0e43492906764a 4464-4466,4959
+apps/desktop/src/renderer/logView.ts
+  s_26f5e669d3043c::t_f15d0a34d9b9f9 82-86,89-90,99-101,137-138,206-207,210-211
+apps/desktop/src/renderer/ui.ts
+  s_26f5e669d3043c::t_8909f266ab034c 7
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_ad77d0c77ab044 4251-4253,4274-4282,4288-4302
+  s_26f5e669d3043c::t_9ecca18305cb4b 6631-6641
+  s_26f5e669d3043c::t_f15d0a34d9b9f9 7898-7901,7903,7911-7915,7998-8001,8009-8011
+  s_26f5e669d3043c::t_ddee59f734cb54 4303
+apps/desktop/src/renderer/cloneDialog.ts
+  s_26f5e669d3043c::t_978cab92a7574f 57,443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "bf12999eb409a02de97d6260088fc4335d4b148d",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
