@@ -19,6 +19,9 @@
 /** Private-use sentinel for parking finished HTML during inline parsing; cannot
  *  occur in escaped text and is stripped from input anyway. */
 const SENT = "\uE000";
+/** Sentinel for allowlisted tags parked during sanitizeHtml's escape pass.
+ *  Distinct from SENT so an inline hold can never collide with a tag hold. */
+const TAG_SENT = "\uE001";
 /** Hard caps so a crafted document can't blow the stack / DOM. */
 const MAX_QUOTE_DEPTH = 16;
 const MAX_LIST_DEPTH = 10;
@@ -175,7 +178,9 @@ function filterAttrs(tag: string, rawAttrs: string): string {
  * permitted is removed. This is the security boundary for all rendered markdown.
  */
 export function sanitizeHtml(html: string): string {
-  let s = html;
+  // The sentinels below are private-use codepoints; strip any the input carries
+  // so a crafted body can never forge one and smuggle markup past the escape.
+  let s = html.split(TAG_SENT).join("");
 
   // 1. Drop dangerous elements together with their contents (closed or not).
   for (const tag of DROP_WITH_CONTENT) {
@@ -190,6 +195,11 @@ export function sanitizeHtml(html: string): string {
 
   // 3. Rewrite every remaining tag through the allowlist. The attribute-aware
   //    pattern tolerates `>` inside quoted attribute values.
+  //
+  //    Each surviving tag is parked behind a sentinel rather than written back
+  //    directly, so that step 4 can escape everything the pattern did NOT
+  //    match without also re-escaping our own output.
+  const kept: string[] = [];
   s = s.replace(
     /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g,
     (_m, slash: string, rawTag: string, attrs: string) => {
@@ -197,17 +207,36 @@ export function sanitizeHtml(html: string): string {
       if (!ALLOWED_TAGS.has(tag)) {
         return "";
       }
+      let html: string;
       if (slash) {
-        return VOID_TAGS.has(tag) ? "" : `</${tag}>`;
+        if (VOID_TAGS.has(tag)) return "";
+        html = `</${tag}>`;
+      } else {
+        const filtered = filterAttrs(tag, attrs);
+        html = VOID_TAGS.has(tag) ? `<${tag}${filtered} />` : `<${tag}${filtered}>`;
       }
-      const filtered = filterAttrs(tag, attrs);
-      return VOID_TAGS.has(tag) ? `<${tag}${filtered} />` : `<${tag}${filtered}>`;
+      kept.push(html);
+      return TAG_SENT + (kept.length - 1) + TAG_SENT;
     },
   );
 
-  // 4. Any lone `<` that survived (e.g. `a < b`) is inert text.
-  s = s.replace(/<(?![a-zA-Z/])/g, "&lt;");
-  return s;
+  // 4. FAIL CLOSED. Every `<` still standing is markup the pattern above could
+  //    not parse, and passing it through verbatim was a real, proven XSS: an
+  //    unterminated attribute quote — `<img src="x` — does not match, so the
+  //    tag was emitted untouched and never attribute-filtered. The browser then
+  //    ran that quote on until the NEXT `"` in the document, which the sanitizer
+  //    itself supplies from a later tag's `title="…"`, and everything after it
+  //    landed in attribute position on the unfiltered tag. A body carrying
+  //    `<img src="x` and, further down, `<b title="onerror=alert(1) x">` gave
+  //    the img a live onerror. Escaping instead of trusting closes the whole
+  //    class, lone `a < b` included.
+  s = s.replace(/</g, "&lt;");
+
+  // 5. Restore the tags that DID pass the allowlist.
+  return s.replace(
+    new RegExp(`${TAG_SENT}(\\d+)${TAG_SENT}`, "g"),
+    (_m, i: string) => kept[Number(i)] ?? "",
+  );
 }
 
 // ── inline parsing ───────────────────────────────────────────────────────────
