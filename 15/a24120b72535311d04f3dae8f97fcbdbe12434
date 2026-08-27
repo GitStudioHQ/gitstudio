@@ -1,0 +1,38 @@
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_7ee319390171f3 2642-2644,7191-7193,7195
+  s_26f5e669d3043c::t_1ad9200830eb80 7604-7608
+  s_26f5e669d3043c::t_065480f385218b 7197-7198
+  s_26f5e669d3043c::t_3bde76561122fd 2645
+apps/desktop/src/renderer/views/actions.ts
+  s_26f5e669d3043c::t_2a3d7b7706cfa1 34
+  s_26f5e669d3043c::t_1ad9200830eb80 291-293,295-298,301-304,306
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_3bde76561122fd 39-40
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_5477d2fe14a4e0 3094-3097,3124,3386-3387
+  s_26f5e669d3043c::t_3bde76561122fd 3500-3506
+  s_26f5e669d3043c::t_1ad9200830eb80 3141-3144
+apps/desktop/test/stylesheet.test.ts
+  s_26f5e669d3043c::t_ce732e1abc4029 16,38-40
+  s_26f5e669d3043c::t_4c580d43363b75 96-129
+  s_26f5e669d3043c::t_e48f5288da7d35 1-15,17-37,41-79,83,94-95
+  s_26f5e669d3043c::t_25eea202ce9996 80-82,84-93
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_3bde76561122fd 168-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "15a24120b72535311d04f3dae8f97fcbdbe12434",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
