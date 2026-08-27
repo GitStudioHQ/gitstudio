@@ -1,0 +1,21 @@
+apps/desktop/test/logModel.test.ts
+  s_26f5e669d3043c::t_b3fe3ba90a9d70 108-160
+apps/desktop/src/renderer/logModel.ts
+  s_26f5e669d3043c::t_bebd0dc0b6b9e5 52-79,88-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "73a98437bd908fc1615d41d020af4b16bba120a6",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
