@@ -1,0 +1,37 @@
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_9906ec826d9f88 496-542,554-555
+  s_26f5e669d3043c::t_f47e34a3e050c9 595-604
+  s_26f5e669d3043c::t_12f582fedc368e 697-698,700-702
+  s_26f5e669d3043c::t_e4910ba547ed94 731-749
+  s_26f5e669d3043c::t_661f20270c5117 579-581
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_2e9f485cce30c4 198-241
+  s_26f5e669d3043c::t_76006287244183 1-138,140-188,190-197,242-360
+  s_26f5e669d3043c::t_12f582fedc368e 139,189
+apps/desktop/src/renderer/views/actions.ts
+  s_26f5e669d3043c::t_bd8a27521f10b1 63
+  s_26f5e669d3043c::t_773ddefd4563b8 738,968-978,1027-1031
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_2e9f485cce30c4 47-48
+  s_26f5e669d3043c::t_e45951fe64671b 1-46,49-130
+apps/desktop/harness/gen.sh
+  s_26f5e669d3043c::t_e4910ba547ed94 13,25
+apps/desktop/harness/README.md
+  s_26f5e669d3043c::t_dd575afe69bb69 18-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "125355e4e93f0c121a9c23193193f6ebd40039bc",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}

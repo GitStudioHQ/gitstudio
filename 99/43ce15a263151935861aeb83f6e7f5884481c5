@@ -1,0 +1,93 @@
+apps/desktop/src/renderer/contextMenu.ts
+  s_26f5e669d3043c::t_f8ec1995a3f602 9
+  s_26f5e669d3043c::t_420b51ec749da2 42-43,65,176-177
+apps/desktop/src/renderer/peek.ts
+  s_26f5e669d3043c::t_6cd5f8d183252a 103,109
+  s_26f5e669d3043c::t_f8ec1995a3f602 10-11
+apps/desktop/src/renderer/facetModel.ts
+  s_26f5e669d3043c::t_f62a8a0df756d8 81-91,99-101
+apps/desktop/test/overlays.test.ts
+  s_26f5e669d3043c::t_110779f9197d3d 1-68
+apps/desktop/src/renderer/overlays.ts
+  s_26f5e669d3043c::t_35ac894523e1f7 1-64
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_7df467370f1000 35,82-95
+  s_26f5e669d3043c::t_f62a8a0df756d8 112,120,674,692
+  s_26f5e669d3043c::t_e96a69f0324842 137-142
+  s_26f5e669d3043c::t_4b0daf6f46de64 440-445
+  s_26f5e669d3043c::t_15f3476cb73cc8 30,302,312
+  s_26f5e669d3043c::t_dcdf83f880d804 193-194,216-217
+  s_26f5e669d3043c::t_9278f2b2d0b732 197-212
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_9278f2b2d0b732 308-318
+  s_26f5e669d3043c::t_6cbd6dc70addd0 191,193-194
+  s_26f5e669d3043c::t_46c2d946500a67 202
+  s_26f5e669d3043c::t_01db68a07c2c01 296
+apps/desktop/src/renderer/commandPalette.ts
+  s_26f5e669d3043c::t_f8ec1995a3f602 13
+  s_26f5e669d3043c::t_fdf0231b34ac05 140-143,148-155,223,232,249-252
+  s_26f5e669d3043c::t_6cd5f8d183252a 118,259
+apps/desktop/src/renderer/views/common.ts
+  s_26f5e669d3043c::t_01db68a07c2c01 152,154,163-173
+  s_26f5e669d3043c::t_46c2d946500a67 619-622,625-627,629,631-633,636-641
+apps/desktop/test/facets.test.ts
+  s_26f5e669d3043c::t_38cf618ea57890 106-131
+apps/desktop/src/renderer/views/mywork.ts
+  s_26f5e669d3043c::t_9278f2b2d0b732 156-166
+  s_26f5e669d3043c::t_6cbd6dc70addd0 114-115,117
+  s_26f5e669d3043c::t_65986fa869291e 23
+  s_26f5e669d3043c::t_7df467370f1000 85,87,93
+  s_26f5e669d3043c::t_01db68a07c2c01 143
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_6b211c04b2c905 65
+  s_26f5e669d3043c::t_f0082a1597ba92 1654-1656
+  s_26f5e669d3043c::t_5e01e618272a26 2903-2907,2913,3043-3054
+  s_26f5e669d3043c::t_5525dfaa56a0ef 1634-1639,1642-1643,1807-1823,1825
+  s_26f5e669d3043c::t_0dfd530c1d7649 858-863
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_4b0daf6f46de64 4197-4198,5990-5992
+  s_26f5e669d3043c::t_6c6df52f8420d5 7470-7474,7476
+  s_26f5e669d3043c::t_51e06bf7ae5065 46-53,1309,1346,1348,1374,1768,2919,3953,4154,4422,4992,5092,5448,5501-5505,6111,7797,7967
+  s_26f5e669d3043c::t_6abe0fda8400e8 54-57,3998-4001
+  s_26f5e669d3043c::t_e96a69f0324842 6017,6020-6026
+  s_26f5e669d3043c::t_80d33d295fa17e 6018-6019
+  s_26f5e669d3043c::t_3dcbb88940b53b 1104-1107,7412-7415
+  s_26f5e669d3043c::t_1a943f3b6ff06e 5506
+apps/desktop/src/renderer/ui.ts
+  s_26f5e669d3043c::t_6592859e33c1ea 122-128,130-134,264
+  s_26f5e669d3043c::t_bcab09dde44c3d 6
+  s_26f5e669d3043c::t_062f24e3ef59a8 275-283,287-288,298-299
+  s_26f5e669d3043c::t_3dcbb88940b53b 231-234,258-263
+  s_26f5e669d3043c::t_5321e59378d29d 662-672,674,687-688,693-694,696-697
+apps/desktop/src/renderer/views/issues.ts
+  s_26f5e669d3043c::t_9278f2b2d0b732 273-280
+  s_26f5e669d3043c::t_7ccd63f837fed8 302-318,374-378
+  s_26f5e669d3043c::t_e1884eb67880c1 42
+  s_26f5e669d3043c::t_46c2d946500a67 196,198-199
+  s_26f5e669d3043c::t_01db68a07c2c01 236
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_6cd5f8d183252a 90,98-101
+  s_26f5e669d3043c::t_f8ec1995a3f602 7-8
+apps/desktop/src/renderer/views/actions.ts
+  s_26f5e669d3043c::t_f62a8a0df756d8 237-244
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_513ae0b467bd1a 240-280
+apps/desktop/src/renderer/views/releases.ts
+  s_26f5e669d3043c::t_986d86499bf543 36,96-104,106-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "9943ce15a263151935861aeb83f6e7f5884481c5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+apps/desktop/src/renderer/views/releases.ts
+  s_26f5e669d3043c::t_ba5dfa424b6236 295-296,301-315
+apps/desktop/src/renderer/logView.ts
+  s_26f5e669d3043c::t_88ac45323cbc7f 103-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "3b37d73168603d72776f8cc19a3650a6c9e36288",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
