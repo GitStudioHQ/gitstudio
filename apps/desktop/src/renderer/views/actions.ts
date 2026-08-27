@@ -60,6 +60,7 @@ import type {
   RepoSecretInfo,
   RepoVariableInfo,
   WorkflowRun,
+  WorkflowStep,
   WorkflowRunDetail,
   WorkflowJob,
   WorkflowInfo,
@@ -734,6 +735,7 @@ interface RunDetailCtx {
 function buildRunDetail(ctx: RunDetailCtx): void {
   const { main, rail, topActions, d, reload } = ctx;
   const full = d.run;
+  runMaxStepSec = Math.max(0, ...d.jobs.flatMap((j) => j.steps.map(stepSeconds)));
   // One identity for this run, everywhere on the page: the run NUMBER. The
   // crumb used to carry the internal id ("#9100") while the title showed
   // "#411" — the same run wearing two numbers 40px apart.
@@ -963,6 +965,17 @@ function runStatePill(state: string): HTMLElement {
 
 /** One expandable job card: header row (dot + name + state + Logs) + its steps.
  *  Expansion is remembered in `expandedJobs` so live-poll repaints keep it. */
+/** The longest step in the run being rendered — the shared scale for every
+ *  step bar on the page. Set by buildRunDetail before the cards are built. */
+let runMaxStepSec = 0;
+
+/** Seconds a step took, or 0 when it hasn't finished (or never started). */
+function stepSeconds(s: WorkflowStep): number {
+  const a = Date.parse(s.startedAt);
+  const b = Date.parse(s.completedAt);
+  return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, (b - a) / 1000) : 0;
+}
+
 function jobCard(j: WorkflowJob): HTMLElement {
   const card = el("div", "gh-job");
   const state = j.conclusion || j.status || "";
@@ -1011,12 +1024,11 @@ function jobCard(j: WorkflowJob): HTMLElement {
   }
   // Per-step durations + a proportional timeline bar (widths relative to the
   // longest step, via a --w custom property — layout stays in CSS).
-  const stepSecs = j.steps.map((s) => {
-    const a = Date.parse(s.startedAt);
-    const b = Date.parse(s.completedAt);
-    return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, (b - a) / 1000) : 0;
-  });
-  const maxSec = Math.max(1, ...stepSecs);
+  const stepSecs = j.steps.map(stepSeconds);
+  // Normalised across the WHOLE RUN, not per job: per-job scaling drew a 30s
+  // step and a 4m step at the same length in adjacent cards, which makes the
+  // bars actively misleading — they exist to be compared.
+  const maxSec = Math.max(1, runMaxStepSec, ...stepSecs);
   j.steps.forEach((s, i) => {
     const row = el("div", "gh-step-row");
     const sState = s.conclusion || s.status || "";

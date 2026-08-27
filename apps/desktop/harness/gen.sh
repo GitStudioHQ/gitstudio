@@ -10,6 +10,7 @@ mkdir -p "$PAGE"
 cp "$DIST/renderer.js" "$DIST/renderer.css" "$DIST/theme-boot.js" "$PAGE/"
 cp "$DIST"/brand-*.svg "$DIST"/icon*.png "$PAGE/" 2>/dev/null || true
 cp "$HARNESS/shim.js" "$PAGE/shim.js"
+cp "$HARNESS/checks.js" "$PAGE/checks.js"
 cat > "$PAGE/harness.html" <<'HTML'
 <!DOCTYPE html>
 <html lang="en">
@@ -21,6 +22,7 @@ cat > "$PAGE/harness.html" <<'HTML'
   <body>
     <script src="./theme-boot.js"></script>
     <div id="root"><div id="boot">Loading GitStudio…</div></div>
+    <script src="./checks.js"></script>
     <script src="./shim.js"></script>
     <script src="./renderer.js"></script>
   </body>

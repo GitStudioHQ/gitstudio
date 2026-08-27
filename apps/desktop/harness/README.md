@@ -15,6 +15,22 @@ harness/shot.sh 'prs~open106~click:.gh-subtab%5Bdata-sub%3Dfiles%5D' out/files.p
 harness/shot.sh issues out/light.png light       # light theme
 ```
 
+## Functional checks
+
+Screenshots prove a surface renders. They do not prove the count badge tracks
+the filter, that a disabled button is disabled, that a menu is dismissed on
+navigation, or that two columns share an x — those are assertions.
+
+```sh
+node harness/check.mjs                 # every case
+node harness/check.mjs count palette   # only cases matching these substrings
+```
+
+Each case names a scene and an assertion from `checks.js`, which runs INSIDE
+the page after the scene driver finishes and returns a list of failures. The
+runner exits non-zero if anything fails, so it can gate a commit. Add a case by
+writing the assertion in `checks.js` and listing `[id, scene]` in `check.mjs`.
+
 `shim.js` fakes the preload's `window.gitstudio` bridge (see `shared/ipc.ts`)
 with fixtures for the GitStudio repo itself. Unstubbed channels log
 `[shim missing] <channel>` to the console and resolve safely — add a fixture

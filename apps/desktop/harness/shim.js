@@ -493,9 +493,53 @@
     "pr:files": (n) => prFiles[n] || [],
     "pr:checks": (n) => prChecks[n] || [],
     "pr:commits": (n) => prCommits[n] || [],
-    "actions:runDetail": (id) => ({
-      run: runs.find((r) => r.id === id) || runs[0],
-      jobs: [
+    // Per-run job sets. Every run used to return the same two jobs, so the
+    // success path, the failure path and a many-job matrix were all
+    // unreviewable — the fixture answered every question the same way.
+    "actions:runDetail": (id) => {
+      const run = runs.find((r) => r.id === id) || runs[0];
+      const step = (name, n, concl, from, to) => ({
+        name, number: n, status: concl === "in_progress" ? "in_progress" : "completed",
+        conclusion: concl === "in_progress" ? "" : concl,
+        startedAt: ISO(from), completedAt: concl === "in_progress" ? "" : ISO(to),
+      });
+      const job = (o) => ({
+        id: o.id, runId: id, runAttempt: run.runAttempt || 1, name: o.name,
+        status: o.status, conclusion: o.conclusion, htmlUrl: "",
+        createdAt: ISO(0.42), startedAt: ISO(o.from), completedAt: o.to ? ISO(o.to) : "",
+        runnerName: o.runner ?? "GitHub Actions 8", runnerGroupName: "Default",
+        labels: o.labels, workflowName: run.name, headBranch: run.branch, steps: o.steps,
+      });
+      // A FAILED run: one job green, one red with a failing step.
+      if (run.conclusion === "failure") {
+        return { run, jobs: [
+          job({ id: 21, name: "lint", status: "completed", conclusion: "success", from: 0.4, to: 0.36,
+            labels: ["ubuntu-latest"], steps: [
+              step("Checkout", 1, "success", 0.4, 0.397),
+              step("npm ci", 2, "success", 0.397, 0.37),
+              step("eslint", 3, "success", 0.37, 0.36),
+            ] }),
+          job({ id: 22, name: "test (ubuntu-latest)", status: "completed", conclusion: "failure", from: 0.4, to: 0.2,
+            labels: ["ubuntu-latest"], steps: [
+              step("Checkout", 1, "success", 0.4, 0.397),
+              step("npm ci", 2, "success", 0.397, 0.33),
+              step("Renderer tests", 3, "failure", 0.33, 0.2),
+              step("Upload artifacts", 4, "skipped", 0.2, 0.2),
+            ] }),
+        ] };
+      }
+      // A SCHEDULED run: a single job, all green — the quiet happy path.
+      if (run.event === "schedule") {
+        return { run, jobs: [
+          job({ id: 31, name: "nightly", status: "completed", conclusion: "success", from: 0.5, to: 0.2,
+            labels: ["ubuntu-latest"], runner: "GitHub Actions 3", steps: [
+              step("Checkout", 1, "success", 0.5, 0.497),
+              step("Build", 2, "success", 0.497, 0.31),
+              step("Notarize", 3, "success", 0.31, 0.2),
+            ] }),
+        ] };
+      }
+      return { run, jobs: [
         { id: 1, runId: id, runAttempt: 1, name: "build (macos-latest)", status: "completed", conclusion: "success", htmlUrl: "", createdAt: ISO(0.42), startedAt: ISO(0.4), completedAt: ISO(0.2), runnerName: "GitHub Actions 8", runnerGroupName: "Default", labels: ["macos-latest"], workflowName: "Desktop CI", headBranch: "main", steps: [
           { name: "Checkout", status: "completed", conclusion: "success", number: 1, startedAt: ISO(0.4), completedAt: ISO(0.395) },
           { name: "npm ci", status: "completed", conclusion: "success", number: 2, startedAt: ISO(0.395), completedAt: ISO(0.33) },
@@ -507,7 +551,8 @@
           { name: "npm ci", status: "in_progress", conclusion: "", number: 2, startedAt: ISO(0.29), completedAt: "" },
         ] },
       ],
-    }),
+      };
+    },
     "orgs:repos": () => orgRepos,
     "orgs:teams": () => [ { name: "Core", slug: "core", description: "Maintainers", privacy: "closed", htmlUrl: "" } ],
     "orgs:members": () => [u(me), u("mira-holt"), u("s-ohta"), u("dkovachev"), u("jparks")].map((p) => ({ ...p, htmlUrl: "" })),
@@ -531,6 +576,9 @@
     "actions:jobLogChunk": (req) => {
       const TS = "2026-08-25T10:00:42.1234567Z ";
       const lines = [];
+      // Every job used to return the same failing log, so a green job's log
+      // ended in "exit code 1" and the success path could not be reviewed.
+      const failing = req.jobId === 22;
       lines.push(TS + "##[group]Run actions/checkout@v4");
       lines.push(TS + "Syncing repository: GitStudioHQ/gitstudio");
       lines.push(TS + "\u001b[36;1mgit version 2.47.0\u001b[0m");
@@ -544,7 +592,16 @@
       for (let i = 0; i < 60; i++) lines.push(TS + "  bundling module " + i + "/60 …");
       lines.push(TS + "\u001b[32m[build] finished\u001b[0m");
       lines.push(TS + "##[endgroup]");
-      lines.push(TS + "##[error]Process completed with exit code 1.");
+      if (failing) {
+        lines.push(TS + "##[group]Renderer tests");
+        lines.push(TS + "  \u001b[31m✗\u001b[0m issues › list renders every row");
+        lines.push(TS + "    expected 8 rows, got 2");
+        lines.push(TS + "##[endgroup]");
+        lines.push(TS + "##[error]Process completed with exit code 1.");
+      } else {
+        lines.push(TS + "\u001b[32mAll checks passed\u001b[0m");
+        lines.push(TS + "Job completed in 11m 24s");
+      }
       const full = lines.join("\n") + "\n";
       const off = Math.max(0, req.offset || 0);
       return { text: full.slice(off), totalLength: full.length, reset: off > full.length, truncated: false };
@@ -637,9 +694,12 @@
       } else if (step.startsWith("type:")) {
         // Type into the focused input (palette, search fields).
         const val = decodeURIComponent(step.slice(5));
-        const inp = document.activeElement && document.activeElement.tagName === "INPUT"
+        const editable = (n) => n && (n.tagName === "INPUT" || n.tagName === "TEXTAREA");
+        const inp = editable(document.activeElement)
           ? document.activeElement
-          : await until(() => q("input:focus") || q(".cmdk-card input") || q("input"));
+          : await until(() =>
+              q("input:focus") || q("textarea:focus") || q(".cmdk-card input") || q("input") || q("textarea"),
+            );
         inp.value = val;
         inp.dispatchEvent(new Event("input", { bubbles: true }));
       } else if (step.startsWith("text:")) {
@@ -668,6 +728,25 @@
       await wait(350);
     }
     await wait(600);
+    // Functional mode: run the named assertion and publish the verdict in the
+    // title, which is the one channel --dump-dom always carries back.
+    const checkId = params.get("check");
+    if (checkId) {
+      const suite = window.__GS_CHECKS || {};
+      const fn = suite[checkId];
+      if (!fn) {
+        document.title = "CHECK " + JSON.stringify({ id: checkId, fails: ["no such check"] });
+        return;
+      }
+      const fails = [];
+      try {
+        fn(fails);
+      } catch (e) {
+        fails.push("threw: " + (e && e.message ? e.message : String(e)));
+      }
+      document.title = "CHECK " + JSON.stringify({ id: checkId, fails });
+      return;
+    }
     document.title = "SCENE-READY";
   }
   window.addEventListener("DOMContentLoaded", () => { drive().catch((e) => console.error("[driver]", e)); });
