@@ -4,7 +4,7 @@
 // These replace the native alert()/confirm()/prompt(), which are jarring (and,
 // for prompt(), unsupported) in an Electron renderer.
 
-import { registerLayer } from "./overlays";
+import { registerLayer, isMenuOpen} from "./overlays";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -107,6 +107,7 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
     if (e.key === "Escape") {
       if (modalStack[modalStack.length - 1] !== token) return; // a newer modal owns Esc
       if (document.body.classList.contains("cmdk-open")) return; // the palette owns Esc
+      if (isMenuOpen()) return; // …and so does a menu opened from inside this dialog
       e.preventDefault();
       dismiss();
       return;

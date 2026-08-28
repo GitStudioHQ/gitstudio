@@ -14,9 +14,14 @@
 // Deliberately tiny and dependency-free: layers register from modules that this
 // one must never import back.
 
+/** What kind of layer this is. Only "menu" is distinguished, and only because
+ *  Escape precedence needs it — see `isMenuOpen`. */
+export type LayerKind = "menu" | "surface";
+
 /** A live floating layer. `dispose` must be idempotent. */
 interface Layer {
   id: number;
+  kind: LayerKind;
   dispose: () => void;
 }
 
@@ -28,9 +33,12 @@ let layers: Layer[] = [];
  * from its OWN close path, so a layer that closes normally doesn't linger in
  * the registry (and can't be disposed twice).
  */
-export function registerLayer(dispose: () => void): { release: () => void } {
+export function registerLayer(
+  dispose: () => void,
+  kind: LayerKind = "surface",
+): { release: () => void } {
   const id = nextId++;
-  layers.push({ id, dispose });
+  layers.push({ id, kind, dispose });
   return {
     release: () => {
       layers = layers.filter((l) => l.id !== id);
@@ -86,4 +94,31 @@ export function holdBackground(keep: HTMLElement): () => void {
     released = true;
     for (const el of held) el.removeAttribute("inert");
   };
+}
+
+/**
+ * Is a dropdown or context menu open right now?
+ *
+ * Escape precedence is the problem this answers. Every floating layer attaches
+ * its own capture-phase `keydown` to `document`, so which one hears the key
+ * first is REGISTRATION ORDER, not stacking order — and `stopPropagation` is no
+ * help, because listeners on the same node still all run (only
+ * `stopImmediatePropagation` would, and that makes precedence depend on
+ * registration order too, which is exactly the thing that is wrong).
+ *
+ * So one Escape closed both a menu and the peek or dialog it was opened from:
+ * you dismissed a menu on top of a surface, and the surface went with it,
+ * taking whatever you had typed into it. The palette had a hand-carved
+ * exception for this (`body.cmdk-open`); menus never did.
+ *
+ * A menu is always the topmost thing when it is open — it is opened FROM the
+ * surface beneath it — so surfaces stand down while one is up. This is a
+ * predicate rather than routing Escape through the registry on purpose: a peek
+ * registers a full `dispose` while its Escape means `back()` (one step up its
+ * own history), and a dialog deliberately registers `close` rather than
+ * `dismiss` so an in-flight clone can veto being dismissed. Those differences
+ * are load-bearing.
+ */
+export function isMenuOpen(): boolean {
+  return layers.some((l) => l.kind === "menu");
 }

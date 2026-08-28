@@ -136,12 +136,52 @@ export function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-/** A stable, pleasant avatar hue from a seed (email/name) — `hsl(...)` string.
- *  Deterministic so the same author always gets the same colour. */
+/** A stable avatar hue from a seed (email/name). Deterministic, so the same
+ *  author always gets the same colour. */
 export function avatarHue(seed: string): string {
+  return `hsl(${avatarHueDeg(seed)} 52% 44%)`;
+}
+
+/** The raw hue in degrees — exported so the ink can be chosen from it. */
+export function avatarHueDeg(seed: string): number {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 52% 52%)`;
+  return h % 360;
+}
+
+/**
+ * Black or white initials, whichever is legible on this seed's tile.
+ *
+ * The tiles hard-coded WHITE over `hsl(h 52% 52%)`, and 52% lightness is not
+ * one perceived brightness — it is a very different one at hue 60 (yellow) than
+ * at hue 240 (blue). So the same rule that gave "AN" a comfortable 5:1 gave a
+ * yellow-hashed login white-on-yellow at roughly 2:1. The hue is decorative and
+ * worth keeping; the assumption that one ink suits all of them is not.
+ */
+export function avatarInk(seed: string): string {
+  const hue = avatarHueDeg(seed);
+  // Relative luminance of hsl(hue 52% 44%), per WCAG's sRGB coefficients.
+  const [r, g, b] = hslToRgb(hue, 0.52, 0.44);
+  const lin = (c: number): number =>
+    c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  // Contrast against white is 1.05 / (L + 0.05); against black, (L + 0.05) / 0.05.
+  return 1.05 / (L + 0.05) >= (L + 0.05) / 0.05 ? "#ffffff" : "#10131a";
+}
+
+function hslToRgb(hDeg: number, s: number, l: number): [number, number, number] {
+  const h = hDeg / 360;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const to = (t: number): number => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [to(h + 1 / 3), to(h), to(h - 1 / 3)];
 }
 
 /** Relative time from an ISO-8601 string; "" when missing or unparseable. */
@@ -296,6 +336,7 @@ export function avatar(
     s.title = label;
     s.setAttribute("aria-label", label);
     s.style.setProperty("--av", avatarHue(login || "?"));
+    s.style.setProperty("--av-ink", avatarInk(login || "?"));
     s.style.width = s.style.height = `${size}px`;
     s.style.fontSize = `${Math.round(size * 0.42)}px`;
     return s;
@@ -754,7 +795,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     opts.onClose?.();
   };
   liveMenuClose = close;
-  const layer = registerLayer(() => close(false));
+  const layer = registerLayer(() => close(false), "menu");
   const onDoc = (e: MouseEvent): void => {
     // The ANCHOR is not "outside". This dismiss runs on a capturing mousedown,
     // so clicking the trigger of an open menu closed it here and then the
@@ -778,6 +819,11 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     const cur = vis.indexOf(document.activeElement as HTMLElement);
     if (e.key === "Escape") {
       e.preventDefault();
+      // The menu owns this Escape; the surfaces beneath it stand down via
+      // `isMenuOpen()`. stopPropagation cannot do that job — every layer
+      // listens on `document` ITSELF, and listeners on the same node all run
+      // regardless.
+      e.stopPropagation();
       close();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -860,7 +906,12 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
           if (!row.classList.contains("is-busy-item")) it.onClick!(row);
           return;
         }
-        close(false);
+        // Restore focus to the trigger BEFORE running the action. openModal
+        // captures `document.activeElement` as the place to return the keyboard
+        // to, and closing the menu without restoring left that as <body> — so
+        // dismissing a dialog opened from a menu stranded the keyboard at the
+        // top of the document instead of on the control you had used.
+        close(true);
         it.onClick!(row);
       });
       rows.push(row);

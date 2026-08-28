@@ -100,7 +100,9 @@ export function createLogPane(o: {
   }, "Timestamps");
   tsBtn.setAttribute("aria-pressed", "false");
   const followBtn = toolBtn("fold-down", "Follow the newest output", () => setFollow(!follow), "Follow");
-  followBtn.setAttribute("aria-pressed", "false");
+  // NOT a hand-stamped "false": `follow` starts ON, so a literal here made the
+  // button open lit while announcing itself off. setFollow is the only writer;
+  // it is called once below, after it is defined, to paint the initial state.
   const copyBtn = toolBtn("copy", "Copy the full log", () => {
     void Promise.resolve(o.onCopy()).then((t) => navigator.clipboard.writeText(t).catch(() => {}));
   });
@@ -194,6 +196,13 @@ export function createLogPane(o: {
       render();
     }
   }
+
+  // Paint the initial state through the ONE writer, so what the button looks
+  // like and what it announces can never start out disagreeing.
+  followBtn.classList.toggle("is-on", follow);
+  followBtn.title = follow ? "Following the newest output" : "Follow the newest output";
+  followBtn.setAttribute("aria-label", followBtn.title);
+  followBtn.setAttribute("aria-pressed", String(follow));
 
   // A user scroll away from the bottom disables follow; back to bottom re-arms.
   scroll.addEventListener("scroll", () => {

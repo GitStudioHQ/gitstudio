@@ -30,7 +30,15 @@ export const hostTokens = css`
     --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 12%, var(--gs-hover));
     --gs-border: color-mix(in srgb, var(--gs-fg) 13%, transparent);
     --gs-border-soft: color-mix(in srgb, var(--gs-fg) 8%, transparent);
-    --gs-amber: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
+    /* charts-yellow FIRST. This read gitDecoration-"modified" first, on the
+       reasoning that it is the legibility-tuned equivalent — but "modified" is
+       whatever a theme paints changed FILES, which is blue in most of them
+       (and in the GitStudio desktop, by construction). So every tag chip in the
+       graph rendered as the modified-file blue and the tuned amber never
+       shipped anywhere. charts-yellow is the semantically right slot for an
+       amber, and the decoration colour stays as the fallback for the rare theme
+       that omits the charts palette. */
+    --gs-amber: var(--vscode-charts-yellow, var(--vscode-gitDecoration-modifiedResourceForeground));
     --gs-brand: #7458e8;
     --gs-brand-hover: #7d61ec;
     --gs-brand-fg: #ffffff;

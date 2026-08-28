@@ -12,6 +12,7 @@
 //   repo/<owner>/<name>/tree/<ref>/<path…>
 //   repo/<owner>/<name>/blob/<ref>/<path…>
 
+import { fileLines } from "../textFit";
 import { host } from "../bridge";
 import { gget } from "../cache";
 import { toast } from "../dialogs";
@@ -323,7 +324,7 @@ async function renderFile(
     return;
   }
 
-  const lines = file.text.split("\n");
+  const lines = fileLines(file.text);
   const box = el("div", "explore-file");
   const gutter = el("div", "explore-file-gutter");
   gutter.textContent = lines.map((_, i) => String(i + 1)).join("\n");

@@ -250,13 +250,17 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     }
     // (The "N threads · M unread" summary line used to live here; the header
     // badge already says how many are shown, so it was the same fact twice.)
-    for (const t of shown) {
+    // ONE roving tab stop for the list: Tab reaches the Inbox and lands on the
+    // first thread, ↑/↓ move between them. Every row was `tabIndex = -1`, which
+    // made arrow traversal work but left the whole list unreachable from the
+    // keyboard in the first place — Tab skipped straight past it. Every other
+    // list in the app is enterable; this one was not.
+    shown.forEach((t, i) => {
       const row = notificationRow(t, body, refresh, nav, currentRepo);
       rowThreads.set(row, t);
-      // Rows are plain divs — focusable so ↑/↓ traversal and `e` work on them.
-      row.tabIndex = -1;
+      row.tabIndex = i === 0 ? 0 : -1;
       body.appendChild(row);
-    }
+    });
   };
 
   if (threads.length === 0) {
@@ -603,7 +607,22 @@ function notificationRow(
 
   // Whole-row click opens the subject (matches Actions / Projects rows). The
   // action buttons stopPropagation (textBtn does), so they don't double-fire.
+  // Every other list in the app builds a row you can reach and operate; these
+  // were the only ones that were not. They already carried the hover, the
+  // pointer cursor and an accessible NAME — but no role, no tab stop and no
+  // keys, so a keyboard user could read the Inbox and not open anything in it.
+  // The row holds its own action buttons, so it takes the app's documented
+  // div[role="button"] shape rather than becoming a <button>.
+  row.setAttribute("role", "button");
+  row.tabIndex = 0;
+  row.classList.add("is-clickable");
   row.addEventListener("click", open);
+  row.addEventListener("keydown", (e) => {
+    if (e.target !== row) return; // the row's own buttons keep their keys
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    open();
+  });
 
   // Right-click → a context menu mirroring the row actions.
   row.addEventListener("contextmenu", (e) => {

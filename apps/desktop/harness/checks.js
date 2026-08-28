@@ -817,6 +817,14 @@
       const w = parseFloat(st.outlineWidth) || 0;
       const off = parseFloat(st.outlineOffset) || 0;
       c.ok(w > 0, `the focused item paints a ring (outline-width ${st.outlineWidth})`);
+      // The APP's ring, not Chrome's. A menu row is tabindex="-1" (the bar has
+      // one roving tab stop), and the rule that strips the ring from
+      // tabindex="-1" LANDING targets must not reach a row you actually
+      // operate. Chrome's default paints `outline-style: auto`.
+      c.ok(
+        st.outlineStyle === "solid",
+        `and it is the app's ring, not Chrome's default (outline-style ${st.outlineStyle})`,
+      );
       const reach = w + Math.max(0, off);
       const i = item.getBoundingClientRect();
       // The scrollport clips at the menu's PADDING box, so the ring has to fit
@@ -1666,6 +1674,35 @@
       c.ok(now.classList.contains("active"), "which is now the selected one");
     },
 
+    // GitHub drops a reviewer from `requestedReviewers` the moment they SUBMIT,
+    // so a rail built from that list alone showed only the people who had not
+    // answered — and told you each of them had "not yet submitted". Anyone who
+    // had actually approved or blocked appeared nowhere in the rail at all,
+    // which is the one question the section exists to answer.
+    "reviewers-rail-says-who-answered": async (f) => {
+      const c = check(f);
+      await settle(700); // the verdicts arrive from the cached conversation
+      const prop = $$(".det-prop").find((p) =>
+        /reviewers/i.test(text($$(".det-prop-label", p)[0]) || ""),
+      );
+      c.ok(!!prop, "the rail has a Reviewers section");
+      if (!prop) return;
+      const chips = $$(".det-person", prop);
+      c.ok(chips.length >= 2, `it lists reviewers (${chips.length})`);
+      const cls = (n) => chips.filter((x) => x.classList.contains(n));
+      c.ok(cls("is-pending").length >= 1, "someone still owes a review");
+      c.ok(cls("is-approved").length >= 1, "and someone who APPROVED is shown as approved");
+      c.ok(cls("is-blocking").length >= 1, "and someone blocking is shown as blocking");
+      for (const chip of chips) {
+        c.ok(!!chip.title, `${text(chip)} says what its state means`);
+      }
+      // The claim has to be true of each chip, not just present.
+      for (const chip of cls("is-approved")) {
+        c.ok(/approved/i.test(chip.title), `"${chip.title}" reads as approved`);
+        c.ok(!/not yet submitted/i.test(chip.title), "and is NOT called unsubmitted");
+      }
+    },
+
     "approve-opens-the-composer": async (f) => {
       const c = check(f);
       const approve = $$(".mini-btn").find((b) => text(b) === "Approve");
@@ -1939,6 +1976,183 @@
       );
       c.ok(on[0] && on[0].tabIndex === 0, "the tab stop is the SELECTED tab");
       c.ok(!!$("[role=tabpanel]"), "the panel the tabs control is marked as one");
+    },
+
+    // A comment pasted into the MIDDLE of a selector list split it in two and
+    // handed the first five selectors the next rule's declaration — so every
+    // segmented control, checkbox and field label in Settings silently took
+    // `width: min(720px, 92vw)`. A 720px bordered rail around 277px of buttons
+    // reads as a broken control, and nothing in the source said why.
+    // The shared graph package paints from a `--vscode-*` vocabulary the desktop
+    // has to supply. It supplied it in the DARK block only, so on the light page
+    // `--gs-amber` resolved to nothing and a tag chip rendered as bare body
+    // text — no ink, no pill, and nothing in the source saying why.
+    // Every other list in the app builds a row you can reach and operate. The
+    // Inbox's rows carried the hover, the pointer and an accessible NAME but no
+    // role, no tab stop and no keys — so a keyboard user could read the Inbox
+    // and open nothing in it, and Tab skipped the whole list.
+    "inbox-rows-are-controls": (f) => {
+      const c = check(f);
+      const rows = $$(".notif-row");
+      c.ok(rows.length >= 3, `the Inbox lists threads (${rows.length})`);
+      for (const r of rows) {
+        c.eq(r.getAttribute("role"), "button", `"${text(r).slice(0, 22)}" is a control`);
+        c.ok(!!r.getAttribute("aria-label"), "and carries its own name");
+      }
+      // One roving tab stop: Tab reaches the list, arrows move inside it.
+      const stops = rows.filter((r) => r.tabIndex === 0);
+      c.eq(stops.length, 1, `the list is ONE tab stop (${stops.length})`);
+      c.ok(stops[0] === rows[0], "and Tab lands on the first thread");
+    },
+
+    // The ring is the one thing on screen whose whole job is to be seen. It was
+    // the accent mixed with `transparent`, which lowers ALPHA rather than
+    // lightness — so it composited toward the page behind it and measured
+    // 2.19-2.90:1 on the light ground, under the 3:1 WCAG asks of a focus
+    // indicator.
+    "the-focus-ring-can-be-seen": async (f) => {
+      const c = check(f);
+      const menu = $(".dropdown");
+      c.ok(!!menu, "a menu is open to focus something in");
+      if (!menu) return;
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
+      );
+      await settle(80);
+      const item = document.activeElement;
+      c.ok(!!item && item.classList.contains("dropdown-item"), "an item takes keyboard focus");
+      if (!item || !item.classList.contains("dropdown-item")) return;
+      // EVERY focusable surface, not just this one. Checking only the menu row
+      // is how the sidebar kept its 2.19:1 ring through a pass that was meant to
+      // replace every diluted outline in the app: the check was looking at the
+      // surface that had already been fixed.
+      for (const el of [...$$(".nav-item"), ...$$(".list-row"), ...$$(".sec-row")].slice(0, 6)) {
+        const ring = getComputedStyle(el).outlineColor;
+        c.ok(
+          !/rgba\([^)]*,\s*0?\.\d+\s*\)/.test(ring),
+          `${el.className.split(" ")[0]} has an opaque ring, not an alpha wash (${ring})`,
+        );
+      }
+      const st = getComputedStyle(item);
+      const nums = (col) => (col.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+      const lin = (v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      };
+      const lum = (col) => {
+        const [r, g, b] = nums(col);
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+      };
+      // color() / color-mix values do not parse as 0-255 triples; a ring that
+      // still carries alpha is exactly the bug, so demand a plain opaque colour.
+      c.ok(
+        /^rgba?\(/.test(st.outlineColor) && !/rgba\([^)]*,\s*0?\.\d+\s*\)/.test(st.outlineColor),
+        `the ring is an opaque colour, not an alpha wash (${st.outlineColor})`,
+      );
+      const a = lum(st.outlineColor);
+      const b = lum(getComputedStyle(menu).backgroundColor);
+      const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      c.ok(ratio >= 3, `it clears 3:1 against what it sits on (${Math.round(ratio * 100) / 100}:1)`);
+    },
+
+    // The branch/tag column is the reason to open Commits rather than read a
+    // plain log, and between roughly 1300 and 1550px it carried no readable text
+    // at all: the track pinned to its 60px structural floor, which is less than
+    // one chip's own furniture. Worse, it was non-monotonic — WIDENING the window
+    // past host 760 brought the date and sha columns back and made the refs
+    // column narrower. Invisible at the default size, appearing when you maximise.
+    "graph-ref-column-shows-a-name": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const host = $("gitstudio-graph");
+      c.ok(!!host && !!host.shadowRoot, "the graph renders");
+      if (!host || !host.shadowRoot) return;
+      const nm = host.shadowRoot.querySelector(".refs .nm");
+      c.ok(!!nm, "a ref chip carries a name element");
+      if (!nm) return;
+      const shown = Math.round(nm.getBoundingClientRect().width);
+      c.ok(
+        shown >= nm.scrollWidth - 1,
+        `"${nm.textContent}" is fully readable at ${window.innerWidth}px (${shown} of ${nm.scrollWidth}px)`,
+      );
+      const track = host.shadowRoot.querySelector(".ch-refs");
+      if (track) {
+        c.ok(
+          track.getBoundingClientRect().width > 60,
+          "and the track is above the structural floor, which cannot fit a chip",
+        );
+      }
+    },
+
+    "graph-ref-chips-are-painted": (f) => {
+      const c = check(f);
+      const host = $("gitstudio-graph");
+      c.ok(!!host && !!host.shadowRoot, "the graph renders with an open shadow root");
+      if (!host || !host.shadowRoot) return;
+      const chips = [...host.shadowRoot.querySelectorAll(".chip")];
+      c.ok(chips.length >= 2, `it draws ref chips (${chips.length})`);
+      const named = chips.filter((x) => (x.textContent || "").trim() && !x.classList.contains("chip-overflow"));
+      for (const chip of named) {
+        const st = getComputedStyle(chip);
+        // A chip is a PILL: it has to have a ground of its own. Transparent means
+        // the token behind it resolved to nothing.
+        const bg = st.backgroundColor;
+        const transparent = bg === "rgba(0, 0, 0, 0)" || bg === "transparent";
+        c.ok(
+          !transparent || chip.classList.contains("chip-current"),
+          `"${(chip.textContent || "").trim()}" has a ground (${bg})`,
+        );
+      }
+      // And the amber consumer specifically. Asserting only "has a ground" and
+      // "not the body colour" was too weak: after the first fix the chip was
+      // the modified-file BLUE and satisfied both, so this check passed while
+      // the tuned amber still never shipped. Name the hue.
+      const tag = chips.find((x) => x.classList.contains("chip-tag"));
+      c.ok(!!tag, "a tag chip is on screen to check");
+      if (!tag) return;
+      const st = getComputedStyle(tag);
+      c.ok(
+        st.backgroundColor !== "rgba(0, 0, 0, 0)",
+        `the tag chip keeps its pill (${st.backgroundColor})`,
+      );
+      const [r, g, b] = (st.color.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+      c.ok(r > b && g > b, `its ink is AMBER — red and green above blue (rgb ${r}, ${g}, ${b})`);
+      c.ok(
+        st.color !== getComputedStyle(document.body).color,
+        "and it is not simply the page's body colour",
+      );
+    },
+
+    "settings-controls-fit-their-content": (f) => {
+      const c = check(f);
+      const segs = $$(".settings-seg");
+      c.ok(segs.length >= 2, `Settings has segmented controls (${segs.length})`);
+      for (const seg of segs) {
+        const track = seg.getBoundingClientRect().width;
+        const btns = $$(".settings-seg-btn", seg).reduce(
+          (a, b) => a + b.getBoundingClientRect().width,
+          0,
+        );
+        c.ok(btns > 0, "the segment has buttons");
+        // The track is its buttons plus its own 1px borders — never a rail with
+        // hundreds of pixels of nothing inside it.
+        c.ok(
+          track - btns < 12,
+          `the track fits its buttons (${Math.round(track)}px around ${Math.round(btns)}px)`,
+        );
+      }
+      // The same broken list also cost these their top margin, so a card read
+      // as one undifferentiated block.
+      const body = $(".settings-card-body");
+      c.ok(!!body, "a settings card renders");
+      if (!body) return;
+      const spaced = $$(".settings-card-body > * + .settings-seg");
+      for (const el of spaced) {
+        c.ok(
+          parseFloat(getComputedStyle(el).marginTop) > 0,
+          "a control that follows something is pushed off from it",
+        );
+      }
     },
 
     "settings-has-a-rhythm": (f) => {

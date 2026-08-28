@@ -100,7 +100,15 @@
   /* Raw charts-yellow as small text fails AA on light themes (≈3:1); the
      gitDecoration "modified" foreground is the legibility-tuned equivalent and
      keeps every amber consumer (tag chips, modified "M") readable on both. */
-  --gs-amber: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow));
+  /* charts-yellow FIRST. This read gitDecoration-"modified" first, on the
+     reasoning that it is the legibility-tuned equivalent — but "modified" is
+     whatever a theme paints changed FILES, which is blue in most of them
+     (and in the GitStudio desktop, by construction). So every tag chip in the
+     graph rendered as the modified-file blue and the tuned amber never
+     shipped anywhere. charts-yellow is the semantically right slot for an
+     amber, and the decoration colour stays as the fallback for the rare theme
+     that omits the charts palette. */
+  --gs-amber: var(--vscode-charts-yellow, var(--vscode-gitDecoration-modifiedResourceForeground));
 
   /* ---- Brand ------------------------------------------------------------ */
   /* GitStudio violet. The mark's "one git tone" is #A98CFF (a light line

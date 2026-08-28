@@ -62,7 +62,7 @@ export class CommitContextMenu {
     refs: readonly RowRef[] = [],
   ): void {
     this.close();
-    this.layer = registerLayer(() => this.close(false));
+    this.layer = registerLayer(() => this.close(false), "menu");
     this.prevFocus = document.activeElement as HTMLElement | null;
     const menu = document.createElement("div");
     menu.className = "ctx-menu";
@@ -125,6 +125,8 @@ export class CommitContextMenu {
     switch (e.key) {
       case "Escape":
         e.preventDefault();
+        // This menu owns the keystroke — see the same note in ui.ts's openMenu.
+        e.stopPropagation();
         this.close();
         break;
       case "ArrowDown":

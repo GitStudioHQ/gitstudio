@@ -42,6 +42,7 @@ import {
   relTimeISO,
   initials,
   avatarHue,
+  avatarInk,
   avatar,
   fileIcon,
   formatBytes,
@@ -3126,7 +3127,9 @@ class App {
 
     const av = el("span", "code-latest-av");
     av.textContent = initials(hc.author);
-    av.style.setProperty("--av", avatarHue(hc.authorEmail || hc.author));
+    const seed = hc.authorEmail || hc.author;
+    av.style.setProperty("--av", avatarHue(seed));
+    av.style.setProperty("--av-ink", avatarInk(seed));
 
     const meta = el("div", "code-latest-meta");
     const who = el("span", "code-latest-author");

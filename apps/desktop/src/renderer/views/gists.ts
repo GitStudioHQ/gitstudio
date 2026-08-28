@@ -6,6 +6,7 @@
 // Edit, Delete, Copy raw URL. Gists aren't repo-scoped, so the view gates only
 // on the GitHub connection (NEEDS_REPO=false).
 
+import { fileLines } from "../textFit";
 import { host } from "../bridge";
 import { peek as cachePeek, gget, bust } from "../cache";
 import {
@@ -345,7 +346,7 @@ function buildGistDetail(ctx: GistDetailCtx): void {
  *  un-highlighted <pre>). Capped so a giant file can't lock the UI. */
 const MAX_RENDER_LINES = 5000;
 function codeBlock(text: string, fileName: string, truncated: boolean): HTMLElement {
-  const lines = text.split("\n");
+  const lines = fileLines(text);
   const shown = lines.slice(0, MAX_RENDER_LINES);
   const wrap = el("div", "ghfile");
   const gutter = el("pre", "ghfile-gutter");

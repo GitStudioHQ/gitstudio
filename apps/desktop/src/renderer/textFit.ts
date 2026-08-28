@@ -28,3 +28,21 @@ export function middleTruncate(text: string, max = 44): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
 }
+
+/**
+ * Split a file into the lines a reader would count.
+ *
+ * `"a\nb\n".split("\n")` is `["a", "b", ""]`, and every code viewer in the app
+ * numbered that trailing empty string as a real line. A POSIX text file ends in
+ * a newline, so this was not an edge case — it was every file: a 5-line file
+ * showed 6 numbers, and a line reference was off by one against the editor the
+ * reader would go on to open.
+ *
+ * Only ONE trailing empty is dropped: a file ending in a genuinely blank line
+ * ("a\n\n") keeps it, because that blank line is really there.
+ */
+export function fileLines(text: string): string[] {
+  const lines = text.split("\n");
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}

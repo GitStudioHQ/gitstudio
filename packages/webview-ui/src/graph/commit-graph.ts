@@ -26,6 +26,7 @@ import {
   fitRefsWidth,
   wantedRefsWidth,
   REF_CHIP_GAP,
+  legibleRefsWidth,
 } from "./refLayout";
 import {
   Virtualizer,
@@ -72,8 +73,22 @@ const COMPACT_DROP_DATE_AT = 580;
 const COMPACT_DROP_AUTHOR_AT = 430;
 const SUBJECT_MIN_COMPACT_MID = 150;
 const SUBJECT_MIN_COMPACT_TIGHT = 120;
-/** Below this, column mode drops its Date and SHA tracks. */
-const COLUMN_DROP_TAIL_AT = 760;
+/**
+ * Below this host width, column mode drops its Date and SHA tracks.
+ *
+ * The threshold is set by what the REFS column needs when the tail comes back,
+ * not by when the tail itself starts to feel tight. At 760 the tail returned
+ * ~36px too early: crossing it (a 1296px window) collapsed the branch/tag track
+ * from 168px to 87px and rendered zero readable characters in it, so WIDENING
+ * the window made a column narrower and emptied it. That put the dead band over
+ * exactly the maximised-laptop widths, and nothing on screen said the column had
+ * been starved — it just looked empty.
+ *
+ * Date and SHA are the right things to give up for it: both are still on the
+ * row's hover tooltip and in the details dock, and both can be turned back on
+ * from the Columns menu. A branch name has nowhere else to be.
+ */
+const COLUMN_DROP_TAIL_AT = 860;
 /** `:host([compact]) .content .refs { max-width }` — a share of the MESSAGE track. */
 const COMPACT_REFS_SHARE = 0.44;
 /** The sidebar rule's `.content .refs { max-width }` — a share of the row. */
@@ -2016,6 +2031,12 @@ export class CommitGraph extends LitElement {
       comfort: Math.min(SUBJECT_COMFORT_WIDTH, Math.round(host * 0.42)),
       min: spec.min,
       max: spec.max,
+      // The same floor a manual drag may squeeze the subject to. Refs yield to
+      // the subject's COMFORT first, then stop at the width where a ref name is
+      // still readable — rather than collapsing to a 60px track that can show
+      // only chrome. See fitRefsWidth.
+      subjectFloor: this.subjectFloor(),
+      legible: legibleRefsWidth(this.rows),
     });
     this.autoRefs = { n: this.rows.length, host, w: fitted };
     return fitted;

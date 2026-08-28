@@ -7,6 +7,7 @@
 //
 // Cards stack (repo → folder → file), so ← / Esc walk back out naturally.
 
+import { fileLines } from "./textFit";
 import { host } from "./bridge";
 import { openPeek, peekChip, peekSection, type PeekCard, type PeekContext } from "./peek";
 import { el, span, glyph, fileIcon, formatBytes, cleanErr } from "./ui";
@@ -210,7 +211,7 @@ function repoFileCard(fullName: string, path: string): PeekCard {
  *  can't lock the UI — the cap is announced, never silent. */
 const MAX_RENDER_LINES = 5000;
 function codeBlock(text: string, fileName: string): HTMLElement {
-  const lines = text.split("\n");
+  const lines = fileLines(text);
   const shown = lines.slice(0, MAX_RENDER_LINES);
   const wrap = el("div", "ghfile");
   const gutter = el("pre", "ghfile-gutter");

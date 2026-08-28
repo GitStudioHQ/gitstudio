@@ -39,23 +39,38 @@ test("every CSS variable is declared, or carries a fallback", () => {
 });
 
 /**
- * The desktop consumes a handful of VS Code semantic names from the shared CSS
- * it inherited from the extension. Undeclared, each one fell through to a
- * literal tuned for a dark editor — which is how "Sign out" ended up a 3.61:1
- * red on the LIGHT page. Both themes must state them.
+ * The shared packages speak a VS Code vocabulary the desktop has to supply.
+ *
+ * `packages/webview-ui/src/styles/tokens.css` derives its whole palette from
+ * `--vscode-*` names — in the extension the editor provides them; in the desktop
+ * nobody does. Undeclared, each resolves to `var(undefined)`, which is invalid
+ * at computed-value time: the property does not apply and the element silently
+ * keeps whatever it inherited. `--gs-amber` is
+ * `var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow))`,
+ * and with neither declared a tag chip in the Commits graph rendered as bare
+ * body text in the light theme — no ink, no pill, nothing in the source saying
+ * why.
+ *
+ * This asserts the desktop declares every name the shared file consumes, so the
+ * next one added upstream fails here instead of quietly rendering as nothing.
  */
-test("the VS Code semantic inks are declared in both themes", () => {
+test("the desktop declares every --vscode-* the shared tokens consume", () => {
+  const shared = readFileSync(
+    resolve(HERE, "../../../packages/webview-ui/src/styles/tokens.css"),
+    "utf8",
+  ).replace(/\/\*[\s\S]*?\*\//g, "");
   const css = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
-  const light = css.slice(css.indexOf("body.vscode-light {"));
-  assert.ok(light.length > 0, "the light theme block exists");
-  for (const token of ["--vscode-errorForeground", "--vscode-editorError-foreground"]) {
-    assert.ok(
-      new RegExp(`${token}\\s*:`).test(css),
-      `${token} is declared for the dark theme`,
-    );
-    assert.ok(
-      new RegExp(`${token}\\s*:`).test(light),
-      `${token} is re-declared for the light theme`,
-    );
-  }
+  const consumed = new Set(
+    [...shared.matchAll(/var\(\s*(--vscode-[a-zA-Z0-9-]+)/g)].map((m) => m[1]),
+  );
+  assert.ok(consumed.size > 10, `the shared file consumes VS Code names (${consumed.size})`);
+  const declared = new Set(
+    [...css.matchAll(/(--vscode-[a-zA-Z0-9-]+)\s*:/g)].map((m) => m[1]),
+  );
+  const missing = [...consumed].filter((t) => !declared.has(t)).sort();
+  assert.deepEqual(
+    missing,
+    [],
+    `the desktop never declares these, so they render as nothing: ${missing.join(", ")}`,
+  );
 });

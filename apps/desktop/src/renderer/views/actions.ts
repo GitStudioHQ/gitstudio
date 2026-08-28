@@ -1060,7 +1060,13 @@ function jobCard(j: WorkflowJob): HTMLElement {
   // so a run detail was two hollow rows in an empty page — you had to click
   // every job to see what actually ran.
   const open = expandedJobs.size === 0 || expandedJobs.has(j.id);
-  const head = el("button", "gh-job-head" + (open ? " open" : ""));
+  // A div, not a <button>: this header carries the job's own "Logs" button, and
+  // a control inside a control is invalid — the outer button's accessible name
+  // swallows the inner one, assistive tech cannot reach it, and Space activates
+  // the header rather than the thing you are on. Same shape the branch rows and
+  // secRow use for exactly this reason; the role, tab stop and keys are wired
+  // below.
+  const head = el("div", "gh-job-head" + (open ? " open" : ""));
   const chevron = glyph("chevron-right");
   chevron.classList.add("gh-job-chevron");
   const dot = el("span", `gh-check-dot gh-checks-${state}`);

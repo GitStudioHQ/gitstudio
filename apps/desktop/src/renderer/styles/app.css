@@ -102,17 +102,6 @@ body.vscode-dark {
   --vscode-scrollbarSlider-hoverBackground: #5c657888;
   --vscode-scrollbarSlider-activeBackground: #6b7488aa;
   --vscode-editorIndentGuide-background: #232a36;
-  /* Semantic inks the desktop consumes from the shared CSS but never declared.
-     Undeclared, each fell through to a literal fallback tuned for a dark editor
-     — which is how "Sign out" ended up a 3.61:1 red on the light page. */
-  --vscode-errorForeground: #e15a5a;
-  --vscode-editorError-foreground: #e15a5a;
-  --vscode-list-warningForeground: var(--status-warn);
-  --vscode-testing-iconPassed: var(--status-add);
-  --vscode-gitDecoration-modifiedResourceForeground: var(--status-mod);
-  --vscode-focusBorder: var(--gs-accent);
-  --vscode-list-hoverBackground: var(--app-hover);
-  --vscode-textCodeBlock-background: var(--app-elevated);
 
   --app-bg: #0d1016;
   --app-panel: #12151c;
@@ -157,6 +146,56 @@ body.vscode-dark {
 }
 
 /* ── Light theme tokens ────────────────────────────────────────────────────── */
+/* ── The VS Code vocabulary the SHARED packages speak ─────────────────────
+   On `body`, unqualified, so BOTH themes match it. It lived in the
+   `body.vscode-dark` block, which meant the light theme got none of it —
+   which is why a tag chip in the Commits graph rendered as bare body text
+   on the light page: `--gs-amber` is
+   `var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow))`
+   and in light neither name existed.
+   Every value below is stated in terms of the desktop's OWN semantic tokens,
+   which each theme redeclares on this same element — so one block is
+   automatically correct in both, and a light value never has to be
+   remembered separately. */
+body {
+  /* The focus ring's own ink, at FULL opacity. It used to be the accent mixed
+     with `transparent`, which lowers alpha rather than lightness — so the ring
+     composited toward whatever was behind it and measured 2.19-2.90:1 on the
+     light page, under the 3:1 WCAG asks of a focus indicator. It is the one
+     thing on screen whose whole job is to be seen. */
+  --gs-focus-ring: var(--gs-accent-ink, var(--gs-accent));
+
+  --vscode-errorForeground: var(--status-del);
+  --vscode-editorError-foreground: var(--status-del);
+  --vscode-list-warningForeground: var(--status-warn);
+  --vscode-testing-iconPassed: var(--status-add);
+  --vscode-focusBorder: var(--gs-accent);
+  --vscode-list-hoverBackground: var(--app-hover);
+  --vscode-textCodeBlock-background: var(--app-elevated);
+  --vscode-sideBar-background: var(--app-panel);
+  --vscode-badge-background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+  --vscode-badge-foreground: var(--gs-accent-ink, var(--gs-accent));
+  --vscode-button-secondaryBackground: var(--app-elevated);
+  --vscode-button-secondaryForeground: var(--vscode-foreground);
+  --vscode-button-secondaryHoverBackground: var(--app-hover);
+  --vscode-list-activeSelectionBackground: var(--app-active);
+  --vscode-list-activeSelectionForeground: var(--vscode-foreground);
+  --vscode-textLink-foreground: var(--gs-accent-2, var(--gs-accent));
+  /* Git decoration inks: the same four the Changes list paints A/M/D with, so
+     the graph and the file list can never disagree about what "modified" is. */
+  --vscode-gitDecoration-modifiedResourceForeground: var(--status-mod);
+  --vscode-gitDecoration-untrackedResourceForeground: var(--status-add);
+  --vscode-gitDecoration-conflictingResourceForeground: var(--status-del);
+  --vscode-gitDecoration-ignoredResourceForeground: var(--app-muted);
+  /* Chart hues, mapped onto the app's own status palette rather than a second,
+     parallel set of colours nobody tuned. */
+  --vscode-charts-blue: var(--status-mod);
+  --vscode-charts-green: var(--status-add);
+  --vscode-charts-red: var(--status-del);
+  --vscode-charts-yellow: var(--status-warn);
+  --vscode-charts-purple: var(--gs-accent-ink, var(--gs-accent));
+}
+
 body.vscode-light {
   color-scheme: light;
   --vscode-foreground: #2b2f36;
@@ -180,9 +219,6 @@ body.vscode-light {
   --vscode-scrollbarSlider-hoverBackground: #9aa1ad88;
   --vscode-scrollbarSlider-activeBackground: #868e9caa;
   --vscode-editorIndentGuide-background: #e7eaef;
-  /* Same semantic inks, darkened to clear AA on the light page. */
-  --vscode-errorForeground: #b3243f;
-  --vscode-editorError-foreground: #b3243f;
 
   --app-bg: #eef1f5;
   --app-panel: #f7f9fb;
@@ -540,7 +576,7 @@ button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
   [role="menuitemcheckbox"], [role="switch"], [role="checkbox"],
   [role="separator"], [role="link"], [tabindex]:not([tabindex="-1"])
 ):focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: 2px;
   border-radius: 7px;
 }
@@ -596,14 +632,14 @@ button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
 .assistant-send:focus-visible,
 .dock-chevron:focus-visible,
 .tab:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -2px;
   border-radius: 7px;
 }
 .btn:focus-visible,
 .btn-primary:focus-visible,
 .btn-danger:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 80%, white 10%);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: 2px;
 }
 
@@ -612,7 +648,7 @@ button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
 .rail-resizer:focus-visible,
 .cmp-vsplit:focus-visible,
 .dock-resizer:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -1px;
 }
 .rail-resizer:focus-visible .rail-resizer-grip,
@@ -734,7 +770,7 @@ html.is-mac .topbar { padding-left: 78px; }
   border-color: color-mix(in srgb, var(--gs-accent) 22%, transparent);
 }
 .topbar-home:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: 2px;
 }
 /* The inline brand mark: cube hull tracks the foreground (subtle on both
@@ -862,7 +898,7 @@ html.is-mac .topbar { padding-left: 78px; }
 .recent-card:focus-visible,
 .dropdown-item:focus-visible,
 .welcome-open:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: 2px;
 }
 
@@ -936,7 +972,7 @@ html.is-mac .topbar { padding-left: 78px; }
   box-shadow: 0 0 10px color-mix(in srgb, var(--gs-accent) 60%, transparent);
 }
 .nav-item:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 60%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -2px;
 }
 /* The footer Settings gear: a quiet, compact affordance pinned to the very
@@ -1139,7 +1175,7 @@ html.is-mac .topbar { padding-left: 78px; }
 .list-row .glyph { color: var(--app-muted); flex: 0 0 auto; }
 .list-row:hover:not(:disabled) { background: var(--app-hover); }
 .list-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -1px;
 }
 .list-row.is-current {
@@ -2168,7 +2204,7 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 }
 .list-group-head:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 .list-group-head:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -1px;
 }
 .list-group-head .glyph {
@@ -2272,6 +2308,8 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   height: 24px;
   border-radius: 50%;
   background: var(--av, var(--gs-accent));
+  /* The ink is chosen per tile from the hue's own luminance — see avatarInk. */
+  color: var(--av-ink, #ffffff);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -2568,7 +2606,7 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 .compare-commit:hover { background: var(--app-hover); }
 .compare-commit:active { transform: translateY(0.5px); }
 .compare-commit:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -2px;
 }
 .cc-subject { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2971,22 +3009,33 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   gap: 6px;
   padding: 16px;
 }
+/* Every control in a card body pushes off from the one before it.
+   A comment block was once pasted INTO the middle of this selector list, which
+   split it in two and handed the first five selectors the next rule's
+   declaration — `.repo-manager-card { width: min(720px, 92vw) }`. So every
+   segmented control, checkbox and field label in Settings was silently given a
+   720px width (a bordered rail with 440px of empty space inside it), and lost
+   the margin this rule exists to give them. Same failure mode as the two
+   comments that once closed early inside a selector glob and killed `--sp-1`
+   app-wide: a selector list will happily swallow whatever declaration follows
+   it. Keep the list contiguous. */
 .settings-card-body > * + .settings-field-label,
 .settings-card-body > * + .settings-seg,
 .settings-card-body > * + .settings-check,
 .settings-card-body > * + .settings-actions,
 .settings-card-body > * + .settings-logo-row,
+.settings-card-body > * + .settings-copies,
+.settings-card-body > * + .settings-row,
+.settings-card-body > * + .btn,
+.settings-card-body > * + .btn-primary,
+.settings-card-body > * + .btn-danger { margin-top: 10px; }
+
 /* The repository manager: the clone list as its own surface rather than a card
    buried in preferences. Wide, because these rows carry a name, an owner, a
    badge, a full path and an action cluster. */
 .repo-manager-card { width: min(var(--modal-lg), 92vw); }
 .repo-manager-card .settings-copies { max-height: min(58vh, 520px); overflow-y: auto; }
 .repo-manager-card .settings-sub { margin-bottom: var(--sp-2); }
-.settings-card-body > * + .settings-copies,
-.settings-card-body > * + .settings-row,
-.settings-card-body > * + .btn,
-.settings-card-body > * + .btn-primary,
-.settings-card-body > * + .btn-danger { margin-top: 10px; }
 /* …but a control that a label introduces stays with its label. */
 .settings-card-body > .settings-field-label + * { margin-top: 0; }
 /* Prose keeps a reading measure even though the column is wider than one:
@@ -3006,6 +3055,7 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .settings-seg {
   display: inline-flex;
   align-self: flex-start;
+  max-width: 100%;
   border: 1px solid var(--app-border);
   border-radius: 9px;
   overflow: hidden;
@@ -3419,7 +3469,7 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-files .file-row { cursor: default; }
 .gh-adds { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--app-muted); margin-left: auto; }
 
-/* PR detail sub-tabs (Conversation / Commits / Pipelines / Files). */
+/* PR detail sub-tabs (Conversation / Commits / Checks / Files). */
 .gh-subtabs {
   display: flex;
   gap: 2px;
@@ -4093,9 +4143,14 @@ gitstudio-graph {
   box-shadow: var(--sheen);
   transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
 }
+/* Every list view's search box. An 18%-alpha halo around a 1px border was the
+   only sign the keyboard was in here, and the input itself carries
+   `outline: none` — so on the light page the field looked identical focused and
+   unfocused. It wears the app's own ring, like every other control. */
 .gh-search:focus-within {
-  border-color: var(--accent-line);
-  box-shadow: var(--sheen), 0 0 0 2px color-mix(in srgb, var(--gs-accent) 18%, transparent);
+  border-color: var(--gs-focus-ring);
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: 1px;
 }
 /* The search sits on the LEFT, inside the title cluster (.gh-head-titlewrap),
    right after the page name + count. Keep it from shrinking below its min width. */
@@ -4221,7 +4276,7 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
   background: color-mix(in srgb, currentColor 11%, var(--app-elevated));
 }
 
-/* Pipelines rows that link out get the affordance only when clickable. */
+/* Check rows that link out get the affordance only when clickable. */
 .gh-check-row.is-link { cursor: pointer; }
 
 /* Multi-field Create-PR + reviewer modals (extend the shared .modal-card). */
@@ -4330,15 +4385,40 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
   flex: 1 1 100%;
   justify-content: flex-start;
   margin-left: 0;
+  /* Ordered AFTER the refresh cluster, which is a later sibling in the DOM.
+     Without this the tools row claimed line 2 and stranded Refresh alone on a
+     line 3 of its own, at the far left — the one view in the app whose Refresh
+     was not where every other view's Refresh is. */
+  order: 2;
+}
+.gh-head:has(> .gh-head-tools.gh-tools-own-line) > .gh-acct {
+  order: 1;
+  margin-left: auto;
 }
 .gh-head-titlewrap { min-width: 0; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; row-gap: 8px; }
 /* The search field must keep a floor and its own line when the row is tight —
    below ~1200px it used to collide with the first facet pill, losing its right
    border and running its placeholder under the neighbouring control. */
 .gh-head-titlewrap .gh-search { min-width: 180px; flex: 1 1 180px; max-width: 320px; }
+/* main.ts opens at 1280x820, so this rule fires at exactly the app's default
+   width — every GitHub header launches in the layout below. That is deliberate,
+   though it was arrived at the hard way: moving the breakpoint under the default
+   instead was tried, and it helped Issues (89px) while pushing PRs, which
+   carries more controls, to 161px. The header genuinely does not fit at 1280;
+   the honest answer is to degrade well there, not to pretend it fits.
+   Degrading well means TWO rows, never three. Giving the title `100%` used to
+   push the refresh cluster onto a line of its own, which is how the app opened
+   with a 125px header eating 15% of an 820px window before a single row of
+   content. Same controls, 89px. */
 @media (max-width: 1280px) {
-  .gh-head-titlewrap { flex: 1 1 100%; }
-  .gh-head-tools { flex: 1 1 100%; justify-content: flex-start; margin-left: 0; }
+  /* TWO rows, never three. The title claims only what it needs and the refresh
+     cluster rides beside it; the tools take the second line. Giving the title
+     `100%` pushed refresh onto a line of its own, so the app opened — at its own
+     1280x820 default — with a 125px header eating 15% of the window before a
+     single row of content. Same shape, 89px. */
+  .gh-head-titlewrap { flex: 1 1 auto; order: 0; }
+  .gh-head > .gh-acct { order: 1; margin-left: auto; }
+  .gh-head-tools { flex: 1 1 100%; justify-content: flex-start; margin-left: 0; order: 2; }
 }
 /* The ≤1280px rule below gives .gh-head-titlewrap and .gh-head-tools a basis of
    100% each, which only means "take your own line" if this container WRAPS.
@@ -4361,6 +4441,7 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
   font: inherit; color: var(--vscode-foreground); text-align: left;
 }
 .gh-job-head:hover { background: var(--app-hover); }
+.gh-job-head:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: -2px; }
 .gh-job-head .gh-check-name { flex: 1 1 auto; }
 .gh-job-chevron { transition: transform 0.12s ease; color: var(--app-muted); flex: 0 0 auto; }
 .gh-job-head.open .gh-job-chevron { transform: rotate(90deg); }
@@ -4495,7 +4576,7 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .gh-seg-btn .glyph .codicon { font-size: 14px; }
 .gh-seg-btn + .gh-seg-btn { border-left: 1px solid var(--app-border); }
 .gh-seg-btn:hover { color: var(--vscode-foreground); background: var(--app-hover); }
-.gh-seg-btn:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: -2px; }
+.gh-seg-btn:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: -2px; }
 .gh-seg-btn.active { color: var(--gs-accent-ink, var(--gs-accent)); background: var(--app-active); }
 
 /* The tag glyph inside a gh-row title sits inline with the name (Tags sub-list). */
@@ -4755,7 +4836,7 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 /* While a move mutation is in flight, lock + dim the card so it's clear. */
 .gh-card.is-moving { opacity: 0.5; pointer-events: none; }
 .gh-card.clickable:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: 1px;
 }
 .gh-card-top { display: flex; align-items: flex-start; gap: 7px; }
@@ -5609,7 +5690,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   border-right: 0;
   transform: rotate(-45deg) translate(1px, -1px);
 }
-.settings-check input[type="checkbox"]:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: 2px; }
+.settings-check input[type="checkbox"]:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: 2px; }
 .settings-check-text { display: flex; flex-direction: column; gap: 2px; }
 .settings-check-text .settings-sub { margin: 0; }
 
@@ -5713,6 +5794,25 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
      and stood 6px taller than the settled reviewers beside it. */
   border: 1px dashed color-mix(in srgb, var(--app-muted) 60%, transparent);
 }
+/* A reviewer who has ANSWERED. Pending reviewers recede (dashed, dimmed); these
+   carry their verdict, because "who approved this" and "who is blocking it" are
+   the two questions this section exists for. */
+.det-person.is-approved,
+.det-person.is-blocking {
+  opacity: 1;
+  padding-right: 6px;
+}
+.det-person.is-approved {
+  border-color: color-mix(in srgb, var(--status-add) 45%, transparent);
+  background: color-mix(in srgb, var(--status-add) 10%, transparent);
+}
+.det-person.is-blocking {
+  border-color: color-mix(in srgb, var(--status-del) 45%, transparent);
+  background: color-mix(in srgb, var(--status-del) 10%, transparent);
+}
+.det-person.is-approved > .glyph { color: var(--status-add); font-size: 12px; }
+.det-person.is-blocking > .glyph { color: var(--status-del); font-size: 12px; }
+
 .det-milestone-chip { align-self: flex-start; }
 .det-prop-when { font-size: var(--text-xs); color: var(--app-muted); align-self: center; }
 .gh-fork-chip {
@@ -6204,6 +6304,8 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .av-fallback {
   color: #fff;
   background: var(--av, var(--gs-accent));
+  /* The ink is chosen per tile from the hue's own luminance — see avatarInk. */
+  color: var(--av-ink, #ffffff);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
@@ -6230,7 +6332,7 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
 }
 .gh-row-rich:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -1px;
 }
 .gh-row-lead {
@@ -6394,7 +6496,7 @@ body.vscode-light .gh-label-chip {
 .gh-picker:hover { background: var(--app-hover); border-color: var(--accent-line); }
 .gh-picker[aria-expanded="true"] { background: var(--app-active); border-color: var(--accent-line); }
 .gh-picker:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: 2px;
 }
 .gh-picker-lead {
@@ -6533,7 +6635,7 @@ body.vscode-light .gh-label-chip {
     border-color var(--dur-1) var(--ease);
 }
 .icon-btn:hover { background: var(--app-hover); color: var(--vscode-foreground); border-color: var(--accent-line); }
-.icon-btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: 2px; }
+.icon-btn:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: 2px; }
 .icon-btn .codicon { font-size: 15px; }
 
 /* Buttons must never wrap their label (the Actions detail cluster squished
@@ -6656,7 +6758,7 @@ body.vscode-light .gh-label-chip {
   transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
 .topbar-acct:hover { background: var(--app-hover); border-color: var(--accent-line); }
-.topbar-acct:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: 2px; }
+.topbar-acct:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: 2px; }
 .topbar-acct .glyph { color: var(--app-muted); }
 .topbar-acct .glyph .codicon { font-size: 15px; }
 .topbar-acct .av { width: 22px; height: 22px; font-size: 9px; }
@@ -7378,7 +7480,7 @@ body.vscode-light .gh-label-chip {
 .actions-log-close .codicon { font-size: 14px; }
 .actions-log-close:hover { background: var(--app-hover); border-color: var(--accent-line); color: var(--vscode-foreground); }
 .actions-log-close:active { transform: translateY(0.5px); }
-.actions-log-close:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: -2px; border-radius: 8px; }
+.actions-log-close:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: -2px; border-radius: 8px; }
 .actions-log-body {
   max-height: 460px;
   overflow: auto;
@@ -7561,7 +7663,7 @@ body.vscode-light .gh-label-chip {
 .dc-toggle .codicon { font-size: 14px; flex: 0 0 auto; }
 .dc-toggle:hover { background: var(--app-hover); border-color: var(--accent-line); color: var(--vscode-foreground); }
 .dc-toggle:active { transform: translateY(0.5px); }
-.dc-toggle:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: -2px; border-radius: 999px; }
+.dc-toggle:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: -2px; border-radius: 999px; }
 .dc-toggle.is-on,
 .dc-toggle[aria-checked="true"] {
   color: var(--gs-accent-ink, var(--gs-accent));
@@ -7624,7 +7726,7 @@ body.vscode-light .gh-label-chip {
 }
 .dc-chip-x .codicon { font-size: 11px; }
 .dc-chip-x:hover { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
-.dc-chip-x:focus-visible { outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent); outline-offset: 1px; }
+.dc-chip-x:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: 1px; }
 /* The "Create pull request" CTA in the Changes toolbar — a .mini-btn with a quiet
    accent lean so it reads as the forward action without shouting like a primary. */
 /* Was the only accent-coloured control in the Changes toolbar, which made a
@@ -8016,7 +8118,7 @@ body.vscode-light .gh-label-chip {
 }
 .sec-row:hover { background: var(--app-hover); }
 .sec-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline: 2px solid var(--gs-focus-ring);
   outline-offset: -2px;
 }
 /* Hairline between rows, inset past the leading icon — density with structure. */
@@ -8405,7 +8507,7 @@ button.det-person:hover { background: var(--app-hover); }
 .det-title-edit { align-self: flex-start; margin-top: 3px; opacity: 0.55; }
 .det-title-edit:hover { opacity: 1; }
 
-/* The rail's checks pill is a real button (jumps to the Pipelines tab). */
+/* The rail's checks pill is a real button (jumps to the Checks tab). */
 .det-checks-pill { margin-top: 0; border: none; cursor: pointer; font: inherit; font-size: var(--text-2xs); font-weight: 600; }
 
 /* Files mode: the rail hides and the content column stretches to the full
@@ -8510,7 +8612,12 @@ button.det-person:hover { background: var(--app-hover); }
   background: color-mix(in srgb, var(--gs-accent) 55%, transparent);
 }
 .gh-step-dur {
-  flex: 0 0 52px;
+  /* A floor, not a fixed width, and never a wrap: a step that has been running
+     for a while reads "17m 24s…", which is wider than 52px and used to fold
+     onto a second line — inflating every row in the job it belonged to. */
+  flex: 0 0 auto;
+  min-width: 52px;
+  white-space: nowrap;
   text-align: right;
   font-size: var(--text-2xs);
   color: var(--app-muted);
@@ -8700,7 +8807,7 @@ button.det-person:hover { background: var(--app-hover); }
 .log-text { flex: 0 0 auto; }
 .log-chev { flex: 0 0 auto; margin-right: 4px; font-size: 12px; color: var(--app-muted); }
 .log-groupline { cursor: pointer; font-weight: 600; }
-.log-groupline:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: -2px; }
+.log-groupline:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: -2px; }
 .log-groupline:hover { background: color-mix(in srgb, var(--log-fg, #fff) 6%, transparent); }
 .log-k-error { background: color-mix(in srgb, var(--status-del) 14%, transparent); }
 .log-k-error .log-text { color: var(--status-del); }

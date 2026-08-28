@@ -118,6 +118,43 @@ export function fitRefs(entries: ChipEntry[], colW: number): RefFit {
  * A `host` of 0 (not laid out yet) means there is no budget to reason about, so
  * the content fit stands until a real measurement arrives.
  */
+/**
+ * The narrowest track that can still show a NAME rather than just chrome.
+ *
+ * `min` (60) is the track's structural floor and is load-bearing elsewhere: a
+ * repo with no refs anywhere asks for exactly `min` so the whole width goes to
+ * the subject instead of reserving an empty column, and the manual drag clamps
+ * to it. But 60px is less than one chip's own furniture — REFS_PADDING (18)
+ * leaves 42, while estimateChipWidth's own floor is 44 — so a track at `min`
+ * mathematically cannot fit a chip, and the "first chip always draws" guard
+ * rendered a bare icon with a zero-width name beside it.
+ *
+ * This floor applies only when the rows actually WANT refs, so the empty-column
+ * case keeps collapsing to `min`.
+ */
+/** Chip width past which the legibility floor stops growing: a 40-character
+ *  branch name must not be allowed to demand half the window. */
+const LEGIBLE_CHIP_CAP = 150;
+
+/**
+ * The narrowest track in which the busiest row still shows ONE readable chip.
+ *
+ * Derived from the same estimator that computes `wanted`, rather than guessed:
+ * a chip is 16px of icon + 14px of gap + the name + an optional 14px remote
+ * tail, and the track adds REFS_PADDING around it. A floor short of that draws
+ * the chip's furniture and none of its name.
+ */
+export function legibleRefsWidth(rows: readonly { refs?: WireRef[] }[]): number {
+  let widest = 0;
+  for (const row of rows) {
+    if (!row.refs?.length) continue;
+    for (const entry of foldRefs(row.refs)) {
+      widest = Math.max(widest, estimateChipWidth(entry, LEGIBLE_CHIP_CAP));
+    }
+  }
+  return widest === 0 ? 0 : REFS_PADDING + widest;
+}
+
 export function fitRefsWidth(opts: {
   wanted: number;
   host: number;
@@ -125,9 +162,23 @@ export function fitRefsWidth(opts: {
   comfort: number;
   min: number;
   max: number;
+  /** How far the subject may be squeezed before refs stop yielding to it. */
+  subjectFloor?: number;
+  /** The width at which one ref name is still readable — see legibleRefsWidth. */
+  legible?: number;
 }): number {
-  const { wanted, host, nonRefs, comfort, min, max } = opts;
-  const spare = host > 0 ? host - nonRefs - comfort : wanted;
+  const { wanted, host, nonRefs, comfort, min, max, subjectFloor, legible = 0 } = opts;
+  if (host <= 0) return Math.min(max, Math.max(min, wanted));
+  // Two budgets: `comfort` is what the subject would LIKE, `hard` is what it
+  // actually needs. Refs yield to comfort first — that is the whole point of
+  // the clamp — but never past the point where they can show a name, because a
+  // column of names showing no names is not a smaller column, it is an empty
+  // one. Between roughly 1300 and 1550px this pinned the track to 60px and
+  // rendered zero readable characters, and widening the window made it
+  // NARROWER, so the app looked broken precisely when maximised on a laptop.
+  const comfortable = host - nonRefs - comfort;
+  const hard = subjectFloor === undefined ? comfortable : host - nonRefs - subjectFloor;
+  const spare = Math.max(comfortable, Math.min(hard, legible));
   return Math.min(max, Math.max(min, Math.min(wanted, spare)));
 }
 

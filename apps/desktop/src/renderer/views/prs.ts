@@ -2,7 +2,7 @@
 // section-page system (docs/desktop-redesign.md): a full-width list page whose
 // rows navigate to a full-page detail (routed via `target.number`), with the
 // PR's properties in an inline-editable right rail and Conversation / Commits /
-// Pipelines / Files sub-tabs in the content column. The Files tab widens to the
+// Checks / Files sub-tabs in the content column. The Files tab widens to the
 // whole window (the rail hides) — diffs get the space they deserve.
 //
 // Everything routes through `host.invoke` against the typed IPC contract. Reads
@@ -434,7 +434,7 @@ function showDetailPage(
   wrap.replaceChildren(view);
 
   // While CI is PENDING, quietly re-fetch and repaint when something changed —
-  // the checks pill and Pipelines tab keep themselves honest. Stands down while
+  // the checks pill and Checks tab keep themselves honest. Stands down while
   // the Files tab is open (a repaint would tear down the Monaco diff mid-read).
   let lastSig = "";
   const schedulePoll = (current: PrDetail): void => {
@@ -653,9 +653,12 @@ function buildDetail(ctx: DetailCtx): void {
   const content = el("div", "gh-subcontent");
   const subDefs = [
     { id: "conversation", label: "Conversation", icon: "comment-discussion" },
-    { id: "commits", label: "Commits", icon: "git-commit" },
-    { id: "checks", label: "Pipelines", icon: "play" },
-    { id: "files", label: `Files (${d.files.length})`, icon: "code" },
+    { id: "commits", label: `Commits${typeof full.commits === "number" ? ` (${full.commits})` : ""}`, icon: "git-commit" },
+    { id: "checks", label: "Checks", icon: "play" },
+    // The tab's count is the PR's OWN total, not the length of the page we
+    // happened to fetch. GitHub caps the files response, so the two disagreed
+    // on the same screen: the rail read 412 and this tab read 300.
+    { id: "files", label: `Files (${full.changedFiles ?? d.files.length})`, icon: "code" },
   ];
   content.id = "gs-pr-subpanel";
   const tabs = subTabs({
@@ -691,7 +694,43 @@ function buildDetail(ctx: DetailCtx): void {
       reviewersProp.body.appendChild(chip);
     }
   }
-  reviewersProp.body.appendChild(propAddBtn("Request review", () => void doRequestReviewers(full.number)));
+  const requestBtn = propAddBtn("Request review", () => void doRequestReviewers(full.number));
+  reviewersProp.body.appendChild(requestBtn);
+  // GitHub drops a reviewer from `requestedReviewers` the moment they SUBMIT,
+  // so this section listed only the people who had not answered yet — and told
+  // you each of them had "not yet submitted". Anyone who had actually approved
+  // or requested changes appeared nowhere in the rail at all, which is the one
+  // question the rail exists to answer. The conversation carries their verdicts;
+  // it is fetched through the cache the Conversation tab already fills, so this
+  // costs nothing when that tab loads.
+  void gget("pr:conversation", full.number, 30_000)
+    .then((conv) => {
+      if (!reviewersProp.body.isConnected) return;
+      // Only a person's LATEST verdict counts — GitHub shows the same.
+      const latest = new Map<string, string>();
+      for (const c of conv) {
+        if (c.kind !== "review" || !c.state) continue;
+        const st = c.state.toUpperCase();
+        if (st === "COMMENTED" || st === "DISMISSED") continue;
+        latest.set(c.author, st);
+      }
+      if (!latest.size) return;
+      const pending = new Set((full.requestedReviewers ?? []).map((r) => r.login));
+      for (const [login, state] of latest) {
+        if (pending.has(login)) continue; // still waiting on a re-review
+        const approved = state === "APPROVED";
+        const chip = personChip(login, `https://github.com/${login}.png`, () =>
+          openPeek(memberCard({ login, avatarUrl: null, htmlUrl: `https://github.com/${login}` })),
+        );
+        chip.classList.add(approved ? "is-approved" : "is-blocking");
+        chip.title = `@${login} — ${approved ? "approved" : "requested changes"}`;
+        chip.append(glyph(approved ? "check" : "request-changes"));
+        reviewersProp.body.insertBefore(chip, requestBtn);
+      }
+    })
+    .catch(() => {
+      /* offline — the requested reviewers above are still true */
+    });
 
   const assignProp = propSection("Assignees", {
     onEdit: () => void doAssignees(full, reload),
@@ -735,8 +774,11 @@ function buildDetail(ctx: DetailCtx): void {
   if (d.checks) {
     const c = el("button", "gh-pill det-checks-pill");
     c.classList.add(`gh-checks-${d.checks}`);
-    c.textContent = d.checks;
-    c.title = "Open the Pipelines tab";
+    // Humanised, like every other status in the app. This pill sat one column
+    // from a Checks tab that says "Passed"/"Running" and read a raw lowercase
+    // `success` / `pending`.
+    c.textContent = checkStateLabel(d.checks);
+    c.title = "Open the Checks tab";
     c.addEventListener("click", () => selectSub("checks"));
     checksProp.body.appendChild(c);
   } else {
@@ -835,7 +877,7 @@ async function renderSubTab(
   if (id === "conversation") {
     let conv: PrComment[] = [];
     try {
-      conv = await host.invoke("pr:conversation", full.number);
+      conv = await gget("pr:conversation", full.number, 30_000);
     } catch {
       /* the description still renders; the timeline simply stays empty */
     }

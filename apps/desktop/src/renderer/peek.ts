@@ -7,7 +7,7 @@
 // can open a peek. Cards render lazily and may be async; the body shows a
 // skeleton until the renderer resolves.
 
-import { registerLayer } from "./overlays";
+import { registerLayer, isMenuOpen} from "./overlays";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -146,9 +146,12 @@ export function openPeek(card: PeekCard): void {
 
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
-      // The command palette owns Esc while it's open (it sits ABOVE peeks);
-      // without this, one Esc closed both layers.
+      // Whatever sits ABOVE this peek owns Esc: the command palette, or a menu
+      // opened from inside the peek itself. Without standing down, one Esc
+      // closed both layers — you dismissed a menu and the card under it went
+      // too, taking anything you had typed into its filter.
       if (document.body.classList.contains("cmdk-open")) return;
+      if (isMenuOpen()) return;
       e.preventDefault();
       e.stopPropagation();
       ctx.back();
