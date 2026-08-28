@@ -69,7 +69,10 @@ export class CommitContextMenu {
     menu.setAttribute("role", "menu");
     const header = document.createElement("div");
     header.className = "ctx-menu-header";
-    header.textContent = sha.slice(0, 10);
+    // 7, like every other short SHA in the app. Ten characters here meant the
+    // menu's heading and the row it was opened on named the same commit two
+    // different ways, one directly above the other.
+    header.textContent = sha.slice(0, 7);
     menu.appendChild(header);
 
     this.rows = [];

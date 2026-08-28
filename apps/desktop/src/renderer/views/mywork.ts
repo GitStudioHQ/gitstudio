@@ -126,7 +126,14 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       time: relTimeISO(it.updatedAt),
       timeTitle: it.updatedAt ? `Updated ${absTimeISO(it.updatedAt)}` : undefined,
       ariaLabel: `${it.type === "pr" ? "Pull request" : "Issue"} #${it.number}: ${it.title}`,
-      onOpen: () => nav(it.type === "pr" ? "prs" : "issues", { number: it.number }),
+      // `from` so the detail's back button and Escape return to My Work rather
+      // than dumping you in the Issues or Pull Requests list, which is a
+      // grouped view you were never in.
+      onOpen: () =>
+        nav(it.type === "pr" ? "prs" : "issues", {
+          number: it.number,
+          from: { view: "mywork", label: "My Work" },
+        }),
     });
     row.dataset.num = String(it.number);
     return row;

@@ -196,7 +196,7 @@ export async function runBusy(btn: HTMLElement, fn: () => Promise<void>): Promis
 export function textBtn(
   label: string,
   title: string,
-  onClick: () => void,
+  onClick: (btn: HTMLElement) => void,
   danger = false,
 ): HTMLElement {
   const b = el("button", "row-btn" + (danger ? " danger" : ""));
@@ -204,7 +204,7 @@ export function textBtn(
   b.title = title;
   b.addEventListener("click", (e) => {
     e.stopPropagation();
-    onClick();
+    onClick(b);
   });
   return b;
 }
@@ -353,10 +353,12 @@ export function subLink(text: string, title: string, onClick: () => void): HTMLE
     onClick();
   });
   s.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.stopPropagation();
-      onClick();
-    }
+    // Space too: a role="button" that answers Enter and ignores Space is half a
+    // control, and Space is the key most people reach for on a focused button.
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    onClick();
   });
   return s;
 }
@@ -541,18 +543,25 @@ export function settingsCard(title: string, icon: string): { card: HTMLElement; 
 }
 
 /** A labeled text field (Settings + composers). */
+let fieldSeq = 0;
 export function settingsField(
   label: string,
   value: string,
   placeholder: string,
 ): { row: HTMLElement; input: HTMLInputElement } {
   const row = el("div", "settings-field");
-  const l = el("label", "settings-field-label");
+  const l = el("label", "settings-field-label") as HTMLLabelElement;
   l.textContent = label;
   const input = document.createElement("input");
   input.className = "settings-input";
   input.value = value ?? "";
   input.placeholder = placeholder;
+  // A <label> is only a label when it points at something. These were <label>
+  // elements sitting NEXT TO their inputs with no `for`, so the field's
+  // accessible name was its placeholder — and clicking the visible label, which
+  // every form on every platform focuses the field, did nothing at all.
+  input.id = `gs-field-${++fieldSeq}`;
+  l.htmlFor = input.id;
   row.append(l, input);
   return { row, input };
 }
@@ -678,6 +687,13 @@ export interface MenuItem {
   /** Don't close the menu on click — for in-place live actions (e.g. Fetch,
    *  which spins its own icon and refreshes the view behind the open menu). */
   keepOpen?: boolean;
+  /** A row you TICK rather than a command you run: renders as
+   *  role="menuitemcheckbox" with a live aria-checked, keeps the menu open, and
+   *  flips its own tick before `onClick` fires (which receives the new state).
+   *  The label picker used to close the whole menu after every single pick, so
+   *  labelling an issue with three labels meant opening the menu three times
+   *  and re-finding your place in it. */
+  checkable?: boolean;
   /** Receives the rendered menuitem element, so keepOpen actions can drive a
    *  live state on it (spinner, disabled) while they run. */
   onClick?: (itemEl: HTMLElement) => void;
@@ -687,6 +703,9 @@ export interface MenuItem {
  *  otherwise appears only for long menus). */
 export interface MenuOpts {
   searchable?: boolean;
+  /** Ran once when the menu closes, however it closed. Lets a multi-select menu
+   *  commit the whole selection in one request instead of one per tick. */
+  onClose?: () => void;
 }
 
 /** A lightweight popover menu anchored below `anchor`; full keyboard support. */
@@ -702,6 +721,12 @@ export function closeMenu(): void {
 }
 
 export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts = {}): void {
+  // Re-clicking the trigger of an open menu means CLOSE, the way every menu on
+  // every platform behaves.
+  if (anchor.getAttribute("aria-expanded") === "true") {
+    closeMenu();
+    return;
+  }
   closeMenu();
   const menu = el("div", "dropdown");
   menu.setAttribute("role", "menu");
@@ -714,7 +739,10 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   const rows: HTMLElement[] = [];
   const seps: HTMLElement[] = [];
 
+  let closed = false;
   const close = (restoreFocus = true): void => {
+    if (closed) return;
+    closed = true;
     if (liveMenuClose === close) liveMenuClose = null;
     layer.release();
     menu.remove();
@@ -723,11 +751,19 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     anchor.setAttribute("aria-expanded", "false");
     // Don't pull focus back to an anchor that a route change already detached.
     if (restoreFocus && anchor.isConnected) anchor.focus();
+    opts.onClose?.();
   };
   liveMenuClose = close;
   const layer = registerLayer(() => close(false));
   const onDoc = (e: MouseEvent): void => {
-    if (!menu.contains(e.target as Node)) close(false);
+    // The ANCHOR is not "outside". This dismiss runs on a capturing mousedown,
+    // so clicking the trigger of an open menu closed it here and then the
+    // trigger's own click opened a fresh one — the menu appeared not to
+    // respond, and anything typed into its filter was silently thrown away.
+    // The anchor's own handler now sees aria-expanded="true" and just closes.
+    const t = e.target as Node;
+    if (menu.contains(t) || anchor === t || anchor.contains(t)) return;
+    close(false);
   };
   /** Currently visible (not filtered-out) menuitem rows. */
   const visible = (): HTMLElement[] => rows.filter((r) => !r.hidden);
@@ -785,7 +821,8 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
         (it.disabled ? " is-disabled" : "") +
         (it.danger ? " is-danger" : ""),
     );
-    row.setAttribute("role", "menuitem");
+    row.setAttribute("role", it.checkable ? "menuitemcheckbox" : "menuitem");
+    if (it.checkable) row.setAttribute("aria-checked", it.current ? "true" : "false");
     row.tabIndex = -1;
     if (it.disabled) row.setAttribute("aria-disabled", "true");
     if (it.title) row.title = it.title;
@@ -800,9 +837,23 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
       sub.textContent = it.sub;
       row.appendChild(sub);
     }
-    if (it.current) row.appendChild(glyph("check"));
+    if (it.checkable) {
+      const tick = glyph("check");
+      tick.classList.add("dropdown-tick");
+      tick.style.visibility = it.current ? "visible" : "hidden";
+      row.appendChild(tick);
+    } else if (it.current) row.appendChild(glyph("check"));
     if (!it.disabled && it.onClick) {
       row.addEventListener("click", () => {
+        if (it.checkable) {
+          const next = row.getAttribute("aria-checked") !== "true";
+          row.setAttribute("aria-checked", String(next));
+          row.classList.toggle("is-current", next);
+          const tick = row.querySelector<HTMLElement>(".dropdown-tick");
+          if (tick) tick.style.visibility = next ? "visible" : "hidden";
+          it.onClick!(row);
+          return;
+        }
         // A keepOpen action runs in place (live spinner on the item); a busy
         // in-place action must not re-fire while it's still running.
         if (it.keepOpen) {
@@ -843,13 +894,26 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   }
 
   document.body.appendChild(menu);
-  const mr = menu.getBoundingClientRect();
-  if (mr.right > window.innerWidth - 8) {
-    menu.style.left = `${Math.round(window.innerWidth - mr.width - 8)}px`;
-  }
-  if (mr.bottom > window.innerHeight - 8) {
-    menu.style.top = `${Math.round(Math.max(8, rect.top - mr.height - 5))}px`;
-  }
+  // Keep an 8px margin on every side. The old version rounded a fractional
+  // width into the clamp and computed the flip from the ANCHOR rather than from
+  // where the menu actually ended up, so a wide menu near the right edge landed
+  // 1px off the window and a tall one could still hang below the fold.
+  const GAP = 8;
+  menu.style.maxWidth = `${Math.max(160, window.innerWidth - GAP * 2)}px`;
+  menu.style.maxHeight = `${Math.max(160, window.innerHeight - GAP * 2)}px`;
+  const place = (): void => {
+    const m = menu.getBoundingClientRect();
+    if (m.right > window.innerWidth - GAP) {
+      menu.style.left = `${Math.floor(window.innerWidth - m.width - GAP)}px`;
+    }
+    if (m.left < GAP) menu.style.left = `${GAP}px`;
+    if (m.bottom > window.innerHeight - GAP) {
+      const above = rect.top - m.height - 5;
+      menu.style.top = `${Math.floor(above >= GAP ? above : Math.max(GAP, window.innerHeight - m.height - GAP))}px`;
+    }
+  };
+  place();
+  place(); // a clamped max-width can rewrap the rows and change the height
   document.addEventListener("keydown", onKey, true);
   setTimeout(() => {
     document.addEventListener("mousedown", onDoc, true);
@@ -883,6 +947,11 @@ export function wireResizerKeys(
     step?: number;
     onCommit?: () => void;
     disabled?: () => boolean;
+    /** The measured pane is on the far side of the handle, so a LARGER value
+     *  moves the handle the other way. Without this the graph's divider walked
+     *  left when you pressed ArrowRight, while the identical-looking divider in
+     *  Changes walked right — the same control, two opposite answers. */
+    inverted?: boolean;
   },
 ): void {
   const step = opts.step ?? 16;
@@ -901,13 +970,17 @@ export function wireResizerKeys(
     if (opts.disabled?.()) return;
     // vertical divider: Right grows the left pane. horizontal divider (bottom-
     // anchored): Up grows the lower pane.
-    const dec = opts.orientation === "vertical" ? "ArrowLeft" : "ArrowDown";
-    const inc = opts.orientation === "vertical" ? "ArrowRight" : "ArrowUp";
+    const towardStart = opts.orientation === "vertical" ? "ArrowLeft" : "ArrowDown";
+    const towardEnd = opts.orientation === "vertical" ? "ArrowRight" : "ArrowUp";
+    // The keys always move the HANDLE in the direction they name; `inverted`
+    // says which way the measured value has to go to achieve that.
+    const dec = opts.inverted ? towardEnd : towardStart;
+    const inc = opts.inverted ? towardStart : towardEnd;
     let next: number | undefined;
     if (e.key === dec) next = opts.get() - (e.shiftKey ? step * 3 : step);
     else if (e.key === inc) next = opts.get() + (e.shiftKey ? step * 3 : step);
-    else if (e.key === "Home") next = opts.min;
-    else if (e.key === "End") next = opts.max();
+    else if (e.key === "Home") next = opts.inverted ? opts.max() : opts.min;
+    else if (e.key === "End") next = opts.inverted ? opts.min : opts.max();
     if (next === undefined) return;
     e.preventDefault();
     opts.set(Math.max(opts.min, Math.min(opts.max(), next)));
@@ -916,4 +989,31 @@ export function wireResizerKeys(
   });
   // Keep aria-valuenow honest after a pointer drag, too.
   handle.addEventListener("pointerup", () => sync());
+}
+
+let segSeq = 0;
+/**
+ * Give a hand-rolled segmented control the semantics it looks like it has.
+ *
+ * Settings and Compare each built one out of plain buttons carrying an `active`
+ * CLASS: a screen reader heard N unrelated buttons, with no group name and no
+ * way to tell which one was chosen. This attaches role="group", names the group
+ * from its own visible label, and keeps `aria-pressed` in step with the class
+ * however the caller toggles it — a delegated click listener re-syncs, so no
+ * existing toggle code has to change.
+ */
+export function markSegment(seg: HTMLElement, ariaLabel: string | HTMLElement, btnSel = "button"): void {
+  seg.setAttribute("role", "group");
+  if (typeof ariaLabel === "string") seg.setAttribute("aria-label", ariaLabel);
+  else {
+    if (!ariaLabel.id) ariaLabel.id = `gs-seg-lbl-${++segSeq}`;
+    seg.setAttribute("aria-labelledby", ariaLabel.id);
+  }
+  const sync = (): void => {
+    for (const b of seg.querySelectorAll<HTMLElement>(btnSel)) {
+      b.setAttribute("aria-pressed", String(b.classList.contains("active")));
+    }
+  };
+  sync();
+  seg.addEventListener("click", () => queueMicrotask(sync));
 }

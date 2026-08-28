@@ -66,6 +66,7 @@ function wire(): void {
   if (wired) return;
   wired = true;
   document.addEventListener("focusin", onFocusIn, true);
+  document.addEventListener("focusout", onFocusOut, true);
 }
 
 /** Poll for the remembered row until it appears or the arm window expires. */
@@ -153,6 +154,73 @@ export function focusNewPage(view: HTMLElement, fallback?: HTMLElement | null): 
     target.focus({ preventScroll: true });
   };
   window.setTimeout(attempt, 0);
+}
+
+/**
+ * When the app destroys the control you were using, put focus on its
+ * replacement.
+ *
+ * Most surfaces here rebuild a whole subtree in response to a click — staging a
+ * file, refreshing a list, flipping a sub-tab, changing a rebase action, hiding
+ * a column. The node you clicked is detached in the process, focus falls to
+ * <body>, and the next Tab starts at the top of the window. That is a different
+ * bug from "the page changed" (which `focusNewPage` handles): here you have not
+ * gone anywhere, and the thing you were operating still exists — as a new
+ * element with the same identity.
+ *
+ * One listener catches all of it. The rule is deliberately narrow, so it can
+ * never steal focus from a person: it acts only when focus landed on <body>
+ * AND the element that lost it is no longer in the document. Clicking blank
+ * space, closing a menu, or moving focus anywhere real all fail that test.
+ */
+function sameThing(a: HTMLElement, b: Element): boolean {
+  if (a.tagName !== b.tagName) return false;
+  const bh = b as HTMLElement;
+  const num = a.dataset.num;
+  if (num) return bh.dataset?.num === num;
+  if (a.title) return bh.title === a.title;
+  const label = a.getAttribute("aria-label");
+  if (label) return bh.getAttribute("aria-label") === label;
+  const t = (a.textContent ?? "").trim();
+  if (!t) return false;
+  // The BASE class only. A rebuilt control usually differs by exactly the
+  // state class the click just changed — flipping Releases to Tags rebuilds
+  // the segment and moves `active` onto the button you pressed, so comparing
+  // the whole className would fail on precisely the elements this exists for.
+  const base = (n: Element): string => (n.className || "").split(" ")[0] ?? "";
+  return base(a) === base(bh) && (bh.textContent ?? "").trim() === t;
+}
+
+function restoreEquivalent(lost: HTMLElement): boolean {
+  // Search only among things that can actually take focus.
+  const candidates = document.querySelectorAll<HTMLElement>(
+    'button, [role="button"], [role="option"], [role="tab"], a[href], input, select, textarea, [tabindex]',
+  );
+  for (const el of candidates) {
+    if (el.offsetParent === null && el.tagName !== "INPUT") continue;
+    if (sameThing(lost, el)) {
+      el.focus({ preventScroll: true });
+      return true;
+    }
+  }
+  return false;
+}
+
+function onFocusOut(e: FocusEvent): void {
+  const lost = e.target as HTMLElement | null;
+  if (!lost || !lost.tagName) return;
+  // Poll briefly rather than checking once. A rebuild is usually asynchronous —
+  // the view is torn down, data is awaited, rows arrive — so a single timeout
+  // lands in the gap where the old control is gone and the new one does not
+  // exist yet, and the rescue quietly finds nothing.
+  let tries = 0;
+  const attempt = (): void => {
+    if (document.activeElement !== document.body) return; // something took it
+    if (lost.isConnected) return; // still there — the user simply clicked away
+    if (restoreEquivalent(lost)) return;
+    if (++tries < 25) window.setTimeout(attempt, POLL_MS);
+  };
+  window.setTimeout(attempt, POLL_MS);
 }
 
 /** Forget everything — a repo switch makes every remembered row meaningless. */

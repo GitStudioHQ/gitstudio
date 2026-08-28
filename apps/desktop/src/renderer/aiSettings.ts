@@ -149,11 +149,13 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
 
   if (c.needsKey) {
     const keyRow = el("div", "settings-field");
-    const kl = el("label", "settings-field-label");
+    const kl = el("label", "settings-field-label") as HTMLLabelElement;
     kl.textContent = "API key";
     const keyInput = document.createElement("input");
     keyInput.type = "password";
     keyInput.className = "settings-input";
+    keyInput.id = "gs-ai-key";
+    kl.htmlFor = keyInput.id;
     keyInput.placeholder = c.hasKey ? "•••••••• (stored — leave blank to keep)" : "Paste your API key";
     keyRow.append(kl, keyInput);
     editor.append(keyRow);

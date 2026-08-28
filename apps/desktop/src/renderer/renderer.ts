@@ -61,8 +61,10 @@ import {
   openMenu,
   wireResizerKeys,
   middleTruncate,
+  markSegment,
 } from "./ui";
 import type { MenuItem } from "./ui";
+import { plural } from "./textFit";
 import { dismissLayers } from "./overlays";
 import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { openBranchPeek, openRefPeek, openStashPeek } from "./peeks";
@@ -922,6 +924,8 @@ class App {
     // Which list a row belongs to, so Escaping out of a detail can put the
     // keyboard back on the row you opened instead of on <body>.
     setFocusScope(id);
+    // The Assistant has no rail item to light up; its launcher is its tab.
+    queueMicrotask(() => this.syncAssistantChip?.());
     // Deep-linking an item must rebuild the section so it can select that item —
     // never restore a stale cached view (which wouldn't have it open). The ONE
     // exception: a sha-only graph reveal, which works against the live
@@ -1294,6 +1298,36 @@ class App {
     };
   }
 
+  /**
+   * Run a refresh with a visible busy state, and put the keyboard back on the
+   * Refresh button afterwards.
+   *
+   * These buttons rebuild their whole view, so the button you pressed is
+   * destroyed and replaced mid-click: nothing spun, nothing said "working", and
+   * the focus you had went to <body>. The replacement occupies the same seat, so
+   * it is found by class and re-focused only if the keyboard was here to start.
+   */
+  private async refreshInPlace(btn: HTMLElement, run: () => void | Promise<void>): Promise<void> {
+    if ((btn as HTMLButtonElement).disabled) return;
+    const hadFocus = document.activeElement === btn;
+    const host_ = btn.parentElement;
+    const nth = host_ ? [...host_.children].indexOf(btn) : -1;
+    (btn as HTMLButtonElement).disabled = true;
+    btn.classList.add("is-busy");
+    btn.querySelector(".codicon")?.classList.add("spin");
+    try {
+      await run();
+    } finally {
+      if (btn.isConnected) {
+        (btn as HTMLButtonElement).disabled = false;
+        btn.classList.remove("is-busy");
+        btn.querySelector(".codicon")?.classList.remove("spin");
+      } else if (hadFocus && host_?.isConnected && nth >= 0) {
+        (host_.children[nth] as HTMLElement | undefined)?.focus?.();
+      }
+    }
+  }
+
   /** Refresh branch rows in place when the Branches view is up, else fully. */
   private async refreshBranchesSoft(): Promise<void> {
     if (this.currentView === "branches" && this.reloadBranchRows) {
@@ -1319,13 +1353,13 @@ class App {
     if (b.ahead) {
       const p = el("span", "ab-pill ahead");
       p.textContent = `↑ ${b.ahead}`;
-      p.title = `${b.ahead} commit(s) to push to ${b.upstream ?? "upstream"}`;
+      p.title = `${plural(b.ahead, "commit")} to push to ${b.upstream ?? "upstream"}`;
       top.appendChild(p);
     }
     if (b.behind) {
       const p = el("span", "ab-pill behind");
       p.textContent = `↓ ${b.behind}`;
-      p.title = `${b.behind} commit(s) to pull from ${b.upstream ?? "upstream"}`;
+      p.title = `${plural(b.behind, "commit")} to pull from ${b.upstream ?? "upstream"}`;
       top.appendChild(p);
     }
     meta.appendChild(top);
@@ -1345,8 +1379,8 @@ class App {
       const pull = textBtn(
         "Pull",
         b.current
-          ? `Pull ${b.behind} commit(s) from ${b.upstream ?? "upstream"}`
-          : `Pull ${b.behind} commit(s) into ${b.name} — fast-forward, no checkout`,
+          ? `Pull ${plural(b.behind, "commit")} from ${b.upstream ?? "upstream"}`
+          : `Pull ${plural(b.behind, "commit")} into ${b.name} — fast-forward, no checkout`,
         () => {},
       ) as HTMLButtonElement;
       pull.addEventListener("click", (e) => {
@@ -1357,7 +1391,7 @@ class App {
     }
     if (!b.current) {
       actions.append(
-        textBtn("Checkout", "Check out this branch", () => void this.checkoutRef(b.name)),
+        textBtn("Checkout", "Check out this branch", (btn) => void this.checkoutRef(b.name, btn)),
         textBtn("Delete", "Delete this branch", () => void this.deleteBranch(b.name), true),
       );
     }
@@ -1430,7 +1464,7 @@ class App {
       label: b.upstream ? "Push" : "Publish branch",
       sub: b.upstream
         ? b.ahead
-          ? `${b.ahead} commit(s) to ${b.upstream}`
+          ? `${plural(b.ahead, "commit")} to ${b.upstream}`
           : `to ${b.upstream}`
         : "create it on the remote and track it",
       icon: b.upstream ? "arrow-up" : "cloud-upload",
@@ -1490,7 +1524,7 @@ class App {
       icon: "edit",
       onClick: () => {
         void (async (): Promise<void> => {
-          const to = await promptInline("Rename branch", "new-name", b.name);
+          const to = await promptInline("Rename branch", "new-name", b.name, "Rename");
           if (to && to.trim() && to.trim() !== b.name)
             await run("rename branch", host.invoke("branch:rename", { from: b.name, to: to.trim() }));
         })();
@@ -1501,7 +1535,7 @@ class App {
       icon: "cloud",
       onClick: () => {
         void (async (): Promise<void> => {
-          const up = await promptInline("Set upstream", "origin/" + b.name, b.upstream ?? "");
+          const up = await promptInline("Set upstream", "origin/" + b.name, b.upstream ?? "", "Set upstream");
           if (up && up.trim())
             await run("set upstream", host.invoke("branch:setUpstream", { name: b.name, upstream: up.trim() }));
         })();
@@ -1538,6 +1572,20 @@ class App {
             if (ok) await run("delete remote branch", host.invoke("branch:deleteRemote", { remote, name: rname }));
           })();
         },
+      });
+    }
+    // Deleting the LOCAL branch belongs here too. The row behind this menu
+    // offered it as a plain "Delete" button while the menu — reached from the
+    // branch's own peek, where you have just read its history and decided — did
+    // not, so the peek was a dead end for the one decision it prepares you for.
+    if (!b.current) {
+      items.push({ separator: true });
+      items.push({
+        label: `Delete ${b.name}`,
+        icon: "trash",
+        danger: true,
+        title: `Delete the local branch ${b.name}`,
+        onClick: () => void this.deleteBranch(b.name),
       });
     }
     openMenu(anchor, items);
@@ -1677,11 +1725,36 @@ class App {
   }
 
   /** Check out a branch/tag by name, then refresh refs + the view. */
-  private async checkoutRef(ref: string): Promise<void> {
-    const result = await host.invoke("commit:action", {
-      action: "checkout",
-      sha: ref,
-    } as Parameters<App["runAction"]>[0]);
+  private async checkoutRef(ref: string, btn?: HTMLElement): Promise<void> {
+    // Checking out is the slowest thing this list does — it rewrites the working
+    // tree — and it used to show nothing at all while it ran, so the row looked
+    // like it had ignored the click.
+    const b = btn as HTMLButtonElement | undefined;
+    if (b?.disabled) return;
+    const label = b?.textContent ?? "";
+    if (b) {
+      b.disabled = true;
+      b.classList.add("is-busy");
+      b.textContent = "Checking out…";
+    }
+    const restore = (): void => {
+      if (!b || !b.isConnected) return;
+      b.disabled = false;
+      b.classList.remove("is-busy");
+      b.textContent = label;
+    };
+    let result;
+    try {
+      result = await host.invoke("commit:action", {
+        action: "checkout",
+        sha: ref,
+      } as Parameters<App["runAction"]>[0]);
+    } catch (e) {
+      restore();
+      toast(cleanErr(e) || "Couldn't check out.", "error");
+      return;
+    }
+    restore();
     // On failure (e.g. uncommitted changes block the switch) HEAD didn't move —
     // surface the error and DON'T refresh as if it succeeded (which made the UI
     // look like the branch was checked out when it wasn't).
@@ -1833,6 +1906,7 @@ class App {
     const filesCount = el("span", "cmp-seg-count");
     filesTab.appendChild(filesCount);
     seg.append(commitsTab, filesTab);
+    markSegment(seg, "Comparison view", ".cmp-seg-btn");
     const summary = el("div", "cmp-summary");
     // The one action GitHub makes PRIMARY on a comparison was missing entirely:
     // you could line up base…head, read every commit and file — and then had
@@ -2090,16 +2164,23 @@ class App {
   }
 
   private async openCompareFile(diff: CompareDiff, path: string): Promise<void> {
+    // The same staleness guard openFile and openWorkingFile already use, and
+    // the only diff surface that was missing it. Click a big file then a small
+    // one and the big one's response lands last and paints over your actual
+    // selection — after which the file list and the pane disagree, and nothing
+    // short of picking a third file resolves it.
+    const gen = ++this.diffGen;
     const fileDiff = await host.invoke("compare:fileDiff", {
       base: this.compareBase!,
       head: this.compareHead!,
       path,
       mode: this.compareMode,
     });
+    if (gen !== this.diffGen) return;
     if (fileDiff) {
       diff.show(fileDiff);
     } else {
-      diff.showEmpty("No diff available.");
+      diff.showEmpty("These two refs have identical content for this file.", { kind: "none" });
     }
   }
 
@@ -2167,6 +2248,7 @@ class App {
       btns.push(b);
       seg.appendChild(b);
     }
+    markSegment(seg, "Theme");
 
     // App icon: sits right next to the theme control, same card. "Auto" matches
     // the theme; the others pin the dock mark regardless of the in-app theme.
@@ -2201,6 +2283,7 @@ class App {
       logoBtns.push(b);
       logoSeg.appendChild(b);
     }
+    markSegment(logoSeg, logoLabel);
     syncLogoPreview();
     // The preview trails the segment so the card's two segmented controls keep
     // one left edge. What made it read as a fourth segment was its BORDER —
@@ -2242,6 +2325,7 @@ class App {
       btns.push(b);
       seg.appendChild(b);
     }
+    markSegment(seg, label);
     body.append(label, sub, seg);
     return card;
   }
@@ -2272,7 +2356,9 @@ class App {
     askBox.type = "checkbox";
     askBox.setAttribute("aria-label", "Ask where to put each clone");
     const askText = el("div", "settings-check-text");
-    const askTitle = el("div", "settings-field-label");
+    // A checkbox's own text, not a group heading — micro-caps would shout a
+    // whole sentence at you.
+    const askTitle = el("div", "settings-check-title");
     askTitle.textContent = "Ask where to put each clone";
     const askSub = el("div", "settings-sub");
     askSub.textContent = "Every one-click open shows the destination sheet first.";
@@ -2804,7 +2890,7 @@ class App {
     refreshBtn.title = "Refresh";
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
-    refreshBtn.addEventListener("click", () => void this.showCodeView());
+    refreshBtn.addEventListener("click", () => void this.refreshInPlace(refreshBtn, () => this.showCodeView()));
     const head = el("div", "code-head");
     head.append(crumbs, countChip, el("div", "topbar-spacer"), filterInput, refreshBtn);
 
@@ -3074,10 +3160,40 @@ class App {
     const back = el("button", "mini-btn");
     back.append(glyph("arrow-left"), span("Back"));
     back.addEventListener("click", () => void this.showCodeView());
-    const name = el("span", "code-file-name");
-    name.textContent = path;
+    // The tree header carries a clickable trail, a count and a filter; opening a
+    // file used to replace all of it with "Back" and a raw path string, so the
+    // routine things — go up a folder, copy this path, see it on GitHub, reload
+    // it — all became "Back, then find the file again".
+    const crumbs = el("div", "code-crumbs code-file-crumbs");
+    const parts = path.split("/");
+    const seg = (label: string, dir: string, isLast: boolean): void => {
+      const btn = el("button", "code-crumb" + (isLast ? " is-current" : ""));
+      btn.append(glyph(isLast ? "file" : dir === "" ? "repo" : "folder"), span(label));
+      if (!isLast) btn.addEventListener("click", () => this.goCodePath(dir));
+      crumbs.appendChild(btn);
+      if (!isLast) crumbs.appendChild(span("/", "code-crumb-sep"));
+    };
+    seg(this.currentRepo?.name ?? "repo", "", false);
+    parts.forEach((p, i) => {
+      seg(p, parts.slice(0, i + 1).join("/"), i === parts.length - 1);
+    });
+
+    const copyBtn = el("button", "topbar-icon");
+    copyBtn.title = "Copy this file's path";
+    copyBtn.setAttribute("aria-label", copyBtn.title);
+    copyBtn.appendChild(glyph("copy"));
+    copyBtn.addEventListener("click", () => void copyText(path, "Path copied."));
+
+    const reloadBtn = el("button", "topbar-icon");
+    reloadBtn.title = "Reload this file";
+    reloadBtn.setAttribute("aria-label", reloadBtn.title);
+    reloadBtn.appendChild(glyph("refresh"));
+    reloadBtn.addEventListener("click", () =>
+      void this.refreshInPlace(reloadBtn, () => this.openCodeFile(path)),
+    );
+
     const bar = el("div", "code-head");
-    bar.append(back, name);
+    bar.append(back, crumbs, el("div", "topbar-spacer"), copyBtn, reloadBtn);
     const surface = el("div", "diff-surface code-file-surface");
     wrap.append(bar, surface);
     this.viewHost.replaceChildren(wrap);
@@ -3151,6 +3267,14 @@ class App {
     };
     textarea.addEventListener("input", () => {
       if (prefilled !== undefined && textarea.value !== prefilled) prefilled = undefined;
+    });
+    // ⌘/Ctrl+Enter commits. Every commit box in every tool does this, and here
+    // it did nothing at all — the only way to commit was to leave the keyboard.
+    textarea.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      if (commitBtn.hasAttribute("disabled")) return;
+      commitBtn.click();
     });
     msgWrap.append(textarea);
     // ✨ Write the message from the staged diff — sits up in the branch header row
@@ -3251,7 +3375,7 @@ class App {
       signoffToggle.setAttribute("aria-checked", signoff ? "true" : "false");
     });
     coAuthorBtn.addEventListener("click", async () => {
-      const v = await promptInline("Add co-author", "Name <email@example.com>");
+      const v = await promptInline("Add co-author", "Name <email@example.com>", "", "Add");
       if (v && v.trim()) {
         coAuthors.push(v.trim());
         renderChips();
@@ -3402,16 +3526,29 @@ class App {
     wsBtn.title = "Ignore whitespace in the diff";
     wsBtn.setAttribute("aria-label", "Ignore whitespace");
     wsBtn.appendChild(glyph("whitespace"));
+    wsBtn.setAttribute("aria-pressed", "false");
+    // A toggle you cannot read is a toggle you cannot trust: this one was an
+    // unlabelled glyph whose title said the same thing whichever way it was
+    // set, and which announced no state at all.
+    const syncWs = (): void => {
+      wsBtn.classList.toggle("is-on", whitespaceIgnored);
+      wsBtn.setAttribute("aria-pressed", String(whitespaceIgnored));
+      wsBtn.title = whitespaceIgnored
+        ? "Whitespace is ignored in the diff — click to show it"
+        : "Ignore whitespace in the diff";
+      wsBtn.setAttribute("aria-label", wsBtn.title);
+    };
+    syncWs();
     wsBtn.addEventListener("click", () => {
       whitespaceIgnored = !whitespaceIgnored;
-      wsBtn.classList.toggle("is-on", whitespaceIgnored);
+      syncWs();
       diffPanel.setRenderOptions({ whitespace: whitespaceIgnored ? "all" : "none" });
     });
     const refreshBtn = el("button", "topbar-icon");
     refreshBtn.title = "Refresh";
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
-    refreshBtn.addEventListener("click", () => void this.showChangesView());
+    refreshBtn.addEventListener("click", () => void this.refreshInPlace(refreshBtn, () => this.showChangesView()));
     // A stash button that follows the selection and relabels itself, matching the
     // extension. Without one, the toolbar could stage everything but never stash
     // anything, and the only stash route was a right-click most people never try.
@@ -3904,7 +4041,7 @@ class App {
     const diff = await host.invoke("file:diff", { path });
     if (gen !== this.diffGen) return;
     if (!diff) {
-      diffPanel.showEmpty("No diff available.");
+      diffPanel.showEmpty("This file has no textual changes to show.", { kind: "none" });
       return;
     }
     if (diff.conflicted) {
@@ -4295,7 +4432,16 @@ class App {
       }
     }
     if (trailers.length) message = `${message}\n\n${trailers.join("\n")}`;
-    (btn as HTMLButtonElement).disabled = true;
+    // Both commit buttons go out together. Disabling only the one you pressed
+    // left "Commit & Push" fully clickable while a commit was already in
+    // flight, so an impatient second click started a second commit of the same
+    // staged tree.
+    const row = btn.closest(".dc-commit-row");
+    const pair = row
+      ? [...row.querySelectorAll<HTMLButtonElement>("button")]
+      : [btn as HTMLButtonElement];
+    for (const b of pair) b.disabled = true;
+    btn.classList.add("is-busy");
     try {
       // Nothing staged, but there IS work? Offer to commit all of it rather than
       // refusing (issue #16) — VS Code and JetBrains both do this. The
@@ -4314,7 +4460,8 @@ class App {
             confirmLabel: `Commit all ${n}`,
           });
           if (!yes) {
-            (btn as HTMLButtonElement).disabled = false;
+            for (const b of pair) b.disabled = false;
+            btn.classList.remove("is-busy");
             return;
           }
           // Stage for real rather than using commit -a: -a skips untracked files
@@ -4322,7 +4469,8 @@ class App {
           const staged = await host.invoke("stageAll", undefined);
           if (!staged.ok) {
             toast(staged.message || "Couldn't stage the changes.", "error");
-            (btn as HTMLButtonElement).disabled = false;
+            for (const b of pair) b.disabled = false;
+            btn.classList.remove("is-busy");
             return;
           }
         }
@@ -4384,7 +4532,8 @@ class App {
     } catch (e) {
       toast(cleanErr(e) || "Commit failed.", "error");
     } finally {
-      (btn as HTMLButtonElement).disabled = false;
+      for (const b of pair) b.disabled = false;
+            btn.classList.remove("is-busy");
     }
   }
 
@@ -4622,10 +4771,10 @@ class App {
         set("cloud", "Publish", "Publish this branch to its remote", () => void this.doSync("publish"));
         wrap.classList.add("has-action");
       } else if (s.behind > 0) {
-        set("arrow-down", `Pull ${s.behind}`, `Pull ${s.behind} commit(s) from ${s.upstream}`, () => void this.doSync("pull"));
+        set("arrow-down", `Pull ${s.behind}`, `Pull ${plural(s.behind, "commit")} from ${s.upstream}`, () => void this.doSync("pull"));
         wrap.classList.add("has-action");
       } else if (s.ahead > 0) {
-        set("arrow-up", `Push ${s.ahead}`, `Push ${s.ahead} commit(s) to ${s.upstream}`, () => void this.doSync("push"));
+        set("arrow-up", `Push ${s.ahead}`, `Push ${plural(s.ahead, "commit")} to ${s.upstream}`, () => void this.doSync("push"));
         wrap.classList.add("has-action");
       } else {
         set("sync", "Fetch", `Up to date with ${s.upstream} — fetch for updates`, () => void this.doSync("fetch"));
@@ -4998,12 +5147,26 @@ class App {
    *  view. Opens the full Assistant (its chats persist + stay warm). */
   private buildAssistantLauncher(): HTMLElement {
     const b = el("button", "topbar-icon topbar-assistant");
-    b.title = "Assistant";
-    b.setAttribute("aria-label", "Open the AI Assistant");
     b.append(glyph("sparkle"), span("Assistant", "topbar-assistant-label"));
+    // The Assistant is a full view like any other, but its only entry point is
+    // this button — and the button looked identical whether you were in the
+    // Assistant or not, so the one surface with no rail item and no tab was
+    // also the one surface that never said you were on it.
+    const sync = (): void => {
+      const here = this.currentView === "assistant";
+      b.classList.toggle("is-current", here);
+      b.setAttribute("aria-current", here ? "page" : "false");
+      b.title = here ? "You are in the Assistant" : "Assistant";
+      b.setAttribute("aria-label", here ? "Assistant (current view)" : "Open the AI Assistant");
+    };
+    sync();
+    this.syncAssistantChip = sync;
     b.addEventListener("click", () => this.routeView("assistant"));
     return b;
   }
+
+  /** Repaint the Assistant launcher's current-view state after a route change. */
+  private syncAssistantChip?: () => void;
 
   /** The notifications center: a bell in the top bar (next to the account chip)
    *  with an unread-count badge, opening the inbox as a floating panel. Replaces
@@ -5529,8 +5692,26 @@ class App {
 
   private async selectCommit(sha: string): Promise<void> {
     this.selectedSha = sha;
-    const details = await host.invoke("commit:details", sha);
-    if (!details || this.selectedSha !== sha) {
+    // Loading a commit's details is a round trip, and this pane used to sit
+    // showing the PREVIOUS commit's files the whole time — so a slow load was
+    // indistinguishable from a fast one, and a FAILED load was invisible: the
+    // old commit stayed on screen as though it were the one you just clicked.
+    this.detailsEl?.replaceChildren(loadingState(`Loading ${sha.slice(0, 7)}…`));
+    let details;
+    try {
+      details = await host.invoke("commit:details", sha);
+    } catch (e) {
+      if (this.selectedSha !== sha) return;
+      this.detailsEl?.replaceChildren(
+        errorState("Couldn't load this commit", cleanErr(e) || "The commit details request failed."),
+      );
+      return;
+    }
+    if (this.selectedSha !== sha) return;
+    if (!details) {
+      this.detailsEl?.replaceChildren(
+        errorState("Couldn't load this commit", `Git returned nothing for ${sha.slice(0, 7)}.`),
+      );
       return;
     }
     this.renderDetails(details);
@@ -5696,6 +5877,7 @@ class App {
       max: maxFor,
       get: () => applied,
       set: setW,
+      inverted: true,
       onCommit: () => localStorage.setItem(KEY, String(desired)),
     });
     split.addEventListener("pointerdown", (e) => {
@@ -5784,7 +5966,7 @@ class App {
     const diff = await host.invoke("file:diff", { path: file.path, sha });
     if (gen !== this.diffGen || panel !== this.diffPanel) return;
     if (!diff) {
-      panel.showEmpty("No diff available.");
+      panel.showEmpty("This file has no textual changes to show.", { kind: "none" });
       return;
     }
     if (diff.conflicted) {

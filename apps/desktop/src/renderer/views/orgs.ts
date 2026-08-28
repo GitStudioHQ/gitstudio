@@ -49,6 +49,7 @@ import {
   wireListNav,
   type SectionNav,
   type SectionRender,
+  subTabs,
 } from "./common";
 import type { GhUserInfo, OrgInfo, OrgMember, OrgRepo, OrgRepoDetail, OrgTeam } from "../../shared/ipc";
 
@@ -245,7 +246,6 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
 
   // Sub-tabs: Repositories · Teams · Members. The content is a responsive card
   // grid so it fills the full-width pane instead of a narrow column of rows.
-  const subBar = el("div", "gh-subtabs");
   const content = el("div", "gh-subcontent gh-org-grid");
   wireListNav(content, ".list-row");
   const subDefs: ReadonlyArray<{ id: SubTabId; label: string; icon: string }> = [
@@ -253,23 +253,20 @@ function showOrgDetail(detail: HTMLElement, org: OrgInfo, gen: number): void {
     { id: "teams", label: "Teams", icon: "organization" },
     { id: "members", label: "Members", icon: "organization" },
   ];
-  const subBtns: HTMLElement[] = [];
-  const selectSub = (id: SubTabId): void => {
-    orgSubTab = id;
-    for (const b of subBtns) b.classList.toggle("active", b.dataset.sub === id);
-    void renderSubTab(content, org.login, id, gen);
-  };
+  content.id = "gs-org-subpanel";
+  const tabs = subTabs({
+    tabs: subDefs,
+    ariaLabel: "Organization sections",
+    panel: content,
+    onSelect: (id) => {
+      orgSubTab = id;
+      void renderSubTab(content, org.login, id, gen);
+    },
+  });
+  const selectSub = tabs.select;
   // Hook the header search into whichever tab is active right now.
   rerenderActiveTab = () => selectSub(orgSubTab);
-  for (const t of subDefs) {
-    const b = el("button", "gh-subtab");
-    b.dataset.sub = t.id;
-    b.append(glyph(t.icon), span(t.label));
-    b.addEventListener("click", () => selectSub(t.id));
-    subBtns.push(b);
-    subBar.appendChild(b);
-  }
-  detail.append(subBar, content);
+  detail.append(tabs.el, content);
   selectSub(orgSubTab);
 }
 

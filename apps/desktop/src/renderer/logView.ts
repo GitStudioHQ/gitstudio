@@ -79,6 +79,7 @@ export function createLogPane(o: {
   });
   search.classList.add("log-search");
   const matchCounter = span("", "log-match-count");
+  let matchStepSync: (() => void) | undefined;
   // These were five identical unlabelled squares, and their titles never
   // changed with their state — "Show timestamps" still read "Show timestamps"
   // while timestamps were showing. The clock-with-arrow icon also universally
@@ -120,10 +121,25 @@ export function createLogPane(o: {
     if (max) root.scrollIntoView({ block: "start", behavior: "smooth" });
     if (wasFollowing) setFollow(true);
   });
+  // Stepping through matches was Enter-only and unadvertised, so a search that
+  // found 40 hits gave you the first one and no way to reach the other 39
+  // unless you guessed. Two buttons, disabled until there is something to step.
+  const prevMatch = toolBtn("chevron-up", "Previous match (Shift+Enter)", () => jumpToMatch(matchIdx - 1));
+  const nextMatch = toolBtn("chevron-down", "Next match (Enter)", () => jumpToMatch(matchIdx + 1));
+  prevMatch.classList.add("log-match-step");
+  nextMatch.classList.add("log-match-step");
+  const syncMatchSteps = (): void => {
+    for (const b of [prevMatch, nextMatch]) (b as HTMLButtonElement).disabled = matches.length < 2;
+  };
+  syncMatchSteps();
+  matchStepSync = syncMatchSteps;
+
   bar.append(
     errChip,
     search,
     matchCounter,
+    prevMatch,
+    nextMatch,
     span("", "log-toolbar-spring"),
     tsBtn,
     followBtn,
@@ -185,13 +201,14 @@ export function createLogPane(o: {
     raf = requestAnimationFrame(() => {
       raf = 0;
       const atBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - LINE_H * 2;
+      // Route BOTH directions through setFollow. Flipping the class here by
+      // hand is how the button came to render as ON while its own tooltip and
+      // aria-pressed still said OFF — three writers, one piece of state.
       if (follow && !atBottom) {
-        follow = false;
-        followBtn.classList.remove("is-on");
+        setFollow(false);
         jumpPill.hidden = false;
       } else if (!follow && atBottom) {
-        follow = true;
-        followBtn.classList.add("is-on");
+        setFollow(true);
         jumpPill.hidden = true;
       }
       render();
@@ -222,12 +239,14 @@ export function createLogPane(o: {
     const q = query.trim().toLowerCase();
     if (!q) {
       matchCounter.textContent = "";
+    matchStepSync?.();
       return;
     }
     for (let i = 0; i < doc.lines.length; i++) {
       if (stripAnsi(doc.lines[i].text).toLowerCase().includes(q)) matches.push(i);
     }
     matchCounter.textContent = matches.length ? `${matches.length} matches` : "no matches";
+    matchStepSync?.();
   }
 
   function jumpToLine(docIdx: number): void {
@@ -241,9 +260,7 @@ export function createLogPane(o: {
     if (pos < 0) return;
     // A search or error jump turns following off — so the way BACK to the tail
     // has to appear, or you are stranded mid-log with no affordance.
-    follow = false;
-    followBtn.classList.remove("is-on");
-    followBtn.title = "Follow the newest output";
+    setFollow(false);
     jumpPill.hidden = visible.length === 0;
     scroll.scrollTop = Math.max(0, pos * LINE_H - scroll.clientHeight / 2);
     render();
@@ -292,15 +309,29 @@ export function createLogPane(o: {
     num.textContent = String(docIdx + 1);
     row.appendChild(num);
     if (line.kind === "group") {
-      const chev = glyph(collapsed.has(docIdx) ? "chevron-right" : "chevron-down");
+      const isCollapsed = collapsed.has(docIdx);
+      const chev = glyph(isCollapsed ? "chevron-right" : "chevron-down");
       chev.classList.add("log-chev");
       row.appendChild(chev);
       row.classList.add("log-groupline");
-      row.addEventListener("click", () => {
+      // These fold whole sections of a build log and were mouse-only: a div
+      // with a click handler, no role, no tab stop, and no expanded state to
+      // read. Enter/Space now fold them like every other disclosure.
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
+      row.setAttribute("aria-expanded", String(!isCollapsed));
+      row.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} group: ${line.text}`);
+      const toggle = (): void => {
         if (collapsed.has(docIdx)) collapsed.delete(docIdx);
         else collapsed.add(docIdx);
         rebuildVisible();
         render();
+      };
+      row.addEventListener("click", toggle);
+      row.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        toggle();
       });
     }
     if (showTs && line.ts) {

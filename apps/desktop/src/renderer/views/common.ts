@@ -53,6 +53,17 @@ export interface SectionTarget {
   /** A ref (branch / remote / tag / stash selector) for the Branches view to
    *  scroll to and flash on entry. */
   ref?: string;
+  /**
+   * Which section the user came FROM, when it is not the one that owns the
+   * item.
+   *
+   * Inbox and My Work both open issues and pull requests, which routes into
+   * those sections — so the detail page believed it belonged to Issues, its
+   * back button said "← Issues", the rail silently switched, and Escape landed
+   * you in a list you had never been in. The originating section rides along so
+   * back and Escape return where you actually were.
+   */
+  from?: { view: string; label: string };
   /** Explicitly route to the section's ROOT (its list page). This is how a
    *  detail page's ← / Esc gets back: routeView's "already showing this view"
    *  no-op would otherwise swallow a target-less same-view navigation. */
@@ -609,6 +620,13 @@ function watchChipOverflow(chips: HTMLElement): void {
 export function secRow(o: SecRowOpts): HTMLElement {
   const row = el("button", "sec-row");
   if (o.ariaLabel) row.setAttribute("aria-label", o.ariaLabel);
+  // Rows built from `meta` fragments can end up carrying their own controls —
+  // an Actions run row puts a branch sub-link in its meta cluster — and a
+  // control inside a <button> is invalid: the outer button's accessible name
+  // swallows the inner one, assistive tech cannot reach it, and Space activates
+  // the row rather than the thing you are actually on. When that happens the row
+  // becomes the app's documented div[role="button"] shape instead, which is what
+  // the branch rows already use for exactly this reason. See `promoteToDivRow`.
   if (o.lead) {
     const lead = el("span", "sec-row-lead");
     lead.appendChild(o.lead);
@@ -643,7 +661,33 @@ export function secRow(o: SecRowOpts): HTMLElement {
     row.appendChild(t);
   }
   row.addEventListener("click", o.onOpen);
-  return row;
+  return promoteToDivRow(row, o.onOpen);
+}
+
+/**
+ * If a row ended up containing its own interactive children, re-shape it from a
+ * `<button>` into a `div[role="button"]` carrying the same contract: clickable,
+ * one tab stop, Enter and Space activate — but only when the key event started
+ * on the ROW, so a control inside it keeps its own keys.
+ */
+function promoteToDivRow(row: HTMLElement, onOpen: () => void): HTMLElement {
+  const inner = row.querySelector('button, a[href], [role="button"], input, select, textarea');
+  if (!inner) return row;
+  const div = el("div", `${row.className} is-clickable`);
+  for (const { name, value } of [...row.attributes]) {
+    if (name !== "class") div.setAttribute(name, value);
+  }
+  while (row.firstChild) div.appendChild(row.firstChild);
+  div.setAttribute("role", "button");
+  div.tabIndex = 0;
+  div.addEventListener("click", onOpen);
+  div.addEventListener("keydown", (e) => {
+    if (e.target !== div) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    onOpen();
+  });
+  return div;
 }
 
 /** An overlapping avatar stack for a row's meta cluster (up to `max`). */
@@ -1018,11 +1062,12 @@ export function facetBar<T>(o: {
           ? undefined
           : optionsFor(spec).find((x) => x.value === value)?.label ?? value;
       btn.classList.toggle("is-active", value != null);
-      btn.append(
-        glyph(spec.icon),
-        span(shown != null ? `${spec.label}: ${shown}` : spec.label),
-        glyph("chevron-down"),
-      );
+      // The pill keeps its own name; the tick beside it says a value is set,
+      // and the tooltip (plus the menu itself) says which. Putting the value in
+      // the label is what made the pill grow and shove its neighbours.
+      const mark = el("span", "gh-facet-value");
+      mark.textContent = value != null ? "1" : "";
+      btn.append(glyph(spec.icon), span(spec.label), mark, glyph("chevron-down"));
       btn.title =
         shown != null
           ? `Filtering by ${spec.label.toLowerCase()} “${shown}” — click to change`
@@ -1065,6 +1110,71 @@ export function facetBar<T>(o: {
 
 /** The segmented control (Open / Closed / All), extracted from the two views
  *  that each had their own copy. Returns the element; the caller owns state. */
+/**
+ * The `.gh-subtabs` bar with real tab semantics. Three detail pages hand-rolled
+ * this as plain buttons carrying an `active` CLASS and nothing else: a screen
+ * reader heard four unrelated buttons and could not tell which page you were
+ * on, and ←/→ did nothing. One tablist, one roving tab stop, one selected tab.
+ *
+ * Returns the bar plus a `select(id)` the caller drives; the caller still owns
+ * what each tab renders.
+ */
+export function subTabs<I extends string>(o: {
+  tabs: ReadonlyArray<{ id: I; label: string; icon?: string }>;
+  ariaLabel: string;
+  panel?: HTMLElement;
+  onSelect: (id: I) => void;
+}): { el: HTMLElement; select: (id: I) => void; current: () => I } {
+  const bar = el("div", "gh-subtabs");
+  bar.setAttribute("role", "tablist");
+  bar.setAttribute("aria-label", o.ariaLabel);
+  const btns: HTMLElement[] = [];
+  let active = o.tabs[0]?.id as I;
+
+  const paint = (id: I): void => {
+    active = id;
+    for (const b of btns) {
+      const on = b.dataset.sub === id;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", String(on));
+      // One tab stop for the whole bar: Tab reaches the selected tab, arrows
+      // move between them. That is what a tablist is.
+      b.tabIndex = on ? 0 : -1;
+    }
+  };
+  const select = (id: I): void => {
+    paint(id);
+    o.onSelect(id);
+  };
+
+  for (const t of o.tabs) {
+    const b = el("button", "gh-subtab");
+    b.setAttribute("role", "tab");
+    b.dataset.sub = t.id;
+    if (o.panel?.id) b.setAttribute("aria-controls", o.panel.id);
+    if (t.icon) b.appendChild(glyph(t.icon));
+    b.appendChild(span(t.label));
+    b.addEventListener("click", () => select(t.id));
+    btns.push(b);
+    bar.appendChild(b);
+  }
+  bar.addEventListener("keydown", (e) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!step && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    const i = btns.findIndex((b) => b.dataset.sub === active);
+    const next =
+      e.key === "Home" ? 0 : e.key === "End" ? btns.length - 1 : (i + step + btns.length) % btns.length;
+    const id = btns[next]?.dataset.sub as I | undefined;
+    if (id == null) return;
+    select(id);
+    btns[next].focus();
+  });
+  if (o.panel) o.panel.setAttribute("role", "tabpanel");
+  paint(active);
+  return { el: bar, select, current: () => active };
+}
+
 export function segmented<V extends string>(o: {
   options: Array<{ value: V; label: string; icon?: string }>;
   value: V;
@@ -1136,4 +1246,33 @@ export function wireListNav(container: HTMLElement, selector = ".gh-row"): void 
     target.focus();
     target.scrollIntoView({ block: "nearest" });
   });
+}
+
+/**
+ * GitHub's CI status/conclusion enums, in English.
+ *
+ * These arrive as `in_progress`, `action_required`, `timed_out` and were
+ * printed raw beside rows the rest of the app humanises — the one place in
+ * GitStudio where the API's vocabulary leaked onto the screen.
+ */
+export function checkStateLabel(state: string): string {
+  const map: Record<string, string> = {
+    success: "Passed",
+    failure: "Failed",
+    neutral: "Neutral",
+    cancelled: "Cancelled",
+    canceled: "Cancelled",
+    skipped: "Skipped",
+    stale: "Stale",
+    timed_out: "Timed out",
+    action_required: "Action required",
+    startup_failure: "Startup failure",
+    queued: "Queued",
+    waiting: "Waiting",
+    pending: "Pending",
+    requested: "Requested",
+    in_progress: "Running",
+    completed: "Completed",
+  };
+  return map[state] ?? state.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 }

@@ -26,8 +26,10 @@ import {
   openMenu,
   statBit,
   statePill,
+  runBusy,
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
+import { plural } from "../textFit";
 import { toast, confirmDialog, openModal } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { wireProseNav } from "../proseNav";
@@ -225,7 +227,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, releases.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching releases", `Nothing matches “${query}”.`, { icon: "search" }));
+        listEl.appendChild(emptyState("No matching releases", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const rel of items) listEl.appendChild(buildReleaseRow(rel, latestId));
@@ -238,7 +240,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       const items = q ? tags.filter((t) => t.name.toLowerCase().includes(q)) : tags;
       header.setCount?.(items.length, tags.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching tags", `Nothing matches “${query}”.`, { icon: "search" }));
+        listEl.appendChild(emptyState("No matching tags", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const t of items) listEl.appendChild(buildTagRow(t));
@@ -424,6 +426,20 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
       { label: "Copy link", icon: "copy", onClick: () => void copyText(rel.htmlUrl, "Copied release link.") },
+      // A draft page said "unpublished draft" and then offered Edit, Copy link,
+      // Delete and Open on GitHub — every action except the one the word
+      // "draft" exists to prompt.
+      ...(rel.draft
+        ? [
+            { separator: true },
+            {
+              label: "Publish release",
+              icon: "rocket",
+              title: `Publish ${rel.tagName} — it becomes visible to everyone`,
+              onClick: () => void publishRelease(rel, moreBtn, reload),
+            },
+          ]
+        : []),
       { separator: true },
       {
         label: "Delete release",
@@ -443,13 +459,27 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
 
   // ── title block ──
   const titleRow = el("div", "det-title-row");
-  titleRow.appendChild(
-    rel.draft
-      ? statePill("Draft", "draft")
-      : rel.prerelease
-        ? statePill("Pre-release", "prerelease")
-        : statePill("Published", "latest"),
-  );
+  // The list marks a release with every badge that applies — Pre-release AND
+  // Latest, say — and this page reduced all of it to one, so opening a row you
+  // had picked out as "Pre-release" showed you a release labelled "Published".
+  // Same pills, same rules, computed from the same list.
+  const pills = el("div", "det-title-pills");
+  if (rel.draft) pills.appendChild(statePill("Draft", "draft"));
+  if (rel.prerelease) pills.appendChild(statePill("Pre-release", "prerelease"));
+  if (!rel.draft && !rel.prerelease) pills.appendChild(statePill("Published", "latest"));
+  titleRow.appendChild(pills);
+  // "Latest" is a property of the LIST, not of one release, so it needs the
+  // list to answer — from cache, without blocking the page on a request.
+  void gget("release:list", undefined, 30000)
+    .then((all) => {
+      if (!pills.isConnected) return;
+      if (!rel.draft && all.find((r) => !r.draft)?.id === rel.id) {
+        pills.appendChild(statePill("Latest", "latest"));
+      }
+    })
+    .catch(() => {
+      /* offline — the other pills still tell the truth */
+    });
   const h = el("h1", "det-title");
   h.textContent = rel.name || rel.tagName;
   titleRow.appendChild(h);
@@ -504,7 +534,9 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
       const t = el("div", "row-meta-title");
       t.textContent = a.label || a.name;
       const subT = el("div", "row-meta-sub");
-      subT.textContent = `${fmtBytes(a.size)} · ${a.downloadCount} download${a.downloadCount === 1 ? "" : "s"}`;
+      // Grouped like every other count in the app — the rail above this list already
+      // wrote the same figure as "48,200" while these rows wrote "48200".
+      subT.textContent = `${fmtBytes(a.size)} · ${plural(a.downloadCount, "download")}`;
       m.append(t, subT);
       row.append(m);
       const download = (): void => void window.open(a.downloadUrl, "_blank");
@@ -841,5 +873,37 @@ function releaseFormDialog(title: string, init: ReleaseInput): Promise<ReleaseIn
         },
       };
     });
+  });
+}
+
+/** Flip a draft release to published — the action the word "draft" implies. */
+async function publishRelease(rel: ReleaseInfo, btn: HTMLElement, reload: () => void): Promise<void> {
+  const ok = await confirmDialog({
+    title: `Publish ${rel.tagName}?`,
+    message:
+      "The release becomes visible to everyone with access to the repository, and its assets become downloadable.",
+    confirmLabel: "Publish",
+  });
+  if (!ok) return;
+  await runBusy(btn, async () => {
+    try {
+      const r = await host.invoke("release:update", {
+        id: rel.id,
+        tagName: rel.tagName,
+        name: rel.name ?? undefined,
+        body: rel.body ?? undefined,
+        prerelease: rel.prerelease,
+        draft: false,
+      });
+      if (!r.ok) {
+        toast(r.message ?? "Couldn't publish the release.", "error");
+        return;
+      }
+      toast(`Published ${rel.tagName}.`, "success");
+      bust();
+      reload();
+    } catch (e) {
+      toast(cleanErr(e) || "Couldn't publish the release.", "error");
+    }
   });
 }

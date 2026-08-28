@@ -773,22 +773,6 @@ export interface GhRepoPaths {
   total: number;
 }
 
-/** One branch of a remote repo (the Explore ref switcher). */
-export interface GhRepoBranch {
-  name: string;
-  sha: string;
-  protected: boolean;
-}
-
-/** Every blob path in a remote repo — the go-to-file index. */
-export interface GhRepoPaths {
-  paths: string[];
-  /** GitHub truncated the tree, or we capped it. Say so; never pretend. */
-  truncated: boolean;
-  /** How many blobs the tree actually had (before our cap). */
-  total: number;
-}
-
 // ── Global GitHub search (Explore) ──
 
 /** One repository in a search result. */

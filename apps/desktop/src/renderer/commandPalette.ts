@@ -98,10 +98,15 @@ export function openCommandPalette(providers: PaletteProviders): void {
   input.className = "cmdk-input";
   input.placeholder = "Jump to a section, branch, PR, repo — or run an action…";
   input.setAttribute("aria-label", "Search commands");
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-expanded", "true");
+  input.setAttribute("aria-autocomplete", "list");
   const kbd = el("span", "cmdk-esc");
   kbd.textContent = "esc";
   inputRow.append(icon, input, kbd);
   const list = el("div", "cmdk-list");
+  list.id = "cmdk-list";
+  input.setAttribute("aria-controls", "cmdk-list");
   list.setAttribute("role", "listbox");
   card.append(inputRow, list);
   overlay.appendChild(card);
@@ -126,8 +131,20 @@ export function openCommandPalette(providers: PaletteProviders): void {
   const select = (i: number): void => {
     if (!flat.length) return;
     selected = Math.max(0, Math.min(i, flat.length - 1));
-    flat.forEach(({ el: row }, idx) => row.classList.toggle("is-selected", idx === selected));
-    flat[selected]?.el.scrollIntoView({ block: "nearest" });
+    flat.forEach(({ el: row }, idx) => {
+      const on = idx === selected;
+      row.classList.toggle("is-selected", on);
+      // The markup was almost right — role=dialog, aria-modal, a role=listbox
+      // of role=option rows — but the selection lived in a CSS class alone.
+      // Focus never leaves the input (correctly, so you can keep typing), so
+      // without aria-selected and aria-activedescendant a screen reader hears
+      // nothing at all as you arrow through 28 results.
+      row.setAttribute("aria-selected", on ? "true" : "false");
+      if (!row.id) row.id = `cmdk-row-${idx}`;
+    });
+    const cur = flat[selected]?.el;
+    if (cur) input.setAttribute("aria-activedescendant", cur.id);
+    cur?.scrollIntoView({ block: "nearest" });
   };
 
   const activate = (i: number): void => {

@@ -102,6 +102,17 @@ body.vscode-dark {
   --vscode-scrollbarSlider-hoverBackground: #5c657888;
   --vscode-scrollbarSlider-activeBackground: #6b7488aa;
   --vscode-editorIndentGuide-background: #232a36;
+  /* Semantic inks the desktop consumes from the shared CSS but never declared.
+     Undeclared, each fell through to a literal fallback tuned for a dark editor
+     — which is how "Sign out" ended up a 3.61:1 red on the light page. */
+  --vscode-errorForeground: #e15a5a;
+  --vscode-editorError-foreground: #e15a5a;
+  --vscode-list-warningForeground: var(--status-warn);
+  --vscode-testing-iconPassed: var(--status-add);
+  --vscode-gitDecoration-modifiedResourceForeground: var(--status-mod);
+  --vscode-focusBorder: var(--gs-accent);
+  --vscode-list-hoverBackground: var(--app-hover);
+  --vscode-textCodeBlock-background: var(--app-elevated);
 
   --app-bg: #0d1016;
   --app-panel: #12151c;
@@ -119,6 +130,10 @@ body.vscode-dark {
   /* Amber "attention" ink (pre-release, action-required) — readable on the dark
      canvas; the light theme darkens it for AA. Keeps amber out of literals. */
   --status-warn: #e0a44e;
+  /* The shared graph package paints tag chips and the detached-HEAD warning
+     with --gs-amber and the desktop never declared it, so both fell back to
+     whatever colour they inherited — a tag looked like body text. */
+  --gs-amber: #e0a44e;
   --gs-accent-ink: #a78bff;
 
   /* ── Elevation — layered ambient+key shadows, deep for the near-black canvas.
@@ -165,6 +180,9 @@ body.vscode-light {
   --vscode-scrollbarSlider-hoverBackground: #9aa1ad88;
   --vscode-scrollbarSlider-activeBackground: #868e9caa;
   --vscode-editorIndentGuide-background: #e7eaef;
+  /* Same semantic inks, darkened to clear AA on the light page. */
+  --vscode-errorForeground: #b3243f;
+  --vscode-editorError-foreground: #b3243f;
 
   --app-bg: #eef1f5;
   --app-panel: #f7f9fb;
@@ -183,6 +201,7 @@ body.vscode-light {
   --status-mod: #1a63c4;
   --status-del: #b82f5e;
   --status-warn: #92610f;
+  --gs-amber: #92610f;
 
   /* Light elevation — softer, cooler ink shadows; a bright top sheen. */
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 1px rgba(16, 24, 40, 0.04);
@@ -277,11 +296,24 @@ body {
   color: inherit;
   cursor: pointer;
   border-radius: 4px;
-  transition: color var(--dur-1) var(--ease);
+  /* These sit INSIDE rows that navigate somewhere else, so a link that reads as
+     plain muted text is a trap: it looked like the row's metadata, and clicking
+     it took you somewhere the row never promised. A resting underline says it is
+     its own target, and the padding gives it a hit box taller than one line of
+     13px text. */
+  padding: 3px 4px;
+  margin: -3px -4px;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
+.gh-sub-link:hover { background: var(--app-hover); }
 .gh-sub-link:hover {
   color: var(--gs-accent-ink, var(--gs-accent));
-  text-decoration: underline;
+  text-decoration-style: solid;
+  text-decoration-color: currentColor;
 }
 .gh-sub-sep { opacity: 0.7; }
 
@@ -495,6 +527,38 @@ button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
 }
 @keyframes gs-busy { 0%, 100% { opacity: 0.62; } 50% { opacity: 0.38; } }
 @media (prefers-reduced-motion: reduce) { .is-busy { animation: none; } }
+
+/* A consistent keyboard focus ring on every interactive surface.
+   The list below used to be the WHOLE story, which meant every control added
+   since — the ⌘K search button, row actions, the drawer's close button — fell
+   back to Chrome's stock blue ring in a purple app. This `:where()` rule carries
+   zero specificity, so it is a floor: anything focusable gets the app's ring,
+   and every rule below (or anywhere else in this file) still overrides it. */
+:where(
+  button, a[href], summary, input, select, textarea,
+  [role="button"], [role="option"], [role="tab"], [role="menuitem"],
+  [role="menuitemcheckbox"], [role="switch"], [role="checkbox"],
+  [role="separator"], [role="link"], [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gs-accent) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 7px;
+}
+/* A landing target is not a control. focusReturn parks the reader on a page's
+   title when a detail opens, so a screen reader announces where it just arrived
+   and the keyboard starts at the top — but the title is `tabindex="-1"`, not a
+   tab stop, and drawing a focus ring around a heading tells a sighted reader
+   they are ON something operable. They are not. */
+:where([tabindex="-1"]):focus,
+:where([tabindex="-1"]):focus-visible {
+  outline: none;
+}
+
+/* Inside a scrolling list an offset ring is clipped by the row above; pull it in. */
+:where(.list-row, .gh-row, .file-row, .code-row, .sec-row, .dropdown-item,
+       .ctx-menu-item, tr, li):focus-visible {
+  outline-offset: -2px;
+}
 
 /* A consistent keyboard focus ring on every interactive surface. */
 .nav-item:focus-visible,
@@ -1365,7 +1429,11 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
 .modal-input::placeholder, .modal-textarea::placeholder { color: var(--app-muted); opacity: 1; }
 .modal-input:focus { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 22%, transparent); }
 .modal-message { font-size: 13px; line-height: 1.55; color: var(--app-muted); white-space: pre-wrap; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Both footer buttons are the same height and sit on the same baseline. They
+   were 28px and 30px, stretch-aligned, so their bottom edges disagreed by 2px
+   — the kind of thing you feel as "unfinished" without being able to name. */
+.modal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.modal-actions .mini-btn, .modal-actions .btn { height: 30px; }
 /* The modal CTA is a shorter 30px button, so drop the 13px .btn font a notch so
    the label isn't cramped/optically mis-centred in the smaller box. */
 .modal-ok { height: 30px; padding: 0 16px; font-size: var(--text-sm); }
@@ -1553,7 +1621,18 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
 .peek-act.btn { height: 28px; padding: 0 12px; font-size: var(--text-sm); }
 .peek-act-danger { color: var(--gs-danger); }
 .peek-act-danger:hover { border-color: color-mix(in srgb, var(--gs-danger) 45%, var(--app-border)); }
-.peek-close { margin-left: 2px; }
+/* Close never moves. The header's action cluster WRAPS when a card carries more
+   buttons, and Close travelled with it — drilling from a branch into a commit
+   dropped it 51px down the card, so the second click of "close this" landed on
+   whatever had taken its place. It is pinned to the header's top-right corner,
+   outside the wrapping run. */
+.peek-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  margin-left: 0;
+}
+.peek-head { position: relative; padding-right: 48px; }
 .peek-body {
   flex: 1 1 auto;
   min-height: 80px;
@@ -2327,11 +2406,12 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   font-size: 12.5px;
 }
 
-/* File viewer (read-only Monaco over the listing). */
-.code-file-view .code-file-name {
+/* File viewer (read-only Monaco over the listing). Its header is the same
+   breadcrumb the tree header uses, so the last crumb — the file itself — reads
+   as the subject and the ones before it walk back up the tree. */
+.code-file-crumbs { min-width: 0; overflow: hidden; }
+.code-file-crumbs .code-crumb.is-current {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: 12px;
-  color: var(--app-muted);
 }
 .code-file-surface { flex: 1 1 auto; min-height: 0; position: relative; }
 
@@ -2431,7 +2511,8 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   color: var(--app-muted);
   font-family: inherit;
   font-size: 12.5px;
-  font-weight: 550;
+  /* The selected weight, worn by every tab: see .explore-tab. */
+  font-weight: 650;
   cursor: pointer;
 }
 .cmp-seg-btn + .cmp-seg-btn { border-left: 1px solid var(--app-border); }
@@ -2692,7 +2773,32 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
    rows only "Unstage", so anything narrower either clipped the buttons on
    hover or let the two groups reserve different widths (which is why the M/A
    letters sat ~50px apart and could not be scanned as a column). */
-.dc-file .row-actions { flex: 0 0 140px; justify-content: flex-end; }
+/* The actions OVERLAY the row's tail instead of reserving 140px of it.
+   Reserving was the right instinct — it is what stopped the staged and unstaged
+   groups putting their M/A letters in two different columns — but in a 320px
+   file list it left the FILENAME 40px, so every name in the checkbox model was
+   truncated to "com…" while 140px of invisible buttons sat beside it. The status
+   letter keeps its column because every row still ends at the same x; the
+   buttons appear over the tail on hover, where the pointer already is. */
+.dc-file { position: relative; }
+.dc-file .row-actions {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-left: 18px;
+  /* A short fade so a long filename runs under the buttons rather than into
+     them. The row's own ground shows through the transparent end. */
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--app-hover) 18px,
+    var(--app-hover)
+  );
+}
+.dc-file:focus-within .row-actions { background: linear-gradient(to right, transparent, var(--app-active) 18px, var(--app-active)); }
 /* Staged rows have no disclosure twisty, so their content started ~29px left
    of the unstaged rows and the list had two left edges. The cell is always
    there; only its ink is conditional. */
@@ -2947,7 +3053,6 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 
 /* Fields */
 .settings-field { display: flex; flex-direction: column; gap: 5px; max-width: 380px; }
-.settings-field-label { font-size: 11.5px; font-weight: 600; color: var(--app-muted); }
 .settings-input {
   height: 32px;
   padding: 0 11px;
@@ -3343,7 +3448,7 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 }
 .gh-subtab .glyph .codicon { font-size: 15px; }
 .gh-subtab:hover { color: var(--vscode-foreground); }
-.gh-subtab.active { color: var(--vscode-foreground); border-bottom-color: var(--gs-accent); font-weight: 650; }
+.gh-subtab.active { color: var(--vscode-foreground); border-bottom-color: var(--gs-accent); }
 .gh-subtab.active .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
 .gh-subcontent { display: flex; flex-direction: column; }
 .gh-comment {
@@ -3382,7 +3487,20 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .gh-check-dot.gh-checks-failure, .gh-check-dot.gh-checks-error, .gh-check-dot.gh-checks-cancelled { background: var(--status-del); }
 .gh-check-dot.gh-checks-in_progress, .gh-check-dot.gh-checks-queued, .gh-check-dot.gh-checks-pending { background: var(--status-mod); }
 .gh-check-name { flex: 1 1 auto; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The status WORD takes the status's own colour. Every state used to print in
+   the same grey, so "Failed" and "Passed" were distinguishable only by an icon
+   two columns away. */
 .gh-check-state { font-size: 11.5px; color: var(--app-muted); }
+.gh-check-row:has(.is-success) .gh-check-state,
+.gh-step-row:has(.is-success) .gh-check-state,
+.gh-check-row:has(.gh-checks-success) .gh-check-state,
+.gh-step-row:has(.gh-checks-success) .gh-check-state { color: var(--status-add); }
+.gh-check-row:has(.gh-checks-failure) .gh-check-state,
+.gh-step-row:has(.gh-checks-failure) .gh-check-state,
+.gh-check-row:has(.gh-checks-timed_out) .gh-check-state,
+.gh-step-row:has(.gh-checks-timed_out) .gh-check-state { color: var(--status-del); font-weight: 600; }
+.gh-check-row:has(.gh-checks-in_progress) .gh-check-state,
+.gh-step-row:has(.gh-checks-in_progress) .gh-check-state { color: var(--status-mod); }
 
 /* ── Glyphs — the real VS Code codicon font ─────────────────────────────────────
  * The `codicon` @font-face is registered at document scope by the imported
@@ -4086,7 +4204,7 @@ gitstudio-graph {
 .gh-detail-meta .gh-pill { margin-top: 0; align-self: center; }
 .gh-state-open { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .gh-state-closed { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
-.gh-state-merged { color: var(--gs-accent); background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
+.gh-state-merged { color: var(--gs-accent-ink, var(--gs-accent)); background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
 .gh-state-not-planned { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 16%, transparent); }
 .gh-state-draft { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 20%, transparent); }
 /* Semantic variants so Releases/Gists pills stop collapsing into gray "draft". */
@@ -4094,6 +4212,14 @@ gitstudio-graph {
 .gh-state-latest { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .gh-state-public { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 15%, transparent); }
 .gh-state-private { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 18%, transparent); }
+/* On the light page a 15-20% tint of a saturated ink lands close enough to the
+   ink itself that the word inside stops being legible. Light gets a paler tint
+   and a darker word, so every badge clears AA on both grounds. */
+body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
+  .gh-state-prerelease, .gh-state-latest, .gh-state-public, .gh-state-not-planned,
+  .gh-state-private, .gh-state-draft) {
+  background: color-mix(in srgb, currentColor 11%, var(--app-elevated));
+}
 
 /* Pipelines rows that link out get the affordance only when clickable. */
 .gh-check-row.is-link { cursor: pointer; }
@@ -4181,8 +4307,30 @@ gitstudio-graph {
   justify-content: flex-start;
   min-width: 0;
 }
-/* Present even when empty — an empty slot is the row's spring. */
-.gh-facet-slot { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+/* Present even when empty — an empty slot is the row's spring. It also keeps
+   the row's HEIGHT, because an empty flex box is 0px tall: on Actions/Workflows
+   that collapse let the whole tools row fold back up onto the title line, and
+   the Runs/Workflows segment jumped 297px sideways between two tabs of the same
+   screen. A tools row that carries a facet slot always takes its own line, so
+   its controls sit in the same place whichever tab is showing. */
+.gh-facet-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 28px;
+}
+/* Opted into by a view whose tools row gains and loses controls as you move
+   between its own tabs. Actions is the case: Runs carries twelve controls and
+   Workflows four, so the row fitted beside the title on one tab and wrapped
+   below it on the other, and the Runs/Workflows segment jumped 297px between
+   two tabs of the same screen. Claiming the line makes the geometry a constant.
+   Views whose tools row never changes shape are left alone. */
+.gh-head-tools.gh-tools-own-line {
+  flex: 1 1 100%;
+  justify-content: flex-start;
+  margin-left: 0;
+}
 .gh-head-titlewrap { min-width: 0; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; row-gap: 8px; }
 /* The search field must keep a floor and its own line when the row is tight —
    below ~1200px it used to collide with the first facet pill, losing its right
@@ -4341,14 +4489,14 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .gh-seg-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 26px; padding: 0 11px; border: none; background: transparent;
-  color: var(--app-muted); font: inherit; font-size: 12px; font-weight: 550; cursor: pointer;
+  color: var(--app-muted); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer;
   transition: color .12s ease, background .12s ease;
 }
 .gh-seg-btn .glyph .codicon { font-size: 14px; }
 .gh-seg-btn + .gh-seg-btn { border-left: 1px solid var(--app-border); }
 .gh-seg-btn:hover { color: var(--vscode-foreground); background: var(--app-hover); }
 .gh-seg-btn:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: -2px; }
-.gh-seg-btn.active { color: var(--gs-accent-ink, var(--gs-accent)); background: var(--app-active); font-weight: 650; }
+.gh-seg-btn.active { color: var(--gs-accent-ink, var(--gs-accent)); background: var(--app-active); }
 
 /* The tag glyph inside a gh-row title sits inline with the name (Tags sub-list). */
 .gh-row-title .glyph { color: var(--app-muted); margin-right: 6px; font-size: 13px; vertical-align: -2px; }
@@ -4364,7 +4512,18 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 /* Multi-field release form (reuses .modal-overlay / .modal-input / .modal-actions). */
 .modal-form { width: min(var(--modal-md), 92vw); display: flex; flex-direction: column; gap: 12px; }
 .modal-field { display: flex; flex-direction: column; gap: 5px; }
-.modal-field-label { font-size: 11.5px; font-weight: 600; color: var(--app-muted); }
+/* ONE field-label convention across every form modal. The same scaffold carried
+   three: uppercase letter-spaced micro-caps here, sentence case there, and a
+   plain bold line in the third — so the release form and the PR form did not
+   look like parts of the same app. This is an alias of .gh-form-label. */
+.modal-field-label,
+.settings-field-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--app-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 .modal-textarea { resize: vertical; min-height: 96px; font-family: var(--vscode-editor-font-family); line-height: 1.5; }
 .modal-checks { display: flex; gap: 18px; flex-wrap: wrap; }
 .modal-check { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--vscode-foreground); cursor: pointer; }
@@ -4820,8 +4979,12 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 }
 /* Top resizer — drag the dock's top edge to resize the body height. */
 .dock-resizer {
+  /* The 8px grab strip sits entirely ABOVE the dock's top edge. It used to be
+     centred on that edge (margin: -4px 0), so its lower half covered the top
+     4px of the panel tabs and the collapse chevron — you aimed at "Terminal",
+     got a row-resize cursor, and dragged the dock instead of switching tab. */
   flex: 0 0 8px;
-  margin: -4px 0;
+  margin: -8px 0 0;
   z-index: 4;
   cursor: row-resize;
   display: flex;
@@ -5541,7 +5704,15 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .gh-reaction-emoji { font-size: 12px; line-height: 1; }
 .gh-reaction-n { color: var(--app-muted); font-variant-numeric: tabular-nums; }
 /* A requested-but-not-yet-submitted reviewer reads as pending, not done. */
-.det-person.is-pending { opacity: 0.75; border-style: dashed; }
+.det-person { border: 1px solid transparent; }
+.det-person.is-pending {
+  opacity: 0.75;
+  /* A FULL border. Setting only border-style against a base rule of
+     `border: none` leaves the width at the initial `medium` (3px) and the
+     colour at currentColor — so a pending reviewer wore a 3px near-black ring
+     and stood 6px taller than the settled reviewers beside it. */
+  border: 1px dashed color-mix(in srgb, var(--app-muted) 60%, transparent);
+}
 .det-milestone-chip { align-self: flex-start; }
 .det-prop-when { font-size: var(--text-xs); color: var(--app-muted); align-self: center; }
 .gh-fork-chip {
@@ -5569,10 +5740,15 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-search .gh-search-input { height: 38px; font-size: var(--text-base); }
 .explore-tools { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .explore-tabs { display: inline-flex; gap: 2px; }
+/* Every tab carries the SELECTED weight at all times and differs by colour and
+   ground instead. Bolding only the active one changed its width, so each tab
+   crept 4-7px out from under the cursor the instant you clicked it — and the
+   tabs beside it moved too. */
 .explore-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-weight: 600;
   height: 30px;
   padding: 0 12px;
   border: none;
@@ -5586,7 +5762,6 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .explore-tab.active {
   background: var(--app-active);
   color: var(--gs-accent-ink, var(--gs-accent));
-  font-weight: 600;
 }
 .explore-sort { margin-left: auto; }
 .explore-desc {
@@ -5879,11 +6054,8 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   gap: 9px;
   flex: 1 1 auto;
   min-width: 0;
-  border: none;
-  background: transparent;
   color: inherit;
   text-align: left;
-  cursor: pointer;
   padding: 0;
 }
 .explore-account-link { display: inline-flex; align-items: center; gap: 6px; }
@@ -6302,16 +6474,29 @@ body.vscode-light .gh-label-chip {
 .dc-file > .glyph { flex: 0 0 auto; color: var(--app-muted); }
 .dc-file.status-A > .glyph, .dc-file.status-C > .glyph { color: var(--status-add); }
 .dc-file.status-D > .glyph { color: var(--status-del); }
-.dc-file-meta { display: flex; align-items: baseline; gap: 7px; flex: 1 1 auto; min-width: 0; }
+/* `overflow: hidden` is the point: without it the NAME, which never wrapped and
+   never ellipsised, simply painted outside this box — in the checkbox staging
+   model the row is narrower and "common.ts" ran straight over the M beside it,
+   so the filename and its status letter overlapped, mid-glyph. */
+.dc-file-meta { display: flex; align-items: baseline; gap: 7px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
 .dc-file-name {
   font-size: var(--text-sm);
   font-weight: 550;
   color: var(--vscode-foreground);
   white-space: nowrap;
+  /* The name never shrinks and never overflows: it is the thing you are reading,
+     so the DIRECTORY beside it gives up its space first. It also never ellipsised
+     at all before, which is how "common.ts" came to paint straight over the M
+     beside it in the narrower checkbox-model row — the same pixels, mid-glyph. */
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dc-file-dir {
   font-size: var(--text-xs);
   color: var(--app-muted);
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6887,8 +7072,12 @@ body.vscode-light .gh-label-chip {
 .rb-gloss > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rb-gloss b { font-weight: 650; margin-right: 2px; }
 .rb-gloss .g-pick { color: var(--app-text); }
-.rb-gloss .g-reword { color: #4a9eda; }
-.rb-gloss .g-squash, .rb-gloss .g-fixup { color: var(--gs-accent-ink, var(--gs-accent)); }
+/* These three were a literal dark-theme blue (2.67:1 on the light page) and one
+   shared purple for two different actions — so the legend could not tell you
+   which of squash/fixup a row was set to. Each action gets its own themed ink. */
+.rb-gloss .g-reword { color: var(--status-mod); }
+.rb-gloss .g-squash { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-gloss .g-fixup { color: var(--status-warn); }
 .rb-gloss .g-edit { color: var(--status-warn); }
 .rb-gloss .g-drop { color: var(--gs-danger); }
 
@@ -6942,8 +7131,9 @@ body.vscode-light .gh-label-chip {
   border: 1px solid var(--app-border); border-radius: 6px;
   padding: 3px 6px; font-size: 11.5px; font-weight: 600; cursor: pointer;
 }
-.rb-action.a-reword { color: #4a9eda; }
-.rb-action.a-squash, .rb-action.a-fixup { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-action.a-reword { color: var(--status-mod); }
+.rb-action.a-squash { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-action.a-fixup { color: var(--status-warn); }
 .rb-action.a-edit { color: var(--status-warn); }
 .rb-action.a-drop { color: var(--gs-danger); }
 
@@ -6975,14 +7165,23 @@ body.vscode-light .gh-label-chip {
 }
 .rb-reword textarea:focus { outline: 1px solid var(--gs-accent); border-color: var(--gs-accent); }
 
-.rb-consequence { display: none; align-items: center; gap: 5px; margin-top: 5px; font-size: 11.5px; color: var(--app-muted); }
+/* Inline with the subject, so showing it costs no height. See rebase.ts. */
+.rb-consequence {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--app-muted);
+}
 .rb-consequence .glyph { font-size: 12px; }
 .rb-row[data-action="squash"] .rb-consequence,
 .rb-row[data-action="fixup"] .rb-consequence,
 .rb-row[data-action="edit"] .rb-consequence,
-.rb-row[data-action="drop"] .rb-consequence { display: flex; }
-.rb-row[data-action="squash"] .rb-consequence,
-.rb-row[data-action="fixup"] .rb-consequence { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-row[data-action="drop"] .rb-consequence { display: inline-flex; }
+.rb-row[data-action="squash"] .rb-consequence { color: var(--gs-accent-ink, var(--gs-accent)); }
+.rb-row[data-action="fixup"] .rb-consequence { color: var(--status-warn); }
 .rb-row[data-action="edit"] .rb-consequence { color: var(--status-warn); }
 .rb-row[data-action="drop"] .rb-consequence { color: var(--gs-danger); }
 
@@ -7491,10 +7690,11 @@ body.vscode-light .gh-label-chip {
   min-height: 0;
 }
 .pr-files-list {
+  /* A hard 268px meant every path in a real repo lost its middle while the diff
+     beside it had 900px of slack. The list now takes a share of the window and
+     still refuses to crowd out the diff. */
   flex: 0 0 auto;
-  width: 268px;
-  min-width: 220px;
-  max-width: 300px;
+  width: clamp(260px, 24%, 460px);
   overflow-y: auto;
   padding-right: 12px;
   border-right: 1px solid var(--app-border);
@@ -7636,12 +7836,51 @@ body.vscode-light .gh-label-chip {
    this mode, so it gets a real hit area rather than the browser default. */
 .dc-ck {
   flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
   margin: 0 8px 0 0;
-  accent-color: var(--accent);
   cursor: pointer;
+  /* A drawn box, not the platform's. `accent-color: var(--accent)` named a
+     token this app has never declared (it is --gs-accent), so the one control
+     that IS the staging model rendered as a stock macOS blue tick in a purple
+     app — the most-clicked thing on the screen, visibly not part of it. */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1.5px solid color-mix(in srgb, var(--vscode-foreground) 34%, transparent);
+  border-radius: 4px;
+  background: var(--app-elevated);
+  display: inline-grid;
+  place-content: center;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
 }
+.dc-ck::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  transform: scale(0);
+  transition: transform 90ms var(--ease);
+  background: #fff;
+  /* A tick, drawn as a mask so it inherits no font and needs no glyph. */
+  clip-path: polygon(14% 46%, 0 60%, 38% 96%, 100% 22%, 86% 10%, 36% 70%);
+}
+.dc-ck:checked {
+  background: var(--gs-accent);
+  border-color: var(--gs-accent);
+}
+.dc-ck:checked::after { transform: scale(1); }
+.dc-ck:indeterminate {
+  background: var(--gs-accent);
+  border-color: var(--gs-accent);
+}
+.dc-ck:indeterminate::after {
+  transform: scale(1);
+  clip-path: none;
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+}
+.dc-ck:hover { border-color: color-mix(in srgb, var(--gs-accent) 60%, var(--app-border)); }
+.dc-ck:disabled { opacity: 0.45; cursor: not-allowed; }
 .dc-ck-master { margin-left: 2px; }
 
 /* Per-hunk ticks in the checkbox staging model (#20). A file with unstaged work
@@ -7655,7 +7894,7 @@ body.vscode-light .gh-label-chip {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--app-muted);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -7669,7 +7908,7 @@ body.vscode-light .gh-label-chip {
   display: flex;
   flex-direction: column;
   margin: 0 0 4px 46px;
-  border-left: 1px solid var(--border-soft, var(--border));
+  border-left: 1px solid var(--app-border);
 }
 .dc-hunk-row {
   display: flex;
@@ -7678,9 +7917,9 @@ body.vscode-light .gh-label-chip {
   padding: 2px 8px;
   min-height: 22px;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--app-muted);
 }
-.dc-hunk-row:hover { background: var(--hover); }
+.dc-hunk-row:hover { background: var(--app-hover); }
 .dc-hunk-lines { flex: 0 0 auto; font-variant-numeric: tabular-nums; opacity: 0.75; }
 .dc-hunk-preview {
   flex: 1 1 auto;
@@ -7688,8 +7927,8 @@ body.vscode-light .gh-label-chip {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--mono, ui-monospace, monospace);
-  color: var(--fg);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  color: var(--vscode-foreground);
 }
 .dc-hunk-empty { padding: 3px 10px; font-size: 12px; opacity: 0.7; }
 
@@ -7975,8 +8214,13 @@ body.vscode-light .gh-label-chip {
 }
 
 /* Title block at the top of det-main. */
+/* The pill sits on the title's FIRST LINE, aligned to its cap height. A hard
+   4px offset against a flex-start row put it 13px above the title's optical
+   centre — close enough to look like a mistake rather than a choice. */
 .det-title-row { display: flex; align-items: flex-start; gap: var(--sp-3); margin: 2px 0 6px; }
-.det-title-row .gh-state-pill { margin-top: 4px; flex: 0 0 auto; }
+.det-title-row .gh-state-pill,
+.det-title-row .det-title-pills { margin-top: 3px; flex: 0 0 auto; }
+.det-title-pills { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .det-title {
   font-size: 21px;
   line-height: 1.25;
@@ -8021,7 +8265,11 @@ body.vscode-light .gh-label-chip {
   background: transparent;
   color: var(--app-muted);
   cursor: pointer;
-  opacity: 0;
+  /* Visible at rest, not on hover. A filled Assignees or Labels section showed
+     its people and NOTHING that said they could be changed — the only way to
+     find out was to sweep the pointer over the heading and hope. Hover is a
+     way to emphasise an affordance, never the way to discover one. */
+  opacity: 0.55;
   transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 .det-prop:hover .det-prop-edit, .det-prop-edit:focus-visible { opacity: 1; }
@@ -8096,7 +8344,32 @@ button.det-person:hover { background: var(--app-hover); }
    it stayed a single unbreakable line and ran off the right edge at narrow
    widths however much the parent wrapped. */
 .gh-facets { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; row-gap: 8px; min-width: 0; }
+/* A facet pill is the same width filtered or not.
+   The chosen value used to be appended to the pill's own label ("Label" →
+   "Label: enhancement"), which widened that pill by ~90px and slid every pill
+   after it sideways — the next one you were aiming at had moved before your
+   second click landed. The value now lives in a fixed-width slot that is always
+   reserved, so picking one moves nothing, and the pills keep sizing to their
+   own labels so the toolbar around them is unchanged. */
 .gh-facet-btn { max-width: 220px; }
+.gh-facet-value {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  background: transparent;
+  color: transparent;
+}
+.gh-facet-btn.is-active .gh-facet-value {
+  background: color-mix(in srgb, var(--gs-accent) 24%, transparent);
+  color: var(--gs-accent-ink, var(--gs-accent));
+}
 .gh-facet-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-facet-btn .codicon-chevron-down { font-size: 13px; opacity: 0.65; margin-left: -1px; }
 .gh-facet-btn.is-active {
@@ -8416,14 +8689,18 @@ button.det-person:hover { background: var(--app-hover); }
   width: 56px;
   padding-right: 10px;
   text-align: right;
-  color: color-mix(in srgb, var(--log-fg, #c8ccd4) 32%, transparent);
+  /* 32% of the ink over the log's own ground is ~2:1 — a line number you can
+     see is there but cannot read. These are reference marks people call out to
+     each other ("it fails at 412"), so they have to be legible. */
+  color: color-mix(in srgb, var(--log-fg, #c8ccd4) 62%, transparent);
   user-select: none;
   font-variant-numeric: tabular-nums;
 }
-.log-ts { flex: 0 0 auto; margin-right: 10px; color: color-mix(in srgb, var(--log-fg, #c8ccd4) 40%, transparent); }
+.log-ts { flex: 0 0 auto; margin-right: 10px; color: color-mix(in srgb, var(--log-fg, #c8ccd4) 68%, transparent); font-variant-numeric: tabular-nums; }
 .log-text { flex: 0 0 auto; }
 .log-chev { flex: 0 0 auto; margin-right: 4px; font-size: 12px; color: var(--app-muted); }
 .log-groupline { cursor: pointer; font-weight: 600; }
+.log-groupline:focus-visible { outline: 2px solid var(--gs-accent); outline-offset: -2px; }
 .log-groupline:hover { background: color-mix(in srgb, var(--log-fg, #fff) 6%, transparent); }
 .log-k-error { background: color-mix(in srgb, var(--status-del) 14%, transparent); }
 .log-k-error .log-text { color: var(--status-del); }
@@ -8595,3 +8872,112 @@ body.vscode-light .log-pane {
   font-size: var(--text-xs);
 }
 .sec-cap-note .codicon { font-size: 13px; }
+
+/* A thread marked read while the "Unread only" filter is on. It keeps its slot
+   so nothing moves under the pointer, and reads as spent rather than present. */
+.notif-row.notif-leaving {
+  opacity: 0.5;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 8px,
+    color-mix(in srgb, var(--vscode-foreground) 3%, transparent) 8px 16px
+  );
+}
+.notif-row.notif-leaving:hover { opacity: 0.72; }
+
+/* Result counts sit beside controls people aim at, so a count going from 9 to
+   10 must not widen its own box and shove the segment under the finger. */
+.gh-head-count, .gh-count, .sec-count, .notif-summary-text, .gh-seg-count {
+  font-variant-numeric: tabular-nums;
+}
+.gh-head-count { min-width: 2.4em; text-align: center; }
+
+/* Match stepping sits with the counter it steps through, not with the pane's
+   own actions on the far side of the spring. */
+.log-match-step { margin-left: 2px; }
+.log-match-step:first-of-type { margin-left: 6px; }
+
+/* A step still running: the bar is a measurement in progress, so it reads as
+   hatched rather than solid. Static hatching, not an animation — an endless
+   animation would keep the pane repainting for as long as the page is open. */
+.gh-step-bar.is-running {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--status-mod) 70%, transparent) 0 5px,
+    color-mix(in srgb, var(--status-mod) 30%, transparent) 5px 10px
+  );
+}
+
+/* The +/− pair is one figure, not two words: it wrapped onto a second line in
+   every row of a narrow file list, doubling every row's height. */
+.gh-adds { flex: 0 0 auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* The Go-to-file cursor. Enter has always opened one of these rows; now you can
+   see which. */
+.gotofile-row.is-sel {
+  background: var(--app-active);
+  box-shadow: inset 2px 0 0 var(--gs-accent);
+}
+
+/* The repository above a file's own title — context, set below the title's
+   weight so the file stays the subject of the page. */
+.explore-repo-eyebrow {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The Assistant launcher, while you are in the Assistant. */
+.topbar-assistant.is-current {
+  background: var(--app-active);
+  color: var(--gs-accent-ink, var(--gs-accent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 35%, transparent);
+}
+.topbar-assistant.is-current .glyph { color: var(--gs-accent-ink, var(--gs-accent)); }
+
+/* "Create pull request" appears only once a comparison resolves, and hiding it
+   until then made the whole toolbar jump 171px sideways the moment the compare
+   landed — under a pointer already on its way to something else. It keeps its
+   seat and fades in instead. */
+.cmp-pr-btn { transition: opacity var(--dur-1) var(--ease), visibility var(--dur-1); }
+.cmp-pr-btn[hidden] {
+  display: inline-flex;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The error variant of the diff placeholder wears the warning ink, so a failed
+   load never reads as an instruction to select something. */
+.diff-empty.is-error .list-empty-badge {
+  background: color-mix(in srgb, var(--status-del) 12%, transparent);
+  border-color: color-mix(in srgb, var(--status-del) 30%, transparent);
+  box-shadow: none;
+}
+.diff-empty.is-error .list-empty-badge .codicon { color: var(--status-del); }
+
+/* Inside a BAR the primary button keeps its sheen but drops its outer glow: a
+   22px purple bloom on a 40px-tall bar spilled past the bar's bottom hairline
+   and tinted the first rows of the view beneath it. Every bar that pins a
+   primary action against a hairline gets the same treatment. */
+.topbar .btn-primary,
+.topbar .btn-primary:hover,
+.det-topbar .btn-primary,
+.det-topbar .btn-primary:hover,
+.gh-head .btn-primary,
+.gh-head .btn-primary:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+/* A checkbox's own label: sentence case at reading size, unlike the uppercase
+   micro-caps that head a GROUP of fields. */
+.settings-check-title {
+  font-size: var(--text-sm);
+  font-weight: 550;
+  color: var(--vscode-foreground);
+}

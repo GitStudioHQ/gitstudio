@@ -17,7 +17,11 @@
   const $$ = (sel, root) => [...(root || document).querySelectorAll(sel)];
   /** Let a click that re-renders behind an await actually land. */
   const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
-  const text = (sel) => ($(sel)?.textContent ?? "").trim();
+  /** Accepts a selector OR an element, like probe.mjs's helper of the same name. */
+  const text = (x) => {
+    const n = typeof x === "string" ? $(x) : x;
+    return (n?.textContent ?? "").trim();
+  };
   const left = (el) => Math.round(el.getBoundingClientRect().left);
 
   /** Assertion helpers — each pushes a human-readable failure or nothing. */
@@ -536,9 +540,17 @@
       }
       // The transient verbs stay glyphs, split off by a rule.
       c.ok(!!$(".log-toolbar-div", bar), "state and actions are visually separated");
-      const bare = $$(".log-tool", bar).filter((b) => !b.classList.contains("has-label"));
+      // The rule is about the ACTION cluster past the spring (copy / save /
+      // expand). Match stepping lives with the counter it steps through, on the
+      // search side, where a chevron pair beside "3 of 40" is self-evident.
+      const bare = $$(".log-tool", bar).filter(
+        (b) => !b.classList.contains("has-label") && !b.classList.contains("log-match-step"),
+      );
       c.ok(bare.length <= 3, `at most three unlabelled glyph verbs (${bare.length})`);
       for (const b of bare) c.ok(!!b.title, "every glyph verb still carries a title");
+      for (const b of $$(".log-match-step", bar)) {
+        c.ok(!!b.title && !!b.getAttribute("aria-label"), "match stepping is named");
+      }
     },
 
     // ── toolbars survive narrow windows ──────────────────────────────────────
@@ -1519,7 +1531,382 @@
       c.eq(text(".nav-item.active"), "Changes", "and that is where the app opens");
     },
 
+    // ── nothing pretends to be loading ──────────────────────────────────────
+    "assistant-has-no-phantom-skeleton": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const w = $(".assistant-view");
+      c.ok(!!w, "the Assistant view mounts");
+      if (!w) return;
+      // mountSection puts a skeleton in the container; the Assistant renders
+      // synchronously and used to APPEND to it, leaving a six-row shimmer
+      // pinned above its own header — 278px of the pane, loading nothing, for
+      // as long as you left it open.
+      c.ok(!w.querySelector(".sk-list"), "and discards the mount placeholder");
+      c.eq(
+        [...w.children][0]?.className.split(" ")[0],
+        "assistant-head",
+        "so the header is the first thing in it",
+      );
+    },
+
+    // ── a menu closes on its own trigger ────────────────────────────────────
+    // Approving is a public, named act on someone else's work. The toolbar
+    // button posted it on the FIRST click, 8px from a button that merely opens a
+    // menu — and that menu carried a second "Approve" doing the same thing.
+    // Flipping Releases↔Tags rebuilds the whole list, so the button you pressed
+    // is destroyed mid-click and focus fell to <body>: the keyboard was simply
+    // ejected from the control it was operating. focusReturn's rescue finds the
+    // equivalent control in the rebuilt DOM and puts the keyboard back on it.
+    // The Changes list reserved 140px of every row for buttons that are
+    // invisible until you hover, which in a 320px file list left the FILENAME
+    // 40px. The name did not ellipsise either, so it painted straight over the
+    // status letter beside it — same pixels, mid-glyph.
+    // Choosing an action revealed a consequence line UNDER the row, growing it
+    // ~17px the instant you chose — which shoved every row below it, including
+    // the next row's action dropdown: the very control you reach for next moved
+    // before your hand got there.
+    "rebase-actions-do-not-move-the-list": async (f) => {
+      const c = check(f);
+      const rows = $$(".rb-row");
+      c.ok(rows.length >= 3, `the plan lists its commits (${rows.length})`);
+      const sel = $$(".rb-action")[1];
+      c.ok(!!sel, "each row carries an action picker");
+      if (!sel || rows.length < 3) return;
+      const before = rows.map((r) => Math.round(r.getBoundingClientRect().top));
+      const pickerBefore = Math.round($$(".rb-action")[2].getBoundingClientRect().top);
+      sel.value = "squash";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle(300);
+      const now = $$(".rb-row");
+      c.eq(now.length, rows.length, "the plan keeps its rows");
+      const after = now.map((r) => Math.round(r.getBoundingClientRect().top));
+      c.eq(after.join(","), before.join(","), "no row moves");
+      c.eq(
+        Math.round($$(".rb-action")[2].getBoundingClientRect().top),
+        pickerBefore,
+        "and the NEXT row's picker is exactly where you left it",
+      );
+      c.ok(
+        $$(".rb-row")[1].querySelector(".rb-consequence") !== null,
+        "the consequence is still shown — inline, not on a line of its own",
+      );
+    },
+
+    "file-rows-show-the-whole-name": (f) => {
+      const c = check(f);
+      const rows = $$(".dc-file");
+      c.ok(rows.length >= 3, `the list has files (${rows.length})`);
+      const xs = new Set();
+      for (const r of rows) {
+        const name = $$(".dc-file-name", r)[0];
+        const st = $$(".file-status", r)[0];
+        if (!name || !st) continue;
+        c.ok(
+          name.scrollWidth <= name.clientWidth + 1,
+          `"${text(name)}" is not truncated (${name.scrollWidth} into ${name.clientWidth}px)`,
+        );
+        c.ok(
+          Math.round(name.getBoundingClientRect().right) <= Math.round(st.getBoundingClientRect().left),
+          `"${text(name)}" does not run into its status letter`,
+        );
+        xs.add(Math.round(st.getBoundingClientRect().left));
+      }
+      // The reservation existed to keep the letters scannable as a column; the
+      // overlay has to keep that.
+      c.eq(xs.size, 1, `every status letter sits in ONE column (${[...xs].join(", ")})`);
+    },
+
+    "segment-flip-keeps-the-keyboard": async (f) => {
+      const c = check(f);
+      const tags = $$(".gh-seg-btn").find((b) => text(b) === "Tags");
+      c.ok(!!tags, "the Releases/Tags segment renders");
+      if (!tags) return;
+      tags.focus();
+      c.eq(document.activeElement, tags, "the keyboard starts on the button");
+      tags.click();
+      await settle(700);
+      const now = document.activeElement;
+      c.ok(now !== document.body, "focus does NOT fall to <body>");
+      c.eq(text(now), "Tags", "it lands on the same control in the rebuilt list");
+      c.ok(now.classList.contains("active"), "which is now the selected one");
+    },
+
+    "approve-opens-the-composer": async (f) => {
+      const c = check(f);
+      const approve = $$(".mini-btn").find((b) => text(b) === "Approve");
+      c.ok(!!approve, "the toolbar offers Approve");
+      const menuApproves = $$(".dropdown-item").filter((b) => text(b) === "Approve");
+      c.eq(menuApproves.length, 0, "no second Approve is already on screen");
+      if (!approve) return;
+      approve.click();
+      await settle(300);
+      const modal = $(".review-modal");
+      c.ok(!!modal, "it opens the review composer instead of posting");
+      if (!modal) return;
+      c.ok(!!$$("textarea", modal)[0], "the composer carries the review body");
+      const chosen = $$(".review-verdict.is-selected", modal).map((r) => r.dataset.event);
+      c.eq(chosen.join(","), "APPROVE", "with Approve preselected");
+    },
+
+    // Labelling is a multi-select. The picker used to close — and fire a
+    // request — after every single tick, so three labels meant opening the menu
+    // three times and re-finding your place in it.
+    "label-picker-stays-open": async (f) => {
+      const c = check(f);
+      const edit = $$(".det-prop").find((p) => /labels/i.test(text($$(".det-prop-label", p)[0]) || ""));
+      c.ok(!!edit, "the rail has a Labels section");
+      const btn = edit && $$(".det-prop-edit", edit)[0];
+      c.ok(!!btn, "with a visible way to change it");
+      if (!btn) return;
+      // Visible at REST, not only on hover: this was the section's only
+      // affordance and it was invisible until the pointer swept the heading.
+      btn.style.transition = "none";
+      c.ok(Number(getComputedStyle(btn).opacity) > 0.3, "the edit control is visible at rest");
+      btn.click();
+      await settle(400);
+      const rows = $$('.dropdown-item[role="menuitemcheckbox"]');
+      c.ok(rows.length >= 2, `the picker lists the repo's labels as tickable rows (${rows.length})`);
+      if (rows.length < 2) return;
+      const before = rows[0].getAttribute("aria-checked");
+      rows[0].click();
+      await settle(150);
+      c.eq($$(".dropdown").length, 1, "ticking one does NOT close the menu");
+      c.ok(rows[0].getAttribute("aria-checked") !== before, "and the tick flips under your finger");
+      rows[1].click();
+      await settle(150);
+      c.eq($$(".dropdown").length, 1, "a second pick keeps it open too");
+    },
+
+    // Under "Unread only" the row was REMOVED on the spot: the list collapsed
+    // under the pointer and the next row's own Mark-read button slid into the
+    // pixel you had just clicked.
+    "mark-read-keeps-its-slot": async (f) => {
+      const c = check(f);
+      const rows = $$(".notif-row");
+      c.ok(rows.length >= 2, `the inbox lists threads (${rows.length})`);
+      if (rows.length < 2) return;
+      const second = rows[1];
+      const y = second.getBoundingClientRect().top;
+      const btn = $$("button", rows[0]).find((b) => text(b) === "Mark read");
+      c.ok(!!btn, "an unread row offers Mark read");
+      if (!btn) return;
+      btn.click();
+      await settle(400);
+      c.eq($$(".notif-row").length, rows.length, "the row keeps its place in the list");
+      c.ok(
+        Math.abs(second.getBoundingClientRect().top - y) < 2,
+        `nothing below it moves (${Math.round(second.getBoundingClientRect().top - y)}px)`,
+      );
+      c.ok(rows[0].classList.contains("notif-read"), "the row reads as spent instead");
+    },
+
+    // Enter dismisses most dialogs. On a destructive confirm that used to mean
+    // Enter DELETED, because the destroy button held focus on open.
+    "danger-dialogs-start-on-cancel": async (f) => {
+      const c = check(f);
+      const del = $$("button").find((b) => /delete|discard|remove/i.test(text(b) || ""));
+      c.ok(!!del, "the view offers a destructive action");
+      if (!del) return;
+      del.click();
+      await settle(400);
+      const card = $(".modal-card");
+      c.ok(!!card, "it asks first");
+      if (!card) return;
+      const focused = document.activeElement;
+      c.ok(!!focused && card.contains(focused), "focus lands inside the dialog");
+      const destroy = $$(".btn-danger", card)[0];
+      c.ok(!destroy || focused !== destroy, "but NOT on the button that destroys");
+    },
+
+    // Arrow keys were dead and Enter fired the top row while nothing on screen
+    // said the top row was special.
+    "go-to-file-has-a-cursor": async (f) => {
+      const c = check(f);
+      const btn = $$(".mini-btn").find((b) => /go to file/i.test(text(b) || ""));
+      c.ok(!!btn, "the repo page offers Go to file");
+      if (!btn) return;
+      btn.click();
+      await settle(500);
+      const input = $(".gotofile-input");
+      c.ok(!!input, "it opens the picker");
+      if (!input) return;
+      c.eq(input.getAttribute("role"), "combobox", "the field is a combobox");
+      const rows = $$(".gotofile-row");
+      c.ok(rows.length >= 2, `it lists files (${rows.length})`);
+      if (rows.length < 2) return;
+      c.eq($$(".gotofile-row.is-sel").length, 1, "exactly one row is marked as the cursor");
+      c.ok(rows[0].classList.contains("is-sel"), "starting at the top");
+      const id = input.getAttribute("aria-activedescendant");
+      c.ok(!!id && rows[0].id === id, "and the cursor reaches the accessibility tree");
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await settle(80);
+      c.ok(rows[1].classList.contains("is-sel"), "ArrowDown moves it");
+      c.ok(!rows[0].classList.contains("is-sel"), "and leaves the row it came from");
+    },
+
+    "menu-toggles-on-its-own-trigger": async (f) => {
+      const c = check(f);
+      const p = $(".gh-picker");
+      c.ok(!!p, "the header picker renders");
+      if (!p) return;
+      p.click();
+      await settle(350);
+      c.eq($$(".dropdown").length, 1, "clicking opens it");
+      p.click();
+      await settle(350);
+      // The outside-dismiss ran on a capturing mousedown, so the trigger closed
+      // the menu and its own click immediately opened a NEW one. The menu
+      // appeared not to respond, and anything typed into its filter was lost.
+      c.eq($$(".dropdown").length, 0, "clicking it again closes it");
+      c.eq(p.getAttribute("aria-expanded"), "false", "and says so");
+    },
+
+    // ── a row that looks clickable is clickable ─────────────────────────────
+    "pr-commit-rows-are-real-controls": (f) => {
+      const c = check(f);
+      const rows = $$(".compare-commit");
+      c.ok(rows.length > 0, `the Commits tab renders rows (${rows.length})`);
+      for (const r of rows) {
+        // They had a pointer cursor, a hover background and an :active depress
+        // — every signal of a control — and did nothing, while being invisible
+        // to the keyboard.
+        c.eq(r.tagName, "BUTTON", "a commit row is a button");
+        c.ok(!!r.getAttribute("aria-label"), "with an accessible name");
+        c.match(text(r.querySelector(".cc-meta")) || "", /·/, "and shows author, sha and date");
+      }
+    },
+
+    // ── keyboard surfaces announce their selection ──────────────────────────
+    "palette-selection-reaches-the-a11y-tree": async (f) => {
+      const c = check(f);
+      const input = $(".cmdk-input");
+      c.ok(!!input, "the palette is open");
+      if (!input) return;
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await settle(250);
+      // Focus stays in the input (correctly — you keep typing), so without
+      // activedescendant a screen reader hears nothing as you arrow through.
+      const id = input.getAttribute("aria-activedescendant");
+      c.ok(!!id, "the input points at the active row");
+      c.eq($(".cmdk-row[aria-selected='true']")?.id, id, "and that row is marked selected");
+      c.eq(input.getAttribute("role"), "combobox", "the input is a combobox");
+    },
+    "graph-selection-reaches-the-a11y-tree": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph element is mounted");
+      if (!sr) return;
+      const sc = sr.querySelector(".scroller");
+      sc.focus();
+      sc.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await settle(400);
+      c.ok(!!sc.getAttribute("aria-activedescendant"), "the grid points at the selected row");
+      c.ok(!!sc.getAttribute("aria-rowcount"), "and reports how many rows there are");
+    },
+
+    // ── hiding one column moves only that column ────────────────────────────
+    "graph-columns-keep-their-tracks": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph element is mounted");
+      if (!sr) return;
+      const keys = ["graph", "refs", "subject", "changes", "author", "date", "sha"];
+      const widths = () =>
+        Object.fromEntries(
+          keys.map((k) => [k, Math.round(sr.querySelector(".ch-" + k)?.getBoundingClientRect().width || 0)]),
+        );
+      const base = widths();
+      c.ok(base.subject > 100, `the columns render (subject ${base.subject}px)`);
+      for (const hide of ["date", "refs", "changes"]) {
+        host.classList.add("hide-" + hide);
+        await settle(300);
+        const now = widths();
+        host.classList.remove("hide-" + hide);
+        // Cells were placed by source order, so removing one slid every later
+        // cell up a track: hiding Date made the SHA column vanish while the
+        // menu still showed SHA as checked.
+        c.eq(now[hide], 0, `hiding ${hide} collapses ${hide}`);
+        for (const k of keys) {
+          if (k === hide || k === "subject") continue;
+          c.eq(now[k], base[k], `hiding ${hide} must not resize ${k}`);
+        }
+      }
+    },
+
+    // ── back goes where you came from ───────────────────────────────────────
+    "back-returns-to-the-list-you-opened-from": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const back = text(".det-back");
+      // Inbox and My Work open items that LIVE in other sections, so the detail
+      // used to claim it belonged there: "← Issues", the rail switching under
+      // you, and Escape landing in a list you had never opened.
+      c.eq(back, "My Work", `the back button names where you came from (got "${back}")`);
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+      await settle(1100);
+      c.eq(text(".nav-item.active"), "My Work", "and Escape returns there");
+      c.ok($$(".mywork-group").length > 0, "with its grouping intact");
+    },
+
+    // ── a rebuild does not cost you the keyboard ────────────────────────────
+    "focus-survives-a-rebuild": async (f) => {
+      const c = check(f);
+      // Most surfaces rebuild a whole subtree in response to a click — refresh,
+      // staging, flipping a sub-tab, changing a rebase action. The node you
+      // clicked is detached, focus falls to <body>, and the next Tab starts at
+      // the top of the window. You have not gone anywhere; the control still
+      // exists, as a new element with the same identity.
+      // ONE control per scene. Two in a row interfere: the first rebuild's
+      // rescue is still settling when the second click starts, and the check
+      // then measures a race rather than the rule. The two scenes this runs on
+      // cover both shapes — a rebuild-in-place (refresh) and a rebuild that
+      // swaps the list (a segment).
+      const sel = window.__GS_ARG || ".gh-refresh";
+      const b = $(sel);
+      c.ok(!!b, `the view offers ${sel}`);
+      if (!b) return;
+      b.focus();
+      const before = (b.textContent || "").trim() + "|" + (b.className || "").split(" ")[0];
+      b.click();
+      await settle(1400);
+      const a = document.activeElement;
+      c.ok(a && a !== document.body, "focus is not dropped on <body>");
+      if (a && a !== document.body) {
+        const after = (a.textContent || "").trim() + "|" + (a.className || "").split(" ")[0];
+        c.eq(after, before, "focus lands back on the same control");
+      }
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
+    // Three detail pages hand-rolled the same tab bar as plain buttons carrying
+    // an `active` CLASS: a reader heard N unrelated buttons and could not tell
+    // which page was showing, and arrow keys did nothing.
+    "detail-subtabs-are-a-tablist": (f) => {
+      const c = check(f);
+      const bar = $("[role=tablist]");
+      c.ok(!!bar, "the sub-tab bar is a tablist");
+      if (!bar) return;
+      c.ok(!!bar.getAttribute("aria-label"), "the tablist is named");
+      const tabs = $$("[role=tab]", bar);
+      c.ok(tabs.length >= 2, `it holds its tabs (${tabs.length})`);
+      const on = tabs.filter((t) => t.getAttribute("aria-selected") === "true");
+      c.eq(on.length, 1, "exactly one tab reports itself selected");
+      c.eq(
+        tabs.filter((t) => t.tabIndex === 0).length,
+        1,
+        "one roving tab stop, so Tab reaches the bar and arrows move inside it",
+      );
+      c.ok(on[0] && on[0].tabIndex === 0, "the tab stop is the SELECTED tab");
+      c.ok(!!$("[role=tabpanel]"), "the panel the tabs control is marked as one");
+    },
+
     "settings-has-a-rhythm": (f) => {
       const c = check(f);
       const labels = $$(".settings-card-body > .settings-field-label");

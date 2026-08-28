@@ -39,6 +39,7 @@ import {
   type SectionNav,
   type SectionRender,
   type SectionTarget,
+  subTabs,
 } from "./common";
 import type { GistInfo } from "../../shared/ipc";
 
@@ -148,7 +149,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // it can't read "2" above "No matching gists".
     header.setCount?.(items.length, gists.length);
     if (items.length === 0) {
-      listEl.appendChild(emptyState("No matching gists", `Nothing matches “${query}”.`, { icon: "search" }));
+      listEl.appendChild(emptyState("No matching gists", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
       return;
     }
     for (const g of items) listEl.appendChild(buildRow(g));
@@ -279,13 +280,11 @@ function buildGistDetail(ctx: GistDetailCtx): void {
     main.appendChild(emptyState("Empty gist", "This gist has no files."));
   } else {
     // ── file tabs + highlighted content ──
-    const tabBar = el("div", "gh-subtabs");
     const content = el("div", "gh-subcontent");
-    const tabBtns: HTMLElement[] = [];
+    let selectTab: ((i: number) => void) | undefined;
 
     const renderFile = (idx: number): void => {
       fileTabByGist.set(g.id, idx);
-      for (const b of tabBtns) b.classList.toggle("active", Number(b.dataset.fileIdx) === idx);
       const f = g.files[idx];
       if (!f) return;
       content.replaceChildren();
@@ -303,18 +302,19 @@ function buildGistDetail(ctx: GistDetailCtx): void {
     };
 
     if (g.files.length > 1) {
-      g.files.forEach((f, i) => {
-        const b = el("button", "gh-subtab");
-        b.dataset.fileIdx = String(i);
-        b.append(glyph("file"), span(f.filename));
-        b.addEventListener("click", () => renderFile(i));
-        tabBtns.push(b);
-        tabBar.appendChild(b);
+      content.id = "gs-gist-filepanel";
+      const tabs = subTabs({
+        tabs: g.files.map((f, i) => ({ id: String(i), label: f.filename, icon: "file" })),
+        ariaLabel: "Files in this gist",
+        panel: content,
+        onSelect: (id) => renderFile(Number(id)),
       });
-      main.appendChild(tabBar);
+      main.appendChild(tabs.el);
+      selectTab = (i: number) => tabs.select(String(i));
     }
     main.appendChild(content);
-    renderFile(fileIdx());
+    if (selectTab) selectTab(fileIdx());
+    else renderFile(fileIdx());
   }
 
   // ── rail ──

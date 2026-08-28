@@ -7,6 +7,9 @@
 #   esc              dispatch Escape (detail → list)
 #   palette          open the ⌘K palette
 #   bell             open the notifications popover
+#
+# A 4th argument is appended to the query string, for the scene switches the
+# shim reads directly (e.g. "staging=checkboxes", "many=1", "ask=1").
 # Examples:
 #   ./shot.sh issues out/issues.png
 #   ./shot.sh 'issues~open31' out/detail.png light
@@ -16,11 +19,12 @@ HARNESS="$(cd "$(dirname "$0")" && pwd)"
 SCENE="${1:-issues}"
 OUT="${2:-$HARNESS/out/$SCENE.png}"
 THEME="${3:-dark}"
+EXTRA="${4:-}"
 mkdir -p "$(dirname "$OUT")"
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless --disable-gpu --hide-scrollbars \
   --window-size=1600,1000 --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \
   --screenshot="$OUT" \
-  "file://${GS_HARNESS_PAGE:-$HARNESS/page}/harness.html?scene=$SCENE&theme=$THEME" 2>&1 | grep -viE 'devtools|gpu|fontations|dawn|install' || true
+  "file://${GS_HARNESS_PAGE:-$HARNESS/page}/harness.html?scene=$SCENE&theme=$THEME${EXTRA:+&$EXTRA}" 2>&1 | grep -viE 'devtools|gpu|fontations|dawn|install' || true
 echo "wrote $OUT"

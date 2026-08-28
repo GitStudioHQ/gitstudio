@@ -103,7 +103,11 @@ function commentCard(
   hd.append(who);
   const badge = associationBadge(extra.association);
   if (badge) hd.appendChild(badge);
-  hd.appendChild(span(`${action} · ${relTimeISO(createdAt)}`, "gh-comment-when"));
+  // "3 days ago" alone cannot answer "before or after the release?" — the exact
+  // time is one hover away rather than nowhere.
+  const when = span(`${action} · ${relTimeISO(createdAt)}`, "gh-comment-when");
+  when.title = absTimeISO(createdAt);
+  hd.appendChild(when);
   // A comment edited after posting is a different artifact from what people
   // replied to — GitHub says so, and silence here has burned readers.
   if (extra.updatedAt && extra.updatedAt !== createdAt) {
@@ -147,7 +151,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   if (!gate) return;
 
   if (target?.number != null) {
-    showDetailPage(wrap, nav, target.number);
+    showDetailPage(wrap, nav, target.number, target.from);
     return;
   }
   await listPage(wrap, nav, gate);
@@ -280,9 +284,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         emptyState("No matching issues", desc, {
           icon: "search",
           anchor: "inline",
-        secondary: facets.activeCount() > 0
-          ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
-          : undefined,
+          secondary:
+            facets.activeCount() > 0
+              ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
+              : undefined,
         }),
       );
       return;
@@ -420,15 +425,23 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
 // ── The detail page ──────────────────────────────────────────────────────────
 
-function showDetailPage(wrap: HTMLElement, nav: SectionNav, n: number): void {
-  const back = (): void => nav("issues", { list: true });
+function showDetailPage(
+  wrap: HTMLElement,
+  nav: SectionNav,
+  n: number,
+  from?: { view: string; label: string },
+): void {
+  // Back goes where you CAME from. Inbox and My Work both open items that live
+  // in this section, so without this the bar read "← Issues", the rail
+  // switched under you, and Escape dropped you in a list you had never opened.
+  const back = (): void => nav(from?.view ?? "issues", { list: true });
   const reload = (): void => {
     bust("issue");
-    showDetailPage(wrap, nav, n);
+    showDetailPage(wrap, nav, n, from);
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Issues",
+    backLabel: from?.label ?? "Issues",
     crumb: `#${n}`,
     onBack: back,
   });
@@ -715,8 +728,15 @@ function buildDetail(ctx: DetailCtx): void {
     else commentDrafts.delete(it.number);
   });
   const crow = el("div", "gh-composer-actions");
-  const send = el("button", "btn btn-primary");
+  const send = el("button", "btn btn-primary") as HTMLButtonElement;
   send.append(glyph("comment"), span("Comment"));
+  const syncSend = (): void => {
+    const ready = ta.value.trim().length > 0;
+    send.disabled = !ready;
+    send.title = ready ? "Post this comment" : "Write something first";
+  };
+  ta.addEventListener("input", syncSend);
+  syncSend();
   send.addEventListener("click", () => void postComment(it.number, ta, send, reload));
   const draftChip = aiChip("Draft a reply", () =>
     void streamInto(
@@ -857,21 +877,30 @@ async function labelsMenu(anchor: HTMLElement, it: IssueInfo, reload: () => void
     toast("This repo has no labels defined.", "info");
     return;
   }
-  const current = new Set(it.labels.map((l) => l.name));
+  const before = new Set(it.labels.map((l) => l.name));
+  const picked = new Set(before);
+  // Labelling is a multi-select: tick as many as you mean, and the whole
+  // selection is sent once when the menu closes. It used to close — and fire a
+  // request — after every single tick.
   openMenu(
     anchor,
     repoLabels.map((l) => ({
       label: l.name,
       iconEl: swatch(l.color),
-      current: current.has(l.name),
+      checkable: true,
+      current: picked.has(l.name),
       onClick: () => {
-        const next = new Set(current);
-        if (next.has(l.name)) next.delete(l.name);
-        else next.add(l.name);
-        void applyLabels(it.number, [...next], reload);
+        if (picked.has(l.name)) picked.delete(l.name);
+        else picked.add(l.name);
       },
     })),
-    { searchable: repoLabels.length > 8 },
+    {
+      searchable: repoLabels.length > 8,
+      onClose: () => {
+        const same = picked.size === before.size && [...picked].every((x) => before.has(x));
+        if (!same) void applyLabels(it.number, [...picked], reload);
+      },
+    },
   );
 }
 

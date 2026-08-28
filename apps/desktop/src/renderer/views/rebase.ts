@@ -233,7 +233,15 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     av.title = r.author;
     const sha = el("span", "rb-sha");
     sha.append(glyph("git-commit"), span(r.shortSha));
-    line.append(subj, av, span(r.rel, "rb-meta"), sha);
+    // The consequence rides the SUBJECT line, not a line of its own. Revealing a
+    // second line under the row grew it by 17px the instant you chose an action,
+    // which shoved every row below — including the next row's action dropdown,
+    // the very control you reach for next. Choosing "squash" moved the thing you
+    // were about to click before your hand got there.
+    const cons = el("span", "rb-consequence");
+    const c = consequence(r.action, foldTargetSubject(i));
+    if (c) cons.append(glyph(c.icon), span(c.text));
+    line.append(subj, cons, av, span(r.rel, "rb-meta"), sha);
     main.appendChild(line);
 
     // Reword editor — only visible for `reword` (CSS-driven off data-action).
@@ -248,12 +256,6 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     rw.appendChild(ta);
     main.appendChild(rw);
 
-    const cons = el("div", "rb-consequence");
-    const c = consequence(r.action, foldTargetSubject(i));
-    if (c) {
-      cons.append(glyph(c.icon), span(c.text));
-    }
-    main.appendChild(cons);
     row.appendChild(main);
 
     wireDrag(row, i);

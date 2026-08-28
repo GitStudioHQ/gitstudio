@@ -61,18 +61,27 @@ export class CompareDiff {
     this.editor.setModel({ original, modified });
   }
 
-  /** Composed placeholder (icon badge + text) when no file is selected. */
-  showEmpty(text: string): void {
+  /** Same contract as DiffPanel.showEmpty — see the note there on why the KIND
+   *  of nothing matters. Kept in step so the two panels never disagree. */
+  showEmpty(text: string, opts: { title?: string; kind?: "waiting" | "none" | "error" } = {}): void {
     this.teardown();
+    const kind = opts.kind ?? "waiting";
+    const icon = kind === "error" ? "warning" : kind === "none" ? "check-all" : "git-compare";
+    const title =
+      opts.title ??
+      (kind === "error" ? "Couldn't load this diff" : kind === "none" ? "No changes" : "Nothing selected");
     const empty = document.createElement("div");
-    empty.className = "diff-empty list-empty";
+    empty.className = `diff-empty list-empty is-${kind}`;
     const badge = document.createElement("div");
     badge.className = "list-empty-badge";
-    badge.innerHTML = '<span class="glyph codicon codicon-git-compare"></span>';
+    badge.innerHTML = `<span class="glyph codicon codicon-${icon}"></span>`;
+    const h = document.createElement("div");
+    h.className = "list-empty-title";
+    h.textContent = title;
     const t = document.createElement("div");
     t.className = "list-empty-desc";
     t.textContent = text;
-    empty.append(badge, t);
+    empty.append(badge, h, t);
     this.container.replaceChildren(empty);
   }
 

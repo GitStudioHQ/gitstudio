@@ -8,6 +8,7 @@
 // file, which is impossible when several people are investigating at once.
 //
 //   node harness/probe.mjs '<scene>' '<js>' [--theme=light] [--width=1150]
+//                                            [--extra=staging=checkboxes]
 //
 // The <js> body runs INSIDE the driven page after its steps have played, with
 // `await` available; whatever it returns is JSON-printed. Helpers in scope:
@@ -39,8 +40,11 @@ const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const argv = process.argv.slice(2);
 const flags = Object.fromEntries(
   argv.filter((a) => a.startsWith("--")).map((a) => {
-    const [k, v = "true"] = a.slice(2).split("=");
-    return [k, v];
+    // Split on the FIRST "=" only: --extra=staging=checkboxes is one flag whose
+    // value is itself a query fragment.
+    const raw = a.slice(2);
+    const at = raw.indexOf("=");
+    return at < 0 ? [raw, "true"] : [raw.slice(0, at), raw.slice(at + 1)];
   }),
 );
 const positional = argv.filter((a) => !a.startsWith("--"));
@@ -84,7 +88,10 @@ const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 `;
 
 const probe = encodeURIComponent(PRELUDE + "\n" + body);
-const url = `file://${PAGE}?scene=${scene}&theme=${theme}&probe=${probe}`;
+// --extra=k=v[&k=v] appends the shim's own scene switches (staging=checkboxes,
+// many=1, ask=1) so a mode reachable only through a pref can still be measured.
+const extra = flags.extra ? `&${flags.extra}` : "";
+const url = `file://${PAGE}?scene=${scene}&theme=${theme}&probe=${probe}${extra}`;
 
 execFile(
   CHROME,

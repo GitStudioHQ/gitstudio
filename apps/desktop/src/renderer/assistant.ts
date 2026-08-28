@@ -146,7 +146,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   inputRow.append(input, send);
   composer.append(quick, inputRow);
 
-  wrap.append(header, transcript, composer);
+  // replaceChildren, not append: mountSection puts a loading skeleton in this
+  // container first, and the Assistant renders synchronously — so appending
+  // left a six-row shimmer pinned above the header, 278px of the pane,
+  // pretending to load something forever.
+  wrap.replaceChildren(header, transcript, composer);
 
   let running = false;
 

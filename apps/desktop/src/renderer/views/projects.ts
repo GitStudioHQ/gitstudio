@@ -25,6 +25,7 @@ import {
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
 import { toast } from "../dialogs";
+import { holdBackground } from "../overlays";
 import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
 import { renderIssueDetailInto } from "./issues";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
@@ -288,6 +289,16 @@ function projectCard(
   const top = el("div", "gh-card-top");
   const stateKey = it.state ? it.state.toLowerCase() : "";
   const dot = el("span", `gh-check-dot gh-state-${stateKey || "none"}`);
+  // A card wrote its TYPE in words ("Issue", "PR") and its STATE — open, closed,
+  // merged, the thing that decides whether it still needs you — as a 9px dot
+  // with no label at all. The dot keeps its place; the word joins the sub-line.
+  if (stateKey) {
+    const stateWord =
+      stateKey === "merged" ? "Merged" : stateKey === "closed" ? "Closed" : "Open";
+    dot.title = stateWord;
+    dot.setAttribute("role", "img");
+    dot.setAttribute("aria-label", stateWord);
+  }
   const title = el("div", "gh-card-title");
   title.textContent = it.title;
   top.append(dot, title);
@@ -306,7 +317,16 @@ function projectCard(
   const sub = el("div", "gh-card-sub");
   const num = it.number != null ? `#${it.number}` : it.type === "DRAFT_ISSUE" ? "draft" : "";
   const when = relTimeISO(it.updatedAt);
-  sub.textContent = [num, it.author && `@${it.author}`, when].filter(Boolean).join(" · ");
+  const stateWord = stateKey
+    ? stateKey === "merged"
+      ? "merged"
+      : stateKey === "closed"
+        ? "closed"
+        : "open"
+    : "";
+  sub.textContent = [num, stateWord, it.author && `@${it.author}`, when]
+    .filter(Boolean)
+    .join(" · ");
   card.appendChild(sub);
 
   const typePill = pill(
@@ -376,8 +396,10 @@ function openIssueDrawer(number: number, nav: SectionNav): void {
   drawer.append(head, body);
   scrim.appendChild(drawer);
   document.body.appendChild(scrim);
+  const releaseBackground = holdBackground(scrim);
 
   const dispose = (): void => {
+    releaseBackground();
     document.removeEventListener("keydown", onKey, true);
     scrim.classList.remove("is-open");
     // Let the slide-out play, then remove; restore focus to the card.

@@ -62,3 +62,28 @@ export function dismissLayers(): void {
 export function openLayerCount(): number {
   return layers.length;
 }
+
+/**
+ * Hold the page behind a modal surface: everything outside `keep` becomes
+ * `inert`, so Tab, the pointer, and assistive tech all stop at the surface.
+ *
+ * `aria-modal="true"` is a CLAIM, not a mechanism — the Projects drawer set it
+ * and every card on the board behind it stayed in the tab order, so Tab walked
+ * straight out of the dialog and into a board the user could not see.
+ * Returns the release function; call it once, when the surface goes away.
+ */
+export function holdBackground(keep: HTMLElement): () => void {
+  const held: HTMLElement[] = [];
+  for (const node of Array.from(document.body.children)) {
+    const el = node as HTMLElement;
+    if (el === keep || el.contains(keep) || el.hasAttribute("inert")) continue;
+    el.setAttribute("inert", "");
+    held.push(el);
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const el of held) el.removeAttribute("inert");
+  };
+}

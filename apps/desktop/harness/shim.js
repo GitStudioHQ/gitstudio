@@ -24,6 +24,10 @@
       railWidth: 216,
       railCollapsed: false,
       terminalOpen: false,
+      // ?staging=checkboxes drives the one-list model (issue #16). Without a way
+      // in, the ticks that ARE the staging model in that mode were unreachable
+      // from the harness and never looked at.
+      stagingModel: params.get("staging") === "checkboxes" ? "checkboxes" : "split",
     }),
   );
 
@@ -168,7 +172,9 @@
 
   const gists = [
     { id: "g1", description: "GitStudio release checklist", public: false, htmlUrl: "", owner: u(me), createdAt: ISO(300), updatedAt: ISO(48), fileCount: 1, comments: 0, files: [{ filename: "RELEASE.md", language: "Markdown", type: "text/markdown", size: 2400, rawUrl: "", content: "# Release checklist\n\n1. `npm run check-types`\n2. Tag + push\n3. Notarize", truncated: false }] },
-    { id: "g2", description: "zsh: git aliases", public: true, htmlUrl: "", owner: u(me), createdAt: ISO(1000), updatedAt: ISO(700), fileCount: 1, comments: 2, files: [{ filename: "aliases.zsh", language: "Shell", type: "text/plain", size: 812, rawUrl: "", content: "alias gs='git status'\nalias gl='git log --oneline -20'", truncated: false }] },
+    // Two files, so the gist detail's FILE TABS have something to render — the
+    // single-file fixture never exercised that path at all.
+    { id: "g2", description: "zsh: git aliases", public: true, htmlUrl: "", owner: u(me), createdAt: ISO(1000), updatedAt: ISO(700), fileCount: 2, comments: 2, files: [{ filename: "aliases.zsh", language: "Shell", type: "text/plain", size: 812, rawUrl: "", content: "alias gs='git status'\nalias gl='git log --oneline -20'", truncated: false }, { filename: "functions.zsh", language: "Shell", type: "text/plain", size: 460, rawUrl: "", content: "gco() { git checkout \"$@\"; }", truncated: false }] },
   ];
 
   const projects = [
@@ -809,6 +815,8 @@
 
     const checkId = params.get("check");
     if (checkId) {
+      // A case may be parameterised (?arg=...): one assertion, several shapes.
+      window.__GS_ARG = params.get("arg") || undefined;
       const suite = window.__GS_CHECKS || {};
       const fn = suite[checkId];
       if (!fn) {

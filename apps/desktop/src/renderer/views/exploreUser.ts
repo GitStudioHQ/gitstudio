@@ -144,8 +144,12 @@ async function mount(
 }
 
 function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
-  const row = el("div", "explore-tree-row explore-account-repo");
-  const open = el("button", "explore-account-repo-main");
+  const row = el("div", "explore-tree-row explore-account-repo is-clickable");
+  // The whole row opens the repository. The clickable area used to be a button
+  // wrapping only the icon and the name, so the right half of every row — the
+  // language, the stars, the time, and the gap between them — was dead space
+  // that looked exactly as clickable as the half that worked.
+  const open = el("div", "explore-account-repo-main");
   open.appendChild(glyph(r.private ? "lock" : r.fork ? "repo-forked" : "repo"));
   const body = el("div", "explore-row-body");
   const head = el("div", "explore-row-head");
@@ -158,7 +162,18 @@ function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
     body.appendChild(d);
   }
   open.appendChild(body);
-  open.addEventListener("click", () => nav("explore", { id: repoRouteId({ fullName: r.fullName }) }));
+  row.setAttribute("role", "button");
+  row.tabIndex = 0;
+  row.setAttribute("aria-label", `Open ${r.fullName}`);
+  row.title = `Open ${r.fullName}`;
+  const go = (): void => nav("explore", { id: repoRouteId({ fullName: r.fullName }) });
+  row.addEventListener("click", go);
+  row.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target !== row) return;
+    e.preventDefault();
+    go();
+  });
   row.appendChild(open);
 
   const meta = el("span", "sec-row-meta");

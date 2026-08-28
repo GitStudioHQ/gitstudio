@@ -370,6 +370,14 @@ export class CommitGraph extends LitElement {
       color: var(--vscode-foreground);
     }
     .gh-refresh { margin-left: 2px; }
+    /* A refresh over an existing list keeps the list and says so here instead. */
+    .gh-refresh.is-refreshing { opacity: 0.6; cursor: progress; }
+    .gh-refresh.is-refreshing .codicon { animation: gh-spin 1s linear infinite; }
+    @keyframes gh-spin { to { transform: rotate(360deg); } }
+    /* The app's global reduced-motion rule cannot reach into this shadow root. */
+    @media (prefers-reduced-motion: reduce) {
+      .gh-refresh.is-refreshing .codicon { animation: none; }
+    }
 
     /* ── Anchored popover/menu shell (Columns + search scope share it) ────── */
     .gh-anchor { position: relative; flex: 0 0 auto; display: inline-flex; }
@@ -815,6 +823,33 @@ export class CommitGraph extends LitElement {
     :host(.col-dragging) .scroller,
     :host(.col-dragging) .row,
     :host(.col-dragging) .colhead { user-select: none; }
+
+    /* Every cell is PINNED to its own track.
+       -------------------------------------
+       The row is a seven-track grid and its cells used to be placed by source
+       order alone. Hiding a column sets its track to 0px (correct) and also
+       takes the cell out of the flow with display:none — at which point
+       every later cell slides up one track and lands in the wrong column.
+       Unchecking "Branch / Tag" gave the subject 9px and the changes column
+       493px; unchecking "Date" made the SHA column vanish entirely while the
+       Columns menu still showed SHA as checked, which is a menu lying about
+       what is on screen.
+       With an explicit grid-column, removing a cell moves nothing. Compact
+       mode lays .content out as flex and is unaffected. */
+    :host(:not([compact])) .row > .gutter,
+    :host(:not([compact])) .colhead .ch-graph { grid-column: 1; }
+    :host(:not([compact])) .row .refs,
+    :host(:not([compact])) .colhead .ch-refs { grid-column: 2; }
+    :host(:not([compact])) .row .subject,
+    :host(:not([compact])) .colhead .ch-subject { grid-column: 3; }
+    :host(:not([compact])) .row .changes,
+    :host(:not([compact])) .colhead .ch-changes { grid-column: 4; }
+    :host(:not([compact])) .row .meta.author,
+    :host(:not([compact])) .colhead .ch-author { grid-column: 5; }
+    :host(:not([compact])) .row .meta.date,
+    :host(:not([compact])) .colhead .ch-date { grid-column: 6; }
+    :host(:not([compact])) .row .meta.sha,
+    :host(:not([compact])) .colhead .ch-sha { grid-column: 7; }
 
     /* ── Hidden columns: hide the cells/header (the track is collapsed to 0 on
        the inline :host style by applyColumnStyles, which outranks any saved
@@ -2411,7 +2446,11 @@ export class CommitGraph extends LitElement {
         : `${row.shortSha}: ${row.subject} — ${row.author}, ${relTime(row.authorDate)}`,
     );
     return (
-      `<div class="${cls}" role="row" data-sha="${row.sha}" ` +
+      // The id is what `aria-activedescendant` on the grid points at. Selection
+      // lived in a class alone, so a screen reader on this grid heard nothing
+      // as you arrowed through history — every row carries a good aria-label
+      // and none of them was ever announced.
+      `<div class="${cls}" role="row" id="gs-row-${row.sha}" data-sha="${row.sha}" ` +
       (canReorder ? `title="Drag to reorder" ` : "") +
       (this.chainShas.length > 0 && this.isFirstInert(row.sha)
         ? `data-inert-why="${esc(stopReason(this.chainStop))}" `
@@ -3020,8 +3059,9 @@ export class CommitGraph extends LitElement {
       </span>
       ${this.columnsControlHtml()}
       <button
-        class="gh-iconbtn gh-refresh"
-        title="Refresh"
+        class="gh-iconbtn gh-refresh${this.status === "loading" && this.rows.length ? " is-refreshing" : ""}"
+        title=${this.status === "loading" && this.rows.length ? "Refreshing…" : "Refresh"}
+        ?disabled=${this.status === "loading" && this.rows.length > 0}
         @click=${() => this.onAction({ type: "refresh" })}
       >
         <span class="codicon codicon-refresh"></span>
@@ -3173,6 +3213,8 @@ export class CommitGraph extends LitElement {
         tabindex="0"
         role="grid"
         aria-label="Commit graph"
+        aria-rowcount=${this.rows.length}
+        aria-activedescendant=${this.selectedSha ? `gs-row-${this.selectedSha}` : nothing}
         @click=${this.onClick}
         @dblclick=${this.onDblClick}
         @contextmenu=${this.onContextMenu}

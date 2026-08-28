@@ -93,6 +93,17 @@ const CASES = [
   ["explore-code-hit-is-one-block", "explore~type:git~key:Enter~click:.explore-tab%3Anth-of-type(4)"],
   ["graph-change-bars-share-a-left-edge", "graph"],
   ["row-meta-columns-align", "mywork"],
+  ["rebase-actions-do-not-move-the-list", "rebase"],
+  ["file-rows-show-the-whole-name", "changes"],
+  ["file-rows-show-the-whole-name", "changes", { extra: "staging=checkboxes" }],
+  ["segment-flip-keeps-the-keyboard", "releases"],
+  ["approve-opens-the-composer", "prs~open106"],
+  ["label-picker-stays-open", "issues~open31"],
+  ["mark-read-keeps-its-slot", "inbox"],
+  ["danger-dialogs-start-on-cancel", "branches"],
+  ["go-to-file-has-a-cursor", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
+  ["detail-subtabs-are-a-tablist", "prs~open106"],
+  ["detail-subtabs-are-a-tablist", "gists~click:.sec-row:nth-of-type(2)"],
   ["settings-has-a-rhythm", "code~text:Settings"],
   ["rail-groups-survive-collapse", "code~click:.topbar-sidebar"],
   ["status-facet-shows-its-states", "actions~text:Status"],
@@ -132,6 +143,15 @@ const CASES = [
   ["repo-manager-opens-from-the-repo-chip", "code~click:.topbar-switch~text:Manage%20repositories"],
   ["settings-holds-preferences-not-repositories", "code~text:Settings"],
   ["landing-is-the-working-tree", "changes"],
+  ["assistant-has-no-phantom-skeleton", "code~click:.topbar-assistant"],
+  ["menu-toggles-on-its-own-trigger", "orgs"],
+  ["pr-commit-rows-are-real-controls", "prs~open106~click:.gh-subtab%5Bdata-sub%3Dcommits%5D"],
+  ["palette-selection-reaches-the-a11y-tree", "code~palette"],
+  ["graph-selection-reaches-the-a11y-tree", "graph"],
+  ["graph-columns-keep-their-tracks", "graph"],
+  ["back-returns-to-the-list-you-opened-from", "mywork~open104"],
+  ["focus-survives-a-rebuild", "issues", { arg: ".gh-refresh" }],
+  ["focus-survives-a-rebuild", "releases", { arg: ".gh-seg-btn:not(.active)" }],
   ["settings-checkbox-styled", "code~text:Settings"],
   // These two moved with the list they assert about: the clone manager is its
   // own surface now, not a card in Settings.
@@ -143,7 +163,11 @@ const CASES = [
 function run(scene, checkId, opts = {}) {
   const width = opts.width ?? 1600;
   const theme = opts.theme ?? "dark";
-  const url = `file://${PAGE}?scene=${scene}&theme=${theme}&check=${checkId}`;
+  const arg = opts.arg ? `&arg=${encodeURIComponent(opts.arg)}` : "";
+  // The shim's own scene switches (staging=checkboxes, many=1, ask=1) — a mode
+  // reachable only through a pref still has to be assertable.
+  const extra = opts.extra ? `&${opts.extra}` : "";
+  const url = `file://${PAGE}?scene=${scene}&theme=${theme}&check=${checkId}${arg}${extra}`;
   return new Promise((res) => {
     execFile(
       CHROME,
@@ -156,8 +180,12 @@ function run(scene, checkId, opts = {}) {
         "--dump-dom",
         url,
       ],
-      { maxBuffer: 64 * 1024 * 1024 },
+      // A page that never lets virtual time run out (an unbounded animation, a
+      // self-rescheduling timer) hangs headless Chrome forever, and without a
+      // timeout that hangs the WHOLE suite with no clue which case did it.
+      { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        if (err?.killed && !stdout) return res({ fails: ["timed out after 90s — the page never settled"] });
         if (err && !stdout) return res({ fails: [`chrome failed: ${err.message}`] });
         const m = /<title>CHECK ([\s\S]*?)<\/title>/.exec(stdout);
         if (!m) {

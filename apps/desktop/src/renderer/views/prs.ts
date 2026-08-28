@@ -64,6 +64,8 @@ import {
   type SectionRender,
   type SectionNav,
   type SectionTarget,
+  subTabs,
+  checkStateLabel,
 } from "./common";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";
@@ -161,7 +163,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   if (!gate) return;
 
   if (target?.number != null) {
-    showDetailPage(wrap, nav, target.number);
+    showDetailPage(wrap, nav, target.number, target.from);
     return;
   }
   await listPage(wrap, nav, gate);
@@ -401,7 +403,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
 // ── The detail page ──────────────────────────────────────────────────────────
 
-function showDetailPage(wrap: HTMLElement, nav: SectionNav, n: number): void {
+function showDetailPage(
+  wrap: HTMLElement,
+  nav: SectionNav,
+  n: number,
+  from?: { view: string; label: string },
+): void {
   sectionNav = nav;
   disposePrDiff();
   // A DIFFERENT PR starts on Conversation with no file pre-selected — the
@@ -411,14 +418,15 @@ function showDetailPage(wrap: HTMLElement, nav: SectionNav, n: number): void {
     activeSubTab = "conversation";
     activeFilePath = undefined;
   }
-  const back = (): void => nav("prs", { list: true });
+  // Back goes where you CAME from — see the note in issues.ts.
+  const back = (): void => nav(from?.view ?? "prs", { list: true });
   const reload = (): void => {
     bust("pr");
-    showDetailPage(wrap, nav, n);
+    showDetailPage(wrap, nav, n, from);
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Pull Requests",
+    backLabel: from?.label ?? "Pull Requests",
     crumb: `#${n}`,
     onBack: back,
   });
@@ -542,10 +550,15 @@ function buildDetail(ctx: DetailCtx): void {
   checkoutBtn.addEventListener("click", () => void doCheckout(full.number, checkoutBtn));
   actions.push(checkoutBtn);
 
+  // Approving is a public, named act on someone else's work, and this button
+  // used to post it on the first click — 8px from a button that merely opens a
+  // menu, with a second "Approve" inside that menu doing the same thing. Both
+  // now open the review modal with APPROVE preselected, which is also where the
+  // review body the modal exists for finally gets used.
   const approveBtn = el("button", "mini-btn");
   approveBtn.append(glyph("check"), span("Approve"));
-  approveBtn.title = "Approve this pull request";
-  approveBtn.addEventListener("click", () => void doApprove(full.number, approveBtn, reload));
+  approveBtn.title = "Approve this pull request — opens the review composer";
+  approveBtn.addEventListener("click", () => void doReview(full.number, "APPROVE", approveBtn, reload));
 
   const reviewBtn = el("button", "mini-btn");
   reviewBtn.append(glyph("comment"), span("Review"), glyph("chevron-down"));
@@ -554,8 +567,6 @@ function buildDetail(ctx: DetailCtx): void {
     openMenu(reviewBtn, [
       { label: "Comment", icon: "comment", onClick: () => void doReview(full.number, "COMMENT", reviewBtn, reload) },
       { label: "Request changes", icon: "request-changes", onClick: () => void doReview(full.number, "REQUEST_CHANGES", reviewBtn, reload) },
-      { separator: true },
-      { label: "Approve", icon: "check", onClick: () => void doApprove(full.number, approveBtn, reload) },
     ]),
   );
   if (kind === "open-pr" || kind === "draft") actions.push(approveBtn, reviewBtn);
@@ -639,7 +650,6 @@ function buildDetail(ctx: DetailCtx): void {
   main.appendChild(sub);
 
   // ── sub-tabs ──
-  const subBar = el("div", "gh-subtabs");
   const content = el("div", "gh-subcontent");
   const subDefs = [
     { id: "conversation", label: "Conversation", icon: "comment-discussion" },
@@ -647,25 +657,22 @@ function buildDetail(ctx: DetailCtx): void {
     { id: "checks", label: "Pipelines", icon: "play" },
     { id: "files", label: `Files (${d.files.length})`, icon: "code" },
   ];
-  const subBtns: HTMLElement[] = [];
-  const selectSub = (id: string): void => {
-    if (activeSubTab === "files" && id !== "files") disposePrDiff();
-    activeSubTab = id;
-    for (const b of subBtns) b.classList.toggle("active", b.dataset.sub === id);
-    // Files mode: the rail hides and the content column stretches to the full
-    // window — a review surface, not a document.
-    view.classList.toggle("det-files-mode", id === "files");
-    void renderSubTab(content, full, d, id, reload);
-  };
-  for (const t of subDefs) {
-    const b = el("button", "gh-subtab");
-    b.dataset.sub = t.id;
-    b.append(glyph(t.icon), span(t.label));
-    b.addEventListener("click", () => selectSub(t.id));
-    subBtns.push(b);
-    subBar.appendChild(b);
-  }
-  main.append(subBar, content);
+  content.id = "gs-pr-subpanel";
+  const tabs = subTabs({
+    tabs: subDefs,
+    ariaLabel: "Pull request sections",
+    panel: content,
+    onSelect: (id) => {
+      if (activeSubTab === "files" && id !== "files") disposePrDiff();
+      activeSubTab = id;
+      // Files mode: the rail hides and the content column stretches to the full
+      // window — a review surface, not a document.
+      view.classList.toggle("det-files-mode", id === "files");
+      void renderSubTab(content, full, d, id, reload, nav);
+    },
+  });
+  const selectSub = tabs.select;
+  main.append(tabs.el, content);
 
   // ── property rail ──
   const reviewersProp = propSection("Reviewers", {
@@ -765,7 +772,18 @@ function buildDetail(ctx: DetailCtx): void {
     row.append(span(k, "det-fact-k"), val);
     return row;
   };
-  about.body.appendChild(fact("Files changed", String(d.files.length)));
+  // GitHub caps the files response, so `d.files.length` is what we FETCHED —
+  // it read "300" on a 412-file PR while the Files tab said something else.
+  // `changedFiles` is the PR's own count; fall back only when it is absent.
+  about.body.appendChild(
+    fact(
+      "Files changed",
+      String(full.changedFiles ?? d.files.length),
+      full.changedFiles != null && full.changedFiles !== d.files.length
+        ? `${d.files.length} of ${full.changedFiles} loaded`
+        : undefined,
+    ),
+  );
   if (typeof full.additions === "number" || typeof full.deletions === "number") {
     about.body.appendChild(fact("Lines", `+${full.additions ?? 0} −${full.deletions ?? 0}`));
   }
@@ -811,6 +829,7 @@ async function renderSubTab(
   d: PrDetail,
   id: string,
   reload: () => void,
+  nav: SectionNav,
 ): Promise<void> {
   content.replaceChildren(loadingState());
   if (id === "conversation") {
@@ -829,11 +848,16 @@ async function renderSubTab(
         commentCard(full.user?.login ?? "author", "description", full.body, undefined, {
           association: full.authorAssociation,
           reactions: full.reactions,
+          createdAt: full.createdAt,
         }),
       );
     }
     for (const c of conv) {
-      timeline.appendChild(commentCard(c.author, undefined, c.body, c.kind === "review" ? c.state : undefined));
+      timeline.appendChild(
+        commentCard(c.author, undefined, c.body, c.kind === "review" ? c.state : undefined, {
+          createdAt: c.createdAt,
+        }),
+      );
     }
     if ((!full.body || !full.body.trim()) && conv.length === 0) {
       timeline.appendChild(emptyState("No conversation yet", "No description or comments on this PR."));
@@ -852,8 +876,18 @@ async function renderSubTab(
       else commentDrafts.delete(full.number);
     });
     const crow = el("div", "gh-composer-actions");
-    const send = el("button", "btn btn-primary");
+    const send = el("button", "btn btn-primary") as HTMLButtonElement;
     send.append(glyph("comment"), span("Comment"));
+    // An empty composer used to leave this button in full accent, and clicking
+    // it answered with a toast telling you off. A button that cannot do
+    // anything should look like it cannot do anything.
+    const syncSend = (): void => {
+      const ready = ta.value.trim().length > 0;
+      send.disabled = !ready;
+      send.title = ready ? "Post this comment" : "Write something first";
+    };
+    ta.addEventListener("input", syncSend);
+    syncSend();
     send.addEventListener("click", () => void doComment(full.number, ta, send, reload));
     crow.appendChild(send);
     composer.append(ta, crow);
@@ -874,12 +908,22 @@ async function renderSubTab(
       return;
     }
     for (const c of commits) {
-      const row = el("div", "compare-commit");
+      // A <button>, not a div. These rows already had a pointer cursor, a hover
+      // background and an :active depress — every signal that they were
+      // clickable — and did nothing at all, while also being invisible to the
+      // keyboard (tabIndex -1, no name). The date and the full SHA were in hand
+      // from the same IPC response and simply thrown away.
+      const row = el("button", "compare-commit") as HTMLButtonElement;
       const subj = el("div", "cc-subject");
       subj.textContent = c.message;
       const m = el("div", "cc-meta");
-      m.textContent = `${c.author} · ${c.shortSha}`;
+      const when = relTimeISO(c.date);
+      m.textContent = `${c.author} · ${c.shortSha}${when ? ` · ${when}` : ""}`;
+      if (c.date) m.title = absTimeISO(c.date);
       row.append(subj, m);
+      row.title = `Show ${c.shortSha} in Commits`;
+      row.setAttribute("aria-label", `${c.message} — ${c.author}, ${c.shortSha}`);
+      row.addEventListener("click", () => nav("graph", { sha: c.sha }));
       content.appendChild(row);
     }
   } else if (id === "checks") {
@@ -904,9 +948,12 @@ async function renderSubTab(
       const name = el("span", "gh-check-name");
       name.textContent = c.name;
       const st = el("span", "gh-check-state");
-      st.textContent = state;
+      st.textContent = checkStateLabel(state);
       row.append(dot, name, st);
       if (c.detailsUrl) {
+        // A row only claims to be clickable when there is somewhere to go. The
+        // rest used to carry the same pointer cursor and hover as the linked
+        // ones and swallow the click.
         row.classList.add("is-link");
         // GitHub-Actions checks land on the RUN PAGE with the job's log pane
         // expanded — the full surface, not a modal. External CI keeps the browser.
@@ -972,14 +1019,18 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
     (row as HTMLButtonElement).type = "button";
     const st = el("span", "file-status");
     st.textContent = letter;
-    const path = el("span", "file-path");
-    // Left-truncate long paths so the filename (the part you read) stays visible.
-    path.textContent = f.filename;
-    path.title = f.filename;
-    path.dir = "rtl";
+    // Lead with the FILE NAME and trail the directory, the way Changes and
+    // Compare already do. This list showed one raw rtl-truncated path per row,
+    // so in a 268px column every row read "…/components/" and the name you were
+    // actually looking for was the part that got cut.
+    const cut = f.filename.lastIndexOf("/");
+    const meta = el("span", "dc-file-meta");
+    meta.appendChild(span(cut < 0 ? f.filename : f.filename.slice(cut + 1), "dc-file-name"));
+    if (cut > 0) meta.appendChild(span(f.filename.slice(0, cut), "dc-file-dir"));
+    meta.title = f.filename;
     const adds = el("span", "gh-adds");
     adds.textContent = `+${f.additions} −${f.deletions}`;
-    row.append(st, path, adds);
+    row.append(st, meta, adds);
     row.addEventListener("click", () => openFile(f));
     rows.set(f.filename, row);
     list.appendChild(row);
@@ -1027,13 +1078,13 @@ async function showFileDiff(
     diff = await host.invoke("pr:fileDiff", { number: full.number, path: f.filename });
   } catch (e) {
     if (prDiffPanel !== panel) return; // superseded by another open
-    panel.showEmpty(cleanErr(e) || "Couldn't load this file's diff.");
+    panel.showEmpty(cleanErr(e) || "GitHub did not return this file's diff.", { kind: "error" });
     threadsSlot.replaceChildren();
     return;
   }
   if (prDiffPanel !== panel) return; // a newer file was opened mid-fetch
   if (!diff) {
-    panel.showEmpty("No diff available for this file.");
+    panel.showEmpty("GitHub reports no textual changes in this file.", { kind: "none" });
   } else {
     panel.showDiff(diff);
   }
@@ -1156,7 +1207,7 @@ function commentCard(
   suffix: string | undefined,
   body: string,
   reviewState?: string,
-  extra: { association?: string; reactions?: ReactionSummary } = {},
+  extra: { association?: string; reactions?: ReactionSummary; createdAt?: string } = {},
 ): HTMLElement {
   const card = el("div", "gh-comment");
   const hd = el("div", "gh-comment-head");
@@ -1169,6 +1220,13 @@ function commentCard(
     const badge = pill(reviewState.toLowerCase().replace(/_/g, " "));
     badge.classList.add(`gh-review-${reviewState.toLowerCase()}`);
     hd.appendChild(badge);
+  }
+  // The conversation carried NO time at all — a wall of comments with no way to
+  // tell a reply from last October from one posted an hour ago.
+  if (extra.createdAt) {
+    const when = span(relTimeISO(extra.createdAt), "gh-comment-when");
+    when.title = absTimeISO(extra.createdAt);
+    hd.appendChild(when);
   }
   card.appendChild(hd);
   if (body && body.trim()) {
@@ -1194,23 +1252,6 @@ async function doCheckout(n: number, btn: HTMLElement): Promise<void> {
     toast(`Checked out PR #${n} as pr/${n}.`, "success");
   } catch (e) {
     toast(cleanErr(e) || "Couldn't check out the PR.", "error");
-  } finally {
-    (btn as HTMLButtonElement).disabled = false;
-  }
-}
-
-async function doApprove(n: number, btn: HTMLElement, reload: () => void): Promise<void> {
-  (btn as HTMLButtonElement).disabled = true;
-  try {
-    const r = await host.invoke("pr:approve", n);
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't approve the PR.", "error");
-      return;
-    }
-    toast(`Approved pull request #${n}.`, "success");
-    reload();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't approve the PR.", "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }

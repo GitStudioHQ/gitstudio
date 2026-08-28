@@ -71,6 +71,7 @@ export class DiffPanel {
       b.append(glyph(icon), span(label));
       b.title = m === "inline" ? "Unified diff (one column)" : "Side-by-side diff";
       b.setAttribute("aria-pressed", String(mode === m));
+      b.dataset.mode = m;
       b.addEventListener("click", () => {
         if (this.resolveMode() === m && localStorage.getItem(LS_DIFF_MODE)) return;
         try {
@@ -78,7 +79,12 @@ export class DiffPanel {
         } catch {
           /* non-fatal */
         }
-        if (this.lastFile) this.showDiff(this.lastFile);
+        // Swap the EDITOR, not the toolbar. This used to re-run showDiff, which
+        // replaced the whole panel — so the button you had just pressed was
+        // destroyed under your finger, taking hover, focus and the pressed
+        // state with it, and the panel's Monaco instance was thrown away and
+        // rebuilt even though the file had not changed.
+        this.swapMode(seg, body, m);
       });
       return b;
     };
@@ -88,6 +94,11 @@ export class DiffPanel {
     wrap.append(bar, body);
     this.container.replaceChildren(wrap);
 
+    this.renderMode(body, file, mode);
+  }
+
+  /** Paint one mode's editor into the panel body. Owns nothing above it. */
+  private renderMode(body: HTMLElement, file: FileDiff, mode: DiffMode): void {
     if (mode === "split") {
       const payload: DiffInitPayload = {
         leftLabel: file.leftLabel,
@@ -112,6 +123,25 @@ export class DiffPanel {
         this.showInlineStagingHint(body);
       }
     }
+  }
+
+  /**
+   * Change diff mode in place: dispose only the editor, repaint only the body,
+   * and re-mark the segment. The bar — and the button under the pointer —
+   * survives.
+   */
+  private swapMode(seg: HTMLElement, body: HTMLElement, mode: DiffMode): void {
+    const file = this.lastFile;
+    if (!file) return;
+    this.disposeEditors();
+    body.replaceChildren();
+    body.parentElement?.querySelector(".diff-staging-hint")?.remove();
+    for (const b of seg.querySelectorAll<HTMLElement>(".cmp-mode-btn")) {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+    this.renderMode(body, file, mode);
   }
 
   /**
@@ -290,18 +320,33 @@ export class DiffPanel {
     this.diff?.setRenderOptions(opts);
   }
 
-  /** Shows a composed placeholder (icon badge + text) when nothing is selected. */
-  showEmpty(text: string): void {
+  /**
+   * The placeholder this panel shows when there is no diff on screen.
+   *
+   * It used to be one line of grey text under the same compare icon whatever
+   * the reason was — "select a file", "there is no diff", and "the request
+   * failed" all looked identical, so a failure read as an instruction. It now
+   * takes a title and picks its icon from the KIND of nothing it is showing.
+   */
+  showEmpty(text: string, opts: { title?: string; kind?: "waiting" | "none" | "error" } = {}): void {
     this.teardown();
+    const kind = opts.kind ?? "waiting";
+    const icon = kind === "error" ? "warning" : kind === "none" ? "check-all" : "git-compare";
+    const title =
+      opts.title ??
+      (kind === "error" ? "Couldn't load this diff" : kind === "none" ? "No changes" : "Nothing selected");
     const empty = document.createElement("div");
-    empty.className = "diff-empty list-empty";
+    empty.className = `diff-empty list-empty is-${kind}`;
     const badge = document.createElement("div");
     badge.className = "list-empty-badge";
-    badge.innerHTML = '<span class="glyph codicon codicon-git-compare"></span>';
+    badge.innerHTML = `<span class="glyph codicon codicon-${icon}"></span>`;
+    const h = document.createElement("div");
+    h.className = "list-empty-title";
+    h.textContent = title;
     const t = document.createElement("div");
     t.className = "list-empty-desc";
     t.textContent = text;
-    empty.append(badge, t);
+    empty.append(badge, h, t);
     this.container.replaceChildren(empty);
   }
 
@@ -309,15 +354,22 @@ export class DiffPanel {
     this.teardown();
   }
 
-  private teardown(): void {
+  /** Dispose every editor and model this panel owns, keeping the DOM. */
+  private disposeEditors(): void {
     this.diff?.dispose();
     this.diff = undefined;
     this.merge?.dispose();
     this.merge = undefined;
     this.inline?.dispose();
     this.inline = undefined;
+    // Monaco models are not owned by the editor that used them: leaving these
+    // behind on every rebuild leaked one pair of models per diff shown.
     for (const m of this.inlineModels) m.dispose();
     this.inlineModels = [];
+  }
+
+  private teardown(): void {
+    this.disposeEditors();
     this.container.replaceChildren();
   }
 }

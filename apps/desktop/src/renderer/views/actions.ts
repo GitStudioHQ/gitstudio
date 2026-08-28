@@ -178,6 +178,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // stay at its right whichever tab you're on — without it, Workflows (which
   // has no facets) let flex-end shove the segment 620px right.
   const facetSlot = el("div", "gh-facet-slot");
+  // This row's control set changes with the tab (Runs has five facets, Workflows
+  // none), so it claims its own line and stops moving between them.
+  tools.classList.add("gh-tools-own-line");
   tools.append(seg, facetSlot, secretsBtn, runBtn);
   header.querySelector(".gh-acct")?.before(tools);
   view.append(header, listEl);
@@ -392,7 +395,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, runs.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching runs", `Nothing matches “${query}”.`, { icon: "search" }));
+        listEl.appendChild(emptyState("No matching runs", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const r of items) listEl.appendChild(buildRunRow(r));
@@ -414,7 +417,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // the unfiltered total directly above a "No matching …" empty state.
       header.setCount?.(items.length, workflows.length);
       if (items.length === 0) {
-        listEl.appendChild(emptyState("No matching workflows", `Nothing matches “${query}”.`, { icon: "search" }));
+        listEl.appendChild(emptyState("No matching workflows", `Nothing matches “${query}”.`, { icon: "search", anchor: "inline" }));
         return;
       }
       for (const w of items) listEl.appendChild(buildWfRow(w));
@@ -488,6 +491,12 @@ function runLead(state: string, label?: string): HTMLElement {
   if (state === "success") {
     icon = "pass-filled";
     cls = "is-success";
+  } else if (state === "failure" || state === "error" || state === "startup_failure") {
+    // Failure was drawn as a hollow ring next to a SOLID success disc, so at a
+    // glance down a list of runs the failures read as the quieter ones. The
+    // state that needs you is the state that carries the weight.
+    icon = "error";
+    cls = "is-failure";
   } else if (
     state === "failure" ||
     state === "error" ||
@@ -676,6 +685,16 @@ function toggleJobLog(j: WorkflowJob, slot: HTMLElement): void {
     e.pane.saveViewport();
     slot.appendChild(e.pane.el);
     e.pane.restoreViewport();
+    // Opening a ~390px pane on the second or third job put the whole thing
+    // below the fold — the click "did nothing" unless you happened to scroll.
+    // Bring the pane you just asked for into view.
+    const bring = (): void => {
+      const r = e.pane.el.getBoundingClientRect();
+      if (r.top >= 0 && r.bottom <= window.innerHeight) return;
+      e.pane.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
+    bring();
+    window.setTimeout(bring, 120); // again once the log has laid out
     if (!e.loaded) void loadJobLog(j).then(() => {
       if (jobStatus(j.id) === "in_progress") startTail(j.id);
     });
@@ -803,16 +822,22 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // ── top-bar actions ──
   const rerunBtn = btn("mini-btn");
   rerunBtn.append(glyph("refresh"), span("Re-run"));
-  rerunBtn.title = "Re-run all jobs in this run";
+  // A disabled button that still promises what it would do is a button you
+  // keep clicking. When it can't act, its tooltip says why instead.
   rerunBtn.disabled = live;
+  rerunBtn.title = live
+    ? "This run is still going — you can't re-run it until it finishes"
+    : "Re-run all jobs in this run";
   rerunBtn.addEventListener("click", () => void rerunRun(full.id, rerunBtn, reload));
 
   const rerunFailedBtn = btn("mini-btn");
   rerunFailedBtn.append(glyph("debug-restart"), span("Re-run failed"));
-  rerunFailedBtn.title = "Re-run only the failed jobs";
   // Nothing failed, so there is nothing to re-run: don't show a dead control.
   rerunFailedBtn.hidden = full.conclusion === "success" || live;
   rerunFailedBtn.disabled = rerunFailedBtn.hidden;
+  rerunFailedBtn.title = rerunFailedBtn.disabled
+    ? "Nothing has failed in this run"
+    : "Re-run only the failed jobs";
   rerunFailedBtn.addEventListener("click", () => void rerunFailed(full.id, rerunFailedBtn, reload));
 
   const cancelBtn = btn("mini-btn danger");
@@ -858,7 +883,9 @@ function buildRunDetail(ctx: RunDetailCtx): void {
       const card = main.querySelector<HTMLElement>(`[data-job-id="${j.id}"]`);
       if (!card) continue;
       card.querySelector(".gh-job-steps")?.classList.remove("hidden");
-      card.querySelector(".gh-job-head")?.classList.add("open");
+      const jobHead = card.querySelector(".gh-job-head");
+      jobHead?.classList.add("open");
+      jobHead?.setAttribute("aria-expanded", "true");
       const slot = card.querySelector<HTMLElement>(".gh-job-logslot");
       if (slot) openJobLogLazy(j, slot);
       const logBtn = card.querySelector<HTMLElement>(".gh-job-log");
@@ -873,8 +900,9 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   const openBtn = btn("mini-btn gh-icon-btn");
   openBtn.append(glyph("link-external"));
   openBtn.title = "Open this run on GitHub";
-  openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.disabled = !full.htmlUrl;
+  if (openBtn.disabled) openBtn.title = "GitHub didn't give this run a link";
+  openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
 
   topActions.replaceChildren(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn, openBtn);
@@ -1015,8 +1043,14 @@ let runMaxStepSec = 0;
 /** Seconds a step took, or 0 when it hasn't finished (or never started). */
 function stepSeconds(s: WorkflowStep): number {
   const a = Date.parse(s.startedAt);
+  if (!Number.isFinite(a)) return 0;
   const b = Date.parse(s.completedAt);
-  return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, (b - a) / 1000) : 0;
+  // A step that has started but not finished has no completedAt, and returning
+  // 0 for it drew the ONE step actually running right now as the shortest bar
+  // in the job — the opposite of the truth, and it grew shorter the longer it
+  // ran. Measure a live step against the clock.
+  const end = Number.isFinite(b) ? b : Date.now();
+  return Math.max(0, (end - a) / 1000);
 }
 
 function jobCard(j: WorkflowJob): HTMLElement {
@@ -1080,19 +1114,38 @@ function jobCard(j: WorkflowJob): HTMLElement {
     sname.textContent = s.name || "(step)";
     const bar = el("span", "gh-step-bar");
     bar.style.setProperty("--w", `${Math.max(2, Math.round((stepSecs[i] / maxSec) * 100))}%`);
+    const running = !!s.startedAt && !s.completedAt;
+    if (running) bar.classList.add("is-running");
     const sdur = el("span", "gh-step-dur");
-    sdur.textContent = s.startedAt && s.completedAt ? fmtDuration(s.startedAt, s.completedAt) : "";
+    // "1m 12s" while it runs, not a blank column. The suffix marks it as still
+    // counting rather than a final number.
+    sdur.textContent = s.startedAt ? fmtDuration(s.startedAt, s.completedAt) + (running ? "…" : "") : "";
     const sst = el("span", "gh-check-state");
     sst.textContent = prettyState(sState);
     row.append(sdot, sname, bar, sdur, sst);
     steps.appendChild(row);
   });
 
+  const syncHead = (): void => {
+    const open = !steps.classList.contains("hidden");
+    head.classList.toggle("open", open);
+    head.setAttribute("aria-expanded", String(open));
+  };
+  head.setAttribute("role", "button");
+  if (head.tabIndex < 0) head.tabIndex = 0;
+  head.setAttribute("aria-controls", (steps.id ||= `gs-job-steps-${j.id}`));
+  syncHead();
   head.addEventListener("click", () => {
     const nowHidden = steps.classList.toggle("hidden");
-    head.classList.toggle("open", !nowHidden);
+    syncHead();
     if (nowHidden) expandedJobs.delete(j.id);
     else expandedJobs.add(j.id);
+  });
+  head.addEventListener("keydown", (e) => {
+    if (e.target !== head) return;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    head.click();
   });
 
   const logSlot = el("div", "gh-job-logslot");
@@ -1112,7 +1165,7 @@ function jobCard(j: WorkflowJob): HTMLElement {
     const nowOpen = !!logPanes.get(j.id)?.open;
     if (nowOpen) {
       steps.classList.remove("hidden");
-      head.classList.add("open");
+      syncHead();
       expandedJobs.add(j.id);
     }
     syncLogBtn();

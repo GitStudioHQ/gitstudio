@@ -212,7 +212,11 @@ export function confirmDialog(opts: {
       });
       return {
         card,
-        focusEl: typedInput ?? ok,
+        // A destructive confirm used to open with the DESTROY button focused,
+        // so the Return key that dismisses most dialogs deleted the branch
+        // instead. Danger dialogs start on Cancel; a typed-confirmation dialog
+        // starts in the field you have to fill in either way.
+        focusEl: typedInput ?? (opts.danger ? cancel : ok),
         label: opts.title,
         onClose: () => {
           if (!settled) resolve(false);

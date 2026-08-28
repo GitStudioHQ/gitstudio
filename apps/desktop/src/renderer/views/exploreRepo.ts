@@ -105,13 +105,16 @@ async function mount(
 
   // Filled in from the repo detail once it lands (the rail fetches it anyway).
   let defaultBranchLabel = "default branch";
+  let defaultBranchName: string | undefined;
   const refBtn = el("button", "mini-btn explore-ref-btn");
   // "default branch" described the KIND of thing selected rather than the
   // selection; the rail says the default is "main", so the button said one
   // thing and the rail another.
   refBtn.append(glyph("git-branch"), span(ref ?? defaultBranchLabel, "explore-ref-name"), glyph("chevron-down"));
   refBtn.title = "Switch branch";
-  refBtn.addEventListener("click", () => void openRefMenu(refBtn, fullName, ref, (r) => goto({ ref: r, path })));
+  refBtn.addEventListener("click", () =>
+    void openRefMenu(refBtn, fullName, ref, (r) => goto({ ref: r, path }), defaultBranchName),
+  );
 
   // The page had no title at all — the only place the repo was named was 13px
   // of breadcrumb in the toolbar.
@@ -151,7 +154,19 @@ async function mount(
   const pageHead = el("div", "explore-repo-head");
   const h1 = el("h1", "explore-repo-title");
   const [ownerName, repoName] = fullName.split("/", 2);
-  h1.append(span(`${ownerName}/`, "explore-repo-owner"), span(repoName ?? fullName));
+  // On a FILE page the biggest words on screen used to be the repository's —
+  // the same string the toolbar crumb above it already said — while the file
+  // you had opened appeared only in that crumb. A page is titled by its subject.
+  if (kind === "blob" && path) {
+    const fileName = path.split("/").pop() ?? path;
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    pageHead.appendChild(
+      span(dir ? `${fullName} / ${dir}` : fullName, "explore-repo-eyebrow"),
+    );
+    h1.appendChild(span(fileName));
+  } else {
+    h1.append(span(`${ownerName}/`, "explore-repo-owner"), span(repoName ?? fullName));
+  }
   pageHead.appendChild(h1);
   main.appendChild(pageHead);
 
@@ -166,6 +181,7 @@ async function mount(
       if (!rail.isConnected) return;
       renderRepoRail(rail, d, fullName, nav);
       // Name the branch the button is actually on.
+      if (d.defaultBranch) defaultBranchName = d.defaultBranch;
       if (!ref && d.defaultBranch) {
         defaultBranchLabel = d.defaultBranch;
         const nameEl = refBtn.querySelector(".explore-ref-name");
@@ -390,6 +406,7 @@ async function openRefMenu(
   fullName: string,
   current: string | undefined,
   pick: (ref: string | undefined) => void,
+  defaultBranch?: string,
 ): Promise<void> {
   let branches: GhRepoBranch[] = [];
   try {
@@ -398,21 +415,21 @@ async function openRefMenu(
     toast(cleanErr(e) || "Couldn't list branches.", "error");
     return;
   }
+  // The default branch is one of these branches, not a separate thing. Listing
+  // it as its own row above the list meant `main` appeared twice — once ticked
+  // as "Default branch" and once, three rows down, under its own name and not
+  // ticked, which reads as two different branches with the same content.
+  const def = defaultBranch;
+  const selected = current ?? def;
   openMenu(
     anchor,
-    [
-      {
-        label: "Default branch",
-        icon: current == null ? "check" : "git-branch",
-        onClick: () => pick(undefined),
-      },
-      { separator: true },
-      ...branches.map((b) => ({
-        label: b.name,
-        icon: current === b.name ? "check" : "git-branch",
-        onClick: () => pick(b.name),
-      })),
-    ],
+    branches.map((b) => ({
+      label: b.name,
+      sub: b.name === def ? "default" : undefined,
+      icon: selected === b.name ? "check" : "git-branch",
+      current: selected === b.name,
+      onClick: () => pick(b.name === def ? undefined : b.name),
+    })),
     { searchable: branches.length > 8 },
   );
 }
@@ -433,7 +450,13 @@ async function openGoToFile(
   input.placeholder = "Go to file…";
   input.spellcheck = false;
   input.setAttribute("aria-label", "Go to file");
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-expanded", "true");
+  input.setAttribute("aria-autocomplete", "list");
   const listEl = el("div", "gotofile-list");
+  listEl.setAttribute("role", "listbox");
+  listEl.id = "gs-gotofile-list";
+  input.setAttribute("aria-controls", listEl.id);
   const note = el("div", "gotofile-note");
   note.textContent = "Loading the file list…";
   card.append(input, listEl, note);
@@ -455,6 +478,24 @@ async function openGoToFile(
     return;
   }
 
+  // Which row Enter will open. Without one, ↑/↓ were dead keys and Enter fired
+  // the top row while nothing on screen said the top row was special — a picker
+  // with 40 identical options and an invisible cursor.
+  let sel = 0;
+  const rows = (): HTMLElement[] => [...listEl.querySelectorAll<HTMLElement>(".gotofile-row")];
+  const paint = (): void => {
+    const rs = rows();
+    if (!rs.length) return;
+    sel = Math.max(0, Math.min(rs.length - 1, sel));
+    rs.forEach((r, i) => {
+      r.classList.toggle("is-sel", i === sel);
+      r.setAttribute("aria-selected", String(i === sel));
+    });
+    rs[sel].scrollIntoView({ block: "nearest" });
+    if (!rs[sel].id) rs[sel].id = `gs-gotofile-${sel}`;
+    input.setAttribute("aria-activedescendant", rs[sel].id);
+  };
+
   const render = (): void => {
     const q = input.value.trim();
     const ranked = q
@@ -466,8 +507,10 @@ async function openGoToFile(
           .map((x) => x.p)
       : paths.slice(0, 40);
     listEl.replaceChildren();
+    sel = 0;
     for (const p of ranked) {
       const row = el("button", "gotofile-row");
+      row.setAttribute("role", "option");
       row.appendChild(glyph(fileIcon(p.split("/").pop() ?? p)));
       const dir = p.includes("/") ? p.slice(0, p.lastIndexOf("/") + 1) : "";
       if (dir) row.appendChild(span(dir, "gotofile-dir"));
@@ -480,13 +523,30 @@ async function openGoToFile(
     }
     if (!ranked.length) {
       listEl.appendChild(span("No file matches that.", "gotofile-empty"));
+      input.removeAttribute("aria-activedescendant");
+      return;
     }
+    paint();
   };
   input.addEventListener("input", render);
   input.addEventListener("keydown", (e) => {
+    const rs = rows();
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!rs.length) return;
+      sel = (sel + (e.key === "ArrowDown" ? 1 : -1) + rs.length) % rs.length;
+      paint();
+      return;
+    }
+    if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      sel = e.key === "Home" ? 0 : rs.length - 1;
+      paint();
+      return;
+    }
     if (e.key === "Enter") {
       e.preventDefault();
-      (listEl.firstElementChild as HTMLElement | null)?.click();
+      rs[sel]?.click();
     }
   });
   render();

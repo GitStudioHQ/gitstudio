@@ -104,8 +104,13 @@ export class GraphMount {
    *  On failure, render an in-view error + Retry instead of spinning forever. */
   async reload(): Promise<void> {
     this.container.replaceChildren(this.element);
+    // Keep the rows you are looking at. Blanking them turned Refresh into a
+    // re-mount: the history vanished, a spinner took the whole pane, your scroll
+    // position and selection went with it — for an operation that usually
+    // returns the same list plus one commit. The graph's own placeholder only
+    // appears when there is nothing to show, so `status = "loading"` over a
+    // populated list marks the toolbar busy and leaves the list alone.
     this.element.status = "loading";
-    this.element.rows = [];
     try {
       await this.adapter.loadInitial();
     } catch (err) {

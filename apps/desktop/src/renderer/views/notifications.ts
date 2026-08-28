@@ -52,7 +52,7 @@ let notifQuery = "";
 const notifFacets: FacetState = {};
 
 /** The dismiss handle for the open notifications popover (so the bell toggles). */
-let closePanel: (() => void) | null = null;
+let closePanel: ((restoreFocus?: boolean) => void) | null = null;
 
 export const renderNotifications: SectionRender = (wrap, nav) => {
   void mount(wrap, nav);
@@ -306,11 +306,17 @@ export function openNotificationsPanel(
 ): void {
   // Toggle: a second click on the bell (or while open) closes the panel.
   if (closePanel) {
-    closePanel();
+    closePanel(true);
     return;
   }
 
   const panel = el("div", "notif-pop");
+  // A floating panel of interactive rows that announced itself as a plain div:
+  // no role, no name, and focus left behind on the bell, so a keyboard user
+  // could open it and then Tab through the whole page before reaching it.
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "Notifications");
+  panel.tabIndex = -1;
   const inner = el("div", "notif-pop-inner");
   panel.appendChild(inner);
   document.body.appendChild(panel);
@@ -330,10 +336,13 @@ export function openNotificationsPanel(
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
       e.preventDefault();
-      close();
+      close(true);
     }
   };
-  const close = (): void => {
+  let closed = false;
+  const close = (restoreFocus = false): void => {
+    if (closed) return;
+    closed = true;
     layer.release();
     panel.remove();
     document.removeEventListener("mousedown", onDoc, true);
@@ -341,6 +350,7 @@ export function openNotificationsPanel(
     window.removeEventListener("resize", position);
     anchor.setAttribute("aria-expanded", "false");
     closePanel = null;
+    if (restoreFocus && anchor.isConnected) anchor.focus();
     onClose?.();
   };
   closePanel = close;
@@ -357,6 +367,9 @@ export function openNotificationsPanel(
   });
 
   position();
+  // Move into the panel so the keyboard is where the eye is; Escape hands focus
+  // straight back to the bell.
+  (panel.querySelector<HTMLElement>("button, [tabindex='0'], a[href]") ?? panel).focus();
   setTimeout(() => {
     position();
     document.addEventListener("mousedown", onDoc, true);
@@ -565,7 +578,9 @@ function notificationRow(
     } else if (inAppCommit) {
       nav("graph", { sha: t.subjectSha });
     } else if (item && sameRepo) {
-      nav(item.kind, { number: item.number });
+      // Same as My Work: back and Escape belong to the Inbox, not to whichever
+      // section happens to own the thread's subject.
+      nav(item.kind, { number: item.number, from: { view: "notifications", label: "Inbox" } });
     } else if (item) {
       const [owner, repo] = item.repo.split("/");
       openExternalItem({ owner, repo, number: item.number, kind: item.kind === "prs" ? "pull" : "issue", htmlUrl: t.htmlUrl });
@@ -631,18 +646,20 @@ async function markRead(
       return;
     }
     t.unread = false;
+    // Whichever filter is on, the row stays where it is and simply changes
+    // style. Under "Unread only" it used to be REMOVED on the spot: the list
+    // collapsed under the pointer, and the next row's own Mark-read button slid
+    // into the exact pixel you had just clicked — so a second click marked a
+    // thread you never chose. It leaves on the next refresh instead, which is
+    // when you are looking at the list rather than at one row in it.
+    row.classList.add("notif-read");
+    row.querySelector(".notif-dot")?.remove();
+    row.querySelectorAll<HTMLElement>(".row-actions .row-btn").forEach((b) => {
+      if (b.textContent === "Mark read") b.setAttribute("hidden", "");
+    });
     if (!notifAll) {
-      // "Unread only" filter active → the row no longer belongs; drop it.
-      row.remove();
-      if (body.querySelectorAll(".notif-row").length === 0) refresh();
-    } else {
-      // "Show all" → flip the row to its read style in place: recede it, drop
-      // the unread dot, and remove the now-irrelevant "Mark read" action.
-      row.classList.add("notif-read");
-      row.querySelector(".notif-dot")?.remove();
-      row.querySelectorAll<HTMLElement>(".row-actions .row-btn").forEach((b) => {
-        if (b.textContent === "Mark read") b.remove();
-      });
+      row.classList.add("notif-leaving");
+      row.title = "Marked read — leaves this list on the next refresh";
     }
     // Keep the summary + "Mark all read" in sync after the in-place change.
     const unread = body.querySelectorAll(".notif-dot").length;
