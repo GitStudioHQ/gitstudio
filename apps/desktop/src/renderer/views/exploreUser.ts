@@ -69,7 +69,7 @@ async function mount(
     try {
       const u: GhUserInfo = await gget("github:userInfo", login, 300_000);
       if (!rail.isConnected) return;
-      renderProfileRail(rail, u);
+      renderProfileRail(rail, u, nav);
       const head = el("div", "explore-account-head");
       head.append(avatar(u.login, u.avatarUrl, 44));
       const names = el("div", "explore-account-names");
@@ -192,7 +192,7 @@ function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
   return row;
 }
 
-function renderProfileRail(rail: HTMLElement, u: GhUserInfo): void {
+function renderProfileRail(rail: HTMLElement, u: GhUserInfo, nav: SectionNav): void {
   rail.replaceChildren();
 
   const facts = propSection("Profile");
@@ -240,9 +240,13 @@ function renderProfileRail(rail: HTMLElement, u: GhUserInfo): void {
           return;
         }
         for (const o of orgs) {
+          // Same dead chip as the repo page's OWNER: it looked and read like a
+          // door and opened onto nothing.
           const chip = el("button", "det-person");
           chip.append(avatar(o.login, o.avatarUrl, 20), span(o.login));
           chip.title = `Explore ${o.login}`;
+          chip.setAttribute("aria-label", chip.title);
+          chip.addEventListener("click", () => nav("explore", { id: `org/${o.login}` }));
           orgProp.body.appendChild(chip);
         }
       })

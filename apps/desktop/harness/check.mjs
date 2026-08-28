@@ -125,6 +125,7 @@ const CASES = [
   ["count-badge-tracks-the-filter", "releases~click:.gh-search-input~type:zzzz"],
   ["count-badge-tracks-the-filter", "issues"],
   ["count-badge-tracks-the-filter", "prs"],
+  ["identity-chips-are-not-dead", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
   ["settings-checkbox-styled", "code~text:Settings"],
   ["settings-local-copies", "code~text:Settings~scroll:.settings-copies"],
   ["settings-copy-actions-one-shape", "code~text:Settings~scroll:.settings-copies"],

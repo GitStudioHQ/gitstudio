@@ -1386,6 +1386,23 @@
       }
     },
 
+    // ── a control that reads like a door opens one ──────────────────────────
+    "identity-chips-are-not-dead": async (f) => {
+      const c = check(f);
+      const chip = $(".det-person");
+      c.ok(!!chip, "the rail shows an identity chip");
+      if (!chip) return;
+      c.eq(chip.tagName, "BUTTON", "it is a button");
+      c.ok(/open|explore|profile/i.test(chip.title || ""), `its tooltip promises navigation ("${chip.title}")`);
+      const before = text(".det-crumb") + "|" + (location.hash || "");
+      chip.click();
+      await settle(900);
+      const after = text(".det-crumb") + "|" + (location.hash || "");
+      // It had a pointer cursor and a tooltip saying it would open the account,
+      // and clicking it did nothing at all.
+      c.ok(before !== after, `clicking it navigates (crumb stayed "${before}")`);
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
     "settings-has-a-rhythm": (f) => {
       const c = check(f);

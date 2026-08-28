@@ -164,7 +164,7 @@ async function mount(
     try {
       const d: OrgRepoDetail = await gget("orgs:repoDetail", fullName, 120_000);
       if (!rail.isConnected) return;
-      renderRepoRail(rail, d, fullName);
+      renderRepoRail(rail, d, fullName, nav);
       // Name the branch the button is actually on.
       if (!ref && d.defaultBranch) {
         defaultBranchLabel = d.defaultBranch;
@@ -323,7 +323,12 @@ async function renderFile(
 
 // ── the rail ─────────────────────────────────────────────────────────────────
 
-function renderRepoRail(rail: HTMLElement, d: OrgRepoDetail, fullName: string): void {
+function renderRepoRail(
+  rail: HTMLElement,
+  d: OrgRepoDetail,
+  fullName: string,
+  nav: SectionNav,
+): void {
   rail.replaceChildren();
   const about = propSection("About");
   if (d.description) {
@@ -365,9 +370,15 @@ function renderRepoRail(rail: HTMLElement, d: OrgRepoDetail, fullName: string): 
   }
 
   const owner = propSection("Owner");
+  const ownerLogin = fullName.split("/")[0];
+  // It was a <button> with a pointer cursor and a tooltip promising to open the
+  // account, and clicking it did nothing at all. Either a control does its
+  // thing or it is not a control.
   const ownerBtn = el("button", "det-person");
-  ownerBtn.textContent = fullName.split("/")[0];
-  ownerBtn.title = "Open this account in Explore";
+  ownerBtn.textContent = ownerLogin;
+  ownerBtn.title = `Open ${ownerLogin} in Explore`;
+  ownerBtn.setAttribute("aria-label", ownerBtn.title);
+  ownerBtn.addEventListener("click", () => nav("explore", { id: `user/${ownerLogin}` }));
   owner.body.appendChild(ownerBtn);
   rail.appendChild(owner.root);
 }
