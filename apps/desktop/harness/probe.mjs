@@ -31,7 +31,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PAGE = resolve(HERE, "page/harness.html");
+const PAGE = process.env.GS_HARNESS_PAGE
+  ? resolve(process.env.GS_HARNESS_PAGE, "harness.html")
+  : resolve(HERE, "page/harness.html");
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const argv = process.argv.slice(2);

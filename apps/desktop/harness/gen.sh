@@ -1,10 +1,16 @@
 #!/bin/sh
 # Assemble the headless-render harness page from the built renderer bundles +
 # the fixtures shim. Run `npm run build` (or `node esbuild.js`) first.
+#
+#   gen.sh [outDir]
+#
+# The optional outDir lets a second page exist alongside the default one, so a
+# verification run can use a freshly built bundle while something else is still
+# reading the old one. shot.sh and probe.mjs both honour $GS_HARNESS_PAGE.
 set -e
 HARNESS="$(cd "$(dirname "$0")" && pwd)"
 DIST="$(cd "$HARNESS/../dist/renderer" && pwd)"
-PAGE="$HARNESS/page"
+PAGE="${1:-$HARNESS/page}"
 rm -rf "$PAGE"
 mkdir -p "$PAGE"
 cp "$DIST/renderer.js" "$DIST/renderer.css" "$DIST/theme-boot.js" "$PAGE/"

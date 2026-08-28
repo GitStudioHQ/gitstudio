@@ -331,22 +331,23 @@ export class TerminalDock {
       row.append(glyph("terminal"), span(t.label, "term-side-label"));
       row.title = t.label;
       row.addEventListener("click", () => this.setActiveTerm(t.id));
-      const kill = el("span", "term-side-close");
+      // The kill control is a SIBLING of the row, not a child of it. It used to
+      // be a role=button span inside the row's <button>, which is invalid: an
+      // interactive element cannot contain another one. The outer button's
+      // accessible name absorbed it, and no assistive tech could reach it — the
+      // tabIndex = -1 that kept it out of the Tab order was hiding the problem
+      // rather than solving it. `.term-side-item` positions the two together.
+      const kill = el("button", "term-side-close") as HTMLButtonElement;
       kill.append(glyph("trash"));
       kill.title = `Kill ${t.label}`;
-      kill.setAttribute("role", "button");
       kill.setAttribute("aria-label", `Kill ${t.label}`);
-      kill.tabIndex = -1;
-      const doKill = (e: Event): void => {
+      kill.addEventListener("click", (e) => {
         e.stopPropagation();
         this.closeTerminal(t.id);
-      };
-      kill.addEventListener("click", doKill);
-      kill.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") doKill(e);
       });
-      row.appendChild(kill);
-      list.appendChild(row);
+      const item = el("div", "term-side-item");
+      item.append(row, kill);
+      list.appendChild(item);
     }
     this.termSide.appendChild(list);
   }

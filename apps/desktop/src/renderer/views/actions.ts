@@ -378,7 +378,6 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     listEl.replaceChildren();
     if (actionsTab === "runs") {
       if (!runs) return;
-      header.setCount?.(runs.length);
       if (runs.length === 0) {
         listEl.appendChild(
           emptyState("No workflow runs", "No GitHub Actions runs found for this repository.", {
@@ -389,6 +388,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         return;
       }
       const items = q ? runs.filter((r) => runMatches(r, q)) : runs;
+      // AFTER the filter, and with both numbers: the pill used to advertise
+      // the unfiltered total directly above a "No matching …" empty state.
+      header.setCount?.(items.length, runs.length);
       if (items.length === 0) {
         listEl.appendChild(emptyState("No matching runs", `Nothing matches “${query}”.`, { icon: "search" }));
         return;
@@ -401,7 +403,6 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       if (cap) listEl.appendChild(cap);
     } else {
       if (!workflows) return;
-      header.setCount?.(workflows.length);
       if (workflows.length === 0) {
         listEl.appendChild(
           emptyState("No workflows", "This repo has no .github/workflows files.", { icon: "play" }),
@@ -409,6 +410,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         return;
       }
       const items = q ? workflows.filter((w) => wfMatches(w, q)) : workflows;
+      // AFTER the filter, and with both numbers: the pill used to advertise
+      // the unfiltered total directly above a "No matching …" empty state.
+      header.setCount?.(items.length, workflows.length);
       if (items.length === 0) {
         listEl.appendChild(emptyState("No matching workflows", `Nothing matches “${query}”.`, { icon: "search" }));
         return;

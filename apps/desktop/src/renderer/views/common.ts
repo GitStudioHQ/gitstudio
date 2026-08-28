@@ -7,6 +7,7 @@
 import { host } from "../bridge";
 import { gget } from "../cache";
 import { openModal } from "../dialogs";
+import { focusNewPage } from "../focusReturn";
 import {
   cleanErr,
   el,
@@ -739,6 +740,11 @@ export function detailPage(o: DetailPageOpts): {
   scroll.appendChild(body);
   view.append(bar, scroll);
   wireDetailEsc(view, o.onBack);
+  // The page that just replaced a list takes the keyboard with it. Without
+  // this, pressing Enter on a row left focus on <body>, so the next Tab
+  // started at the top of the window — past the entire nav rail — rather than
+  // in the thing you had just opened.
+  focusNewPage(view, back);
   return { view, main, rail, topActions };
 }
 

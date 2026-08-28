@@ -18,7 +18,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PAGE = resolve(HERE, "page/harness.html");
+const PAGE = process.env.GS_HARNESS_PAGE
+  ? resolve(process.env.GS_HARNESS_PAGE, "harness.html")
+  : resolve(HERE, "page/harness.html");
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 /** id → the scene that sets up the state the assertion needs. */
@@ -111,6 +113,18 @@ const CASES = [
   ["status-pills-never-wrap", "actions", { width: 1000 }],
   ["status-pills-never-wrap", "releases", { width: 1000 }],
   ["graph-details-opens-at-its-intended-width", "graph"],
+  ["focus-follows-you-into-a-detail-and-back", "issues"],
+  ["focus-follows-you-into-a-detail-and-back", "prs"],
+  ["no-nested-interactive-elements", "releases~open50"],
+  ["no-nested-interactive-elements", "issues"],
+  ["no-nested-interactive-elements", "code"],
+  ["pr-files-fits-the-window", "prs~open106~click:.gh-subtab%3Anth-of-type(4)"],
+  ["native-controls-follow-the-theme", "releases~text:New release"],
+  ["hover-actions-are-reachable", "explore~type:git~key:Enter~text:People~click:.explore-person-row"],
+  ["count-badge-tracks-the-filter", "actions~click:.gh-search-input~type:zzzz"],
+  ["count-badge-tracks-the-filter", "releases~click:.gh-search-input~type:zzzz"],
+  ["count-badge-tracks-the-filter", "issues"],
+  ["count-badge-tracks-the-filter", "prs"],
   ["settings-checkbox-styled", "code~text:Settings"],
   ["settings-local-copies", "code~text:Settings~scroll:.settings-copies"],
   ["settings-copy-actions-one-shape", "code~text:Settings~scroll:.settings-copies"],

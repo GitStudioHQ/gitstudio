@@ -22,5 +22,5 @@ mkdir -p "$(dirname "$OUT")"
   --window-size=1600,1000 --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \
   --screenshot="$OUT" \
-  "file://$HARNESS/page/harness.html?scene=$SCENE&theme=$THEME" 2>&1 | grep -viE 'devtools|gpu|fontations|dawn|install' || true
+  "file://${GS_HARNESS_PAGE:-$HARNESS/page}/harness.html?scene=$SCENE&theme=$THEME" 2>&1 | grep -viE 'devtools|gpu|fontations|dawn|install' || true
 echo "wrote $OUT"

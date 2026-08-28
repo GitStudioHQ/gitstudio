@@ -161,7 +161,11 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       blankable(span(rel.author?.login ?? "", "rel-author"), !!rel.author?.login),
       withClass(
         blankable(statBit("file", rel.assets.length, "", "assets"), rel.assets.length > 0),
-        "rel-assets",
+        // NOT "rel-assets" — that name already belongs to the detail page's
+        // vertical asset list (`flex-direction: column`), which stacked this
+        // row's file icon over its number and pushed the digit onto the row's
+        // bottom border.
+        "rel-asset-count",
       ),
       // Download counts run from "12" to "1,240"; without a floor the column
       // moved every element to its LEFT by the difference.
@@ -203,7 +207,6 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     listEl.replaceChildren();
     if (releaseTab === "releases") {
       if (!releases) return;
-      header.setCount?.(releases.length);
       if (releases.length === 0) {
         listEl.appendChild(
           emptyState("No releases yet", "Publish your first release to share builds and notes.", {
@@ -218,6 +221,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       const items = q
         ? releases.filter((rel) => `${rel.name} ${rel.tagName}`.toLowerCase().includes(q))
         : releases;
+      // AFTER the filter, and with both numbers: the pill used to advertise
+      // the unfiltered total directly above a "No matching …" empty state.
+      header.setCount?.(items.length, releases.length);
       if (items.length === 0) {
         listEl.appendChild(emptyState("No matching releases", `Nothing matches “${query}”.`, { icon: "search" }));
         return;
@@ -225,12 +231,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       for (const rel of items) listEl.appendChild(buildReleaseRow(rel, latestId));
     } else {
       if (!tags) return;
-      header.setCount?.(tags.length);
       if (tags.length === 0) {
         listEl.appendChild(emptyState("No tags", "This repository has no git tags yet.", { icon: "tag" }));
         return;
       }
       const items = q ? tags.filter((t) => t.name.toLowerCase().includes(q)) : tags;
+      header.setCount?.(items.length, tags.length);
       if (items.length === 0) {
         listEl.appendChild(emptyState("No matching tags", `Nothing matches “${query}”.`, { icon: "search" }));
         return;
@@ -484,7 +490,15 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   if (rel.assets.length) {
     const list = el("div", "rel-assets");
     for (const a of rel.assets) {
-      const row = el("button", "list-row");
+      // The row is a DIV, not a button. It used to be a <button> with the
+      // delete <button> nested inside it, which is invalid: the outer row's
+      // accessible name swallows the inner control ("Download x" absorbing
+      // "Delete x from this release"), assistive tech cannot reach the inner
+      // one, and a single click can dispatch on both. The download is now the
+      // row's own trailing action, and delete is its sibling.
+      const row = el("div", "list-row is-clickable rel-asset-row");
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
       row.appendChild(glyph("package"));
       const m = el("div", "row-meta");
       const t = el("div", "row-meta-title");
@@ -493,6 +507,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
       subT.textContent = `${fmtBytes(a.size)} · ${a.downloadCount} download${a.downloadCount === 1 ? "" : "s"}`;
       m.append(t, subT);
       row.append(m);
+      const download = (): void => void window.open(a.downloadUrl, "_blank");
       const acts = el("span", "rel-asset-acts");
       const del = el("button", "icon-btn rel-asset-del");
       del.appendChild(glyph("trash"));
@@ -502,12 +517,25 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
         e.stopPropagation();
         void deleteAsset(a.id, a.name, del, reload);
       });
-      const dl = el("span", "gh-adds");
+      const dl = el("button", "icon-btn rel-asset-dl");
       dl.appendChild(glyph("cloud-download"));
+      dl.title = `Download ${a.name}`;
+      dl.setAttribute("aria-label", dl.title);
+      dl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        download();
+      });
       acts.append(del, dl);
       row.appendChild(acts);
+      row.setAttribute("aria-label", `Download ${a.name}`);
       row.title = `Download ${a.name}`;
-      row.addEventListener("click", () => window.open(a.downloadUrl, "_blank"));
+      row.addEventListener("click", download);
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          download();
+        }
+      });
       list.appendChild(row);
     }
     main.appendChild(list);

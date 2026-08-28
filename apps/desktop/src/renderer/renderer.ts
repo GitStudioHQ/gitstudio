@@ -64,6 +64,7 @@ import {
 } from "./ui";
 import type { MenuItem } from "./ui";
 import { dismissLayers } from "./overlays";
+import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { openBranchPeek, openRefPeek, openStashPeek } from "./peeks";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu } from "./contextMenu";
@@ -513,6 +514,9 @@ class App {
     // Namespace (and wipe) the SWR cache so the previous repo's branches/status/
     // graph can never bleed into this one.
     setCacheScope(info.root);
+    // A different repo makes every remembered row meaningless — issue #31 in
+    // one repo is not issue #31 in another.
+    clearFocusReturn();
     // A half-written commit message belongs to the repo it was typed in.
     this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [] };
     // Drop the previous repo's graph mount so a refresh from a non-graph view
@@ -879,6 +883,9 @@ class App {
     // menu used to survive navigation and hover over the next view, filtering
     // a list that was no longer on screen.
     dismissLayers();
+    // Which list a row belongs to, so Escaping out of a detail can put the
+    // keyboard back on the row you opened instead of on <body>.
+    setFocusScope(id);
     // Deep-linking an item must rebuild the section so it can select that item —
     // never restore a stale cached view (which wouldn't have it open). The ONE
     // exception: a sha-only graph reveal, which works against the live

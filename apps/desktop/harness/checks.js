@@ -49,6 +49,30 @@
       c.eq(text(".gh-head-count"), "8", "badge with no filter");
       c.ok(!text(".gh-head-count").includes("of"), "unfiltered badge must not say 'of'");
     },
+    /**
+     * The same rule as count-badge-filtered, stated as a PROPERTY so it can run
+     * on any list rather than only the one whose fixture numbers were baked in.
+     * Actions and Releases both kept advertising the unfiltered total directly
+     * above a "No matching …" empty state.
+     */
+    "count-badge-tracks-the-filter": (f) => {
+      const c = check(f);
+      const badge = text(".gh-head-count");
+      const shown = $$(".sec-row[data-num]").length;
+      c.ok(!!badge, "the header shows a count");
+      const m = /^(\d[\d,]*)(?:\s+of\s+(\d[\d,]*))?$/.exec(badge);
+      c.ok(!!m, `the badge reads "N" or "N of M" (got "${badge}")`);
+      if (!m) return;
+      const n = Number(m[1].replace(/,/g, ""));
+      c.eq(n, shown, `the badge counts the rows actually rendered (${badge} vs ${shown} rows)`);
+      if (shown === 0) {
+        c.ok(
+          !!m[2],
+          `an empty filtered list must say "0 of N", not the pre-filter total ("${badge}")`,
+        );
+        c.ok(!!$(".list-empty"), "and show an empty state");
+      }
+    },
 
     // ── overlays do not outlive the view that opened them ────────────────────
     "menu-dismissed-on-route": (f) => {
@@ -1215,6 +1239,151 @@
       // floor every time, and a width you dragged to never came back.
       const w = Math.round(d.getBoundingClientRect().width);
       c.ok(w > 320, `the column opens at its default, not its floor (got ${w}px)`);
+    },
+
+    // ── the keyboard follows you ────────────────────────────────────────────
+    "focus-follows-you-into-a-detail-and-back": async (f) => {
+      const c = check(f);
+      const rows = $$(".sec-row[data-num]");
+      c.ok(rows.length >= 3, `the list renders rows (${rows.length})`);
+      if (rows.length < 3) return;
+      rows[2].focus();
+      const opened = document.activeElement?.getAttribute("data-num");
+      c.ok(!!opened, "a row can take focus");
+      rows[2].click();
+      // Wait for the page rather than guessing: a PR detail loads more than an
+      // issue and a fixed delay made this pass or fail on timing.
+      for (let i = 0; i < 80 && !$(".det-view"); i++) await settle(50);
+      // …and then for focus to actually move: `focusNewPage` waits for the page
+      // to be attached AND titled, which on a loaded machine takes longer than
+      // any fixed delay would guess.
+      for (let i = 0; i < 60; i++) {
+        const a = document.activeElement;
+        if (a && a !== document.body && a.closest?.(".det-view")) break;
+        await settle(50);
+      }
+      // Arrive: the keyboard belongs to the page that just replaced the list.
+      // It used to land on <body>, so the next Tab started above the nav rail.
+      const active = document.activeElement;
+      c.ok(!!active && active !== document.body, "focus is not on <body> after opening");
+      c.ok(
+        !!active?.closest?.(".det-view"),
+        `focus is inside the detail page (was ${active?.tagName}.${String(active?.className).slice(0, 30)})`,
+      );
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+      for (let i = 0; i < 40 && !$(".sec-row[data-num]"); i++) await settle(50);
+      await settle(400);
+      // Return: on the row you opened, not nowhere — so arrowing continues
+      // from where you were reading instead of from the top.
+      c.ok($$(".sec-row").length > 0, "the list came back");
+      // Give the armed restore a moment: it polls for the row on animation
+      // frames, and the list it is waiting for renders asynchronously.
+      for (let i = 0; i < 30; i++) {
+        if (document.activeElement?.getAttribute("data-num") === opened) break;
+        await settle(50);
+      }
+      const back = document.activeElement;
+      c.eq(
+        back?.getAttribute("data-num"),
+        opened,
+        `focus returns to the row you opened (landed on ${back?.tagName}.${String(back?.className).slice(0, 30)})`,
+      );
+    },
+
+    // ── nothing interactive nests inside anything interactive ───────────────
+    "no-nested-interactive-elements": (f) => {
+      const c = check(f);
+      // A real <button> or <a> containing another interactive element is
+      // invalid HTML with real consequences: the outer element's accessible
+      // name swallows the inner one, assistive tech cannot reach the inner
+      // control, and one click can dispatch on both.
+      //
+      // Scoped deliberately to REAL elements. The app also has a
+      // `.list-row.is-clickable[role=button]` pattern — a clickable row with a
+      // hover action cluster inside — which is non-conformant ARIA but is a
+      // considered, guarded convention here (every inner handler stops
+      // propagation) and is used by most list surfaces. Flagging it would
+      // demand a redesign of every list, not a bug fix; the unambiguous case
+      // is the one that gets caught.
+      const bad = [];
+      for (const outer of $$("button, a[href]")) {
+        for (const inner of $$('button, [role="button"], a[href], input, select, textarea', outer)) {
+          if (inner === outer) continue;
+          bad.push(
+            `${outer.tagName.toLowerCase()}.${String(outer.className).split(" ")[0]} > ${inner.tagName.toLowerCase()}.${String(inner.className).split(" ")[0]}`,
+          );
+        }
+      }
+      c.eq(bad.length, 0, `nested interactives: ${[...new Set(bad)].slice(0, 5).join(", ")}`);
+    },
+
+    // ── a page fits the window it is drawn in ───────────────────────────────
+    "pr-files-fits-the-window": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const sc = $(".det-scroll");
+      c.ok(!!sc, "the detail scroller exists");
+      if (!sc) return;
+      // The column used to grow to its content (1787px into an 804px port)
+      // inside a container whose overflow is hidden — no scrollbar, no wheel.
+      // Everything below the diff was permanently unreachable.
+      c.ok(
+        sc.scrollHeight <= sc.clientHeight + 2,
+        `nothing is clipped away (${sc.scrollHeight} into ${sc.clientHeight})`,
+      );
+      const threads = $(".pr-threads");
+      if (threads) {
+        const t = threads.getBoundingClientRect();
+        c.ok(t.top < innerHeight, `the review panel is on screen (top ${Math.round(t.top)} of ${innerHeight})`);
+      }
+      const list = $(".pr-files-list");
+      if (list) {
+        c.ok(
+          list.getBoundingClientRect().bottom <= innerHeight + 2,
+          "and the file list ends inside the window, so its own scrollbar works",
+        );
+      }
+    },
+
+    // ── native controls follow the app's theme, not the OS ──────────────────
+    "native-controls-follow-the-theme": (f) => {
+      const c = check(f);
+      const scheme = getComputedStyle(document.body).colorScheme;
+      // Without this a checkbox rendered in the OS palette: a solid white block
+      // on a near-black card, with UNCHECKED reading brighter than checked.
+      c.ok(
+        scheme === "dark" || scheme === "light",
+        `the body declares a single color-scheme (got "${scheme}")`,
+      );
+      for (const input of $$('input[type="checkbox"], input[type="radio"]')) {
+        const s = getComputedStyle(input).colorScheme;
+        if (s === "normal" || getComputedStyle(input).appearance === "none") continue;
+        c.eq(s, scheme, "a native control inherits the app's scheme");
+      }
+    },
+
+    // ── hover actions can actually be revealed ──────────────────────────────
+    "hover-actions-are-reachable": async (f) => {
+      const c = check(f);
+      const acts = $$(".row-actions").filter((a) => a.querySelector("button"));
+      c.ok(acts.length > 0, "the view has hover actions");
+      for (const a of acts.slice(0, 4)) {
+        const row = a.parentElement;
+        const btn = a.querySelector("button");
+        if (!btn || !row) continue;
+        // Transitions do not advance under a virtual-time budget, so read the
+        // resolved value rather than an interpolated one.
+        a.style.transition = "none";
+        btn.focus();
+        await settle(60);
+        const o = Number(getComputedStyle(a).opacity);
+        c.ok(
+          o > 0.9,
+          `focusing "${btn.textContent.trim().slice(0, 16)}" must reveal its row's actions (opacity ${o}) — invisible controls that still take clicks and Tab stops`,
+        );
+      }
     },
 
     // ── settings ─────────────────────────────────────────────────────────────
