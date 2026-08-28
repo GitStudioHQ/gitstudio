@@ -129,9 +129,14 @@ const CASES = [
   ["identity-chips-are-not-dead", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
   ["branch-switcher-checks-out", "code~click:.topbar-branch"],
   ["staging-keeps-the-open-file", "changes~text:app.css"],
+  ["repo-manager-opens-from-the-repo-chip", "code~click:.topbar-switch~text:Manage%20repositories"],
+  ["settings-holds-preferences-not-repositories", "code~text:Settings"],
+  ["landing-is-the-working-tree", "changes"],
   ["settings-checkbox-styled", "code~text:Settings"],
-  ["settings-local-copies", "code~text:Settings~scroll:.settings-copies"],
-  ["settings-copy-actions-one-shape", "code~text:Settings~scroll:.settings-copies"],
+  // These two moved with the list they assert about: the clone manager is its
+  // own surface now, not a card in Settings.
+  ["settings-local-copies", "code~click:.topbar-switch~text:Manage%20repositories"],
+  ["settings-copy-actions-one-shape", "code~click:.topbar-switch~text:Manage%20repositories"],
   ["settings-icon-preview-is-not-a-control", "code~text:Settings"],
 ];
 

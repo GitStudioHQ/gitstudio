@@ -1478,6 +1478,47 @@
       c.eq(still?.title, path, "and it is the same file you had open");
     },
 
+    // ── repositories are an object you manage, not a preference ─────────────
+    "repo-manager-opens-from-the-repo-chip": (f) => {
+      const c = check(f);
+      // The clone list used to live 480px down the Settings page, with Open,
+      // Reveal in Finder and Delete from disk on each row. Choosing a
+      // repository is the most frequent thing anyone does in a Git client, and
+      // nothing on a preferences page should be able to Trash 2GB of work.
+      c.ok(!!$(".repo-manager-card"), "the repository manager opens as its own surface");
+      c.eq(text(".modal-title"), "Repositories", "and says what it is");
+      c.ok($$(".settings-copy").length >= 3, `it lists the clones (${$$(".settings-copy").length})`);
+      const acts = $$(".repo-manager-card .modal-actions button").map((b) => b.textContent.trim());
+      c.ok(acts.some((a) => /Open repository/.test(a)), "with a way to open one");
+      c.ok(acts.some((a) => /Clone repository/.test(a)), "and a way to get another");
+    },
+    "settings-holds-preferences-not-repositories": (f) => {
+      const c = check(f);
+      c.eq($$(".settings-copy").length, 0, "Settings no longer lists every clone on the machine");
+      c.ok(
+        $$("button").some((b) => /Manage repositories/.test(b.textContent || "")),
+        "but still points at where they live",
+      );
+      // The actual preference — where clones land — stays.
+      c.ok(
+        $$(".settings-field-label").some((n) => /clone folder/i.test(n.textContent || "")),
+        "and keeps the clone-folder preference",
+      );
+    },
+
+    // ── the app does not open on a file tree ────────────────────────────────
+    "landing-is-the-working-tree": (f) => {
+      const c = check(f);
+      const rail = $$(".nav-item").map((n) => (n.textContent || "").trim());
+      c.ok(rail.length > 6, `the rail renders (${rail.length})`);
+      // Code — a read-only file tree of HEAD — held the first slot and was the
+      // default view, in an app whose user already has those files open in an
+      // editor. It is the one view nothing else navigates to.
+      c.eq(rail[0], "Changes", `the first destination is the working tree (got "${rail[0]}")`);
+      c.ok(rail.indexOf("Code") > 2, `Code is demoted, not removed (position ${rail.indexOf("Code")})`);
+      c.eq(text(".nav-item.active"), "Changes", "and that is where the app opens");
+    },
+
     // ── settings ─────────────────────────────────────────────────────────────
     "settings-has-a-rhythm": (f) => {
       const c = check(f);

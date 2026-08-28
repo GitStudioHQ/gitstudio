@@ -2870,6 +2870,12 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
 .settings-card-body > * + .settings-check,
 .settings-card-body > * + .settings-actions,
 .settings-card-body > * + .settings-logo-row,
+/* The repository manager: the clone list as its own surface rather than a card
+   buried in preferences. Wide, because these rows carry a name, an owner, a
+   badge, a full path and an action cluster. */
+.repo-manager-card { width: min(var(--modal-lg), 92vw); }
+.repo-manager-card .settings-copies { max-height: min(58vh, 520px); overflow-y: auto; }
+.repo-manager-card .settings-sub { margin-bottom: var(--sp-2); }
 .settings-card-body > * + .settings-copies,
 .settings-card-body > * + .settings-row,
 .settings-card-body > * + .btn,

@@ -149,7 +149,19 @@ class App {
   private refs: RefInfo[] = [];
   private viewHost!: HTMLElement;
   private navButtons: HTMLElement[] = [];
-  private currentView = "code";
+  /**
+   * The view the app opens on before any preference is restored.
+   *
+   * Not "code". A desktop Git client's first screen should answer a question
+   * you actually have when you open it — what have I changed, what is staged,
+   * what am I about to commit — and Changes is the surface that does. The file
+   * tree answered none of them, and the files are already open in the editor
+   * the user just came from.
+   *
+   * A returning user does not see this at all: `prefs.currentView` puts you
+   * back on the surface you were last working in.
+   */
+  private currentView = "changes";
   /** Guards re-entrant disk-triggered refreshes (see refreshFromDisk). */
   private refreshingFromDisk = false;
   /** "split" (staged/unstaged groups) or "checkboxes" (one ticked list) — issue #16. */
@@ -579,7 +591,17 @@ class App {
     /** The label shown on the divider before this item (defaults to "GitHub"). */
     dividerLabel?: string;
   }> = [
-    { id: "code", label: "Code", icon: "code" },
+    // ORDER IS DAILY USE, and the first entry is the one the app opens on when
+    // it has no memory of where you were.
+    //
+    // Code — a read-only file tree of HEAD — held that slot, and it is the one
+    // view in this list nothing else in the app ever navigates to: the only two
+    // callers of routeView("code") are its own folder hop and the unknown-view
+    // fallback. It is also the view a user least needs from a Git client, since
+    // the files are already open in their editor. Landing there answered none
+    // of the questions you open this app with. It keeps its route and its seat;
+    // it just stops being the front door.
+    //
     // Five rail entries — Changes, Branches, Rebase, Compare, Pull Requests —
     // used to be five variations on the same fork-with-two-nodes motif, which
     // at 16px in a single column is no icon at all. `git-branch`, `git-compare`
@@ -591,10 +613,11 @@ class App {
     { id: "changes", label: "Changes", icon: "diff-multiple" },
     { id: "graph", label: "Commits", icon: "git-commit" },
     { id: "branches", label: "Branches", icon: "git-branch" },
+    { id: "compare", label: "Compare", icon: "git-compare" },
     // Rebase here IS an ordered list of commits you reorder and replay — a
     // truer picture than `git-merge`, which is a different operation besides.
     { id: "rebase", label: "Rebase", icon: "list-ordered" },
-    { id: "compare", label: "Compare", icon: "git-compare" },
+    { id: "code", label: "Code", icon: "code" },
     // Inbox first in the GitHub group — the "what needs me" surface (Linear's
     // Inbox translated): review requests, mentions, assignments, CI failures.
     // The top-bar bell stays for a quick glance; this is the full triage page.
@@ -2290,11 +2313,44 @@ class App {
         rowValue.textContent = "Unavailable";
       });
 
-    // ── the local-copies manager ──────────────────────────────────────────
-    const listHead = el("div", "settings-field-label settings-copies-head");
-    listHead.textContent = "On this machine";
-    const listSub = el("div", "settings-sub");
-    listSub.textContent =
+    // The list of every clone on this machine used to live here, 480px down a
+    // preferences page — with Open, Reveal in Finder and Delete from disk on
+    // each row. Choosing which repository to work on is the most frequent thing
+    // anyone does in a Git client and the one thing that must happen before
+    // anything else works; burying it under "Settings" put it behind the least
+    // likely door. And nothing on a preferences page should be able to move
+    // 2GB of someone's work to the Trash: Settings is where reversible knobs
+    // live. It has its own surface now, reachable from the repository chip in
+    // the top bar (and from ⌘K). What stays here is the actual preference —
+    // where clones land — plus a way in.
+    const manageRow = el("div", "settings-clonedir-row");
+    const manageText = el("div", "settings-clonedir-text");
+    const manageLabel = el("div", "settings-field-label");
+    manageLabel.textContent = "On this machine";
+    const manageSub = el("div", "settings-sub");
+    manageSub.textContent = "Open, reveal or remove any clone GitStudio knows about.";
+    manageText.append(manageLabel, manageSub);
+    const manageBtn = el("button", "mini-btn") as HTMLButtonElement;
+    manageBtn.append(glyph("repo"), span("Manage repositories…"));
+    manageBtn.addEventListener("click", () => this.openRepoManager());
+    manageRow.append(manageText, manageBtn);
+
+    body.append(sub, row, askRow, manageRow);
+    return card;
+  }
+
+  /**
+   * Every clone on this machine, as a surface of its own.
+   *
+   * Moved out of Settings wholesale — the same rows, the same actions — so that
+   * picking a repository is one gesture from the repository chip instead of a
+   * scroll through preferences, and so that "Delete from disk" sits in a file
+   * management context rather than beside the theme switcher.
+   */
+  private openRepoManager(): void {
+    const body = el("div", "repo-manager");
+    const sub = el("div", "settings-sub");
+    sub.textContent =
       "Every clone GitStudio knows about — the ones in your clone folder plus anything you've opened.";
     const list = el("div", "settings-copies");
     list.appendChild(loadingState("Looking for local copies…"));
@@ -2302,27 +2358,60 @@ class App {
     const renderCopies = (copies: LocalCopy[]): void => {
       list.replaceChildren();
       if (!copies.length) {
-        const none = el("div", "settings-sub");
-        none.textContent = "No local copies yet — open or clone a repository and it'll show up here.";
-        list.appendChild(none);
+        list.appendChild(
+          emptyState(
+            "No local copies yet",
+            "Open or clone a repository and it will show up here.",
+            {
+              icon: "repo",
+              action: {
+                label: "Clone repository…",
+                icon: "cloud-download",
+                onClick: () => openCloneDialog((root) => void this.openPath(root)),
+              },
+            },
+          ),
+        );
         return;
       }
       for (const c of copies) list.appendChild(this.localCopyRow(c, renderCopies));
     };
-    const loadCopies = (): void => {
-      void host
-        .invoke("repos:local", undefined)
-        .then(renderCopies)
-        .catch((e) => {
-          list.replaceChildren(
-            emptyState("Couldn't list local copies", cleanErr(e) || "Try again in a moment."),
-          );
-        });
-    };
-    loadCopies();
+    void host
+      .invoke("repos:local", undefined)
+      .then(renderCopies)
+      .catch((e) => {
+        list.replaceChildren(
+          emptyState("Couldn't list local copies", cleanErr(e) || "Try again in a moment."),
+        );
+      });
 
-    body.append(sub, row, askRow, listHead, listSub, list);
-    return card;
+    openModal((close) => {
+      const card = el("div", "modal-card repo-manager-card");
+      const h = el("div", "modal-title");
+      h.textContent = "Repositories";
+      card.append(h, sub, list);
+
+      const actions = el("div", "modal-actions");
+      const openBtn = el("button", "mini-btn") as HTMLButtonElement;
+      openBtn.append(glyph("folder-opened"), span("Open repository…"));
+      openBtn.addEventListener("click", () => {
+        close();
+        void this.openRepo();
+      });
+      const cloneBtn = el("button", "btn btn-primary") as HTMLButtonElement;
+      cloneBtn.append(glyph("cloud-download"), span("Clone repository…"));
+      cloneBtn.addEventListener("click", () => {
+        close();
+        openCloneDialog((root) => void this.openPath(root));
+      });
+      const doneBtn = el("button", "mini-btn") as HTMLButtonElement;
+      doneBtn.textContent = "Done";
+      doneBtn.addEventListener("click", close);
+      actions.append(openBtn, cloneBtn, doneBtn);
+      card.appendChild(actions);
+
+      return { card, focusEl: cloneBtn, label: "Repositories", onClose: () => {} };
+    });
   }
 
   /** One row in the local-copies manager: what it is, where it lives, and the
@@ -4500,7 +4589,7 @@ class App {
    *  advertises a finished feature as unbuilt. */
   private showPlaceholderView(id: string): void {
     this.viewHost.replaceChildren(
-      errorState("View unavailable", `“${id}” isn’t a known view.`, () => this.routeView("code", true)),
+      errorState("View unavailable", `“${id}” isn’t a known view.`, () => this.routeView("changes", true)),
     );
   }
 
@@ -5261,7 +5350,8 @@ class App {
     items.push({
       label: "Manage repositories…",
       icon: "repo",
-      onClick: () => this.routeView("settings", true),
+      title: "Every clone on this machine",
+      onClick: () => this.openRepoManager(),
     });
     items.push({
       // Was "Back to the main menu" — a name for a destination that does not
