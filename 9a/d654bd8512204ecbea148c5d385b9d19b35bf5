@@ -1,0 +1,88 @@
+packages/webview-ui/src/graph/refLayout.ts
+  s_26f5e669d3043c::t_5495d1609f615f 135-137,139-157,167-168,170,181
+  s_26f5e669d3043c::t_ae935459246ffb 121-134,138,165-166,171-180
+apps/desktop/src/renderer/contextMenu.ts
+  s_26f5e669d3043c::t_625124883db175 65
+  s_26f5e669d3043c::t_de6faca537f5c4 128-129
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_a93516a8325da5 85,96
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_9e4058a8b11b8d 8615-8620
+  s_26f5e669d3043c::t_71d6dffca2b8d0 168-196
+  s_26f5e669d3043c::t_ba700bc05b84b6 579,635,642,651,773,901,975,1178,2207,2609,4152,4403-4412,4839,6335,6499,8121
+  s_26f5e669d3043c::t_1d578b66657f28 4388-4396
+  s_26f5e669d3043c::t_22fe3b254e1ea1 4420
+  s_26f5e669d3043c::t_ff2273955be391 197,5797-5815
+  s_26f5e669d3043c::t_031c6e35aaaa3b 149-167,198,2311-2312,3012-3021,3027-3032,3058,3472,4146-4149,4151,4153,4279,4414-4419,4421,4444,4579,5693,6307-6308,6638,6761,7483,7666,7729,8510,8810
+packages/webview-ui/src/styles/hostTokens.ts
+  s_26f5e669d3043c::t_70429a7472b238 41
+  s_26f5e669d3043c::t_f748d77a5960e2 33-40
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_d71f32f5ef1d82 253-258,261,263
+  s_26f5e669d3043c::t_904aaf01cbfa14 610-618,620-625
+apps/desktop/src/renderer/views/gists.ts
+  s_26f5e669d3043c::t_bbf02275ea7407 9,349
+apps/desktop/src/renderer/repoBrowser.ts
+  s_26f5e669d3043c::t_bbf02275ea7407 10,214
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_0caf4e365c99fe 824,827,2025-2035,2056-2084,2088-2089,2091,2101,2104-2123,2127,2135,2139,2142-2143,2151,2154-2155
+  s_26f5e669d3043c::t_9f2d30d2a641ae 1990-2024,2036-2055,2085-2086,2124,2156
+  s_26f5e669d3043c::t_d6afb97cac29c1 1677-1705
+  s_26f5e669d3043c::t_01318c3dae6c6a 820-823,825-826,1981-1989,2087,2090,2092-2100,2102-2103,2125-2126,2128-2134,2136-2138,2140-2141,2144-2150,2152-2153,2157
+apps/desktop/test/cssTokens.test.ts
+  s_26f5e669d3043c::t_5d9b7dc088f8af 42-55,57-61,63-75
+apps/desktop/src/renderer/logView.ts
+  s_26f5e669d3043c::t_6642c5bab7418d 103-105
+  s_26f5e669d3043c::t_9e4058a8b11b8d 200-206
+apps/desktop/src/renderer/views/exploreRepo.ts
+  s_26f5e669d3043c::t_bbf02275ea7407 15,327
+packages/webview-ui/src/styles/tokens.css
+  s_26f5e669d3043c::t_f748d77a5960e2 103-111
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_3c1844873d10b5 777-780
+  s_26f5e669d3043c::t_1bf54e3f7394f2 5,437,656-661,697-733,781,880
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_625124883db175 7,110
+apps/desktop/src/renderer/textFit.ts
+  s_26f5e669d3043c::t_bbf02275ea7407 31-48
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_d6afb97cac29c1 101
+  s_26f5e669d3043c::t_9f2d30d2a641ae 109-111
+  s_26f5e669d3043c::t_0caf4e365c99fe 112-117
+  s_26f5e669d3043c::t_fe676fa5cb8563 118-120
+apps/desktop/src/renderer/peek.ts
+  s_26f5e669d3043c::t_625124883db175 10,149-152,154
+apps/desktop/test/textFit.test.ts
+  s_26f5e669d3043c::t_9017d2ba2e0d7b 1-31
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_5495d1609f615f 29,2039
+  s_26f5e669d3043c::t_65b3499e6d7db2 2034-2038
+  s_26f5e669d3043c::t_86c9467c13ef69 76-90
+  s_26f5e669d3043c::t_7b1e3a2483b0dc 91
+apps/desktop/src/renderer/ui.ts
+  s_26f5e669d3043c::t_625124883db175 798,822-825
+  s_26f5e669d3043c::t_b2e5f8b3963081 139-140,142-146,149-184,339,826,909-914
+apps/desktop/src/renderer/views/actions.ts
+  s_26f5e669d3043c::t_8fbe6a4f9bb3e4 1063-1069
+apps/desktop/src/renderer/overlays.ts
+  s_26f5e669d3043c::t_625124883db175 17-20,24,36-39,41,98-123
+  s_26f5e669d3043c::t_d8d5fd0f6872c2 124
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_bcf8cf5eee0b17 45,3130-3132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9ad654bd8512204ecbea148c5d385b9d19b35bf5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
