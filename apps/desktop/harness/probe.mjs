@@ -104,7 +104,10 @@ execFile(
     "--dump-dom",
     url,
   ],
-  { maxBuffer: 64 * 1024 * 1024 },
+  // Same guard check.mjs carries: a page that never lets virtual time run out
+  // hangs headless Chrome forever, and a probe that never returns is worse than
+  // one that fails — it hangs whatever asked the question.
+  { maxBuffer: 64 * 1024 * 1024, timeout: 90_000, killSignal: "SIGKILL" },
   (err, stdout) => {
     if (err && !stdout) {
       console.error("chrome failed:", err.message);
