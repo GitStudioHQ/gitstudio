@@ -25,7 +25,7 @@ import {
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
 import { toast } from "../dialogs";
-import { holdBackground } from "../overlays";
+import { holdBackground, registerLayer } from "../overlays";
 import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
 import { renderIssueDetailInto } from "./issues";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
@@ -398,14 +398,23 @@ function openIssueDrawer(number: number, nav: SectionNav): void {
   document.body.appendChild(scrim);
   const releaseBackground = holdBackground(scrim);
 
-  const dispose = (): void => {
+  let disposed = false;
+  const dispose = (restoreFocus = true): void => {
+    if (disposed) return;
+    disposed = true;
+    layer.release();
     releaseBackground();
     document.removeEventListener("keydown", onKey, true);
     scrim.classList.remove("is-open");
     // Let the slide-out play, then remove; restore focus to the card.
     window.setTimeout(() => scrim.remove(), 200);
-    opener?.focus?.();
+    if (restoreFocus) opener?.focus?.();
   };
+  // A route change dismisses this drawer like every other floating layer. It
+  // was the one surface that never registered, so navigating away left it
+  // hanging over the next view — and now that it makes the page behind it
+  // `inert`, a drawer that outlived its own view would have frozen the app.
+  const layer = registerLayer(() => dispose(false));
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -416,7 +425,7 @@ function openIssueDrawer(number: number, nav: SectionNav): void {
   scrim.addEventListener("mousedown", (e) => {
     if (e.target === scrim) dispose();
   });
-  closeBtn.addEventListener("click", dispose);
+  closeBtn.addEventListener("click", () => dispose());
   openFull.addEventListener("click", () => {
     dispose();
     nav("issues", { number });

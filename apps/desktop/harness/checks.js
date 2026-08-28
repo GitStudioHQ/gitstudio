@@ -1566,6 +1566,40 @@
     // ~17px the instant you chose — which shoved every row below it, including
     // the next row's action dropdown: the very control you reach for next moved
     // before your hand got there.
+    // A modal surface has to actually HOLD the page behind it. The Projects
+    // drawer set aria-modal="true" — a claim, not a mechanism — and every card
+    // on the board behind it stayed in the tab order, so Tab walked straight
+    // out of the dialog into a board the user could not see.
+    "drawer-holds-the-board-behind-it": async (f) => {
+      const c = check(f);
+      const card = $$(".gh-card").find((x) => $$("button", x).length);
+      c.ok(!!card, "the board has cards");
+      if (!card) return;
+      card.click();
+      await settle(500);
+      const scrim = $(".gh-drawer-scrim");
+      c.ok(!!scrim, "clicking a card opens the drawer");
+      if (!scrim) return;
+      const drawer = $(".gh-drawer");
+      c.eq(drawer && drawer.getAttribute("aria-modal"), "true", "it claims to be modal");
+      // Everything that is NOT the drawer must be inert, so the claim is true.
+      const outside = [...document.body.children].filter((el) => el !== scrim && !el.contains(scrim));
+      c.ok(outside.length > 0, "there is a page behind it");
+      const live = outside.filter((el) => !el.hasAttribute("inert"));
+      c.eq(live.length, 0, `nothing behind the drawer is still reachable (${live.length} live)`);
+      const focused = document.activeElement;
+      c.ok(!!focused && scrim.contains(focused), "focus starts inside the drawer");
+      // …and closing it hands the page back. An `inert` that outlives its
+      // dialog freezes the whole app.
+      const close = $(".gh-drawer-close");
+      c.ok(!!close, "the drawer has a close button");
+      if (!close) return;
+      close.click();
+      await settle(400);
+      const stuck = [...document.body.children].filter((el) => el.hasAttribute("inert"));
+      c.eq(stuck.length, 0, `closing releases the page (${stuck.length} still inert)`);
+    },
+
     "rebase-actions-do-not-move-the-list": async (f) => {
       const c = check(f);
       const rows = $$(".rb-row");

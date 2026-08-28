@@ -93,6 +93,7 @@ const CASES = [
   ["explore-code-hit-is-one-block", "explore~type:git~key:Enter~click:.explore-tab%3Anth-of-type(4)"],
   ["graph-change-bars-share-a-left-edge", "graph"],
   ["row-meta-columns-align", "mywork"],
+  ["drawer-holds-the-board-behind-it", "projects"],
   ["rebase-actions-do-not-move-the-list", "rebase"],
   ["file-rows-show-the-whole-name", "changes"],
   ["file-rows-show-the-whole-name", "changes", { extra: "staging=checkboxes" }],
