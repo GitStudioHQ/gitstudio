@@ -1,0 +1,50 @@
+apps/desktop/src/renderer/focusReturn.ts
+  s_26f5e669d3043c::t_b3cef14635225a 1-37,39-40,53-72,74-91,93-105,109-111,113-126,139,143,148-153,156-162
+  s_26f5e669d3043c::t_cc094bda7fa482 38,41-52,73,92,106-108,112,138,147,155
+  s_26f5e669d3043c::t_08930d84ef915e 127-137,140-142,144-146,154
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_18535c5a92b282 21-23
+  s_26f5e669d3043c::t_3505943bb38f19 116-123
+  s_26f5e669d3043c::t_d35742fce89f4c 124-127
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_6d5919cea44459 67,517-519,886-888
+apps/desktop/src/renderer/views/common.ts
+  s_26f5e669d3043c::t_6d5919cea44459 10,743-747
+apps/desktop/harness/gen.sh
+  s_26f5e669d3043c::t_18535c5a92b282 4-9,13
+apps/desktop/harness/probe.mjs
+  s_26f5e669d3043c::t_18535c5a92b282 34-36
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_4065096c2da021 1254-1255,1276-1277,1298-1309,1311-1312
+  s_26f5e669d3043c::t_3505943bb38f19 59,69,72,74-75,1244-1253,1264-1275,1278-1288,1290,1292-1297,1310,1313-1388
+  s_26f5e669d3043c::t_0d8c5d9bb3da02 52-58,60-68,70-71,73,1256-1263,1289,1291
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_bf6b25037145b8 4353-4356
+  s_26f5e669d3043c::t_f3e12367e9de42 5078-5082,5084-5089,5101-5103
+  s_26f5e669d3043c::t_9bce0f27f8d4eb 77-83,146,5864-5869,7861,8140-8148
+apps/desktop/src/renderer/terminalDock.ts
+  s_26f5e669d3043c::t_f3e12367e9de42 334-340,344,348-350
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_18535c5a92b282 25
+apps/desktop/src/renderer/views/releases.ts
+  s_26f5e669d3043c::t_e196f94630e7ac 493-501,510,520,522-527,530,532-538
+  s_26f5e669d3043c::t_330498507615b8 164-168,224-226,239
+apps/desktop/src/renderer/views/actions.ts
+  s_26f5e669d3043c::t_9886b69ad44030 391-393,413-415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "71d9e77d1c4dd4d864ee46250b788ba65cdf3ca9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
