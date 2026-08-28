@@ -267,13 +267,26 @@ function buildMenu(): void {
         { label: "Open Recent", submenu: recentSubmenu },
         { type: "separator" },
         {
+          label: "Clone repository…",
+          accelerator: "CmdOrCtrl+Shift+O",
+          click: () => send("menu:command", { command: "cloneRepo" }),
+        },
+        { type: "separator" },
+        {
           label: "Refresh",
-          accelerator: "CmdOrCtrl+R",
+          // NOT CmdOrCtrl+R: the View menu's `reload` role claims that by
+          // default, so two items were bound to the same chord and which one
+          // fired was down to menu order rather than intent.
+          accelerator: "CmdOrCtrl+Shift+R",
           click: () => send("menu:command", { command: "refresh" }),
         },
         {
-          label: "Close Repository",
-          accelerator: "CmdOrCtrl+W",
+          label: "Close repository",
+          // NOT CmdOrCtrl+W. On macOS that is the most reflexive shortcut
+          // there is and it means "close this window"; here it threw you back
+          // to the welcome screen with the window still open. The Window menu
+          // owns ⌘W now, and closing the repo is a deliberate act.
+          accelerator: "CmdOrCtrl+Shift+W",
           click: () => closeRepo(),
         },
         ...(isMac
@@ -297,17 +310,38 @@ function buildMenu(): void {
       ],
     },
     {
+      // The menu named "View" could not reach a single one of the app's
+      // eighteen views: it was Electron's stock template verbatim, so the only
+      // things a user could "view" were the zoom level and the dev tools.
       label: "View",
       submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
+        {
+          label: "Toggle Sidebar",
+          accelerator: "CmdOrCtrl+B",
+          click: () => send("menu:command", { command: "toggleSidebar" }),
+        },
+        {
+          label: "Toggle Terminal",
+          accelerator: "CmdOrCtrl+`",
+          click: () => send("menu:command", { command: "toggleTerminal" }),
+        },
+        {
+          label: "Command Palette…",
+          accelerator: "CmdOrCtrl+K",
+          click: () => send("menu:command", { command: "palette" }),
+        },
         { type: "separator" },
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
         { type: "separator" },
         { role: "togglefullscreen" },
+        { type: "separator" },
+        // Kept, but where they belong: developer tools, not "views".
+        {
+          label: "Developer",
+          submenu: [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }],
+        },
       ],
     },
     {

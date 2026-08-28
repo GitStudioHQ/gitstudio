@@ -1114,6 +1114,30 @@
       if (push) c.eq(push.disabled, false, "and so is Commit & Push — both hang off the same sync");
       c.eq(commit.title, "", "with no stale 'write a message first' tooltip");
     },
+    "amend-off-restores-the-composer": async (f) => {
+      const c = check(f);
+      const toggle = $$(".dc-toggle").find((b) => /Amend/.test(b.textContent || ""));
+      const msg = $(".dc-message");
+      c.ok(!!toggle && !!msg, "the composer renders");
+      if (!toggle || !msg) return;
+      const startLabel = text(".dc-commit-label");
+      c.match(startLabel, /^Commit to /, `it starts naming the branch ("${startLabel}")`);
+      toggle.click();
+      await settle(800);
+      c.eq(text(".dc-commit-label"), "Amend commit", "ticking Amend relabels");
+      c.ok(msg.value.trim().length > 0, "and prefills the last message");
+      toggle.click();
+      await settle(600);
+      // Two separate bugs met here. The label was written from a `curBranch`
+      // captured before HEAD resolved, so un-ticking produced a bare "Commit"
+      // beside a branch line still reading "main". And the prefill was never
+      // withdrawn, leaving the LAST COMMIT'S text in the box with amend off —
+      // a fully armed button about to create a new commit carrying the
+      // previous one's exact message, indistinguishable from something typed.
+      c.eq(text(".dc-commit-label"), startLabel, "un-ticking restores the branch name");
+      c.eq(msg.value, "", "and takes the prefilled message back");
+      c.eq($(".dc-commit").disabled, true, "so committing is unarmed again");
+    },
     "amend-survives-a-repaint": (f) => {
       const c = check(f);
       // Staging a file re-runs showChangesView(), which rebuilds this subtree.
@@ -1401,6 +1425,57 @@
       // It had a pointer cursor and a tooltip saying it would open the account,
       // and clicking it did nothing at all.
       c.ok(before !== after, `clicking it navigates (crumb stayed "${before}")`);
+    },
+
+    // ── the branch switcher switches branches ───────────────────────────────
+    "branch-switcher-checks-out": async (f) => {
+      const c = check(f);
+      const items = $$(".dropdown-item");
+      c.ok(items.length >= 3, `the branch menu opened (${items.length} rows)`);
+      if (items.length < 3) return;
+      // Every row used to call revealInGraph — so clicking a branch under a
+      // chip whose tooltip reads "switch branch" left you on the branch you
+      // were on and dropped you in the Commits view instead. The app's most
+      // load-bearing control did something other than its name, every time.
+      const other = items.find(
+        (i) => /fix\/log-stream/.test(i.textContent || "") && !i.classList.contains("is-current"),
+      );
+      c.ok(!!other, "a branch other than the current one is listed");
+      if (!other) return;
+      c.match(other.title || "", /check out/i, "the row says it will check out");
+      const activeBefore = text(".nav-item.active");
+      other.click();
+      await settle(800);
+      c.ok(
+        document.body.innerHTML.includes("Checked out"),
+        "clicking it actually checks out",
+      );
+      c.eq(
+        text(".nav-item.active"),
+        activeBefore,
+        "and does not navigate you somewhere else while doing it",
+      );
+    },
+
+    // ── staging keeps your place ────────────────────────────────────────────
+    "staging-keeps-the-open-file": async (f) => {
+      const c = check(f);
+      const row = $(".dc-file.active");
+      c.ok(!!row, "a file is selected");
+      if (!row) return;
+      const path = row.title;
+      const btn = row.querySelector(".row-actions button");
+      c.ok(!!btn, "the row offers an action");
+      if (!btn) return;
+      btn.click();
+      await settle(1200);
+      // Every stage / unstage / discard / refresh ends in showChangesView(),
+      // which replaces the whole subtree — so the diff you were reading closed,
+      // the row deselected, and the list jumped to the top. Staging one file in
+      // a list of forty meant finding your place again every single time.
+      const still = $(".dc-file.active");
+      c.ok(!!still, "a file is still selected after the action");
+      c.eq(still?.title, path, "and it is the same file you had open");
     },
 
     // ── settings ─────────────────────────────────────────────────────────────

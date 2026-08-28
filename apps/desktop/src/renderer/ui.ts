@@ -672,6 +672,9 @@ export interface MenuItem {
   separator?: boolean;
   /** A destructive item — reads red, like the danger buttons it replaced. */
   danger?: boolean;
+  /** Hover text. A row that performs a git action should be able to say which
+   *  ("Check out fix/log-stream") without relying on its label alone. */
+  title?: string;
   /** Don't close the menu on click — for in-place live actions (e.g. Fetch,
    *  which spins its own icon and refreshes the view behind the open menu). */
   keepOpen?: boolean;
@@ -785,6 +788,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     row.setAttribute("role", "menuitem");
     row.tabIndex = -1;
     if (it.disabled) row.setAttribute("aria-disabled", "true");
+    if (it.title) row.title = it.title;
     if (it.current) row.setAttribute("aria-current", "true");
     if (it.icon) row.appendChild(glyph(it.icon));
     else if (it.iconEl) row.appendChild(it.iconEl);

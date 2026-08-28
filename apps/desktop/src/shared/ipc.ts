@@ -1518,7 +1518,16 @@ export interface IpcEvents {
   /** A message from the main process to show in-app (never a native alert). */
   "app:notice": { kind: "info" | "warn" | "error"; message: string };
   /** A menu item asks the renderer to do something it owns. */
-  "menu:command": { command: "openRepo" | "refresh" | "closeRepo" | "toggleTerminal" | "cloneRepo" };
+  "menu:command": {
+    command:
+      | "openRepo"
+      | "refresh"
+      | "closeRepo"
+      | "toggleTerminal"
+      | "cloneRepo"
+      | "toggleSidebar"
+      | "palette";
+  };
   /** A chunk of PTY output for a terminal session. */
   "terminal:data": TerminalData;
   /** A PTY session ended. */

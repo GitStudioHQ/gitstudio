@@ -650,6 +650,16 @@
         additions: [64, 9, 402, 121, 18, 233, 77, 918, 145, 4][i % 10],
         deletions: [12, 0, 96, 340, 3, 41, 512, 77, 22, 1][i % 10],
       })),
+    // Every graph/branch mutation funnels through here (checkout, cherry-pick,
+    // revert, reset, branch, tag). Without it `commit:action` fell through to
+    // the missing-channel path and returned undefined, so the caller's
+    // `result.ok` threw and the click looked inert — which is exactly how the
+    // branch switcher's checkout hid while it was being tested.
+    "commit:action": (req) => ({
+      ok: true,
+      changed: true,
+      message: `${req?.action ?? "action"} ok`,
+    }),
     "pr:fileDiff": (req) => ({
       path: req.path,
       leftLabel: "main",

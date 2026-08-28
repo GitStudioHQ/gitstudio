@@ -169,7 +169,13 @@ export function openCommandPalette(providers: PaletteProviders): void {
         }))
             .filter((s) => s.score > 0)
             .sort((a, b) => b.score - a.score)
-            .slice(0, q ? 8 : 6);
+            // With no query the cap used to be 6 — and since groups are built
+            // in rail order, those were exactly the six destinations that
+            // already have ⌘1–⌘6. The palette's idle state showed you only
+            // what you could already reach without it, and hid the twelve
+            // things you actually need it for. Idle now shows a group whole;
+            // a query still narrows to the best 8.
+            .slice(0, q ? 8 : undefined);
       if (!scored.length) continue;
       const head = el("div", "cmdk-group");
       head.textContent = group.title;

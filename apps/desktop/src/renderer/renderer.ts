@@ -122,6 +122,19 @@ class App {
   private graphViewWrap?: HTMLElement;
   /** Re-clamps the graph/details split when the pane's box changes. */
   private graphSplitRO?: ResizeObserver;
+  /** The live composer's label writer, so HEAD resolving can refresh it. */
+  private syncCommitLabel?: () => void;
+  /**
+   * What the Changes view had open and where it was scrolled.
+   *
+   * Every per-row Stage / Unstage / Discard, Stage all, Stash and Refresh ends
+   * in `showChangesView()`, which replaces the whole subtree — so the diff you
+   * were reading closed, the row you had selected deselected, and the list
+   * jumped back to the top. Staging one file in a list of forty meant finding
+   * your place again, every single time.
+   */
+  private changesOpenPath?: string;
+  private changesScroll = 0;
   /** The repo changed while the graph was parked — reload in place on return. */
   private graphDirty = false;
   private diffSurfaceEl?: HTMLElement;
@@ -1649,7 +1662,12 @@ class App {
     // On failure (e.g. uncommitted changes block the switch) HEAD didn't move —
     // surface the error and DON'T refresh as if it succeeded (which made the UI
     // look like the branch was checked out when it wasn't).
-    if (!result.ok) {
+    //
+    // `result` is typed non-nullable but arrives over IPC: a channel that
+    // failed to register, or a main-process throw, hands back undefined, and
+    // reading `.ok` off it threw inside an async handler — no toast, no error,
+    // the click simply did nothing.
+    if (!result?.ok) {
       toast(result.message || "Couldn't check out — you may have uncommitted changes.", "error");
       return;
     }
@@ -3036,10 +3054,15 @@ class App {
      * message and then left BOTH Commit and Commit & Push greyed out, insisting
      * you "write a commit message first" while it sat in front of you.
      */
+    /** The exact text the amend prefill put in the box, while it is untouched. */
+    let prefilled: string | undefined;
     const setMessage = (text: string): void => {
       textarea.value = text;
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     };
+    textarea.addEventListener("input", () => {
+      if (prefilled !== undefined && textarea.value !== prefilled) prefilled = undefined;
+    });
     msgWrap.append(textarea);
     // ✨ Write the message from the staged diff — sits up in the branch header row
     // (right-aligned), not inside the textarea. Shown only when a model is connected.
@@ -3117,8 +3140,19 @@ class App {
           // Amend and pressing commit silently deleted the body and every
           // trailer — the box looked like the commit, so nothing warned you.
           const prefill = hc?.message || hc?.subject;
-          if (amend && prefill && !textarea.value.trim()) setMessage(prefill);
+          if (amend && prefill && !textarea.value.trim()) {
+            setMessage(prefill);
+            prefilled = prefill;
+          }
         });
+      } else if (!amend && prefilled !== undefined && textarea.value === prefilled) {
+        // Un-ticking takes the prefill back. It is the LAST COMMIT'S text, and
+        // leaving it in the box with amend off armed the composer to create a
+        // brand-new commit carrying the previous one's exact message — with
+        // nothing on screen to distinguish it from something you wrote. Only
+        // withdrawn when untouched: the moment you edit it, it is yours.
+        setMessage("");
+        prefilled = undefined;
       }
     });
     signoffToggle.addEventListener("click", () => {
@@ -3160,12 +3194,19 @@ class App {
      * rewrote the last one.
      */
     const syncCommitLabel = (): void => {
-      commitLabel.textContent = amend
-        ? "Amend commit"
-        : curBranch
-          ? `Commit to ${curBranch}`
-          : "Commit";
+      // Reads `this.headInfo` LIVE rather than the `curBranch` const captured
+      // when the composer was built. HEAD is often still resolving at that
+      // moment, so the const is undefined and stays undefined — which meant
+      // ticking Amend and un-ticking it turned "Commit to main" into a bare
+      // "Commit" and shrank the button by 51px, with the branch line right
+      // beside it still reading "main". syncComposerBranch used to paper over
+      // it by writing this element's text directly; now it calls this.
+      const head = this.headInfo;
+      const branch = head && !head.detached ? head.branch : undefined;
+      const name = branch ?? curBranch;
+      commitLabel.textContent = amend ? "Amend commit" : name ? `Commit to ${name}` : "Commit";
     };
+    this.syncCommitLabel = syncCommitLabel;
     commitBtn.addEventListener("click", () => void this.doDesktopCommit(textarea, commitBtn, false, getOpts()));
     const pushBtn = el("button", "btn dc-commit dc-push");
     pushBtn.append(glyph("arrow-up"), span("Commit & Push"));
@@ -3479,6 +3520,18 @@ class App {
       wrap.insertBefore(banner, wrap.firstChild);
     });
 
+    /** Select a row and open its diff — the one path a click and a restore share. */
+    const selectRow = (row: HTMLElement, f: ChangedFile): void => {
+      lists.querySelectorAll(".file-row.active").forEach((n) => n.classList.remove("active"));
+      row.classList.add("active");
+      openFile = { path: f.path, staged: !!f.staged };
+      this.changesOpenPath = f.path;
+      stageLinesLabel.textContent = f.staged ? "Unstage lines" : "Stage lines";
+      stageLinesBtn.disabled = false;
+      wsBtn.disabled = false;
+      void this.openWorkingFile(diffPanel, f.path);
+    };
+
     const fileRow = (f: ChangedFile, kind: "staged" | "unstaged"): HTMLElement => {
       const row = el("button", `file-row dc-file status-${f.status}`);
       const slash = f.path.lastIndexOf("/");
@@ -3530,13 +3583,7 @@ class App {
       row.addEventListener("click", (ev) => {
         // A modifier click selects; a plain one opens the file, as before.
         if (this.handleSelectionClick(ev, key, lists, selBar)) return;
-        lists.querySelectorAll(".file-row.active").forEach((n) => n.classList.remove("active"));
-        row.classList.add("active");
-        openFile = { path: f.path, staged: !!f.staged };
-        stageLinesLabel.textContent = f.staged ? "Unstage lines" : "Stage lines";
-        stageLinesBtn.disabled = false;
-        wsBtn.disabled = false;
-        void this.openWorkingFile(diffPanel, f.path);
+        selectRow(row, f);
       });
 
       row.addEventListener("contextmenu", (ev) => {
@@ -3686,6 +3733,26 @@ class App {
       unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
     }
     this.reconcileSelection(lists, selBar);
+
+    // Put the view back where the user left it. Everything above rebuilt the
+    // list from scratch — which is what closed the diff you were reading,
+    // deselected the row you had picked and scrolled you back to the top on
+    // every single stage, unstage, discard or refresh.
+    lists.addEventListener("scroll", () => {
+      this.changesScroll = lists.scrollTop;
+    });
+    const reopen = this.changesOpenPath;
+    if (reopen) {
+      const f = [...staged, ...unstaged].find((x) => x.path === reopen);
+      const row = f
+        ? [...lists.querySelectorAll<HTMLElement>(".dc-file")].find((r) => r.title === reopen)
+        : undefined;
+      // The file may be gone (discarded) or have changed group (staged) —
+      // either is fine, it is simply re-selected wherever it is now.
+      if (f && row) selectRow(row, f);
+      else this.changesOpenPath = undefined;
+    }
+    if (this.changesScroll > 0) lists.scrollTop = this.changesScroll;
   }
 
   /**
@@ -4573,6 +4640,16 @@ class App {
           run: () => go(t.id),
         }));
         views.push({ icon: "gear", label: "Settings", run: () => go("settings") });
+        // The Assistant is a routed, keep-alive view like any other, but it
+        // lives only behind a sparkle icon in the top bar — absent from the
+        // rail, from ⌘1-8, and (until now) from here. Typing "assistant" into
+        // the palette found a GitHub search instead of the app's own view.
+        views.push({
+          icon: "sparkle",
+          label: "Assistant",
+          keywords: "ai chat assistant help",
+          run: () => go("assistant"),
+        });
 
         const refs: PaletteItem[] = [
           ...this.refs
@@ -4871,8 +4948,9 @@ class App {
     const name = head.detached ? "detached HEAD" : (head.branch ?? "HEAD");
     const nameEl = document.querySelector<HTMLElement>(".dc-branch-name");
     if (nameEl) nameEl.textContent = name;
-    const label = document.querySelector<HTMLElement>(".dc-commit .dc-commit-label");
-    if (label) label.textContent = head.detached ? "Commit" : `Commit to ${name}`;
+    // The composer owns its own label — writing it from here made two writers
+    // for one string, and the other one holds the amend flag.
+    this.syncCommitLabel?.();
   }
 
   /** Pull the unread count and reflect it on the bell badge (hidden at zero). */
@@ -4974,6 +5052,8 @@ class App {
       else if (msg.command === "closeRepo") void this.backToMenu();
       else if (msg.command === "toggleTerminal") this.toggleTerminal();
       else if (msg.command === "cloneRepo") openCloneDialog((root) => void this.openPath(root));
+      else if (msg.command === "toggleSidebar") this.toggleRail();
+      else if (msg.command === "palette") this.openPalette();
     });
     // App updates: the main process polls; the USER decides. Nothing downloads
     // or installs without a confirm here.
@@ -5184,8 +5264,13 @@ class App {
       onClick: () => this.routeView("settings", true),
     });
     items.push({
-      label: "Back to the main menu",
-      icon: "home",
+      // Was "Back to the main menu" — a name for a destination that does not
+      // exist. It closes the repository, and what it opened was a full-screen
+      // card offering Open… / Clone… / Recent: the same three things this menu
+      // already offers, one row above. One name for one act.
+      label: "Close repository",
+      icon: "close",
+      title: "Close this repository and go back to the picker",
       onClick: () => void this.backToMenu(),
     });
     openMenu(anchor, items);
@@ -5220,6 +5305,24 @@ class App {
     requestAnimationFrame(tryReveal);
   }
 
+  /**
+   * The branch switcher.
+   *
+   * It used to switch nothing. Every row — branches, remotes and tags alike —
+   * called `revealInGraph`, so clicking "fix/log-stream" under a chip whose own
+   * tooltip reads "On branch main — switch branch" left you on main and dropped
+   * you in the Commits view instead. The app's most load-bearing control did
+   * something other than its name, silently, every time.
+   *
+   * Now a branch row CHECKS OUT. Revealing a ref in the graph is still one
+   * gesture away — it moved to a trailing button on the row, where it reads as
+   * the secondary thing it is.
+   *
+   * Remotes and tags keep reveal as their primary: checking either out detaches
+   * HEAD, which is not what someone picking from a branch chip is asking for.
+   * The remote rows offer "check out as a local branch", which is what they
+   * actually mean, through the same path the Branches list uses.
+   */
   private openBranchMenu(anchor: HTMLElement): void {
     const locals = this.refs.filter((r) => r.type === "head");
     const remotes = this.refs.filter((r) => r.type === "remote");
@@ -5232,7 +5335,15 @@ class App {
           label: b.name,
           icon: "git-branch",
           current: b.isCurrent,
-          onClick: () => this.revealInGraph(b.sha),
+          sub: b.isCurrent ? "current" : undefined,
+          title: b.isCurrent ? `Already on ${b.name}` : `Check out ${b.name}`,
+          onClick: () => {
+            if (b.isCurrent) {
+              this.revealInGraph(b.sha);
+              return;
+            }
+            void this.checkoutRef(b.name);
+          },
         });
       }
     }
@@ -5245,7 +5356,8 @@ class App {
         items.push({
           label: b.name,
           icon: "cloud",
-          onClick: () => this.revealInGraph(b.sha),
+          title: `Check out ${b.name} as a local branch`,
+          onClick: () => void this.checkoutRef(b.name),
         });
       }
     }
@@ -5261,12 +5373,25 @@ class App {
         items.push({
           label: t.name,
           icon: "tag",
+          title: `Show ${t.name} in Commits`,
           onClick: () => this.revealInGraph(t.sha),
         });
       }
     }
     if (items.length === 0) {
       items.push({ label: "No branches yet", disabled: true });
+    } else {
+      items.push({ separator: true });
+      items.push({
+        label: "New branch…",
+        icon: "add",
+        onClick: () => void this.newBranch(),
+      });
+      items.push({
+        label: "Manage branches…",
+        icon: "git-branch",
+        onClick: () => this.routeView("branches"),
+      });
     }
     // No `searchable` override: openMenu already turns the filter on above 9
     // rows, which every repo large enough to need it will exceed.
