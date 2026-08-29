@@ -63,6 +63,19 @@ export interface ModalSpec {
   /** Veto Esc/backdrop dismissal (return false to keep the modal up — e.g. a
    *  clone mid-flight). The explicit close() handed to build() always works. */
   canDismiss?: () => boolean;
+  /**
+   * Is there unsaved work in here right now?
+   *
+   * A route change tears every floating layer down, which is right for a menu or
+   * a peek and wrong for a form someone is typing into. The window-focus refresh
+   * routes, so saving a file in your editor while a half-written issue sat in
+   * this dialog destroyed it — the user did nothing, and their text was gone.
+   *
+   * Returning true makes a BACKGROUND teardown skip this modal. Esc, the
+   * backdrop and the modal's own close() are unaffected: those are the user
+   * asking, and the user is allowed to throw their own work away.
+   */
+  hasUnsavedWork?: () => boolean;
 }
 
 /** Open-modal stack — Esc must dismiss only the TOPMOST modal, not every one
@@ -98,7 +111,13 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
   // A route change dismisses the modal like Esc would — but through `close`,
   // not `dismiss`, so a modal that refuses dismissal mid-clone still tears down
   // rather than being orphaned above a view it no longer belongs to.
-  const layer = registerLayer(close);
+  //
+  // …unless it holds work the user has not saved. A background refresh routing
+  // underneath a form is not a reason to throw that form away.
+  const layer = registerLayer(() => {
+    if (spec?.hasUnsavedWork?.()) return;
+    close();
+  });
   const dismiss = (): void => {
     if (spec.canDismiss && !spec.canDismiss()) return;
     close();
@@ -238,6 +257,9 @@ export function editForm(opts: {
   titlePlaceholder?: string;
   bodyValue?: string;
   bodyPlaceholder?: string;
+  /** Why the last attempt failed — shown in the form so the fix is one edit
+   *  away, instead of a toast over a screen that no longer has your text. */
+  note?: string;
 }): Promise<{ title: string; body: string } | null> {
   return new Promise((resolve) => {
     let settled = false;
@@ -245,6 +267,11 @@ export function editForm(opts: {
       const card = mk("div", "modal-card modal-card-form");
       const h = mk("div", "modal-title");
       h.textContent = opts.title;
+      if (opts.note) {
+        const note = mk("div", "modal-message modal-note-error");
+        note.textContent = opts.note;
+        card.appendChild(note);
+      }
       const titleInput = document.createElement("input");
       titleInput.className = "modal-input";
       titleInput.placeholder = opts.titlePlaceholder ?? "Title";
@@ -297,6 +324,12 @@ export function editForm(opts: {
         card,
         focusEl: titleInput,
         label: opts.title,
+        // Anything the user has typed BEYOND what we prefilled is theirs, and a
+        // background route change must not take it. New issue, edit release,
+        // edit gist — all of them come through here.
+        hasUnsavedWork: () =>
+          titleInput.value !== (opts.titleValue ?? "") ||
+          bodyInput.value !== (opts.bodyValue ?? ""),
         onClose: () => {
           if (!settled) resolve(null);
         },
@@ -357,4 +390,36 @@ export function promptInline(
       };
     });
   });
+}
+
+/**
+ * Open a form, submit it, and give it BACK if the submit fails.
+ *
+ * Every create/edit flow in the app had the same shape: collect the text, close
+ * the dialog, then send it. When the send failed — offline, a permissions error,
+ * a validation the API rejects — the user got a toast and an empty screen, and
+ * everything they had written was gone. For a release body or an issue
+ * description that can be several minutes of work destroyed by one bad request.
+ *
+ * `submit` returns an error message to keep the loop going, or `undefined` when
+ * it succeeded. On failure the form re-opens carrying exactly what was typed,
+ * with the reason shown, so the fix is one edit away instead of a retype.
+ */
+export async function formWithRetry<V>(
+  open: (seed: V | undefined, error: string | undefined) => Promise<V | null>,
+  submit: (value: V) => Promise<string | undefined>,
+): Promise<V | undefined> {
+  let seed: V | undefined;
+  let error: string | undefined;
+  // Bounded: a submit that fails forever must not trap the user in a loop they
+  // cannot leave. Cancelling (a null from `open`) exits immediately.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const value = await open(seed, error);
+    if (value === null) return undefined; // the user chose to abandon it
+    const failure = await submit(value);
+    if (failure === undefined) return value;
+    seed = value;
+    error = failure;
+  }
+  return undefined;
 }

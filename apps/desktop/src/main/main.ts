@@ -274,10 +274,18 @@ function buildMenu(): void {
         { type: "separator" },
         {
           label: "Refresh",
-          // NOT CmdOrCtrl+R: the View menu's `reload` role claims that by
-          // default, so two items were bound to the same chord and which one
-          // fired was down to menu order rather than intent.
-          accelerator: "CmdOrCtrl+Shift+R",
+          // ⌘R, the chord everyone's hands already know. It used to be ⌘⇧R to
+          // dodge the `reload` role, which claims ⌘R by default — but that meant
+          // the most reflexive refresh gesture there is HARD-RELOADED the
+          // renderer: every view rebuilt from nothing, every cache dropped, the
+          // repo re-opened, and whatever you had typed gone. It looked like the
+          // app had crashed and recovered.
+          //
+          // And ⌘⇧R was no safer: that is `forceReload`'s default, so Refresh
+          // and Force Reload were bound to the SAME chord and which one fired
+          // came down to menu order. Both dev roles are explicitly re-bound
+          // below, so neither can reclaim a chord by default ever again.
+          accelerator: "CmdOrCtrl+R",
           click: () => send("menu:command", { command: "refresh" }),
         },
         {
@@ -340,7 +348,14 @@ function buildMenu(): void {
         // Kept, but where they belong: developer tools, not "views".
         {
           label: "Developer",
-          submenu: [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }],
+          // Accelerators stated, not inherited. A `role` carries its default
+          // chord even nested three levels down a submenu, which is how ⌘R came
+          // to restart the app and ⌘⇧R came to mean two different things.
+          submenu: [
+            { role: "reload" as const, accelerator: "Alt+CmdOrCtrl+R" },
+            { role: "forceReload" as const, accelerator: "Alt+CmdOrCtrl+Shift+R" },
+            { role: "toggleDevTools" as const },
+          ],
         },
       ],
     },

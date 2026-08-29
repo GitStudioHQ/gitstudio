@@ -96,6 +96,33 @@ export function containedPath(root: string, rel: string): string | undefined {
   return undefined;
 }
 
+/**
+ * A git command that exited non-zero did not succeed with no output.
+ *
+ * `GitProcess.run` RESOLVES with the exit code (the caller decides), so a read
+ * whose command failed comes back as `{ stdout: "", code: 128 }` on the success
+ * path — and a parser handed "" returns an empty list. That empty list then
+ * rendered as "Working tree clean · No changes to commit" over a working tree
+ * full of uncommitted work, and as "No branches yet" in a repo full of branches.
+ * A held `index.lock`, a corrupt `.git/index` or `.git/packed-refs`, wrong
+ * permissions, or the folder moving out from under the app all produce exactly
+ * that. It is the single most dangerous sentence this app can print: it reads as
+ * "your changes are already committed".
+ *
+ * The renderer already knows what to do with a failure — Changes has an
+ * errorState with a Retry, and Commits shows "Couldn't load history" precisely
+ * because `graph:load` never swallowed. Those paths were unreachable, not
+ * missing.
+ */
+function mustSucceed(result: { stdout: string; stderr?: string; code?: number }, what: string): string {
+  if (result.code !== undefined && result.code !== 0) {
+    const detail = (result.stderr ?? "").trim().split("\n")[0];
+    throw new Error(detail ? `${what}: ${detail}` : `${what} (git exited ${result.code})`);
+  }
+  return result.stdout;
+}
+
+
 export class GitBridge {
   /** sha → record, accumulated as the graph pages stream in (for details). */
   private records = new Map<string, CommitRecord>();
@@ -417,15 +444,13 @@ export class GitBridge {
     if (!ctx) {
       return [];
     }
-    try {
-      const result = await ctx.process.run(["status", "--porcelain=v1", "-z"]);
-      return parsePorcelainStatus(result.stdout);
-    } catch {
-      // A held index.lock, a repo deleted under us, a corrupt index — return an
-      // empty working tree rather than rejecting into the renderer (which would
-      // leave the Changes view stuck on its skeleton).
-      return [];
-    }
+    // NOT wrapped in a catch that returns []. The old comment here claimed a
+    // rejection "would leave the Changes view stuck on its skeleton" — that was
+    // not true even when it was written: showChangesView catches a rejected
+    // status and renders "Couldn't read the working tree" with a Retry. What the
+    // swallow actually did was render a broken repo as a clean one.
+    const result = await ctx.process.run(["status", "--porcelain=v1", "-z"]);
+    return parsePorcelainStatus(mustSucceed(result, "Couldn't read the working tree"));
   }
 
   async diffFiles(): Promise<ChangedFile[]> {
@@ -567,8 +592,98 @@ export class GitBridge {
         : ctx.staging.discardChanges(path);
     });
   }
+  /**
+   * Stage everything — except a conflict you have not actually resolved.
+   *
+   * `git add -A` marks an unmerged path RESOLVED. It does not care whether the
+   * file still contains `<<<<<<<`. So during a conflicted merge, "Stage all"
+   * followed by Commit was two clicks that produced a commit with conflict
+   * markers in the source — and, because staging cleared the unmerged entries,
+   * the app's conflict count dropped to zero and re-enabled Continue, so nothing
+   * on screen suggested anything was wrong.
+   *
+   * The naive guard — "exclude every unmerged path" — is worse: someone who
+   * resolved a conflict properly in another editor would find that file could
+   * never be staged and Continue disabled forever, with nothing explaining why.
+   * So resolutions are staged and only marker-bearing files are held back, by
+   * name, so the message says what to go and fix.
+   */
   async stageAll(): Promise<CommitActionResult> {
-    return this.staged(async (ctx) => ctx.process.run(["add", "-A"]));
+    return this.staged(async (ctx) => {
+      const st = await ctx.process.run(["status", "--porcelain=v1", "-z"]);
+      const unmerged =
+        st.code === 0 ? parsePorcelainStatus(st.stdout).filter((f) => f.conflicted) : [];
+      const unresolved: string[] = [];
+      const needsChoice: string[] = [];
+      for (const f of unmerged) {
+        // A modify/delete conflict (UD / DU) never contains markers — git leaves
+        // one side's file in the tree and asks you to choose keep-or-delete. So
+        // "no markers" cannot mean "resolved" here, and staging it silently
+        // picks a side on the user's behalf. Those need a decision, not a bulk
+        // action, and per-file staging still makes one.
+        const modifyDelete = f.conflictKind === "UD" || f.conflictKind === "DU";
+        if (modifyDelete) {
+          unresolved.push(f.path);
+          needsChoice.push(f.path);
+        } else if (await this.hasConflictMarkers(ctx, f.path)) {
+          unresolved.push(f.path);
+        }
+      }
+      if (unresolved.length === 0) return ctx.process.run(["add", "-A"]);
+      // An explicit ALLOW-LIST, not `:!` exclusions: verified against real git,
+      // `add -A -- . ':!path'` stages the excluded path anyway, so the exclusion
+      // would have been silent and this guard would have done nothing at all.
+      const hold = new Set(unresolved);
+      const allow = [...new Set(parsePorcelainStatus(st.stdout).map((f) => f.path))].filter(
+        (p) => !hold.has(p),
+      );
+      if (allow.length > 0) {
+        const add = await ctx.process.run(["add", "-A", "--", ...allow]);
+        if (add.code !== 0) return add;
+      }
+      // Two different reasons to hold a file back, needing two different things
+      // done to them — say which is which rather than one vague sentence.
+      const marked = unresolved.filter((p) => !needsChoice.includes(p));
+      const list = (paths: string[]): string => {
+        const head = paths.slice(0, 3).join(", ");
+        return paths.length > 3 ? `${head} and ${paths.length - 3} more` : head;
+      };
+      const parts: string[] = [];
+      if (marked.length) {
+        parts.push(
+          `${marked.length} still contain${marked.length === 1 ? "s" : ""} conflict markers ` +
+            `(${list(marked)}) — staging a file with markers in it tells git the conflict is settled`,
+        );
+      }
+      if (needsChoice.length) {
+        parts.push(
+          `${needsChoice.length} ${needsChoice.length === 1 ? "is a" : "are"} modify/delete ` +
+            `conflict${needsChoice.length === 1 ? "" : "s"} (${list(needsChoice)}) — one side edited ` +
+            `the file and the other deleted it, so you have to choose keep or delete`,
+        );
+      }
+      return {
+        ok: false,
+        changed: true,
+        expected: true,
+        message: `Staged everything else. ${parts.join(". ")}.`,
+      };
+    });
+  }
+
+  /** Does this working-tree file still carry `<<<<<<<` conflict markers? */
+  private async hasConflictMarkers(
+    ctx: { root: string },
+    path: string,
+  ): Promise<boolean> {
+    try {
+      const buf = await readFile(join(ctx.root, path), "utf8");
+      return /^<{7}[ \t]/m.test(buf) && /^>{7}[ \t]/m.test(buf);
+    } catch {
+      // Unreadable (deleted by one side, binary, permissions) — not our call to
+      // make here; let git decide when the user stages it explicitly.
+      return false;
+    }
   }
   async unstageAll(): Promise<CommitActionResult> {
     return this.staged(async (ctx) => ctx.process.run(["reset"]));
@@ -1213,18 +1328,16 @@ export class GitBridge {
     const fmt =
       `%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
       `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(contents:subject)`;
-    let out = "";
-    try {
-      const r = await ctx.process.run([
-        "for-each-ref",
-        `--format=${fmt}`,
-        "--sort=-committerdate",
-        "refs/heads",
-      ]);
-      out = r.stdout;
-    } catch {
-      return [];
-    }
+    // No catch-and-return-[]: `for-each-ref` exits 0 with no output in a repo
+    // that genuinely has no branches, so a non-zero exit means the read FAILED
+    // and "No branches yet" would be a lie about a repo full of them.
+    const r = await ctx.process.run([
+      "for-each-ref",
+      `--format=${fmt}`,
+      "--sort=-committerdate",
+      "refs/heads",
+    ]);
+    const out = mustSucceed(r, "Couldn't list branches");
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
@@ -1390,7 +1503,16 @@ export class GitBridge {
   private async staged(
     op: (
       ctx: GitContext,
-    ) => Promise<{ ok?: boolean; code?: number; stderr?: string; stdout?: string }>,
+    ) => Promise<{
+      ok?: boolean;
+      code?: number;
+      stderr?: string;
+      stdout?: string;
+      /** A message the OP composed. It knows more than stderr does. */
+      message?: string;
+      changed?: boolean;
+      expected?: boolean;
+    }>,
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
@@ -1405,6 +1527,17 @@ export class GitBridge {
         }
         const stderr = r.stderr?.trim() ?? "";
         const stdout = r.stdout?.trim() ?? "";
+        // An op's OWN message wins. stageAll composes one naming the files it
+        // held back; replacing it with "The operation failed." threw away the
+        // only part the user could act on.
+        if (r.message) {
+          return {
+            ok: false,
+            changed: r.changed ?? false,
+            message: r.message,
+            ...(r.expected ? { expected: true } : {}),
+          };
+        }
         return {
           ok: false,
           changed: false,
@@ -1855,6 +1988,20 @@ export function parsePorcelainStatus(stdout: string): ChangedFile[] {
       i++;
     }
     if (!path) {
+      continue;
+    }
+    // UNMERGED paths first, because for them the two columns do NOT mean
+    // index-half and worktree-half. Git's own docs list seven unmerged codes —
+    // DD AU UD UA DU AA UU — and in every one the columns are the two SIDES of
+    // the merge. Reading them as halves emitted TWO rows for one conflicted
+    // file: a phantom "staged" copy (carrying an Unstage button that destroys
+    // the merge stages) and a worktree copy whose letter contradicted git, e.g.
+    // `D` on a file plainly sitting on disk. One path, one row, marked as what
+    // it is.
+    const unmerged =
+      x === "U" || y === "U" || (x === "A" && y === "A") || (x === "D" && y === "D");
+    if (unmerged) {
+      files.push({ path, status: "U", staged: false, conflicted: true, conflictKind: x + y });
       continue;
     }
     // A record can carry BOTH an index half (x) and a worktree half (y) —

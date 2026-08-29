@@ -847,7 +847,11 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
         vis[0].click();
       }
     } else if (e.key === "Tab") {
-      close(false);
+      // Hand the keyboard back to the ANCHOR, exactly as Escape does. `false`
+      // skipped the restore, so Tab out of any of the app's 29 menus dropped
+      // focus on <body> and the next Tab restarted at the top of the window —
+      // from a menu you had opened by pressing Tab to reach in the first place.
+      close();
     }
   };
 

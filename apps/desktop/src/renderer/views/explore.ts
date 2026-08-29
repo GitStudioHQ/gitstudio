@@ -42,6 +42,7 @@ import {
   parseExploreTarget,
   parseRepoRoute,
   searchTargetId,
+  repoRouteId,
 } from "../exploreRoutes";
 export { searchTargetId } from "../exploreRoutes";
 import { renderRepoPage } from "./exploreRepo";
@@ -424,7 +425,14 @@ function codeRow(c: SearchCodeItem, nav: SectionNav): HTMLElement {
     title: c.path,
     ariaLabel: `${c.path} in ${c.repoFullName}`,
     sub: c.repoFullName,
-    onOpen: () => nav("explore", { id: `repo/${c.repoFullName}` }),
+    // Open the FILE you found, not the repository it happens to live in. This
+    // navigated to `repo/<fullName>` and threw `c.path` away — so a code search,
+    // whose entire purpose is finding one file among thousands, answered a click
+    // by dumping you at the repo root with the result gone from the screen.
+    onOpen: () =>
+      nav("explore", {
+        id: repoRouteId({ fullName: c.repoFullName, path: c.path, kind: "blob" }),
+      }),
     extraClass: "explore-code-row",
     actions: [
       {

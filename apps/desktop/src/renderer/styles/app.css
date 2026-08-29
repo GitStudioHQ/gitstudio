@@ -9088,3 +9088,20 @@ body.vscode-light .log-pane {
   font-weight: 550;
   color: var(--vscode-foreground);
 }
+
+/* Refresh is the same control on every screen. It was three: 28x28
+   `.topbar-icon` in Code and Changes, 30x30 `.icon-btn.gh-refresh` in the twelve
+   GitHub views, and the graph's own — so the one button people reach for most
+   changed size and weight depending on which screen they were on. */
+.gh-refresh { width: 28px; height: 28px; }
+.gh-refresh .codicon { font-size: 15px; }
+
+/* Why the last submit failed, shown inside the form that still holds your text
+   — rather than a toast over a screen that has already thrown it away. */
+.modal-note-error {
+  color: var(--status-del);
+  background: color-mix(in srgb, var(--status-del) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-del) 30%, transparent);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+}

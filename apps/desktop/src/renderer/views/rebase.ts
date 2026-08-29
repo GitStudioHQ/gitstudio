@@ -136,7 +136,6 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   }
 
   // ── model helpers ──
-  const firstKeptIndex = (): number => rows.findIndex((r) => r.action !== "drop");
 
   /**
    * The commit a squash/fixup folds INTO. git melds into the entry BEFORE it in
@@ -163,8 +162,20 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   };
 
   const setAction = (i: number, action: RebaseAction): void => {
-    if ((action === "squash" || action === "fixup") && i === firstKeptIndex()) {
-      flashBanner("The top commit has nothing above it to fold into.");
+    // A squash folds into the nearest kept commit BELOW — the list is
+    // newest-first (issue #18), and git melds into the entry before it in the
+    // todo file. So the commit that CANNOT be squashed is the last kept one,
+    // not the first.
+    //
+    // The guard checked `i === firstKeptIndex()`, the TOP of the list. That
+    // refused the most ordinary interactive rebase there is — fold my latest
+    // commit into the one before it — while happily accepting a squash on the
+    // oldest commit, which git cannot execute, letting an impossible plan reach
+    // the "you'll need to force-push" dialog. `firstKeptIndex` was a leftover
+    // from before the ordering flip; `foldTargetSubject` already scans the right
+    // way and already skips drop/squash/fixup chains, so ask it.
+    if ((action === "squash" || action === "fixup") && foldTargetSubject(i) === null) {
+      flashBanner("The oldest commit has nothing below it to fold into.");
       render();
       return;
     }

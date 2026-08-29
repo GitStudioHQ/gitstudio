@@ -144,6 +144,12 @@
   ];
 
   const releases = [
+    // A PUBLISHED pre-release, newer than the newest stable — the ordinary shape
+    // of a repo mid-release-cycle, and the one that exposes whether "Latest"
+    // follows github.com's rule (newest published NON-pre-release) or just picks
+    // the newest published thing. The only prerelease here used to also be a
+    // draft, so the distinction was never exercised.
+    { id: 52, tagName: "desktop-v1.7.0-rc.1", targetCommitish: "main", name: "Desktop 1.7.0 RC 1", draft: false, prerelease: true, htmlUrl: "", author: u(me), createdAt: ISO(8), publishedAt: ISO(8), assets: [], body: "Release candidate — please test." },
     { id: 51, tagName: "ext-v1.11.1", targetCommitish: "main", name: "Extension 1.11.1", draft: false, prerelease: false, htmlUrl: "", author: u(me), createdAt: ISO(40), publishedAt: ISO(40), assets: [ { id: 1, name: "gitstudio-1.11.1.vsix", label: null, contentType: "application/zip", size: 4830210, downloadCount: 1240, downloadUrl: "", createdAt: ISO(40), updatedAt: ISO(40) } ], body: "### Fixes\n- Drive the update-refs end-to-end through the shipping runner\n- Graph: keep-alive across view switches" },
     { id: 50, tagName: "desktop-v1.5.1", targetCommitish: "main", name: "Desktop 1.5.1", draft: false, prerelease: false, htmlUrl: "", author: u(me), createdAt: ISO(60), publishedAt: ISO(58), assets: [ { id: 2, name: "GitStudio-1.5.1-arm64.dmg", label: null, contentType: "application/x-apple-diskimage", size: 128400000, downloadCount: 356, downloadUrl: "", createdAt: ISO(58), updatedAt: ISO(58) }, { id: 3, name: "GitStudio-1.5.1-x64.dmg", label: null, contentType: "application/x-apple-diskimage", size: 131200000, downloadCount: 121, downloadUrl: "", createdAt: ISO(58), updatedAt: ISO(58) } ], body: "### Highlights\n- Drag a commit in the graph to reorder it\n- Rebase carries other branches when asked" },
     { id: 49, tagName: "desktop-v1.6.0-beta.1", targetCommitish: "main", name: "Desktop 1.6.0 beta 1", draft: true, prerelease: true, htmlUrl: "", author: u(me), createdAt: ISO(12), publishedAt: null, assets: [], body: "The redesign preview build." },
@@ -387,6 +393,9 @@
   ];
 
   const dynamic = {
+    // A READ that the fallback used to answer with a mutation shape. Present so
+    // the AI-gating path is exercised instead of silently failing open.
+    "ai:settings": () => ({ enabled: false, connections: [], defaultId: null }),
     "settings:get": () => settingsView(),
     "settings:update": (patch) => {
       if (patch && patch.cloneDir === null) settingsState.cloneDir = null;
@@ -713,7 +722,11 @@
       missing.add(channel);
       console.error("[shim missing]", channel, JSON.stringify(payload));
       // Mutations: pretend success so flows continue; reads: undefined.
-      if (/:(set|create|edit|comment|merge|rerun|cancel|dispatch|markRead|apply|update|upload|delete|approve|review)/.test(channel)) {
+      // Anchored at the END of the channel name (or before a capitalised word),
+      // because a plain substring test matched ":set" inside "ai:settings" — a
+      // READ answered with `{ ok: true }`, which is why aiEnabled() memoised
+      // `undefined` and re-asked over IPC on every route for months.
+      if (/:(set|create|edit|comment|merge|rerun|cancel|dispatch|markRead|apply|update|upload|delete|approve|review)(?=$|[A-Z])/.test(channel)) {
         return Promise.resolve({ ok: true, changed: false });
       }
       return Promise.resolve(undefined);

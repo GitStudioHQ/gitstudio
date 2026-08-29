@@ -2061,6 +2061,419 @@
     // one chip's own furniture. Worse, it was non-monotonic — WIDENING the window
     // past host 760 brought the date and sha columns back and made the refs
     // column narrower. Invisible at the default size, appearing when you maximise.
+    // "Clicking around causes slow screen loading and reloading." It did:
+    // revisiting the five local views fired 21 IPC calls and flashed 8 skeletons,
+    // for data that had not changed. Two of those calls — whether AI is
+    // configured, and whether you are signed in to GitHub — fired on EVERY route
+    // into Changes and Compare and cannot change between two clicks.
+    // Alt-tab away and back. The window-focus refresh is a real need — you may
+    // have edited files in another app — but it fired unconditionally, and its
+    // refresh drops the whole cache, clears every kept-alive view and
+    // force-rebuilds. So switching to a browser and back rebuilt the app from
+    // nothing AND ejected you from whatever detail page you were reading, since
+    // the forced re-route carried no target. Settings had to be hand-excluded
+    // from it to stop the sign-in card being destroyed mid-flow.
+    // Two routes to the same object must mean the same thing. A repo row in
+    // Organizations looked identical to a repo row in Explore, but clicking it
+    // CLONED the repository to disk and replaced the app's entire working
+    // context — no confirmation, nothing on the row to warn you — while the
+    // Explore row merely browsed. The destructive one was the default.
+    // Code search exists to find ONE file among thousands. Clicking a hit
+    // navigated to `repo/<fullName>` and threw the path away, so the answer to
+    // "open this result" was the repository root with the result gone.
+    // Click into a section, get impatient, click away. The half-painted view —
+    // skeleton and all — was stashed in the keep-alive cache and restored on
+    // every later visit, so Issues came back permanently empty for the rest of
+    // the session and only the header refresh button could recover it.
+    // The rail is a tablist with a roving tab stop. "The active item is the stop"
+    // has no answer for a route that is not a rail item at all — the Assistant is
+    // reached from the top bar, a detail page has no rail entry — so on those
+    // routes every one of the 17 destinations got tabIndex -1 and the entire
+    // navigation rail left the keyboard's reach.
+    // The most dangerous sentence this app can print is "Working tree clean ·
+    // No changes to commit" over a working tree full of uncommitted work. It
+    // could: GitProcess.run RESOLVES on a non-zero exit, so a failing
+    // `git status` returned {stdout:"", code:128} on the SUCCESS path, and
+    // parsing "" gave []. A corrupt .git/index or a held index.lock rendered a
+    // broken repo as a healthy, empty one — and "No branches yet" for a repo
+    // full of branches.
+    // Ticking Amend fills the box with the PREVIOUS commit's message. Un-ticking
+    // withdraws it — but the flag recording "the app put this here, the user did
+    // not" was render-local while every sibling piece of composer state was not.
+    // Any repaint (stage, unstage, discard, Refresh, a route change, a file
+    // saved in your editor) lost it, so the withdrawal almost never happened:
+    // the toggle, the button label and the branch line all returned to the
+    // new-commit shape while the box kept someone else's message, and committing
+    // duplicated its subject.
+    // Every create/edit flow collected the text, CLOSED the dialog, then sent it.
+    // A rejected request answered several minutes of writing with a toast over an
+    // empty screen. The form comes back now, carrying what was typed and the
+    // reason it failed.
+    // A squash folds into the nearest kept commit BELOW — the list is
+    // newest-first, and git melds into the entry before it in the todo file. So
+    // the commit that cannot be squashed is the LAST kept one. The guard checked
+    // the first, which refused the most ordinary interactive rebase there is
+    // (fold my latest commit into the one before it) and accepted a squash on
+    // the oldest, which git cannot execute — letting an impossible plan reach
+    // the force-push dialog.
+    // "Latest" answers "which version is current?". github.com's rule is the
+    // newest published NON-pre-release; taking the newest published thing awards
+    // it to a release candidate whenever one exists, pointing everyone at the RC
+    // instead of the build they should be running.
+    "latest-is-the-shipping-build-not-the-rc": (f) => {
+      const c = check(f);
+      const rows = $$(".sec-row");
+      c.ok(rows.length >= 3, `releases are listed (${rows.length})`);
+      const pillsOf = (r) => $$(".gh-pill, [class*=state-]", r).map((p) => text(p)).filter(Boolean);
+      const latest = rows.filter((r) => pillsOf(r).includes("Latest"));
+      c.eq(latest.length, 1, `exactly one release is Latest (${latest.length})`);
+      if (!latest.length) return;
+      const pills = pillsOf(latest[0]);
+      c.ok(
+        !pills.includes("Pre-release"),
+        `and it is not a pre-release (${text($$(".sec-row-title", latest[0])[0])}: ${pills.join(", ")})`,
+      );
+      c.ok(!pills.includes("Draft"), "nor a draft");
+      // The fixture deliberately carries a PUBLISHED rc newer than the newest
+      // stable — without one this check cannot fail.
+      const rc = rows.find((r) => /RC/i.test(text($$(".sec-row-title", r)[0] || r)));
+      c.ok(!!rc, "the fixture still has a published release candidate to be fooled by");
+      if (rc) c.ok(pillsOf(rc).includes("Pre-release"), "which is marked as a pre-release");
+    },
+
+    "squash-is-refused-only-where-git-would-refuse-it": async (f) => {
+      const c = check(f);
+      const sels = () => $$(".rb-action");
+      c.ok(sels().length >= 3, `the plan lists commits (${sels().length})`);
+      if (sels().length < 3) return;
+      const set = (i, v) => {
+        const el = sels()[i];
+        el.value = v;
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+
+      // The newest commit HAS somewhere to fold into: the one below it.
+      set(0, "squash");
+      await settle(300);
+      c.eq(sels()[0].value, "squash", "the newest commit can be squashed");
+
+      // The oldest has nothing below it, and git would reject the plan.
+      const last = sels().length - 1;
+      set(last, "squash");
+      await settle(300);
+      c.eq(sels()[last].value, "pick", "the oldest commit cannot");
+      c.ok(
+        /oldest/i.test(text(".rb-banner") || ""),
+        `and it says which end is the problem ("${text(".rb-banner")}")`,
+      );
+    },
+
+    "a-failed-submit-gives-the-form-back": async (f) => {
+      const c = check(f);
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "issue:create") {
+          return Promise.resolve({ ok: false, message: "Validation failed: title is too long" });
+        }
+        return orig(ch, p);
+      };
+      const nb = $$("button").find((b) => /new issue/i.test(text(b)));
+      c.ok(!!nb, "the New issue action is present");
+      if (!nb) return;
+      nb.click();
+      await settle(600);
+      const ins = $$(".modal-input");
+      c.ok(ins.length >= 2, "the form has a title and a body");
+      if (ins.length < 2) return;
+      ins[0].value = "my title";
+      ins[0].dispatchEvent(new Event("input", { bubbles: true }));
+      ins[1].value = "my body text";
+      ins[1].dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(150);
+      $$(".modal-actions button").find((b) => /create/i.test(text(b))).click();
+      await settle(900);
+      c.ok(!!$(".modal-overlay"), "the form is still open after a rejected submit");
+      const after = $$(".modal-input");
+      c.eq((after[0] || {}).value, "my title", "the title survives");
+      c.eq((after[1] || {}).value, "my body text", "and so does the body");
+      c.ok(
+        /too long/.test(text(".modal-note-error") || ""),
+        "and the form says why it failed, where the text still is",
+      );
+      window.gitstudio.invoke = orig;
+    },
+
+    "amend-withdraws-its-prefill-after-a-repaint": async (f) => {
+      const c = check(f);
+      const amend = () => $$(".dc-toggle").find((b) => /Amend/.test(text(b)));
+      const go = (n) => $$(".nav-item").find((b) => text(b).trim() === n);
+      c.ok(!!amend() && !!go("Commits") && !!go("Changes"), "the composer and rail are present");
+      if (!amend() || !go("Commits") || !go("Changes")) return;
+
+      amend().click();
+      await settle(700);
+      const prefill = $(".dc-message").value;
+      c.ok(prefill.length > 0, `ticking Amend prefills the last message ("${prefill.slice(0, 30)}")`);
+
+      // A repaint — the thing that used to defeat the withdrawal.
+      go("Commits").click();
+      await settle(600);
+      go("Changes").click();
+      await settle(800);
+      c.eq($(".dc-message").value, prefill, "the prefill survives while Amend is still ON");
+
+      amend().click();
+      await settle(500);
+      c.eq($(".dc-message").value, "", "un-ticking withdraws it even across the repaint");
+      c.ok(
+        $(".dc-commit").hasAttribute("disabled") || $(".dc-commit").disabled,
+        "and Commit is not armed with a message the user never wrote",
+      );
+    },
+
+    "a-failed-git-read-is-not-an-empty-repo": async (f) => {
+      const c = check(f);
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "status" || ch === "branches:list") {
+          return Promise.reject(new Error("fatal: index file corrupt"));
+        }
+        return orig(ch, p);
+      };
+      const go = (n) => $$(".nav-item").find((b) => text(b) === n);
+      c.ok(!!go("Branches") && !!go("Changes"), "both views are reachable");
+      if (!go("Branches") || !go("Changes")) return;
+
+      go("Branches").click();
+      await settle(1200);
+      const branchText = (text(".view-host") || "").replace(/\s+/g, " ");
+      c.ok(
+        !/no branches yet/i.test(branchText),
+        `a failed ref read is NOT reported as an empty repo (${branchText.slice(0, 70)})`,
+      );
+      c.ok(/couldn't list branches/i.test(branchText), "it says the read failed");
+      c.ok($$(".list-empty.is-error button, .list-error button").length > 0, "and offers a retry");
+
+      go("Changes").click();
+      await settle(1500);
+      const changesText = (text(".view-host") || "").replace(/\s+/g, " ");
+      const toasts = $$(".toast").map((t) => text(t));
+      // Either it refuses to claim the tree is clean, or it keeps the last known
+      // tree AND says it could not confirm it. Silently claiming "clean" is the
+      // one outcome that is never acceptable.
+      const claimsClean = /working tree clean/i.test(changesText);
+      c.ok(
+        !claimsClean || toasts.length > 0,
+        `it never silently claims a clean tree (clean=${claimsClean}, toasts=${toasts.length})`,
+      );
+      window.gitstudio.invoke = orig;
+    },
+
+    "the-rail-always-has-a-tab-stop": (f) => {
+      const c = check(f);
+      const items = $$(".nav-item");
+      c.ok(items.length > 5, `the rail has destinations (${items.length})`);
+      const stops = items.filter((b) => b.tabIndex === 0);
+      c.eq(stops.length, 1, `exactly one is in the Tab order (${stops.length})`);
+      c.ok(
+        items.every((b) => b.hasAttribute("aria-selected")),
+        "and every item reports its selected state",
+      );
+    },
+
+    // The app's own shortcut sheet advertises "Esc or ←" on detail pages. The
+    // arrow was implemented nowhere, and Esc unhooked itself on the next KEYDOWN
+    // after the page detached — so switching section, typing anything, and
+    // coming back left a restored page whose Esc was dead.
+    "detail-pages-answer-back-keys": async (f) => {
+      const c = check(f);
+      c.ok(!!$(".det-title"), "a detail page is open");
+      if (!$(".det-title")) return;
+      // Left arrow, as documented.
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }),
+      );
+      await settle(500);
+      c.ok(!$(".det-title"), "left arrow goes back");
+      c.ok($$(".sec-row").length > 0, "and lands on the list");
+    },
+
+    "an-abandoned-load-is-not-cached": async (f) => {
+      const c = check(f);
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      let calls = 0;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "issue:list") {
+          calls++;
+          return new Promise((r) => setTimeout(() => r(orig(ch, p)), 300));
+        }
+        return orig(ch, p);
+      };
+      const go = (n) => $$(".nav-item").find((b) => text(b) === n);
+      c.ok(!!go("Issues") && !!go("Changes"), "both sections are in the rail");
+      if (!go("Issues") || !go("Changes")) return;
+      // The timing matters and is the whole repro: leave BEFORE the first
+      // response lands (120ms < 300ms), so the container is detached while the
+      // section's `if (!view.isConnected) return` guard is still pending. The
+      // guard then bails, the half-painted DOM is what got cached, and nothing
+      // ever paints it again.
+      go("Issues").click();
+      await settle(120);
+      go("Changes").click();
+      await settle(500);
+      go("Issues").click();
+      await settle(4000); // far past the injected delay
+      c.ok($$(".sec-row").length > 0, `the section recovers (${$$(".sec-row").length} rows)`);
+      c.eq(
+        $$(".skeleton, .sk-row, .list-loading").length,
+        0,
+        "and is not stuck on the skeleton it was abandoned in",
+      );
+      // The abandoned request's answer is still cached, so returning costs
+      // nothing extra — the fix must not turn one fetch into two.
+      c.ok(calls <= 1, `and it did not refetch what was already in flight (${calls})`);
+      window.gitstudio.invoke = orig;
+    },
+
+    "a-code-hit-opens-its-file": async (f) => {
+      const c = check(f);
+      const tab = $$(".explore-tab").find((t) => /code/i.test(text(t)));
+      c.ok(!!tab, "Explore has a Code tab");
+      if (!tab) return;
+      tab.click();
+      await settle(600);
+      const rows = $$(".explore-code-row");
+      c.ok(rows.length > 0, `it returns code hits (${rows.length})`);
+      if (!rows.length) return;
+      const wanted = text($$(".explore-row-head", rows[0])[0] || rows[0]).trim();
+      c.ok(wanted.includes("/"), `the hit names a path (${wanted})`);
+      rows[0].click();
+      await settle(800);
+      const title = text(".explore-repo-title");
+      const leaf = wanted.split("/").pop();
+      c.eq(title, leaf, `it opens the FILE, not the repo root (landed on "${title}")`);
+      c.ok(
+        (text(".explore-repo-eyebrow") || "").includes("/"),
+        "and says which repository and folder it came from",
+      );
+    },
+
+    "clicking-a-repo-browses-it": async (f) => {
+      const c = check(f);
+      const row = $$(".gh-org-repo")[0];
+      c.ok(!!row, "the org lists repositories");
+      if (!row) return;
+      c.ok(
+        /browse/i.test(row.getAttribute("aria-label") || ""),
+        `the row says it browses (${row.getAttribute("aria-label")})`,
+      );
+      // Adopting the repo is still available — as something you choose by name.
+      const actions = $$(".row-btn", row).map((b) => text(b));
+      // The wording is free to change — "Open in GitStudio" was shortened to
+      // "Open" because the longer label grew the hover cluster to 53% of the
+      // card. What must hold is that adopting the repo is something you CHOOSE
+      // by name, and that the row's own click does not do it.
+      c.ok(
+        actions.some((a) => /^open\b/i.test(a.trim())),
+        `cloning is a named action, not the default (${actions.join(", ")})`,
+      );
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      const seen = [];
+      window.gitstudio.invoke = (ch, p) => {
+        seen.push(ch);
+        return orig(ch, p);
+      };
+      row.click();
+      await settle(500);
+      window.gitstudio.invoke = orig;
+      c.eq(
+        seen.filter((ch) => /clone|repo:open/i.test(ch)).join(", "),
+        "",
+        `and a plain click clones nothing (${[...new Set(seen)].join(", ")})`,
+      );
+    },
+
+    "alt-tab-does-not-rebuild-the-app": async (f) => {
+      const c = check(f);
+      const title = text(".det-title");
+      c.ok(!!title, "a detail page is open");
+      if (!title) return;
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      let seen = [];
+      window.gitstudio.invoke = (ch, p) => {
+        seen.push(ch);
+        return orig(ch, p);
+      };
+      window.dispatchEvent(new Event("focus"));
+      await settle(800);
+      c.ok(!!$(".det-title"), "focus does not eject you from the detail page");
+      c.eq(text(".det-title"), title, "and it is still the SAME page");
+      // Nothing changed on disk, so the cost is the two reads that establish
+      // that — not a rebuild of everything.
+      const noisy = seen.filter((ch) => ch !== "status" && ch !== "head:get");
+      c.eq(
+        noisy.join(", "),
+        "",
+        `an unchanged repo costs only the probe (${seen.length} calls: ${[...new Set(seen)].join(", ")})`,
+      );
+      seen = [];
+      window.dispatchEvent(new Event("focus"));
+      await settle(600);
+      c.ok(seen.length <= 2, `and a second focus costs the same (${seen.length})`);
+      window.gitstudio.invoke = orig;
+    },
+
+    "revisiting-a-view-costs-nothing": async (f) => {
+      const c = check(f);
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      const seen = [];
+      // Real git answers in 40-300ms; the fixtures answer instantly, which hides
+      // every loading behaviour there is. Slow it down so a skeleton has time to
+      // be seen — that is the point of the test.
+      window.gitstudio.invoke = (ch, p) => {
+        seen.push(ch);
+        return new Promise((r) => setTimeout(() => r(orig(ch, p)), 120));
+      };
+      const go = (n) => $$(".nav-item").find((b) => text(b) === n);
+      const views = ["Commits", "Branches", "Compare", "Changes"];
+      c.ok(views.every(go), "the local views are all in the rail");
+      if (!views.every(go)) return;
+      // Warm every view once, the way a user who has been working would have.
+      for (const v of views) {
+        go(v).click();
+        await settle(520);
+      }
+      // Wait PAST the status TTL (3s) before the second lap. Without this the
+      // revisit lands inside the TTL, gget answers without IPC, and the check
+      // passes for a reason that has nothing to do with the fix — which is
+      // exactly what it did on the first attempt. The complaint being tested is
+      // "click away and come back", not "click twice quickly".
+      await settle(3400);
+      seen.length = 0;
+      const flashed = [];
+      for (const v of views) {
+        go(v).click();
+        await settle(30); // early enough that a skeleton would still be up
+        const sk = $$(".skeleton, .sk-row, .loading-state, .spinner, .list-loading").length;
+        if (sk) flashed.push(`${v} (${sk})`);
+        await settle(520);
+      }
+      c.eq(flashed.join(", "), "", "no view flashes a skeleton on a REVISIT");
+      // Session facts must not be re-asked per route.
+      for (const ch of ["ai:settings", "github:status"]) {
+        c.eq(
+          seen.filter((x) => x === ch).length,
+          0,
+          `${ch} is not re-fetched on every route (it cannot change between clicks)`,
+        );
+      }
+      c.ok(
+        seen.length <= 8,
+        `and a full lap costs few calls, not one per view per datum (${seen.length}: ${[...new Set(seen)].join(", ")})`,
+      );
+      window.gitstudio.invoke = orig;
+    },
+
     "graph-ref-column-shows-a-name": async (f) => {
       const c = check(f);
       await settle(900);

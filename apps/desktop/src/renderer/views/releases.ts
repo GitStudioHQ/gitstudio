@@ -218,8 +218,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         );
         return;
       }
-      // "Latest" marks the first non-draft (published) release, like github.com.
-      const latestId = releases.find((r) => !r.draft)?.id;
+      // "Latest" is the newest published, NON-PRE-RELEASE release — github.com's
+      // own rule. Taking the first non-draft awarded the badge to a release
+      // candidate whenever one was newest, so the list pointed at the RC instead
+      // of the build people are actually running. "Which version is current?" is
+      // the question this badge exists to answer.
+      const latestId = releases.find((r) => !r.draft && !r.prerelease)?.id;
       const items = q
         ? releases.filter((rel) => `${rel.name} ${rel.tagName}`.toLowerCase().includes(q))
         : releases;
@@ -473,7 +477,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   void gget("release:list", undefined, 30000)
     .then((all) => {
       if (!pills.isConnected) return;
-      if (!rel.draft && all.find((r) => !r.draft)?.id === rel.id) {
+      if (!rel.draft && !rel.prerelease && all.find((r) => !r.draft && !r.prerelease)?.id === rel.id) {
         pills.appendChild(statePill("Latest", "latest"));
       }
     })

@@ -159,7 +159,7 @@ export function connectPrompt(nav: (view: string) => void): HTMLElement {
 export function ghHeader(
   title: string,
   login: string | undefined,
-  onRefresh: () => void,
+  onRefresh: () => void | Promise<void>,
   count?: number,
 ): HTMLElement & { setCount?: (shown: number, total?: number) => void } {
   const headRow = el("div", "list-head list-head-row gh-head") as HTMLElement & {
@@ -193,11 +193,32 @@ export function ghHeader(
   // affordance is honesty, not clutter.
   void login;
   const right = el("div", "gh-acct");
-  const refreshBtn = el("button", "icon-btn gh-refresh");
+  const refreshBtn = el("button", "icon-btn gh-refresh") as HTMLButtonElement;
   refreshBtn.title = "Refresh";
   refreshBtn.setAttribute("aria-label", "Refresh this view");
   refreshBtn.appendChild(glyph("refresh"));
-  refreshBtn.addEventListener("click", () => onRefresh());
+  // Say that it is working. This was `() => onRefresh()` — fire and forget, no
+  // feedback of any kind — in twelve views. Clicking it looked like nothing had
+  // happened, so people clicked it again. The local views (Code, Changes) grew a
+  // busy state of their own; these never did.
+  refreshBtn.addEventListener("click", () => {
+    if (refreshBtn.disabled) return;
+    refreshBtn.disabled = true;
+    refreshBtn.classList.add("is-busy");
+    refreshBtn.querySelector(".codicon")?.classList.add("spin");
+    const done = (): void => {
+      if (!refreshBtn.isConnected) return;
+      refreshBtn.disabled = false;
+      refreshBtn.classList.remove("is-busy");
+      refreshBtn.querySelector(".codicon")?.classList.remove("spin");
+    };
+    // A refresh answered from cache finishes in a millisecond, and a spinner
+    // that appears and vanishes within one frame reads as "nothing happened".
+    // Hold it long enough to be seen — the honest signal is "I did the thing",
+    // not "here is precisely how long it took".
+    const floor = new Promise<void>((r) => setTimeout(r, 350));
+    void Promise.all([Promise.resolve(onRefresh()).catch(() => {}), floor]).then(done);
+  });
   right.appendChild(refreshBtn);
   headRow.append(left, right);
   return headRow;
@@ -724,21 +745,57 @@ export function avatarStack(
 /** Esc on a detail page = back to the list. Stands down whenever another layer
  *  consumed the key (peek/modal/palette/menu all preventDefault their Esc) or
  *  the focus is in a text surface; self-unhooks once the page leaves the DOM. */
+/**
+ * ONE listener for every detail page, and it answers "←" as well as Escape.
+ *
+ * Two things were wrong with a listener per page. It only handled Escape, while
+ * the app's own shortcut sheet advertises "Esc or ←" — the arrow was documented
+ * and implemented nowhere. And it unhooked itself on the next KEYDOWN after the
+ * view had detached, not when the view detached: so open a detail, switch
+ * section (the view is stashed, not destroyed), type anything at all, and the
+ * handler removed itself for good. Come back to that page and Escape was dead,
+ * with the page's closure pinned in memory until some later keystroke happened
+ * to evict it.
+ *
+ * A registry keyed by the view element fixes both. It survives the
+ * detach/re-attach that keep-alive does, it needs no teardown from callers that
+ * have none to give, and the entries are pruned whenever a new page is wired.
+ */
+const detailBacks = new WeakMap<HTMLElement, () => void>();
+let detailStack: HTMLElement[] = [];
+let detailKeysWired = false;
+
 function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
-  const onKey = (e: KeyboardEvent): void => {
-    if (!view.isConnected) {
-      document.removeEventListener("keydown", onKey);
-      return;
-    }
-    if (e.key !== "Escape" || e.defaultPrevented) return;
+  detailBacks.set(view, onBack);
+  // Most recent last; drop anything the DOM has finished with.
+  detailStack = detailStack.filter((v) => v !== view && v.isConnected);
+  detailStack.push(view);
+  if (detailKeysWired) return;
+  detailKeysWired = true;
+  document.addEventListener("keydown", (e) => {
+    const esc = e.key === "Escape";
+    const left = e.key === "ArrowLeft";
+    if ((!esc && !left) || e.defaultPrevented) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    // ← is Back only when the keyboard is on the PAGE. Inside a control that
+    // uses arrows — a tablist, a toolbar, a resizer, a list — the arrow belongs
+    // to that control, and stealing it would be worse than not offering it.
+    if (left && t && t !== document.body && t.closest('[role="tablist"], [role="toolbar"], [role="separator"], [role="listbox"], [role="menu"], .gh-seg, .settings-seg, .cmp-seg')) {
+      return;
+    }
+    // A floating layer above the page owns these keys.
     if (document.querySelector(".peek-overlay, .modal-overlay, .cmdk-overlay, .dropdown")) return;
-    e.preventDefault();
-    document.removeEventListener("keydown", onKey);
-    onBack();
-  };
-  document.addEventListener("keydown", onKey);
+    for (let i = detailStack.length - 1; i >= 0; i--) {
+      const v = detailStack[i];
+      if (!v.isConnected) continue;
+      const back = detailBacks.get(v);
+      if (!back) continue;
+      e.preventDefault();
+      back();
+      return;
+    }
+  });
 }
 
 export interface DetailPageOpts {

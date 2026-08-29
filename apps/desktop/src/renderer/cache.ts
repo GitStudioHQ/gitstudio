@@ -164,3 +164,97 @@ export function prime<C extends IpcChannel>(
 ): void {
   store.set(keyFor(channel, payload), { value, at: Date.now() });
 }
+
+/**
+ * Stable stringify — key order must not decide whether two payloads "differ".
+ *
+ * `JSON.stringify` preserves insertion order, and an IPC response rebuilt from a
+ * different code path can carry the same facts with its keys in another order.
+ * Comparing those raw would report a change on every single revalidation, which
+ * is exactly the repaint this module exists to avoid.
+ */
+function stable(v: unknown): string {
+  const seen = new WeakSet<object>();
+  const walk = (x: unknown): unknown => {
+    if (x === null || typeof x !== "object") return x;
+    if (seen.has(x as object)) return "[circular]";
+    seen.add(x as object);
+    if (Array.isArray(x)) return x.map(walk);
+    const o = x as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(o).sort()) out[k] = walk(o[k]);
+    return out;
+  };
+  try {
+    return JSON.stringify(walk(v));
+  } catch {
+    return String(v);
+  }
+}
+
+/** Do these two IPC answers carry the same facts? Key order is not a fact. */
+export function sameData(a: unknown, b: unknown): boolean {
+  return stable(a) === stable(b);
+}
+
+/**
+ * Render what we already know, then quietly check whether it is still true.
+ *
+ * The complaint this answers: "clicking around causes slow screen loading and
+ * reloading". Every view fetched its data on every route and painted a skeleton
+ * while it waited — so returning to a screen you had just left cost a round trip
+ * and a flash of nothing, even when the answer could not possibly have changed.
+ *
+ * Three properties, and the third is the one that matters:
+ *
+ *  1. A cached value is handed back SYNCHRONOUSLY, before this function
+ *     returns. The caller renders it in the same frame; there is no skeleton
+ *     and no await for data we already hold.
+ *  2. The request is still made, so the screen cannot go stale.
+ *  3. If the fresh answer is IDENTICAL to what was rendered, `onData` is not
+ *     called again. Nothing repaints, nothing scrolls, nothing flickers, and
+ *     whatever the user had selected or typed survives. A view only rebuilds
+ *     when the data behind it actually changed — which is what "refresh" should
+ *     have meant all along.
+ *
+ * `alive()` lets a caller drop a response that arrived after its view was
+ * replaced; without it a slow answer repaints a screen the user has left.
+ */
+export function swr<C extends IpcChannel>(
+  channel: C,
+  payload: IpcRequest<C>,
+  opts: {
+    onData: (value: IpcResponse<C>, from: "cache" | "network") => void;
+    onError?: (err: unknown) => void;
+    /** Skip the revalidation entirely while the cached value is younger. */
+    ttl?: number;
+    /** False once the caller's view is gone — a late answer is then dropped. */
+    alive?: () => boolean;
+  },
+): void {
+  const cached = peek(channel, payload);
+  let rendered: string | undefined;
+  if (cached !== undefined) {
+    rendered = stable(cached);
+    opts.onData(cached, "cache");
+  }
+  // A fresh-enough cached value needs no round trip at all.
+  if (cached !== undefined && opts.ttl !== undefined) {
+    const e = store.get(keyFor(channel, payload));
+    if (e && Date.now() - e.at <= opts.ttl) return;
+  }
+  void gget(channel, payload, 0)
+    .then((fresh) => {
+      if (opts.alive && !opts.alive()) return;
+      if (rendered !== undefined && stable(fresh) === rendered) return; // nothing changed
+      opts.onData(fresh, "network");
+    })
+    .catch((err) => {
+      if (opts.alive && !opts.alive()) return;
+      // A failed revalidation must not blank a screen that is already showing
+      // the last good answer — that turns a transient network blip into a
+      // regression the user can see.
+      if (cached !== undefined) return;
+      opts.onError?.(err);
+    });
+}

@@ -398,14 +398,21 @@ async function renderSubTab(
 // ── Row builders ──────────────────────────────────────────────────────────────
 
 function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
-  // CLICK = OPEN. An org repo IS a repo — one click puts you inside it (Code,
-  // Commits, Branches, PRs, everything), cloning itself into ~/GitStudio
-  // first if needed. No interstitial card in the way: the info peek and the
-  // no-clone browser are hover actions for when you want them.
+  // CLICK = BROWSE, the same as clicking a repo anywhere else in the app.
+  //
+  // It used to mean CLONE: one click on a row that looks exactly like Explore's
+  // repo rows downloaded the whole repository to disk and replaced the app's
+  // entire working context with it. Two identical-looking rows, two very
+  // different outcomes — and the destructive one was the default, with no
+  // confirmation and nothing on the row to warn you. Adopting a repository is a
+  // deliberate act; reading one is not, and reading is what a click means
+  // everywhere else here.
+  //
+  // "Open in GitStudio" keeps the clone, as a named action you choose.
   const row = el("div", "list-row gh-org-repo is-clickable");
   row.setAttribute("role", "button");
   row.tabIndex = 0;
-  row.setAttribute("aria-label", `Open ${r.fullName} in GitStudio`);
+  row.setAttribute("aria-label", `Browse ${r.fullName}`);
   row.appendChild(glyph(r.fork ? "repo-forked" : "repo"));
   const m = el("div", "row-meta");
   const t = el("div", "row-meta-title");
@@ -422,27 +429,29 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   m.append(t, sub);
   row.appendChild(m);
   row.title = r.description
-    ? `${r.description}\n\nClick to open in GitStudio`
-    : `Click to open ${r.fullName} in GitStudio`;
-  row.addEventListener("click", () => openGhRepoInApp(r.fullName));
+    ? `${r.description}\n\nClick to browse ${r.name}`
+    : `Click to browse ${r.fullName}`;
+  const browse = (): void => {
+    if (sectionNav) sectionNav("explore", { id: `repo/${r.fullName}` });
+    else openPeek(repoDirCard(r.fullName, ""));
+  };
+  row.addEventListener("click", browse);
   row.addEventListener("keydown", (e) => {
-    // Only the ROW itself: Enter on a nested hover button (Details/Browse)
-    // must activate THAT button, not silently start a clone.
+    // Only the ROW itself: Enter on a nested hover button must activate THAT
+    // button rather than the row behind it.
     if (e.target !== row) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      openGhRepoInApp(r.fullName);
+      browse();
     }
   });
   const actions = el("div", "row-actions");
   actions.append(
     textBtn("Details", `About ${r.name} — stars, license, activity`, () => openRepoPeek(r)),
-    // The full page, not the peek: browsing a repo you might adopt deserves
-    // breadcrumbs, a ref switcher and go-to-file. "Details" keeps the glance.
-    textBtn("Browse", `Read ${r.name}'s files and README without opening it`, () =>
-      sectionNav
-        ? sectionNav("explore", { id: `repo/${r.fullName}` })
-        : openPeek(repoDirCard(r.fullName, "")),
+    // Browsing is now what the ROW does, so the action that earns a place here
+    // is the one the row no longer performs: adopting the repository.
+    textBtn("Open", `Clone ${r.name} if needed and open it in GitStudio`, () =>
+      openGhRepoInApp(r.fullName),
     ),
   );
   row.appendChild(actions);

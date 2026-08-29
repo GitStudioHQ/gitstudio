@@ -17,7 +17,12 @@ let enabledCache: boolean | undefined;
 export async function aiEnabled(): Promise<boolean> {
   if (enabledCache !== undefined) return enabledCache;
   try {
-    enabledCache = (await host.invoke("ai:settings", undefined)).enabled;
+    // `?? false`, not a bare read: an answer that arrives without `enabled`
+    // assigned `undefined` to the cache, which is the ONE value that means "not
+    // cached yet" — so the memo never took and every view that gates on AI
+    // re-asked over IPC on every single route. A memo you can poison with a
+    // malformed answer is not a memo.
+    enabledCache = (await host.invoke("ai:settings", undefined))?.enabled ?? false;
   } catch {
     enabledCache = false;
   }

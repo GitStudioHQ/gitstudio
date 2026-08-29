@@ -32,7 +32,7 @@ import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled }
 import { toast, confirmDialog, promptInline, openModal } from "./dialogs";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
-import { gget, peek, bust, setCacheScope } from "./cache";
+import { gget, peek, bust, setCacheScope, swr, sameData} from "./cache";
 import {
   el,
   span,
@@ -202,6 +202,20 @@ class App {
     amend: boolean;
     signoff: boolean;
     coAuthors: string[];
+    /**
+     * The text Amend PUT in the box, so un-ticking can tell "the previous
+     * commit's message, untouched" from "something the user wrote".
+     *
+     * This lived as a render-local `let` while every sibling piece of composer
+     * state lived here — so the withdrawal only worked inside a single render.
+     * Every stage, unstage, discard, stash, Refresh, route change and
+     * filesystem-watcher tick rebuilds the composer, which means the guard was
+     * almost never in force: tick Amend to look at the last message, change your
+     * mind, untick, and the box kept the previous commit's message while the
+     * toggle, the button label and the branch line all returned to the
+     * new-commit shape. Committing then duplicated someone else's subject.
+     */
+    prefilled?: string;
   } = { message: "", amend: false, signoff: false, coAuthors: [] };
   /** A pending deep-link target for the next section mount (e.g. an issue number
    *  to open from the project board). Consumed + cleared by mountSection. */
@@ -545,8 +559,12 @@ class App {
     // A different repo makes every remembered row meaningless — issue #31 in
     // one repo is not issue #31 in another.
     clearFocusReturn();
+    // Baseline the on-disk state for this repo, so the FIRST window focus can
+    // tell "nothing changed" from "no idea" and skip a full refresh it does not
+    // need. Fire-and-forget: it only has to land before the user alt-tabs.
+    void this.recordDiskFingerprint();
     // A half-written commit message belongs to the repo it was typed in.
-    this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [] };
+    this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined };
     // Drop the previous repo's graph mount so a refresh from a non-graph view
     // never reloads stale history.
     this.graph?.dispose();
@@ -972,9 +990,24 @@ class App {
     }
     // Stash the OUTGOING view if it's keep-alive-able, so returning to it later
     // restores the rendered DOM (scroll, expanded state) instead of refetching.
+    //
+    // But only if it actually FINISHED. A section you clicked into and left
+    // before its data arrived was cached mid-load — skeleton and all — and
+    // restored from that cache on every later visit, so Issues came back
+    // permanently empty for the rest of the session and nothing but the header
+    // refresh button could recover it. The trigger is ordinary: click a section,
+    // get impatient, click something else. A view that never painted is not a
+    // view worth keeping.
     const prev = this.currentView;
-    if (!force && App.KEEPALIVE.has(prev) && this.viewHost.firstElementChild) {
-      this.viewCache.set(prev, this.viewHost.firstElementChild as HTMLElement);
+    const outgoing = this.viewHost.firstElementChild as HTMLElement | null;
+    const stillLoading =
+      !!outgoing?.querySelector(".skeleton, .sk-row, .list-loading, .loading-state, .spinner");
+    if (!force && App.KEEPALIVE.has(prev) && outgoing && !stillLoading) {
+      this.viewCache.set(prev, outgoing);
+    } else if (stillLoading) {
+      // …and drop any older good copy, so the next visit rebuilds rather than
+      // restoring something staler than what we just abandoned.
+      this.viewCache.delete(prev);
     }
     if (force) {
       this.viewCache.delete(id); // a refresh must rebuild with fresh data
@@ -994,13 +1027,23 @@ class App {
       this.closeGraphDiff();
       this.detailsEl = undefined;
     }
+    // Roving tabindex: exactly ONE rail item is in the Tab order.
+    //
+    // "The active one" is not enough, because some routes are not rail items at
+    // all — the Assistant is reached from the top bar, and a detail page is a
+    // route with no rail entry. On those, nothing matched, every one of the 17
+    // destinations got tabIndex -1, and the entire navigation rail dropped out
+    // of the keyboard's reach until you happened to press ⌘1-8. A roving tab
+    // stop needs a fallback, or it is not a tab stop.
+    let anyActive = false;
     for (const btn of this.navButtons) {
       const active = btn.dataset.view === id;
+      if (active) anyActive = true;
       btn.classList.toggle("active", active);
       btn.setAttribute("aria-selected", active ? "true" : "false");
-      // Roving tabindex: only the active tab is in the Tab order.
       btn.tabIndex = active ? 0 : -1;
     }
+    if (!anyActive && this.navButtons.length) this.navButtons[0].tabIndex = 0;
     // Restore a kept-alive view instantly, skipping the rebuild + refetch.
     const cached = App.KEEPALIVE.has(id) ? this.viewCache.get(id) : undefined;
     if (cached) {
@@ -1098,7 +1141,22 @@ class App {
 
     const gen = this.routeGen;
     await this.refreshRefs();
-    let locals = await gget("branches:list", undefined);
+    let locals: BranchInfo[];
+    try {
+      locals = await gget("branches:list", undefined);
+    } catch (e) {
+      // A failed read is not an empty repository. This used to be impossible to
+      // reach — the bridge turned every git failure into `[]` — so a repo with a
+      // corrupt packed-refs or a held index.lock rendered as "No branches yet",
+      // which is a confident lie about a repo full of branches.
+      if (gen !== this.routeGen) return;
+      body.replaceChildren(
+        errorState("Couldn't list branches", cleanErr(e) || "Git could not read this repository's refs.", () =>
+          void this.showBranchesView(highlightRef),
+        ),
+      );
+      return;
+    }
     if (gen !== this.routeGen) return;
     // Stashes join the ref manager: they're refs too, and this is the only
     // browsable surface they have (the peek offers apply / pop / drop).
@@ -1923,12 +1981,19 @@ class App {
         head: this.compareHead,
       }),
     );
-    void host
-      .invoke("github:status", undefined)
-      .then((s) => {
+    // Through the cache, not a fresh round trip on every route. Whether you are
+    // signed in to GitHub cannot change between two clicks in the same app, and
+    // asking again each time was one of two calls that fired on EVERY entry to
+    // Compare and Changes — latency spent to re-learn something we already knew.
+    swr("github:status", undefined, {
+      // Signing in or out busts the cache explicitly, so a minute of staleness
+      // costs nothing and saves a round trip on every single route.
+      ttl: 60_000,
+      alive: () => prBtn.isConnected,
+      onData: (s) => {
         prBtn.hidden = !(s.connected && !!s.repo);
-      })
-      .catch(() => {});
+      },
+    });
     // The Explain / Review actions live on the right of the results row — they act
     // on the comparison's diff, so they belong with the results, not the pickers.
     viewBar.append(seg, summary, prBtn, aiWrap);
@@ -1959,7 +2024,18 @@ class App {
     });
 
     const runCompare = async (): Promise<void> => {
-      body.replaceChildren(loadingState(`Comparing ${this.compareBase} … ${this.compareHead}`));
+      // "Comparing main … feature" belongs on a comparison you have not seen.
+      // Re-entering Compare on the SAME two refs used to blank the result and
+      // re-run the whole comparison, so returning to a screen you had just left
+      // cost a git round trip and a flash of a loading card — for an answer that
+      // was already on the page a second earlier.
+      const cmpKey =
+        this.compareBase && this.compareHead
+          ? { base: this.compareBase, head: this.compareHead, mode: this.compareMode }
+          : undefined;
+      if (!cmpKey || peek("compare:refs", cmpKey) === undefined) {
+        body.replaceChildren(loadingState(`Comparing ${this.compareBase} … ${this.compareHead}`));
+      }
       // Nothing to compare yet (a single-branch repo, or base === head):
       // prompt for a second ref instead of running a doomed comparison.
       if (!this.compareBase || this.compareBase === this.compareHead) {
@@ -1977,11 +2053,14 @@ class App {
         );
         return;
       }
-      const res = await host.invoke("compare:refs", {
-        base: this.compareBase,
-        head: this.compareHead!,
-        mode: this.compareMode,
-      });
+      // Through the cache: comparing the same two refs twice should not re-run
+      // the comparison. Any mutation that could change the answer already calls
+      // bust(), so this cannot go stale behind the user's back.
+      const res = await gget(
+        "compare:refs",
+        { base: this.compareBase, head: this.compareHead!, mode: this.compareMode },
+        15_000,
+      );
       last = res ?? undefined;
       if (!res) {
         summary.textContent = "";
@@ -2652,6 +2731,10 @@ class App {
         signOut.append(span("Sign out"));
         signOut.addEventListener("click", async () => {
           await host.invoke("github:disconnect", undefined);
+          // Signing out invalidates EVERY cached GitHub answer, not just the
+          // account chip: issues, PRs, notifications and the "Create pull
+          // request" affordances were all computed for a session that is over.
+          bust();
           toast("Signed out of GitHub.", "info");
           void this.showSettingsView();
         });
@@ -3263,13 +3346,17 @@ class App {
      * you "write a commit message first" while it sat in front of you.
      */
     /** The exact text the amend prefill put in the box, while it is untouched. */
-    let prefilled: string | undefined;
+    let prefilled: string | undefined = this.composerDraft.prefilled;
     const setMessage = (text: string): void => {
       textarea.value = text;
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     };
     textarea.addEventListener("input", () => {
-      if (prefilled !== undefined && textarea.value !== prefilled) prefilled = undefined;
+      if (prefilled !== undefined && textarea.value !== prefilled) {
+        prefilled = undefined;
+        this.composerDraft.prefilled = undefined;
+        this.composerDraft.prefilled = undefined;
+      }
     });
     // ⌘/Ctrl+Enter commits. Every commit box in every tool does this, and here
     // it did nothing at all — the only way to commit was to leave the keyboard.
@@ -3359,6 +3446,7 @@ class App {
           if (amend && prefill && !textarea.value.trim()) {
             setMessage(prefill);
             prefilled = prefill;
+            this.composerDraft.prefilled = prefill;
           }
         });
       } else if (!amend && prefilled !== undefined && textarea.value === prefilled) {
@@ -3482,14 +3570,13 @@ class App {
     createPrBtn.addEventListener("click", () =>
       void openCreatePr(() => this.routeView("prs", true), { head: curBranch }),
     );
-    void host
-      .invoke("github:status", undefined)
-      .then((s) => {
+    swr("github:status", undefined, {
+      ttl: 60_000,
+      alive: () => createPrBtn.isConnected,
+      onData: (s) => {
         createPrBtn.hidden = !(s.connected && !!s.repo);
-      })
-      .catch(() => {
-        /* offline / not connected — leave hidden */
-      });
+      },
+    });
     // Hunk / line staging: stage (or unstage) exactly the lines selected in the
     // open file's diff. Hidden until a file is open; relabelled by stage state.
     let openFile: { path: string; staged: boolean } | null = null;
@@ -3584,8 +3671,14 @@ class App {
 
     const body = el("div", "dc-body");
     const lists = el("div", "dc-lists");
+    // ↑/↓ and j/k, the same as every other list in the app — and the same as the
+    // app's own cheat sheet has been promising. Five lists wired this; the
+    // LANDING view was not one of them, so the first list most people ever touch
+    // was the one where the documented keys did nothing.
+    wireListNav(lists, ".dc-file");
     lists.style.flex = `0 0 ${this.changesListW}px`;
-    lists.appendChild(skeletonList(6));
+    // Only when there is nothing cached to draw. See the status load below.
+    if (peek("status", undefined) === undefined) lists.appendChild(skeletonList(6));
 
     // Selection bar — present only while a selection exists, so the view is
     // unchanged for anyone who never selects.
@@ -3676,17 +3769,52 @@ class App {
     this.activeMonacoView = diffPanel;
     diffPanel.showEmpty("Select a file to view its diff.");
 
+    // Paint from what we already know, and only rebuild if the tree ACTUALLY
+    // moved. Before this, the file list was a 6-row skeleton on every entry and
+    // the answer was re-fetched past a 3s TTL — so clicking away for four
+    // seconds and coming back cost a git round trip and a flash of nothing, on
+    // the app's landing view, for a working tree that had not changed. The
+    // skeleton now appears only when there is genuinely nothing to show yet.
     let files: ChangedFile[];
-    try {
-      files = await gget("status", undefined, 3000);
-    } catch (e) {
-      // A failed status load must not leave the skeleton spinning forever.
-      lists.replaceChildren(
-        errorState("Couldn't read the working tree", cleanErr(e) || "Git status failed.", () =>
-          void this.showChangesView(),
-        ),
-      );
-      return;
+    const known = peek("status", undefined);
+    if (known !== undefined) {
+      files = known;
+      void gget("status", undefined, 0)
+        .then((fresh) => {
+          // Drop an answer for a view the user has already left, and repaint
+          // only on a real difference — a rebuild here would otherwise throw
+          // away the open file, the scroll position and the selection every
+          // few seconds for no reason.
+          this.staleTreeWarned = false;
+          if (this.currentView !== "changes" || !lists.isConnected) return;
+          if (sameData(fresh, known)) return;
+          void this.showChangesView();
+        })
+        .catch((e) => {
+          // Keep the last good tree on screen — blanking it would turn a
+          // transient blip into a visible regression — but SAY that we could not
+          // confirm it. Silence here means a genuinely broken repo goes on
+          // showing a stale working tree that the user believes is current.
+          if (this.currentView !== "changes" || !lists.isConnected) return;
+          if (this.staleTreeWarned) return;
+          this.staleTreeWarned = true;
+          toast(
+            cleanErr(e) || "Couldn't re-read the working tree — showing the last known state.",
+            "error",
+          );
+        });
+    } else {
+      try {
+        files = await gget("status", undefined, 3000);
+      } catch (e) {
+        // A failed status load must not leave the skeleton spinning forever.
+        lists.replaceChildren(
+          errorState("Couldn't read the working tree", cleanErr(e) || "Git status failed.", () =>
+            void this.showChangesView(),
+          ),
+        );
+        return;
+      }
     }
     const staged = files.filter((f) => f.staged);
     const unstaged = files.filter((f) => !f.staged);
@@ -3786,12 +3914,7 @@ class App {
         );
         actions.appendChild(
           textBtn("Discard", "Discard changes to this file", () => {
-            void confirmDialog({
-              title: "Discard changes?",
-              message: `Discard your changes to ${f.path}? This can't be undone.`,
-              confirmLabel: "Discard",
-              danger: true,
-            }).then((ok) => {
+            void confirmDialog(this.discardConfirm([f.path])).then((ok) => {
               if (ok) void this.changesAction("discard", f.path);
             });
           }, true),
@@ -4063,6 +4186,63 @@ class App {
   }
 
   /** Selection helpers — see selectedRows for why the key is kind:path. */
+  /**
+   * The confirmation for a Discard, told truthfully for these exact files.
+   *
+   * Discard means two different things and the dialog only ever described one.
+   * For a TRACKED file it reverts edits and the file stays. For an UNTRACKED one
+   * the bridge runs `git clean`, which deletes the file from disk — and git has
+   * no copy of it, so there is nothing to restore it from, ever. Both cases said
+   * "Discard your changes to <path>? This can't be undone", which someone with a
+   * brand-new file reasonably reads as "revert my edits". They lose the file.
+   */
+  private discardConfirm(paths: string[]): {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    danger: true;
+  } {
+    const files = peek("status", undefined) ?? [];
+    const untrackedPaths = new Set(
+      files.filter((f) => f.status === "?" && !f.staged).map((f) => f.path),
+    );
+    const gone = paths.filter((p) => untrackedPaths.has(p));
+    const reverted = paths.filter((p) => !untrackedPaths.has(p));
+    const one = paths.length === 1;
+
+    if (gone.length === 0) {
+      return {
+        title: "Discard changes?",
+        message: one
+          ? `Discard your changes to ${paths[0]}? This can't be undone.`
+          : `Discard your changes to ${paths.length} files? This can't be undone.`,
+        confirmLabel: "Discard",
+        danger: true,
+      };
+    }
+    if (reverted.length === 0) {
+      return {
+        title: one ? "Delete this file?" : `Delete ${gone.length} files?`,
+        message: one
+          ? `${gone[0]} isn't tracked by git, so discarding it DELETES the file from disk. ` +
+            `Git has no copy of it — there is nothing to restore it from.`
+          : `${gone.length} of these files aren't tracked by git, so discarding them DELETES ` +
+            `them from disk. Git has no copy of them — there is nothing to restore them from.`,
+        confirmLabel: one ? "Delete file" : `Delete ${gone.length} files`,
+        danger: true,
+      };
+    }
+    return {
+      title: "Discard changes and delete files?",
+      message:
+        `${gone.length} of these ${paths.length} files aren't tracked by git and will be ` +
+        `DELETED from disk with no way to restore them. The other ${reverted.length} will have ` +
+        `their changes reverted. Neither can be undone.`,
+      confirmLabel: "Discard and delete",
+      danger: true,
+    };
+  }
+
   private selectionEntries(): Array<{ kind: string; path: string }> {
     return selectionEntries(this.rowOrder, this.selectedRows);
   }
@@ -4281,12 +4461,7 @@ class App {
       items.push({
         label: "Discard Changes", icon: "discard",
         onClick: () => {
-          void confirmDialog({
-            title: "Discard changes?",
-            message: `Discard your changes to ${f.path}? This can't be undone.`,
-            confirmLabel: "Discard",
-            danger: true,
-          }).then((ok) => {
+          void confirmDialog(this.discardConfirm([f.path])).then((ok) => {
             if (ok) void this.changesAction("discard", f.path);
           });
         },
@@ -4328,15 +4503,7 @@ class App {
       items.push({
         label: `Discard ${noun(discardable.length)}`, icon: "discard",
         onClick: () => {
-          void confirmDialog({
-            title: "Discard changes?",
-            message:
-              discardable.length === 1
-                ? `Discard your changes to ${discardable[0]}? This can't be undone.`
-                : `Discard your changes to ${discardable.length} files? This can't be undone.`,
-            confirmLabel: "Discard",
-            danger: true,
-          }).then((ok) => {
+          void confirmDialog(this.discardConfirm(discardable)).then((ok) => {
             if (ok) void this.bulkAction("discard", discardable, lists, selBar);
           });
         },
@@ -4527,7 +4694,7 @@ class App {
       }
       textarea.value = "";
       // The draft has been spent — do not carry it into the next commit.
-      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [] };
+      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined };
       bust(); // a commit (± push) touches refs/branches/status/sync/graph
       await this.refreshRefs();
       await this.updateSync();
@@ -4663,6 +4830,11 @@ class App {
       }
       if (r.state === "authorized") {
         cleanup();
+        // Every cached GitHub answer was computed while signed OUT — the empty
+        // issue lists, the hidden PR buttons, the connect prompts. None of it is
+        // true any more.
+        bust("github:");
+        bust("gh");
         toast(`Signed in as @${r.login}.`, "success");
         onConnected();
         return;
@@ -4838,9 +5010,11 @@ class App {
       toast(`${verb} successfully.`, "success");
       bust(); // a fetch/pull/push changes sync/refs/branches/graph
       await this.updateSync();
+      // refreshAll() already re-routes — and it does so WITH the current
+      // history target, so you keep your place. This second, targetless
+      // re-route undid that: pressing Push while reading PR #106 refreshed
+      // correctly and was then immediately replaced by the PR list.
       await this.refreshAll();
-      // Refresh the active data view so its content reflects the sync.
-      this.routeView(this.currentView, true);
     } catch (e) {
       toast(cleanErr(e) || `${action} failed.`, "error");
     } finally {
@@ -5298,8 +5472,14 @@ class App {
     // edit in another app, switch to GitStudio — and it is also the safety net
     // for when the watcher could not start at all (a huge tree on Linux can
     // exhaust inotify), so it deliberately does not check whether one is running.
+    // Coming back to the front does NOT mean anything changed. This used to call
+    // refreshFromDisk(true) unconditionally, which drops the entire cache, throws
+    // away every kept-alive view and force-rebuilds the current one — so a plain
+    // alt-tab away and back cost a full reload of the app and ejected you from
+    // whatever detail page you were reading. Ask what changed first; if the
+    // answer is nothing, do nothing.
     window.addEventListener("focus", () => {
-      void this.refreshFromDisk(true);
+      void this.refreshIfDiskMoved();
     });
     host.on("menu:command", (msg) => {
       if (msg.command === "openRepo") void this.openRepo();
@@ -5423,6 +5603,44 @@ class App {
       }));
   }
 
+  /** What the repo looked like on disk the last time we synced with it. */
+  private diskFingerprint?: string;
+  /** One warning per run of failures, not one per revalidation. */
+  private staleTreeWarned = false;
+
+  /**
+   * Refresh only if the repository actually moved while we were away.
+   *
+   * The window-focus refresh is the safety net for edits made in another app —
+   * a real need, and the reason it deliberately does not check whether a file
+   * watcher is running. But it fired on EVERY focus, and its full refresh drops
+   * the whole cache, clears every kept-alive view and force-rebuilds. So alt-tab
+   * to a browser and back and the app rebuilt itself from nothing, which is both
+   * slow and destructive: the Settings sign-in card had to be special-cased out
+   * of it by hand, and any detail page you were reading was replaced by its list.
+   *
+   * Two cheap reads answer "did anything change?" — the working tree and HEAD.
+   * They cost a few milliseconds against the seconds a full refresh costs, and
+   * in the common case (nothing changed) the answer is: do nothing at all.
+   */
+  private async refreshIfDiskMoved(): Promise<void> {
+    if (!this.currentRepo || this.refreshingFromDisk) return;
+    let print: string;
+    try {
+      const [status, head] = await Promise.all([
+        host.invoke("status", undefined),
+        host.invoke("head:get", undefined),
+      ]);
+      print = JSON.stringify({ status, head });
+    } catch {
+      // Could not tell — leave the screen alone rather than rebuild on a guess.
+      return;
+    }
+    if (this.diskFingerprint === print) return; // nothing moved while we were away
+    this.diskFingerprint = print;
+    await this.refreshFromDisk(true);
+  }
+
   private async refreshFromDisk(gitDir: boolean): Promise<void> {
     if (!this.currentRepo || this.refreshingFromDisk) {
       return;
@@ -5431,6 +5649,10 @@ class App {
     try {
       if (gitDir) {
         await this.refreshAll();
+        // Our OWN refresh has just re-read the tree; record it, or the next
+        // window focus sees a fingerprint from before this change and rebuilds
+        // the app a second time for something it has already applied.
+        void this.recordDiskFingerprint();
         return;
       }
       bust("status");
@@ -5448,6 +5670,19 @@ class App {
       }
     } finally {
       this.refreshingFromDisk = false;
+    }
+  }
+
+  /** Snapshot the on-disk state so the next focus can tell "changed" from "same". */
+  private async recordDiskFingerprint(): Promise<void> {
+    try {
+      const [status, head] = await Promise.all([
+        host.invoke("status", undefined),
+        host.invoke("head:get", undefined),
+      ]);
+      this.diskFingerprint = JSON.stringify({ status, head });
+    } catch {
+      this.diskFingerprint = undefined;
     }
   }
 
@@ -5478,7 +5713,13 @@ class App {
     if (this.currentView === "graph" && this.graph) {
       await this.graph.reload();
     } else {
-      this.routeView(this.currentView, true);
+      // Re-route to WHERE YOU ARE, not just to which section you are in. This
+      // passed no target, so a refresh while reading PR #106 rebuilt the PR
+      // LIST — you were ejected from the page you were on by a background
+      // event you never asked for. The history stack already knows the target;
+      // it is the same value Back would return you to.
+      const here = this.navHistory[this.navPos];
+      this.routeView(this.currentView, true, here?.view === this.currentView ? here.target : undefined);
     }
   }
 

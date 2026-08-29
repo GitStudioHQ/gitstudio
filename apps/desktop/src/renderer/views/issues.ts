@@ -27,7 +27,7 @@ import {
   stateLead,
   statePill,
 } from "../ui";
-import { confirmDialog, editForm, promptInline, toast } from "../dialogs";
+import { confirmDialog, editForm, promptInline, toast, formWithRetry} from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";
@@ -758,27 +758,38 @@ function buildDetail(ctx: DetailCtx): void {
 /** The New-issue flow — exported so the command palette can launch it from
  *  anywhere, not just the Issues toolbar. Lands on the created issue. */
 export async function openNewIssue(nav: SectionNav): Promise<void> {
-  const res = await editForm({
-    title: "New issue",
-    okLabel: "Create issue",
-    titlePlaceholder: "Issue title",
-    bodyPlaceholder: "Describe the issue… (Markdown supported)",
-  });
-  if (!res) return;
-  try {
-    const r = await host.invoke("issue:create", { title: res.title, body: res.body });
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't create the issue.", "error");
-      return;
-    }
-    toast(r.number ? `Opened issue #${r.number}.` : "Issue created.", "success");
-    bust("issue");
-    issueState = "open";
-    if (r.number) nav("issues", { number: r.number });
-    else nav("issues", { list: true });
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't create the issue.", "error");
-  }
+  let created: { number?: number } | undefined;
+  // The form comes BACK if the create fails, carrying what was typed. It used to
+  // close first and send afterwards, so a rejected request answered several
+  // minutes of writing with a toast and an empty screen.
+  await formWithRetry<{ title: string; body: string }>(
+    (seed, error) =>
+      editForm({
+        title: "New issue",
+        okLabel: "Create issue",
+        titlePlaceholder: "Issue title",
+        bodyPlaceholder: "Describe the issue… (Markdown supported)",
+        titleValue: seed?.title,
+        bodyValue: seed?.body,
+        note: error,
+      }),
+    async (v) => {
+      try {
+        const r = await host.invoke("issue:create", { title: v.title, body: v.body });
+        if (!r.ok) return r.message ?? "Couldn't create the issue.";
+        created = r;
+        return undefined;
+      } catch (e) {
+        return cleanErr(e) || "Couldn't create the issue.";
+      }
+    },
+  );
+  if (!created) return;
+  toast(created.number ? `Opened issue #${created.number}.` : "Issue created.", "success");
+  bust("issue");
+  issueState = "open";
+  if (created.number) nav("issues", { number: created.number });
+  else nav("issues", { list: true });
 }
 
 async function postComment(

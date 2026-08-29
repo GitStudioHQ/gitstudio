@@ -10,7 +10,7 @@
 
 import { el, span, glyph } from "./ui";
 import { createSearchScheduler } from "./searchDebounce";
-import { registerLayer } from "./overlays";
+import { registerLayer, holdBackground } from "./overlays";
 
 export interface PaletteItem {
   /** Codicon for the row. */
@@ -91,6 +91,10 @@ export function openCommandPalette(providers: PaletteProviders): void {
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-label", "Command palette");
+  // The claim, made true. Tab from the palette's single input walked 34 controls
+  // sitting under its own opaque scrim — the flagship keyboard surface was the
+  // easiest place in the app to get lost.
+  const releaseBackground = holdBackground(overlay);
   const card = el("div", "cmdk-card");
   const inputRow = el("div", "cmdk-input-row");
   const icon = glyph("search");
@@ -118,6 +122,9 @@ export function openCommandPalette(providers: PaletteProviders): void {
   let selected = 0;
 
   const dispose = (): void => {
+    // Release BEFORE anything else: an `inert` that outlives its dialog freezes
+    // the whole app behind a palette that is no longer there.
+    releaseBackground();
     if (live?.overlay !== overlay) return;
     live = null;
     layer.release();

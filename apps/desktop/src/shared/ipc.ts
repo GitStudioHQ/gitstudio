@@ -52,6 +52,22 @@ export interface ChangedFile {
   status: string;
   /** Present for working-tree changes: is the change staged (in the index)? */
   staged?: boolean;
+  /**
+   * An UNMERGED path — a merge conflict, not an edit.
+   *
+   * Porcelain v1's two status columns normally mean index-half and
+   * worktree-half, which is what the parser assumed. For an unmerged path they
+   * mean something else entirely: the two SIDES of the merge. Reading `UD` as
+   * "staged U, unstaged D" produced two rows for one file, one of them claiming
+   * a deletion of a file sitting on disk, and the phantom "staged" copy carried
+   * an Unstage button that destroys the merge stages.
+   *
+   * Nothing downstream could tell a conflict from an edit because nothing said
+   * so. This is that flag.
+   */
+  conflicted?: boolean;
+  /** For an unmerged path, the raw two-letter code (UU, AA, DU, UD, …). */
+  conflictKind?: string;
 }
 
 /** One entry in a HEAD directory listing, for the GitHub-style Code browser. */
