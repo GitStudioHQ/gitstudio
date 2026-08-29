@@ -7,7 +7,7 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, stat } from "node:fs/promises";
-import { continueRebase, skipRebase, abortRebaseAt } from "@gitstudio/git-service/RebaseRunner";
+import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
 import { join, resolve, sep } from "node:path";
@@ -1744,8 +1744,9 @@ export class GitBridge {
    */
   rebaseAbort(): Promise<CommitActionResult> {
     return this.resumeRebase(async (root, o) => {
-      const ok = await abortRebaseAt(root, o);
-      return ok ? { status: "done" } : { status: "failed", message: "Couldn't abort the rebase." };
+      // The runner's message form: a failed abort says WHY — a locked index,
+      // an unmerged path git will not discard — instead of a canned sentence.
+      return await abortRebase(root, o);
     });
   }
   /**

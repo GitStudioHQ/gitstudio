@@ -160,6 +160,47 @@ async function rewordPaths(
 }
 
 /**
+ * git's own state directory for the rebase in progress, or undefined.
+ *
+ * This is where the queue LIVES once a rebase has paused — and it is the whole
+ * fence. git creates this directory when a rebase starts and deletes it when
+ * the rebase ends, however it ends and whoever ends it: `--abort` from a
+ * terminal, the extension's own abort command, `--quit`, completion. Anything
+ * inside it has exactly the rebase's lifetime, enforced by git.
+ *
+ * The previous attempt STAMPED the queue with `onto` + `orig-head` and compared
+ * on resume. That does not fence, because an abort RESTORES those values: the
+ * next rebase of the same branch onto the same base produces a byte-identical
+ * stamp, so an abandoned draft matched perfectly. Measured, with the stamp in
+ * place: "FINAL log: ABANDONED-DRAFT | m2 | m1". A lifetime we try to describe
+ * is a lifetime we get wrong; a lifetime git already manages is free.
+ */
+function rebaseStateDir(gitDir: string): string | undefined {
+  for (const d of ["rebase-merge", "rebase-apply"]) {
+    const full = path.join(gitDir, d);
+    try {
+      if (fs.statSync(full).isDirectory()) return full;
+    } catch {
+      /* not this layout */
+    }
+  }
+  return undefined;
+}
+
+/** Where a PAUSED rebase's queue and installer live: inside git's state dir. */
+function pausedPaths(
+  gitDir: string,
+): { dir: string; queue: string; installer: string } | undefined {
+  const state = rebaseStateDir(gitDir);
+  if (!state) return undefined;
+  return {
+    dir: gitDir,
+    queue: path.join(state, "gitstudio-reword-queue.json"),
+    installer: path.join(state, "gitstudio-reword-msg.js"),
+  };
+}
+
+/**
  * Forget the queue. Safe to call when there is none.
  *
  * Synchronous on purpose: this runs on the paths that report the rebase
@@ -169,48 +210,13 @@ async function rewordPaths(
  */
 function clearRewordQueue(p: { queue: string; installer: string } | undefined): void {
   if (!p) return;
-  for (const f of [p.queue, stampPath(p.queue), p.installer]) {
+  for (const f of [p.queue, p.installer]) {
     try {
       fs.rmSync(f, { force: true });
     } catch {
       /* nothing to do about it */
     }
   }
-}
-
-/** The stamp file beside a queue: which rebase it was written for. */
-function stampPath(queue: string): string {
-  return queue + ".rebase";
-}
-function readStamp(queue: string): string {
-  try {
-    return fs.readFileSync(stampPath(queue), "utf8").trim();
-  } catch {
-    return "";
-  }
-}
-
-/**
- * The rebase currently in flight, as a string that changes between rebases.
- *
- * `rebase-merge/onto` is where it is replaying onto and `orig-head` is where
- * the branch was — together they identify THIS run. Empty when no rebase is in
- * progress.
- */
-function rebaseIdentity(gitDir: string): string {
-  const read = (name: string): string => {
-    for (const d of ["rebase-merge", "rebase-apply"]) {
-      try {
-        return fs.readFileSync(path.join(gitDir, d, name), "utf8").trim();
-      } catch {
-        /* try the other layout */
-      }
-    }
-    return "";
-  };
-  const onto = read("onto");
-  const orig = read("orig-head");
-  return onto || orig ? `${onto}:${orig}` : "";
 }
 
 /**
@@ -227,21 +233,13 @@ async function resumeEnv(
     GIT_EDITOR: "true",
     GIT_SEQUENCE_EDITOR: "true",
   };
-  const paths = await rewordPaths(root, opts);
+  const git = await rewordPaths(root, opts);
+  // ONLY from inside git's own rebase state directory. That location is the
+  // fence: git deletes the directory when the rebase ends, however it ends and
+  // whoever ends it, so a queue there cannot outlive its rebase and cannot be
+  // seen by the next one. Nothing here has to guess a lifetime.
+  const paths = git && pausedPaths(git.dir);
   if (!paths || !fs.existsSync(paths.queue) || !fs.existsSync(paths.installer)) {
-    return { env: base };
-  }
-  // FENCE: only install messages into the rebase that queued them.
-  //
-  // Keying by sha makes a stale queue inert against a FOREIGN rebase, but not
-  // against a repeat of the same one: `git rebase --abort` restores the
-  // original shas, so a queue abandoned by an abort matches perfectly when that
-  // branch is rebased again — and an abandoned draft renamed a commit in a
-  // later rebase the user never asked to reword. The stamp is written when the
-  // run pauses and checked here; a mismatch means this queue is not ours.
-  const stamp = readStamp(paths.queue);
-  if (stamp && stamp !== rebaseIdentity(paths.dir)) {
-    clearRewordQueue(paths);
     return { env: base };
   }
   const exe = opts.nodePath ?? process.execPath;
@@ -263,6 +261,22 @@ export async function runRebasePlan(
   plan: RebasePlan,
   opts: RebaseRunOptions = {},
 ): Promise<RebaseOutcome> {
+  // Refuse BEFORE writing anything.
+  //
+  // git will refuse this run itself ("there is already a rebase-merge
+  // directory") — but only after we have already written the new plan's reword
+  // queue, and the pause path then handed that queue to the rebase ALREADY in
+  // flight, overwriting the messages the user actually typed. Measured: a
+  // second plan that git never started still renamed the commit —
+  // "FINAL log: SECOND-DRAFT | m2 | m1" — while the outcome shown was git's
+  // "It seems that there is already a rebase-merge directory", which reads as
+  // "nothing happened".
+  if (await rebaseInProgress(root, { ...process.env, GIT_OPTIONAL_LOCKS: "0" }, opts)) {
+    return {
+      status: "failed",
+      message: "A rebase is already in progress — continue or abort it before starting another.",
+    };
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gitstudio-rebase-"));
   const seqJs = path.join(dir, "seq.js");
   const todoFile = path.join(dir, "todo");
@@ -299,17 +313,30 @@ export async function runRebasePlan(
     const args = ["rebase", "-i", plan.base];
     const { code, stderr, stdout } = await spawnGit(args, root, env, opts);
 
-    /** A pause, not an ending: keep the queue and record which rebase it is for. */
+    /**
+     * A pause, not an ending.
+     *
+     * Hand the queue to GIT to look after: moved inside `rebase-merge/`, it
+     * lives exactly as long as the rebase does, and an abort from anywhere —
+     * a terminal, the extension, `--quit` — takes it with the directory. That
+     * is the whole fence; there is nothing for us to stamp or compare.
+     */
     const paused = (
       reason: "conflict" | "edit" | "unknown",
       message: string,
     ): RebaseOutcome => {
-      if (rw) {
+      const inRebase = rw && pausedPaths(rw.dir);
+      if (rw && inRebase) {
         try {
-          fs.writeFileSync(stampPath(rw.queue), rebaseIdentity(rw.dir));
+          fs.renameSync(rw.queue, inRebase.queue);
+          fs.renameSync(rw.installer, inRebase.installer);
         } catch {
-          /* no stamp is safer than a wrong one — resumeEnv treats "" as "unknown, allow" */
+          // Could not hand it over — then do NOT leave it lying in .git, where
+          // the next rebase of this branch would find it.
+          clearRewordQueue(rw);
         }
+      } else {
+        clearRewordQueue(rw);
       }
       return { status: "stopped", reason, message };
     };
@@ -399,6 +426,35 @@ export async function skipRebase(root: string, opts: RebaseRunOptions = {}): Pro
 }
 
 /** `git rebase --abort`. */
+/**
+ * Abort, reporting WHY when it fails.
+ *
+ * `abortRebaseAt` answers a bare boolean, so the caller had nothing to show but
+ * a canned "Couldn't abort the rebase." — while git's own explanation (a locked
+ * index, an unmerged path it will not discard) was thrown away. That is the
+ * same laundering this codebase has fixed in three other places.
+ */
+export async function abortRebase(
+  root: string,
+  opts: RebaseRunOptions = {},
+): Promise<RebaseOutcome> {
+  const { code, stderr, stdout } = await spawnGit(
+    ["rebase", "--abort"],
+    root,
+    { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    opts,
+  );
+  if (code === 0) {
+    clearRewordQueue(await rewordPaths(root, opts));
+    return { status: "done" };
+  }
+  return {
+    status: "failed",
+    message: firstLine(stderr) || firstLine(stdout) || "Couldn't abort the rebase.",
+  };
+}
+
+/** Boolean form, for callers that only branch on success. */
 export async function abortRebaseAt(root: string, opts: RebaseRunOptions = {}): Promise<boolean> {
   const { code } = await spawnGit(
     ["rebase", "--abort"],
@@ -406,10 +462,12 @@ export async function abortRebaseAt(root: string, opts: RebaseRunOptions = {}): 
     { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
     opts,
   );
-  // The plan is gone; so are the messages composed for it. (Keying by SHA means
-  // a queue left behind by some path that does not reach here is inert rather
-  // than dangerous — but leaving litter in `.git` is still litter.)
-  clearRewordQueue(await rewordPaths(root, opts));
+  // ONLY on success. A failed abort has changed nothing about the rebase, so it
+  // must not change the queue either — destroying the messages while the rebase
+  // is still live is the worst of both. git's own `--abort` removes
+  // `rebase-merge/` and the queue inside it; this only sweeps up a staging copy
+  // left by a run that never reached a pause.
+  if (code === 0) clearRewordQueue(await rewordPaths(root, opts));
   return code === 0;
 }
 
@@ -423,8 +481,22 @@ async function rebaseInProgress(
   env: NodeJS.ProcessEnv,
   opts: RebaseRunOptions,
 ): Promise<boolean> {
-  const { stdout } = await spawnGit(["status"], root, env, opts);
-  return /rebase in progress|interactive rebase in progress/i.test(stdout);
+  // Ask the FILESYSTEM, not git's prose.
+  //
+  // This ran `git status` and grepped it for "rebase in progress". git
+  // translates that sentence — a French git says "rebasage interactif en
+  // cours", a German one "Interaktives Rebase im Gange" — and the message
+  // catalogs ship with the standard package. So on any non-English git the
+  // answer was always `false`, which silently disabled every guard built on it:
+  // an `edit` stop was reported as a completed rebase, and the reword queue was
+  // deleted with it.
+  //
+  // The state directory is the same fact without the language, and cheaper than
+  // `git status` on a large working tree.
+  const { code, stdout } = await spawnGit(["rev-parse", "--absolute-git-dir"], root, env, opts);
+  const gitDir = stdout.trim();
+  if (code !== 0 || !gitDir) return false;
+  return rebaseStateDir(gitDir) !== undefined;
 }
 
 /**

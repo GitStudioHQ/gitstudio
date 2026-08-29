@@ -595,6 +595,12 @@ function inProgressCard(reload: () => void): HTMLElement {
       const r = await host.invoke("rebase:continue", undefined);
       if (r.ok) {
         toast("Rebase continued.", "success");
+      } else if (r.expected) {
+        // A PAUSE is not a failure. Continuing into an `edit` row, or into the
+        // next conflict, is the plan working — the bridge marks those
+        // `expected`, and painting them red told the user something had gone
+        // wrong when nothing had.
+        toast(r.message || "Rebase paused again — the plan asked for it.", "info", 5000);
       } else {
         toast(r.message || "Couldn't continue — unresolved conflicts?", "error", 6000);
       }
