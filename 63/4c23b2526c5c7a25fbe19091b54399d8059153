@@ -1,0 +1,36 @@
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_16d9ebe0f0feef 208-213
+apps/desktop/src/renderer/cloneDialog.ts
+  s_26f5e669d3043c::t_72e2f67726dd66 210-217,220-229
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_b6f71c62cd92ad 3075-3084
+  s_26f5e669d3043c::t_8cc217314a4785 4090-4096,4125,4131-4137,4144-4147
+  s_26f5e669d3043c::t_9e0c1e11d16057 4097-4105
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_19162d960d8d3a 2287-2292
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_16d9ebe0f0feef 393-419
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_16d9ebe0f0feef 106
+apps/desktop/src/renderer/views/releases.ts
+  s_26f5e669d3043c::t_970dac78ed8e76 87,383,387
+  s_26f5e669d3043c::t_fcb61741cebad7 371-380
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_d44595cbea1a5b 589-593,595,597-599,604
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "634c23b2526c5c7a25fbe19091b54399d8059153",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
