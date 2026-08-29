@@ -1,0 +1,123 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_7809a1198bd166 53-56
+  s_26f5e669d3043c::t_5276b1ad5114d0 52
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_cc62156874eded 121-130
+  s_26f5e669d3043c::t_53b6d963df76c5 1884-1908
+  s_26f5e669d3043c::t_59452499cab065 1805-1811,1815
+  s_26f5e669d3043c::t_29eb205960da5a 10
+apps/desktop/test/graphLoadRace.test.ts
+  s_26f5e669d3043c::t_ecacf461b7b227 42
+apps/desktop/test/rebaseUpdateRefs.test.ts
+  s_26f5e669d3043c::t_e9b07fe18878e3 5,70,86,115,147,160-221
+  s_26f5e669d3043c::t_1c7c17c3ff8426 222-266,276-314
+  s_26f5e669d3043c::t_ec94eb614a2728 126-130,267-275
+  s_26f5e669d3043c::t_447d72a0a2cc52 27
+  s_26f5e669d3043c::t_0b2d9823e17809 4
+apps/desktop/test/binaryConflict.test.ts
+  s_26f5e669d3043c::t_bcbecfa91d5e8e 1-151
+packages/webview-ui/src/graph/gutter.ts
+  s_26f5e669d3043c::t_1d19eed05269b8 78
+  s_26f5e669d3043c::t_1b994b75831167 50-61,63,65,71
+  s_26f5e669d3043c::t_f17cd6910f66f9 62,64,66-70,72-77,79-84
+packages/webview-ui/test/gutterFold.test.ts
+  s_26f5e669d3043c::t_ad16d494700d20 88-97,102-118
+  s_26f5e669d3043c::t_aac4d9d37ba05f 4,98-101
+apps/desktop/src/renderer/views/explore.ts
+  s_26f5e669d3043c::t_a0d4bffb88529c 86-92,286-288,290,304
+apps/desktop/src/renderer/aiAssist.ts
+  s_26f5e669d3043c::t_628bd0e97f2103 108-117,119,124-130
+apps/desktop/test/hunkIpc.test.ts
+  s_26f5e669d3043c::t_ecacf461b7b227 30
+apps/desktop/test/conflictResolve.test.ts
+  s_26f5e669d3043c::t_e9b07fe18878e3 5,81,100,118
+  s_26f5e669d3043c::t_447d72a0a2cc52 30
+  s_26f5e669d3043c::t_0b2d9823e17809 4
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_ff73247bd02cca 98-103
+  s_26f5e669d3043c::t_14bf7a447fff3f 141-157,159,162,167-169,172-175,267
+  s_26f5e669d3043c::t_9dc47d748fad33 6,197-224,259-266,268-280,284
+apps/desktop/test/stageLines.test.ts
+  s_26f5e669d3043c::t_0b2d9823e17809 4
+  s_26f5e669d3043c::t_447d72a0a2cc52 29
+  s_26f5e669d3043c::t_e9b07fe18878e3 5,71,94,127,148
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_a21f4145ea539b 9161-9163
+apps/desktop/test/branchPush.test.ts
+  s_26f5e669d3043c::t_e9b07fe18878e3 5,43
+  s_26f5e669d3043c::t_d0273aa6438b83 125-163
+  s_26f5e669d3043c::t_ccd9b86fdc6312 164-195
+  s_26f5e669d3043c::t_0b2d9823e17809 4
+  s_26f5e669d3043c::t_447d72a0a2cc52 38
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_5276b1ad5114d0 446-447
+  s_26f5e669d3043c::t_7809a1198bd166 420-434
+  s_26f5e669d3043c::t_60385d2cabaff1 435-445,448-455
+apps/desktop/src/renderer/views/releases.ts
+  s_26f5e669d3043c::t_ec9217b1d9890d 909-918
+apps/desktop/test/mergeReport.test.ts
+  s_26f5e669d3043c::t_447d72a0a2cc52 30
+  s_26f5e669d3043c::t_e9b07fe18878e3 5,57,76,102
+  s_26f5e669d3043c::t_0b2d9823e17809 4
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_d0273aa6438b83 170-177
+  s_26f5e669d3043c::t_ccd9b86fdc6312 198-205
+apps/desktop/test/nameStatus.test.ts
+  s_26f5e669d3043c::t_447d72a0a2cc52 28
+  s_26f5e669d3043c::t_0b2d9823e17809 4
+  s_26f5e669d3043c::t_e9b07fe18878e3 5,57,75,103
+apps/desktop/src/renderer/overlays.ts
+  s_26f5e669d3043c::t_4e66933dad670e 88-95,107-112
+  s_26f5e669d3043c::t_cc6c747256ac67 113-114
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_f8dfe67abf83d5 1548-1550,2323-2328,2384,2387-2401,2403-2407
+  s_26f5e669d3043c::t_c71b48a4cc841f 1923-1931
+  s_26f5e669d3043c::t_05df2aca8b67e3 1616-1627
+  s_26f5e669d3043c::t_62e03472075414 43,1715
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_ab09af9cdd4bc6 1499-1500,4024,4028,4035
+  s_26f5e669d3043c::t_97e903e94a6d56 1013-1018
+  s_26f5e669d3043c::t_88c1cfaf6d8de1 3442-3448,3453
+  s_26f5e669d3043c::t_4d04f2349f9003 271-274,5362-5366,5382
+  s_26f5e669d3043c::t_9ce01fec581437 5822-5830,5833
+apps/desktop/src/renderer/views/gists.ts
+  s_26f5e669d3043c::t_a24b5f50dc9d8a 625-632
+apps/desktop/test/brokenRepo.test.ts
+  s_26f5e669d3043c::t_e9b07fe18878e3 5,61,91
+  s_26f5e669d3043c::t_d3b37b3d7bdd33 1-3,6-31,33-60,62-72,74-90,92-93
+  s_26f5e669d3043c::t_ecacf461b7b227 32,73
+  s_26f5e669d3043c::t_0b2d9823e17809 4
+apps/desktop/test/repoWatcher.test.ts
+  s_26f5e669d3043c::t_0b2d9823e17809 3
+  s_26f5e669d3043c::t_e9b07fe18878e3 4,174,194,220,252,266
+apps/desktop/test/tmpRepo.ts
+  s_26f5e669d3043c::t_e9b07fe18878e3 14-20
+  s_26f5e669d3043c::t_e6a6c4a750bc1b 13
+apps/desktop/src/renderer/ui.ts
+  s_26f5e669d3043c::t_ab09af9cdd4bc6 249-259,264
+apps/desktop/src/renderer/views/common.ts
+  s_26f5e669d3043c::t_f0b94bf3b039ee 215-231,233,238-248
+  s_26f5e669d3043c::t_fbda7ea3227a53 1209-1217,1224-1229,1233-1235
+  s_26f5e669d3043c::t_de0697b166291a 804-811,813-815
+  s_26f5e669d3043c::t_0841217424b8e0 798-801
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_9290f4814a3fb0 67-69,71-73
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_9b8bfe906d54bf 193,213-226,276,503-504,629,670,684-685,714-719
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "18ea9763142ab56490df0a72c254424795662986",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
