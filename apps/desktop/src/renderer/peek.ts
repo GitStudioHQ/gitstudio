@@ -7,7 +7,7 @@
 // can open a peek. Cards render lazily and may be async; the body shows a
 // skeleton until the renderer resolves.
 
-import { registerLayer, isMenuOpen} from "./overlays";
+import { registerLayer, isMenuOpen, holdBackground } from "./overlays";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -97,6 +97,8 @@ export function openPeek(card: PeekCard): void {
   /** Bumped per render; an async renderer landing late writes into a detached body. */
   let renderGen = 0;
 
+  /** Set once the overlay is mounted — see the holdBackground call below. */
+  let releaseBackground: (() => void) | undefined;
   const dispose = (): void => {
     if (live?.overlay !== overlay) return;
     live = null;
@@ -104,6 +106,8 @@ export function openPeek(card: PeekCard): void {
     renderGen++;
     overlay.remove();
     document.removeEventListener("keydown", onKey, true);
+    // BEFORE restoring focus: focus cannot land inside an inert subtree.
+    releaseBackground?.();
     prevFocus?.focus?.();
   };
   const layer = registerLayer(dispose);
@@ -264,6 +268,16 @@ export function openPeek(card: PeekCard): void {
   });
   document.addEventListener("keydown", onKey, true);
   document.body.appendChild(overlay);
+  /**
+   * Hold the page behind the card. `aria-modal="true"` above is a claim; this
+   * is the mechanism.
+   *
+   * A peek was the worse case of the two: its card is focused on open with
+   * `tabindex="-1"`, and the Tab wrap's own selector excludes `[tabindex='-1']`
+   * — so the very first Tab, from the state the peek opens in, walked straight
+   * out into the view behind the scrim.
+   */
+  releaseBackground = holdBackground(overlay);
   live = { overlay, dispose };
   stack.push(card);
   renderTop();

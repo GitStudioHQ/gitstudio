@@ -453,6 +453,106 @@
       }
     },
 
+    // `aria-modal="true"` is a CLAIM. The Tab wrap in dialogs/peek acts only
+    // when focus sits exactly on the first or last focusable in the card, so
+    // any in-card re-render that destroyed the focused control — or a click on
+    // the card's own heading — dropped focus on <body>, and the next Tab walked
+    // into the app behind the scrim: reachable, focusable, clickable, invisible.
+    // A peek was worse still: its card is focused with tabindex="-1", which the
+    // wrap's own selector excludes, so the FIRST Tab escaped.
+    "a-modal-surface-holds-the-page-behind-it": (f) => {
+      const c = check(f);
+      const overlay = $(".peek-overlay, .modal-overlay, .cmdk-overlay");
+      c.ok(!!overlay, "a modal surface is open");
+      if (!overlay) return;
+      // Every other body child is inert — that is what stops Tab, the pointer
+      // and assistive tech at the surface. (Live regions are exempt by design;
+      // see holdBackground.)
+      const leaked = [...document.body.children].filter(
+        (el) =>
+          el !== overlay &&
+          !el.contains(overlay) &&
+          !el.hasAttribute("inert") &&
+          // Not rendered at all — `inert` on a <script> would mean nothing, and
+          // listing them buries the real leak in noise.
+          !/^(SCRIPT|STYLE|TEMPLATE|LINK|META)$/.test(el.tagName) &&
+          el.id !== "toast-stack" &&
+          !el.matches('[aria-live], [role="status"], [role="alert"], [role="log"]'),
+      );
+      c.eq(
+        leaked.length,
+        0,
+        `nothing behind the scrim stays interactive (leaked: ${leaked
+          .map((el) => el.id || el.className || el.tagName)
+          .join(", ")})`,
+      );
+      // And the app's own root really is held.
+      const root = document.getElementById("root");
+      if (root && !root.contains(overlay)) {
+        c.ok(root.hasAttribute("inert"), "the app root is inert while the surface is up");
+      }
+    },
+
+    // Explore's page RESTORE used to re-fetch. Coming back from a result
+    // re-ran one search request per accumulated page, sequentially, on the
+    // premise that they were all in the 60s cache — true for a minute. Read a
+    // repo page for longer and every Back spent the search budget rebuilding
+    // scroll position; on the Code tab (~8 requests/minute) a return with eight
+    // pages loaded spent ALL of it, so the next query met the app's own
+    // "Search is catching its breath".
+    //
+    // Time is moved past the TTL here on purpose: with a warm cache the old
+    // code and the new one are indistinguishable, which is exactly why this
+    // went unnoticed.
+    "coming-back-to-a-search-costs-no-requests": async (f) => {
+      const c = check(f);
+      const more = [...$$(".explore-footer button")].find((b) => /load more/i.test(b.textContent));
+      c.ok(!!more, "the list offers Load more");
+      if (!more) return;
+      const before = $$(".explore-row").length;
+      more.click();
+      await settle(900);
+      const two = [...$$(".explore-footer button")].find((b) => /load more/i.test(b.textContent));
+      two?.click();
+      await settle(900);
+      const loaded = $$(".explore-row").length;
+      c.ok(loaded > before, `more pages are loaded (${before} → ${loaded})`);
+      const pagesLoaded = Math.max(1, Math.round(loaded / Math.max(1, before)));
+
+      // Age the cache past its 60s TTL, and count what the restore spends.
+      const realNow = Date.now;
+      let searches = 0;
+      const host = window.gitstudio;
+      const realInvoke = host.invoke.bind(host);
+      host.invoke = (ch, p) => {
+        if (typeof ch === "string" && ch.startsWith("search:")) searches++;
+        return realInvoke(ch, p);
+      };
+      Date.now = () => realNow.call(Date) + 61_000;
+      try {
+        // Leave for a result, then come straight back.
+        $(".explore-row")?.click();
+        await settle(900);
+        const back = $(".det-back, .peek-nav-btn, .gh-back");
+        c.ok(!!back, "the result page offers a way back");
+        back?.click();
+        await settle(1400);
+        // At most the base search itself — a stale page-1 entry legitimately
+        // revalidates. What must NEVER happen again is the cost SCALING with
+        // how many pages were loaded, which is what made a long read poison
+        // the next query.
+        c.ok(
+          searches <= 1,
+          `the return does not spend a request per loaded page ` +
+            `(${pagesLoaded} pages loaded, ${searches} search requests spent)`,
+        );
+        c.ok($$(".explore-row").length > 0, "and the results are still on screen");
+      } finally {
+        Date.now = realNow;
+        host.invoke = realInvoke;
+      }
+    },
+
     "row-meta-columns-align": (f) => {
       const c = check(f);
       // A row missing an optional datum must not slide its neighbours into a

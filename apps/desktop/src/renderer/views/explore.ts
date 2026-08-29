@@ -19,7 +19,7 @@
 //   user/<login> · org/<login>                (E4 fills these in)
 
 import { host } from "./../bridge";
-import { gget } from "./../cache";
+import { gget, peek } from "./../cache";
 import { toast } from "./../dialogs";
 import {
   avatar,
@@ -266,19 +266,29 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         listEl.querySelector(".explore-footer")?.remove();
         appendRows(result, false);
       } else {
-        // How many pages this same search had already accumulated. Every one is
-        // in the 60s cache, so coming back from a result costs no requests —
-        // it just re-lays what was already fetched.
+        // Re-lay the pages this search had already accumulated — but ONLY the
+        // ones still in the cache.
+        //
+        // This used to `await fetchPage(...)` per page, on the premise that
+        // they were all cached. That holds for a minute. Read a repo page for
+        // longer and every Back spent one search request per accumulated page,
+        // sequentially, with the list visibly rebuilding a page at a time — and
+        // on the Code tab, where the budget is about eight requests a minute,
+        // returning with eight pages loaded spent the entire budget on the
+        // BACK, so the next thing the user typed met the app's own "Search is
+        // catching its breath". Paying the search budget to restore a scroll
+        // position is not a trade worth making; the footer still offers the
+        // rest, which is the same one click that loaded them the first time.
+        //
+        // (The old loop's guard was dead too: `result.items.length > 0` tests
+        // the FIRST page on every iteration, so it never stopped anything.)
         const restore = pages;
         pages = 1;
         listEl.replaceChildren();
         appendRows(result, true);
         for (let p = 2; p <= restore && result.items.length > 0; p++) {
-          const more = await fetchPage(tab, query, repoSort, p);
-          if (seq !== searchSeq || !view.isConnected) return;
-          // A refusal while replaying is not worth a card: the pages up to here
-          // are on screen and the footer still offers the rest.
-          if (more.limited) break;
+          const more = peekPage(tab, query, repoSort, p);
+          if (!more || more.limited || !more.items.length) break;
           pages = p;
           listEl.querySelector(".explore-footer")?.remove();
           appendRows(more, false);
@@ -325,6 +335,22 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   };
 
   await run();
+}
+
+/**
+ * A page ALREADY in the cache, or undefined. Never a request.
+ *
+ * The keys must match `fetchPage`'s exactly, which is why the two sit together.
+ */
+function peekPage(
+  t: Tab,
+  q: string,
+  sort: SearchSort,
+  page: number,
+): SearchPage<SearchRepoItem | SearchUserItem | SearchCodeItem> | undefined {
+  if (t === "repos") return peek("search:repos", { query: q, sort, page }, 60_000);
+  if (t === "code") return peek("search:code", { query: q, page }, 60_000);
+  return peek("search:users", { query: q, kind: t === "orgs" ? "orgs" : "users", page }, 60_000);
 }
 
 // ── one request, cached by (tab, query, sort, page) ──────────────────────────

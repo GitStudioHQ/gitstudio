@@ -4,7 +4,7 @@
 // These replace the native alert()/confirm()/prompt(), which are jarring (and,
 // for prompt(), unsupported) in an Electron renderer.
 
-import { registerLayer, isMenuOpen} from "./overlays";
+import { registerLayer, isMenuOpen, holdBackground } from "./overlays";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -97,6 +97,8 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
   overlay.setAttribute("aria-modal", "true");
   let spec: ModalSpec;
   let closed = false;
+  /** Set once the overlay is in the DOM — see the holdBackground call below. */
+  let releaseBackground: (() => void) | undefined;
   const close = (): void => {
     if (closed) return;
     closed = true;
@@ -106,6 +108,9 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
     spec.onClose();
     overlay.remove();
     document.removeEventListener("keydown", onKey, true);
+    // BEFORE restoring focus: focus cannot land inside an inert subtree, so
+    // releasing after would silently drop the keyboard on <body>.
+    releaseBackground?.();
     prevFocus?.focus?.();
   };
   // A route change dismisses the modal like Esc would — but through `close`,
@@ -152,6 +157,22 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
   if (spec.label) overlay.setAttribute("aria-label", spec.label);
   overlay.appendChild(spec.card);
   document.body.appendChild(overlay);
+  /**
+   * Hold the page behind the dialog.
+   *
+   * `aria-modal="true"` is a CLAIM, not a mechanism. The Tab wrap below acts
+   * only when focus is exactly on the first or last focusable in the card — so
+   * an in-dialog re-render that destroys the focused control, or a click on the
+   * dialog's own heading, put focus on <body>, and the next Tab walked into the
+   * dozens of controls behind the scrim: reachable, focusable and clickable
+   * while invisible. A screen reader read the whole background as though no
+   * dialog were open. Two of the app's four modal surfaces already did this;
+   * the other two claimed it.
+   *
+   * The wrap stays as belt and braces — `inert` fixes the escape, the wrap
+   * keeps the cycle tight.
+   */
+  releaseBackground = holdBackground(overlay);
   modalStack.push(token);
   overlay.addEventListener("mousedown", (e) => {
     if (e.target === overlay) dismiss();

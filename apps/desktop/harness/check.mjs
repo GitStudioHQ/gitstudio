@@ -49,6 +49,10 @@ const CASES = [
   ["run-detail-hides-dead-actions", "actions~open9100"],
   ["run-detail-steps-visible", "actions~open9100"],
   ["row-meta-columns-align", "explore~type:git~key:Enter"],
+  ["coming-back-to-a-search-costs-no-requests", "explore~type:git~key:Enter"],
+  // Both shapes: a dialog, and a peek (whose card is focused with tabindex=-1).
+  ["a-modal-surface-holds-the-page-behind-it", "branches~text:New%20branch"],
+  ["a-modal-surface-holds-the-page-behind-it", "branches~click:.branch-row"],
   ["a-toast-is-reachable-over-a-dialog", "branches~text:Push~palette"],
   [
     "escape-still-works-after-coming-back",
