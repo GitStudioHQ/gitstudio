@@ -1818,6 +1818,28 @@ export class GitBridge {
     const stage = req.side === "ours" ? "2" : "3";
     return this.serialize(async () => {
       try {
+        // A modify/delete conflict has only TWO stages: the base, and whichever
+        // side kept the file. Asking for the missing one is not an error — that
+        // side's answer IS "delete it" — but `git show :3:path` exits non-zero
+        // and the user got a raw `fatal: path ... does not exist` for pressing a
+        // button the app itself offered. Taking a side that deleted the file
+        // means removing the file.
+        const unmerged = await ctx.process.run(["ls-files", "-u", "--", req.path]);
+        if (unmerged.code === 0 && unmerged.stdout.trim()) {
+          const present = new Set(
+            unmerged.stdout
+              .split("\n")
+              .map((line) => /^\d{6} [0-9a-f]+ (\d)\t/.exec(line)?.[1])
+              .filter((n): n is string => !!n),
+          );
+          if (!present.has(stage)) {
+            const rm = await ctx.process.run(["rm", "-f", "--", req.path]);
+            if (rm.code !== 0) {
+              return { ok: false, changed: false, message: rm.stderr.trim() || "Couldn't delete the file." };
+            }
+            return { ok: true, changed: true };
+          }
+        }
         const show = await ctx.process.run(["show", `:${stage}:${req.path}`]);
         if (show.code !== 0) return { ok: false, changed: false, message: show.stderr.trim() };
         const abs = containedPath(ctx.root, req.path);
