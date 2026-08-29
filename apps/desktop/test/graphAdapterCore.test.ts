@@ -54,7 +54,11 @@ test("nextGraphMessage produces graphAppend for later pages", () => {
 });
 
 test("parseNameStatus handles modifications and renames", () => {
-  const out = parseNameStatus("M\tsrc/a.ts\nR100\told.ts\tnew.ts\nA\tb.ts\n");
+  // -z form: NUL-separated records, a status then its path, and for R/C the
+  // source path then the destination. Every caller passes -z now, because
+  // without it git C-quotes any non-ASCII path into an octal escape string
+  // that is neither displayable nor usable as a pathspec. See nameStatus.test.
+  const out = parseNameStatus("M\0src/a.ts\0R100\0old.ts\0new.ts\0A\0b.ts\0");
   assert.deepEqual(out, [
     { path: "src/a.ts", status: "M" },
     { path: "new.ts", status: "R" },

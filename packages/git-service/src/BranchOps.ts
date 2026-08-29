@@ -3,6 +3,17 @@ import type { GitProcess, GitRunOptions } from "./GitProcess";
 export interface BranchOpResult {
   ok: boolean;
   /**
+   * git's stdout.
+   *
+   * Not decoration: a conflicted `git merge` writes its ENTIRE report there —
+   * "CONFLICT (content): Merge conflict in f.txt / Automatic merge failed; fix
+   * conflicts and then commit the result." — and leaves stderr empty. Dropping
+   * it meant the app answered a conflicted merge with "The operation failed."
+   * while the working tree was sitting mid-merge, which describes neither what
+   * happened nor what to do about it. Verified against real git.
+   */
+  stdout?: string;
+  /**
    * git's exit code, kept alongside `ok` because the two are not the same
    * question. `ok` says "did it do the thing"; the code says *how* it did not,
    * and git distinguishes "I PAUSED for you" (1) from "I REFUSED" (128, or 2 for
@@ -50,7 +61,7 @@ export class BranchOps {
       args.push(startPoint);
     }
     const r = await this.proc.run(args, { signal: opts?.signal });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /** `git checkout [--detach] <ref>`. */
@@ -64,7 +75,7 @@ export class BranchOps {
     }
     args.push(ref);
     const r = await this.proc.run(args, { signal: opts?.signal });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /**
@@ -82,7 +93,7 @@ export class BranchOps {
       args.push(startPoint);
     }
     const r = await this.proc.run(args, { signal: opts?.signal });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /**
@@ -102,7 +113,7 @@ export class BranchOps {
     const r = await this.proc.run(["branch", "-m", old, neu], {
       signal: opts?.signal,
     });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /**
@@ -148,7 +159,7 @@ export class BranchOps {
     const r = await this.proc.run(["branch", flag, name], {
       signal: opts?.signal,
     });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /** `git merge [--no-ff|--ff-only] <ref>` into the current branch. */
@@ -162,7 +173,7 @@ export class BranchOps {
     }
     args.push(ref);
     const r = await this.proc.run(args, { signal: opts?.signal });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /** `git rebase <upstream>` — rebase the current branch onto `upstream`. */
@@ -173,7 +184,7 @@ export class BranchOps {
     const r = await this.proc.run(["rebase", upstream], {
       signal: opts?.signal,
     });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /** `git branch --set-upstream-to=<upstream> <branch>`. */
@@ -186,7 +197,7 @@ export class BranchOps {
       ["branch", `--set-upstream-to=${upstream}`, branch],
       { signal: opts?.signal },
     );
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 
   /** `git push <remote> --delete <name>` — delete a branch on the remote. */
@@ -198,6 +209,6 @@ export class BranchOps {
     const r = await this.proc.run(["push", remote, "--delete", name], {
       signal: opts?.signal,
     });
-    return { ok: r.code === 0, code: r.code, stderr: r.stderr };
+    return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
   }
 }

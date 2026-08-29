@@ -65,7 +65,13 @@ interface RawSearchCode {
   path?: string;
   html_url?: string;
   repository?: { full_name?: string } | null;
-  text_matches?: { fragment?: string }[];
+  text_matches?: {
+    fragment?: string;
+    /** Where in `fragment` the query matched. Offsets are into the fragment,
+     *  and GitHub gives them in the same request that gives the fragment — the
+     *  row just never carried them, so nothing was highlighted. */
+    matches?: { text?: string; indices?: [number, number] }[];
+  }[];
 }
 
 function mapRepo(r: RawSearchRepo): SearchRepoItem {
@@ -98,8 +104,21 @@ function mapCode(c: RawSearchCode): SearchCodeItem {
     repoFullName: c.repository?.full_name ?? "",
     htmlUrl: c.html_url ?? "",
     fragments: (c.text_matches ?? [])
-      .map((m) => m.fragment ?? "")
-      .filter((f) => f.trim().length > 0),
+      .filter((m) => (m.fragment ?? "").trim().length > 0)
+      .map((m) => {
+        const text = m.fragment ?? "";
+        const ranges: Array<[number, number]> = [];
+        for (const hit of m.matches ?? []) {
+          const [a, b] = hit.indices ?? [];
+          // Trust nothing from the wire: an out-of-range pair would slice the
+          // fragment into gibberish or drop characters silently.
+          if (typeof a !== "number" || typeof b !== "number") continue;
+          if (a < 0 || b > text.length || a >= b) continue;
+          ranges.push([a, b]);
+        }
+        ranges.sort((x, y) => x[0] - y[0]);
+        return { text, ranges };
+      }),
   };
 }
 

@@ -78,6 +78,7 @@ export class BottomDock {
       set: (h) => {
         this.heightPx = h;
         this.bodyEl.style.height = `${h}px`;
+        this.publishReserve();
         this.opts.onResize?.();
       },
       onCommit: () => this.opts.onHeightChange?.(this.heightPx),
@@ -115,6 +116,7 @@ export class BottomDock {
     this.root = el("div", "dock-mount" + (this.collapsed ? " collapsed" : ""));
     this.root.append(this.panel);
     host.appendChild(this.root);
+    this.publishReserve();
   }
 
   /** Collapse to just the footer bar, or expand back to footer + body. */
@@ -128,11 +130,30 @@ export class BottomDock {
     this.collapsed = collapsed;
     this.root.classList.toggle("collapsed", collapsed);
     this.syncChevron();
+    this.publishReserve();
     this.opts.onResize?.();
   }
 
   isCollapsed(): boolean {
     return this.collapsed;
+  }
+
+  /**
+   * Publish how much vertical space the dock is taking, as `--dock-reserve` on
+   * its host.
+   *
+   * The dock is an overlay footer: it does not shrink the scrollers above it,
+   * so with it open the last card of a long page sat behind it with nowhere
+   * left to scroll — Settings' final section was simply unreachable. Long
+   * scrollers add this to their bottom padding, so the end of the content
+   * always clears the dock.
+   */
+  private publishReserve(): void {
+    const host = this.root.parentElement ?? this.root;
+    host.style.setProperty(
+      "--dock-reserve",
+      this.collapsed ? "0px" : `${this.heightPx}px`,
+    );
   }
 
   get height(): number {
@@ -163,6 +184,7 @@ export class BottomDock {
   setHeight(h: number): void {
     this.heightPx = BottomDock.clampHeight(h, this.opts.minHeight ?? 120);
     this.bodyEl.style.height = `${this.heightPx}px`;
+    this.publishReserve();
     this.opts.onResize?.();
     this.opts.onHeightChange?.(this.heightPx);
   }
@@ -172,6 +194,7 @@ export class BottomDock {
     if (next !== this.heightPx) {
       this.heightPx = next;
       this.bodyEl.style.height = `${next}px`;
+      this.publishReserve();
       this.opts.onResize?.();
     }
   }

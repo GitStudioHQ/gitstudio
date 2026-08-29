@@ -59,8 +59,14 @@ export class GraphMount {
         case "requestStats":
           void host
             .invoke("commit:rowStats", action.shas)
-            .then((stats) => this.element.setRowStats(stats))
-            .catch(() => {});
+            // A short answer is as bad as no answer: anything the host did not
+            // return stays pending, and a pending sha renders no CHANGES cell.
+            // Release the whole batch, keep what came back.
+            .then((stats) => {
+              this.element.setRowStats(stats);
+              this.element.failRowStats(action.shas);
+            })
+            .catch(() => this.element.failRowStats(action.shas));
           break;
       }
     };

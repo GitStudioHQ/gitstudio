@@ -221,7 +221,9 @@ class GitContextToolHost implements GitToolHost {
       /* empty */
     }
     let files: ToolStatusFile[] = [];
-    const r = await this.ctx.process.run(["diff", "--name-status", "-M", `${base}...${head}`]).catch(() => null);
+    // -z: without it any non-ASCII path arrives C-quoted and octal-escaped,
+    // and the AI tool then reports a filename that does not exist on disk.
+    const r = await this.ctx.process.run(["diff", "--name-status", "-M", "-z", `${base}...${head}`]).catch(() => null);
     if (r && r.code === 0) {
       files = parseNameStatus(r.stdout);
     }
@@ -384,17 +386,17 @@ function parsePorcelain(stdout: string): ToolStatusFile[] {
   return out;
 }
 
-/** Parse `git diff --name-status -M` into tool files (staged=false; just the change). */
+/** Parse `git diff --name-status -M -z` into tool files (staged=false; just the
+ *  change). NUL-separated records, so nothing is quoted or escaped: a status
+ *  token then its path, and two paths for R/C (source, destination). */
 function parseNameStatus(stdout: string): ToolStatusFile[] {
   const out: ToolStatusFile[] = [];
-  for (const line of stdout.split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    const cols = line.split("\t");
-    const code = cols[0]?.[0] ?? "?";
-    // For R/C the destination path is the last column.
-    const path = cols.length >= 3 ? cols[cols.length - 1] : cols[1] ?? "";
+  const tok = stdout.split("\0").filter((t) => t.length > 0);
+  for (let i = 0; i < tok.length; i++) {
+    const code = tok[i][0] ?? "?";
+    const paths = code === "R" || code === "C" ? 2 : 1;
+    const path = tok[i + paths]; // the destination — the one that exists now
+    i += paths;
     if (path) {
       out.push({ path, status: code, staged: false });
     }

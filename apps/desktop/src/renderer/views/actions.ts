@@ -526,8 +526,21 @@ function runLead(state: string, label?: string): HTMLElement {
 
 // ── The run detail page ──────────────────────────────────────────────────────
 
-/** Job cards the user expanded, per run — preserved across live-poll repaints. */
+/**
+ * Job cards the user expanded, per run — preserved across live-poll repaints.
+ *
+ * The set is SEEDED with every job the first time a run's cards are built, so
+ * it only ever means "exactly these are open". It used to be read as
+ * `size === 0 || has(id)`, where an empty set also meant "nothing chosen yet,
+ * so show everything" — and the first click then silently redefined every
+ * OTHER card: collapse the one job you were done with and all its siblings
+ * collapsed with it, because the set stopped being empty.
+ */
 const expandedJobs = new Set<number>();
+/** Jobs already given their default. A running workflow gains jobs as it goes,
+ *  and one that starts after you collapsed something must still open itself —
+ *  so the default is applied per job on first sight, not once per run. */
+const seededJobs = new Set<number>();
 let lastRunDetailId: number | undefined;
 let lastRunAttempt = 0;
 
@@ -710,6 +723,7 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number, revea
     lastRunDetailId = id;
     lastRunAttempt = 0;
     expandedJobs.clear();
+    seededJobs.clear();
     destroyLogPanes();
   }
   const back = (): void => nav("actions", { list: true });
@@ -906,6 +920,13 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   openBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
 
   topActions.replaceChildren(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn, openBtn);
+  // Derive the label from the panes that are ACTUALLY open, on every paint. It
+  // was hard-coded at creation and only ever corrected inside the click
+  // handler — so the 15s poll's repaint, or coming back to the run, reset it to
+  // "View all logs" over logs that were already showing, and pressing it then
+  // HID them. The state it needs survives repaints in `logPanes`; nothing was
+  // asking it.
+  syncLogsBtn();
 
   // ── title block ──
   const titleRow = el("div", "det-title-row");
@@ -950,6 +971,14 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   if (jobs.length === 0) {
     main.appendChild(emptyState("No jobs", "This run reported no jobs yet."));
   } else {
+    // Open by default — the steps ARE the page, and a run detail whose cards
+    // are all shut is two hollow rows. Seeding says that once, as a fact about
+    // this run, instead of leaving `jobCard` to infer it from an empty set.
+    for (const j of jobs) {
+      if (seededJobs.has(j.id)) continue;
+      seededJobs.add(j.id);
+      expandedJobs.add(j.id);
+    }
     const jobsWrap = el("div", "gh-jobs");
     for (const j of jobs) jobsWrap.appendChild(jobCard(j));
     main.appendChild(jobsWrap);
@@ -1058,8 +1087,9 @@ function jobCard(j: WorkflowJob): HTMLElement {
   const state = j.conclusion || j.status || "";
   // Steps are the content of this page. They used to be collapsed by default,
   // so a run detail was two hollow rows in an empty page — you had to click
-  // every job to see what actually ran.
-  const open = expandedJobs.size === 0 || expandedJobs.has(j.id);
+  // every job to see what actually ran. `buildRunDetail` seeds the default;
+  // this asks one question only.
+  const open = expandedJobs.has(j.id);
   // A div, not a <button>: this header carries the job's own "Logs" button, and
   // a control inside a control is invalid — the outer button's accessible name
   // swallows the inner one, assistive tech cannot reach it, and Space activates
@@ -1305,7 +1335,20 @@ function openSecretsManager(): void {
 /** Render the secrets list (name + updated) with an Add button and per-row delete. */
 async function renderSecretsSection(section: HTMLElement, alive: () => boolean): Promise<void> {
   const reload = (): void => void renderSecretsSection(section, alive);
-  section.replaceChildren(sectionHeader("Secrets", "lock", "Add secret", () => void addSecret(reload)));
+  // Creating a secret cannot succeed in this build (see main/github/actions.ts:
+  // it needs libsodium to encrypt the value, which isn't bundled). The flow
+  // asked for the name, then asked for the SECRET VALUE in a plain visible
+  // field, and only then said so — a credential typed onto the screen for an
+  // operation that was never going to run. Say it before, on the control.
+  section.replaceChildren(
+    sectionHeader(
+      "Secrets",
+      "lock",
+      "Add secret",
+      () => void addSecret(reload),
+      CAN_SET_SECRETS ? undefined : SECRETS_UNAVAILABLE,
+    ),
+  );
   const listWrap = el("div", "actions-kv-list");
   listWrap.appendChild(loadingState("Loading secrets…"));
   section.appendChild(listWrap);
@@ -1380,13 +1423,27 @@ async function renderVariablesSection(section: HTMLElement, alive: () => boolean
 }
 
 /** A section header: an icon + title on the left, an Add button on the right. */
-function sectionHeader(title: string, icon: string, addLabel: string, onAdd: () => void): HTMLElement {
+function sectionHeader(
+  title: string,
+  icon: string,
+  addLabel: string,
+  onAdd: () => void,
+  /** Why the add action cannot be used. Given, the button is disabled and says
+   *  so — rather than running a flow that always ends in a refusal. */
+  unavailable?: string,
+): HTMLElement {
   const head = el("div", "actions-kv-head");
   const lead = el("div", "actions-kv-headtitle");
   lead.append(glyph(icon), span(title));
   const add = btn("mini-btn");
   add.append(glyph("add"), span(addLabel));
-  add.addEventListener("click", onAdd);
+  if (unavailable) {
+    (add as HTMLButtonElement).disabled = true;
+    add.title = unavailable;
+    add.setAttribute("aria-label", `${addLabel} — ${unavailable}`);
+  } else {
+    add.addEventListener("click", onAdd);
+  }
   head.append(lead, add);
   return head;
 }
@@ -1424,7 +1481,28 @@ function invalidName(name: string): string | null {
   return null;
 }
 
+/**
+ * Whether this build can create a secret.
+ *
+ * `main/github/actions.ts` `setSecret` refuses unconditionally: encrypting the
+ * value needs libsodium, which isn't bundled. Typed as `boolean` deliberately —
+ * the flow below is complete and correct, and starts working the moment that
+ * changes; narrowing it to `false` would mark it dead.
+ */
+const CAN_SET_SECRETS: boolean = false;
+/** Why, in one sentence — used on the disabled control AND in the guard, so
+ *  the button and the flow can never tell different stories. */
+const SECRETS_UNAVAILABLE =
+  "Adding secrets needs the libsodium encryption library, which isn't bundled in this build. Add one on github.com; deleting works here.";
+
 async function addSecret(reload: () => void): Promise<void> {
+  // Before the first prompt, not after the second. The flow used to ask for the
+  // name, then ask for the SECRET VALUE in a plain visible field, and only then
+  // report that it could not save it.
+  if (!CAN_SET_SECRETS) {
+    toast(SECRETS_UNAVAILABLE, "info");
+    return;
+  }
   const name = await promptInline("New secret", "SECRET_NAME", "", "Next");
   if (name == null) return;
   const bad = invalidName(name);

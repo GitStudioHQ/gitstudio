@@ -154,6 +154,23 @@ export class SyncOps {
           refspec = `HEAD:refs/heads/${pair.remoteBranch}`;
         }
       }
+    } else if (branch && !setUpstream) {
+      // A NAMED branch (the Branches view's Push, which pushes a branch you are
+      // not standing on). This ran `git push <remote> <localName>` — the local
+      // name on both sides — so after `git branch -m`, which keeps the tracking
+      // config pointing at the OLD remote name, Push created a second remote
+      // branch under the new name and left the tracked one untouched. Verified
+      // against real git: "* [new branch] feature-local-rename". The ahead
+      // count never cleared either, because the branch still tracked a ref that
+      // had not moved.
+      //
+      // Source is the local branch by full ref (a bare name resolves against
+      // refs/tags too); destination is the name the upstream actually has.
+      const pair = await this.upstreamPair(opts?.signal, branch);
+      if (pair && pair.remoteBranch !== pair.local) {
+        remote = pair.remote;
+        refspec = `refs/heads/${pair.local}:refs/heads/${pair.remoteBranch}`;
+      }
     }
 
     const args = ["push"];
@@ -185,15 +202,21 @@ export class SyncOps {
    */
   private async upstreamPair(
     signal?: AbortSignal,
+    /** Resolve THIS branch's pair rather than HEAD's. The Branches view pushes
+     *  a branch it is not standing on, and needs the same answer. */
+    branch?: string,
   ): Promise<{ local: string; remote: string; remoteBranch: string } | null> {
-    const head = await this.proc.run(["symbolic-ref", "--quiet", "HEAD"], {
-      signal,
-    });
-    const fullRef = head.stdout.trim();
-    if (head.code !== 0 || !fullRef.startsWith("refs/heads/")) {
-      return null; // detached
+    let local = branch;
+    if (!local) {
+      const head = await this.proc.run(["symbolic-ref", "--quiet", "HEAD"], {
+        signal,
+      });
+      const fullRef = head.stdout.trim();
+      if (head.code !== 0 || !fullRef.startsWith("refs/heads/")) {
+        return null; // detached
+      }
+      local = fullRef.slice("refs/heads/".length);
     }
-    const local = fullRef.slice("refs/heads/".length);
     const [remoteR, mergeR] = await Promise.all([
       this.proc.run(["config", "--get", `branch.${local}.remote`], { signal }),
       this.proc.run(["config", "--get", `branch.${local}.merge`], { signal }),

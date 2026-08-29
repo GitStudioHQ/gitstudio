@@ -32,7 +32,7 @@ import {
   statePill,
   stateLead,
 } from "../ui";
-import { toast, confirmDialog, promptInline, editForm, openModal } from "../dialogs";
+import { toast, confirmDialog, promptInline, editForm, openModal, formWithRetry } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { openAssistantTab, aiEnabled } from "../aiAssist";
 import { DiffPanel } from "../diffPanel";
@@ -104,6 +104,15 @@ let prState: "open" | "closed" | "merged" | "all" = "open";
 const prFacets: FacetState = {};
 /** Unsent comment drafts, per PR — navigating away must never eat one. */
 const commentDrafts = new Map<number, string>();
+/**
+ * Unsent inline replies, per review thread.
+ *
+ * Resolving ANY thread reloads the file's whole thread panel, which rebuilds
+ * every card from scratch — so a reply half-written in one thread vanished
+ * because a different thread was resolved. Same rule as the composer above:
+ * text the user typed is not the app's to throw away on a repaint.
+ */
+const replyDrafts = new Map<string, string>();
 
 // ── Monaco diff lifecycle (self-contained; we can't touch renderer.ts) ─────────
 //
@@ -343,22 +352,61 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     );
     header.setCount?.(items.length, prs.length);
     listEl.replaceChildren();
+    // The empty state has to answer the question the SEGMENT asked. It was
+    // hardcoded to the open-state copy, so "Closed" reported "No open pull
+    // requests — you're all caught up", which is about a different set entirely.
+    // Same table Issues already uses.
+    const emptyCopy: Record<typeof prState, { title: string; desc: string; icon: string }> = {
+      open: {
+        title: "No open pull requests",
+        desc: "You're all caught up — nothing to review right now.",
+        icon: "git-pull-request",
+      },
+      merged: {
+        title: "No merged pull requests",
+        desc: "Merged pull requests will show here once some land.",
+        icon: "git-merge",
+      },
+      closed: {
+        title: "No closed pull requests",
+        desc: "Pull requests closed without merging will show here.",
+        icon: "git-pull-request-closed",
+      },
+      all: {
+        title: "No pull requests yet",
+        desc: "This repo has none. Open the first one to propose a change.",
+        icon: "git-pull-request",
+      },
+    };
+    const ec = emptyCopy[prState];
     if (prs.length === 0) {
       listEl.appendChild(
-        emptyState("No open pull requests", "You're all caught up — nothing to review right now.", {
-          icon: "git-pull-request",
-          action: { label: "New pull request", icon: "git-pull-request", onClick: () => void openCreatePr(refresh) },
+        emptyState(ec.title, ec.desc, {
+          icon: ec.icon,
+          // Only offer to open one where opening one is the natural next step.
+          action:
+            prState === "open" || prState === "all"
+              ? { label: "New pull request", icon: "git-pull-request", onClick: () => void openCreatePr(refresh) }
+              : undefined,
         }),
       );
       return;
     }
     if (items.length === 0) {
+      // Nothing filtered it — the segment did. Blaming filters that are not set
+      // ("0 of 5 … matches these filters") sends people hunting for a control
+      // that is already clear.
+      const bySegment = facets.activeCount() === 0 && !query;
       listEl.appendChild(
         emptyState(
-          "No matching pull requests",
-          query ? `Nothing matches “${query}”.` : "No pull request matches these filters.",
+          bySegment ? ec.title : "No matching pull requests",
+          bySegment
+            ? ec.desc
+            : query
+              ? `Nothing matches “${query}”.`
+              : "No pull request matches these filters.",
           {
-            icon: "search",
+            icon: bySegment ? ec.icon : "search",
           anchor: "inline",
           secondary: facets.activeCount() > 0
             ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
@@ -437,6 +485,21 @@ function showDetailPage(
   // the checks pill and Checks tab keep themselves honest. Stands down while
   // the Files tab is open (a repaint would tear down the Monaco diff mid-read).
   let lastSig = "";
+  /** What the CI poll watches: the check state and the counts its sub-tab
+   *  labels are built from. Everything else changing is not a reason to throw
+   *  the page away and rebuild it. */
+  const pollSig = (d: PrDetail): string =>
+    JSON.stringify([
+      d.checks,
+      d.pr.state,
+      d.pr.draft,
+      d.pr.mergedAt ?? null,
+      d.pr.closedAt ?? null,
+      d.pr.comments ?? 0,
+      d.pr.reviewComments ?? 0,
+      d.files.length,
+    ]);
+
   const schedulePoll = (current: PrDetail): void => {
     if (current.checks !== "pending") return;
     window.setTimeout(() => {
@@ -445,12 +508,25 @@ function showDetailPage(
         schedulePoll(current);
         return;
       }
+      // Never rebuild the page out from under someone who is typing in it. The
+      // rebuild moves focus to the top of the new DOM, so a comment written
+      // across two 15-second ticks lost the caret mid-sentence — and the
+      // keystrokes after it went nowhere.
+      const focused = document.activeElement;
+      if (focused && view.contains(focused) && /^(TEXTAREA|INPUT)$/.test(focused.tagName)) {
+        schedulePoll(current);
+        return;
+      }
       host
         .invoke("pr:detail", n)
         .then((fresh) => {
           if (!view.isConnected || !fresh) return;
           prime("pr:detail", n, fresh);
-          const sig = JSON.stringify(fresh);
+          // Compare only what this poll EXISTS to watch. Signing the whole
+          // detail meant any unrelated field — an `updatedAt` bump from someone
+          // else's comment — rebuilt the entire page, scroll and all, every 15
+          // seconds on a busy PR.
+          const sig = pollSig(fresh);
           if (sig !== lastSig) {
             lastSig = sig;
             buildDetail({ view, main, rail, topActions, d: fresh, nav, reload });
@@ -477,7 +553,7 @@ function showDetailPage(
       main.replaceChildren(emptyState("Pull request unavailable", "This pull request couldn't be loaded."));
       return;
     }
-    lastSig = JSON.stringify(d);
+    lastSig = pollSig(d);
     buildDetail({ view, main, rail, topActions, d, nav, reload });
     schedulePoll(d);
   })();
@@ -1222,6 +1298,11 @@ function threadCard(prNumber: number, t: PrReviewThread, reloadFile: () => void)
   ta.className = "gh-composer-input pr-reply-input";
   ta.placeholder = "Reply…";
   ta.rows = 2;
+  ta.value = replyDrafts.get(t.id) ?? "";
+  ta.addEventListener("input", () => {
+    if (ta.value.trim()) replyDrafts.set(t.id, ta.value);
+    else replyDrafts.delete(t.id);
+  });
   const replyBtn = el("button", "btn btn-primary");
   replyBtn.append(span("Reply"));
   replyBtn.addEventListener("click", () => void replyToThread(prNumber, t.id, ta, replyBtn, reloadFile));
@@ -1311,23 +1392,31 @@ async function doReview(
   btn: HTMLElement,
   reload: () => void,
 ): Promise<void> {
-  const choice = await reviewModal(n, event);
-  if (!choice) return; // cancelled
+  // A review is the longest thing anyone writes in this app, and it used to be
+  // collected, the card closed, and only THEN sent — so a rejected submit
+  // answered several paragraphs of considered feedback with a toast over an
+  // empty screen, with no way back to the text. `formWithRetry` re-opens the
+  // card carrying exactly what was written, and says why inside it.
   (btn as HTMLButtonElement).disabled = true;
   try {
-    const r = await host.invoke("pr:review", {
-      number: n,
-      event: choice.event,
-      body: choice.body || undefined,
-    });
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't submit the review.", "error");
-      return;
-    }
-    toast(`Review submitted on PR #${n}.`, "success");
-    reload();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't submit the review.", "error");
+    await formWithRetry<{ event: PrReviewEvent; body: string }>(
+      (seed, error) => reviewModal(n, seed?.event ?? event, seed?.body ?? "", error),
+      async (choice) => {
+        try {
+          const r = await host.invoke("pr:review", {
+            number: n,
+            event: choice.event,
+            body: choice.body || undefined,
+          });
+          if (!r.ok) return r.message ?? "Couldn't submit the review.";
+        } catch (e) {
+          return cleanErr(e) || "Couldn't submit the review.";
+        }
+        toast(`Review submitted on PR #${n}.`, "success");
+        reload();
+        return undefined;
+      },
+    );
   } finally {
     (btn as HTMLButtonElement).disabled = false;
   }
@@ -1342,6 +1431,8 @@ const REVIEW_VERDICTS: ReadonlyArray<{ event: PrReviewEvent; label: string; icon
 function reviewModal(
   n: number,
   initial: PrReviewEvent,
+  initialBody = "",
+  error?: string,
 ): Promise<{ event: PrReviewEvent; body: string } | null> {
   return new Promise((resolve) => {
     let settled = false;
@@ -1392,7 +1483,15 @@ function reviewModal(
       ta.className = "gh-form-textarea";
       ta.placeholder = "Leave a review comment… (required for Request changes)";
       ta.rows = 5;
+      ta.value = initialBody;
       card.appendChild(ta);
+      // Why the last attempt failed, shown WITH the text it failed on — a toast
+      // over a closed card told you nothing you could act on.
+      if (error) {
+        const note = el("div", "modal-note-error");
+        note.textContent = error;
+        card.appendChild(note);
+      }
 
       const actions = el("div", "modal-actions");
       const cancel = el("button", "mini-btn");
@@ -1426,6 +1525,8 @@ function reviewModal(
         card,
         focusEl: ta,
         label: `Review pull request #${n}`,
+        // A route change (a window focus counts) must not take a written review.
+        hasUnsavedWork: () => ta.value.trim() !== initialBody.trim(),
         onClose: () => {
           if (!settled) resolve(null);
         },
@@ -1744,6 +1845,8 @@ async function replyToThread(
       return;
     }
     toast("Reply posted.", "success");
+    // Spent, and only now — a failed post keeps the text for the retry.
+    replyDrafts.delete(threadId);
     reloadFile();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't post the reply.", "error");

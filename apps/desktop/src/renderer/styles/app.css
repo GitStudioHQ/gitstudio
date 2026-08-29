@@ -2284,7 +2284,7 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 
 /* Cap + center the repo listing on the wide measure so the file table stays
    comfortable on ultra-wide windows instead of stretching edge to edge. */
-.code-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px max(16px, calc((100% - var(--measure-wide)) / 2)) 28px; }
+.code-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px max(16px, calc((100% - var(--measure-wide)) / 2)) calc(28px + var(--dock-reserve, 0px)); }
 
 /* The GitHub-style "latest commit" bar that crowns the repo-root listing. */
 .code-latest-slot:empty { display: none; }
@@ -2966,7 +2966,12 @@ body.resizing-h .cmp-diff-editor { pointer-events: none; }
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px max(22px, calc((100% - var(--measure-settings)) / 2)) 40px;
+  /* The terminal dock is an overlay footer — it does not shrink this scroller.
+     So with the dock open the last card sat behind it with nowhere left to
+     scroll, and Settings' final section was simply unreachable. The dock
+     publishes its height as --dock-reserve (bottomDock.publishReserve). */
+  padding: 20px max(22px, calc((100% - var(--measure-settings)) / 2))
+    calc(40px + var(--dock-reserve, 0px));
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -4689,6 +4694,18 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   gap: 8px;
   align-content: start;
 }
+/* Hover actions are INVISIBLE until hover, but they still took their width out
+   of the card — 36% of it at 1280, squeezing the description and wrapping the
+   meta line onto a row holding nothing but a separator. Out of flow: they
+   overlay the card's right edge when revealed, and cost nothing when not. */
+.gh-org-grid .row-actions {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.gh-org-grid > * { position: relative; }
+
 /* People are a directory, not documents: fixed-width chips that wrap from the
    left, so five members read as five people and not as five stretched cards. */
 .gh-org-grid.is-people {
@@ -4734,6 +4751,13 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
    by a rule. */
 .gh-org-head {
   display: flex;
+  /* `.gh-detail-head` — the other class on this same element — sets
+     `flex-direction: column`, and this block never reset it. So the identity's
+     `flex: 1 1 auto` and the actions' `flex: 0 0 auto` below did nothing at
+     all: the avatar, the name, the description and the buttons stacked into
+     four rows 132px tall with 891px of empty space to their right, and the
+     description sat UNDER the buttons instead of with the name it describes. */
+  flex-direction: row;
   align-items: flex-start;
   gap: var(--sp-4);
   padding-bottom: var(--sp-4);
@@ -5933,6 +5957,14 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 /* One block per hit. The stitched-sibling rules this replaces could not close
    the gap the row body's own `gap` put between the boxes. */
 .explore-code-line { display: block; }
+/* What actually matched. A code search that shows you three lines and leaves
+   you to find the string yourself has done half the job. */
+.explore-code-hit {
+  background: color-mix(in srgb, var(--gs-accent) 26%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
 .explore-code-gap {
   display: block;
   color: var(--app-muted);
@@ -7299,6 +7331,21 @@ body.vscode-light .gh-label-chip {
   border-top: 1px solid var(--app-border);
 }
 .rb-preview { color: var(--app-muted); font-size: 11.5px; }
+/* "Move stacked-a, stacked-b with the rewrite" — shown only when branches
+   actually sit inside the range. A rebase gives every commit a new id, so
+   without this those branches end up pointing at commits that are no longer in
+   the branch's history. */
+.rb-carry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--app-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.rb-carry:hover { color: var(--app-text); }
+.rb-carry input { margin: 0; cursor: pointer; }
 .rb-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 600;
@@ -7334,6 +7381,12 @@ body.vscode-light .gh-label-chip {
   color: var(--app-muted); cursor: pointer;
 }
 .rb-chip:hover { background: var(--app-hover); color: var(--app-text); }
+/* Loading a base is work on the CONTROL, not on the workspace: the plan you
+   composed stays on screen while the request runs. */
+.rb-chip.is-busy, .rb-basebar button.is-busy {
+  opacity: 0.6;
+  cursor: progress;
+}
 .rb-chip.is-active {
   color: var(--gs-accent-ink, var(--gs-accent));
   border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
@@ -8097,7 +8150,8 @@ body.vscode-light .gh-label-chip {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-1) var(--sp-4) var(--sp-5);
+  /* …and the same reserve every long scroller needs; see .settings-scroll. */
+  padding: var(--sp-1) var(--sp-4) calc(var(--sp-5) + var(--dock-reserve, 0px));
 }
 .sec-row {
   display: flex;
@@ -8207,6 +8261,10 @@ body.vscode-light .gh-label-chip {
 .sec-row-meta > .rel-author { min-width: 110px; text-align: right; }
 .sec-row-meta > .rel-asset-count { min-width: 42px; justify-content: flex-end; }
 .sec-row-meta > .rel-downloads { min-width: 76px; justify-content: flex-end; }
+/* Explore's own two — the only list in the app whose meta cluster did not form
+   columns, because these were the two slots nobody added here. */
+.sec-row-meta > .explore-lang { min-width: 84px; text-align: right; }
+.sec-row-meta > .explore-stat { min-width: 62px; justify-content: flex-end; }
 /* Actions run rows: branch, event and duration each keep their column so the
    list can be scanned down rather than read row by row. */
 .sec-row-meta > .sec-run-branch {

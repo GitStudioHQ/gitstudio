@@ -103,6 +103,7 @@ export class RebaseBridge {
       commits,
       baseCommit,
       inProgress,
+      updateRefs: await this.repoUpdateRefs(),
       message: notes.join(" ") || undefined,
     };
   }
@@ -127,13 +128,56 @@ export class RebaseBridge {
     if (r.code !== 0) {
       return [];
     }
+    // Which local branches sit ON each commit in the range. A rewrite gives
+    // every commit a new sha, so a branch pointing at an old one is stranded on
+    // a line nothing references — `update-ref` in the todo moves it across.
+    const tips = new Map<string, string[]>();
+    const current = (
+      await ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"])
+    ).stdout.trim();
+    const refs = await ctx.process.run([
+      "for-each-ref",
+      "--format=%(objectname) %(refname:short)",
+      "refs/heads",
+    ]);
+    if (refs.code === 0) {
+      for (const line of refs.stdout.split("\n")) {
+        const i = line.indexOf(" ");
+        if (i <= 0) continue;
+        const sha = line.slice(0, i);
+        const name = line.slice(i + 1).trim();
+        // Never the branch being rebased: git moves that one itself, and
+        // naming it in an update-ref would fight the rebase for it.
+        if (!name || name === current) continue;
+        tips.set(sha, [...(tips.get(sha) ?? []), name]);
+      }
+    }
+
     const out: RebaseCommitInfo[] = [];
     for (const line of r.stdout.split("\n")) {
       if (!line.trim()) continue;
       const [sha, shortSha, author, at, subject] = line.split(sep);
-      out.push({ sha, shortSha, author, subject: subject ?? "", rel: relTime(Number(at) || 0) });
+      const branches = tips.get(sha);
+      out.push({
+        sha,
+        shortSha,
+        author,
+        subject: subject ?? "",
+        rel: relTime(Number(at) || 0),
+        ...(branches?.length ? { branches } : {}),
+      });
     }
     return out;
+  }
+
+  /** The repo's own `rebase.updateRefs`. Following it means the app does what
+   *  the user's git already does; ignoring it was how branches got orphaned by
+   *  a rebase that their own config said should carry them. */
+  private async repoUpdateRefs(): Promise<boolean> {
+    const ctx = this.repos.getContext();
+    if (!ctx) return false;
+    const r = await ctx.process.run(["config", "--get", "--type=bool", "rebase.updateRefs"]);
+    return r.code === 0 && r.stdout.trim() === "true";
   }
 
   private async loadBaseCommit(base: string): Promise<{ shortSha: string; subject: string } | undefined> {
@@ -162,7 +206,8 @@ export class RebaseBridge {
     }
     // Display order (newest first) becomes git's todo order in buildRebasePlan,
     // shared with the extension because every way to get this wrong is silent.
-    const built = buildRebasePlan(rows);
+    const updateRefs = req.updateRefs ?? (await this.repoUpdateRefs());
+    const built = buildRebasePlan(rows, { updateRefs });
     if (!built.ok) {
       return { status: "failed", message: built.message };
     }

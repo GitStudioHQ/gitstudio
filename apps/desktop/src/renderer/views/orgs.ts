@@ -84,11 +84,19 @@ type SubTabId = "repos" | "teams" | "members";
  *  fallback is initials, where this one's is the three-person org glyph, which
  *  on a member row said "this person is an organization". */
 function orgAvatar(url: string | null, alt: string, size = 18): HTMLElement {
-  if (!url) {
+  // The fallback has to be the size that was ASKED for. It wasn't: the header
+  // requests 44px and got a bare 16px codicon in a 44px hole whenever the
+  // image was missing or failed to load, so the identity block collapsed
+  // around it. `avatar()` in ui.ts has always sized its own fallback.
+  const fallback = (): HTMLElement => {
     const g = glyph("organization");
     g.classList.add("gh-avatar-fallback");
+    g.style.width = `${size}px`;
+    g.style.height = `${size}px`;
+    g.style.fontSize = `${Math.round(size * 0.62)}px`;
     return g;
-  }
+  };
+  if (!url) return fallback();
   const img = document.createElement("img");
   img.className = "gh-avatar";
   img.src = url;
@@ -99,9 +107,7 @@ function orgAvatar(url: string | null, alt: string, size = 18): HTMLElement {
   img.style.width = `${size}px`;
   img.style.height = `${size}px`;
   img.addEventListener("error", () => {
-    const g = glyph("organization");
-    g.classList.add("gh-avatar-fallback");
-    img.replaceWith(g);
+    img.replaceWith(fallback());
   });
   return img;
 }

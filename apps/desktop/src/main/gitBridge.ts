@@ -387,8 +387,13 @@ export class GitBridge {
       return [];
     }
     const out: RowStat[] = [];
+    // The cap is a runaway guard, not a page size: the graph asks for exactly
+    // the rows in view plus its overscan, and a tall window at compact row
+    // height passes 60 easily. Truncating there meant the rows past it were
+    // never answered — and the client marked them pending regardless, so their
+    // CHANGES cells stayed blank. Sized above any real viewport.
     await Promise.all(
-      shas.slice(0, 60).map(async (sha) => {
+      shas.slice(0, 250).map(async (sha) => {
         let record = this.records.get(sha);
         if (!record) {
           for await (const c of ctx.log.streamCommits({
@@ -429,10 +434,16 @@ export class GitBridge {
   ): Promise<ChangedFile[]> {
     const range =
       record.parents.length > 0 ? `${record.parents[0]}..${record.sha}` : record.sha;
+    // -z, always. Without it git C-QUOTES any path outside ASCII — "café.txt"
+    // arrives as `"caf\303\251.txt"`, quotes and octal escapes included, and
+    // that string is then what the row shows AND what every later `-- <path>`
+    // is given, so the file's diff comes back empty. Verified against real git.
+    // (`core.quotepath=false` fixes the escapes but not a path containing a tab
+    // or a newline, which -z handles too.)
     const args =
       record.parents.length > 0
-        ? ["diff", "--name-status", "-M", range]
-        : ["show", "--name-status", "-M", "--format=", record.sha];
+        ? ["diff", "--name-status", "-M", "-z", range]
+        : ["show", "--name-status", "-M", "-z", "--format=", record.sha];
     const result = await ctx.process.run(args);
     return parseNameStatus(result.stdout);
   }
@@ -487,11 +498,19 @@ export class GitBridge {
     // Working-tree diff: is it conflicted?
     const conflicted = await ctx.conflict.isConflicted(rel).catch(() => false);
     const headText = await ctx.staging.headContent(rel).catch(() => "");
-    const workingText = await readWorking(ctx, rel);
+    // A DELETED file is not a file we failed to read. `readWorking` falls back
+    // to the index and then HEAD when the path is gone — a fallback
+    // conflictModel needs and this does not — so a deletion produced a right
+    // pane identical to the left one: both panes the same, zero change markers,
+    // the app showing a file as unchanged that is not on disk at all. Ask
+    // whether it exists rather than inferring it from a failed read.
+    const abs = containedPath(ctx.root, rel);
+    const gone = !abs || !(await stat(abs).then(() => true).catch(() => false));
+    const workingText = gone ? "" : await readWorking(ctx, rel);
     return {
       path: rel,
       leftLabel: `HEAD ${rel}`,
-      rightLabel: `Working Tree ${rel}`,
+      rightLabel: gone ? `(deleted) ${rel}` : `Working Tree ${rel}`,
       leftText: headText,
       rightText: workingText,
       conflicted,
@@ -946,7 +965,7 @@ export class GitBridge {
       // 3-dot (base...head) = "what head introduced since the merge-base";
       // 2-dot (base head)   = the literal difference between the two tips.
       const range = threeDot ? [`${base}...${head}`] : [base, head];
-      const r = await ctx.process.run(["diff", "--name-status", "-M", ...range]);
+      const r = await ctx.process.run(["diff", "--name-status", "-M", "-z", ...range]);
       files = parseNameStatus(r.stdout);
     } catch {
       files = [];
@@ -2003,17 +2022,27 @@ export function parseTrack(track: string): { ahead: number; behind: number } {
 }
 
 /** Parses `git diff --name-status` (tab-separated, newline-delimited). */
+/**
+ * Parses `git diff/show --name-status -M -z`.
+ *
+ * With -z the output is a flat NUL-separated stream, NOT lines: a status record
+ * followed by its path, and for R/C entries by TWO paths (source then
+ * destination). Nothing is quoted or escaped, which is the whole point — the
+ * previous line/tab parse handed the UI git's C-quoted form of any non-ASCII
+ * name (`"caf\303\251.txt"`), and that same string was then passed back as a
+ * pathspec, so the diff for it was always empty.
+ */
 export function parseNameStatus(stdout: string): ChangedFile[] {
   const files: ChangedFile[] = [];
-  for (const line of stdout.split("\n")) {
-    if (!line) {
-      continue;
-    }
-    const parts = line.split("\t");
-    const code = parts[0] ?? "";
+  const tok = stdout.split("\0").filter((t) => t.length > 0);
+  for (let i = 0; i < tok.length; i++) {
+    const code = tok[i];
     const status = code.charAt(0);
-    // Renames/copies carry two paths (R100\told\tnew); take the destination.
-    const path = parts.length >= 3 ? parts[2] : parts[1] ?? "";
+    // R/C carry a similarity score and two paths; the destination is the one
+    // that exists now, so it is the one to show and to diff.
+    const paths = status === "R" || status === "C" ? 2 : 1;
+    const path = tok[i + paths];
+    i += paths;
     if (path) {
       files.push({ path, status });
     }

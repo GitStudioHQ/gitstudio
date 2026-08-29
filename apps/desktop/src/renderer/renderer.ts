@@ -69,6 +69,7 @@ import { plural } from "./textFit";
 import { dismissLayers } from "./overlays";
 import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { openBranchPeek, openRefPeek, openStashPeek } from "./peeks";
+import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu } from "./contextMenu";
 import { wireListNav } from "./views/common";
@@ -197,6 +198,8 @@ class App {
    * typing a message and then staging one more file discarded the message —
    * along with the amend / sign-off toggles and any co-authors.
    */
+  /** The repo root `composerDraft` was typed in. See showRepoScreen. */
+  private composerDraftRoot?: string;
   private composerDraft: {
     message: string;
     amend: boolean;
@@ -430,8 +433,10 @@ class App {
         // code block keeps the OLD theme's colors after an OS light/dark flip.
         refreshHighlightTheme();
         this.terminalDock?.applyTheme();
-        // An "auto" dock icon must follow the OS flip too.
+        // An "auto" dock icon must follow the OS flip too — and so must the
+        // Appearance card's preview OF that icon, which is built once and kept.
         this.syncDockIcon();
+        this.invalidateAppearanceCard();
       }
     });
     this.wireHostEvents();
@@ -563,8 +568,15 @@ class App {
     // tell "nothing changed" from "no idea" and skip a full refresh it does not
     // need. Fire-and-forget: it only has to land before the user alt-tabs.
     void this.recordDiskFingerprint();
-    // A half-written commit message belongs to the repo it was typed in.
-    this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined };
+    // A half-written commit message belongs to the repo it was typed in — and
+    // that is the rule this line USED to break. It reset unconditionally, so
+    // "Back to main menu" and straight back into the SAME repo (the recent-repo
+    // list is right there, one click away) destroyed the message, and so did
+    // every re-open of the repo you were already in. Ask which repo first.
+    if (this.composerDraftRoot !== info.root) {
+      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined };
+      this.composerDraftRoot = undefined;
+    }
     // Drop the previous repo's graph mount so a refresh from a non-graph view
     // never reloads stale history.
     this.graph?.dispose();
@@ -876,6 +888,7 @@ class App {
     this.terminalDock?.applyTheme();
     // An "auto" dock icon follows the new theme.
     this.syncDockIcon();
+    this.invalidateAppearanceCard();
     this.persist();
   }
 
@@ -883,7 +896,20 @@ class App {
   private setLogoMode(mode: LogoMode): void {
     this.logoMode = mode;
     this.syncDockIcon();
+    this.invalidateAppearanceCard();
     this.persist();
+  }
+
+  /**
+   * Settings holds a kept-alive DOM built when it was last rendered, so its
+   * Appearance card kept showing whichever theme was selected THEN. Changing
+   * the theme from anywhere else — ⌘K, the menu, an OS light/dark flip — left
+   * the segment highlighting the old mode and the App-icon preview painting
+   * the old variant, both stating as fact something that had already changed.
+   */
+  private invalidateAppearanceCard(): void {
+    this.viewCache.delete("settings");
+    if (this.currentView === "settings") void this.showSettingsView();
   }
 
   /** The dock icon variant to show: pinned light/dark, or (auto) the resolved theme. */
@@ -1045,21 +1071,31 @@ class App {
     }
     if (!anyActive && this.navButtons.length) this.navButtons[0].tabIndex = 0;
     // Restore a kept-alive view instantly, skipping the rebuild + refetch.
+    // Any soft-reload hook belongs to the view being replaced, and its captured
+    // routeGen can never match again (routeGen bumps on every route). Left in
+    // place it made refreshBranchesSoft await a function that returns
+    // immediately — so a fetch or pull silently refreshed nothing.
+    //
+    // This has to run BEFORE the keep-alive restore below, which returns early.
+    // It did not, so a route change into a CACHED view skipped it and left the
+    // dead hook armed: Branches then stopped refreshing for the rest of the
+    // session. A dropped stash stayed on the list, and dropping it a second
+    // time ran `stash drop` against an index that now names a DIFFERENT stash —
+    // destroying work the user never chose.
+    this.reloadBranchRows = null;
     const cached = App.KEEPALIVE.has(id) ? this.viewCache.get(id) : undefined;
     if (cached) {
       this.viewHost.replaceChildren(cached);
       return;
     }
-    // Any soft-reload hook belongs to the view being replaced, and its captured
-    // routeGen can never match again (routeGen bumps on every route). Left in
-    // place it made refreshBranchesSoft await a function that returns
-    // immediately — so a fetch or pull silently refreshed nothing.
-    this.reloadBranchRows = null;
     if (id === "code") {
       // A path target deep-links a folder — that's how the Code browser's own
       // folder hops travel, so ⌘[/⌘] walk the folder trail like a browser.
       if (target?.path !== undefined) this.codePath = target.path;
-      void this.showCodeView();
+      // …and a `file` target is the open FILE, which is a place in the app just
+      // as much as a folder is. See SectionTarget.file.
+      if (target?.file) void this.openCodeFile(target.file);
+      else void this.showCodeView();
     } else if (id === "graph") {
       this.showGraphView(force);
       // A sha target deep-links a commit: scroll to + select it once the rows
@@ -1607,8 +1643,20 @@ class App {
         void (async (): Promise<void> => {
           const name = await promptInline("Tag name", "v1.0.0");
           if (!name || !name.trim()) return;
-          const msg = await promptInline("Tag message (optional — blank = lightweight)", "Release 1.0.0");
-          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.name, message: msg?.trim() || undefined }));
+          // `allowEmpty` so Cancel is distinguishable from a deliberate blank.
+          // Without it both answered `null`, the flow could not tell them
+          // apart, and cancelling the OPTIONAL second prompt created the tag
+          // anyway — a Cancel that performs the action, on an object nothing in
+          // the app can delete afterwards.
+          const msg = await promptInline(
+            "Tag message (optional — blank = lightweight)",
+            "Release 1.0.0",
+            "",
+            "Create tag",
+            true,
+          );
+          if (msg === null) return;
+          await run("create tag", host.invoke("tag:create", { name: name.trim(), ref: b.name, message: msg.trim() || undefined }));
         })();
       },
     });
@@ -1778,6 +1826,12 @@ class App {
       return; // branch still exists — don't refresh as if it were gone
     }
     toast(`Deleted ${name}.`, "success");
+    // The peek this was very likely launched from is ABOUT the branch that no
+    // longer exists. Leaving it open left a card offering Checkout, Merge,
+    // Rename and Push on a ref git would refuse — and a second Delete on
+    // nothing. A mutation that invalidates a card's subject closes the card;
+    // the stash peek already works this way.
+    closePeek();
     bust();
     await this.refreshRefs();
     if (this.currentView === "branches") void this.showBranchesView();
@@ -2182,6 +2236,12 @@ class App {
     split.append(left, divider, right, restore);
     body.appendChild(split);
 
+    // Release the previous surface BEFORE taking its handle. Overwriting the
+    // handle orphaned a live Monaco editor — its models, its DOM and its
+    // listeners all still attached, with nothing left holding a reference to
+    // dispose them. Every rebuild of this pane leaked one. Every other
+    // assignment site already does this.
+    this.activeMonacoView?.dispose();
     const diff = new CompareDiff(right);
     this.activeMonacoView = diff;
     diff.showEmpty("Select a changed file to view its diff.");
@@ -3079,7 +3139,7 @@ class App {
       row.append(glyph(fileIcon(e.name, isDir)), label, size);
       row.addEventListener("click", () => {
         if (isDir) this.goCodePath(e.path);
-        else void this.openCodeFile(e.path);
+        else this.goCodeFile(e.path);
       });
       listing.appendChild(row);
       rows.push({ el: row, name: e.name, label });
@@ -3207,7 +3267,7 @@ class App {
             undefined,
             (rel) => {
               const p = resolveRelative(baseDir, rel);
-              if (/\.[A-Za-z0-9]{1,8}$/.test(p.split("/").pop() ?? "")) void this.openCodeFile(p);
+              if (/\.[A-Za-z0-9]{1,8}$/.test(p.split("/").pop() ?? "")) this.goCodeFile(p);
               else this.goCodePath(p);
             },
           );
@@ -3260,6 +3320,13 @@ class App {
   }
 
   /** Opens a tracked file read-only over the listing (Back restores the browser). */
+  /** Open a file AS A NAVIGATION — the sibling of `goCodePath` for blobs. The
+   *  folder rides along so Back returns to the listing the file came from. */
+  private goCodeFile(path: string): void {
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    this.routeView("code", true, { path: dir, file: path });
+  }
+
   private async openCodeFile(path: string): Promise<void> {
     const wrap = el("div", "code-view code-file-view");
     const back = el("button", "mini-btn");
@@ -3354,6 +3421,9 @@ class App {
     textarea.value = this.composerDraft.message;
     textarea.addEventListener("input", () => {
       this.composerDraft.message = textarea.value;
+      // Whose draft this is. Without it the reset above cannot tell a repo
+      // SWITCH (drop it) from a re-open of the same repo (keep it).
+      this.composerDraftRoot = this.currentRepo?.root;
     });
     /**
      * Put text in the composer the way a keystroke would.
@@ -3626,9 +3696,7 @@ class App {
       } catch (e) {
         toast(cleanErr(e) || "Couldn't apply the selected lines.", "error");
       }
-      bust("status");
-      bust("diff");
-      if (this.currentView === "changes") void this.showChangesView();
+      void this.repaintChanges();
     });
     const wsBtn = el("button", "topbar-icon dc-ws") as HTMLButtonElement;
     wsBtn.disabled = true;
@@ -3784,6 +3852,7 @@ class App {
     wrap.append(composer, toolbar, body);
     this.viewHost.replaceChildren(wrap);
 
+    this.activeMonacoView?.dispose();
     const diffPanel = new DiffPanel(surface);
     this.activeMonacoView = diffPanel;
     diffPanel.showEmpty("Select a file to view its diff.");
@@ -4159,9 +4228,7 @@ class App {
           if (!r.ok) {
             toast(r.message || "Couldn't stage that change.", r.expected ? "info" : "error");
           }
-          bust("status");
-          bust("diff");
-          void this.showChangesView();
+          void this.repaintChanges();
         })();
       });
       // 1-based, matching what an editor's gutter shows.
@@ -4194,9 +4261,7 @@ class App {
       if (gen !== this.diffGen) return;
       if (model) {
         diffPanel.showMerge(model, () => {
-          bust("status");
-          bust("diff");
-          if (this.currentView === "changes") void this.showChangesView();
+          void this.repaintChanges();
         });
         return;
       }
@@ -4552,9 +4617,7 @@ class App {
       toast(failed === paths.length ? "Nothing could be applied." : `${failed} of ${paths.length} failed.`, "error");
     }
     this.clearSelection(lists, selBar);
-    bust("status");
-    bust("diff");
-    void this.showChangesView();
+    void this.repaintChanges();
   }
 
   /** Stash the given paths, then refresh. Empty means the whole tree. */
@@ -4565,9 +4628,32 @@ class App {
       return;
     }
     toast(paths.length === 1 ? "Stashed 1 file." : `Stashed ${paths.length} files.`);
-    bust("status");
-    bust("diff");
-    void this.showChangesView();
+    void this.repaintChanges();
+  }
+
+  /**
+   * Re-read the working tree IN PLACE, then repaint Changes.
+   *
+   * `bust("status")` DELETES the cached tree, so `showChangesView`'s
+   * paint-from-what-we-know path found nothing and fell back to a 6-row
+   * skeleton — on every stage, unstage, discard, stash and hunk apply. The
+   * list you were working in blanked and the open diff went back to "Select a
+   * file to view its diff.", several times a minute, for an operation that
+   * usually moves one row.
+   *
+   * Re-reading into the same cache entry keeps a real tree on screen the whole
+   * time, and the existing change-diff gate then swaps in only what moved. The
+   * status read must land BEFORE `bust("diff")`, because a bust supersedes
+   * every request already in flight — including this one.
+   */
+  private async repaintChanges(): Promise<void> {
+    try {
+      await gget("status", undefined, 0);
+    } catch {
+      // Leave the last-known tree up; showChangesView reports the failure.
+    }
+    bust("diff"); // a staged/unstaged file's diff genuinely changed
+    if (this.currentView === "changes") void this.showChangesView();
   }
 
   private async changesAction(
@@ -4591,9 +4677,7 @@ class App {
     } catch (e) {
       toast(cleanErr(e) || "The operation failed.", "error");
     }
-    bust("status");
-    bust("diff");
-    if (this.currentView === "changes") void this.showChangesView();
+    void this.repaintChanges();
   }
 
   private async doDesktopCommit(
@@ -4714,6 +4798,7 @@ class App {
       textarea.value = "";
       // The draft has been spent — do not carry it into the next commit.
       this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined };
+      this.composerDraftRoot = undefined;
       bust(); // a commit (± push) touches refs/branches/status/sync/graph
       await this.refreshRefs();
       await this.updateSync();
@@ -5376,13 +5461,21 @@ class App {
     badge.hidden = true;
     bell.appendChild(badge);
     this.notifBellBadge = badge;
-    bell.addEventListener("click", () =>
+    bell.addEventListener("click", () => {
+      // A popover OF the page you are already reading has nothing to add, and
+      // it put a second copy of the Inbox on screen: two "Inbox 7" headers,
+      // two identical refresh buttons, two lists of the same threads. On the
+      // Inbox the bell just refreshes the page.
+      if (this.currentView === "notifications") {
+        this.routeView("notifications", true);
+        return;
+      }
       openNotificationsPanel(
         bell,
         (v, target) => this.routeView(v, false, target),
         () => void this.refreshNotifBadge(),
-      ),
-    );
+      );
+    });
     void this.refreshNotifBadge();
     return bell;
   }

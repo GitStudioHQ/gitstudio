@@ -24,7 +24,7 @@ import {
   statBit,
   statePill,
 } from "../ui";
-import { confirmDialog, openModal, toast } from "../dialogs";
+import { confirmDialog, openModal, toast, formWithRetry } from "../dialogs";
 import { highlightCode } from "../highlight";
 import {
   detailPage,
@@ -233,6 +233,18 @@ function buildGistDetail(ctx: GistDetailCtx): void {
   const editBtn = el("button", "mini-btn");
   editBtn.append(glyph("edit"), span("Edit"));
   editBtn.addEventListener("click", () => void editGist(g, fileIdx(), reload));
+  /** Match the affordance to what Edit will actually do — a live button that
+   *  refuses on click is a worse answer than one that says why up front.
+   *  Re-run whenever the selected file changes. */
+  const syncEditBtn = (): void => {
+    const f = g.files[fileIdx()];
+    const blocked = !!f?.truncated;
+    (editBtn as HTMLButtonElement).disabled = blocked;
+    editBtn.title = blocked
+      ? `GitStudio only received part of ${f?.filename ?? "this file"} — edit it on GitHub`
+      : "Edit this gist";
+  };
+  syncEditBtn();
 
   const copyBtn = el("button", "mini-btn");
   copyBtn.append(glyph("copy"), span("Copy raw URL"));
@@ -288,6 +300,8 @@ function buildGistDetail(ctx: GistDetailCtx): void {
       fileTabByGist.set(g.id, idx);
       const f = g.files[idx];
       if (!f) return;
+      // Switching tabs changes which file Edit would save, so re-ask.
+      syncEditBtn();
       content.replaceChildren();
 
       const fileHead = el("div", "gist-file-head");
@@ -379,59 +393,86 @@ function formatBytes(n: number): string {
 // ── Mutations ────────────────────────────────────────────────────────────────
 
 async function newGist(nav: SectionNav, refresh: () => void): Promise<void> {
-  const v = await gistDialog({ title: "New gist", okLabel: "Create gist" });
-  if (!v) return;
-  try {
-    const r = await host.invoke("gist:create", {
-      description: v.description,
-      filename: v.filename,
-      content: v.content,
-      public: v.public,
-    });
-    if (!r.ok) {
-      toast(r.message || "Couldn't create the gist.", "error");
-      return;
-    }
-    toast("Gist created.", "success");
-    bust("gist");
-    // The created id comes back in `message` — open the new gist directly.
-    if (r.message) nav("gists", { id: r.message });
-    else refresh();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't create the gist.", "error");
-  }
+  // The form closed before the request was even sent, so a rejected create
+  // answered a whole file of typing with a toast over an empty screen.
+  await formWithRetry<GistDialogResult>(
+    (seed, error) =>
+      gistDialog({
+        title: "New gist",
+        okLabel: "Create gist",
+        description: seed?.description,
+        filename: seed?.filename,
+        content: seed?.content,
+        public: seed?.public,
+        error,
+      }),
+    async (v) => {
+      try {
+        const r = await host.invoke("gist:create", {
+          description: v.description,
+          filename: v.filename,
+          content: v.content,
+          public: v.public,
+        });
+        if (!r.ok) return r.message || "Couldn't create the gist.";
+        toast("Gist created.", "success");
+        bust("gist");
+        // The created id comes back in `message` — open the new gist directly.
+        if (r.message) nav("gists", { id: r.message });
+        else refresh();
+        return undefined;
+      } catch (e) {
+        return cleanErr(e) || "Couldn't create the gist.";
+      }
+    },
+  );
 }
 
 async function editGist(g: GistInfo, fileIdx: number, reload: () => void): Promise<void> {
   const file = g.files[fileIdx] ?? g.files[0];
   if (!file) return;
-  const v = await gistDialog({
-    title: "Edit gist",
-    okLabel: "Save changes",
-    description: g.description,
-    filename: file.filename,
-    content: file.content,
-    public: g.public,
-    lockVisibility: true, // GitHub can't flip public↔secret on an existing gist
-  });
-  if (!v) return;
-  try {
-    const r = await host.invoke("gist:update", {
-      id: g.id,
-      description: v.description,
-      filename: file.filename, // current name = the API key
-      content: v.content,
-      newFilename: v.filename, // rename when changed
-    });
-    if (!r.ok) {
-      toast(r.message || "Couldn't save the gist.", "error");
-      return;
-    }
-    toast("Gist saved.", "success");
-    reload();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't save the gist.", "error");
+  // GitHub only sends the first megabyte of a large gist file, and the view
+  // already SAYS so ("GitHub truncated this file"). Editing loaded that partial
+  // text into the box and saved it back as the whole file, so opening a big
+  // gist and pressing Save — changing nothing — silently deleted everything
+  // past the truncation point. The one place that knows is here.
+  if (file.truncated) {
+    toast(
+      `GitStudio only received part of ${file.filename}. Edit it on GitHub so the rest isn't overwritten.`,
+      "error",
+    );
+    return;
   }
+  await formWithRetry<GistDialogResult>(
+    (seed, error) =>
+      gistDialog({
+        title: "Edit gist",
+        okLabel: "Save changes",
+        description: seed?.description ?? g.description,
+        filename: seed?.filename ?? file.filename,
+        content: seed?.content ?? file.content,
+        public: g.public,
+        lockVisibility: true, // GitHub can't flip public↔secret on an existing gist
+        error,
+      }),
+    async (v) => {
+      try {
+        const r = await host.invoke("gist:update", {
+          id: g.id,
+          description: v.description,
+          filename: file.filename, // current name = the API key
+          content: v.content,
+          newFilename: v.filename, // rename when changed
+        });
+        if (!r.ok) return r.message || "Couldn't save the gist.";
+        toast("Gist saved.", "success");
+        reload();
+        return undefined;
+      } catch (e) {
+        return cleanErr(e) || "Couldn't save the gist.";
+      }
+    },
+  );
 }
 
 async function deleteGist(g: GistInfo, btn: HTMLElement, back: () => void): Promise<void> {
@@ -481,6 +522,9 @@ function gistDialog(opts: {
   public?: boolean;
   /** When true, the public/secret toggle is shown disabled (edit can't flip it). */
   lockVisibility?: boolean;
+  /** Why the previous attempt failed, shown inside the form that still holds
+   *  the text. See `formWithRetry`. */
+  error?: string;
 }): Promise<GistDialogResult | null> {
   return new Promise((resolve) => {
     let settled = false;
@@ -539,7 +583,13 @@ function gistDialog(opts: {
       ok.appendChild(span(opts.okLabel));
       actions.append(cancel, ok);
 
-      card.append(heading, descIn, fileIn, contentIn, visRow, actions);
+      card.append(heading, descIn, fileIn, contentIn, visRow);
+      if (opts.error) {
+        const note = el("div", "modal-note-error");
+        note.textContent = opts.error;
+        card.appendChild(note);
+      }
+      card.appendChild(actions);
 
       const submit = (): void => {
         const filename = fileIn.value.trim();

@@ -81,6 +81,18 @@ export async function gget<C extends IpcChannel>(
   channel: C,
   payload: IpcRequest<C>,
   ttl = DEFAULT_TTL,
+  opts?: {
+    /**
+     * Is this answer worth remembering? Some channels resolve SUCCESSFULLY with
+     * a refusal — search returns `{ limited: { retryInMs } }` when GitHub's
+     * per-minute budget is spent. Caching that pins the refusal for the whole
+     * TTL, so every retry, timed or manual, is answered from the cache without
+     * a request ever being made: the countdown sits still and "Retry now" is
+     * dead until the entry expires. Returning false leaves the cache untouched,
+     * exactly as a rejection would.
+     */
+    cacheable?: (value: IpcResponse<C>) => boolean;
+  },
 ): Promise<IpcResponse<C>> {
   const key = keyFor(channel, payload);
   const e = store.get(key);
@@ -129,7 +141,8 @@ export async function gget<C extends IpcChannel>(
 
   pending = host.invoke(channel, payload).then(
     (value) => {
-      settle(superseded() ? undefined : { value, at: Date.now() });
+      const keep = !superseded() && (opts?.cacheable?.(value as IpcResponse<C>) ?? true);
+      settle(keep ? { value, at: Date.now() } : undefined);
       return value;
     },
     (err) => {

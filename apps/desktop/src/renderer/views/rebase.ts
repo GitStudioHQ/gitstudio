@@ -123,6 +123,36 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
   const applyBtn = el("button", "rb-btn primary") as HTMLButtonElement;
   const applyLabel = span("Start rebase");
   applyBtn.append(glyph("play"), applyLabel);
+
+  /**
+   * Carry other local branches through the rewrite.
+   *
+   * Every commit gets a NEW sha, so a branch pointing at an old one is not left
+   * alone by the rebase — it is left on a parallel line nothing references. The
+   * plan builder emits `update-ref` for these, and the desktop never asked it
+   * to, so a stack of branches inside the range was silently orphaned. Defaults
+   * to the repo's own `rebase.updateRefs`, which is what the user's git would
+   * have done; the control only appears when there is actually something to
+   * carry.
+   */
+  const carried = [...new Set(rows.flatMap((r) => r.branches ?? []))];
+  let carryBranches = state.updateRefs ?? false;
+  if (carried.length) {
+    const wrapEl = el("label", "rb-carry");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = carryBranches;
+    box.addEventListener("change", () => {
+      carryBranches = box.checked;
+    });
+    const names = carried.length <= 3 ? carried.join(", ") : `${carried.length} other branches`;
+    wrapEl.append(box, span(`Move ${names} with the rewrite`));
+    wrapEl.title =
+      `These branches point at commits in this range: ${carried.join(", ")}. ` +
+      `Rewriting gives those commits new ids, so unless they are moved too they ` +
+      `will point at commits that are no longer in ${state.branch}.`;
+    foot.appendChild(wrapEl);
+  }
   foot.append(resetBtn, el("span", "rb-spacer"), preview, applyBtn);
 
   wrap.replaceChildren(head, explain, hintBar(), list, banner, foot);
@@ -181,6 +211,13 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     }
     rows[i].action = action;
     render();
+    // Put the keyboard back on the control that was just used, the way `move`
+    // does. Relying on the generic focus rescue alone left it on whichever row
+    // happened to match — a different commit's dropdown, one keystroke from
+    // setting an action nobody chose.
+    (list.children[i] as HTMLElement | undefined)
+      ?.querySelector<HTMLSelectElement>(".rb-action")
+      ?.focus();
   };
 
   const move = (from: number, to: number): void => {
@@ -224,6 +261,13 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
 
     const sel = document.createElement("select");
     sel.className = `rb-action a-${r.action}`;
+    // Which commit this control belongs to. Changing an action rebuilds the
+    // list, and the focus rescue then matched on `title` — which is derived
+    // from the action, so it changes at exactly the moment the rescue needs it
+    // stable, and every other "Pick" row matched instead. Focus landed on a
+    // DIFFERENT commit's dropdown, where the next keystroke set an action on a
+    // commit the user never selected. `sameThing` checks dataset.num first.
+    sel.dataset.num = r.sha;
     for (const a of ACTIONS) {
       const o = document.createElement("option");
       o.value = a.id;
@@ -360,8 +404,17 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
           sha: r.sha,
           subject: r.subject,
           message: r.action === "reword" ? r.message : undefined,
+          // The branches sitting on this commit. Without them the plan builder
+          // has nothing to emit `update-ref` for, and every branch inside the
+          // rewritten range is left pointing at a commit that is no longer in
+          // this branch's history.
+          branches: r.branches,
         }));
-        const outcome = await host.invoke("rebase:apply", { base: state.base, rows: payload });
+        const outcome = await host.invoke("rebase:apply", {
+          base: state.base,
+          rows: payload,
+          updateRefs: carryBranches,
+        });
         if (outcome.status === "done") {
           toast("Rebase complete.", "success");
           void mount(wrap, nav); // reload the (now shorter) plan
@@ -445,9 +498,24 @@ function buildExplainer(): HTMLElement {
 function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => void): HTMLElement {
   const bar = el("div", "rb-basebar");
 
-  const load = (base: string): void => {
+  /**
+   * Load a new base.
+   *
+   * The composed plan — every action, the reordering, any message typed into a
+   * reword — lives in the DOM this builds. So it must not be torn down until
+   * there is something to replace it WITH. It used to blank the view to a
+   * loading card first and, on any failure, "fall back" by rebuilding from the
+   * original `state`: same commits, every action reset to pick, every edit
+   * gone. Trying a base and finding it empty silently threw away the plan.
+   *
+   * The in-flight state goes on the control you pressed, not on the workspace.
+   */
+  const load = (base: string, btn?: HTMLButtonElement): void => {
     void (async () => {
-      wrap.replaceChildren(loadingCard());
+      if (btn) {
+        btn.disabled = true;
+        btn.classList.add("is-busy");
+      }
       try {
         const re = await host.invoke("rebase:load", { base });
         if (re.ok && re.commits.length) {
@@ -457,10 +525,15 @@ function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => 
         toast(re.message || `No commits between ${short(base)} and HEAD.`, "error");
       } catch (err) {
         toast(cleanErr(err), "error");
+      } finally {
+        if (btn?.isConnected) {
+          btn.disabled = false;
+          btn.classList.remove("is-busy");
+        }
       }
-      // Fall back to whatever was on screen before.
-      if (state.commits.length) build(wrap, nav, state);
-      else void mount(wrap, nav);
+      // Nothing to show for the new base — so show what is still on screen.
+      // There is no rebuild here on purpose: the live plan is untouched.
+      if (!state.commits.length) void mount(wrap, nav);
     })();
   };
 
@@ -469,7 +542,7 @@ function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => 
     b.textContent = label;
     b.title = title;
     if (base === state.base) b.classList.add("is-active");
-    b.addEventListener("click", () => load(base));
+    b.addEventListener("click", () => load(base, b));
     bar.appendChild(b);
   };
 
@@ -489,7 +562,7 @@ function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => 
         state.base === "--root" ? "" : state.base,
         "Load commits",
       );
-      if (next && next.trim()) load(next.trim());
+      if (next && next.trim()) load(next.trim(), btn as HTMLButtonElement);
     })();
   });
   bar.appendChild(btn);

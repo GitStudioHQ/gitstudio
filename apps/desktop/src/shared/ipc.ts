@@ -829,13 +829,27 @@ export interface SearchUserItem {
 
 /** One code hit. GitHub's code search returns the FILE, plus optional
  *  text-match fragments when the text-match media type is requested. */
+/**
+ * One matching fragment of a code-search hit, plus WHERE in it the query
+ * matched.
+ *
+ * The offsets were being thrown away, so a code search — whose whole job is
+ * "find me this string" — rendered three lines of code with nothing marking
+ * the string. GitHub sends them; we simply did not carry them.
+ */
+export interface SearchCodeFragment {
+  text: string;
+  /** [start, end) character offsets into `text`, from GitHub's text_matches. */
+  ranges: Array<[number, number]>;
+}
+
 export interface SearchCodeItem {
   name: string;
   path: string;
   repoFullName: string;
   htmlUrl: string;
   /** Matching line fragments, when GitHub returned them. */
-  fragments: string[];
+  fragments: SearchCodeFragment[];
 }
 
 /** One page of results, plus the honesty the UI needs to render it. */
@@ -1097,11 +1111,23 @@ export interface RebaseCommitInfo {
   subject: string;
   /** Humanized author time, e.g. "3h ago". */
   rel: string;
+  /**
+   * Local branches whose tip IS this commit (excluding the one being rebased).
+   *
+   * A rewrite gives every commit a new sha, so a branch left pointing at an old
+   * one is not "untouched" — it is stranded on a parallel line nothing
+   * references any more. The plan builder can carry them along with
+   * `update-ref`; it needs to be told which branches those are.
+   */
+  branches?: string[];
 }
 
 /** Everything the Rebase view needs to render a plan. */
 export interface RebasePlanState {
   ok: boolean;
+  /** The repo's own `rebase.updateRefs`, so the "carry other branches" toggle
+   *  starts where the user's git already stands rather than at our guess. */
+  updateRefs?: boolean;
   /** Why the plan couldn't be loaded (ok === false). */
   message?: string;
   /** The base the rebase runs onto, exclusive (or "--root"). */
@@ -1122,11 +1148,17 @@ export interface RebaseApplyRow {
   subject: string;
   /** New message for a `reword` row. */
   message?: string;
+  /** Branches tipped at this commit — see RebaseCommitInfo.branches. */
+  branches?: string[];
 }
 
 export interface RebaseApplyRequest {
   base: string;
   rows: RebaseApplyRow[];
+  /** Carry other local branches through the rewrite. Omitted = follow the
+   *  repo's own `rebase.updateRefs`, so GitStudio does what the user's git
+   *  would do rather than silently doing something else. */
+  updateRefs?: boolean;
 }
 
 /** Wire form of the runner's RebaseOutcome. */

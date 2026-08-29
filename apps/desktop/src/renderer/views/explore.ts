@@ -57,6 +57,7 @@ import {
   type SectionTarget,
 } from "./common";
 import type {
+  SearchCodeFragment,
   SearchCodeItem,
   SearchPage,
   SearchRepoItem,
@@ -82,6 +83,8 @@ let pages = 1;
 
 /** Guards against a slow earlier query overwriting a newer one's results. */
 let searchSeq = 0;
+/** Where the result list was scrolled when we left it for a repo/person page. */
+let listScroll = 0;
 
 
 
@@ -112,9 +115,15 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 
   const routed = parseExploreTarget(target?.id);
   if (routed) {
+    // Only a DIFFERENT search starts over. Explore's whole loop is scan, open
+    // one, come back, open the next — and coming back re-routes to this same
+    // search, so resetting unconditionally meant every visit re-paged from one:
+    // eight "Load more" clicks thrown away, and the row you had just read gone
+    // back above the fold.
+    const same = routed.tab === tab && routed.query === query;
     tab = routed.tab;
     query = routed.query;
-    pages = 1;
+    if (!same) pages = 1;
   }
 
   const refresh = (): void => renderExplore(wrap, nav, target);
@@ -221,14 +230,29 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     // organization's Members tab uses — compact chips that wrap from the left.
     listEl.classList.toggle("is-people", tab === "users" || tab === "orgs");
     if (!append) listEl.replaceChildren(skeletonList(6));
-    else listEl.appendChild(loadingMore());
+    else {
+      // A retry from the rate-limit card replaces that card, so the list never
+      // accumulates one refusal per attempt.
+      listEl.querySelector(".explore-limited")?.remove();
+      listEl.appendChild(loadingMore());
+    }
 
     try {
       const page = append ? pages + 1 : 1;
       const result = await fetchPage(tab, query, repoSort, page);
       if (seq !== searchSeq || !view.isConnected) return;
       if (result.limited) {
-        listEl.replaceChildren(limitedState(result.limited.retryInMs, () => void run(append)));
+        // On an APPEND the loaded pages are still good — the refusal is about
+        // the NEXT page. Replacing the list threw away everything the user had
+        // scrolled through to punish them for asking for more.
+        const limited = limitedState(result.limited.retryInMs, () => void run(append));
+        if (append) {
+          const spinner = listEl.querySelector(".explore-loading-more");
+          if (spinner) spinner.replaceWith(limited);
+          else listEl.appendChild(limited);
+        } else {
+          listEl.replaceChildren(limited);
+        }
         return;
       }
       if (append) {
@@ -237,9 +261,27 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         listEl.querySelector(".explore-footer")?.remove();
         appendRows(result, false);
       } else {
+        // How many pages this same search had already accumulated. Every one is
+        // in the 60s cache, so coming back from a result costs no requests —
+        // it just re-lays what was already fetched.
+        const restore = pages;
         pages = 1;
         listEl.replaceChildren();
         appendRows(result, true);
+        for (let p = 2; p <= restore && result.items.length > 0; p++) {
+          const more = await fetchPage(tab, query, repoSort, p);
+          if (seq !== searchSeq || !view.isConnected) return;
+          // A refusal while replaying is not worth a card: the pages up to here
+          // are on screen and the footer still offers the rest.
+          if (more.limited) break;
+          pages = p;
+          listEl.querySelector(".explore-footer")?.remove();
+          appendRows(more, false);
+        }
+        if (listScroll > 0) {
+          listEl.scrollTop = listScroll;
+          listScroll = 0;
+        }
       }
     } catch (e) {
       if (seq !== searchSeq || !view.isConnected) return;
@@ -247,6 +289,14 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         errorState("Search failed", cleanErr(e) || "GitHub couldn't answer that search.", () => void run()),
       );
     }
+  };
+
+  /** Every row navigates through this, so wherever you were reading is where
+   *  you come back to. Opening a result and returning used to land you at the
+   *  top of the list with the row you had just opened somewhere below. */
+  const leaveNav: SectionNav = (section, t) => {
+    listScroll = listEl.scrollTop;
+    nav(section, t);
   };
 
   const appendRows = (result: SearchPage<unknown>, first: boolean): void => {
@@ -261,9 +311,9 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       return;
     }
     for (const item of items) {
-      if (tab === "repos") listEl.appendChild(repoRow(item as SearchRepoItem, nav));
-      else if (tab === "code") listEl.appendChild(codeRow(item as SearchCodeItem, nav));
-      else listEl.appendChild(userRow(item as SearchUserItem, nav));
+      if (tab === "repos") listEl.appendChild(repoRow(item as SearchRepoItem, leaveNav));
+      else if (tab === "code") listEl.appendChild(codeRow(item as SearchCodeItem, leaveNav));
+      else listEl.appendChild(userRow(item as SearchUserItem, leaveNav));
     }
     listEl.appendChild(footer(result, () => void run(true)));
   };
@@ -280,9 +330,17 @@ function fetchPage(
   page: number,
 ): Promise<SearchPage<SearchRepoItem | SearchUserItem | SearchCodeItem>> {
   // 60s cache: retyping a query you just ran must not spend the budget twice.
-  if (t === "repos") return gget("search:repos", { query: q, sort, page }, 60_000);
-  if (t === "code") return gget("search:code", { query: q, page }, 60_000);
-  return gget("search:users", { query: q, kind: t === "orgs" ? "orgs" : "users", page }, 60_000);
+  // A rate-limit refusal is NOT an answer, so it is never remembered — cached,
+  // it made both the timed retry and "Retry now" no-ops for the full minute.
+  const keep = { cacheable: (r: { limited?: unknown }) => !r.limited };
+  if (t === "repos") return gget("search:repos", { query: q, sort, page }, 60_000, keep);
+  if (t === "code") return gget("search:code", { query: q, page }, 60_000, keep);
+  return gget(
+    "search:users",
+    { query: q, kind: t === "orgs" ? "orgs" : "users", page },
+    60_000,
+    keep,
+  );
 }
 
 // ── rows ─────────────────────────────────────────────────────────────────────
@@ -419,6 +477,31 @@ function userRow(u: SearchUserItem, nav: SectionNav): HTMLElement {
   });
 }
 
+/**
+ * One fragment with the matched text marked.
+ *
+ * A code search exists to find a STRING, and the result rendered three lines of
+ * code with nothing at all indicating where in them the string was — leaving
+ * the reader to scan for it by eye, which is the work they asked the search to
+ * do. GitHub returns the offsets in the same response as the fragment.
+ */
+function codeFragment(f: SearchCodeFragment): HTMLElement {
+  const line = el("span", "explore-code-line");
+  let at = 0;
+  for (const [a, b] of f.ranges) {
+    // Ranges arrive sorted; skip any that overlaps one already drawn rather
+    // than emitting text twice.
+    if (a < at) continue;
+    if (a > at) line.appendChild(document.createTextNode(f.text.slice(at, a)));
+    const mark = el("mark", "explore-code-hit");
+    mark.textContent = f.text.slice(a, b);
+    line.appendChild(mark);
+    at = b;
+  }
+  if (at < f.text.length) line.appendChild(document.createTextNode(f.text.slice(at)));
+  return line;
+}
+
 function codeRow(c: SearchCodeItem, nav: SectionNav): HTMLElement {
   const row = exploreRow({
     lead: glyph("file-code"),
@@ -452,7 +535,7 @@ function codeRow(c: SearchCodeItem, nav: SectionNav): HTMLElement {
     const pre = el("pre", "explore-code-frag");
     frags.forEach((f, i) => {
       if (i > 0) pre.appendChild(span("⋯", "explore-code-gap"));
-      pre.appendChild(span(f, "explore-code-line"));
+      pre.appendChild(codeFragment(f));
     });
     body.appendChild(pre);
   }
@@ -501,20 +584,34 @@ function loadingMore(): HTMLElement {
 
 /** The rate-limit state: a real countdown, not a dead error. */
 function limitedState(retryInMs: number, retry: () => void): HTMLElement {
-  const secs = Math.max(1, Math.ceil(retryInMs / 1000));
-  const wrap = emptyState(
-    "Search is catching its breath",
-    `GitHub allows a limited number of searches per minute. Trying again in ${secs}s.`,
-    { icon: "watch" },
-  );
+  const secs = (ms: number): number => Math.max(0, Math.ceil(ms / 1000));
+  const line = (n: number): string =>
+    n > 0
+      ? `GitHub allows a limited number of searches per minute. Trying again in ${n}s.`
+      : `GitHub allows a limited number of searches per minute. Trying again now…`;
+  const wrap = emptyState("Search is catching its breath", line(secs(retryInMs)), {
+    icon: "watch",
+  });
+  wrap.classList.add("explore-limited");
   const btn = el("button", "btn btn-soft list-empty-action");
-  btn.append(glyph("sync"), span(`Retry now`));
+  btn.append(glyph("sync"), span("Retry now"));
   btn.addEventListener("click", retry);
   wrap.appendChild(btn);
-  // Retry itself when the window opens — the user shouldn't have to babysit it.
-  window.setTimeout(() => {
-    if (wrap.isConnected) retry();
-  }, retryInMs);
+
+  // Tick the countdown. It used to be rendered once, so the card said the same
+  // number for the whole minute — indistinguishable from a wedged screen, which
+  // is exactly what people reported it as.
+  const body = wrap.querySelector(".list-empty-desc");
+  const until = Date.now() + retryInMs;
+  const tick = window.setInterval(() => {
+    if (!wrap.isConnected) return void window.clearInterval(tick);
+    const left = secs(until - Date.now());
+    if (body) body.textContent = line(left);
+    if (left > 0) return;
+    window.clearInterval(tick);
+    // Retry when the window opens — the user shouldn't have to babysit it.
+    retry();
+  }, 500);
   return wrap;
 }
 

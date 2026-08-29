@@ -1608,6 +1608,9 @@ export class CommitGraph extends LitElement {
       this.rebuildIndex();
       // New page arrived: re-arm the loader so the next near-bottom fires.
       this.loadMoreArmed = true;
+      // …and re-run the live search over it. Row indices shift on append, so
+      // the old match list is stale as well as short.
+      if (this.searchQuery.trim()) this.rescanMatches();
     }
     // The `.scroller` only exists once we leave the placeholder states, and a
     // status flip swaps the whole subtree. Lazily (re)bind the virtualizer to
@@ -1686,6 +1689,17 @@ export class CommitGraph extends LitElement {
       MIN_GUTTER_WIDTH,
       NODE_INSET + cols * COL_WIDTH + COL_WIDTH / 2 + AVATAR_SIZE / 2 + 2,
     );
+  }
+
+  /**
+   * The deepest lane whose NODE fits inside `width`. `.gutter` hides its
+   * overflow, so a node drawn past this is not merely cut in half — it is gone,
+   * and the commit renders as a text row with nothing in the graph beside it.
+   * Lanes past this fold onto it, marked.
+   */
+  private maxDrawableColumn(width: number): number {
+    const usable = width - NODE_INSET - COL_WIDTH / 2 - (NODE_RADIUS + 2);
+    return Math.max(0, Math.floor(usable / COL_WIDTH));
   }
 
   private applyGutterWidth(): void {
@@ -2276,7 +2290,12 @@ export class CommitGraph extends LitElement {
     const total = v.getTotalSize();
     sizer.style.height = `${total}px`;
 
-    const gutterW = this.gutterWidth();
+    // The width the gutter is actually GIVEN — the same expression
+    // `applyGutterWidth` sets `--gs-gutter-w` from. It used to render at the
+    // capped auto-size regardless, so dragging the Graph column wider bought
+    // nothing but blank space: the SVG stayed 16 lanes wide and everything
+    // past it stayed clipped.
+    const gutterW = this.colWidths.graph ?? this.gutterWidth();
     let lastIndex = -1;
     let htmlOut = "";
     const needStats: string[] = [];
@@ -2336,6 +2355,23 @@ export class CommitGraph extends LitElement {
       this.pendingStats.delete(s.sha);
     }
     this.renderRows();
+  }
+
+  /**
+   * Give up on a batch of stat requests WITHOUT caching an answer.
+   *
+   * `renderRows` skips any sha still in `pendingStats`, and `setRowStats` only
+   * clears the ones it was actually given — so a batch that failed, or came
+   * back short (the host caps at 60 and drops shas it cannot resolve), left
+   * those shas pending forever. Their CHANGES cells stayed blank for the rest
+   * of the session: scrolling away and back re-rendered the same skip, and
+   * Refresh rebuilt rows whose shas were still in the set. Clearing them means
+   * the next repaint simply asks again.
+   */
+  failRowStats(shas: readonly string[]): void {
+    let any = false;
+    for (const sha of shas) any = this.pendingStats.delete(sha) || any;
+    if (any) this.renderRows();
   }
 
   /**
@@ -2433,6 +2469,7 @@ export class CommitGraph extends LitElement {
         nodeInset: NODE_INSET,
         palette: this.palette,
         focusColor: this.focusColor,
+        maxColumn: this.maxDrawableColumn(gutterW),
       },
       gutterW,
     );
@@ -2934,23 +2971,56 @@ export class CommitGraph extends LitElement {
   }
 
   private computeMatches(): void {
-    const q = this.searchQuery.trim().toLowerCase();
+    this.scanMatches();
+    if (this.searchMatches.length) {
+      this.matchIdx = 0;
+      this.scrollToMatch();
+    }
+  }
+
+  /**
+   * Re-scan the loaded rows for the current query, keeping the user's place.
+   *
+   * The graph pages, so the rows a search ran over are only the ones loaded at
+   * the time it was typed. Nothing re-scanned on append: the match counter
+   * froze at its first-page value, and every matching commit on every later
+   * page rendered as a NON-match — dimmed, uncounted, and unreachable with
+   * next/previous. On a repo of any size that is most of the answer, silently
+   * missing, while the counter states a total as fact.
+   *
+   * Deliberately not `computeMatches`: that resets to the first match and
+   * scrolls there, which on every appended page would yank the view out from
+   * under someone reading. The focused match is re-found by SHA instead, so
+   * "next" continues from where they actually are.
+   */
+  private rescanMatches(): void {
+    const focused = this.searchMatches[this.matchIdx];
+    const focusedSha = focused !== undefined ? this.rows[focused]?.sha : undefined;
+    this.scanMatches();
+    if (!this.searchMatches.length) {
+      this.matchIdx = -1;
+      return;
+    }
+    const again =
+      focusedSha === undefined
+        ? -1
+        : this.searchMatches.findIndex((i) => this.rows[i]?.sha === focusedSha);
+    this.matchIdx = again >= 0 ? again : 0;
+  }
+
+  /** The scan itself: rebuild `searchMatches`/`matchSet`, touching nothing else. */
+  private scanMatches(): void {
     this.searchMatches = [];
     this.matchSet.clear();
     this.matchIdx = -1;
-    if (!q) {
-      return;
-    }
+    const q = this.searchQuery.trim().toLowerCase();
+    if (!q) return;
     const scope = this.searchScope;
     for (let i = 0; i < this.rows.length; i++) {
       if (this.rowMatches(this.rows[i], q, scope)) {
         this.searchMatches.push(i);
         this.matchSet.add(i);
       }
-    }
-    if (this.searchMatches.length) {
-      this.matchIdx = 0;
-      this.scrollToMatch();
     }
   }
 
@@ -3017,10 +3087,16 @@ export class CommitGraph extends LitElement {
         ? ""
         : `${n.toLocaleString()}${this.hasMore ? "+" : ""} commit${n === 1 ? "" : "s"}`;
     const q = this.searchQuery.trim();
+    // The search only sees the rows that are LOADED. Saying "No results" while
+    // more history is unread states as fact something we have not looked at —
+    // and "3/3" implies the search is finished when it is not. The "+" is the
+    // same honesty the commit count beside it already uses.
     const results = q
       ? this.searchMatches.length
-        ? `${this.matchIdx + 1}/${this.searchMatches.length}`
-        : "No results"
+        ? `${this.matchIdx + 1}/${this.searchMatches.length}${this.hasMore ? "+" : ""}`
+        : this.hasMore
+          ? `No results in ${n.toLocaleString()} loaded`
+          : "No results"
       : "";
     return html`<div class="gheader">
       <span

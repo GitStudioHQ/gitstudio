@@ -218,8 +218,16 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       titleSuffix: [],
       chips: it.labels.map((l) => labelChip(l.name, l.color)),
       meta,
-      time: relTimeISO(it.createdAt),
-      timeTitle: it.createdAt ? `Opened ${absTimeISO(it.createdAt)}` : undefined,
+      // The list arrives sorted by LAST UPDATED, so the date column has to be
+      // the updated date. It showed — and its tooltip labelled — the CREATED
+      // date, which made the order look arbitrary: a two-year-old issue
+      // commented on this morning sat at the top reading "opened 2 years ago".
+      // Both dates are in the tooltip; only one can be the sorted column.
+      time: relTimeISO(it.updatedAt),
+      timeTitle: it.updatedAt
+        ? `Updated ${absTimeISO(it.updatedAt)}` +
+          (it.createdAt ? `\nOpened ${absTimeISO(it.createdAt)}` : "")
+        : undefined,
       ariaLabel: `Issue #${it.number}: ${it.title}`,
       onOpen: () => nav("issues", { number: it.number }),
     });
@@ -477,10 +485,16 @@ export async function renderIssueDetailInto(
   container: HTMLElement,
   number: number,
   nav: SectionNav,
+  /** Called whenever something in here CHANGED the issue — closing it,
+   *  relabelling it, assigning it. The Projects board hosts this detail in a
+   *  drawer, and the card behind the drawer went on reading "open" after the
+   *  issue was closed in front of it, because nothing told the board. */
+  onMutated?: () => void,
 ): Promise<void> {
   const reload = (): void => {
     bust("issue");
-    void renderIssueDetailInto(container, number, nav);
+    onMutated?.();
+    void renderIssueDetailInto(container, number, nav, onMutated);
   };
   container.replaceChildren(skeletonList(4, false));
   let d: IssueDetail | undefined;

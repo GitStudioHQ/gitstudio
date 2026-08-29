@@ -50,6 +50,17 @@ export interface SectionTarget {
   /** A folder for the Code view to open ("" = repo root). Routing every folder
    *  hop through this puts the browser's history behind ⌘[/⌘] too. */
   path?: string;
+  /**
+   * A FILE for the Code view to open, with `path` naming its folder.
+   *
+   * Opening a file used to replace the view host directly without routing, so
+   * as far as the app was concerned you were still standing in the folder: any
+   * forced re-route — a window focus after you edited that very file in your
+   * editor, a Pull, a branch switch — rebuilt the listing on top of it and
+   * ejected you from what you were reading. Back landed on the wrong folder and
+   * Forward could not return to the file, because neither ever knew about it.
+   */
+  file?: string;
   /** A ref (branch / remote / tag / stash selector) for the Branches view to
    *  scroll to and flash on entry. */
   ref?: string;
@@ -1050,7 +1061,14 @@ export function facetBar<T>(o: {
     return loaded.get(spec.key) ?? [];
   };
 
+  /** The facet whose menu is open, so `sync` can refill it in place when the
+   *  list finally lands. Opening a menu before the data arrives used to leave
+   *  it saying "No assignee to filter by" for as long as it stayed open — a
+   *  statement about the repo, made from an empty array. */
+  let openSpecKey: string | undefined;
+
   const openFacetMenu = (spec: FacetSpec<T>, btn: HTMLElement): void => {
+    openSpecKey = spec.key;
     const build = (opts: FacetOption[]): void => {
       const current = o.state[spec.key];
       const items_: MenuItem[] = [
@@ -1155,8 +1173,24 @@ export function facetBar<T>(o: {
       o.onChange();
     },
     sync: (next: T[]) => {
+      const had = items.length;
       items = next;
       render();
+      // A menu opened over a still-loading list is anchored to a button that
+      // `render()` has just replaced, and holds options harvested from nothing.
+      // Re-open it against the live button so it fills in; `openMenu` replaces
+      // any menu already up, so this is a refill rather than a second menu.
+      if (openSpecKey === undefined || (!had && !next.length)) return;
+      // Only while a menu is genuinely on screen. Without this check a sync
+      // arriving after the user dismissed the menu would pop it back open by
+      // itself, which is a worse bug than the one being fixed.
+      if (!document.querySelector(".dropdown")) {
+        openSpecKey = undefined;
+        return;
+      }
+      const i = o.specs.findIndex((sp) => sp.key === openSpecKey);
+      const btn = i >= 0 ? (bar.children[i] as HTMLElement | undefined) : undefined;
+      if (i >= 0 && btn) openFacetMenu(o.specs[i], btn);
     },
   };
 

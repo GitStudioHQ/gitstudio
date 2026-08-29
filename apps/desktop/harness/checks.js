@@ -265,6 +265,25 @@
       c.ok($$(".gh-job").length >= 2, "both jobs render");
       c.ok($$(".gh-step-row").length >= 4, "steps should be visible without clicking");
     },
+    // Collapsing ONE job card used to silently redefine every other card.
+    // `open` was `expandedJobs.size === 0 || has(id)`, so the set meant both
+    // "nothing chosen yet ⇒ show all" and "exactly these" — and the first
+    // collapse left it empty (deleting an id it never held), so the next
+    // repaint re-opened the card you had just shut. The mirror case is worse:
+    // opening one job's log ADDS to the set, and every untouched sibling then
+    // collapses on the next repaint.
+    "collapsing-one-job-leaves-the-others-alone": (f) => {
+      const c = check(f);
+      const cards = $$(".gh-job");
+      c.ok(cards.length >= 2, `the run has at least two jobs (got ${cards.length})`);
+      const shut = (card) => card.querySelector(".gh-job-steps")?.classList.contains("hidden");
+      c.ok(shut(cards[0]), "the job I collapsed is still collapsed after leaving and coming back");
+      c.ok(
+        cards.slice(1).every((card) => !shut(card)),
+        "and the jobs I never touched are still open — collapsing one must not close the rest",
+      );
+    },
+
     "run-detail-no-duplicate-status": (f) => {
       const c = check(f);
       const railLabels = $$(".det-prop-label").map((n) => n.textContent.trim().toLowerCase());
@@ -347,6 +366,28 @@
       c.ok(seg.includes("Unread") && seg.includes("All"), `expected an Unread|All segment, got ${seg.join(", ")}`);
       const active = $$(".gh-seg-btn.active").map((b) => b.textContent.trim());
       c.ok(active.length >= 1, "the segment must show which mode is active");
+    },
+
+    // A code search exists to find a STRING. The result rendered the matching
+    // lines with nothing marking WHERE in them the string was, so the reader
+    // was left scanning by eye for the thing they had just asked the search to
+    // find. GitHub sends the offsets alongside the fragment; the row dropped
+    // them on the floor.
+    "code-hits-show-what-matched": (f) => {
+      const c = check(f);
+      const frags = $$(".explore-code-line");
+      c.ok(frags.length > 0, `code results render their fragments (${frags.length})`);
+      const marks = $$(".explore-code-line mark");
+      c.ok(marks.length > 0, "and mark the matched text inside them");
+      for (const m of marks) {
+        c.ok(m.textContent.trim().length > 0, "each mark covers real text");
+      }
+      // The mark must not eat the line: the surrounding code has to survive.
+      const line = frags[0];
+      c.ok(
+        line.textContent.length > $$("mark", line).reduce((n, m) => n + m.textContent.length, 0),
+        "the rest of the line is still there around the highlight",
+      );
     },
 
     "row-meta-columns-align": (f) => {
@@ -444,12 +485,27 @@
       const c = check(f);
       const head = $(".gh-org-head");
       c.ok(!!head, "org header exists");
+      const identity = $(".gh-org-identity");
       const desc = $(".gh-org-desc");
       const actions = $(".gh-org-head .gh-detail-actions");
+      // The description belongs to the identity — it describes the org, not the
+      // buttons. This used to assert `desc.top < actions.bottom`, which only
+      // reads correctly in a COLUMN header, and the column header was itself the
+      // bug: `.gh-detail-head` sets flex-direction: column and `.gh-org-head`
+      // never reset it, so the avatar, name, description and buttons stacked
+      // into four rows with 891px of empty space beside them. Assert the two
+      // things that are actually true of a correct header instead.
+      c.ok(!!(desc && identity && identity.contains(desc)), "the description sits inside the identity block");
       if (desc && actions) {
+        const d = desc.getBoundingClientRect();
+        const a = actions.getBoundingClientRect();
+        c.ok(d.right <= a.left + 1, `the description does not run under the actions (${Math.round(d.right)} vs ${Math.round(a.left)})`);
+      }
+      if (head && actions) {
+        // Row, not column: the actions share the identity's first line.
         c.ok(
-          desc.getBoundingClientRect().top < actions.getBoundingClientRect().bottom,
-          "the description must sit with the identity, not below the actions",
+          actions.getBoundingClientRect().top - head.getBoundingClientRect().top < 24,
+          "the actions sit on the header's first line, beside the identity",
         );
       }
     },
@@ -1478,6 +1534,29 @@
     },
 
     // ── staging keeps your place ────────────────────────────────────────────
+    // Staging used to `bust("status")` and repaint, which deletes the very
+    // cache entry the repaint would have drawn from — so the file list blanked
+    // to a 6-row skeleton and the diff pane went back to its empty state, on
+    // every stage, unstage, discard and stash. It now re-reads into the same
+    // entry, so a real tree is on screen the whole time.
+    "staging-does-not-blank-the-list": async (f) => {
+      const c = check(f);
+      const before = $$(".dc-file").length;
+      c.ok(before > 0, `the list has files to begin with (${before})`);
+      const row = $(".dc-file.active") ?? $(".dc-file");
+      const btn = row?.querySelector(".row-actions button");
+      c.ok(!!btn, "the row offers an action");
+      if (!btn) return;
+      btn.click();
+      // Mid-flight: the moment the operation returns is exactly when the
+      // skeleton used to appear.
+      await settle(140);
+      c.eq($$(".sk-list").length, 0, "no skeleton is painted over the list");
+      c.ok($$(".dc-file").length > 0, "and real rows stay on screen throughout");
+      await settle(900);
+      c.ok($$(".dc-file").length > 0, "the list is still populated once it settles");
+    },
+
     "staging-keeps-the-open-file": async (f) => {
       const c = check(f);
       const row = $(".dc-file.active");

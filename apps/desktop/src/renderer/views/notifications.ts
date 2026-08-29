@@ -104,6 +104,18 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   markAllBtn.title = "Mark all read";
   markAllBtn.addEventListener("click", () => void markAllRead(markAllBtn, refresh));
 
+  // The facet bar belongs to the full Inbox page. In the 520px bell popover it
+  // pushed the refresh button onto a second line, leaving a 40px band that was
+  // 90% empty — and filtering is not what a glance at the bell is for.
+  const inPopover = !!wrap.closest(".notif-pop");
+  // …and because the popover shows no filter UI, it must not APPLY the page's
+  // either. Sharing the module state meant filtering the Inbox to "review
+  // requested" silently made the bell hide every other unread thread, with
+  // nothing on screen to say why or any way to clear it. The bell is a glance
+  // at what is unread; it keeps its own (empty) filters.
+  const facetState: FacetState = inPopover ? {} : notifFacets;
+  let query = inPopover ? "" : notifQuery;
+
   // Type / reason facets over the fetched inbox — triage is exactly "show me
   // only the review requests", and scrolling for them is not triage.
   const facets = facetBar<NotificationThread>({
@@ -133,23 +145,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         predicate: (t, v) => t.repo === v,
       },
     ],
-    state: notifFacets,
+    state: facetState,
     items: [],
     onChange: () => renderThreads(),
   });
 
-  // The facet bar belongs to the full Inbox page. In the 520px bell popover it
-  // pushed the refresh button onto a second line, leaving a 40px band that was
-  // 90% empty — and filtering is not what a glance at the bell is for.
-  const inPopover = !!wrap.closest(".notif-pop");
   // Every sibling list has a search field; the Inbox's header was a title on
   // the far left and a control cluster on the far right with a gap between.
   if (!inPopover) {
     header.querySelector(".gh-head-titlewrap")?.appendChild(
       searchField({
         placeholder: "Search notifications…",
-        initial: notifQuery,
+        initial: query,
         onInput: (q) => {
+          query = q;
           notifQuery = q;
           renderThreads();
         },
@@ -210,7 +219,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   facets.sync(threads);
 
   const renderThreads = (): void => {
-    const q = notifQuery.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
     const shown = threads.filter(
       (t) =>
         facets.passes(t) &&
@@ -230,7 +239,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
           filtered ? "No matching notifications" : notifAll ? "Inbox zero" : "You're all caught up",
           filtered
             ? q
-              ? `Nothing in your inbox matches “${notifQuery.trim()}”.`
+              ? `Nothing in your inbox matches “${query.trim()}”.`
               : "Nothing in your inbox matches these filters."
             : notifAll
               ? "You have no notifications."
@@ -672,7 +681,10 @@ async function markRead(
     // thread you never chose. It leaves on the next refresh instead, which is
     // when you are looking at the list rather than at one row in it.
     row.classList.add("notif-read");
-    row.querySelector(".notif-dot")?.remove();
+    // The dot is the read/unread MARKER, not decoration: removing it collapsed
+    // the 14px lead slot (so the row's text jumped left of every other row's)
+    // and destroyed the only thing the unread tally could be counted from.
+    row.querySelector(".notif-dot")?.classList.add("is-read");
     row.querySelectorAll<HTMLElement>(".row-actions .row-btn").forEach((b) => {
       if (b.textContent === "Mark read") b.setAttribute("hidden", "");
     });
@@ -680,22 +692,30 @@ async function markRead(
       row.classList.add("notif-leaving");
       row.title = "Marked read — leaves this list on the next refresh";
     }
-    // Keep the summary + "Mark all read" in sync after the in-place change.
-    const unread = body.querySelectorAll(".notif-dot").length;
+    // Everything below is scoped to THIS view. It used to search the whole
+    // document, and the Inbox page and the bell popover are both mounted at
+    // once — so marking a thread read in the popover wrote its numbers into the
+    // page's header behind it, and left the popover's own untouched.
+    const scope = body.closest(".notif-view") ?? body;
+    const unread = body.querySelectorAll(".notif-dot:not(.is-read)").length;
     const total = body.querySelectorAll(".notif-row").length;
-    const sumEl = document.querySelector(".notif-summary-text");
+    const sumEl = scope.querySelector(".notif-summary-text");
     if (sumEl) {
       sumEl.textContent =
         `${total} ${total === 1 ? "thread" : "threads"}` + (unread > 0 ? ` · ${unread} unread` : "");
     }
-    const markAll = document.querySelector<HTMLButtonElement>(".notif-markall");
+    const markAll = scope.querySelector<HTMLButtonElement>(".notif-markall");
     if (markAll) markAll.disabled = unread === 0;
-    // Keep the header's unread count pill honest after the in-place change.
-    const countPill = document.querySelector<HTMLElement>(".gh-head-count");
-    if (countPill) {
-      countPill.textContent = String(unread);
-      countPill.hidden = false;
-    }
+    // The header badge is "shown of total" everywhere in the app. This wrote a
+    // bare UNREAD number straight into it, so one thread marked read turned
+    // "12 of 40" into "11" — a different quantity in the same pill.
+    const head = scope.querySelector<HTMLElement & { setCount?: (s: number, t?: number) => void }>(
+      ".gh-head",
+    );
+    head?.setCount?.(total, total);
+    // And the bell badge, which tracked none of this: the top bar went on
+    // advertising unread threads the user had just read.
+    window.dispatchEvent(new CustomEvent("gs:unread", { detail: unread }));
     toast("Marked as read.", "success");
   } catch (e) {
     toast(cleanErr(e) || "Couldn't mark the notification read.", "error");

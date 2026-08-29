@@ -30,7 +30,7 @@ import {
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
 import { plural } from "../textFit";
-import { toast, confirmDialog, openModal } from "../dialogs";
+import { toast, confirmDialog, openModal, formWithRetry } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";
@@ -671,52 +671,67 @@ async function deleteAsset(
 
 /** Draft a new release; `prefillTag` comes from a tag peek. */
 async function createRelease(refresh: () => void, prefillTag: string): Promise<void> {
-  const input = await releaseFormDialog("New release", {
-    tagName: prefillTag,
-    targetCommitish: "",
-    name: "",
-    body: "",
-    draft: false,
-    prerelease: false,
-  });
-  if (!input) return;
-  try {
-    const r = await host.invoke("release:create", input);
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't create the release.", "error");
-      return;
-    }
-    toast(`Created release ${input.tagName}.`, "success");
-    bust("release");
-    releaseTab = "releases";
-    refresh();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't create the release.", "error");
-  }
+  // Release notes are the longest thing this view asks anyone to write, and the
+  // form used to close before the request was sent — so a rejected create
+  // answered all of it with a toast over a screen that no longer held the text.
+  await formWithRetry<ReleaseInput>(
+    (seed, error) =>
+      releaseFormDialog(
+        "New release",
+        seed ?? {
+          tagName: prefillTag,
+          targetCommitish: "",
+          name: "",
+          body: "",
+          draft: false,
+          prerelease: false,
+        },
+        error,
+      ),
+    async (input) => {
+      try {
+        const r = await host.invoke("release:create", input);
+        if (!r.ok) return r.message ?? "Couldn't create the release.";
+        toast(`Created release ${input.tagName}.`, "success");
+        bust("release");
+        releaseTab = "releases";
+        refresh();
+        return undefined;
+      } catch (e) {
+        return cleanErr(e) || "Couldn't create the release.";
+      }
+    },
+  );
 }
 
 async function editRelease(rel: ReleaseInfo, reload: () => void): Promise<void> {
-  const input = await releaseFormDialog("Edit release", {
-    id: rel.id,
-    tagName: rel.tagName,
-    targetCommitish: rel.targetCommitish,
-    name: rel.name,
-    body: rel.body ?? "",
-    draft: rel.draft,
-    prerelease: rel.prerelease,
-  });
-  if (!input) return;
-  try {
-    const r = await host.invoke("release:update", input);
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't update the release.", "error");
-      return;
-    }
-    toast(`Updated release ${input.tagName}.`, "success");
-    reload();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't update the release.", "error");
-  }
+  await formWithRetry<ReleaseInput>(
+    (seed, error) =>
+      releaseFormDialog(
+        "Edit release",
+        seed ?? {
+          id: rel.id,
+          tagName: rel.tagName,
+          targetCommitish: rel.targetCommitish,
+          name: rel.name,
+          body: rel.body ?? "",
+          draft: rel.draft,
+          prerelease: rel.prerelease,
+        },
+        error,
+      ),
+    async (input) => {
+      try {
+        const r = await host.invoke("release:update", input);
+        if (!r.ok) return r.message ?? "Couldn't update the release.";
+        toast(`Updated release ${input.tagName}.`, "success");
+        reload();
+        return undefined;
+      } catch (e) {
+        return cleanErr(e) || "Couldn't update the release.";
+      }
+    },
+  );
 }
 
 async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => void): Promise<void> {
@@ -757,7 +772,13 @@ function mkDialogEl(tag: string, cls = ""): HTMLElement {
   return n;
 }
 
-function releaseFormDialog(title: string, init: ReleaseInput): Promise<ReleaseInput | null> {
+function releaseFormDialog(
+  title: string,
+  init: ReleaseInput,
+  /** Why the previous attempt failed, shown inside the form that still holds
+   *  the release notes. See `formWithRetry`. */
+  error?: string,
+): Promise<ReleaseInput | null> {
   return new Promise((resolve) => {
     let settled = false;
     openModal((close) => {
@@ -837,8 +858,13 @@ function releaseFormDialog(title: string, init: ReleaseInput): Promise<ReleaseIn
         field("Title", name),
         field("Notes", bodyInput),
         checks,
-        actions,
       );
+      if (error) {
+        const note = mkDialogEl("div", "modal-note-error");
+        note.textContent = error;
+        card.appendChild(note);
+      }
+      card.appendChild(actions);
 
       const submit = (): void => {
         const tagName = tag.value.trim();

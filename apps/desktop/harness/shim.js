@@ -509,8 +509,10 @@
     },
     "search:code": (req) => ({
       items: [
-        { name: "logView.ts", path: "apps/desktop/src/renderer/logView.ts", repoFullName: "GitStudioHQ/gitstudio", htmlUrl: "https://github.com/GitStudioHQ/gitstudio", fragments: ["export function createLogPane(o: LogPaneOpts): LogPane {", "  const el = document.createElement(\"div\");"] },
-        { name: "index.ts", path: "src/git/index.ts", repoFullName: "libgit2/libgit2", htmlUrl: "https://github.com/libgit2/libgit2", fragments: ["int git_repository_open(git_repository **out, const char *path)"] },
+        // Fragments carry the match OFFSETS, exactly as GitHub's
+        // text-match+json returns them — the row marks those ranges.
+        { name: "logView.ts", path: "apps/desktop/src/renderer/logView.ts", repoFullName: "GitStudioHQ/gitstudio", htmlUrl: "https://github.com/GitStudioHQ/gitstudio", fragments: [{ text: "export function createLogPane(o: LogPaneOpts): LogPane {", ranges: [[16, 19]] }, { text: "  const el = document.createElement(\"div\");", ranges: [[24, 27]] }] },
+        { name: "index.ts", path: "src/git/index.ts", repoFullName: "libgit2/libgit2", htmlUrl: "https://github.com/libgit2/libgit2", fragments: [{ text: "int git_repository_open(git_repository **out, const char *path)", ranges: [[4, 7]] }] },
       ],
       totalCount: 2,
       incomplete: false,

@@ -346,7 +346,7 @@ function projectCard(
     const isPr = it.type === "PULL_REQUEST";
     const open = (): void => {
       if (isPr) nav("prs", { number: num });
-      else openIssueDrawer(num, nav);
+      else openIssueDrawer(num, nav, refresh);
     };
     card.classList.add("clickable");
     card.tabIndex = 0;
@@ -370,7 +370,11 @@ function projectCard(
  * all of whose mutations re-render inside it. "Open in Issues" escalates to the
  * full-page issue workspace when you want the section around it.
  */
-function openIssueDrawer(number: number, nav: SectionNav): void {
+function openIssueDrawer(number: number, nav: SectionNav, onChanged?: () => void): void {
+  /** Did anything in the drawer change the issue? Refreshing the board on
+   *  every close would re-fetch on a plain read; refreshing on none left a
+   *  closed issue showing as open on the card behind. */
+  let changed = false;
   const opener = document.activeElement as HTMLElement | null;
   const scrim = el("div", "gh-drawer-scrim");
   const drawer = el("div", "gh-drawer");
@@ -409,6 +413,7 @@ function openIssueDrawer(number: number, nav: SectionNav): void {
     // Let the slide-out play, then remove; restore focus to the card.
     window.setTimeout(() => scrim.remove(), 200);
     if (restoreFocus) opener?.focus?.();
+    if (changed) onChanged?.();
   };
   // A route change dismisses this drawer like every other floating layer. It
   // was the one surface that never registered, so navigating away left it
@@ -433,7 +438,9 @@ function openIssueDrawer(number: number, nav: SectionNav): void {
 
   requestAnimationFrame(() => scrim.classList.add("is-open"));
   closeBtn.focus();
-  void renderIssueDetailInto(body, number, nav);
+  void renderIssueDetailInto(body, number, nav, () => {
+    changed = true;
+  });
 }
 
 /** Kebab menu: "Open on GitHub" + "Move to → <Status option>" (the keyboard

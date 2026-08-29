@@ -34,6 +34,15 @@ export interface GutterOptions {
   curveSpan?: number;
   /** Lane stroke width override, px (default 1.75). */
   strokeWidth?: number;
+  /**
+   * Last lane that fits in `width`. Lanes beyond it are FOLDED onto it rather
+   * than drawn past the edge — the gutter clips its overflow, so an unclamped
+   * deep lane meant the commit had no node at all: a row of text with nothing
+   * in the graph, which reads as "this commit isn't in the history". Folded
+   * nodes are marked (see `foldedNode`) so a stacked lane is never mistaken for
+   * a real one. Omit for no clamping.
+   */
+  maxColumn?: number;
 }
 
 /** Lane stroke width — thin enough to feel native, thick enough to read. */
@@ -129,7 +138,13 @@ export function renderRowGutterSVG(
   const { colWidth, rowHeight, nodeRadius, palette, focusColor } = opts;
   const inset = opts.nodeInset ?? 0;
   const strokeWidth = opts.strokeWidth ?? STROKE_WIDTH;
-  const cx = laneCenterX(row.column, colWidth, inset);
+  // Fold lanes deeper than the gutter can show onto its last one. Everything
+  // below draws through `lane`, never a raw column, so a deep-fan-out commit
+  // keeps a node and its edges instead of being clipped into nothing.
+  const cap = opts.maxColumn;
+  const lane = (c: number): number => (cap === undefined ? c : Math.min(c, cap));
+  const folded = cap !== undefined && row.column > cap;
+  const cx = laneCenterX(lane(row.column), colWidth, inset);
   const cy = Math.round(rowHeight / 2) + 0.5;
 
   // Draw diagonals (lane shifts / merges) first, then straight verticals on top
@@ -144,7 +159,11 @@ export function renderRowGutterSVG(
   for (const seg of row.segments) {
     const dim = focusColor !== undefined && seg.color !== focusColor;
     const opacity = dim ? ` opacity="${DIM_OPACITY}"` : "";
-    const d = segmentPath(seg, colWidth, rowHeight, inset, opts.curveSpan, row.column);
+    const clamped =
+      cap === undefined || (seg.fromColumn <= cap && seg.toColumn <= cap)
+        ? seg
+        : { ...seg, fromColumn: lane(seg.fromColumn), toColumn: lane(seg.toColumn) };
+    const d = segmentPath(clamped, colWidth, rowHeight, inset, opts.curveSpan, lane(row.column));
     const markup =
       `<path d="${d}" fill="none" stroke="${color(palette, seg.color)}" ` +
       `stroke-width="${strokeWidth}" stroke-linecap="round" ` +
@@ -185,9 +204,18 @@ export function renderRowGutterSVG(
       `<circle cx="${cx}" cy="${cy}" r="${nodeRadius}" fill="${nodeColor}"${nodeOpacity}/>`;
   }
 
+  // A folded node sits on a lane that is not really its own, so say so: a small
+  // outward chevron past the node, in the lane colour. Without it two commits
+  // on genuinely different lanes look like they share one.
+  const beyond = !folded
+    ? ""
+    : `<path d="M${cx + nodeRadius + 3.5} ${cy - 3.5}l3.2 3.5l-3.2 3.5" ` +
+      `fill="none" stroke="${nodeColor}" stroke-width="1.6" ` +
+      `stroke-linecap="round" stroke-linejoin="round"${nodeOpacity}/>`;
+
   return (
     `<svg class="gs-gutter-svg" width="${width}" height="${rowHeight}" ` +
     `viewBox="0 0 ${width} ${rowHeight}" preserveAspectRatio="none" ` +
-    `aria-hidden="true">${paths}${node}</svg>`
+    `aria-hidden="true">${paths}${node}${beyond}</svg>`
   );
 }

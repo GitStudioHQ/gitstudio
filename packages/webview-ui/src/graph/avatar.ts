@@ -229,8 +229,12 @@ export function authorInitials(name: string, email: string): string {
   if (parts.length === 0) {
     return "?";
   }
+  // Code POINTS, not UTF-16 units — `slice(0, 2)` / `[0]` cut an astral
+  // character in half and leave a lone surrogate, which paints as a tofu box.
   if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
+    return [...parts[0]].slice(0, 2).join("").toUpperCase();
   }
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  const first = [...parts[0]][0] ?? "";
+  const last = [...parts[parts.length - 1]][0] ?? "";
+  return (first + last).toUpperCase();
 }

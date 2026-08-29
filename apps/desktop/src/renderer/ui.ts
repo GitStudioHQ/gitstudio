@@ -128,12 +128,20 @@ export function initials(name: string): string {
     .split(/[\s._-]+/)
     .filter(Boolean);
   if (parts.length === 0) return "?";
+  // Letters and digits in ANY script. The strip used to be `[^A-Za-z0-9]`,
+  // which deletes every Cyrillic, Greek, CJK, Arabic and Hebrew character —
+  // so "Пётр", "田中" and "محمد" each came out empty and rendered "?" beside
+  // their own correctly-spelled name, as if the app could not read them.
+  const letters = (s: string): string[] => [...s].filter((ch) => /\p{L}|\p{N}/u.test(ch));
   if (parts.length === 1) {
-    // Alphanumerics only, so "s-" can never survive as a second character.
-    const clean = parts[0].replace(/[^A-Za-z0-9]/g, "");
-    return (clean.slice(0, 2) || "?").toUpperCase();
+    // Code POINTS, not UTF-16 units: slicing an astral character (an emoji, or
+    // rarer CJK) in half yields a lone surrogate, which paints as a tofu box.
+    const clean = letters(parts[0]);
+    return (clean.slice(0, 2).join("") || "?").toUpperCase();
   }
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  const first = letters(parts[0])[0] ?? "";
+  const last = letters(parts[parts.length - 1])[0] ?? "";
+  return ((first + last) || "?").toUpperCase();
 }
 
 /** A stable avatar hue from a seed (email/name). Deterministic, so the same

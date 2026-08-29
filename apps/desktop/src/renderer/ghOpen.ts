@@ -17,12 +17,36 @@ import { el, cleanErr } from "./ui";
 import { openDestinationSheet } from "./destinationSheet";
 import { closePeek } from "./peek";
 
-let opening = false;
+/**
+ * The open in flight, if any.
+ *
+ * This was a bare `let opening = false` and three `if (opening) return;`
+ * guards. Esc and the backdrop only HIDE the progress card — the clone keeps
+ * running, by design — so dismissing it left the flag set with nothing on
+ * screen, and from then on every click on every repo in the app did nothing at
+ * all: no card, no toast, no error. It looked like the buttons had stopped
+ * working. Holding the request instead of a bare boolean lets the same repo
+ * bring its card BACK, a different one say why not, and a hung open time out
+ * rather than disabling the feature for the rest of the session.
+ */
+let current: { fullName: string; reopen: () => void } | null = null;
+
+/** How long an open may run before we stop believing in it. A clone of a large
+ *  repo is slow; a wedged IPC is forever, and the two have to be told apart. */
+const OPEN_TIMEOUT_MS = 10 * 60_000;
+
+/** Answer a click that arrives while another open is running. Never silent. */
+function busy(fullName: string): boolean {
+  if (!current) return false;
+  if (current.fullName === fullName) current.reopen();
+  else toast(`Still opening ${current.fullName} — one at a time.`, "info");
+  return true;
+}
 
 /** One-click open. Respects ask-where-every-time; otherwise clones straight
  *  into the default folder (or `opts.dest`/`opts.name` when given). */
 export function openGhRepoInApp(fullName: string, opts: { dest?: string; name?: string } = {}): void {
-  if (opening) return; // one at a time — a second click mid-clone is a misfire
+  if (busy(fullName)) return; // one at a time — a second click mid-clone is a misfire
   if (opts.dest) {
     run(fullName, opts);
     return;
@@ -38,7 +62,7 @@ export function openGhRepoInApp(fullName: string, opts: { dest?: string; name?: 
 
 /** The "Choose location…" path: ask where first, then open. */
 export function openGhRepoChooseLocation(fullName: string, opts: { name?: string; note?: string } = {}): void {
-  if (opening) return;
+  if (busy(fullName)) return;
   openDestinationSheet(
     fullName,
     (choice) => run(fullName, { dest: choice.dest, name: choice.name }),
@@ -47,8 +71,7 @@ export function openGhRepoChooseLocation(fullName: string, opts: { name?: string
 }
 
 function run(fullName: string, opts: { dest?: string; name?: string }): void {
-  if (opening) return;
-  opening = true;
+  if (busy(fullName)) return;
   closePeek();
 
   let done = false;
@@ -75,8 +98,10 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
       ? `First open clones it into ${destDisplay} — after that it's instant.`
       : "First open clones it — after that it's instant.";
 
-  const timer = window.setTimeout(() => {
-    if (done) return;
+  let cardOpen = false;
+  const showCard = (): void => {
+    if (done || cardOpen) return;
+    cardOpen = true;
     openModal((c) => {
       close = c;
       const card = el("div", "modal-card ghopen-card");
@@ -95,10 +120,31 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
       fillEl = fill;
       card.append(title, sub, phase, bar);
       // Esc/backdrop just hides the card — the clone keeps going and the app
-      // flips to the repo the moment it lands (repo:changed).
-      return { card, focusEl: card, label: `Opening ${fullName}`, onClose: () => {} };
+      // flips to the repo the moment it lands (repo:changed). Clicking the same
+      // repo again brings this card back, so dismissing it is undo-able.
+      return {
+        card,
+        focusEl: card,
+        label: `Opening ${fullName}`,
+        onClose: () => {
+          cardOpen = false;
+          phaseEl = undefined;
+          fillEl = undefined;
+          subEl = undefined;
+        },
+      };
     });
-  }, 250);
+  };
+  const timer = window.setTimeout(showCard, 250);
+  current = { fullName, reopen: showCard };
+
+  // A never-settling `ghrepo:open` used to disable one-click open for the rest
+  // of the session. Let go after a bound, and say so.
+  const giveUp = window.setTimeout(() => {
+    if (done) return;
+    finish();
+    toast(`Gave up waiting for ${fullName}. It may still be cloning — check your clone folder.`, "error");
+  }, OPEN_TIMEOUT_MS);
 
   const offProgress = host.on("clone:progress", (p) => {
     if (phaseEl && (p.phase || p.raw)) phaseEl.textContent = p.phase || p.raw || "";
@@ -106,9 +152,11 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
   });
 
   const finish = (): void => {
+    if (done) return;
     done = true;
-    opening = false;
+    current = null;
     window.clearTimeout(timer);
+    window.clearTimeout(giveUp);
     offProgress();
     close();
   };
