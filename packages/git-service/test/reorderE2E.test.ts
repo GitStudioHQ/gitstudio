@@ -84,7 +84,7 @@ async function applyReorder(
   return runRebasePlan(r.dir, {
     base: chain.base ?? "--root",
     todo: built.todo,
-    rewordMessages: built.rewordMessages,
+    rewords: built.rewords,
   });
 }
 
@@ -293,7 +293,7 @@ test("naming the branch being rebased in update-ref breaks the whole rebase", as
     const out = await runRebasePlan(r.dir, {
       base: chain.base ?? "--root",
       todo: built.todo,
-      rewordMessages: built.rewordMessages,
+      rewords: built.rewords,
     });
     assert.notEqual(
       out.status,

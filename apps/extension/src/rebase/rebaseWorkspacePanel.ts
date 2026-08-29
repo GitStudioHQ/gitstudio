@@ -169,11 +169,11 @@ export class RebaseWorkspacePanel {
       this.post({ type: "result", outcome: { status: "failed", message: built.message } });
       return;
     }
-    const { todo, rewordMessages } = built;
+    const { todo, rewords } = built;
 
     await this.finish(() =>
       this.undo.runWithUndo(active, `Interactive rebase onto ${shortRef(this.base)}`, () =>
-        runRebasePlan(active.root, { base: this.base, todo, rewordMessages }),
+        runRebasePlan(active.root, { base: this.base, todo, rewords }),
       ),
     );
   }

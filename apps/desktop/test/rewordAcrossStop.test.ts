@@ -169,3 +169,116 @@ test("a rebase with no stop still rewords, and cleans up after itself", async ()
     removeTempRepo(root);
   }
 });
+
+/**
+ * The abort path must forget the queue.
+ *
+ * Keying by sha makes a stale queue inert against a FOREIGN rebase — but
+ * `git rebase --abort` restores the ORIGINAL shas, so a queue abandoned by an
+ * abort matches perfectly the next time that branch is rebased. An abandoned
+ * draft then renamed a commit in a rebase nobody asked to reword, and the app
+ * said "Rebase continued."
+ *
+ * Measured before the fix: FINAL log "ABANDONED-DRAFT | m2 | m1".
+ */
+test("aborting forgets the messages that were abandoned with it", async () => {
+  const { root, git } = conflictingStack();
+  try {
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const rebase = new RebaseBridge(repos);
+    const bridge = new GitBridge(repos);
+
+    const plan = await rebase.load({ base: "trunk" });
+    const rows = plan.commits.map((c) => ({
+      action: (c.subject === "t2" ? "reword" : "pick") as "reword" | "pick",
+      sha: c.sha,
+      subject: c.subject,
+      message: c.subject === "t2" ? "ABANDONED-DRAFT" : undefined,
+    }));
+    assert.equal((await rebase.apply({ base: "trunk", rows })).status, "stopped");
+
+    // The user changes their mind and aborts — discarding that draft.
+    const ab = await bridge.rebaseAbort();
+    assert.equal(ab.ok, true, `abort succeeds (${ab.message ?? ""})`);
+    assert.ok(
+      !existsSync(`${root}/.git/gitstudio-reword-queue.json`),
+      "the abandoned message is gone with the plan that carried it",
+    );
+
+    // Now an ORDINARY rebase of the same branch, with no reword asked for.
+    const again = await bridge.branchRebase({ onto: "trunk" });
+    assert.equal(again.ok, false, "it conflicts, as before");
+    writeFileSync(`${root}/shared.txt`, "resolved\n");
+    git("add", "shared.txt");
+    const cont = await bridge.rebaseContinue();
+    assert.equal(cont.ok, true, `continue succeeds (${cont.message ?? ""})`);
+
+    assert.ok(
+      !git("log", "--format=%s", "HEAD").includes("ABANDONED-DRAFT"),
+      "and no commit wears a message the user threw away",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * An `edit` stop is a PAUSE, not an ending.
+ *
+ * `git rebase -i` exits 0 when it stops at an `edit` row — the user asked for
+ * that pause — and treating exit 0 as finished toasted "Rebase complete." over
+ * a detached, mid-rebase repo AND deleted the reword queue, so every reword
+ * below the `edit` row then committed with its original message.
+ */
+test("an edit stop is reported as a pause, and keeps the rewords below it", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-editstop-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    for (const n of ["m1", "c1", "c2", "c3"]) {
+      writeFileSync(`${root}/${n}.txt`, `${n}\n`);
+      git("add", "-A");
+      git("commit", "-qm", n);
+      if (n === "m1") git("branch", "trunk");
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const rebase = new RebaseBridge(repos);
+    const bridge = new GitBridge(repos);
+
+    const plan = await rebase.load({ base: "trunk" });
+    // Pause on c1 (the oldest), reword c3 (the newest) — below the stop in the
+    // todo, so it is only reached after the user continues.
+    const rows = plan.commits.map((c) => ({
+      action: (c.subject === "c1" ? "edit" : c.subject === "c3" ? "reword" : "pick") as
+        | "edit"
+        | "reword"
+        | "pick",
+      sha: c.sha,
+      subject: c.subject,
+      message: c.subject === "c3" ? "NEW-C3" : undefined,
+    }));
+
+    const out = await rebase.apply({ base: "trunk", rows });
+    assert.equal(out.status, "stopped", `an edit row PAUSES the rebase (got ${out.status})`);
+    assert.ok(
+      existsSync(`${root}/.git/gitstudio-reword-queue.json`),
+      "and the messages queued below it are still there",
+    );
+
+    const cont = await bridge.rebaseContinue();
+    assert.equal(cont.ok, true, `continue finishes it (${cont.message ?? ""})`);
+    assert.equal(
+      git("log", "-1", "--format=%s", "HEAD").trim(),
+      "NEW-C3",
+      "the reword below the pause still landed",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});

@@ -52,6 +52,18 @@ export class RepoStore {
    *  so the renderer's Output tab can show a live git-command log. */
   onGitRun?: GitRunHook;
 
+  /**
+   * The options a shared runner needs to look like any other git command here:
+   * the same executable, and the same observer feeding the Output tab.
+   *
+   * `RebaseRunner` spawns git directly rather than through `GitContext`, so
+   * without this its invocations were invisible — a `rebase --continue` that
+   * failed left no row anywhere in the app.
+   */
+  runnerOptions(): { gitPath: string; onRun: GitRunHook } {
+    return { gitPath: this.adapter.gitPath(), onRun: (e) => this.onGitRun?.(e) };
+  }
+
   /** Listeners fired when the active repo changes (the main process re-emits). */
   private readonly listeners = new Set<(info: RepoInfo | undefined) => void>();
 

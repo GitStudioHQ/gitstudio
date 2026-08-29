@@ -37,17 +37,22 @@ test("reword messages follow TODO order, not screen order", () => {
     row("aaaaaa", "first", "reword", "FIRST edited"),
   ]);
   assert.ok(r.ok);
+  // Keyed by commit, in todo order. The order still matters for reading, but
+  // it is no longer what SELECTS the message — see `rewords` in rebasePlan.ts.
   assert.deepEqual(
-    r.rewordMessages,
-    ["FIRST edited", "THIRD edited"],
-    "oldest commit's message must be consumed first",
+    r.rewords,
+    [
+      { sha: "aaaaaa", message: "FIRST edited" },
+      { sha: "cccccc", message: "THIRD edited" },
+    ],
+    "each message is bound to the commit it belongs to, oldest first",
   );
 });
 
 test("a reword with an empty message falls back to its subject", () => {
   const r = buildRebasePlan([row("aaaaaa", "first", "reword", "   ")]);
   assert.ok(r.ok);
-  assert.deepEqual(r.rewordMessages, ["first"]);
+  assert.deepEqual(r.rewords, [{ sha: "aaaaaa", message: "first" }]);
 });
 
 test("the squash guard applies to the OLDEST commit — the bottom row on screen", () => {

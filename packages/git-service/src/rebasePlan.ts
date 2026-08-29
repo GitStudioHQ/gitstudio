@@ -69,8 +69,6 @@ export type RebasePlanResult =
        * one commit early. Keyed by sha there is nothing to count.
        */
       rewords: Array<{ sha: string; message: string }>;
-      /** Deprecated: positional form, kept for callers not yet migrated. */
-      rewordMessages: string[];
     }
   | { ok: false; message: string };
 
@@ -162,5 +160,5 @@ export function buildRebasePlan(
     .filter((r) => r.action === "reword")
     .map((r) => ({ sha: r.sha, message: (r.message ?? "").trim() || r.subject }));
 
-  return { ok: true, todo, rewords, rewordMessages: rewords.map((r) => r.message) };
+  return { ok: true, todo, rewords };
 }

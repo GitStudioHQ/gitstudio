@@ -347,10 +347,12 @@ export class RebaseBridge {
     if (!built.ok) {
       return { status: "failed", message: built.message };
     }
-    const { todo, rewords, rewordMessages } = built;
+    const { todo, rewords } = built;
 
     try {
-      return await runRebasePlan(root, { base: req.base, todo, rewords, rewordMessages });
+      // Same options as every other git command here: the app's git, and the
+      // observer that feeds the Output tab.
+      return await runRebasePlan(root, { base: req.base, todo, rewords }, this.repos.runnerOptions());
     } catch (err) {
       return { status: "failed", message: err instanceof Error ? err.message : String(err) };
     }

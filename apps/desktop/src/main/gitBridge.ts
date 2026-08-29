@@ -7,7 +7,7 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, stat } from "node:fs/promises";
-import { continueRebase, skipRebase } from "@gitstudio/git-service/RebaseRunner";
+import { continueRebase, skipRebase, abortRebaseAt } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
 import { join, resolve, sep } from "node:path";
@@ -1733,8 +1733,20 @@ export class GitBridge {
   mergeContinue(): Promise<CommitActionResult> {
     return this.runResult(["commit", "--no-edit"]);
   }
+  /**
+   * Abort through the RUNNER, which also forgets the reword queue.
+   *
+   * `runResult(["rebase","--abort"])` left it in `.git`. Keying by sha makes a
+   * stale queue inert against a FOREIGN rebase — but an abort restores the
+   * ORIGINAL shas, so an abandoned draft matched perfectly the next time that
+   * branch was rebased, and renamed a commit the user never asked to reword.
+   * Measured: "FINAL log: ABANDONED-DRAFT | m2 | m1".
+   */
   rebaseAbort(): Promise<CommitActionResult> {
-    return this.runResult(["rebase", "--abort"]);
+    return this.resumeRebase(async (root, o) => {
+      const ok = await abortRebaseAt(root, o);
+      return ok ? { status: "done" } : { status: "failed", message: "Couldn't abort the rebase." };
+    });
   }
   /**
    * Continue / skip through the RUNNER, not `-c core.editor=true`.
@@ -1745,20 +1757,23 @@ export class GitBridge {
    * queue (keyed by sha, so it can only ever apply to this rebase).
    */
   rebaseContinue(): Promise<CommitActionResult> {
-    return this.resumeRebase(continueRebase);
+    return this.resumeRebase((root, o) => continueRebase(root, o));
   }
   rebaseSkip(): Promise<CommitActionResult> {
-    return this.resumeRebase(skipRebase);
+    return this.resumeRebase((root, o) => skipRebase(root, o));
   }
 
   private async resumeRebase(
-    run: (root: string) => Promise<RebaseOutcome>,
+    run: (root: string, opts: ReturnType<RepoStore["runnerOptions"]>) => Promise<RebaseOutcome>,
   ): Promise<CommitActionResult> {
     const root = this.repos.current()?.root;
     if (!root) return { ok: false, changed: false, message: "No repository open." };
     return this.serialize(async () => {
       try {
-        const out = await run(root);
+        // The runner spawns git itself, so it has to be told which git and
+        // where to report — otherwise these commands vanish from the Output tab
+        // and fall back to a bare "git" on PATH.
+        const out = await run(root, this.repos.runnerOptions());
         if (out.status === "done") return { ok: true, changed: true };
         // A stop is not a failure — the rebase is still live and the view says
         // so. `expected` keeps it out of the crash reporter.

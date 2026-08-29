@@ -23,17 +23,39 @@ export interface RebasePlan {
   base: string;
   /** The full `git-rebase-todo` text to install (see engine serializeRebaseTodo). */
   todo: string;
-  /** New commit messages for each `reword` row, in top-to-bottom todo order. */
-  /** Positional form — see rebasePlan.ts. Kept for callers not yet migrated. */
-  rewordMessages: string[];
-  /** Reword messages keyed by commit. Preferred: a positional queue cannot
-   *  survive a pause, and a persisted positional queue is actively dangerous. */
-  rewords?: Array<{ sha: string; message: string }>;
+  /**
+   * New commit messages, keyed by the commit each belongs to.
+   *
+   * REQUIRED, and there is deliberately no positional alternative. A `rewords?`
+   * that fell back to a bare list left the extension on the old shape while the
+   * installer had moved to sha lookup — and the shim minted `{sha: ""}`, which
+   * `startsWith("")` matches for EVERY commit: every reword got the first
+   * message and commits nobody reworded were renamed. An optional field is how
+   * a half-done migration hides from the compiler.
+   */
+  rewords: Array<{ sha: string; message: string }>;
 }
 
 export interface RebaseRunOptions {
   /** The git executable (default "git"). */
   gitPath?: string;
+  /**
+   * Observer for each git invocation this runner makes, so the host can show
+   * them wherever it shows its other git commands.
+   *
+   * Without it a rebase's commands are invisible to the desktop's Output tab —
+   * the surface the app itself calls "what the user reads, copies and pastes
+   * into bug reports". A `rebase --continue` that fails then leaves nothing
+   * anywhere: git's explanation of which paths still need `git add` reaches a
+   * one-line toast and is then unrecoverable.
+   */
+  onRun?: (event: {
+    args: string[];
+    durationMs: number;
+    exitCode: number | null;
+    failed: boolean;
+    stderr?: string;
+  }) => void;
   /**
    * The binary used to run the tiny installer scripts. Defaults to the current
    * process (Electron/extension host) with ELECTRON_RUN_AS_NODE=1.
@@ -74,6 +96,11 @@ const SEQ_INSTALLER = `const fs=require("fs");fs.writeFileSync(process.argv[proc
  *
  * A squash group's combined message (git marks it "# This is a combination of
  * N commits.") is left alone, as before.
+ *
+ * An entry must carry a REAL key (>= 4 hex chars). `"".startsWith("")` is true
+ * and so is `anySha.startsWith("")`, so an unkeyed entry matches every commit
+ * there is — which turned a compatibility shim into a wildcard that renamed
+ * commits nobody had reworded.
  */
 const MSG_INSTALLER = `const fs=require("fs");const path=require("path");
 const t=process.argv[process.argv.length-1];const c=fs.readFileSync(t,"utf8");
@@ -91,7 +118,7 @@ try{
     }catch(_){}
   }
   if(sha){
-    const hit=q.find(function(e){return e&&typeof e.sha==="string"&&(e.sha.startsWith(sha)||sha.startsWith(e.sha));});
+    const hit=q.find(function(e){return e&&typeof e.sha==="string"&&e.sha.length>=4&&(e.sha.startsWith(sha)||sha.startsWith(e.sha));});
     if(hit&&typeof hit.message==="string"&&hit.message.trim()){
       fs.writeFileSync(t,hit.message.endsWith("\\n")?hit.message:hit.message+"\\n");
     }
@@ -142,13 +169,48 @@ async function rewordPaths(
  */
 function clearRewordQueue(p: { queue: string; installer: string } | undefined): void {
   if (!p) return;
-  for (const f of [p.queue, p.installer]) {
+  for (const f of [p.queue, stampPath(p.queue), p.installer]) {
     try {
       fs.rmSync(f, { force: true });
     } catch {
       /* nothing to do about it */
     }
   }
+}
+
+/** The stamp file beside a queue: which rebase it was written for. */
+function stampPath(queue: string): string {
+  return queue + ".rebase";
+}
+function readStamp(queue: string): string {
+  try {
+    return fs.readFileSync(stampPath(queue), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The rebase currently in flight, as a string that changes between rebases.
+ *
+ * `rebase-merge/onto` is where it is replaying onto and `orig-head` is where
+ * the branch was — together they identify THIS run. Empty when no rebase is in
+ * progress.
+ */
+function rebaseIdentity(gitDir: string): string {
+  const read = (name: string): string => {
+    for (const d of ["rebase-merge", "rebase-apply"]) {
+      try {
+        return fs.readFileSync(path.join(gitDir, d, name), "utf8").trim();
+      } catch {
+        /* try the other layout */
+      }
+    }
+    return "";
+  };
+  const onto = read("onto");
+  const orig = read("orig-head");
+  return onto || orig ? `${onto}:${orig}` : "";
 }
 
 /**
@@ -167,6 +229,19 @@ async function resumeEnv(
   };
   const paths = await rewordPaths(root, opts);
   if (!paths || !fs.existsSync(paths.queue) || !fs.existsSync(paths.installer)) {
+    return { env: base };
+  }
+  // FENCE: only install messages into the rebase that queued them.
+  //
+  // Keying by sha makes a stale queue inert against a FOREIGN rebase, but not
+  // against a repeat of the same one: `git rebase --abort` restores the
+  // original shas, so a queue abandoned by an abort matches perfectly when that
+  // branch is rebased again — and an abandoned draft renamed a commit in a
+  // later rebase the user never asked to reword. The stamp is written when the
+  // run pauses and checked here; a mismatch means this queue is not ours.
+  const stamp = readStamp(paths.queue);
+  if (stamp && stamp !== rebaseIdentity(paths.dir)) {
+    clearRewordQueue(paths);
     return { env: base };
   }
   const exe = opts.nodePath ?? process.execPath;
@@ -195,8 +270,7 @@ export async function runRebasePlan(
   // outlive this process so `--continue` after a conflict can still install the
   // messages the user typed. See rewordPaths.
   const rw = await rewordPaths(root, opts);
-  const rewords =
-    plan.rewords ?? (plan.rewordMessages ?? []).map((message) => ({ sha: "", message }));
+  const rewords = plan.rewords;
   const msgJs = rw?.installer ?? path.join(dir, "msg.js");
   const rewordFile = rw?.queue ?? path.join(dir, "reword.json");
   try {
@@ -225,20 +299,43 @@ export async function runRebasePlan(
     const args = ["rebase", "-i", plan.base];
     const { code, stderr, stdout } = await spawnGit(args, root, env, opts);
 
+    /** A pause, not an ending: keep the queue and record which rebase it is for. */
+    const paused = (
+      reason: "conflict" | "edit" | "unknown",
+      message: string,
+    ): RebaseOutcome => {
+      if (rw) {
+        try {
+          fs.writeFileSync(stampPath(rw.queue), rebaseIdentity(rw.dir));
+        } catch {
+          /* no stamp is safer than a wrong one — resumeEnv treats "" as "unknown, allow" */
+        }
+      }
+      return { status: "stopped", reason, message };
+    };
+
     if (code === 0) {
+      // Exit 0 is NOT the same as finished. `git rebase -i` exits 0 when it
+      // stops at an `edit` row — the user asked for that pause — and taking it
+      // as "done" toasted "Rebase complete." over a detached, mid-rebase repo
+      // AND deleted the queue this whole mechanism exists to preserve, so every
+      // reword below the `edit` row then committed with its original message.
+      if (await rebaseInProgress(root, env, opts)) {
+        return paused("edit", "Rebase paused for editing.");
+      }
       clearRewordQueue(rw);
       return { status: "done" };
     }
     const blob = `${stdout}\n${stderr}`;
     if (/could not apply|CONFLICT|Merge conflict|needs merge|fix conflicts/i.test(blob)) {
-      return { status: "stopped", reason: "conflict", message: firstLine(stderr) || "Rebase paused on a conflict." };
+      return paused("conflict", firstLine(stderr) || "Rebase paused on a conflict.");
     }
     if (/Stopped at .*edit|You can amend the commit now/i.test(blob)) {
-      return { status: "stopped", reason: "edit", message: "Rebase paused for editing." };
+      return paused("edit", "Rebase paused for editing.");
     }
     // Still mid-rebase? Treat as a stop the user must resolve rather than a hard fail.
     if (await rebaseInProgress(root, env, opts)) {
-      return { status: "stopped", reason: "unknown", message: firstLine(stderr) || "Rebase paused." };
+      return paused("unknown", firstLine(stderr) || "Rebase paused.");
     }
     // A hard failure ends the rebase; a STOP does not, and its queue must
     // survive for the `--continue` that follows.
@@ -256,6 +353,11 @@ export async function continueRebase(root: string, opts: RebaseRunOptions = {}):
   const { env, paths } = await resumeEnv(root, opts);
   const { code, stderr, stdout } = await spawnGit(["rebase", "--continue"], root, env, opts);
   if (code === 0) {
+    // Exit 0 with a rebase still in flight is the next `edit` stop, not the end
+    // — and clearing the queue there would drop every reword below it.
+    if (await rebaseInProgress(root, env, opts)) {
+      return { status: "stopped", reason: "edit", message: "Rebase paused for editing." };
+    }
     clearRewordQueue(paths);
     return { status: "done" };
   }
@@ -279,6 +381,9 @@ export async function skipRebase(root: string, opts: RebaseRunOptions = {}): Pro
   const { env, paths } = await resumeEnv(root, opts);
   const { code, stderr, stdout } = await spawnGit(["rebase", "--skip"], root, env, opts);
   if (code === 0) {
+    if (await rebaseInProgress(root, env, opts)) {
+      return { status: "stopped", reason: "edit", message: "Rebase paused for editing." };
+    }
     clearRewordQueue(paths);
     return { status: "done" };
   }
@@ -368,6 +473,7 @@ function spawnGit(
   opts: RebaseRunOptions,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
+    const startedAt = Date.now();
     // stdin is IGNORED, not inherited/piped. A rebase re-signs commits and may
     // hit a credential helper; with an open stdin git blocks on the prompt
     // forever and this promise never settles, wedging the whole rebase with no
@@ -386,6 +492,17 @@ function spawnGit(
       }
       done = true;
       clearTimeout(timer);
+      try {
+        opts.onRun?.({
+          args,
+          durationMs: Date.now() - startedAt,
+          exitCode: r.code,
+          failed: r.code !== 0,
+          stderr: r.code !== 0 ? r.stderr.slice(0, 4000) : undefined,
+        });
+      } catch {
+        /* an observer must never break the command it is observing */
+      }
       resolve(r);
     };
     // Backstop for anything that still wedges (a pinentry GUI nobody answers,

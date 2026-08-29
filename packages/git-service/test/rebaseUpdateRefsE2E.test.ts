@@ -43,7 +43,7 @@ test("end to end: the plan builder's todo really moves the branches", async () =
     const out = await runRebasePlan(d, {
       base: "main~3",
       todo: plan.todo,
-      rewordMessages: plan.rewordMessages,
+      rewords: plan.rewords,
     });
     assert.equal(out.status, "done", JSON.stringify(out));
 

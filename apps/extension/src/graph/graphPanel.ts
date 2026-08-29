@@ -605,7 +605,7 @@ export class CommitGraphPanel {
       runRebasePlan(active.root, {
         base: chain.base ?? "--root",
         todo: built.todo,
-        rewordMessages: built.rewordMessages,
+        rewords: built.rewords,
       });
     const outcome = ledger
       ? await ledger.runWithUndo(active, `Reorder ${order.length} commits`, run)
