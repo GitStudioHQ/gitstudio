@@ -1,0 +1,49 @@
+packages/git-service/test/rebasePlan.test.ts
+  s_26f5e669d3043c::t_813d2940e9ecef 40-41,43-48,55
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_d27270d6954376 1746-1747,1760,1763,1767,1773-1776
+  s_26f5e669d3043c::t_9cf6da2617edde 10,1736-1744,1748-1749
+packages/git-service/test/reorderE2E.test.ts
+  s_26f5e669d3043c::t_9213b1b21bb342 87,296
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_9213b1b21bb342 172,176
+packages/git-service/src/RebaseRunner.ts
+  s_26f5e669d3043c::t_5a5ecbe87fb445 26-36,42,99-103,121,273
+  s_26f5e669d3043c::t_8da55d25f9119b 43-58,476,495-505
+  s_26f5e669d3043c::t_9cf6da2617edde 356-360,384-386
+  s_26f5e669d3043c::t_d11a3ae2253c80 302-316,318-325,331,334,338
+  s_26f5e669d3043c::t_a49a70df02b259 172,181-215,234-244,246
+  s_26f5e669d3043c::t_da23e83b2e9041 245
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_9213b1b21bb342 350
+  s_26f5e669d3043c::t_a85f1e77d6ed2a 353-355
+packages/git-service/test/rewordKeying.test.ts
+  s_26f5e669d3043c::t_bab6a627f4345f 7,77-81,83-101,104,110-120
+  s_26f5e669d3043c::t_825425df1b0e72 1-6,8-76,82,102-103,105-109,121-125
+packages/git-service/src/rebasePlan.ts
+  s_26f5e669d3043c::t_04dd0d38b44e88 163
+packages/git-service/test/rebaseUpdateRefsE2E.test.ts
+  s_26f5e669d3043c::t_9213b1b21bb342 46
+apps/desktop/src/main/repoStore.ts
+  s_26f5e669d3043c::t_d27270d6954376 55-66
+apps/desktop/test/rewordAcrossStop.test.ts
+  s_26f5e669d3043c::t_5249b9a1b38ff6 172-284
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_9213b1b21bb342 608
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f3b49e1d9dfc2680974a82c280a345bf90d1ca8f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
