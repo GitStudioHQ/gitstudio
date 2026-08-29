@@ -1487,6 +1487,8 @@ class App {
           ? `Pull ${plural(b.behind, "commit")} from ${b.upstream ?? "upstream"}`
           : `Pull ${plural(b.behind, "commit")} into ${b.name} — fast-forward, no checkout`,
         () => {},
+        false,
+        b.name,
       ) as HTMLButtonElement;
       pull.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2707,7 +2709,7 @@ class App {
     const acts = el("div", "settings-copy-acts");
     if (!c.missing && !c.current) {
       acts.appendChild(
-        textBtn("Open", `Open ${c.name} in GitStudio`, () => void this.openPath(c.root)),
+        textBtn("Open", `Open ${c.name} in GitStudio`, () => void this.openPath(c.root), false, c.name),
       );
     }
 

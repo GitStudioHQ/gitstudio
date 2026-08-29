@@ -4146,6 +4146,8 @@ gitstudio-graph {
   gap: 6px;
   height: 28px;
   padding: 0 6px 0 9px;
+  /* See the .gh-head-titlewrap rule below, which sizes this from the longest
+     placeholder the app actually uses. */
   min-width: 150px;
   max-width: 240px;
   border-radius: 8px;
@@ -4410,7 +4412,11 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
 /* The search field must keep a floor and its own line when the row is tight —
    below ~1200px it used to collide with the first facet pill, losing its right
    border and running its placeholder under the neighbouring control. */
-.gh-head-titlewrap .gh-search { min-width: 180px; flex: 1 1 180px; max-width: 320px; }
+/* 196px, not 180: the app's longest placeholder ("Filter this organization…")
+   measures 141px, and the field spends ~39px on its icon, gap and padding. At
+   180 the text had four pixels of slack and clipped its own ellipsis. Sized
+   from the content rather than from a round number. */
+.gh-head-titlewrap .gh-search { min-width: 196px; flex: 1 1 196px; max-width: 320px; }
 /* main.ts opens at 1280x820, so this rule fires at exactly the app's default
    width — every GitHub header launches in the layout below. That is deliberate,
    though it was arrived at the hard way: moving the breakpoint under the default
@@ -4700,6 +4706,18 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   gap: 8px;
   align-content: start;
 }
+/* What the repository IS, on the card. One line, clipped with a title to
+   recover it — the full text is already on the row's own tooltip. */
+.gh-org-repo-desc {
+  font-size: var(--text-sm);
+  color: var(--app-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  margin: 1px 0;
+}
+
 /* Hover actions are INVISIBLE until hover, but they still took their width out
    of the card — 36% of it at 1280, squeezing the description and wrapping the
    meta line onto a row holding nothing but a separator. Out of flow: they
@@ -5164,8 +5182,11 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 19px;
+  /* The only pointer affordance for opening the dock, and it was 20x19 — the
+     smallest target in the app. As wide as the 23px footer allows, which is
+     still a third more area to aim at. */
+  width: 26px;
+  height: 21px;
   border: none;
   border-radius: 5px;
   background: transparent;

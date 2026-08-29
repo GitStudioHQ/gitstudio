@@ -49,6 +49,13 @@ const CASES = [
   ["run-detail-hides-dead-actions", "actions~open9100"],
   ["run-detail-steps-visible", "actions~open9100"],
   ["row-meta-columns-align", "explore~type:git~key:Enter"],
+  ["placeholders-fit-their-field", "orgs"],
+  ["placeholders-fit-their-field", "branches"],
+  ["placeholders-fit-their-field", "issues"],
+  // The three shapes: file rows, branch rows, and repo rows in an org.
+  ["row-actions-name-their-object", "changes"],
+  ["row-actions-name-their-object", "branches"],
+  ["row-actions-name-their-object", "orgs~text:Repositories"],
   ["coming-back-to-a-search-costs-no-requests", "explore~type:git~key:Enter"],
   // Both shapes: a dialog, and a peek (whose card is focused with tabindex=-1).
   ["a-modal-surface-holds-the-page-behind-it", "branches~text:New%20branch"],

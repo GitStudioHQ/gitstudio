@@ -94,7 +94,6 @@ export class BottomDock {
     this.tabsEl = el("div", "dock-tabs");
     this.actionsEl = el("div", "dock-actions");
     this.chevron = el("button", "dock-chevron");
-    this.chevron.setAttribute("aria-label", "Toggle panel");
     this.syncChevron();
     this.chevron.addEventListener("click", () => this.toggle());
     footer.append(this.tabsEl, el("div", "dock-spacer"), this.actionsEl, this.chevron);
@@ -163,7 +162,16 @@ export class BottomDock {
   /** Point the chevron the right way (up = expand, down = collapse). */
   private syncChevron(): void {
     this.chevron.replaceChildren(glyph(this.collapsed ? "chevron-up" : "chevron-down"));
-    this.chevron.title = this.collapsed ? "Expand panel" : "Collapse panel";
+    const what = this.collapsed ? "Expand panel" : "Collapse panel";
+    this.chevron.title = what;
+    // The label moves with the state, and the state is announced.
+    //
+    // It was a fixed "Toggle panel" while the tooltip changed underneath it, so
+    // a screen reader heard the same three words whether the dock was open or
+    // shut — and was never told which. `aria-expanded` is the part that makes
+    // the answer available without operating the control to find out.
+    this.chevron.setAttribute("aria-label", what);
+    this.chevron.setAttribute("aria-expanded", String(!this.collapsed));
   }
 
   /**

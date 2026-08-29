@@ -261,7 +261,17 @@ export function textBtn(
   const b = el("button", "row-btn" + (danger ? " danger" : ""));
   b.textContent = label;
   b.title = title;
-  if (identity) b.dataset.num = identity;
+  if (identity) {
+    b.dataset.num = identity;
+    // …and NAME the object, not just the verb.
+    //
+    // Every row in a list carries the same button: four "Stage"s, three
+    // "Delete"s, and a `title` that repeats the verb too ("Delete this
+    // branch"). Tabbing a list with a screen reader was therefore "Stage,
+    // Stage, Stage, Stage" — the one thing a person needs to know, WHICH file,
+    // being the one thing not said. It is worst on the destructive ones.
+    b.setAttribute("aria-label", `${label} ${identity}`);
+  }
   b.addEventListener("click", (e) => {
     e.stopPropagation();
     onClick(b);

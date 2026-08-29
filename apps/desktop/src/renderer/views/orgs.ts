@@ -432,7 +432,19 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   if (when) bits.push(`updated ${when}`);
   sub.textContent = bits.join(" · ");
   if (r.pushedAt) sub.title = `Last pushed ${absTimeISO(r.pushedAt)}`;
-  m.append(t, sub);
+  // The description, on the card rather than only in its tooltip.
+  //
+  // It is the one line that tells you what a repository IS, and the card had
+  // room for it — 570px wide, carrying a name and a row of facts. Hiding the
+  // only distinguishing text behind a hover made a directory of repos read as
+  // a directory of names.
+  if (r.description) {
+    const d = el("div", "gh-org-repo-desc");
+    d.textContent = r.description;
+    m.append(t, d, sub);
+  } else {
+    m.append(t, sub);
+  }
   row.appendChild(m);
   row.title = r.description
     ? `${r.description}\n\nClick to browse ${r.name}`
@@ -453,11 +465,15 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
   });
   const actions = el("div", "row-actions");
   actions.append(
-    textBtn("Details", `About ${r.name} — stars, license, activity`, () => openRepoPeek(r)),
+    textBtn("Details", `About ${r.name} — stars, license, activity`, () => openRepoPeek(r), false, r.name),
     // Browsing is now what the ROW does, so the action that earns a place here
     // is the one the row no longer performs: adopting the repository.
-    textBtn("Open", `Clone ${r.name} if needed and open it in GitStudio`, () =>
-      openGhRepoInApp(r.fullName),
+    textBtn(
+      "Open",
+      `Clone ${r.name} if needed and open it in GitStudio`,
+      () => openGhRepoInApp(r.fullName),
+      false,
+      r.name,
     ),
   );
   row.appendChild(actions);

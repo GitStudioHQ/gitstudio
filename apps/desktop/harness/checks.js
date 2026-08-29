@@ -553,6 +553,60 @@
       }
     },
 
+    // Every row in a list carries the same button — four "Stage"s, three
+    // "Delete"s — and the `title` repeats the verb too ("Delete this branch").
+    // So tabbing a list with a screen reader was "Stage, Stage, Stage, Stage":
+    // the one thing a person needs to know, WHICH file, was the one thing not
+    // said. Worst on the destructive ones, where the next Enter acts.
+    "row-actions-name-their-object": (f) => {
+      const c = check(f);
+      const btns = $$(".row-actions .row-btn").filter((b) => b.offsetParent !== null);
+      c.ok(btns.length >= 2, `the view has row actions (${btns.length})`);
+      if (btns.length < 2) return;
+      const names = btns.map(
+        (b) => (b.getAttribute("aria-label") || b.textContent || "").trim().toLowerCase(),
+      );
+      const dupes = names.filter((n, i) => n && names.indexOf(n) !== i);
+      c.eq(
+        [...new Set(dupes)].length,
+        0,
+        `no two row actions announce the same thing (repeated: ${[...new Set(dupes)]
+          .slice(0, 3)
+          .join(", ")})`,
+      );
+      // And the name has to carry the object, not just the verb.
+      const bare = btns.filter((b) => {
+        const label = (b.getAttribute("aria-label") || "").trim();
+        return label && label.toLowerCase() === (b.textContent || "").trim().toLowerCase();
+      });
+      c.eq(bare.length, 0, "an aria-label that only repeats the visible verb adds nothing");
+    },
+
+    // A placeholder is the field's label when the field is empty. Measured
+    // against its own box rather than eyeballed: "Filter this organization…"
+    // was 141px in a 145px input — four pixels of slack, clipping its own
+    // ellipsis at any larger text size.
+    "placeholders-fit-their-field": (f) => {
+      const c = check(f);
+      const inputs = $$("input[placeholder]").filter((i) => i.offsetParent !== null);
+      c.ok(inputs.length > 0, "the view has a field with a placeholder");
+      const ctx = document.createElement("canvas").getContext("2d");
+      for (const i of inputs) {
+        const cs = getComputedStyle(i);
+        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const text = Math.ceil(ctx.measureText(i.placeholder).width);
+        const room =
+          i.getBoundingClientRect().width -
+          parseFloat(cs.paddingLeft || "0") -
+          parseFloat(cs.paddingRight || "0");
+        // A little headroom, so a slightly different font does not clip it.
+        c.ok(
+          text <= room - 6,
+          `"${i.placeholder}" fits its field (${text}px of ${Math.round(room)}px)`,
+        );
+      }
+    },
+
     "row-meta-columns-align": (f) => {
       const c = check(f);
       // A row missing an optional datum must not slide its neighbours into a
