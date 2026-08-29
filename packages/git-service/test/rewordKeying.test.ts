@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { buildRebasePlan } from "../src/rebasePlan";
 import { runRebasePlan, continueRebase } from "../src/RebaseRunner";
@@ -70,7 +71,7 @@ test("two rewords land on their own commits, not both on the first", async () =>
       "each message on its own commit, and B untouched",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeTempRepo(root);
   }
 });
 
@@ -120,6 +121,6 @@ test("an entry with no real key renames nothing — not even a conflicted pick",
       "an unkeyed message is inert — the commit keeps its own",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeTempRepo(root);
   }
 });

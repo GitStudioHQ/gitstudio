@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -51,7 +52,7 @@ before(() => {
 
 after(() => {
   ctx?.dispose();
-  rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  removeTempRepo(repo);
 });
 
 test("capture records HEAD and the current branch on a clean tree", async () => {
@@ -117,7 +118,7 @@ test("isPushed is true once a commit is on a remote-tracking branch", async () =
     const sha = head();
     assert.equal(await ctx.snapshot.isPushed(sha), true);
   } finally {
-    rmSync(remote, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    removeTempRepo(remote);
   }
 });
 

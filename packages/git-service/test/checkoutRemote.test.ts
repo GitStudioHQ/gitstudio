@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { localNameFor, planRemoteCheckout } from "../src/checkoutRemote";
@@ -48,7 +49,7 @@ function git(cwd: string, ...args: string[]): { code: number; out: string } {
 
 function cleanup(dir: string): void {
   try {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    removeTempRepo(dir);
   } catch {
     /* the OS tmpdir gets swept anyway */
   }

@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readRewritableChain } from "../src/rebaseChain";
@@ -49,7 +50,7 @@ function repo(): Repo {
     dispose: () => {
       ctx.dispose();
       try {
-        rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 120 });
+        removeTempRepo(dir);
       } catch {
         /* git background processes may still hold it; the temp dir is disposable */
       }
@@ -148,7 +149,7 @@ test("published commits are untouched — the chain never included them", async 
         "the published commit keeps its identity — it was never rewritten",
       );
     } finally {
-      rmSync(bare, { recursive: true, force: true, maxRetries: 20, retryDelay: 120 });
+      removeTempRepo(bare);
     }
   } finally {
     r.dispose();

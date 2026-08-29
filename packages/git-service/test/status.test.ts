@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -113,7 +114,7 @@ before(() => {
 
 after(() => {
   ctx.dispose();
-  rmSync(repo, { recursive: true, force: true });
+  removeTempRepo(repo);
 });
 
 test("StatusProvider.read on a real repo groups correctly", async () => {

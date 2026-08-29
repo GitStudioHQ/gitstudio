@@ -2,6 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -37,7 +38,7 @@ before(() => {
 after(() => {
   ctx?.dispose();
   if (repo) {
-    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    removeTempRepo(repo);
   }
 });
 
@@ -51,7 +52,7 @@ test("list reports the main worktree", async () => {
 
 test("add creates a linked worktree on a new branch, then list shows both", async () => {
   const wtPath = mkdtempSync(join(tmpdir(), "gitstudio-wt-linked-"));
-  rmSync(wtPath, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }); // git wants a non-existent path
+  removeTempRepo(wtPath); // git wants a non-existent path
 
   const added = await ctx.worktrees.add(wtPath, "feature", {
     newBranch: true,
@@ -83,7 +84,7 @@ test("remove deletes the linked worktree", async () => {
   assert.equal(after.length, 1);
   assert.equal(after[0].branch, "main");
 
-  rmSync(linked!.path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  removeTempRepo(linked!.path);
 });
 
 test("parseWorktreePorcelain handles bare, detached, locked, and prunable", () => {
@@ -134,7 +135,7 @@ test("a differently-named branch from a remote start point gets no upstream unle
   try {
     const noTrackPath = mkdtempSync(join(tmpdir(), "gitstudio-wt-notrack-"));
     paths.push(noTrackPath);
-    rmSync(noTrackPath, { recursive: true, force: true }); // git wants a fresh path
+    removeTempRepo(noTrackPath); // git wants a fresh path
     const added = await ctx.worktrees.add(noTrackPath, "my-experiment", {
       newBranch: true,
       startPoint: "refs/remotes/origin/main",
@@ -148,7 +149,7 @@ test("a differently-named branch from a remote start point gets no upstream unle
     // branch — which is why callers must decide noTrack themselves.
     const trackPath = mkdtempSync(join(tmpdir(), "gitstudio-wt-track-"));
     paths.push(trackPath);
-    rmSync(trackPath, { recursive: true, force: true });
+    removeTempRepo(trackPath);
     const control = await ctx.worktrees.add(trackPath, "control-track", {
       newBranch: true,
       startPoint: "refs/remotes/origin/main",
@@ -161,8 +162,8 @@ test("a differently-named branch from a remote start point gets no upstream unle
     );
   } finally {
     for (const p of paths) {
-      rmSync(p, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      removeTempRepo(p);
     }
-    rmSync(remoteDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    removeTempRepo(remoteDir);
   }
 });

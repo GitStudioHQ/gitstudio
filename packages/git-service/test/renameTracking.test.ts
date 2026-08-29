@@ -1,7 +1,8 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -55,7 +56,7 @@ before(() => {
   gitIn(seed, ["config", "commit.gpgsign", "false"]);
   commitIn(seed, "file.txt", "base\n", "base");
   gitIn(seed, ["push", "origin", "main"]);
-  rmSync(seed, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  removeTempRepo(seed);
 
   clone = mkdtempSync(join(tmpdir(), "gitstudio-rn-clone-"));
   execFileSync("git", ["clone", bare, clone], { env: ENV });
@@ -70,7 +71,7 @@ after(() => {
   ctx?.dispose();
   for (const dir of [bare, clone]) {
     if (dir) {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      removeTempRepo(dir);
     }
   }
 });

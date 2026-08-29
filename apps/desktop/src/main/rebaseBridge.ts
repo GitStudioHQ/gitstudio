@@ -136,10 +136,25 @@ export class RebaseBridge {
     if (!ctx) {
       return [];
     }
-    const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
+    // THREE dots, and --cherry-pick --right-only, for anything but --root.
+    //
+    // git's sequencer selects the todo with `--cherry-mark --right-only` over
+    // `upstream...HEAD`, which DROPS commits whose patch is already on the base
+    // — a backport, a cherry-pick that went both ways, a commit merged upstream
+    // by someone else. `<base>..HEAD` keeps them, so the plan listed a commit
+    // git's own todo omits; running it made git skip that commit and PAUSE:
+    //
+    //   warning: skipped previously applied commit 4b20fb3
+    //
+    // leaving the repo mid-rebase with a clean tree and an in-progress card
+    // telling the user to resolve conflicts that do not exist — the same wedge
+    // a merge commit in the range used to produce, for the same reason.
+    const threeDot = base !== "--root";
+    const range = threeDot ? `${base}...HEAD` : "HEAD";
     const sep = "\x1f";
     const r = await ctx.process.run([
       "log",
+      ...(threeDot ? ["--cherry-pick", "--right-only"] : []),
       // A rebase FLATTENS merges: it replays the merged-in commits one by one
       // and the merge itself disappears. `git log` lists merges; `git rebase -i`
       // does not — its sequencer builds the todo from
@@ -248,14 +263,17 @@ export class RebaseBridge {
   ): Promise<RebaseApplyRow[] | null> {
     const ctx = this.repos.getContext();
     if (!ctx) return null;
-    const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
+    // The SAME selection as loadCommits, for the same reasons — a merge, or a
+    // patch already on the base, re-injected as a `pick` below the display cap
+    // wedges the repo just as surely — and so this tail is the same
+    // linearization the shown page came from, which is what makes appending it
+    // correct.
+    const threeDot = base !== "--root";
+    const range = threeDot ? `${base}...HEAD` : "HEAD";
     const sep = "\x1f";
-    // The SAME flags as loadCommits, for the same reason — a merge below the
-    // display cap re-injected as a `pick` wedges the repo just as surely — and
-    // so this tail is the same linearization the shown page came from, which is
-    // what makes appending it correct.
     const r = await ctx.process.run([
       "log",
+      ...(threeDot ? ["--cherry-pick", "--right-only"] : []),
       "--no-merges",
       "--topo-order",
       `--format=%H${sep}%s`,

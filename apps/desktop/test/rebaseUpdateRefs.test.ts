@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, chmodSync } from "node:fs";
+import { writeFileSync, mkdtempSync, chmodSync, existsSync } from "node:fs";
 import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
@@ -482,6 +482,74 @@ test("the plan replays in the order git itself would", async () => {
     // The plan is newest-first on screen; `apply` reverses it to make the todo.
     const ours = plan.commits.map((c) => c.subject).reverse();
     assert.deepEqual(ours, native, "our todo is git's todo");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * A commit whose patch is already on the base.
+ *
+ * git's sequencer builds the todo with `--cherry-mark --right-only` over
+ * `upstream...HEAD`, which DROPS commits already applied upstream — a backport,
+ * a cherry-pick that travelled both ways, a commit someone else merged. Listing
+ * them made git skip the commit and PAUSE:
+ *
+ *     warning: skipped previously applied commit 4b20fb3
+ *
+ * leaving the repo mid-rebase with a clean tree and a card telling the user to
+ * resolve conflicts that do not exist — the same wedge a merge in the range
+ * produced, for the same reason: a plan git will not execute as written.
+ */
+test("a patch already on the base is not in the plan, and does not wedge the rebase", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-cherrydup-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(`${root}/m.txt`, "m\n");
+    git("add", "-A");
+    git("commit", "-qm", "m1");
+    git("branch", "trunk");
+
+    git("checkout", "-qb", "feature");
+    writeFileSync(`${root}/dup.txt`, "dup\n");
+    git("add", "-A");
+    git("commit", "-qm", "dup");
+    writeFileSync(`${root}/keep.txt`, "keep\n");
+    git("add", "-A");
+    git("commit", "-qm", "keeper");
+
+    // The SAME patch lands on trunk independently.
+    git("checkout", "-q", "trunk");
+    git("cherry-pick", "-x", "feature~1");
+    git("checkout", "-q", "feature");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new RebaseBridge(repos);
+    const plan = await bridge.load({ base: "trunk" });
+
+    assert.deepEqual(
+      plan.commits.map((c) => c.subject),
+      ["keeper"],
+      "the already-applied commit is not offered — git's own todo does not list it",
+    );
+
+    const out = await bridge.apply({
+      base: "trunk",
+      rows: plan.commits.map((c) => ({ action: "pick" as const, sha: c.sha, subject: c.subject })),
+    });
+    assert.equal(out.status, "done", `the rebase completes (${out.message ?? ""})`);
+    assert.ok(
+      !existsSync(`${root}/.git/rebase-merge`),
+      "and leaves no rebase in progress behind it",
+    );
+    const log = git("log", "--format=%s", "HEAD").trim().split("\n");
+    assert.ok(log.includes("keeper"), "the real work survives");
+    assert.ok(log.includes("dup"), "and the duplicated patch is still there, from trunk");
   } finally {
     removeTempRepo(root);
   }

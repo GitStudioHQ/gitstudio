@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildRebasePlan } from "../src/rebasePlan";
@@ -59,7 +60,7 @@ test("end to end: the plan builder's todo really moves the branches", async () =
     console.log("  main:", g(["log", "--format=%s", "main"]).split("\n").join(" "));
     console.log("  feat-1 and feat-2 both followed onto the rewritten commits");
   } finally {
-    try { rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 120 }); }
+    try { removeTempRepo(d); }
     catch { /* git background processes still holding the dir; the temp dir is disposable */ }
   }
 });

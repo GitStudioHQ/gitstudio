@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, renameSync } from "node:fs";
+import { mkdtempSync, writeFileSync, renameSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "../src/GitContext";
@@ -71,7 +72,7 @@ before(() => {
 after(() => {
   ctx?.dispose();
   if (repo) {
-    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    removeTempRepo(repo);
   }
 });
 
