@@ -228,6 +228,19 @@
     // state — the one surface nobody could actually look at.
     // Compare had no fixture either — every shot of it was "Couldn't compare
     // these refs".
+    // Compare's file DIFF. Without it every file in a comparison rendered the
+    // "nothing to show" state, so the pane the view exists for was never
+    // exercised — and the state it fell into was a positive claim ("identical
+    // content") the app had no basis for. A fixture the harness cannot express
+    // is a defect the harness cannot catch.
+    "compare:fileDiff": {
+      path: "packages/engine/src/hunks.ts",
+      leftLabel: "main (merge-base) packages/engine/src/hunks.ts",
+      rightLabel: "redesign/issues-detail packages/engine/src/hunks.ts",
+      leftText: "export function computeHunks(a: string, b: string): Hunk[] {\n  return diff(a, b);\n}\n",
+      rightText: "export function computeHunks(a: string, b: string): Hunk[] {\n  // split on a selection boundary (issue #20)\n  return diff(a, b).flatMap(splitOnSelection);\n}\n",
+      conflicted: false,
+    },
     "compare:refs": {
       ahead: 5,
       behind: 2,

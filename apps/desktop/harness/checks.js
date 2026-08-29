@@ -607,6 +607,33 @@
       }
     },
 
+    // A file is in the changed list BECAUSE the two refs differ on it. When the
+    // diff could not be loaded the pane said "These two refs have identical
+    // content for this file." — asserting equality the app had no basis for,
+    // about the one file it had just told you was different. `undefined` from
+    // compare:fileDiff means no repo open or a rejected ref; it has never meant
+    // "no difference".
+    "a-compare-diff-that-fails-says-so": async (f) => {
+      const c = check(f);
+      const row = $(".cmp-file, .dc-file, .file-row");
+      c.ok(!!row, "the comparison lists files");
+      if (!row) return;
+      row.click();
+      await settle(900);
+      const empty = $(".diff-empty");
+      if (!empty) {
+        // The happy path: a real diff rendered. Nothing to assert here.
+        c.ok(!!$(".monaco-editor, .diff-surface"), "a diff is showing");
+        return;
+      }
+      const said = (empty.textContent || "").toLowerCase();
+      c.ok(
+        !said.includes("identical"),
+        `a file that could not be loaded must not be called identical ("${said.slice(0, 70)}")`,
+      );
+      c.ok(empty.classList.contains("is-error"), "and it reads as a failure, not a result");
+    },
+
     "row-meta-columns-align": (f) => {
       const c = check(f);
       // A row missing an optional datum must not slide its neighbours into a

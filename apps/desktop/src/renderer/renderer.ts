@@ -2349,10 +2349,24 @@ class App {
     });
     if (gen !== this.diffGen) return;
     if (fileDiff) {
+      // A file CAN legitimately have identical text on both sides — a mode
+      // change, or a rename with no edit — and `diff.show` says so itself.
       diff.show(fileDiff);
-    } else {
-      diff.showEmpty("These two refs have identical content for this file.", { kind: "none" });
+      return;
     }
+    // No answer is not the same as "no difference".
+    //
+    // `compareFileDiff` returns undefined only when there is no repository open
+    // or a ref failed its safety check — never because the two sides matched.
+    // Printing "These two refs have identical content for this file." asserted
+    // equality the app had no basis for, about a file that is in the changed
+    // list PRECISELY BECAUSE it differs. The same laundering of an absent
+    // answer into a reassuring one as "working tree clean" over uncommitted
+    // work, on a smaller surface.
+    diff.showEmpty(
+      `${path} is listed as changed between these refs, so this is a failure to read it — not two sides that match.`,
+      { title: "Couldn't load this file's diff", kind: "error" },
+    );
   }
 
   /** Open a branch/tag picker anchored to `anchor`; calls back with the ref name. */

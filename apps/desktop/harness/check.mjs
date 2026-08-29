@@ -49,6 +49,7 @@ const CASES = [
   ["run-detail-hides-dead-actions", "actions~open9100"],
   ["run-detail-steps-visible", "actions~open9100"],
   ["row-meta-columns-align", "explore~type:git~key:Enter"],
+  ["a-compare-diff-that-fails-says-so", "compare~text:Changed%20files"],
   ["placeholders-fit-their-field", "orgs"],
   ["placeholders-fit-their-field", "branches"],
   ["placeholders-fit-their-field", "issues"],
