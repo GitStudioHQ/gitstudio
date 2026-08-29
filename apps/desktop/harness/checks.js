@@ -2120,6 +2120,46 @@
     // newest published NON-pre-release; taking the newest published thing awards
     // it to a release candidate whenever one exists, pointing everyone at the RC
     // instead of the build they should be running.
+    // `last` was only reassigned on the SUCCESS path, so the base===head early
+    // return left it holding the PREVIOUS comparison — and both panes went on
+    // rendering those commits and files as the answer for refs that were never
+    // compared. The counts said one thing, the rows below showed another.
+    "a-dead-comparison-shows-nothing-not-the-last-one": async (f) => {
+      const c = check(f);
+      await settle(700);
+      const picks = $$(".ref-pick");
+      c.ok(picks.length >= 2, "two ref pickers");
+      if (picks.length < 2) return;
+      const headName = text(picks[1]).trim();
+      // Make base === head, which is a comparison with no answer.
+      picks[0].click();
+      await settle(400);
+      const same = $$(".dropdown-item").find((r) => text(r).trim() === headName);
+      c.ok(!!same, `the base menu offers ${headName}`);
+      if (!same) return;
+      same.click();
+      await settle(900);
+
+      c.ok(!!$(".list-empty"), "it says there is nothing to compare");
+      // The empty state alone does not prove it: `runCompare` paints that
+      // directly. The stale `last` only surfaces when something calls
+      // renderBody() AFTERWARDS — which switching the segment does. That is the
+      // repro: land in the dead comparison, then click Commits, and the previous
+      // comparison's rows come back as the answer.
+      for (const seg of $$(".cmp-seg-btn")) {
+        seg.click();
+        await settle(400);
+        c.eq(
+          $$(".compare-commit").length,
+          0,
+          `"${text(seg).trim()}" shows none of the previous comparison's commits`,
+        );
+        c.eq($$(".file-row").length, 0, `"${text(seg).trim()}" shows none of its files`);
+      }
+      const pr = $(".cmp-pr-btn");
+      c.ok(!pr || pr.hidden, "and does not offer a pull request from a branch to itself");
+    },
+
     "latest-is-the-shipping-build-not-the-rc": (f) => {
       const c = check(f);
       const rows = $$(".sec-row");

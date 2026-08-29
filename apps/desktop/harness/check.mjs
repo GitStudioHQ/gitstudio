@@ -109,6 +109,7 @@ const CASES = [
   ["inbox-rows-are-controls", "inbox"],
   ["the-focus-ring-can-be-seen", "issues~click:.gh-facet-btn"],
   ["the-focus-ring-can-be-seen", "issues~click:.gh-facet-btn", { theme: "light" }],
+  ["a-dead-comparison-shows-nothing-not-the-last-one", "compare"],
   ["latest-is-the-shipping-build-not-the-rc", "releases"],
   ["squash-is-refused-only-where-git-would-refuse-it", "rebase"],
   ["a-failed-submit-gives-the-form-back", "issues"],

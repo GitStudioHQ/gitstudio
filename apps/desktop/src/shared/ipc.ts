@@ -258,8 +258,13 @@ export interface CompareResult {
   commits: CompareCommit[];
   /** Files changed between base and head. */
   files: ChangedFile[];
+  /** The REAL count of commits in base..head — not the length of `commits`,
+   *  which is capped. See `commitsTruncated`. */
   ahead: number;
   behind: number;
+  /** True when `commits` holds only the first N of `ahead`. The list has to be
+   *  able to say so; a count that is silently a cap is worse than no count. */
+  commitsTruncated?: boolean;
 }
 
 /** Diff range mode for Compare: ".." (direct) or "..." (since merge-base). */

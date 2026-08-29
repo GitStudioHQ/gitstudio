@@ -2036,12 +2036,20 @@ class App {
       if (!cmpKey || peek("compare:refs", cmpKey) === undefined) {
         body.replaceChildren(loadingState(`Comparing ${this.compareBase} … ${this.compareHead}`));
       }
+      // The previous comparison's answer is no longer an answer to anything.
+      // `last` was only reassigned on the success path, so the early return
+      // below left it holding the PRIOR result — and the Commits/Changed-files
+      // panes went on rendering those commits and files as though they were the
+      // comparison now on screen, for refs that were never compared.
+      last = undefined;
       // Nothing to compare yet (a single-branch repo, or base === head):
       // prompt for a second ref instead of running a doomed comparison.
       if (!this.compareBase || this.compareBase === this.compareHead) {
         summary.textContent = "";
         commitsCount.textContent = "";
         filesCount.textContent = "";
+        // …and you cannot open a pull request from a branch to itself.
+        prBtn.hidden = true;
         body.replaceChildren(
           emptyState(
             "Pick two refs to compare",
@@ -2075,7 +2083,10 @@ class App {
         );
         return;
       }
-      const n = res.commits.length;
+      // The COUNT is the real one; the LIST may be the first page of it. Showing
+      // `commits.length` made a 400-commit cap read as a fact, printed beside a
+      // `behind` that genuinely was one.
+      const n = res.ahead ?? res.commits.length;
       const m = res.files.length;
       commitsCount.textContent = String(n);
       filesCount.textContent = String(m);
@@ -2096,6 +2107,13 @@ class App {
   /** Commits-only view: the commits `compare` adds over `base`. */
   private renderCompareCommits(body: HTMLElement, res: CompareResult | undefined): void {
     body.replaceChildren();
+    // A capped list has to say it is capped, or the rows read as the whole set.
+    const capNote = (): void => {
+      if (!res?.commitsTruncated) return;
+      const note = el("div", "list-cap-note");
+      note.textContent = `Showing the first ${res.commits.length} of ${res.ahead} commits.`;
+      body.appendChild(note);
+    };
     if (!res || !res.commits.length) {
       body.appendChild(
         emptyState("No commits", "These refs share the same history in this direction.", {
@@ -2121,6 +2139,7 @@ class App {
       list.appendChild(row);
     }
     body.appendChild(list);
+    capNote();
   }
 
   /** Changed-files view: a GitHub-style master/detail — file list (left,

@@ -952,7 +952,13 @@ export class GitBridge {
       files = [];
     }
     const behind = await this.revCount(ctx, `${head}..${base}`);
-    return { commits, files, ahead: commits.length, behind };
+    // `commits.length` is the CAP (400), not the answer. It was reported as
+    // `ahead` beside `behind`, which is a real count from rev-list — so a
+    // comparison of 900 commits read "400 ahead · 12 behind", with the lie
+    // wearing the same authority as the truth. Count it properly and say when
+    // the list below is only the first page of it.
+    const ahead = await this.revCount(ctx, `${base}..${head}`);
+    return { commits, files, ahead, behind, commitsTruncated: ahead > commits.length };
   }
 
   async compareFileDiff(req: {

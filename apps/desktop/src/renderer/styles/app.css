@@ -9105,3 +9105,12 @@ body.vscode-light .log-pane {
   border-radius: var(--r-sm);
   padding: var(--sp-2) var(--sp-3);
 }
+
+/* "Showing the first 400 of 912 commits." A capped list that does not say it is
+   capped reads as the whole set — and the count beside it was the cap. */
+.list-cap-note {
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  border-top: 1px solid var(--app-border);
+}
