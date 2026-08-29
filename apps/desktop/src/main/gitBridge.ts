@@ -7,13 +7,15 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, stat } from "node:fs/promises";
+import { continueRebase, skipRebase } from "@gitstudio/git-service/RebaseRunner";
+import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
-import type { LineRange } from "@gitstudio/engine/staging/applyLineChanges";
+import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
@@ -1734,11 +1736,42 @@ export class GitBridge {
   rebaseAbort(): Promise<CommitActionResult> {
     return this.runResult(["rebase", "--abort"]);
   }
+  /**
+   * Continue / skip through the RUNNER, not `-c core.editor=true`.
+   *
+   * A no-op editor discards every reword message queued for the commits AFTER
+   * the one that stopped — the plan the user composed, applied silently and
+   * only in part, reported as "Rebase continued." The runner re-installs the
+   * queue (keyed by sha, so it can only ever apply to this rebase).
+   */
   rebaseContinue(): Promise<CommitActionResult> {
-    return this.runResult(["-c", "core.editor=true", "rebase", "--continue"]);
+    return this.resumeRebase(continueRebase);
   }
   rebaseSkip(): Promise<CommitActionResult> {
-    return this.runResult(["-c", "core.editor=true", "rebase", "--skip"]);
+    return this.resumeRebase(skipRebase);
+  }
+
+  private async resumeRebase(
+    run: (root: string) => Promise<RebaseOutcome>,
+  ): Promise<CommitActionResult> {
+    const root = this.repos.current()?.root;
+    if (!root) return { ok: false, changed: false, message: "No repository open." };
+    return this.serialize(async () => {
+      try {
+        const out = await run(root);
+        if (out.status === "done") return { ok: true, changed: true };
+        // A stop is not a failure — the rebase is still live and the view says
+        // so. `expected` keeps it out of the crash reporter.
+        return {
+          ok: false,
+          changed: true,
+          expected: out.status === "stopped",
+          message: out.message ?? (out.status === "stopped" ? "Rebase paused." : "Rebase failed."),
+        };
+      } catch (err) {
+        return { ok: false, changed: false, message: err instanceof Error ? err.message : String(err) };
+      }
+    });
   }
 
   // ── Tag creation (the Branches view's "Create tag here…") ───────────────────
@@ -1783,19 +1816,37 @@ export class GitBridge {
           modified = await readWorking(ctx, rel);
         }
         const hunks = computeHunks(original, modified);
-        // WHICH side the selection is numbered in.
+        // WHICH coordinates the selection arrives in.
         //
-        // The renderer takes line numbers from the pane you clicked, and that
-        // pane always shows `original` — the index. For staging, `modified` is
-        // the working tree and the two happen to agree often enough to look
-        // right. For UNSTAGING, `modified` is HEAD, and any staged edit that
-        // inserts or deletes lines shifts every later line: the selection then
-        // names one line in the index and a different one in HEAD. Selecting a
-        // staged change 5 lines below an insertion either matched the wrong hunk
-        // or matched none, and "Nothing to apply in the selection" is what the
-        // user got for clicking a line that is plainly right there.
+        // `fileDiff` builds EVERY working-tree diff as HEAD (left) vs WORKING
+        // (right), whatever the file's stage state — the index is carried only
+        // as `indexText`, for the tick glyphs, and is never a pane. And
+        // `getSelectedLines` reads the RIGHT editor. So the numbers the renderer
+        // sends are always WORKING-tree line numbers.
+        //
+        // The comment that stood here said the opposite ("that pane always shows
+        // `original` — the index"), and the code followed the comment. For
+        // staging it did not matter: `modified` IS the working tree there. For
+        // UNSTAGING, `modified` is HEAD and `original` is the index, and neither
+        // is numbered like the working tree — so on a file that is staged AND
+        // further modified (git's `MM`), an unstaged edit above the selection
+        // shifts every later working line away from its index line, and the
+        // selection matched a DIFFERENT hunk: a staged change the user never
+        // clicked was rolled back to HEAD and the app said "Unstaged selected
+        // lines." Or it matched nothing, and said "Nothing to apply in the
+        // selection." for a line plainly on screen.
+        //
+        // So translate first, through the index→working diff, and match on the
+        // index side.
+        let selection = ranges;
+        if (req.reverse) {
+          selection = toOriginalRanges(ranges, computeHunks(original, await readWorking(ctx, rel)));
+          if (!selection.length) {
+            return { ok: false, changed: false, message: "Nothing to apply in the selection." };
+          }
+        }
         const sideOf = (h: (typeof hunks)[number]): LineRange => (req.reverse ? h.original : h.modified);
-        const selected = hunks.filter((h) => ranges.some((r) => rangesOverlap(sideOf(h), r)));
+        const selected = hunks.filter((h) => selection.some((r) => rangesOverlap(sideOf(h), r)));
         if (!selected.length) return { ok: false, changed: false, message: "Nothing to apply in the selection." };
         const content = applySelectedChanges(original, modified, selected.map((h) => h.modified));
         // …and report what actually happened. This discarded stageContent's
@@ -1930,6 +1981,49 @@ function linesToRanges(lines: number[]): LineRange[] {
     else ranges.push({ start: zero, end: zero });
   }
   return ranges;
+}
+
+/**
+ * Re-expresses ranges numbered on the MODIFIED side of `hunks` in ORIGINAL-side
+ * coordinates.
+ *
+ * Used to carry a working-tree selection back into index numbering before it is
+ * matched against the index→HEAD hunks. Lines outside every hunk shift by the
+ * running length difference of the hunks before them; a line inside a hunk maps
+ * to that hunk's whole original span. Lines the original does not have at all —
+ * a working-only insertion — map to nothing, because there is no staged change
+ * under them to pick up.
+ */
+function toOriginalRanges(ranges: LineRange[], hunks: Hunk[]): LineRange[] {
+  const len = (r: LineRange): number => (r.end < r.start ? 0 : r.end - r.start + 1);
+  const mapped: LineRange[] = [];
+  // The mapping is monotonic, so folding each result into the previous one keeps
+  // the output the size of the selection's shape rather than its line count.
+  const add = (r: LineRange): void => {
+    const last = mapped[mapped.length - 1];
+    if (last && r.start >= last.start && r.start <= last.end + 1) {
+      last.end = Math.max(last.end, r.end);
+      return;
+    }
+    mapped.push(r);
+  };
+  for (const range of ranges) {
+    for (let line = range.start; line <= range.end; line++) {
+      let delta = 0;
+      let landed = false;
+      for (const h of hunks) {
+        if (len(h.modified) > 0 && line >= h.modified.start && line <= h.modified.end) {
+          if (len(h.original) > 0) add({ ...h.original });
+          landed = true;
+          break;
+        }
+        if (h.modified.start > line) break;
+        delta += len(h.modified) - len(h.original);
+      }
+      if (!landed) add({ start: line - delta, end: line - delta });
+    }
+  }
+  return mapped;
 }
 
 /** Whether two inclusive line ranges overlap (zero-width spans treated as a point). */

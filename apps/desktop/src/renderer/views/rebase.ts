@@ -76,10 +76,15 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
   }
 
   if (!state.commits.length) {
+    // The host's note, when it has one, is the REASON the list is empty — most
+    // often "a merge commit in this range isn't listed", because a range made
+    // only of merges leaves nothing to pick. Printing the hardcoded sentence
+    // over it stated a falsehood: there ARE commits between those two refs.
     wrap.replaceChildren(
       emptyState(
         "Nothing to rebase",
-        `No commits between ${short(state.base)} and ${state.branch}. Pick a different base to reach further back.`,
+        state.message ??
+          `No commits between ${short(state.base)} and ${state.branch}. Pick a different base to reach further back.`,
         { icon: "git-commit" },
       ),
       baseBar(state, wrap, nav),
@@ -575,7 +580,10 @@ function inProgressCard(reload: () => void): HTMLElement {
   const head = el("div", "rb-inprogress-head");
   head.append(glyph("debug-pause"), span("A rebase is in progress"));
   const body = span(
-    "Git stopped part-way — resolve any conflicts in the Changes view, then continue. Aborting restores the branch to where it started.",
+    // Not "resolve any conflicts": a rebase can stop with a perfectly clean tree —
+    // git refusing a todo it cannot execute is one way — and telling someone to
+    // resolve conflicts that do not exist sends them looking for nothing.
+    "Git stopped part-way. If there are conflicts, resolve them in the Changes view first, then continue. Aborting restores the branch to exactly where it started.",
     "rb-inprogress-body",
   );
   const btns = el("div", "rb-inprogress-btns");

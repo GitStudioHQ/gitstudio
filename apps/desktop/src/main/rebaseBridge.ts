@@ -87,10 +87,27 @@ export class RebaseBridge {
     const b = branchRes.stdout.trim();
     const branch = b && b !== "HEAD" ? b : "detached HEAD";
 
-    const commits = await this.loadCommits(base);
-    const baseCommit = base === "--root" ? undefined : await this.loadBaseCommit(base);
+    // Concurrently: the walk for the plan and the walk for the merge count are
+    // independent, and on a large repo with no commit-graph each is ~115ms.
+    // Run in series that is a quarter-second before the view paints; run
+    // together it is the cost of one.
+    const [commits, baseCommit, merges] = await Promise.all([
+      this.loadCommits(base),
+      base === "--root" ? Promise.resolve(undefined) : this.loadBaseCommit(base),
+      this.countMerges(base),
+    ]);
 
     const notes: string[] = [];
+    // The plan now deliberately omits commits that ARE in the range. Say so —
+    // silently dropping rows is how the previous version of this got away with
+    // being wrong.
+    if (merges > 0) {
+      notes.push(
+        merges === 1
+          ? "A merge commit in this range isn't listed — a rebase replays the merged-in commits one by one and the merge itself disappears."
+          : `${merges} merge commits in this range aren't listed — a rebase replays the merged-in commits one by one and the merges themselves disappear.`,
+      );
+    }
     if (fellBack) {
       notes.push(`“${req.base ?? "that base"}” doesn't resolve here — showing the whole branch instead.`);
     }
@@ -123,8 +140,33 @@ export class RebaseBridge {
     const sep = "\x1f";
     const r = await ctx.process.run([
       "log",
-      // NEWEST FIRST, matching the Commits list (issue #18). git's todo file is
-      // the other way round; apply() does that reversal in exactly one place.
+      // A rebase FLATTENS merges: it replays the merged-in commits one by one
+      // and the merge itself disappears. `git log` lists merges; `git rebase -i`
+      // does not — its sequencer builds the todo from
+      // `rev-list --reverse --topo-order --no-merges`, and its parser REFUSES
+      // `pick <merge>` outright ("error: 'pick' does not accept merge commits").
+      // So a feature branch with main merged into it — the ordinary shape —
+      // produced a plan git would never accept, and running it left the repo
+      // detached at the base, mid-rebase, with a clean tree and no conflict to
+      // resolve. Continue re-ran the same failing todo; only Abort escaped.
+      "--no-merges",
+      // The other half, and load-bearing beyond merges: reversed, this
+      // reproduces git's own todo, and the default ordering does not. Measured
+      // on a range whose two lines interleave by date — base, then
+      // B(Jan 9) → C(Jan 2) on one line and A(Jan 3) on the other:
+      //
+      //   git log --no-merges          A, C, B  → todo: pick B, pick C, pick A
+      //   git log --no-merges --topo   C, B, A  → todo: pick A, pick B, pick C
+      //   git rebase -i's OWN todo              → pick A, pick B, pick C
+      //
+      // Both todos are legal; only one replays the branch the way git would,
+      // and the plan is a promise about what running it will do.
+      //
+      // (It does mean the plan can order differently from the Commits list,
+      // which is --date-order. The plan has to match the todo git executes.)
+      "--topo-order",
+      // Newest first on screen (issue #18); git's todo is the other way round,
+      // and apply() does that reversal in exactly one place.
       // Hard cap: rebasing onto --root in a large repo would otherwise try to
       // render thousands of rows (and be a terrible idea to execute).
       `--max-count=${MAX_PLAN_COMMITS}`,
@@ -208,7 +250,17 @@ export class RebaseBridge {
     if (!ctx) return null;
     const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
     const sep = "\x1f";
-    const r = await ctx.process.run(["log", `--format=%H${sep}%s`, range]);
+    // The SAME flags as loadCommits, for the same reason — a merge below the
+    // display cap re-injected as a `pick` wedges the repo just as surely — and
+    // so this tail is the same linearization the shown page came from, which is
+    // what makes appending it correct.
+    const r = await ctx.process.run([
+      "log",
+      "--no-merges",
+      "--topo-order",
+      `--format=%H${sep}%s`,
+      range,
+    ]);
     if (r.code !== 0) return null;
     const known = new Set(rows.map((x) => x.sha));
     const out: RebaseApplyRow[] = [];
@@ -220,6 +272,16 @@ export class RebaseBridge {
     }
     // git lists newest-first, and so does the plan; appending keeps that order.
     return out;
+  }
+
+  /** How many merge commits the range contains. They are NOT in the plan — a
+   *  rebase flattens them away — so the view has to say they were left out. */
+  private async countMerges(base: string): Promise<number> {
+    const ctx = this.repos.getContext();
+    if (!ctx) return 0;
+    const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
+    const r = await ctx.process.run(["rev-list", "--count", "--merges", range]);
+    return r.code === 0 ? Number(r.stdout.trim()) || 0 : 0;
   }
 
   /** The repo's own `rebase.updateRefs`. Following it means the app does what
@@ -285,10 +347,10 @@ export class RebaseBridge {
     if (!built.ok) {
       return { status: "failed", message: built.message };
     }
-    const { todo, rewordMessages } = built;
+    const { todo, rewords, rewordMessages } = built;
 
     try {
-      return await runRebasePlan(root, { base: req.base, todo, rewordMessages });
+      return await runRebasePlan(root, { base: req.base, todo, rewords, rewordMessages });
     } catch (err) {
       return { status: "failed", message: err instanceof Error ? err.message : String(err) };
     }

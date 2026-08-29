@@ -12,9 +12,9 @@
 // Two things depend on that and fail quietly if they are left reading the display
 // order instead:
 //
-//   · rewordMessages. RebaseRunner queues these and pops one each time git opens
-//     the editor, which happens once per `reword` IN TODO ORDER. Built from the
-//     display array they would land on the wrong commits, with no error.
+//   · rewords. RebaseRunner looks these up BY SHA when git opens the editor.
+//     They used to be a bare list popped once per editor call, which is only
+//     correct while nothing interrupts the run — see `rewords` below.
 //   · squash/fixup meld into the entry BEFORE them in the file. After the flip
 //     that is the row BELOW on screen, which is why the "first commit can't be a
 //     squash" guard has to run against the reversed plan, not the visible top row.
@@ -55,7 +55,23 @@ export interface BuildOptions {
 }
 
 export type RebasePlanResult =
-  | { ok: true; todo: string; rewordMessages: string[] }
+  | {
+      ok: true;
+      todo: string;
+      /**
+       * Reword messages keyed by the commit they belong to.
+       *
+       * `rewordMessages` below is the same data as a bare list, and a bare list
+       * is only usable by COUNTING editor invocations — which stops being
+       * correct the moment a rebase pauses. `git rebase --continue` opens the
+       * editor for the commit that stopped, whatever its verb, so a conflicted
+       * `pick` consumed the next reword's text and every later message landed
+       * one commit early. Keyed by sha there is nothing to count.
+       */
+      rewords: Array<{ sha: string; message: string }>;
+      /** Deprecated: positional form, kept for callers not yet migrated. */
+      rewordMessages: string[];
+    }
   | { ok: false; message: string };
 
 /** Actions we will write into a todo file. Anything else is a caller bug. */
@@ -142,9 +158,9 @@ export function buildRebasePlan(
     }
   }
   const todo = lines.join("\n") + "\n";
-  const rewordMessages = plan
+  const rewords = plan
     .filter((r) => r.action === "reword")
-    .map((r) => (r.message ?? "").trim() || r.subject);
+    .map((r) => ({ sha: r.sha, message: (r.message ?? "").trim() || r.subject }));
 
-  return { ok: true, todo, rewordMessages };
+  return { ok: true, todo, rewords, rewordMessages: rewords.map((r) => r.message) };
 }

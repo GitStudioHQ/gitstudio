@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync, chmodSync } from "node:fs";
 import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
@@ -311,6 +311,178 @@ test("a branch checked out in another worktree is left alone", async () => {
       /* best effort */
     }
     removeTempRepo(linked);
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * A merge commit inside the range.
+ *
+ * `git log <base>..HEAD` lists merges; `git rebase -i` does not — its sequencer
+ * builds the todo from `rev-list --reverse --topo-order --no-merges`, and its
+ * parser refuses `pick <merge>` outright. So the plan contained a row git would
+ * never accept, and applying it left the repo DETACHED AT THE BASE, mid-rebase,
+ * with a clean tree and no conflict to resolve; Continue re-ran the same failing
+ * todo and only Abort escaped. A feature branch with main merged into it is the
+ * ordinary shape of this.
+ *
+ * Measured before the fix:
+ *   {"status":"stopped","reason":"unknown",
+ *    "message":"error: 'pick' does not accept merge commits"}
+ */
+function mergeRangeRepo(): { root: string; git: (...a: string[]) => string } {
+  const root = mkdtempSync(`${tmpdir()}/gs-mergerange-`);
+  const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+  git("init", "-q");
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "t");
+  git("config", "gc.auto", "0");
+  const commit = (n: string): void => {
+    writeFileSync(`${root}/${n}.txt`, `${n}\n`);
+    git("add", "-A");
+    git("commit", "-qm", n);
+  };
+  commit("m1");
+  git("branch", "trunk");
+  git("checkout", "-qb", "feature");
+  commit("f1");
+  // main moves on, and is merged INTO the feature branch — the ordinary shape.
+  git("checkout", "-q", "trunk");
+  commit("m2");
+  git("checkout", "-q", "feature");
+  git("merge", "-q", "--no-ff", "-m", "Merge branch 'trunk' into feature", "trunk");
+  commit("f2");
+  return { root, git };
+}
+
+test("a merge inside the range does not wedge the repo", async () => {
+  const { root, git } = mergeRangeRepo();
+  try {
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new RebaseBridge(repos);
+    const plan = await bridge.load({ base: "trunk" });
+    assert.equal(plan.ok, true, plan.message ?? "");
+
+    // The plan is what git would replay: no merges in it.
+    for (const c of plan.commits) {
+      const parents = git("rev-list", "--parents", "-n", "1", c.sha).trim().split(/\s+/);
+      assert.ok(parents.length <= 2, `no merge in the plan (${c.subject} has ${parents.length - 1} parents)`);
+    }
+    // …and it SAYS the merge was left out, rather than silently dropping it.
+    assert.match(plan.message ?? "", /merge/i, "the omission is disclosed");
+
+    const rows = plan.commits.map((c) => ({
+      action: "pick" as const,
+      sha: c.sha,
+      subject: c.subject,
+      branches: c.branches,
+    }));
+    const out = await bridge.apply({ base: "trunk", rows });
+    assert.equal(out.status, "done", `the rebase completes (${out.message ?? ""})`);
+
+    // Not detached, no rebase in progress, and the work is still there.
+    assert.equal(git("symbolic-ref", "--short", "HEAD").trim(), "feature", "still on the branch");
+    const subjects = git("log", "--format=%s", "HEAD").trim().split("\n");
+    for (const s of ["f1", "f2", "m2", "m1"]) {
+      assert.ok(subjects.includes(s), `${s} survives the rebase`);
+    }
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * The plan must be the todo git itself would generate.
+ *
+ * `git log`'s default order is reverse-chronological, which is NOT the order
+ * `git rebase -i` replays in — its sequencer uses `--topo-order`. On a range
+ * whose two lines interleave by date the two disagree, and the plan then
+ * promised a replay order git would not have chosen:
+ *
+ *   git log --no-merges          A, C, B  -> todo: pick B, pick C, pick A
+ *   git log --no-merges --topo   C, B, A  -> todo: pick A, pick B, pick C
+ *   git rebase -i's OWN todo              -> pick A, pick B, pick C
+ *
+ * (An earlier version of this test asserted "no parent before its child" in the
+ * default order. That can never fail: git's walk only puts a parent on the
+ * frontier once a child has been emitted. The real invariant is agreement with
+ * git, and that IS checkable — so check it.)
+ */
+function interleavedRepo(): { root: string; git: (...a: string[]) => string } {
+  const root = mkdtempSync(`${tmpdir()}/gs-interleave-`);
+  const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+  git("init", "-q");
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "t");
+  git("config", "gc.auto", "0");
+  const at = (n: string, when: string): void => {
+    writeFileSync(`${root}/${n}.txt`, `${n}\n`);
+    execFileSync("git", ["add", "-A"], { cwd: root });
+    execFileSync("git", ["commit", "-qm", n], {
+      cwd: root,
+      env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
+    });
+  };
+  at("base", "2024-01-01T00:00:00Z");
+  git("branch", "trunk");
+  git("checkout", "-qb", "side");
+  at("B", "2024-01-09T00:00:00Z");
+  at("C", "2024-01-02T00:00:00Z");
+  git("checkout", "-q", "trunk");
+  git("checkout", "-qb", "feature");
+  at("A", "2024-01-03T00:00:00Z");
+  git("merge", "-q", "--no-ff", "-m", "merge", "side");
+  return { root, git };
+}
+
+/**
+ * git's own todo for `rebase -i <base>`, captured WITHOUT running it.
+ *
+ * The sequence editor must exit NON-ZERO: a plain `GIT_SEQUENCE_EDITOR=cat`
+ * returns 0, so git takes the todo as approved and executes the whole rebase —
+ * which silently rewrote the branch this is supposed to be measuring, and the
+ * comparison below then compared a linearized repo against itself and passed
+ * no matter what. Exiting 1 makes git abort with the repository untouched.
+ */
+function nativeTodo(root: string, base: string): string[] {
+  const editor = mkdtempSync(`${tmpdir()}/gs-seq-`) + "/seq.sh";
+  writeFileSync(editor, '#!/bin/sh\ncat "$1"\nexit 1\n');
+  chmodSync(editor, 0o755);
+  let out = "";
+  try {
+    execFileSync("git", ["rebase", "-i", base], {
+      cwd: root,
+      env: { ...process.env, GIT_SEQUENCE_EDITOR: editor },
+      encoding: "utf8",
+    });
+  } catch (e) {
+    out = String((e as { stdout?: string }).stdout ?? "");
+  }
+  assert.equal(
+    execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: root }).toString().trim(),
+    "feature",
+    "capturing git's todo must not run the rebase",
+  );
+  return out
+    .split("\n")
+    .filter((l) => l.startsWith("pick "))
+    .map((l) => l.split(/\s+/)[2]);
+}
+
+test("the plan replays in the order git itself would", async () => {
+  const { root } = interleavedRepo();
+  try {
+    const native = nativeTodo(root, "trunk");
+    assert.deepEqual(native, ["A", "B", "C"], "git's own todo, for reference");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const plan = await new RebaseBridge(repos).load({ base: "trunk" });
+    // The plan is newest-first on screen; `apply` reverses it to make the todo.
+    const ours = plan.commits.map((c) => c.subject).reverse();
+    assert.deepEqual(ours, native, "our todo is git's todo");
+  } finally {
     removeTempRepo(root);
   }
 });
