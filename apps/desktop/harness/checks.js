@@ -634,6 +634,39 @@
       c.ok(empty.classList.contains("is-error"), "and it reads as a failure, not a result");
     },
 
+    // Changing the theme used to rebuild the WHOLE Settings view, so a value
+    // half-typed into any OTHER card — the git identity, an SSH passphrase, the
+    // clone folder — was destroyed by a ⌘K theme switch. The Appearance card
+    // updates its own two controls instead. Same rule the rest of the app
+    // already follows: a form is not the app's to throw away.
+    "changing-the-theme-keeps-what-you-typed": async (f) => {
+      const c = check(f);
+      const view = $(".settings-view");
+      c.ok(!!view, "the Settings view is up");
+      if (!view) return;
+      // A marker on a node the theme control does NOT own. If the view is
+      // rebuilt, this node is discarded with everything typed into the cards
+      // around it — which is what a ⌘K theme switch used to do to a half-typed
+      // git identity, SSH passphrase or clone folder.
+      const other = $$(".settings-card").find((n) => !n.contains($(".settings-seg")));
+      c.ok(!!other, "and it has a card other than Appearance");
+      const marker = "gs-survives-" + Date.now();
+      (other ?? view).dataset.gsMarker = marker;
+
+      const themeBtn = $$(".settings-seg-btn").find((b) => !b.classList.contains("active"));
+      c.ok(!!themeBtn, "and a theme control to change");
+      if (!themeBtn) return;
+      themeBtn.click();
+      await settle(700);
+
+      c.ok(themeBtn.isConnected, "the control itself survived");
+      c.ok(themeBtn.classList.contains("active"), "and took the change");
+      c.ok(
+        !!document.querySelector(`[data-gs-marker="${marker}"]`),
+        "the OTHER cards were not rebuilt — nothing typed into them is lost",
+      );
+    },
+
     "row-meta-columns-align": (f) => {
       const c = check(f);
       // A row missing an optional datum must not slide its neighbours into a

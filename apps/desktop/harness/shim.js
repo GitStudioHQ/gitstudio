@@ -769,6 +769,17 @@
   }
   async function drive() {
     await until(() => q(".screen.repo"));
+    // Some views are NOT in the app's TABS list — Settings lives in the rail's
+    // footer — and `prefs.currentView` is validated against TABS, so seeding it
+    // silently fell back to "changes". The `settings` scene therefore screenshot
+    // and checked the CHANGES view for as long as this harness has existed, and
+    // Settings had no coverage at all. Click the rail item when the seed did not
+    // take, so a scene name always means the view it names.
+    const rail = q(`[data-view="${view}"]`);
+    if (rail && rail.getAttribute("aria-current") !== "page" && !rail.classList.contains("active")) {
+      rail.click();
+      await wait(250);
+    }
     for (const step of steps) {
       await wait(250);
       if (step === "bell") {

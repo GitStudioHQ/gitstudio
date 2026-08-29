@@ -176,13 +176,26 @@ async function rewordPaths(
  * is a lifetime we get wrong; a lifetime git already manages is free.
  */
 function rebaseStateDir(gitDir: string): string | undefined {
-  for (const d of ["rebase-merge", "rebase-apply"]) {
-    const full = path.join(gitDir, d);
-    try {
-      if (fs.statSync(full).isDirectory()) return full;
-    } catch {
-      /* not this layout */
+  const merge = path.join(gitDir, "rebase-merge");
+  try {
+    if (fs.statSync(merge).isDirectory()) return merge;
+  } catch {
+    /* not the merge backend */
+  }
+  // `rebase-apply` is NOT only a rebase. `git am` uses the same directory, and
+  // git tells them apart by a marker file inside it: `applying` for am,
+  // `rebasing` for a rebase on the apply backend. Treating the directory alone
+  // as proof reported an interrupted `git am` as a paused rebase, and every
+  // control the app then offered — Continue, Skip, Abort — runs `git rebase`,
+  // which refuses. (The prose check this replaced got that right by accident:
+  // git says "You are in the middle of an am session", which never matched.)
+  const apply = path.join(gitDir, "rebase-apply");
+  try {
+    if (fs.statSync(apply).isDirectory() && !fs.existsSync(path.join(apply, "applying"))) {
+      return apply;
     }
+  } catch {
+    /* not the apply backend either */
   }
   return undefined;
 }

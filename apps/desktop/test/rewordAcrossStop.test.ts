@@ -407,3 +407,65 @@ test("a second plan cannot overwrite the messages of the rebase already running"
     removeTempRepo(root);
   }
 });
+
+/**
+ * An interrupted `git am` is not a rebase.
+ *
+ * `git am` uses the SAME `.git/rebase-apply` directory a rebase on the apply
+ * backend uses; git tells them apart by a marker inside it — `applying` for am,
+ * `rebasing` for a rebase. Treating the directory alone as proof reported a
+ * stopped `am` as a paused rebase, so the Rebase view offered Continue, Skip
+ * and Abort — every one of which runs `git rebase` and is refused — while the
+ * actual `am` sat there unmentioned.
+ *
+ * The prose check this replaced got it right by accident: git says "You are in
+ * the middle of an am session", which never matched "rebase in progress".
+ */
+test("an interrupted git am is not reported as a rebase", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-amstate-`);
+  const patches = mkdtempSync(`${tmpdir()}/gs-ampatch-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(`${root}/f.txt`, "one\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+
+    git("checkout", "-qb", "side");
+    writeFileSync(`${root}/f.txt`, "two\n");
+    git("commit", "-qam", "side change");
+    git("format-patch", "-q", "-1", "-o", patches);
+
+    git("checkout", "-q", "-");
+    writeFileSync(`${root}/f.txt`, "conflicting\n");
+    git("commit", "-qam", "main change");
+
+    // Conflicts, and leaves an am session open.
+    try {
+      execFileSync("git", ["am", `${patches}/0001-side-change.patch`], { cwd: root, stdio: "ignore" });
+    } catch {
+      /* expected */
+    }
+    assert.ok(existsSync(`${root}/.git/rebase-apply/applying`), "an am session is open");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const plan = await new RebaseBridge(repos).load({});
+    assert.equal(
+      plan.inProgress,
+      false,
+      "the app must not offer rebase controls for someone else's am session",
+    );
+  } finally {
+    try {
+      execFileSync("git", ["am", "--abort"], { cwd: root, stdio: "ignore" });
+    } catch {
+      /* nothing to abort */
+    }
+    removeTempRepo(patches);
+    removeTempRepo(root);
+  }
+});

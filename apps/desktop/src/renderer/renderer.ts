@@ -912,9 +912,20 @@ class App {
    * the old variant, both stating as fact something that had already changed.
    */
   private invalidateAppearanceCard(): void {
-    this.viewCache.delete("settings");
-    if (this.currentView === "settings") void this.showSettingsView();
+    // Update the card IN PLACE. It used to rebuild the whole Settings view —
+    // which throws away every other card's in-progress state, so changing the
+    // theme with ⌘K while half-way through typing a Git identity, an SSH
+    // passphrase or a clone folder destroyed what was typed. That is the same
+    // rule this codebase already enforces everywhere else ("a form is not the
+    // app's to throw away"), broken by the fix for the card NEXT to it.
+    this.syncAppearanceCard?.();
+    // The cached DOM is still correct, because the card just updated itself —
+    // but a card built LATER must start from the current values, and that is
+    // what showSettingsView does on a fresh build.
   }
+
+  /** Re-sync the Appearance card's own controls, set when that card is built. */
+  private syncAppearanceCard?: () => void;
 
   /** The dock icon variant to show: pinned light/dark, or (auto) the resolved theme. */
   private dockVariant(): AppTheme {
@@ -2470,6 +2481,17 @@ class App {
     }
     markSegment(logoSeg, logoLabel);
     syncLogoPreview();
+    // Let a theme change from anywhere else — ⌘K, the menu, an OS flip — bring
+    // these two controls up to date without rebuilding the page around them.
+    this.syncAppearanceCard = (): void => {
+      if (!seg.isConnected) {
+        this.syncAppearanceCard = undefined;
+        return;
+      }
+      btns.forEach((b, i) => b.classList.toggle("active", modes[i].id === this.themeMode));
+      logoBtns.forEach((b, i) => b.classList.toggle("active", logoModes[i].id === this.logoMode));
+      syncLogoPreview();
+    };
     // The preview trails the segment so the card's two segmented controls keep
     // one left edge. What made it read as a fourth segment was its BORDER —
     // a bordered, rounded box a hair from three bordered, rounded buttons —
