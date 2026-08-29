@@ -1,0 +1,27 @@
+packages/git-service/src/StagingProvider.ts
+  s_26f5e669d3043c::t_25555bb7ed1ff0 1-2,275-288,291-302,304-318
+apps/desktop/test/stageLines.test.ts
+  s_26f5e669d3043c::t_fcb4b7858ffe49 4,91-144
+  s_26f5e669d3043c::t_7cae2a10c55562 1-3,5-90,145-148
+packages/git-service/src/GitProcess.ts
+  s_26f5e669d3043c::t_25555bb7ed1ff0 82-85
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_549cc070a5c26c 1762
+  s_26f5e669d3043c::t_d7abcec6513d6a 1751-1761,1763,1766-1776
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ffe8a38bddf5751e41c30a2d1419b562b2178b41",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
