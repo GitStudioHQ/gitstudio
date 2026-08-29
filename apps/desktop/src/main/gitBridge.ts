@@ -1748,10 +1748,32 @@ export class GitBridge {
           modified = await readWorking(ctx, rel);
         }
         const hunks = computeHunks(original, modified);
-        const selected = hunks.filter((h) => ranges.some((r) => rangesOverlap(h.modified, r)));
+        // WHICH side the selection is numbered in.
+        //
+        // The renderer takes line numbers from the pane you clicked, and that
+        // pane always shows `original` — the index. For staging, `modified` is
+        // the working tree and the two happen to agree often enough to look
+        // right. For UNSTAGING, `modified` is HEAD, and any staged edit that
+        // inserts or deletes lines shifts every later line: the selection then
+        // names one line in the index and a different one in HEAD. Selecting a
+        // staged change 5 lines below an insertion either matched the wrong hunk
+        // or matched none, and "Nothing to apply in the selection" is what the
+        // user got for clicking a line that is plainly right there.
+        const sideOf = (h: (typeof hunks)[number]): LineRange => (req.reverse ? h.original : h.modified);
+        const selected = hunks.filter((h) => ranges.some((r) => rangesOverlap(sideOf(h), r)));
         if (!selected.length) return { ok: false, changed: false, message: "Nothing to apply in the selection." };
         const content = applySelectedChanges(original, modified, selected.map((h) => h.modified));
-        await ctx.staging.stageContent(rel, content);
+        // …and report what actually happened. This discarded stageContent's
+        // result and answered ok:true unconditionally, so a write that failed
+        // was indistinguishable from one that worked.
+        const wrote = await ctx.staging.stageContent(rel, content);
+        if (wrote && typeof wrote === "object" && "ok" in wrote && !wrote.ok) {
+          return {
+            ok: false,
+            changed: false,
+            message: (wrote as { message?: string }).message ?? "Couldn't update the index.",
+          };
+        }
         return { ok: true, changed: true };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };

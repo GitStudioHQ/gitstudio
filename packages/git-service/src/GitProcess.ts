@@ -79,7 +79,10 @@ function makeAbortError(): Error {
  * This package must never import `vscode`.
  */
 export class GitProcess {
-  private readonly cwd: string;
+  /** The repository root every command runs in. Readable so a provider can ask
+   *  the filesystem something git will not answer — e.g. the mode of a file that
+   *  is not in the index yet. */
+  readonly cwd: string;
   private readonly gitPath: string;
   private readonly maxConcurrent: number;
   private readonly onRun?: GitRunHook;

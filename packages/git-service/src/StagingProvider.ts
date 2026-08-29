@@ -1,3 +1,5 @@
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import type { GitProcess } from "./GitProcess";
 
 export interface StagingOptions {
@@ -270,19 +272,50 @@ export class StagingProvider {
   }
 
   /**
-   * The file mode currently recorded for `rel` in the index (e.g. "100644" or
-   * "100755"), or "100644" when the path is not yet tracked. Parsed from
-   * `git ls-files -s -- <rel>`, whose first field is the mode.
+   * The mode to record for `rel` — asked of the WORKING TREE, not just the index.
+   *
+   * This used to return the mode already in the index, and "100644" whenever the
+   * path had no index entry. Both answers are wrong in the case that matters:
+   *
+   *   - a brand-new executable script staged through line or hunk staging has no
+   *     index entry, so it was recorded 100644 and the commit shipped a script
+   *     that will not run;
+   *   - `chmod +x` on a TRACKED file returned the old mode, so the bit could
+   *     never be staged at all through these paths.
+   *
+   * `core.fileMode=false` (Windows, some network filesystems) means the on-disk
+   * bit is not to be trusted, and there the recorded mode is the right answer —
+   * so that case keeps the old behaviour deliberately.
    */
   private async indexMode(rel: string, signal?: AbortSignal): Promise<string> {
-    const r = await this.proc.run(["ls-files", "-s", "--", rel], { signal });
-    if (r.code === 0) {
-      const match = /^(\d{6})\s/.exec(r.stdout);
-      if (match) {
-        return match[1];
-      }
+    const recorded = await this.recordedMode(rel, signal);
+    if (!(await this.fileModeHonoured(signal))) return recorded ?? "100644";
+    try {
+      const st = await lstat(join(this.proc.cwd, rel));
+      if (st.isSymbolicLink()) return "120000";
+      // Git records exactly two file modes; the owner-execute bit is the one it
+      // reads (see git-update-index(1) on --chmod).
+      return st.mode & 0o100 ? "100755" : "100644";
+    } catch {
+      // Gone, unreadable, or not a plain file — fall back to whatever the index
+      // already believed rather than inventing a mode.
+      return recorded ?? "100644";
     }
-    return "100644";
+  }
+
+  /** The mode `rel` already carries in the index, or undefined when untracked. */
+  private async recordedMode(rel: string, signal?: AbortSignal): Promise<string | undefined> {
+    const r = await this.proc.run(["ls-files", "-s", "--", rel], { signal });
+    if (r.code !== 0) return undefined;
+    return /^(\d{6})\s/.exec(r.stdout)?.[1];
+  }
+
+  /** Does this repo trust the filesystem's executable bit? */
+  private async fileModeHonoured(signal?: AbortSignal): Promise<boolean> {
+    const r = await this.proc.run(["config", "--bool", "core.fileMode"], { signal });
+    // Unset (exit 1) means git's default, which is true on POSIX.
+    if (r.code !== 0) return process.platform !== "win32";
+    return r.stdout.trim() !== "false";
   }
 
   /** The staged (index) version of a file via `git show :<rel>`, or "". */
