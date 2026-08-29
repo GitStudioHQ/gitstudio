@@ -40,7 +40,7 @@ import type {
   WireRef,
   RowStat,
 } from "@gitstudio/host-bridge/graphProtocol";
-import { renderRowGutterSVG, laneCenterX } from "./gutter";
+import { renderRowGutterSVG, laneCenterX, lastDrawableLane } from "./gutter";
 import {
   paletteForTheme,
   observeGraphTheme,
@@ -1545,6 +1545,9 @@ export class CommitGraph extends LitElement {
   private rowStats = new Map<string, RowStat>();
   /** Shas whose stats have been requested but not yet returned. */
   private pendingStats = new Set<string>();
+  /** Shas the host ANSWERED for and had no stats for. Asking again returns the
+   *  same nothing, and re-asking on every repaint is a request storm. */
+  private readonly statsUnavailable = new Set<string>();
   private loadMoreArmed = true;
   /** lane color the pointer is hovering, for the focus-dim affordance. */
   private focusColor: number | undefined;
@@ -1610,7 +1613,18 @@ export class CommitGraph extends LitElement {
       this.loadMoreArmed = true;
       // …and re-run the live search over it. Row indices shift on append, so
       // the old match list is stale as well as short.
-      if (this.searchQuery.trim()) this.rescanMatches();
+      //
+      // `searchMatches` is a plain field, and this runs in `updated()` — AFTER
+      // the render that the new rows triggered. So the header had already been
+      // painted from the old list, and nothing scheduled another paint: the
+      // counter stayed a page behind, and a query whose first page had no hits
+      // went on saying "No results" over rows it had just highlighted. Ask for
+      // one more render, and only when the answer actually moved.
+      if (this.searchQuery.trim()) {
+        const before = `${this.searchMatches.length}/${this.matchIdx}`;
+        this.rescanMatches();
+        if (`${this.searchMatches.length}/${this.matchIdx}` !== before) this.requestUpdate();
+      }
     }
     // The `.scroller` only exists once we leave the placeholder states, and a
     // status flip swaps the whole subtree. Lazily (re)bind the virtualizer to
@@ -1698,8 +1712,7 @@ export class CommitGraph extends LitElement {
    * Lanes past this fold onto it, marked.
    */
   private maxDrawableColumn(width: number): number {
-    const usable = width - NODE_INSET - COL_WIDTH / 2 - (NODE_RADIUS + 2);
-    return Math.max(0, Math.floor(usable / COL_WIDTH));
+    return lastDrawableLane(width, COL_WIDTH, NODE_INSET, NODE_RADIUS);
   }
 
   private applyGutterWidth(): void {
@@ -1907,10 +1920,15 @@ export class CommitGraph extends LitElement {
     // everything snaps into place only on pointerup. The keyboard resize path
     // has always re-rendered on every nudge; this makes the drag agree.
     //
-    // Only `refs` needs it — the gutter derives its width from the lane count,
-    // never from colWidths.graph. Coalesced to one frame because pointermove
-    // fires far faster than we can lay out rows.
-    if (d.id === "refs" && this.resizeRaf === 0) {
+    // `graph` needs it for the same reason now. That was not true when this was
+    // written — the gutter derived its width purely from the lane count — but
+    // the SVG is sized from `colWidths.graph` since deep lanes became
+    // draggable-to-reveal, so without a re-render the column widens while the
+    // rows keep their old canvas and the fold does not move. The feature that
+    // change was made FOR was inert during the drag.
+    //
+    // Coalesced to one frame: pointermove fires far faster than we lay out rows.
+    if ((d.id === "refs" || d.id === "graph") && this.resizeRaf === 0) {
       this.resizeRaf = requestAnimationFrame(() => {
         this.resizeRaf = 0;
         if (this.drag) this.renderRows();
@@ -2302,7 +2320,12 @@ export class CommitGraph extends LitElement {
     for (const item of items) {
       lastIndex = Math.max(lastIndex, item.index);
       const row = this.rows[item.index];
-      if (row && !this.rowStats.has(row.sha) && !this.pendingStats.has(row.sha)) {
+      if (
+        row &&
+        !this.rowStats.has(row.sha) &&
+        !this.pendingStats.has(row.sha) &&
+        !this.statsUnavailable.has(row.sha)
+      ) {
         needStats.push(row.sha);
       }
       htmlOut += this.rowHtml(item, gutterW);
@@ -2358,20 +2381,30 @@ export class CommitGraph extends LitElement {
   }
 
   /**
-   * Give up on a batch of stat requests WITHOUT caching an answer.
+   * Release a batch of stat requests that produced no answer.
    *
    * `renderRows` skips any sha still in `pendingStats`, and `setRowStats` only
-   * clears the ones it was actually given — so a batch that failed, or came
-   * back short (the host caps at 60 and drops shas it cannot resolve), left
-   * those shas pending forever. Their CHANGES cells stayed blank for the rest
-   * of the session: scrolling away and back re-rendered the same skip, and
-   * Refresh rebuilt rows whose shas were still in the set. Clearing them means
-   * the next repaint simply asks again.
+   * clears the ones it was actually GIVEN — so a batch that failed, or came
+   * back short, left those shas pending forever and their CHANGES cells blank
+   * for the rest of the session.
+   *
+   * The two cases are NOT the same, and treating them alike is a request storm:
+   *
+   *   • `answered` — the host replied, and simply had nothing for these shas.
+   *     That is a real answer ("no stats for this commit"), so record it and
+   *     never ask again. Re-asking would produce the same nothing, forever.
+   *   • rejected — the host errored. Worth another try, but NOT right now:
+   *     clearing and re-rendering here would ask again immediately, get the
+   *     same error, and clear and re-render again. The next natural repaint
+   *     (a scroll, a resize) asks, which is bounded by the user.
+   *
+   * So this never calls `renderRows` itself. That call was the cycle.
    */
-  failRowStats(shas: readonly string[]): void {
-    let any = false;
-    for (const sha of shas) any = this.pendingStats.delete(sha) || any;
-    if (any) this.renderRows();
+  failRowStats(shas: readonly string[], answered = true): void {
+    for (const sha of shas) {
+      this.pendingStats.delete(sha);
+      if (answered) this.statsUnavailable.add(sha);
+    }
   }
 
   /**

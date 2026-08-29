@@ -3,6 +3,7 @@ import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import type { RepoStore } from "./repoStore";
 import type {
   RebaseApplyRequest,
+  RebaseApplyRow,
   RebaseCommitInfo,
   RebaseOutcomeWire,
   RebasePlanState,
@@ -94,7 +95,12 @@ export class RebaseBridge {
       notes.push(`“${req.base ?? "that base"}” doesn't resolve here — showing the whole branch instead.`);
     }
     if (commits.length >= MAX_PLAN_COMMITS) {
-      notes.push(`Showing the first ${MAX_PLAN_COMMITS} commits; pick a nearer base to narrow it.`);
+      // Say what happens to the rest, not just that they are not shown. They
+      // ride along as plain picks (see apply → commitsBelowCap); before that
+      // they were silently deleted, so this note was worse than incomplete.
+      notes.push(
+        `Showing the newest ${MAX_PLAN_COMMITS} commits — the older ones in this range are kept as-is. Pick a nearer base to narrow it.`,
+      );
     }
     return {
       ok: true,
@@ -132,23 +138,41 @@ export class RebaseBridge {
     // every commit a new sha, so a branch pointing at an old one is stranded on
     // a line nothing references — `update-ref` in the todo moves it across.
     const tips = new Map<string, string[]>();
-    const current = (
-      await ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"])
+    // FULL refnames, not `%(refname:short)`. The short form is the shortest
+    // UNAMBIGUOUS name, so a branch that collides with a tag — v1.2, release,
+    // stable, all routine — comes back as `heads/stacked-a`. That string went
+    // straight into `update-ref refs/heads/heads/stacked-a`: the rebase created
+    // a junk branch under that name, reported success, and left the user's real
+    // branch on a parallel line no longer in the rebased history — exactly the
+    // orphaning this feature exists to prevent. Verified on a real repo.
+    // `RefProvider.ts` already says this in a comment; this code did not follow it.
+    //
+    // `%(worktreepath)` too: git's own --update-refs REFUSES to move a branch
+    // checked out in another worktree, writing a comment into the todo instead
+    // ("# Ref refs/heads/x checked out at ..."). Moving it anyway leaves that
+    // worktree's HEAD on a rewritten commit while its index and working tree
+    // stay behind — `git status` there then shows staged changes nobody made.
+    // The app ships a Worktrees feature, so this is a normal setup for its users.
+    const headRef = (
+      await ctx.process.run(["symbolic-ref", "--quiet", "HEAD"])
     ).stdout.trim();
+    const SEP = "\x1e";
     const refs = await ctx.process.run([
       "for-each-ref",
-      "--format=%(objectname) %(refname:short)",
+      `--format=%(objectname)${SEP}%(refname)${SEP}%(worktreepath)`,
       "refs/heads",
     ]);
     if (refs.code === 0) {
       for (const line of refs.stdout.split("\n")) {
-        const i = line.indexOf(" ");
-        if (i <= 0) continue;
-        const sha = line.slice(0, i);
-        const name = line.slice(i + 1).trim();
+        if (!line.trim()) continue;
+        const [sha, ref, worktree] = line.split(SEP);
+        if (!sha || !ref?.startsWith("refs/heads/")) continue;
         // Never the branch being rebased: git moves that one itself, and
         // naming it in an update-ref would fight the rebase for it.
-        if (!name || name === current) continue;
+        if (ref === headRef) continue;
+        // Nor one checked out anywhere else — see above.
+        if (worktree?.trim()) continue;
+        const name = ref.slice("refs/heads/".length);
         tips.set(sha, [...(tips.get(sha) ?? []), name]);
       }
     }
@@ -167,6 +191,34 @@ export class RebaseBridge {
         ...(branches?.length ? { branches } : {}),
       });
     }
+    return out;
+  }
+
+  /**
+   * Commits in `base..HEAD` that the plan does not mention — the tail the
+   * display cap hid. Returned as plain picks so applying the plan cannot
+   * delete history the user never saw. `null` means we could not read the
+   * range, which must block the apply rather than silently truncate it.
+   */
+  private async commitsBelowCap(
+    base: string,
+    rows: RebaseApplyRow[],
+  ): Promise<RebaseApplyRow[] | null> {
+    const ctx = this.repos.getContext();
+    if (!ctx) return null;
+    const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
+    const sep = "\x1f";
+    const r = await ctx.process.run(["log", `--format=%H${sep}%s`, range]);
+    if (r.code !== 0) return null;
+    const known = new Set(rows.map((x) => x.sha));
+    const out: RebaseApplyRow[] = [];
+    for (const line of r.stdout.split("\n")) {
+      if (!line.trim()) continue;
+      const [sha, subject] = line.split(sep);
+      if (!sha || known.has(sha)) continue;
+      out.push({ action: "pick", sha, subject: subject ?? "" });
+    }
+    // git lists newest-first, and so does the plan; appending keeps that order.
     return out;
   }
 
@@ -204,10 +256,32 @@ export class RebaseBridge {
     if (!rows.length) {
       return { status: "failed", message: "Nothing to rebase." };
     }
+
+    // The todo IS the plan: a commit in the range but NOT in the todo is
+    // dropped. `loadCommits` caps the list at MAX_PLAN_COMMITS so a huge range
+    // does not render thousands of rows — a DISPLAY limit — and the note said
+    // exactly that ("Showing the first 200 commits"). But apply() then built
+    // the todo from those 200 rows and ran it over the whole range, so
+    // rebasing 205 commits DELETED the 5 oldest and reported "done".
+    // Measured, on a real repo, before this: BEFORE=205 AFTER=200 LOST=5.
+    //
+    // The commits below the cap are ones the user was never shown and never
+    // made a decision about, so they ride along untouched: appended in display
+    // order (which is newest-first, so appending puts them oldest-last), which
+    // `buildRebasePlan`'s reversal turns into the first picks of the todo.
+    const carried = await this.commitsBelowCap(req.base, rows);
+    if (carried === null) {
+      return {
+        status: "failed",
+        message:
+          "Couldn't read the full commit range, so the plan can't be applied safely. Pick a nearer base and try again.",
+      };
+    }
+    const fullRows = [...rows, ...carried];
     // Display order (newest first) becomes git's todo order in buildRebasePlan,
     // shared with the extension because every way to get this wrong is silent.
     const updateRefs = req.updateRefs ?? (await this.repoUpdateRefs());
-    const built = buildRebasePlan(rows, { updateRefs });
+    const built = buildRebasePlan(fullRows, { updateRefs });
     if (!built.ok) {
       return { status: "failed", message: built.message };
     }

@@ -39,6 +39,7 @@ beforeEach(() => {
   });
   git("config", "user.email", "dev@example.com");
   git("config", "user.name", "Dev");
+    git("config", "gc.auto", "0"); // no background gc racing the cleanup
   for (let i = 0; i < 12; i++) {
     writeFileSync(join(repo, `f${i}.txt`), `${i}\n`);
     git("add", ".");

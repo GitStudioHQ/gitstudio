@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync, chmodSync } from "node:fs";
+import { writeFileSync, mkdtempSync, chmodSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
@@ -25,6 +26,7 @@ function repo(): { root: string; git: (...a: string[]) => string } {
   git("init", "-q");
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
+  git("config", "gc.auto", "0"); // no background gc racing the cleanup
   return { root, git };
 }
 
@@ -66,7 +68,7 @@ test("unstaging a line works when a staged insertion has shifted the numbering",
       "while the OTHER staged change is untouched — only what was selected moves",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -89,7 +91,7 @@ test("staging a line still applies the working-tree change it names", async () =
     assert.equal(staged[2], "c-EDIT", "the selected line is staged");
     assert.equal(staged[0], "a", "and the unselected one is not");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -122,7 +124,7 @@ test("a new executable script keeps its bit through line staging", async (t) => 
     const entry = git("ls-files", "-s", "--", "run.sh").trim();
     assert.match(entry, /^100755 /, `it is staged executable, not 100644 (${entry})`);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -143,6 +145,6 @@ test("line staging does not invent an executable bit", async () => {
     const entry = git("ls-files", "-s", "--", "notes.md").trim();
     assert.match(entry, /^100644 /, `an ordinary file stays 100644 (${entry})`);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });

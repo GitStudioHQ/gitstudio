@@ -167,7 +167,14 @@ export class SyncOps {
       // Source is the local branch by full ref (a bare name resolves against
       // refs/tags too); destination is the name the upstream actually has.
       const pair = await this.upstreamPair(opts?.signal, branch);
-      if (pair && pair.remoteBranch !== pair.local) {
+      if (pair) {
+        // ALWAYS fully qualified, not only when the names differ. A bare name is
+        // resolved against refs/heads AND refs/tags, so on a repo where a tag
+        // shares the branch's name git refuses outright:
+        //   error: src refspec release matches more than one
+        // The HEAD path above has said this in a comment since it was written;
+        // the named-branch path qualified only the rename case and inherited
+        // the bug for every ordinary push.
         remote = pair.remote;
         refspec = `refs/heads/${pair.local}:refs/heads/${pair.remoteBranch}`;
       }
@@ -188,7 +195,14 @@ export class SyncOps {
       if (refspec) {
         args.push(refspec);
       } else if (branch) {
-        args.push(branch);
+        // Qualify here too. This is the PUBLISH path — a branch with no
+        // upstream yet, so `upstreamPair` above found nothing to resolve — and
+        // a bare name is matched against refs/heads AND refs/tags, so
+        // publishing a branch that shares a tag's name failed outright with
+        // "error: src refspec v2 matches more than one". Verified against real
+        // git, including that `--set-upstream` still tracks correctly with an
+        // explicit src:dst ("branch 'v2' set up to track 'origin/v2'").
+        args.push(`refs/heads/${branch}:refs/heads/${branch}`);
       }
     }
     const r = await this.proc.run(args, { signal: opts?.signal });

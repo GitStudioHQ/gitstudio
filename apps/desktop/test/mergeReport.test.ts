@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
@@ -26,6 +27,7 @@ function conflictRepo(): { root: string; git: (...a: string[]) => string } {
   git("init", "-q");
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
+  git("config", "gc.auto", "0"); // no background gc racing the cleanup
   writeFileSync(`${root}/f.txt`, "one\n");
   git("add", ".");
   git("commit", "-qm", "base");
@@ -52,7 +54,7 @@ test("a conflicted merge reports git's own conflict text, not 'The operation fai
     assert.match(msg, /CONFLICT/i, `it names the conflict (got: ${msg})`);
     assert.match(msg, /f\.txt/, "and the file it is in");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -71,7 +73,7 @@ test("a merge that cannot start still reports git's refusal", async () => {
     assert.notEqual(r.message ?? "", "The operation failed.", "neither channel is dropped");
     assert.ok((r.message ?? "").length > 10, `git's own words survive (got: ${r.message})`);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -97,6 +99,6 @@ test("a clean merge still just succeeds", async () => {
     const r = await bridge.branchMerge({ name: "side" });
     assert.equal(r.ok, true, `a clean merge succeeds (${r.message ?? ""})`);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });

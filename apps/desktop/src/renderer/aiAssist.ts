@@ -105,11 +105,29 @@ export async function streamInto(
   const prev = textarea.value;
   textarea.value = "";
   let got = false;
+  /**
+   * Stop the moment the box we are writing into leaves the document.
+   *
+   * A stream outlives a repo switch, a route change and a view rebuild — and it
+   * went on appending to a detached textarea, then dispatching `input` on it.
+   * For the commit composer that meant repo A's generated message being written
+   * into the draft while repo B was open, silently replacing whatever was
+   * typed there. What is on screen is the only thing worth writing to.
+   */
+  const gone = (): boolean => !textarea.isConnected;
   const res = await streamTask(task, input, (d) => {
+    if (gone()) return;
     got = true;
     textarea.value += d;
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  if (gone()) {
+    if (btn) {
+      btn.disabled = false;
+      if (original) btn.innerHTML = original;
+    }
+    return;
+  }
   if (btn) {
     btn.disabled = false;
     if (original) btn.innerHTML = original;

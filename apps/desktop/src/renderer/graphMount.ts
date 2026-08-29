@@ -64,9 +64,13 @@ export class GraphMount {
             // Release the whole batch, keep what came back.
             .then((stats) => {
               this.element.setRowStats(stats);
-              this.element.failRowStats(action.shas);
+              // Anything the host did not return is an ANSWER of "no stats for
+              // this commit" — recorded, not re-asked.
+              this.element.failRowStats(action.shas, true);
             })
-            .catch(() => this.element.failRowStats(action.shas));
+            // An ERROR is worth retrying, but not immediately: `false` releases
+            // the shas without recording them, and the next repaint asks.
+            .catch(() => this.element.failRowStats(action.shas, false));
           break;
       }
     };

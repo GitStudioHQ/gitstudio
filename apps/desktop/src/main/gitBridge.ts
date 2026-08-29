@@ -7,6 +7,7 @@
 // shared by both hosts).
 
 import { readFile, readdir, writeFile, stat } from "node:fs/promises";
+import { ExpectedError } from "./expectedError";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
@@ -117,7 +118,16 @@ export function containedPath(root: string, rel: string): string | undefined {
 function mustSucceed(result: { stdout: string; stderr?: string; code?: number }, what: string): string {
   if (result.code !== undefined && result.code !== 0) {
     const detail = (result.stderr ?? "").trim().split("\n")[0];
-    throw new Error(detail ? `${what}: ${detail}` : `${what} (git exited ${result.code})`);
+    // ExpectedError, not Error. Git failing here means the REPOSITORY is in a
+    // state git refuses to read — a corrupt index, a held index.lock, wrong
+    // permissions, the folder moved — which is a condition the user is in, not
+    // a defect in this app. As a plain Error every one of those filed a crash
+    // report, and the status read runs on a watcher: a single stuck lock would
+    // have produced a report per tick. The renderer is unaffected; it receives
+    // the same message and shows the same error state with its Retry.
+    throw new ExpectedError(
+      detail ? `${what}: ${detail}` : `${what} (git exited ${result.code})`,
+    );
   }
   return result.stdout;
 }
@@ -1792,11 +1802,17 @@ export class GitBridge {
         // result and answered ok:true unconditionally, so a write that failed
         // was indistinguishable from one that worked.
         const wrote = await ctx.staging.stageContent(rel, content);
-        if (wrote && typeof wrote === "object" && "ok" in wrote && !wrote.ok) {
+        if (!wrote.ok) {
+          // `stderr`, not `message`. CommitResult is `{ ok, stderr }` — it has
+          // never had a `message` — so the cast always read undefined and the
+          // fallback always won. Every real failure said "Couldn't update the
+          // index." while git's own text was thrown away, including the one
+          // that tells you exactly what to do: "Another git process seems to be
+          // running in this repository… remove the file manually to continue."
           return {
             ok: false,
             changed: false,
-            message: (wrote as { message?: string }).message ?? "Couldn't update the index.",
+            message: wrote.stderr.trim() || "Couldn't update the index.",
           };
         }
         return { ok: true, changed: true };
@@ -1865,11 +1881,31 @@ export class GitBridge {
             return { ok: true, changed: true };
           }
         }
-        const show = await ctx.process.run(["show", `:${stage}:${req.path}`]);
-        if (show.code !== 0) return { ok: false, changed: false, message: show.stderr.trim() };
-        const abs = containedPath(ctx.root, req.path);
-        if (!abs) return { ok: false, changed: false, message: "Path escapes the repository." };
-        await writeFile(abs, show.stdout, "utf8");
+        // Let GIT write the bytes. This used to `git show :N:path`, take the
+        // stdout as a STRING and write it back as UTF-8 — and `GitProcess.run`
+        // decodes stdout with `Buffer.concat(...).toString("utf8")`, which is
+        // lossy for anything that is not UTF-8 text. So resolving a conflicted
+        // PNG, PDF or any binary asset wrote mangled bytes over it and STAGED
+        // them, then reported success: verified on a real 512×512 PNG, whose
+        // header came back `efbfbd504e470d0a` instead of `89504e470d0a1a0a`,
+        // 36,078 bytes in and 67,288 bytes out. Take-ours/take-theirs is the
+        // only resolution the app offers for a binary conflict, so this was the
+        // only path available, and it destroyed the file.
+        //
+        // `checkout --ours/--theirs` never decodes anything.
+        const co = await ctx.process.run([
+          "checkout",
+          req.side === "ours" ? "--ours" : "--theirs",
+          "--",
+          req.path,
+        ]);
+        if (co.code !== 0) {
+          return {
+            ok: false,
+            changed: false,
+            message: co.stderr.trim() || `Couldn't take the ${req.side === "ours" ? "current" : "incoming"} version.`,
+          };
+        }
         const r = await ctx.process.run(["add", "--", req.path]);
         if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
         return { ok: true, changed: true };

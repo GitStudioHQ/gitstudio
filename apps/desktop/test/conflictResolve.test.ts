@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync, existsSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdtempSync, existsSync, mkdirSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
@@ -26,6 +27,7 @@ function conflictRepo(): { root: string; git: (...a: string[]) => string } {
   git("init", "-q");
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
+  git("config", "gc.auto", "0"); // no background gc racing the cleanup
   mkdirSync(`${root}/app`);
   writeFileSync(`${root}/app/keep.py`, "print('base')\n");
   writeFileSync(`${root}/app/drop.py`, "print('base')\n");
@@ -76,7 +78,7 @@ test("taking the side that DELETED the file deletes it", async () => {
     const status = git("status", "--porcelain=v1");
     assert.ok(!/^U|^.U/m.test(status.replace(/^.. app\/both\.py$/m, "")), "both are resolved");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -95,7 +97,7 @@ test("taking the side that KEPT the file keeps it", async () => {
     assert.equal(keepTheirs.ok, true, `keeping their version succeeds (${keepTheirs.message ?? ""})`);
     assert.ok(existsSync(`${root}/app/drop.py`), "their edited file is restored");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -113,6 +115,6 @@ test("an ordinary content conflict still resolves to the chosen side", async () 
       "the staged content is the side that was chosen",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });

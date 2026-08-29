@@ -49,6 +49,11 @@ const CASES = [
   ["run-detail-hides-dead-actions", "actions~open9100"],
   ["run-detail-steps-visible", "actions~open9100"],
   ["row-meta-columns-align", "explore~type:git~key:Enter"],
+  ["a-toast-is-reachable-over-a-dialog", "branches~text:Push~palette"],
+  [
+    "escape-still-works-after-coming-back",
+    "issues~open31~click:%5Bdata-view%3D%22prs%22%5D~click:%5Bdata-view%3D%22issues%22%5D",
+  ],
   ["code-hits-show-what-matched", "explore~click:.explore-tab:nth-child(4)~type:git~key:Enter"],
   [
     "collapsing-one-job-leaves-the-others-alone",

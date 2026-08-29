@@ -85,6 +85,14 @@ export function holdBackground(keep: HTMLElement): () => void {
   for (const node of Array.from(document.body.children)) {
     const el = node as HTMLElement;
     if (el === keep || el.contains(keep) || el.hasAttribute("inert")) continue;
+    // Never a LIVE REGION. Toasts live in a persistent `#toast-stack` on the
+    // body, and inerting it made a toast raised over an open palette or dialog
+    // unclickable — aiming at its Dismiss ✕ dismissed the layer instead and
+    // threw away what had been typed — and, worse, silent: an `aria-live` host
+    // inside an inert subtree announces nothing, so an error toast raised while
+    // a dialog was open was never read out at all. A live region is not part of
+    // the page being held back; it is how the app speaks.
+    if (isLiveRegion(el)) continue;
     el.setAttribute("inert", "");
     held.push(el);
   }
@@ -94,6 +102,14 @@ export function holdBackground(keep: HTMLElement): () => void {
     released = true;
     for (const el of held) el.removeAttribute("inert");
   };
+}
+
+/** A host whose whole job is to announce things. Inerting one silences it. */
+function isLiveRegion(el: HTMLElement): boolean {
+  return (
+    el.id === "toast-stack" ||
+    el.matches('[aria-live], [role="status"], [role="alert"], [role="log"]')
+  );
 }
 
 /**

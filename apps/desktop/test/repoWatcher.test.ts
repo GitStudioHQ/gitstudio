@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RepoWatcher, shouldRefreshFor, DEBOUNCE_MS } from "../src/main/repoWatcher";
@@ -170,7 +171,7 @@ test("a working-tree edit fires, and is NOT reported as a git-dir change", async
     assert.equal(info.gitDir, false, "a file edit must not drag a graph reload with it");
   } finally {
     w.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    removeTempRepo(dir);
   }
 });
 
@@ -190,7 +191,7 @@ test("a .git change IS reported as one, so history gets re-read", async () => {
     assert.equal(info.gitDir, true);
   } finally {
     w.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    removeTempRepo(dir);
   }
 });
 
@@ -216,7 +217,7 @@ test("a burst of writes collapses into ONE refresh", async () => {
     assert.ok(calls >= 1 && calls <= 2, `fifty writes produced ${calls} refreshes`);
   } finally {
     w.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    removeTempRepo(dir);
   }
 });
 
@@ -248,7 +249,7 @@ test("ignored churn produces NO refresh at all", async () => {
     assert.ok(calls <= 1, `an npm install must not wake the app up repeatedly (got ${calls})`);
   } finally {
     w.dispose();
-    rmSync(dir, { recursive: true, force: true });
+    removeTempRepo(dir);
   }
 });
 
@@ -262,7 +263,7 @@ test("dispose() stops it, so a closed repo cannot keep firing", async () => {
   writeFileSync(join(dir, "after.txt"), "x\n");
   await new Promise((r) => setTimeout(r, 800));
   assert.equal(calls, 0);
-  rmSync(dir, { recursive: true, force: true });
+  removeTempRepo(dir);
 });
 
 test("a missing directory degrades instead of throwing", () => {

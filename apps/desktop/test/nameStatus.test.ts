@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { parseNameStatus } from "../src/main/gitBridge";
 
@@ -24,6 +25,7 @@ function repo(): { root: string; git: (...a: string[]) => string } {
   git("init", "-q");
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
+  git("config", "gc.auto", "0"); // no background gc racing the cleanup
   return { root, git };
 }
 
@@ -52,7 +54,7 @@ test("non-ASCII paths survive, verbatim, from real git", () => {
       assert.ok(!f.path.startsWith('"'), `no wrapping quotes left in ${f.path}`);
     }
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -70,7 +72,7 @@ test("a rename reports the destination, not the source", () => {
     assert.equal(files[0].status, "R");
     assert.equal(files[0].path, "nouveau-nom.txt", "the destination — the path that exists now");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });
 
@@ -98,6 +100,6 @@ test("ordinary ASCII commits parse exactly as before", () => {
       "add / delete / modify all still land",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTempRepo(root);
   }
 });

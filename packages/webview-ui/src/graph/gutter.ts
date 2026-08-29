@@ -47,6 +47,41 @@ export interface GutterOptions {
 
 /** Lane stroke width — thin enough to feel native, thick enough to read. */
 const STROKE_WIDTH = 2.1;
+/**
+ * How far right of a node's centre the FOLD marker reaches, in px, measured
+ * from the node's edge: the chevron starts 3.5px out, is 3.2px wide, and its
+ * 1.6px stroke adds a further 0.8px.
+ *
+ * Exported because the caller has to reserve this space when it decides which
+ * lane is the last one that fits. Reserving only the node's radius clipped the
+ * marker away at roughly one gutter width in four — and a folded node with no
+ * marker is indistinguishable from a real lane, which is worse than the
+ * clipping this whole mechanism exists to prevent.
+ */
+export const FOLD_MARKER_REACH = 3.5 + 3.2 + 0.8;
+
+/**
+ * The deepest lane whose node AND fold marker fit inside `width`.
+ *
+ * Lives here, beside the drawing it constrains, and is derived by asking
+ * `laneCenterX` itself rather than inverting it arithmetically — that function
+ * half-pixel-aligns (`round(...) + 0.5`), so a closed-form estimate disagreed
+ * with the real centre and clipped the marker at about one gutter width in
+ * four. One implementation, so the renderer and its caller cannot drift.
+ */
+export function lastDrawableLane(
+  width: number,
+  colWidth: number,
+  inset: number,
+  nodeRadius: number,
+): number {
+  const reach = nodeRadius + FOLD_MARKER_REACH;
+  const est = Math.floor((width - inset - colWidth / 2 - reach) / colWidth) + 1;
+  for (let c = Math.max(0, est); c > 0; c--) {
+    if (laneCenterX(c, colWidth, inset) + reach <= width) return c;
+  }
+  return 0;
+}
 /** Dimmed opacity for unrelated lanes when a lane is focused. */
 const DIM_OPACITY = 0.2;
 

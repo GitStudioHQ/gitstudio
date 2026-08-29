@@ -268,6 +268,10 @@ class App {
    *  Cleared on a repo switch; busted per-view on an explicit refresh. */
   private viewCache = new Map<string, HTMLElement>();
   /** Views safe to keep alive (no Monaco surface / dispose lifecycle of their own). */
+  /** A search that came back rate-limited is a REFUSAL, not an answer — caching
+   *  it makes every retry a cache hit for the whole TTL. See cache.gget. */
+  private static readonly SEARCH_KEEP = { cacheable: (r: { limited?: unknown }) => !r.limited };
+
   private static readonly KEEPALIVE = new Set([
     "branches",
     "explore",
@@ -1006,6 +1010,12 @@ class App {
         a?.id === b?.id &&
         a?.sha === b?.sha &&
         a?.path === b?.path &&
+        // The FILE too. Without it, opening a file from the listing it lives in
+        // compares equal to the listing (same `path`), so no history entry was
+        // pushed: Back skipped past the folder entirely and Forward could never
+        // return to the file. That is half of what SectionTarget.file was added
+        // for, and it was silently doing nothing.
+        a?.file === b?.file &&
         a?.ref === b?.ref &&
         (a?.list ?? false) === (b?.list ?? false);
       if (!last || last.view !== id || (target && !same(last.target, target))) {
@@ -1486,8 +1496,8 @@ class App {
     }
     if (!b.current) {
       actions.append(
-        textBtn("Checkout", "Check out this branch", (btn) => void this.checkoutRef(b.name, btn)),
-        textBtn("Delete", "Delete this branch", () => void this.deleteBranch(b.name), true),
+        textBtn("Checkout", "Check out this branch", (btn) => void this.checkoutRef(b.name, btn), false, b.name),
+        textBtn("Delete", "Delete this branch", () => void this.deleteBranch(b.name), true, b.name),
       );
     }
     // Clicking a row opens the branch's PEEK — a browsable card with its recent
@@ -3429,11 +3439,18 @@ class App {
     // this whole subtree. Without a surviving draft, typing a commit message and
     // then staging one more file silently threw the message away.
     textarea.value = this.composerDraft.message;
+    // The repo this composer BELONGS to, captured now — not read at event time.
+    // An `input` fires for a streaming AI message too, and that stream outlives
+    // a repo switch: repo A's generated message landed in repo B's box, stamped
+    // with B, so the guard above then PROTECTED it and it survived every later
+    // re-open of B. Stamping the repo the composer was built for makes the
+    // guard drop it instead, which is what it is for.
+    const composerRepo = this.currentRepo?.root;
     textarea.addEventListener("input", () => {
       this.composerDraft.message = textarea.value;
       // Whose draft this is. Without it the reset above cannot tell a repo
       // SWITCH (drop it) from a re-open of the same repo (keep it).
-      this.composerDraftRoot = this.currentRepo?.root;
+      this.composerDraftRoot = composerRepo;
     });
     /**
      * Put text in the composer the way a keystroke would.
@@ -4004,18 +4021,18 @@ class App {
       const actions = el("div", "row-actions");
       if (kind === "staged") {
         actions.appendChild(
-          textBtn("Unstage", "Unstage this file", () => void this.changesAction("unstage", f.path)),
+          textBtn("Unstage", "Unstage this file", () => void this.changesAction("unstage", f.path), false, f.path),
         );
       } else {
         actions.appendChild(
-          textBtn("Stage", "Stage this file", () => void this.changesAction("stage", f.path)),
+          textBtn("Stage", "Stage this file", () => void this.changesAction("stage", f.path), false, f.path),
         );
         actions.appendChild(
           textBtn("Discard", "Discard changes to this file", () => {
             void confirmDialog(this.discardConfirm([f.path])).then((ok) => {
               if (ok) void this.changesAction("discard", f.path);
             });
-          }, true),
+          }, true, f.path),
         );
       }
       row.appendChild(actions);
@@ -5342,7 +5359,11 @@ class App {
             },
           ],
         }),
-        gget("search:repos", { query, sort: "best", page: 1 }, 60_000)
+        // Never remember a rate-limit refusal. The palette shares the search
+        // cache with Explore, so a refusal cached here left Explore's own
+        // "Retry now" answering from cache — no request made — for the whole
+        // 60s window. Same guard Explore's fetchPage uses.
+        gget("search:repos", { query, sort: "best", page: 1 }, 60_000, App.SEARCH_KEEP)
           .then((page): PaletteGroup | undefined =>
             page.items.length
               ? {
@@ -5358,7 +5379,7 @@ class App {
               : undefined,
           )
           .catch(() => undefined),
-        gget("search:users", { query, kind: "users", page: 1 }, 60_000)
+        gget("search:users", { query, kind: "users", page: 1 }, 60_000, App.SEARCH_KEEP)
           .then((page): PaletteGroup | undefined =>
             page.items.length
               ? {
@@ -5798,11 +5819,18 @@ class App {
         void this.recordDiskFingerprint();
         return;
       }
+      if (this.currentView === "changes") {
+        // Re-read into the cache rather than deleting it. `bust("status")`
+        // removes the very entry showChangesView paints from, so every save in
+        // your editor blanked the file list to a 6-row skeleton and closed the
+        // diff you were reading — the same defect as staging, which this fix
+        // wave already corrected for the buttons but not for the watcher.
+        await this.repaintChanges();
+        return;
+      }
       bust("status");
       bust("diff");
-      if (this.currentView === "changes") {
-        await this.showChangesView();
-      } else if (this.currentView === "graph" && this.graph) {
+      if (this.currentView === "graph" && this.graph) {
         // The graph carries an uncommitted-changes row, so it still cares — but
         // only about that row. Reload IN PLACE: rebuilding the whole view here
         // (the old behavior) threw away the live mount on every disk change.

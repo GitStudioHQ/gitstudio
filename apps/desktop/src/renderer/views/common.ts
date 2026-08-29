@@ -212,21 +212,40 @@ export function ghHeader(
   // feedback of any kind — in twelve views. Clicking it looked like nothing had
   // happened, so people clicked it again. The local views (Code, Changes) grew a
   // busy state of their own; these never did.
+  // `aria-disabled`, never `disabled`. A disabled control cannot hold focus and
+  // leaves the tab order, so the focus rescue that puts the keyboard back after
+  // a rebuild had nothing to put it back ON — pressing Refresh dropped focus to
+  // <body>, which is the exact bug the rescue exists to prevent. The re-entry
+  // guard is the deadline below, not the DOM.
+  const setBusy = (btn: HTMLButtonElement, on: boolean): void => {
+    btn.setAttribute("aria-disabled", String(on));
+    btn.setAttribute("aria-busy", String(on));
+    btn.classList.toggle("is-busy", on);
+    btn.querySelector(".codicon")?.classList.toggle("spin", on);
+  };
+  // A refresh REBUILDS the view, which replaces this whole header — so the
+  // button that was spinning is detached the instant the answer lands, and the
+  // new one is built with no busy state at all. The floor below was protecting
+  // an element nobody could see any more. Carrying the deadline across the
+  // rebuild lets the freshly-built button pick the spin back up.
+  if (Date.now() < refreshBusyUntil) setBusy(refreshBtn, true);
   refreshBtn.addEventListener("click", () => {
-    if (refreshBtn.disabled) return;
-    refreshBtn.disabled = true;
-    refreshBtn.classList.add("is-busy");
-    refreshBtn.querySelector(".codicon")?.classList.add("spin");
-    const done = (): void => {
-      if (!refreshBtn.isConnected) return;
-      refreshBtn.disabled = false;
-      refreshBtn.classList.remove("is-busy");
-      refreshBtn.querySelector(".codicon")?.classList.remove("spin");
-    };
+    if (Date.now() < refreshBusyUntil) return; // still working on the last one
     // A refresh answered from cache finishes in a millisecond, and a spinner
     // that appears and vanishes within one frame reads as "nothing happened".
     // Hold it long enough to be seen — the honest signal is "I did the thing",
     // not "here is precisely how long it took".
+    refreshBusyUntil = Date.now() + 350;
+    setBusy(refreshBtn, true);
+    const done = (): void => {
+      refreshBusyUntil = 0;
+      if (refreshBtn.isConnected) setBusy(refreshBtn, false);
+      // …and whichever button the rebuild put in its place.
+      for (const b of document.querySelectorAll<HTMLButtonElement>(".gh-refresh.is-busy")) {
+        setBusy(b, false);
+      }
+    };
+
     const floor = new Promise<void>((r) => setTimeout(r, 350));
     void Promise.all([Promise.resolve(onRefresh()).catch(() => {}), floor]).then(done);
   });
@@ -776,11 +795,24 @@ const detailBacks = new WeakMap<HTMLElement, () => void>();
 let detailStack: HTMLElement[] = [];
 let detailKeysWired = false;
 
+/** Until when a header refresh should read as busy. A refresh rebuilds the
+ *  header it lives in, so the state has to survive the element. */
+let refreshBusyUntil = 0;
+
 function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
   detailBacks.set(view, onBack);
-  // Most recent last; drop anything the DOM has finished with.
-  detailStack = detailStack.filter((v) => v !== view && v.isConnected);
+  // Most recent last. Deliberately NOT filtered on `isConnected`: a kept-alive
+  // section is stashed OUT of the DOM while you are elsewhere, so pruning
+  // detached views here dropped a page that was merely put away — and a
+  // restore replays the cached DOM without rebuilding it, so nothing ever
+  // re-registered. Escape and ← were dead on every detail page you came back
+  // to. Dispatch already skips disconnected views, which is the right place to
+  // ask, because by then the answer is current.
+  detailStack = detailStack.filter((v) => v !== view);
   detailStack.push(view);
+  // Bounded, since entries can now outlive their time on screen. Far more than
+  // any real navigation depth; the oldest is also the least likely to return.
+  if (detailStack.length > 64) detailStack = detailStack.slice(-64);
   if (detailKeysWired) return;
   detailKeysWired = true;
   document.addEventListener("keydown", (e) => {
@@ -1174,23 +1206,33 @@ export function facetBar<T>(o: {
     },
     sync: (next: T[]) => {
       const had = items.length;
+      // Ask BEFORE the rebuild: `render()` replaces every button, so the
+      // aria-expanded that identifies the open menu lives on the button that is
+      // about to be discarded. Checking afterwards always answers "no".
+      const specIndex = o.specs.findIndex((sp) => sp.key === openSpecKey);
+      const wasOpen =
+        openSpecKey !== undefined &&
+        specIndex >= 0 &&
+        (bar.children[specIndex] as HTMLElement | undefined)?.getAttribute("aria-expanded") ===
+          "true";
       items = next;
       render();
       // A menu opened over a still-loading list is anchored to a button that
       // `render()` has just replaced, and holds options harvested from nothing.
       // Re-open it against the live button so it fills in; `openMenu` replaces
       // any menu already up, so this is a refill rather than a second menu.
-      if (openSpecKey === undefined || (!had && !next.length)) return;
-      // Only while a menu is genuinely on screen. Without this check a sync
-      // arriving after the user dismissed the menu would pop it back open by
-      // itself, which is a worse bug than the one being fixed.
-      if (!document.querySelector(".dropdown")) {
+      // Refill ONLY the menu that was open on THIS facet's own button. Testing
+      // for any `.dropdown` in the document was wrong twice over: a menu the
+      // user had dismissed before the data landed would pop itself back open,
+      // and a menu they had since opened somewhere else — a row's ⋯, the sort
+      // picker — would be replaced by this one.
+      if (!wasOpen) {
         openSpecKey = undefined;
         return;
       }
-      const i = o.specs.findIndex((sp) => sp.key === openSpecKey);
-      const btn = i >= 0 ? (bar.children[i] as HTMLElement | undefined) : undefined;
-      if (i >= 0 && btn) openFacetMenu(o.specs[i], btn);
+      if (!had && !next.length) return; // still nothing to put in it
+      const btn = bar.children[specIndex] as HTMLElement | undefined;
+      if (btn) openFacetMenu(o.specs[specIndex], btn);
     },
   };
 

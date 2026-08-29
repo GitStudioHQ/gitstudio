@@ -246,10 +246,22 @@ export function textBtn(
   title: string,
   onClick: (btn: HTMLElement) => void,
   danger = false,
+  /**
+   * WHICH object this button acts on — the branch name, the file path.
+   *
+   * The focus rescue that restores the keyboard after a list rebuild matches on
+   * `dataset.num` first and falls back to `title`. Every row's Delete button
+   * carries the same title ("Delete this branch"), so without an identity the
+   * rescue matched the FIRST such button in the rebuilt list: after confirming
+   * a delete or a discard, focus landed on a different object's destructive
+   * button, one Enter away from acting on something nobody selected.
+   */
+  identity?: string,
 ): HTMLElement {
   const b = el("button", "row-btn" + (danger ? " danger" : ""));
   b.textContent = label;
   b.title = title;
+  if (identity) b.dataset.num = identity;
   b.addEventListener("click", (e) => {
     e.stopPropagation();
     onClick(b);

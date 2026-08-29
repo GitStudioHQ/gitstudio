@@ -9158,6 +9158,9 @@ body.vscode-light .log-pane {
    GitHub views, and the graph's own — so the one button people reach for most
    changed size and weight depending on which screen they were on. */
 .gh-refresh { width: 28px; height: 28px; }
+/* Busy, but still focusable — see ghHeader's setBusy. `disabled` would drop the
+   button out of the tab order mid-refresh and take the keyboard with it. */
+.gh-refresh[aria-disabled="true"] { opacity: 0.55; pointer-events: none; }
 .gh-refresh .codicon { font-size: 15px; }
 
 /* Why the last submit failed, shown inside the form that still holds your text

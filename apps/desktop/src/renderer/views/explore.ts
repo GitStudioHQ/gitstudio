@@ -83,8 +83,13 @@ let pages = 1;
 
 /** Guards against a slow earlier query overwriting a newer one's results. */
 let searchSeq = 0;
-/** Where the result list was scrolled when we left it for a repo/person page. */
-let listScroll = 0;
+/**
+ * Where the result list was scrolled when we left it — and WHICH search that
+ * was. Keyed, because a bare number is applied to whatever runs next: leave a
+ * repo search scrolled to row 40, come back, switch to Code, and the new
+ * (shorter) list was scrolled to a position that meant nothing in it.
+ */
+let listScroll: { key: string; top: number } | undefined;
 
 
 
@@ -278,10 +283,11 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
           listEl.querySelector(".explore-footer")?.remove();
           appendRows(more, false);
         }
-        if (listScroll > 0) {
-          listEl.scrollTop = listScroll;
-          listScroll = 0;
+        // Only onto the search it was taken from.
+        if (listScroll && listScroll.key === searchTargetId(tab, query)) {
+          listEl.scrollTop = listScroll.top;
         }
+        listScroll = undefined;
       }
     } catch (e) {
       if (seq !== searchSeq || !view.isConnected) return;
@@ -295,7 +301,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
    *  you come back to. Opening a result and returning used to land you at the
    *  top of the list with the row you had just opened somewhere below. */
   const leaveNav: SectionNav = (section, t) => {
-    listScroll = listEl.scrollTop;
+    listScroll = { key: searchTargetId(tab, query), top: listEl.scrollTop };
     nav(section, t);
   };
 

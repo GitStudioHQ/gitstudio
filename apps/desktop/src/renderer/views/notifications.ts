@@ -190,7 +190,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     const t = row ? rowThreads.get(row) : undefined;
     if (!row || !t || !t.unread) return;
     ev.preventDefault();
-    void markRead(t, row, body, refresh);
+    void markRead(t, row, body, refresh, syncCounts);
   });
 
   // Load.
@@ -210,12 +210,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   }
   if (!body.isConnected) return;
 
-  // Keep the "Mark all read" affordance honest: nothing unread → nothing to do.
-  const unreadCount = threads.filter((t) => t.unread).length;
-  (markAllBtn as HTMLButtonElement).disabled = unreadCount === 0;
-  // Keep the top-bar bell in step with what the Inbox actually loaded — the
-  // badge said 3 while the panel header said 4, 200px apart.
-  window.dispatchEvent(new CustomEvent("gs:unread", { detail: unreadCount }));
+  /**
+   * The counts that describe the whole inbox, not the filtered view of it.
+   *
+   * "Mark all read" is honest only if it knows whether anything is unread, and
+   * the top-bar bell must agree with the panel — the badge said 3 while the
+   * header said 4, 200px apart. Both are computed from `threads`, which is
+   * every thread loaded, so a filter can never leak into a global number.
+   */
+  const syncCounts = (): void => {
+    const unread = threads.filter((t) => t.unread).length;
+    (markAllBtn as HTMLButtonElement).disabled = unread === 0;
+    window.dispatchEvent(new CustomEvent("gs:unread", { detail: unread }));
+  };
+  syncCounts();
   facets.sync(threads);
 
   const renderThreads = (): void => {
@@ -265,7 +273,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     // keyboard in the first place — Tab skipped straight past it. Every other
     // list in the app is enterable; this one was not.
     shown.forEach((t, i) => {
-      const row = notificationRow(t, body, refresh, nav, currentRepo);
+      const row = notificationRow(t, body, refresh, nav, currentRepo, syncCounts);
       rowThreads.set(row, t);
       row.tabIndex = i === 0 ? 0 : -1;
       body.appendChild(row);
@@ -492,7 +500,8 @@ function notificationRow(
   body: HTMLElement,
   refresh: () => void,
   nav: SectionNav,
-  currentRepo?: string,
+  currentRepo: string | undefined,
+  syncCounts: () => void,
 ): HTMLElement {
   // Leading: unread dot (when unread) + the subject-type glyph. We reuse the
   // existing .notif-lead/.notif-dot styling so unread emphasis + the read-state
@@ -617,7 +626,7 @@ function notificationRow(
   acts.appendChild(textBtn("Open", openable ? "Open in GitStudio" : "Open the subject on GitHub", open));
   if (t.unread) {
     acts.appendChild(
-      textBtn("Mark read", "Mark this thread as read", () => void markRead(t, row, body, refresh)),
+      textBtn("Mark read", "Mark this thread as read", () => void markRead(t, row, body, refresh, syncCounts)),
     );
   }
   row.appendChild(acts);
@@ -658,7 +667,7 @@ function notificationRow(
           ]
         : []),
       ...(t.unread
-        ? [{ label: "Mark as read", icon: "mail-read", onClick: () => void markRead(t, row, body, refresh) }]
+        ? [{ label: "Mark as read", icon: "mail-read", onClick: () => void markRead(t, row, body, refresh, syncCounts) }]
         : []),
     ]);
   });
@@ -672,6 +681,8 @@ async function markRead(
   row: HTMLElement,
   body: HTMLElement,
   refresh: () => void,
+  /** Recompute the counts from the FULL thread list — see below. */
+  syncCounts: () => void,
 ): Promise<void> {
   if (row.classList.contains("is-busy")) return;
   row.classList.add("is-busy");
@@ -700,30 +711,12 @@ async function markRead(
       row.classList.add("notif-leaving");
       row.title = "Marked read — leaves this list on the next refresh";
     }
-    // Everything below is scoped to THIS view. It used to search the whole
-    // document, and the Inbox page and the bell popover are both mounted at
-    // once — so marking a thread read in the popover wrote its numbers into the
-    // page's header behind it, and left the popover's own untouched.
-    const scope = body.closest(".notif-view") ?? body;
-    const unread = body.querySelectorAll(".notif-dot:not(.is-read)").length;
-    const total = body.querySelectorAll(".notif-row").length;
-    const sumEl = scope.querySelector(".notif-summary-text");
-    if (sumEl) {
-      sumEl.textContent =
-        `${total} ${total === 1 ? "thread" : "threads"}` + (unread > 0 ? ` · ${unread} unread` : "");
-    }
-    const markAll = scope.querySelector<HTMLButtonElement>(".notif-markall");
-    if (markAll) markAll.disabled = unread === 0;
-    // The header badge is "shown of total" everywhere in the app. This wrote a
-    // bare UNREAD number straight into it, so one thread marked read turned
-    // "12 of 40" into "11" — a different quantity in the same pill.
-    const head = scope.querySelector<HTMLElement & { setCount?: (s: number, t?: number) => void }>(
-      ".gh-head",
-    );
-    head?.setCount?.(total, total);
-    // And the bell badge, which tracked none of this: the top bar went on
-    // advertising unread threads the user had just read.
-    window.dispatchEvent(new CustomEvent("gs:unread", { detail: unread }));
+    // Counting is the caller's job, because only the caller can see the whole
+    // inbox. Counting the DOM here counted the RENDERED rows — i.e. whatever
+    // survived the current filter — so marking one thread read while filtered
+    // to a single repo wrote that repo's unread total into the global bell
+    // badge, and rewrote the header's "12 of 40" as "shown of shown".
+    syncCounts();
     toast("Marked as read.", "success");
   } catch (e) {
     toast(cleanErr(e) || "Couldn't mark the notification read.", "error");

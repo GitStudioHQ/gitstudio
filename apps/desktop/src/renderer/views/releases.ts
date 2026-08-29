@@ -906,6 +906,16 @@ function releaseFormDialog(
         card,
         focusEl: tag,
         label: title,
+        // Release notes are the longest thing this view asks anyone to write,
+        // and a BACKGROUND teardown — a route change, and a window focus routes
+        // — must not take them. Esc, the backdrop and Cancel still work: those
+        // are the user asking. `formWithRetry` covers a failed submit; this is
+        // the other half, and without it the wave's fix was only half a fix.
+        hasUnsavedWork: () =>
+          tag.value !== init.tagName ||
+          target.value !== init.targetCommitish ||
+          name.value !== init.name ||
+          bodyInput.value !== (init.body ?? ""),
         onClose: () => {
           if (!settled) resolve(null);
         },

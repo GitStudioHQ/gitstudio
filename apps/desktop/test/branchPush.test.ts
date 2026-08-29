@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync } from "node:fs";
+import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
@@ -34,11 +35,12 @@ function repoWithRemote(): {
   const git = (...a: string[]): string => execFileSync("git", a, { cwd: work }).toString();
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
+  git("config", "gc.auto", "0"); // no background gc racing the cleanup
   writeFileSync(`${work}/a.txt`, "a\n");
   git("add", ".");
   git("commit", "-qm", "init");
   git("remote", "add", "origin", remote);
-  return { work, remote, git, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  return { work, remote, git, cleanup: () => removeTempRepo(root) };
 }
 
 const heads = (remote: string): string[] =>
@@ -114,6 +116,77 @@ test("pushing an ordinary tracked branch still pushes it", async () => {
         .toString()
         .trim(),
       "t2",
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * A branch whose name is also a tag's.
+ *
+ * `git push <remote> <name>` resolves the bare name against refs/heads AND
+ * refs/tags, so git refuses: "error: src refspec release matches more than
+ * one". Confirmed against real git. The HEAD push path had always qualified its
+ * refspec for exactly this reason; the Branches view's path did not.
+ */
+test("pushing a branch whose name is also a tag still works", async () => {
+  const { work, remote, git, cleanup } = repoWithRemote();
+  try {
+    git("checkout", "-qb", "release");
+    writeFileSync(`${work}/r.txt`, "r\n");
+    git("add", ".");
+    git("commit", "-qm", "r1");
+    git("push", "-q", "-u", "origin", "release");
+    git("tag", "release"); // a TAG sharing the branch's name — legal in git
+    writeFileSync(`${work}/r2.txt`, "r\n");
+    git("add", ".");
+    git("commit", "-qm", "r2");
+    git("checkout", "-q", "master");
+
+    const repos = new RepoStore([]);
+    await repos.open(work);
+    const bridge = new GitBridge(repos);
+    const r = await bridge.branchPush("release");
+    assert.equal(r.ok, true, `push succeeds despite the tag (${r.message ?? ""})`);
+    assert.equal(
+      execFileSync("git", ["log", "-1", "--format=%s", "refs/heads/release"], { cwd: remote })
+        .toString()
+        .trim(),
+      "r2",
+      "and it pushed the BRANCH, not the tag",
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+/**
+ * Publishing a branch that shares a tag's name.
+ *
+ * The publish path has no upstream to resolve, so it fell through to a BARE
+ * name — matched against refs/heads and refs/tags alike, which git refuses:
+ * "error: src refspec v2 matches more than one". Verified against real git.
+ */
+test("publishing a branch whose name is also a tag works", async () => {
+  const { work, remote, git, cleanup } = repoWithRemote();
+  try {
+    git("checkout", "-qb", "v2");
+    writeFileSync(`${work}/v.txt`, "v\n");
+    git("add", ".");
+    git("commit", "-qm", "v");
+    git("tag", "v2"); // the collision
+    git("checkout", "-q", "master");
+
+    const repos = new RepoStore([]);
+    await repos.open(work);
+    const r = await new GitBridge(repos).branchPush("v2");
+    assert.equal(r.ok, true, `publish succeeds despite the tag (${r.message ?? ""})`);
+    assert.ok(heads(remote).includes("refs/heads/v2"), "the BRANCH reached the remote");
+    assert.equal(
+      git("config", "--get", "branch.v2.merge").trim(),
+      "refs/heads/v2",
+      "and tracking is still set up",
     );
   } finally {
     cleanup();

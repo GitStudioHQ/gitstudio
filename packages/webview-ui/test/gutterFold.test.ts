@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { WireRow } from "@gitstudio/host-bridge/graphProtocol";
-import { renderRowGutterSVG, laneCenterX } from "../src/graph/gutter";
+import { renderRowGutterSVG, laneCenterX, lastDrawableLane } from "../src/graph/gutter";
 
 /**
  * `.gutter` hides its overflow and the SVG is sized to the (capped) gutter
@@ -83,6 +83,37 @@ test("segments into and out of a folded lane are folded with it", () => {
     ]),
   );
   assert.ok(maxX <= 458, `no path control point escapes the canvas (max x ${maxX})`);
+});
+
+/**
+ * The fold marker must be INSIDE the canvas at every gutter width.
+ *
+ * The first version reserved only the node's radius when picking the last
+ * drawable lane, so the chevron was clipped away at roughly one width in four —
+ * and a folded node with no marker is indistinguishable from a real lane, which
+ * is worse than the clipping the fold exists to prevent. Measured before the
+ * fix: 26 of 112 sampled widths overflowed, by up to 5.2px.
+ */
+test("the fold marker is inside the canvas at every gutter width", () => {
+  // The REAL function the graph uses — not a copy of its arithmetic here. The
+  // first version of this test reimplemented the walk, so it passed happily
+  // while the production reach was wrong: it was checking itself.
+  const lastLane = (width: number): number => lastDrawableLane(width, COL, INSET, R);
+
+  const overflows: string[] = [];
+  for (let width = 100; width <= 1400; width++) {
+    const cap = lastLane(width);
+    const svg = renderRowGutterSVG(row(cap + 9), opts(cap), width);
+    // Every x the markup draws at — circles and path coordinates alike.
+    const xs = [
+      ...[...svg.matchAll(/<circle cx="([\d.]+)"/g)].map((m) => Number(m[1])),
+      ...[...svg.matchAll(/[ML]([\d.]+) /g)].map((m) => Number(m[1])),
+    ];
+    // The chevron is relative (`l3.2 3.5`), so account for its full extent.
+    const right = Math.max(...xs) + 3.2 + 0.8;
+    if (right > width) overflows.push(`w=${width} lane=${cap} right=${right.toFixed(1)}`);
+  }
+  assert.deepEqual(overflows.slice(0, 5), [], `${overflows.length} width(s) overflow`);
 });
 
 test("without a cap nothing is folded — the rail and any narrow host keep the old geometry", () => {

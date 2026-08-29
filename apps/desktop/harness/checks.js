@@ -417,6 +417,42 @@
       if (m) c.eq(Number(m[1]), rows.length, `"Changes (N)" counts files, not records`);
     },
 
+    // A kept-alive section is stashed OUT of the DOM while you are elsewhere,
+    // and restoring replays the cached DOM rather than rebuilding it — so
+    // nothing re-registers the page's Escape handler. Pruning the handler stack
+    // on `isConnected` at REGISTRATION time therefore dropped pages that were
+    // merely put away, and Escape and ← were dead on every detail page you
+    // came back to.
+    "escape-still-works-after-coming-back": async (f) => {
+      const c = check(f);
+      c.ok(!!$(".det-back"), "we are on a detail page");
+      document.body.focus();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(600);
+      c.ok(!$(".det-back"), "Escape leaves the detail page it came back to");
+    },
+
+    // Toasts live in a persistent #toast-stack on the body, and `holdBackground`
+    // inerted every body child that was not the modal — including it. A toast
+    // raised over an open palette or dialog was then unclickable (aiming at its
+    // ✕ dismissed the LAYER and threw away what had been typed) and, for a
+    // screen reader, silent: an aria-live host inside an inert subtree
+    // announces nothing. A live region is not part of the page being held back.
+    "a-toast-is-reachable-over-a-dialog": (f) => {
+      const c = check(f);
+      const layer = $(".cmdk-overlay, .modal-overlay, .peek-overlay");
+      c.ok(!!layer, "a modal surface is open");
+      const stack = document.getElementById("toast-stack");
+      c.ok(!!stack, "a toast is up (the host only exists once one is raised)");
+      c.ok($$(".toast").length > 0, "and it is still on screen");
+      if (!stack) return;
+      c.ok(!stack.hasAttribute("inert"), "and it is NOT inert while the surface is up");
+      // Its ancestors too — inert inherits.
+      for (let n = stack.parentElement; n && n !== document.documentElement; n = n.parentElement) {
+        c.ok(!n.hasAttribute("inert"), `no ancestor is inert (${n.tagName.toLowerCase()})`);
+      }
+    },
+
     "row-meta-columns-align": (f) => {
       const c = check(f);
       // A row missing an optional datum must not slide its neighbours into a

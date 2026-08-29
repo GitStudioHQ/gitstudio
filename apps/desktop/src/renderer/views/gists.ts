@@ -622,6 +622,14 @@ function gistDialog(opts: {
         // On edit, the filename is known → focus the content; on create, the filename.
         focusEl: opts.filename ? contentIn : fileIn,
         label: opts.title,
+        // A BACKGROUND teardown — a route change, and a window focus routes —
+        // must not take a file someone is typing. Esc, the backdrop and Cancel
+        // are unaffected: those are the user asking. `formWithRetry` gives the
+        // text back after a failed SUBMIT; this is the other half.
+        hasUnsavedWork: () =>
+          descIn.value !== (opts.description ?? "") ||
+          fileIn.value !== (opts.filename ?? "") ||
+          contentIn.value !== (opts.content ?? ""),
         onClose: () => {
           if (!settled) resolve(null);
         },
