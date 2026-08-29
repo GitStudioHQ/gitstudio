@@ -2284,6 +2284,12 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 
 /* Cap + center the repo listing on the wide measure so the file table stays
    comfortable on ultra-wide windows instead of stretching edge to edge. */
+/* The view takes focus so its own keys ("/" for the filter, Backspace for the
+   parent folder) actually reach it — but it is a container, not a control, so
+   it must not draw a focus ring around the whole page. Rows and inputs inside
+   keep theirs. */
+.code-view:focus { outline: none; }
+
 .code-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px max(16px, calc((100% - var(--measure-wide)) / 2)) calc(28px + var(--dock-reserve, 0px)); }
 
 /* The GitHub-style "latest commit" bar that crowns the repo-root listing. */

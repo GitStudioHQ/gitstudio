@@ -3072,6 +3072,16 @@ class App {
     listing.appendChild(skeletonList(8, false));
     wrap.append(head, scroll);
     this.viewHost.replaceChildren(wrap);
+    // The view's own keys — "/" to jump to the filter, Backspace to go up a
+    // folder — are bound on `wrap`, so they only fire for keys pressed INSIDE
+    // it. Nothing here had focus after a render, so both were dead until you
+    // happened to click a row first, while the filter placeholder went on
+    // advertising "(/)". Making the view itself the focus target fixes that and
+    // the more general "nothing is focused after a folder hop".
+    wrap.tabIndex = -1;
+    if (document.activeElement === document.body || document.activeElement === null) {
+      wrap.focus({ preventScroll: true });
+    }
 
     const gen = this.routeGen;
     let entries;
@@ -4077,10 +4087,22 @@ class App {
       // stages, unticking unstages, and the checked state is read back from what
       // git reports — so there is no shadow selection able to drift away from the
       // repository, and an external `git add` keeps agreeing with the UI.
-      const all = [
-        ...staged.map((f) => ({ f, staged: true })),
-        ...unstaged.map((f) => ({ f, staged: false })),
-      ].sort((a, b) => a.f.path.localeCompare(b.f.path));
+      // ONE row per FILE. Concatenating the two lists gave a partially-staged
+      // file (git's `MM`: a staged edit plus a newer unstaged one) two rows —
+      // the same path listed twice, once ticked and once not, contradicting
+      // itself, and counted twice in "Changes (N)". In a model whose entire
+      // promise is "the tick is the index", one file cannot be both.
+      //
+      // Partial is a real third state, and a checkbox has one: indeterminate.
+      const byPath = new Map<string, { f: ChangedFile; staged: boolean; partial: boolean }>();
+      for (const f of staged) byPath.set(f.path, { f, staged: true, partial: false });
+      for (const f of unstaged) {
+        const prior = byPath.get(f.path);
+        // The UNSTAGED record wins the row: it is the one with unstaged hunks
+        // to open, which is what a partial file needs its twisty for.
+        byPath.set(f.path, { f, staged: false, partial: !!prior });
+      }
+      const all = [...byPath.values()].sort((a, b) => a.f.path.localeCompare(b.f.path));
 
       // Selecting a "section" here means the CHECKED rows or the UNCHECKED ones:
       // this model deliberately has no Staged/Unstaged split to click on.
@@ -4100,20 +4122,29 @@ class App {
       head.insertBefore(master, head.firstChild);
       lists.appendChild(head);
 
-      for (const { f, staged: isStaged } of all) {
+      for (const { f, staged: isStaged, partial } of all) {
         const row = fileRow(f, isStaged ? "staged" : "unstaged");
         const ck = document.createElement("input");
         ck.type = "checkbox";
         ck.className = "dc-ck";
         ck.checked = isStaged;
-        ck.title = isStaged ? "Included in the commit" : "Not included";
+        // Partly in, partly out — the state the two-row version could not say.
+        ck.indeterminate = partial;
+        ck.title = partial
+          ? "Partly included — some changes to this file are staged"
+          : isStaged
+            ? "Included in the commit"
+            : "Not included";
         ck.addEventListener("click", (ev) => {
           // The row opens the diff; the tick must not.
           ev.stopPropagation();
           // Ticking the whole file supersedes any hunk view of it: those indexes
           // describe a state that is about to stop existing.
           this.expandedHunks.delete(f.path);
-          void this.changesAction(isStaged ? "unstage" : "stage", f.path);
+          // From partial, one click means "include the whole file" — matching
+          // the master tick above, and the only reading that leaves the file in
+          // a state the checkbox can then describe.
+          void this.changesAction(partial ? "stage" : isStaged ? "unstage" : "stage", f.path);
         });
         row.insertBefore(ck, row.firstChild);
 

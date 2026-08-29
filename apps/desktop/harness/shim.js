@@ -205,6 +205,12 @@
     { path: "apps/desktop/src/renderer/styles/app.css", status: "M", staged: false },
     { path: "apps/desktop/src/renderer/views/prs.ts", status: "M", staged: false },
     { path: "docs/redesign.md", status: "A", staged: false },
+    // A PARTIALLY-staged file: git's `MM` — a staged edit plus a newer unstaged
+    // one — which the parser correctly reports as two records for one path.
+    // Without one in the fixture, the checkbox model's duplicate-row bug was
+    // invisible to every check here.
+    { path: "apps/desktop/src/renderer/renderer.ts", status: "M", staged: true },
+    { path: "apps/desktop/src/renderer/renderer.ts", status: "M", staged: false },
   ];
 
   const fixtures = {

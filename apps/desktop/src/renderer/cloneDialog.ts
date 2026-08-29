@@ -207,11 +207,26 @@ export function openCloneDialog(
       const status = await host.invoke("github:status", undefined);
       if (seq !== searchSeq) return;
       if (!status.connected) {
+        // This used to say "sign in from the account button at the top of the
+        // window". From the welcome screen — where most people meet this
+        // dialog, because there is no repo open yet — there IS no account
+        // button and no Settings: the whole window is a hero, two buttons and
+        // a recent list. So the one instruction on the screen pointed at a
+        // control that did not exist, and the dialog dead-ended.
+        //
+        // Cloning by URL needs no account at all, and is right here.
         ghList.replaceChildren(
           emptyState(
-            "Connect GitHub",
-            "Sign in from the account button at the top of the window to browse and clone your repositories.",
-            { icon: "github" },
+            "Not signed in to GitHub",
+            "Browsing your repositories needs a GitHub account, which you can connect from Settings once a repository is open. Any repository URL works right now without one.",
+            {
+              icon: "github",
+              action: {
+                label: "Clone by URL",
+                icon: "link",
+                onClick: () => setTab("url"),
+              },
+            },
           ),
         );
         return;

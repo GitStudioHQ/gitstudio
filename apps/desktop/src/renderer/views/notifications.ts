@@ -586,14 +586,22 @@ function notificationRow(
   const inAppCommit = sameRepo && kind === "commit" && !!t.subjectSha;
   const openable = !!item || inAppRelease || inAppCommit;
   const open = (): void => {
+    // Every in-app open carries where it came from. Release and commit threads
+    // did not, so opening one from the Inbox retitled the back button
+    // "Releases", switched the rail under you, and Escape put you in a list you
+    // had never opened — with the thread you were reading nowhere in sight.
+    const origin = { view: "notifications", label: "Inbox" };
     if (inAppRelease) {
-      nav("releases", { number: t.subjectNumber });
+      nav("releases", { number: t.subjectNumber, from: origin });
     } else if (inAppCommit) {
+      // No `from` here on purpose: Commits is a SECTION, not a detail page, so
+      // there is no back bar to retitle — going back is the nav history's job
+      // (⌘[), exactly as it is for every other section-to-section move.
       nav("graph", { sha: t.subjectSha });
     } else if (item && sameRepo) {
       // Same as My Work: back and Escape belong to the Inbox, not to whichever
       // section happens to own the thread's subject.
-      nav(item.kind, { number: item.number, from: { view: "notifications", label: "Inbox" } });
+      nav(item.kind, { number: item.number, from: origin });
     } else if (item) {
       const [owner, repo] = item.repo.split("/");
       openExternalItem({ owner, repo, number: item.number, kind: item.kind === "prs" ? "pull" : "issue", htmlUrl: t.htmlUrl });

@@ -103,6 +103,7 @@ const CASES = [
   ["rebase-actions-do-not-move-the-list", "rebase"],
   ["file-rows-show-the-whole-name", "changes"],
   ["file-rows-show-the-whole-name", "changes", { extra: "staging=checkboxes" }],
+  ["one-row-per-file-in-checkbox-mode", "changes", { extra: "staging=checkboxes" }],
   ["segment-flip-keeps-the-keyboard", "releases"],
   ["reviewers-rail-says-who-answered", "prs~open106"],
   ["approve-opens-the-composer", "prs~open106"],

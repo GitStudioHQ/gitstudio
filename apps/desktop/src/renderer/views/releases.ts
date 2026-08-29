@@ -84,7 +84,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   if (!gate) return;
 
   if (target?.number != null) {
-    showReleaseDetailPage(wrap, nav, target.number);
+    showReleaseDetailPage(wrap, nav, target.number, target.from);
     return;
   }
   await listPage(wrap, nav, gate);
@@ -368,15 +368,23 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
 
 // ── The release detail page ──────────────────────────────────────────────────
 
-function showReleaseDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void {
-  const back = (): void => nav("releases", { list: true });
+function showReleaseDetailPage(
+  wrap: HTMLElement,
+  nav: SectionNav,
+  id: number,
+  /** Where this was opened FROM. The Inbox opens releases, and back and Escape
+   *  belong to the Inbox — not to whichever section owns the subject. Same
+   *  contract Issues and PRs already honour. */
+  from?: { view: string; label: string },
+): void {
+  const back = (): void => nav(from?.view ?? "releases", { list: true });
   const reload = (): void => {
     bust("release");
-    showReleaseDetailPage(wrap, nav, id);
+    showReleaseDetailPage(wrap, nav, id, from);
   };
 
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Releases",
+    backLabel: from?.label ?? "Releases",
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));

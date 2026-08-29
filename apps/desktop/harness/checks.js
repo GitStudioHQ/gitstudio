@@ -390,6 +390,33 @@
       );
     },
 
+    // The checkbox model's promise is "the tick IS the index". A partially
+    // staged file (git's `MM`) arrived as two records for one path and was
+    // rendered as two rows — the same file listed twice, once ticked and once
+    // not, contradicting itself, and counted twice in "Changes (N)". Partial is
+    // a real third state and a checkbox has one.
+    "one-row-per-file-in-checkbox-mode": (f) => {
+      const c = check(f);
+      const rows = $$(".dc-file");
+      c.ok(rows.length > 0, "the checklist has rows");
+      const paths = rows.map((r) => r.title || r.textContent.trim());
+      const dupes = paths.filter((p, i) => paths.indexOf(p) !== i);
+      c.eq(dupes.length, 0, `no file is listed twice (dupes: ${[...new Set(dupes)].join(", ")})`);
+
+      // The partial file is the one the fixture stages half of.
+      const partialRow = rows.find((r) => (r.title || "").endsWith("renderer.ts"));
+      c.ok(!!partialRow, "the partially-staged file is present");
+      const ck = partialRow?.querySelector(".dc-ck");
+      c.ok(!!ck, "it has a tick");
+      c.ok(ck?.indeterminate === true, "and the tick says PARTIAL, not in-or-out");
+
+      // The header count is files, not status records.
+      const head = $(".dc-list-head, .dc-checklist-head") ?? $$(".dc-file")[0]?.parentElement?.firstElementChild;
+      const label = head?.textContent ?? "";
+      const m = /Changes \((\d+)\)/.exec(label);
+      if (m) c.eq(Number(m[1]), rows.length, `"Changes (N)" counts files, not records`);
+    },
+
     "row-meta-columns-align": (f) => {
       const c = check(f);
       // A row missing an optional datum must not slide its neighbours into a
