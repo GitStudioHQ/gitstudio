@@ -1,0 +1,38 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_a9f1f6b77f0e15 52
+  s_26f5e669d3043c::t_ed8f16383e9d27 54
+  s_26f5e669d3043c::t_a468cd21095733 53,55
+apps/desktop/src/renderer/peek.ts
+  s_26f5e669d3043c::t_7ccc158e599299 10
+  s_26f5e669d3043c::t_443543799aeeb2 280
+  s_26f5e669d3043c::t_43f2d932f0f01d 100-101,109-110,271-279
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_ed8f16383e9d27 515-517,519-520,540-548
+  s_26f5e669d3043c::t_a468cd21095733 456-475,479-495
+  s_26f5e669d3043c::t_a9f1f6b77f0e15 496-514,518,521-539,549-555
+  s_26f5e669d3043c::t_51441fe378ef4a 476-478
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_443543799aeeb2 175
+  s_26f5e669d3043c::t_7ccc158e599299 7
+  s_26f5e669d3043c::t_48a2ff581909cb 100-101,111-113,160-174
+apps/desktop/src/renderer/views/explore.ts
+  s_26f5e669d3043c::t_443543799aeeb2 290-291
+  s_26f5e669d3043c::t_34fad0263cc780 22,269-284,340-353
+  s_26f5e669d3043c::t_5a5d652b216470 354-355
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "07df2fb274302cdd0ac9204d96e8e687ed1df770",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
