@@ -3389,6 +3389,63 @@
     },
 
     /**
+     * The banner's forward controls, in the two shapes that decide them.
+     *
+     * `canContinue` / `canSkip` come from the host now, and the banner's job is
+     * to render them faithfully. Both halves of that had been wrong: an enabled
+     * Continue on an operation git would refuse, and a Skip that hard-resets
+     * offered at a pause the user asked for. `?skip=1` is the emptied-patch
+     * shape; without it the same scene is the ordinary one.
+     */
+    "the-banner-offers-only-what-git-would-accept": async (f) => {
+      const c = check(f);
+      const arg = (window.__GS_ARG || "continue").split(":");
+      const wantSkip = arg[0] === "skip";
+      const banner = $(".dc-opbanner");
+      c.ok(!!banner, "the banner renders");
+      if (!banner) return;
+      const btns = [...banner.querySelectorAll("button")];
+      const byText = (re) => btns.find((b) => re.test((b.textContent || "").trim()));
+      const cont = byText(/^Continue$/);
+      const skip = byText(/^Skip/);
+      c.ok(!!byText(/^Abort$/), "Abort is always there");
+
+      if (wantSkip) {
+        c.ok(!!skip, "an emptied patch offers Skip — git's own way out");
+        c.ok(!cont || cont.disabled, "and does not offer a Continue git would refuse");
+        c.ok(
+          !skip || !skip.classList.contains("btn-primary"),
+          "Skip is never the primary button: it discards work",
+        );
+      } else {
+        c.ok(!!cont && !cont.disabled, "an ordinary stop offers Continue");
+        c.ok(!skip, "and no Skip, which would discard the commit");
+      }
+    },
+
+    /**
+     * Pressing a banner button twice must not run it twice. `serialize()` in
+     * the main process QUEUES the second call rather than dropping it, so an
+     * enabled button really did discard two patches on a double-click.
+     */
+    "a-banner-button-cannot-be-fired-twice": async (f) => {
+      const c = check(f);
+      const banner = $(".dc-opbanner");
+      c.ok(!!banner, "the banner renders");
+      if (!banner) return;
+      const abort = [...banner.querySelectorAll("button")].find((b) => /^Abort$/.test((b.textContent || "").trim()));
+      c.ok(!!abort, "with an Abort");
+      if (!abort) return;
+      const before = window.__GS_INVOKED.length;
+      abort.click();
+      abort.click();
+      abort.click();
+      await settle(400);
+      const sent = window.__GS_INVOKED.slice(before).filter((ch) => /:(abort|continue|skip)$/.test(ch));
+      c.eq(sent.length, 1, `three clicks send ONE command, not ${sent.length} (${sent.join(", ")})`);
+    },
+
+    /**
      * A PAGE-level key handler sits underneath every floating layer, so any
      * open layer outranks it.
      *

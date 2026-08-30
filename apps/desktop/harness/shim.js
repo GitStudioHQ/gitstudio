@@ -279,14 +279,32 @@
     // Without a fixture the banner NEVER rendered in the harness, which is why
     // no check could see that its Abort ran `git merge --abort` on every one of
     // the four operations it names.
+    // `?op=merge|rebase|cherry-pick|revert|am` puts the Changes banner on
+    // screen, `&conflicts=N` gives it conflicts, `&skip=1` puts it in the
+    // "nothing left to commit" shape where Skip is the way out.
+    //
+    // The whole GitOpState shape, `kind`/`canContinue`/`canSkip` included: the
+    // host decides those now, and a fixture that returns only the old booleans
+    // makes the banner render NOTHING — which is exactly what this fixture's
+    // own check caught when the banner was rewritten.
     "git:opState": (() => {
       const op = params.get("op") || "";
+      const conflicts = Number(params.get("conflicts") || 0) || 0;
+      const emptied = params.get("skip") === "1";
+      // Mirrors gitBridge's own rules: there is no `merge --skip`, and a rebase
+      // only offers Skip on the apply backend's emptied patch.
+      const canSkip = emptied && (op === "cherry-pick" || op === "revert" || op === "am");
       return {
         merging: op === "merge",
         rebasing: op === "rebase",
+        amApplying: op === "am",
         cherryPicking: op === "cherry-pick",
         reverting: op === "revert",
-        conflicts: 0,
+        conflicts,
+        kind: op || null,
+        canContinue: !!op && conflicts === 0 && !emptied,
+        canSkip,
+        nothingToCommit: emptied,
       };
     })(),
     "diff:files": changedFiles,
