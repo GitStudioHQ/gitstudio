@@ -1,0 +1,58 @@
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_df6f160b4d4688 94-102,160
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_c9632130e281df 223
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_c060d57b9209a8 4066-4069
+  s_26f5e669d3043c::t_8c24f741a8d63a 4078,4129-4142
+apps/desktop/src/renderer/aiSettings.ts
+  s_26f5e669d3043c::t_df349c55d917f9 255-260
+apps/desktop/src/renderer/views/projects.ts
+  s_26f5e669d3043c::t_df349c55d917f9 425-430
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_6ab6bbfb940fee 3415-3425
+  s_26f5e669d3043c::t_2a329a22ada591 3392-3401,3405,3411-3414,3426-3429
+  s_26f5e669d3043c::t_c9632130e281df 3402-3404,3406-3410
+  s_26f5e669d3043c::t_50297341f0d4f9 3391
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_8c24f741a8d63a 1525
+apps/desktop/src/renderer/overlays.ts
+  s_26f5e669d3043c::t_dac050122a8b62 39,46-50,54-60,224-238
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_c90556589bc1fc 1661-1668,1674-1678,1855-1862,1867-1873
+  s_26f5e669d3043c::t_8c24f741a8d63a 1905-1915
+  s_26f5e669d3043c::t_65803fb7cd6555 1669-1670,1917,1958,1966,1969,1975
+  s_26f5e669d3043c::t_c060d57b9209a8 1828-1847,1850
+  s_26f5e669d3043c::t_39b3f347266a83 2225-2233,2235-2239,2243,2245-2267
+apps/desktop/src/renderer/views/common.ts
+  s_26f5e669d3043c::t_dac050122a8b62 11,831-837
+apps/desktop/test/conflictWriteSafety.test.ts
+  s_26f5e669d3043c::t_7b6db40e1fc403 196-288
+apps/desktop/src/renderer/peek.ts
+  s_26f5e669d3043c::t_02d502186c051c 153-162
+apps/desktop/test/gitBridgeArgGuards.test.ts
+  s_26f5e669d3043c::t_66fb838627e9e4 50
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_df349c55d917f9 366-369
+apps/desktop/test/opState.test.ts
+  s_26f5e669d3043c::t_662d2fe05de0e7 4,453-507
+  s_26f5e669d3043c::t_aac7c381189286 405-452,508-512
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_8c24f741a8d63a 911
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e04e1ceff04c586b45d117b4d949e0d846154b51",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
