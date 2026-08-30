@@ -3389,6 +3389,45 @@
     },
 
     /**
+     * A PAGE-level key handler sits underneath every floating layer, so any
+     * open layer outranks it.
+     *
+     * `wireDetailEsc` answers ← as well as Escape, and it was moved from a
+     * four-selector DOM whitelist to `ownsEscape()` — which cannot see a peek,
+     * because a peek registers as a "surface". So ← started navigating the page
+     * BACK out from under an open peek and throwing the peek away with it.
+     */
+    "arrow-left-does-not-navigate-out-from-under-a-peek": async (f) => {
+      const c = check(f);
+      const detail = $(".gh-detail, .det-main");
+      c.ok(!!detail, "a detail page is showing (the surface that owns ← as Back)");
+      if (!detail) return;
+
+      const author = detail.querySelector(".gh-meta-author");
+      c.ok(!!author, "with an author chip that drills into a peek");
+      if (!author) return;
+      author.click();
+      await settle(900);
+      const peek = $(".peek-overlay");
+      c.ok(!!peek, "a peek is open over the page");
+      if (!peek) return;
+
+      // Dispatched on the FOCUSED element, not on `document`. The handler asks
+      // `e.target.closest(...)` to keep ← inside tablists and toolbars, and
+      // `document` has no `closest` — a synthetic event aimed there throws
+      // inside the listener before the rule under test is ever reached, and the
+      // check passes on a broken build for a reason that has nothing to do
+      // with the fix.
+      const target = document.activeElement && document.activeElement !== document.body
+        ? document.activeElement
+        : $(".peek-card") || $(".peek-overlay");
+      c.ok(!!target, "something inside the peek has the keyboard");
+      target.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+      await settle(700);
+      c.ok(!!$(".peek-overlay"), "← does not throw the peek away");
+    },
+
+    /**
      * Signing out — by EITHER button — has to make the whole window stop
      * claiming the account is still there.
      *

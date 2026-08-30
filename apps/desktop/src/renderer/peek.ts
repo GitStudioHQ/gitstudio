@@ -150,11 +150,16 @@ export function openPeek(card: PeekCard): void {
 
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
-      // Whatever sits ABOVE this peek owns Esc: the command palette, a menu, or
-      // a dialog opened from inside the peek itself. Without standing down, one
-      // Esc closed both layers — you dismissed the thing you aimed at and the
-      // card under it went too, taking anything you had typed into its filter.
-      if (!ownsEscape()) return;
+      // Whatever opened AFTER this peek owns Esc — a menu, a dialog, the
+      // palette, or another surface. Without standing down, one Esc closed both
+      // layers: you dismissed the thing you aimed at and the card under it went
+      // too, taking anything you had typed into its filter.
+      //
+      // Asked as "am I the top layer?", not "is a menu or a modal open?". The
+      // latter is a list of the kinds that happen to outrank a peek, and three
+      // surfaces have now each got a different subset of that list wrong. The
+      // registry knows the order; nothing else does.
+      if (!layer.isTop() || !ownsEscape()) return;
       e.preventDefault();
       e.stopPropagation();
       ctx.back();

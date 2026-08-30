@@ -193,3 +193,96 @@ test("a path whose parent directory is a symlink out of the repo is refused", as
     removeTempRepo(outside);
   }
 });
+
+/**
+ * Non-ASCII filenames.
+ *
+ * `ls-files` without `-z` honours `core.quotePath`, which defaults to true, so
+ * it C-quotes every path outside ASCII: `"caf\303\251.txt"`. The renderer sends
+ * the RAW path — it comes from `status --porcelain=v2 -z` — so an exact
+ * comparison against the quoted form never matched, "no stages found" fell into
+ * the branch that runs `git rm`, and Take ours DELETED the file and staged the
+ * deletion while reporting "Took your version."
+ *
+ * Measured before the fix: of six files conflicting in one merge, the four with
+ * non-ASCII names were destroyed and the two ASCII ones resolved correctly.
+ */
+test("a conflicted file with a non-ASCII name resolves, and is not deleted", async () => {
+  const names = ["plain.txt", "café.txt", "emoji🎉.md", "日本語.md", "sub dir/ünï.ts"];
+  const { root, git } = repo("unicode");
+  try {
+    execFileSync("mkdir", ["-p", `${root}/sub dir`]);
+    const writeAll = (side: string): void => {
+      for (const n of names) writeFileSync(`${root}/${n}`, `${side} ${n}\n`);
+    };
+    writeAll("base");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "-qb", "side");
+    writeAll("theirs");
+    git("add", "-A");
+    git("commit", "-qm", "theirs");
+    git("checkout", "-q", main);
+    writeAll("ours");
+    git("add", "-A");
+    git("commit", "-qm", "ours");
+    try {
+      execFileSync("git", ["merge", "side"], { cwd: root, stdio: "ignore" });
+    } catch {
+      /* the conflict is the point */
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    assert.deepEqual([...(await b.conflictList())].sort(), [...names].sort(), "all six are conflicted");
+
+    for (const n of names) {
+      const r = await b.conflictTakeSide({ path: n, side: "ours" });
+      assert.equal(r.ok, true, `${n}: Take ours succeeds — ${r.message ?? ""}`);
+      assert.equal(
+        readFileSync(`${root}/${n}`, "utf8"),
+        `ours ${n}\n`,
+        `${n}: the file is still there, with OUR side in it`,
+      );
+    }
+    assert.deepEqual(await b.conflictList(), [], "and every conflict is resolved");
+    assert.equal(
+      git("diff", "--cached", "--name-only", "--diff-filter=D").trim(),
+      "",
+      "with nothing staged as a deletion",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * And when the listing cannot be read at all, the answer is a refusal — not a
+ * deletion. `!present.has(stage)` could not tell "the other side deleted it"
+ * from "I did not find this path", and answered both by running `git rm`. That
+ * made destruction the default outcome of not understanding the input, which is
+ * precisely how the C-quoting bug above destroyed four files.
+ */
+test("a path the conflict listing does not mention is refused, not deleted", async () => {
+  const { root, git } = repo("unknown");
+  try {
+    conflict(root, git, "f.txt", (side) => writeFileSync(`${root}/f.txt`, `${side}\n`));
+    writeFileSync(`${root}/bystander.txt`, "not conflicted at all\n");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const r = await new GitBridge(repos).conflictTakeSide({ path: "bystander.txt", side: "theirs" });
+
+    assert.equal(r.ok, false, "refused");
+    assert.equal(r.expected, true, "as a condition, not a crash to report");
+    assert.equal(
+      readFileSync(`${root}/bystander.txt`, "utf8"),
+      "not conflicted at all\n",
+      "and the file is still there",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});

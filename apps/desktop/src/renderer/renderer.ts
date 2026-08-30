@@ -4063,7 +4063,10 @@ class App {
       const cont = el("button", "btn btn-primary mini-btn") as HTMLButtonElement;
       // Skip, not Continue, when there is nothing left to commit — that is
       // git's own answer, and it was the one way out the banner never offered.
-      const skipping = op.nothingToCommit && (op.cherryPicking || op.reverting || op.rebasing);
+      // `nothingToCommit` is reported for a cherry-pick or a revert only, and
+      // this must not widen it: `rebase:skip` HARD-RESETS the working tree, and
+      // a rebase paused at `edit` looks identical to an empty patch from here.
+      const skipping = op.nothingToCommit && (op.cherryPicking || op.reverting);
       cont.append(glyph(skipping ? "arrow-right" : "check"), span(skipping ? "Skip" : "Continue"));
       cont.disabled = op.conflicts > 0;
       type OpChannel =
@@ -4072,7 +4075,7 @@ class App {
         | "cherryPick:abort" | "cherryPick:continue"
         | "revert:abort" | "revert:continue"
         | "cherryPick:skip" | "revert:skip" | "rebase:skip"
-        | "am:abort" | "am:continue";
+        | "am:abort" | "am:continue" | "am:skip";
       const runOp = async (ch: OpChannel): Promise<void> => {
         try {
           const r = await host.invoke(ch, undefined);
@@ -4123,7 +4126,20 @@ class App {
       cont.addEventListener("click", () =>
         void runOp(`${family}:${skipping ? "skip" : "continue"}` as OpChannel),
       );
-      acts.append(abort, cont);
+      // A patch series gets a third control. Continue and Abandon alone left
+      // "finish it" (which git refuses when the patch will not apply) and
+      // "throw the whole series away" as the only choices, while git's own
+      // advice on that screen is `git am --skip`. Not primary: it discards a
+      // patch, it just discards far less than Abandon does.
+      if (op.amApplying) {
+        const skip = el("button", "mini-btn") as HTMLButtonElement;
+        skip.append(glyph("arrow-right"), span("Skip this patch"));
+        skip.title = "Drop the patch git is stuck on and carry on with the rest of the series";
+        skip.addEventListener("click", () => void runOp("am:skip"));
+        acts.append(abort, skip, cont);
+      } else {
+        acts.append(abort, cont);
+      }
       banner.append(txt, acts);
       wrap.insertBefore(banner, wrap.firstChild);
     });

@@ -36,14 +36,26 @@ let layers: Layer[] = [];
 export function registerLayer(
   dispose: () => void,
   kind: LayerKind = "surface",
-): { release: () => void } {
+): LayerHandle {
   const id = nextId++;
   layers.push({ id, kind, dispose });
   return {
     release: () => {
       layers = layers.filter((l) => l.id !== id);
     },
+    // "Is anything still open that opened AFTER me?" — the question every
+    // surface with a keyboard handler is actually asking, and the registry is
+    // the only thing that can answer it. See `ownsEscape` for what happened
+    // while they each asked something else.
+    isTop: () => layers.length > 0 && layers[layers.length - 1].id === id,
   };
+}
+
+/** What `registerLayer` hands back. */
+export interface LayerHandle {
+  release: () => void;
+  /** True while no layer registered after this one is still open. */
+  isTop: () => boolean;
 }
 
 /**
@@ -208,4 +220,19 @@ export function isModalOpen(): boolean {
  */
 export function ownsEscape(): boolean {
   return !document.body.classList.contains("cmdk-open") && !isMenuOpen() && !isModalOpen();
+}
+
+/**
+ * The rule for a PAGE-LEVEL key handler — one that belongs to the view itself
+ * rather than to a floating surface. It sits underneath every layer, so ANY
+ * open layer outranks it, not only the ones that outrank a peek.
+ *
+ * `wireDetailEsc` (which answers ← as well as Escape) used a whitelist of four
+ * CSS selectors and was moved to `ownsEscape()`, which cannot see a peek — a
+ * peek registers as a "surface". So ← started routing the page out from under
+ * an open peek and throwing the peek away with it. A page-level handler should
+ * never have been asking the peek's question.
+ */
+export function pageOwnsKeys(): boolean {
+  return openLayerCount() === 0 && ownsEscape();
 }

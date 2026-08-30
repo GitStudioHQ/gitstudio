@@ -1522,6 +1522,7 @@ export interface IpcChannels {
   "cherryPick:skip": [void, CommitActionResult];
   "revert:skip": [void, CommitActionResult];
   "am:abort": [void, CommitActionResult];
+  "am:skip": [void, CommitActionResult];
   "am:continue": [void, CommitActionResult];
   // ── Tag creation (the Branches view's "Create tag here…") ──
   "tag:create": [{ name: string; ref?: string; message?: string }, CommitActionResult];

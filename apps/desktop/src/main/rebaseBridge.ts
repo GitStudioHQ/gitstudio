@@ -91,6 +91,15 @@ export class RebaseBridge {
     // independent, and on a large repo with no commit-graph each is ~115ms.
     // Run in series that is a quarter-second before the view paints; run
     // together it is the cost of one.
+    // HEAD is read BEFORE the walk, strictly serially, and that one value is
+    // what the plan records. Sampled after — which is where the object literal
+    // below used to evaluate it — a commit landing during the load is baked in
+    // as "the tip this plan describes", so `apply()` compares the new tip to
+    // the new tip and passes, and the commit nobody saw is replayed as the
+    // OLDEST on the branch. Folding it into the Promise.all fixes nothing: the
+    // rev-parse would still race the log. A tip read first can only be equal or
+    // older than the rows, which makes the staleness check fail safe.
+    const head = await this.headSha();
     const [commits, baseCommit, merges, applied] = await Promise.all([
       this.loadCommits(base),
       base === "--root" ? Promise.resolve(undefined) : this.loadBaseCommit(base),
@@ -148,7 +157,7 @@ export class RebaseBridge {
       commits,
       baseCommit,
       inProgress,
-      headSha: await this.headSha(),
+      headSha: head,
       // The number apply() acts on: the whole selection, cap or no cap. The
       // walk is `--cherry-pick --right-only`'s, NOT a plain `base..HEAD` count
       // — the commits that walk drops are exactly the ones apply() does not

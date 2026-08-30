@@ -220,6 +220,7 @@ const CASES = [
   ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=revert" }],
   ["the-composer-keeps-your-place-through-a-repaint", "changes"],
   ["escape-closes-one-layer-at-a-time", "branches"],
+  ["arrow-left-does-not-navigate-out-from-under-a-peek", "prs~open106"],
   ["a-surface-under-a-dialog-keeps-its-escape", "projects~click:.gh-card.clickable", { arg: "drawer" }],
   ["a-surface-under-a-dialog-keeps-its-escape", "changes~bell", { arg: "popover" }],
   ["the-code-viewer-back-is-a-navigation", "code"],

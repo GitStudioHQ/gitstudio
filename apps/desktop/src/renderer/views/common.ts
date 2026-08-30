@@ -8,7 +8,7 @@ import { host } from "../bridge";
 import { gget } from "../cache";
 import { openModal } from "../dialogs";
 import { focusNewPage } from "../focusReturn";
-import { ownsEscape } from "../overlays";
+import { pageOwnsKeys } from "../overlays";
 import {
   cleanErr,
   el,
@@ -828,13 +828,13 @@ function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
     if (left && t && t !== document.body && t.closest('[role="tablist"], [role="toolbar"], [role="separator"], [role="listbox"], [role="menu"], .gh-seg, .settings-seg, .cmp-seg')) {
       return;
     }
-    // A floating layer above the page owns these keys. Asked through the
-    // registry, not by querying for a list of class names: this was the fourth
-    // copy of the same rule, and a whitelist of selectors is a list that a new
-    // surface silently falls off. (`aiSettings`'s connect overlay was exactly
-    // that surface — `aria-modal="true"`, in no registry, matched by none of
-    // the four selectors.)
-    if (!ownsEscape()) return;
+    // ANY floating layer above the page owns these keys — this handler belongs
+    // to the page, so everything outranks it. `ownsEscape()` is the wrong
+    // question here: it cannot see a peek (a "surface"), so ← started routing
+    // the page out from under an open peek and throwing the peek away. The
+    // whitelist of four CSS selectors this replaced did happen to match
+    // `.peek-overlay`; the registry matches every layer, present and future.
+    if (!pageOwnsKeys()) return;
     for (let i = detailStack.length - 1; i >= 0; i--) {
       const v = detailStack[i];
       if (!v.isConnected) continue;

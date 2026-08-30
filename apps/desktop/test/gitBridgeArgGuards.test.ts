@@ -47,6 +47,7 @@ const REVIEWED: Record<string, string> = {
   mergeAbort: "no arguments",
   mergeContinue: "no arguments",
   amAbort: "no arguments",
+  amSkip: "no arguments",
   amContinue: "no arguments",
   cherryPickAbort: "no arguments",
   cherryPickSkip: "no arguments",

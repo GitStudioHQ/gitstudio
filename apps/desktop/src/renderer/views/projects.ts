@@ -422,11 +422,12 @@ function openIssueDrawer(number: number, nav: SectionNav, onChanged?: () => void
   const layer = registerLayer(() => dispose(false));
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
-      // A dialog opened from inside the drawer owns Escape. Without this, one
-      // press closed the dialog and took the drawer under it too, discarding
-      // whatever the card was showing. Same rule as the peek and the
-      // notifications popover; see `ownsEscape`.
-      if (!ownsEscape()) return;
+      // Anything opened AFTER the drawer owns Escape — a dialog, a menu, or a
+      // peek drilled into from the card. Without this, one press closed the
+      // thing you aimed at and took the drawer under it too, discarding
+      // whatever the card was showing. Asked as "am I the top layer?", because
+      // "is a modal open?" cannot see a peek. See `registerLayer`.
+      if (!layer.isTop() || !ownsEscape()) return;
       e.preventDefault();
       dispose();
     }

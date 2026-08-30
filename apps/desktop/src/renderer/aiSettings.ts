@@ -252,7 +252,12 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   const layer = registerLayer(() => closeOverlay(), "modal");
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
-      if (!ownsEscape()) return;
+      // `isTop()`, NOT `ownsEscape()`. The gallery registers itself as a
+      // "modal", and `ownsEscape()` asks "is any modal open?" — which its own
+      // registration makes true, so Escape could never close it at all. The
+      // registry answers the question each surface is actually asking: is
+      // anything still open that opened after me?
+      if (!layer.isTop() || !ownsEscape()) return;
       e.preventDefault();
       closeOverlay();
       return;

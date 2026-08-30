@@ -1658,11 +1658,24 @@ export class GitBridge {
         // marked expected. "The previous cherry-pick is now empty" is the
         // commonest of them — picking something already on the branch — and it
         // filed a report on every press of a button the app itself had enabled.
-        const ordinary = /is now empty|nothing to commit|no changes .* patch already applied/i.test(both);
+        //
+        // Matching on English strings is the wrong mechanism for that, and it
+        // proved it: `git am --continue` stopping on the next patch of a series
+        // — the most ordinary outcome there is — matched none of these
+        // wordings and was reported as a crash. Callers that KNOW their failure
+        // is always a condition say so with `expected`, and the strings stay
+        // only as a fallback for the callers that do not.
+        const ordinary =
+          r.expected === true ||
+          /is now empty|nothing to commit|no changes .* patch already applied/i.test(both);
         return {
           ok: false,
           changed: false,
-          message: stderr || stdout || "The operation failed.",
+          // BOTH streams, stdout first. git splits one explanation across them
+          // — `am --continue` puts "error: Failed to merge in the changes." on
+          // stderr and the file it stopped on, plus what to do next, on stdout
+          // — and showing only stderr threw away the half that helps.
+          message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || "The operation failed.",
           ...(stderr && !ordinary ? {} : { expected: true }),
         };
       } catch (err) {
@@ -1812,22 +1825,52 @@ export class GitBridge {
       // Only meaningful while something is stopped, and only when nothing is
       // conflicted: `diff --cached --quiet HEAD` exiting 0 means the index
       // matches HEAD, so there is no commit left to make.
-      // A MERGE is deliberately excluded: git allows an empty merge commit, so
-      // `commit --no-edit` genuinely finishes one whose result matches HEAD.
-      // The verbs that refuse are the sequencer's.
+      // CHERRY-PICK AND REVERT ONLY.
+      //
+      // The signal is "the index equals HEAD", and for those two verbs that
+      // means exactly one thing: the patch is empty, git will refuse to record
+      // it, and Skip is the way out.
+      //
+      // It means something else entirely during a REBASE. At an `edit` stop —
+      // which the user asked for, and which the app's own hint describes as
+      // "Pause here so you can amend the commit" — git has already applied the
+      // commit, so the index matches HEAD and nothing is conflicted. Reading
+      // that as "nothing left to commit" put a lie in the banner and turned the
+      // single forward button into `git rebase --skip`, which HARD-RESETS the
+      // working tree: the amend you paused to make is gone, and in git's own
+      // split-a-commit flow the commit being split is gone with it. A merge is
+      // excluded for a different reason — git allows an empty merge commit, so
+      // `commit --no-edit` genuinely finishes one.
+      //
+      // A rebase that really does reach an empty patch is rare now that the
+      // todo is built with `--cherry-pick --right-only`, and the Rebase view's
+      // own in-progress card is where that belongs.
       nothingToCommit:
         conflicts === 0 &&
-        (rebaseM || rebaseA || cherryPicking || reverting) &&
+        (cherryPicking || reverting) &&
         (await ctx.process.run(["diff", "--cached", "--quiet", "HEAD"])).code === 0,
     };
   }
 
-  private runResult(args: string[]): Promise<CommitActionResult> {
+  /**
+   * `alwaysExpected` marks a command whose FAILURE is always a condition rather
+   * than a defect — the sequencer's continue/skip verbs, where "stopped on the
+   * next patch" and "nothing to do" are the normal outcomes. Without it the
+   * classifier falls back to matching git's English on stderr, which missed
+   * every `git am` wording and filed a crash report on each one.
+   */
+  private runResult(args: string[], opts?: { alwaysExpected?: boolean }): Promise<CommitActionResult> {
     return this.staged(async (ctx) => {
       const r = await ctx.process.run(args);
       // stdout matters here: rebase --continue with unresolved conflicts, and
       // merge-continue's `commit --no-edit`, both explain themselves there.
-      return { ok: r.code === 0, code: r.code, stderr: r.stderr, stdout: r.stdout };
+      return {
+        ok: r.code === 0,
+        code: r.code,
+        stderr: r.stderr,
+        stdout: r.stdout,
+        ...(opts?.alwaysExpected ? { expected: true } : {}),
+      };
     });
   }
 
@@ -1859,8 +1902,19 @@ export class GitBridge {
    * Reporting that as "Done." would be a lie about the repository's state, so
    * the warning is passed back as the result's message.
    */
+  /**
+   * Drop the patch git is stuck on and carry on with the rest of the series.
+   *
+   * The banner offered Continue and Abandon and nothing between them, so a
+   * patch that simply would not apply left "finish it" (which git refuses) and
+   * "throw the whole series away" as the only choices — while git's own advice
+   * on that screen is `git am --skip`.
+   */
+  amSkip(): Promise<CommitActionResult> {
+    return this.runResult(["am", "--skip"], { alwaysExpected: true });
+  }
   amContinue(): Promise<CommitActionResult> {
-    return this.runResult(["am", "--continue"]);
+    return this.runResult(["am", "--continue"], { alwaysExpected: true });
   }
   async amAbort(): Promise<CommitActionResult> {
     const ctx = this.ctx();
@@ -1901,7 +1955,7 @@ export class GitBridge {
     return this.runResult(["cherry-pick", "--abort"]);
   }
   cherryPickContinue(): Promise<CommitActionResult> {
-    return this.runResult(["cherry-pick", "--continue", "--no-edit"]);
+    return this.runResult(["cherry-pick", "--continue", "--no-edit"], { alwaysExpected: true });
   }
   /**
    * Skipping the stopped commit. This is git's own answer to "the previous
@@ -1909,16 +1963,16 @@ export class GitBridge {
    * offered.
    */
   cherryPickSkip(): Promise<CommitActionResult> {
-    return this.runResult(["cherry-pick", "--skip"]);
+    return this.runResult(["cherry-pick", "--skip"], { alwaysExpected: true });
   }
   revertSkip(): Promise<CommitActionResult> {
-    return this.runResult(["revert", "--skip"]);
+    return this.runResult(["revert", "--skip"], { alwaysExpected: true });
   }
   revertAbort(): Promise<CommitActionResult> {
     return this.runResult(["revert", "--abort"]);
   }
   revertContinue(): Promise<CommitActionResult> {
-    return this.runResult(["revert", "--continue", "--no-edit"]);
+    return this.runResult(["revert", "--continue", "--no-edit"], { alwaysExpected: true });
   }
   /**
    * Abort through the RUNNER, which also forgets the reword queue.
@@ -2168,45 +2222,49 @@ export class GitBridge {
         // and the user got a raw `fatal: path ... does not exist` for pressing a
         // button the app itself offered. Taking a side that deleted the file
         // means removing the file.
-        // NO pathspec, and an exact path comparison below.
+        // `-z`, ALWAYS. Without it `ls-files` honours `core.quotePath`, which
+        // defaults to true, so it C-QUOTES every path outside ASCII:
+        // `"caf\303\251.txt"`, quotes and octal escapes included. The renderer
+        // sends the RAW path (it comes from `status --porcelain=v2 -z`), so an
+        // exact comparison against the quoted form never matches — and "no
+        // stages found" fell into the branch that runs `git rm`. Verified: a
+        // merge conflicting six files, "Take ours" on each, four of six DELETED
+        // and the deletions staged, every one reported ok:true. The convention
+        // is written down forty lines above this, at `fileDiff`'s own listing.
         //
-        // This answer decides whether "Take theirs" WRITES a file or DELETES
-        // one, so it must not depend on git's pathspec matching — which is
-        // glob-capable, and whose literal-vs-glob precedence is steerable from
-        // the environment git is spawned with (`GIT_GLOB_PATHSPECS`,
-        // `GIT_LITERAL_PATHSPECS`). A filename like `[id].tsx`, ordinary in
-        // every Next.js and SvelteKit app, is a character class if it is ever
-        // read as a glob. Measured on git 2.49 it is matched literally in all
-        // three modes, so this is not a bug being fixed — it is a dependency
-        // being removed from a code path whose two outcomes are write and
-        // delete.
-        //
-        // `:(literal)` would NOT do it: with `GIT_LITERAL_PATHSPECS=1` set the
+        // The path is compared HERE rather than passed as a pathspec: this
+        // answer decides between writing a file and deleting one, and a
+        // pathspec is glob-capable with environment-steerable precedence
+        // (`GIT_GLOB_PATHSPECS`, `GIT_LITERAL_PATHSPECS`). `:(literal)` is not
+        // the escape hatch it looks like — under `GIT_LITERAL_PATHSPECS=1` the
         // magic prefix becomes part of the filename and matches nothing.
         //
         // The list is bounded by the number of conflicts, which is small.
-        const unmerged = await ctx.process.run(["ls-files", "-u"]);
+        const unmerged = await ctx.process.run(["ls-files", "-u", "-z"]);
         if (unmerged.code === 0 && unmerged.stdout.trim()) {
-          // Filter by the PATH each line names, not just by the stage number.
-          // A pathspec is a glob: `[id].tsx` — an ordinary filename in every
-          // Next.js and SvelteKit app — is a character class matching `i`, `d`,
-          // and any sibling file whose name is one of those characters. Those
-          // siblings are not conflicted, so no stage 2 or 3 line appears for
-          // them; but a stage-1 line from the real file plus the union of
-          // everything matched made the "which sides exist" answer wrong, and
-          // Take theirs concluded "theirs deleted it" and ran `git rm` on a
-          // file that was plainly there.
-          //
-          // Not `:(literal)`: git is spawned with the inherited environment, so
-          // under `GIT_LITERAL_PATHSPECS=1` the magic prefix becomes part of
-          // the filename and matches nothing at all.
-          const present = new Set(
-            unmerged.stdout
-              .split("\n")
-              .map((line) => /^\d{6} [0-9a-f]+ (\d)\t(.*)$/.exec(line))
-              .filter((m): m is RegExpExecArray => !!m && m[2] === req.path)
-              .map((m) => m[1]),
-          );
+          // `[\s\S]` for the path, not `.`: with `-z` a path containing a
+          // NEWLINE arrives raw, and `.` will not cross it — which would drop
+          // that file straight back into the delete branch.
+          const rows = unmerged.stdout
+            .split("\0")
+            .map((rec) => /^\d{6} [0-9a-f]+ (\d)\t([\s\S]*)$/.exec(rec))
+            .filter((m): m is RegExpExecArray => !!m);
+          const present = new Set(rows.filter((m) => m[2] === req.path).map((m) => m[1]));
+          // DELETE only when git says this path really has no such side. A
+          // modify/delete conflict always lists the path with stage 1 plus one
+          // of 2 or 3, so "listed, but not the side you asked for" is the only
+          // safe reading of an absent stage. "Not listed at all" means the
+          // parse failed or the path moved, and answering that with `git rm`
+          // makes destruction the default outcome of not understanding the
+          // input — which is exactly how the C-quoting bug destroyed files.
+          if (!present.size) {
+            return {
+              ok: false,
+              changed: false,
+              expected: true,
+              message: `Couldn't read the conflict state for ${req.path}. Nothing was changed — try refreshing.`,
+            };
+          }
           if (!present.has(stage)) {
             const rm = await ctx.process.run(["rm", "-f", "--", req.path]);
             if (rm.code !== 0) {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
@@ -398,6 +398,114 @@ test("a genuine conflict still reports something to commit", async () => {
     assert.equal(st.conflicts, 0, "resolved");
     assert.equal(st.nothingToCommit, false, "and there IS something to commit — Continue is right here");
     assert.equal((await b.cherryPickContinue()).ok, true, "and it works");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * A rebase paused at `edit` is NOT "nothing left to commit".
+ *
+ * The user asked for that pause — the Rebase view's own hint for the action is
+ * "Pause here so you can amend the commit". git has already applied the commit,
+ * so the index matches HEAD and nothing is conflicted, which is byte-identical
+ * to an empty cherry-pick from a conflict count's point of view.
+ *
+ * Reading it that way put a lie in the banner ("nothing left to commit, this
+ * one is already on the branch") and relabelled the single forward button
+ * **Skip** — `git rebase --skip`, which HARD-RESETS the working tree. The amend
+ * you paused to make is discarded, and in git's own split-a-commit flow
+ * (`edit`, then `git reset HEAD^`) the commit being split goes with it. No
+ * confirm dialog, and a green "Done."
+ */
+test("a rebase paused at an edit stop is never reported as nothing to commit", async () => {
+  const { root, git } = repo("editstop");
+  try {
+    writeFileSync(`${root}/f.txt`, "base\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("branch", "trunk");
+    writeFileSync(`${root}/a.txt`, "a\n");
+    git("add", "-A");
+    git("commit", "-qm", "the commit to edit");
+
+    // `edit` on the only commit — the exact stop the Rebase view produces.
+    const seq = `${root}/seq.sh`;
+    writeFileSync(seq, '#!/bin/sh\nsed -i.bak "s/^pick /edit /" "$1"\n');
+    execFileSync("chmod", ["+x", seq]);
+    execFileSync("git", ["rebase", "-i", "trunk"], {
+      cwd: root,
+      env: { ...process.env, GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: "true" },
+      stdio: "ignore",
+    });
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    const st = await b.opState();
+
+    assert.equal(st.rebasing, true, "the rebase is paused");
+    assert.equal(st.conflicts, 0, "with nothing conflicted — which is why a conflict count cannot see it");
+    assert.equal(
+      st.nothingToCommit,
+      false,
+      "and it is NOT 'nothing to commit' — the banner must not offer a hard-resetting Skip here",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * A patch that simply will not apply.
+ *
+ * The banner offered Continue — which git refuses, because there is nothing
+ * staged to record — and Abandon, which throws the whole series away. git's own
+ * advice on that screen is `git am --skip`, and it was offered nowhere. The
+ * refusal was also classified as a crash rather than a condition, so pressing
+ * the one enabled button filed a report each time.
+ */
+test("a patch that will not apply can be skipped, and the refusal is not a crash", async () => {
+  const { root, git } = repo("amskip");
+  try {
+    writeFileSync(`${root}/f.txt`, "base\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+
+    git("checkout", "-qb", "series");
+    writeFileSync(`${root}/f.txt`, "from patch one\n");
+    git("commit", "-qam", "patch one");
+    writeFileSync(`${root}/g.txt`, "second\n");
+    git("add", "-A");
+    git("commit", "-qm", "patch two");
+    writeFileSync(`${root}/series.patch`, git("format-patch", "-2", "--stdout"));
+
+    git("checkout", "-q", main);
+    writeFileSync(`${root}/f.txt`, "diverged\n");
+    git("commit", "-qam", "diverged");
+    tryGit(root, "am", "series.patch");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    assert.equal((await b.opState()).amApplying, true, "the series is stopped");
+
+    // Continue with nothing resolved: git refuses, and that is a CONDITION.
+    const cont = await b.amContinue();
+    assert.equal(cont.ok, false, "Continue cannot succeed on an unapplied patch");
+    assert.equal(cont.expected, true, "and it is not reported as a crash");
+    assert.ok((cont.message ?? "").length > 0, "with something the user can read");
+
+    const skipped = await b.amSkip();
+    assert.equal(skipped.ok, true, `Skip drops that patch — ${skipped.message ?? ""}`);
+    assert.equal(existsSync(`${root}/g.txt`), true, "and the REST of the series still applied");
+    assert.equal((await b.opState()).amApplying, false, "with the session finished");
+    assert.equal(
+      readFileSync(`${root}/f.txt`, "utf8"),
+      "diverged\n",
+      "the skipped patch left the file as it was",
+    );
   } finally {
     removeTempRepo(root);
   }

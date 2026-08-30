@@ -908,6 +908,7 @@ function registerIpc(): void {
   handle("cherryPick:skip", () => bridge.cherryPickSkip());
   handle("revert:skip", () => bridge.revertSkip());
   handle("am:abort", () => bridge.amAbort());
+  handle("am:skip", () => bridge.amSkip());
   handle("am:continue", () => bridge.amContinue());
   handle("rebase:abort", () => bridge.rebaseAbort());
   handle("rebase:continue", () => bridge.rebaseContinue());

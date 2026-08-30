@@ -363,10 +363,10 @@ export function openNotificationsPanel(
   };
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
-      // Whatever is above the popover owns Escape — otherwise one press closed
-      // the dialog AND the popover that opened it. Same rule as the peek and
-      // the Projects drawer; see `ownsEscape`.
-      if (!ownsEscape()) return;
+      // Whatever opened AFTER the popover owns Escape — otherwise one press
+      // closed the dialog AND the popover that opened it. Asked as "am I the
+      // top layer?"; see `registerLayer`.
+      if (!layer.isTop() || !ownsEscape()) return;
       e.preventDefault();
       close(true);
     }
