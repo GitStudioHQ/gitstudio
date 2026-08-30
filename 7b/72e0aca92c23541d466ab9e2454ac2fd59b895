@@ -1,0 +1,129 @@
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_c3ad921f785c87 1115-1122
+  s_26f5e669d3043c::t_377e6a10ed5a56 1494-1497
+  s_26f5e669d3043c::t_d238e2c8c7c2df 1114
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_72f8cd4152a1b0 327-346,350-352
+  s_26f5e669d3043c::t_51ad9a172ad8fd 68-74,76-78,376-382
+  s_26f5e669d3043c::t_93b90acfca0c3e 383-384
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_377e6a10ed5a56 904-907
+apps/desktop/test/opState.test.ts
+  s_26f5e669d3043c::t_c12cf2b059f797 1-180
+  s_26f5e669d3043c::t_f1e5ae30088165 181-229
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_46b23d2298ed42 1240-1244,1246-1255,1258-1261
+  s_26f5e669d3043c::t_377e6a10ed5a56 1804-1823
+  s_26f5e669d3043c::t_e7824bf0d1f7d1 79-92,100-104,2013,2031
+  s_26f5e669d3043c::t_8dee1283112dfb 1765,1769-1775,1781
+  s_26f5e669d3043c::t_21f5ab635f848c 105-106,1803
+apps/desktop/test/rebaseUpdateRefs.test.ts
+  s_26f5e669d3043c::t_ac451840b67f5e 226-245,250,254-257,268-277,279-284,287-293
+  s_26f5e669d3043c::t_c16b1e5b8e7884 246-249,251-253,264-266
+  s_26f5e669d3043c::t_f4add8206ee361 258-263,267,278,285-286
+  s_26f5e669d3043c::t_592d6e72ed0308 225
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_2202b8463a9bfb 94,98,112-124,361-376
+  s_26f5e669d3043c::t_e9488295368a76 216-250,252,296,377
+  s_26f5e669d3043c::t_5fe4493d506c4b 253-256
+  s_26f5e669d3043c::t_c3ad921f785c87 202-210
+  s_26f5e669d3043c::t_257b0c795efd85 329-333,339-345
+  s_26f5e669d3043c::t_1313f155acaf47 378
+apps/desktop/test/rewordAcrossStop.test.ts
+  s_26f5e669d3043c::t_167c2c6e108deb 472-578
+apps/desktop/src/renderer/terminalDock.ts
+  s_26f5e669d3043c::t_f14222d06589a8 142-143
+  s_26f5e669d3043c::t_e86b9af6e30f85 135-141
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_39be4372fbaeed 584,4954
+  s_26f5e669d3043c::t_2924fc1443b6b0 3415
+  s_26f5e669d3043c::t_bd882cc27d7c61 223-224
+  s_26f5e669d3043c::t_b9d70b0a9757e3 3511-3521,3953-3956,3958-3963
+  s_26f5e669d3043c::t_befd6da8dbe25b 2875-2880,5094-5107
+  s_26f5e669d3043c::t_38f77e294e067a 3408-3414,3416
+  s_26f5e669d3043c::t_377e6a10ed5a56 4057-4062,4075-4085
+apps/desktop/test/gitBridgeArgGuards.test.ts
+  s_26f5e669d3043c::t_2b0410ffb36397 49-52
+  s_26f5e669d3043c::t_e7824bf0d1f7d1 96-98
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_a7415fba0363a5 3247-3248
+  s_26f5e669d3043c::t_10e3eb4fb5314a 3276-3295,3298-3304,3310-3311,3313-3318,3320-3321,3323-3324
+  s_26f5e669d3043c::t_82aa6f0908a022 3305-3309,3312,3319,3322
+  s_26f5e669d3043c::t_58728d04c1a0c4 3140-3154,3156-3165
+  s_26f5e669d3043c::t_6edec6db98552b 3155
+  s_26f5e669d3043c::t_92bd9c0d99a375 3166-3185,3187-3198
+  s_26f5e669d3043c::t_90acc0251d431a 3296-3297
+  s_26f5e669d3043c::t_218969c63bfb9f 3264-3274
+  s_26f5e669d3043c::t_81ce4513d60f75 3237-3246,3249-3263,3275
+  s_26f5e669d3043c::t_bb312b0e9432bd 3208,3212,3217-3222,3224-3226
+  s_26f5e669d3043c::t_1ae200eeaee868 3199-3207,3209-3211,3213-3216,3223,3227-3236
+  s_26f5e669d3043c::t_4323fdb06c3003 3186
+apps/extension/test/rebaseTodoSelection.test.ts
+  s_26f5e669d3043c::t_295d0b5e60b5ea 78-80,82-90
+  s_26f5e669d3043c::t_4ee37992a08d3e 1-77,81,91-92
+packages/git-service/src/RebaseRunner.ts
+  s_26f5e669d3043c::t_8b58055e73118d 283-298,319,333,446-454
+  s_26f5e669d3043c::t_ec6f635faa431b 226,242-246,260,263-269,272,299-318,320-332,389-399,472-473,500-501
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_e36f2f80d44708 125
+apps/desktop/src/renderer/overlays.ts
+  s_26f5e669d3043c::t_e36f2f80d44708 19,141-154
+  s_26f5e669d3043c::t_895088ecaaddd8 155
+apps/desktop/test/rebaseAlreadyApplied.test.ts
+  s_26f5e669d3043c::t_38ef1da90b8fa3 72,109
+  s_26f5e669d3043c::t_a6f665cec47179 62-67,69-71,73,104,106-108,110
+  s_26f5e669d3043c::t_f6c9bb7aa6da90 1-61,68,74-103,105,111-140
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_086a6dbabf21a6 106-114,999,1001-1002,1566
+  s_26f5e669d3043c::t_788ff616335cf8 14
+  s_26f5e669d3043c::t_af0cb7a557cb6d 105
+apps/desktop/test/identityIpc.test.ts
+  s_26f5e669d3043c::t_b8a808e2ae5a30 70-96
+apps/desktop/test/dashNamedPath.test.ts
+  s_26f5e669d3043c::t_bbfe8708851d7c 1-103
+apps/desktop/test/cache.test.ts
+  s_26f5e669d3043c::t_8c1542512a0c18 218-233
+  s_26f5e669d3043c::t_dbdc9fab9adf45 53,60,64
+apps/desktop/harness/gen.sh
+  s_26f5e669d3043c::t_29e155b8c640e3 12-19
+apps/desktop/src/renderer/peek.ts
+  s_26f5e669d3043c::t_fb73280879e5ce 159-163
+  s_26f5e669d3043c::t_c00fcd5fac6cda 10
+apps/desktop/src/renderer/views/issues.ts
+  s_26f5e669d3043c::t_788ff616335cf8 11
+  s_26f5e669d3043c::t_086a6dbabf21a6 81-90,747,749-750,837
+apps/desktop/src/renderer/bottomDock.ts
+  s_26f5e669d3043c::t_90acc0251d431a 181-187
+  s_26f5e669d3043c::t_bff345d4fcf524 74-80
+apps/desktop/src/renderer/cache.ts
+  s_26f5e669d3043c::t_086a6dbabf21a6 59-67
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_10e3eb4fb5314a 224-226
+  s_26f5e669d3043c::t_bb312b0e9432bd 222
+  s_26f5e669d3043c::t_e00df5ce860c00 227
+  s_26f5e669d3043c::t_a7415fba0363a5 223
+  s_26f5e669d3043c::t_c8ab588a4f83ee 217-220
+  s_26f5e669d3043c::t_92bd9c0d99a375 221
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_c3ad921f785c87 101-108
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_5d5d2ecff158d8 287
+  s_26f5e669d3043c::t_47e54274ff922f 744-781
+  s_26f5e669d3043c::t_94d0d5f2bf73c0 276-286,288-289,783-784,787
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7b72e0aca92c23541d466ab9e2454ac2fd59b895",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
