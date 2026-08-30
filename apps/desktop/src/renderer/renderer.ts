@@ -63,6 +63,7 @@ import {
   wireResizerKeys,
   middleTruncate,
   markSegment,
+  statusWord,
 } from "./ui";
 import type { MenuItem } from "./ui";
 import { plural } from "./textFit";
@@ -2490,6 +2491,13 @@ class App {
       }
       btns.forEach((b, i) => b.classList.toggle("active", modes[i].id === this.themeMode));
       logoBtns.forEach((b, i) => b.classList.toggle("active", logoModes[i].id === this.logoMode));
+      // `aria-pressed` too, not just the class. `markSegment` keeps it in step
+      // from a delegated CLICK listener, so a theme changed from anywhere else
+      // — ⌘K, the menu, an OS flip — moved the highlight while leaving the
+      // announced state on the button that is no longer chosen.
+      for (const b of [...btns, ...logoBtns]) {
+        b.setAttribute("aria-pressed", String(b.classList.contains("active")));
+      }
       syncLogoPreview();
     };
     // The preview trails the segment so the card's two segmented controls keep
@@ -4047,6 +4055,16 @@ class App {
       const slash = f.path.lastIndexOf("/");
       const base = slash >= 0 ? f.path.slice(slash + 1) : f.path;
       const dir = slash >= 0 ? f.path.slice(0, slash) : "";
+      // NAME the row explicitly, because it is a <button> that CONTAINS
+      // buttons. Without a name of its own it derives one from its contents,
+      // so giving the row actions labels that name their file — the right fix
+      // for the actions — folded that path into the row's announcement three
+      // times over: "app.css Stage app.css Discard app.css". Carrying the
+      // status letter and the staged side says what the path alone cannot.
+      row.setAttribute(
+        "aria-label",
+        `${kind === "staged" ? "Staged" : "Unstaged"} ${statusWord(f.status)} ${f.path}`,
+      );
       row.appendChild(glyph(fileIcon(base)));
       const meta = el("div", "dc-file-meta");
       meta.appendChild(span(base, "dc-file-name"));

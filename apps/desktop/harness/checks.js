@@ -580,6 +580,34 @@
         return label && label.toLowerCase() === (b.textContent || "").trim().toLowerCase();
       });
       c.eq(bare.length, 0, "an aria-label that only repeats the visible verb adds nothing");
+
+      // A ROW that is itself a control and CONTAINS these actions must carry
+      // its own name, or it derives one from its children and announces the
+      // object once per action: "app.css Stage app.css Discard app.css".
+      for (const b of btns) {
+        // From the PARENT: `closest` matches the element itself, so starting at
+        // the button found the button, and the check skipped every row instead
+        // of walking up to it. It passed over the exact defect it was written
+        // for — a file row whose name is derived from its children.
+        const row = b.parentElement?.closest("button, [role=button]");
+        if (!row) continue;
+        const own = (row.getAttribute("aria-label") || "").trim();
+        c.ok(
+          !!own,
+          `a row that contains its actions needs a name of its own (${(row.className || "").slice(0, 30)})`,
+        );
+        // As a WORD. "Unstaged modified <path>" is a good row name and happens
+        // to contain "stage" inside "Unstaged"; a substring test called that a
+        // defect. What must not happen is the row RECITING its actions.
+        const verb = (b.textContent || "").trim().toLowerCase();
+        if (own && verb) {
+          const asWord = new RegExp(`\\b${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+          c.ok(
+            !asWord.test(own),
+            `and it must not recite its actions ("${own.slice(0, 48)}" contains "${verb}")`,
+          );
+        }
+      }
     },
 
     // A placeholder is the field's label when the field is empty. Measured
@@ -664,6 +692,42 @@
       c.ok(
         !!document.querySelector(`[data-gs-marker="${marker}"]`),
         "the OTHER cards were not rebuilt — nothing typed into them is lost",
+      );
+    },
+
+    // The dock is an overlay footer: it does not shrink the scrollers above it,
+    // so long views add `--dock-reserve` to their bottom padding to clear it.
+    // Every path that changes the dock's height must republish that value —
+    // collapse, the keyboard resizer, setHeight, reclamp all did, and the
+    // POINTER DRAG did not, so dragging the dock taller put the end of every
+    // long list back underneath it.
+    "the-dock-reserve-tracks-the-dock": async (f) => {
+      const c = check(f);
+      const host = $(".main-stack");
+      c.ok(!!host, "the dock's host is present");
+      const body = $(".dock-body");
+      c.ok(!!body, "the dock is open");
+      if (!host || !body) return;
+      const read = () => parseFloat(getComputedStyle(host).getPropertyValue("--dock-reserve")) || 0;
+      const before = read();
+      c.ok(before > 0, `an open dock reserves space (${before}px)`);
+
+      // Drag the top edge upward — the same path a pointer takes.
+      const grip = $(".dock-resizer, .dock-grip, [class*=resizer]");
+      c.ok(!!grip, "the dock offers a resize grip");
+      if (!grip) return;
+      const at = grip.getBoundingClientRect();
+      const opts = { bubbles: true, clientX: at.left + 4, pointerId: 1 };
+      grip.dispatchEvent(new PointerEvent("pointerdown", { ...opts, clientY: at.top + 2 }));
+      window.dispatchEvent(new PointerEvent("pointermove", { ...opts, clientY: at.top - 120 }));
+      window.dispatchEvent(new PointerEvent("pointerup", { ...opts, clientY: at.top - 120 }));
+      await settle(250);
+
+      const after = read();
+      const h = parseFloat(getComputedStyle(body).height) || 0;
+      c.ok(
+        Math.abs(after - h) < 2,
+        `the reserve follows the drag (reserve ${Math.round(after)}px vs dock ${Math.round(h)}px)`,
       );
     },
 

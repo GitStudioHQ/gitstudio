@@ -623,10 +623,28 @@ function notificationRow(
 
   // Right-side action cluster (hover-revealed via .row-actions, like other rows).
   const acts = el("div", "row-actions");
-  acts.appendChild(textBtn("Open", openable ? "Open in GitStudio" : "Open the subject on GitHub", open));
+  // NAME the thread, not just the verb. This is the densest list of identical
+  // row actions in the app — eleven buttons announcing "Open" seven times and
+  // "Mark read" four — and the one list with a roving tab stop, so for every
+  // row but the first these buttons are the ONLY things Tab lands on.
+  acts.appendChild(
+    textBtn(
+      "Open",
+      openable ? "Open in GitStudio" : "Open the subject on GitHub",
+      open,
+      false,
+      t.title,
+    ),
+  );
   if (t.unread) {
     acts.appendChild(
-      textBtn("Mark read", "Mark this thread as read", () => void markRead(t, row, body, refresh, syncCounts)),
+      textBtn(
+        "Mark read",
+        "Mark this thread as read",
+        () => void markRead(t, row, body, refresh, syncCounts),
+        false,
+        t.title,
+      ),
     );
   }
   row.appendChild(acts);

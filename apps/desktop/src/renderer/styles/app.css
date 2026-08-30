@@ -4727,6 +4727,17 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
   right: 10px;
   top: 50%;
   transform: translateY(-50%);
+  /* The half that was dropped when this was copied from `.dc-file`. Without it
+     the buttons sit ON the description added to these cards — invisible until
+     hover, and hover is the same gesture that reveals them, so the only reason
+     you would look at the card is the moment its last 110px of description
+     disappeared. A fade lets a long description run UNDER the buttons rather
+     than into them. */
+  padding-left: 18px;
+  background: linear-gradient(to right, transparent, var(--app-hover) 18px, var(--app-hover));
+}
+.gh-org-grid > *:focus-within .row-actions {
+  background: linear-gradient(to right, transparent, var(--app-active) 18px, var(--app-active));
 }
 .gh-org-grid > * { position: relative; }
 

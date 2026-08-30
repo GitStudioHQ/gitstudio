@@ -49,6 +49,7 @@ const CASES = [
   ["run-detail-hides-dead-actions", "actions~open9100"],
   ["run-detail-steps-visible", "actions~open9100"],
   ["row-meta-columns-align", "explore~type:git~key:Enter"],
+  ["the-dock-reserve-tracks-the-dock", "changes~click:.dock-chevron"],
   ["changing-the-theme-keeps-what-you-typed", "settings"],
   ["a-compare-diff-that-fails-says-so", "compare~text:Changed%20files"],
   ["placeholders-fit-their-field", "orgs"],
@@ -58,6 +59,7 @@ const CASES = [
   ["row-actions-name-their-object", "changes"],
   ["row-actions-name-their-object", "branches"],
   ["row-actions-name-their-object", "orgs~text:Repositories"],
+  ["row-actions-name-their-object", "notifications"],
   ["coming-back-to-a-search-costs-no-requests", "explore~type:git~key:Enter"],
   // Both shapes: a dialog, and a peek (whose card is focused with tabindex=-1).
   ["a-modal-surface-holds-the-page-behind-it", "branches~text:New%20branch"],

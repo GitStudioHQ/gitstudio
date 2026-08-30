@@ -6,7 +6,7 @@
 // graphPanel performs (now factored into @gitstudio/host-bridge/graphWire and
 // shared by both hosts).
 
-import { readFile, readdir, writeFile, stat } from "node:fs/promises";
+import { readFile, readdir, writeFile, stat, lstat, readlink } from "node:fs/promises";
 import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
@@ -509,7 +509,12 @@ export class GitBridge {
 
     // Working-tree diff: is it conflicted?
     const conflicted = await ctx.conflict.isConflicted(rel).catch(() => false);
-    const headText = await ctx.staging.headContent(rel).catch(() => "");
+    // Under HEAD's OWN name for it — a staged rename means HEAD has only the
+    // old path, and an empty left pane renders a rename as a brand-new file.
+    const headName = await headSideName(ctx, rel).catch(() => rel);
+    const headText = headName
+      ? await ctx.staging.headContent(headName).catch(() => "")
+      : "";
     // A DELETED file is not a file we failed to read. `readWorking` falls back
     // to the index and then HEAD when the path is gone — a fallback
     // conflictModel needs and this does not — so a deletion produced a right
@@ -517,8 +522,19 @@ export class GitBridge {
     // the app showing a file as unchanged that is not on disk at all. Ask
     // whether it exists rather than inferring it from a failed read.
     const abs = containedPath(ctx.root, rel);
-    const gone = !abs || !(await stat(abs).then(() => true).catch(() => false));
-    const workingText = gone ? "" : await readWorking(ctx, rel);
+    // lstat, not stat: a DANGLING symlink exists as a link but `stat` follows it
+    // and fails, so the file was reported "(deleted)" when it is right there.
+    const lst = abs ? await lstat(abs).catch(() => undefined) : undefined;
+    const gone = !abs || !lst;
+    // A symlink's content is its TARGET. `readFile` follows the link, so the
+    // right pane showed the pointed-at file's text — and a rename of the link
+    // rendered as that file's whole contents appearing from nowhere.
+    const isLink = !!lst?.isSymbolicLink();
+    const workingText = gone
+      ? ""
+      : isLink
+        ? await readlink(abs!).catch(() => "")
+        : await readWorking(ctx, rel);
     return {
       path: rel,
       leftLabel: `HEAD ${rel}`,
@@ -823,11 +839,17 @@ export class GitBridge {
     if (!abs) {
       return [];
     }
+    // Do not OFFER what cannot be done safely. Reading with "utf8" succeeds on a
+    // PNG — it just mangles it — so the catch below never fired for the case
+    // that mattered, and the row listed hunks whose staging destroyed the file.
+    if (!(await lineStageable(ctx, rel)).ok) {
+      return [];
+    }
     try {
       const text = await readFile(abs, "utf8");
       return await listUnstagedHunks(ctx, rel, text);
     } catch {
-      return []; // binary, deleted, unreadable — the row simply offers nothing
+      return []; // deleted or unreadable — the row simply offers nothing
     }
   }
 
@@ -842,6 +864,8 @@ export class GitBridge {
     }
     return this.serialize(async () => {
       try {
+        const safe = await lineStageable(ctx, req.path);
+        if (!safe.ok) return { ok: false, changed: false, expected: true, message: safe.why };
         const text = await readFile(abs, "utf8");
         const r = await stageHunks(ctx, req.path, text, [req.index]);
         if (!r.ok) {
@@ -1820,12 +1844,30 @@ export class GitBridge {
         const rel = req.path;
         const ranges = linesToRanges(req.lines);
         if (!ranges.length) return { ok: false, changed: false, message: "No lines selected." };
+        // Before reading anything: this path round-trips the file through a
+        // string, which destroys a binary and follows a symlink.
+        const safe = await lineStageable(ctx, rel);
+        if (!safe.ok) return { ok: false, changed: false, expected: true, message: safe.why };
         let original: string;
         let modified: string;
         if (req.reverse) {
-          // Unstage: roll the selected index changes back to HEAD.
+          // Unstage: roll the selected index changes back to HEAD — under the
+          // name HEAD actually knows. See headSideName: for a staged rename the
+          // new path is not in HEAD, and reading "" made the whole file look
+          // like one insertion that a single-line unstage then wiped.
+          const headName = await headSideName(ctx, rel);
           original = await ctx.staging.indexContent(rel);
-          modified = await ctx.staging.headContent(rel);
+          modified = headName ? await ctx.staging.headContent(headName) : "";
+          if (!headName) {
+            // HEAD has no such file under any name: this is a newly ADDED file,
+            // where "roll back to HEAD" means unstage the whole thing. Doing it
+            // through the file-level op keeps the add intact in the working
+            // tree instead of writing an empty blob over it.
+            const un = await ctx.staging.unstageFile(rel);
+            return un.ok
+              ? { ok: true, changed: true }
+              : { ok: false, changed: false, message: un.stderr.trim() || "Couldn't unstage the file." };
+          }
         } else {
           // Stage: apply the selected working-tree changes onto the index.
           original = await ctx.staging.indexContent(rel);
@@ -2040,6 +2082,99 @@ function toOriginalRanges(ranges: LineRange[], hunks: Hunk[]): LineRange[] {
     }
   }
   return mapped;
+}
+
+/**
+ * Can this path be staged CHANGE BY CHANGE without being destroyed?
+ *
+ * Line and hunk staging round-trips the file through a JavaScript string:
+ * `indexContent`/`readWorking` decode it as UTF-8, the selected changes are
+ * applied to that string, and `stageContent` hashes it back. Every byte that is
+ * not valid UTF-8 becomes U+FFFD on the way through, so staging one line of a
+ * PNG wrote a mangled blob into the index — 29 bytes in, 42 out, header
+ * `efbfbd504e47` instead of `89504e47` — and answered ok:true.
+ *
+ * A symlink is worse: `readFile` FOLLOWS it, so the "content" is the pointed-at
+ * file's text, and staging wrote that text as the link's new target under mode
+ * 120000 — a permanently dangling link, committed and cloned that way.
+ *
+ * Deliberately NOT `isStageableText`, which the sibling tick path uses: its
+ * invariant is "cheap enough to repaint ticks", so it passes NUL-free Latin-1
+ * (still destroyed) and REFUSES a 25,000-line text file that stages correctly
+ * today. This asks the exact question instead — do the bytes survive the round
+ * trip this code is about to perform.
+ */
+async function lineStageable(
+  ctx: GitContext,
+  rel: string,
+): Promise<{ ok: true } | { ok: false; why: string }> {
+  const abs = containedPath(ctx.root, rel);
+  if (!abs) return { ok: false, why: "That path is outside the repository." };
+  const st = await lstat(abs).catch(() => undefined);
+  if (st?.isSymbolicLink()) {
+    return {
+      ok: false,
+      why: `${rel} is a symbolic link — stage it whole. Staging part of one would write a file's contents into the link.`,
+    };
+  }
+  if (st?.isFile()) {
+    const bytes = await readFile(abs).catch(() => undefined);
+    if (bytes && Buffer.compare(Buffer.from(bytes.toString("utf8"), "utf8"), bytes) !== 0) {
+      return {
+        ok: false,
+        why: `${rel} isn't UTF-8 text — stage it whole. Staging part of it would rewrite the bytes it can't represent.`,
+      };
+    }
+  }
+  // The side already in the index can be binary even when the working file is
+  // gone or readable. git answers this itself: `--numstat` prints "-" for a
+  // binary blob rather than a line count.
+  const ns = await ctx.process.run(["diff", "--cached", "--numstat", "--", rel]);
+  if (ns.code === 0 && /^-\t-\t/m.test(ns.stdout)) {
+    return {
+      ok: false,
+      why: `${rel} is staged as a binary file — stage or unstage it whole.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * The name this path had at HEAD.
+ *
+ * A staged RENAME means HEAD has only the OLD name, so `git show HEAD:<new>`
+ * exits non-zero and `headContent` answers "". Everything downstream then reads
+ * the file as one giant insertion: the diff's left pane is empty, so a rename
+ * plus a one-line edit renders as a brand-new file — and unstaging a single
+ * line rolls the WHOLE file back to that empty side, putting the empty blob in
+ * the index and committing a 0-byte file, reporting ok:true at every step.
+ *
+ * `-M` asks git which path it came from. Returns the path unchanged when it is
+ * not a rename, and undefined when HEAD does not have it under any name (a
+ * genuinely new file), which is a different case the caller must handle.
+ */
+async function headSideName(ctx: GitContext, rel: string): Promise<string | undefined> {
+  // NO pathspec. Limiting the diff to the destination filters the rename's
+  // SOURCE out of it, and `-M` then has nothing to pair with — git reports
+  // `A helpers.ts` instead of `R077 util.ts helpers.ts`, which is exactly the
+  // "brand new file" answer that made a one-line unstage wipe the whole thing.
+  // Verified both ways against real git.
+  const r = await ctx.process.run(["diff", "--cached", "--name-status", "-M", "-z"]);
+  if (r.code === 0) {
+    const tok = r.stdout.split("\0").filter((t) => t.length > 0);
+    for (let i = 0; i < tok.length; ) {
+      const code = tok[i];
+      // R/C carry a similarity score and TWO paths: source then destination.
+      const renamed = code.startsWith("R") || code.startsWith("C");
+      const src = tok[i + 1];
+      const dst = renamed ? tok[i + 2] : src;
+      if (renamed && dst === rel && src) return src;
+      i += renamed ? 3 : 2;
+    }
+  }
+  // Not a rename. Does HEAD have it at all?
+  const has = await ctx.process.run(["cat-file", "-e", `HEAD:${rel}`]);
+  return has.code === 0 ? rel : undefined;
 }
 
 /** Whether two inclusive line ranges overlap (zero-width spans treated as a point). */

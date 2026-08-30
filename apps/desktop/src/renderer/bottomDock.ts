@@ -220,6 +220,12 @@ export class BottomDock {
       const h = Math.max(min, Math.min(max, startH + (startY - ev.clientY)));
       this.heightPx = h;
       this.bodyEl.style.height = `${h}px`;
+      // The DRAG path was the one place the reserve was not republished — the
+      // keyboard resizer, collapse, setHeight and reclamp all did. So dragging
+      // the dock taller left `--dock-reserve` at its old value and put the end
+      // of every long list back behind the dock, which is the whole thing the
+      // reserve exists to prevent.
+      this.publishReserve();
       this.opts.onResize?.();
     };
     const up = (): void => {

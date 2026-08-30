@@ -279,6 +279,33 @@ export function textBtn(
   return b;
 }
 
+/**
+ * A porcelain status letter as a word, for an accessible name.
+ *
+ * "M" is a column heading a sighted reader learns in a second; announced on its
+ * own it is the letter M.
+ */
+export function statusWord(status: string): string {
+  switch (status) {
+    case "M":
+      return "modified";
+    case "A":
+      return "added";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    case "U":
+      return "conflicted";
+    case "?":
+      return "untracked";
+    default:
+      return status;
+  }
+}
+
 /** An uppercase muted group label used inside list/compare/changes views. */
 export function groupLabel(text: string): HTMLElement {
   const d = el("div", "group-label");
