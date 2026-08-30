@@ -8,7 +8,7 @@
 // busts the SWR cache and re-fetches so the UI stays authoritative.
 
 import { host } from "../bridge";
-import { peek as cachePeek, gget, bust } from "../cache";
+import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
 import {
   avatar,
   cleanErr,
@@ -78,8 +78,16 @@ let issueState: "open" | "closed" | "all" = "open";
 const issueFacets: FacetState = {};
 /** The live text query — kept so Back from a detail restores the search. */
 let query = "";
-/** Unsent comment drafts, per issue — navigating away must never eat one. */
-const commentDrafts = new Map<number, string>();
+/**
+ * Unsent comment drafts, per issue — navigating away must never eat one.
+ *
+ * Keyed by REPO and number. Keyed by number alone, a draft written on issue #31
+ * in one repository was handed to issue #31 in the next one you opened —
+ * pre-filled into its composer, ready to send to strangers. Numbers collide
+ * across repos constantly; the low ones always do.
+ */
+const commentDrafts = new Map<string, string>();
+const draftKey = (n: number): string => `${cacheScope()}#${n}`;
 
 // ── Small DOM builders ───────────────────────────────────────────────────────
 
@@ -736,10 +744,10 @@ function buildDetail(ctx: DetailCtx): void {
   ta.className = "gh-composer-input";
   ta.placeholder = "Leave a comment…";
   ta.rows = 4;
-  ta.value = commentDrafts.get(it.number) ?? "";
+  ta.value = commentDrafts.get(draftKey(it.number)) ?? "";
   ta.addEventListener("input", () => {
-    if (ta.value.trim()) commentDrafts.set(it.number, ta.value);
-    else commentDrafts.delete(it.number);
+    if (ta.value.trim()) commentDrafts.set(draftKey(it.number), ta.value);
+    else commentDrafts.delete(draftKey(it.number));
   });
   const crow = el("div", "gh-composer-actions");
   const send = el("button", "btn btn-primary") as HTMLButtonElement;
@@ -826,7 +834,7 @@ async function postComment(
       return;
     }
     toast("Comment posted.", "success");
-    commentDrafts.delete(n);
+    commentDrafts.delete(draftKey(n));
     reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't post the comment.", "error");

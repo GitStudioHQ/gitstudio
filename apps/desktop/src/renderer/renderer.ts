@@ -220,6 +220,8 @@ class App {
      * new-commit shape. Committing then duplicated someone else's subject.
      */
     prefilled?: string;
+    /** Where the caret was, so a rebuild can put it back. */
+    caret?: { start: number; end: number };
   } = { message: "", amend: false, signoff: false, coAuthors: [] };
   /** A pending deep-link target for the next section mount (e.g. an issue number
    *  to open from the project board). Consumed + cleared by mountSection. */
@@ -579,7 +581,7 @@ class App {
     // list is right there, one click away) destroyed the message, and so did
     // every re-open of the repo you were already in. Ask which repo first.
     if (this.composerDraftRoot !== info.root) {
-      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined };
+      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined, caret: undefined };
       this.composerDraftRoot = undefined;
     }
     // Drop the previous repo's graph mount so a refresh from a non-graph view
@@ -2870,6 +2872,12 @@ class App {
           // account chip: issues, PRs, notifications and the "Create pull
           // request" affordances were all computed for a session that is over.
           bust();
+          // …and the kept-alive DOM those answers were rendered into, which
+          // `bust()` does not touch. Without this, Issues and PRs re-attached
+          // the PREVIOUS account's pages — names, avatars, private titles — to
+          // a window that was signed out, and kept them until the next repo
+          // switch.
+          this.viewCache.clear();
           toast("Signed out of GitHub.", "info");
           void this.showSettingsView();
         });
@@ -3397,7 +3405,15 @@ class App {
     const wrap = el("div", "code-view code-file-view");
     const back = el("button", "mini-btn");
     back.append(glyph("arrow-left"), span("Back"));
-    back.addEventListener("click", () => void this.showCodeView());
+    // Through routeView, like every other hop in this view — a bare
+    // `showCodeView()` repainted the listing without telling the navigation
+    // history anything, so the top-bar Back chevron (and ⌘[) still pointed at
+    // whatever you were doing before you opened the file: pressing it from the
+    // listing jumped out of Code entirely, and Forward came back to the FILE,
+    // a page you had already left.
+    back.addEventListener("click", () =>
+      this.goCodePath(path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""),
+    );
     // The tree header carries a clickable trail, a count and a filter; opening a
     // file used to replace all of it with "Back" and a raw path string, so the
     // routine things — go up a folder, copy this path, see it on GitHub, reload
@@ -3492,6 +3508,17 @@ class App {
     // re-open of B. Stamping the repo the composer was built for makes the
     // guard drop it instead, which is what it is for.
     const composerRepo = this.currentRepo?.root;
+    // The caret, not just the text. `showChangesView()` rebuilds this whole
+    // subtree on every stage, unstage, discard and filesystem-watcher tick, and
+    // a rebuilt textarea is a NEW element: focus fell to <body> and the caret
+    // went to 0. Typing a paragraph of commit message while a build tool
+    // touched a file meant the next keystroke landed at the START of it.
+    const rememberCaret = (): void => {
+      this.composerDraft.caret = { start: textarea.selectionStart, end: textarea.selectionEnd };
+    };
+    for (const ev of ["keyup", "click", "select", "input"] as const) {
+      textarea.addEventListener(ev, rememberCaret);
+    }
     textarea.addEventListener("input", () => {
       this.composerDraft.message = textarea.value;
       // Whose draft this is. Without it the reset above cannot tell a repo
@@ -3923,7 +3950,17 @@ class App {
     listCol.append(lists, selBar, dropZone);
     body.append(listCol, divider, surface);
     wrap.append(composer, toolbar, body);
+    // Whether the composer had the keyboard is read HERE, immediately before
+    // the swap — not at the top of this method, which is several awaits away
+    // and could have been true about a textarea the user has since left.
+    const composerHadFocus = document.activeElement?.classList.contains("dc-message") === true;
     this.viewHost.replaceChildren(wrap);
+    if (composerHadFocus) {
+      textarea.focus({ preventScroll: true });
+      const caret = this.composerDraft.caret;
+      const end = textarea.value.length;
+      textarea.setSelectionRange(Math.min(caret?.start ?? end, end), Math.min(caret?.end ?? end, end));
+    }
 
     this.activeMonacoView?.dispose();
     const diffPanel = new DiffPanel(surface);
@@ -4017,7 +4054,12 @@ class App {
       const cont = el("button", "btn btn-primary mini-btn") as HTMLButtonElement;
       cont.append(glyph("check"), span("Continue"));
       cont.disabled = op.conflicts > 0;
-      const runOp = async (ch: "merge:abort" | "merge:continue" | "rebase:abort" | "rebase:continue"): Promise<void> => {
+      type OpChannel =
+        | "merge:abort" | "merge:continue"
+        | "rebase:abort" | "rebase:continue"
+        | "cherryPick:abort" | "cherryPick:continue"
+        | "revert:abort" | "revert:continue";
+      const runOp = async (ch: OpChannel): Promise<void> => {
         try {
           const r = await host.invoke(ch, undefined);
           if (!r.ok) toast(r.message || "Operation failed.", r.expected ? "info" : "error");
@@ -4030,9 +4072,17 @@ class App {
         await this.updateSync();
         if (this.currentView === "changes") void this.showChangesView();
       };
-      const isRebase = kind === "rebase";
-      abort.addEventListener("click", () => void runOp(isRebase ? "rebase:abort" : "merge:abort"));
-      cont.addEventListener("click", () => void runOp(isRebase ? "rebase:continue" : "merge:continue"));
+      // By KIND, not a boolean. `kind === "rebase" ? rebase : merge` sent
+      // cherry-pick and revert down the MERGE channel, so the banner named the
+      // operation correctly and then ran `git merge --abort` on it, which fails
+      // because MERGE_HEAD does not exist. Each operation ends itself.
+      const family =
+        kind === "rebase" ? "rebase"
+        : kind === "cherry-pick" ? "cherryPick"
+        : kind === "revert" ? "revert"
+        : "merge";
+      abort.addEventListener("click", () => void runOp(`${family}:abort` as OpChannel));
+      cont.addEventListener("click", () => void runOp(`${family}:continue` as OpChannel));
       acts.append(abort, cont);
       banner.append(txt, acts);
       wrap.insertBefore(banner, wrap.firstChild);
@@ -4901,7 +4951,7 @@ class App {
       }
       textarea.value = "";
       // The draft has been spent — do not carry it into the next commit.
-      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined };
+      this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined, caret: undefined };
       this.composerDraftRoot = undefined;
       bust(); // a commit (± push) touches refs/branches/status/sync/graph
       await this.refreshRefs();
@@ -5041,8 +5091,20 @@ class App {
         // Every cached GitHub answer was computed while signed OUT — the empty
         // issue lists, the hidden PR buttons, the connect prompts. None of it is
         // true any more.
-        bust("github:");
-        bust("gh");
+        //
+        // Dropped WHOLESALE, because the prefixes matched almost nothing: the
+        // channels are `issue:list`, `pr:list`, `notifications:list`,
+        // `actions:runs`, `release:list`, `orgs:list`, `gist:list`,
+        // `project:list` — only `github:status` and `github:myWork` ever began
+        // with "github:", and no channel at all begins with "gh". So the two
+        // lines below read as a careful invalidation while leaving every list
+        // exactly as it was.
+        bust();
+        // The kept-alive view DOM is the other half. `bust()` only empties the
+        // data cache; a section stashed out of the DOM is re-attached verbatim
+        // on return, without a refetch — so Issues came back still showing the
+        // signed-out empty state, with no way to refresh it but a repo switch.
+        this.viewCache.clear();
         toast(`Signed in as @${r.login}.`, "success");
         onConnected();
         return;

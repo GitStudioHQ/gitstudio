@@ -98,7 +98,14 @@ async function mount(wrap: HTMLElement, nav: (view: string) => void): Promise<vo
 // ── the workspace ────────────────────────────────────────────────────────────
 
 function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlanState): void {
-  const original: Row[] = state.commits.map((c) => ({ ...c, action: "pick", message: c.subject }));
+  // Seed the reword box from the FULL message, not the subject. Seeding from
+  // the subject meant choosing Reword and changing nothing still deleted the
+  // body and every trailer under it.
+  const original: Row[] = state.commits.map((c) => ({
+    ...c,
+    action: "pick",
+    message: c.body ?? c.subject,
+  }));
   let rows: Row[] = original.map((r) => ({ ...r }));
   let busy = false;
 

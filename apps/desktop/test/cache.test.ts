@@ -50,16 +50,18 @@ interface CacheModule {
   bust: (prefix?: string) => void;
   prime: (c: string, p: unknown, v: unknown) => void;
   setCacheScope: (root: string | undefined) => void;
+  cacheScope: () => string;
 }
 let peek!: CacheModule["peek"];
 let gget!: CacheModule["gget"];
 let bust!: CacheModule["bust"];
 let prime!: CacheModule["prime"];
 let setCacheScope!: CacheModule["setCacheScope"];
+let cacheScope!: CacheModule["cacheScope"];
 
 before(async () => {
   const m = (await import("../src/renderer/cache")) as unknown as CacheModule;
-  ({ peek, gget, bust, prime, setCacheScope } = m);
+  ({ peek, gget, bust, prime, setCacheScope, cacheScope } = m);
 });
 
 /** Let the microtask queue drain so `.then` handlers on settled calls run. */
@@ -212,4 +214,20 @@ test("peek respects a max age", async () => {
   await a;
   assert.equal(peek("status:get", undefined, 10_000), "dirty");
   assert.equal(peek("status:get", undefined, -1), undefined, "nothing is younger than a negative age");
+});
+
+/**
+ * `cacheScope()` is what keys the things that must be per-repo but are not
+ * cache entries — an unsent comment draft, above all. Those lived in a
+ * `Map<number, string>`, so a reply half-written on issue #31 in one repository
+ * was pre-filled into issue #31's composer in the next one you opened, ready to
+ * send to strangers. Low numbers collide across repos constantly.
+ */
+test("the cache scope is readable, and tracks the active repo", () => {
+  setCacheScope("/repos/alpha");
+  assert.equal(cacheScope(), "/repos/alpha");
+  setCacheScope("/repos/beta");
+  assert.equal(cacheScope(), "/repos/beta", "so a key built from it changes with the repo");
+  setCacheScope(undefined);
+  assert.equal(cacheScope(), "", "and is empty, not undefined, with no repo open");
 });

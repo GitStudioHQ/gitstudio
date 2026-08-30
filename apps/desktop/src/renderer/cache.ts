@@ -56,6 +56,15 @@ export function setCacheScope(repoRoot: string | undefined): void {
   }
 }
 
+/**
+ * The repo the cache is currently pointed at, for the few things that must be
+ * keyed by repo but are not cache entries — an unsent comment draft, say.
+ * Empty string when no repo is open.
+ */
+export function cacheScope(): string {
+  return scope;
+}
+
 function keyFor(channel: string, payload: unknown): string {
   return scope + " " + channel + "|" + (payload === undefined ? "" : JSON.stringify(payload));
 }

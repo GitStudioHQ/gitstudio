@@ -11,7 +11,7 @@
 // and re-renders the affected surface.
 
 import { host } from "../bridge";
-import { peek as cachePeek, gget, bust, prime } from "../cache";
+import { peek as cachePeek, gget, bust, prime, cacheScope } from "../cache";
 import {
   el,
   span,
@@ -102,8 +102,16 @@ let query = "";
 let prState: "open" | "closed" | "merged" | "all" = "open";
 /** Client-side PR facets, kept across list ⇄ detail round trips. */
 const prFacets: FacetState = {};
-/** Unsent comment drafts, per PR — navigating away must never eat one. */
-const commentDrafts = new Map<number, string>();
+/**
+ * Unsent comment drafts, per PR — navigating away must never eat one.
+ *
+ * Keyed by REPO and number. Keyed by number alone, a draft written on PR #31
+ * in one repository was handed to PR #31 in the next one you opened —
+ * pre-filled into its composer, ready to send to strangers. Numbers collide
+ * across repos constantly; the low ones always do.
+ */
+const commentDrafts = new Map<string, string>();
+const draftKey = (n: number): string => `${cacheScope()}#${n}`;
 /**
  * Unsent inline replies, per review thread.
  *
@@ -988,10 +996,10 @@ async function renderSubTab(
     ta.className = "gh-composer-input";
     ta.placeholder = "Leave a comment…";
     ta.rows = 3;
-    ta.value = commentDrafts.get(full.number) ?? "";
+    ta.value = commentDrafts.get(draftKey(full.number)) ?? "";
     ta.addEventListener("input", () => {
-      if (ta.value.trim()) commentDrafts.set(full.number, ta.value);
-      else commentDrafts.delete(full.number);
+      if (ta.value.trim()) commentDrafts.set(draftKey(full.number), ta.value);
+      else commentDrafts.delete(draftKey(full.number));
     });
     const crow = el("div", "gh-composer-actions");
     const send = el("button", "btn btn-primary") as HTMLButtonElement;
@@ -1555,7 +1563,7 @@ async function doComment(
       return;
     }
     toast(`Commented on PR #${n}.`, "success");
-    commentDrafts.delete(n);
+    commentDrafts.delete(draftKey(n));
     activeSubTab = "conversation";
     reload();
   } catch (e) {

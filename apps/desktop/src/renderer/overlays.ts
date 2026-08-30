@@ -16,7 +16,7 @@
 
 /** What kind of layer this is. Only "menu" is distinguished, and only because
  *  Escape precedence needs it — see `isMenuOpen`. */
-export type LayerKind = "menu" | "surface";
+export type LayerKind = "menu" | "modal" | "surface";
 
 /** A live floating layer. `dispose` must be idempotent. */
 interface Layer {
@@ -137,4 +137,19 @@ function isLiveRegion(el: HTMLElement): boolean {
  */
 export function isMenuOpen(): boolean {
   return layers.some((l) => l.kind === "menu");
+}
+
+/**
+ * Is a modal dialog on screen?
+ *
+ * A peek and a dialog opened from inside it both listen for Escape on
+ * `document`, in the capture phase. `stopPropagation()` does not stop a sibling
+ * listener on the SAME node — only `stopImmediatePropagation()` would — and the
+ * peek registered first, so it ran first: one Escape dismissed the dialog AND
+ * the card that opened it, discarding whatever was behind it. The peek already
+ * stands down for the palette and for a menu; a dialog is the third layer that
+ * can sit above it.
+ */
+export function isModalOpen(): boolean {
+  return layers.some((l) => l.kind === "modal");
 }

@@ -469,3 +469,110 @@ test("an interrupted git am is not reported as a rebase", async () => {
     removeTempRepo(root);
   }
 });
+
+/**
+ * A reword must keep the whole message.
+ *
+ * The plan carried only `%s`, so the textarea was seeded with the SUBJECT and
+ * choosing Reword — even changing nothing — committed the subject alone and
+ * deleted the explanation, the `Fixes #N`, the `Signed-off-by` and every
+ * `Co-Authored-By` under it. The app said "Rebase complete."
+ *
+ * `%B` has to arrive as a NUL-separated record, not another \x1f field: its
+ * newlines would parse as extra commits whose "shas" then fail the plan's
+ * validation and break the view.
+ */
+test("a reword keeps the body and the trailers", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-rewordbody-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(`${root}/a.txt`, "a\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("branch", "trunk");
+    writeFileSync(`${root}/b.txt`, "b\n");
+    git("add", "-A");
+    execFileSync(
+      "git",
+      ["commit", "-q", "-m", "feat: subject\n\nExplanation.\n\nFixes #123\nSigned-off-by: S <s@e>"],
+      { cwd: root },
+    );
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const plan = await new RebaseBridge(repos).load({ base: "trunk" });
+    const body = plan.commits[0].body ?? "";
+    assert.match(body, /Explanation\./, "the plan carries the body");
+    assert.match(body, /Signed-off-by/, "and the trailers");
+    assert.match(body, /^feat: subject/, "starting with the subject");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * A `#` in a reword message.
+ *
+ * The message reaches git through the EDITOR channel, where `--cleanup=default`
+ * strips every line beginning with `core.commentChar`. A body line like `#123`
+ * was deleted without a word, and a message STARTING with one became empty —
+ * which git reads as "abort this commit", wedging the rebase.
+ *
+ * `core.commentChar=auto` does not fix it: git chooses when it PREPARES the
+ * file, from the text that is in it then, and the installer overwrites that
+ * file afterwards. The character is picked from the messages about to be
+ * installed instead. git generates its own boilerplate with the same character,
+ * so a squash group's is still stripped — which is why this cannot be done by
+ * changing the cleanup MODE.
+ */
+test("a reword message keeps its hashes, and a squash still loses its boilerplate", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-hash-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(`${root}/a.txt`, "a\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("branch", "trunk");
+    for (const n of ["one", "two"]) {
+      writeFileSync(`${root}/${n}.txt`, `${n}\n`);
+      git("add", "-A");
+      git("commit", "-qm", n);
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new RebaseBridge(repos);
+    const plan = await bridge.load({ base: "trunk" });
+
+    const msg = "#urgent: renamed\n\nMentions #456 and:\n#not-a-comment\n\nFixes #123";
+    const out = await bridge.apply({
+      base: "trunk",
+      rows: plan.commits.map((c) => ({
+        action: (c.subject === "two" ? "squash" : "reword") as "squash" | "reword",
+        sha: c.sha,
+        subject: c.subject,
+        message: c.subject === "one" ? msg : undefined,
+      })),
+    });
+    assert.equal(out.status, "done", out.message ?? "");
+
+    const stored = git("log", "-1", "--format=%B", "HEAD");
+    assert.ok(stored.includes("#urgent: renamed"), "a leading # survives");
+    assert.ok(stored.includes("#not-a-comment"), "and a # line in the body");
+    assert.ok(stored.includes("Fixes #123"), "and a trailer mentioning an issue");
+    assert.ok(
+      !stored.includes("This is a combination"),
+      "while git's own squash boilerplate is still stripped",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});

@@ -122,7 +122,7 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
   const layer = registerLayer(() => {
     if (spec?.hasUnsavedWork?.()) return;
     close();
-  });
+  }, "modal");
   const dismiss = (): void => {
     if (spec.canDismiss && !spec.canDismiss()) return;
     close();

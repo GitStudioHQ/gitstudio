@@ -223,6 +223,75 @@ test("a range longer than the display cap loses nothing", async () => {
 });
 
 /**
+ * A branch pointing BELOW the display cap.
+ *
+ * The commits past the 200-row cap ride along as picks, which is what stops the
+ * rebase deleting them (above). But they rode along as BARE picks: the branch
+ * map was built inside `loadCommits`, so only the commits shown on screen ever
+ * carried their branches. A branch pointing at commit #3 of 205 got no
+ * `update-ref` line, and the rebase left it on a parallel line no longer in the
+ * rewritten history — the exact orphaning `--update-refs` exists to prevent,
+ * happening to the commits the user had the least chance of noticing.
+ */
+test("a branch below the display cap is carried across the rewrite too", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-capbranch-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    git("commit", "-q", "--allow-empty", "-m", "base");
+    git("branch", "trunk");
+    // Real content per commit, not `--allow-empty`: every empty commit has the
+    // same (empty) patch-id, so once the base moves, `--cherry-pick` reads all
+    // 205 as duplicates of the one empty commit on the other side and drops
+    // them — "Nothing to rebase" on a range that plainly has 205 commits.
+    for (let i = 1; i <= 205; i++) {
+      writeFileSync(`${root}/c${i}.txt`, `c${i}\n`);
+      git("add", "-A");
+      git("commit", "-qm", `c${i}`);
+      // Deep in the range, far past what the plan will display.
+      if (i === 3) git("branch", "deep");
+    }
+    const deepBefore = git("rev-parse", "deep").trim();
+    // Move the base forward, so the rebase genuinely REWRITES every commit in
+    // the range. Replayed onto an unchanged base, git fast-forwards the
+    // untouched prefix and the shas below the edit do not move at all — a real
+    // outcome, but not the one that orphans a branch.
+    const branch = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "-q", "trunk");
+    writeFileSync(`${root}/upstream.txt`, "upstream\n");
+    git("add", "-A");
+    git("commit", "-qm", "upstream moved");
+    git("checkout", "-q", branch);
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new RebaseBridge(repos);
+    const plan = await bridge.load({ base: "trunk" });
+    assert.ok(
+      !plan.commits.some((c) => c.sha === deepBefore),
+      "the branch's commit is below the cap — it is not on screen at all",
+    );
+
+    const rows = plan.commits.map((c) => ({ action: "pick" as const, sha: c.sha, subject: c.subject }));
+    const out = await bridge.apply({ base: "trunk", rows, updateRefs: true });
+    assert.equal(out.status, "done", out.message ?? "");
+
+    const deepAfter = git("rev-parse", "deep").trim();
+    assert.notEqual(deepAfter, deepBefore, "the branch moved with the rewrite");
+    const contains = git("branch", "--contains", deepAfter).trim();
+    assert.ok(
+      contains.split("\n").some((l) => l.replace(/^\*?\s*/, "") === branch),
+      `the branch is still in the rewritten history, not orphaned beside it (${contains})`,
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
  * A branch whose name is also a tag's.
  *
  * `%(refname:short)` returns the shortest UNAMBIGUOUS name, so a branch

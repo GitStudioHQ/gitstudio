@@ -273,6 +273,20 @@
     },
     "stash:list": [ { sha: "77aa88", ref: "stash@{0}", message: "WIP: palette streaming groups", time: S(30) } ],
     "status": changedFiles,
+    // `?op=merge|rebase|cherry-pick|revert` puts the Changes banner on screen.
+    // Without a fixture the banner NEVER rendered in the harness, which is why
+    // no check could see that its Abort ran `git merge --abort` on every one of
+    // the four operations it names.
+    "git:opState": (() => {
+      const op = params.get("op") || "";
+      return {
+        merging: op === "merge",
+        rebasing: op === "rebase",
+        cherryPicking: op === "cherry-pick",
+        reverting: op === "revert",
+        conflicts: 0,
+      };
+    })(),
     "diff:files": changedFiles,
     "notifications:unreadCount": 3,
     "notifications:list": notifications,
@@ -727,9 +741,50 @@
     fixtures["issue:list"] = synth;
   }
 
+  // ── Code browser: a real tree, so the file viewer is reachable ─────────────
+  //
+  // Without these two the Code view painted "Empty repository" in every run,
+  // and no check could reach the file viewer at all — which is exactly why its
+  // Back button spent months bypassing the navigation history unnoticed.
+  const TREE = {
+    "": [
+      { name: "apps", path: "apps", type: "tree" },
+      { name: "packages", path: "packages", type: "tree" },
+      { name: "README.md", path: "README.md", type: "blob", size: 4213 },
+      { name: "package.json", path: "package.json", type: "blob", size: 1187 },
+      { name: "tsconfig.json", path: "tsconfig.json", type: "blob", size: 642 },
+    ],
+    apps: [
+      { name: "desktop", path: "apps/desktop", type: "tree" },
+      { name: "extension", path: "apps/extension", type: "tree" },
+    ],
+    "apps/desktop": [
+      { name: "src", path: "apps/desktop/src", type: "tree" },
+      { name: "esbuild.js", path: "apps/desktop/esbuild.js", type: "blob", size: 3902 },
+    ],
+    packages: [
+      { name: "git-service", path: "packages/git-service", type: "tree" },
+      { name: "webview-ui", path: "packages/webview-ui", type: "tree" },
+    ],
+  };
+  const FILES = {
+    "README.md": "# GitStudio\n\nA Git client that shows you what is about to happen.\n\n## Building\n\n    npm install\n    npm run build\n",
+    "package.json": '{\n  "name": "gitstudio",\n  "private": true,\n  "workspaces": ["apps/*", "packages/*"]\n}\n',
+    "tsconfig.json": '{\n  "compilerOptions": {\n    "target": "ES2022",\n    "strict": true\n  }\n}\n',
+    "apps/desktop/esbuild.js": 'const esbuild = require("esbuild");\n\nesbuild.build({ entryPoints: ["src/main/main.ts"] });\n',
+  };
+  dynamic["repo:tree"] = (req) => TREE[(req && req.path) || ""] || [];
+  dynamic["repo:file"] = (req) => {
+    const path = (req && req.path) || "";
+    return path in FILES ? { path, text: FILES[path] } : undefined;
+  };
+
   const missing = new Set();
+  const invoked = [];
+  window.__GS_INVOKED = invoked;
   window.gitstudio = {
     invoke(channel, payload) {
+      invoked.push(channel);
       if (channel in dynamic) {
         try { return Promise.resolve(dynamic[channel](payload)); } catch (e) { return Promise.reject(e); }
       }

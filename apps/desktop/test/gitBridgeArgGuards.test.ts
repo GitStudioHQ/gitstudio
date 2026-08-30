@@ -46,6 +46,10 @@ const REVIEWED: Record<string, string> = {
   syncPush: "boolean options only",
   mergeAbort: "no arguments",
   mergeContinue: "no arguments",
+  cherryPickAbort: "no arguments",
+  cherryPickContinue: "no arguments",
+  revertAbort: "no arguments",
+  revertContinue: "no arguments",
   rebaseAbort: "no arguments",
   rebaseContinue: "no arguments",
   rebaseSkip: "no arguments",
@@ -89,7 +93,9 @@ function mutations(): Array<{ name: string; body: string }> {
 
 /** The two shapes of guard used in this file. */
 function guards(body: string): boolean {
-  return body.includes("safeArg(") || body.includes('startsWith("-")');
+  // safePath is the pathspec form: it allows a leading dash (legal after `--`)
+  // and refuses the two things that actually break a path — empty, and a NUL.
+  return body.includes("safeArg(") || body.includes("safePath(") || body.includes('startsWith("-")');
 }
 
 test("the bridge exposes the mutations we think it does", () => {

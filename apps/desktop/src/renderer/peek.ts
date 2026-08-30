@@ -7,7 +7,7 @@
 // can open a peek. Cards render lazily and may be async; the body shows a
 // skeleton until the renderer resolves.
 
-import { registerLayer, isMenuOpen, holdBackground } from "./overlays";
+import { registerLayer, isMenuOpen, isModalOpen, holdBackground } from "./overlays";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -156,6 +156,11 @@ export function openPeek(card: PeekCard): void {
       // too, taking anything you had typed into its filter.
       if (document.body.classList.contains("cmdk-open")) return;
       if (isMenuOpen()) return;
+      // A dialog opened from inside the peek is the third such layer. Both
+      // listeners sit on `document` in the capture phase, and the peek's was
+      // registered first, so without this one Escape closed the dialog and the
+      // card underneath it in the same keystroke.
+      if (isModalOpen()) return;
       e.preventDefault();
       e.stopPropagation();
       ctx.back();

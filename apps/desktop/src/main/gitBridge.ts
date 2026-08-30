@@ -76,11 +76,32 @@ export function safeArg(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && !v.startsWith("-");
 }
 
+/**
+ * The guard for a value that reaches git as a PATHSPEC, always after `--`.
+ *
+ * A leading dash is legal there — git stops reading options at the separator —
+ * and `safeArg` was refusing it, so a conflicted file named `-fix.patch` (or
+ * anything in a `--generated/` directory) could not be resolved at all: every
+ * button the conflict view offered answered "That value isn't a valid git
+ * reference", about a file the same view had just listed. The real hazards for
+ * a path are emptiness and a NUL, which no filename can contain.
+ */
+export function safePath(v: unknown): v is string {
+  return typeof v === "string" && v.length > 0 && !v.includes("\0");
+}
+
 /** Standard rejection for an unsafe ref/name reaching a mutation. */
 const UNSAFE_REF_RESULT: CommitActionResult = {
   ok: false,
   changed: false,
   message: "That value isn't a valid git reference.",
+};
+
+/** Standard rejection for an unusable path reaching a mutation. */
+const UNSAFE_PATH_RESULT: CommitActionResult = {
+  ok: false,
+  changed: false,
+  message: "That isn't a usable file path.",
 };
 
 /**
@@ -1216,13 +1237,28 @@ export class GitBridge {
     if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
       return { ok: false, changed: false, message: "Name and email can't start with “-”." };
     }
+    // An identity is a PAIR. git refuses to commit without both
+    // ("Please tell me who you are"), so a half-filled card is not a saveable
+    // state — and the code below only wrote the fields that were non-empty, so
+    // clearing one and pressing Save reported "Identity updated" while leaving
+    // the old value in ~/.gitconfig, untouched and unmentioned.
     if (!name && !email) {
-      return { ok: false, changed: false, message: "Enter a name or an email to save." };
+      return { ok: false, changed: false, message: "Enter a name and an email to save." };
+    }
+    if (!name || !email) {
+      return {
+        ok: false,
+        changed: false,
+        message: `Git needs both a name and an email to record a commit. ${
+          name ? "Add an email" : "Add a name"
+        } to save, or leave the card as it is — nothing has been changed.`,
+      };
     }
     try {
-      const writes: Array<[string, string]> = [];
-      if (name) writes.push(["user.name", name]);
-      if (email) writes.push(["user.email", email]);
+      const writes: Array<[string, string]> = [
+        ["user.name", name],
+        ["user.email", email],
+      ];
       for (const [key, value] of writes) {
         const r = await ctx.process.run(["config", "--global", key, value]);
         // `git config` exits non-zero WITHOUT throwing (run() resolves with the
@@ -1726,16 +1762,23 @@ export class GitBridge {
     } catch {
       conflicts = 0;
     }
-    const [merging, rebaseM, rebaseA, cherryPicking, reverting] = await Promise.all([
+    const [merging, rebaseM, rebaseA, amMarker, cherryPicking, reverting] = await Promise.all([
       present("MERGE_HEAD"),
       present("rebase-merge"),
       present("rebase-apply"),
+      // `git am` uses the SAME rebase-apply directory. git tells them apart by
+      // a marker inside it — `applying` for am, `rebasing` for a rebase on the
+      // apply backend — and they are mutually exclusive. Without asking, a
+      // conflicted `git am` beside the app showed "rebase in progress" with
+      // Abort and Continue, both of which run `git rebase` and are refused, so
+      // the only banner offering a way out led nowhere.
+      present("rebase-apply/applying"),
       present("CHERRY_PICK_HEAD"),
       present("REVERT_HEAD"),
     ]);
     return {
       merging,
-      rebasing: rebaseM || rebaseA,
+      rebasing: rebaseM || (rebaseA && !amMarker),
       cherryPicking,
       reverting,
       conflicts,
@@ -1756,6 +1799,27 @@ export class GitBridge {
   }
   mergeContinue(): Promise<CommitActionResult> {
     return this.runResult(["commit", "--no-edit"]);
+  }
+  /**
+   * Cherry-pick and revert abort and continue THEMSELVES.
+   *
+   * The banner names four operations and then collapsed them into two
+   * channels, so a stopped cherry-pick or revert was aborted with
+   * `git merge --abort` — which fails outright, because MERGE_HEAD does not
+   * exist. The banner correctly said "cherry-pick in progress" and its only
+   * way out did nothing.
+   */
+  cherryPickAbort(): Promise<CommitActionResult> {
+    return this.runResult(["cherry-pick", "--abort"]);
+  }
+  cherryPickContinue(): Promise<CommitActionResult> {
+    return this.runResult(["cherry-pick", "--continue", "--no-edit"]);
+  }
+  revertAbort(): Promise<CommitActionResult> {
+    return this.runResult(["revert", "--abort"]);
+  }
+  revertContinue(): Promise<CommitActionResult> {
+    return this.runResult(["revert", "--continue", "--no-edit"]);
   }
   /**
    * Abort through the RUNNER, which also forgets the reword queue.
@@ -1946,7 +2010,7 @@ export class GitBridge {
   async conflictResolve(req: { path: string; content: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, message: "No repository open." };
-    if (!safeArg(req.path)) return UNSAFE_REF_RESULT;
+    if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     return this.serialize(async () => {
       try {
         const abs = containedPath(ctx.root, req.path);
@@ -1964,7 +2028,7 @@ export class GitBridge {
   async conflictTakeSide(req: { path: string; side: "ours" | "theirs" }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, message: "No repository open." };
-    if (!safeArg(req.path)) return UNSAFE_REF_RESULT;
+    if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     const stage = req.side === "ours" ? "2" : "3";
     return this.serialize(async () => {
       try {

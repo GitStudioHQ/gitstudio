@@ -67,3 +67,30 @@ test("saving with both fields empty is rejected, not silently 'updated'", async 
   const r = await bridge.setGitIdentity({ name: "", email: "  " });
   assert.equal(r.ok, false);
 });
+
+/**
+ * The card is a pair of fields over a pair of git settings, and git will not
+ * record a commit without both. Clearing one and pressing Save used to write
+ * only the other, leave the cleared setting exactly as it was, and report
+ * "Identity updated" — so the value on screen and the value in ~/.gitconfig
+ * disagreed, with the app insisting it had done what was asked.
+ */
+test("clearing one field is refused, and leaves the stored identity alone", async () => {
+  await bridge.setGitIdentity({ name: "Test User", email: "t@example.com" });
+
+  const cleared = await bridge.setGitIdentity({ name: "", email: "t@example.com" });
+  assert.equal(cleared.ok, false, "a half-filled identity is not saved");
+  assert.equal(cleared.changed, false);
+  assert.match(cleared.message ?? "", /both a name and an email/i, "and says why");
+  assert.match(cleared.message ?? "", /nothing has been changed/i, "and what it did instead");
+
+  assert.deepEqual(
+    await bridge.gitIdentity(),
+    { name: "Test User", email: "t@example.com" },
+    "the stored identity is untouched — which is what the message promised",
+  );
+
+  const other = await bridge.setGitIdentity({ name: "Test User", email: "   " });
+  assert.equal(other.ok, false, "whitespace is empty too");
+  assert.match(other.message ?? "", /Add an email/i, "naming the field that is missing");
+});

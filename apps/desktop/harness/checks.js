@@ -3137,5 +3137,190 @@
         );
       }
     },
+
+    /**
+     * The Changes banner names four operations and had two ways out. Three of
+     * the four therefore aborted with `git merge --abort`, which fails outright
+     * because MERGE_HEAD does not exist during a cherry-pick, a revert, or a
+     * rebase. The banner said the right thing and its only control did nothing.
+     *
+     * Parameterised by `?op=` — the check runs once per operation.
+     */
+    "an-operation-is-ended-by-its-own-command": async (f) => {
+      const c = check(f);
+      const op = new URLSearchParams(location.search).get("op") || "merge";
+      const banner = $(".dc-opbanner");
+      c.ok(!!banner, `${op} in progress puts a banner on screen`);
+      if (!banner) return;
+      c.ok(banner.textContent.toLowerCase().includes(op), `the banner names the operation (${op})`);
+      const abort = [...banner.querySelectorAll("button")].find((b) => /abort/i.test(b.textContent));
+      c.ok(!!abort, "it offers an Abort");
+      if (!abort) return;
+      const before = window.__GS_INVOKED.length;
+      abort.click();
+      await new Promise((r) => setTimeout(r, 120));
+      const sent = window.__GS_INVOKED.slice(before).filter((ch) => /:(abort|continue)$/.test(ch));
+      const family = { merge: "merge", rebase: "rebase", "cherry-pick": "cherryPick", revert: "revert" }[op];
+      c.eq(sent[0], `${family}:abort`, `Abort ends the ${op}, not something else`);
+    },
+
+    /**
+     * `showChangesView()` rebuilds the composer on every stage, unstage,
+     * discard, Refresh and filesystem-watcher tick. The rebuilt textarea is a
+     * NEW element, so focus fell to <body> and the caret to 0: type a paragraph
+     * of commit message, let a build tool touch one file, and your next
+     * keystroke landed at the start of the first word.
+     */
+    "the-composer-keeps-your-place-through-a-repaint": async (f) => {
+      const c = check(f);
+      const ta = $(".dc-message");
+      c.ok(!!ta, "the Changes view has a composer");
+      if (!ta) return;
+      ta.focus();
+      ta.value = "fix: the thing that was broken";
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      // Caret in the MIDDLE — restoring to the end would hide the bug.
+      ta.setSelectionRange(5, 5);
+      ta.dispatchEvent(new Event("select", { bubbles: true }));
+
+      const refresh = $('.changes-view button[title="Refresh"]');
+      c.ok(!!refresh, "and something that repaints it");
+      if (!refresh) return;
+      refresh.click();
+      await settle(1400);
+
+      const now = $(".dc-message");
+      c.ok(!!now, "the composer is still there after the repaint");
+      if (!now) return;
+      c.eq(now.value, "fix: the thing that was broken", "with the draft intact");
+      c.eq(document.activeElement, now, "the keyboard is still in it");
+      c.eq(now.selectionStart, 5, "and the caret is where you left it, not at 0");
+    },
+
+    /**
+     * A peek and a dialog opened from inside it both listen for Escape on
+     * `document`, in the capture phase, and `stopPropagation()` does not stop a
+     * sibling listener on the same node. The peek registered first, so it ran
+     * first: one Escape closed the dialog AND the card that opened it.
+     */
+    "escape-closes-one-layer-at-a-time": async (f) => {
+      const c = check(f);
+      const row = $(".list-row");
+      c.ok(!!row, "the view has a row to drill into");
+      if (!row) return;
+      row.click();
+      await settle(800);
+      const peek = $(".peek-overlay");
+      c.ok(!!peek, "clicking it opens a peek");
+      if (!peek) return;
+
+      // Peek → its menu → a dialog. Three stacked layers is the real shape:
+      // the menu closes on its own when the dialog opens.
+      peek.querySelector("button").click();
+      await settle(400);
+      const rename = [...document.querySelectorAll(".dropdown button")].find((b) =>
+        /rename/i.test(b.textContent || ""),
+      );
+      c.ok(!!rename, "whose menu offers something that opens a dialog");
+      if (!rename) return;
+      rename.click();
+      await settle(700);
+      const dlg = $(".modal-overlay");
+      c.ok(!!dlg, "a dialog opens above the peek");
+      if (!dlg) return;
+
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(500);
+      c.ok(!$(".modal-overlay"), "one Escape closes the dialog");
+      c.ok(!!$(".peek-overlay"), "and leaves the peek that opened it on screen");
+    },
+
+    /**
+     * The Code file viewer's own "Back" called `showCodeView()` directly,
+     * repainting the listing without telling the navigation history anything.
+     * So the top-bar Back chevron still pointed at whatever you were doing
+     * BEFORE you opened the file, and Forward pointed at the file you had just
+     * left — every other hop in this view routes through `routeView`.
+     */
+    "the-code-viewer-back-is-a-navigation": async (f) => {
+      const c = check(f);
+      const fileRow = [...$$(".code-listing .file-row")].find((r) =>
+        /^README\.md/.test((r.textContent || "").trim()),
+      );
+      c.ok(!!fileRow, "the listing offers a file");
+      if (!fileRow) return;
+      fileRow.click();
+      await settle(1200);
+      c.ok(!!$(".code-file-view"), "which opens in the file viewer");
+
+      const pageBack = [...$$(".code-file-view button")].find((b) => /^back$/i.test((b.textContent || "").trim()));
+      c.ok(!!pageBack, "and the viewer offers its own Back");
+      if (!pageBack) return;
+      pageBack.click();
+      await settle(1200);
+      c.ok(!$(".code-file-view"), "which returns to the listing");
+      c.ok(!!$(".code-listing"), "showing the folder again");
+
+      // The point, asserted by DESTINATION rather than by the chevron's
+      // enabled-ness: the chevron is live either way, because OPENING the file
+      // recorded an entry. What the missing entry changes is where it goes.
+      // With the hop recorded, the top-bar Back returns to the file you were
+      // just looking at; without it, Back steps over the file entirely.
+      const chev = [...$$(".topbar-nav")].find((b) => (b.getAttribute("aria-label") || "") === "Back");
+      c.ok(!!chev && !chev.disabled, "the top-bar Back is live");
+      if (!chev || chev.disabled) return;
+      chev.click();
+      await settle(1200);
+      c.ok(!!$(".code-file-view"), "and it returns to the file you just left, not past it");
+    },
+
+    /**
+     * A keyboard resizer must MOVE, monotonically, in the direction you press.
+     * The terminal list's mirrored the value inside `set` while `get` returned
+     * it un-mirrored, so the two disagreed: from 168px, → gave 268, → again
+     * gave 168, forever. Two keystrokes returned you to the start and nothing
+     * between the two widths was reachable at all.
+     *
+     * Asserted on EVERY resizer in the app, not just the one that was broken —
+     * the helper takes an `inverted` flag precisely because getting this wrong
+     * is easy, and three of the five dividers are on the far side of their
+     * handle.
+     */
+    "a-resizer-moves-the-way-you-press-it": async (f) => {
+      const c = check(f);
+      const handles = $$('[role="separator"]');
+      c.ok(handles.length > 0, "the view has a resizer");
+      const press = (h, key, shift) =>
+        h.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey: !!shift, bubbles: true }));
+      for (const h of handles) {
+        // A collapsed pane's divider says so, and answers no key by design.
+        if (h.getAttribute("aria-disabled") === "true") continue;
+        const label = h.getAttribute("aria-label") || "(unlabelled)";
+        const start = Number(h.getAttribute("aria-valuenow"));
+        const min = Number(h.getAttribute("aria-valuemin"));
+        const max = Number(h.getAttribute("aria-valuemax"));
+        c.ok(Number.isFinite(start), `${label}: reports a value`);
+        // Away from an end stop, so a step in either direction has room.
+        h.focus();
+        // The key that moves THIS divider: a vertical line moves left/right, a
+        // horizontal one up/down. Pressing → on the dock's horizontal splitter
+        // correctly does nothing, and asserting on it would be asserting the
+        // wrong axis.
+        const key = h.getAttribute("aria-orientation") === "horizontal" ? "ArrowUp" : "ArrowRight";
+        const seen = [];
+        for (let i = 0; i < 3; i++) {
+          press(h, key);
+          seen.push(Number(h.getAttribute("aria-valuenow")));
+        }
+        // Either strictly non-decreasing or strictly non-increasing — a
+        // resizer that goes up, down, up is the oscillation.
+        const up = seen.every((v, i) => i === 0 || v >= seen[i - 1]);
+        const down = seen.every((v, i) => i === 0 || v <= seen[i - 1]);
+        c.ok(up || down, `${label}: three presses of ${key} move one way, not back and forth (${start} → ${seen.join(" → ")})`);
+        // And it actually moved, unless it was already against that end stop.
+        const stuck = seen.every((v) => v === start);
+        c.ok(!stuck || start === min || start === max, `${label}: ${key} moves it (was ${start}, range ${min}–${max})`);
+      }
+    },
   };
 })();

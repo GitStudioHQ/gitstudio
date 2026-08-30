@@ -214,6 +214,17 @@ const CASES = [
   ["settings-local-copies", "code~click:.topbar-switch~text:Manage%20repositories"],
   ["settings-copy-actions-one-shape", "code~click:.topbar-switch~text:Manage%20repositories"],
   ["settings-icon-preview-is-not-a-control", "code~text:Settings"],
+  ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=merge" }],
+  ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=rebase" }],
+  ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=cherry-pick" }],
+  ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=revert" }],
+  ["the-composer-keeps-your-place-through-a-repaint", "changes"],
+  ["escape-closes-one-layer-at-a-time", "branches"],
+  ["the-code-viewer-back-is-a-navigation", "code"],
+  ["a-resizer-moves-the-way-you-press-it", "changes~bell"],
+  ["a-resizer-moves-the-way-you-press-it", "compare"],
+  ["a-resizer-moves-the-way-you-press-it", "graph"],
+  ["a-resizer-moves-the-way-you-press-it", "branches"],
 ];
 
 function run(scene, checkId, opts = {}) {

@@ -65,8 +65,17 @@ export class RebaseWorkspacePanel {
     }
     const commits = await loadCommits(active, base);
     if (commits.length === 0) {
+      // Empty for three different reasons, and "no commits from that point" is
+      // only true for one of them. The selection deliberately omits merges and
+      // commits already applied upstream, so a branch that is entirely merged,
+      // or a range made only of merges, empties the plan while plainly having
+      // commits in it — and the old sentence sent people looking for a nearer
+      // base, which finds fewer, not more.
+      const total = await countInRange(active, base);
       void vscode.window.showInformationMessage(
-        "GitStudio: no commits to rebase from that point.",
+        total > 0
+          ? `GitStudio: nothing to rebase — all ${total} commit${total === 1 ? "" : "s"} here are either merges or changes already on the base, which a rebase would skip.`
+          : "GitStudio: no commits to rebase from that point.",
       );
       return;
     }
@@ -315,10 +324,32 @@ async function resolveBase(active: RepoEntry, sha?: string): Promise<string | un
 }
 
 async function loadCommits(active: RepoEntry, base: string): Promise<RebaseCommit[]> {
-  const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
+  // The same selection git's own sequencer uses. The desktop learned each of
+  // these the hard way, and this panel was still building the plans they exist
+  // to prevent — the todo IS the plan, so anything wrong here is executed.
+  //
+  //  · THREE dots + `--cherry-pick --right-only`: drops commits whose patch is
+  //    already on the base (a backport, a cherry-pick that went both ways, a
+  //    commit merged upstream by someone else). `base..HEAD` keeps them, git's
+  //    todo does not, and running the plan made git skip one and PAUSE —
+  //    "warning: skipped previously applied commit" — leaving the repo
+  //    mid-rebase with a clean tree and nothing to resolve.
+  //  · `--no-merges`: a rebase FLATTENS merges, and `git rebase -i` refuses
+  //    `pick <merge>` outright. git checks out the base BEFORE parsing the
+  //    todo, so the repo was left detached at the base, mid-rebase, with no
+  //    conflict to resolve and only Abort as a way out. A feature branch with
+  //    main merged into it is the ordinary shape of this.
+  //  · `--topo-order`: reversed, this reproduces git's own todo; the default
+  //    date ordering does not, so the plan promised one replay order and git
+  //    performed another.
+  const threeDot = base !== "--root";
+  const range = threeDot ? `${base}...HEAD` : "HEAD";
   const sep = "\x1f";
   const r = await active.ctx.process.run([
     "log",
+    ...(threeDot ? ["--cherry-pick", "--right-only"] : []),
+    "--no-merges",
+    "--topo-order",
     // NEWEST FIRST, matching the Commits list (issue #18). git's todo file is the
     // other way round; buildRebasePlan does that reversal in exactly one place.
     `--format=%H${sep}%h${sep}%an${sep}%at${sep}%s`,
@@ -340,6 +371,15 @@ async function loadCommits(active: RepoEntry, base: string): Promise<RebaseCommi
     });
   }
   return out;
+}
+
+/** Every commit in the range, merges and already-applied ones included — the
+ *  number the user can see in the Commits list, so an empty plan can say what
+ *  happened to them. */
+async function countInRange(active: RepoEntry, base: string): Promise<number> {
+  const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
+  const r = await active.ctx.process.run(["rev-list", "--count", range]);
+  return r.code === 0 ? Number(r.stdout.trim()) || 0 : 0;
 }
 
 async function currentBranch(active: RepoEntry): Promise<string> {

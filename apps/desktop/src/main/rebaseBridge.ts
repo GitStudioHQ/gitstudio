@@ -91,10 +91,11 @@ export class RebaseBridge {
     // independent, and on a large repo with no commit-graph each is ~115ms.
     // Run in series that is a quarter-second before the view paints; run
     // together it is the cost of one.
-    const [commits, baseCommit, merges] = await Promise.all([
+    const [commits, baseCommit, merges, applied] = await Promise.all([
       this.loadCommits(base),
       base === "--root" ? Promise.resolve(undefined) : this.loadBaseCommit(base),
       this.countMerges(base),
+      this.countAlreadyApplied(base),
     ]);
 
     const notes: string[] = [];
@@ -106,6 +107,19 @@ export class RebaseBridge {
         merges === 1
           ? "A merge commit in this range isn't listed — a rebase replays the merged-in commits one by one and the merge itself disappears."
           : `${merges} merge commits in this range aren't listed — a rebase replays the merged-in commits one by one and the merges themselves disappear.`,
+      );
+    }
+    // `--cherry-pick` drops commits whose patch is already on the base. That is
+    // the right todo — git's own sequencer drops them too — but silently it
+    // reads as data loss, and when it empties the range the fallback sentence
+    // "No commits between X and Y" is simply false: the commits are there, they
+    // have just already landed upstream. A branch fully merged by a squash or a
+    // rebase-merge on the server is the ordinary way to hit this.
+    if (applied > 0) {
+      notes.push(
+        applied === 1
+          ? "One commit in this range isn't listed — its change is already on the base, so a rebase would skip it."
+          : `${applied} commits in this range aren't listed — their changes are already on the base, so a rebase would skip them.`,
       );
     }
     if (fellBack) {
@@ -185,16 +199,61 @@ export class RebaseBridge {
       // Hard cap: rebasing onto --root in a large repo would otherwise try to
       // render thousands of rows (and be a terrible idea to execute).
       `--max-count=${MAX_PLAN_COMMITS}`,
-      `--format=%H${sep}%h${sep}%an${sep}%at${sep}%s`,
+      // NUL-separated RECORDS, with the full message LAST.
+      //
+      // %B contains newlines, so it cannot be another \x1f field in a
+      // newline-delimited stream — the body's own lines would parse as extra
+      // commits whose "shas" then fail the plan's validation and break the
+      // whole view. `-z` ends each record with NUL instead, which %B cannot
+      // contain.
+      "-z",
+      `--format=%H${sep}%h${sep}%an${sep}%at${sep}%s${sep}%B`,
       range,
     ]);
     if (r.code !== 0) {
       return [];
     }
-    // Which local branches sit ON each commit in the range. A rewrite gives
-    // every commit a new sha, so a branch pointing at an old one is stranded on
-    // a line nothing references — `update-ref` in the todo moves it across.
+    const tips = await this.branchTips();
+
+    const out: RebaseCommitInfo[] = [];
+    for (const line of r.stdout.split("\0")) {
+      if (!line.trim()) continue;
+      const [sha, shortSha, author, at, subject, body] = line.split(sep);
+      const branches = tips.get(sha);
+      out.push({
+        sha,
+        shortSha,
+        author,
+        subject: subject ?? "",
+        rel: relTime(Number(at) || 0),
+        // Trailing newlines are git's, not the author's.
+        ...(body?.trim() ? { body: body.replace(/\n+$/, "") } : {}),
+        ...(branches?.length ? { branches } : {}),
+      });
+    }
+    return out;
+  }
+
+
+  /**
+   * Local branches by the commit they point at, for the todo's `update-ref`
+   * lines.
+   *
+   * Its own method because BOTH halves of the plan need it. It used to be
+   * inline in `loadCommits`, so only the commits shown on screen carried their
+   * branches: a branch pointing below the 200-commit display cap got no
+   * `update-ref`, and the rebase left it on a parallel line nothing references
+   * — the precise orphaning this feature exists to prevent, on the commits the
+   * user was least able to notice.
+   */
+  private async branchTips(): Promise<Map<string, string[]>> {
+    const ctx = this.repos.getContext();
     const tips = new Map<string, string[]>();
+    if (!ctx) return tips;
+    // A rewrite gives every commit a new sha, so a branch pointing at an old
+    // one is stranded on a line nothing references — `update-ref` in the todo
+    // moves it across.
+    //
     // FULL refnames, not `%(refname:short)`. The short form is the shortest
     // UNAMBIGUOUS name, so a branch that collides with a tag — v1.2, release,
     // stable, all routine — comes back as `heads/stacked-a`. That string went
@@ -234,21 +293,7 @@ export class RebaseBridge {
       }
     }
 
-    const out: RebaseCommitInfo[] = [];
-    for (const line of r.stdout.split("\n")) {
-      if (!line.trim()) continue;
-      const [sha, shortSha, author, at, subject] = line.split(sep);
-      const branches = tips.get(sha);
-      out.push({
-        sha,
-        shortSha,
-        author,
-        subject: subject ?? "",
-        rel: relTime(Number(at) || 0),
-        ...(branches?.length ? { branches } : {}),
-      });
-    }
-    return out;
+    return tips;
   }
 
   /**
@@ -281,12 +326,23 @@ export class RebaseBridge {
     ]);
     if (r.code !== 0) return null;
     const known = new Set(rows.map((x) => x.sha));
+    // Carried commits need their branches as much as the shown ones do — more,
+    // in fact, because nothing on screen would have hinted at the loss. Without
+    // this the tail rode along as bare picks, and a branch pointing below the
+    // display cap was left on a parallel line no longer in the rebased history.
+    const tips = await this.branchTips();
     const out: RebaseApplyRow[] = [];
     for (const line of r.stdout.split("\n")) {
       if (!line.trim()) continue;
       const [sha, subject] = line.split(sep);
       if (!sha || known.has(sha)) continue;
-      out.push({ action: "pick", sha, subject: subject ?? "" });
+      const branches = tips.get(sha);
+      out.push({
+        action: "pick",
+        sha,
+        subject: subject ?? "",
+        ...(branches?.length ? { branches } : {}),
+      });
     }
     // git lists newest-first, and so does the plan; appending keeps that order.
     return out;
@@ -300,6 +356,24 @@ export class RebaseBridge {
     const range = base === "--root" ? "HEAD" : `${base}..HEAD`;
     const r = await ctx.process.run(["rev-list", "--count", "--merges", range]);
     return r.code === 0 ? Number(r.stdout.trim()) || 0 : 0;
+  }
+
+  /**
+   * How many commits `--cherry-pick` dropped: everything in `base..HEAD` that
+   * is NOT in the plan's `base...HEAD --cherry-pick --right-only` selection.
+   *
+   * Both walks exclude merges, which are counted and explained separately, so
+   * the two notes never describe the same commit twice.
+   */
+  private async countAlreadyApplied(base: string): Promise<number> {
+    const ctx = this.repos.getContext();
+    if (!ctx || base === "--root") return 0;
+    const [all, kept] = await Promise.all([
+      ctx.process.run(["rev-list", "--count", "--no-merges", `${base}..HEAD`]),
+      ctx.process.run(["rev-list", "--count", "--no-merges", "--cherry-pick", "--right-only", `${base}...HEAD`]),
+    ]);
+    if (all.code !== 0 || kept.code !== 0) return 0;
+    return Math.max(0, (Number(all.stdout.trim()) || 0) - (Number(kept.stdout.trim()) || 0));
   }
 
   /** The repo's own `rebase.updateRefs`. Following it means the app does what

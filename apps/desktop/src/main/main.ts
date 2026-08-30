@@ -901,6 +901,10 @@ function registerIpc(): void {
   handle("git:opState", () => bridge.opState());
   handle("merge:abort", () => bridge.mergeAbort());
   handle("merge:continue", () => bridge.mergeContinue());
+  handle("cherryPick:abort", () => bridge.cherryPickAbort());
+  handle("cherryPick:continue", () => bridge.cherryPickContinue());
+  handle("revert:abort", () => bridge.revertAbort());
+  handle("revert:continue", () => bridge.revertContinue());
   handle("rebase:abort", () => bridge.rebaseAbort());
   handle("rebase:continue", () => bridge.rebaseContinue());
   handle("rebase:skip", () => bridge.rebaseSkip());

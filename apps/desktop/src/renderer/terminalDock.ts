@@ -132,8 +132,15 @@ export class TerminalDock {
       min: SIDE_MIN,
       max: () => SIDE_MAX,
       get: () => sideW,
-      // The list is the RIGHT pane, so "grow left pane" (→) shrinks it.
-      set: (w) => setSideW(SIDE_MIN + SIDE_MAX - w),
+      // The list is the RIGHT pane, so → has to SHRINK it. That is exactly what
+      // `inverted` is for. It was done by mirroring the value inside `set`
+      // instead — `set(MIN + MAX - w)` — while `get` returned the un-mirrored
+      // width, so the two disagreed and the handle oscillated between two
+      // widths: from 168, → gave 268, → again gave 168, forever. Two keystrokes
+      // and you were back where you started, with no way to reach anything in
+      // between from the keyboard.
+      set: setSideW,
+      inverted: true,
       onCommit: () => localStorage.setItem("gitstudio.termSideW", String(sideW)),
     });
     sideResizer.addEventListener("pointerdown", (e) => {

@@ -1112,6 +1112,15 @@ export interface RebaseCommitInfo {
   /** Humanized author time, e.g. "3h ago". */
   rel: string;
   /**
+   * The commit's FULL message — subject, blank line, body, trailers.
+   *
+   * A reword seeded its textarea from the subject alone, so choosing Reword and
+   * changing nothing still committed the subject and deleted the explanation,
+   * the `Fixes #N`, the `Signed-off-by` and every `Co-Authored-By` under it —
+   * reporting "Rebase complete."
+   */
+  body?: string;
+  /**
    * Local branches whose tip IS this commit (excluding the one being rebased).
    *
    * A rewrite gives every commit a new sha, so a branch left pointing at an old
@@ -1482,6 +1491,10 @@ export interface IpcChannels {
   "rebase:abort": [void, CommitActionResult];
   "rebase:continue": [void, CommitActionResult];
   "rebase:skip": [void, CommitActionResult];
+  "cherryPick:abort": [void, CommitActionResult];
+  "cherryPick:continue": [void, CommitActionResult];
+  "revert:abort": [void, CommitActionResult];
+  "revert:continue": [void, CommitActionResult];
   // ── Tag creation (the Branches view's "Create tag here…") ──
   "tag:create": [{ name: string; ref?: string; message?: string }, CommitActionResult];
   // ── PR review depth: per-file diffs + inline threads + metadata ──

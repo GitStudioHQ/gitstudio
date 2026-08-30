@@ -71,7 +71,13 @@ export class BottomDock {
     this.resizer.addEventListener("pointerdown", (e) => this.startResize(e));
     wireResizerKeys(this.resizer, {
       orientation: "horizontal",
-      label: opts.label ? `Resize ${opts.label}` : "Resize panel",
+      // Sentence case, like every other control in the app ("Resize sidebar",
+      // "Resize file list"). `label` is a region name — "Panel", "Terminal" —
+      // and interpolating it verbatim produced the app's only Title Case
+      // accessible name, "Resize Panel".
+      label: opts.label
+        ? `Resize ${opts.label.charAt(0).toLowerCase()}${opts.label.slice(1)}`
+        : "Resize panel",
       min: opts.minHeight ?? 120,
       max: () => BottomDock.clampHeight(Number.MAX_SAFE_INTEGER, opts.minHeight ?? 120),
       get: () => this.heightPx,
@@ -172,6 +178,13 @@ export class BottomDock {
     // the answer available without operating the control to find out.
     this.chevron.setAttribute("aria-label", what);
     this.chevron.setAttribute("aria-expanded", String(!this.collapsed));
+    // A collapsed dock has nothing to resize, and `wireResizerKeys` already
+    // refuses the keys (`disabled: () => this.collapsed`). Say so, and stop
+    // being a tab stop: a focusable separator that answers no key at all is a
+    // dead stop in the tab order and a value a screen reader reads out as
+    // adjustable when it is not.
+    this.resizer.setAttribute("aria-disabled", String(this.collapsed));
+    this.resizer.tabIndex = this.collapsed ? -1 : 0;
   }
 
   /**

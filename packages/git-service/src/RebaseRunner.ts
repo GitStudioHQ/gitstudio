@@ -223,7 +223,7 @@ function pausedPaths(
  */
 function clearRewordQueue(p: { queue: string; installer: string } | undefined): void {
   if (!p) return;
-  for (const f of [p.queue, p.installer]) {
+  for (const f of [p.queue, charPath(p.queue), p.installer]) {
     try {
       fs.rmSync(f, { force: true });
     } catch {
@@ -239,7 +239,11 @@ function clearRewordQueue(p: { queue: string; installer: string } | undefined): 
 async function resumeEnv(
   root: string,
   opts: RebaseRunOptions,
-): Promise<{ env: NodeJS.ProcessEnv; paths?: { dir: string; queue: string; installer: string } }> {
+): Promise<{
+  env: NodeJS.ProcessEnv;
+  paths?: { dir: string; queue: string; installer: string };
+  commentChar: string;
+}> {
   const base: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_OPTIONAL_LOCKS: "0",
@@ -253,11 +257,19 @@ async function resumeEnv(
   // seen by the next one. Nothing here has to guess a lifetime.
   const paths = git && pausedPaths(git.dir);
   if (!paths || !fs.existsSync(paths.queue) || !fs.existsSync(paths.installer)) {
-    return { env: base };
+    return { env: base, commentChar: "#" };
   }
   const exe = opts.nodePath ?? process.execPath;
+  let commentChar = "#";
+  try {
+    const c = fs.readFileSync(charPath(paths.queue), "utf8").trim();
+    if (c.length === 1) commentChar = c;
+  } catch {
+    /* an older queue, or none — the default is right for ordinary messages */
+  }
   return {
     paths,
+    commentChar,
     env: {
       ...base,
       ELECTRON_RUN_AS_NODE: "1",
@@ -266,6 +278,57 @@ async function resumeEnv(
       GS_GIT_DIR: paths.dir,
     },
   };
+}
+
+/**
+ * Config every rebase invocation carries.
+ *
+ * `core.commentChar=auto` because the user's reword message goes to git through
+ * the EDITOR channel, where `--cleanup=default` strips every line that begins
+ * with the comment character. A body line like `#123` was deleted from the
+ * stored message without a word, and a message that STARTS with one became
+ * empty — which git treats as "abort this commit", wedging the rebase. `auto`
+ * makes git pick a character that begins no line in the message, so nothing of
+ * the user's is a comment.
+ *
+ * NOT `commit.cleanup=whitespace`: MSG_INSTALLER deliberately leaves a squash
+ * group's combined message alone, and that message is git's own boilerplate,
+ * which only `cleanup=default` strips. Changing the character moves git's
+ * boilerplate with it; changing the cleanup mode leaves the boilerplate in the
+ * commit.
+ */
+function rebaseConfig(commentChar: string): string[] {
+  return ["-c", `core.commentChar=${commentChar}`];
+}
+
+/** Where the chosen comment character is remembered for `--continue`/`--skip`. */
+function charPath(queue: string): string {
+  return queue + ".commentchar";
+}
+
+/**
+ * A comment character that begins no line in any message we are about to
+ * install.
+ *
+ * `auto` is not enough: git chooses when it PREPARES the message file, from the
+ * text that is in it then — and MSG_INSTALLER overwrites that file afterwards.
+ * So git decided on `#` from the ORIGINAL message and stripped the user's `#`
+ * lines from ours. We know every message up front, so choose from those.
+ *
+ * Falls back to `#`, which is no worse than not trying.
+ */
+function pickCommentChar(messages: readonly string[]): string {
+  const starts = new Set<string>();
+  for (const m of messages) {
+    for (const line of m.split("\n")) {
+      const c = line.trimStart()[0];
+      if (c) starts.add(c);
+    }
+  }
+  for (const c of [";", "@", "!", "$", "%", "^", "&", "*", "+", "=", "~", "|", ":", "?"]) {
+    if (!starts.has(c)) return c;
+  }
+  return "#";
 }
 
 /** Run the composed plan. Resolves with the outcome; never throws for git errors. */
@@ -323,7 +386,17 @@ export async function runRebasePlan(
       // git is asking about.
       GS_GIT_DIR: rw?.dir ?? "",
     };
-    const args = ["rebase", "-i", plan.base];
+    // Chosen from the messages this run will install, and remembered for the
+    // `--continue` that may follow.
+    const commentChar = pickCommentChar(rewords.map((r) => r.message));
+    if (rw) {
+      try {
+        fs.writeFileSync(charPath(rewordFile), commentChar);
+      } catch {
+        /* the default is still correct for messages with no leading hash */
+      }
+    }
+    const args = [...rebaseConfig(commentChar), "rebase", "-i", plan.base];
     const { code, stderr, stdout } = await spawnGit(args, root, env, opts);
 
     /**
@@ -370,9 +443,15 @@ export async function runRebasePlan(
     if (/could not apply|CONFLICT|Merge conflict|needs merge|fix conflicts/i.test(blob)) {
       return paused("conflict", firstLine(stderr) || "Rebase paused on a conflict.");
     }
-    if (/Stopped at .*edit|You can amend the commit now/i.test(blob)) {
-      return paused("edit", "Rebase paused for editing.");
-    }
+    // No `Stopped at .*edit` branch here on purpose.
+    //
+    // "You can amend the commit now" is the generic hint git prints after ANY
+    // failed commit during a rebase — a `commit-msg` hook rejecting the
+    // message, an empty message, a failed GPG sign. Matching it reported every
+    // one of those as "Rebase paused for editing." and threw away git's own
+    // explanation, which is the only thing that says what to fix. The guard
+    // below already answers correctly: it reports a stop only when a rebase is
+    // genuinely live, and carries git's words when it does.
     // Still mid-rebase? Treat as a stop the user must resolve rather than a hard fail.
     if (await rebaseInProgress(root, env, opts)) {
       return paused("unknown", firstLine(stderr) || "Rebase paused.");
@@ -390,8 +469,8 @@ export async function runRebasePlan(
 export async function continueRebase(root: string, opts: RebaseRunOptions = {}): Promise<RebaseOutcome> {
   // GIT_EDITOR was "true" here — a no-op — so every reword AFTER the stop point
   // committed with its original message, and the app said "Rebase continued."
-  const { env, paths } = await resumeEnv(root, opts);
-  const { code, stderr, stdout } = await spawnGit(["rebase", "--continue"], root, env, opts);
+  const { env, paths, commentChar } = await resumeEnv(root, opts);
+  const { code, stderr, stdout } = await spawnGit([...rebaseConfig(commentChar), "rebase", "--continue"], root, env, opts);
   if (code === 0) {
     // Exit 0 with a rebase still in flight is the next `edit` stop, not the end
     // — and clearing the queue there would drop every reword below it.
@@ -418,8 +497,8 @@ export async function continueRebase(root: string, opts: RebaseRunOptions = {}):
  * the ones after it disappear.
  */
 export async function skipRebase(root: string, opts: RebaseRunOptions = {}): Promise<RebaseOutcome> {
-  const { env, paths } = await resumeEnv(root, opts);
-  const { code, stderr, stdout } = await spawnGit(["rebase", "--skip"], root, env, opts);
+  const { env, paths, commentChar } = await resumeEnv(root, opts);
+  const { code, stderr, stdout } = await spawnGit([...rebaseConfig(commentChar), "rebase", "--skip"], root, env, opts);
   if (code === 0) {
     if (await rebaseInProgress(root, env, opts)) {
       return { status: "stopped", reason: "edit", message: "Rebase paused for editing." };
