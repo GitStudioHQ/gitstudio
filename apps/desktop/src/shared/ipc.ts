@@ -1701,6 +1701,23 @@ export interface GitOpState {
    * Skip (or Abort) is the way out, and neither was on screen.
    */
   nothingToCommit: boolean;
+  /**
+   * ONE name for what is in progress — decided in the main process, not
+   * re-derived from the booleans above.
+   *
+   * The renderer's own precedence put `merging` first, and
+   * `rebase --rebase-merges` stopping on a `merge` step leaves MERGE_HEAD *and*
+   * `rebase-merge/`: the banner called it a merge, and its Abort ran
+   * `git merge --abort`, discarding a hand resolution and leaving the rebase
+   * running underneath.
+   */
+  kind: "merge" | "rebase" | "cherry-pick" | "revert" | "am" | null;
+  /** Whether `<kind>:continue` can succeed right now. */
+  canContinue: boolean;
+  /** Whether `<kind>:skip` is offered — and safe. There is no `merge --skip`,
+   *  and `rebase --skip` HARD-RESETS, so it is offered only where git itself
+   *  names it as the way out. */
+  canSkip: boolean;
 }
 
 // ── GitHub depth wire types (PR threads, milestones, actions) ───────────────────

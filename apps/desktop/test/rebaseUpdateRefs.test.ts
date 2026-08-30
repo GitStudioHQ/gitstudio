@@ -393,6 +393,78 @@ test("the plan reports every commit it will replay, not just the page shown", as
 });
 
 /**
+ * A branch sitting on a commit that a later row SQUASHES or FIXUPS into.
+ *
+ * `update-ref` was emitted on the line after its own pick, and git records the
+ * ref the moment it reaches that line. A squash or fixup below then AMENDS the
+ * commit the branch was just pointed at — so the branch ends up on a commit
+ * that is no longer in the rewritten history, which is precisely the orphaning
+ * `--update-refs` exists to prevent. git's own `--autosquash` emits the
+ * update-ref AFTER the fold.
+ *
+ * `drop` is transparent to that scan: `pick c2 / update-ref / drop c3 /
+ * fixup c4` orphans just the same, because the fixup still folds into c2.
+ *
+ * This ships in BOTH products through the shared plan builder.
+ */
+test("a branch on a squashed commit moves with the fold, not before it", async () => {
+  for (const shape of ["fixup", "drop-then-fixup"] as const) {
+    const root = mkdtempSync(`${tmpdir()}/gs-fold-${shape}-`);
+    try {
+      const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+      git("init", "-q");
+      git("config", "user.email", "t@t");
+      git("config", "user.name", "t");
+      git("config", "gc.auto", "0");
+      git("commit", "-q", "--allow-empty", "-m", "base");
+      git("branch", "trunk");
+      for (const n of ["c1", "c2", "c3", "c4"]) {
+        writeFileSync(`${root}/${n}.txt`, `${n}\n`);
+        git("add", "-A");
+        git("commit", "-qm", n);
+      }
+      const branch = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+      // `feature` sits on c2 — the commit the fold below rewrites.
+      git("branch", "feature", git("rev-parse", "HEAD~2").trim());
+      const before = git("rev-parse", "feature").trim();
+
+      const repos = new RepoStore([]);
+      await repos.open(root);
+      const bridge = new RebaseBridge(repos);
+      const plan = await bridge.load({ base: "trunk" });
+      const bySubject = (x: string): { sha: string; subject: string } => {
+        const c = plan.commits.find((k) => k.subject === x);
+        assert.ok(c, `${x} is in the plan`);
+        return c;
+      };
+      // Display order is newest first, so: c4, c3, c2, c1.
+      const rows = [
+        { action: "fixup" as const, ...bySubject("c4") },
+        {
+          action: (shape === "drop-then-fixup" ? "drop" : "fixup") as "drop" | "fixup",
+          ...bySubject("c3"),
+        },
+        { action: "pick" as const, ...bySubject("c2"), branches: ["feature"] },
+        { action: "pick" as const, ...bySubject("c1") },
+      ];
+      const out = await bridge.apply({ base: "trunk", rows, updateRefs: true, headSha: plan.headSha });
+      assert.equal(out.status, "done", `${shape}: ${out.message ?? ""}`);
+
+      const after = git("rev-parse", "feature").trim();
+      assert.notEqual(after, before, `${shape}: the branch moved with the rewrite`);
+      // The assertion that matters: is it still IN this branch's history?
+      const contains = git("branch", "--contains", after).trim();
+      assert.ok(
+        contains.split("\n").some((l) => l.replace(/^\*?\s*/, "") === branch),
+        `${shape}: feature is still in the rewritten history, not orphaned beside it (${contains})`,
+      );
+    } finally {
+      removeTempRepo(root);
+    }
+  }
+});
+
+/**
  * A branch whose name is also a tag's.
  *
  * `%(refname:short)` returns the shortest UNAMBIGUOUS name, so a branch

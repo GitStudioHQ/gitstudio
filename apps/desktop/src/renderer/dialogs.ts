@@ -119,10 +119,18 @@ export function openModal(build: (close: () => void) => ModalSpec): void {
   //
   // …unless it holds work the user has not saved. A background refresh routing
   // underneath a form is not a reason to throw that form away.
-  const layer = registerLayer(() => {
-    if (spec?.hasUnsavedWork?.()) return;
-    close();
-  }, "modal");
+  const layer = registerLayer(
+    () => {
+      if (spec?.hasUnsavedWork?.()) return;
+      close();
+    },
+    "modal",
+    // A veto leaves the dialog on screen, and the registry has to say so:
+    // dropped from it, `isTop()` was false for a dialog that IS the top layer
+    // (its Escape dead), and `openLayerCount()` was zero with it open (the
+    // page's own ← navigating out from under it).
+    () => overlay.isConnected,
+  );
   const dismiss = (): void => {
     if (spec.canDismiss && !spec.canDismiss()) return;
     close();

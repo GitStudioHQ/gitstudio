@@ -441,7 +441,7 @@ export async function runRebasePlan(
     }
     const blob = `${stdout}\n${stderr}`;
     if (/could not apply|CONFLICT|Merge conflict|needs merge|fix conflicts/i.test(blob)) {
-      return paused("conflict", firstLine(stderr) || "Rebase paused on a conflict.");
+      return paused("conflict", firstLine(stderr, stdout) || "Rebase paused on a conflict.");
     }
     // No `Stopped at .*edit` branch here on purpose.
     //
@@ -454,12 +454,12 @@ export async function runRebasePlan(
     // genuinely live, and carries git's words when it does.
     // Still mid-rebase? Treat as a stop the user must resolve rather than a hard fail.
     if (await rebaseInProgress(root, env, opts)) {
-      return paused("unknown", firstLine(stderr) || "Rebase paused.");
+      return paused("unknown", firstLine(stderr, stdout) || "Rebase paused.");
     }
     // A hard failure ends the rebase; a STOP does not, and its queue must
     // survive for the `--continue` that follows.
     clearRewordQueue(rw);
-    return { status: "failed", message: firstLine(stderr) || firstLine(stdout) || "Rebase failed." };
+    return { status: "failed", message: firstLine(stderr, stdout) || "Rebase failed." };
   } finally {
     fs.rm(dir, { recursive: true, force: true }, () => {});
   }
@@ -482,13 +482,13 @@ export async function continueRebase(root: string, opts: RebaseRunOptions = {}):
   }
   const blob = `${stdout}\n${stderr}`;
   if (/could not apply|CONFLICT|needs merge/i.test(blob)) {
-    return { status: "stopped", reason: "conflict", message: firstLine(stderr) || "Still conflicted." };
+    return { status: "stopped", reason: "conflict", message: firstLine(stderr, stdout) || "The rebase is still stopped." };
   }
   if (await rebaseInProgress(root, env, opts)) {
-    return { status: "stopped", reason: "unknown", message: firstLine(stderr) || "Rebase paused." };
+    return { status: "stopped", reason: "unknown", message: firstLine(stderr, stdout) || "Rebase paused." };
   }
   clearRewordQueue(paths);
-  return { status: "failed", message: firstLine(stderr) || "Continue failed." };
+  return { status: "failed", message: firstLine(stderr, stdout) || "Continue failed." };
 }
 
 /**
@@ -508,13 +508,13 @@ export async function skipRebase(root: string, opts: RebaseRunOptions = {}): Pro
   }
   const blob = `${stdout}\n${stderr}`;
   if (/could not apply|CONFLICT|needs merge/i.test(blob)) {
-    return { status: "stopped", reason: "conflict", message: firstLine(stderr) || "Still conflicted." };
+    return { status: "stopped", reason: "conflict", message: firstLine(stderr, stdout) || "The rebase is still stopped." };
   }
   if (await rebaseInProgress(root, env, opts)) {
-    return { status: "stopped", reason: "unknown", message: firstLine(stderr) || "Rebase paused." };
+    return { status: "stopped", reason: "unknown", message: firstLine(stderr, stdout) || "Rebase paused." };
   }
   clearRewordQueue(paths);
-  return { status: "failed", message: firstLine(stderr) || "Skip failed." };
+  return { status: "failed", message: firstLine(stderr, stdout) || "Skip failed." };
 }
 
 /** `git rebase --abort`. */
@@ -542,7 +542,7 @@ export async function abortRebase(
   }
   return {
     status: "failed",
-    message: firstLine(stderr) || firstLine(stdout) || "Couldn't abort the rebase.",
+    message: firstLine(stderr, stdout) || "Couldn't abort the rebase.",
   };
 }
 
@@ -603,11 +603,17 @@ async function rebaseInProgress(
  * So: split on CR as well as LF, prefer a line that announces a problem, and
  * fall back to the first line that is not progress noise.
  */
-function firstLine(s: string): string {
-  const lines = (s || "")
+function firstLine(...streams: string[]): string {
+  const lines = streams
+    .join("\n")
     .split(/[\r\n]+/)
     .map((l) => l.trim())
-    .filter((l) => l.length > 0);
+    // `hint:` lines are git's advice ABOUT the problem, and it puts them first:
+    // taking one gave the user "hint: Resolve all conflicts manually, mark them
+    // as resolved with" — a sentence cut mid-clause, telling them to fix
+    // conflicts that in the emptied-patch case do not exist. `Applying:` is
+    // progress noise for the same reason `Rebasing (n/m)` is.
+    .filter((l) => l.length > 0 && !/^(hint|Applying):/i.test(l));
   const problem = lines.find((l) =>
     /^(error|fatal|warning):|could not|cannot |failed to|CONFLICT/i.test(l),
   );

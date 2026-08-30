@@ -7,7 +7,7 @@
 // can open a peek. Cards render lazily and may be async; the body shows a
 // skeleton until the renderer resolves.
 
-import { registerLayer, ownsEscape, holdBackground } from "./overlays";
+import { registerLayer, holdBackground } from "./overlays";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -159,7 +159,10 @@ export function openPeek(card: PeekCard): void {
       // latter is a list of the kinds that happen to outrank a peek, and three
       // surfaces have now each got a different subset of that list wrong. The
       // registry knows the order; nothing else does.
-      if (!layer.isTop() || !ownsEscape()) return;
+      // `isTop()` is the whole question: every layer that can sit above a
+      // peek — a menu, a dialog, the command palette — registers, so "nothing
+      // opened after me" answers it without a list of kinds to keep current.
+      if (!layer.isTop()) return;
       e.preventDefault();
       e.stopPropagation();
       ctx.back();

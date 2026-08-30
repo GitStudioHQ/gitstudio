@@ -97,3 +97,64 @@ test("an ordinary branch name still gets through", () => {
   assert.ok(r.ok);
   assert.ok(r.todo.includes("update-ref refs/heads/feature/some-work"));
 });
+
+/**
+ * An update-ref line must sit after the LAST row that folds into its commit.
+ *
+ * git records the ref the moment it reaches the line, and a squash or fixup
+ * below then AMENDS the commit the branch was just pointed at — so the branch
+ * ends on a commit that is no longer in the rewritten history, which is exactly
+ * the orphaning `--update-refs` exists to prevent. git's own `--autosquash`
+ * emits `pick c2 / fixup fixup!c2 / update-ref …`, after the fold.
+ *
+ * `drop` is transparent to that scan: a `drop` between the pick and the fixup
+ * does not stop the fixup folding into the same commit.
+ */
+test("update-ref follows the fold, not the pick", () => {
+  const rows = [
+    { action: "pick" as const, sha: "aaa1111", subject: "c1" },
+    { action: "pick" as const, sha: "bbb2222", subject: "c2", branches: ["feature"] },
+    { action: "fixup" as const, sha: "ccc3333", subject: "c3" },
+  ];
+  // Display order is newest first; buildRebasePlan reverses into git's todo.
+  const built = buildRebasePlan([...rows].reverse(), { updateRefs: true });
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  const lines = built.todo.trim().split("\n");
+  const ref = lines.findIndex((l) => l.startsWith("update-ref"));
+  const fixup = lines.findIndex((l) => l.startsWith("fixup"));
+  assert.ok(ref > fixup, `update-ref must come after the fixup it folds into:\n${built.todo}`);
+});
+
+test("a drop between the pick and its fixup does not detach the update-ref", () => {
+  const rows = [
+    { action: "pick" as const, sha: "bbb2222", subject: "c2", branches: ["feature"] },
+    { action: "drop" as const, sha: "ccc3333", subject: "c3" },
+    { action: "fixup" as const, sha: "ddd4444", subject: "c4" },
+  ];
+  const built = buildRebasePlan([...rows].reverse(), { updateRefs: true });
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  const lines = built.todo.trim().split("\n");
+  const ref = lines.findIndex((l) => l.startsWith("update-ref"));
+  const fixup = lines.findIndex((l) => l.startsWith("fixup"));
+  assert.ok(ref > fixup, `a dropped row must not end the fold run:\n${built.todo}`);
+});
+
+test("a dropped commit's own branch gets no update-ref at all", () => {
+  // Alongside a surviving pick — a plan that drops everything is refused on
+  // its own grounds, which would make this assert nothing.
+  const built = buildRebasePlan(
+    [
+      { action: "drop" as const, sha: "eee5555", subject: "gone", branches: ["stranded"] },
+      { action: "pick" as const, sha: "fff6666", subject: "kept" },
+    ],
+    { updateRefs: true },
+  );
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  assert.ok(
+    !built.todo.includes("update-ref"),
+    "a commit that is not in the rewritten history has nowhere for its branch to point",
+  );
+});

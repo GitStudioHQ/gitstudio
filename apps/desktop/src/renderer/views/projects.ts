@@ -25,7 +25,7 @@ import {
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
 import { toast } from "../dialogs";
-import { holdBackground, registerLayer, ownsEscape } from "../overlays";
+import { holdBackground, registerLayer } from "../overlays";
 import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
 import { renderIssueDetailInto } from "./issues";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
@@ -427,7 +427,9 @@ function openIssueDrawer(number: number, nav: SectionNav, onChanged?: () => void
       // thing you aimed at and took the drawer under it too, discarding
       // whatever the card was showing. Asked as "am I the top layer?", because
       // "is a modal open?" cannot see a peek. See `registerLayer`.
-      if (!layer.isTop() || !ownsEscape()) return;
+      // "Nothing opened after me." Every layer registers, so this needs no
+      // list of the kinds that can outrank a drawer.
+      if (!layer.isTop()) return;
       e.preventDefault();
       dispose();
     }

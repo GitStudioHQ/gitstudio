@@ -14,7 +14,7 @@ import { providerLogo } from "./providerLogos";
 import { invalidateAiEnabled } from "./aiAssist";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import { trapTab } from "./views/common";
-import { registerLayer, holdBackground, ownsEscape } from "./overlays";
+import { registerLayer, holdBackground } from "./overlays";
 import type { AiConnectionView, AiPresetView, AiSettingsView, McpInfo } from "../shared/ipc";
 
 /** The "AI Models" card: manage model connections. */
@@ -257,7 +257,13 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
       // registration makes true, so Escape could never close it at all. The
       // registry answers the question each surface is actually asking: is
       // anything still open that opened after me?
-      if (!layer.isTop() || !ownsEscape()) return;
+      // `isTop()` ALONE. This asked `isTop() || ownsEscape()`'s conjunction
+      // and kept the exact term that broke it: the gallery registers itself as
+      // a "modal", `ownsEscape()` asks "is any modal open?", and its own
+      // registration makes that true — so Escape could never close it at all.
+      // Every layer that can sit above this one is IN the registry (the
+      // palette and menus included), so being top is the whole question.
+      if (!layer.isTop()) return;
       e.preventDefault();
       closeOverlay();
       return;

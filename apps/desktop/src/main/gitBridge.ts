@@ -754,7 +754,17 @@ export class GitBridge {
     }
   }
   async unstageAll(): Promise<CommitActionResult> {
-    return this.staged(async (ctx) => ctx.process.run(["reset"]));
+    // A PATHSPEC, always. `git reset` with no pathspec is not the inverse of
+    // "stage everything" — it is also `git merge --quit`: it clears MERGE_HEAD
+    // and ends the merge. So unchecking everything mid-merge silently abandoned
+    // it, and the next Commit recorded a ONE-PARENT commit carrying the merged
+    // content, with no second parent and no way to abort. `git merge --abort`
+    // afterwards answers "There is no merge to abort".
+    //
+    // `-- .` rather than a list of paths from `status`: `parsePorcelainStatus`
+    // reports only the new half of a rename, so resetting the listed paths
+    // would strand the `D old-name` half of every renamed file staged.
+    return this.staged(async (ctx) => ctx.process.run(["reset", "-q", "HEAD", "--", "."]));
   }
   async commit(req: { message: string; amend?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
@@ -1776,6 +1786,9 @@ export class GitBridge {
       amApplying: false,
       conflicts: 0,
       nothingToCommit: false,
+      kind: null,
+      canContinue: false,
+      canSkip: false,
     };
     if (!ctx) return empty;
     const present = async (gitPath: string): Promise<boolean> => {
@@ -1807,57 +1820,111 @@ export class GitBridge {
       present("rebase-apply"),
       // `git am` uses the SAME rebase-apply directory. git tells them apart by
       // a marker inside it — `applying` for am, `rebasing` for a rebase on the
-      // apply backend — and they are mutually exclusive. Without asking, a
-      // conflicted `git am` beside the app showed "rebase in progress" with
-      // Abort and Continue, both of which run `git rebase` and are refused, so
-      // the only banner offering a way out led nowhere.
+      // apply backend — and they are mutually exclusive.
       present("rebase-apply/applying"),
       present("CHERRY_PICK_HEAD"),
       present("REVERT_HEAD"),
     ]);
+    const rebasing = rebaseM || (rebaseA && !amMarker);
+    const amApplying = rebaseA && amMarker;
+
+    // ONE name for what is in progress, decided HERE.
+    //
+    // The renderer used to re-derive this from five booleans, and got the
+    // precedence wrong in a way that destroyed work: `rebase --rebase-merges`
+    // stopping on a `merge` step leaves MERGE_HEAD *and* `rebase-merge/`, and
+    // "merging first" named it a merge — so Abort ran `git merge --abort`,
+    // which throws away a hand resolution and leaves the rebase running. A
+    // rebase that stops inside a merge step is still a rebase, and only git's
+    // rebase verbs can end it.
+    const kind: GitOpState["kind"] = rebasing
+      ? "rebase"
+      : amApplying
+        ? "am"
+        : cherryPicking
+          ? "cherry-pick"
+          : reverting
+            ? "revert"
+            : merging
+              ? "merge"
+              : null;
+
+    // Is there anything left to record? `diff --cached --quiet HEAD` exiting 0
+    // means the index matches HEAD. Asked only while something is stopped, so
+    // the ordinary refresh path pays nothing for it.
+    const indexMatchesHead =
+      kind !== null &&
+      conflicts === 0 &&
+      (await ctx.process.run(["diff", "--cached", "--quiet", "HEAD"])).code === 0;
+
+    // What the two forward buttons can actually DO, decided here rather than
+    // guessed by the renderer from the booleans above. `skipping` was re-derived
+    // there and came out wrong in BOTH directions in consecutive commits: once
+    // offering a hard-resetting Skip at a pause the user asked for, then
+    // removing the only Skip that could finish an apply-backend rebase.
+    // Both FALSE when nothing is in progress. `conflicts === 0` is true of an
+    // ordinary clean repo, and defaulting `canContinue` from it made the field
+    // claim a Continue was possible with no operation to continue — inert
+    // today, because the banner returns early on a null kind, but a field that
+    // is wrong in a state nobody reads is a field the next caller will trust.
+    let canContinue = kind !== null && conflicts === 0;
+    let canSkip = false;
+    if (kind === "merge") {
+      // git allows an EMPTY merge commit, so `commit --no-edit` finishes one
+      // whose result matches HEAD. There is no `git merge --skip`.
+      canSkip = false;
+    } else if (kind === "rebase") {
+      if (rebaseM) {
+        // The MERGE backend never offers Skip, for two reasons that point the
+        // same way. Its `--continue` auto-drops a commit that conflict
+        // resolution emptied, so Skip is not needed. And a deliberate pause —
+        // `edit`, `break` — can ONLY happen here: `git rebase -i --apply` is
+        // refused outright ("apply options and merge options cannot be used
+        // together") and `-i` writes `rebase-merge/` even under
+        // `rebase.backend = apply`. At such a pause the index equals HEAD and
+        // nothing is conflicted, indistinguishable from an empty patch, and
+        // `rebase --skip` HARD-RESETS the working tree: it discards the amend
+        // the pause existed to make, and in git's split-a-commit flow the
+        // commit being split with it.
+        canSkip = false;
+      } else {
+        // The APPLY backend refuses `--continue` on an emptied patch and names
+        // `--skip` itself. This is the one place a rebase Skip is correct, and
+        // removing it left the operation with no way to finish at all.
+        canContinue = conflicts === 0 && !indexMatchesHead;
+        canSkip = conflicts === 0 && indexMatchesHead;
+      }
+    } else if (kind === "cherry-pick" || kind === "revert" || kind === "am") {
+      // The sequencer refuses to record an empty patch and names `--skip`.
+      canContinue = conflicts === 0 && !indexMatchesHead;
+      canSkip = true;
+    }
+
     return {
       merging,
-      rebasing: rebaseM || (rebaseA && !amMarker),
-      amApplying: rebaseA && amMarker,
+      rebasing,
+      amApplying,
       cherryPicking,
       reverting,
       conflicts,
-      // Only meaningful while something is stopped, and only when nothing is
-      // conflicted: `diff --cached --quiet HEAD` exiting 0 means the index
-      // matches HEAD, so there is no commit left to make.
-      // CHERRY-PICK AND REVERT ONLY.
-      //
-      // The signal is "the index equals HEAD", and for those two verbs that
-      // means exactly one thing: the patch is empty, git will refuse to record
-      // it, and Skip is the way out.
-      //
-      // It means something else entirely during a REBASE. At an `edit` stop —
-      // which the user asked for, and which the app's own hint describes as
-      // "Pause here so you can amend the commit" — git has already applied the
-      // commit, so the index matches HEAD and nothing is conflicted. Reading
-      // that as "nothing left to commit" put a lie in the banner and turned the
-      // single forward button into `git rebase --skip`, which HARD-RESETS the
-      // working tree: the amend you paused to make is gone, and in git's own
-      // split-a-commit flow the commit being split is gone with it. A merge is
-      // excluded for a different reason — git allows an empty merge commit, so
-      // `commit --no-edit` genuinely finishes one.
-      //
-      // A rebase that really does reach an empty patch is rare now that the
-      // todo is built with `--cherry-pick --right-only`, and the Rebase view's
-      // own in-progress card is where that belongs.
-      nothingToCommit:
-        conflicts === 0 &&
-        (cherryPicking || reverting) &&
-        (await ctx.process.run(["diff", "--cached", "--quiet", "HEAD"])).code === 0,
+      kind,
+      canContinue,
+      canSkip,
+      nothingToCommit: indexMatchesHead,
     };
   }
 
   /**
-   * `alwaysExpected` marks a command whose FAILURE is always a condition rather
-   * than a defect — the sequencer's continue/skip verbs, where "stopped on the
-   * next patch" and "nothing to do" are the normal outcomes. Without it the
-   * classifier falls back to matching git's English on stderr, which missed
-   * every `git am` wording and filed a crash report on each one.
+   * `alwaysExpected` keeps a command's failures OUT OF THE CRASH REPORTS, and
+   * does nothing else.
+   *
+   * The sequencer's continue and skip verbs fail routinely — "stopped on the
+   * next patch", "nothing to do" — and the classifier's fallback is matching
+   * git's English on stderr, which matched no `git am` wording at all and filed
+   * a report on every press. But the flag is per-CALLER, so it cannot tell that
+   * routine failure from "I could not take the index lock", and it must not be
+   * read as "this was fine": the banner shows every failure in red regardless,
+   * because in all of these cases the operation did not finish.
    */
   private runResult(args: string[], opts?: { alwaysExpected?: boolean }): Promise<CommitActionResult> {
     return this.staged(async (ctx) => {
@@ -2183,6 +2250,32 @@ export class GitBridge {
             : `${req.path} isn't UTF-8 text. Saving it as text would rewrite the bytes it can't represent — use Take ours or Take theirs.`,
         );
         if (!safe.ok) return { ok: false, changed: false, expected: true, message: safe.why };
+        // A BOTH-DELETED (DD) conflict has no side that still has the file, so
+        // there is nothing to write back: saving text here CREATES it, staged
+        // as an addition nobody asked for, and Discard afterwards reports
+        // success having changed nothing. Both sides agree it is gone.
+        //
+        // Asked with the same shape of probe `conflictTakeSide` uses — and
+        // refused only on the POSITIVE signal (listed, stage 1, no 2 or 3).
+        // "Mark resolved" is the only way to commit a hand-merged result, so a
+        // blanket refusal on an unreadable listing would take that away, unlike
+        // take-a-side where refusing is the safe default.
+        const stages = await ctx.process.run(["ls-files", "-u", "-z"]);
+        if (stages.code === 0) {
+          const mine = stages.stdout
+            .split("\0")
+            .map((rec) => /^\d{6} [0-9a-f]+ (\d)\t([\s\S]*)$/.exec(rec))
+            .filter((m): m is RegExpExecArray => !!m && m[2] === req.path)
+            .map((m) => m[1]);
+          if (mine.length && !mine.includes("2") && !mine.includes("3")) {
+            return {
+              ok: false,
+              changed: false,
+              expected: true,
+              message: `Both sides deleted ${req.path}. There is nothing to merge — use Discard to accept the deletion.`,
+            };
+          }
+        }
         // A containment check that resolves SYMLINKS, not just "..". The one
         // above is purely lexical, so a repo-relative path whose PARENT is a
         // symlink pointing outside still lands outside. Both sides are
@@ -2241,7 +2334,15 @@ export class GitBridge {
         //
         // The list is bounded by the number of conflicts, which is small.
         const unmerged = await ctx.process.run(["ls-files", "-u", "-z"]);
-        if (unmerged.code === 0 && unmerged.stdout.trim()) {
+        if (unmerged.code !== 0) {
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: `Couldn't read the conflict state for ${req.path}. Nothing was changed.`,
+          };
+        }
+        {
           // `[\s\S]` for the path, not `.`: with `-z` a path containing a
           // NEWLINE arrives raw, and `.` will not cross it — which would drop
           // that file straight back into the delete branch.
@@ -2257,12 +2358,18 @@ export class GitBridge {
           // parse failed or the path moved, and answering that with `git rm`
           // makes destruction the default outcome of not understanding the
           // input — which is exactly how the C-quoting bug destroyed files.
+          // The verdict gates BOTH outcomes. This used to sit inside an
+          // `if (stdout.trim())`, so an empty listing — the file is no longer
+          // conflicted, because a watcher tick or another window resolved it —
+          // skipped the probe entirely and fell through to a precondition-free
+          // `git checkout --ours/--theirs`, which happily overwrites a file
+          // that has no conflict left and reports "Took your version."
           if (!present.size) {
             return {
               ok: false,
               changed: false,
               expected: true,
-              message: `Couldn't read the conflict state for ${req.path}. Nothing was changed — try refreshing.`,
+              message: `${req.path} is no longer conflicted — nothing was changed.`,
             };
           }
           if (!present.has(stage)) {

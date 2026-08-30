@@ -132,7 +132,16 @@ export class RebaseBridge {
       );
     }
     if (fellBack) {
-      notes.push(`“${req.base ?? "that base"}” doesn't resolve here — showing the whole branch instead.`);
+      // Only quote a base the CALLER supplied. With none, the fallback quoted
+      // the app's own default and told the user that "that base" — a string
+      // they had never typed, chosen, or seen — does not resolve, which reads
+      // as a warning about something they did wrong. In a repo with fewer
+      // commits than the default range, that is what every first visit said.
+      notes.push(
+        req.base
+          ? `“${req.base}” doesn't resolve here — showing the whole branch instead.`
+          : "No base was set and the default range doesn't reach here, so this is the whole branch, starting at the root commit.",
+      );
     }
     if (commits.length >= MAX_PLAN_COMMITS) {
       // Say what happens to the rest, not just that they are not shown. They

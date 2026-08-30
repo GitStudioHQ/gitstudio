@@ -446,11 +446,18 @@ test("a rebase paused at an edit stop is never reported as nothing to commit", a
 
     assert.equal(st.rebasing, true, "the rebase is paused");
     assert.equal(st.conflicts, 0, "with nothing conflicted — which is why a conflict count cannot see it");
+    // `nothingToCommit` is now the raw fact ("the index equals HEAD"), which IS
+    // true here — it is true at every deliberate pause. The decision moved to
+    // `canSkip`, where it can be made per operation and per backend, because
+    // making it from the raw fact alone is what put a hard-resetting Skip on
+    // this screen in the first place. The full cell lives in opMatrix.test.ts.
+    assert.equal(st.nothingToCommit, true, "the index does equal HEAD — that fact is not the decision");
     assert.equal(
-      st.nothingToCommit,
+      st.canSkip,
       false,
-      "and it is NOT 'nothing to commit' — the banner must not offer a hard-resetting Skip here",
+      "and the decision is right: no hard-resetting Skip at a pause the user asked for",
     );
+    assert.equal(st.canContinue, true, "Continue is the way on");
   } finally {
     removeTempRepo(root);
   }

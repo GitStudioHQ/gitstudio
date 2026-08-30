@@ -23,6 +23,9 @@ interface Layer {
   id: number;
   kind: LayerKind;
   dispose: () => void;
+  /** Optional: "am I still on screen?", asked after a dispose that may have
+   *  been declined. A layer that cannot answer is assumed to have closed. */
+  stillOpen?: () => boolean;
 }
 
 let nextId = 1;
@@ -36,9 +39,10 @@ let layers: Layer[] = [];
 export function registerLayer(
   dispose: () => void,
   kind: LayerKind = "surface",
+  stillOpen?: () => boolean,
 ): LayerHandle {
   const id = nextId++;
-  layers.push({ id, kind, dispose });
+  layers.push({ id, kind, dispose, stillOpen });
   return {
     release: () => {
       layers = layers.filter((l) => l.id !== id);
@@ -64,10 +68,20 @@ export interface LayerHandle {
  *
  * Iterates a COPY and clears first: a dispose() will call its own release(),
  * which mutates `layers` — walking the live array would skip entries.
+ *
+ * A layer that DECLINES to close is put back. Not every dispose closes: a
+ * dialog with unsaved work vetoes (`hasUnsavedWork`), and one that throws has
+ * not closed either. Clearing the array regardless left those surfaces on
+ * screen and absent from the registry, and from that point every predicate
+ * built on the registry lied about them — `isTop()` false forever for a dialog
+ * that IS the top layer, so its Escape was dead; `openLayerCount()` zero with a
+ * dialog open, so the page's own ← navigated out from under it. The registry
+ * has to describe what is on screen, not what this function intended.
  */
 export function dismissLayers(): void {
   const open = layers;
   layers = [];
+  const survived: Layer[] = [];
   // Newest first, so a modal opened from a menu closes before the menu.
   for (const l of [...open].reverse()) {
     try {
@@ -75,6 +89,17 @@ export function dismissLayers(): void {
     } catch {
       /* one broken layer must not strand the rest open */
     }
+    // A dispose that closed calls its own `release()`, which is a no-op now
+    // that `layers` is cleared — so "still here" is decided by asking the layer
+    // itself, through the same predicate everything else uses.
+    if (l.stillOpen?.()) survived.push(l);
+  }
+  // In ORIGINAL order, ahead of anything registered DURING the sweep (a
+  // dispose can open something). Plain assignment would drop those; reversed
+  // order would make `isTop()` name the wrong survivor.
+  if (survived.length) {
+    survived.sort((a, b) => a.id - b.id);
+    layers = [...survived, ...layers];
   }
 }
 

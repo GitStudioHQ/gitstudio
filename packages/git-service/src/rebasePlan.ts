@@ -138,23 +138,58 @@ export function buildRebasePlan(
     };
   }
 
-  // An update-ref line means "this branch points HERE", so it must sit
-  // immediately after its own pick and travel with it through any reorder.
-  // Detached from its commit the branch lands somewhere arbitrary — proved by
-  // getting this wrong once: swapping a pick with the update-ref line above it
-  // moved a branch onto the commit BEFORE the range began.
+  // An update-ref line means "this branch points HERE", so it must travel with
+  // its own commit through any reorder — detached from it, the branch lands
+  // somewhere arbitrary. (Proved by getting it wrong once: swapping a pick with
+  // the update-ref line above it moved a branch onto the commit BEFORE the
+  // range began.)
+  //
+  // "With its commit" is not "on the next line", though. A squash or fixup
+  // AMENDS the commit above it, and git records an update-ref the moment it
+  // reaches that line — so `pick c2 / update-ref refs/heads/feature / fixup c3`
+  // points the branch at c2 and then rewrites c2, leaving the branch on a
+  // commit that is no longer in the history. Verified against git 2.49:
+  // `merge-base --is-ancestor feature HEAD` fails, which is exactly the
+  // orphaning `--update-refs` exists to prevent. git's own `--autosquash`
+  // emits `pick c2 / fixup fixup!c2 / update-ref …`, after the fold.
+  //
+  // So each row's refs are emitted after the LAST row that folds into it.
+  // `drop` is transparent when scanning forward — `pick c2 / update-ref /
+  // drop c3 / fixup c4` still orphans, because the fixup after the dropped row
+  // folds into c2 all the same.
+  const FOLDS = new Set(["squash", "fixup"]);
+  /** The index of the last row that folds into `i`, or `i` itself. */
+  const foldEnd = (i: number): number => {
+    let end = i;
+    for (let j = i + 1; j < plan.length; j++) {
+      if (FOLDS.has(plan[j].action)) end = j;
+      else if (plan[j].action === "drop") continue;
+      else break;
+    }
+    return end;
+  };
+
+  // Refs to emit after each row, keyed by the row that ends its fold run.
+  const refsAfter = new Map<number, string[]>();
+  plan.forEach((r, i) => {
+    // A DROPPED commit is not in the rewritten history at all, so there is
+    // nothing for its branch to point at; git's own --update-refs writes a
+    // comment rather than a line, and moving the branch anyway would put it
+    // somewhere the user never asked for.
+    if (!opts?.updateRefs || r.action === "drop") return;
+    const names = (r.branches ?? []).filter(isSafeBranchName);
+    if (!names.length) return;
+    const at = foldEnd(i);
+    refsAfter.set(at, [...(refsAfter.get(at) ?? []), ...names]);
+  });
+
   const lines: string[] = [];
-  for (const r of plan) {
+  plan.forEach((r, i) => {
     lines.push(`${r.action} ${r.sha} ${oneLine(r.subject)}`.trimEnd());
-    if (!opts?.updateRefs || r.action === "drop") {
-      continue;
+    for (const branch of refsAfter.get(i) ?? []) {
+      lines.push(`update-ref refs/heads/${branch}`);
     }
-    for (const branch of r.branches ?? []) {
-      if (isSafeBranchName(branch)) {
-        lines.push(`update-ref refs/heads/${branch}`);
-      }
-    }
-  }
+  });
   const todo = lines.join("\n") + "\n";
   const rewords = plan
     .filter((r) => r.action === "reword")

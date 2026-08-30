@@ -540,6 +540,15 @@ function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => 
       }
       try {
         const re = await host.invoke("rebase:load", { base });
+        // A rebase already running owns this view. Building the Start-rebase
+        // workspace over a live rebase offers a plan that cannot be applied —
+        // `runRebasePlan` refuses while one is in progress — so the user is
+        // handed a screen whose only button is dead. Checked BEFORE the
+        // commits test, because a mid-rebase load legitimately has rows.
+        if (re.ok && re.inProgress) {
+          void mount(wrap, nav);
+          return;
+        }
         if (re.ok && re.commits.length) {
           build(wrap, nav, re);
           return;

@@ -167,3 +167,51 @@ test("releasing twice does not un-hold a surface that is still open", () => {
   relB();
   assert.equal(shell.hasAttribute("inert"), false);
 });
+
+/**
+ * A layer that DECLINES to close stays in the registry.
+ *
+ * Not every dispose closes: a dialog with unsaved work vetoes a route change,
+ * which is what `hasUnsavedWork` is for. `dismissLayers` cleared the array
+ * regardless, so that dialog was on screen and absent from the registry — and
+ * every predicate built on the registry then lied about it. `isTop()` false for
+ * the layer that IS the top one, so its Escape was dead; `openLayerCount()`
+ * zero with it open, so the page's own ← navigated out from under it.
+ */
+test("a layer that refuses to close is still in the registry afterwards", () => {
+  let aOpen = true;
+  let bOpen = true;
+  const a = registerLayer(() => { aOpen = false; a.release(); }, "surface", () => aOpen);
+  const b = registerLayer(() => { /* vetoes */ }, "modal", () => bOpen);
+
+  assert.equal(openLayerCount(), 2);
+  assert.equal(b.isTop(), true, "the modal is on top before the sweep");
+
+  dismissLayers();
+
+  assert.equal(aOpen, false, "the layer that could close, did");
+  assert.equal(openLayerCount(), 1, "and the one that refused is still counted");
+  assert.equal(b.isTop(), true, "so it still owns Escape");
+
+  bOpen = false;
+  b.release();
+  assert.equal(openLayerCount(), 0);
+});
+
+test("survivors keep their original order, ahead of anything opened during the sweep", () => {
+  let firstOpen = true;
+  let secondOpen = true;
+  const first = registerLayer(() => { /* vetoes */ }, "surface", () => firstOpen);
+  const second = registerLayer(() => { /* vetoes */ }, "modal", () => secondOpen);
+
+  dismissLayers();
+
+  assert.equal(openLayerCount(), 2, "both refused, both kept");
+  assert.equal(second.isTop(), true, "and the NEWER one is still the top layer");
+  assert.equal(first.isTop(), false);
+
+  firstOpen = false;
+  secondOpen = false;
+  first.release();
+  second.release();
+});

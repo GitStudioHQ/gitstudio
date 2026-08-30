@@ -4021,39 +4021,30 @@ class App {
     // Abort / Continue affordance (Continue is gated on zero remaining conflicts).
     void host.invoke("git:opState", undefined).then((op) => {
       if (this.currentView !== "changes") return;
-      const kind = op.merging
-        ? "merge"
-        : op.rebasing
-          ? "rebase"
-          : op.cherryPicking
-            ? "cherry-pick"
-            : op.reverting
-              ? "revert"
-              // A part-applied patch series. Naming it is not cosmetic: this is
-              // the app's only in-progress surface, and without it the window
-              // showed an ordinary dirty tree with a live Commit button —
-              // which strands the rest of the series and puts your name on
-              // someone else's patch.
-              : op.amApplying
-                ? "patch series (git am)"
-                : null;
+      // The host decides WHAT is in progress and WHAT its buttons can do. This
+      // used to re-derive both from five booleans, and got each wrong in turn:
+      // "merging first" named a rebase stopped on a merge step a merge (whose
+      // Abort discards the resolution), and the Skip/Continue choice came out
+      // wrong in both directions in consecutive commits.
+      const kind = op.kind;
       if (!kind) return;
+      const label = kind === "am" ? "patch series (git am)" : kind;
       const banner = el("div", "dc-opbanner");
       const txt = el("div", "dc-opbanner-text");
       txt.append(
         glyph("warning"),
         span(
           op.conflicts > 0
-            ? `${kind} in progress — ${op.conflicts} file${op.conflicts === 1 ? "" : "s"} still conflicted`
-            // Zero conflicts does not mean "ready to continue". Picking or
-            // reverting something already on the branch stops with nothing
-            // conflicted AND nothing to commit, and so does a conflict resolved
-            // by keeping HEAD's side. "resolve and continue" over an empty file
-            // list, with Continue enabled, was the app telling the user to do
-            // something git would then refuse.
-            : op.nothingToCommit
-              ? `${kind} in progress — nothing left to commit, this one is already on the branch`
-              : `${kind} in progress — resolve and continue`,
+            ? `${label} in progress — ${op.conflicts} file${op.conflicts === 1 ? "" : "s"} still conflicted`
+            : op.canSkip && !op.canContinue
+              // Zero conflicts does not mean "ready to continue": an empty
+              // patch, or one that would not apply, leaves nothing to record
+              // and git refuses. Saying "resolve and continue" there sent the
+              // user at a button that could never work.
+              ? kind === "am"
+                ? `${label} in progress — git couldn't apply this patch`
+                : `${label} in progress — nothing left to commit, this one is already on the branch`
+              : `${label} in progress — resolve and continue`,
           "dc-opbanner-strong",
         ),
       );
@@ -4061,28 +4052,45 @@ class App {
       const abort = el("button", "mini-btn") as HTMLButtonElement;
       abort.append(glyph("discard"), span("Abort"));
       const cont = el("button", "btn btn-primary mini-btn") as HTMLButtonElement;
-      // Skip, not Continue, when there is nothing left to commit — that is
-      // git's own answer, and it was the one way out the banner never offered.
-      // `nothingToCommit` is reported for a cherry-pick or a revert only, and
-      // this must not widen it: `rebase:skip` HARD-RESETS the working tree, and
-      // a rebase paused at `edit` looks identical to an empty patch from here.
-      const skipping = op.nothingToCommit && (op.cherryPicking || op.reverting);
-      cont.append(glyph(skipping ? "arrow-right" : "check"), span(skipping ? "Skip" : "Continue"));
-      cont.disabled = op.conflicts > 0;
+      cont.append(glyph("check"), span("Continue"));
+      cont.disabled = !op.canContinue;
       type OpChannel =
         | "merge:abort" | "merge:continue"
-        | "rebase:abort" | "rebase:continue"
-        | "cherryPick:abort" | "cherryPick:continue"
-        | "revert:abort" | "revert:continue"
-        | "cherryPick:skip" | "revert:skip" | "rebase:skip"
+        | "rebase:abort" | "rebase:continue" | "rebase:skip"
+        | "cherryPick:abort" | "cherryPick:continue" | "cherryPick:skip"
+        | "revert:abort" | "revert:continue" | "revert:skip"
         | "am:abort" | "am:continue" | "am:skip";
+      const family =
+        kind === "rebase" ? "rebase"
+        : kind === "cherry-pick" ? "cherryPick"
+        : kind === "revert" ? "revert"
+        : kind === "am" ? "am"
+        : "merge";
+      const buttons: HTMLButtonElement[] = [];
       const runOp = async (ch: OpChannel): Promise<void> => {
+        // Disabled for the whole round trip, and deliberately NOT restored:
+        // the repaint below rebuilds the banner with fresh buttons. Restoring
+        // in a `finally` is not enough — the invoke takes ~10ms and the repaint
+        // lands a fresh enabled button within ~15ms, so the guard would be
+        // narrower than a double-click. These controls discard patches one
+        // press at a time, and `serialize()` QUEUES a second call rather than
+        // dropping it, so two clicks really did throw away two patches.
+        for (const b of buttons) b.disabled = true;
         try {
           const r = await host.invoke(ch, undefined);
-          // A message on SUCCESS is a caveat, not a failure — `git am --abort`
-          // exits 0 while declining to rewind a HEAD that has moved. "Done."
-          // over the top of that would be a lie about the repository.
-          if (!r.ok) toast(r.message || "Operation failed.", r.expected ? "info" : "error");
+          // A failure here is ALWAYS shown as a failure, whatever `expected`
+          // says. That flag has one job — keep an ordinary condition out of the
+          // crash reports — and it was doing a second one badly: the sequencer
+          // verbs are marked expected wholesale, so "I could not take the index
+          // lock" arrived in the same calm blue as "stopped on the next patch",
+          // and those are not the same news. Every failure of one of these
+          // buttons means the operation did not finish, which is worth red even
+          // when the reason is routine.
+          //
+          // A message on SUCCESS is the opposite case — a caveat, not a
+          // failure. `git am --abort` exits 0 while declining to rewind a HEAD
+          // that has moved.
+          if (!r.ok) toast(r.message || "Operation failed.", "error");
           else toast(r.message || "Done.", r.message ? "info" : "success");
         } catch (e) {
           toast(cleanErr(e) || "Operation failed.", "error");
@@ -4092,23 +4100,12 @@ class App {
         await this.updateSync();
         if (this.currentView === "changes") void this.showChangesView();
       };
-      // By KIND, not a boolean. `kind === "rebase" ? rebase : merge` sent
-      // cherry-pick and revert down the MERGE channel, so the banner named the
-      // operation correctly and then ran `git merge --abort` on it, which fails
-      // because MERGE_HEAD does not exist. Each operation ends itself.
-      const family =
-        kind === "rebase" ? "rebase"
-        : kind === "cherry-pick" ? "cherryPick"
-        : kind === "revert" ? "revert"
-        : op.amApplying ? "am"
-        : "merge";
       abort.addEventListener("click", () => {
         // Aborting an `am` throws away the patches it has ALREADY applied, and
         // the patch files are usually a mail attachment or a pipe that no
-        // longer exists — there is no re-running it. The other three aborts
-        // return you to a commit that is still in the reflog; this one does
-        // not, so it asks.
-        if (op.amApplying) {
+        // longer exists — there is no re-running it. The other aborts return
+        // you to a commit still in the reflog; this one does not, so it asks.
+        if (kind === "am") {
           void confirmDialog({
             title: "Abandon this patch series?",
             message:
@@ -4123,22 +4120,34 @@ class App {
         }
         void runOp(`${family}:abort` as OpChannel);
       });
-      cont.addEventListener("click", () =>
-        void runOp(`${family}:${skipping ? "skip" : "continue"}` as OpChannel),
-      );
-      // A patch series gets a third control. Continue and Abandon alone left
-      // "finish it" (which git refuses when the patch will not apply) and
-      // "throw the whole series away" as the only choices, while git's own
-      // advice on that screen is `git am --skip`. Not primary: it discards a
-      // patch, it just discards far less than Abandon does.
-      if (op.amApplying) {
+      cont.addEventListener("click", () => void runOp(`${family}:continue` as OpChannel));
+      if (op.canSkip) {
         const skip = el("button", "mini-btn") as HTMLButtonElement;
-        skip.append(glyph("arrow-right"), span("Skip this patch"));
-        skip.title = "Drop the patch git is stuck on and carry on with the rest of the series";
-        skip.addEventListener("click", () => void runOp("am:skip"));
+        skip.append(glyph("arrow-right"), span(kind === "am" ? "Skip this patch" : "Skip this commit"));
+        skip.title =
+          kind === "am"
+            ? "Drop the patch git is stuck on and carry on with the rest of the series"
+            : "Drop this commit and carry on with the rest";
+        // Skipping discards work — a patch, or a commit — and cannot be undone
+        // from inside the app. It asks, and it is never the primary button.
+        skip.addEventListener("click", () => {
+          void confirmDialog({
+            title: kind === "am" ? "Skip this patch?" : "Skip this commit?",
+            message:
+              kind === "am"
+                ? "The patch git is stuck on is dropped and the rest of the series carries on. The app cannot replay it."
+                : "This commit is dropped from the rebase and the rest carries on.",
+            confirmLabel: kind === "am" ? "Skip patch" : "Skip commit",
+            danger: true,
+          }).then((yes) => {
+            if (yes) void runOp(`${family}:skip` as OpChannel);
+          });
+        });
         acts.append(abort, skip, cont);
+        buttons.push(abort, skip, cont);
       } else {
         acts.append(abort, cont);
+        buttons.push(abort, cont);
       }
       banner.append(txt, acts);
       wrap.insertBefore(banner, wrap.firstChild);

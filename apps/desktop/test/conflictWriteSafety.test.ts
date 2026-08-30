@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, readFileSync, mkdtempSync, symlinkSync, lstatSync, mkdirSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdtempSync, symlinkSync, lstatSync, mkdirSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
@@ -282,6 +282,91 @@ test("a path the conflict listing does not mention is refused, not deleted", asy
       "not conflicted at all\n",
       "and the file is still there",
     );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * A file that is no longer conflicted.
+ *
+ * The probe that decides between write and delete used to sit inside
+ * `if (stdout.trim())`, so an EMPTY listing — the conflict was resolved by a
+ * watcher tick, another window, or a terminal — skipped it entirely and fell
+ * through to a precondition-free `git checkout --ours/--theirs`, which happily
+ * overwrites a file with no conflict left and reports "Took your version."
+ */
+test("taking a side on a file that is no longer conflicted changes nothing", async () => {
+  const { root, git } = repo("resolved");
+  try {
+    conflict(root, git, "f.txt", (side) => writeFileSync(`${root}/f.txt`, `${side}\n`));
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+
+    // Resolved out from under the view, the way a terminal or a second window
+    // would do it.
+    writeFileSync(`${root}/f.txt`, "resolved elsewhere\n");
+    git("add", "f.txt");
+    assert.deepEqual(await b.conflictList(), [], "nothing is conflicted any more");
+
+    const r = await b.conflictTakeSide({ path: "f.txt", side: "theirs" });
+    assert.equal(r.ok, false, "so taking a side is refused");
+    assert.equal(r.expected, true, "as a condition, not a crash");
+    assert.match(r.message ?? "", /no longer conflicted/i, "and says so");
+    assert.equal(
+      readFileSync(`${root}/f.txt`, "utf8"),
+      "resolved elsewhere\n",
+      "with the resolution someone else made left alone",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * A both-deleted (DD) conflict.
+ *
+ * Neither side still has the file, so there is nothing to merge and nothing to
+ * write back. "Mark resolved" wrote the editor buffer anyway, RESURRECTING the
+ * file as a staged addition nobody asked for — and Discard afterwards reported
+ * success having changed nothing, because the file is not in HEAD to restore.
+ */
+test("a both-deleted conflict cannot be resolved by writing text into it", async () => {
+  const { root, git } = repo("dd");
+  try {
+    // A rename/rename: both sides move the same file somewhere different, so
+    // the ORIGINAL path is left with only a stage 1 — git's `DD`, "both
+    // deleted". (Two plain deletions of one file merge cleanly and never
+    // produce an unmerged entry at all.)
+    writeFileSync(`${root}/doomed.txt`, "contents\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "-qb", "side");
+    git("mv", "doomed.txt", "theirs.txt");
+    git("commit", "-qm", "they rename it");
+    git("checkout", "-q", main);
+    git("mv", "doomed.txt", "ours.txt");
+    git("commit", "-qm", "we rename it elsewhere");
+    try {
+      execFileSync("git", ["merge", "side"], { cwd: root, stdio: "ignore" });
+    } catch {
+      /* the conflict is the point */
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    const listed = await b.conflictList();
+    assert.ok(listed.includes("doomed.txt"), `the original path is listed as conflicted (${listed.join(", ")})`);
+
+    const r = await b.conflictResolve({ path: "doomed.txt", content: "resurrected!\n" });
+    assert.equal(r.ok, false, "writing text into it is refused");
+    assert.equal(r.expected, true, "as a condition");
+    assert.match(r.message ?? "", /both sides deleted/i, "and says what happened");
+    assert.equal(existsSync(`${root}/doomed.txt`), false, "the file is not resurrected");
   } finally {
     removeTempRepo(root);
   }
