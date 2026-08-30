@@ -1,0 +1,71 @@
+apps/desktop/test/rebaseUpdateRefs.test.ts
+  s_26f5e669d3043c::t_d0e81109befaf9 396-466
+  s_26f5e669d3043c::t_8bdbf18c8c61d5 395
+apps/desktop/src/renderer/peek.ts
+  s_26f5e669d3043c::t_80ca595353bba9 10
+  s_26f5e669d3043c::t_fa32faeea0417e 162-165
+apps/desktop/test/opState.test.ts
+  s_26f5e669d3043c::t_3c01f8da62c843 449-454,456,458,460
+apps/desktop/src/renderer/views/projects.ts
+  s_26f5e669d3043c::t_fa32faeea0417e 430-432
+  s_26f5e669d3043c::t_80ca595353bba9 28
+apps/desktop/test/conflictWriteSafety.test.ts
+  s_26f5e669d3043c::t_920771b8e209d5 339-343,348-349,351-352,362-363
+  s_26f5e669d3043c::t_64450b6245ad88 289-322,370-373
+  s_26f5e669d3043c::t_a8ac9780d1b400 4,323-338,344-347,350,353-361,364-369
+apps/desktop/test/overlays.test.ts
+  s_26f5e669d3043c::t_93ae8e15a71151 170-217
+apps/desktop/test/opMatrix.test.ts
+  s_26f5e669d3043c::t_d09b23163cb2f5 1-428
+  s_26f5e669d3043c::t_9f02d7121f3afe 429-462
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_9f02d7121f3afe 757-767
+  s_26f5e669d3043c::t_5a5fe02f5e628a 1865-1870
+  s_26f5e669d3043c::t_35aedd3894e1d1 1918-1927
+  s_26f5e669d3043c::t_a64687bc480b6f 2253-2278
+  s_26f5e669d3043c::t_64557ac31a8f93 2337-2345,2361-2366,2372
+  s_26f5e669d3043c::t_e462d975175709 1789-1791,1823,1828-1864,1871-1876,1889-1902,1905-1906,1910-1913
+  s_26f5e669d3043c::t_dae0783aa3e364 1877-1888
+apps/desktop/src/renderer/overlays.ts
+  s_26f5e669d3043c::t_e2247a7d94c0fb 26-28,42,45,71-79,84,92-102
+packages/git-service/test/rebasePlanUpdateRefs.test.ts
+  s_26f5e669d3043c::t_54c707d737645b 100-144,147,152-160
+  s_26f5e669d3043c::t_af015713de36ea 145-146,148-151
+packages/git-service/src/rebasePlan.ts
+  s_26f5e669d3043c::t_6837727cbaf77f 141-185,187,189-190,192
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_93ae8e15a71151 122-133
+apps/desktop/src/renderer/views/notifications.ts
+  s_26f5e669d3043c::t_fa32faeea0417e 369-370
+  s_26f5e669d3043c::t_80ca595353bba9 30
+apps/desktop/src/renderer/aiSettings.ts
+  s_26f5e669d3043c::t_80ca595353bba9 17
+  s_26f5e669d3043c::t_fa32faeea0417e 260-266
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_27b8151d0a9ac2 543-551
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_e462d975175709 1704-1720
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_35aedd3894e1d1 4081-4093
+  s_26f5e669d3043c::t_29d2149cf3ad6e 4024-4029,4031,4038-4047,4055-4056,4059-4061,4063-4069,4071-4078,4106-4108,4123-4124,4126-4145,4147,4150
+packages/git-service/src/RebaseRunner.ts
+  s_26f5e669d3043c::t_8aedf0c27ee45a 444,457,462,485,488,491,511,514,517,545,606-608,611-616
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_acc220168da9ed 135-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bb6e92bc470fbcca0069000a791a379e44ac88e9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
