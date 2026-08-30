@@ -3236,6 +3236,42 @@
     },
 
     /**
+     * The same rule, on the two surfaces that had also forgotten it: the
+     * Projects issue drawer and the notifications popover. Three independent
+     * copies of the same three guards is why they diverged; they now share
+     * `ownsEscape()`, and this check is what keeps a fourth surface from
+     * getting it wrong quietly.
+     *
+     * `?arg=` names the surface: its own selector, and how to open it.
+     */
+    "a-surface-under-a-dialog-keeps-its-escape": async (f) => {
+      const c = check(f);
+      const which = window.__GS_ARG || "drawer";
+      const sel = which === "drawer" ? ".gh-drawer" : ".notif-pop";
+
+      const surface = $(sel);
+      c.ok(!!surface, `the ${which} is open`);
+      if (!surface) return;
+
+      // Anything in it that opens a dialog.
+      const opener = [...surface.querySelectorAll("button")].find((b) =>
+        /edit|rename|new |create|add |mark all/i.test((b.getAttribute("aria-label") || b.title || b.textContent || "")),
+      );
+      c.ok(!!opener, `and offers something that opens a dialog (${which})`);
+      if (!opener) return;
+      opener.click();
+      await settle(700);
+      const dlg = $(".modal-overlay");
+      c.ok(!!dlg, `a dialog opens above the ${which}`);
+      if (!dlg) return;
+
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(500);
+      c.ok(!$(".modal-overlay"), "one Escape closes the dialog");
+      c.ok(!!$(sel), `and leaves the ${which} that opened it on screen`);
+    },
+
+    /**
      * The Code file viewer's own "Back" called `showCodeView()` directly,
      * repainting the listing without telling the navigation history anything.
      * So the top-bar Back chevron still pointed at whatever you were doing
@@ -3290,37 +3326,108 @@
       const c = check(f);
       const handles = $$('[role="separator"]');
       c.ok(handles.length > 0, "the view has a resizer");
-      const press = (h, key, shift) =>
-        h.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey: !!shift, bubbles: true }));
+      let measured = 0;
+      const press = (h, key) => h.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
       for (const h of handles) {
         // A collapsed pane's divider says so, and answers no key by design.
         if (h.getAttribute("aria-disabled") === "true") continue;
         const label = h.getAttribute("aria-label") || "(unlabelled)";
-        const start = Number(h.getAttribute("aria-valuenow"));
-        const min = Number(h.getAttribute("aria-valuemin"));
-        const max = Number(h.getAttribute("aria-valuemax"));
-        c.ok(Number.isFinite(start), `${label}: reports a value`);
-        // Away from an end stop, so a step in either direction has room.
+        const r0 = h.getBoundingClientRect();
+        // A divider inside a hidden pane has a [0,0,0,0] rect: it is IN the DOM
+        // and enabled, but nothing about it can be measured. Skipping it
+        // silently is how this check passed for four scenes while the one
+        // divider it was written for was never driven at all.
+        if (r0.width === 0 && r0.height === 0) continue;
+        measured++;
+
+        const horizontal = h.getAttribute("aria-orientation") === "horizontal";
+        // The key names a DIRECTION ON SCREEN: → moves a vertical divider
+        // right, ↑ moves a bottom-anchored horizontal one up. Asserting on
+        // `aria-valuenow` alone cannot see this — a divider whose value grows
+        // as the handle walks the other way is still perfectly monotonic, which
+        // is exactly the bug this check was written for and exactly the bug it
+        // did not catch.
+        const key = horizontal ? "ArrowUp" : "ArrowRight";
+        const axis = (rect) => (horizontal ? rect.top : rect.left);
+        const wanted = horizontal ? "up" : "right";
+
         h.focus();
-        // The key that moves THIS divider: a vertical line moves left/right, a
-        // horizontal one up/down. Pressing → on the dock's horizontal splitter
-        // correctly does nothing, and asserting on it would be asserting the
-        // wrong axis.
-        const key = h.getAttribute("aria-orientation") === "horizontal" ? "ArrowUp" : "ArrowRight";
-        const seen = [];
+        // Measured AFTER a settle, not immediately: the panes these dividers
+        // move are sized through a CSS variable with a transition, so a
+        // `getBoundingClientRect` in the same task returns the pre-press
+        // geometry every time and the handle looks frozen. (That is why the
+        // first version of this check asserted on `aria-valuenow` instead — and
+        // why it could not tell a divider walking the wrong way from a correct
+        // one.)
+        const seen = [axis(r0)];
         for (let i = 0; i < 3; i++) {
           press(h, key);
-          seen.push(Number(h.getAttribute("aria-valuenow")));
+          await settle(200);
+          seen.push(axis(h.getBoundingClientRect()));
         }
-        // Either strictly non-decreasing or strictly non-increasing — a
-        // resizer that goes up, down, up is the oscillation.
-        const up = seen.every((v, i) => i === 0 || v >= seen[i - 1]);
-        const down = seen.every((v, i) => i === 0 || v <= seen[i - 1]);
-        c.ok(up || down, `${label}: three presses of ${key} move one way, not back and forth (${start} → ${seen.join(" → ")})`);
-        // And it actually moved, unless it was already against that end stop.
-        const stuck = seen.every((v) => v === start);
-        c.ok(!stuck || start === min || start === max, `${label}: ${key} moves it (was ${start}, range ${min}–${max})`);
+        const moved = seen[seen.length - 1] - seen[0];
+        const atStop =
+          h.getAttribute("aria-valuenow") === h.getAttribute("aria-valuemin") ||
+          h.getAttribute("aria-valuenow") === h.getAttribute("aria-valuemax");
+        if (moved === 0) {
+          c.ok(atStop, `${label}: ${key} moves the handle (it is at ${seen[0]}px, range ${h.getAttribute("aria-valuemin")}–${h.getAttribute("aria-valuemax")})`);
+          continue;
+        }
+        c.ok(
+          horizontal ? moved < 0 : moved > 0,
+          `${label}: ${key} moves the handle ${wanted}, not the other way (${seen.join(" → ")})`,
+        );
+        // …and every step goes the same way. A handle that oscillates can end
+        // up displaced in the right direction by luck.
+        const steps = seen.slice(1).map((v, i) => v - seen[i]).filter((d) => d !== 0);
+        c.ok(
+          steps.every((d) => (horizontal ? d < 0 : d > 0)),
+          `${label}: every press moves it ${wanted} (${seen.join(" → ")})`,
+        );
       }
+      c.ok(measured > 0, "at least one divider in this scene could actually be measured");
+    },
+
+    /**
+     * Signing out — by EITHER button — has to make the whole window stop
+     * claiming the account is still there.
+     *
+     * Sign out dropped the caches; Switch account, one line above it, dropped
+     * neither; and neither touched the top-bar chip, which asks `github:status`
+     * exactly once at construction and is only rebuilt on `repo:changed`. So
+     * the chip kept the previous account's name and avatar for the rest of the
+     * session while Settings one click away said "Not connected".
+     *
+     * Parameterised by `?arg=` — the check runs once per button.
+     */
+    "signing-out-does-not-leave-the-old-account-on-screen": async (f) => {
+      const c = check(f);
+      const which = window.__GS_ARG || "Sign out";
+      const chip = $(".topbar-acct");
+      c.ok(!!chip, "the top bar has an account chip");
+      if (!chip) return;
+      c.ok(chip.classList.contains("is-connected"), "which starts signed in");
+
+      const btn = [...$$(".settings-actions button, .settings-card button")].find(
+        (b) => (b.textContent || "").trim() === which,
+      );
+      c.ok(!!btn, `Settings offers "${which}"`);
+      if (!btn) return;
+      btn.click();
+      await settle(1500);
+
+      const now = $(".topbar-acct");
+      c.ok(!!now, "the chip is still there");
+      if (!now) return;
+      c.eq(
+        now.classList.contains("is-connected"),
+        false,
+        `after "${which}" the chip no longer claims an account`,
+      );
+      c.ok(
+        !/antonarnaudov/i.test(`${now.textContent} ${now.title}`),
+        `and does not still name them (text: ${JSON.stringify(now.textContent)}, title: ${JSON.stringify(now.title)})`,
+      );
     },
   };
 })();

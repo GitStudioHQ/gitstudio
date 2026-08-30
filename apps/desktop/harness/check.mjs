@@ -220,11 +220,16 @@ const CASES = [
   ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=revert" }],
   ["the-composer-keeps-your-place-through-a-repaint", "changes"],
   ["escape-closes-one-layer-at-a-time", "branches"],
+  ["a-surface-under-a-dialog-keeps-its-escape", "projects~click:.gh-card.clickable", { arg: "drawer" }],
+  ["a-surface-under-a-dialog-keeps-its-escape", "changes~bell", { arg: "popover" }],
   ["the-code-viewer-back-is-a-navigation", "code"],
   ["a-resizer-moves-the-way-you-press-it", "changes~bell"],
   ["a-resizer-moves-the-way-you-press-it", "compare"],
   ["a-resizer-moves-the-way-you-press-it", "graph"],
   ["a-resizer-moves-the-way-you-press-it", "branches"],
+  ["a-resizer-moves-the-way-you-press-it", "changes~click:.dock-chevron"],
+  ["signing-out-does-not-leave-the-old-account-on-screen", "code~text:Settings", { arg: "Sign out" }],
+  ["signing-out-does-not-leave-the-old-account-on-screen", "code~text:Settings", { arg: "Switch account" }],
 ];
 
 function run(scene, checkId, opts = {}) {

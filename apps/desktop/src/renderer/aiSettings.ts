@@ -14,6 +14,7 @@ import { providerLogo } from "./providerLogos";
 import { invalidateAiEnabled } from "./aiAssist";
 import { toast, confirmDialog, promptInline } from "./dialogs";
 import { trapTab } from "./views/common";
+import { registerLayer, holdBackground, ownsEscape } from "./overlays";
 import type { AiConnectionView, AiPresetView, AiSettingsView, McpInfo } from "../shared/ipc";
 
 /** The "AI Models" card: manage model connections. */
@@ -233,13 +234,25 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   // its controls aren't clickable.
   overlay.style.setProperty("-webkit-app-region", "no-drag");
   const prevFocus = document.activeElement as HTMLElement | null;
+  // A layer like every other floating surface. It set `aria-modal="true"` and
+  // then did none of the three things that makes true: it was not in the
+  // registry (so a route change left it hanging over the next view), it did not
+  // hold the page behind it back (so Tab walked straight out into a board the
+  // user could not see), and it did not stand down for anything above it. Every
+  // sibling surface in the app had each of those fixed in turn; this one was
+  // never in the list.
+  let releaseBg: (() => void) | undefined;
   const closeOverlay = (): void => {
+    layer.release();
+    releaseBg?.();
     overlay.remove();
     document.removeEventListener("keydown", onKey, true);
     prevFocus?.focus?.();
   };
+  const layer = registerLayer(() => closeOverlay(), "modal");
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
+      if (!ownsEscape()) return;
       e.preventDefault();
       closeOverlay();
       return;
@@ -317,6 +330,9 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   });
   overlay.append(panel);
   document.body.append(overlay);
+  // AFTER the mount, so the overlay itself is not one of the elements held
+  // back. `aria-modal` is a claim; this is the mechanism behind it.
+  releaseBg = holdBackground(overlay);
   document.addEventListener("keydown", onKey, true);
   // Focus the first card (or the close button) so keyboard users land inside.
   (panel.querySelector<HTMLElement>(".ai-prov-card") ?? close).focus();

@@ -27,7 +27,7 @@ import {
 } from "../ui";
 import { toast, confirmDialog, openModal } from "../dialogs";
 import { renderMarkdown } from "../markdown";
-import { registerLayer } from "../overlays";
+import { registerLayer, ownsEscape } from "../overlays";
 import { openRemoteRepoBrowser } from "../repoBrowser";
 import {
   facetBar,
@@ -351,11 +351,22 @@ export function openNotificationsPanel(
   };
 
   const onDoc = (e: MouseEvent): void => {
+    // While a dialog opened FROM this popover is up, the popover itself is
+    // `inert` — held back by `holdBackground` like the rest of the page. So a
+    // click anywhere in that dialog is "outside the panel" by the test below,
+    // and dismissed the popover the user was working from. Asking whether we
+    // are inert answers it for every layer, present and future, without a
+    // whitelist of class names to keep up to date.
+    if (panel.hasAttribute("inert")) return;
     const t = e.target as Node;
     if (!panel.contains(t) && t !== anchor && !anchor.contains(t)) close();
   };
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
+      // Whatever is above the popover owns Escape — otherwise one press closed
+      // the dialog AND the popover that opened it. Same rule as the peek and
+      // the Projects drawer; see `ownsEscape`.
+      if (!ownsEscape()) return;
       e.preventDefault();
       close(true);
     }

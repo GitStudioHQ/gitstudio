@@ -292,6 +292,107 @@ test("a branch below the display cap is carried across the rewrite too", async (
 });
 
 /**
+ * A plan applied to a branch that has moved since it was built.
+ *
+ * `apply` re-walks the range and treats anything not among the rows as part of
+ * the below-the-cap tail, appending it — and appending is newest-last, so the
+ * reversal into git's todo made the appended commit the FIRST pick. Open the
+ * Rebase view, commit from a terminal, press Start rebase: the commit you had
+ * just written was moved to the BOTTOM of the branch's history, with "Rebase
+ * complete." and no mention of it anywhere.
+ */
+test("a plan is refused once the branch has moved under it", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-stale-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(`${root}/f.txt`, "base\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("branch", "trunk");
+    for (const n of ["A", "B", "C"]) {
+      writeFileSync(`${root}/${n}.txt`, `${n}\n`);
+      git("add", "-A");
+      git("commit", "-qm", n);
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new RebaseBridge(repos);
+    const plan = await bridge.load({ base: "trunk" });
+    assert.deepEqual(plan.commits.map((c) => c.subject), ["C", "B", "A"], "newest first");
+    assert.ok(plan.headSha, "the plan records the tip it describes");
+
+    // …and now something commits, outside the app.
+    writeFileSync(`${root}/D.txt`, "D\n");
+    git("add", "-A");
+    git("commit", "-qm", "D-NEW");
+
+    const rows = plan.commits.map((c) => ({ action: "pick" as const, sha: c.sha, subject: c.subject }));
+    const out = await bridge.apply({ base: "trunk", rows, headSha: plan.headSha });
+
+    assert.equal(out.status, "failed", "the stale plan is refused");
+    assert.match(out.message ?? "", /branch has moved/i, "and says why");
+    assert.deepEqual(
+      git("log", "--format=%s", "trunk..HEAD").trim().split("\n"),
+      ["D-NEW", "C", "B", "A"],
+      "history is exactly as it was — D-NEW is still the newest commit",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * What the plan SAYS it will rewrite.
+ *
+ * Above the display cap the rows on screen are not the commits the rebase acts
+ * on: the ones below the cap are replayed too — that is what stops them being
+ * deleted — and a replay gives every one of them a new id as soon as the base
+ * has moved. The banner said they were "kept as-is" and the confirm dialog said
+ * "This rewrites 200 commits" on a range of 260. Both understated the blast
+ * radius of the one irreversible button in the view.
+ */
+test("the plan reports every commit it will replay, not just the page shown", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-replaycount-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    git("commit", "-q", "--allow-empty", "-m", "base");
+    git("branch", "trunk");
+    for (let i = 1; i <= 205; i++) {
+      writeFileSync(`${root}/c${i}.txt`, `c${i}\n`);
+      git("add", "-A");
+      git("commit", "-qm", `c${i}`);
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const plan = await new RebaseBridge(repos).load({ base: "trunk" });
+
+    assert.equal(plan.commits.length, 200, "the page is capped, as designed");
+    assert.equal(plan.replayCount, 205, "and the plan says how many will actually be rewritten");
+    assert.match(
+      plan.message ?? "",
+      /still rewritten and get new IDs/i,
+      "the banner says what happens to the ones it is not showing",
+    );
+    assert.ok(
+      !/kept as-is/i.test(plan.message ?? ""),
+      "and no longer says they are kept as-is, which was the opposite of true",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
  * A branch whose name is also a tag's.
  *
  * `%(refname:short)` returns the shortest UNAMBIGUOUS name, so a branch

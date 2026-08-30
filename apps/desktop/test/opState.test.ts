@@ -69,6 +69,10 @@ test("a conflicted `git am` is not reported as a rebase", async () => {
       false,
       "an `am` is not a rebase — the banner's Abort/Continue would run `git rebase` and be refused",
     );
+    // Telling them apart is only half of it. Reported as NOTHING, the app shows
+    // an ordinary dirty tree with a live Commit button — and committing strands
+    // the rest of the series and replaces the patch author with you.
+    assert.equal(st.amApplying, true, "it is named as what it is, so the banner can render");
   } finally {
     removeTempRepo(root);
   }
@@ -225,5 +229,176 @@ test("a resolved cherry-pick and revert are finished by their own continue", asy
     } finally {
       removeTempRepo(root);
     }
+  }
+});
+
+/**
+ * The half that makes the banner worth having: a plain commit must not be
+ * allowed to derail a part-applied series.
+ *
+ * Measured before the guard: staging the resolution and pressing Commit
+ * succeeded, HEAD carried the user's message and authorship instead of the
+ * patch's, `rebase-apply/` was still on disk, and the second patch was never
+ * applied — with nothing on screen to say any of that had happened.
+ */
+test("a plain commit cannot derail a part-applied patch series", async () => {
+  const { root, git } = repo("amcommit");
+  try {
+    writeFileSync(`${root}/f.txt`, "base\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+
+    git("checkout", "-qb", "series");
+    writeFileSync(`${root}/f.txt`, "from the patch\n");
+    git("commit", "-qam", "patch one");
+    writeFileSync(`${root}/g.txt`, "second\n");
+    git("add", "-A");
+    git("commit", "-qm", "patch two");
+    writeFileSync(`${root}/series.patch`, git("format-patch", "-2", "--stdout"));
+
+    git("checkout", "-q", main);
+    writeFileSync(`${root}/f.txt`, "from the branch\n");
+    git("commit", "-qam", "diverged");
+    tryGit(root, "am", "series.patch");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    assert.equal((await b.opState()).amApplying, true, "the series is stopped");
+
+    // Resolve, exactly as the conflict view would.
+    writeFileSync(`${root}/f.txt`, "resolved\n");
+    await b.stage("f.txt");
+
+    const bad = await b.commit({ message: "my own message" });
+    assert.equal(bad.ok, false, "Commit is refused");
+    assert.equal(bad.expected, true, "as a condition, not a crash to report");
+    assert.match(bad.message ?? "", /git am/i, "and says which operation is in the way");
+    assert.notEqual(
+      git("show", "-s", "--format=%s", "HEAD").trim(),
+      "my own message",
+      "nothing was committed",
+    );
+
+    // Continue is the way through, and it keeps the patch's own metadata.
+    const good = await b.amContinue();
+    assert.equal(good.ok, true, good.message ?? "");
+    assert.equal(
+      git("show", "-s", "--format=%s", "HEAD").trim(),
+      "patch two",
+      "the whole series applied, not just the conflicted patch",
+    );
+    assert.equal(existsSync(`${root}/g.txt`), true, "including the patch that had not been reached");
+    assert.equal((await b.opState()).amApplying, false, "and the session is over");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/** Abandoning a series says so when git declines to rewind a moved HEAD. */
+test("abandoning a patch series reports it when git does not rewind", async () => {
+  const { root, git } = repo("amabort");
+  try {
+    writeFileSync(`${root}/f.txt`, "base\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "-qb", "series");
+    writeFileSync(`${root}/f.txt`, "patch\n");
+    git("commit", "-qam", "patch one");
+    writeFileSync(`${root}/series.patch`, git("format-patch", "-1", "--stdout"));
+    git("checkout", "-q", main);
+    writeFileSync(`${root}/f.txt`, "diverged\n");
+    git("commit", "-qam", "diverged");
+    const before = git("rev-parse", "HEAD").trim();
+    tryGit(root, "am", "series.patch");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+
+    const r = await b.amAbort();
+    assert.equal(r.ok, true, r.message ?? "");
+    assert.equal((await b.opState()).amApplying, false, "the session is gone");
+    assert.equal(git("rev-parse", "HEAD").trim(), before, "and HEAD is where the series started");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * Cherry-picking or reverting something that is already on the branch is the
+ * commonest way to get those wrong, and it does NOT leave a conflict: git stops
+ * with CHERRY_PICK_HEAD set and zero unmerged files.
+ *
+ * So the banner read "cherry-pick in progress — resolve and continue" over an
+ * empty file list, with Continue enabled; pressing it got git's refusal ("The
+ * previous cherry-pick is now empty") as a red error toast AND a filed crash
+ * report, and pointed at `git cherry-pick --skip`, which the app did not offer.
+ */
+test("an already-applied pick reports nothing to commit, and skip is what works", async () => {
+  const { root, git } = repo("emptypick");
+  try {
+    writeFileSync(`${root}/f.txt`, "one\n");
+    git("add", "-A");
+    git("commit", "-qm", "one");
+    writeFileSync(`${root}/f.txt`, "two\n");
+    git("commit", "-qam", "two");
+    const head = git("rev-parse", "HEAD").trim();
+    // Pick the commit that is already the tip: legal, and immediately empty.
+    tryGit(root, "cherry-pick", head);
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+
+    const st = await b.opState();
+    assert.equal(st.cherryPicking, true, "the pick is stopped");
+    assert.equal(st.conflicts, 0, "with nothing conflicted — which is why a conflict count cannot see it");
+    assert.equal(st.nothingToCommit, true, "so the banner is told there is nothing to continue with");
+
+    // The button the banner used to enable.
+    const cont = await b.cherryPickContinue();
+    assert.equal(cont.ok, false, "Continue cannot succeed here");
+    assert.equal(cont.expected, true, "and it is a condition, not a crash to report");
+
+    const skipped = await b.cherryPickSkip();
+    assert.equal(skipped.ok, true, `Skip is the way out — ${skipped.message ?? ""}`);
+    assert.equal((await b.opState()).cherryPicking, false, "and the pick is over");
+    assert.equal(git("rev-parse", "HEAD").trim(), head, "with history untouched");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+test("a genuine conflict still reports something to commit", async () => {
+  const { root, git } = repo("realconf");
+  try {
+    writeFileSync(`${root}/f.txt`, "base\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("checkout", "-qb", "side");
+    writeFileSync(`${root}/f.txt`, "side\n");
+    git("commit", "-qam", "side");
+    const side = git("rev-parse", "HEAD").trim();
+    git("checkout", "-q", "-");
+    writeFileSync(`${root}/f.txt`, "main\n");
+    git("commit", "-qam", "main");
+    tryGit(root, "cherry-pick", side);
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    assert.equal((await b.opState()).conflicts, 1, "this one really is conflicted");
+
+    writeFileSync(`${root}/f.txt`, "resolved differently\n");
+    git("add", "f.txt");
+    const st = await b.opState();
+    assert.equal(st.conflicts, 0, "resolved");
+    assert.equal(st.nothingToCommit, false, "and there IS something to commit — Continue is right here");
+    assert.equal((await b.cherryPickContinue()).ok, true, "and it works");
+  } finally {
+    removeTempRepo(root);
   }
 });

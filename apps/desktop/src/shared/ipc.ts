@@ -1147,6 +1147,26 @@ export interface RebasePlanState {
   baseCommit?: { shortSha: string; subject: string };
   /** True when a rebase is already mid-flight (conflict or `edit` stop). */
   inProgress: boolean;
+  /**
+   * HEAD's sha when this plan was built, echoed back on apply.
+   *
+   * A plan is a promise about a specific branch tip. Commit from a terminal
+   * while the workspace is open and the rows no longer describe the range:
+   * `apply` re-walks it, finds the new commit missing from the rows, treats it
+   * as one of the below-the-cap tail and appends it — and appending is
+   * newest-last, so the reversal into git's todo made the commit you just wrote
+   * the FIRST pick, moving it to the bottom of the branch's history. Reported
+   * as success, with nothing on screen ever mentioning it.
+   */
+  headSha?: string;
+  /**
+   * How many commits `apply()` will replay — the whole selection, not the page
+   * shown. Above the display cap the two differ, and both the cap banner and
+   * the confirm dialog quoted the page: "Showing the newest 200 … the older
+   * ones are kept as-is" and "This rewrites 200 commits" on a range of 260, all
+   * 260 of which are replayed and get new IDs the moment the base has moved.
+   */
+  replayCount?: number;
 }
 
 export type RebaseAction = "pick" | "reword" | "edit" | "squash" | "fixup" | "drop";
@@ -1164,6 +1184,10 @@ export interface RebaseApplyRow {
 export interface RebaseApplyRequest {
   base: string;
   rows: RebaseApplyRow[];
+  /** The `headSha` the plan was built against. When it no longer matches, the
+   *  rows describe a range that has moved and applying them rewrites history
+   *  the user never saw. Omitted only by callers that built the rows this tick. */
+  headSha?: string;
   /** Carry other local branches through the rewrite. Omitted = follow the
    *  repo's own `rebase.updateRefs`, so GitStudio does what the user's git
    *  would do rather than silently doing something else. */
@@ -1495,6 +1519,10 @@ export interface IpcChannels {
   "cherryPick:continue": [void, CommitActionResult];
   "revert:abort": [void, CommitActionResult];
   "revert:continue": [void, CommitActionResult];
+  "cherryPick:skip": [void, CommitActionResult];
+  "revert:skip": [void, CommitActionResult];
+  "am:abort": [void, CommitActionResult];
+  "am:continue": [void, CommitActionResult];
   // ── Tag creation (the Branches view's "Create tag here…") ──
   "tag:create": [{ name: string; ref?: string; message?: string }, CommitActionResult];
   // ── PR review depth: per-file diffs + inline threads + metadata ──
@@ -1646,8 +1674,32 @@ export interface GitOpState {
   rebasing: boolean;
   cherryPicking: boolean;
   reverting: boolean;
+  /**
+   * A `git am` is stopped mid-series.
+   *
+   * It shares `rebase-apply/` with a rebase on the apply backend, so telling
+   * the two apart is necessary — but telling them apart is not enough. Reported
+   * as a rebase, its banner offered two buttons git refuses; reported as
+   * NOTHING, the app showed an ordinary dirty tree with a live Commit button,
+   * and committing strands the rest of the series and replaces the patch
+   * author with you. An operation the app can see has to be an operation the
+   * app names.
+   */
+  amApplying: boolean;
   /** Number of currently-conflicted paths. */
   conflicts: number;
+  /**
+   * The stopped operation has nothing left to commit.
+   *
+   * Cherry-picking or reverting something already on the branch stops with
+   * CHERRY_PICK_HEAD set and ZERO unmerged files — and so does a conflict the
+   * user resolved by keeping HEAD's side. Both look "resolved" to a conflict
+   * count, so the banner said "resolve and continue" over an empty file list
+   * and left Continue enabled; git then refused with "The previous cherry-pick
+   * is now empty" and the app raised it as an error toast, and a crash report.
+   * Skip (or Abort) is the way out, and neither was on screen.
+   */
+  nothingToCommit: boolean;
 }
 
 // ── GitHub depth wire types (PR threads, milestones, actions) ───────────────────

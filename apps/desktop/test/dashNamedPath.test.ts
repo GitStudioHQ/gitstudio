@@ -101,3 +101,59 @@ test("a path that escapes the repository is still refused", async () => {
     removeTempRepo(root);
   }
 });
+
+/**
+ * `conflictTakeSide` probes the index to learn which sides of a conflict exist,
+ * because that decides whether "Take theirs" WRITES a file or DELETES one. It
+ * asked with a pathspec, and a pathspec is glob-capable — a filename like
+ * `[id].tsx`, ordinary in every Next.js and SvelteKit app, is a character class
+ * if it is ever read as one.
+ *
+ * Measured on git 2.49 it matches literally in all three pathspec modes, so
+ * this is coverage of a real surface rather than a reproduction of a live bug.
+ * The probe now compares paths itself and does not depend on git's
+ * literal-vs-glob precedence, which is steerable from the environment.
+ */
+test("a modify/delete conflict on a filename that could be read as a glob", async () => {
+  const name = "[id].tsx";
+  const root = mkdtempSync(`${tmpdir()}/gs-glob-`);
+  try {
+    const git = (...a: string[]): string =>
+      execFileSync("git", a, { cwd: root, stdio: ["ignore", "pipe", "pipe"] }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(`${root}/${name}`, "base\n");
+    writeFileSync(`${root}/i`, "an innocent bystander\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+
+    // theirs DELETES it; ours edits it — a modify/delete, where the probe's
+    // answer decides whether Take theirs removes the file or errors out.
+    git("checkout", "-qb", "side");
+    git("rm", "-q", "--", name);
+    git("commit", "-qm", "theirs deletes it");
+    git("checkout", "-q", main);
+    writeFileSync(`${root}/${name}`, "ours\n");
+    git("commit", "-qam", "ours edits it");
+    try {
+      execFileSync("git", ["merge", "side"], { cwd: root, stdio: "ignore" });
+    } catch {
+      /* the conflict is the point */
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    assert.deepEqual(await b.conflictList(), [name], "the view lists it");
+
+    const r = await b.conflictTakeSide({ path: name, side: "theirs" });
+    assert.equal(r.ok, true, `Take theirs works — ${r.message ?? ""}`);
+    assert.deepEqual(await b.conflictList(), [], "the conflict is resolved");
+    assert.equal(readFileSync(`${root}/i`, "utf8"), "an innocent bystander\n", "and the sibling is untouched");
+  } finally {
+    removeTempRepo(root);
+  }
+});

@@ -6,11 +6,11 @@
 // graphPanel performs (now factored into @gitstudio/host-bridge/graphWire and
 // shared by both hosts).
 
-import { readFile, readdir, writeFile, stat, lstat, readlink } from "node:fs/promises";
+import { readFile, readdir, writeFile, stat, lstat, readlink, realpath } from "node:fs/promises";
 import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
-import { join, resolve, sep } from "node:path";
+import { join, resolve, sep, dirname } from "node:path";
 import { homedir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
@@ -763,6 +763,23 @@ export class GitBridge {
     }
     if (!req.message.trim() && !req.amend) {
       return { ok: false, changed: false, message: "A commit message is required." };
+    }
+    // A plain commit does NOT finish a `git am`, it derails it: the session
+    // stays open on disk, the remaining patches are never applied, and the
+    // patch's own author and message are replaced by yours. git's own answer is
+    // `git am --continue`, which reuses the patch's metadata. Every other
+    // mid-operation state is left alone — committing IS how you finish a merge,
+    // and `commit` then `--continue` is a legitimate way through a rebase.
+    const am = await this.amInProgress();
+    if (am) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          "A patch series is part-applied (git am). Use Continue in the banner above — a plain commit " +
+          "would leave the rest of the series unapplied and put your name on someone else's patch.",
+      };
     }
     return this.serialize(async () => {
       const r = await ctx.staging.commit(req.message, { amend: req.amend });
@@ -1635,11 +1652,18 @@ export class GitBridge {
             ...(r.expected ? { expected: true } : {}),
           };
         }
+        const both = `${stdout}\n${stderr}`;
+        // git explains some ordinary situations on STDERR, and the IPC wrapper
+        // crash-reports any ok:false result carrying a message that is not
+        // marked expected. "The previous cherry-pick is now empty" is the
+        // commonest of them — picking something already on the branch — and it
+        // filed a report on every press of a button the app itself had enabled.
+        const ordinary = /is now empty|nothing to commit|no changes .* patch already applied/i.test(both);
         return {
           ok: false,
           changed: false,
           message: stderr || stdout || "The operation failed.",
-          ...(stderr ? {} : { expected: true }),
+          ...(stderr && !ordinary ? {} : { expected: true }),
         };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
@@ -1736,7 +1760,9 @@ export class GitBridge {
       rebasing: false,
       cherryPicking: false,
       reverting: false,
+      amApplying: false,
       conflicts: 0,
+      nothingToCommit: false,
     };
     if (!ctx) return empty;
     const present = async (gitPath: string): Promise<boolean> => {
@@ -1779,9 +1805,20 @@ export class GitBridge {
     return {
       merging,
       rebasing: rebaseM || (rebaseA && !amMarker),
+      amApplying: rebaseA && amMarker,
       cherryPicking,
       reverting,
       conflicts,
+      // Only meaningful while something is stopped, and only when nothing is
+      // conflicted: `diff --cached --quiet HEAD` exiting 0 means the index
+      // matches HEAD, so there is no commit left to make.
+      // A MERGE is deliberately excluded: git allows an empty merge commit, so
+      // `commit --no-edit` genuinely finishes one whose result matches HEAD.
+      // The verbs that refuse are the sequencer's.
+      nothingToCommit:
+        conflicts === 0 &&
+        (rebaseM || rebaseA || cherryPicking || reverting) &&
+        (await ctx.process.run(["diff", "--cached", "--quiet", "HEAD"])).code === 0,
     };
   }
 
@@ -1794,6 +1831,57 @@ export class GitBridge {
     });
   }
 
+  /** Is a `git am` stopped mid-series? The `applying` marker is git's own way
+   *  of telling an am from a rebase inside the shared `rebase-apply/`. */
+  private async amInProgress(): Promise<boolean> {
+    const ctx = this.ctx();
+    if (!ctx) return false;
+    const r = await ctx.process.run(["rev-parse", "--git-path", "rebase-apply/applying"]);
+    if (r.code !== 0) return false;
+    try {
+      // resolve(), not join() — inside a linked worktree git answers with an
+      // absolute path. Same reasoning as `opState`'s own probe.
+      await stat(resolve(ctx.root, r.stdout.trim()));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Finishing, and abandoning, a part-applied patch series.
+   *
+   * `--continue` takes no `--no-edit`: it reuses the patch's own message and
+   * author, which is the whole reason a plain commit is the wrong way out.
+   *
+   * `--abort` is the destructive one. It rewinds to where the series started,
+   * discarding patches it already applied — and when HEAD has moved since, git
+   * declines to rewind, prints "Not rewinding to ORIG_HEAD" and still exits 0.
+   * Reporting that as "Done." would be a lie about the repository's state, so
+   * the warning is passed back as the result's message.
+   */
+  amContinue(): Promise<CommitActionResult> {
+    return this.runResult(["am", "--continue"]);
+  }
+  async amAbort(): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    const r = await ctx.process.run(["am", "--abort"]);
+    if (r.code !== 0) {
+      return { ok: false, changed: false, message: r.stderr.trim() || `git am --abort failed (${r.code}).` };
+    }
+    const warned = /not rewinding to orig_head/i.test(`${r.stdout}\n${r.stderr}`);
+    return {
+      ok: true,
+      changed: true,
+      ...(warned
+        ? {
+            message:
+              "The patch series was abandoned, but HEAD had moved since it started, so git left it " +
+              "where it is rather than rewinding. Check the log before carrying on.",
+          }
+        : {}),
+    };
+  }
   mergeAbort(): Promise<CommitActionResult> {
     return this.runResult(["merge", "--abort"]);
   }
@@ -1814,6 +1902,17 @@ export class GitBridge {
   }
   cherryPickContinue(): Promise<CommitActionResult> {
     return this.runResult(["cherry-pick", "--continue", "--no-edit"]);
+  }
+  /**
+   * Skipping the stopped commit. This is git's own answer to "the previous
+   * cherry-pick is now empty", and it was the one way out the banner never
+   * offered.
+   */
+  cherryPickSkip(): Promise<CommitActionResult> {
+    return this.runResult(["cherry-pick", "--skip"]);
+  }
+  revertSkip(): Promise<CommitActionResult> {
+    return this.runResult(["revert", "--skip"]);
   }
   revertAbort(): Promise<CommitActionResult> {
     return this.runResult(["revert", "--abort"]);
@@ -2015,6 +2114,37 @@ export class GitBridge {
       try {
         const abs = containedPath(ctx.root, req.path);
         if (!abs) return { ok: false, changed: false, message: "Path escapes the repository." };
+        // The merge view's "Mark resolved" hands back a JavaScript string, and
+        // `writeFile` follows symlinks. So on a conflicted symlink this opened
+        // the LINK'S TARGET — a file that may be nowhere near the repository —
+        // and overwrote it, while the link git actually tracks kept its old
+        // value; and on a conflicted binary it wrote back the U+FFFD wreckage
+        // of a UTF-8 round trip. Both reported "Resolved and staged."
+        //
+        // Take ours / Take theirs is the way through both: `git checkout
+        // --ours/--theirs` never decodes and never follows.
+        const safe = await textWriteSafe(abs, req.path, (what) =>
+          what === "symlink"
+            ? `${req.path} is a symbolic link. Saving text here would overwrite whatever it points at, not the link — use Take ours or Take theirs.`
+            : `${req.path} isn't UTF-8 text. Saving it as text would rewrite the bytes it can't represent — use Take ours or Take theirs.`,
+        );
+        if (!safe.ok) return { ok: false, changed: false, expected: true, message: safe.why };
+        // A containment check that resolves SYMLINKS, not just "..". The one
+        // above is purely lexical, so a repo-relative path whose PARENT is a
+        // symlink pointing outside still lands outside. Both sides are
+        // realpath'd — on macOS the repo root itself is usually under a
+        // symlinked /tmp, so realpathing only the child refuses every
+        // legitimate file.
+        const realRoot = await realpath(ctx.root).catch(() => ctx.root);
+        const realDir = await realpath(dirname(abs)).catch(() => undefined);
+        if (!realDir || (realDir !== realRoot && !realDir.startsWith(realRoot + sep))) {
+          return {
+            ok: false,
+            changed: false,
+            expected: true,
+            message: `${req.path} resolves outside the repository — nothing was written.`,
+          };
+        }
         await writeFile(abs, req.content, "utf8");
         const r = await ctx.process.run(["add", "--", req.path]);
         if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
@@ -2038,13 +2168,44 @@ export class GitBridge {
         // and the user got a raw `fatal: path ... does not exist` for pressing a
         // button the app itself offered. Taking a side that deleted the file
         // means removing the file.
-        const unmerged = await ctx.process.run(["ls-files", "-u", "--", req.path]);
+        // NO pathspec, and an exact path comparison below.
+        //
+        // This answer decides whether "Take theirs" WRITES a file or DELETES
+        // one, so it must not depend on git's pathspec matching — which is
+        // glob-capable, and whose literal-vs-glob precedence is steerable from
+        // the environment git is spawned with (`GIT_GLOB_PATHSPECS`,
+        // `GIT_LITERAL_PATHSPECS`). A filename like `[id].tsx`, ordinary in
+        // every Next.js and SvelteKit app, is a character class if it is ever
+        // read as a glob. Measured on git 2.49 it is matched literally in all
+        // three modes, so this is not a bug being fixed — it is a dependency
+        // being removed from a code path whose two outcomes are write and
+        // delete.
+        //
+        // `:(literal)` would NOT do it: with `GIT_LITERAL_PATHSPECS=1` set the
+        // magic prefix becomes part of the filename and matches nothing.
+        //
+        // The list is bounded by the number of conflicts, which is small.
+        const unmerged = await ctx.process.run(["ls-files", "-u"]);
         if (unmerged.code === 0 && unmerged.stdout.trim()) {
+          // Filter by the PATH each line names, not just by the stage number.
+          // A pathspec is a glob: `[id].tsx` — an ordinary filename in every
+          // Next.js and SvelteKit app — is a character class matching `i`, `d`,
+          // and any sibling file whose name is one of those characters. Those
+          // siblings are not conflicted, so no stage 2 or 3 line appears for
+          // them; but a stage-1 line from the real file plus the union of
+          // everything matched made the "which sides exist" answer wrong, and
+          // Take theirs concluded "theirs deleted it" and ran `git rm` on a
+          // file that was plainly there.
+          //
+          // Not `:(literal)`: git is spawned with the inherited environment, so
+          // under `GIT_LITERAL_PATHSPECS=1` the magic prefix becomes part of
+          // the filename and matches nothing at all.
           const present = new Set(
             unmerged.stdout
               .split("\n")
-              .map((line) => /^\d{6} [0-9a-f]+ (\d)\t/.exec(line)?.[1])
-              .filter((n): n is string => !!n),
+              .map((line) => /^\d{6} [0-9a-f]+ (\d)\t(.*)$/.exec(line))
+              .filter((m): m is RegExpExecArray => !!m && m[2] === req.path)
+              .map((m) => m[1]),
           );
           if (!present.has(stage)) {
             const rm = await ctx.process.run(["rm", "-f", "--", req.path]);
@@ -2168,28 +2329,51 @@ function toOriginalRanges(ranges: LineRange[], hunks: Hunk[]): LineRange[] {
  * today. This asks the exact question instead — do the bytes survive the round
  * trip this code is about to perform.
  */
+/**
+ * The two kinds of file that a text write-back destroys, asked once.
+ *
+ * A symlink, because `writeFile` FOLLOWS it: the app opens the link's target
+ * and overwrites whatever is there — a file that may be nowhere near the
+ * repository — while the link itself, which is what git tracks, is untouched.
+ * And a non-UTF-8 file, because the content has been round-tripped through a
+ * JavaScript string by the time it gets here, and every byte that is not valid
+ * UTF-8 came back as U+FFFD.
+ *
+ * Shared because it was answered separately in two places and only one of them
+ * was ever right. `conflictTakeSide` was fixed to let git move the bytes;
+ * `conflictResolve`, forty lines below it, still wrote a JS string through
+ * `writeFile` and reported "Resolved and staged." over a corrupted PNG and an
+ * obliterated file outside the repo. `caller` supplies wording that names a
+ * control the user can actually see from where they are.
+ */
+async function textWriteSafe(
+  abs: string,
+  rel: string,
+  advice: (what: "symlink" | "binary") => string,
+): Promise<{ ok: true } | { ok: false; why: string }> {
+  const st = await lstat(abs).catch(() => undefined);
+  if (st?.isSymbolicLink()) return { ok: false, why: advice("symlink") };
+  if (st?.isFile()) {
+    const bytes = await readFile(abs).catch(() => undefined);
+    if (bytes && Buffer.compare(Buffer.from(bytes.toString("utf8"), "utf8"), bytes) !== 0) {
+      return { ok: false, why: advice("binary") };
+    }
+  }
+  return { ok: true };
+}
+
 async function lineStageable(
   ctx: GitContext,
   rel: string,
 ): Promise<{ ok: true } | { ok: false; why: string }> {
   const abs = containedPath(ctx.root, rel);
   if (!abs) return { ok: false, why: "That path is outside the repository." };
-  const st = await lstat(abs).catch(() => undefined);
-  if (st?.isSymbolicLink()) {
-    return {
-      ok: false,
-      why: `${rel} is a symbolic link — stage it whole. Staging part of one would write a file's contents into the link.`,
-    };
-  }
-  if (st?.isFile()) {
-    const bytes = await readFile(abs).catch(() => undefined);
-    if (bytes && Buffer.compare(Buffer.from(bytes.toString("utf8"), "utf8"), bytes) !== 0) {
-      return {
-        ok: false,
-        why: `${rel} isn't UTF-8 text — stage it whole. Staging part of it would rewrite the bytes it can't represent.`,
-      };
-    }
-  }
+  const safe = await textWriteSafe(abs, rel, (what) =>
+    what === "symlink"
+      ? `${rel} is a symbolic link — stage it whole. Staging part of one would write a file's contents into the link.`
+      : `${rel} isn't UTF-8 text — stage it whole. Staging part of it would rewrite the bytes it can't represent.`,
+  );
+  if (!safe.ok) return safe;
   // The side already in the index can be binary even when the working file is
   // gone or readable. git answers this itself: `--numstat` prints "-" for a
   // binary blob rather than a line count.

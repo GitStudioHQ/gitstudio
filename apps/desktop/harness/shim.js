@@ -219,7 +219,9 @@
       { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio" },
       { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" },
     ],
-    "github:status": { connected: true, login: me, repo: { owner: "GitStudioHQ", repo: "gitstudio" } },
+    // `github:status` is DYNAMIC below, not here: a fixture that never changes
+    // cannot express signing out, which is why nothing could see that the
+    // top-bar chip kept naming the account you had just left.
     "sync:status": { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
     "refs:list": branches.map((b) => ({ type: "head", name: b.name, fullName: "refs/heads/" + b.name, sha: "abc123", isCurrent: b.current, upstream: b.upstream })),
     "head:get": { detached: false, branch: "main", sha: "9f8e7d6" },
@@ -777,6 +779,18 @@
   dynamic["repo:file"] = (req) => {
     const path = (req && req.path) || "";
     return path in FILES ? { path, text: FILES[path] } : undefined;
+  };
+
+  // Auth is a state, not a constant. `github:disconnect` flips it, so a check
+  // can drive Sign out / Switch account and see what the app does about it.
+  let connected = params.get("signedout") !== "1";
+  dynamic["github:status"] = () =>
+    connected
+      ? { connected: true, login: me, repo: { owner: "GitStudioHQ", repo: "gitstudio" } }
+      : { connected: false };
+  dynamic["github:disconnect"] = () => {
+    connected = false;
+    return { ok: true, changed: true };
   };
 
   const missing = new Set();

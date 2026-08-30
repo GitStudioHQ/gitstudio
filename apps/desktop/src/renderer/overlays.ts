@@ -84,7 +84,7 @@ export function holdBackground(keep: HTMLElement): () => void {
   const held: HTMLElement[] = [];
   for (const node of Array.from(document.body.children)) {
     const el = node as HTMLElement;
-    if (el === keep || el.contains(keep) || el.hasAttribute("inert")) continue;
+    if (el === keep || el.contains(keep)) continue;
     // Never a LIVE REGION. Toasts live in a persistent `#toast-stack` on the
     // body, and inerting it made a toast raised over an open palette or dialog
     // unclickable — aiming at its Dismiss ✕ dismissed the layer instead and
@@ -93,15 +93,54 @@ export function holdBackground(keep: HTMLElement): () => void {
     // a dialog was open was never read out at all. A live region is not part of
     // the page being held back; it is how the app speaks.
     if (isLiveRegion(el)) continue;
-    el.setAttribute("inert", "");
+    hold(el);
     held.push(el);
   }
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    for (const el of held) el.removeAttribute("inert");
+    for (const el of held) drop(el);
   };
+}
+
+/**
+ * How many open surfaces are holding each element back.
+ *
+ * A plain boolean attribute cannot answer that, and two surfaces holding the
+ * same shell is the ordinary case: a peek or a drawer opens a dialog, so both
+ * are up at once. `holdBackground` used to SKIP anything already `inert`, which
+ * is right only when the inner surface closes first. It does not always: a
+ * route change disposes layers newest-first, the dialog vetoes (that is what
+ * `hasUnsavedWork` is for), the drawer beneath it does not — and the drawer's
+ * release then stripped `inert` off the shell the surviving dialog still
+ * needed. The result was a dialog claiming `aria-modal="true"` over an app that
+ * was fully tab-reachable, and activating anything back there routed the whole
+ * window behind a dialog the user could still see.
+ *
+ * A WeakMap, not a Map: the counted elements include a scrim that is removed
+ * from the DOM when its surface closes, and a strong Map would pin every one of
+ * them for the life of the session.
+ *
+ * The invariant this rests on: `inert` on a body child is set ONLY here. Verify
+ * with `rg 'setAttribute\("inert"' src/renderer/` before adding another.
+ */
+const holds = new WeakMap<HTMLElement, number>();
+
+function hold(el: HTMLElement): void {
+  const n = (holds.get(el) ?? 0) + 1;
+  holds.set(el, n);
+  if (n === 1) el.setAttribute("inert", "");
+}
+
+function drop(el: HTMLElement): void {
+  const n = (holds.get(el) ?? 1) - 1;
+  if (n <= 0) {
+    holds.delete(el);
+    el.removeAttribute("inert");
+  } else {
+    holds.set(el, n);
+  }
 }
 
 /** A host whose whole job is to announce things. Inerting one silences it. */
@@ -152,4 +191,21 @@ export function isMenuOpen(): boolean {
  */
 export function isModalOpen(): boolean {
   return layers.some((l) => l.kind === "modal");
+}
+
+/**
+ * Does a surface own the Escape key right now, or is something ABOVE it up?
+ *
+ * The command palette, a menu, and a dialog all sit over whatever opened them,
+ * and all of them listen on `document`. `stopPropagation()` does not stop a
+ * sibling listener on the same node, and the surface underneath usually
+ * registered FIRST, so it runs first: one Escape dismissed the thing you aimed
+ * at AND the thing underneath, along with whatever you had typed into it.
+ *
+ * One helper because three surfaces have now independently forgotten some of
+ * these checks — the peek, the Projects drawer, and the notifications popover —
+ * each in its own copy of the same three lines. A fourth copy is not the answer.
+ */
+export function ownsEscape(): boolean {
+  return !document.body.classList.contains("cmdk-open") && !isMenuOpen() && !isModalOpen();
 }

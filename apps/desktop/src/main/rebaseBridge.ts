@@ -129,8 +129,16 @@ export class RebaseBridge {
       // Say what happens to the rest, not just that they are not shown. They
       // ride along as plain picks (see apply → commitsBelowCap); before that
       // they were silently deleted, so this note was worse than incomplete.
+      // "Kept as-is" is not true and the distinction matters: they are REPLAYED
+      // as plain picks, which is what stops them being deleted — but a replay
+      // gives every one of them a new sha, so a rebase of a 205-commit range
+      // rewrites all 205, not the 200 on screen. Saying "kept" invited the
+      // reading that the older commits are untouched, which is exactly what
+      // someone weighing a large rebase needs to get right.
       notes.push(
-        `Showing the newest ${MAX_PLAN_COMMITS} commits — the older ones in this range are kept as-is. Pick a nearer base to narrow it.`,
+        `Showing the newest ${MAX_PLAN_COMMITS} commits. The older ones in this range are replayed ` +
+          `unchanged — you can't edit them here, but they are still rewritten and get new IDs. ` +
+          `Pick a nearer base to narrow the range.`,
       );
     }
     return {
@@ -140,6 +148,12 @@ export class RebaseBridge {
       commits,
       baseCommit,
       inProgress,
+      headSha: await this.headSha(),
+      // The number apply() acts on: the whole selection, cap or no cap. The
+      // walk is `--cherry-pick --right-only`'s, NOT a plain `base..HEAD` count
+      // — the commits that walk drops are exactly the ones apply() does not
+      // replay, so counting them would swap an undercount for an overcount.
+      replayCount: await this.selectionCount(base),
       updateRefs: await this.repoUpdateRefs(),
       message: notes.join(" ") || undefined,
     };
@@ -376,6 +390,26 @@ export class RebaseBridge {
     return Math.max(0, (Number(all.stdout.trim()) || 0) - (Number(kept.stdout.trim()) || 0));
   }
 
+  /** How many commits the plan's selection contains, ignoring the display cap. */
+  private async selectionCount(base: string): Promise<number | undefined> {
+    const ctx = this.repos.getContext();
+    if (!ctx) return undefined;
+    const args =
+      base === "--root"
+        ? ["rev-list", "--count", "--no-merges", "HEAD"]
+        : ["rev-list", "--count", "--no-merges", "--cherry-pick", "--right-only", `${base}...HEAD`];
+    const r = await ctx.process.run(args);
+    return r.code === 0 ? Number(r.stdout.trim()) || 0 : undefined;
+  }
+
+  /** HEAD's sha, or undefined on an unborn branch or an unreadable repo. */
+  private async headSha(): Promise<string | undefined> {
+    const ctx = this.repos.getContext();
+    if (!ctx) return undefined;
+    const r = await ctx.process.run(["rev-parse", "HEAD"]);
+    return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : undefined;
+  }
+
   /** The repo's own `rebase.updateRefs`. Following it means the app does what
    *  the user's git already does; ignoring it was how branches got orphaned by
    *  a rebase that their own config said should carry them. */
@@ -409,6 +443,28 @@ export class RebaseBridge {
     const rows = req.rows ?? [];
     if (!rows.length) {
       return { status: "failed", message: "Nothing to rebase." };
+    }
+    // The plan describes a branch tip. If the tip has moved since — a commit
+    // made in a terminal, a pull, an amend — the rows no longer cover the
+    // range, and `commitsBelowCap` cannot tell "the user never saw this" from
+    // "this is below the display cap": it appends the new commit, and the
+    // reversal into git's todo makes it the FIRST pick. Measured: plan C,B,A,
+    // commit D, apply → the branch reads D, A, B, C oldest-first, and nothing
+    // on screen ever mentioned D.
+    //
+    // Compared against HEAD ITSELF, not against the plan's top row: the
+    // selection drops merges and already-applied commits, so on a perfectly
+    // current plan the top row is legitimately not HEAD.
+    if (req.headSha) {
+      const now = await this.headSha();
+      if (now && now !== req.headSha) {
+        return {
+          status: "failed",
+          message:
+            "The branch has moved since this plan was built — something committed, pulled or amended " +
+            "while it was open. Reload the plan and try again.",
+        };
+      }
     }
 
     // The todo IS the plan: a commit in the range but NOT in the todo is

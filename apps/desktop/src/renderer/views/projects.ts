@@ -25,7 +25,7 @@ import {
 } from "../ui";
 import { peek as cachePeek, gget, bust } from "../cache";
 import { toast } from "../dialogs";
-import { holdBackground, registerLayer } from "../overlays";
+import { holdBackground, registerLayer, ownsEscape } from "../overlays";
 import { ghGate, ghHeader, headerPicker, type SectionRender, type SectionNav } from "./common";
 import { renderIssueDetailInto } from "./issues";
 import type { ProjectBoard, ProjectInfo, ProjectItem } from "../../shared/ipc";
@@ -422,6 +422,11 @@ function openIssueDrawer(number: number, nav: SectionNav, onChanged?: () => void
   const layer = registerLayer(() => dispose(false));
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === "Escape") {
+      // A dialog opened from inside the drawer owns Escape. Without this, one
+      // press closed the dialog and took the drawer under it too, discarding
+      // whatever the card was showing. Same rule as the peek and the
+      // notifications popover; see `ownsEscape`.
+      if (!ownsEscape()) return;
       e.preventDefault();
       dispose();
     }

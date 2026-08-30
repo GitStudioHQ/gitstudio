@@ -395,7 +395,12 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     void (async () => {
       if (busy) return;
       const dropped = rows.filter((r) => r.action === "drop").length;
-      const rewritten = rows.length;
+      // What the rebase REWRITES, not what is on screen. Above the display cap
+      // the commits below it are replayed too — that is what stops them being
+      // deleted — and a replay gives every one of them a new id as soon as the
+      // base has moved. "This rewrites 200 commits" on a range of 260 was the
+      // dialog understating the blast radius of the one irreversible button.
+      const rewritten = Math.max(state.replayCount ?? rows.length, rows.length);
       const ok = await confirmDialog({
         title: "Start interactive rebase?",
         message:
@@ -426,6 +431,11 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
           base: state.base,
           rows: payload,
           updateRefs: carryBranches,
+          // The tip this plan was built against. The host refuses if it has
+          // moved since — otherwise a commit made in a terminal while the
+          // workspace was open is silently replayed as the OLDEST commit on the
+          // branch.
+          headSha: state.headSha,
         });
         if (outcome.status === "done") {
           toast("Rebase complete.", "success");

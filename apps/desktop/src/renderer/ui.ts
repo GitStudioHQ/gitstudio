@@ -1078,6 +1078,14 @@ export function wireResizerKeys(
     handle.setAttribute("aria-valuenow", String(Math.round(opts.get())));
   };
   sync();
+  // …and again whenever the control is focused, which is the moment an
+  // assistive technology reads the values out. `max` is a FUNCTION of the
+  // current layout for several of these dividers, and it was sampled once at
+  // wire time — before the pane had been laid out, and never again after a
+  // window resize. The graph's details divider announced itself as pinned at
+  // its maximum (320 of 320) while sitting at 420px with a real max of 584, so
+  // a screen-reader user was told the control could not move.
+  handle.addEventListener("focus", () => sync());
   handle.addEventListener("keydown", (e: KeyboardEvent) => {
     if (opts.disabled?.()) return;
     // vertical divider: Right grows the left pane. horizontal divider (bottom-

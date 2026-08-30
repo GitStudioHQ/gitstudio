@@ -127,6 +127,8 @@ class App {
   private graphViewWrap?: HTMLElement;
   /** Re-clamps the graph/details split when the pane's box changes. */
   private graphSplitRO?: ResizeObserver;
+  /** The top-bar account chip's re-reader, so signing in or out can refresh it. */
+  private syncAccountChip?: () => Promise<void>;
   /** The live composer's label writer, so HEAD resolving can refresh it. */
   private syncCommitLabel?: () => void;
   /**
@@ -2862,22 +2864,14 @@ class App {
         switchBtn.append(glyph("sign-in"), span("Switch account"));
         switchBtn.addEventListener("click", async () => {
           await host.invoke("github:disconnect", undefined);
+          await this.authChanged();
           void this.showSettingsView();
         });
         const signOut = el("button", "mini-btn danger");
         signOut.append(span("Sign out"));
         signOut.addEventListener("click", async () => {
           await host.invoke("github:disconnect", undefined);
-          // Signing out invalidates EVERY cached GitHub answer, not just the
-          // account chip: issues, PRs, notifications and the "Create pull
-          // request" affordances were all computed for a session that is over.
-          bust();
-          // …and the kept-alive DOM those answers were rendered into, which
-          // `bust()` does not touch. Without this, Issues and PRs re-attached
-          // the PREVIOUS account's pages — names, avatars, private titles — to
-          // a window that was signed out, and kept them until the next repo
-          // switch.
-          this.viewCache.clear();
+          await this.authChanged();
           toast("Signed out of GitHub.", "info");
           void this.showSettingsView();
         });
@@ -4035,7 +4029,14 @@ class App {
             ? "cherry-pick"
             : op.reverting
               ? "revert"
-              : null;
+              // A part-applied patch series. Naming it is not cosmetic: this is
+              // the app's only in-progress surface, and without it the window
+              // showed an ordinary dirty tree with a live Commit button —
+              // which strands the rest of the series and puts your name on
+              // someone else's patch.
+              : op.amApplying
+                ? "patch series (git am)"
+                : null;
       if (!kind) return;
       const banner = el("div", "dc-opbanner");
       const txt = el("div", "dc-opbanner-text");
@@ -4044,7 +4045,15 @@ class App {
         span(
           op.conflicts > 0
             ? `${kind} in progress — ${op.conflicts} file${op.conflicts === 1 ? "" : "s"} still conflicted`
-            : `${kind} in progress — resolve and continue`,
+            // Zero conflicts does not mean "ready to continue". Picking or
+            // reverting something already on the branch stops with nothing
+            // conflicted AND nothing to commit, and so does a conflict resolved
+            // by keeping HEAD's side. "resolve and continue" over an empty file
+            // list, with Continue enabled, was the app telling the user to do
+            // something git would then refuse.
+            : op.nothingToCommit
+              ? `${kind} in progress — nothing left to commit, this one is already on the branch`
+              : `${kind} in progress — resolve and continue`,
           "dc-opbanner-strong",
         ),
       );
@@ -4052,18 +4061,26 @@ class App {
       const abort = el("button", "mini-btn") as HTMLButtonElement;
       abort.append(glyph("discard"), span("Abort"));
       const cont = el("button", "btn btn-primary mini-btn") as HTMLButtonElement;
-      cont.append(glyph("check"), span("Continue"));
+      // Skip, not Continue, when there is nothing left to commit — that is
+      // git's own answer, and it was the one way out the banner never offered.
+      const skipping = op.nothingToCommit && (op.cherryPicking || op.reverting || op.rebasing);
+      cont.append(glyph(skipping ? "arrow-right" : "check"), span(skipping ? "Skip" : "Continue"));
       cont.disabled = op.conflicts > 0;
       type OpChannel =
         | "merge:abort" | "merge:continue"
         | "rebase:abort" | "rebase:continue"
         | "cherryPick:abort" | "cherryPick:continue"
-        | "revert:abort" | "revert:continue";
+        | "revert:abort" | "revert:continue"
+        | "cherryPick:skip" | "revert:skip" | "rebase:skip"
+        | "am:abort" | "am:continue";
       const runOp = async (ch: OpChannel): Promise<void> => {
         try {
           const r = await host.invoke(ch, undefined);
+          // A message on SUCCESS is a caveat, not a failure — `git am --abort`
+          // exits 0 while declining to rewind a HEAD that has moved. "Done."
+          // over the top of that would be a lie about the repository.
           if (!r.ok) toast(r.message || "Operation failed.", r.expected ? "info" : "error");
-          else toast("Done.", "success");
+          else toast(r.message || "Done.", r.message ? "info" : "success");
         } catch (e) {
           toast(cleanErr(e) || "Operation failed.", "error");
         }
@@ -4080,9 +4097,32 @@ class App {
         kind === "rebase" ? "rebase"
         : kind === "cherry-pick" ? "cherryPick"
         : kind === "revert" ? "revert"
+        : op.amApplying ? "am"
         : "merge";
-      abort.addEventListener("click", () => void runOp(`${family}:abort` as OpChannel));
-      cont.addEventListener("click", () => void runOp(`${family}:continue` as OpChannel));
+      abort.addEventListener("click", () => {
+        // Aborting an `am` throws away the patches it has ALREADY applied, and
+        // the patch files are usually a mail attachment or a pipe that no
+        // longer exists — there is no re-running it. The other three aborts
+        // return you to a commit that is still in the reflog; this one does
+        // not, so it asks.
+        if (op.amApplying) {
+          void confirmDialog({
+            title: "Abandon this patch series?",
+            message:
+              "git has applied part of the series already. Abandoning it discards those patches, and " +
+              "the patch files themselves are usually not something the app can replay.",
+            confirmLabel: "Abandon series",
+            danger: true,
+          }).then((yes) => {
+            if (yes) void runOp("am:abort");
+          });
+          return;
+        }
+        void runOp(`${family}:abort` as OpChannel);
+      });
+      cont.addEventListener("click", () =>
+        void runOp(`${family}:${skipping ? "skip" : "continue"}` as OpChannel),
+      );
       acts.append(abort, cont);
       banner.append(txt, acts);
       wrap.insertBefore(banner, wrap.firstChild);
@@ -5092,19 +5132,13 @@ class App {
         // issue lists, the hidden PR buttons, the connect prompts. None of it is
         // true any more.
         //
-        // Dropped WHOLESALE, because the prefixes matched almost nothing: the
-        // channels are `issue:list`, `pr:list`, `notifications:list`,
-        // `actions:runs`, `release:list`, `orgs:list`, `gist:list`,
-        // `project:list` — only `github:status` and `github:myWork` ever began
-        // with "github:", and no channel at all begins with "gh". So the two
-        // lines below read as a careful invalidation while leaving every list
-        // exactly as it was.
-        bust();
-        // The kept-alive view DOM is the other half. `bust()` only empties the
-        // data cache; a section stashed out of the DOM is re-attached verbatim
-        // on return, without a refetch — so Issues came back still showing the
-        // signed-out empty state, with no way to refresh it but a repo switch.
-        this.viewCache.clear();
+        // Dropped WHOLESALE, because the prefixes this replaced matched almost
+        // nothing: the channels are `issue:list`, `pr:list`,
+        // `notifications:list`, `actions:runs`, `release:list`, `orgs:list`,
+        // `gist:list`, `project:list` — only `github:status` and
+        // `github:myWork` ever began with "github:", and no channel at all
+        // begins with "gh".
+        void this.authChanged();
         toast(`Signed in as @${r.login}.`, "success");
         onConnected();
         return;
@@ -5697,14 +5731,24 @@ class App {
     const chip = el("button", "topbar-acct");
     chip.append(glyph("github"), span("…", "topbar-acct-name"));
     chip.addEventListener("click", () => this.routeView("settings"));
-    void (async () => {
+    // Asked ONCE, at construction — and the top bar is built by showRepoScreen,
+    // which runs only on `repo:changed`. So the chip kept naming the account
+    // you had signed out of for the rest of the session, avatar and all, while
+    // Settings one click away said "Not connected". Stored as a hook so the
+    // three auth sites can re-ask, the way `syncCommitLabel` and
+    // `syncAssistantChip` already do for their own surfaces.
+    let gen = 0;
+    const sync = async (): Promise<void> => {
+      const mine = ++gen;
       let status: GitHubStatus = { connected: false };
       try {
         status = await host.invoke("github:status", undefined);
       } catch {
         /* offline / not connected — show the sign-in state */
       }
-      if (!chip.isConnected) return;
+      // A switch immediately followed by a sign-in can resolve out of order;
+      // the later question owns the answer.
+      if (!chip.isConnected || mine !== gen) return;
       if (status.connected && status.login) {
         chip.classList.add("is-connected");
         chip.title = `Signed in to GitHub as ${status.login}`;
@@ -5717,8 +5761,31 @@ class App {
         chip.title = "Sign in to GitHub";
         chip.replaceChildren(glyph("github"), span("Sign in", "topbar-acct-name"));
       }
-    })();
+    };
+    this.syncAccountChip = sync;
+    void sync();
     return chip;
+  }
+
+  /**
+   * Everything that stops being true when the signed-in account changes.
+   *
+   * ONE helper, called from all three auth sites, because they had drifted:
+   * Sign out dropped the caches, Switch account dropped neither, and neither
+   * touched the top-bar chip. Three sites each remembering four things is how
+   * that happened, and splitting the fix across them again would only reset the
+   * clock. The toast stays at the call site — only Sign out has one to say.
+   */
+  private async authChanged(): Promise<void> {
+    // Every cached GitHub answer was computed for a session that is over.
+    bust();
+    // …and the kept-alive DOM those answers were rendered into, which `bust()`
+    // does not touch: a stashed view is re-attached verbatim on return, so
+    // Issues and PRs came back showing the previous account's pages — names,
+    // avatars, private titles — on a window that was signed out.
+    this.viewCache.clear();
+    await this.syncAccountChip?.();
+    void this.refreshNotifBadge();
   }
 
   // ── Host events ──────────────────────────────────────────────────────────────

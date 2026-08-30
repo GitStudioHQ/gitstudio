@@ -905,6 +905,10 @@ function registerIpc(): void {
   handle("cherryPick:continue", () => bridge.cherryPickContinue());
   handle("revert:abort", () => bridge.revertAbort());
   handle("revert:continue", () => bridge.revertContinue());
+  handle("cherryPick:skip", () => bridge.cherryPickSkip());
+  handle("revert:skip", () => bridge.revertSkip());
+  handle("am:abort", () => bridge.amAbort());
+  handle("am:continue", () => bridge.amContinue());
   handle("rebase:abort", () => bridge.rebaseAbort());
   handle("rebase:continue", () => bridge.rebaseContinue());
   handle("rebase:skip", () => bridge.rebaseSkip());

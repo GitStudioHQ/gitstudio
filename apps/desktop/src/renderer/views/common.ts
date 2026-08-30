@@ -8,6 +8,7 @@ import { host } from "../bridge";
 import { gget } from "../cache";
 import { openModal } from "../dialogs";
 import { focusNewPage } from "../focusReturn";
+import { ownsEscape } from "../overlays";
 import {
   cleanErr,
   el,
@@ -827,8 +828,13 @@ function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
     if (left && t && t !== document.body && t.closest('[role="tablist"], [role="toolbar"], [role="separator"], [role="listbox"], [role="menu"], .gh-seg, .settings-seg, .cmp-seg')) {
       return;
     }
-    // A floating layer above the page owns these keys.
-    if (document.querySelector(".peek-overlay, .modal-overlay, .cmdk-overlay, .dropdown")) return;
+    // A floating layer above the page owns these keys. Asked through the
+    // registry, not by querying for a list of class names: this was the fourth
+    // copy of the same rule, and a whitelist of selectors is a list that a new
+    // surface silently falls off. (`aiSettings`'s connect overlay was exactly
+    // that surface — `aria-modal="true"`, in no registry, matched by none of
+    // the four selectors.)
+    if (!ownsEscape()) return;
     for (let i = detailStack.length - 1; i >= 0; i--) {
       const v = detailStack[i];
       if (!v.isConnected) continue;
