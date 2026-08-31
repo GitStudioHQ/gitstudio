@@ -234,9 +234,28 @@ export async function renderCommit(
       main.appendChild(p);
     }
     const split = el("div", "cmt-split");
+    const listCol = el("div", "cmt-listcol");
     const list = el("div", "cmt-files");
     const pane = el("div", "cmt-diff");
-    split.append(list, pane);
+
+    // A filter, because at any real size scrolling is not finding.
+    //
+    // Measured on a 420-file merge — an ordinary size for a codemod or a
+    // lockfile bump: 13,027px of file list in a 566px column. Rendering all of
+    // it costs 25ms, so virtualisation is not the problem and building it would
+    // have been the wrong work; having no way to ASK for a file is the problem.
+    const filter = document.createElement("input");
+    filter.className = "cmt-filter";
+    filter.type = "search";
+    filter.placeholder = `Filter ${n} file${n === 1 ? "" : "s"}…`;
+    filter.setAttribute("aria-label", "Filter the changed files");
+    const count = el("div", "cmt-filter-count");
+    count.hidden = true;
+
+    const filterHead = el("div", "cmt-filterhead");
+    filterHead.append(filter, count);
+    listCol.append(filterHead, list);
+    split.append(listCol, pane);
     main.appendChild(split);
 
     const diff = new DiffPanel(pane);
@@ -263,8 +282,10 @@ export async function renderCommit(
       else diff.showEmpty(`Couldn't read the diff for ${f.path}.`);
     };
 
+    const rowFor = new Map<HTMLElement, string>();
     d.files.forEach((f, i) => {
       const row = el("button", "cmt-file") as HTMLButtonElement;
+      rowFor.set(row, f.path.toLowerCase());
       const st = STATUS[f.status] ?? { word: "changed", cls: "is-mod" };
       const letter = span(f.status, `cmt-file-status ${st.cls}`);
       letter.title = st.word;
@@ -286,6 +307,40 @@ export async function renderCommit(
       row.addEventListener("click", () => void openFile(f, row));
       list.appendChild(row);
       if (i === 0) void openFile(f, row);
+    });
+
+    // Every space-separated term must appear somewhere in the path, so
+    // "render css" finds `src/renderer/styles/app.css` — the way a person
+    // narrows by remembering two fragments rather than one exact prefix.
+    const applyFilter = (): void => {
+      const terms = filter.value.toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      for (const [row, path] of rowFor) {
+        const hit = terms.every((t) => path.includes(t));
+        row.hidden = !hit;
+        if (hit) shown++;
+      }
+      count.hidden = terms.length === 0;
+      count.textContent = shown === 0 ? "No file matches" : `${shown} of ${n}`;
+      count.classList.toggle("is-empty", shown === 0);
+    };
+    filter.addEventListener("input", applyFilter);
+    filter.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && filter.value) {
+        // Clear before dismissing: Escape in a filter means "undo the filter",
+        // and only means "leave" once there is nothing to undo.
+        e.stopPropagation();
+        filter.value = "";
+        applyFilter();
+      }
+    });
+    // "/" jumps to the filter from anywhere on the page, as it does in the
+    // Code browser — the same key for the same job.
+    view.addEventListener("keydown", (e) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== "/" || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA"))) return;
+      e.preventDefault();
+      filter.focus();
     });
   }
 

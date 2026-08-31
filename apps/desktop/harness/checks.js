@@ -3618,6 +3618,47 @@
     },
 
     /**
+     * The commit page has to work at a real size.
+     *
+     * It shipped verified against a SEVEN-file fixture, which says nothing. A
+     * 420-file merge — an ordinary size for a codemod or a lockfile bump — puts
+     * 13,027px of file list in a 566px column.
+     *
+     * Measured before building anything: rendering all 420 rows costs 25ms, so
+     * virtualisation was NOT the problem and building it would have been the
+     * wrong work. Having no way to ASK for a file was the problem.
+     */
+    "a-large-commit-can-be-navigated": async (f) => {
+      const c = check(f);
+      const merge = $$(".compare-commit").find((r) => /Merge the generated/.test(text(r)));
+      c.ok(!!merge, "the PR lists a large merge commit");
+      if (!merge) return;
+      merge.click();
+      await settle(1600);
+
+      const rows = () => $$(".cmt-file").filter((r) => !r.hidden);
+      c.ok(rows().length > 300, `the commit page lists all of its files (${rows().length})`);
+      c.match(text(".cmt-statbar"), /420 files changed/, "and says how many");
+
+      const filter = $(".cmt-filter");
+      c.ok(!!filter, "at this size the list can be filtered, not just scrolled");
+      if (!filter) return;
+
+      // Every term must match somewhere in the path, so two remembered
+      // fragments narrow better than one exact prefix.
+      filter.value = "engine module-003";
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      c.eq(rows().length, 1, "two terms narrow to the one file");
+      c.match(text(".cmt-filter-count"), /1 of 420/, "and the count says what was hidden");
+
+      // Escape in a filter means "undo the filter" before it means "leave".
+      filter.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+      c.ok(rows().length > 300, "Escape clears the filter rather than leaving the page");
+    },
+
+    /**
      * Publishing is a decision, not a checkbox.
      *
      * "same is for publishing releases". The form expressed the most

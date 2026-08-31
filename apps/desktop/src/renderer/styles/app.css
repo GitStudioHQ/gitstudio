@@ -9317,7 +9317,7 @@ body.vscode-light .log-pane {
   min-height: 0;
 }
 .cmt-files {
-  flex: 0 0 300px;
+  flex: 1 1 auto;
   min-width: 0;
   max-height: min(62vh, 720px);
   overflow-y: auto;
@@ -9503,3 +9503,37 @@ body.vscode-light .log-pane {
 }
 .md-preview { padding: var(--sp-3); overflow-y: auto; }
 .md-preview-empty { color: var(--app-muted); font-style: italic; }
+
+/* The commit page's file filter. At 420 files the list is 13,027px tall, and
+   scrolling is not finding. */
+.cmt-listcol {
+  flex: 0 0 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.cmt-listcol .cmt-files { flex: 1 1 auto; }
+.cmt-filterhead { display: flex; align-items: center; gap: var(--sp-2); }
+.cmt-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px var(--sp-2);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-sm);
+  background: var(--app-bg);
+  color: var(--app-text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.cmt-filter:focus-visible {
+  outline: 2px solid var(--gs-focus-ring, var(--gs-accent));
+  outline-offset: -1px;
+}
+.cmt-filter-count {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cmt-filter-count.is-empty { color: var(--status-del); }

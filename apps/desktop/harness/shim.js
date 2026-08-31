@@ -147,10 +147,33 @@
       },
     ],
   };
+  // FOURTEEN, because the tab says "Commits (14)". Two made the count a lie and
+  // meant no capped-list notice was ever reachable. The third is the 420-file
+  // merge, so the commit page can be driven at a real size from a real route.
   const prCommits = {
     106: [
       { sha: "a1b2c3d4", shortSha: "a1b2c3d", message: "issues: full-page detail as a routed state", author: me, date: ISO(3) },
       { sha: "b2c3d4e5", shortSha: "b2c3d4e", message: "common: sectionList + detailShell primitives", author: me, date: ISO(2.6) },
+      { sha: "f00dbabe", shortSha: "f00dbab", message: "Merge the generated-module migration", author: me, date: ISO(2.4) },
+      ...Array.from({ length: 11 }, (_, i) => ({
+        sha: `c${i}d4e5f6`,
+        shortSha: `c${i}d4e5f`,
+        message: [
+          "css: list + detail tokens share one scale",
+          "prs: files tab reads the diff from the engine",
+          "actions: stream job logs with backpressure",
+          "graph: keep the mount alive across routes",
+          "settings: one measure for every card",
+          "inbox: group by repository, not by hour",
+          "compare: drop the either/or body",
+          "code: middle-truncate paths in the crumb",
+          "gists: a real empty state",
+          "orgs: repositories before teams",
+          "releases: latest is the shipping build",
+        ][i],
+        author: i % 3 === 0 ? "mira-holt" : i % 3 === 1 ? "s-ohta" : me,
+        date: ISO(2.2 - i * 0.12),
+      })),
     ],
   };
 
@@ -895,6 +918,40 @@
       hasRemote: true,
     },
   };
+  // A commit the size of a real merge. The page had only ever been driven
+  // against seven files, and "it works at seven" says nothing about the column
+  // width, the scrolling, or the cost of building every row up front.
+  const bigFiles = [];
+  const AREAS = ["src/main", "src/renderer/views", "src/renderer/styles", "packages/engine/src", "test"];
+  for (let i = 0; i < 420; i++) {
+    const area = AREAS[i % AREAS.length];
+    const st = ["M", "M", "M", "A", "D", "R"][i % 6];
+    bigFiles.push({
+      path: `apps/desktop/${area}/generated/module-${String(i).padStart(3, "0")}.ts`,
+      status: st,
+      additions: st === "D" ? 0 : (i * 7) % 340,
+      deletions: st === "A" ? 0 : (i * 3) % 180,
+      ...(st === "R" ? { oldPath: `apps/desktop/${area}/old/module-${i}.ts` } : {}),
+    });
+  }
+  commits.f00dbabe = {
+    kind: "commit",
+    sha: "f00dbabe1234567890abcdef1234567890abcdef",
+    shortSha: "f00dbab",
+    parents: ["a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "b2c3d4e5f60718293a4b5c6d7e8f901234567890"],
+    author: me,
+    authorEmail: "anton@gitstudio.dev",
+    authorDate: Math.floor(Date.now() / 1000) - 7200,
+    committer: me,
+    committerEmail: "anton@gitstudio.dev",
+    committerDate: Math.floor(Date.now() / 1000) - 7200,
+    subject: "Merge the generated-module migration",
+    body: "420 files, which is an ordinary size for a codemod or a lockfile bump.",
+    refs: [],
+    files: bigFiles,
+    hasRemote: true,
+  };
+
   dynamic["commit:details"] = (sha) => commits[String(sha).slice(0, 8)];
 
   // The diff pane's header must name the file that was ASKED for. A fixed path
