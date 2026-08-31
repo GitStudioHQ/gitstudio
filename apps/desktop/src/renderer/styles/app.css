@@ -2583,10 +2583,12 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.cmp-seg-btn.active /* An empty badge rendered as a grey dot, so the tab strip looked like it had
-   two unread markers. */
-.cmp-seg-count:empty { display: none; }
-.cmp-seg-count {
+/* The ACTIVE segment's badge takes the accent. The `.active` qualifier used to
+   sit before a comment that opened a selector list, which glued it to the next
+   selector as a descendant — so every badge got the accent and the active one
+   was indistinguishable. Fourth time a comment beside a selector has eaten a
+   qualifier in this file; `test/stylesheet.test.ts` now refuses the shape. */
+.cmp-seg-btn.active .cmp-seg-count {
   background: color-mix(in srgb, var(--gs-accent) 30%, transparent);
 }
 .cmp-summary { font-size: 12.5px; color: var(--app-muted); }
@@ -9243,11 +9245,11 @@ body.vscode-light .log-pane {
   align-items: center;
   gap: var(--sp-2);
   font-size: var(--text-sm);
-  color: var(--gs-fg-muted);
+  color: var(--app-muted);
 }
-.cmt-who-name { font-weight: 600; color: var(--gs-fg); }
-.cmt-who-verb { color: var(--gs-fg-muted); }
-.cmt-who-when { color: var(--gs-fg-muted); }
+.cmt-who-name { font-weight: 600; color: var(--app-text); }
+.cmt-who-verb { color: var(--app-muted); }
+.cmt-who-when { color: var(--app-muted); }
 
 .cmt-refs {
   display: flex;
@@ -9256,13 +9258,13 @@ body.vscode-light .log-pane {
   margin-bottom: var(--sp-4);
 }
 .cmt-ref {
-  font-family: var(--font-mono);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-xs);
   padding: 2px var(--sp-2);
   border-radius: var(--r-sm);
-  border: 1px solid var(--gs-border);
-  color: var(--gs-fg-muted);
-  background: var(--gs-bg-subtle);
+  border: 1px solid var(--app-border);
+  color: var(--app-muted);
+  background: var(--app-panel);
 }
 .cmt-ref.is-currentHead {
   border-color: var(--gs-accent);
@@ -9278,13 +9280,13 @@ body.vscode-light .log-pane {
   gap: var(--sp-3);
   padding: var(--sp-3) 0;
   margin-top: var(--sp-4);
-  border-top: 1px solid var(--gs-border);
+  border-top: 1px solid var(--app-border);
   font-size: var(--text-sm);
 }
 .cmt-stat-files { font-weight: 600; }
-.cmt-stat-add { color: var(--gs-success); font-variant-numeric: tabular-nums; }
-.cmt-stat-del { color: var(--gs-danger); font-variant-numeric: tabular-nums; }
-.cmt-stat-bin { color: var(--gs-fg-muted); }
+.cmt-stat-add { color: var(--status-add); font-variant-numeric: tabular-nums; }
+.cmt-stat-del { color: var(--status-del); font-variant-numeric: tabular-nums; }
+.cmt-stat-bin { color: var(--app-muted); }
 
 /* Files beside their diff. The list is the navigation; the pane is the answer. */
 .cmt-split {
@@ -9301,16 +9303,16 @@ body.vscode-light .log-pane {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  border: 1px solid var(--gs-border);
+  border: 1px solid var(--app-border);
   border-radius: var(--r-md);
   padding: var(--sp-1);
-  background: var(--gs-bg-subtle);
+  background: var(--app-panel);
 }
 .cmt-diff {
   flex: 1 1 auto;
   min-width: 0;
   height: min(62vh, 720px);
-  border: 1px solid var(--gs-border);
+  border: 1px solid var(--app-border);
   border-radius: var(--r-md);
   overflow: hidden;
 }
@@ -9331,20 +9333,20 @@ body.vscode-light .log-pane {
   text-align: left;
   cursor: pointer;
 }
-.cmt-file:hover { background: var(--gs-bg-hover); }
-.cmt-file.is-current { background: var(--gs-bg-selected); }
+.cmt-file:hover { background: var(--app-hover); }
+.cmt-file.is-current { background: var(--app-active); }
 .cmt-file-status {
-  font-family: var(--font-mono);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-xs);
   font-weight: 600;
   text-align: center;
 }
-.cmt-file-status.is-add { color: var(--gs-success); }
-.cmt-file-status.is-del { color: var(--gs-danger); }
-.cmt-file-status.is-mod { color: var(--gs-warning); }
+.cmt-file-status.is-add { color: var(--status-add); }
+.cmt-file-status.is-del { color: var(--status-del); }
+.cmt-file-status.is-mod { color: var(--status-mod); }
 .cmt-file-status.is-ren { color: var(--gs-accent); }
 .cmt-file-path {
-  font-family: var(--font-mono);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9354,25 +9356,25 @@ body.vscode-light .log-pane {
 .cmt-file-counts {
   display: flex;
   gap: var(--sp-1);
-  font-family: var(--font-mono);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
-.cmt-file-add { color: var(--gs-success); }
-.cmt-file-del { color: var(--gs-danger); }
-.cmt-file-bin { font-size: var(--text-xs); color: var(--gs-fg-muted); }
+.cmt-file-add { color: var(--status-add); }
+.cmt-file-del { color: var(--status-del); }
+.cmt-file-bin { font-size: var(--text-xs); color: var(--app-muted); }
 
 /* Rail */
 .cmt-sha-row { display: flex; }
 .cmt-sha,
 .cmt-parent {
-  font-family: var(--font-mono);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-xs);
   padding: 2px var(--sp-2);
   border-radius: var(--r-sm);
-  border: 1px solid var(--gs-border);
-  background: var(--gs-bg-subtle);
-  color: var(--gs-fg);
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--app-text);
   cursor: pointer;
 }
 .cmt-sha:hover,
@@ -9387,8 +9389,8 @@ body.vscode-light .log-pane {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  font-family: var(--font-mono);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
   font-size: var(--text-xs);
-  color: var(--gs-fg-muted);
+  color: var(--app-muted);
   margin-bottom: var(--sp-2);
 }

@@ -3599,6 +3599,68 @@
     },
 
     /**
+     * A failed read must not render as an empty result.
+     *
+     * Four `.catch(() => [])` sites in the bridge turned a rate limit, a dropped
+     * connection or a 500 into "This PR has no commits yet." — beside a rail
+     * reading 14 — with no way to retry. The renderer's errorState-with-Retry
+     * branches were already written and could never run.
+     *
+     * Unwritable until now: the harness had no way to make a channel fail, so
+     * every error path in the app was unreachable from a check. `?fail=` is that
+     * switch, and `?arg=` names the sub-tab to open.
+     */
+    "a-failed-read-says-so-instead-of-showing-nothing": async (f) => {
+      const c = check(f);
+      const body = text(".gh-subcontent") || text(".det-main");
+      // The empty state's own words. Seeing them here means the app has
+      // concluded "there are none" from a request that never answered.
+      c.ok(
+        !/no commits yet|has no files|nothing here/i.test(body),
+        `a failed request must not read as an empty result (body: ${JSON.stringify(body.slice(0, 90))})`,
+      );
+      c.ok(
+        /couldn't load|could not load|failed/i.test(body),
+        "it says the read failed",
+      );
+      const retry = [...$$("button")].find((b) => /retry|try again/i.test(b.textContent || ""));
+      c.ok(!!retry, "and offers a way to try again");
+    },
+
+    /**
+     * A deleted file and a renamed one must not read the same.
+     *
+     * GitHub sends WORDS — added, removed, modified, renamed, copied — and the
+     * row took `status.charAt(0).toUpperCase()`, which collapses "removed" and
+     * "renamed" onto the same "R", in the same amber, on the one screen where
+     * telling them apart is the entire point. "changed" and "copied" both landed
+     * on C.
+     *
+     * Unwritable until now: every file in the fixture was "modified", so the
+     * collision could not occur in any scene.
+     */
+    "a-deleted-file-does-not-look-like-a-renamed-one": async (f) => {
+      const c = check(f);
+      const rows = $$(".file-row");
+      c.ok(rows.length >= 5, `the PR lists its files (${rows.length})`);
+      if (!rows.length) return;
+
+      const letters = rows
+        .map((r) => (r.className.match(/status-([A-Z])/) || [])[1])
+        .filter(Boolean);
+      c.ok(letters.includes("D"), `a removed file is D (saw ${letters.join("")})`);
+      c.ok(letters.includes("R"), "a renamed file is R");
+      c.ok(letters.includes("A"), "an added file is A");
+      // The count in the tab must match what is listed — three files behind a
+      // tab reading "Files (9)" is the app contradicting itself.
+      const tab = [...$$(".gh-subtab")].find((b) => /^Files/.test((b.textContent || "").trim()));
+      if (tab) {
+        const claimed = Number((tab.textContent || "").replace(/\D+/g, ""));
+        c.eq(rows.length, claimed, `the tab says ${claimed} files and the list shows ${rows.length}`);
+      }
+    },
+
+    /**
      * The commit page answers the question the graph could not: what changed.
      *
      * "it teleports u to the commit graph which tells u nothing about the

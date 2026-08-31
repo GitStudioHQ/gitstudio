@@ -97,11 +97,21 @@
       { kind: "comment", author: me, createdAt: ISO(1.2), body: "PRs view converts next on this pattern, then Actions." },
     ],
   };
+  // NINE files, because the PR says "Files (9)" — three made the count a lie and
+  // hid every capped-list notice. Across three directories, and covering every
+  // status GitHub sends: with all three "modified", the bug where "removed" and
+  // "renamed" both rendered as an amber R was not expressible at all.
   const prFiles = {
     106: [
       { filename: "apps/desktop/src/renderer/views/issues.ts", status: "modified", additions: 402, deletions: 260 },
       { filename: "apps/desktop/src/renderer/views/common.ts", status: "modified", additions: 118, deletions: 30 },
+      { filename: "apps/desktop/src/renderer/views/issueDetail.ts", status: "renamed", additions: 12, deletions: 4, previous_filename: "apps/desktop/src/renderer/issueDetail.ts" },
+      { filename: "apps/desktop/src/renderer/legacySplit.ts", status: "removed", additions: 0, deletions: 231 },
+      { filename: "apps/desktop/src/renderer/detailShell.ts", status: "added", additions: 188, deletions: 0 },
       { filename: "apps/desktop/src/renderer/styles/app.css", status: "modified", additions: 92, deletions: 58 },
+      { filename: "apps/desktop/harness/checks.js", status: "modified", additions: 41, deletions: 0 },
+      { filename: "packages/webview-ui/src/detail.css", status: "copied", additions: 22, deletions: 0 },
+      { filename: "apps/desktop/assets/issue-empty.png", status: "added", additions: 0, deletions: 0 },
     ],
   };
   // `detailsUrl` on at least one row is load-bearing for the harness, not

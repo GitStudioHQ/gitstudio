@@ -74,6 +74,9 @@ export class GitHubBridge {
       // password prompt again, and declining it made sign-in look broken.
       // That migration is gone: any leftover blob is deleted unread, and the
       // user signs in once more through the (now prompt-free) device flow.
+      // read-failure-reviewed: deleting a legacy token file that may not exist.
+      // Nothing is READ here and nothing downstream renders the result — a
+      // failure to remove it is not news.
       await unlink(this.legacyTokenPath()).catch(() => {});
     }
   }
@@ -167,6 +170,9 @@ export class GitHubBridge {
       await this.secrets().set(TOKEN_SECRET, token);
       // A freshly entered token supersedes any pre-1.4 blob; drop it so
       // `hasStoredToken` can't be satisfied by a file we will never read again.
+      // read-failure-reviewed: deleting a legacy token file that may not exist.
+      // Nothing is READ here and nothing downstream renders the result — a
+      // failure to remove it is not news.
       await unlink(this.legacyTokenPath()).catch(() => {});
     } catch {
       // best-effort persistence; the in-memory token still works this session
@@ -302,8 +308,11 @@ export class GitHubBridge {
     }
     try {
       const pr = await this.client.getPull(r.owner, r.repo, n);
+      // The FILES are the point of this response — losing them silently turns
+      // "Files (9)" into an empty tab. The combined status is genuinely
+      // optional decoration, so that one still degrades to blank.
       const [files, status] = await Promise.all([
-        this.client.getPullFiles(r.owner, r.repo, n).catch(() => []),
+        this.client.getPullFiles(r.owner, r.repo, n),
         this.client.getCombinedStatus(r.owner, r.repo, pr.head.sha).catch(() => ({ state: "", totalCount: 0 })),
       ]);
       return { pr, files, checks: status.state };
@@ -324,6 +333,11 @@ export class GitHubBridge {
     if (!this.token) return undefined;
     const { owner, repo, number, kind } = req;
     try {
+      // read-failure-reviewed: this is the AI assistant's summary of an item it
+      // was handed, and the title/body/state below carry the answer. A dropped
+      // comment list makes the summary thinner, not wrong — and the whole call
+      // is already inside a try that returns undefined, so letting this reject
+      // would throw the item away over its least important part.
       const comments = (await this.client.listConversation(owner, repo, number).catch(() => []))
         .filter((c) => c.kind === "comment")
         .map((c) => ({ author: c.author || null, body: c.body, createdAt: c.createdAt }));
@@ -379,15 +393,23 @@ export class GitHubBridge {
     }
   }
 
+  // A FAILED read is not an empty result, and the difference is the whole
+  // message. Swallowed, a rate limit or a dropped connection rendered "This PR
+  // has no commits yet." beside a rail reading 14 — the app stating something
+  // false with total confidence, and offering no way to retry. The renderer's
+  // errorState-with-Retry branches were already written and could never run.
+  //
+  // "Not signed in" and "no repository" ARE empty, and stay empty: nothing went
+  // wrong, there is simply nothing to fetch.
   async prCommits(n: number): Promise<PrCommitInfo[]> {
     const r = await this.resolveOwnerRepo();
     if (!r || !this.token) return [];
-    return this.client.listPrCommits(r.owner, r.repo, n).catch(() => []);
+    return this.client.listPrCommits(r.owner, r.repo, n);
   }
   async prConversation(n: number): Promise<PrComment[]> {
     const r = await this.resolveOwnerRepo();
     if (!r || !this.token) return [];
-    return this.client.listConversation(r.owner, r.repo, n).catch(() => []);
+    return this.client.listConversation(r.owner, r.repo, n);
   }
   async prChecks(n: number): Promise<CheckRun[]> {
     const r = await this.resolveOwnerRepo();

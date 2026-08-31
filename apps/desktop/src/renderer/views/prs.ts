@@ -964,10 +964,14 @@ async function renderSubTab(
   content.replaceChildren(loadingState());
   if (id === "conversation") {
     let conv: PrComment[] = [];
+    let convFailed: unknown;
     try {
       conv = await gget("pr:conversation", full.number, 30_000);
-    } catch {
-      /* the description still renders; the timeline simply stays empty */
+    } catch (e) {
+      // The description still renders, so this is not fatal — but a timeline
+      // that silently stays empty is the app claiming the discussion is empty.
+      // Said, not swallowed.
+      convFailed = e;
     }
     if (activeSubTab !== id) return; // a newer tab was selected mid-fetch
     content.replaceChildren();
@@ -980,6 +984,18 @@ async function renderSubTab(
           reactions: full.reactions,
           createdAt: full.createdAt,
         }),
+      );
+    }
+    if (convFailed) {
+      // Between the description and the composer, where the discussion would
+      // have been — so it reads as "this part is missing", not as "there is
+      // nothing here".
+      timeline.appendChild(
+        errorState(
+          "Couldn't load the discussion",
+          cleanErr(convFailed) || "GitHub request failed.",
+          reload,
+        ),
       );
     }
     for (const c of conv) {
@@ -1028,7 +1044,11 @@ async function renderSubTab(
       commits = await host.invoke("pr:commits", full.number);
     } catch (e) {
       if (activeSubTab !== id) return;
-      content.replaceChildren(errorState("Couldn't load commits", cleanErr(e) || "GitHub request failed."));
+      // `reload` is in scope and was simply never passed, so a failed read had
+      // no way back short of leaving the pull request and returning.
+      content.replaceChildren(
+        errorState("Couldn't load commits", cleanErr(e) || "GitHub request failed.", reload),
+      );
       return;
     }
     if (activeSubTab !== id) return;
@@ -1066,7 +1086,9 @@ async function renderSubTab(
       checks = await host.invoke("pr:checks", full.number);
     } catch (e) {
       if (activeSubTab !== id) return;
-      content.replaceChildren(errorState("Couldn't load checks", cleanErr(e) || "GitHub request failed."));
+      content.replaceChildren(
+        errorState("Couldn't load checks", cleanErr(e) || "GitHub request failed.", reload),
+      );
       return;
     }
     if (activeSubTab !== id) return;
@@ -1147,8 +1169,22 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
     void showFileDiff(detail, full, f, loadThreads);
   };
 
+  // GitHub sends WORDS; the CSS and the reader both want git's letters. Taking
+  // the first character collapses "removed" and "renamed" onto the same "R" —
+  // so a deleted file and a moved one rendered identically, in the same amber,
+  // on the one screen where telling them apart is the point. "changed" and
+  // "copied" land on C and are equally wrong.
+  const STATUS_LETTER: Record<string, string> = {
+    added: "A",
+    removed: "D",
+    modified: "M",
+    renamed: "R",
+    copied: "C",
+    changed: "M",
+    unchanged: "M",
+  };
   for (const f of files) {
-    const letter = f.status.charAt(0).toUpperCase();
+    const letter = STATUS_LETTER[f.status.toLowerCase()] ?? f.status.charAt(0).toUpperCase();
     const row = el("button", `file-row status-${letter}`);
     (row as HTMLButtonElement).type = "button";
     const st = el("span", "file-status");

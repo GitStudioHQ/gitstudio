@@ -127,3 +127,53 @@ test("the brace guard catches an unclosed rule", () => {
   assert.equal(offenders(".a {\n  color: red;\n}\n").depth, 0);
   assert.equal(offenders(".a {\n.b { color: red; }\n").depth, 1, "should report one unclosed block");
 });
+
+/**
+ * A comment must never sit BETWEEN a selector and its block, or between two
+ * selectors in a list.
+ *
+ * CSS ignores comments, so this:
+ *
+ *     .cmp-seg-btn.active /* why the badge is accented *\/
+ *     .cmp-seg-count { background: accent; }
+ *
+ * does not mean "here is why .cmp-seg-btn.active .cmp-seg-count is accented".
+ * It parses as ONE descendant selector, `.cmp-seg-btn.active .cmp-seg-count`,
+ * and whatever the author meant the qualifier to do is silently gone. Measured
+ * on the shipping build: every Compare badge took the accent, so the active
+ * segment was indistinguishable from the inactive one.
+ *
+ * This is the FOURTH time a comment beside a selector has eaten a declaration
+ * in this file, each time presenting as "looks broken, source looks fine". The
+ * fix for a defect that recurs is to make its shape impossible.
+ *
+ * The rule: a comment ends a line, or it starts one. It never sits in the
+ * middle of a selector.
+ */
+test("no comment splits a selector from its block", () => {
+  const lines = CSS.split("\n");
+  const bad: string[] = [];
+  lines.forEach((line, i) => {
+    const start = line.indexOf("/*");
+    if (start < 0) return;
+    const before = line.slice(0, start).trim();
+    // Nothing before the comment: it is a leading comment, which is fine.
+    if (!before) return;
+    // A complete declaration or a closed block before it is fine too —
+    // `color: red; /* why */` and `}  /* end of section */`.
+    if (/[;{}]$/.test(before)) return;
+    // What is left is a SELECTOR fragment with a comment after it. Legal only
+    // when the comment closes and the block opens on this same line.
+    const after = line.slice(start);
+    if (/\*\/\s*\{/.test(after)) return;
+    bad.push(`app.css:${i + 1}  ${line.trim().slice(0, 96)}`);
+  });
+  assert.deepEqual(
+    bad,
+    [],
+    "a comment between a selector and its block is invisible to CSS — the selector joins the " +
+      "next one as a DESCENDANT and the qualifier is silently lost. Put the comment on its own " +
+      "line above the rule:\n" +
+      bad.join("\n"),
+  );
+});
