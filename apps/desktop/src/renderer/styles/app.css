@@ -9415,3 +9415,29 @@ body.vscode-light .log-pane {
   color: var(--app-muted);
   margin-bottom: var(--sp-2);
 }
+
+/* The org repo row's overflow.
+   Replaces a pair of hover-revealed text buttons that were 129px wide over a
+   441px card, overlaying 128px of the description — and revealed by the same
+   gesture that makes you look at the card, so the text vanished exactly when
+   you went to read it. This reserves its width permanently instead: the row
+   never reflows, and the actions are discoverable without hovering to find out
+   they exist. */
+.gh-org-grid .row-more {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+.gh-org-grid .row-more:hover { background: var(--app-hover); color: var(--app-text); }
+.gh-org-grid .row-more:focus-visible {
+  outline: 2px solid var(--gs-focus-ring, var(--gs-accent));
+  outline-offset: -2px;
+}

@@ -585,7 +585,11 @@
     // said. Worst on the destructive ones, where the next Enter acts.
     "row-actions-name-their-object": (f) => {
       const c = check(f);
-      const btns = $$(".row-actions .row-btn").filter((b) => b.offsetParent !== null);
+      // `.row-more` too: a row whose actions live behind ONE overflow still has
+      // to name its object — "More actions for gitstudio", not "More actions"
+      // repeated down the page. The rule is about what a screen reader hears,
+      // not about which element the actions happen to sit in.
+      const btns = $$(".row-actions .row-btn, .row-more").filter((b) => b.offsetParent !== null);
       c.ok(btns.length >= 2, `the view has row actions (${btns.length})`);
       if (btns.length < 2) return;
       const names = btns.map(
@@ -2853,11 +2857,22 @@
         `the row says it browses (${row.getAttribute("aria-label")})`,
       );
       // Adopting the repo is still available — as something you choose by name.
-      const actions = $$(".row-btn", row).map((b) => text(b));
-      // The wording is free to change — "Open in GitStudio" was shortened to
-      // "Open" because the longer label grew the hover cluster to 53% of the
-      // card. What must hold is that adopting the repo is something you CHOOSE
-      // by name, and that the row's own click does not do it.
+      //
+      // WHERE it lives is free to change and has: the pair of hover-revealed
+      // buttons became one overflow, because the pair was 129px wide covering
+      // 128px of the description on a 441px card. What must hold is that
+      // adopting the repo is something you CHOOSE by name and that the row's
+      // own click does not do it — so look in both places.
+      let actions = $$(".row-btn", row).map((b) => text(b));
+      const more = row.querySelector(".row-more");
+      if (more) {
+        more.click();
+        await settle(220);
+        actions = actions.concat($$(".dropdown [role='menuitem'], .dropdown button").map((b) => text(b)));
+        // Leave the page as it was found; an open menu breaks the click below.
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await settle(160);
+      }
       c.ok(
         actions.some((a) => /^open\b/i.test(a.trim())),
         `cloning is a named action, not the default (${actions.join(", ")})`,
@@ -3596,6 +3611,52 @@
         !!dest.target && typeof dest.target.sha === "string" && dest.target.sha.length >= 7,
         "and it carries the sha of the commit that was clicked",
       );
+    },
+
+    /**
+     * Pointing at a row must not hide what the row says.
+     *
+     * "org repos view is trash and still has old buttons showing on hover."
+     * Measured on the shipping build: a pair of hover-revealed text buttons
+     * 129px wide, overlaying 128px of the description on a 441px card — about a
+     * third of the content — and revealed by the SAME gesture that makes you
+     * look at the card. So the description vanished exactly when you went to
+     * read it. A fade had been added to soften that; the buttons still won.
+     *
+     * Asserted as geometry, not as "the buttons are gone": any future control
+     * that overlays the content fails this the same way.
+     */
+    "hovering-a-repo-row-does-not-cover-its-description": async (f) => {
+      const c = check(f);
+      const rows = $$(".gh-org-grid .list-row");
+      c.ok(rows.length > 0, "the org lists repositories");
+      if (!rows.length) return;
+
+      for (const row of rows.slice(0, 3)) {
+        const name = text(row.querySelector("[class*=title]")) || "(row)";
+        row.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+        row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+        await settle(120);
+
+        const desc = row.querySelector("[class*=desc], .row-meta-sub");
+        if (!desc) continue;
+        const d = desc.getBoundingClientRect();
+
+        // Anything positioned over the row's own text, whenever it appears.
+        const covering = [...row.querySelectorAll("button, .row-actions")].filter((b) => {
+          const r = b.getBoundingClientRect();
+          if (r.width === 0) return false;
+          const overlap = Math.min(d.right, r.right) - Math.max(d.left, r.left);
+          const vertical = Math.min(d.bottom, r.bottom) - Math.max(d.top, r.top);
+          return overlap > 4 && vertical > 4;
+        });
+        c.eq(
+          covering.length,
+          0,
+          `${name}: ${covering.length} control(s) sit on top of the description — ` +
+            `it must reserve its width, not take it on hover`,
+        );
+      }
     },
 
     /**

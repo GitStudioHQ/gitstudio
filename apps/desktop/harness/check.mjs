@@ -229,6 +229,7 @@ const CASES = [
   ["leaving-a-pr-for-its-pipeline-comes-back-to-the-pr", "prs~open106~text:Checks"],
   ["a-detail-page-back-pops-the-history", "issues~open31"],
   ["a-deleted-file-does-not-look-like-a-renamed-one", "prs~open106~text:Files"],
+  ["hovering-a-repo-row-does-not-cover-its-description", "orgs"],
   ["the-log-is-navigable-without-a-trackpad", "actions~open9100~click:.gh-job-log"],
   ["the-log-can-jump-between-failures", "actions~open9097"],
   ["a-failed-read-says-so-instead-of-showing-nothing", "prs~open106~text:Commits", { extra: "fail=pr:commits" }],

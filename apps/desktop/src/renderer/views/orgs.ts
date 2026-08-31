@@ -463,20 +463,40 @@ function renderRepoRow(content: HTMLElement, r: OrgRepo): void {
       browse();
     }
   });
-  const actions = el("div", "row-actions");
-  actions.append(
-    textBtn("Details", `About ${r.name} — stars, license, activity`, () => openRepoPeek(r), false, r.name),
-    // Browsing is now what the ROW does, so the action that earns a place here
-    // is the one the row no longer performs: adopting the repository.
-    textBtn(
-      "Open",
-      `Clone ${r.name} if needed and open it in GitStudio`,
-      () => openGhRepoInApp(r.fullName),
-      false,
-      r.name,
-    ),
-  );
-  row.appendChild(actions);
+  // ONE always-visible control, not two buttons revealed on hover.
+  //
+  // Measured on the shipping build: the hover pair was 129px wide overlaying
+  // 128px of a 441px card — roughly a third of the content — and it appeared on
+  // the same gesture that makes you look at the card, so the description
+  // vanished exactly when you went to read it. A fade was added to soften that
+  // and the buttons still won.
+  //
+  // An overflow reserves ~26px permanently instead of taking 129px on hover:
+  // the row never reflows, nothing is hidden by pointing at it, and the actions
+  // are discoverable without hovering to find out they exist.
+  const more = el("button", "row-more") as HTMLButtonElement;
+  more.append(glyph("kebab-vertical"));
+  more.title = `More actions for ${r.name}`;
+  more.setAttribute("aria-label", more.title);
+  more.addEventListener("click", (e) => {
+    // The row itself browses; the overflow must not also trigger that.
+    e.stopPropagation();
+    openMenu(more, [
+      {
+        label: "Details",
+        sub: "Stars, licence, activity",
+        icon: "info",
+        onClick: () => openRepoPeek(r),
+      },
+      {
+        label: "Open in GitStudio",
+        sub: "Clone it if needed",
+        icon: "repo-clone",
+        onClick: () => openGhRepoInApp(r.fullName),
+      },
+    ]);
+  });
+  row.appendChild(more);
   content.appendChild(row);
 }
 
