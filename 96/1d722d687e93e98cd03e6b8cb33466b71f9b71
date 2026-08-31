@@ -1,0 +1,30 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_b7609a581ec541 3601-3631,3637,3639-3667,3677-3701
+  s_26f5e669d3043c::t_a6cdaf84f1dea5 3668-3676
+  s_26f5e669d3043c::t_6bc77e1ffdfdb6 3632-3636,3638
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_a6cdaf84f1dea5 233
+  s_26f5e669d3043c::t_b7609a581ec541 232
+apps/desktop/src/renderer/logView.ts
+  s_26f5e669d3043c::t_c79b30e4da0c2f 160-167,313-363
+  s_26f5e669d3043c::t_4260a786864fa2 269-271,286-289
+  s_26f5e669d3043c::t_d22be410ea7e57 438
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_7ac9be7dfb2a89 8821-8825,8883-8900
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "961d722d687e93e98cd03e6b8cb33466b71f9b71",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
