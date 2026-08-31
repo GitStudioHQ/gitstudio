@@ -31,7 +31,7 @@ import {
   statBit,
   statePill,
   stateLead,
-} from "../ui";
+ commonDir,} from "../ui";
 import { toast, confirmDialog, promptInline, editForm, openModal, formWithRetry } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { openAssistantTab, aiEnabled } from "../aiAssist";
@@ -1183,6 +1183,22 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
     changed: "M",
     unchanged: "M",
   };
+  // The directory every changed file shares, shown ONCE above the list.
+  //
+  // The row already leads with the filename and trails the directory, but the
+  // directory is left-truncated by CSS — so nine files under one folder gave
+  // three different elisions of the same prefix ("…src/renderer/views",
+  // "…rc/renderer/views", "…top/src/renderer") and no way to tell whether two
+  // rows were even in the same place. Folding the shared part leaves the
+  // distinguishing part short enough to show whole.
+  const shared = commonDir(files.map((f) => f.filename));
+  if (shared) {
+    const head = el("div", "pr-files-prefix");
+    head.append(glyph("folder"), span(shared));
+    head.title = `Every file in this pull request is under ${shared}`;
+    list.appendChild(head);
+  }
+
   for (const f of files) {
     const letter = STATUS_LETTER[f.status.toLowerCase()] ?? f.status.charAt(0).toUpperCase();
     const row = el("button", `file-row status-${letter}`);
@@ -1193,11 +1209,16 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
     // Compare already do. This list showed one raw rtl-truncated path per row,
     // so in a 268px column every row read "…/components/" and the name you were
     // actually looking for was the part that got cut.
-    const cut = f.filename.lastIndexOf("/");
+    const rest = f.filename.slice(shared.length);
+    const cut = rest.lastIndexOf("/");
     const meta = el("span", "dc-file-meta");
-    meta.appendChild(span(cut < 0 ? f.filename : f.filename.slice(cut + 1), "dc-file-name"));
-    if (cut > 0) meta.appendChild(span(f.filename.slice(0, cut), "dc-file-dir"));
-    meta.title = f.filename;
+    meta.appendChild(span(cut < 0 ? rest : rest.slice(cut + 1), "dc-file-name"));
+    if (cut > 0) meta.appendChild(span(rest.slice(0, cut), "dc-file-dir"));
+    // The FULL path in the tooltip, including the folded prefix — the header
+    // says where you are, but a row still has to be able to answer on its own.
+    meta.title = f.previousFilename
+      ? `${f.previousFilename} → ${f.filename}`
+      : f.filename;
     const adds = el("span", "gh-adds");
     adds.textContent = `+${f.additions} −${f.deletions}`;
     row.append(st, meta, adds);

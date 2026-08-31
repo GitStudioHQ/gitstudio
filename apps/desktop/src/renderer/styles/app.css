@@ -9537,3 +9537,16 @@ body.vscode-light .log-pane {
   font-variant-numeric: tabular-nums;
 }
 .cmt-filter-count.is-empty { color: var(--status-del); }
+
+/* The directory every file in this pull request shares, shown once — the rows
+   left-truncate their directory, so nine files under one folder produced three
+   different elisions of the same prefix. */
+.pr-files-prefix {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}

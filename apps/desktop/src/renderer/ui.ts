@@ -1137,3 +1137,29 @@ export function markSegment(seg: HTMLElement, ariaLabel: string | HTMLElement, b
   sync();
   seg.addEventListener("click", () => queueMicrotask(sync));
 }
+
+/**
+ * The longest directory prefix every path shares.
+ *
+ * A commit or a pull request usually touches one area, so without this every
+ * row reads `apps/desktop/src/renderer/views/…` and the only distinguishing
+ * part — the filename — is what gets truncated away. Worse, a list that
+ * truncates from the LEFT produces three different elisions of the same prefix
+ * ("…src/renderer/views", "…rc/renderer/views", "…top/src/renderer") and the
+ * reader cannot tell whether two rows are in the same folder.
+ *
+ * Shown once above the list instead, which is better than GitHub, where every
+ * row carries the full path.
+ *
+ * DIRECTORY boundaries only: `logView.ts` and `logModel.ts` share the
+ * characters "log" and share no directory, and folding on characters would
+ * leave rows reading "View.ts" and "Model.ts".
+ */
+export function commonDir(paths: string[]): string {
+  if (paths.length < 2) return "";
+  const split = paths.map((p) => p.split("/"));
+  const first = split[0];
+  let n = 0;
+  while (n < first.length - 1 && split.every((x) => x.length > n + 1 && x[n] === first[n])) n++;
+  return n ? `${first.slice(0, n).join("/")}/` : "";
+}

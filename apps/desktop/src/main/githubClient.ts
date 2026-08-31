@@ -282,6 +282,9 @@ export class GitHubClient {
       status: f.status,
       additions: f.additions,
       deletions: f.deletions,
+      // In the response already — dropping it left every rename unable to say
+      // what it was renamed from.
+      ...(f.previous_filename ? { previousFilename: f.previous_filename } : {}),
     }));
   }
   async mergePull(owner: string, repo: string, n: number, method: "merge" | "squash" | "rebase"): Promise<void> {
@@ -401,6 +404,8 @@ interface RawFile {
   status: string;
   additions: number;
   deletions: number;
+  /** GitHub's own field name, present on renames and copies. */
+  previous_filename?: string;
 }
 interface RawPrCommit {
   sha: string;

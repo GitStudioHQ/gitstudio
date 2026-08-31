@@ -370,6 +370,14 @@ export interface PrFile {
   status: string;
   additions: number;
   deletions: number;
+  /**
+   * Where a renamed or copied file came FROM.
+   *
+   * GitHub sends it and the mapper dropped it, so an `R` row could say a file
+   * was renamed and never say from what — which is the only fact that makes a
+   * rename readable. Costs nothing: it is in the response already.
+   */
+  previousFilename?: string;
 }
 /** A PR detail bundle for the PR detail panel. */
 export interface PrDetail {

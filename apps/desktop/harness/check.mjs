@@ -229,6 +229,7 @@ const CASES = [
   ["leaving-a-pr-for-its-pipeline-comes-back-to-the-pr", "prs~open106~text:Checks"],
   ["a-detail-page-back-pops-the-history", "issues~open31"],
   ["a-deleted-file-does-not-look-like-a-renamed-one", "prs~open106~text:Files"],
+  ["a-truncated-path-is-still-recoverable", "prs~open106~text:Files"],
   ["a-large-commit-can-be-navigated", "prs~open106~text:Commits"],
   ["creating-a-release-names-what-the-button-will-do", "releases"],
   ["a-composer-does-not-lose-what-you-typed", "issues", { arg: "new issue" }],

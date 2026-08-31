@@ -3618,6 +3618,44 @@
     },
 
     /**
+     * A truncated path must always be recoverable, and a rename must say what
+     * it was renamed FROM.
+     *
+     * The file column is 268px, so the directory is elided — deliberately from
+     * the left, because the tail distinguishes. That is only safe if the full
+     * path survives somewhere, and `previousFilename` was being DROPPED at the
+     * mapper, so an `R` row could say a file was renamed and never say from
+     * what — the one fact that makes a rename readable. GitHub sends it in the
+     * response already.
+     */
+    "a-truncated-path-is-still-recoverable": async (f) => {
+      const c = check(f);
+      const rows = $$(".file-row");
+      c.ok(rows.length >= 5, `the PR lists its files (${rows.length})`);
+      if (!rows.length) return;
+
+      for (const row of rows) {
+        const meta = row.querySelector(".dc-file-meta");
+        const name = text(row.querySelector(".dc-file-name"));
+        c.ok(!!meta?.title, `${name}: carries its full path`);
+        if (!meta?.title) continue;
+        // The title must be the WHOLE path, not the same elision the row shows.
+        c.ok(
+          !meta.title.startsWith("…") && meta.title.includes(name),
+          `${name}: the tooltip is the full path, not the truncation again (${meta.title})`,
+        );
+      }
+
+      // A rename names both sides.
+      const renamed = rows.find((r) => /status-R/.test(r.className));
+      c.ok(!!renamed, "the PR contains a rename");
+      if (renamed) {
+        const t = renamed.querySelector(".dc-file-meta")?.title || "";
+        c.match(t, /→/, `a rename says what it came from (${t})`);
+      }
+    },
+
+    /**
      * The commit page has to work at a real size.
      *
      * It shipped verified against a SEVEN-file fixture, which says nothing. A

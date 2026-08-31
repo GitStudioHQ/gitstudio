@@ -105,7 +105,7 @@
     106: [
       { filename: "apps/desktop/src/renderer/views/issues.ts", status: "modified", additions: 402, deletions: 260 },
       { filename: "apps/desktop/src/renderer/views/common.ts", status: "modified", additions: 118, deletions: 30 },
-      { filename: "apps/desktop/src/renderer/views/issueDetail.ts", status: "renamed", additions: 12, deletions: 4, previous_filename: "apps/desktop/src/renderer/issueDetail.ts" },
+      { filename: "apps/desktop/src/renderer/views/issueDetail.ts", status: "renamed", additions: 12, deletions: 4, previousFilename: "apps/desktop/src/renderer/issueDetail.ts" },
       { filename: "apps/desktop/src/renderer/legacySplit.ts", status: "removed", additions: 0, deletions: 231 },
       { filename: "apps/desktop/src/renderer/detailShell.ts", status: "added", additions: 188, deletions: 0 },
       { filename: "apps/desktop/src/renderer/styles/app.css", status: "modified", additions: 92, deletions: 58 },

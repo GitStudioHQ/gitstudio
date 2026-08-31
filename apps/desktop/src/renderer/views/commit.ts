@@ -29,6 +29,7 @@ import {
   skeletonList,
   relTime,
   absTime,
+  commonDir,
 } from "../ui";
 import { detailPage, propSection, type SectionTarget } from "./common";
 import { renderMarkdown } from "../markdown";
@@ -46,27 +47,6 @@ const STATUS: Record<string, { word: string; cls: string }> = {
   C: { word: "copied", cls: "is-ren" },
   T: { word: "type changed", cls: "is-mod" },
 };
-
-/**
- * The longest directory prefix every path shares.
- *
- * A commit usually touches one area, so without this every row reads
- * `apps/desktop/src/renderer/views/…` and the only distinguishing part — the
- * filename — is the part that gets truncated away. Shown ONCE above the list
- * instead, which is better than GitHub, where every row carries the full path.
- *
- * Directory boundaries only: two files named `logView.ts` and `logModel.ts`
- * share the characters "log" and share no directory, and folding on characters
- * would leave rows reading "View.ts" and "Model.ts".
- */
-function commonDir(paths: string[]): string {
-  if (paths.length < 2) return "";
-  const split = paths.map((p) => p.split("/"));
-  const first = split[0];
-  let n = 0;
-  while (n < first.length - 1 && split.every((s) => s.length > n + 1 && s[n] === first[n])) n++;
-  return n ? `${first.slice(0, n).join("/")}/` : "";
-}
 
 function diffstat(files: CommitFileChange[]): { adds: number; dels: number; binary: number } {
   let adds = 0;
