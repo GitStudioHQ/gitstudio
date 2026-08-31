@@ -13,6 +13,7 @@
 import "@gitstudio/webview-ui/styles/diff.css";
 import { clickIntent, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
+import { renderCommit } from "./views/commit";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
@@ -1148,7 +1149,13 @@ class App {
       this.viewHost.replaceChildren(cached);
       return;
     }
-    if (id === "code") {
+    if (id === "commit") {
+      // A commit is a PLACE, not a row to reveal in the graph. Everything that
+      // referenced one used to route to "graph" and call reveal(sha), which
+      // shows no files, returns silently when the sha is off the loaded page,
+      // and abandons wherever you were.
+      void renderCommit(this.viewHost, (v, t) => this.routeView(v, false, t), target);
+    } else if (id === "code") {
       // A path target deep-links a folder — that's how the Code browser's own
       // folder hops travel, so ⌘[/⌘] walk the folder trail like a browser.
       if (target?.path !== undefined) this.codePath = target.path;
@@ -2251,7 +2258,10 @@ class App {
       meta.textContent = `${c.author} · ${c.shortSha} · ${relTime(c.date)}`;
       if (c.date) meta.title = absTime(c.date);
       row.append(subj, meta);
-      row.addEventListener("click", () => this.revealInGraph(c.sha));
+      // Compare's commit rows open THE COMMIT. "it teleports u to the commit
+      // graph instead of having similar UX UI to github" — and the graph shows
+      // a row, never the files the commit changed.
+      row.addEventListener("click", () => this.routeView("commit", false, { sha: c.sha }));
       list.appendChild(row);
     }
     body.appendChild(list);

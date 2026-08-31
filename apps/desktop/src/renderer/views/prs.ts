@@ -1051,9 +1051,13 @@ async function renderSubTab(
       m.textContent = `${c.author} · ${c.shortSha}${when ? ` · ${when}` : ""}`;
       if (c.date) m.title = absTimeISO(c.date);
       row.append(subj, m);
-      row.title = `Show ${c.shortSha} in Commits`;
+      row.title = `Open commit ${c.shortSha}`;
       row.setAttribute("aria-label", `${c.message} — ${c.author}, ${c.shortSha}`);
-      row.addEventListener("click", () => nav("graph", { sha: c.sha }));
+      // The COMMIT, not the graph. This used to eject you out of the pull
+      // request into a graph row that shows no files at all — and `reveal()`
+      // returns silently when the sha is outside the loaded page, so on a
+      // long-lived PR the click did nothing whatsoever.
+      row.addEventListener("click", () => nav("commit", { sha: c.sha }));
       content.appendChild(row);
     }
   } else if (id === "checks") {

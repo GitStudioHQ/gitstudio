@@ -296,10 +296,10 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
       {
         label: "View in Commits",
         icon: "git-commit",
-        title: "Reveal this tag's commit in the Commits view",
+        title: "Open this tag's commit",
         onClick: (ctx) => {
           ctx.close();
-          nav("graph", { sha: t.sha });
+          nav("commit", { sha: t.sha });
         },
       },
       {

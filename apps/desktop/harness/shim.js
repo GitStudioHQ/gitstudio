@@ -260,14 +260,6 @@
     // exercised — and the state it fell into was a positive claim ("identical
     // content") the app had no basis for. A fixture the harness cannot express
     // is a defect the harness cannot catch.
-    "compare:fileDiff": {
-      path: "packages/engine/src/hunks.ts",
-      leftLabel: "main (merge-base) packages/engine/src/hunks.ts",
-      rightLabel: "redesign/issues-detail packages/engine/src/hunks.ts",
-      leftText: "export function computeHunks(a: string, b: string): Hunk[] {\n  return diff(a, b);\n}\n",
-      rightText: "export function computeHunks(a: string, b: string): Hunk[] {\n  // split on a selection boundary (issue #20)\n  return diff(a, b).flatMap(splitOnSelection);\n}\n",
-      conflicted: false,
-    },
     "compare:refs": {
       ahead: 5,
       behind: 2,
@@ -822,6 +814,94 @@
   dynamic["repo:file"] = (req) => {
     const path = (req && req.path) || "";
     return path in FILES ? { path, text: FILES[path] } : undefined;
+  };
+
+  // ── commit:details — so the commit PAGE is reachable at all ──────────────
+  //
+  // Three shapes, because the page branches on all three: an ordinary commit
+  // whose committer differs from its author (a cherry-pick — the case a single
+  // "author" line hides), a MERGE with two parents, and a sha the repository
+  // does not have, which is the honest dead-end for a fork's commit.
+  const commitFiles = (spec) =>
+    spec.map(([status, path, additions, deletions, oldPath]) => ({
+      path,
+      status,
+      additions,
+      deletions,
+      ...(oldPath ? { oldPath } : {}),
+    }));
+  const commits = {
+    a1b2c3d4: {
+      kind: "commit",
+      sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      shortSha: "a1b2c3d",
+      parents: ["b2c3d4e5f60718293a4b5c6d7e8f901234567890"],
+      author: me,
+      authorEmail: "anton@gitstudio.dev",
+      authorDate: Math.floor(Date.now() / 1000) - 3 * 3600,
+      // Committer differs: this was cherry-picked by someone else.
+      committer: "mira-holt",
+      committerEmail: "mira@gitstudio.dev",
+      committerDate: Math.floor(Date.now() / 1000) - 2 * 3600,
+      subject: "issues: full-page detail as a routed state",
+      body:
+        "The split view could not show a body, a timeline and a rail at once on\n" +
+        "a 13\" screen, so all three were cropped.\n\nCloses #31.",
+      refs: [{ name: "redesign/wave-2", kind: "currentHead" }],
+      files: commitFiles([
+        ["M", "apps/desktop/src/renderer/views/issues.ts", 402, 260],
+        ["A", "apps/desktop/src/renderer/views/common.ts", 188, 0],
+        ["R", "apps/desktop/src/renderer/views/issueDetail.ts", 12, 4, "apps/desktop/src/renderer/issueDetail.ts"],
+        ["D", "apps/desktop/src/renderer/legacySplit.ts", 0, 231],
+        ["M", "apps/desktop/src/renderer/styles/app.css", 96, 31],
+        ["M", "apps/desktop/harness/checks.js", 41, 0],
+        ["A", "apps/desktop/assets/issue-empty.png", -1, -1],
+      ]),
+      hasRemote: true,
+    },
+    b2c3d4e5: {
+      kind: "commit",
+      sha: "b2c3d4e5f60718293a4b5c6d7e8f901234567890",
+      shortSha: "b2c3d4e",
+      // A MERGE — two parents, so the page's parent chips have to handle plural.
+      parents: [
+        "c3d4e5f60718293a4b5c6d7e8f90123456789012",
+        "d4e5f60718293a4b5c6d7e8f9012345678901234",
+      ],
+      author: me,
+      authorEmail: "anton@gitstudio.dev",
+      authorDate: Math.floor(Date.now() / 1000) - 26 * 3600,
+      committer: me,
+      committerEmail: "anton@gitstudio.dev",
+      committerDate: Math.floor(Date.now() / 1000) - 26 * 3600,
+      subject: "Merge branch 'main' into redesign/wave-2",
+      body: "",
+      refs: [
+        { name: "main", kind: "head" },
+        { name: "origin/main", kind: "remoteHead" },
+        { name: "desktop-v1.6.0", kind: "tag" },
+      ],
+      files: commitFiles([["M", "apps/desktop/src/renderer/renderer.ts", 14, 2]]),
+      hasRemote: true,
+    },
+  };
+  dynamic["commit:details"] = (sha) => commits[String(sha).slice(0, 8)];
+
+  // The diff pane's header must name the file that was ASKED for. A fixed path
+  // here showed one file's name over another file's diff, which reads as a bug
+  // in the page rather than in the fixture — and it hid the fact that the
+  // commit page was requesting the right path all along.
+  dynamic["compare:fileDiff"] = (req) => {
+    const path = (req && req.path) || "packages/engine/src/hunks.ts";
+    const name = path.split("/").pop() || path;
+    return {
+      path,
+      leftLabel: `${(req && req.base) || "main"} ${path}`,
+      rightLabel: `${(req && req.head) || "HEAD"} ${path}`,
+      leftText: `// ${name}\nexport function computeHunks(a: string, b: string): Hunk[] {\n  return diff(a, b);\n}\n`,
+      rightText: `// ${name}\nexport function computeHunks(a: string, b: string): Hunk[] {\n  // split on a selection boundary (issue #20)\n  return diff(a, b).flatMap(splitOnSelection);\n}\n`,
+      conflicted: false,
+    };
   };
 
   // Auth is a state, not a constant. `github:disconnect` flips it, so a check

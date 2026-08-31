@@ -125,7 +125,7 @@ export function wireProseNav(
         return;
       }
       if (commit) {
-        if (nav && commit[1].toLowerCase() === open) nav("graph", { sha: commit[2] });
+        if (nav && commit[1].toLowerCase() === open) nav("commit", { sha: commit[2] });
         else window.open(href, "_blank");
         return;
       }

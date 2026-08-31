@@ -9213,3 +9213,182 @@ body.vscode-light .log-pane {
   color: var(--app-muted);
   border-top: 1px solid var(--app-border);
 }
+
+/* ── The commit page ────────────────────────────────────────────────────────
+   A commit is a PLACE. Everything that referenced one used to route to the
+   Commits graph and reveal a row, which shows no files at all.
+
+   The message wants a reading measure and the diff wants the window, so the
+   page lifts the detail column's cap and the header re-caps itself. */
+.cmt-view .det-main { max-width: none; }
+.cmt-head { max-width: var(--measure-read); }
+
+.cmt-subject {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.cmt-body { margin: 0 0 var(--sp-4); }
+
+.cmt-identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+}
+.cmt-who {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+  color: var(--gs-fg-muted);
+}
+.cmt-who-name { font-weight: 600; color: var(--gs-fg); }
+.cmt-who-verb { color: var(--gs-fg-muted); }
+.cmt-who-when { color: var(--gs-fg-muted); }
+
+.cmt-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+.cmt-ref {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--gs-border);
+  color: var(--gs-fg-muted);
+  background: var(--gs-bg-subtle);
+}
+.cmt-ref.is-currentHead {
+  border-color: var(--gs-accent);
+  color: var(--gs-accent);
+  font-weight: 600;
+}
+.cmt-ref.is-tag { border-style: dashed; }
+
+/* The diffstat bar, above the files it summarises. */
+.cmt-statbar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  margin-top: var(--sp-4);
+  border-top: 1px solid var(--gs-border);
+  font-size: var(--text-sm);
+}
+.cmt-stat-files { font-weight: 600; }
+.cmt-stat-add { color: var(--gs-success); font-variant-numeric: tabular-nums; }
+.cmt-stat-del { color: var(--gs-danger); font-variant-numeric: tabular-nums; }
+.cmt-stat-bin { color: var(--gs-fg-muted); }
+
+/* Files beside their diff. The list is the navigation; the pane is the answer. */
+.cmt-split {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-4);
+  min-height: 0;
+}
+.cmt-files {
+  flex: 0 0 300px;
+  min-width: 0;
+  max-height: min(62vh, 720px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--gs-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-1);
+  background: var(--gs-bg-subtle);
+}
+.cmt-diff {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: min(62vh, 720px);
+  border: 1px solid var(--gs-border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.cmt-file {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.cmt-file:hover { background: var(--gs-bg-hover); }
+.cmt-file.is-current { background: var(--gs-bg-selected); }
+.cmt-file-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-align: center;
+}
+.cmt-file-status.is-add { color: var(--gs-success); }
+.cmt-file-status.is-del { color: var(--gs-danger); }
+.cmt-file-status.is-mod { color: var(--gs-warning); }
+.cmt-file-status.is-ren { color: var(--gs-accent); }
+.cmt-file-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+}
+.cmt-file-counts {
+  display: flex;
+  gap: var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cmt-file-add { color: var(--gs-success); }
+.cmt-file-del { color: var(--gs-danger); }
+.cmt-file-bin { font-size: var(--text-xs); color: var(--gs-fg-muted); }
+
+/* Rail */
+.cmt-sha-row { display: flex; }
+.cmt-sha,
+.cmt-parent {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--gs-border);
+  background: var(--gs-bg-subtle);
+  color: var(--gs-fg);
+  cursor: pointer;
+}
+.cmt-sha:hover,
+.cmt-parent:hover { border-color: var(--gs-accent); color: var(--gs-accent); }
+.cmt-parents { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.cmt-verbs { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
+.cmt-verbs .mini-btn { justify-content: flex-start; }
+
+/* The directory every file in this commit shares, shown once so the rows can
+   spend their width on the filename instead of repeating the path. */
+.cmt-prefix {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--gs-fg-muted);
+  margin-bottom: var(--sp-2);
+}

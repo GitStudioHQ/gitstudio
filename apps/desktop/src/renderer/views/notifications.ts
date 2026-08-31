@@ -618,7 +618,7 @@ function notificationRow(
       // No `from` here on purpose: Commits is a SECTION, not a detail page, so
       // there is no back bar to retitle — going back is the nav history's job
       // (⌘[), exactly as it is for every other section-to-section move.
-      nav("graph", { sha: t.subjectSha });
+      nav("commit", { sha: t.subjectSha });
     } else if (item && sameRepo) {
       // Same as My Work: back and Escape belong to the Inbox, not to whichever
       // section happens to own the thread's subject.

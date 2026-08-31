@@ -3599,6 +3599,50 @@
     },
 
     /**
+     * The commit page answers the question the graph could not: what changed.
+     *
+     * "it teleports u to the commit graph which tells u nothing about the
+     * changed files". So the page has to actually list them, with their status
+     * and their counts, and selecting one has to show that file's diff.
+     */
+    "the-commit-page-shows-what-changed": async (f) => {
+      const c = check(f);
+      c.ok(!!$(".cmt-view"), "the commit page is showing");
+      const rows = $$(".cmt-file");
+      c.ok(rows.length >= 5, `it lists the changed files (${rows.length})`);
+      if (!rows.length) return;
+
+      const stat = text(".cmt-statbar");
+      c.match(stat, /\d+ files changed/, "with a diffstat");
+      c.match(stat, /\+[\d,]+/, "including lines added");
+
+      // Statuses are distinguishable — a deleted file and a renamed one must not
+      // read the same, which is a defect this app has had elsewhere.
+      const letters = new Set(rows.map((r) => text(r.querySelector(".cmt-file-status"))));
+      c.ok(letters.size >= 3, `with more than one kind of change (${[...letters].join(", ")})`);
+
+      // The shared directory is shown ONCE, not repeated down every row — the
+      // filename is the part worth the width.
+      const prefix = text(".cmt-prefix");
+      if (prefix) {
+        const repeated = rows.filter((r) => text(r.querySelector(".cmt-file-path")).startsWith(prefix));
+        c.eq(repeated.length, 0, `the shared prefix ${JSON.stringify(prefix)} is not repeated in the rows`);
+      }
+
+      // Selecting a file shows THAT file's diff.
+      const target = rows[2] || rows[0];
+      const want = text(target.querySelector(".cmt-file-path"));
+      target.click();
+      await settle(900);
+      c.ok(target.classList.contains("is-current"), "the selected row is marked");
+      const shown = text(".cmt-diff .diffmode-bar, .cmt-diff");
+      c.ok(
+        shown.includes(want.split("/").pop()),
+        `and the diff pane shows ${JSON.stringify(want)} (pane says ${JSON.stringify(shown.slice(0, 60))})`,
+      );
+    },
+
+    /**
      * A PAGE-level key handler sits underneath every floating layer, so any
      * open layer outranks it.
      *
