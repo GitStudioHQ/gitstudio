@@ -1,0 +1,43 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_acb8e07a779b0f 3631-3662
+  s_26f5e669d3043c::t_3df69bbb61f2c8 3601-3630
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_3df69bbb61f2c8 232
+  s_26f5e669d3043c::t_2be08682ca5434 233-234
+  s_26f5e669d3043c::t_acb8e07a779b0f 231
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_bde922d696b19b 2586-2591
+  s_26f5e669d3043c::t_222cf150c4814a 9248,9250-9252,9261,9265-9267,9283,9287-9289,9306,9309,9315,9336-9337,9339,9344-9346,9349,9359,9363-9365,9371,9375-9377,9392,9394
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_8f18fed7e1a796 100-103,108-110,112-114
+apps/desktop/src/main/githubBridge.ts
+  s_26f5e669d3043c::t_cb8dc91645db9b 311-313,315,396-403,407,412
+  s_26f5e669d3043c::t_1986b327dcfc28 77-79,173-175,336-340
+apps/desktop/test/readFailuresSurface.test.ts
+  s_26f5e669d3043c::t_247ad132205fb4 1-28,35-44,47-67
+  s_26f5e669d3043c::t_0a1305657bbe40 45-46
+  s_26f5e669d3043c::t_13b7233f400aad 29-34
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_b64175c4cc08fc 1172-1185,1187
+  s_26f5e669d3043c::t_85368aaef1d1f9 989-1000
+  s_26f5e669d3043c::t_5b4de561153c15 967,970-974,1047-1051,1089-1091
+apps/desktop/test/stylesheet.test.ts
+  s_26f5e669d3043c::t_dbe17cc5680d07 154
+  s_26f5e669d3043c::t_60d988093e94a7 130-153,155-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d0f483742044ed954a7ec9d78f899f1ad9e01e1b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
