@@ -3618,6 +3618,74 @@
     },
 
     /**
+     * Three defect classes, measured on every view rather than found one
+     * screenshot at a time.
+     *
+     * Each of these was a real bug on some surface this session, and each is
+     * the kind that spreads: a hover control painted over a row's own text
+     * (Organizations, 129px over 128px of description), a scrollable region
+     * that Tab cannot reach (the job log, no tabindex at all against a
+     * 16-line port), and a control with no accessible name.
+     *
+     * Fixing them per-surface is how they came back. A check that walks all of
+     * them is the only version that holds.
+     */
+    "no-view-hides-its-own-content-or-locks-out-the-keyboard": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const rows = $$(".list-row, .sec-row, .file-row, .gh-row, .cmt-file").slice(0, 40);
+      // Hover everything first: these controls only exist on hover, which is
+      // exactly what makes them easy to miss.
+      for (const row of rows) row.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      await settle(180);
+
+      const covered = [];
+      for (const row of rows) {
+        const label = row.querySelector("[class*=title], [class*=name], .row-meta-title");
+        if (!label) continue;
+        const L = label.getBoundingClientRect();
+        if (L.width === 0) continue;
+        for (const b of row.querySelectorAll("button")) {
+          const R = b.getBoundingClientRect();
+          if (R.width === 0) continue;
+          const ox = Math.min(L.right, R.right) - Math.max(L.left, R.left);
+          const oy = Math.min(L.bottom, R.bottom) - Math.max(L.top, R.top);
+          if (ox > 4 && oy > 4) covered.push(text(label).slice(0, 30));
+        }
+      }
+      c.eq(
+        [...new Set(covered)].length,
+        0,
+        `a control is painted over the row's own text: ${[...new Set(covered)].slice(0, 3).join(", ")}`,
+      );
+
+      const unnamed = $$("button")
+        .slice(0, 200)
+        .filter((b) => b.offsetParent !== null)
+        .filter((b) => !(b.getAttribute("aria-label") || b.textContent || b.title || "").trim())
+        .map((b) => b.className.split(" ")[0] || "(button)");
+      c.eq(
+        [...new Set(unnamed)].length,
+        0,
+        `a control announces nothing: ${[...new Set(unnamed)].slice(0, 4).join(", ")}`,
+      );
+
+      // A region you can scroll must be reachable without a pointer. Monaco is
+      // excluded: it owns its own keyboard handling and its inner scroller is
+      // an implementation detail of an editor that IS focusable.
+      const stuck = $$('[role="log"], .log-scroll, [class*=scroll]')
+        .filter((x) => !x.closest(".monaco-editor") && !/monaco/.test(x.className))
+        .filter((x) => x.scrollHeight > x.clientHeight + 40)
+        .filter((x) => x.tabIndex < 0 && !x.querySelector("[tabindex]:not([tabindex='-1'])"))
+        .map((x) => x.className.split(" ")[0]);
+      c.eq(
+        [...new Set(stuck)].length,
+        0,
+        `a scrollable region cannot be reached by Tab: ${[...new Set(stuck)].slice(0, 3).join(", ")}`,
+      );
+    },
+
+    /**
      * A truncated path must always be recoverable, and a rename must say what
      * it was renamed FROM.
      *
