@@ -9441,3 +9441,65 @@ body.vscode-light .log-pane {
   outline: 2px solid var(--gs-focus-ring, var(--gs-accent));
   outline-offset: -2px;
 }
+
+/* ── The shared markdown editor ─────────────────────────────────────────────
+   Release notes, issue bodies and comments were each a bare textarea with no
+   preview and no toolbar. One component now, and its preview renders through
+   the same `renderMarkdown` as the published body, so the two cannot drift. */
+.md-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  background: var(--app-bg);
+  overflow: hidden;
+}
+.md-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+}
+.md-tabs { display: flex; gap: 2px; }
+.md-tab {
+  padding: 3px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--app-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.md-tab:hover { color: var(--app-text); background: var(--app-hover); }
+.md-tab.is-active { color: var(--app-text); background: var(--app-active); font-weight: 600; }
+.md-toolbar { display: flex; gap: 1px; margin-left: auto; }
+.md-tool {
+  width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--app-muted);
+  cursor: pointer;
+}
+.md-tool:hover { background: var(--app-hover); color: var(--app-text); }
+.md-text {
+  border: none;
+  outline: none;
+  resize: none;
+  padding: var(--sp-3);
+  background: none;
+  color: var(--app-text);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  min-height: 120px;
+}
+.md-preview { padding: var(--sp-3); overflow-y: auto; }
+.md-preview-empty { color: var(--app-muted); font-style: italic; }

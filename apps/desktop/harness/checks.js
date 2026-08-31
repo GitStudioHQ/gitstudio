@@ -2671,20 +2671,24 @@
       if (!nb) return;
       nb.click();
       await settle(600);
-      const ins = $$(".modal-input");
-      c.ok(ins.length >= 2, "the form has a title and a body");
-      if (ins.length < 2) return;
-      ins[0].value = "my title";
-      ins[0].dispatchEvent(new Event("input", { bubbles: true }));
-      ins[1].value = "my body text";
-      ins[1].dispatchEvent(new Event("input", { bubbles: true }));
+      // Title and body, wherever the body lives. It was a second `.modal-input`
+      // and is now the shared markdown editor's `.md-text` — the RULE is that a
+      // rejected submit gives you your text back, not that the body is a
+      // particular element.
+      const titleOf = () => $(".modal-card .modal-input");
+      const bodyOf = () => $(".modal-card .md-text") || $$(".modal-card .modal-input")[1];
+      c.ok(!!titleOf() && !!bodyOf(), "the form has a title and a body");
+      if (!titleOf() || !bodyOf()) return;
+      titleOf().value = "my title";
+      titleOf().dispatchEvent(new Event("input", { bubbles: true }));
+      bodyOf().value = "my body text";
+      bodyOf().dispatchEvent(new Event("input", { bubbles: true }));
       await settle(150);
       $$(".modal-actions button").find((b) => /create/i.test(text(b))).click();
       await settle(900);
       c.ok(!!$(".modal-overlay"), "the form is still open after a rejected submit");
-      const after = $$(".modal-input");
-      c.eq((after[0] || {}).value, "my title", "the title survives");
-      c.eq((after[1] || {}).value, "my body text", "and so does the body");
+      c.eq((titleOf() || {}).value, "my title", "the title survives");
+      c.eq((bodyOf() || {}).value, "my body text", "and so does the body");
       c.ok(
         /too long/.test(text(".modal-note-error") || ""),
         "and the form says why it failed, where the text still is",
@@ -3611,6 +3615,85 @@
         !!dest.target && typeof dest.target.sha === "string" && dest.target.sha.length >= 7,
         "and it carries the sha of the commit that was clicked",
       );
+    },
+
+    /**
+     * Escape must not destroy what you typed.
+     *
+     * "editing a release is complete garbage compared to github ui ux, same is
+     * for publishing releases" / "Same goes for issues creating and editing".
+     *
+     * Both were a bare textarea in a modal, and Escape discarded everything
+     * without a word — Escape being the key people press to mean "never mind"
+     * everywhere else in the app. A confirm dialog is the obvious answer and
+     * the wrong one: it makes leaving expensive instead of making the text
+     * safe, and still loses everything to a route change or a restart.
+     *
+     * `?arg=` names the button that opens the composer.
+     */
+    "a-composer-does-not-lose-what-you-typed": async (f) => {
+      const c = check(f);
+      const want = window.__GS_ARG || "new issue";
+      const opener = () =>
+        [...$$("button")].find((b) => new RegExp(want, "i").test((b.textContent || "").trim()));
+      c.ok(!!opener(), `the view offers "${want}"`);
+      if (!opener()) return;
+
+      opener().click();
+      await settle(700);
+      const ta = $(".md-text");
+      c.ok(!!ta, "the composer uses the shared markdown editor");
+      if (!ta) return;
+
+      const typed = "something worth keeping";
+      ta.value = typed;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(650); // longer than the draft's debounce
+
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(500);
+      c.ok(!$(".modal-card"), "Escape closes the form");
+
+      opener().click();
+      await settle(700);
+      const again = $(".md-text");
+      c.ok(!!again, "the form re-opens");
+      if (!again) return;
+      c.eq(again.value, typed, "and what you typed is still there");
+    },
+
+    /**
+     * Preview has to render through the SAME renderer as the published body, or
+     * the two drift and the preview becomes a lie you check against.
+     */
+    "the-editor-previews-with-the-real-renderer": async (f) => {
+      const c = check(f);
+      const opener = [...$$("button")].find((b) => /new issue/i.test((b.textContent || "").trim()));
+      c.ok(!!opener, "the view offers New issue");
+      if (!opener) return;
+      opener.click();
+      await settle(700);
+
+      const ta = $(".md-text");
+      c.ok(!!ta, "the composer uses the shared editor");
+      if (!ta) return;
+      const tabs = $$(".md-tab").map((t) => text(t));
+      c.ok(tabs.includes("Write") && tabs.includes("Preview"), `it has Write and Preview (${tabs.join(", ")})`);
+      c.ok($$(".md-tool").length >= 6, "and a toolbar");
+
+      ta.value = "## Heading\n\n- one\n- two\n\n**bold** and `code`";
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(300);
+      $$(".md-tab").find((t) => text(t) === "Preview").click();
+      await settle(400);
+
+      const pv = $(".md-preview");
+      c.ok(!!pv && !pv.hidden, "Preview shows");
+      if (!pv) return;
+      // Real markdown structure, not escaped text or a plain dump.
+      c.ok(!!pv.querySelector("h2"), "a heading renders as a heading");
+      c.eq(pv.querySelectorAll("li").length, 2, "list items render as list items");
+      c.ok(!!pv.querySelector("strong") && !!pv.querySelector("code"), "inline marks render");
     },
 
     /**

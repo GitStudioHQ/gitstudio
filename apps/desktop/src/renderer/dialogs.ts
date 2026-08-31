@@ -5,6 +5,8 @@
 // for prompt(), unsupported) in an Electron renderer.
 
 import { registerLayer, isMenuOpen, holdBackground } from "./overlays";
+import { mdEditor } from "./mdEditor";
+import { wireDraft } from "./draftStore";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -289,6 +291,15 @@ export function editForm(opts: {
   /** Why the last attempt failed — shown in the form so the fix is one edit
    *  away, instead of a toast over a screen that no longer has your text. */
   note?: string;
+  /**
+   * Identity for the durable draft, e.g. `["issue", 31]` or `["issue", "new"]`.
+   *
+   * Without one the form keeps its old behaviour and Escape discards what you
+   * typed — which is fine for a throwaway prompt and wrong for anything you
+   * spent a paragraph on. Given one, the text survives Escape, a route change,
+   * and a restart.
+   */
+  draft?: [kind: string, id: string | number];
 }): Promise<{ title: string; body: string } | null> {
   return new Promise((resolve) => {
     let settled = false;
@@ -305,11 +316,29 @@ export function editForm(opts: {
       titleInput.className = "modal-input";
       titleInput.placeholder = opts.titlePlaceholder ?? "Title";
       titleInput.value = opts.titleValue ?? "";
-      const bodyInput = document.createElement("textarea");
-      bodyInput.className = "modal-input modal-textarea";
-      bodyInput.placeholder = opts.bodyPlaceholder ?? "Description…";
-      bodyInput.value = opts.bodyValue ?? "";
-      bodyInput.rows = 7;
+      // The shared editor rather than a bare textarea: Write/Preview, a
+      // toolbar, list continuation, ⌘B/I/K. Preview renders through the same
+      // `renderMarkdown` that draws the published body, so what you see here is
+      // what gets posted.
+      const body = mdEditor({
+        value: opts.bodyValue ?? "",
+        placeholder: opts.bodyPlaceholder ?? "Description…",
+        rows: 10,
+        label: "Description",
+        onInput: (v) => bodyDraft?.save(v),
+        onSubmit: () => ok.click(),
+      });
+      // A durable draft, when the caller gave this form an identity. Escape used
+      // to discard everything typed here without a word — and Escape is the key
+      // people press to mean "never mind".
+      const bodyDraft = opts.draft
+        ? wireDraft(opts.draft[0], opts.draft[1], (text) => {
+            // Only over an EMPTY field: a draft must never silently replace a
+            // body the server already has.
+            if (!opts.bodyValue) body.set(text);
+          })
+        : undefined;
+      const bodyInput = body.textarea;
       const actions = mk("div", "modal-actions");
       const cancel = mk("button", "mini-btn");
       cancel.textContent = "Cancel";
@@ -318,7 +347,7 @@ export function editForm(opts: {
       okSpan.textContent = opts.okLabel ?? "Save";
       ok.appendChild(okSpan);
       actions.append(cancel, ok);
-      card.append(h, titleInput, bodyInput, actions);
+      card.append(h, titleInput, body.root, actions);
       const done = (v: { title: string; body: string } | null): void => {
         settled = true;
         resolve(v);
@@ -330,7 +359,10 @@ export function editForm(opts: {
           titleInput.focus();
           return; // title is required
         }
-        done({ title: t, body: bodyInput.value.trim() });
+        // The draft has done its job once the text is on its way; left behind,
+        // re-opening would restore a copy over what was just saved.
+        bodyDraft?.clear();
+        done({ title: t, body: body.get().trim() });
       };
       cancel.addEventListener("click", () => done(null));
       ok.addEventListener("click", submit);

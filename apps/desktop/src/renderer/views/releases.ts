@@ -50,6 +50,8 @@ import {
   type SectionRender,
   type SectionTarget,
 } from "./common";
+import { mdEditor } from "../mdEditor";
+import { wireDraft } from "../draftStore";
 import type { CommitDetailsPayload, ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
 
 /** Which sub-list the section shows. Module-scoped so it survives re-renders. */
@@ -824,11 +826,30 @@ function releaseFormDialog(
       name.placeholder = "Release title";
       name.value = init.name ?? "";
 
-      const bodyInput = document.createElement("textarea");
-      bodyInput.className = "modal-input modal-textarea";
-      bodyInput.rows = 6;
-      bodyInput.placeholder = "Release notes (Markdown supported)…";
-      bodyInput.value = init.body ?? "";
+      // The shared editor: Write/Preview, a toolbar, list continuation, ⌘B/I/K
+      // and ⌘Enter to submit. Preview renders through the SAME `renderMarkdown`
+      // that draws the published release, so the two cannot disagree.
+      //
+      // And a durable draft, which is what actually fixes the data loss —
+      // Escape used to discard everything typed here without a word, and Escape
+      // is the key people press to mean "never mind". Keyed by the release, or
+      // by "new" while it does not exist yet.
+      const draftId = init.id === undefined ? "new" : String(init.id);
+      const notes = mdEditor({
+        value: init.body ?? "",
+        placeholder: "Release notes (Markdown supported)…",
+        rows: 10,
+        label: "Release notes",
+        onInput: (v) => notesDraft.save(v),
+        onSubmit: () => ok.click(),
+      });
+      const notesDraft = wireDraft("release", draftId, (text) => {
+        // Only over an EMPTY field. A draft must never silently replace notes
+        // the server already has — that would read as the app rewriting a
+        // published release behind your back.
+        if (!init.body) notes.set(text);
+      });
+      const bodyInput = notes.textarea;
 
       const draft = document.createElement("input");
       draft.type = "checkbox";
@@ -864,7 +885,7 @@ function releaseFormDialog(
         field("Tag", tag),
         field("Target", target),
         field("Title", name),
-        field("Notes", bodyInput),
+        field("Notes", notes.root),
         checks,
       );
       if (error) {
@@ -880,12 +901,16 @@ function releaseFormDialog(
           tag.focus();
           return;
         }
+        // The draft has served its purpose the moment the text is on its way to
+        // GitHub. Left behind, re-opening the form would restore a copy of what
+        // was just published, over the top of it.
+        notesDraft.clear();
         finish({
           id: init.id,
           tagName,
           targetCommitish: target.value.trim() || undefined,
           name: name.value.trim(),
-          body: bodyInput.value,
+          body: notes.get(),
           draft: draft.checked,
           prerelease: pre.checked,
         });

@@ -794,6 +794,14 @@ export async function openNewIssue(nav: SectionNav): Promise<void> {
         bodyPlaceholder: "Describe the issue… (Markdown supported)",
         titleValue: seed?.title,
         bodyValue: seed?.body,
+        // A new issue's draft is keyed per REPOSITORY, so a half-written report
+        // survives Escape, a route change and a restart — and never follows you
+        // into a different repo.
+        draft: ["issue", "new"],
+        // A new issue's draft is keyed per REPOSITORY, so a half-written report
+        // survives Escape, a route change and a restart — and never follows you
+        // into a different repo.
+
         note: error,
       }),
     async (v) => {
@@ -883,6 +891,7 @@ async function editIssue(it: IssueInfo, reload: () => void): Promise<void> {
     titlePlaceholder: "Issue title",
     bodyValue: it.body ?? "",
     bodyPlaceholder: "Describe the issue…",
+    draft: ["issue", it.number],
   });
   if (!res) return;
   if (res.title === it.title && res.body === (it.body ?? "")) return; // nothing changed
