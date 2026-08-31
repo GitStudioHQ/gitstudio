@@ -157,6 +157,14 @@ export function createLogPane(o: {
   banner.hidden = true;
   root.appendChild(banner);
   const scroll = el("div", "log-scroll");
+  // A log is a document you READ, so it has to be able to take the keyboard.
+  // Without a tabindex the scroller was unreachable by Tab and answered no key
+  // at all: the only way through 50,000 lines was a trackpad, against a
+  // sixteen-line port. `role="log"` tells assistive tech what it is, and
+  // `aria-label` names which job's output this is.
+  scroll.tabIndex = 0;
+  scroll.setAttribute("role", "log");
+  scroll.setAttribute("aria-label", "Job log");
   const top = el("div", "log-spacer");
   const win = el("div", "log-window");
   const bottom = el("div", "log-spacer");
@@ -258,6 +266,9 @@ export function createLogPane(o: {
     matchStepSync?.();
   }
 
+  /** The line a jump landed on, flashed until the next one. */
+  let hitLine = -1;
+
   function jumpToLine(docIdx: number): void {
     // Un-collapse any group hiding the target, then center it.
     for (const g of doc.groups) {
@@ -272,6 +283,10 @@ export function createLogPane(o: {
     setFollow(false);
     jumpPill.hidden = visible.length === 0;
     scroll.scrollTop = Math.max(0, pos * LINE_H - scroll.clientHeight / 2);
+    // Centring is not enough to FIND it. A CI log is a wall of monospace, and
+    // an error line looks like every other line in it once it is on screen —
+    // which is most of what "not practical" means here.
+    hitLine = docIdx;
     render();
   }
 
@@ -295,6 +310,57 @@ export function createLogPane(o: {
     for (let i = 0; i < doc.lines.length; i++) if (doc.lines[i].kind === "error") out.push(i);
     return out;
   }
+  /**
+   * The keys a person expects in a document, and two this log needs.
+   *
+   * PageUp/PageDown move by a SCREENFUL rather than a fixed number of lines, so
+   * the step matches whatever height the pane happens to have. `n`/`N` walk the
+   * failures, which is the actual question being asked of a CI log — the error
+   * chip could already do it, but only by mouse, and only forwards.
+   */
+  scroll.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const page = Math.max(1, Math.floor(scroll.clientHeight / LINE_H) - 1) * LINE_H;
+    const by = (dy: number): void => {
+      e.preventDefault();
+      // Any deliberate move away from the bottom means the reader has taken
+      // over; follow-tail must stand down or it will yank them back.
+      if (dy < 0) setFollow(false);
+      scroll.scrollTop += dy;
+    };
+    switch (e.key) {
+      case "ArrowDown": return by(LINE_H);
+      case "ArrowUp": return by(-LINE_H);
+      case "PageDown": return by(page);
+      case "PageUp": return by(-page);
+      case "Home":
+        e.preventDefault();
+        setFollow(false);
+        scroll.scrollTop = 0;
+        return;
+      case "End":
+        e.preventDefault();
+        setFollow(true);
+        scroll.scrollTop = scroll.scrollHeight;
+        return;
+      case "n":
+      case "N": {
+        const errs = errorLines();
+        if (!errs.length) return;
+        e.preventDefault();
+        setFollow(false);
+        // Shift-N walks backwards, wrapping at both ends.
+        errJump = e.shiftKey
+          ? (errJump - 1 + errs.length) % errs.length
+          : (errJump + 1) % errs.length;
+        jumpToLine(errs[errJump]);
+        return;
+      }
+      default:
+        return;
+    }
+  });
+
   let errJump = -1;
   errChip.addEventListener("click", () => {
     const errs = errorLines();
@@ -369,6 +435,7 @@ export function createLogPane(o: {
       }
     }
     row.appendChild(content);
+    if (docIdx === hitLine) row.classList.add("is-hit");
     return row;
   }
 

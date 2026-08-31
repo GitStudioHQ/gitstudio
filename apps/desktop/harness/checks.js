@@ -3599,6 +3599,107 @@
     },
 
     /**
+     * The log has to be readable with a keyboard, and big enough to read.
+     *
+     * "scrolling the logs is still trash ux, its too fast and not easy to use
+     * and practical at all, it just looks kinda pretty."
+     *
+     * "Too fast" was measurable and it was not the scroll speed: the pane was
+     * 337px against a 20px line height — SIXTEEN lines — so an ordinary
+     * trackpad flick of 2,000-4,000px is six to twelve screenfuls with nothing
+     * readable on the way past. Overscrolling at the bottom then carried the
+     * whole run page away, and the scroller had no tabindex at all, so there
+     * was no keyboard alternative: a trackpad was the only way through 50,000
+     * lines.
+     */
+    "the-log-is-navigable-without-a-trackpad": async (f) => {
+      const c = check(f);
+      const s = $$(".log-scroll").pop();
+      c.ok(!!s, "the job log is open");
+      if (!s) return;
+
+      // A document's worth of lines, not a slit.
+      const lines = Math.floor(s.clientHeight / 20);
+      c.ok(lines >= 24, `the log shows a readable number of lines at once (${lines})`);
+      c.eq(
+        getComputedStyle(s).overscrollBehavior,
+        "contain",
+        "reaching the end must not scroll the page out from under the log",
+      );
+
+      // It can take the keyboard, and says what it is.
+      c.eq(s.getAttribute("role"), "log", "it is announced as a log");
+      // tabIndex 0, not merely focusable. `-1` still accepts a programmatic
+      // `.focus()`, so asserting on activeElement alone passes on a scroller
+      // that Tab can never reach — which was the actual defect: no keyboard
+      // route to the log at all.
+      c.eq(s.tabIndex, 0, "and it is reachable by Tab, not just by script");
+      s.focus();
+      c.eq(document.activeElement, s, "and takes focus");
+
+      const key = (k, shift) =>
+        s.dispatchEvent(new KeyboardEvent("keydown", { key: k, shiftKey: !!shift, bubbles: true }));
+
+      // Home/End reach both ends; a page moves by a SCREENFUL, so the step
+      // follows whatever height the pane happens to have.
+      key("Home");
+      await settle(120);
+      c.eq(s.scrollTop, 0, "Home reaches the top");
+      const page = (Math.floor(s.clientHeight / 20) - 1) * 20;
+      key("PageDown");
+      await settle(140);
+      c.eq(s.scrollTop, page, `PageDown moves one screenful (${page}px)`);
+      key("ArrowUp");
+      await settle(120);
+      c.eq(s.scrollTop, page - 20, "and an arrow moves one line");
+      key("End");
+      await settle(140);
+      c.ok(s.scrollTop > page, "End reaches the bottom");
+    },
+
+    /**
+     * `n` walks the failures — the question actually being asked of a CI log.
+     * The error chip could already do it, but only by mouse and only forwards,
+     * and it centred the line without marking it, which in a wall of monospace
+     * is most of what "not practical" means.
+     */
+    "the-log-can-jump-between-failures": async (f) => {
+      const c = check(f);
+      // The FAILING job's log — the scene opens whichever comes first, and on a
+      // failed run that is usually the job that passed. Asking for "the log
+      // with errors in it" is what the check actually means.
+      const failing = $$(".gh-job-card, .gh-job").find((j) => /failure/i.test(j.textContent || ""));
+      const opener = (failing || document).querySelector(".gh-job-log");
+      if (opener) {
+        opener.click();
+        await settle(1500);
+      }
+      const s = $$(".log-scroll").pop();
+      c.ok(!!s, "a job log is open");
+      if (!s) return;
+      const chip = $$(".log-chip-err").find((x) => !x.hidden);
+      c.ok(!!chip, "the log reports that it contains errors");
+      c.match(text(chip), /\d+ error/, "and how many");
+
+      s.focus();
+      s.scrollTop = 0;
+      await settle(100);
+      s.dispatchEvent(new KeyboardEvent("keydown", { key: "n", bubbles: true }));
+      await settle(400);
+
+      c.ok(s.scrollTop > 0, "pressing n moves to a failure");
+      const hit = $(".log-line.is-hit");
+      c.ok(!!hit, "and marks the line it landed on, so it can be found");
+      if (hit) {
+        c.match(
+          text(hit),
+          /error|exit code|✗|FAIL/i,
+          `the marked line is the failure (got ${JSON.stringify(text(hit).slice(0, 60))})`,
+        );
+      }
+    },
+
+    /**
      * A failed read must not render as an empty result.
      *
      * Four `.catch(() => [])` sites in the bridge turned a rate limit, a dropped
