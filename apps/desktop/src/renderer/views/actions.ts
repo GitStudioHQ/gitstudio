@@ -55,6 +55,7 @@ import {
 } from "./common";
 import { prime } from "../cache";
 import { createLogPane, type LogPane } from "../logView";
+import { setPageLabel } from "../navStack";
 import type {
   ActionsRunsFilter,
   ArtifactInfo,
@@ -817,6 +818,10 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // "#411" — the same run wearing two numbers 40px apart.
   const crumbEl = main.closest(".det-view")?.querySelector<HTMLElement>(".det-crumb");
   if (crumbEl) crumbEl.textContent = `#${full.runNumber || full.id}`;
+  // The run's identity is only known once it loads, so the page names itself
+  // here rather than at construction. A page opened FROM this one then says
+  // "← Run #411" instead of "← Actions".
+  setPageLabel(`Run #${full.runNumber || full.id}`);
   const state = full.conclusion || full.status || "";
   const live = isLive(full.status);
   // A re-run attempt REPLACES the logs — every pane restarts from zero.

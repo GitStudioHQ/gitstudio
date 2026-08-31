@@ -3515,6 +3515,52 @@
     },
 
     /**
+     * Leaving a pull request for one of its pipelines, then pressing Back, must
+     * return to THE PULL REQUEST — not to the Actions list.
+     *
+     * The owner's words: "going from pr checks tab to a pipeline, then back
+     * arrow should send u back to pr not to pipelines view". Two separate
+     * defects made that impossible: the back button pushed instead of popping,
+     * and `SectionTarget.from` was `{view,label}` so it could only ever name a
+     * LIST — there was no way to say "Pull Request #106" at all.
+     *
+     * This check could not be written before now: no scene in the repo had a
+     * check row with a `detailsUrl`, so `.gh-check-row.is-link` did not exist
+     * anywhere and the journey was unreachable.
+     */
+    "leaving-a-pr-for-its-pipeline-comes-back-to-the-pr": async (f) => {
+      const c = check(f);
+      const link = [...$$(".gh-check-row.is-link")].find((r) => /build/i.test(r.textContent || ""));
+      c.ok(!!link, "the PR has a check row that links to a run");
+      if (!link) return;
+
+      const before = window.__GS_ROUTES.length;
+      link.click();
+      await settle(1400);
+      const went = window.__GS_ROUTES.slice(before).map((r) => r.view);
+      c.ok(went.includes("actions"), `it opens the run in-app (went: ${went.join(" → ") || "nowhere"})`);
+
+      const back = $(".det-back");
+      c.ok(!!back, "the run page offers a Back");
+      if (!back) return;
+      c.ok(
+        /pull request/i.test(back.textContent || ""),
+        `and it NAMES the pull request rather than the section ` +
+          `(says ${JSON.stringify((back.textContent || "").trim())})`,
+      );
+
+      back.click();
+      await settle(1400);
+      c.ok(!!$(".det-view"), "pressing it lands on a detail page");
+      const crumb = $(".det-crumb");
+      c.eq(
+        (crumb?.textContent || "").trim(),
+        "#106",
+        "and that page is the pull request you left, not the Actions list",
+      );
+    },
+
+    /**
      * Clicking a commit must open THAT COMMIT, not eject you into the graph.
      *
      * Eight call sites answer "show me this commit" with `nav("graph",{sha})`

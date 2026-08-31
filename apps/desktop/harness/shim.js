@@ -104,12 +104,37 @@
       { filename: "apps/desktop/src/renderer/styles/app.css", status: "modified", additions: 92, deletions: 58 },
     ],
   };
+  // `detailsUrl` on at least one row is load-bearing for the harness, not
+  // decoration: without it `.gh-check-row.is-link` cannot exist in ANY scene, so
+  // "leave a PR for its pipeline and press back" — a bug the owner hit — was
+  // literally unreachable by the test suite. One GitHub-Actions URL (opens the
+  // run in-app) and one external CI URL (opens a browser), because the two take
+  // different code paths.
   const prChecks = {
     106: [
-      { name: "build / desktop (macos)", status: "completed", conclusion: "success" },
+      {
+        name: "build / desktop (macos)",
+        status: "completed",
+        conclusion: "success",
+        detailsUrl: "https://github.com/GitStudioHQ/gitstudio/actions/runs/9100/job/1",
+      },
       { name: "build / desktop (windows)", status: "completed", conclusion: "success" },
       { name: "test / renderer", status: "completed", conclusion: "success" },
+      {
+        name: "codecov/patch",
+        status: "completed",
+        conclusion: "failure",
+        detailsUrl: "https://app.circleci.com/pipelines/github/GitStudioHQ/gitstudio/4102",
+      },
       { name: "lint", status: "in_progress", conclusion: "" },
+    ],
+    104: [
+      {
+        name: "build / desktop (macos)",
+        status: "completed",
+        conclusion: "failure",
+        detailsUrl: "https://github.com/GitStudioHQ/gitstudio/actions/runs/9097/job/1",
+      },
     ],
   };
   const prCommits = {

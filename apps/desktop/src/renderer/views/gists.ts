@@ -184,6 +184,7 @@ function showGistDetailPage(wrap: HTMLElement, nav: SectionNav, id: string): voi
 
   const { view, main, rail, topActions } = detailPage({
     backLabel: "Gists",
+    pageLabel: "Gist",
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));

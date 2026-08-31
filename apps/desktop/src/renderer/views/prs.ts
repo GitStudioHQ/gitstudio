@@ -484,6 +484,10 @@ function showDetailPage(
   const { view, main, rail, topActions } = detailPage({
     backLabel: from?.label ?? "Pull Requests",
     crumb: `#${n}`,
+    // What the NEXT page's back button calls this one. Without it, leaving for
+    // a pipeline and pressing back read "← Pull requests" and landed on the
+    // list rather than the pull request you were reading.
+    pageLabel: `Pull Request #${n}`,
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));

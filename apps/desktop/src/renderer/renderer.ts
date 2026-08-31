@@ -12,6 +12,7 @@
 // the same look as the extension because it ships the same CSS.
 import "@gitstudio/webview-ui/styles/diff.css";
 import { clickIntent, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
+import { installNavStack } from "./navStack";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
@@ -231,7 +232,7 @@ class App {
   /** In-app navigation history — every routed view (with its deep-link target)
    *  lands here so ⌘[/⌘] and the top-bar chevrons walk back/forward like a real
    *  app. Reset on repo switch (entries would point into the previous repo). */
-  private navHistory: Array<{ view: string; target?: SectionTarget }> = [];
+  private navHistory: Array<{ view: string; target?: SectionTarget; label?: string }> = [];
   private navPos = -1;
   /** True while back/forward drives routeView, so the travel isn't re-recorded. */
   private navTravel = false;
@@ -314,6 +315,9 @@ class App {
   private terminalHeight = 280;
 
   async start(): Promise<void> {
+    // Views can pop the history from here on. Before this the only way back
+    // from a detail page was a forward navigation dressed as a back button.
+    this.installNav();
     // Catch-all error boundary: a rejected promise or thrown render should never
     // leave the app silently broken — surface it as a toast. BUT skip the benign
     // Monaco worker noise (it asks the base worker for TS language-service methods
@@ -943,10 +947,30 @@ class App {
   }
 
   /** Step back in the in-app navigation history (⌘[ / topbar chevron). */
-  private navBack(): void {
-    if (this.navPos <= 0) return;
+  private navBack(): boolean {
+    if (this.navPos <= 0) return false;
     this.navPos--;
     this.navTravelTo(this.navHistory[this.navPos]);
+    return true;
+  }
+
+  /**
+   * Hand the history to the views, so a detail page's own Back can POP.
+   *
+   * It used to PUSH — every `.det-back` called `nav(view, {list:true})`, which
+   * appends. Measured: pressing back left FORWARD disabled, which only happens
+   * if nothing was stepped over. The one control that should restore your place
+   * was the one destroying it.
+   */
+  private installNav(): void {
+    installNavStack({
+      back: () => this.navBack(),
+      prev: () => (this.navPos > 0 ? this.navHistory[this.navPos - 1] : undefined),
+      label: (label: string) => {
+        const cur = this.navHistory[this.navPos];
+        if (cur) cur.label = label;
+      },
+    });
   }
 
   /** Step forward in the in-app navigation history (⌘] / topbar chevron). */

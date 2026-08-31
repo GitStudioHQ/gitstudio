@@ -459,6 +459,7 @@ function showDetailPage(
   const { view, main, rail, topActions } = detailPage({
     backLabel: from?.label ?? "Issues",
     crumb: `#${n}`,
+    pageLabel: `Issue #${n}`,
     onBack: back,
   });
   main.appendChild(skeletonList(4, false));

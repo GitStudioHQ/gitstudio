@@ -9,6 +9,7 @@ import { gget } from "../cache";
 import { openModal } from "../dialogs";
 import { focusNewPage } from "../focusReturn";
 import { pageOwnsKeys } from "../overlays";
+import { navPrev, navPop, entryLabel, setPageLabel } from "../navStack";
 import {
   cleanErr,
   el,
@@ -848,13 +849,25 @@ function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
 }
 
 export interface DetailPageOpts {
-  /** The ← button's label — the section name ("Issues", "Pull Requests"). */
+  /**
+   * Where Back goes when there is NO history behind this page — a deep link, a
+   * fresh launch, a restored session. Otherwise the button pops, and its label
+   * names wherever that lands.
+   */
   backLabel: string;
   /** Muted crumb after the back button, e.g. "#31". */
   crumb?: string;
+  /** The cold-start fallback, used only when the history is empty. */
   onBack: () => void;
   /** The top-bar action cluster (rightmost); one primary action at most. */
   actions?: HTMLElement[];
+  /**
+   * What to call THIS page in the next page's back button — "Pull Request
+   * #106", "Run #411". Without it the button falls back to the view's name, so
+   * leaving a PR for a pipeline and pressing back reads "← Pull requests" and
+   * lands on the list rather than the PR you were reading.
+   */
+  pageLabel?: string;
 }
 
 /** The full-page detail shell: a slim top bar (← back · crumb · actions) over
@@ -869,10 +882,29 @@ export function detailPage(o: DetailPageOpts): {
   const view = el("div", "det-view");
   const bar = el("div", "det-topbar");
   const back = el("button", "det-back");
-  back.append(glyph("arrow-left"), span(o.backLabel));
-  back.title = `Back to ${o.backLabel}  (Esc)`;
+
+  // POP, not push.
+  //
+  // Every caller used to pass `nav(view, {list:true})`, which APPENDS a history
+  // entry — so the button that should restore your place destroyed it, and the
+  // top bar's Forward went dead the moment you used it. It also meant Back
+  // could only ever name a list: leaving a pull request for a pipeline and
+  // pressing back landed in the Actions list rather than the pull request,
+  // because `from` had no way to say "Pull Request #106".
+  //
+  // The history already knows where you were. The label is read from it, so the
+  // button always names its real destination; `o.onBack` survives only as the
+  // cold-start fallback for a page nothing led to.
+  if (o.pageLabel) setPageLabel(o.pageLabel);
+  const prev = navPrev();
+  const label = entryLabel(prev, o.backLabel);
+  const goBack = (): void => {
+    if (!navPop()) o.onBack();
+  };
+  back.append(glyph("arrow-left"), span(label));
+  back.title = `Back to ${label}  (Esc)`;
   back.setAttribute("aria-label", back.title);
-  back.addEventListener("click", o.onBack);
+  back.addEventListener("click", goBack);
   bar.appendChild(back);
   if (o.crumb) {
     const crumb = el("span", "det-crumb");
@@ -889,7 +921,9 @@ export function detailPage(o: DetailPageOpts): {
   body.append(main, rail);
   scroll.appendChild(body);
   view.append(bar, scroll);
-  wireDetailEsc(view, o.onBack);
+  // The IDENTICAL function, so Escape, ← and the button can never disagree
+  // about where back is.
+  wireDetailEsc(view, goBack);
   // The page that just replaced a list takes the keyboard with it. Without
   // this, pressing Enter on a row left focus on <body>, so the next Tab
   // started at the top of the window — past the entire nav rail — rather than
