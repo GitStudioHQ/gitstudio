@@ -1,0 +1,38 @@
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_01eaca703d042f 373-380
+apps/desktop/src/renderer/views/commit.ts
+  s_26f5e669d3043c::t_b0fc265012bb3e 32
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_99fdbf1e624c1f 34,1186-1201,1212-1213,1215-1221
+apps/desktop/src/renderer/ui.ts
+  s_26f5e669d3043c::t_b0fc265012bb3e 1140-1165
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_85498ad399aa3c 9540-9552
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_764d72e436dc9a 232
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_85498ad399aa3c 108
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_764d72e436dc9a 3621-3657
+  s_26f5e669d3043c::t_ab67581fabb0b7 3620
+apps/desktop/src/main/githubClient.ts
+  s_26f5e669d3043c::t_85498ad399aa3c 407-408
+  s_26f5e669d3043c::t_01eaca703d042f 285-286
+  s_26f5e669d3043c::t_f1b5c0df168a73 287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7cf1da1638a20b3e250c1f1a0bc06bd9c462a63f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
