@@ -3618,6 +3618,62 @@
     },
 
     /**
+     * Publishing is a decision, not a checkbox.
+     *
+     * "same is for publishing releases". The form expressed the most
+     * consequential choice on it — private draft, or announced to everyone
+     * watching the repository — as a checkbox reading "Draft (don't publish
+     * yet)" beside a button reading "Create". The quietest control on the form
+     * decided the loudest thing it does.
+     *
+     * Two named buttons instead, and the empty-tag refusal now SAYS something:
+     * the form rendered a `.modal-note-error` slot only after a rejected
+     * submit, so the first failure had nowhere to be reported and simply moved
+     * focus.
+     */
+    "creating-a-release-names-what-the-button-will-do": async (f) => {
+      const c = check(f);
+      const opener = [...$$("button")].find((b) => /new release|create release/i.test(text(b)));
+      c.ok(!!opener, "the view offers New release");
+      if (!opener) return;
+      opener.click();
+      await settle(700);
+
+      const labels = $$(".modal-actions button").map((b) => text(b));
+      c.ok(
+        labels.some((l) => /^publish/i.test(l)),
+        `the primary action says it publishes (${labels.join(", ")})`,
+      );
+      c.ok(labels.some((l) => /draft/i.test(l)), "and drafting is its own named button");
+      // The old checkbox must be gone — two ways to say the same thing is worse
+      // than either alone.
+      const checks = $$(".modal-check").map((x) => text(x));
+      c.ok(
+        !checks.some((x) => /^draft/i.test(x)),
+        `draft is not ALSO a checkbox (${checks.join(", ") || "none"})`,
+      );
+
+      // A tag is required, and the refusal has to be legible.
+      const publish = $$(".modal-actions button").find((b) => /^publish/i.test(text(b)));
+      publish.click();
+      await settle(400);
+      c.ok(!!$(".modal-card"), "an empty tag does not submit");
+      const note = $(".modal-note-error");
+      c.ok(!!note && !note.hidden, "and the form says why");
+      c.match(text(note), /tag/i, "naming the field that is missing");
+      const tag = $(".modal-card .modal-input");
+      c.eq(tag.getAttribute("aria-invalid"), "true", "and marks it for assistive tech");
+
+      // Fixing it withdraws the complaint, rather than leaving it accusing a
+      // field that is now correct.
+      tag.value = "v2.0.0";
+      tag.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      c.ok($(".modal-note-error").hidden, "typing a tag clears the message");
+      c.eq(tag.getAttribute("aria-invalid"), null, "and the invalid mark");
+    },
+
+    /**
      * Escape must not destroy what you typed.
      *
      * "editing a release is complete garbage compared to github ui ux, same is

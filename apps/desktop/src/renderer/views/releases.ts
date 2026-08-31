@@ -851,9 +851,6 @@ function releaseFormDialog(
       });
       const bodyInput = notes.textarea;
 
-      const draft = document.createElement("input");
-      draft.type = "checkbox";
-      draft.checked = !!init.draft;
       const pre = document.createElement("input");
       pre.type = "checkbox";
       pre.checked = !!init.prerelease;
@@ -866,19 +863,35 @@ function releaseFormDialog(
         w.append(cb, t);
         return w;
       };
-      checks.append(
-        checkWrap(draft, "Draft (don't publish yet)"),
-        checkWrap(pre, "Pre-release"),
-      );
+      // Pre-release stays a checkbox — it is an ATTRIBUTE of the release.
+      // Draft is not: it is the difference between "nobody can see this" and
+      // "this is announced to everyone watching the repository", and a
+      // checkbox reading "Draft (don't publish yet)" beside a button reading
+      // "Create" makes the most consequential choice on the form the quietest
+      // thing on it. Two named buttons say what will happen.
+      checks.append(checkWrap(pre, "Pre-release"));
 
       const actions = mkDialogEl("div", "modal-actions");
       const cancel = mkDialogEl("button", "mini-btn");
       cancel.textContent = "Cancel";
-      const ok = mkDialogEl("button", "btn btn-primary modal-ok");
+
+      // On an EXISTING published release, "Save draft" would silently unpublish
+      // it — a destructive act behind an innocuous label. Editing a published
+      // release offers one button; un-publishing is a deliberate action
+      // elsewhere, behind a confirm.
+      const alreadyPublished = init.id !== undefined && !init.draft;
+      const saveDraft = mkDialogEl("button", "mini-btn") as HTMLButtonElement;
+      saveDraft.textContent = "Save draft";
+      saveDraft.title = "Keep this private — nobody is notified, and it stays off the releases page";
+      const ok = mkDialogEl("button", "btn btn-primary modal-ok") as HTMLButtonElement;
       const okSpan = mkDialogEl("span");
-      okSpan.textContent = init.id === undefined ? "Create" : "Save";
+      okSpan.textContent = alreadyPublished ? "Save" : "Publish release";
       ok.appendChild(okSpan);
-      actions.append(cancel, ok);
+      ok.title = alreadyPublished
+        ? "Save your changes to this published release"
+        : "Publish now — anyone watching this repository is notified";
+      if (alreadyPublished) actions.append(cancel, ok);
+      else actions.append(cancel, saveDraft, ok);
 
       card.append(
         h,
@@ -888,16 +901,25 @@ function releaseFormDialog(
         field("Notes", notes.root),
         checks,
       );
-      if (error) {
-        const note = mkDialogEl("div", "modal-note-error");
-        note.textContent = error;
-        card.appendChild(note);
-      }
+      // The error line exists ALWAYS, empty until there is something to say.
+      // It used to be created only when the form re-opened after a rejected
+      // submit, so the first failure — an empty tag — had nowhere to be
+      // reported and the form just moved focus and left you guessing.
+      const note = mkDialogEl("div", "modal-note-error");
+      note.setAttribute("role", "alert");
+      note.hidden = !error;
+      if (error) note.textContent = error;
+      card.appendChild(note);
       card.appendChild(actions);
 
-      const submit = (): void => {
+      const submit = (asDraft?: boolean): void => {
         const tagName = tag.value.trim();
         if (!tagName) {
+          // The form already renders a `.modal-note-error` slot and never used
+          // it: an empty tag simply moved focus and left you guessing.
+          tag.setAttribute("aria-invalid", "true");
+          note.hidden = false;
+          note.textContent = "A tag is required — it is what the release points at.";
           tag.focus();
           return;
         }
@@ -911,19 +933,27 @@ function releaseFormDialog(
           targetCommitish: target.value.trim() || undefined,
           name: name.value.trim(),
           body: notes.get(),
-          draft: draft.checked,
+          // Which BUTTON was pressed. Editing an already-published release has
+          // only one, and it must not silently unpublish.
+          draft: asDraft ?? (alreadyPublished ? false : !!init.draft && init.id !== undefined),
           prerelease: pre.checked,
         });
       };
 
+      tag.addEventListener("input", () => {
+        if (!tag.value.trim()) return;
+        tag.removeAttribute("aria-invalid");
+        note.hidden = true;
+      });
       cancel.addEventListener("click", () => finish(null));
-      ok.addEventListener("click", submit);
+      ok.addEventListener("click", () => submit(false));
+      saveDraft.addEventListener("click", () => submit(true));
       // ⌘/Ctrl+Enter submits from anywhere in the form (textarea included).
       // On the card, not document — openModal owns Escape and the Tab trap.
       card.addEventListener("keydown", (e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
           e.preventDefault();
-          submit();
+          submit(false);
         }
       });
 

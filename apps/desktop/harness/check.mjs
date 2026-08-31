@@ -229,6 +229,7 @@ const CASES = [
   ["leaving-a-pr-for-its-pipeline-comes-back-to-the-pr", "prs~open106~text:Checks"],
   ["a-detail-page-back-pops-the-history", "issues~open31"],
   ["a-deleted-file-does-not-look-like-a-renamed-one", "prs~open106~text:Files"],
+  ["creating-a-release-names-what-the-button-will-do", "releases"],
   ["a-composer-does-not-lose-what-you-typed", "issues", { arg: "new issue" }],
   ["a-composer-does-not-lose-what-you-typed", "releases", { arg: "new release" }],
   ["the-editor-previews-with-the-real-renderer", "issues"],
