@@ -811,12 +811,41 @@
     return { ok: true, changed: true };
   };
 
+  // Every routeView the app performs, in order. Created HERE so production
+  // never has it — the renderer only pushes when the array exists.
+  window.__GS_ROUTES = [];
+
   const missing = new Set();
+
+  // ── What the app SENT, and what it sent WITH ────────────────────────────
+  //
+  // This recorded channel NAMES only, so no check could ever assert a payload
+  // — "did Take theirs ask about the right path", "did the composer send the
+  // body it was showing", "was this refetched or served from cache". Records
+  // are `{channel, payload}` now, `calls` counts per channel for the caching
+  // assertions, and both are exposed for checks to read.
   const invoked = [];
+  const calls = Object.create(null);
   window.__GS_INVOKED = invoked;
+  window.__GS_CALLS = calls;
+  /** Channel names in order — what the old array was, for a name-only check. */
+  window.__gsSent = (re) =>
+    invoked.map((r) => r.channel).filter((c) => (re ? re.test(c) : true));
+
+  // `?fail=a:b,c:d` makes those channels REJECT. Every error path in the app —
+  // the errorState-with-Retry branches, the toasts, the empty-vs-failed
+  // distinction — was unreachable from the harness, which is why several
+  // surfaces launder a read failure into a confident empty state and no check
+  // noticed.
+  const failing = new Set((params.get("fail") || "").split(",").filter(Boolean));
+
   window.gitstudio = {
     invoke(channel, payload) {
-      invoked.push(channel);
+      invoked.push({ channel, payload });
+      calls[channel] = (calls[channel] || 0) + 1;
+      if (failing.has(channel)) {
+        return Promise.reject(new Error(`${channel} failed (harness ?fail=)`));
+      }
       if (channel in dynamic) {
         try { return Promise.resolve(dynamic[channel](payload)); } catch (e) { return Promise.reject(e); }
       }
@@ -896,13 +925,24 @@
         inp.value = val;
         inp.dispatchEvent(new Event("input", { bubbles: true }));
       } else if (step.startsWith("text:")) {
-        // Click the first button/row whose visible text contains the needle.
+        // Click the first button/row whose visible text contains the needle,
+        // PREFERRING one inside the view over one in the navigation rail.
+        //
+        // Document order put the rail first, so `text:Commits` inside a pull
+        // request clicked the rail's Commits item and navigated to the graph —
+        // a scene that reads as "open the PR's Commits tab" and silently did
+        // the opposite. Any needle that names both a section and a sub-tab hits
+        // this: Commits, Files, Checks, Releases, Issues.
         const needle = decodeURIComponent(step.slice(5)).toLowerCase();
-        const hit = await until(() =>
-          Array.from(document.querySelectorAll("button, [role=option], .list-row, .cmdk-row")).find(
-            (b) => (b.textContent || "").toLowerCase().includes(needle),
-          ),
-        );
+        const SEL = "button, [role=option], [role=tab], .list-row, .cmdk-row";
+        const matches = (root) =>
+          Array.from(root.querySelectorAll(SEL)).find((b) =>
+            (b.textContent || "").toLowerCase().includes(needle),
+          );
+        const hit = await until(() => {
+          const host = document.querySelector("#view-host, .view-host, main") || document;
+          return matches(host) || matches(document);
+        });
         hit.click();
       } else if (step === "palette") {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));

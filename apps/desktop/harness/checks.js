@@ -17,6 +17,31 @@
   const $$ = (sel, root) => [...(root || document).querySelectorAll(sel)];
   /** Let a click that re-renders behind an await actually land. */
   const settle = (ms = 250) => new Promise((r) => setTimeout(r, ms));
+  /**
+   * Take CSS transitions out of the measurement.
+   *
+   * Headless Chrome runs on a virtual clock. `setTimeout` resolves without
+   * necessarily producing a frame, so anything driven by a transition — every
+   * resizable pane here sets its width through a variable — still holds its OLD
+   * geometry when the timeout returns. And `requestAnimationFrame` is not the
+   * escape hatch: on an idle page the virtual clock never advances to a frame
+   * at all, so awaiting one hangs the check until the suite reports "no
+   * verdict".
+   *
+   * So: remove the animation instead of waiting for it. A geometry check wants
+   * to know where a thing ENDS UP, never how it travelled — measuring mid-flight
+   * is the bug, not the timing. Call once, before the first measurement.
+   */
+  let killedAnim = false;
+  const noAnimation = () => {
+    if (killedAnim) return;
+    killedAnim = true;
+    const st = document.createElement("style");
+    st.textContent =
+      "*,*::before,*::after{transition:none!important;animation:none!important;" +
+      "scroll-behavior:auto!important}";
+    document.head.appendChild(st);
+  };
   /** Accepts a selector OR an element, like probe.mjs's helper of the same name. */
   const text = (x) => {
     const n = typeof x === "string" ? $(x) : x;
@@ -3159,7 +3184,7 @@
       const before = window.__GS_INVOKED.length;
       abort.click();
       await new Promise((r) => setTimeout(r, 120));
-      const sent = window.__GS_INVOKED.slice(before).filter((ch) => /:(abort|continue)$/.test(ch));
+      const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /:(abort|continue)$/.test(ch));
       const family = { merge: "merge", rebase: "rebase", "cherry-pick": "cherryPick", revert: "revert" }[op];
       c.eq(sent[0], `${family}:abort`, `Abort ends the ${op}, not something else`);
     },
@@ -3324,6 +3349,11 @@
      */
     "a-resizer-moves-the-way-you-press-it": async (f) => {
       const c = check(f);
+      // Geometry, so the transitions have to go — see `noAnimation`. Without
+      // this the rect read back after a keypress is the one from before it, and
+      // whether the check passes comes down to how the virtual clock happened
+      // to schedule that run.
+      noAnimation();
       const handles = $$('[role="separator"]');
       c.ok(handles.length > 0, "the view has a resizer");
       let measured = 0;
@@ -3362,7 +3392,7 @@
         const seen = [axis(r0)];
         for (let i = 0; i < 3; i++) {
           press(h, key);
-          await settle(200);
+          await settle(60);
           seen.push(axis(h.getBoundingClientRect()));
         }
         const moved = seen[seen.length - 1] - seen[0];
@@ -3441,8 +3471,85 @@
       abort.click();
       abort.click();
       await settle(400);
-      const sent = window.__GS_INVOKED.slice(before).filter((ch) => /:(abort|continue|skip)$/.test(ch));
+      const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /:(abort|continue|skip)$/.test(ch));
       c.eq(sent.length, 1, `three clicks send ONE command, not ${sent.length} (${sent.join(", ")})`);
+    },
+
+    /**
+     * A detail page's own Back must POP the history, not push onto it.
+     *
+     * Measured on the shipping build: after pressing `.det-back`, FORWARD is
+     * disabled — which only happens if the press appended an entry rather than
+     * stepping back over one. So the one control that should restore your place
+     * is the control that destroys it, on every detail page in the app.
+     *
+     * The cause is that `SectionTarget.from` is `{view,label}` and can only name
+     * a LIST, so every consumer calls `nav(view,{list:true})`. It structurally
+     * cannot say "return to Pull Request #106" — which is why leaving a PR for
+     * a pipeline and pressing back lands you in the Actions list.
+     *
+     * Asserted on the history STATE, not on what rendered: landing on the right
+     * view by luck is not the same as having gone back.
+     */
+    "a-detail-page-back-pops-the-history": async (f) => {
+      const c = check(f);
+      const chev = () => [...$$(".topbar-nav")].find((b) => (b.getAttribute("aria-label") || "") === "Back");
+      const fwd = () => [...$$(".topbar-nav")].find((b) => (b.getAttribute("aria-label") || "") === "Forward");
+      c.ok(!!chev() && !!fwd(), "the top bar has Back and Forward");
+      if (!chev() || !fwd()) return;
+      c.eq(fwd().disabled, true, "Forward starts disabled — nothing has been gone back over");
+
+      const back = $(".det-back");
+      c.ok(!!back, "the detail page offers its own Back");
+      if (!back) return;
+      back.click();
+      await settle(1000);
+
+      c.ok(!$(".gh-detail, .det-main"), "it leaves the detail page");
+      // The point. A pop leaves somewhere to go forward TO; a push does not.
+      c.eq(
+        fwd().disabled,
+        false,
+        "Forward is live after Back — pressing Back must step over an entry, not append one",
+      );
+    },
+
+    /**
+     * Clicking a commit must open THAT COMMIT, not eject you into the graph.
+     *
+     * Eight call sites answer "show me this commit" with `nav("graph",{sha})`
+     * plus a `reveal(sha)` that returns silently when the sha is outside the
+     * loaded page — and dead-ends entirely when the object is not in the clone.
+     * The owner hit it three separate ways: from a PR's commit list, from
+     * Compare, and from a release tag.
+     *
+     * Asserted on the ROUTE, not the DOM: "it went somewhere else" is invisible
+     * to a check that can only see what rendered.
+     *
+     * `?arg=` names the selector to click.
+     */
+    "a-commit-opens-the-commit-not-the-graph": async (f) => {
+      const c = check(f);
+      const sel = window.__GS_ARG || ".compare-commit";
+      const row = $(sel);
+      c.ok(!!row, `the view offers a commit row (${sel})`);
+      if (!row) return;
+      const before = window.__GS_ROUTES.length;
+      row.click();
+      await settle(900);
+      const went = window.__GS_ROUTES.slice(before);
+      c.ok(went.length > 0, "clicking it navigates somewhere");
+      if (!went.length) return;
+      const dest = went[went.length - 1];
+      c.ok(
+        dest.view !== "graph",
+        `it must not land on the commit graph — that shows a row, not the changed files ` +
+          `(went to "${dest.view}")`,
+      );
+      c.ok(
+        !!dest.target && typeof dest.target.sha === "string" && dest.target.sha.length >= 7,
+        "and it carries the sha of the commit that was clicked",
+      );
     },
 
     /**

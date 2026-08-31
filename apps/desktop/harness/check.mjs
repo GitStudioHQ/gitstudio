@@ -225,6 +225,10 @@ const CASES = [
   ["the-composer-keeps-your-place-through-a-repaint", "changes"],
   ["escape-closes-one-layer-at-a-time", "branches"],
   ["arrow-left-does-not-navigate-out-from-under-a-peek", "prs~open106"],
+  ["a-detail-page-back-pops-the-history", "prs~open106", { pending: true }],
+  ["a-detail-page-back-pops-the-history", "issues~open31", { pending: true }],
+  ["a-commit-opens-the-commit-not-the-graph", "prs~open106~text:Commits", { pending: true }],
+  ["a-commit-opens-the-commit-not-the-graph", "compare~text:Commits", { pending: true }],
   ["a-surface-under-a-dialog-keeps-its-escape", "projects~click:.gh-card.clickable", { arg: "drawer" }],
   ["a-surface-under-a-dialog-keeps-its-escape", "changes~bell", { arg: "popover" }],
   ["the-code-viewer-back-is-a-navigation", "code"],
@@ -297,18 +301,43 @@ if (!existsSync(PAGE)) {
 
 console.log(`running ${selected.length} functional checks\n`);
 let failed = 0;
+let pending = 0;
+let fixed = 0;
 // Serial: each case is its own browser, and parallel Chromes fight over the GPU
 // lock and produce flaky geometry.
 for (const [id, scene, opts] of selected) {
   const r = await run(scene, id, opts);
   const fails = r.fails ?? [];
+  // A check written BEFORE the thing it checks. `pending: true` says "this
+  // describes work that is not done yet" — so a spec can be committed as a
+  // failing check without turning the suite red and hiding real breakage.
+  //
+  // It is not a way to park an inconvenient failure: a pending check that
+  // starts PASSING is reported as such and must have its flag removed, so the
+  // list can only shrink.
+  const isPending = opts?.pending === true;
   if (fails.length === 0) {
-    console.log(`  \x1b[32mPASS\x1b[0m  ${id}`);
+    if (isPending) {
+      fixed++;
+      console.log(`  \x1b[33mFIXED\x1b[0m ${id}   — passing now; drop \`pending\` from check.mjs`);
+    } else {
+      console.log(`  \x1b[32mPASS\x1b[0m  ${id}`);
+    }
+  } else if (isPending) {
+    pending++;
+    console.log(`  \x1b[36mTODO\x1b[0m  ${id}   (scene: ${scene})`);
+    for (const f of fails) console.log(`         ${f}`);
   } else {
     failed++;
     console.log(`  \x1b[31mFAIL\x1b[0m  ${id}   (scene: ${scene})`);
     for (const f of fails) console.log(`         ${f}`);
   }
 }
-console.log(`\n${selected.length - failed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+const passed = selected.length - failed - pending - fixed;
+const bits = [`${passed} passed`, `${failed} failed`];
+if (pending) bits.push(`${pending} pending`);
+if (fixed) bits.push(`${fixed} newly passing`);
+console.log(`\n${bits.join(", ")}`);
+// A pending check that now passes is a FAILURE of the suite's bookkeeping, not
+// of the app — but it must still be loud, or the pending list never shrinks.
+process.exit(failed || fixed ? 1 : 0);

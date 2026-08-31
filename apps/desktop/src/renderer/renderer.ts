@@ -980,6 +980,16 @@ class App {
    *  specific item in a section view (e.g. opening an issue from the project
    *  board) — keeping navigation inside the app instead of bouncing to GitHub. */
   private routeView(id: string, force = false, target?: SectionTarget): void {
+    // Where the app actually navigated, for the harness to assert against.
+    // Several defects are "it went somewhere else" — a commit reference
+    // ejecting you into the graph, a back button landing on a list — and none
+    // of them were checkable, because a check can see the DOM that resulted
+    // but not the route that produced it. Costs one array push in a build the
+    // harness page is the only consumer of; `__GS_ROUTES` is absent in
+    // production because nothing ever creates it.
+    const spy = (window as unknown as { __GS_ROUTES?: Array<{ view: string; target?: SectionTarget }> })
+      .__GS_ROUTES;
+    if (spy) spy.push({ view: id, target });
     // Any route change dismisses every floating layer — a peek, a menu, a
     // modal, the palette, the notifications popover. They all mount on
     // document.body, so a view swap cannot take them with it: an Inbox facet
