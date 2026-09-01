@@ -279,6 +279,8 @@ const CASES = [
   ["picking-another-job-swaps-the-log", "actions~open9100~click:.gh-job-log"],
   ["the-run-page-sends-logs-to-their-page", "actions~open9100"],
   ["a-long-log-can-be-navigated-by-eye", "actions~open9097~click:.gh-job-log"],
+  ["a-draft-release-leads-with-publishing-it", "releases~open49", { arg: "draft" }],
+  ["a-draft-release-leads-with-publishing-it", "releases~open51", { arg: "published" }],
   ["the-release-notes-get-the-window", "releases~text:New%20release"],
   ["the-composer-says-when-it-will-create-a-tag", "releases~text:New%20release"],
   ["generating-notes-keeps-what-you-wrote", "releases~text:New%20release"],

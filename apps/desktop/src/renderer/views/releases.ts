@@ -439,26 +439,20 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   editBtn.title = "Edit this release";
   editBtn.addEventListener("click", () => sectionNav?.("releasenew", { number: rel.id }));
 
+  // On a DRAFT, publishing is not "another action" — it is the one thing the
+  // word draft exists to prompt, and it was three clicks deep behind a kebab
+  // whose own icon says nothing. A draft release page now leads with it.
+  const publishBtn = el("button", "btn btn-primary") as HTMLButtonElement;
+  publishBtn.append(glyph("rocket"), span("Publish release"));
+  publishBtn.title = `Publish ${rel.tagName} — everyone watching this repository is notified`;
+  publishBtn.addEventListener("click", () => void publishRelease(rel, publishBtn, reload));
+
   const moreBtn = el("button", "mini-btn gh-icon-btn");
   moreBtn.append(glyph("ellipsis"));
   moreBtn.title = "More actions";
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
       { label: "Copy link", icon: "copy", onClick: () => void copyText(rel.htmlUrl, "Copied release link.") },
-      // A draft page said "unpublished draft" and then offered Edit, Copy link,
-      // Delete and Open on GitHub — every action except the one the word
-      // "draft" exists to prompt.
-      ...(rel.draft
-        ? [
-            { separator: true },
-            {
-              label: "Publish release",
-              icon: "rocket",
-              title: `Publish ${rel.tagName} — it becomes visible to everyone`,
-              onClick: () => void publishRelease(rel, moreBtn, reload),
-            },
-          ]
-        : []),
       { separator: true },
       {
         label: "Delete release",
@@ -474,7 +468,9 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   openBtn.setAttribute("aria-label", openBtn.title);
   openBtn.addEventListener("click", () => window.open(rel.htmlUrl, "_blank"));
 
-  topActions.replaceChildren(editBtn, moreBtn, openBtn);
+  // Publish leads on a draft and is absent everywhere else — a greyed-out
+  // "Publish release" sitting permanently on a published one is just noise.
+  topActions.replaceChildren(...(rel.draft ? [publishBtn] : []), editBtn, moreBtn, openBtn);
 
   // ── title block ──
   const titleRow = el("div", "det-title-row");

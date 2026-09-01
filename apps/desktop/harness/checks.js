@@ -4732,5 +4732,32 @@
         "taking it drops the restored draft",
       );
     },
+
+    /**
+     * "same is for publishing releases."
+     *
+     * A draft's page offered Edit, Copy link, Delete and Open on GitHub — and
+     * publishing, the one thing the word "draft" exists to prompt, three clicks
+     * deep behind a kebab whose icon says nothing. `?arg=` is "draft" or
+     * "published".
+     */
+    "a-draft-release-leads-with-publishing-it": async (f) => {
+      const c = check(f);
+      const top = $$(".det-tb-actions button").map((b) => (b.textContent || b.title || "").trim());
+      if ((window.__GS_ARG || "draft") === "draft") {
+        c.ok(
+          top.some((t) => /^publish release/i.test(t)),
+          `a draft leads with publishing (top bar: ${top.join(", ")})`,
+        );
+        const btn = $$(".det-tb-actions button").find((b) => /^publish release/i.test(text(b)));
+        c.ok(btn?.classList.contains("btn-primary"), "and it carries the primary weight");
+        c.match(btn?.title, /notified|visible/i, "saying what publishing does");
+      } else {
+        c.ok(
+          !top.some((t) => /^publish release/i.test(t)),
+          `a published release does not offer to publish itself (${top.join(", ")})`,
+        );
+      }
+    },
   };
 })();

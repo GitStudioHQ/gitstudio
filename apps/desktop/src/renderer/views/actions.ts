@@ -54,7 +54,6 @@ import {
   type SectionTarget,
 } from "./common";
 import { prime } from "../cache";
-import { createLogPane, type LogPane } from "../logView";
 import { setPageLabel } from "../navStack";
 import type {
   ActionsRunsFilter,

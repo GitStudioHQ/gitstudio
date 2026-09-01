@@ -18,7 +18,7 @@
 // -card-in-different-states class of bug.
 
 import { host } from "../bridge";
-import { el, span, glyph, cleanErr, errorState } from "../ui";
+import { el, span, glyph, cleanErr, errorState, skeletonList } from "../ui";
 import { toast } from "../dialogs";
 import { detailPage, type SectionTarget, type SectionNav } from "./common";
 import { createLogPane, type LogPane } from "../logView";
@@ -75,6 +75,7 @@ export async function renderJobLog(
   view.classList.add("joblog-view");
   rail.remove();
   wrap.replaceChildren(view);
+  main.appendChild(skeletonList(3, false));
 
   if (!runId) {
     main.replaceChildren(errorState("No run", "Nothing was asked for."));

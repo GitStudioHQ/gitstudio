@@ -64,6 +64,10 @@ export async function renderIssueCompose(
 ): Promise<void> {
   const editNo = target?.number;
   const isPr = kind === "pr";
+  // There is no "compose a pull request" here — a PR is opened from a branch,
+  // not written from nothing — so a `predit` with no number is a routing bug,
+  // and it must not quietly turn into the NEW-ISSUE form (which would file an
+  // issue when you asked to edit a pull request).
   const section = isPr ? "prs" : "issues";
   const noun = isPr ? "pull request" : "issue";
   const { view, main, rail, topActions } = detailPage({
@@ -76,6 +80,13 @@ export async function renderIssueCompose(
   topActions.remove();
   wrap.replaceChildren(view);
   main.appendChild(skeletonList(3, false));
+
+  if (isPr && editNo == null) {
+    // No Retry here — retrying a routing bug does nothing. The top bar's
+    // "← Pull requests" is the way out, and it is already on screen.
+    main.replaceChildren(errorState("No pull request", "Nothing was named to edit."));
+    return;
+  }
 
   let existing: IssueDetail | undefined;
   let existingPr: PullRequest | undefined;
