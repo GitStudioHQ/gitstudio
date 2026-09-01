@@ -15,6 +15,7 @@ import { PAGE_CAPS } from "../githubPaging";
 import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
+  GeneratedNotes,
   ReleaseInfo,
   ReleaseInput,
   TagInfo,
@@ -128,6 +129,36 @@ export async function listTags(
 // ── Mutations (return CommitActionResult) ──
 
 /**
+ * The REST body for a release, as one pure function.
+ *
+ * `make_latest` is the reason this is worth extracting: GitHub takes the
+ * string "true"/"false", omitting it means "you decide" (it picks by date), and
+ * getting that wrong silently moves the repository's Latest badge onto whatever
+ * was published most recently — including a back-ported tag. A caller that
+ * never asked the question must not answer it.
+ */
+export function releaseBody(
+  input: ReleaseInput,
+  o: { forCreate: boolean },
+): Record<string, unknown> {
+  return {
+    tag_name: input.tagName,
+    target_commitish: input.targetCommitish || undefined,
+    // A NEW release with no title sensibly defaults to the tag; an EDIT sends
+    // the raw name (including "") so an emptied title clears it rather than
+    // being silently overwritten with the tag.
+    name: o.forCreate ? input.name || input.tagName : (input.name ?? ""),
+    body: input.body ?? "",
+    draft: input.draft ?? false,
+    prerelease: input.prerelease ?? false,
+    ...(input.makeLatest === undefined
+      ? {}
+      : { make_latest: input.makeLatest ? "true" : "false" }),
+  };
+}
+
+
+/**
  * Draft or publish a release. An empty `targetCommitish` is sent as `undefined`
  * so GitHub uses the repo's default branch rather than erroring on "". If the
  * tag doesn't exist yet, GitHub auto-creates it at the target commitish.
@@ -139,15 +170,11 @@ export async function createRelease(
   input: ReleaseInput,
 ): Promise<CommitActionResult> {
   try {
-    await client.requestBody("POST", `/repos/${enc(owner)}/${enc(repo)}/releases`, {
-      tag_name: input.tagName,
-      target_commitish: input.targetCommitish || undefined,
-      // A new release with no title sensibly defaults to the tag.
-      name: input.name || input.tagName,
-      body: input.body ?? "",
-      draft: input.draft ?? false,
-      prerelease: input.prerelease ?? false,
-    });
+    await client.requestBody(
+      "POST",
+      `/repos/${enc(owner)}/${enc(repo)}/releases`,
+      releaseBody(input, { forCreate: true }),
+    );
     return { ok: true, changed: true };
   } catch (err) {
     return {
@@ -172,16 +199,7 @@ export async function updateRelease(
     await client.requestBody(
       "PATCH",
       `/repos/${enc(owner)}/${enc(repo)}/releases/${input.id}`,
-      {
-        tag_name: input.tagName,
-        target_commitish: input.targetCommitish || undefined,
-        // Send the raw name (incl. "") so an emptied title clears it rather than
-        // being silently overwritten with the tag.
-        name: input.name ?? "",
-        body: input.body ?? "",
-        draft: input.draft ?? false,
-        prerelease: input.prerelease ?? false,
-      },
+      releaseBody(input, { forCreate: false }),
     );
     return { ok: true, changed: true };
   } catch (err) {
@@ -250,4 +268,32 @@ export async function deleteAsset(
   } catch (err) {
     return { ok: false, changed: false, ...errorFields(err) };
   }
+}
+
+/**
+ * GitHub's own release notes for a tag — the website's "Generate release
+ * notes" button, which reads the pull requests merged since the previous tag.
+ *
+ * `previous_tag_name` is omitted rather than guessed: GitHub picks the last
+ * release itself, and a wrong guess produces a changelog that silently starts
+ * in the wrong place.
+ */
+export async function generateNotes(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { tagName: string; targetCommitish?: string; previousTagName?: string },
+): Promise<GeneratedNotes> {
+  // `request`, not `requestBody`: the generated notes ARE the response, and
+  // requestBody throws the body away.
+  const raw = await client.request<{ name?: string; body?: string }>(
+    "POST",
+    `/repos/${enc(owner)}/${enc(repo)}/releases/generate-notes`,
+    {
+      tag_name: req.tagName,
+      target_commitish: req.targetCommitish || undefined,
+      previous_tag_name: req.previousTagName || undefined,
+    },
+  );
+  return { name: raw?.name ?? "", body: raw?.body ?? "" };
 }

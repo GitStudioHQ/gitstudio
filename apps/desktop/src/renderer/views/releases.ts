@@ -73,7 +73,12 @@ function fmtBytes(n: number): string {
   return `${(n / Math.pow(1024, i)).toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
+/** The section's router, so nested builders can leave for another view — the
+ *  release composer is a page of its own now, not a modal over this one. */
+let sectionNav: SectionNav | undefined;
+
 export const renderReleases: SectionRender = (wrap, nav, target) => {
+  sectionNav = nav;
   void mount(wrap, nav, target);
 };
 
@@ -120,7 +125,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("plus"), span("New release"));
   newBtn.title = "Draft a new release";
-  newBtn.addEventListener("click", () => void createRelease(refresh, ""));
+  newBtn.addEventListener("click", () => sectionNav?.("releasenew"));
 
   tools.append(seg, newBtn);
   header.querySelector(".gh-acct")?.before(tools);
@@ -215,7 +220,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         listEl.appendChild(
           emptyState("No releases yet", "Publish your first release to share builds and notes.", {
             icon: "tag",
-            action: { label: "New release", icon: "plus", onClick: () => void createRelease(refresh, "") },
+            action: { label: "New release", icon: "plus", onClick: () => sectionNav?.("releasenew") },
           }),
         );
         return;
@@ -311,7 +316,7 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
         title: `Draft a new release from ${t.name}`,
         onClick: (ctx) => {
           ctx.close();
-          void createRelease(refresh, t.name);
+          sectionNav?.("releasenew", { ref: t.name });
         },
       },
     ],
@@ -432,7 +437,7 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   const editBtn = el("button", "mini-btn");
   editBtn.append(glyph("pencil"), span("Edit"));
   editBtn.title = "Edit this release";
-  editBtn.addEventListener("click", () => void editRelease(rel, reload));
+  editBtn.addEventListener("click", () => sectionNav?.("releasenew", { number: rel.id }));
 
   const moreBtn = el("button", "mini-btn gh-icon-btn");
   moreBtn.append(glyph("ellipsis"));
@@ -680,70 +685,6 @@ async function deleteAsset(
 // ── CRUD actions ──
 
 /** Draft a new release; `prefillTag` comes from a tag peek. */
-async function createRelease(refresh: () => void, prefillTag: string): Promise<void> {
-  // Release notes are the longest thing this view asks anyone to write, and the
-  // form used to close before the request was sent — so a rejected create
-  // answered all of it with a toast over a screen that no longer held the text.
-  await formWithRetry<ReleaseInput>(
-    (seed, error) =>
-      releaseFormDialog(
-        "New release",
-        seed ?? {
-          tagName: prefillTag,
-          targetCommitish: "",
-          name: "",
-          body: "",
-          draft: false,
-          prerelease: false,
-        },
-        error,
-      ),
-    async (input) => {
-      try {
-        const r = await host.invoke("release:create", input);
-        if (!r.ok) return r.message ?? "Couldn't create the release.";
-        toast(`Created release ${input.tagName}.`, "success");
-        bust("release");
-        releaseTab = "releases";
-        refresh();
-        return undefined;
-      } catch (e) {
-        return cleanErr(e) || "Couldn't create the release.";
-      }
-    },
-  );
-}
-
-async function editRelease(rel: ReleaseInfo, reload: () => void): Promise<void> {
-  await formWithRetry<ReleaseInput>(
-    (seed, error) =>
-      releaseFormDialog(
-        "Edit release",
-        seed ?? {
-          id: rel.id,
-          tagName: rel.tagName,
-          targetCommitish: rel.targetCommitish,
-          name: rel.name,
-          body: rel.body ?? "",
-          draft: rel.draft,
-          prerelease: rel.prerelease,
-        },
-        error,
-      ),
-    async (input) => {
-      try {
-        const r = await host.invoke("release:update", input);
-        if (!r.ok) return r.message ?? "Couldn't update the release.";
-        toast(`Updated release ${input.tagName}.`, "success");
-        reload();
-        return undefined;
-      } catch (e) {
-        return cleanErr(e) || "Couldn't update the release.";
-      }
-    },
-  );
-}
-
 async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => void): Promise<void> {
   const ok = await confirmDialog({
     title: `Delete release ${rel.name || rel.tagName}?`,
@@ -769,215 +710,12 @@ async function deleteRelease(rel: ReleaseInfo, btn: HTMLElement, back: () => voi
   }
 }
 
-// ── The multi-field release form dialog ──
-//
-// dialogs.ts keeps its `modal()` scaffold private and only exports the
-// single-field promptInline, so this section ships its own modal. It reuses the
-// shared .modal-overlay / .modal-* CSS, traps focus, closes on Esc / backdrop /
-// Cancel, and submits on the primary button or ⌘/Ctrl+Enter.
-
-function mkDialogEl(tag: string, cls = ""): HTMLElement {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  return n;
-}
-
-function releaseFormDialog(
-  title: string,
-  init: ReleaseInput,
-  /** Why the previous attempt failed, shown inside the form that still holds
-   *  the release notes. See `formWithRetry`. */
-  error?: string,
-): Promise<ReleaseInput | null> {
-  return new Promise((resolve) => {
-    let settled = false;
-    openModal((close) => {
-      const finish = (value: ReleaseInput | null): void => {
-        if (settled) return;
-        settled = true;
-        resolve(value);
-        close();
-      };
-
-      const card = mkDialogEl("div", "modal-card modal-form");
-      const h = mkDialogEl("div", "modal-title");
-      h.textContent = title;
-
-      const field = (label: string, ctrl: HTMLElement): HTMLElement => {
-        const f = mkDialogEl("label", "modal-field");
-        const l = mkDialogEl("span", "modal-field-label");
-        l.textContent = label;
-        f.append(l, ctrl);
-        return f;
-      };
-
-      const tag = document.createElement("input");
-      tag.className = "modal-input";
-      tag.placeholder = "v1.0.0";
-      tag.value = init.tagName ?? "";
-
-      const target = document.createElement("input");
-      target.className = "modal-input";
-      target.placeholder = "main (target branch or commit)";
-      target.value = init.targetCommitish ?? "";
-
-      const name = document.createElement("input");
-      name.className = "modal-input";
-      name.placeholder = "Release title";
-      name.value = init.name ?? "";
-
-      // The shared editor: Write/Preview, a toolbar, list continuation, ⌘B/I/K
-      // and ⌘Enter to submit. Preview renders through the SAME `renderMarkdown`
-      // that draws the published release, so the two cannot disagree.
-      //
-      // And a durable draft, which is what actually fixes the data loss —
-      // Escape used to discard everything typed here without a word, and Escape
-      // is the key people press to mean "never mind". Keyed by the release, or
-      // by "new" while it does not exist yet.
-      const draftId = init.id === undefined ? "new" : String(init.id);
-      const notes = mdEditor({
-        value: init.body ?? "",
-        placeholder: "Release notes (Markdown supported)…",
-        rows: 10,
-        label: "Release notes",
-        onInput: (v) => notesDraft.save(v),
-        onSubmit: () => ok.click(),
-      });
-      const notesDraft = wireDraft("release", draftId, (text) => {
-        // Only over an EMPTY field. A draft must never silently replace notes
-        // the server already has — that would read as the app rewriting a
-        // published release behind your back.
-        if (!init.body) notes.set(text);
-      });
-      const bodyInput = notes.textarea;
-
-      const pre = document.createElement("input");
-      pre.type = "checkbox";
-      pre.checked = !!init.prerelease;
-
-      const checks = mkDialogEl("div", "modal-checks");
-      const checkWrap = (cb: HTMLInputElement, text: string): HTMLElement => {
-        const w = mkDialogEl("label", "modal-check");
-        const t = mkDialogEl("span");
-        t.textContent = text;
-        w.append(cb, t);
-        return w;
-      };
-      // Pre-release stays a checkbox — it is an ATTRIBUTE of the release.
-      // Draft is not: it is the difference between "nobody can see this" and
-      // "this is announced to everyone watching the repository", and a
-      // checkbox reading "Draft (don't publish yet)" beside a button reading
-      // "Create" makes the most consequential choice on the form the quietest
-      // thing on it. Two named buttons say what will happen.
-      checks.append(checkWrap(pre, "Pre-release"));
-
-      const actions = mkDialogEl("div", "modal-actions");
-      const cancel = mkDialogEl("button", "mini-btn");
-      cancel.textContent = "Cancel";
-
-      // On an EXISTING published release, "Save draft" would silently unpublish
-      // it — a destructive act behind an innocuous label. Editing a published
-      // release offers one button; un-publishing is a deliberate action
-      // elsewhere, behind a confirm.
-      const alreadyPublished = init.id !== undefined && !init.draft;
-      const saveDraft = mkDialogEl("button", "mini-btn") as HTMLButtonElement;
-      saveDraft.textContent = "Save draft";
-      saveDraft.title = "Keep this private — nobody is notified, and it stays off the releases page";
-      const ok = mkDialogEl("button", "btn btn-primary modal-ok") as HTMLButtonElement;
-      const okSpan = mkDialogEl("span");
-      okSpan.textContent = alreadyPublished ? "Save" : "Publish release";
-      ok.appendChild(okSpan);
-      ok.title = alreadyPublished
-        ? "Save your changes to this published release"
-        : "Publish now — anyone watching this repository is notified";
-      if (alreadyPublished) actions.append(cancel, ok);
-      else actions.append(cancel, saveDraft, ok);
-
-      card.append(
-        h,
-        field("Tag", tag),
-        field("Target", target),
-        field("Title", name),
-        field("Notes", notes.root),
-        checks,
-      );
-      // The error line exists ALWAYS, empty until there is something to say.
-      // It used to be created only when the form re-opened after a rejected
-      // submit, so the first failure — an empty tag — had nowhere to be
-      // reported and the form just moved focus and left you guessing.
-      const note = mkDialogEl("div", "modal-note-error");
-      note.setAttribute("role", "alert");
-      note.hidden = !error;
-      if (error) note.textContent = error;
-      card.appendChild(note);
-      card.appendChild(actions);
-
-      const submit = (asDraft?: boolean): void => {
-        const tagName = tag.value.trim();
-        if (!tagName) {
-          // The form already renders a `.modal-note-error` slot and never used
-          // it: an empty tag simply moved focus and left you guessing.
-          tag.setAttribute("aria-invalid", "true");
-          note.hidden = false;
-          note.textContent = "A tag is required — it is what the release points at.";
-          tag.focus();
-          return;
-        }
-        // The draft has served its purpose the moment the text is on its way to
-        // GitHub. Left behind, re-opening the form would restore a copy of what
-        // was just published, over the top of it.
-        notesDraft.clear();
-        finish({
-          id: init.id,
-          tagName,
-          targetCommitish: target.value.trim() || undefined,
-          name: name.value.trim(),
-          body: notes.get(),
-          // Which BUTTON was pressed. Editing an already-published release has
-          // only one, and it must not silently unpublish.
-          draft: asDraft ?? (alreadyPublished ? false : !!init.draft && init.id !== undefined),
-          prerelease: pre.checked,
-        });
-      };
-
-      tag.addEventListener("input", () => {
-        if (!tag.value.trim()) return;
-        tag.removeAttribute("aria-invalid");
-        note.hidden = true;
-      });
-      cancel.addEventListener("click", () => finish(null));
-      ok.addEventListener("click", () => submit(false));
-      saveDraft.addEventListener("click", () => submit(true));
-      // ⌘/Ctrl+Enter submits from anywhere in the form (textarea included).
-      // On the card, not document — openModal owns Escape and the Tab trap.
-      card.addEventListener("keydown", (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-          e.preventDefault();
-          submit(false);
-        }
-      });
-
-      return {
-        card,
-        focusEl: tag,
-        label: title,
-        // Release notes are the longest thing this view asks anyone to write,
-        // and a BACKGROUND teardown — a route change, and a window focus routes
-        // — must not take them. Esc, the backdrop and Cancel still work: those
-        // are the user asking. `formWithRetry` covers a failed submit; this is
-        // the other half, and without it the wave's fix was only half a fix.
-        hasUnsavedWork: () =>
-          tag.value !== init.tagName ||
-          target.value !== init.targetCommitish ||
-          name.value !== init.name ||
-          bodyInput.value !== (init.body ?? ""),
-        onClose: () => {
-          if (!settled) resolve(null);
-        },
-      };
-    });
-  });
-}
+/*
+ * `createRelease`, `editRelease` and `releaseFormDialog` used to live here: a
+ * 560px modal card with the release notes squeezed into ~180px of it. They are
+ * `views/releaseCompose.ts` now — a routed page, reached through
+ * `sectionNav("releasenew")` above.
+ */
 
 /** Flip a draft release to published — the action the word "draft" implies. */
 async function publishRelease(rel: ReleaseInfo, btn: HTMLElement, reload: () => void): Promise<void> {

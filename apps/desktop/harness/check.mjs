@@ -44,7 +44,7 @@ const CASES = [
   ["changes-status-column", "changes"],
   ["log-no-blank-endgroup-rows", "actions~open9100~click:.gh-job-log"],
   ["log-pane-has-its-own-ground", "actions~open9100~click:.gh-job-log"],
-  ["log-follow-survives-expand", "actions~open9100~click:.gh-job-log~click:.log-tool%5Btitle%3D%22Expand%20the%20pane%22%5D"],
+  ["log-follow-survives-expand", "actions~open9100~click:.gh-job-log~click:.log-tool%5Btitle%3D%22Use%20the%20full%20width%22%5D"],
   ["run-detail-one-identity", "actions~open9100"],
   ["run-detail-hides-dead-actions", "actions~open9100"],
   ["run-detail-steps-visible", "actions~open9100"],
@@ -229,6 +229,8 @@ const CASES = [
   ["leaving-a-pr-for-its-pipeline-comes-back-to-the-pr", "prs~open106~text:Checks"],
   ["a-detail-page-back-pops-the-history", "issues~open31"],
   ["a-deleted-file-does-not-look-like-a-renamed-one", "prs~open106~text:Files"],
+  ["a-locked-token-still-reads-as-signed-in", "changes", { extra: "unlocked=0" }],
+  ["a-locked-token-still-reads-as-signed-in", "changes"],
   ["no-view-hides-its-own-content-or-locks-out-the-keyboard", "changes"],
   ["no-view-hides-its-own-content-or-locks-out-the-keyboard", "issues"],
   ["no-view-hides-its-own-content-or-locks-out-the-keyboard", "prs"],
@@ -269,6 +271,26 @@ const CASES = [
   ["a-resizer-moves-the-way-you-press-it", "changes~click:.dock-chevron"],
   ["signing-out-does-not-leave-the-old-account-on-screen", "code~text:Settings", { arg: "Sign out" }],
   ["signing-out-does-not-leave-the-old-account-on-screen", "code~text:Settings", { arg: "Switch account" }],
+
+  // The log, the release and the issue — each of the three composers/readers
+  // the owner called out, now a routed page rather than a box inside one.
+  ["the-log-gets-the-window", "actions~open9100~click:.gh-job-log"],
+  ["the-log-page-names-the-job", "actions~open9100~click:.gh-job-log"],
+  ["picking-another-job-swaps-the-log", "actions~open9100~click:.gh-job-log"],
+  ["the-run-page-sends-logs-to-their-page", "actions~open9100"],
+  ["a-long-log-can-be-navigated-by-eye", "actions~open9097~click:.gh-job-log"],
+  ["the-release-notes-get-the-window", "releases~text:New%20release"],
+  ["the-composer-says-when-it-will-create-a-tag", "releases~text:New%20release"],
+  ["generating-notes-keeps-what-you-wrote", "releases~text:New%20release"],
+  ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
+  ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
+  ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~click:.compare-commit"],
+  ["the-files-tab-gives-the-diff-the-room", "prs~open106~text:Files", { arg: "open" }],
+  [
+    "the-files-tab-gives-the-diff-the-room",
+    "prs~open106~text:Files~click:.pr-files-list%20.file-row:nth-child(5)",
+    { arg: "quiet" },
+  ],
 ];
 
 function run(scene, checkId, opts = {}) {

@@ -601,6 +601,21 @@ export interface ReleaseInput {
   body?: string;
   draft?: boolean;
   prerelease?: boolean;
+  /**
+   * Whether this release becomes the repository's "Latest" one.
+   *
+   * GitHub's own composer asks; ours could not, so publishing an old
+   * back-ported tag silently moved the Latest badge onto it. Undefined leaves
+   * GitHub's default (it picks by date), which is what a caller that never
+   * asked the question should get.
+   */
+  makeLatest?: boolean;
+}
+
+/** What GitHub's generate-notes endpoint answers with. */
+export interface GeneratedNotes {
+  name: string;
+  body: string;
 }
 
 // ── Notifications ──
@@ -1227,6 +1242,14 @@ export interface IpcChannels {
   "head:get": [void, HeadInfo | undefined];
   "status": [void, ChangedFile[]];
   "commit:details": [string, CommitDetailsPayload | undefined];
+  /**
+   * Which local branches contain this commit — "did this come from the branch
+   * I am on, or was it merged in from somewhere else".
+   *
+   * A commit page that shows the change but never says where it lives leaves
+   * the reader unable to answer the first question they have about it.
+   */
+  "commit:branches": [string, CommitBranches];
   "commit:rowStats": [string[], RowStat[]];
   "diff:files": [void, ChangedFile[]];
   "file:diff": [{ path: string; sha?: string }, FileDiff | undefined];
@@ -1379,7 +1402,10 @@ export interface IpcChannels {
   // Issues CRUD.
   "issue:list": [{ state?: "open" | "closed" | "all" }, IssueInfo[]];
   "issue:detail": [number, IssueDetail | undefined];
-  "issue:create": [{ title: string; body?: string }, { ok: boolean; number?: number; message?: string }];
+  "issue:create": [
+    { title: string; body?: string; labels?: string[]; assignees?: string[]; milestone?: number },
+    { ok: boolean; number?: number; message?: string },
+  ];
   "issue:comment": [{ number: number; body: string }, CommitActionResult];
   "issue:setState": [{ number: number; state: "open" | "closed" }, CommitActionResult];
   "issue:edit": [{ number: number; title?: string; body?: string }, CommitActionResult];
@@ -1405,6 +1431,18 @@ export interface IpcChannels {
   "release:detail": [number, ReleaseInfo | undefined];
   "release:tags": [void, TagInfo[]];
   "release:create": [ReleaseInput, CommitActionResult];
+  /**
+   * GitHub's own release notes, written from the merged pull requests between
+   * two tags — the "Generate release notes" button on its composer.
+   *
+   * Without it the app asks someone to hand-write what GitHub will produce in
+   * a second, which is most of why the composer felt like a worse place to
+   * write a release than the website.
+   */
+  "release:generateNotes": [
+    { tagName: string; targetCommitish?: string; previousTagName?: string },
+    GeneratedNotes,
+  ];
   "release:update": [ReleaseInput, CommitActionResult];
   "release:delete": [number, CommitActionResult];
   /** Pick local files (native dialog in MAIN) and upload them as assets. */
@@ -1726,6 +1764,16 @@ export interface GitOpState {
    *  and `rebase --skip` HARD-RESETS, so it is offered only where git itself
    *  names it as the way out. */
   canSkip: boolean;
+}
+
+/** Where a commit sits in the branch graph — see `commit:branches`. */
+export interface CommitBranches {
+  /** Local branches containing it, HEAD's own first when present. */
+  branches: string[];
+  /** True when the branch HEAD is on contains it. */
+  onCurrent: boolean;
+  /** The branch HEAD is on, so the page can phrase it ("also on main"). */
+  current?: string;
 }
 
 // ── GitHub depth wire types (PR threads, milestones, actions) ───────────────────

@@ -119,7 +119,13 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   if (!gate) return;
 
   if (target?.number != null) {
-    showRunDetailPage(wrap, nav, target.number, target.jobId);
+    // A run asked for WITH a job is a request to read that job's log, and the
+    // log has its own route now — a page rather than a pane on this one.
+    if (target.jobId != null) {
+      nav("joblog", { number: target.number, jobId: target.jobId });
+      return;
+    }
+    showRunDetailPage(wrap, nav, target.number);
     return;
   }
   await listPage(wrap, nav, gate);
@@ -545,187 +551,12 @@ const seededJobs = new Set<number>();
 let lastRunDetailId: number | undefined;
 let lastRunAttempt = 0;
 
-// ── Log panes (one per job, surviving the 8s detail repaints) ────────────────
-interface JobLogEntry {
-  pane: LogPane;
-  /** Renderer-side offset into the server log (next chunk starts here). */
-  offset: number;
-  open: boolean;
-  loaded: boolean;
-  tailing: boolean;
-  unchangedPolls: number;
-}
-const logPanes = new Map<number, JobLogEntry>();
-/** The freshest job list from the detail poll — tail loops read status here. */
-let latestJobs: WorkflowJob[] = [];
-const TAIL_LIMIT = 3;
-let activeTails = 0;
-
-function jobStatus(jobId: number): string {
-  return latestJobs.find((j) => j.id === jobId)?.status ?? "";
-}
-
-function destroyLogPanes(): void {
-  for (const [, e] of logPanes) e.pane.destroy();
-  logPanes.clear();
-  latestJobs = [];
-  activeTails = 0;
-  logIO?.disconnect();
-  logIO = undefined;
-  lazyLoadJobs.clear();
-}
-
-/** Get-or-create the pane entry for a job. */
-function paneFor(j: WorkflowJob): JobLogEntry {
-  let e = logPanes.get(j.id);
-  if (!e) {
-    const pane = createLogPane({
-      ariaLabel: `Log for ${j.name}`,
-      onCopy: () => host.invoke("actions:jobLog", { jobId: j.id }),
-      onDownload: () => {
-        void host.invoke("actions:saveLog", { jobId: j.id, name: j.name }).then((r) => {
-          toast(r.ok ? (r.message ?? "Log saved.") : (r.message ?? "Couldn't save the log."), r.ok ? "success" : "error");
-        });
-      },
-    });
-    e = { pane, offset: 0, open: false, loaded: false, tailing: false, unchangedPolls: 0 };
-    logPanes.set(j.id, e);
-  }
-  return e;
-}
-
-/** First fetch (or refetch after reset) of a job's log into its pane. */
-async function loadJobLog(j: WorkflowJob): Promise<void> {
-  const e = paneFor(j);
-  try {
-    const d = await host.invoke("actions:jobLogChunk", { jobId: j.id, offset: e.offset });
-    if (!e.pane.el.isConnected && !e.open) return;
-    if (d.reset || !e.loaded) e.pane.reset(d.text, { truncated: d.truncated });
-    else e.pane.append(d.text);
-    e.offset = d.totalLength;
-    e.loaded = true;
-    if (jobStatus(j.id) !== "in_progress") e.pane.finish();
-  } catch (err) {
-    if (!e.loaded) e.pane.reset(`[logs unavailable: ${cleanErr(err) || "request failed"}]`);
-  }
-}
-
-/** The live tail: poll deltas every 4s while the job runs; back off to 8s
- *  after two unchanged polls; at most TAIL_LIMIT concurrent tails. A final
- *  fetch runs once the job concludes, then the loop ends. */
-function startTail(jobId: number): void {
-  const e = logPanes.get(jobId);
-  if (!e || e.tailing) return;
-  e.tailing = true;
-  const tick = (): void => {
-    const delay = e.unchangedPolls >= 2 ? 8000 : 4000;
-    window.setTimeout(() => {
-      void (async () => {
-        if (!e.pane.el.isConnected) {
-          e.tailing = false;
-          return;
-        }
-        const live = jobStatus(jobId) === "in_progress";
-        if (activeTails >= TAIL_LIMIT) {
-          tick(); // queue behind the running tails
-          return;
-        }
-        activeTails++;
-        try {
-          const d = await host.invoke("actions:jobLogChunk", { jobId, offset: e.offset });
-          if (d.reset) e.pane.reset(d.text, { truncated: d.truncated });
-          else if (d.text) e.pane.append(d.text);
-          e.unchangedPolls = d.text ? 0 : e.unchangedPolls + 1;
-          e.offset = d.totalLength;
-          e.loaded = true;
-        } catch {
-          e.unchangedPolls++;
-        } finally {
-          activeTails--;
-        }
-        if (live) tick();
-        else {
-          e.tailing = false;
-          e.pane.finish();
-        }
-      })();
-    }, delay);
-  };
-  tick();
-}
-
-/** Lazy open used by run-level "View logs": panes materialize as they scroll
- *  into view, so a 40-job matrix doesn't fire 40 fetches at once. */
-let logIO: IntersectionObserver | undefined;
-const lazyLoadJobs = new Map<Element, WorkflowJob>();
-function ensureLogIO(): IntersectionObserver {
-  if (!logIO) {
-    logIO = new IntersectionObserver(
-      (entries) => {
-        for (const en of entries) {
-          if (!en.isIntersecting) continue;
-          const j = lazyLoadJobs.get(en.target);
-          if (!j) continue;
-          lazyLoadJobs.delete(en.target);
-          logIO?.unobserve(en.target);
-          void loadJobLog(j).then(() => {
-            if (jobStatus(j.id) === "in_progress") startTail(j.id);
-          });
-        }
-      },
-      { rootMargin: "200px" },
-    );
-  }
-  return logIO;
-}
-function openJobLogLazy(j: WorkflowJob, slot: HTMLElement): void {
-  const e = paneFor(j);
-  if (e.open) return;
-  e.open = true;
-  slot.appendChild(e.pane.el);
-  if (!e.loaded) {
-    lazyLoadJobs.set(e.pane.el, j);
-    ensureLogIO().observe(e.pane.el);
-  } else if (jobStatus(j.id) === "in_progress") {
-    startTail(j.id);
-  }
-}
-
-/** Toggle a job's inline log pane open/closed (lazy first fetch + tail). */
-function toggleJobLog(j: WorkflowJob, slot: HTMLElement): void {
-  const e = paneFor(j);
-  e.open = !e.open;
-  if (e.open) {
-    e.pane.saveViewport();
-    slot.appendChild(e.pane.el);
-    e.pane.restoreViewport();
-    // Opening a ~390px pane on the second or third job put the whole thing
-    // below the fold — the click "did nothing" unless you happened to scroll.
-    // Bring the pane you just asked for into view.
-    const bring = (): void => {
-      const r = e.pane.el.getBoundingClientRect();
-      if (r.top >= 0 && r.bottom <= window.innerHeight) return;
-      e.pane.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    };
-    bring();
-    window.setTimeout(bring, 120); // again once the log has laid out
-    if (!e.loaded) void loadJobLog(j).then(() => {
-      if (jobStatus(j.id) === "in_progress") startTail(j.id);
-    });
-    else if (jobStatus(j.id) === "in_progress") startTail(j.id);
-  } else {
-    e.pane.saveViewport();
-    e.pane.el.remove();
-  }
-}
-
-function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number, revealJobId?: number): void {
+function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number): void {
   if (lastRunDetailId !== id) {
     lastRunDetailId = id;
     lastRunAttempt = 0;
     expandedJobs.clear();
     seededJobs.clear();
-    destroyLogPanes();
   }
   const back = (): void => nav("actions", { list: true });
   const reload = (): void => {
@@ -786,18 +617,6 @@ function showRunDetailPage(wrap: HTMLElement, nav: SectionNav, id: number, revea
     lastSig = JSON.stringify(d);
     buildRunDetail({ main, rail, topActions, d, reload });
     schedulePoll(d);
-    // Deep link from PR checks: expand the target job's log and scroll to it.
-    if (revealJobId != null) {
-      const j = d.jobs.find((x) => x.id === revealJobId);
-      if (j) {
-        expandedJobs.add(j.id);
-        const card = main.querySelector(`[data-job-id="${j.id}"]`);
-        const slot = card?.querySelector<HTMLElement>(".gh-job-logslot");
-        const e = paneFor(j);
-        if (slot && !e.open) toggleJobLog(j, slot);
-        card?.scrollIntoView({ block: "start" });
-      }
-    }
   })();
 }
 
@@ -825,16 +644,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   const state = full.conclusion || full.status || "";
   const live = isLive(full.status);
   // A re-run attempt REPLACES the logs — every pane restarts from zero.
-  if (lastRunAttempt && full.runAttempt !== lastRunAttempt) destroyLogPanes();
   lastRunAttempt = full.runAttempt;
-  latestJobs = d.jobs;
-  // Detach live panes before the repaint wipes main (they re-slot below).
-  for (const [, e] of logPanes) {
-    if (e.open && e.pane.el.isConnected) {
-      e.pane.saveViewport();
-      e.pane.el.remove();
-    }
-  }
   main.replaceChildren();
   rail.replaceChildren();
 
@@ -868,53 +678,21 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   cancelBtn.disabled = !live;
   cancelBtn.addEventListener("click", () => void cancelRun(full.id, cancelBtn, reload));
 
+  // The logs are a PAGE, not an accordion on this one. Expanding every job's
+  // log inline gave each of them a ~400px slot inside a page that was already
+  // scrolling — "the log window is too small" — and left two entry points able
+  // to put the same card in different states.
   const logsBtn = btn("btn btn-primary");
-  const logsLabel = span("View all logs");
-  logsBtn.append(glyph("output"), logsLabel);
-  logsBtn.title = "Expand every job's log inline (they load as you scroll)";
-  // It used to be one-way: after expanding everything it kept the same label
-  // and the same primary weight, offering to do what it had already done.
-  const allLogsOpen = (): boolean => d.jobs.length > 0 && d.jobs.every((j) => logPanes.get(j.id)?.open);
-  const syncLogsBtn = (): void => {
-    const open = allLogsOpen();
-    logsLabel.textContent = open ? "Hide all logs" : "View all logs";
-    logsBtn.title = open
-      ? "Collapse every job's log"
-      : "Expand every job's log inline (they load as you scroll)";
-  };
-  logsBtn.addEventListener("click", () => {
-    if (allLogsOpen()) {
-      for (const j of d.jobs) {
-        const card = main.querySelector<HTMLElement>(`[data-job-id="${j.id}"]`);
-        const slot = card?.querySelector<HTMLElement>(".gh-job-logslot");
-        if (slot && logPanes.get(j.id)?.open) toggleJobLog(j, slot);
-        const logBtn = card?.querySelector<HTMLElement>(".gh-job-log");
-        if (logBtn) {
-          logBtn.textContent = "Logs";
-          logBtn.title = "View this job's log inline";
-        }
-      }
-      syncLogsBtn();
-      return;
-    }
-    for (const j of d.jobs) {
-      expandedJobs.add(j.id);
-      const card = main.querySelector<HTMLElement>(`[data-job-id="${j.id}"]`);
-      if (!card) continue;
-      card.querySelector(".gh-job-steps")?.classList.remove("hidden");
-      const jobHead = card.querySelector(".gh-job-head");
-      jobHead?.classList.add("open");
-      jobHead?.setAttribute("aria-expanded", "true");
-      const slot = card.querySelector<HTMLElement>(".gh-job-logslot");
-      if (slot) openJobLogLazy(j, slot);
-      const logBtn = card.querySelector<HTMLElement>(".gh-job-log");
-      if (logBtn) {
-        logBtn.textContent = "Hide logs";
-        logBtn.title = "Collapse this job's log";
-      }
-    }
-    syncLogsBtn();
-  });
+  const failedJobs = d.jobs.filter((j) => j.conclusion === "failure" || j.conclusion === "timed_out");
+  logsBtn.append(glyph("output"), span(failedJobs.length ? "Read the failing log" : "Read the logs"));
+  logsBtn.title = failedJobs.length
+    ? "Open the failing job's log full-window"
+    : "Open this run's logs full-window";
+  logsBtn.disabled = d.jobs.length === 0;
+  if (logsBtn.disabled) logsBtn.title = "This run has no jobs yet";
+  logsBtn.addEventListener("click", () =>
+    sectionNav?.("joblog", { number: full.id, jobId: (failedJobs[0] ?? d.jobs[0])?.id }),
+  );
 
   const openBtn = btn("mini-btn gh-icon-btn");
   openBtn.append(glyph("link-external"));
@@ -925,13 +703,6 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   openBtn.addEventListener("click", () => full.htmlUrl && window.open(full.htmlUrl, "_blank"));
 
   topActions.replaceChildren(rerunBtn, rerunFailedBtn, cancelBtn, logsBtn, openBtn);
-  // Derive the label from the panes that are ACTUALLY open, on every paint. It
-  // was hard-coded at creation and only ever corrected inside the click
-  // handler — so the 15s poll's repaint, or coming back to the run, reset it to
-  // "View all logs" over logs that were already showing, and pressing it then
-  // HID them. The state it needs survives repaints in `logPanes`; nothing was
-  // asking it.
-  syncLogsBtn();
 
   // ── title block ──
   const titleRow = el("div", "det-title-row");
@@ -985,7 +756,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
       expandedJobs.add(j.id);
     }
     const jobsWrap = el("div", "gh-jobs");
-    for (const j of jobs) jobsWrap.appendChild(jobCard(j));
+    for (const j of jobs) jobsWrap.appendChild(jobCard(j, full.id));
     main.appendChild(jobsWrap);
   }
 
@@ -1087,7 +858,7 @@ function stepSeconds(s: WorkflowStep): number {
   return Math.max(0, (end - a) / 1000);
 }
 
-function jobCard(j: WorkflowJob): HTMLElement {
+function jobCard(j: WorkflowJob, runId: number): HTMLElement {
   const card = el("div", "gh-job");
   const state = j.conclusion || j.status || "";
   // Steps are the content of this page. They used to be collapsed by default,
@@ -1189,38 +960,16 @@ function jobCard(j: WorkflowJob): HTMLElement {
     head.click();
   });
 
-  const logSlot = el("div", "gh-job-logslot");
-  const log = el("button", "row-btn gh-job-log");
-  const entry = logPanes.get(j.id);
-  const syncLogBtn = (): void => {
-    const isOpen = !!logPanes.get(j.id)?.open;
-    log.textContent = isOpen ? "Hide logs" : "Logs";
-    log.title = isOpen ? "Collapse this job's log" : "View this job's log inline";
-  };
+  const log = el("button", "row-btn gh-job-log") as HTMLButtonElement;
+  log.textContent = "Logs";
+  log.title = `Read ${j.name}'s log full-window`;
   log.addEventListener("click", (e) => {
     e.stopPropagation();
-    toggleJobLog(j, logSlot);
-    // Opening a log used to leave the card's chevron pointing right and its
-    // steps hidden, so the two ways in (this button and "View all logs") left
-    // the same card in visibly different states.
-    const nowOpen = !!logPanes.get(j.id)?.open;
-    if (nowOpen) {
-      steps.classList.remove("hidden");
-      syncHead();
-      expandedJobs.add(j.id);
-    }
-    syncLogBtn();
+    sectionNav?.("joblog", { number: runId, jobId: j.id });
   });
   head.appendChild(log);
   card.dataset.jobId = String(j.id);
-  card.append(head, steps, logSlot);
-  // A pane left open across the 8s repaint re-slots into the fresh card with
-  // its scroll position intact — a live tail must never visibly reset.
-  if (entry?.open) {
-    logSlot.appendChild(entry.pane.el);
-    entry.pane.restoreViewport();
-  }
-  syncLogBtn();
+  card.append(head, steps);
   return card;
 }
 

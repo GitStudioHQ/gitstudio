@@ -3557,7 +3557,14 @@
       link.click();
       await settle(1400);
       const went = window.__GS_ROUTES.slice(before).map((r) => r.view);
-      c.ok(went.includes("actions"), `it opens the run in-app (went: ${went.join(" → ") || "nowhere"})`);
+      // Either CI surface counts as "in-app". A check row that names a JOB now
+      // goes straight to that job's log page rather than to the run page,
+      // which would put a list of jobs between you and the row you clicked —
+      // what the destination must NOT be is github.com.
+      c.ok(
+        went.some((v) => v === "actions" || v === "joblog"),
+        `it opens the run in-app (went: ${went.join(" → ") || "nowhere"})`,
+      );
 
       const back = $(".det-back");
       c.ok(!!back, "the run page offers a Back");
@@ -3615,6 +3622,35 @@
         !!dest.target && typeof dest.target.sha === "string" && dest.target.sha.length >= 7,
         "and it carries the sha of the commit that was clicked",
       );
+    },
+
+    /**
+     * Being signed in must not read as "Sign in".
+     *
+     * `github:status` deliberately does NOT decrypt the token — that raises the
+     * OS keychain prompt on every launch — so a signed-in user gets
+     * `{connected: true, login: undefined}` until some real request unlocks it.
+     * The chip branched on `connected && login`, which put that state in the
+     * ELSE: it told a signed-in user to sign in, then flipped to their name
+     * once anything else made a request. Two strings one character apart that
+     * mean opposite things.
+     *
+     * `?unlocked=0` is that launch state.
+     */
+    "a-locked-token-still-reads-as-signed-in": (f) => {
+      const c = check(f);
+      const chip = $(".topbar-acct");
+      c.ok(!!chip, "the top bar has an account chip");
+      if (!chip) return;
+      c.ok(
+        chip.classList.contains("is-connected"),
+        "a connected account reads as connected even before the token is unlocked",
+      );
+      c.ok(
+        !/^sign in$/i.test(text(chip)),
+        `it must not tell a signed-in user to sign in (says ${JSON.stringify(text(chip))})`,
+      );
+      c.match(chip.title, /signed in/i, "and the tooltip agrees");
     },
 
     /**
@@ -3744,7 +3780,7 @@
 
       const rows = () => $$(".cmt-file").filter((r) => !r.hidden);
       c.ok(rows().length > 300, `the commit page lists all of its files (${rows().length})`);
-      c.match(text(".cmt-statbar"), /420 files changed/, "and says how many");
+      c.match(text(".cmt-statbar"), /420 files?\b/, "and says how many");
 
       const filter = $(".cmt-filter");
       c.ok(!!filter, "at this size the list can be filtered, not just scrolled");
@@ -3784,31 +3820,38 @@
       c.ok(!!opener, "the view offers New release");
       if (!opener) return;
       opener.click();
-      await settle(700);
+      await settle(900);
 
-      const labels = $$(".modal-actions button").map((b) => text(b));
+      // The composer is a PAGE now (views/releaseCompose.ts), not a modal — the
+      // demands below are unchanged, only where they are looked for.
+      c.ok(!!$(".relc-form"), "it opens the release composer");
+      const labels = $$(".relc-actions button").map((b) => text(b));
       c.ok(
         labels.some((l) => /^publish/i.test(l)),
-        `the primary action says it publishes (${labels.join(", ")})`,
+        `the primary action says it publishes (${labels.join(", ") || "no buttons"})`,
       );
       c.ok(labels.some((l) => /draft/i.test(l)), "and drafting is its own named button");
       // The old checkbox must be gone — two ways to say the same thing is worse
       // than either alone.
-      const checks = $$(".modal-check").map((x) => text(x));
+      const checks = $$(".relc-check").map((x) => text(x));
       c.ok(
         !checks.some((x) => /^draft/i.test(x)),
         `draft is not ALSO a checkbox (${checks.join(", ") || "none"})`,
       );
 
       // A tag is required, and the refusal has to be legible.
-      const publish = $$(".modal-actions button").find((b) => /^publish/i.test(text(b)));
+      const publish = $$(".relc-actions button").find((b) => /^publish/i.test(text(b)));
+      c.ok(!!publish, "the publish button exists");
+      if (!publish) return;
       publish.click();
       await settle(400);
-      c.ok(!!$(".modal-card"), "an empty tag does not submit");
-      const note = $(".modal-note-error");
+      c.ok(!!$(".relc-form"), "an empty tag does not submit");
+      const note = $(".relc-error");
       c.ok(!!note && !note.hidden, "and the form says why");
       c.match(text(note), /tag/i, "naming the field that is missing");
-      const tag = $(".modal-card .modal-input");
+      const tag = $(".relc-form .gh-combo-input");
+      c.ok(!!tag, "the tag field is findable");
+      if (!tag) return;
       c.eq(tag.getAttribute("aria-invalid"), "true", "and marks it for assistive tech");
 
       // Fixing it withdraws the complaint, rather than leaving it accusing a
@@ -3816,7 +3859,7 @@
       tag.value = "v2.0.0";
       tag.dispatchEvent(new Event("input", { bubbles: true }));
       await settle(200);
-      c.ok($(".modal-note-error").hidden, "typing a tag clears the message");
+      c.ok($(".relc-error").hidden, "typing a tag clears the message");
       c.eq(tag.getAttribute("aria-invalid"), null, "and the invalid mark");
     },
 
@@ -4122,9 +4165,14 @@
       c.ok(rows.length >= 5, `it lists the changed files (${rows.length})`);
       if (!rows.length) return;
 
+      // The diffstat exists and carries the numbers — the WORDING is free to
+      // change and did ("7 files changed" became "7 files" when the stat bar
+      // moved into a 260px column beside the diff, where "changed" bought
+      // nothing next to the ± counts).
       const stat = text(".cmt-statbar");
-      c.match(stat, /\d+ files changed/, "with a diffstat");
+      c.match(stat, /\d+ files?\b/, "with a diffstat naming how many files");
       c.match(stat, /\+[\d,]+/, "including lines added");
+      c.match(stat, /−[\d,]+/, "and lines removed");
 
       // Statuses are distinguishable — a deleted file and a renamed one must not
       // read the same, which is a defect this app has had elsewhere.
@@ -4231,6 +4279,393 @@
         !/antonarnaudov/i.test(`${now.textContent} ${now.title}`),
         `and does not still name them (text: ${JSON.stringify(now.textContent)}, title: ${JSON.stringify(now.title)})`,
       );
+    },
+
+    // ── The log page ─────────────────────────────────────────────────────────
+    //
+    // "scrolling the logs is still trash as initially reported, scrolling is
+    // too fast and the log window is too small, pls do it properly, you havent
+    // even touched that part."
+    //
+    // Measured before this: 523px of log in a 913px window, inside a run page
+    // that itself scrolled 1,048px — two nested scroll contexts, and the log
+    // getting whatever height was left over. A wheel flick moves 2,000-4,000px,
+    // which against a 16-line port is six to twelve screenfuls of nothing you
+    // can read on the way past. That IS "scrolling is too fast".
+    "the-log-gets-the-window": (f) => {
+      const c = check(f);
+      noAnimation();
+      const scroll = $(".log-scroll");
+      c.ok(!!scroll, "a log is open");
+      if (!scroll) return;
+      const h = scroll.getBoundingClientRect().height;
+      c.ok(
+        h >= window.innerHeight * 0.65,
+        `the log takes the window (${Math.round(h)}px of ${window.innerHeight}px)`,
+      );
+      // And nothing scrolls BEHIND it: a page that also scrolls is the other
+      // half of the complaint, because the wheel then means two things.
+      const page = $(".det-scroll");
+      c.ok(!!page, "the page has its scroll container");
+      if (page) {
+        c.ok(
+          page.scrollHeight <= page.clientHeight + 2,
+          `the page itself does not scroll (${page.scrollHeight} vs ${page.clientHeight})`,
+        );
+      }
+    },
+    "the-log-page-names-the-job": (f) => {
+      const c = check(f);
+      const current = $(".joblog-job.is-current");
+      c.ok(!!current, "the rail marks which job is open");
+      if (!current) return;
+      c.eq(current.getAttribute("aria-current"), "true", "and says so to assistive tech");
+      const name = text(current.querySelector(".joblog-job-name"));
+      c.ok(!!name, "the current job has a name");
+      c.ok(
+        text(".det-crumb").includes(name),
+        `the crumb names the log on screen (crumb ${JSON.stringify(text(".det-crumb"))}, job ${JSON.stringify(name)})`,
+      );
+    },
+    "picking-another-job-swaps-the-log": async (f) => {
+      const c = check(f);
+      const rows = $$(".joblog-job");
+      c.ok(rows.length > 1, "the run has more than one job to switch between");
+      if (rows.length < 2) return;
+      const other = rows.find((r) => !r.classList.contains("is-current"));
+      c.ok(!!other, "one of them is not the open one");
+      if (!other) return;
+      const wanted = text(other.querySelector(".joblog-job-name"));
+      other.click();
+      await settle(900);
+      c.ok(other.classList.contains("is-current"), "clicking it makes it the current job");
+      c.ok(text(".det-crumb").includes(wanted), "and the crumb follows");
+      const pane = $(".log-pane");
+      c.ok(!!pane, "a log pane is still on screen");
+      c.match(
+        pane?.getAttribute("aria-label"),
+        new RegExp(wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+        "and it is that job's log",
+      );
+    },
+    // The run page must not ALSO host logs. Two entry points to the same log
+    // left the same card in visibly different states, and the inline pane is
+    // exactly the 523px box the report was about.
+    "the-run-page-sends-logs-to-their-page": async (f) => {
+      const c = check(f);
+      c.ok(!$(".log-pane"), "the run page holds no log pane of its own");
+      const btn = $(".gh-job-log");
+      c.ok(!!btn, "a job card offers its log");
+      if (!btn) return;
+      const before = window.__GS_ROUTES.length;
+      btn.click();
+      await settle(900);
+      const went = window.__GS_ROUTES.slice(before).map((r) => r.view);
+      c.ok(went.includes("joblog"), `it routes to the log page (went: ${went.join(" → ") || "nowhere"})`);
+    },
+
+    // ── The release composer ─────────────────────────────────────────────────
+    "the-release-notes-get-the-window": (f) => {
+      const c = check(f);
+      noAnimation();
+      const ta = $(".relc-form .md-text");
+      c.ok(!!ta, "the composer uses the shared markdown editor");
+      if (!ta) return;
+      const h = ta.getBoundingClientRect().height;
+      c.ok(
+        h >= 320,
+        `the notes take the page rather than a modal's leftovers (${Math.round(h)}px)`,
+      );
+      // The four things a release IS, all present on one page.
+      c.ok($$(".relc-form .gh-combo-input").length >= 2, "tag and target are both pickers");
+      c.ok(!!$(".relc-title"), "the title has its own field");
+      c.ok($$(".relc-check").length >= 2, "pre-release and latest are both askable");
+    },
+    /**
+     * A tag name means one of two very different things, and the composer has
+     * to say which: releasing a tag that exists, or CREATING one on whatever
+     * Target says. Nothing else on the form distinguishes them, and it is not
+     * undoable from here.
+     */
+    "the-composer-says-when-it-will-create-a-tag": async (f) => {
+      const c = check(f);
+      const tag = $(".relc-form .gh-combo-input");
+      c.ok(!!tag, "the tag field exists");
+      if (!tag) return;
+      tag.value = "v9.9.9-brand-new";
+      tag.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      c.match(text(".relc-note"), /new tag/i, "a tag nothing has says it will be created");
+      c.match(text(".relc-note"), /v9\.9\.9-brand-new/, "naming it");
+
+      tag.value = "ext-v1.11.1"; // in the fixture's release:tags
+      tag.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      c.match(text(".relc-note"), /existing tag|points at/i, "an existing tag says it is existing");
+      c.ok(!/will create/i.test(text(".relc-note")), "and does not promise to create it");
+    },
+    /**
+     * "Generate release notes" must never overwrite writing someone already
+     * did — that is the one thing a generate button can do that is worse than
+     * not existing.
+     */
+    "generating-notes-keeps-what-you-wrote": async (f) => {
+      const c = check(f);
+      const tag = $(".relc-form .gh-combo-input");
+      const ta = $(".relc-form .md-text");
+      c.ok(!!tag && !!ta, "the composer is open");
+      if (!tag || !ta) return;
+      tag.value = "v2.0.0";
+      tag.dispatchEvent(new Event("input", { bubbles: true }));
+      const mine = "Read this first: upgrade notes.";
+      ta.value = mine;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+
+      const gen = $(".relc-gen");
+      c.ok(!!gen, "the composer offers to generate notes");
+      if (!gen) return;
+      gen.click();
+      await settle(900);
+      c.ok(ta.value.includes(mine), "what was already written survives");
+      c.match(ta.value, /What's Changed/i, "and GitHub's notes are added");
+    },
+
+    // ── The issue composer ───────────────────────────────────────────────────
+    "the-issue-body-gets-the-window": (f) => {
+      const c = check(f);
+      noAnimation();
+      const ta = $(".isc-form .md-text");
+      c.ok(!!ta, "the composer uses the shared markdown editor");
+      if (!ta) return;
+      c.ok(
+        ta.getBoundingClientRect().height >= 320,
+        `the description takes the page (${Math.round(ta.getBoundingClientRect().height)}px)`,
+      );
+      c.ok(!!$(".isc-title"), "the title has its own field");
+    },
+    /**
+     * The sidebar the modal could never have. Labels, assignees and milestone
+     * used to mean a second trip through the issue's own page AFTER GitHub had
+     * already announced it to everyone watching.
+     */
+    "composing-an-issue-can-decide-who-it-is-for": async (f) => {
+      const c = check(f);
+      const rail = $(".isc-view .det-rail");
+      c.ok(!!rail, "the composer has a sidebar");
+      if (!rail) return;
+      const sections = $$(".det-prop-label", rail).map((x) => text(x).toLowerCase());
+      for (const want of ["labels", "assignees", "milestone"]) {
+        c.ok(sections.some((s) => s.includes(want)), `it offers ${want} (has: ${sections.join(", ")})`);
+      }
+
+      const add = $$(".isc-add").find((b) => /label/i.test(text(b)));
+      c.ok(!!add, "labels can be picked");
+      if (!add) return;
+      add.click();
+      await settle(400);
+      const item = $$(".dropdown-item, .dropdown button")[0];
+      c.ok(!!item, "the picker lists this repository's labels");
+      if (!item) return;
+      const picked = text(item);
+      item.click();
+      await settle(300);
+      c.ok(
+        text(".isc-chips").includes(picked.trim()),
+        `picking one shows it (${JSON.stringify(text(".isc-chips"))} should contain ${JSON.stringify(picked.trim())})`,
+      );
+
+      // And it must ride along WITH the create — a second request can fail on
+      // its own, and an issue that exists without the labels its author chose
+      // has already been announced.
+      const title = $(".isc-title");
+      title.value = "A thing that broke";
+      title.dispatchEvent(new Event("input", { bubbles: true }));
+      const before = window.__GS_INVOKED.length;
+      $$(".isc-actions button").find((b) => /create issue/i.test(text(b))).click();
+      await settle(700);
+      const sent = window.__GS_INVOKED.slice(before).find((r) => r.channel === "issue:create");
+      c.ok(!!sent, "it sends the issue");
+      c.ok(
+        Array.isArray(sent?.payload?.labels) && sent.payload.labels.length > 0,
+        `with the labels attached (sent ${JSON.stringify(sent?.payload?.labels)})`,
+      );
+    },
+
+    /**
+     * The diff is what the Files tab is FOR.
+     *
+     * The review panel took 42% of the pane unconditionally, so on a file with
+     * nothing to discuss the diff got 354px of a 913px window — the same "the
+     * code diff view itself is super small like its not important at all" the
+     * commit page was reported for. It folds now, and opens by itself only when
+     * this file has an unresolved thread.
+     *
+     * `?arg=` is "open" for the file that HAS a thread, "quiet" for one without.
+     */
+    "the-files-tab-gives-the-diff-the-room": (f) => {
+      const c = check(f);
+      noAnimation();
+      const want = window.__GS_ARG || "quiet";
+      const panel = $(".pr-threads");
+      const diff = $(".pr-diff-surface");
+      c.ok(!!panel && !!diff, "the Files tab has a diff and a review panel");
+      if (!panel || !diff) return;
+      const dh = diff.getBoundingClientRect().height;
+      const ph = panel.getBoundingClientRect().height;
+
+      if (want === "open") {
+        c.ok(panel.classList.contains("is-open"), "a file with an open thread shows it");
+        c.match(text(".pr-threads-head"), /open of|comments \(/i, "and says how many");
+      } else {
+        c.ok(!panel.classList.contains("is-open"), "a file with nothing to discuss stays folded");
+        c.ok(ph < 60, `folded, the panel is one row (${Math.round(ph)}px)`);
+        c.ok(dh > 500, `so the diff gets the pane (${Math.round(dh)}px)`);
+      }
+      // Either way the panel must still SAY what it holds — folding is not
+      // hiding, and a resolved thread you cannot find is a thread you lose.
+      c.ok(text(".pr-threads-head").length > 0, "the fold names what is inside it");
+      c.ok(
+        !!$(".pr-threads-head[aria-expanded]"),
+        "and reports its state to assistive tech",
+      );
+    },
+
+    /**
+     * "lacks visual info who commited it, when and did it come from this branch
+     * or it got merged in from another".
+     *
+     * All three, on one line each. The WHEN is asserted against a real clock
+     * because it silently was not one: `relTime` and `absTime` take epoch
+     * SECONDS and this page passed milliseconds, so every commit ever opened
+     * read "authored just now" — the negative delta is clamped to zero — with a
+     * hover date in the year 57000. A time that is always "just now" is not a
+     * time, and nothing on screen said so.
+     */
+    "the-commit-page-says-who-when-and-where": (f) => {
+      const c = check(f);
+      const ident = $(".cmt-identity");
+      c.ok(!!ident, "the page names who is responsible");
+      if (!ident) return;
+      const names = $$(".cmt-who-name", ident).map((x) => text(x));
+      c.ok(names.length > 0, "an author is named");
+      // The fixture commit was cherry-picked: author and committer differ, which
+      // is exactly the case a single "author" line hides.
+      c.ok(names.length >= 2, `a differing committer is named too (${names.join(", ")})`);
+      c.match(text(ident), /authored/, "and what each of them did");
+      c.match(text(ident), /committed/, "including the committer's verb");
+
+      const when = $$(".cmt-who-when");
+      c.ok(when.length > 0, "with a time");
+      for (const w of when) {
+        c.ok(
+          !/just now/i.test(text(w)),
+          `a commit hours old must not read "just now" (got ${JSON.stringify(text(w))})`,
+        );
+        c.match(text(w), /\d+\s*(m|h|d|mo|y) ago/, "a real elapsed time");
+        // The hover date has to be a date a person could have lived through.
+        const year = Number((w.title.match(/\b(\d{4})\b/) || [])[1]);
+        c.ok(
+          year >= 2000 && year <= 2100,
+          `and an absolute date that is not from another era (title ${JSON.stringify(w.title)})`,
+        );
+      }
+
+      c.ok(!!$(".cmt-where"), "the page says where the commit lives");
+      c.match(
+        text(".cmt-where"),
+        /on |only on|not on|merge/i,
+        `naming the branch situation (got ${JSON.stringify(text(".cmt-where"))})`,
+      );
+    },
+
+    /**
+     * Two ways to hold 20,000 lines in your head.
+     *
+     * A CI log is mostly ##[group] CONTENTS, so once you scroll past the header
+     * that named them you are reading 400 lines with no idea which step
+     * produced them; and errors are invisible until you happen to scroll onto
+     * one. The strip names the group the top of the port is inside, and the
+     * ticks put every error on a map of the whole log — that is what "scrolling
+     * is too fast" costs you when there is nothing to aim at.
+     */
+    "a-long-log-can-be-navigated-by-eye": async (f) => {
+      const c = check(f);
+      noAnimation();
+      // Read the failing job — the one with something to find.
+      const row = $$(".joblog-job").find((r) => /test/i.test(text(r)));
+      if (row) {
+        row.click();
+        await settle(1400);
+      }
+      const s = $(".log-scroll");
+      c.ok(!!s, "a log is open");
+      if (!s) return;
+
+      // Headless Chrome composites nothing on an idle page, so a programmatic
+      // scrollTop never produces the scroll event a real wheel would. Send it —
+      // the pane's repaint path is what is under test, not the compositor.
+      const scrollTo = async (top) => {
+        s.scrollTop = top;
+        s.dispatchEvent(new Event("scroll"));
+        await settle(300);
+      };
+
+      // At the very top there is no group above you, so the strip stays out of
+      // the way rather than repeating the header you can already see.
+      await scrollTo(0);
+      c.ok($(".log-groupbar")?.hidden !== false, "at the top the strip stays out of the way");
+
+      // Inside a group it names that group.
+      await scrollTo(700);
+      const bar = $(".log-groupbar");
+      c.ok(bar && !bar.hidden, "scrolled into a step, the strip appears");
+      c.ok(text(bar).length > 2, `and names the step (${JSON.stringify(text(bar))})`);
+      // The strip must sit at the TOP of the log, not somewhere down the page:
+      // as a sticky LAST child it stuck only at the very end of the log, which
+      // is nowhere anyone reading looks.
+      const bb = bar?.getBoundingClientRect();
+      const sb = s.getBoundingClientRect();
+      c.ok(bb && Math.abs(bb.top - sb.top) < 6, `pinned to the top of the log (${Math.round((bb?.top ?? 0) - sb.top)}px off)`);
+
+      // Standing ON a group's own header needs no reminder of it — and this is
+      // the assertion that catches naming the group you have already LEFT: the
+      // strip is fed the first RENDERED line, which carries 30 lines of
+      // overscan above the fold, so it named the previous step for the first
+      // 30 lines of every new one.
+      // Walk down a line at a time until a step header IS the top row. Pixel
+      // arithmetic is not reliable here (the rows are virtualized and the
+      // scroller re-anchors), so step and look.
+      const topRow = () => {
+        const y = s.getBoundingClientRect().top;
+        return $$(".log-line").find((r) => r.getBoundingClientRect().bottom > y + 2);
+      };
+      let landed = false;
+      for (let t = 700; t <= 1500 && !landed; t += 20) {
+        await scrollTo(t);
+        const r = topRow();
+        if (!r || !/build bundles/i.test(text(r))) continue;
+        landed = true;
+        const onHeader = $(".log-groupbar");
+        c.ok(
+          onHeader?.hidden !== false,
+          `standing on a step header, the strip does not repeat it ` +
+            `(says ${JSON.stringify(text(onHeader))})`,
+        );
+      }
+      c.ok(landed, "the log has a step header to stand on");
+      await scrollTo(700);
+
+      // Pressing it goes back to the step's own header.
+      bar.click();
+      s.dispatchEvent(new Event("scroll"));
+      await settle(400);
+      c.ok(s.scrollTop < 700, `clicking it returns to the step header (now ${Math.round(s.scrollTop)})`);
+
+      // And the errors are on a map of the whole log, each one a click.
+      const ticks = $$(".log-errtick");
+      c.ok(ticks.length > 0, "every error has a tick on the map");
+      for (const t of ticks) c.ok(!!t.title, "each tick says which line it is");
     },
   };
 })();

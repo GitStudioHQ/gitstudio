@@ -1111,14 +1111,19 @@ async function renderSubTab(
         // rest used to carry the same pointer cursor and hover as the linked
         // ones and swallow the click.
         row.classList.add("is-link");
-        // GitHub-Actions checks land on the RUN PAGE with the job's log pane
-        // expanded — the full surface, not a modal. External CI keeps the browser.
+        // A failing check is a question about a LOG, so a check that names a
+        // job goes straight to that log's page — not to the run page, which
+        // would put a list of jobs between you and the thing you clicked, and
+        // would make Back mean "Actions" instead of the pull request you left.
+        // External CI keeps the browser.
         const gha = /\/actions\/runs\/(\d+)(?:\/jobs?\/(\d+))?/.exec(c.detailsUrl);
         row.title = gha ? "Open the run's logs in-app" : "Open check details";
         row.addEventListener("click", () => {
           if (gha) {
             const jobId = gha[2] ? Number(gha[2]) : undefined;
-            sectionNav?.("actions", { number: Number(gha[1]), jobId });
+            const runId = Number(gha[1]);
+            if (jobId != null) sectionNav?.("joblog", { number: runId, jobId });
+            else sectionNav?.("actions", { number: runId });
           } else {
             window.open(c.detailsUrl!, "_blank");
           }
@@ -1299,23 +1304,56 @@ function renderThreadsPanel(
     .filter((t) => t.path === f.filename)
     .sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 
-  const head = el("div", "pr-threads-head");
-  const title = span(`Review comments (${mine.length})`, "pr-threads-title");
-  head.append(glyph("comment-discussion"), title);
+  // The panel FOLDS. It used to take 42% of the pane unconditionally, so the
+  // diff — the reason the Files tab exists — got 354px of a 913px window even
+  // on a file with nothing to discuss. It opens by itself when this file has an
+  // unresolved thread, which is the case where the comment is the point.
+  const unresolved = mine.filter((t) => !t.isResolved).length;
+  const open = unresolved > 0;
+  slot.classList.toggle("is-open", open);
+
+  const head = el("button", "pr-threads-head") as HTMLButtonElement;
+  head.setAttribute("aria-expanded", String(open));
+  const chevron = glyph(open ? "chevron-down" : "chevron-right");
+  const title = span(
+    mine.length === 0
+      ? "No comments on this file"
+      : unresolved
+        ? `Review comments (${unresolved} open of ${mine.length})`
+        : `Review comments (${mine.length}, all resolved)`,
+    "pr-threads-title",
+  );
+  head.append(chevron, glyph("comment-discussion"), title);
+  head.title = open ? "Hide the review comments" : "Show the review comments";
+  slot.appendChild(head);
+
+  const bodyEl = el("div", "pr-threads-body");
+  bodyEl.hidden = !open;
   const addBtn = el("button", "mini-btn pr-threads-add");
   addBtn.append(glyph("comment"), span("Add a comment"));
   addBtn.title = "Comment on a line of this file";
   addBtn.addEventListener("click", () => void addInlineComment(full.number, f.filename, addBtn, reloadFile));
-  head.appendChild(addBtn);
-  slot.appendChild(head);
+  const tools = el("div", "pr-threads-tools");
+  tools.appendChild(addBtn);
+  bodyEl.appendChild(tools);
+
+  head.addEventListener("click", () => {
+    const now = bodyEl.hidden === true;
+    bodyEl.hidden = !now;
+    slot.classList.toggle("is-open", now);
+    head.setAttribute("aria-expanded", String(now));
+    head.title = now ? "Hide the review comments" : "Show the review comments";
+    head.replaceChildren(glyph(now ? "chevron-down" : "chevron-right"), glyph("comment-discussion"), title);
+  });
 
   if (mine.length === 0) {
     const none = el("div", "pr-threads-empty");
     none.textContent = "No inline comments on this file yet.";
-    slot.appendChild(none);
-    return;
+    bodyEl.appendChild(none);
+  } else {
+    for (const t of mine) bodyEl.appendChild(threadCard(full.number, t, reloadFile));
   }
-  for (const t of mine) slot.appendChild(threadCard(full.number, t, reloadFile));
+  slot.appendChild(bodyEl);
 }
 
 /** One review thread: a line anchor + its comments + resolve / reply controls. */

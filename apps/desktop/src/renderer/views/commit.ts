@@ -30,8 +30,9 @@ import {
   relTime,
   absTime,
   commonDir,
+  openMenu,
 } from "../ui";
-import { detailPage, propSection, type SectionTarget } from "./common";
+import { detailPage, type SectionTarget } from "./common";
 import { renderMarkdown } from "../markdown";
 import { DiffPanel } from "../diffPanel";
 import { gget } from "../cache";
@@ -77,8 +78,12 @@ function identity(d: CommitDetailsPayload): HTMLElement {
     span(d.author, "cmt-who-name"),
     span("authored", "cmt-who-verb"),
   );
-  const t = span(relTime(d.authorDate * 1000), "cmt-who-when");
-  t.title = absTime(d.authorDate * 1000);
+  // SECONDS. `relTime` and `absTime` both take epoch seconds — passing
+  // milliseconds made every commit on this page read "authored just now"
+  // (the clamp swallows the negative delta) with a hover date in the year
+  // 57000. The one thing the report asked this line for was *when*.
+  const t = span(relTime(d.authorDate), "cmt-who-when");
+  t.title = absTime(d.authorDate);
   authored.append(t);
   box.appendChild(authored);
 
@@ -91,8 +96,8 @@ function identity(d: CommitDetailsPayload): HTMLElement {
       span(d.committer, "cmt-who-name"),
       span("committed", "cmt-who-verb"),
     );
-    const t2 = span(relTime(d.committerDate * 1000), "cmt-who-when");
-    t2.title = absTime(d.committerDate * 1000);
+    const t2 = span(relTime(d.committerDate), "cmt-who-when");
+    t2.title = absTime(d.committerDate);
     committed.append(t2);
     box.appendChild(committed);
   }
@@ -160,41 +165,92 @@ export async function renderCommit(
   }
 
   // ── header ────────────────────────────────────────────────────────────────
+  //
+  // TWO LINES. The diff is what this page is for, and the first version spent
+  // 251px of a 913px window on a message and a stat bar before the diff
+  // started, then gave the diff 504px of ~1100px because a file list and a
+  // properties rail were beside it. The most important thing on the page had
+  // less than half the room.
+  //
+  // So: subject, one identity line, one facts line. A long message hides behind
+  // a disclosure rather than pushing the diff off the screen — most commit
+  // bodies are two lines and the ones that are not are exactly the problem.
   const head = el("div", "cmt-head");
   const title = el("h1", "cmt-subject");
   title.textContent = d.subject;
   head.appendChild(title);
-
-  if (d.body.trim()) {
-    const body = el("div", "gh-body-md cmt-body");
-    body.innerHTML = renderMarkdown(d.body);
-    head.appendChild(body);
-  }
   head.appendChild(identity(d));
 
-  // Ref chips: which branches and tags sit on this commit.
-  if (d.refs.length) {
-    const refs = el("div", "cmt-refs");
-    for (const r of d.refs) {
-      const chip = span(r.name, `cmt-ref is-${r.kind}`);
-      chip.title = `${r.kind === "tag" ? "tag" : "branch"} ${r.name}`;
-      refs.appendChild(chip);
-    }
-    head.appendChild(refs);
+  const facts = el("div", "cmt-facts");
+  // Where it lives: "on redesign/wave-2", or "merged into main" — the first
+  // question a reader has, and the page could not answer it at all.
+  const where = span("", "cmt-where");
+  facts.appendChild(where);
+  void host
+    .invoke("commit:branches", d.sha)
+    .then((b) => {
+      if (!b || !b.branches.length) {
+        where.textContent = d.parents.length > 1 ? "a merge commit" : "not on any local branch";
+        where.title = "No local branch contains this commit — it may only exist on a remote.";
+        return;
+      }
+      const others = b.branches.filter((x) => x !== b.current);
+      if (b.onCurrent && others.length) {
+        where.textContent = `on ${b.current}, and ${others.length} other branch${others.length === 1 ? "" : "es"}`;
+      } else if (b.onCurrent) {
+        where.textContent = `only on ${b.current}`;
+      } else {
+        where.textContent = `not on ${b.current ?? "this branch"} — on ${b.branches[0]}`;
+      }
+      where.title = `Contained by: ${b.branches.join(", ")}`;
+    })
+    .catch(() => {
+      where.remove();
+    });
+
+  if (d.parents.length > 1) {
+    const m = span(`merge of ${d.parents.length} parents`, "cmt-fact-merge");
+    m.title = "A merge commit — its diff is against the first parent.";
+    facts.appendChild(m);
+  }
+
+  // Ref chips: branch tips and tags sitting exactly here.
+  for (const r of d.refs) {
+    const chip = span(r.name, `cmt-ref is-${r.kind}`);
+    chip.title = `${r.kind === "tag" ? "tag" : "branch"} ${r.name}`;
+    facts.appendChild(chip);
+  }
+
+  if (d.body.trim()) {
+    const toggle = el("button", "cmt-body-toggle") as HTMLButtonElement;
+    toggle.append(glyph("chevron-down"), span("Description"));
+    toggle.setAttribute("aria-expanded", "false");
+    const body = el("div", "gh-body-md cmt-body");
+    body.innerHTML = renderMarkdown(d.body);
+    body.hidden = true;
+    toggle.addEventListener("click", () => {
+      body.hidden = !body.hidden;
+      toggle.setAttribute("aria-expanded", String(!body.hidden));
+      toggle.replaceChildren(glyph(body.hidden ? "chevron-down" : "chevron-up"), span("Description"));
+    });
+    facts.appendChild(toggle);
+    head.appendChild(facts);
+    head.appendChild(body);
+  } else {
+    head.appendChild(facts);
   }
   main.replaceChildren(head);
 
   // ── the changed files — the whole point ───────────────────────────────────
   const { adds, dels, binary } = diffstat(d.files);
-  const statBar = el("div", "cmt-statbar");
   const n = d.files.length;
+  const statBar = el("div", "cmt-statbar");
   statBar.append(
-    span(`${n} file${n === 1 ? "" : "s"} changed`, "cmt-stat-files"),
+    span(`${n} file${n === 1 ? "" : "s"}`, "cmt-stat-files"),
     span(`+${adds.toLocaleString()}`, "cmt-stat-add"),
     span(`−${dels.toLocaleString()}`, "cmt-stat-del"),
   );
   if (binary) statBar.appendChild(span(`${binary} binary`, "cmt-stat-bin"));
-  main.appendChild(statBar);
 
   if (!n) {
     main.appendChild(
@@ -234,7 +290,7 @@ export async function renderCommit(
 
     const filterHead = el("div", "cmt-filterhead");
     filterHead.append(filter, count);
-    listCol.append(filterHead, list);
+    listCol.append(statBar, filterHead, list);
     split.append(listCol, pane);
     main.appendChild(split);
 
@@ -258,7 +314,18 @@ export async function renderCommit(
         .invoke("compare:fileDiff", { base, head: d!.sha, path: f.path })
         .catch(() => undefined);
       if (mine !== gen) return;
-      if (fd) diff.showDiff(fd);
+      if (fd) {
+        // The path already sits above the diff, so repeating it inside each
+        // pane behind a 40-character sha only crowds the one thing this page
+        // exists for. Name the SIDES instead — which is what a reader of a
+        // commit diff actually needs to know, and what the pane labels never
+        // said.
+        diff.showDiff({
+          ...fd,
+          leftLabel: d!.parents.length ? `${base.slice(0, 7)} · before` : "(new file)",
+          rightLabel: `${d!.shortSha} · this commit`,
+        });
+      }
       else diff.showEmpty(`Couldn't read the diff for ${f.path}.`);
     };
 
@@ -324,59 +391,51 @@ export async function renderCommit(
     });
   }
 
-  // ── rail ──────────────────────────────────────────────────────────────────
-  const shaRow = el("div", "cmt-sha-row");
-  const shaBtn = el("button", "cmt-sha") as HTMLButtonElement;
-  shaBtn.textContent = d.shortSha;
+  // ── actions ───────────────────────────────────────────────────────────────
+  //
+  // In the TOP BAR, not a rail. A 264px properties column beside the diff was
+  // 264px the diff did not get, to hold five buttons and two chips — and the
+  // diff is the page. The verbs are one menu; the parents are chips on the
+  // facts line; the sha is in the crumb, where it already was.
+  rail.remove();
+
+  const shaBtn = el("button", "mini-btn cmt-sha") as HTMLButtonElement;
+  shaBtn.append(glyph("copy"), span(d.shortSha));
   shaBtn.title = `${d.sha}\nCopy the full SHA`;
   shaBtn.setAttribute("aria-label", `Copy the full SHA ${d.sha}`);
   shaBtn.addEventListener("click", () => void host.invoke("clipboard:write", d!.sha));
-  shaRow.appendChild(shaBtn);
-  const shaProp = propSection("Commit");
-  shaProp.body.appendChild(shaRow);
-  rail.appendChild(shaProp.root);
-
-  if (d.parents.length) {
-    const box = el("div", "cmt-parents");
-    for (const p of d.parents) {
-      const b = el("button", "cmt-parent") as HTMLButtonElement;
-      b.textContent = p.slice(0, 7);
-      b.title = `Open parent ${p}`;
-      b.addEventListener("click", () => nav("commit", { sha: p }));
-      box.appendChild(b);
-    }
-    const pProp = propSection(d.parents.length > 1 ? `Parents (${d.parents.length})` : "Parent");
-    pProp.body.appendChild(box);
-    rail.appendChild(pProp.root);
-  }
+  topActions.appendChild(shaBtn);
 
   // The reason to read a commit HERE rather than on github.com: the repository
-  // is in hand, so these are real operations rather than links. Reachable today
-  // only by right-clicking inside the graph's shadow DOM.
-  const verbs: Array<{ id: string; label: string; danger?: boolean }> = [
-    { id: "checkout", label: "Check out this commit" },
-    { id: "branch", label: "Branch from here…" },
-    { id: "tag", label: "Tag this commit…" },
-    { id: "cherry-pick", label: "Cherry-pick onto current branch" },
-    { id: "revert", label: "Revert this commit" },
-  ];
-  const acts = el("div", "cmt-verbs");
-  for (const v of verbs) {
-    const b = el("button", `mini-btn${v.danger ? " danger" : ""}`) as HTMLButtonElement;
-    b.textContent = v.label;
-    b.addEventListener("click", () => {
-      void host.invoke("commit:action", { action: v.id, sha: d!.sha } as never);
-    });
-    acts.appendChild(b);
-  }
-  const aProp = propSection("Actions");
-  aProp.body.appendChild(acts);
-  rail.appendChild(aProp.root);
+  // is in hand, so these are real operations rather than links.
+  const more = el("button", "mini-btn") as HTMLButtonElement;
+  more.append(glyph("kebab-vertical"));
+  more.title = "Actions for this commit";
+  more.setAttribute("aria-label", more.title);
+  more.addEventListener("click", () => {
+    const items = [
+      { label: "Check out this commit", icon: "git-branch", onClick: () => act("checkout") },
+      { label: "Branch from here…", icon: "git-branch", onClick: () => act("branch") },
+      { label: "Tag this commit…", icon: "tag", onClick: () => act("tag") },
+      { separator: true },
+      { label: "Cherry-pick onto current branch", icon: "git-commit", onClick: () => act("cherry-pick") },
+      { label: "Revert this commit", icon: "discard", onClick: () => act("revert") },
+      { separator: true },
+      ...d!.parents.map((p, i) => ({
+        label: d!.parents.length > 1 ? `Open parent ${i + 1} — ${p.slice(0, 7)}` : `Open parent ${p.slice(0, 7)}`,
+        icon: "git-commit",
+        onClick: () => nav("commit", { sha: p }),
+      })),
+      { separator: true },
+      // The graph is a good way to see a commit's SHAPE — just not an answer to
+      // "what changed", which is why it stopped being the destination.
+      { label: "Show in the graph", icon: "git-commit", onClick: () => nav("graph", { sha: d!.sha }) },
+    ];
+    openMenu(more, items);
+  });
+  topActions.appendChild(more);
 
-  // Kept as an explicit action rather than the destination: the graph is a good
-  // place to see a commit's SHAPE, just not a good answer to "what changed".
-  const inGraph = el("button", "mini-btn") as HTMLButtonElement;
-  inGraph.append(glyph("git-commit"), span("Show in the graph"));
-  inGraph.addEventListener("click", () => nav("graph", { sha: d!.sha }));
-  topActions.appendChild(inGraph);
+  const act = (action: string): void => {
+    void host.invoke("commit:action", { action, sha: d!.sha } as never);
+  };
 }

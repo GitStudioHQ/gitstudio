@@ -14,6 +14,9 @@ import "@gitstudio/webview-ui/styles/diff.css";
 import { clickIntent, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
 import { renderCommit } from "./views/commit";
+import { renderJobLog } from "./views/jobLog";
+import { renderReleaseCompose } from "./views/releaseCompose";
+import { renderIssueCompose } from "./views/issueCompose";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
@@ -1149,7 +1152,22 @@ class App {
       this.viewHost.replaceChildren(cached);
       return;
     }
-    if (id === "commit") {
+    if (id === "issuenew") {
+      // Writing an issue is a PAGE. As a modal it had a title box, a body box
+      // and nowhere to say who it is for — so labels, assignees and milestone
+      // were a second trip through the issue's own page, after GitHub had
+      // already announced it.
+      void renderIssueCompose(this.viewHost, (v, t) => this.routeView(v, false, t), target);
+    } else if (id === "releasenew") {
+      // Writing a release is a PAGE. As a modal it gave the notes — the only
+      // part anyone spends time on — about 180px of a 560px card.
+      void renderReleaseCompose(this.viewHost, (v, t) => this.routeView(v, false, t), target);
+    } else if (id === "joblog") {
+      // The log is a PAGE, not a pane inside one. It used to get 523px of a
+      // 913px window, on a run page that itself scrolled — two nested scroll
+      // contexts and whatever height was left over.
+      void renderJobLog(this.viewHost, (v, t) => this.routeView(v, false, t), target);
+    } else if (id === "commit") {
       // A commit is a PLACE, not a row to reveal in the graph. Everything that
       // referenced one used to route to "graph" and call reveal(sha), which
       // shows no files, returns silently when the sha is off the loaded page,
@@ -5807,6 +5825,7 @@ class App {
     // three auth sites can re-ask, the way `syncCommitLabel` and
     // `syncAssistantChip` already do for their own surfaces.
     let gen = 0;
+    let nameRetry: number | undefined;
     const sync = async (): Promise<void> => {
       const mine = ++gen;
       let status: GitHubStatus = { connected: false };
@@ -5818,14 +5837,36 @@ class App {
       // A switch immediately followed by a sign-in can resolve out of order;
       // the later question owns the answer.
       if (!chip.isConnected || mine !== gen) return;
-      if (status.connected && status.login) {
+
+      // CONNECTED is the question. The login NAME is a separate, slower fact.
+      //
+      // `github:status` deliberately does not decrypt the token — doing so
+      // raises the OS keychain prompt on every launch — so a signed-in user
+      // gets `{connected: true, login: undefined}` until some real GitHub
+      // request unlocks it. Branching on `connected && login` put that state in
+      // the ELSE, so the chip said "Sign in" to someone who was signed in, and
+      // then flipped to their name once anything else made a request. Two
+      // strings one character apart that mean opposite things.
+      if (status.connected) {
         chip.classList.add("is-connected");
-        chip.title = `Signed in to GitHub as ${status.login}`;
-        chip.replaceChildren(
-          avatar(status.login, `https://github.com/${status.login}.png`, 22),
-          span(status.login, "topbar-acct-name"),
-        );
+        if (status.login) {
+          window.clearTimeout(nameRetry);
+          chip.title = `Signed in to GitHub as ${status.login}`;
+          chip.replaceChildren(
+            avatar(status.login, `https://github.com/${status.login}.png`, 22),
+            span(status.login, "topbar-acct-name"),
+          );
+        } else {
+          // Signed in, name not known yet. Say so honestly rather than
+          // guessing, and ask again shortly — the first real request fills it
+          // in, and this stops only when it does.
+          chip.title = "Signed in to GitHub";
+          chip.replaceChildren(glyph("github"), span("Signed in", "topbar-acct-name"));
+          window.clearTimeout(nameRetry);
+          nameRetry = window.setTimeout(() => void sync(), 2000);
+        }
       } else {
+        window.clearTimeout(nameRetry);
         chip.classList.remove("is-connected");
         chip.title = "Sign in to GitHub";
         chip.replaceChildren(glyph("github"), span("Sign in", "topbar-acct-name"));

@@ -7910,22 +7910,43 @@ body.vscode-light .gh-label-chip {
   border-top: none;
 }
 /* The inline-review panel beneath the diff. */
+/* The review panel FOLDS: closed it is one summary row, open it takes at most
+   42% of the pane. It used to take that 42% unconditionally, so on a file with
+   nothing to discuss the diff — the reason this tab exists — was left with
+   354px of a 913px window. */
 .pr-threads {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 42%;
-  overflow-y: auto;
-  padding: 12px 2px 4px;
+  overflow: hidden;
+  padding: 4px 2px;
   border-top: 1px solid var(--app-border);
 }
+.pr-threads.is-open { max-height: 42%; padding: 4px 2px; }
+.pr-threads-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+.pr-threads-tools { display: flex; justify-content: flex-end; }
 .pr-threads-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 6px var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
+.pr-threads-head:hover { background: var(--app-hover); }
 .pr-threads-title {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -8828,6 +8849,13 @@ button.det-person:hover { background: var(--app-hover); }
    "Jump to latest" pill all stay reachable — 78vh from a pane already 320px
    down the page ran off the bottom of the window. */
 .log-pane.log-max { max-height: min(70vh, 820px); height: min(70vh, 820px); }
+/* Fill mode: the pane IS the page, so it takes its container's height instead
+   of carrying an opinion about how tall a log ought to be — and the expand
+   control widens it over the job list rather than growing a box (see the
+   `.joblog-split:has()` rule). The margins go too: a page does not need to be
+   inset from itself. */
+.log-pane.log-fill { flex: 1 1 auto; margin: 0; min-height: 0; max-height: none; height: auto; }
+.log-pane.log-fill.log-max { max-height: none; height: auto; }
 .log-toolbar {
   flex: 0 0 auto;
   display: flex;
@@ -8880,6 +8908,60 @@ button.det-person:hover { background: var(--app-hover); }
   background: color-mix(in srgb, var(--status-warn) 10%, transparent);
   border-bottom: 1px solid var(--app-border);
 }
+/* Which ##[group] the top of the port is inside. A CI log is mostly group
+   CONTENTS, so scrolling past the header that named them leaves you reading 400
+   lines with no idea which step produced them. */
+/* The scroller plus its two floating overlays. */
+.log-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+.log-groupbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px var(--sp-3);
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--log-fg, #c8ccd4) 18%, transparent);
+  background: color-mix(in srgb, var(--log-fg, #c8ccd4) 10%, var(--log-bg, #0b0e14));
+  color: color-mix(in srgb, var(--log-fg, #c8ccd4) 80%, transparent);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.log-groupbar:hover { color: var(--log-fg, #c8ccd4); }
+.log-groupbar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Where the errors ARE, over the whole log rather than the screenful you can
+   see. A 20,000-line log has no shape without it: you scroll and hope. */
+.log-errmap {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  pointer-events: none;
+  z-index: 3;
+}
+.log-errtick {
+  position: absolute;
+  right: 0;
+  width: 8px;
+  height: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 1px;
+  background: var(--log-c1, #e06c75);
+  opacity: 0.85;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.log-errtick:hover { opacity: 1; width: 12px; right: 0; }
+
 .log-scroll {
   flex: 1 1 auto;
   overflow: auto;
@@ -9238,88 +9320,122 @@ body.vscode-light .log-pane {
 }
 
 /* ── The commit page ────────────────────────────────────────────────────────
-   A commit is a PLACE. Everything that referenced one used to route to the
-   Commits graph and reveal a row, which shows no files at all.
+   The diff IS the page.
 
-   The message wants a reading measure and the diff wants the window, so the
-   page lifts the detail column's cap and the header re-caps itself. */
+   The first version spent 251px of a 913px window on a message and a stat bar
+   before the diff began, then gave the diff 504px of ~1100px because a file
+   list and a 264px properties rail sat beside it — the most important thing on
+   the screen with less than half the room. Now the header is two lines, the
+   rail is gone (its verbs are one menu in the top bar), and the split FILLS
+   whatever is left rather than being a fixed box inside a scrolling page. */
 .cmt-view .det-main { max-width: none; }
-.cmt-head { max-width: var(--measure-read); }
+/* The shell caps its body to "reading column + rail" and centres it, which is
+   right for a document and wrong for a page whose content is a diff: it left a
+   167px gutter on the left and the diff short of the window on the right. */
+.cmt-view .det-body { max-width: none; margin-inline: 0; }
+.cmt-view .det-body { padding-bottom: var(--sp-4); }
+/* The page does not scroll; the diff and the file list do. */
+.cmt-view .det-scroll { overflow: hidden; display: flex; min-height: 0; }
+.cmt-view .det-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* STRETCH, not flex-start. The shared detail shell top-aligns its columns,
+     which is right for a properties rail beside a document and wrong here —
+     it left the diff at its content height (210px) in a 913px window. */
+  align-items: stretch;
+}
+.cmt-view .det-main { display: flex; flex-direction: column; min-height: 0; }
 
+.cmt-head { flex: 0 0 auto; }
 .cmt-subject {
-  margin: 0 0 var(--sp-3);
-  font-size: var(--text-xl);
+  margin: 0 0 var(--sp-1);
+  font-size: var(--text-lg);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.3;
   letter-spacing: -0.01em;
 }
-.cmt-body { margin: 0 0 var(--sp-4); }
 
+/* Who wrote it and who committed it, on ONE line. The committer half appears
+   only when it differs — which is the case that matters (a rebase, a
+   cherry-pick, a maintainer applying a patch) and the case a single "author"
+   line hides. */
 .cmt-identity {
   display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-  margin-bottom: var(--sp-3);
-}
-.cmt-who {
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-2) var(--sp-3);
   font-size: var(--text-sm);
   color: var(--app-muted);
 }
+.cmt-who { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .cmt-who-name { font-weight: 600; color: var(--app-text); }
-.cmt-who-verb { color: var(--app-muted); }
-.cmt-who-when { color: var(--app-muted); }
 
-.cmt-refs {
+/* Where it lives, whether it is a merge, which refs sit on it, and the way in
+   to a long description — one line, so none of it costs the diff any height. */
+.cmt-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-4);
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin: var(--sp-2) 0 var(--sp-3);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
 }
+.cmt-where { color: var(--app-muted); }
+.cmt-fact-merge { color: var(--gs-accent); }
 .cmt-ref {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: var(--text-xs);
-  padding: 2px var(--sp-2);
+  padding: 1px var(--sp-2);
   border-radius: var(--r-sm);
   border: 1px solid var(--app-border);
   color: var(--app-muted);
+}
+.cmt-ref.is-currentHead { border-color: var(--gs-accent); color: var(--gs-accent); font-weight: 600; }
+.cmt-ref.is-tag { border-style: dashed; }
+.cmt-body-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--app-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.cmt-body-toggle:hover { background: var(--app-hover); color: var(--app-text); }
+.cmt-body {
+  flex: 0 0 auto;
+  max-height: 30vh;
+  overflow-y: auto;
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
   background: var(--app-panel);
 }
-.cmt-ref.is-currentHead {
-  border-color: var(--gs-accent);
-  color: var(--gs-accent);
-  font-weight: 600;
-}
-.cmt-ref.is-tag { border-style: dashed; }
 
-/* The diffstat bar, above the files it summarises. */
-.cmt-statbar {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-3);
-  padding: var(--sp-3) 0;
-  margin-top: var(--sp-4);
-  border-top: 1px solid var(--app-border);
-  font-size: var(--text-sm);
-}
-.cmt-stat-files { font-weight: 600; }
-.cmt-stat-add { color: var(--status-add); font-variant-numeric: tabular-nums; }
-.cmt-stat-del { color: var(--status-del); font-variant-numeric: tabular-nums; }
-.cmt-stat-bin { color: var(--app-muted); }
-
-/* Files beside their diff. The list is the navigation; the pane is the answer. */
+/* Files beside their diff, filling the window. */
 .cmt-split {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   align-items: stretch;
-  gap: var(--sp-4);
+  gap: var(--sp-3);
+}
+.cmt-listcol {
+  flex: 0 0 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
   min-height: 0;
 }
 .cmt-files {
   flex: 1 1 auto;
-  min-width: 0;
-  max-height: min(62vh, 720px);
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -9332,25 +9448,36 @@ body.vscode-light .log-pane {
 .cmt-diff {
   flex: 1 1 auto;
   min-width: 0;
-  height: min(62vh, 720px);
+  min-height: 0;
   border: 1px solid var(--app-border);
   border-radius: var(--r-md);
   overflow: hidden;
 }
 
+.cmt-statbar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--text-xs);
+}
+.cmt-stat-files { font-weight: 600; color: var(--app-text); }
+.cmt-stat-add { color: var(--status-add); font-variant-numeric: tabular-nums; }
+.cmt-stat-del { color: var(--status-del); font-variant-numeric: tabular-nums; }
+.cmt-stat-bin { color: var(--app-muted); }
+
 .cmt-file {
   display: grid;
-  grid-template-columns: 16px 1fr auto;
+  grid-template-columns: 14px 1fr auto;
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  padding: var(--sp-2);
+  padding: 3px var(--sp-2);
   border: none;
   border-radius: var(--r-sm);
   background: none;
   color: inherit;
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -9358,7 +9485,6 @@ body.vscode-light .log-pane {
 .cmt-file.is-current { background: var(--app-active); }
 .cmt-file-status {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: var(--text-xs);
   font-weight: 600;
   text-align: center;
 }
@@ -9368,41 +9494,20 @@ body.vscode-light .log-pane {
 .cmt-file-status.is-ren { color: var(--gs-accent); }
 .cmt-file-path {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: var(--text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: ltr;
 }
 .cmt-file-counts {
   display: flex;
-  gap: var(--sp-1);
+  gap: 4px;
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
 .cmt-file-add { color: var(--status-add); }
 .cmt-file-del { color: var(--status-del); }
-.cmt-file-bin { font-size: var(--text-xs); color: var(--app-muted); }
-
-/* Rail */
-.cmt-sha-row { display: flex; }
-.cmt-sha,
-.cmt-parent {
-  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
-  font-size: var(--text-xs);
-  padding: 2px var(--sp-2);
-  border-radius: var(--r-sm);
-  border: 1px solid var(--app-border);
-  background: var(--app-panel);
-  color: var(--app-text);
-  cursor: pointer;
-}
-.cmt-sha:hover,
-.cmt-parent:hover { border-color: var(--gs-accent); color: var(--gs-accent); }
-.cmt-parents { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.cmt-verbs { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
-.cmt-verbs .mini-btn { justify-content: flex-start; }
+.cmt-file-bin { color: var(--app-muted); }
+.cmt-sha { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
 
 /* The directory every file in this commit shares, shown once so the rows can
    spend their width on the filename instead of repeating the path. */
@@ -9505,15 +9610,8 @@ body.vscode-light .log-pane {
 .md-preview-empty { color: var(--app-muted); font-style: italic; }
 
 /* The commit page's file filter. At 420 files the list is 13,027px tall, and
-   scrolling is not finding. */
-.cmt-listcol {
-  flex: 0 0 300px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-}
-.cmt-listcol .cmt-files { flex: 1 1 auto; }
+   scrolling is not finding. (`.cmt-listcol` itself is defined once, up in the
+   layout block — a second definition here was silently overriding its width.) */
 .cmt-filterhead { display: flex; align-items: center; gap: var(--sp-2); }
 .cmt-filter {
   flex: 1 1 auto;
@@ -9550,3 +9648,214 @@ body.vscode-light .log-pane {
   font-size: var(--text-xs);
   color: var(--app-muted);
 }
+
+/* ── The job log page ───────────────────────────────────────────────────────
+   The log is a document you read, sometimes tens of thousands of lines of it,
+   and it needs the window. As a pane inside the run page it got 523px of a
+   913px window, inside a page that itself scrolled 1,048px — two nested scroll
+   contexts and whatever height was left over. */
+.joblog-view .det-main { max-width: none; display: flex; flex-direction: column; min-height: 0; }
+.joblog-view .det-body { max-width: none; margin-inline: 0; align-items: stretch; flex: 1 1 auto; min-height: 0; }
+.joblog-view .det-scroll { overflow: hidden; display: flex; min-height: 0; }
+
+.joblog-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-3);
+}
+.joblog-jobs {
+  flex: 0 0 230px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  padding: var(--sp-1);
+  background: var(--app-panel);
+}
+.joblog-log { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+/* Asking for the full width hides the job rail: on a page whose whole job is
+   the log, "expand" can only mean "give me the rest of the window". */
+.joblog-split:has(.log-pane.log-max) .joblog-jobs { display: none; }
+
+.joblog-job {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.joblog-job:hover { background: var(--app-hover); }
+.joblog-job.is-current { background: var(--app-active); }
+.joblog-job.is-ok .glyph { color: var(--status-add); }
+.joblog-job.is-fail .glyph { color: var(--status-del); }
+.joblog-job.is-running .glyph { color: var(--gs-accent); }
+.joblog-job.is-idle .glyph { color: var(--app-muted); }
+.joblog-job-meta { display: flex; flex-direction: column; min-width: 0; }
+.joblog-job-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.joblog-job-when { font-size: var(--text-xs); color: var(--app-muted); }
+
+/* ── The release composer ───────────────────────────────────────────────────
+   Writing a release is a PAGE. As a modal it was a 560px card holding two ref
+   fields, a title, a ten-row notes box and two buttons — the notes, which are
+   the only part anyone spends time on, got about 180px of it. */
+.relc-view .det-main { max-width: min(980px, 100%); display: flex; flex-direction: column; min-height: 0; }
+.relc-view .det-body { align-items: stretch; flex: 1 1 auto; min-height: 0; }
+.relc-view .det-scroll { overflow: hidden; display: flex; min-height: 0; }
+
+.relc-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+/* The two refs sit side by side: they are one decision — what this release
+   points at — and stacking them read as two unrelated questions. */
+.relc-refs { display: flex; gap: var(--sp-3); align-items: flex-end; }
+.relc-refs .relc-field { flex: 1 1 0; min-width: 0; }
+.relc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.relc-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.relc-input {
+  width: 100%;
+  padding: 7px var(--sp-3);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  background: var(--app-bg);
+  color: var(--app-text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.relc-input:focus-visible {
+  outline: 2px solid var(--gs-focus-ring, var(--gs-accent));
+  outline-offset: -1px;
+}
+.relc-input[aria-invalid="true"] { border-color: var(--status-del); }
+.relc-title { font-size: var(--text-md); }
+/* Whether the tag exists is the difference between releasing a tag you cut and
+   creating one from Target — and nothing else on the form says which. */
+.relc-note { min-height: 16px; font-size: var(--text-xs); color: var(--app-muted); }
+.relc-note.is-new { color: var(--status-warn, var(--app-muted)); }
+.relc-note.is-known { color: var(--status-add); }
+
+.relc-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+/* The editor takes the rest of the window: a release note is the reason this
+   page exists. */
+.relc-form .md-editor { flex: 1 1 auto; min-height: 200px; }
+.md-editor.md-fill { min-height: 0; }
+.md-editor.md-fill .md-text { flex: 1 1 auto; min-height: 0; height: auto; }
+.md-editor.md-fill .md-preview { flex: 1 1 auto; min-height: 0; }
+
+.relc-attrs { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5); margin-top: var(--sp-2); }
+.relc-check { display: flex; align-items: flex-start; gap: var(--sp-2); cursor: pointer; }
+.relc-check.is-off { opacity: 0.5; cursor: default; }
+.relc-check-text { display: flex; flex-direction: column; }
+.relc-check-label { font-size: var(--text-sm); }
+.relc-check-hint { font-size: var(--text-xs); color: var(--app-muted); }
+
+.relc-error {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--status-del);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--status-del) 10%, transparent);
+  font-size: var(--text-sm);
+}
+.relc-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--app-border);
+}
+.relc-spring { flex: 1 1 auto; }
+
+/* ── The issue composer ─────────────────────────────────────────────────────
+   github.com/…/issues/new is a page: the title, a body that takes the window,
+   and a sidebar for what you decide ABOUT the issue. `editForm` was a modal
+   with two boxes and nowhere to put the third of those. */
+.isc-view .det-body { align-items: stretch; flex: 1 1 auto; min-height: 0; }
+.isc-view .det-scroll { overflow: hidden; display: flex; min-height: 0; }
+.isc-view .det-main { display: flex; flex-direction: column; min-height: 0; }
+.isc-view .det-rail { overflow-y: auto; }
+
+.isc-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.isc-field { display: flex; flex-direction: column; gap: 4px; }
+.isc-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
+.isc-body-label { margin-top: var(--sp-2); }
+.isc-input {
+  width: 100%;
+  padding: 7px var(--sp-3);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-md);
+  background: var(--app-bg);
+  color: var(--app-text);
+  font: inherit;
+  font-size: var(--text-md);
+}
+.isc-input:focus-visible {
+  outline: 2px solid var(--gs-focus-ring, var(--gs-accent));
+  outline-offset: -1px;
+}
+.isc-input[aria-invalid="true"] { border-color: var(--status-del); }
+.isc-form .md-editor { flex: 1 1 auto; min-height: 200px; }
+
+.isc-error {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--status-del);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--status-del) 10%, transparent);
+  font-size: var(--text-sm);
+}
+.isc-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--app-border);
+}
+.isc-spring { flex: 1 1 auto; }
+
+/* The sidebar: what is chosen, then one control to change it. */
+.isc-none { font-size: var(--text-sm); color: var(--app-muted); }
+.isc-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: var(--sp-2); }
+.isc-people { display: flex; flex-direction: column; gap: 4px; margin-bottom: var(--sp-2); }
+.isc-person { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); }
+.isc-milestone { display: block; margin-bottom: var(--sp-2); font-size: var(--text-sm); }
+.isc-add { margin-top: 4px; }

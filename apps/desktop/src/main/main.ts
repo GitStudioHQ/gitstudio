@@ -765,6 +765,9 @@ function registerIpc(): void {
   handle("release:tags", () => github.withRepo((c, o, r) => releasesApi.listTags(c, o, r)));
   handle("release:create", (input) => github.withRepo((c, o, r) => releasesApi.createRelease(c, o, r, input)));
   handle("release:update", (input) => github.withRepo((c, o, r) => releasesApi.updateRelease(c, o, r, input)));
+  handle("release:generateNotes", (req) =>
+    github.withRepo((c, o, r) => releasesApi.generateNotes(c, o, r, req)),
+  );
   handle("release:delete", (id) => github.withRepo((c, o, r) => releasesApi.deleteRelease(c, o, r, id)));
   handle("release:uploadAssets", async (req) => {
     // The file dialog lives HERE (main) — the renderer has no filesystem.
@@ -898,6 +901,7 @@ function registerIpc(): void {
   handle("branch:rename", (req) => bridge.branchRename(req));
   handle("branch:setUpstream", (req) => bridge.branchSetUpstream(req));
   handle("branch:deleteRemote", (req) => bridge.branchDeleteRemote(req));
+  handle("commit:branches", (sha) => bridge.commitBranches(sha));
   handle("git:opState", () => bridge.opState());
   handle("merge:abort", () => bridge.mergeAbort());
   handle("merge:continue", () => bridge.mergeContinue());

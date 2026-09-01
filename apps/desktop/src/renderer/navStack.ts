@@ -88,6 +88,9 @@ const VIEW_LABELS: Record<string, string> = {
   settings: "Settings",
   assistant: "Assistant",
   commit: "Commit",
+  joblog: "Job log",
+  releasenew: "Release composer",
+  issuenew: "Issue composer",
 };
 
 /** The label a back button should show for an entry. */

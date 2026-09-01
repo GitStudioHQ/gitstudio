@@ -54,6 +54,7 @@ import type {
   SyncStatus,
   TreeEntry,
   WorktreeInfo,
+  CommitBranches,
 } from "../shared/ipc";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitFileChange } from "@gitstudio/host-bridge/git";
@@ -360,6 +361,34 @@ export class GitBridge {
   }
 
   // ── Commit details ─────────────────────────────────────────────────────────
+
+  /**
+   * Which local branches contain this commit.
+   *
+   * FULL refnames, never `%(refname:short)`: the short form is the shortest
+   * UNAMBIGUOUS name, so a branch colliding with a tag comes back as
+   * `heads/release` — this repo has been bitten by that before, badly enough
+   * that a rebase wrote a junk branch.
+   */
+  async commitBranches(sha: string): Promise<CommitBranches> {
+    const ctx = this.ctx();
+    if (!ctx || !safeArg(sha)) return { branches: [], onCurrent: false };
+    const [contains, head] = await Promise.all([
+      ctx.process.run(["branch", "--contains", sha, "--format=%(refname)"]),
+      ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
+    ]);
+    if (contains.code !== 0) return { branches: [], onCurrent: false };
+    const branches = contains.stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("refs/heads/"))
+      .map((l) => l.slice("refs/heads/".length));
+    const current = head.code === 0 ? head.stdout.trim() || undefined : undefined;
+    const onCurrent = !!current && branches.includes(current);
+    // HEAD's own branch first — it is the one the reader is oriented by.
+    branches.sort((a, b) => (a === current ? -1 : b === current ? 1 : a.localeCompare(b)));
+    return { branches, onCurrent, ...(current ? { current } : {}) };
+  }
 
   async commitDetails(sha: string): Promise<CommitDetailsPayload | undefined> {
     const ctx = this.ctx();

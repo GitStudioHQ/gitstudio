@@ -31,6 +31,15 @@ export interface MdEditorOpts {
   onSubmit?: () => void;
   /** Accessible name for the text area. */
   label?: string;
+  /**
+   * Fill the height the container gives it instead of growing with the text.
+   *
+   * Auto-grow is right inside a modal, where the editor is one field among
+   * several. On a composer PAGE the body is the page: growing to half the
+   * window and then scrolling a box inside a box is the same "the window is
+   * too small" complaint in a different surface.
+   */
+  fill?: boolean;
 }
 
 export interface MdEditor {
@@ -116,7 +125,7 @@ function listMarker(line: string): string | undefined {
 }
 
 export function mdEditor(opts: MdEditorOpts = {}): MdEditor {
-  const root = el("div", "md-editor");
+  const root = el("div", "md-editor" + (opts.fill ? " md-fill" : ""));
 
   // ── Write | Preview ───────────────────────────────────────────────────────
   const tabs = el("div", "md-tabs");
@@ -184,6 +193,7 @@ export function mdEditor(opts: MdEditorOpts = {}): MdEditor {
   // Grow with the text, to a point — a release note is not a tweet, and a
   // fixed six rows meant scrolling a box inside a box.
   const autoGrow = (): void => {
+    if (opts.fill) return; // the container decides the height; see `fill`
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight + 2, Math.round(window.innerHeight * 0.5))}px`;
   };

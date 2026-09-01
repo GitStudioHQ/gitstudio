@@ -719,6 +719,13 @@
     ],
     "gist:detail": (id) => gists.find((g) => g.id === id),
     "release:detail": (id) => releases.find((r) => r.id === id),
+    // GitHub's own changelog, as the composer's "Generate release notes" asks
+    // for it. Echoes the tag so a check can prove the answer landed in the
+    // editor rather than some other text happening to be there.
+    "release:generateNotes": (req) => ({
+      name: `Release ${req.tagName}`,
+      body: `## What's Changed\n* Reorder commits by dragging in the graph by @antonarnaudov in #18\n* Carry other branches through a rebase by @mira-holt in #21\n\n**Full Changelog**: https://github.com/GitStudioHQ/gitstudio/compare/ext-v1.11.1...${req.tagName}`,
+    }),
     "pr:reviewThreads": () => [
       { id: "t1", path: "apps/desktop/src/renderer/views/issues.ts", line: 42, isResolved: false, isOutdated: false,
         comments: [
@@ -864,6 +871,29 @@
       ...(oldPath ? { oldPath } : {}),
     }));
   const commits = {
+    // The compare view's own commits, so "open a commit from Compare" is a
+    // scene that lands on a real page rather than the honest-but-untestable
+    // "this commit isn't in your clone".
+    "18c9d0e1": {
+      kind: "commit",
+      sha: "18c9d0e1f2736485a1b2c3d4e5f60718293a4b5c",
+      shortSha: "18c9d0e",
+      parents: ["29d0e1f2736485a1b2c3d4e5f60718293a4b5c6d"],
+      author: "mira-holt",
+      authorEmail: "mira@gitstudio.dev",
+      authorDate: Math.floor(Date.now() / 1000) - 20 * 3600,
+      committer: "mira-holt",
+      committerEmail: "mira@gitstudio.dev",
+      committerDate: Math.floor(Date.now() / 1000) - 20 * 3600,
+      subject: "engine: hunk splitting groundwork",
+      body: "Extracts the split point search so the selection path can reuse it.",
+      refs: [],
+      files: commitFiles([
+        ["M", "packages/engine/src/hunks.ts", 84, 12],
+        ["A", "packages/engine/test/hunks.test.ts", 121, 0],
+      ]),
+      hasRemote: true,
+    },
     a1b2c3d4: {
       kind: "commit",
       sha: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
@@ -953,6 +983,14 @@
   };
 
   dynamic["commit:details"] = (sha) => commits[String(sha).slice(0, 8)];
+  // "did this come from the branch I am on, or was it merged in" — the first
+  // question a reader has about a commit, which the page could not answer.
+  dynamic["commit:branches"] = (sha) => {
+    const key = String(sha).slice(0, 8);
+    if (key === "b2c3d4e5") return { branches: ["main", "redesign/wave-2"], onCurrent: true, current: "main" };
+    if (key === "f00dbabe") return { branches: ["redesign/wave-2"], onCurrent: false, current: "main" };
+    return { branches: ["redesign/wave-2", "main"], onCurrent: true, current: "redesign/wave-2" };
+  };
 
   // The diff pane's header must name the file that was ASKED for. A fixed path
   // here showed one file's name over another file's diff, which reads as a bug
@@ -974,9 +1012,18 @@
   // Auth is a state, not a constant. `github:disconnect` flips it, so a check
   // can drive Sign out / Switch account and see what the app does about it.
   let connected = params.get("signedout") !== "1";
+  // `?unlocked=0` is the state a real launch starts in: the token FILE exists,
+  // so you are connected, but it has not been decrypted yet (decrypting raises
+  // the OS keychain prompt), so the login name is not known. The chip used to
+  // render that as "Sign in".
+  const nameKnown = params.get("unlocked") !== "0";
   dynamic["github:status"] = () =>
     connected
-      ? { connected: true, login: me, repo: { owner: "GitStudioHQ", repo: "gitstudio" } }
+      ? {
+          connected: true,
+          ...(nameKnown ? { login: me } : {}),
+          repo: { owner: "GitStudioHQ", repo: "gitstudio" },
+        }
       : { connected: false };
   dynamic["github:disconnect"] = () => {
     connected = false;

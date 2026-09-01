@@ -146,7 +146,12 @@ function commentCard(
 
 // ── The section view ─────────────────────────────────────────────────────────
 
+/** The section's router, so a detail page nested inside it can leave for
+ *  another view — the issue composer is a page of its own now, not a modal. */
+let sectionNav: SectionNav | undefined;
+
 export const renderIssues: SectionRender = (wrap, nav, target) => {
+  sectionNav = nav;
   void mount(wrap, nav, target);
 };
 
@@ -195,7 +200,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const facetSlot = el("div", "gh-facet-slot");
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("add"), span("New issue"));
-  newBtn.addEventListener("click", () => void openNewIssue(nav));
+  newBtn.addEventListener("click", () => nav("issuenew"));
   tools.append(seg, facetSlot, newBtn);
   header.querySelector(".gh-acct")?.before(tools);
   view.append(header, listEl);
@@ -288,7 +293,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
             ? { icon: c.icon }
             : {
                 icon: c.icon,
-                action: { label: "New issue", icon: "add", onClick: () => void openNewIssue(nav) },
+                action: { label: "New issue", icon: "add", onClick: () => nav("issuenew") },
               },
         ),
       );
@@ -571,7 +576,7 @@ function buildDetail(ctx: DetailCtx): void {
 
   const editBtn = el("button", "mini-btn");
   editBtn.append(glyph("edit"), span("Edit"));
-  editBtn.addEventListener("click", () => void editIssue(it, reload));
+  editBtn.addEventListener("click", () => sectionNav?.("issuenew", { number: it.number }));
   actions.push(editBtn);
 
   const closing = it.state === "open";
@@ -779,48 +784,15 @@ function buildDetail(ctx: DetailCtx): void {
 // ── Mutations (disable trigger → toast → bust cache → re-fetch) ──────────────
 
 /** The New-issue flow — exported so the command palette can launch it from
- *  anywhere, not just the Issues toolbar. Lands on the created issue. */
-export async function openNewIssue(nav: SectionNav): Promise<void> {
-  let created: { number?: number } | undefined;
-  // The form comes BACK if the create fails, carrying what was typed. It used to
-  // close first and send afterwards, so a rejected request answered several
-  // minutes of writing with a toast and an empty screen.
-  await formWithRetry<{ title: string; body: string }>(
-    (seed, error) =>
-      editForm({
-        title: "New issue",
-        okLabel: "Create issue",
-        titlePlaceholder: "Issue title",
-        bodyPlaceholder: "Describe the issue… (Markdown supported)",
-        titleValue: seed?.title,
-        bodyValue: seed?.body,
-        // A new issue's draft is keyed per REPOSITORY, so a half-written report
-        // survives Escape, a route change and a restart — and never follows you
-        // into a different repo.
-        draft: ["issue", "new"],
-        // A new issue's draft is keyed per REPOSITORY, so a half-written report
-        // survives Escape, a route change and a restart — and never follows you
-        // into a different repo.
-
-        note: error,
-      }),
-    async (v) => {
-      try {
-        const r = await host.invoke("issue:create", { title: v.title, body: v.body });
-        if (!r.ok) return r.message ?? "Couldn't create the issue.";
-        created = r;
-        return undefined;
-      } catch (e) {
-        return cleanErr(e) || "Couldn't create the issue.";
-      }
-    },
-  );
-  if (!created) return;
-  toast(created.number ? `Opened issue #${created.number}.` : "Issue created.", "success");
-  bust("issue");
-  issueState = "open";
-  if (created.number) nav("issues", { number: created.number });
-  else nav("issues", { list: true });
+ *  anywhere, not just the Issues toolbar.
+ *
+ *  It used to open `editForm`, a modal with a title input and a body box. It is
+ *  a routed PAGE now (`views/issueCompose.ts`) with a Write/Preview body that
+ *  fills the window and a sidebar for labels, assignees and the milestone —
+ *  none of which a modal could offer, so all three used to mean a second trip
+ *  through the issue's own page AFTER it had been announced. */
+export function openNewIssue(nav: SectionNav): void {
+  nav("issuenew");
 }
 
 async function postComment(
@@ -880,31 +852,6 @@ async function changeState(
     toast(cleanErr(e) || "Couldn't update the issue.", "error");
   } finally {
     (btn as HTMLButtonElement).disabled = false;
-  }
-}
-
-async function editIssue(it: IssueInfo, reload: () => void): Promise<void> {
-  const res = await editForm({
-    title: `Edit issue #${it.number}`,
-    okLabel: "Save",
-    titleValue: it.title,
-    titlePlaceholder: "Issue title",
-    bodyValue: it.body ?? "",
-    bodyPlaceholder: "Describe the issue…",
-    draft: ["issue", it.number],
-  });
-  if (!res) return;
-  if (res.title === it.title && res.body === (it.body ?? "")) return; // nothing changed
-  try {
-    const r = await host.invoke("issue:edit", { number: it.number, title: res.title, body: res.body });
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't edit the issue.", "error");
-      return;
-    }
-    toast("Issue updated.", "success");
-    reload();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't edit the issue.", "error");
   }
 }
 

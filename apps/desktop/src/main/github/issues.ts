@@ -203,11 +203,37 @@ export async function milestones(
  * Open a new issue. Returns the created issue's `number` so the caller can
  * select it. This is its own result shape (carries `number`) per the channel.
  */
+/**
+ * The REST body for a new issue, as one pure function.
+ *
+ * Labels, assignees and the milestone are sent WITH the issue rather than
+ * patched on afterwards: a second request can fail on its own, and an issue
+ * that exists without the labels its author chose has already been announced to
+ * everyone watching the repository. Empty selections are OMITTED rather than
+ * sent as `[]` — GitHub reads an explicit empty array as "clear these", which
+ * on a create is a different statement from "I did not choose any".
+ */
+export function newIssueBody(req: {
+  title: string;
+  body?: string;
+  labels?: string[];
+  assignees?: string[];
+  milestone?: number;
+}): Record<string, unknown> {
+  return {
+    title: req.title,
+    body: req.body ?? "",
+    ...(req.labels?.length ? { labels: req.labels } : {}),
+    ...(req.assignees?.length ? { assignees: req.assignees } : {}),
+    ...(req.milestone !== undefined ? { milestone: req.milestone } : {}),
+  };
+}
+
 export async function createIssue(
   client: GitHubClient,
   owner: string,
   repo: string,
-  req: { title: string; body?: string },
+  req: { title: string; body?: string; labels?: string[]; assignees?: string[]; milestone?: number },
 ): Promise<{ ok: boolean; number?: number; message?: string }> {
   const title = req.title.trim();
   if (!title) {
@@ -217,7 +243,7 @@ export async function createIssue(
     const created = await client.request<RawIssue>(
       "POST",
       `/repos/${enc(owner)}/${enc(repo)}/issues`,
-      { title, body: req.body ?? "" },
+      newIssueBody({ ...req, title }),
     );
     return { ok: true, number: created.number };
   } catch (err) {

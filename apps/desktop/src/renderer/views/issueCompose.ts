@@ -1,0 +1,373 @@
+// Writing an issue, as a PAGE.
+//
+// It used to be `editForm` — a shared modal with a title input and a body box.
+// The owner's report: "Same goes for issues creating and editing, the
+// create/edit window is utter garbage, look at real github page to see how its
+// done."
+//
+// github.com/…/issues/new is a full page: the title, a Write/Preview body that
+// takes the window, and a sidebar for the things you decide ABOUT the issue —
+// assignees, labels, milestone. The modal could offer none of that, so every
+// one of those was a second trip through the issue's detail page after the
+// issue already existed (and had already notified everyone watching).
+//
+// This is that page. Labels and assignees ride along with the create request
+// rather than being patched on afterwards, because a follow-up request can
+// fail on its own and leave an announced issue missing what its author chose.
+
+import { host } from "../bridge";
+import { el, span, glyph, avatar, labelChip, cleanErr, errorState, skeletonList, openMenu } from "../ui";
+import { toast } from "../dialogs";
+import { detailPage, propSection, type SectionTarget, type SectionNav } from "./common";
+import { mdEditor } from "../mdEditor";
+import { wireDraft } from "../draftStore";
+import { setPageLabel } from "../navStack";
+import { bust, gget } from "../cache";
+import type { IssueDetail, RepoLabel, RepoCollaborator, MilestoneInfo } from "../../shared/ipc";
+
+/** Everything the sidebar can offer, fetched once and never blocking the form. */
+interface Choices {
+  labels: RepoLabel[];
+  people: RepoCollaborator[];
+  milestones: MilestoneInfo[];
+}
+
+async function loadChoices(): Promise<Choices> {
+  const [labels, people, milestones] = await Promise.all([
+    gget("issue:labels", undefined, 60000).catch(() => [] as RepoLabel[]),
+    gget("pr:reviewers", undefined, 60000).catch(() => [] as RepoCollaborator[]),
+    gget("issue:milestones", undefined, 60000).catch(() => [] as MilestoneInfo[]),
+  ]);
+  return { labels, people, milestones };
+}
+
+/**
+ * The composer. `target.number` edits that issue; without one it opens a new
+ * one.
+ */
+export async function renderIssueCompose(
+  wrap: HTMLElement,
+  nav: SectionNav,
+  target: SectionTarget | undefined,
+): Promise<void> {
+  const editNo = target?.number;
+  const { view, main, rail, topActions } = detailPage({
+    backLabel: "Issues",
+    crumb: editNo ? `Edit #${editNo}` : "New issue",
+    pageLabel: editNo ? `Edit issue #${editNo}` : "New issue",
+    onBack: () => nav("issues", editNo ? { number: editNo } : { list: true }),
+  });
+  view.classList.add("isc-view");
+  topActions.remove();
+  wrap.replaceChildren(view);
+  main.appendChild(skeletonList(3, false));
+
+  let existing: IssueDetail | undefined;
+  if (editNo != null) {
+    try {
+      existing = await host.invoke("issue:detail", editNo);
+    } catch (e) {
+      if (!view.isConnected) return;
+      main.replaceChildren(
+        errorState("Couldn't load this issue", cleanErr(e) || "GitHub request failed.", () =>
+          void renderIssueCompose(wrap, nav, target),
+        ),
+      );
+      return;
+    }
+    if (!view.isConnected) return;
+    if (!existing) {
+      main.replaceChildren(errorState("Issue unavailable", "This issue couldn't be read from GitHub."));
+      return;
+    }
+  }
+
+  const initTitle = existing?.issue.title ?? "";
+  const initBody = existing?.issue.body ?? "";
+  // Editing an issue changes its TEXT. Labels, assignees and the milestone are
+  // separate GitHub requests and the issue's own page already owns them — so
+  // the sidebar is offered while composing (where it saves a round trip and a
+  // premature notification) and not while editing (where it would duplicate,
+  // and disagree with, controls that already exist).
+  const composing = editNo == null;
+
+  const form = el("div", "isc-form");
+  main.replaceChildren(form);
+
+  const draftId = editNo == null ? "new" : String(editNo);
+
+  const titleField = el("div", "isc-field");
+  const titleLabel = el("label", "isc-label");
+  titleLabel.textContent = "Title";
+  const title = document.createElement("input");
+  title.className = "isc-input isc-title";
+  title.placeholder = "Say what happened, in one line";
+  title.value = initTitle;
+  title.id = "isc-title";
+  (titleLabel as HTMLLabelElement).htmlFor = title.id;
+  titleField.append(titleLabel, title);
+  form.appendChild(titleField);
+  // The title survives leaving too. It used to be the one field a draft did not
+  // cover, so "never mind" (Escape) kept the paragraph you wrote and threw away
+  // the line you wrote first.
+  const titleDraft = wireDraft("issue-title", draftId, (t) => {
+    if (!initTitle && !title.value) title.value = t;
+  });
+  title.addEventListener("input", () => titleDraft.save(title.value));
+
+  const bodyLabel = el("div", "isc-label isc-body-label");
+  bodyLabel.textContent = "Description";
+  form.appendChild(bodyLabel);
+
+  const body = mdEditor({
+    value: initBody,
+    placeholder:
+      "What happened, what you expected, and how to reproduce it. Markdown is supported — drop in a code block with ```.",
+    fill: true,
+    label: "Issue description",
+    onInput: (v) => bodyDraft.save(v),
+    onSubmit: () => submitBtn.click(),
+  });
+  // Only over an EMPTY field: a local draft must never silently replace text
+  // GitHub already has.
+  const bodyDraft = wireDraft("issue", draftId, (text) => {
+    if (!initBody) body.set(text);
+  });
+  form.appendChild(body.root);
+
+  const note = el("div", "isc-error");
+  note.setAttribute("role", "alert");
+  note.hidden = true;
+  form.appendChild(note);
+  const showError = (msg: string): void => {
+    note.hidden = false;
+    note.textContent = msg;
+  };
+
+  const bar = el("div", "isc-actions");
+  const cancel = el("button", "mini-btn") as HTMLButtonElement;
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => nav("issues", editNo ? { number: editNo } : { list: true }));
+  const submitBtn = el("button", "btn btn-primary") as HTMLButtonElement;
+  const submitLabel = span(composing ? "Create issue" : "Save changes");
+  submitBtn.append(glyph(composing ? "issues" : "save"), submitLabel);
+  submitBtn.title = composing
+    ? "Open this issue on GitHub — everyone watching the repository is notified"
+    : "Save the title and description";
+  bar.append(cancel, el("span", "isc-spring"), submitBtn);
+  form.appendChild(bar);
+
+  // ── the sidebar ───────────────────────────────────────────────────────────
+  const pickedLabels = new Set<string>();
+  const pickedPeople = new Set<string>();
+  let pickedMilestone: number | undefined;
+
+  if (!composing) {
+    rail.remove();
+  } else {
+    const labelProp = propSection("Labels");
+    const labelBody = labelProp.body;
+    const assignProp = propSection("Assignees");
+    const assignBody = assignProp.body;
+    const mileProp = propSection("Milestone");
+    const mileBody = mileProp.body;
+    rail.append(labelProp.root, assignProp.root, mileProp.root);
+
+    const empty = (parent: HTMLElement, text: string): void => {
+      parent.appendChild(span(text, "isc-none"));
+    };
+    const addBtn = (text: string, onClick: (anchor: HTMLElement) => void): HTMLElement => {
+      const b = el("button", "mini-btn isc-add") as HTMLButtonElement;
+      b.append(glyph("add"), span(text));
+      b.addEventListener("click", () => onClick(b));
+      return b;
+    };
+
+    const choices = await loadChoices();
+    if (!view.isConnected) return;
+
+    const paintLabels = (): void => {
+      labelBody.replaceChildren();
+      if (pickedLabels.size) {
+        const chips = el("div", "isc-chips");
+        // The SAME chip the lists and the issue page draw, so a label cannot
+        // look like one thing while you pick it and another once it is on.
+        for (const name of pickedLabels) {
+          const l = choices.labels.find((x) => x.name === name);
+          chips.appendChild(labelChip(name, l?.color ?? ""));
+        }
+        labelBody.appendChild(chips);
+      } else empty(labelBody, "None yet");
+      labelBody.appendChild(
+        addBtn(pickedLabels.size ? "Edit labels" : "Add labels", (anchor) => {
+          if (!choices.labels.length) {
+            toast("This repository has no labels defined.", "info");
+            return;
+          }
+          openMenu(
+            anchor,
+            choices.labels.map((l) => ({
+              label: l.name,
+              checkable: true,
+              current: pickedLabels.has(l.name),
+              onClick: () => {
+                if (pickedLabels.has(l.name)) pickedLabels.delete(l.name);
+                else pickedLabels.add(l.name);
+                paintLabels();
+              },
+            })),
+          );
+        }),
+      );
+    };
+    paintLabels();
+
+    const paintPeople = (): void => {
+      assignBody.replaceChildren();
+      if (pickedPeople.size) {
+        const row = el("div", "isc-people");
+        for (const login of pickedPeople) {
+          const p = choices.people.find((x) => x.login === login);
+          const one = el("span", "isc-person");
+          one.append(avatar(login, p?.avatarUrl, 18, "Assignee"), span(login));
+          row.appendChild(one);
+        }
+        assignBody.appendChild(row);
+      } else empty(assignBody, "No one — leave it unassigned");
+      assignBody.appendChild(
+        addBtn(pickedPeople.size ? "Edit assignees" : "Assign people", (anchor) => {
+          if (!choices.people.length) {
+            toast("Couldn't read this repository's collaborators.", "info");
+            return;
+          }
+          openMenu(
+            anchor,
+            choices.people.map((p) => ({
+              label: p.login,
+              iconEl: avatar(p.login, p.avatarUrl, 18),
+              checkable: true,
+              current: pickedPeople.has(p.login),
+              onClick: () => {
+                if (pickedPeople.has(p.login)) pickedPeople.delete(p.login);
+                else pickedPeople.add(p.login);
+                paintPeople();
+              },
+            })),
+          );
+        }),
+      );
+    };
+    paintPeople();
+
+    const paintMilestone = (): void => {
+      mileBody.replaceChildren();
+      const m = choices.milestones.find((x) => x.number === pickedMilestone);
+      if (m) mileBody.appendChild(span(m.title, "isc-milestone"));
+      else empty(mileBody, "No milestone");
+      mileBody.appendChild(
+        addBtn(m ? "Change milestone" : "Set milestone", (anchor) => {
+          const open = choices.milestones.filter((x) => x.state === "open");
+          if (!open.length) {
+            toast("This repository has no open milestones.", "info");
+            return;
+          }
+          openMenu(anchor, [
+            {
+              label: "No milestone",
+              icon: "circle-slash",
+              current: pickedMilestone === undefined,
+              onClick: () => {
+                pickedMilestone = undefined;
+                paintMilestone();
+              },
+            },
+            { separator: true },
+            ...open.map((x) => ({
+              label: `${x.title} — ${x.openIssues} open`,
+              icon: "milestone",
+              current: pickedMilestone === x.number,
+              onClick: () => {
+                pickedMilestone = x.number;
+                paintMilestone();
+              },
+            })),
+          ]);
+        }),
+      );
+    };
+    paintMilestone();
+  }
+
+  // ── submit ────────────────────────────────────────────────────────────────
+  let busy = false;
+  const submit = async (): Promise<void> => {
+    if (busy) return;
+    const t = title.value.trim();
+    if (!t) {
+      showError("An issue needs a title — it is what everyone reads first.");
+      title.setAttribute("aria-invalid", "true");
+      title.focus();
+      return;
+    }
+    note.hidden = true;
+    busy = true;
+    submitBtn.disabled = cancel.disabled = true;
+    submitLabel.textContent = composing ? "Creating…" : "Saving…";
+    try {
+      if (composing) {
+        const r = await host.invoke("issue:create", {
+          title: t,
+          body: body.get(),
+          labels: [...pickedLabels],
+          assignees: [...pickedPeople],
+          milestone: pickedMilestone,
+        });
+        if (!r.ok) {
+          showError(r.message ?? "GitHub rejected the issue.");
+          return;
+        }
+        bodyDraft.clear();
+        titleDraft.clear();
+        bust("issue");
+        toast(r.number ? `Opened issue #${r.number}.` : "Issue created.", "success");
+        nav("issues", r.number ? { number: r.number } : { list: true });
+      } else {
+        if (t === initTitle && body.get() === initBody) {
+          nav("issues", { number: editNo });
+          return;
+        }
+        const r = await host.invoke("issue:edit", { number: editNo!, title: t, body: body.get() });
+        if (!r.ok) {
+          showError(r.message ?? "GitHub rejected the change.");
+          return;
+        }
+        bodyDraft.clear();
+        titleDraft.clear();
+        bust("issue");
+        toast(`Updated issue #${editNo}.`, "success");
+        nav("issues", { number: editNo });
+      }
+    } catch (e) {
+      showError(cleanErr(e) || "Couldn't reach GitHub.");
+    } finally {
+      busy = false;
+      submitBtn.disabled = cancel.disabled = false;
+      submitLabel.textContent = composing ? "Create issue" : "Save changes";
+    }
+  };
+  submitBtn.addEventListener("click", () => void submit());
+  title.addEventListener("input", () => {
+    if (!title.value.trim()) return;
+    title.removeAttribute("aria-invalid");
+    note.hidden = true;
+  });
+  form.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      void submit();
+    }
+  });
+
+  setPageLabel(editNo ? `Edit issue #${editNo}` : "New issue");
+  (initTitle ? body.textarea : title).focus();
+}

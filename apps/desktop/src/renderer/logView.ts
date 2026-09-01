@@ -16,6 +16,7 @@ import {
   parseAnsi,
   stripAnsi,
   type LogDoc,
+  type LogGroup,
 } from "./logModel";
 import { el, glyph, span } from "./ui";
 import { searchField } from "./views/common";
@@ -43,6 +44,16 @@ export function createLogPane(o: {
   ariaLabel: string;
   onCopy: () => string | Promise<string>;
   onDownload?: () => void;
+  /**
+   * The pane IS the page: it fills its container instead of capping itself, and
+   * its expand control widens it over the job list rather than growing a box.
+   *
+   * A log read inside a pane on a scrolling page gets whatever height is left
+   * over — measured at 523px of a 913px window — and that is the "the log
+   * window is too small" report. On its own route there is nothing to leave
+   * over.
+   */
+  fill?: boolean;
 }): LogPane {
   let doc: LogDoc = emptyLogDoc();
   const collapsed = new Set<number>(); // group START line indices
@@ -57,9 +68,10 @@ export function createLogPane(o: {
   let savedScroll = 0;
   let savedFollow = follow;
   let raf = 0;
+  let rafTimer = 0;
   let destroyed = false;
 
-  const root = el("div", "log-pane");
+  const root = el("div", "log-pane" + (o.fill ? " log-fill" : ""));
   root.setAttribute("role", "region");
   root.setAttribute("aria-label", o.ariaLabel);
 
@@ -107,20 +119,24 @@ export function createLogPane(o: {
     void Promise.resolve(o.onCopy()).then((t) => navigator.clipboard.writeText(t).catch(() => {}));
   });
   const dlBtn = o.onDownload ? toolBtn("cloud-download", "Save the full log to Downloads", o.onDownload) : null;
-  const expandBtn = toolBtn("screen-full", "Expand the pane", () => {
+  const expandTitles = o.fill
+    ? { on: "Show the job list", off: "Use the full width" }
+    : { on: "Shrink the pane", off: "Expand the pane" };
+  const expandBtn = toolBtn("screen-full", expandTitles.off, () => {
     // Resizing the pane changes its scroll height, which the scroll listener
     // reads as "the user scrolled away from the bottom" and silently turns
     // follow OFF, dumping you into the middle of the log. Resizing is not
     // scrolling: remember the mode and restore it.
     const wasFollowing = follow;
     const max = root.classList.toggle("log-max");
-    expandBtn.title = max ? "Shrink the pane" : "Expand the pane";
+    expandBtn.title = max ? expandTitles.on : expandTitles.off;
     expandBtn.setAttribute("aria-label", expandBtn.title);
     render();
     // Expanding to 78vh while the pane sits ~320px down the page pushed its
     // tail — the error line, the toolbar's own controls — below the fold, so
     // "expand" made the thing you wanted LESS visible. Bring it into view.
-    if (max) root.scrollIntoView({ block: "start", behavior: "smooth" });
+    // On a filled page there is nothing to scroll to: the pane is the page.
+    if (max && !o.fill) root.scrollIntoView({ block: "start", behavior: "smooth" });
     if (wasFollowing) setFollow(true);
   });
   // Stepping through matches was Enter-only and unadvertised, so a search that
@@ -169,7 +185,27 @@ export function createLogPane(o: {
   const win = el("div", "log-window");
   const bottom = el("div", "log-spacer");
   scroll.append(top, win, bottom);
-  root.appendChild(scroll);
+  // The scroller and the two things that FLOAT over it share a positioned
+  // wrapper. Both were briefly children of the scroller itself, where a sticky
+  // element that is the last child sticks only once its own place scrolls into
+  // view — i.e. at the very end of a 20,000-line log, which is nowhere.
+  const body = el("div", "log-body");
+  body.appendChild(scroll);
+  // Which ##[group] the top of the port is inside. A CI log is mostly group
+  // CONTENTS, and scrolling past the header that named them leaves you reading
+  // 400 lines of output with no idea which step produced it — the other half of
+  // "not easy to use and practical at all". Click it to jump back to its header.
+  const groupBar = el("button", "log-groupbar");
+  groupBar.hidden = true;
+  groupBar.title = "Jump to the start of this step";
+  body.appendChild(groupBar);
+  // Where the errors ARE, over the whole log rather than the screenful you can
+  // see. A 20,000-line log has no shape without it: you scroll and hope. Each
+  // tick is a click that lands on that failure.
+  const errMap = el("div", "log-errmap");
+  errMap.setAttribute("aria-hidden", "true"); // the error chip + `n` are the accessible path
+  body.appendChild(errMap);
+  root.appendChild(body);
   const jumpPill = el("button", "log-jump");
   jumpPill.append(glyph("arrow-down"), span("Jump to latest"));
   jumpPill.hidden = true;
@@ -213,10 +249,26 @@ export function createLogPane(o: {
   followBtn.setAttribute("aria-pressed", String(follow));
 
   // A user scroll away from the bottom disables follow; back to bottom re-arms.
-  scroll.addEventListener("scroll", () => {
-    if (raf) return;
-    raf = requestAnimationFrame(() => {
+  scroll.addEventListener("scroll", () => scheduleScrollFrame());
+
+  /**
+   * Repaint the window after a scroll — on the next frame, or on a short timer
+   * if no frame comes.
+   *
+   * This was rAF alone. A window that is occluded, minimised, or otherwise not
+   * being composited is served NO frames, and a virtualized log whose repaint
+   * only ever runs inside rAF then shows the lines from wherever it last
+   * painted while the scrollbar says something else. The frame is the fast
+   * path; it must not be the only one.
+   */
+  function scheduleScrollFrame(): void {
+    if (raf || rafTimer) return;
+    const paint = (): void => {
+      if (raf) cancelAnimationFrame(raf);
+      if (rafTimer) window.clearTimeout(rafTimer);
       raf = 0;
+      rafTimer = 0;
+      if (destroyed) return;
       const atBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - LINE_H * 2;
       // Route BOTH directions through setFollow. Flipping the class here by
       // hand is how the button came to render as ON while its own tooltip and
@@ -229,8 +281,10 @@ export function createLogPane(o: {
         jumpPill.hidden = true;
       }
       render();
-    });
-  });
+    };
+    raf = requestAnimationFrame(paint);
+    rafTimer = window.setTimeout(paint, 80);
+  }
 
   function groupOf(startIdx: number): { start: number; end: number } | undefined {
     for (const g of doc.groups) if (g.start === startIdx) return { start: g.start, end: g.end === -1 ? doc.lines.length - 1 : g.end };
@@ -451,7 +505,73 @@ export function createLogPane(o: {
     const errs = errorLines();
     errChip.hidden = errs.length === 0;
     if (errs.length) errChip.textContent = `${errs.length} error${errs.length === 1 ? "" : "s"}`;
+    // The first line actually IN the port, not the first RENDERED one: `first`
+    // carries 30 lines of overscan above the fold, so the strip named the group
+    // you had already scrolled past.
+    // The first line actually IN the port, not the first RENDERED one: `first`
+    // carries 30 lines of overscan above the fold, so the strip named the step
+    // you had already scrolled past for the first 30 lines of every new one.
+    syncGroupBar(Math.min(visible.length - 1, Math.floor(scroll.scrollTop / LINE_H)));
+    syncErrMap(errs);
     syncBanner();
+  }
+
+  /** Name the group the top of the port sits inside, or hide the strip. */
+  function syncGroupBar(firstVisible: number): void {
+    const docIdx = visible[firstVisible];
+    if (docIdx === undefined) {
+      groupBar.hidden = true;
+      return;
+    }
+    // The innermost group whose header is above us and whose end is below.
+    let found: LogGroup | undefined;
+    for (const g of doc.groups) {
+      if (g.start > docIdx) break;
+      const end = g.end === -1 ? doc.lines.length - 1 : g.end;
+      if (end >= docIdx) found = g;
+    }
+    // Standing ON the header needs no reminder of it.
+    if (!found || found.start === docIdx) {
+      groupBar.hidden = true;
+      return;
+    }
+    const label = stripAnsi(doc.lines[found.start]?.text ?? "").trim();
+    if (!label) {
+      groupBar.hidden = true;
+      return;
+    }
+    groupBar.hidden = false;
+    groupBar.replaceChildren(glyph("chevron-up"), span(label, "log-groupbar-name"));
+    groupBar.onclick = () => jumpToLine(found.start);
+  }
+
+  /** One tick per error, positioned by its place in the whole log. */
+  function syncErrMap(errs: number[]): void {
+    if (errs.length === 0 || visible.length === 0) {
+      errMap.replaceChildren();
+      errMap.hidden = true;
+      return;
+    }
+    errMap.hidden = false;
+    const pos = new Map<number, number>();
+    for (let i = 0; i < visible.length; i++) pos.set(visible[i], i);
+    const ticks: HTMLElement[] = [];
+    const seen = new Set<number>();
+    for (const docIdx of errs) {
+      const at = pos.get(docIdx);
+      if (at === undefined) continue; // inside a collapsed group
+      const pct = Math.round((at / Math.max(1, visible.length - 1)) * 1000) / 10;
+      const key = Math.round(pct * 2); // don't stack 40 ticks on one pixel
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const tick = el("button", "log-errtick") as HTMLButtonElement;
+      tick.style.top = `${pct}%`;
+      tick.title = `Error on line ${docIdx + 1}`;
+      tick.tabIndex = -1;
+      tick.addEventListener("click", () => jumpToLine(docIdx));
+      ticks.push(tick);
+    }
+    errMap.replaceChildren(...ticks);
   }
 
   function enforceCap(): void {
@@ -512,6 +632,7 @@ export function createLogPane(o: {
     destroy() {
       destroyed = true;
       if (raf) cancelAnimationFrame(raf);
+      if (rafTimer) window.clearTimeout(rafTimer);
       root.remove();
     },
   };
