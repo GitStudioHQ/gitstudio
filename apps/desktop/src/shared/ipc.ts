@@ -120,9 +120,13 @@ export interface CommitDetails {
   parents: string[];
   author: string;
   authorEmail: string;
+  /** Epoch SECONDS — what git's `%at` gives, and what `relTime`/`absTime` in
+   *  the renderer take. Passing milliseconds reads as "just now" forever,
+   *  because the negative delta is clamped to zero. */
   authorDate: number;
   committer: string;
   committerEmail: string;
+  /** Epoch seconds — see `authorDate`. */
   committerDate: number;
   subject: string;
   body: string;

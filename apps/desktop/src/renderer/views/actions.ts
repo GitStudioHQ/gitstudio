@@ -839,7 +839,9 @@ function runStatePill(state: string): HTMLElement {
 }
 
 /** One expandable job card: header row (dot + name + state + Logs) + its steps.
- *  Expansion is remembered in `expandedJobs` so live-poll repaints keep it. */
+ *  Expansion is remembered in `expandedJobs` so live-poll repaints keep it; the
+ *  Logs button leaves for the log's own page (`views/jobLog.ts`), because an
+ *  inline pane on this page got 523px of a 913px window. */
 /** The longest step in the run being rendered — the shared scale for every
  *  step bar on the page. Set by buildRunDetail before the cards are built. */
 let runMaxStepSec = 0;
