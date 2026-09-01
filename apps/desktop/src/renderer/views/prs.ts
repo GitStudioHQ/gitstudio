@@ -32,7 +32,7 @@ import {
   statePill,
   stateLead,
  commonDir,} from "../ui";
-import { toast, confirmDialog, promptInline, editForm, openModal, formWithRetry } from "../dialogs";
+import { toast, confirmDialog, promptInline, openModal, formWithRetry } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { openAssistantTab, aiEnabled } from "../aiAssist";
 import { DiffPanel } from "../diffPanel";
@@ -685,7 +685,7 @@ function buildDetail(ctx: DetailCtx): void {
   moreBtn.title = "More actions";
   moreBtn.addEventListener("click", () =>
     openMenu(moreBtn, [
-      { label: "Edit title & description", icon: "pencil", onClick: () => void doEdit(full, reload) },
+      { label: "Edit title & description", icon: "pencil", onClick: () => sectionNav?.("predit", { number: full.number }) },
       { label: "Update branch", icon: "git-merge", onClick: () => void doUpdateBranch(full.number, reload) },
       { separator: true },
       full.state === "open"
@@ -716,7 +716,7 @@ function buildDetail(ctx: DetailCtx): void {
   editTitleBtn.append(glyph("pencil"));
   editTitleBtn.title = "Edit title & description";
   editTitleBtn.setAttribute("aria-label", "Edit pull request title and description");
-  editTitleBtn.addEventListener("click", () => void doEdit(full, reload));
+  editTitleBtn.addEventListener("click", () => sectionNav?.("predit", { number: full.number }));
   titleRow.appendChild(editTitleBtn);
   main.appendChild(titleRow);
 
@@ -1777,31 +1777,12 @@ async function doRequestReviewers(n: number, reRequest = false): Promise<void> {
   }
 }
 
-/** Edit the PR's title + body in one unified form, then PATCH via pr:edit. */
-async function doEdit(pr: PullRequest, reload: () => void): Promise<void> {
-  const res = await editForm({
-    title: `Edit pull request #${pr.number}`,
-    okLabel: "Save",
-    titleValue: pr.title,
-    titlePlaceholder: "Pull request title",
-    bodyValue: pr.body ?? "",
-    bodyPlaceholder: "Describe the change…",
-  });
-  if (!res) return;
-  if (res.title === pr.title && res.body === (pr.body ?? "")) return; // nothing changed
-  try {
-    const r = await host.invoke("pr:edit", { number: pr.number, title: res.title, body: res.body });
-    if (!r.ok) {
-      toast(r.message ?? "Couldn't edit the pull request.", "error");
-      return;
-    }
-    toast(`Updated pull request #${pr.number}.`, "success");
-    activeSubTab = "conversation"; // the description card reflects the new body
-    reload();
-  } catch (e) {
-    toast(cleanErr(e) || "Couldn't edit the pull request.", "error");
-  }
-}
+/*
+ * `doEdit` used to open `editForm` here: a modal with a title box and a body
+ * box, and — unlike the issue form — no draft, so Escape took everything
+ * written. It is `views/issueCompose.ts` now, routed as "predit".
+ */
+
 
 /** A toggle-menu of the repo's labels (current ones checked) → pr:setLabels. */
 async function doLabels(anchor: HTMLElement, pr: PullRequest, reload: () => void): Promise<void> {

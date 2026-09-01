@@ -1152,7 +1152,12 @@ class App {
       this.viewHost.replaceChildren(cached);
       return;
     }
-    if (id === "issuenew") {
+    if (id === "predit") {
+      // A pull request's title and body are the same two fields, and editing
+      // one was the last surface still doing it in a modal — one with no draft
+      // at all, so Escape took everything you had written.
+      void renderIssueCompose(this.viewHost, (v, t) => this.routeView(v, false, t), target, "pr");
+    } else if (id === "issuenew") {
       // Writing an issue is a PAGE. As a modal it had a title box, a body box
       // and nowhere to say who it is for — so labels, assignees and milestone
       // were a second trip through the issue's own page, after GitHub had

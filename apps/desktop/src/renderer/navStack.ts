@@ -91,6 +91,7 @@ const VIEW_LABELS: Record<string, string> = {
   joblog: "Job log",
   releasenew: "Release composer",
   issuenew: "Issue composer",
+  predit: "Pull request composer",
 };
 
 /** The label a back button should show for an entry. */

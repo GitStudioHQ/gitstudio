@@ -27,7 +27,7 @@ import {
   stateLead,
   statePill,
 } from "../ui";
-import { confirmDialog, editForm, promptInline, toast, formWithRetry} from "../dialogs";
+import { confirmDialog, promptInline, toast, formWithRetry} from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";

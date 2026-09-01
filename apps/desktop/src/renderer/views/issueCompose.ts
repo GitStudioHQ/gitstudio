@@ -23,7 +23,18 @@ import { mdEditor } from "../mdEditor";
 import { wireDraft } from "../draftStore";
 import { setPageLabel } from "../navStack";
 import { bust, gget } from "../cache";
-import type { IssueDetail, RepoLabel, RepoCollaborator, MilestoneInfo } from "../../shared/ipc";
+import type { IssueDetail, PullRequest, RepoLabel, RepoCollaborator, MilestoneInfo } from "../../shared/ipc";
+
+/**
+ * Which thing is being written.
+ *
+ * A pull request's title and body are the same two fields in the same shape,
+ * and editing one was the last surface still doing it in `editForm` — a modal
+ * with no draft at all, so Escape took everything. It gets this page too; it
+ * just has no sidebar, because a pull request's labels and reviewers already
+ * live on its own page.
+ */
+export type ComposeKind = "issue" | "pr";
 
 /** Everything the sidebar can offer, fetched once and never blocking the form. */
 interface Choices {
@@ -49,13 +60,17 @@ export async function renderIssueCompose(
   wrap: HTMLElement,
   nav: SectionNav,
   target: SectionTarget | undefined,
+  kind: ComposeKind = "issue",
 ): Promise<void> {
   const editNo = target?.number;
+  const isPr = kind === "pr";
+  const section = isPr ? "prs" : "issues";
+  const noun = isPr ? "pull request" : "issue";
   const { view, main, rail, topActions } = detailPage({
-    backLabel: "Issues",
+    backLabel: isPr ? "Pull requests" : "Issues",
     crumb: editNo ? `Edit #${editNo}` : "New issue",
-    pageLabel: editNo ? `Edit issue #${editNo}` : "New issue",
-    onBack: () => nav("issues", editNo ? { number: editNo } : { list: true }),
+    pageLabel: editNo ? `Edit ${noun} #${editNo}` : "New issue",
+    onBack: () => nav(section, editNo ? { number: editNo } : { list: true }),
   });
   view.classList.add("isc-view");
   topActions.remove();
@@ -63,27 +78,34 @@ export async function renderIssueCompose(
   main.appendChild(skeletonList(3, false));
 
   let existing: IssueDetail | undefined;
+  let existingPr: PullRequest | undefined;
   if (editNo != null) {
     try {
-      existing = await host.invoke("issue:detail", editNo);
+      if (isPr) existingPr = (await host.invoke("pr:detail", editNo))?.pr;
+      else existing = await host.invoke("issue:detail", editNo);
     } catch (e) {
       if (!view.isConnected) return;
       main.replaceChildren(
-        errorState("Couldn't load this issue", cleanErr(e) || "GitHub request failed.", () =>
-          void renderIssueCompose(wrap, nav, target),
+        errorState(`Couldn't load this ${noun}`, cleanErr(e) || "GitHub request failed.", () =>
+          void renderIssueCompose(wrap, nav, target, kind),
         ),
       );
       return;
     }
     if (!view.isConnected) return;
-    if (!existing) {
-      main.replaceChildren(errorState("Issue unavailable", "This issue couldn't be read from GitHub."));
+    if (!existing && !existingPr) {
+      main.replaceChildren(
+        errorState(
+          isPr ? "Pull request unavailable" : "Issue unavailable",
+          `This ${noun} couldn't be read from GitHub.`,
+        ),
+      );
       return;
     }
   }
 
-  const initTitle = existing?.issue.title ?? "";
-  const initBody = existing?.issue.body ?? "";
+  const initTitle = existingPr?.title ?? existing?.issue.title ?? "";
+  const initBody = existingPr?.body ?? existing?.issue.body ?? "";
   // Editing an issue changes its TEXT. Labels, assignees and the milestone are
   // separate GitHub requests and the issue's own page already owns them — so
   // the sidebar is offered while composing (where it saves a round trip and a
@@ -94,14 +116,14 @@ export async function renderIssueCompose(
   const form = el("div", "isc-form");
   main.replaceChildren(form);
 
-  const draftId = editNo == null ? "new" : String(editNo);
+  const draftId = `${kind}:${editNo == null ? "new" : String(editNo)}`;
 
   const titleField = el("div", "isc-field");
   const titleLabel = el("label", "isc-label");
   titleLabel.textContent = "Title";
   const title = document.createElement("input");
   title.className = "isc-input isc-title";
-  title.placeholder = "Say what happened, in one line";
+  title.placeholder = isPr ? "What does this change do?" : "Say what happened, in one line";
   title.value = initTitle;
   title.id = "isc-title";
   (titleLabel as HTMLLabelElement).htmlFor = title.id;
@@ -121,10 +143,11 @@ export async function renderIssueCompose(
 
   const body = mdEditor({
     value: initBody,
-    placeholder:
-      "What happened, what you expected, and how to reproduce it. Markdown is supported — drop in a code block with ```.",
+    placeholder: isPr
+      ? "What changed, why, and anything a reviewer should look at first. Markdown is supported."
+      : "What happened, what you expected, and how to reproduce it. Markdown is supported — drop in a code block with ```.",
     fill: true,
-    label: "Issue description",
+    label: isPr ? "Pull request description" : "Issue description",
     onInput: (v) => bodyDraft.save(v),
     onSubmit: () => submitBtn.click(),
   });
@@ -147,7 +170,7 @@ export async function renderIssueCompose(
   const bar = el("div", "isc-actions");
   const cancel = el("button", "mini-btn") as HTMLButtonElement;
   cancel.textContent = "Cancel";
-  cancel.addEventListener("click", () => nav("issues", editNo ? { number: editNo } : { list: true }));
+  cancel.addEventListener("click", () => nav(section, editNo ? { number: editNo } : { list: true }));
   const submitBtn = el("button", "btn btn-primary") as HTMLButtonElement;
   const submitLabel = span(composing ? "Create issue" : "Save changes");
   submitBtn.append(glyph(composing ? "issues" : "save"), submitLabel);
@@ -163,6 +186,9 @@ export async function renderIssueCompose(
   let pickedMilestone: number | undefined;
 
   if (!composing) {
+    // Editing changes the TEXT. A pull request's labels and reviewers, and an
+    // issue's labels, assignees and milestone, already live on its own page —
+    // a second set of controls here would duplicate and then disagree with them.
     rail.remove();
   } else {
     const labelProp = propSection("Labels");
@@ -333,19 +359,21 @@ export async function renderIssueCompose(
         nav("issues", r.number ? { number: r.number } : { list: true });
       } else {
         if (t === initTitle && body.get() === initBody) {
-          nav("issues", { number: editNo });
+          nav(section, { number: editNo });
           return;
         }
-        const r = await host.invoke("issue:edit", { number: editNo!, title: t, body: body.get() });
+        const r = isPr
+          ? await host.invoke("pr:edit", { number: editNo!, title: t, body: body.get() })
+          : await host.invoke("issue:edit", { number: editNo!, title: t, body: body.get() });
         if (!r.ok) {
           showError(r.message ?? "GitHub rejected the change.");
           return;
         }
         bodyDraft.clear();
         titleDraft.clear();
-        bust("issue");
-        toast(`Updated issue #${editNo}.`, "success");
-        nav("issues", { number: editNo });
+        bust(isPr ? "pr" : "issue");
+        toast(`Updated ${noun} #${editNo}.`, "success");
+        nav(section, { number: editNo });
       }
     } catch (e) {
       showError(cleanErr(e) || "Couldn't reach GitHub.");
@@ -368,6 +396,6 @@ export async function renderIssueCompose(
     }
   });
 
-  setPageLabel(editNo ? `Edit issue #${editNo}` : "New issue");
+  setPageLabel(editNo ? `Edit ${noun} #${editNo}` : "New issue");
   (initTitle ? body.textarea : title).focus();
 }
