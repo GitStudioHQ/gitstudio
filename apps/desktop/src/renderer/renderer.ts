@@ -6787,6 +6787,19 @@ function openShortcutsHelp(): void {
       rows: [
         ["Esc  or  ←", "Back to the list"],
         [`${mod}Enter`, "Submit the open form / modal"],
+        ["/", "Commit page: filter the changed files"],
+      ],
+    },
+    {
+      // The log grew a page of its own and a keyboard to go with it, and a
+      // shortcut nothing advertises is a shortcut nobody has.
+      title: "Reading a log",
+      rows: [
+        ["↑ ↓  PgUp PgDn", "Move through the output"],
+        ["Home / End", "Start / newest line"],
+        ["n", "Jump to the next failure"],
+        ["j / k", "Next / previous job in this run"],
+        ["Enter  Shift+Enter", "Step through search matches"],
       ],
     },
   ];
