@@ -287,6 +287,7 @@ const CASES = [
   ["a-diff-never-renders-as-an-unmarked-file", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
   ["a-diff-never-renders-as-an-unmarked-file", "compare~text:Changed%20files"],
   ["a-diff-that-cannot-be-shown-says-why", "prs~open106~text:Files", { arg: "prfiles" }],
+  ["a-diff-never-renders-as-an-unmarked-file", "changes~click:.dc-file"],
   ["compare-has-the-same-diff-switch-as-everywhere-else", "compare~text:Changed%20files"],
   ["a-commit-list-reads-like-a-list-of-commits", "prs~open106~text:Commits", { arg: "pr" }],
   ["a-commit-list-reads-like-a-list-of-commits", "compare~click:.cmp-seg-btn", { arg: "compare" }],

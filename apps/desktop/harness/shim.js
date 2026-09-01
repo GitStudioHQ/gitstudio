@@ -1022,6 +1022,36 @@
   // here showed one file's name over another file's diff, which reads as a bug
   // in the page rather than in the fixture — and it hid the fact that the
   // commit page was requesting the right path all along.
+  // The CHANGES view's diff — the most-used diff surface in the app, and it had
+  // no fixture at all, so every scene that clicked a changed file landed on the
+  // empty state and nothing about it was ever checked.
+  dynamic["file:diff"] = (req) => {
+    const path = (req && req.path) || "apps/desktop/src/renderer/views/issues.ts";
+    const name = path.split("/").pop() || path;
+    if (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(path)) {
+      return {
+        path,
+        leftLabel: `HEAD ${path}`,
+        rightLabel: `Working Tree ${path}`,
+        leftText: "",
+        rightText: "",
+        conflicted: false,
+        binary: true,
+      };
+    }
+    return {
+      path,
+      leftLabel: `HEAD ${path}`,
+      rightLabel: `Working Tree ${path}`,
+      leftText: `// ${name}\nexport function render(list) {\n  return list.map(row);\n}\n`,
+      rightText: `// ${name}\nexport function render(list, opts) {\n  // keep the selection across a repaint\n  return list.map((r) => row(r, opts));\n}\n`,
+      conflicted: false,
+      // A working-tree diff carries the INDEX text too — it is the third text
+      // the staging ticks need to say whether each change is already staged.
+      indexText: `// ${name}\nexport function render(list) {\n  return list.map(row);\n}\n`,
+    };
+  };
+
   dynamic["compare:fileDiff"] = (req) => {
     const path = (req && req.path) || "packages/engine/src/hunks.ts";
     const name = path.split("/").pop() || path;

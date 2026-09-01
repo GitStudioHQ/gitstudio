@@ -4551,7 +4551,17 @@ class App {
     const diff = await host.invoke("file:diff", { path });
     if (gen !== this.diffGen) return;
     if (!diff) {
-      diffPanel.showEmpty("This file has no textual changes to show.", { kind: "none" });
+      // NOT "no changes". `fileDiff` returns undefined when there is no
+      // repository open or the path failed its containment check — never
+      // because the two sides matched. This file is in the changed list
+      // PRECISELY BECAUSE it differs, so claiming equality here asserts
+      // something the app has no basis for. The same laundering of an absent
+      // answer into a reassuring one that "working tree clean" over
+      // uncommitted work would be.
+      diffPanel.showEmpty(
+        `${path} is listed as changed, so this is a failure to read it — not a file that matches HEAD.`,
+        { title: "Couldn't read this file", kind: "error" },
+      );
       return;
     }
     if (diff.conflicted) {
