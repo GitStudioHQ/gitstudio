@@ -2670,13 +2670,13 @@
       c.ok(!!nb, "the New issue action is present");
       if (!nb) return;
       nb.click();
-      await settle(600);
-      // Title and body, wherever the body lives. It was a second `.modal-input`
-      // and is now the shared markdown editor's `.md-text` — the RULE is that a
-      // rejected submit gives you your text back, not that the body is a
-      // particular element.
-      const titleOf = () => $(".modal-card .modal-input");
-      const bodyOf = () => $(".modal-card .md-text") || $$(".modal-card .modal-input")[1];
+      await settle(900);
+      // Title and body, wherever the composer lives. It was two `.modal-input`s
+      // in a modal and is a routed page now — the RULE is that a rejected
+      // submit gives you your text back with the reason WHERE the text is, not
+      // that the form is a particular element.
+      const titleOf = () => $(".isc-title");
+      const bodyOf = () => $(".isc-form .md-text");
       c.ok(!!titleOf() && !!bodyOf(), "the form has a title and a body");
       if (!titleOf() || !bodyOf()) return;
       titleOf().value = "my title";
@@ -2684,13 +2684,13 @@
       bodyOf().value = "my body text";
       bodyOf().dispatchEvent(new Event("input", { bubbles: true }));
       await settle(150);
-      $$(".modal-actions button").find((b) => /create/i.test(text(b))).click();
+      $$(".isc-actions button").find((b) => /create/i.test(text(b))).click();
       await settle(900);
-      c.ok(!!$(".modal-overlay"), "the form is still open after a rejected submit");
+      c.ok(!!$(".isc-form"), "the form is still there after a rejected submit");
       c.eq((titleOf() || {}).value, "my title", "the title survives");
       c.eq((bodyOf() || {}).value, "my body text", "and so does the body");
       c.ok(
-        /too long/.test(text(".modal-note-error") || ""),
+        /too long/.test(text(".isc-error") || ""),
         "and the form says why it failed, where the text still is",
       );
       window.gitstudio.invoke = orig;
@@ -3297,10 +3297,18 @@
       c.ok(!!surface, `the ${which} is open`);
       if (!surface) return;
 
-      // Anything in it that opens a dialog.
-      const opener = [...surface.querySelectorAll("button")].find((b) =>
-        /edit|rename|new |create|add |mark all/i.test((b.getAttribute("aria-label") || b.title || b.textContent || "")),
-      );
+      // Anything in it that opens a DIALOG. Ordered, because several of these
+      // verbs are routes now rather than modals — "Edit" on an issue opens the
+      // composer page — and this check is about Escape between LAYERS, so it
+      // needs a candidate that genuinely stacks one.
+      const nameOf = (b) => (b.getAttribute("aria-label") || b.title || b.textContent || "").trim();
+      const wanted = [/close issue|mark all|delete|rename/i, /new |create|add /i, /edit/i];
+      const buttons = [...surface.querySelectorAll("button")];
+      let opener;
+      for (const re of wanted) {
+        opener = buttons.find((b) => re.test(nameOf(b)));
+        if (opener) break;
+      }
       c.ok(!!opener, `and offers something that opens a dialog (${which})`);
       if (!opener) return;
       opener.click();
@@ -4666,6 +4674,63 @@
       const ticks = $$(".log-errtick");
       c.ok(ticks.length > 0, "every error has a tick on the map");
       for (const t of ticks) c.ok(!!t.title, "each tick says which line it is");
+    },
+
+    /**
+     * Editing a pull request is the same two fields as an issue, and it was the
+     * last surface still doing it in a modal — one with no draft key at all, so
+     * Escape, a route change or a window focus took the paragraph you had
+     * written and said nothing.
+     */
+    "editing-a-pull-request-is-a-page-that-keeps-your-text": async (f) => {
+      const c = check(f);
+      const opener = $(".det-title-edit");
+      c.ok(!!opener, "the pull request offers to edit its title and description");
+      if (!opener) return;
+      opener.click();
+      await settle(900);
+
+      c.ok(!!$(".isc-form"), "it opens the composer page, not a modal");
+      c.ok(!$(".modal-card"), "and nothing is modal about it");
+      const title = $(".isc-title");
+      const ta = $(".isc-form .md-text");
+      c.ok(!!title && !!ta, "with the title and the description on it");
+      if (!title || !ta) return;
+      c.ok(title.value.length > 0, "the title arrives filled in");
+      c.ok(ta.value.length > 0, "and so does the description");
+      // The sidebar belongs to the pull request's own page; two sets of label
+      // controls would duplicate and then disagree.
+      c.ok(!$(".isc-view .det-rail"), "editing offers no second set of label controls");
+
+      const typed = ta.value + "\n\nand one more thing";
+      ta.value = typed;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(650); // longer than the draft debounce
+
+      const back = $(".det-back");
+      c.ok(!!back, "the page offers a way back");
+      back.click();
+      await settle(900);
+      const opener2 = $(".det-title-edit");
+      c.ok(!!opener2, "leaving lands back on the pull request");
+      if (!opener2) return;
+      opener2.click();
+      await settle(900);
+      c.eq($(".isc-form .md-text")?.value, typed, "and what was typed survived leaving");
+      // Restoring OVER text GitHub already has must be visible and undoable —
+      // silently rewriting a published body would read as the app editing
+      // behind your back.
+      const note = $(".isc-restored");
+      c.ok(note && !note.hidden, "the page says the text was restored, rather than doing it silently");
+      const discard = note && [...note.querySelectorAll("button")][0];
+      c.ok(!!discard, "and offers the version on GitHub back");
+      if (!discard) return;
+      discard.click();
+      await settle(300);
+      c.ok(
+        $(".isc-form .md-text")?.value !== typed,
+        "taking it drops the restored draft",
+      );
     },
   };
 })();

@@ -168,14 +168,16 @@ export async function createRelease(
   owner: string,
   repo: string,
   input: ReleaseInput,
-): Promise<CommitActionResult> {
+): Promise<CommitActionResult & { id?: number }> {
   try {
-    await client.requestBody(
+    // `request`, not `requestBody`: the new release's id is how the composer
+    // lands on what you just published instead of on a list of everything.
+    const created = await client.request<{ id?: number }>(
       "POST",
       `/repos/${enc(owner)}/${enc(repo)}/releases`,
       releaseBody(input, { forCreate: true }),
     );
-    return { ok: true, changed: true };
+    return { ok: true, changed: true, id: created?.id };
   } catch (err) {
     return {
       ok: false,

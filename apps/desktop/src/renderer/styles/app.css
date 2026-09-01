@@ -9859,3 +9859,19 @@ body.vscode-light .log-pane {
 .isc-person { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-sm); }
 .isc-milestone { display: block; margin-bottom: var(--sp-2); font-size: var(--text-sm); }
 .isc-add { margin-top: 4px; }
+
+/* A draft restored over text GitHub already has — visible, and undoable. The
+   composer used to refuse this case outright, which is right about the silence
+   and wrong about the outcome: an unsaved edit to this very object is the
+   reader's own work. */
+.isc-restored {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--gs-accent) 40%, var(--app-border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--gs-accent) 8%, transparent);
+  font-size: var(--text-sm);
+}
+.isc-restored-text { flex: 1 1 auto; }

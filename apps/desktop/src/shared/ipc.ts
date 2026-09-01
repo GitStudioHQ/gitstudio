@@ -1430,7 +1430,9 @@ export interface IpcChannels {
   "release:list": [void, ReleaseInfo[]];
   "release:detail": [number, ReleaseInfo | undefined];
   "release:tags": [void, TagInfo[]];
-  "release:create": [ReleaseInput, CommitActionResult];
+  /** `id` is the created release, so the composer can land ON it rather than
+   *  on a list where you have to go and find what you just published. */
+  "release:create": [ReleaseInput, CommitActionResult & { id?: number }];
   /**
    * GitHub's own release notes, written from the merged pull requests between
    * two tags — the "Generate release notes" button on its composer.

@@ -394,7 +394,11 @@ export async function renderReleaseCompose(
           : `Updated ${tagName}.`,
         "success",
       );
-      nav("releases", init.id === undefined ? { list: true } : { number: init.id });
+      // Land ON the release, not on a list of every release with the new one
+      // somewhere in it. A draft has no page of its own yet, so that one goes
+      // to the list — where a draft is exactly what you are looking for.
+      const landOn = init.id ?? ("id" in r ? r.id : undefined);
+      nav("releases", landOn !== undefined && !asDraft ? { number: landOn } : { list: true });
     } catch (e) {
       showError(cleanErr(e) || "Couldn't reach GitHub.");
     } finally {

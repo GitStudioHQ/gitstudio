@@ -722,6 +722,9 @@
     // GitHub's own changelog, as the composer's "Generate release notes" asks
     // for it. Echoes the tag so a check can prove the answer landed in the
     // editor rather than some other text happening to be there.
+    // Creating a release answers with the new release's ID, so the composer
+    // can land ON it rather than on a list of every release.
+    "release:create": () => ({ ok: true, changed: true, id: 53 }),
     "release:generateNotes": (req) => ({
       name: `Release ${req.tagName}`,
       body: `## What's Changed\n* Reorder commits by dragging in the graph by @antonarnaudov in #18\n* Carry other branches through a rebase by @mira-holt in #21\n\n**Full Changelog**: https://github.com/GitStudioHQ/gitstudio/compare/ext-v1.11.1...${req.tagName}`,

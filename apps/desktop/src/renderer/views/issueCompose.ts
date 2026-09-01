@@ -132,8 +132,9 @@ export async function renderIssueCompose(
   // The title survives leaving too. It used to be the one field a draft did not
   // cover, so "never mind" (Escape) kept the paragraph you wrote and threw away
   // the line you wrote first.
-  const titleDraft = wireDraft("issue-title", draftId, (t) => {
-    if (!initTitle && !title.value) title.value = t;
+  const titleDraft = wireDraft(`${kind}-title`, draftId, (t) => {
+    if (!title.value || title.value === initTitle) title.value = t;
+    if (initTitle && t !== initTitle) queueMicrotask(() => showRestored());
   });
   title.addEventListener("input", () => titleDraft.save(title.value));
 
@@ -151,12 +152,43 @@ export async function renderIssueCompose(
     onInput: (v) => bodyDraft.save(v),
     onSubmit: () => submitBtn.click(),
   });
-  // Only over an EMPTY field: a local draft must never silently replace text
-  // GitHub already has.
-  const bodyDraft = wireDraft("issue", draftId, (text) => {
-    if (!initBody) body.set(text);
+  // A draft is restored over an EMPTY field silently, and over text GitHub
+  // already has only WITH A NOTICE. The first version refused the second case
+  // outright — "never rewrite the server's text behind your back" — which is
+  // right about the silence and wrong about the outcome: an unsaved edit to
+  // this very object is the reader's own work, and losing it to a stray Escape
+  // is the thing they were promised would not happen.
+  const restored = el("div", "isc-restored");
+  restored.hidden = true;
+  const bodyDraft = wireDraft(kind, draftId, (text) => {
+    if (!initBody) {
+      body.set(text);
+      return;
+    }
+    if (text === initBody) return;
+    body.set(text);
+    showRestored();
   });
-  form.appendChild(body.root);
+  form.append(restored, body.root);
+
+  function showRestored(): void {
+    if (!restored.hidden) return;
+    restored.hidden = false;
+    restored.replaceChildren(
+      glyph("history"),
+      span("Restored unsaved changes from this device.", "isc-restored-text"),
+    );
+    const discard = el("button", "mini-btn") as HTMLButtonElement;
+    discard.textContent = `Use the version on GitHub`;
+    discard.addEventListener("click", () => {
+      body.set(initBody);
+      title.value = initTitle;
+      bodyDraft.clear();
+      titleDraft.clear();
+      restored.hidden = true;
+    });
+    restored.appendChild(discard);
+  }
 
   const note = el("div", "isc-error");
   note.setAttribute("role", "alert");
