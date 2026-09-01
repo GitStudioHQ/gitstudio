@@ -257,6 +257,15 @@ export function createLogPane(o: {
   }
 
   function setFollow(on: boolean): void {
+    // You cannot follow a producer that has stopped. `End` still does what End
+    // means — take me to the last line — but arming the mode would light the
+    // button and have it announce "Following the newest output" over a job that
+    // finished hours ago, which is the lie this whole change removed.
+    if (on && !producing) {
+      scroll.scrollTop = scroll.scrollHeight;
+      render();
+      return;
+    }
     follow = on;
     followBtn.classList.toggle("is-on", on);
     followBtn.title = on ? "Following the newest output" : "Follow the newest output";

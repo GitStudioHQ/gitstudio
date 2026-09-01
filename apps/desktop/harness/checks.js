@@ -273,10 +273,18 @@
      */
     "log-follow-survives-expand": async (f) => {
       const c = check(f);
+      // On a job that is still PRODUCING — following a finished producer is not
+      // a mode the pane will enter, and the invariant under test is about
+      // resizing, not about what can be followed.
+      const live = $$(".joblog-job").find((r) => /running/i.test(text(r)));
+      c.ok(!!live, "the run has a job still producing output");
+      if (!live) return;
+      live.click();
+      await settle(1600);
+
       const followBtn = $$(".log-tool").find((b) => /follow/i.test(b.title));
       c.ok(!!followBtn, "follow control exists");
       if (!followBtn) return;
-
       if (!followBtn.classList.contains("is-on")) {
         followBtn.click();
         await settle(300);
