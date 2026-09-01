@@ -12,3 +12,7 @@ release/
 # Claude Code's per-repo scratch area. It holds nested git worktrees, so a single
 # `git add -A` would otherwise commit entire checkouts into this repo.
 .claude/
+
+# A literal "~" directory, created by an unquoted ~ in a shell command and
+# then swept in by `git add -A`. It held npm logs, not source.
+~/
