@@ -546,14 +546,15 @@ export class GitBridge {
     if (req.sha) {
       const right = await showAt(ctx, req.sha, rel);
       const parent = await parentOf(ctx, req.sha);
-      const left = parent ? await showAt(ctx, parent, rel) : "";
+      const left = parent ? await showAt(ctx, parent, rel) : { text: "", absent: true };
       return {
         path: rel,
         leftLabel: parent ? `${parent.slice(0, 7)} ${rel}` : `(new) ${rel}`,
         rightLabel: `${req.sha.slice(0, 7)} ${rel}`,
-        leftText: left,
-        rightText: right,
+        leftText: left.text,
+        rightText: right.text,
         conflicted: false,
+        ...diffKind(left, right),
       };
     }
 
@@ -580,18 +581,22 @@ export class GitBridge {
     // right pane showed the pointed-at file's text — and a rename of the link
     // rendered as that file's whole contents appearing from nowhere.
     const isLink = !!lst?.isSymbolicLink();
-    const workingText = gone
-      ? ""
+    const working = gone
+      ? { text: "" }
       : isLink
-        ? await readlink(abs!).catch(() => "")
+        ? { text: await readlink(abs!).catch(() => "") }
         : await readWorking(ctx, rel);
     return {
       path: rel,
       leftLabel: `HEAD ${rel}`,
       rightLabel: gone ? `(deleted) ${rel}` : `Working Tree ${rel}`,
       leftText: headText,
-      rightText: workingText,
+      rightText: working.text,
       conflicted,
+      // The Changes view is the most-used diff surface in the app and was the
+      // ONLY producer that did not classify its reads, so a PNG or a generated
+      // bundle opened here went to the editor as text.
+      ...diffKind({}, working),
       // Read alongside HEAD and the working tree so the ticks describe the same
       // revision as the panes. A conflicted file has no meaningful index entry
       // to stage against, so it gets no ticks.
@@ -640,7 +645,7 @@ export class GitBridge {
     if (!ctx) {
       return undefined;
     }
-    const workingText = await readWorking(ctx, path);
+    const workingText = (await readWorking(ctx, path)).text;
     const versions = await ctx.conflict.getConflictVersions(path, { workingText });
     return {
       path,
@@ -1066,8 +1071,13 @@ export class GitBridge {
           sha: c.sha,
           shortSha: c.sha.slice(0, 7),
           subject: c.subject,
+          // `git log`'s pretty format already parses %b and %P into the record;
+          // dropping them here is why Compare's commit rows could not show a
+          // commit's reasoning or mark a merge.
+          body: c.body,
           author: c.author,
           date: c.authorDate,
+          isMerge: (c.parents?.length ?? 0) > 1,
         });
       }
     } catch {
@@ -1097,6 +1107,7 @@ export class GitBridge {
     base: string;
     head: string;
     path: string;
+    leftPath?: string;
     mode?: CompareMode;
   }): Promise<FileDiff | undefined> {
     const ctx = this.ctx();
@@ -1117,15 +1128,20 @@ export class GitBridge {
         leftRef = req.base;
       }
     }
-    const left = await showAt(ctx, leftRef, req.path);
+    // A RENAME's left side lives under the OLD name. Asking the base for the
+    // new one returns nothing, and a 12-line edit then renders as a brand-new
+    // file — the diff "not showing" what actually changed.
+    const leftPath = req.leftPath && safeArg(req.leftPath) ? req.leftPath : req.path;
+    const left = await showAt(ctx, leftRef, leftPath);
     const right = await showAt(ctx, req.head, req.path);
     return {
       path: req.path,
-      leftLabel: `${threeDot ? req.base + " (merge-base)" : req.base} ${req.path}`,
+      leftLabel: `${threeDot ? req.base + " (merge-base)" : req.base} ${leftPath}`,
       rightLabel: `${req.head} ${req.path}`,
-      leftText: left,
-      rightText: right,
+      leftText: left.text,
+      rightText: right.text,
       conflicted: false,
+      ...diffKind(left, right),
     };
   }
 
@@ -2184,7 +2200,7 @@ export class GitBridge {
         } else {
           // Stage: apply the selected working-tree changes onto the index.
           original = await ctx.staging.indexContent(rel);
-          modified = await readWorking(ctx, rel);
+          modified = (await readWorking(ctx, rel)).text;
         }
         const hunks = computeHunks(original, modified);
         // WHICH coordinates the selection arrives in.
@@ -2211,7 +2227,7 @@ export class GitBridge {
         // index side.
         let selection = ranges;
         if (req.reverse) {
-          selection = toOriginalRanges(ranges, computeHunks(original, await readWorking(ctx, rel)));
+          selection = toOriginalRanges(ranges, computeHunks(original, (await readWorking(ctx, rel)).text));
           if (!selection.length) {
             return { ok: false, changed: false, message: "Nothing to apply in the selection." };
           }
@@ -2655,9 +2671,61 @@ function actionArgs(req: CommitActionRequest): string[] | undefined {
 
 // ── content helpers ──────────────────────────────────────────────────────────
 
-async function showAt(ctx: GitContext, sha: string, rel: string): Promise<string> {
+/**
+ * Fold two sides' classifications into the flags a FileDiff carries.
+ *
+ * A side being ABSENT is not a problem to report — that is just an added or a
+ * deleted file, and the empty pane beside the full one says it perfectly well.
+ * Binary and truncated ARE, because there the editor renders nothing (or a wall
+ * of replacement characters) and the reader blames the app.
+ */
+function diffKind(
+  left: { binary?: boolean; truncated?: boolean },
+  right: { binary?: boolean; truncated?: boolean },
+): { binary?: boolean; truncated?: boolean } {
+  const out: { binary?: boolean; truncated?: boolean } = {};
+  if (left.binary || right.binary) out.binary = true;
+  if (left.truncated || right.truncated) out.truncated = true;
+  return out;
+}
+
+/**
+ * One side of a diff, read out of a commit — and what KIND of thing it is.
+ *
+ * This used to return `r.stdout` bare, which fed the diff editor three lies:
+ *
+ *  - a binary file (a PNG, a font, an icon) came back as `git show`'s raw bytes
+ *    decoded as UTF-8: a wall of U+FFFD, or nothing at all when it held a NUL.
+ *    The panel mounted two empty editors and the reader saw "the diff doesn't
+ *    show".
+ *  - a 40MB file went to Monaco whole. `showAt`'s sibling one screen up caps at
+ *    FILE_CAP_BYTES; this one never did.
+ *  - `code !== 0` — a bad ref, a missing object, git failing — became `""`,
+ *    which is exactly what a side that legitimately does not exist looks like.
+ *
+ * The classification rides on the FileDiff so the renderer can SAY which of
+ * those happened instead of rendering an editor over nothing.
+ */
+async function showAt(
+  ctx: GitContext,
+  sha: string,
+  rel: string,
+): Promise<{ text: string; binary?: boolean; truncated?: boolean; absent?: boolean }> {
   const r = await ctx.process.run(["show", `${sha}:${rel}`]);
-  return r.code === 0 ? r.stdout : "";
+  if (r.code !== 0) {
+    // Absent on THIS side (added or deleted in this commit) is the common case
+    // and is not an error; either way there is no text to show.
+    return { text: "", absent: true };
+  }
+  // Binary: a NUL byte, or a high density of U+FFFD — git's stdout is decoded
+  // utf8, so a non-UTF-8, NUL-free binary surfaces as replacement characters.
+  if (r.stdout.includes("\0") || replacementRatio(r.stdout) > 0.3) {
+    return { text: "", binary: true };
+  }
+  if (r.stdout.length > FILE_CAP_BYTES) {
+    return { text: r.stdout.slice(0, FILE_CAP_BYTES), truncated: true };
+  }
+  return { text: r.stdout };
 }
 
 /**
@@ -2724,14 +2792,40 @@ async function parentOf(ctx: GitContext, sha: string): Promise<string | undefine
  * the actual file; if it's gone (a deletion) we fall back to the index, then
  * HEAD, so the diff still shows the prior content on the left.
  */
-async function readWorking(ctx: GitContext, rel: string): Promise<string> {
+/**
+ * The working copy of a file, and what KIND of thing it is.
+ *
+ * Two lies used to leave here:
+ *
+ *  - `readFile(abs, "utf8")` on a PNG, a font, or a 40MB generated bundle hands
+ *    the diff editor a wall of U+FFFD or one enormous line. The commit and
+ *    compare producers classify their reads; this one — the Changes view, the
+ *    most-used diff surface in the app — did not.
+ *  - the catch path returned the INDEX, then HEAD. That is the left-hand side
+ *    of the very diff being built, so a file that could not be read came back
+ *    as "identical on both sides": a diff with nothing in it, presented as the
+ *    truth about your working tree. A read that failed must say it failed.
+ */
+async function readWorking(
+  ctx: GitContext,
+  rel: string,
+): Promise<{ text: string; binary?: boolean; truncated?: boolean; unreadable?: boolean }> {
+  const abs = containedPath(ctx.root, rel);
+  if (!abs) return { text: "", unreadable: true };
   try {
-    const abs = containedPath(ctx.root, rel);
-    if (!abs) return "";
-    return await readFile(abs, "utf8");
+    const buf = await readFile(abs);
+    if (buf.length > FILE_CAP_BYTES) {
+      return { text: buf.subarray(0, FILE_CAP_BYTES).toString("utf8"), truncated: true };
+    }
+    // A NUL byte is the same test git itself uses, and it runs on the BYTES —
+    // decoding first is what turned a binary into replacement characters that
+    // then looked like text.
+    if (buf.includes(0)) return { text: "", binary: true };
+    const text = buf.toString("utf8");
+    if (replacementRatio(text) > 0.3) return { text: "", binary: true };
+    return { text };
   } catch {
-    const indexed = await ctx.staging.indexContent(rel).catch(() => "");
-    return indexed || (await ctx.staging.headContent(rel).catch(() => ""));
+    return { text: "", unreadable: true };
   }
 }
 
@@ -2762,12 +2856,18 @@ export function parseNameStatus(stdout: string): ChangedFile[] {
     const code = tok[i];
     const status = code.charAt(0);
     // R/C carry a similarity score and two paths; the destination is the one
-    // that exists now, so it is the one to show and to diff.
-    const paths = status === "R" || status === "C" ? 2 : 1;
+    // that exists now, so it is the one to show and to diff — but the SOURCE
+    // has to be kept, because the base side of a rename lives under the old
+    // name. Dropping it made every rename diff as a brand-new file: the base
+    // was asked for a path it never had, answered nothing, and a twelve-line
+    // edit rendered as several hundred added lines with no history.
+    const renamed = status === "R" || status === "C";
+    const paths = renamed ? 2 : 1;
+    const oldPath = renamed ? tok[i + 1] : undefined;
     const path = tok[i + paths];
     i += paths;
     if (path) {
-      files.push({ path, status });
+      files.push(oldPath ? { path, status, oldPath } : { path, status });
     }
   }
   return files;

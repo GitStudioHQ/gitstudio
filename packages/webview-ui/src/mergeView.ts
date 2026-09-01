@@ -1290,7 +1290,28 @@ export class MergeView {
     this.trackers.clear();
     this.blockState.clear();
     for (const editor of this.editors) {
-      editor.getModel()?.dispose();
+      // `editor.dispose()` ONLY.
+      //
+      // These editors were built with `monaco.editor.create(dom, { value,
+      // language })` — no model passed — so Monaco creates the model itself and
+      // the STANDALONE EDITOR OWNS IT (`_ownsModel`), disposing it in
+      // `_postDetachModelCleanup`. Disposing it here first re-entered Monaco's
+      // emitter (`onWillDispose` → `setModel(null)` → `_postDetachModelCleanup`
+      // → `dispose()` again) and threw
+      // `Cannot read properties of undefined (reading '0')` on EVERY teardown —
+      // every mode toggle, every file switch, every panel dispose — which
+      // aborted the rest of that emitter's listener delivery, including the
+      // model service's and the worker sync's unregistration. A diff editor
+      // whose worker sync was never unregistered is a diff editor whose worker
+      // can stop answering, which is what "the diff sometimes doesn't show"
+      // looked like from the outside.
+      //
+      // The asymmetry is real and worth stating: the INLINE path in
+      // desktop/diffPanel.ts calls `monaco.editor.createModel` itself and
+      // therefore must dispose those models by hand. Ownership follows who
+      // created the model, not who used it. If this ever switches to
+      // `create(dom, { model })`, the model becomes ours again and must be
+      // disposed AFTER `editor.dispose()`, never before.
       editor.dispose();
     }
     this.editors = [];

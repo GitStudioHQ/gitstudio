@@ -28,7 +28,6 @@ import { applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
 import type { AppTheme, ThemeMode, LogoMode } from "./desktopTheme";
 import { GraphMount } from "./graphMount";
 import { DiffPanel } from "./diffPanel";
-import { CompareDiff } from "./compareDiff";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant, seedAssistantGoal } from "./assistant";
@@ -78,7 +77,7 @@ import { openBranchPeek, openRefPeek, openStashPeek } from "./peeks";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu } from "./contextMenu";
-import { wireListNav } from "./views/common";
+import { wireListNav, commitList } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
 import { openCommandPalette, paletteIsOpen } from "./commandPalette";
@@ -2257,7 +2256,9 @@ class App {
     const capNote = (): void => {
       if (!res?.commitsTruncated) return;
       const note = el("div", "list-cap-note");
-      note.textContent = `Showing the first ${res.commits.length} of ${res.ahead} commits.`;
+      // NOT "the first": the list reads oldest-first, but the cap keeps the
+      // NEWEST N — so "first" named the wrong end of the range it dropped.
+      note.textContent = `Showing ${res.commits.length} of ${res.ahead} commits — the most recent.`;
       body.appendChild(note);
     };
     if (!res || !res.commits.length) {
@@ -2268,26 +2269,27 @@ class App {
       );
       return;
     }
-    const list = el("div", "cmp-commits");
-    for (const c of res.commits) {
-      // A real button — keyboard-focusable + clickable to reveal the commit in the
-      // graph (the hover affordance now actually does something).
-      const row = el("button", "compare-commit");
-      row.setAttribute("aria-label", `Commit ${c.shortSha}: ${c.subject} — reveal in the graph`);
-      row.title = "Reveal in the commit graph";
-      const subj = el("div", "cc-subject");
-      subj.textContent = c.subject;
-      const meta = el("div", "cc-meta");
-      meta.textContent = `${c.author} · ${c.shortSha} · ${relTime(c.date)}`;
-      if (c.date) meta.title = absTime(c.date);
-      row.append(subj, meta);
-      // Compare's commit rows open THE COMMIT. "it teleports u to the commit
-      // graph instead of having similar UX UI to github" — and the graph shows
-      // a row, never the files the commit changed.
-      row.addEventListener("click", () => this.routeView("commit", false, { sha: c.sha }));
-      list.appendChild(row);
-    }
-    body.appendChild(list);
+    // The SAME list the pull request's Commits tab draws. Both surfaces built
+    // their own rows out of the same five fields and had drifted apart: this
+    // one still announced "reveal in the graph" to assistive tech long after
+    // the click had been changed to open the commit page.
+    body.appendChild(
+      commitList(
+        res.commits.map((c) => ({
+          sha: c.sha,
+          shortSha: c.shortSha,
+          subject: c.subject,
+          body: c.body,
+          author: c.author,
+          date: c.date,
+          isMerge: c.isMerge,
+        })),
+        {
+          onOpen: (sha) => this.routeView("commit", false, { sha }),
+          onCopy: (sha) => void copyText(sha, "Copied the full SHA."),
+        },
+      ),
+    );
     capNote();
   }
 
@@ -2337,16 +2339,24 @@ class App {
     // dispose them. Every rebuild of this pane leaked one. Every other
     // assignment site already does this.
     this.activeMonacoView?.dispose();
-    const diff = new CompareDiff(right);
+    // The SAME panel every other diff surface uses — which is where the
+    // Inline/Split toggle lives. Compare had its own class (`CompareDiff`), so
+    // it had no toggle at all: "on the compare its missing the switch to toggle
+    // inline vs split view". Monaco's own width-driven
+    // `useInlineViewWhenSpaceIsLimited` was deciding for you, invisibly, and
+    // the segmented control already in Compare's header is the two-dot /
+    // three-dot RANGE toggle — so the switch looked present and was the wrong
+    // one.
+    const diff = new DiffPanel(right);
     this.activeMonacoView = diff;
     diff.showEmpty("Select a changed file to view its diff.");
 
     let activeRow: HTMLElement | undefined;
-    const open = (path: string, row: HTMLElement): void => {
+    const open = (path: string, row: HTMLElement, oldPath?: string): void => {
       if (activeRow) activeRow.classList.remove("active");
       activeRow = row;
       row.classList.add("active");
-      void this.openCompareFile(diff, path);
+      void this.openCompareFile(diff, path, oldPath);
     };
 
     res.files.forEach((f, i) => {
@@ -2363,9 +2373,9 @@ class App {
       if (cut > 0) meta.appendChild(span(f.path.slice(0, cut), "dc-file-dir"));
       row.append(st, meta);
       row.title = f.path;
-      row.addEventListener("click", () => open(f.path, row));
+      row.addEventListener("click", () => open(f.path, row, f.oldPath));
       fileScroll.appendChild(row);
-      if (i === 0) open(f.path, row); // auto-open the first file
+      if (i === 0) open(f.path, row, f.oldPath); // auto-open the first file
     });
 
     const setCollapsed = (c: boolean): void => {
@@ -2380,7 +2390,7 @@ class App {
   }
 
   /** Drag the vertical divider to resize the file list; relayout the diff live. */
-  private wireCompareResizer(divider: HTMLElement, left: HTMLElement, diff: CompareDiff): void {
+  private wireCompareResizer(divider: HTMLElement, left: HTMLElement, diff: DiffPanel): void {
     wireResizerKeys(divider, {
       orientation: "vertical",
       label: "Resize file list",
@@ -2417,7 +2427,7 @@ class App {
     });
   }
 
-  private async openCompareFile(diff: CompareDiff, path: string): Promise<void> {
+  private async openCompareFile(diff: DiffPanel, path: string, oldPath?: string): Promise<void> {
     // The same staleness guard openFile and openWorkingFile already use, and
     // the only diff surface that was missing it. Click a big file then a small
     // one and the big one's response lands last and paints over your actual
@@ -2428,13 +2438,15 @@ class App {
       base: this.compareBase!,
       head: this.compareHead!,
       path,
+      // A rename's base side lives under the OLD name.
+      leftPath: oldPath,
       mode: this.compareMode,
     });
     if (gen !== this.diffGen) return;
     if (fileDiff) {
       // A file CAN legitimately have identical text on both sides — a mode
       // change, or a rename with no edit — and `diff.show` says so itself.
-      diff.show(fileDiff);
+      diff.showDiff(fileDiff);
       return;
     }
     // No answer is not the same as "no difference".

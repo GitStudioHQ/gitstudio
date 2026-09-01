@@ -19,6 +19,8 @@ import {
   emptyState,
   avatar,
   openMenu,
+  relTime,
+  absTime,
   type MenuItem,
 } from "../ui";
 import type { ReactionSummary } from "../../shared/ipc";
@@ -930,6 +932,161 @@ export function detailPage(o: DetailPageOpts): {
   // in the thing you had just opened.
   focusNewPage(view, back);
   return { view, main, rail, topActions };
+}
+
+/**
+ * One commit in a list of them — the shape github.com/…/pull/N/commits uses.
+ *
+ * "the bare commits view in compare and pr are not improved as i requested, you
+ * can take example of how they look in github and follow similar ui".
+ *
+ * They WERE bare: a subject and one grey line reading "author · sha · 3h ago",
+ * with no face, no date grouping, no way to read a commit's body, no way to
+ * copy a sha, and nothing marking a merge. Everything below except the avatar
+ * was already in the response and thrown away one layer down.
+ */
+export interface CommitListItem {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  /** The rest of the message; the row grows a disclosure when there is one. */
+  body?: string;
+  /** The name git recorded. */
+  author: string;
+  /** The GitHub account, when the commit matched one. */
+  login?: string;
+  avatarUrl?: string;
+  /** Epoch SECONDS. */
+  date: number;
+  verified?: boolean;
+  isMerge?: boolean;
+}
+
+/** "Commits on 25 Aug 2026" — the day a commit was authored, in local time. */
+function dayKey(epochSec: number): string {
+  if (!epochSec) return "";
+  const d = new Date(epochSec * 1000);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+function dayLabel(epochSec: number): string {
+  if (!epochSec) return "Undated";
+  return new Date(epochSec * 1000).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * A list of commits, grouped by the day they were authored.
+ *
+ * ONE renderer for both surfaces. The pull request's Commits tab and Compare
+ * built their own rows, from the same five fields, and had drifted: opposite
+ * sort orders, and Compare's rows still announcing "reveal in the graph" to
+ * assistive tech long after the click had been changed to open the commit.
+ */
+export function commitList(
+  items: CommitListItem[],
+  o: { onOpen: (sha: string) => void; onCopy?: (sha: string) => void },
+): HTMLElement {
+  const root = el("div", "clist");
+  // OLDEST FIRST, always — the order the work was done in, which is how
+  // github.com reads a pull request's commits and a compare. The two callers
+  // took their order from their sources and disagreed: `pr:commits` comes back
+  // chronological, `git log base..head` comes back newest-first, so the same
+  // branch read forwards on one screen and backwards on the other. Sorting
+  // here makes that impossible rather than merely fixed.
+  const sorted = [...items].sort((a, b) => (a.date || 0) - (b.date || 0));
+  let openDay = "\u0000";
+  let group: HTMLElement | undefined;
+
+  for (const c of sorted) {
+    const key = dayKey(c.date);
+    if (key !== openDay) {
+      openDay = key;
+      const head = el("div", "clist-day");
+      head.append(glyph("git-commit"), span(`Commits on ${dayLabel(c.date)}`));
+      root.appendChild(head);
+      group = el("div", "clist-group");
+      root.appendChild(group);
+    }
+
+    const row = el("div", "clist-row");
+    row.appendChild(avatar(c.login || c.author, c.avatarUrl, 20, "Author"));
+
+    const main = el("div", "clist-main");
+    // The SUBJECT is the link. A whole row that is one button cannot also hold
+    // a copy button and a disclosure — a control inside a control has no
+    // accessible name of its own and Space activates the wrong one.
+    const subject = el("button", "clist-subject") as HTMLButtonElement;
+    subject.textContent = c.subject;
+    subject.title = `Open commit ${c.shortSha}`;
+    subject.addEventListener("click", () => o.onOpen(c.sha));
+    const subjRow = el("div", "clist-subjrow");
+    subjRow.appendChild(subject);
+    if (c.isMerge) {
+      const chip = span("Merge", "clist-chip");
+      chip.title = "This commit has more than one parent";
+      subjRow.appendChild(chip);
+    }
+
+    // A body hides behind a disclosure rather than making every row three lines
+    // tall — most commits have none, and the ones that do are the long ones.
+    let bodyEl: HTMLElement | undefined;
+    if (c.body && c.body.trim()) {
+      const more = el("button", "clist-more") as HTMLButtonElement;
+      more.append(glyph("ellipsis"));
+      more.title = "Show this commit's full message";
+      more.setAttribute("aria-label", more.title);
+      more.setAttribute("aria-expanded", "false");
+      bodyEl = el("pre", "clist-body");
+      bodyEl.textContent = c.body.trim();
+      bodyEl.hidden = true;
+      more.addEventListener("click", () => {
+        const showing = bodyEl!.hidden;
+        bodyEl!.hidden = !showing;
+        more.setAttribute("aria-expanded", String(showing));
+        more.title = showing ? "Hide the full message" : "Show this commit's full message";
+        more.setAttribute("aria-label", more.title);
+      });
+      subjRow.appendChild(more);
+    }
+    main.appendChild(subjRow);
+
+    const meta = el("div", "clist-meta");
+    meta.appendChild(span(c.author, "clist-author"));
+    const when = c.date ? relTime(c.date) : "";
+    if (when) {
+      const t = span(`committed ${when}`, "clist-when");
+      t.title = absTime(c.date);
+      meta.appendChild(t);
+    }
+    main.appendChild(meta);
+    if (bodyEl) main.appendChild(bodyEl);
+
+    const right = el("div", "clist-right");
+    if (c.verified) {
+      const v = span("Verified", "clist-verified");
+      v.title = "GitHub verified this commit's signature";
+      right.appendChild(v);
+    }
+    const sha = el("button", "clist-sha") as HTMLButtonElement;
+    sha.textContent = c.shortSha;
+    sha.title = `${c.sha}\nCopy the full SHA`;
+    sha.setAttribute("aria-label", `Copy the full SHA ${c.sha}`);
+    sha.addEventListener("click", () => o.onCopy?.(c.sha));
+    right.appendChild(sha);
+    const openBtn = el("button", "clist-open") as HTMLButtonElement;
+    openBtn.append(glyph("diff"));
+    openBtn.title = `Open ${c.shortSha} and what it changed`;
+    openBtn.setAttribute("aria-label", openBtn.title);
+    openBtn.addEventListener("click", () => o.onOpen(c.sha));
+    right.appendChild(openBtn);
+
+    row.append(main, right);
+    (group ?? root).appendChild(row);
+  }
+  return root;
 }
 
 /** One property in the detail rail: an uppercase label (with a hover-revealed

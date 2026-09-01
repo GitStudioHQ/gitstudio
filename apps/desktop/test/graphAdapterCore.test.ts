@@ -61,7 +61,11 @@ test("parseNameStatus handles modifications and renames", () => {
   const out = parseNameStatus("M\0src/a.ts\0R100\0old.ts\0new.ts\0A\0b.ts\0");
   assert.deepEqual(out, [
     { path: "src/a.ts", status: "M" },
-    { path: "new.ts", status: "R" },
+    // The SOURCE path is kept, not just consumed. The base side of a rename
+    // holds the file under its old name, so a diff asked for `new.ts` on both
+    // sides comes back empty on the left and renders a twelve-line edit as a
+    // brand-new file with no history — "the diff doesn't show" over a rename.
+    { path: "new.ts", status: "R", oldPath: "old.ts" },
     { path: "b.ts", status: "A" },
   ]);
 });

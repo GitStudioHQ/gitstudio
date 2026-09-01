@@ -1,7 +1,8 @@
 // The log pane — a virtualized, ANSI-aware, foldable, searchable, live-tail
 // log surface (docs/desktop-redesign.md "Depth guarantees"). One pane per job;
-// panes survive the run page's 8s repaints via save/restoreViewport and get
-// re-slotted, never rebuilt.
+// The log is a PAGE now (views/jobLog.ts), not a pane re-slotted into a run
+// page's job cards on every repaint — so there is no save/restoreViewport
+// either; nothing re-slots a pane any more.
 //
 // Rendering model: every line is a fixed --log-line-h row; a `visible` array
 // maps render positions → doc line indices (lines inside collapsed ##[group]
@@ -35,8 +36,6 @@ export interface LogPane {
   /** The log's producer finished — flush the last partial line. */
   finish(): void;
   setFollow(on: boolean): void;
-  saveViewport(): void;
-  restoreViewport(): void;
   destroy(): void;
 }
 
@@ -54,19 +53,32 @@ export function createLogPane(o: {
    * over.
    */
   fill?: boolean;
+  /**
+   * The producer is still running, so start following the tail.
+   *
+   * "following active logging is one thing, but scrolling super fast or instead
+   * of me is pure ragebait." Following a FINISHED log is not following, it is
+   * just jumping you to the end of a document you have not read yet.
+   */
+  live?: boolean;
 }): LogPane {
   let doc: LogDoc = emptyLogDoc();
   const collapsed = new Set<number>(); // group START line indices
   let visible: number[] = [];
-  let follow = true;
+  // Following is a MODE, and it belongs to the caller: a job that will never
+  // produce another byte has nothing to follow, and arming it there is what
+  // slammed every log you opened straight to its last line.
+  let follow = !!o.live;
+  /** The producer is still running, so "the tail moved on without you" is a
+   *  thing that can happen. On a finished log it cannot, and a pill offering to
+   *  jump to a latest that is not moving is just an unlabelled End key. */
+  let producing = !!o.live;
   let showTs = false;
   let capped = false; // over MAX_RENDER_LINES — oldest dropped
   let truncatedTail = false; // main sent only the 8MB tail window
   let query = "";
   let matches: number[] = []; // doc line indices
   let matchIdx = -1;
-  let savedScroll = 0;
-  let savedFollow = follow;
   let raf = 0;
   let rafTimer = 0;
   let destroyed = false;
@@ -85,7 +97,17 @@ export function createLogPane(o: {
     onInput: (q) => {
       query = q;
       rebuildMatches();
-      if (matches.length) jumpToMatch(0);
+      // HIGHLIGHT, do not travel. This used to jump the viewport to the first
+      // match on every keystroke, so typing "err" hard-scrolled to three
+      // different places before you had finished the word — the other half of
+      // "scrolling instead of me". Enter (and the two step buttons) go; typing
+      // only paints and counts.
+      matchIdx = -1;
+      matchCounter.textContent = matches.length
+        ? `${matches.length} match${matches.length === 1 ? "" : "es"}`
+        : q.trim()
+          ? "no matches"
+          : "";
       render();
     },
   });
@@ -142,12 +164,18 @@ export function createLogPane(o: {
   // Stepping through matches was Enter-only and unadvertised, so a search that
   // found 40 hits gave you the first one and no way to reach the other 39
   // unless you guessed. Two buttons, disabled until there is something to step.
-  const prevMatch = toolBtn("chevron-up", "Previous match (Shift+Enter)", () => jumpToMatch(matchIdx - 1));
-  const nextMatch = toolBtn("chevron-down", "Next match (Enter)", () => jumpToMatch(matchIdx + 1));
+  const prevMatch = toolBtn("chevron-up", "Previous match (Shift+Enter)", () =>
+    jumpToMatch(matchIdx < 0 ? matches.length - 1 : matchIdx - 1),
+  );
+  const nextMatch = toolBtn("chevron-down", "Next match (Enter)", () =>
+    jumpToMatch(matchIdx < 0 ? 0 : matchIdx + 1),
+  );
   prevMatch.classList.add("log-match-step");
   nextMatch.classList.add("log-match-step");
   const syncMatchSteps = (): void => {
-    for (const b of [prevMatch, nextMatch]) (b as HTMLButtonElement).disabled = matches.length < 2;
+    // Enabled from ONE match, not two: typing no longer travels to the first
+    // hit, so with a single match the step button is the only way to reach it.
+    for (const b of [prevMatch, nextMatch]) (b as HTMLButtonElement).disabled = matches.length < 1;
   };
   syncMatchSteps();
   matchStepSync = syncMatchSteps;
@@ -234,7 +262,7 @@ export function createLogPane(o: {
     followBtn.title = on ? "Following the newest output" : "Follow the newest output";
     followBtn.setAttribute("aria-label", followBtn.title);
     followBtn.setAttribute("aria-pressed", String(on));
-    jumpPill.hidden = on || visible.length === 0;
+    jumpPill.hidden = on || !producing || visible.length === 0;
     if (on) {
       scroll.scrollTop = scroll.scrollHeight;
       render();
@@ -248,8 +276,42 @@ export function createLogPane(o: {
   followBtn.setAttribute("aria-label", followBtn.title);
   followBtn.setAttribute("aria-pressed", String(follow));
 
-  // A user scroll away from the bottom disables follow; back to bottom re-arms.
+  // Scrolling AWAY from the bottom stops following — that is the reader saying
+  // "stop moving". Scrolling BACK to the bottom does NOT start it again: it
+  // used to, so reading to the end of a live log silently re-armed the tail and
+  // the next 4-second poll yanked you away from the line you were on. Following
+  // resumes only when the reader asks: the Follow button, or the pill.
   scroll.addEventListener("scroll", () => scheduleScrollFrame());
+
+  /**
+   * Damped wheel scrolling.
+   *
+   * "scrolling super fast ... is pure ragebait." A 20px line against a trackpad
+   * flick — which delivers 2,000-4,000px of momentum — is a hundred-plus lines
+   * of monospace going past with nothing readable on the way. Native speed is
+   * tuned for prose and images, not for a wall of fixed-width text you are
+   * SCANNING. Halving it is the difference between skimming and teleporting,
+   * and a single event can never move more than one screenful however large a
+   * delta the OS synthesises.
+   *
+   * Pixel-mode, vertical-dominant events only: line/page mode (some mice),
+   * horizontal intent, and zoom gestures are left entirely alone.
+   */
+  const WHEEL_SCALE = 0.45;
+  scroll.addEventListener(
+    "wheel",
+    (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // zoom / OS gestures
+      if (e.deltaMode !== 0) return; // not pixels — leave it native
+      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return; // horizontal intent
+      if (!e.deltaY) return;
+      e.preventDefault();
+      const step = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY) * WHEEL_SCALE, scroll.clientHeight);
+      scroll.scrollTop += step;
+      scheduleScrollFrame();
+    },
+    { passive: false },
+  );
 
   /**
    * Repaint the window after a scroll — on the next frame, or on a short timer
@@ -270,16 +332,13 @@ export function createLogPane(o: {
       rafTimer = 0;
       if (destroyed) return;
       const atBottom = scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - LINE_H * 2;
-      // Route BOTH directions through setFollow. Flipping the class here by
-      // hand is how the button came to render as ON while its own tooltip and
-      // aria-pressed still said OFF — three writers, one piece of state.
-      if (follow && !atBottom) {
-        setFollow(false);
-        jumpPill.hidden = false;
-      } else if (!follow && atBottom) {
-        setFollow(true);
-        jumpPill.hidden = true;
-      }
+      // Leaving the bottom stops the tail. Returning to it does NOT restart the
+      // tail — it only takes the pill away, because there is nothing left to
+      // jump to. Route the disarm through setFollow: flipping the class by hand
+      // here is how the button came to render as ON while its own tooltip and
+      // aria-pressed still said OFF.
+      if (follow && !atBottom) setFollow(false);
+      if (!follow) jumpPill.hidden = atBottom || !producing || visible.length === 0;
       render();
     };
     raf = requestAnimationFrame(paint);
@@ -351,12 +410,15 @@ export function createLogPane(o: {
     jumpToLine(matches[matchIdx]);
   }
 
-  // Enter / Shift+Enter walk matches from the search box.
+  // Enter / Shift+Enter walk matches from the search box. From "no match
+  // selected" (which is where typing now leaves you), Enter goes to the FIRST
+  // one rather than the second.
   search.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
     e.stopPropagation();
-    jumpToMatch(e.shiftKey ? matchIdx - 1 : matchIdx + 1);
+    if (matchIdx < 0) jumpToMatch(e.shiftKey ? matches.length - 1 : 0);
+    else jumpToMatch(e.shiftKey ? matchIdx - 1 : matchIdx + 1);
   });
 
   function errorLines(): number[] {
@@ -377,9 +439,12 @@ export function createLogPane(o: {
     const page = Math.max(1, Math.floor(scroll.clientHeight / LINE_H) - 1) * LINE_H;
     const by = (dy: number): void => {
       e.preventDefault();
-      // Any deliberate move away from the bottom means the reader has taken
-      // over; follow-tail must stand down or it will yank them back.
-      if (dy < 0) setFollow(false);
+      // ANY deliberate move means the reader has taken over; follow-tail must
+      // stand down or it will yank them back. This used to disarm only on the
+      // way UP, so paging DOWN through a live log kept the tail armed and every
+      // poll snapped you past whatever you were reading. Direction is not the
+      // question — who is driving is.
+      setFollow(false);
       scroll.scrollTop += dy;
     };
     switch (e.key) {
@@ -394,6 +459,8 @@ export function createLogPane(o: {
         return;
       case "End":
         e.preventDefault();
+        // End is the one key that ARMS: "take me to the newest" is the whole
+        // meaning of it on a log. setFollow already writes the scroll.
         setFollow(true);
         scroll.scrollTop = scroll.scrollHeight;
         return;
@@ -601,7 +668,10 @@ export function createLogPane(o: {
       rebuildVisible();
       rebuildMatches();
       render();
+      // Only when FOLLOWING. On an already-finished log this used to jump you
+      // to the last line the moment it loaded, before you had read a word.
       if (follow) scroll.scrollTop = scroll.scrollHeight;
+      else jumpPill.hidden = !producing || visible.length === 0;
     },
     append(delta) {
       if (!delta) return;
@@ -615,20 +685,16 @@ export function createLogPane(o: {
     finish() {
       finishLog(doc);
       rebuildVisible();
+      // Nothing will ever arrive again, so there is nothing to follow — and
+      // nothing to be behind. Leaving the mode armed left a finished log
+      // claiming to be tailing, with a lit button that could only ever do one
+      // more thing: jump you to the end.
+      producing = false;
+      if (follow) setFollow(false);
+      jumpPill.hidden = true;
       render();
     },
     setFollow,
-    saveViewport() {
-      savedScroll = scroll.scrollTop;
-      savedFollow = follow;
-    },
-    restoreViewport() {
-      scroll.scrollTop = savedScroll;
-      follow = savedFollow;
-      followBtn.classList.toggle("is-on", follow);
-      jumpPill.hidden = follow;
-      render();
-    },
     destroy() {
       destroyed = true;
       if (raf) cancelAnimationFrame(raf);

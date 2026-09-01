@@ -50,6 +50,14 @@ export interface ChangedFile {
   path: string;
   /** Single-letter git status: A(dded) M(odified) D(eleted) R(enamed) … */
   status: string;
+  /**
+   * The path on the BASE side, when this is a rename or a copy.
+   *
+   * The base does not have the file under its new name, so a diff asked for
+   * `path` on both sides comes back empty on the left and renders a rename as
+   * a brand-new file. Callers pass this as `compare:fileDiff`'s `leftPath`.
+   */
+  oldPath?: string;
   /** Present for working-tree changes: is the change staged (in the index)? */
   staged?: boolean;
   /**
@@ -152,6 +160,17 @@ export interface FileDiff {
    * Undefined for a commit diff, which has nothing to stage.
    */
   indexText?: string;
+  /**
+   * This file is BINARY, so there is no text diff to show.
+   *
+   * `git show` on a PNG or a font decodes to a wall of U+FFFD (or, with a NUL
+   * byte in it, to nothing). Handing that to a diff editor produced two empty
+   * panes and no explanation — "the diff doesn't show". The renderer says so
+   * instead of mounting an editor over nothing.
+   */
+  binary?: boolean;
+  /** One side was longer than the read cap and is shown only in part. */
+  truncated?: boolean;
 }
 
 /** One change since HEAD, and how much of it the index already holds. */
@@ -251,9 +270,14 @@ export interface CompareCommit {
   sha: string;
   shortSha: string;
   subject: string;
+  /** The rest of the message. `git log` already parses it; this used to drop
+   *  it, so a commit list had no way to show a commit's reasoning. */
+  body?: string;
   author: string;
   /** Author date, epoch seconds. */
   date: number;
+  /** More than one parent — reads completely differently in a list. */
+  isMerge?: boolean;
 }
 
 /** The result of comparing two refs (base…head). */
@@ -1074,9 +1098,21 @@ export interface CloneResult {
 export interface PrCommitInfo {
   sha: string;
   shortSha: string;
+  /** The subject — the message's first line. */
   message: string;
+  /** The rest of the message, "" when there is none. */
+  body?: string;
+  /** The author's display name as git recorded it. */
   author: string;
+  /** The GitHub account, when the commit matched one — for the avatar. */
+  login?: string;
+  avatarUrl?: string;
+  /** ISO-8601. */
   date: string;
+  /** GitHub verified the signature. */
+  verified?: boolean;
+  /** More than one parent. */
+  isMerge?: boolean;
 }
 
 /** A timeline entry in a PR's Conversation tab (a comment or a review). */
@@ -1319,7 +1355,18 @@ export interface IpcChannels {
   "branch:pullFf": [{ name: string }, CommitActionResult];
   // ── Compare (base…head) ──
   "compare:refs": [{ base: string; head: string; mode?: CompareMode }, CompareResult | undefined];
-  "compare:fileDiff": [{ base: string; head: string; path: string; mode?: CompareMode }, FileDiff | undefined];
+  /**
+   * One file's two sides between two revisions.
+   *
+   * `leftPath` exists for RENAMES: the file did not exist under `path` on the
+   * base side, so asking for it there returns nothing and a 12-line edit
+   * rendered as a brand-new file with its entire history thrown away. Callers
+   * that know the old name send it.
+   */
+  "compare:fileDiff": [
+    { base: string; head: string; path: string; leftPath?: string; mode?: CompareMode },
+    FileDiff | undefined,
+  ];
   // ── Code browser (GitHub-style file tree at HEAD) ──
   "repo:tree": [{ path: string }, TreeEntry[]];
   "repo:file": [{ path: string }, RepoFile | undefined];

@@ -260,14 +260,39 @@
       const pageBg = getComputedStyle(document.body).backgroundColor;
       c.ok(paneBg !== pageBg, `the pane must not share the page background (${paneBg})`);
     },
-    "log-follow-survives-expand": (f) => {
+    /**
+     * Resizing is not scrolling.
+     *
+     * Changing the pane's size changes its scrollHeight, which the scroll
+     * listener reads as "the user scrolled away from the bottom" and silently
+     * turns following OFF, dumping the reader into the middle of the log.
+     *
+     * The check turns following ON first rather than assuming it: a FINISHED
+     * job's log does not follow anything now, and the invariant was never
+     * "follow is on" — it is "resizing does not change the mode".
+     */
+    "log-follow-survives-expand": async (f) => {
       const c = check(f);
       const followBtn = $$(".log-tool").find((b) => /follow/i.test(b.title));
       c.ok(!!followBtn, "follow control exists");
+      if (!followBtn) return;
+
+      if (!followBtn.classList.contains("is-on")) {
+        followBtn.click();
+        await settle(300);
+      }
+      c.ok(followBtn.classList.contains("is-on"), "following can be turned on");
+
+      const expand = $$(".log-tool").find((b) => /full width|expand the pane/i.test(b.title));
+      c.ok(!!expand, "the pane can be resized");
+      if (!expand) return;
+      expand.click();
+      await settle(400);
       c.ok(
-        followBtn?.classList.contains("is-on"),
-        "expanding the pane must not turn follow-tail off",
+        followBtn.classList.contains("is-on"),
+        "resizing the pane must not turn follow-tail off",
       );
+      c.eq(followBtn.getAttribute("aria-pressed"), "true", "and must not lie about it either");
     },
 
     // ── Actions run detail ───────────────────────────────────────────────────
@@ -2285,15 +2310,25 @@
     // ── a row that looks clickable is clickable ─────────────────────────────
     "pr-commit-rows-are-real-controls": (f) => {
       const c = check(f);
-      const rows = $$(".compare-commit");
+      const rows = $$(".clist-row");
       c.ok(rows.length > 0, `the Commits tab renders rows (${rows.length})`);
       for (const r of rows) {
-        // They had a pointer cursor, a hover background and an :active depress
-        // — every signal of a control — and did nothing, while being invisible
-        // to the keyboard.
-        c.eq(r.tagName, "BUTTON", "a commit row is a button");
-        c.ok(!!r.getAttribute("aria-label"), "with an accessible name");
-        c.match(text(r.querySelector(".cc-meta")) || "", /·/, "and shows author, sha and date");
+        // The original defect: rows had a pointer cursor, a hover background
+        // and an :active depress — every signal of a control — and did nothing,
+        // while being invisible to the keyboard. The demand is unchanged; the
+        // row is no longer ONE button, because a row that is a button cannot
+        // also hold a copy button (a control inside a control has no accessible
+        // name of its own, and Space activates the wrong one).
+        const controls = [...r.querySelectorAll("button")];
+        c.ok(controls.length >= 2, "a row's parts are real controls");
+        for (const b of controls) {
+          const name = (b.textContent || "").trim() || b.title || b.getAttribute("aria-label") || "";
+          c.ok(!!name, `every control in the row has an accessible name (.${b.className})`);
+          c.ok(b.tabIndex >= 0, "and can be reached by keyboard");
+        }
+        c.ok(!!r.querySelector(".clist-subject"), "the subject opens the commit");
+        c.ok(!!r.querySelector(".clist-sha"), "the sha is there to take");
+        c.match(text(r.querySelector(".clist-meta")) || "", /committed/, "and it says who, and when");
       }
     },
 
@@ -2599,7 +2634,7 @@
         seg.click();
         await settle(400);
         c.eq(
-          $$(".compare-commit").length,
+          $$(".clist-row").length,
           0,
           `"${text(seg).trim()}" shows none of the previous comparison's commits`,
         );
@@ -3610,7 +3645,7 @@
      */
     "a-commit-opens-the-commit-not-the-graph": async (f) => {
       const c = check(f);
-      const sel = window.__GS_ARG || ".compare-commit";
+      const sel = window.__GS_ARG || ".clist-subject";
       const row = $(sel);
       c.ok(!!row, `the view offers a commit row (${sel})`);
       if (!row) return;
@@ -3780,10 +3815,10 @@
      */
     "a-large-commit-can-be-navigated": async (f) => {
       const c = check(f);
-      const merge = $$(".compare-commit").find((r) => /Merge the generated/.test(text(r)));
+      const merge = $$(".clist-row").find((r) => /Merge the generated/.test(text(r)));
       c.ok(!!merge, "the PR lists a large merge commit");
       if (!merge) return;
-      merge.click();
+      merge.querySelector(".clist-subject").click();
       await settle(1600);
 
       const rows = () => $$(".cmt-file").filter((r) => !r.hidden);
@@ -4758,6 +4793,352 @@
           `a published release does not offer to publish itself (${top.join(", ")})`,
         );
       }
+    },
+
+    /**
+     * The log must never scroll instead of you.
+     *
+     * "this retarded auto scrolling and fast scrolling in the logs window is
+     * driving me insane and has to go, following active logging is one thing,
+     * but scrolling super fast or instead of me is pure ragebait."
+     *
+     * Three separate faults wore that one sentence:
+     *   - `follow` started true for EVERY pane, so opening a finished log — a
+     *     document nobody has read yet — slammed it to the last line.
+     *   - reaching the bottom silently RE-ARMED following, so reading to the
+     *     end of a live log meant the next 4s poll yanked you away again.
+     *   - a 20px line against a trackpad flick's 2,000-4,000px of momentum is
+     *     a hundred-plus lines going past unreadably.
+     *
+     * `?arg=` is "finished" or "live".
+     */
+    "the-log-never-scrolls-instead-of-you": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const which = window.__GS_ARG || "finished";
+      const followBtn = () => $$(".log-tool").find((b) => /follow/i.test(b.title));
+      const s0 = $(".log-scroll");
+      c.ok(!!s0, "a log is open");
+      if (!s0) return;
+
+      if (which === "finished") {
+        // A document starts at its beginning.
+        c.eq(Math.round(s0.scrollTop), 0, "a finished log opens where the log starts");
+        c.ok(!followBtn()?.classList.contains("is-on"), "and is not following anything");
+        c.ok($(".log-jump")?.hidden !== false, "with no pill offering a latest that is not moving");
+        c.match(text($$(".log-line")[0]), /^\s*1(?!\d)/, "the first line on screen is line 1");
+        return;
+      }
+
+      // A RUNNING job is the one case where following is right.
+      const row = $$(".joblog-job").find((r) => /running/i.test(text(r)));
+      c.ok(!!row, "the run has a job still producing output");
+      if (!row) return;
+      row.click();
+      await settle(1800);
+      const s = $(".log-scroll");
+      c.ok(followBtn()?.classList.contains("is-on"), "a running job's log follows the tail");
+      c.ok(
+        s.scrollTop + s.clientHeight >= s.scrollHeight - 40,
+        "and sits at the newest output",
+      );
+
+      const scrollTo = async (top) => {
+        s.scrollTop = top;
+        s.dispatchEvent(new Event("scroll"));
+        await settle(300);
+      };
+
+      // Reading away from the tail stops it — that is the reader saying "stop
+      // moving".
+      await scrollTo(200);
+      c.ok(!followBtn()?.classList.contains("is-on"), "scrolling away stops the tail");
+      c.ok($(".log-jump")?.hidden === false, "and offers to take you back");
+
+      // Reading back TO the tail must not silently restart it. This is the
+      // whole "scrolling instead of me" complaint: it used to re-arm here, and
+      // the next poll moved the page under the reader.
+      await scrollTo(s.scrollHeight);
+      c.ok(
+        !followBtn()?.classList.contains("is-on"),
+        "reaching the bottom does NOT silently start following again",
+      );
+      c.ok($(".log-jump")?.hidden === true, "and the pill goes, because there is nothing to jump to");
+    },
+    /**
+     * Typing in the log's search box must HIGHLIGHT, not travel.
+     *
+     * It jumped the viewport to the first match on every keystroke, so typing
+     * "err" hard-scrolled to three different places before the word was
+     * finished — the other half of "scrolling instead of me". Enter goes.
+     */
+    "searching-a-log-highlights-before-it-travels": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const s = $(".log-scroll");
+      const inp = $(".log-search input") || $(".log-pane input");
+      c.ok(!!s && !!inp, "the log has a search box");
+      if (!s || !inp) return;
+      s.scrollTop = 0;
+      s.dispatchEvent(new Event("scroll"));
+      await settle(200);
+
+      inp.value = "bundling";
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(500);
+      c.eq(Math.round(s.scrollTop), 0, "typing does not move the viewport");
+      c.match(text(".log-match-count"), /\d+ match/, "but it counts what it found");
+      c.ok($$(".log-hit").length > 0, "and paints the hits where they are");
+
+      inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      await settle(400);
+      c.ok(s.scrollTop > 0, "Enter is what travels");
+      c.match(text(".log-match-count"), /^1 of \d+/, "landing on the FIRST match, not the second");
+    },
+
+    /**
+     * A wheel notch must move a readable number of lines, not a screenful.
+     * Native pixel deltas are tuned for prose; a wall of 20px monospace is
+     * scanned, not read.
+     */
+    "the-log-damps-the-wheel": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const s = $(".log-scroll");
+      c.ok(!!s, "a log is open");
+      if (!s) return;
+      s.scrollTop = 400;
+      s.dispatchEvent(new Event("scroll"));
+      await settle(200);
+      const before = s.scrollTop;
+      const ev = new WheelEvent("wheel", { deltaY: 400, deltaMode: 0, bubbles: true, cancelable: true });
+      s.dispatchEvent(ev);
+      await settle(200);
+      const moved = s.scrollTop - before;
+      c.ok(ev.defaultPrevented, "the pane takes the wheel event rather than leaving it native");
+      c.ok(moved > 0, `it still scrolls (moved ${Math.round(moved)}px)`);
+      c.ok(
+        moved < 400,
+        `but less than the raw delta — 400px of wheel moved ${Math.round(moved)}px`,
+      );
+      // And a synthetic monster delta can never teleport more than a screenful.
+      const huge = new WheelEvent("wheel", { deltaY: 40000, deltaMode: 0, bubbles: true, cancelable: true });
+      const at = s.scrollTop;
+      s.dispatchEvent(huge);
+      await settle(200);
+      c.ok(
+        s.scrollTop - at <= s.clientHeight + 2,
+        `one event never moves more than a screenful (moved ${Math.round(s.scrollTop - at)} of ${s.clientHeight})`,
+      );
+    },
+
+    /**
+     * "the two diff views, inline and side to side, sometimes dont work and
+     * dont show the diffs either on both views or just on one of them."
+     *
+     * One cause sat underneath both modes: `showAt` in main returned `git
+     * show`'s stdout bare. A binary file therefore arrived as two empty strings
+     * (or a wall of U+FFFD), the panel mounted two editors over nothing, and
+     * the app looked broken over a PNG behaving exactly as a PNG does.
+     */
+    "a-diff-that-cannot-be-shown-says-why": async (f) => {
+      const c = check(f);
+      // The commit page and the PR's Files tab list their files differently;
+      // the DEMAND is the same on both, and both producers had to be taught to
+      // flag a binary rather than hand the editor two empty strings.
+      const rowSel = window.__GS_ARG === "prfiles" ? ".file-row" : ".cmt-file";
+      // No \b after "png": on the commit page the row's own text runs the
+      // extension straight into the word "binary", and g-then-b is not a word
+      // boundary.
+      const bin = $$(rowSel).find((r) => /\.png/i.test(text(r)));
+      c.ok(!!bin, `the list has a binary file in it (${rowSel})`);
+      if (!bin) return;
+      bin.click();
+      await settle(1400);
+      c.ok(!$(".monaco-editor"), "no editor is mounted over content that has none");
+      c.match(text(".list-empty-title"), /binary/i, "the panel names what it is");
+      c.match(text(".list-empty-desc"), /nothing to diff|binary/i, "and why there is no diff");
+      c.match(text(".list-empty-desc"), /\.png/, "naming the file it is talking about");
+
+      // And a text file beside it still renders, so this is not a panel that
+      // gave up on everything.
+      // No \b here either: a row's textContent concatenates the file name
+      // straight into its directory ("issues.tsapps/desktop/..."), so every
+      // extension is followed by a word character.
+      const txt = $$(rowSel).find((r) => /\.ts/i.test(text(r)));
+      c.ok(!!txt, "there is a text file too");
+      if (!txt) return;
+      txt.click();
+      await settle(1400);
+      c.ok(!!$(".diffmode-body"), "a text file still gets the diff panel");
+      c.ok(!$(".list-empty-title"), "with no 'nothing to show' over it");
+    },
+
+    /**
+     * Compare renders its diff through the same panel as everywhere else, so it
+     * has the same Inline/Split control. It used to own a separate class with
+     * no chrome at all and let Monaco's width heuristic decide invisibly —
+     * while the segmented control already in Compare's header (two-dot vs
+     * three-dot RANGE) made it look as though the switch was there.
+     */
+    "compare-has-the-same-diff-switch-as-everywhere-else": async (f) => {
+      const c = check(f);
+      const row = $$(".file-row")[0];
+      c.ok(!!row, "Compare lists changed files");
+      if (!row) return;
+      row.click();
+      await settle(1600);
+
+      const seg = $$(".diffmode-seg .cmp-mode-btn").map((b) => text(b));
+      c.ok(seg.includes("Inline") && seg.includes("Split"), `Compare offers both modes (${seg.join(", ") || "none"})`);
+      c.ok(!!$(".diffmode-path"), "and names the file above the diff");
+
+      // Moving Compare onto the shared panel changed what sits in its pane, and
+      // the two rules that FILL that pane and take the pointer off the editor
+      // mid-drag were still aimed at the class the old surface had. A rule that
+      // matches nothing is invisible: the pane looked right and the divider
+      // drag started selecting text inside Monaco.
+      const wrap = $(".cmp-diffpane > .diffmode-wrap");
+      c.ok(!!wrap, "the panel is the pane's own child, so the fill rule can reach it");
+      if (wrap) {
+        const pane = $(".cmp-diffpane").getBoundingClientRect();
+        const w = wrap.getBoundingClientRect();
+        c.ok(
+          Math.abs(w.height - pane.height) < 3 && Math.abs(w.width - pane.width) < 3,
+          `and it fills the pane (${Math.round(w.width)}x${Math.round(w.height)} of ${Math.round(pane.width)}x${Math.round(pane.height)})`,
+        );
+      }
+      document.body.classList.add("resizing-h");
+      const guarded = $(".cmp-diffpane .diffmode-body");
+      c.eq(
+        guarded ? getComputedStyle(guarded).pointerEvents : "",
+        "none",
+        "and while the divider is dragged the editor does not take the pointer",
+      );
+      document.body.classList.remove("resizing-h");
+
+      // The switch has to actually switch.
+      const inline = $$(".diffmode-seg .cmp-mode-btn").find((b) => /inline/i.test(text(b)));
+      inline.click();
+      await settle(1200);
+      c.ok(inline.classList.contains("active"), "pressing Inline selects Inline");
+      c.eq(inline.getAttribute("aria-pressed"), "true", "and says so to assistive tech");
+      const split = $$(".diffmode-seg .cmp-mode-btn").find((b) => /split/i.test(text(b)));
+      c.ok(!split.classList.contains("active"), "and deselects Split");
+      c.ok(!!$(".diffmode-body")?.firstElementChild, "with an editor still in the body");
+    },
+
+    /**
+     * "the bare commits view in compare and pr are not improved as i requested,
+     * you can take example of how they look in github and follow similar ui".
+     *
+     * They were bare: a subject and one grey line reading "author · sha · 3h
+     * ago". Everything below except the avatar was already in the response and
+     * dropped one layer down, in the mappers.
+     *
+     * `?arg=` is "pr" or "compare" — the SAME renderer draws both, which is the
+     * other half of the point: they had drifted to opposite sort orders and
+     * Compare's rows still told assistive tech they would "reveal in the graph"
+     * long after the click had been changed to open the commit.
+     */
+    "a-commit-list-reads-like-a-list-of-commits": async (f) => {
+      const c = check(f);
+      const rows = $$(".clist-row");
+      c.ok(rows.length > 1, `the list rendered (${rows.length} rows)`);
+      if (rows.length < 2) return;
+
+      // Grouped by the day the work happened, github-style.
+      const days = $$(".clist-day").map((d) => text(d));
+      c.ok(days.length > 0, "commits are grouped under the day they were made");
+      for (const d of days) c.match(d, /^Commits on /, `a day heading names itself (${d})`);
+
+      // Every row: a face, a subject that opens it, and a sha you can take.
+      for (const r of rows.slice(0, 4)) {
+        const av = r.querySelector(".av");
+        c.ok(!!av, "each row shows who wrote it");
+        c.match(av?.getAttribute("aria-label"), /author/i, "and says whose face that is");
+        const subj = r.querySelector(".clist-subject");
+        c.ok(!!subj && text(subj).length > 0, "and what it says");
+        c.match(subj?.title, /open commit/i, "the subject opens the commit");
+        const sha = r.querySelector(".clist-sha");
+        c.ok(!!sha, "and carries its sha");
+        c.match(sha?.getAttribute("aria-label"), /copy the full sha/i, "which is copyable");
+        c.match(text(r.querySelector(".clist-meta")), /committed/, "with when it landed");
+      }
+
+      // OLDEST FIRST — the order the work was done in, on both surfaces.
+      const times = $$(".clist-when").map((t) => Date.parse(t.title)).filter((n) => !Number.isNaN(n));
+      c.ok(times.length > 1, "the rows carry real timestamps");
+      const ascending = times.every((t, i) => i === 0 || t >= times[i - 1]);
+      c.ok(ascending, "and read oldest first, the order the work was done in");
+
+      // Nothing may still claim the old destination.
+      const stale = rows.filter((r) => /reveal in the (commit )?graph/i.test(r.innerHTML));
+      c.eq(stale.length, 0, "no row still says it reveals a commit in the graph");
+
+      // Clicking a subject opens the commit PAGE.
+      const before = window.__GS_ROUTES.length;
+      rows[0].querySelector(".clist-subject").click();
+      await settle(1200);
+      const went = window.__GS_ROUTES.slice(before).map((r) => r.view);
+      c.ok(went.includes("commit"), `it opens the commit (went: ${went.join(" → ") || "nowhere"})`);
+    },
+
+    /**
+     * The unified view depends on a WORKER; the side-by-side one does not.
+     *
+     * Split (`DiffView`) computes its diff in-process. Inline is Monaco's
+     * native diff editor, which computes in the editor web worker — so when
+     * that worker is missing, cold, crashed, or answering for a model that has
+     * since been disposed, the editor mounts, paints the modified text, and
+     * shows no diff at all. On a deleted file it shows nothing whatsoever. And
+     * every error it produces was swallowed as worker noise, so the surface
+     * simply looked broken: "sometimes dont work and dont show the diffs either
+     * on both views or just on one of them".
+     *
+     * This harness runs from file://, where the blob worker's importScripts is
+     * blocked — which makes it the exact environment the fallback exists for.
+     */
+    "a-diff-never-renders-as-an-unmarked-file": async (f) => {
+      const c = check(f);
+      const inline = $$(".cmp-mode-btn").find((b) => /inline/i.test(text(b)));
+      c.ok(!!inline, "the panel offers the unified view");
+      if (!inline) return;
+      inline.click();
+      // Longer than the grace period the panel waits for the worker.
+      await settle(3600);
+
+      // Whatever happened, the reader must be looking at a real DIFF — not at
+      // an editor that mounted and painted the file with nothing marked, which
+      // is exactly what a silent worker produces and is indistinguishable from
+      // a working diff if you only ask whether an editor exists.
+      const fellBack = $$(".jb-pane-body").length === 2;
+      const marked = $$(".line-insert, .line-delete, .char-insert, .char-delete").length;
+      c.ok(
+        fellBack || marked > 0,
+        `the changes are actually marked (fellBack=${fellBack}, marked=${marked})`,
+      );
+
+      // If it fell back, it has to SAY so — silently showing a different view
+      // than the one whose button is lit is its own kind of broken.
+      if (fellBack) {
+        c.match(
+          text(".diff-truncated-note"),
+          /side by side|didn't come back/i,
+          "the fallback says which view this is",
+        );
+        const active = $$(".cmp-mode-btn.active").map((b) => text(b));
+        c.ok(
+          active.includes("Split"),
+          `and the segment marks the view actually rendered (${active.join(", ")})`,
+        );
+      }
+
+      // Asking for a mode explicitly clears a note about a render that is gone.
+      const split = $$(".cmp-mode-btn").find((b) => /split/i.test(text(b)));
+      split.click();
+      await settle(900);
+      c.ok(!$(".diff-truncated-note"), "choosing a mode clears the stale explanation");
     },
   };
 })();

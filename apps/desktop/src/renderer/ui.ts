@@ -721,24 +721,14 @@ export function condenseGitOutput(text: string): string {
   return primary.replace(/^(fatal|error):\s*/i, "");
 }
 
-/**
- * True for noise the global error boundary should swallow: Monaco's language
- * worker rejecting unimplemented TS/JS service methods (we bundle only the base
- * editor worker, not the language workers) + ResizeObserver loop warnings.
+/*
+ * `isBenignError` moved to `./benignErrors` — a module with no browser globals
+ * in its import graph, so the rule about what the crash reporter may swallow
+ * can be TESTED. ui.ts pulls in bridge.ts, and bridge.ts touches `window` at
+ * import time; a test that reached this rule through here died on that.
  */
-export function isBenignError(message: string, source?: string): boolean {
-  const m = message || "";
-  // Errors from Monaco's blob-wrapped worker reach window.onerror MASKED by
-  // cross-origin rules as a bare "Script error." — zero information, nothing
-  // actionable, yet it toasted "Something went wrong" over every diff open.
-  // The unmasked originals are the known-benign worker noise matched below.
-  if (/^Script error\.?$/i.test(m.trim())) return true;
-  if (/Missing requestHandler or method/i.test(m)) return true;
-  if (/ResizeObserver loop/i.test(m)) return true;
-  if (/Canceled|Canceled: Canceled/i.test(m)) return true;
-  if (source && /editor\.worker(\.[a-z0-9]+)?\.js/i.test(source)) return true;
-  return false;
-}
+export { isBenignError } from "./benignErrors";
+
 
 /** The GitStudio brand mark, inline so it tracks the theme with no asset swap.
  *  The merge-Y lanes terminate in ringed nodes: each node — the three ends and

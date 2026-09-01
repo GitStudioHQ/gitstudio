@@ -178,6 +178,10 @@ export async function renderJobLog(
     }
     const pane = createLogPane({
       fill: true,
+      // Follow only a job that is still producing. A completed log opens at the
+      // TOP, where a document starts — it used to slam to the last line before
+      // you had read a word of it.
+      live: statusOf(j.id) === "in_progress",
       ariaLabel: `Log for ${j.name}`,
       onCopy: () => host.invoke("actions:jobLog", { jobId: j.id }),
       onDownload: () => {

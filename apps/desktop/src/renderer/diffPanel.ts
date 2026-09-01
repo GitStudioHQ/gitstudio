@@ -23,6 +23,25 @@ type DiffMode = "inline" | "split";
 const LS_DIFF_MODE = "gitstudio.diffMode";
 /** Below this surface width, an unset preference defaults to inline. */
 const INLINE_DEFAULT_BELOW = 1000;
+/**
+ * How long the unified view waits for Monaco's worker to compute its diff
+ * before falling back to the in-process split view.
+ *
+ * Long enough that a cold worker (the bundle is ~576KB and starts on first use)
+ * wins the race on any normal machine; short enough that a dead one does not
+ * leave someone staring at an unmarked file wondering what changed.
+ */
+const INLINE_WORKER_GRACE_MS = 2500;
+/**
+ * The diff worker failed to answer once this session.
+ *
+ * Once is enough to stop asking: a worker that did not load will not load for
+ * the next file either, and making every single file wait out the grace period
+ * before falling back turns one broken dependency into a permanently slow app.
+ * Module-level, so it resets when the window does — which is also when a
+ * genuinely transient failure gets its second chance.
+ */
+let workerDiffBroken = false;
 
 /**
  * A single reusable diff/merge surface. Swaps between the 2-pane DiffView and
@@ -35,6 +54,13 @@ export class DiffPanel {
   /** Inline (unified) mode: Monaco's native diff editor + its two models. */
   private inline?: monaco.editor.IStandaloneDiffEditor;
   private inlineModels: monaco.editor.ITextModel[] = [];
+  /** Pending "did the diff worker answer?" timer — see `renderInline`. */
+  private inlineWatchdog?: number;
+  /** The mode segment, so a fallback can say which view is actually on screen. */
+  private seg?: HTMLElement;
+  /** Whitespace / granularity, so a newly built editor starts where the last
+   *  one left off — and so BOTH modes answer to the same setting. */
+  private renderOpts: { whitespace: "none" | "all"; showInner?: boolean } = { whitespace: "none" };
   /** The last-shown file, so the mode toggle can re-render it. */
   private lastFile?: FileDiff;
   /** Fired after a tick changes the index, so the Changes list can refresh. */
@@ -60,6 +86,29 @@ export class DiffPanel {
   /** Renders a file diff — unified or 2-pane per the mode toggle. */
   showDiff(file: FileDiff): void {
     this.teardown();
+    // A BINARY file has no text diff, and mounting an editor over two empty
+    // strings is how "the diff doesn't show" happened: two blank panes, no
+    // explanation, and the app looking broken over a PNG behaving normally.
+    if (file.binary) {
+      this.showEmpty(
+        `${file.path} is a binary file, so there is nothing to diff line by line. Its contents changed.`,
+        { title: "Binary file", kind: "none" },
+      );
+      return;
+    }
+    // IDENTICAL SIDES. A rename with no edit, or a mode-only change, has two
+    // equal texts — and the inline editor is built with
+    // `hideUnchangedRegions`, which then collapses the entire file and renders
+    // as an empty box, while Split shows two identical panes. That is exactly
+    // "sometimes it doesn't show the diff on just one of the two views". Say
+    // what happened instead of drawing nothing.
+    if (file.leftText === file.rightText && file.leftText.length > 0) {
+      this.showEmpty(
+        `${file.path} has the same contents on both sides — it was renamed, or only its file mode changed.`,
+        { title: "No line changes", kind: "none" },
+      );
+      return;
+    }
     this.lastFile = file;
     const mode = this.resolveMode();
 
@@ -84,21 +133,41 @@ export class DiffPanel {
         // destroyed under your finger, taking hover, focus and the pressed
         // state with it, and the panel's Monaco instance was thrown away and
         // rebuilt even though the file had not changed.
-        this.swapMode(seg, body, m);
+        this.swapMode(body, m);
       });
       return b;
     };
     seg.append(mkBtn("inline", "list-flat", "Inline"), mkBtn("split", "split-horizontal", "Split"));
+    this.seg = seg;
     bar.append(span(file.path, "diffmode-path"), seg);
     const body = el("div", "diffmode-body");
     wrap.append(bar, body);
     this.container.replaceChildren(wrap);
+
+    // Say it BEFORE the editor, not after: a diff that silently stops halfway
+    // through a large file reads as a diff, and the reader draws conclusions
+    // from the half they can see.
+    if (file.truncated) {
+      const note = el("div", "diff-truncated-note");
+      note.append(
+        glyph("warning"),
+        span("This file is too large to diff in full — showing the first part of it."),
+      );
+      wrap.insertBefore(note, body);
+    }
 
     this.renderMode(body, file, mode);
   }
 
   /** Paint one mode's editor into the panel body. Owns nothing above it. */
   private renderMode(body: HTMLElement, file: FileDiff, mode: DiffMode): void {
+    // A worker that already failed this session will fail again; skip the wait.
+    if (mode === "inline" && workerDiffBroken) {
+      this.markSegment("split");
+      this.noteFallback(body);
+      this.renderMode(body, file, "split");
+      return;
+    }
     if (mode === "split") {
       const payload: DiffInitPayload = {
         leftLabel: file.leftLabel,
@@ -112,6 +181,10 @@ export class DiffPanel {
       this.diff.onToggleTick = (row, staged) => {
         void this.toggleTick(file.path, row, staged);
       };
+      // Start where the last editor left off — a rebuild (a file switch, a
+      // mode toggle) used to silently reset the whitespace setting to the
+      // default, so the toggle appeared to un-toggle itself.
+      this.diff.setRenderOptions(this.renderOpts);
       this.diff.render(payload);
       // Staging ticks only where staging means something: a working-tree diff
       // (HEAD on the left) that is not conflicted. A commit diff carries no
@@ -130,18 +203,26 @@ export class DiffPanel {
    * and re-mark the segment. The bar — and the button under the pointer —
    * survives.
    */
-  private swapMode(seg: HTMLElement, body: HTMLElement, mode: DiffMode): void {
+  private swapMode(body: HTMLElement, mode: DiffMode): void {
     const file = this.lastFile;
     if (!file) return;
     this.disposeEditors();
     body.replaceChildren();
     body.parentElement?.querySelector(".diff-staging-hint")?.remove();
-    for (const b of seg.querySelectorAll<HTMLElement>(".cmp-mode-btn")) {
+    // A note left by an earlier fallback describes a render that no longer
+    // exists — asking for a mode explicitly clears it.
+    body.parentElement?.querySelector(".diff-truncated-note")?.remove();
+    this.markSegment(mode);
+    this.renderMode(body, file, mode);
+  }
+
+  /** Paint the segment to match the view that is actually rendered. */
+  private markSegment(mode: DiffMode): void {
+    for (const b of this.seg?.querySelectorAll<HTMLElement>(".cmp-mode-btn") ?? []) {
       const on = b.dataset.mode === mode;
       b.classList.toggle("active", on);
       b.setAttribute("aria-pressed", String(on));
     }
-    this.renderMode(body, file, mode);
   }
 
   /**
@@ -186,7 +267,21 @@ export class DiffPanel {
     }
   }
 
-  /** Unified diff via Monaco's native diff editor (renderSideBySide: false). */
+  /**
+   * Unified diff via Monaco's native diff editor (renderSideBySide: false).
+   *
+   * This mode has a dependency the Split mode does not: Monaco computes its
+   * diff in the EDITOR WEB WORKER, asynchronously. The editor mounts and paints
+   * the modified text immediately, and if the worker is missing, cold, crashed,
+   * or answering for a model that has since been disposed, the diff never
+   * arrives and you are left looking at a plain file with no changes marked —
+   * or, for a deleted file, at nothing at all. Every error that path produces
+   * is swallowed as worker noise, so the surface simply looks broken.
+   *
+   * Split has no such failure mode: it computes in-process. So inline waits a
+   * moment for the worker, and if the diff has not been computed by then it
+   * falls back to Split, which cannot fail this way, and says why.
+   */
   private renderInline(body: HTMLElement, file: FileDiff): void {
     const language = languageForFile(file.path);
     const original = monaco.editor.createModel(file.leftText, language);
@@ -196,6 +291,12 @@ export class DiffPanel {
       theme: ensureNativeTheme(),
       ...nativeFontOptions(),
       renderSideBySide: false,
+      // The SAME whitespace rule the split view uses. Monaco defaults
+      // `ignoreTrimWhitespace` to TRUE; the engine's `buildDiffModel` maps our
+      // default `whitespace: "none"` to FALSE. So a trailing-whitespace-only
+      // change showed in Split and vanished in Inline — the same file, the same
+      // click, one view showing a diff and the other showing none.
+      ignoreTrimWhitespace: this.renderOpts.whitespace === "all",
       readOnly: true,
       automaticLayout: true,
       minimap: { enabled: false },
@@ -209,6 +310,52 @@ export class DiffPanel {
       lineNumbersMinChars: 3,
     });
     this.inline.setModel({ original, modified });
+
+    // Did the worker actually answer? `onDidUpdateDiff` fires once the
+    // computation lands; `getLineChanges()` is null until it does.
+    const editor = this.inline;
+    let answered = false;
+    const sub = editor.onDidUpdateDiff(() => {
+      answered = true;
+      sub.dispose();
+      window.clearTimeout(this.inlineWatchdog);
+    });
+    this.inlineWatchdog = window.setTimeout(() => {
+      sub.dispose();
+      // Identical texts legitimately produce no changes — and `showDiff`
+      // already refused that case above, so reaching here with a diff still
+      // uncomputed means the worker did not answer.
+      if (answered || this.inline !== editor) return;
+      if (editor.getLineChanges()) return;
+      this.fallBackToSplit(body, file);
+    }, INLINE_WORKER_GRACE_MS);
+  }
+
+  /**
+   * The inline editor never got its diff. Render the Split view instead, which
+   * computes in-process, and say so — quietly, once, above the diff.
+   */
+  private fallBackToSplit(body: HTMLElement, file: FileDiff): void {
+    this.disposeEditors();
+    body.replaceChildren();
+    workerDiffBroken = true;
+    this.noteFallback(body);
+    // Mark the segment to match what is ON SCREEN. The stored preference is
+    // deliberately left alone: it is still what you asked for, and it comes
+    // back the next time the window starts with a working worker.
+    this.markSegment("split");
+    this.renderMode(body, file, "split");
+  }
+
+  /** One line above the diff saying which view this actually is, and why. */
+  private noteFallback(body: HTMLElement): void {
+    if (body.parentElement?.querySelector(".diff-truncated-note")) return;
+    const note = el("div", "diff-truncated-note");
+    note.append(
+      glyph("warning"),
+      span("Showing this diff side by side — the unified view didn't come back."),
+    );
+    body.parentElement?.insertBefore(note, body);
   }
 
   /**
@@ -315,9 +462,19 @@ export class DiffPanel {
     return selectedLineNumbers(ed.getSelections());
   }
 
-  /** Re-run the 2-pane diff with new whitespace / granularity options. */
+  /**
+   * Re-run the diff with new whitespace / granularity options.
+   *
+   * BOTH surfaces. This reached only the split view, so the app's own
+   * whitespace toggle silently did nothing in unified mode — and the two modes
+   * then disagreed about what counted as a change.
+   */
   setRenderOptions(opts: { whitespace?: "none" | "all"; showInner?: boolean }): void {
+    this.renderOpts = { ...this.renderOpts, ...opts };
     this.diff?.setRenderOptions(opts);
+    if (this.inline && opts.whitespace !== undefined) {
+      this.inline.updateOptions({ ignoreTrimWhitespace: opts.whitespace === "all" });
+    }
   }
 
   /**
@@ -350,12 +507,28 @@ export class DiffPanel {
     this.container.replaceChildren(empty);
   }
 
+  /**
+   * Re-measure the editors after the container changes size for a reason no
+   * observer will see (a resizer drag, a pane collapsing).
+   *
+   * Both surfaces do keep themselves laid out — DiffView watches its container,
+   * the inline editor uses automaticLayout — but a host that resizes on a
+   * pointer drag wants the new width THIS frame, not on the observer's.
+   */
+  layout(): void {
+    this.diff?.layout?.();
+    this.inline?.layout();
+    (this.merge as { layout?: () => void } | undefined)?.layout?.();
+  }
+
   dispose(): void {
     this.teardown();
   }
 
   /** Dispose every editor and model this panel owns, keeping the DOM. */
   private disposeEditors(): void {
+    window.clearTimeout(this.inlineWatchdog);
+    this.inlineWatchdog = undefined;
     this.diff?.dispose();
     this.diff = undefined;
     this.merge?.dispose();

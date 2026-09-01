@@ -89,7 +89,7 @@ async function fileTextAt(
   repo: string,
   path: string,
   ref: string,
-): Promise<string> {
+): Promise<{ text: string; binary?: boolean; truncated?: boolean }> {
   // Hard cap: never decode more than ~2MB of base64 into the renderer.
   const MAX_BYTES = 2 * 1024 * 1024;
   let raw: RawContents;
@@ -101,23 +101,31 @@ async function fileTextAt(
   } catch (err) {
     // The Contents API 404s when the path is absent at this ref — that's the
     // "added on one side / removed on the other" case, so the side is empty.
-    if (/not found/i.test(errMessage(err))) return "";
+    if (/not found/i.test(errMessage(err))) return { text: "" };
     throw err;
   }
   if (typeof raw.size === "number" && raw.size > MAX_BYTES) {
-    return `// File too large to display (${Math.round(raw.size / 1024)} KB).`;
+    return { text: "", truncated: true };
   }
   if (raw.encoding !== "base64" || !raw.content) {
     // No inlined content (oversized blob or a non-file entry) — degrade cleanly.
-    return raw.content ? raw.content : "// Diff not available for this file.";
+    return raw.content ? { text: raw.content } : { text: "", truncated: true };
   }
   try {
     const text = Buffer.from(raw.content, "base64").toString("utf8");
-    // A NUL byte means binary — Monaco would render mojibake, so blank it.
-    if (text.includes(String.fromCharCode(0))) return "// Binary file not shown.";
-    return text;
+    // A NUL byte means binary.
+    //
+    // This used to return the STRING "// Binary file not shown." for both
+    // sides, which is a lie with a specific consequence: two identical texts.
+    // The unified view builds with `hideUnchangedRegions`, and a diff with no
+    // changes collapses the entire file to one "N hidden lines" band — so a
+    // binary in a pull request rendered as a completely empty unified view
+    // while the side-by-side view showed the placeholder twice. Say what it is
+    // on the wire and let the panel draw the explanation.
+    if (text.includes(String.fromCharCode(0))) return { text: "", binary: true };
+    return { text };
   } catch {
-    return "// Diff not available for this file.";
+    return { text: "", binary: true };
   }
 }
 
@@ -310,7 +318,7 @@ export async function fileDiff(
   req: { number: number; path: string },
 ): Promise<FileDiff | undefined> {
   const { baseSha, headSha } = await prRefs(client, owner, repo, req.number);
-  const [leftText, rightText] = await Promise.all([
+  const [left, right] = await Promise.all([
     fileTextAt(client, owner, repo, req.path, baseSha),
     fileTextAt(client, owner, repo, req.path, headSha),
   ]);
@@ -318,9 +326,11 @@ export async function fileDiff(
     path: req.path,
     leftLabel: "base",
     rightLabel: "head",
-    leftText,
-    rightText,
+    leftText: left.text,
+    rightText: right.text,
     conflicted: false,
+    ...(left.binary || right.binary ? { binary: true } : {}),
+    ...(left.truncated || right.truncated ? { truncated: true } : {}),
   };
 }
 

@@ -48,6 +48,7 @@ import {
   reactionRow,
   avatarStack,
   capNotice,
+  commitList,
   detailPage,
   ghGate,
   ghHeader,
@@ -141,12 +142,24 @@ function disposePrDiff(): void {
   prDiffPanel = undefined;
 }
 
-/** Tear the diff down automatically once its surface leaves the document (e.g. a
- *  route change replaces the view host) so the Monaco editor never lingers. */
-function watchDiffDetach(surface: HTMLElement): void {
+/**
+ * Tear the diff down once its surface leaves the document (a route change
+ * replacing the view host), so the Monaco editor never lingers.
+ *
+ * It watches the WHOLE document for any mutation, so it fires constantly — and
+ * it used to call `disposePrDiff()` on behalf of whatever panel happened to be
+ * current, clearing `prDiffPanel` even when the surface it was watching was not
+ * the live one. After that every `prDiffPanel !== panel` guard in the load path
+ * was true and the tab stayed blank forever, in both modes, until another file
+ * was picked. It disposes only the panel it was created for, and only while
+ * that panel is still the live one.
+ */
+function watchDiffDetach(surface: HTMLElement, panel: DiffPanel): void {
   prDiffDetachObs?.disconnect();
   const obs = new MutationObserver(() => {
-    if (!surface.isConnected) disposePrDiff();
+    if (surface.isConnected) return;
+    if (prDiffPanel !== panel) return;
+    disposePrDiff();
   });
   obs.observe(document.body, { childList: true, subtree: true });
   prDiffDetachObs = obs;
@@ -1057,29 +1070,32 @@ async function renderSubTab(
       content.appendChild(emptyState("No commits", "This PR has no commits yet."));
       return;
     }
-    for (const c of commits) {
-      // A <button>, not a div. These rows already had a pointer cursor, a hover
-      // background and an :active depress — every signal that they were
-      // clickable — and did nothing at all, while also being invisible to the
-      // keyboard (tabIndex -1, no name). The date and the full SHA were in hand
-      // from the same IPC response and simply thrown away.
-      const row = el("button", "compare-commit") as HTMLButtonElement;
-      const subj = el("div", "cc-subject");
-      subj.textContent = c.message;
-      const m = el("div", "cc-meta");
-      const when = relTimeISO(c.date);
-      m.textContent = `${c.author} · ${c.shortSha}${when ? ` · ${when}` : ""}`;
-      if (c.date) m.title = absTimeISO(c.date);
-      row.append(subj, m);
-      row.title = `Open commit ${c.shortSha}`;
-      row.setAttribute("aria-label", `${c.message} — ${c.author}, ${c.shortSha}`);
-      // The COMMIT, not the graph. This used to eject you out of the pull
-      // request into a graph row that shows no files at all — and `reveal()`
-      // returns silently when the sha is outside the loaded page, so on a
-      // long-lived PR the click did nothing whatsoever.
-      row.addEventListener("click", () => nav("commit", { sha: c.sha }));
-      content.appendChild(row);
-    }
+    // The SHARED list — the same rows Compare draws, grouped by day, with the
+    // author's face, the body behind a disclosure, a copyable sha and a badge
+    // on a signed or a merge commit. Every one of those except the avatar was
+    // already in this response and thrown away in the client mapper.
+    content.appendChild(
+      commitList(
+        commits.map((c) => ({
+          sha: c.sha,
+          shortSha: c.shortSha,
+          subject: c.message,
+          body: c.body,
+          author: c.author,
+          login: c.login,
+          avatarUrl: c.avatarUrl,
+          date: c.date ? Math.floor(Date.parse(c.date) / 1000) : 0,
+          verified: c.verified,
+          isMerge: c.isMerge,
+        })),
+        {
+          // The COMMIT, not the graph. This used to eject you out of the pull
+          // request into a graph row that shows no files at all.
+          onOpen: (sha) => nav("commit", { sha }),
+          onCopy: (sha) => void copyText(sha, "Copied the full SHA."),
+        },
+      ),
+    );
   } else if (id === "checks") {
     let checks;
     try {
@@ -1257,7 +1273,13 @@ async function showFileDiff(
   disposePrDiff();
   const panel = new DiffPanel(surface);
   prDiffPanel = panel;
-  watchDiffDetach(surface);
+  // The diff arrives over the network. `new DiffPanel(surface)` paints NOTHING,
+  // so the pane sat blank for the whole round trip — and every guard below is a
+  // bare `if (prDiffPanel !== panel) return`, so anything that superseded this
+  // open left the blank there permanently, with no message. Say what is
+  // happening from the first frame.
+  panel.showEmpty(`Loading ${f.filename}…`, { title: "Reading the diff", kind: "waiting" });
+  watchDiffDetach(surface, panel);
 
   const refreshThreads = async (): Promise<void> => {
     if (prDiffPanel !== panel) return; // the file/view changed under us

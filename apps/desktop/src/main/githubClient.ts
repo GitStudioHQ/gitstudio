@@ -298,13 +298,29 @@ export class GitHubClient {
       `/repos/${enc(owner)}/${enc(repo)}/pulls/${n}/commits?per_page=100`,
       PAGE_CAPS.detail,
     );
-    return raw.map((c) => ({
-      sha: c.sha,
-      shortSha: c.sha.slice(0, 7),
-      message: (c.commit?.message ?? "").split("\n", 1)[0],
-      author: c.commit?.author?.name ?? c.author?.login ?? "unknown",
-      date: c.commit?.author?.date ?? "",
-    }));
+    return raw.map((c) => {
+      const full = c.commit?.message ?? "";
+      const nl = full.indexOf("\n");
+      return {
+        sha: c.sha,
+        shortSha: c.sha.slice(0, 7),
+        message: nl < 0 ? full : full.slice(0, nl),
+        // The rest of the message, if there is any. GitHub's own commits list
+        // hangs a "…" on rows that have one and expands it in place; we threw
+        // the body away here and could not have offered it.
+        body: nl < 0 ? "" : full.slice(nl + 1).trim(),
+        author: c.commit?.author?.name ?? c.author?.login ?? "unknown",
+        login: c.author?.login,
+        avatarUrl: c.author?.avatar_url,
+        date: c.commit?.author?.date ?? "",
+        // GitHub shows a "Verified" badge on a signed commit; the flag was in
+        // this very response and dropped.
+        verified: c.commit?.verification?.verified === true,
+        // A merge has more than one parent, and reads completely differently
+        // from an ordinary commit in a list of them.
+        isMerge: (c.parents?.length ?? 0) > 1,
+      };
+    });
   }
   /** The conversation = issue comments + reviews, merged chronologically. */
   async listConversation(owner: string, repo: string, n: number): Promise<PrComment[]> {
@@ -409,8 +425,18 @@ interface RawFile {
 }
 interface RawPrCommit {
   sha: string;
-  commit?: { message?: string; author?: { name?: string; date?: string } };
-  author?: { login?: string } | null;
+  commit?: {
+    message?: string;
+    author?: { name?: string; email?: string; date?: string };
+    committer?: { name?: string; date?: string };
+    verification?: { verified?: boolean; reason?: string };
+  };
+  // The GitHub ACCOUNT behind the commit, when it matched one — this is where
+  // the avatar comes from. It was declared as `{login}` and everything else in
+  // the same object thrown away, so the rows had no faces on them.
+  author?: RawUser | null;
+  parents?: Array<{ sha: string }>;
+  html_url?: string;
 }
 interface RawComment {
   user?: RawUser | null;

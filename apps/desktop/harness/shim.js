@@ -152,9 +152,13 @@
   // merge, so the commit page can be driven at a real size from a real route.
   const prCommits = {
     106: [
-      { sha: "a1b2c3d4", shortSha: "a1b2c3d", message: "issues: full-page detail as a routed state", author: me, date: ISO(3) },
-      { sha: "b2c3d4e5", shortSha: "b2c3d4e", message: "common: sectionList + detailShell primitives", author: me, date: ISO(2.6) },
-      { sha: "f00dbabe", shortSha: "f00dbab", message: "Merge the generated-module migration", author: me, date: ISO(2.4) },
+      // The four states a commit row has to be able to draw: a plain one, one
+      // with a BODY behind the disclosure, a MERGE, and a VERIFIED signature.
+      { sha: "a1b2c3d4", shortSha: "a1b2c3d", message: "issues: full-page detail as a routed state", body: "The split view could not show a body, a timeline and a rail at once on a\n13\" screen, so all three were cropped.\n\nCloses #31.", author: me, login: me, date: ISO(3), verified: true },
+      { sha: "b2c3d4e5", shortSha: "b2c3d4e", message: "common: sectionList + detailShell primitives", author: me, login: me, date: ISO(2.6) },
+      { sha: "f00dbabe", shortSha: "f00dbab", message: "Merge the generated-module migration", author: me, login: me, date: ISO(2.4), isMerge: true },
+      // Dated across two days, so the day grouping is a thing the screenshot
+      // actually shows rather than a code path nobody looks at.
       ...Array.from({ length: 11 }, (_, i) => ({
         sha: `c${i}d4e5f6`,
         shortSha: `c${i}d4e5f`,
@@ -172,7 +176,11 @@
           "releases: latest is the shipping build",
         ][i],
         author: i % 3 === 0 ? "mira-holt" : i % 3 === 1 ? "s-ohta" : me,
-        date: ISO(2.2 - i * 0.12),
+        login: i % 3 === 0 ? "mira-holt" : i % 3 === 1 ? "s-ohta" : me,
+        // The tail of the list falls on the PREVIOUS day, so the day grouping
+        // is something a screenshot shows rather than a code path nobody sees.
+        date: ISO(2.2 + i * 3),
+        verified: i === 2,
       })),
     ],
   };
@@ -791,14 +799,29 @@
       changed: true,
       message: `${req?.action ?? "action"} ok`,
     }),
-    "pr:fileDiff": (req) => ({
+    "pr:fileDiff": (req) => (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(req.path)
+      ? {
+          // A binary in a pull request used to come back as the SAME
+          // placeholder string on both sides, which is two identical texts —
+          // and the unified view collapses a zero-change diff to a single
+          // "N hidden lines" band, so it rendered completely empty while the
+          // side-by-side view showed the placeholder twice.
+          path: req.path,
+          leftLabel: "main",
+          rightLabel: "redesign/issues-detail",
+          leftText: "",
+          rightText: "",
+          conflicted: false,
+          binary: true,
+        }
+      : {
       path: req.path,
       leftLabel: "main",
       rightLabel: "redesign/issues-detail",
       leftText: 'const view = ghTwoPane();\nconst listEl = view.listEl;\nconst detail = view.detailEl;\n\nfunction select(it, row) {\n  row.classList.add("active");\n  showDetail(detail, it.number);\n}\n',
       rightText: 'const { view, listEl } = sectionList();\n\nfunction open(it) {\n  nav("issues", { number: it.number });\n}\n',
       conflicted: false,
-    }),
+        }),
   };
 
   // IssueInfo body normalizer (fixtures store a trimmed shape).
@@ -1002,6 +1025,20 @@
   dynamic["compare:fileDiff"] = (req) => {
     const path = (req && req.path) || "packages/engine/src/hunks.ts";
     const name = path.split("/").pop() || path;
+    // A BINARY file has no text diff. Mounting an editor over two empty strings
+    // is what "the diff doesn't show" looked like; the panel says so now, and
+    // this is the fixture that exercises it.
+    if (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(path)) {
+      return {
+        path,
+        leftLabel: `${(req && req.base) || "main"} ${path}`,
+        rightLabel: `${(req && req.head) || "HEAD"} ${path}`,
+        leftText: "",
+        rightText: "",
+        conflicted: false,
+        binary: true,
+      };
+    }
     return {
       path,
       leftLabel: `${(req && req.base) || "main"} ${path}`,

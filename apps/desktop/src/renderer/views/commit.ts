@@ -311,7 +311,9 @@ export async function renderCommit(
       // other diff surface here uses.
       const mine = ++gen;
       const fd = await host
-        .invoke("compare:fileDiff", { base, head: d!.sha, path: f.path })
+        // A rename's left side is the OLD name — without it the base is asked
+        // for a path it never had, and a small edit renders as a whole new file.
+        .invoke("compare:fileDiff", { base, head: d!.sha, path: f.path, leftPath: f.oldPath })
         .catch(() => undefined);
       if (mine !== gen) return;
       if (fd) {
