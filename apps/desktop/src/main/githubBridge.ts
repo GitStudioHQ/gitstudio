@@ -6,6 +6,7 @@
 // plus the data calls.
 
 import { app } from "electron";
+import { githubStatus } from "./githubStatus";
 import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { SecretStore } from "@gitstudio/secret-store/secretStore";
@@ -130,18 +131,19 @@ export class GitHubBridge {
     // bound to the app's code signature). Whether a token FILE exists is enough
     // to answer "connected"; the token itself is decrypted lazily, the first
     // time an actual GitHub call needs it.
-    if (this.token) {
-      if (!this.login) {
-        this.login = await this.client.currentLogin();
-      }
-      return { connected: !!this.login, login: this.login, repo };
+    if (this.token && !this.login) {
+      // Best effort. `currentLogin` swallows its own failures and answers
+      // undefined, and THAT used to decide `connected` — so one flaky request
+      // signed the user out of the top bar while Settings, holding the same
+      // account, went on showing them signed in.
+      this.login = await this.client.currentLogin();
     }
-    if (await this.hasStoredToken()) {
-      // Connected, but not yet unlocked — the login name fills in after the
-      // first real request.
-      return { connected: true, login: this.login, repo };
-    }
-    return { connected: false, repo };
+    return githubStatus({
+      hasToken: !!this.token,
+      hasStoredToken: await this.hasStoredToken(),
+      login: this.login,
+      repo,
+    });
   }
 
   /** Is there a stored token, WITHOUT decrypting it? Only the keychain-free

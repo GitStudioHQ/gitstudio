@@ -291,6 +291,8 @@ const CASES = [
   ["compare-has-the-same-diff-switch-as-everywhere-else", "compare~text:Changed%20files"],
   ["a-commit-list-reads-like-a-list-of-commits", "prs~open106~text:Commits", { arg: "pr" }],
   ["a-commit-list-reads-like-a-list-of-commits", "compare~click:.cmp-seg-btn", { arg: "compare" }],
+  ["a-commit-list-can-be-scrolled", "prs~open106~text:Commits"],
+  ["a-commit-list-can-be-scrolled", "compare~click:.cmp-seg-btn"],
   ["a-draft-release-leads-with-publishing-it", "releases~open49", { arg: "draft" }],
   ["a-draft-release-leads-with-publishing-it", "releases~open51", { arg: "published" }],
   ["the-release-notes-get-the-window", "releases~text:New%20release"],

@@ -3688,7 +3688,7 @@
      *
      * `?unlocked=0` is that launch state.
      */
-    "a-locked-token-still-reads-as-signed-in": (f) => {
+    "a-locked-token-still-reads-as-signed-in": async (f) => {
       const c = check(f);
       const chip = $(".topbar-acct");
       c.ok(!!chip, "the top bar has an account chip");
@@ -3702,6 +3702,26 @@
         `it must not tell a signed-in user to sign in (says ${JSON.stringify(text(chip))})`,
       );
       c.match(chip.title, /signed in/i, "and the tooltip agrees");
+
+      // And a FAILED question is not an answer. Break the channel and re-ask:
+      // the chip must keep saying what it last knew, because a dropped IPC or a
+      // moment offline is not someone signing out — and this chip is the only
+      // place in the window that would have claimed otherwise.
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p) =>
+        ch === "github:status" ? Promise.reject(new Error("offline")) : orig(ch, p);
+      try {
+        await window.__gsSyncAccountChip?.();
+        await settle(300);
+        const now = $(".topbar-acct");
+        c.ok(
+          now?.classList.contains("is-connected"),
+          `a failed status question does not sign you out (says ${JSON.stringify(text(now))})`,
+        );
+        c.ok(!/^sign in$/i.test(text(now)), "and does not offer to sign you in");
+      } finally {
+        window.gitstudio.invoke = orig;
+      }
     },
 
     /**
@@ -5147,6 +5167,56 @@
       split.click();
       await settle(900);
       c.ok(!$(".diff-truncated-note"), "choosing a mode clears the stale explanation");
+    },
+
+    /**
+     * A list that can grow without bound must sit inside something that
+     * scrolls.
+     *
+     * "actualy i cant scroll at all on the commits view in compare and pr."
+     * Compare's scroller was a single rule — `.cmp-commits { overflow-y: auto }`
+     * — and it was deleted along with the old row styles when both surfaces
+     * moved to the shared `commitList()`. The list still rendered, and with a
+     * fixture of three commits it still FIT, so nothing looked wrong: a branch
+     * with more commits than the pane is tall simply could not be reached.
+     *
+     * Asserted structurally, not by overflowing: a check that needs the content
+     * to be long enough is a check that passes on whatever the fixture happens
+     * to hold. Walk up from the list and require a real scroller before the
+     * view host.
+     */
+    "a-commit-list-can-be-scrolled": (f) => {
+      const c = check(f);
+      noAnimation();
+      const list = $(".clist");
+      c.ok(!!list, "the commits list rendered");
+      if (!list) return;
+
+      let node = list;
+      let scroller = null;
+      const walked = [];
+      while (node && node !== document.body) {
+        const ov = getComputedStyle(node).overflowY;
+        walked.push(`${(node.className || node.tagName).toString().split(" ")[0]}:${ov}`);
+        if (ov === "auto" || ov === "scroll") {
+          scroller = node;
+          break;
+        }
+        if (node.classList.contains("view-host")) break; // past the view
+        node = node.parentElement;
+      }
+      c.ok(
+        !!scroller,
+        `something between the list and the view host scrolls (walked ${walked.join(" → ")})`,
+      );
+      if (!scroller) return;
+      // And it must be able to grow: a scroller pinned to its content height
+      // scrolls in principle and never in practice.
+      c.ok(
+        getComputedStyle(scroller).minHeight !== "auto" ||
+          scroller.getBoundingClientRect().height < scroller.scrollHeight + 1,
+        "and it is height-constrained, so it will actually scroll when the list grows",
+      );
     },
   };
 })();

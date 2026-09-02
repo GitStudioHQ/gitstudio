@@ -9903,6 +9903,24 @@ body.vscode-light .log-pane {
    on the right. Everything here except the avatar was already in the response
    and thrown away one layer down. */
 .clist { display: flex; flex-direction: column; }
+/*
+ * Compare's own scroller.
+ *
+ * `.compare-view` is a fixed-height flex column — the page itself does not
+ * scroll — so the commits list has to. The rule that did it was `.cmp-commits`,
+ * and it was deleted along with the old row styles when both surfaces moved to
+ * `commitList()`: the list kept rendering, `.cmp-body` is `overflow: visible`,
+ * and a branch with more commits than fit simply could not be reached. The
+ * pull request's tab needs no equivalent — there the PAGE scrolls (`.det-scroll`),
+ * and a second scroller inside it would be the box-inside-a-box this redesign
+ * has spent its time removing.
+ */
+.cmp-body > .clist {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
 .clist-day {
   display: flex;
   align-items: center;

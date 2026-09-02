@@ -5853,13 +5853,21 @@ class App {
     // `syncAssistantChip` already do for their own surfaces.
     let gen = 0;
     let nameRetry: number | undefined;
+    // What the last SUCCESSFUL answer said. A failed question is not an answer:
+    // it used to fall through to `{connected: false}`, so a dropped IPC or a
+    // moment offline turned a signed-in user's chip into a "Sign in" button —
+    // and the chip is the only place in the window that would have said it.
+    let lastKnown: GitHubStatus | undefined;
     const sync = async (): Promise<void> => {
       const mine = ++gen;
-      let status: GitHubStatus = { connected: false };
+      let status: GitHubStatus;
       try {
         status = await host.invoke("github:status", undefined);
+        lastKnown = status;
       } catch {
-        /* offline / not connected — show the sign-in state */
+        // Keep saying what we last knew to be true; only an actual answer of
+        // "not connected" may take the account off the top bar.
+        status = lastKnown ?? { connected: false };
       }
       // A switch immediately followed by a sign-in can resolve out of order;
       // the later question owns the answer.
@@ -5900,6 +5908,12 @@ class App {
       }
     };
     this.syncAccountChip = sync;
+    // Exposed to the harness ONLY when the harness is there, so a check can
+    // re-ask the question under a broken channel — "a failed question is not an
+    // answer" is not observable any other way.
+    if ((window as { __GS_ROUTES?: unknown }).__GS_ROUTES) {
+      (window as { __gsSyncAccountChip?: () => Promise<void> }).__gsSyncAccountChip = sync;
+    }
     void sync();
     return chip;
   }
