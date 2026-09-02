@@ -314,6 +314,7 @@ const CASES = [
   ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
   ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
   ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  ["a-diff-path-reads-forwards-and-cuts-from-the-left", "changes~click:.dc-file"],
   ["growing-the-log-pane-fills-it", "actions~open9097~click:.gh-job-log"],
   ["the-sort-offers-only-what-the-segment-can-do", "branches"],
   ["a-long-log-line-scrolls-the-log-not-the-page", "actions~open9097~click:.gh-job-log"],

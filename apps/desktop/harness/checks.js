@@ -4733,6 +4733,60 @@
     },
 
     /**
+     * The diff's file path keeps its characters in order AND cuts from the left.
+     *
+     * Two properties that fight each other. A path is truncated from the LEFT
+     * because the filename is the part that identifies it, and the stylesheet
+     * does that with `direction: rtl` — which also reorders NEUTRAL characters
+     * at the string's edges. A leading dot is neutral, so every dotfile path in
+     * the app drew as "github/workflows/ci.yml.", naming a file that does not
+     * exist. An inner LTR isolate fixes the order; this asserts it did not cost
+     * the truncation, because reverting to plain LTR would fix the dot and cut
+     * the wrong end.
+     */
+    "a-diff-path-reads-forwards-and-cuts-from-the-left": async (f) => {
+      const c = check(f);
+      const p = $(".diffmode-path");
+      c.ok(!!p, "the diff toolbar names the file");
+      if (!p) return;
+      const t = p.querySelector(".diffmode-path-text");
+      c.ok(!!t, "the path text is isolated from the rtl box around it");
+      if (!t) return;
+      c.eq(getComputedStyle(t).direction, "ltr", "the text itself runs left to right");
+
+      // A dotfile keeps its dot where it was written.
+      t.textContent = ".github/workflows/ci.yml";
+      await settle(150);
+      c.ok(
+        text(p).startsWith("."),
+        `a leading dot stays in front (${JSON.stringify(text(p))})`,
+      );
+
+      // And a path too long for the box loses its START, not its filename.
+      p.style.maxWidth = "180px";
+      t.textContent = "apps/desktop/src/renderer/views/deeply/nested/verylongname.ts";
+      await settle(150);
+      const node = t.firstChild;
+      const r = document.createRange();
+      r.setStart(node, 0);
+      r.setEnd(node, 1);
+      const firstLeft = r.getBoundingClientRect().left;
+      r.setStart(node, node.length - 1);
+      r.setEnd(node, node.length);
+      const lastRight = r.getBoundingClientRect().right;
+      const bb = p.getBoundingClientRect();
+      c.ok(
+        firstLeft < bb.left - 1,
+        `the beginning of the path is what gets cut (first char at ${Math.round(firstLeft)}, box starts ${Math.round(bb.left)})`,
+      );
+      c.ok(
+        lastRight <= bb.right + 1,
+        `and the filename stays inside the box (last char at ${Math.round(lastRight)}, box ends ${Math.round(bb.right)})`,
+      );
+      p.style.maxWidth = "";
+    },
+
+    /**
      * Growing the pane fills it with log, not with a blank band.
      *
      * The virtual window is sized from `scroll.clientHeight`, and the only
