@@ -6,14 +6,28 @@ const FIELD_SEP = "\x1f";
 // %(*objectname) peels annotated tags to the COMMIT they tag — %(objectname)
 // alone is the tag object's own sha, which matches no graph row, so annotated
 // tags would never render a chip anywhere. Empty for everything else.
+//
+// The last four fields cost nothing — this read already runs — and each buys a
+// fact the UI could not previously state:
+//   committerdate  a remote branch or tag row with only a name and a sha cannot
+//                  be told from its neighbours, or sorted by anything useful
+//   contents:subject   what the ref actually points AT
+//   objecttype     "tag" for an ANNOTATED tag; the only thing that separates
+//                  the two kinds, and nothing has ever carried it
+//   symref:short   on refs/remotes/*/HEAD this is the repository's DEFAULT
+//                  branch, free, with no extra process
 const REF_FORMAT =
   `--format=%(objectname)${FIELD_SEP}%(refname)${FIELD_SEP}` +
   `%(refname:short)${FIELD_SEP}%(HEAD)${FIELD_SEP}%(upstream:short)` +
-  `${FIELD_SEP}%(upstream:track)${FIELD_SEP}%(*objectname)`;
+  `${FIELD_SEP}%(upstream:track)${FIELD_SEP}%(*objectname)` +
+  `${FIELD_SEP}%(committerdate:unix)${FIELD_SEP}%(contents:subject)` +
+  `${FIELD_SEP}%(objecttype)${FIELD_SEP}%(symref:short)`;
 
 /** Parses `%(upstream:track)` ("[ahead 2, behind 3]", "[gone]", or "") into
  *  ahead/behind counts. Returns undefined counts when not tracked/clean. */
-function parseTrack(track: string | undefined): { ahead?: number; behind?: number } {
+function parseTrack(
+  track: string | undefined,
+): { ahead?: number; behind?: number; gone?: boolean } {
   if (!track) {
     return {};
   }
@@ -22,6 +36,9 @@ function parseTrack(track: string | undefined): { ahead?: number; behind?: numbe
   return {
     ...(ahead ? { ahead: Number(ahead[1]) } : {}),
     ...(behind ? { behind: Number(behind[1]) } : {}),
+    // `[gone]` — the upstream was deleted. Without it a branch left behind by a
+    // merged pull request is indistinguishable from one in perfect sync.
+    ...(/\bgone\b/.test(track) ? { gone: true } : {}),
   };
 }
 
@@ -60,7 +77,7 @@ export class RefProvider {
       this.proc.run(["stash", "list", STASH_FORMAT]),
     ]);
     for (const line of splitLines(branchesAndTags.stdout)) {
-      const [objectname, refname, short, head, upstream, track, peeled] =
+      const [objectname, refname, short, head, upstream, track, peeled, date, subject, objectType, symref] =
         line.split(FIELD_SEP);
       const type = refTypeFromFullName(refname);
       if (!type) {
@@ -75,14 +92,29 @@ export class RefProvider {
         sha: peeled || objectname,
         isCurrent: head === "*",
       };
+      if (Number(date)) {
+        ref.date = Number(date);
+      }
+      if (subject) {
+        ref.subject = subject;
+      }
+      if (objectType) {
+        ref.objectType = objectType;
+      }
+      if (symref) {
+        ref.symref = symref;
+      }
       if (upstream) {
         ref.upstream = upstream;
-        const { ahead, behind } = parseTrack(track);
+        const { ahead, behind, gone } = parseTrack(track);
         if (ahead !== undefined) {
           ref.ahead = ahead;
         }
         if (behind !== undefined) {
           ref.behind = behind;
+        }
+        if (gone) {
+          ref.gone = true;
         }
       }
       refs.push(ref);

@@ -26,6 +26,17 @@ export interface RefInfo {
   sha: string;
   isCurrent: boolean;
   upstream?: string;
+  /** The tracked upstream no longer exists (git's `[gone]`). */
+  gone?: boolean;
+  /** Tip commit date, epoch seconds. */
+  date?: number;
+  /** Tip commit subject — what this ref actually points at. */
+  subject?: string;
+  /** "tag" for an ANNOTATED tag, "commit" otherwise. */
+  objectType?: string;
+  /** For a remote's own HEAD ref, the DEFAULT branch it points at. (Written
+   *  without the literal path, because the star-slash in it closes a comment.) */
+  symref?: string;
 }
 
 /** The current HEAD, for the sidebar's "on branch …" affordance. */
@@ -327,6 +338,21 @@ export interface BranchInfo {
    * branch is finished and safe to delete.
    */
   gone?: boolean;
+  /**
+   * Divergence from the repository's DEFAULT branch, not from the upstream.
+   *
+   * A different and more useful question than ahead/behind-upstream: "how far
+   * is this from main". `aheadDefault === 0` means every commit here is
+   * already reachable from the default branch — which is what MERGED means,
+   * and therefore what "safe to delete" means.
+   *
+   * Absent on git < 2.41, which does not have `%(ahead-behind:)`. Absent is
+   * not zero: the UI must render nothing rather than a bar of zero.
+   */
+  aheadDefault?: number;
+  behindDefault?: number;
+  /** Every commit on this branch is reachable from the default branch. */
+  merged?: boolean;
   /** Subject of the branch tip commit. */
   subject: string;
   /** Tip commit author date, epoch seconds. */

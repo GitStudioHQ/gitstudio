@@ -53,6 +53,26 @@ export interface GitRef {
   ahead?: number;
   /** Commits behind the upstream (from `%(upstream:track)`), when tracked. */
   behind?: number;
+  /**
+   * The upstream this ref tracked NO LONGER EXISTS (git's `[gone]`).
+   *
+   * Distinct from untracked: `ahead`/`behind` are both absent in either case,
+   * so without this a branch whose remote was deleted is indistinguishable from
+   * one in perfect sync.
+   */
+  gone?: boolean;
+  /** Tip commit date, epoch seconds — every kind of ref has one. */
+  date?: number;
+  /** Tip commit subject. A remote branch or a tag with only a name and a sha
+   *  cannot be told apart from its neighbours at a glance. */
+  subject?: string;
+  /** "tag" for an ANNOTATED tag (it is its own object), "commit" otherwise.
+   *  The one fact that distinguishes the two kinds of tag, and nothing has ever
+   *  carried it. */
+  objectType?: string;
+  /** What a symbolic ref points at — `refs/remotes/origin/HEAD` names the
+   *  repository's DEFAULT branch, for free, on a read that already runs. */
+  symref?: string;
 }
 
 export interface RepoHead {

@@ -332,6 +332,11 @@ export class GitBridge {
     }
     try {
       const refs = await ctx.refs.listRefs();
+      // Copy the whole shape through. This mapper used to drop date, subject,
+      // objectType and symref on the floor — every one of them already parsed
+      // one layer down — which is why a remote branch or a tag reached the UI
+      // as a name and a sha with nothing to sort by, nothing to read, and no
+      // way to tell an annotated tag from a lightweight one.
       return refs.map((r) => ({
         type: r.type,
         name: r.name,
@@ -339,6 +344,11 @@ export class GitBridge {
         sha: r.sha,
         isCurrent: r.isCurrent,
         upstream: r.upstream,
+        ...(r.gone ? { gone: true } : {}),
+        ...(r.date ? { date: r.date } : {}),
+        ...(r.subject ? { subject: r.subject } : {}),
+        ...(r.objectType ? { objectType: r.objectType } : {}),
+        ...(r.symref ? { symref: r.symref } : {}),
       }));
     } catch {
       return [];
@@ -1487,6 +1497,72 @@ export class GitBridge {
 
   // ── Branch management ───────────────────────────────────────────────────────
 
+  /**
+   * The repository's default branch, as cheaply as it can be known.
+   *
+   * `refs/remotes/origin/HEAD` is a symbolic ref pointing at it, set by clone.
+   * When it is absent (a repo initialised locally, or a clone whose origin/HEAD
+   * was never fetched), fall back to the checked-out branch — which is wrong
+   * only in the case where nothing better exists anyway.
+   */
+  private async defaultBranch(ctx: GitContext): Promise<string | undefined> {
+    try {
+      const r = await ctx.process.run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+      const full = r.code === 0 ? r.stdout.trim() : "";
+      if (full) return full.replace(/^origin\//, "");
+    } catch {
+      /* fall through */
+    }
+    try {
+      const h = await ctx.refs.getHead();
+      return h.detached ? undefined : h.branch;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * How far each local branch is ahead of and behind `base`.
+   *
+   * Asked for in its own `for-each-ref` because `%(ahead-behind:)` needs git
+   * >= 2.41: an older git does not recognise the atom and fails the WHOLE read,
+   * which would take the branch list down with it. Here a failure is just an
+   * empty map, and the divergence bar does not render.
+   */
+  private async divergenceFrom(
+    ctx: GitContext,
+    base: string,
+  ): Promise<Map<string, { ahead: number; behind: number }>> {
+    const out = new Map<string, { ahead: number; behind: number }>();
+    if (!safeArg(base)) return out;
+    try {
+      // Named US (unit separator), not the name the NUL-separated reader one
+      // screen up uses: this file has both, a format argument interpolating the
+      // shared name cannot be read as safe at a glance, and a NUL in argv makes
+      // spawn THROW — a throw this function's catch would swallow whole. The
+      // repo's scan flags that shape by name, and it is right to.
+      const US = "\x1f";
+      const r = await ctx.process.run([
+        "for-each-ref",
+        `--format=%(refname:short)${US}%(ahead-behind:${base})`,
+        "refs/heads",
+      ]);
+      if (r.code !== 0) return out;
+      for (const line of r.stdout.split("\n")) {
+        if (!line.trim()) continue;
+        const [name, pair] = line.split(US);
+        // git prints "<ahead> <behind>"; on an unsupported git the atom comes
+        // back as the literal format string, which parses to NaN and is
+        // dropped here rather than rendering as a bar of zero.
+        const [a, b] = (pair ?? "").trim().split(/\s+/).map(Number);
+        if (Number.isFinite(a) && Number.isFinite(b)) out.set(name, { ahead: a, behind: b });
+      }
+    } catch {
+      /* an older git, or a bad base — no bar, no error */
+    }
+    return out;
+  }
+
   /** One `for-each-ref` gives every local branch with upstream + ahead/behind. */
   async branchesList(): Promise<BranchInfo[]> {
     const ctx = this.ctx();
@@ -1494,6 +1570,17 @@ export class GitBridge {
       return [];
     }
     const SEP = "\x1f";
+    // Divergence from the DEFAULT branch, not just from the upstream. It
+    // answers a different and more useful question — "how far is this from
+    // main" — and `ahead === 0` against the default IS the definition of
+    // merged, so one field buys the bar, the Merged state and "what is safe to
+    // delete" at once.
+    //
+    // `%(ahead-behind:)` needs git >= 2.41. On an older git the atom is not
+    // recognised and for-each-ref FAILS the whole read rather than returning a
+    // blank column — which would take the branch list down with it — so it is
+    // asked for separately and the result is optional.
+    const base = await this.defaultBranch(ctx);
     const fmt =
       `%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
       `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(contents:subject)`;
@@ -1507,12 +1594,15 @@ export class GitBridge {
       "refs/heads",
     ]);
     const out = mustSucceed(r, "Couldn't list branches");
+    const divergence = base ? await this.divergenceFrom(ctx, base) : new Map();
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
       const [name, head, upstream, track, date, subject] = line.split(SEP);
       const { ahead, behind, gone } = parseTrack(track ?? "");
+      const vs = base ? divergence.get(name) : undefined;
       branches.push({
+        ...(vs ? { aheadDefault: vs.ahead, behindDefault: vs.behind, merged: vs.ahead === 0 } : {}),
         name,
         current: head === "*",
         upstream: upstream || undefined,
