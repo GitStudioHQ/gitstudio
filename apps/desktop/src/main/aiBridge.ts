@@ -816,7 +816,14 @@ export class AiBridge {
 }
 
 /** A short, human-readable summary of what a tool call will do, for the confirm UI. */
-function summarizeArgs(tool: GitTool, args: Record<string, unknown>): string {
+/** The sentence a human reads before approving an agent's write.
+ *
+ *  Exported for its test: this is the LAST gate before an automated actor does
+ *  something to the repository, and the destructive cases have to say what is
+ *  lost. They once read weaker than the app's own confirm dialogs for the same
+ *  operations — "Reset (hard) to abc123." asked you to approve, in git's
+ *  vocabulary, the destruction of every uncommitted change you had. */
+export function summarizeArgs(tool: GitTool, args: Record<string, unknown>): string {
   switch (tool.name) {
     case "git_commit":
       return `Commit staged changes:\n“${String(args.message ?? "").split("\n")[0]}”`;
