@@ -4759,6 +4759,69 @@
     },
 
     /**
+     * A running clone can always be left.
+     *
+     * setBusy disabled every control INCLUDING Cancel, and the modal's
+     * `canDismiss: () => !busy` blocked Escape and the backdrop — so a clone
+     * against a slow remote, or one waiting on a credential prompt that never
+     * arrives, left no way out of the app short of quitting it. There is no
+     * channel to stop git, and the clone finishes perfectly well without its
+     * card (the success path opens the repository and toasts either way), so
+     * the dialog can be dismissed and Cancel becomes "Hide" rather than
+     * pretending to cancel something it cannot.
+     */
+    "a-running-clone-can-always-be-left": async (f) => {
+      const c = check(f);
+      const open = $$("button").find((b) => /clone/i.test(text(b)));
+      c.ok(!!open, "the welcome screen offers to clone");
+      if (!open) return;
+      open.click();
+      await settle(900);
+      const card = $(".modal-card");
+      c.ok(!!card, "the clone dialog opens");
+      if (!card) return;
+
+      // A clone that never answers — the case that trapped the app.
+      const inv = window.gitstudio.invoke;
+      window.gitstudio.invoke = async (ch, p) =>
+        ch === "clone:start" ? new Promise(() => {}) : inv(ch, p);
+      const url = card.querySelector("input");
+      url.value = "https://github.com/o/r.git";
+      url.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(700);
+      const go = [...card.querySelectorAll("button")].find(
+        (b) => /^clone/i.test(text(b)) && !b.disabled,
+      );
+      c.ok(!!go, "it can be submitted");
+      if (!go) {
+        window.gitstudio.invoke = inv;
+        return;
+      }
+      go.click();
+      await settle(900);
+
+      c.ok(card.className.includes("is-busy"), "the card is busy");
+      const cancel = [...card.querySelectorAll("button")].find((b) =>
+        /cancel|hide/i.test(text(b)),
+      );
+      c.ok(!!cancel, "there is still a button to leave by");
+      c.ok(!cancel?.disabled, "and it is not disabled while the clone runs");
+      c.match(
+        text(cancel || { textContent: "" }),
+        /hide/i,
+        "labelled honestly — git cannot be stopped, so it does not say Cancel",
+      );
+
+      // And Escape works, which it did not.
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+      await settle(700);
+      window.gitstudio.invoke = inv;
+      c.ok(!$(".modal-card"), "Escape leaves the dialog, rather than being swallowed");
+    },
+
+    /**
      * A selection never outlives the rows it was made in.
      *
      * Refresh reloads the graph from the FIRST page, so after paging deep and
