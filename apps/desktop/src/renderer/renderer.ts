@@ -1097,7 +1097,15 @@ class App {
     const outgoing = this.viewHost.firstElementChild as HTMLElement | null;
     const stillLoading =
       !!outgoing?.querySelector(".skeleton, .sk-row, .list-loading, .loading-state, .spinner");
-    if (!force && App.KEEPALIVE.has(prev) && outgoing && !stillLoading) {
+    // NOT gated on `force`. `force` means "rebuild the view I am going TO with
+    // fresh data" — and it is set by every navigation that carries a target,
+    // which is every navigation INTO a detail page. Letting it also throw away
+    // the view being left meant opening a branch's page discarded the Branches
+    // list, so Back rebuilt it from scratch: the filter you had typed to find
+    // that branch was gone and you were back at the top of ninety rows. The
+    // incoming view's own cache is still dropped below, which is what force is
+    // actually for.
+    if (App.KEEPALIVE.has(prev) && outgoing && !stillLoading) {
       this.viewCache.set(prev, outgoing);
     } else if (stillLoading) {
       // …and drop any older good copy, so the next visit rebuilds rather than
@@ -1367,9 +1375,7 @@ class App {
     const isRemoteHead = (r: RefInfo): boolean => !!r.symref || !r.name.includes("/");
     let remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
     let tags = this.refs.filter((r) => r.type === "tag");
-    let defaultBranch =
-      this.refs.find((r) => r.type === "remote" && r.symref)?.symref?.replace(/^origin\//, "") ??
-      locals.find((b) => b.current)?.name;
+    let defaultBranch = this.defaultBranchName(locals);
     // Worktrees: four channels that have existed since the IPC contract was
     // written with NO caller in any view. The segment appears only when there
     // is more than one — a single worktree is just "the repository".
@@ -1484,14 +1490,7 @@ class App {
       // and any moment you were standing on a feature branch the sweep offered
       // — in a confirm listing it by name, among five others — to delete the
       // one branch the repository is organised around.
-      const finished = locals.filter(
-        (b) => !b.current && b.name !== defaultBranch && (b.merged || b.gone),
-      );
       const sweep = el("button", "mini-btn branches-sweep") as HTMLButtonElement;
-      sweep.append(glyph("trash"), span(`Delete ${finished.length} finished…`));
-      sweep.title = "Branches whose work is already in the default branch, or whose upstream is gone";
-      sweep.hidden = this.branchTab !== "local" || finished.length === 0;
-      sweep.addEventListener("click", () => void this.sweepFinishedBranches(finished, defaultBranch));
       segSlot.appendChild(sweep);
 
       // ── the filter bar ────────────────────────────────────────────────
@@ -1582,6 +1581,37 @@ class App {
       const hit = (...parts: Array<string | undefined>): boolean =>
         !q || parts.some((x) => (x ?? "").toLowerCase().includes(q));
 
+      // "What is safe to delete" — the question a branch list is opened to
+      // answer at least as often as "what do I switch to", and one this view
+      // could never answer at all. A branch is finished when every commit on it
+      // is already in the default branch (merged), or when the upstream it
+      // tracked has been deleted (gone) — which is what a merged pull request
+      // leaves behind.
+      //
+      // The default branch is NEVER finished, and excluding it is not a nicety:
+      // `merged` is `ahead === 0` measured against the default branch, and the
+      // default branch is zero commits ahead of itself. So `main` qualified,
+      // and any moment you were standing on a feature branch the sweep offered
+      // — in a confirm listing it by name, among five others — to delete the
+      // one branch the repository is organised around.
+      //
+      // Downstream of the SEARCH and the FACETS, like the age counts beside it:
+      // computed above them, the button read "Delete 6 finished…" beside a list
+      // you had narrowed to one, offering to delete five branches that were not
+      // on screen. Not downstream of the age cut, which is a browsing lens
+      // rather than a narrowing — a finished branch is usually a stale one, and
+      // filtering by it would empty the sweep from the segment it opens on.
+      const finished = locals
+        .filter((b) => hit(b.name, b.upstream, b.subject))
+        .filter((b) => bar.passes(b))
+        .filter((b) => !b.current && b.name !== defaultBranch && (b.merged || b.gone));
+      sweep.replaceChildren(glyph("trash"), span(`Delete ${finished.length} finished…`));
+      sweep.title = q
+        ? `Of the branches matching “${q}”: those already in ${defaultBranch ?? "the default branch"}, or whose upstream is gone`
+        : `Branches whose work is already in ${defaultBranch ?? "the default branch"}, or whose upstream is gone`;
+      sweep.hidden = this.branchTab !== "local" || finished.length === 0;
+      sweep.onclick = () => void this.sweepFinishedBranches(finished, defaultBranch);
+
       // Active / Stale / All — github.com's own cut, and the difference between
       // "what I am working on" and "everything this clone has touched".
       if (this.branchTab === "local") {
@@ -1606,11 +1636,15 @@ class App {
           }),
         );
       }
-      facetSlot.appendChild(this.branchSortBtn(() => render()));
+      const sortBtn = this.branchSortBtn(() => render());
+      if (sortBtn) facetSlot.appendChild(sortBtn);
 
       body.replaceChildren();
       ctaSlot.replaceChildren(this.branchesCta(this.branchTab));
 
+      // The order the segment on screen can actually carry out — not whatever
+      // was last picked on a segment that had more choices.
+      const order = this.effectiveSort();
       const byName = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
       const byDate = (a?: number, b?: number): number => (b ?? 0) - (a ?? 0);
 
@@ -1634,11 +1668,11 @@ class App {
                 : b.current || !isStale(b.date),
           )
           .sort((a, b) =>
-            this.branchSort === "name"
+            order === "name"
               ? byName(a.name, b.name)
-              : this.branchSort === "ahead"
+              : order === "ahead"
                 ? (b.ahead ?? 0) - (a.ahead ?? 0) || byDate(a.date, b.date)
-                : this.branchSort === "stale"
+                : order === "stale"
                   ? (a.date ?? 0) - (b.date ?? 0)
                   : byDate(a.date, b.date),
           );
@@ -1652,7 +1686,13 @@ class App {
         const rows = remotes
           .filter((r) => hit(r.name, r.subject, r.sha.slice(0, 7)))
           .filter((r) => bar.passes(r))
-          .sort((a, b) => (this.branchSort === "name" ? byName(a.name, b.name) : byDate(a.date, b.date)));
+          .sort((a, b) =>
+            order === "name"
+              ? byName(a.name, b.name)
+              : order === "stale"
+                ? (a.date ?? 0) - (b.date ?? 0)
+                : byDate(a.date, b.date),
+          );
         shown = rows.length;
         const haveLocal = new Set(locals.map((b) => b.name));
         for (const r of rows) body.appendChild(this.remoteRefRow(r, haveLocal));
@@ -1663,7 +1703,13 @@ class App {
           .filter((r) => bar.passes(r))
           // By DATE by default, not by name: alphabetical puts v1.10.0 before
           // v1.9.0, which is wrong about every version scheme anyone uses.
-          .sort((a, b) => (this.branchSort === "name" ? byName(a.name, b.name) : byDate(a.date, b.date)));
+          .sort((a, b) =>
+            order === "name"
+              ? byName(a.name, b.name)
+              : order === "stale"
+                ? (a.date ?? 0) - (b.date ?? 0)
+                : byDate(a.date, b.date),
+          );
         shown = rows.length;
         for (const r of rows) body.appendChild(this.tagRefRow(r));
       } else if (this.branchTab === "stashes") {
@@ -1692,12 +1738,20 @@ class App {
       } catch {
         stashFailed = true;
       }
+      // Worktrees too. This re-read everything EXCEPT them, so the list was
+      // fetched exactly once when the view was first built — and every soft
+      // refresh in the view goes through here, including `removeWorktreeLive`.
+      // "Worktree removed." left the row and its count on screen, and pressing
+      // Remove again ran git against a path that no longer existed.
+      try {
+        worktrees = await host.invoke("worktree:list", undefined);
+      } catch {
+        worktrees = [];
+      }
       if (gen !== this.routeGen) return;
       remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
       tags = this.refs.filter((r) => r.type === "tag");
-      defaultBranch =
-        this.refs.find((r) => r.type === "remote" && r.symref)?.symref?.replace(/^origin\//, "") ??
-        locals.find((b) => b.current)?.name;
+      defaultBranch = this.defaultBranchName(locals);
       render();
     };
     // ── the keyboard ──────────────────────────────────────────────────────
@@ -1893,8 +1947,8 @@ class App {
     const actions: HTMLElement[] = [];
     const push = el("button", "row-btn") as HTMLButtonElement;
     push.textContent = "Push";
-    push.setAttribute("aria-label", `Push tag ${r.name} to origin`);
-    push.title = `Publish ${r.name} to origin`;
+    push.setAttribute("aria-label", `Push tag ${r.name} to the remote`);
+    push.title = `Publish ${r.name} to the remote`;
     push.addEventListener("click", () => void this.pushTagLive(r.name, push));
     actions.push(push);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
@@ -2009,7 +2063,7 @@ class App {
         toast(r.message ?? `Couldn't push ${name}.`, r.expected ? "info" : "error");
         return;
       }
-      toast(`Pushed ${name} to origin.`, "success");
+      toast(`Pushed ${name}.`, "success");
     });
   }
 
@@ -2158,25 +2212,44 @@ class App {
     await this.refreshBranchesSoft();
   }
 
-  /** The sort control. Recency is the default because "what was I just doing"
-   *  is the question this view is opened for most often. */
-  private branchSortBtn(rerender: () => void): HTMLElement {
+  /**
+   * The sort control. Recency is the default because "what was I just doing"
+   * is the question this view is opened for most often.
+   *
+   * It offers only the orders the CURRENT segment can actually carry out. It
+   * used to offer all four everywhere and render on every segment, so:
+   * "Most ahead" and "Stalest first" reordered nothing on Remotes and Tags
+   * (a RefInfo has no divergence from the default branch) yet the button
+   * relabelled itself, standing there naming an order the list was not in; and
+   * on Stashes and Worktrees, which apply no sort at all, every one of the four
+   * was inert. A control that states a false fact about the list beneath it is
+   * worse than no control.
+   */
+  private branchSortBtn(rerender: () => void): HTMLElement | undefined {
     const LABELS: Record<string, string> = {
       recent: "Recently committed",
       name: "Name",
       ahead: "Most ahead",
       stale: "Stalest first",
     };
+    // Stashes are a STACK — stash@{0} is the newest and the numbering is the
+    // order — and worktrees are a handful of paths. Neither has an order to
+    // choose, so neither gets a control.
+    const keys = this.branchSortKeys();
+    if (!keys.length) return undefined;
+    // A segment can drop the order that is currently selected (switching from
+    // Local to Tags with "Most ahead" active). Show the one it will really use.
+    const shown = keys.includes(this.branchSort) ? this.branchSort : "recent";
     const b = el("button", "mini-btn branches-sort") as HTMLButtonElement;
-    b.append(glyph("list-ordered"), span(LABELS[this.branchSort]));
+    b.append(glyph("list-ordered"), span(LABELS[shown]));
     b.title = "How this list is ordered";
     b.setAttribute("aria-haspopup", "menu");
     b.addEventListener("click", () =>
       openMenu(
         b,
-        (Object.keys(LABELS) as Array<"recent" | "name" | "ahead" | "stale">).map((k) => ({
+        keys.map((k) => ({
           label: LABELS[k],
-          current: this.branchSort === k,
+          current: shown === k,
           onClick: () => {
             this.branchSort = k;
             rerender();
@@ -2185,6 +2258,47 @@ class App {
       ),
     );
     return b;
+  }
+
+  /**
+   * The repository's default branch, as a LOCAL branch name.
+   *
+   * `refs/remotes/<remote>/HEAD` has a symref of "<remote>/<branch>", and the
+   * remote is not always called origin: `git clone -o upstream`, a
+   * `git remote rename`, or simply a second remote whose name sorts first —
+   * `refs:list` is refname-ordered, so the first symref found may be anyone's.
+   * Stripping the literal "origin/" left "upstream/main", which no local branch
+   * is ever named, and every check written against this value silently stopped
+   * firing: no row got the "default" pill, the divergence bar rendered for the
+   * default branch against itself, and the sweep's guard let `main` through
+   * into a bulk delete.
+   *
+   * Strip the remote the ref actually names — on a remote HEAD `name` IS the
+   * bare remote — which also keeps `origin/release/2.x` → `release/2.x` right.
+   */
+  private defaultBranchName(locals: BranchInfo[]): string | undefined {
+    const head = this.refs.find((r) => r.type === "remote" && r.symref);
+    const symref = head?.symref;
+    if (symref) {
+      const prefix = `${head!.name}/`;
+      return symref.startsWith(prefix) ? symref.slice(prefix.length) : symref;
+    }
+    return locals.find((b) => b.current)?.name;
+  }
+
+  /** Which orders the segment on screen can honour. */
+  private branchSortKeys(): Array<"recent" | "name" | "ahead" | "stale"> {
+    if (this.branchTab === "local") return ["recent", "name", "ahead", "stale"];
+    // A remote branch or a tag carries a date and a name, and nothing that
+    // could answer "most ahead".
+    if (this.branchTab === "remote" || this.branchTab === "tags") return ["recent", "name", "stale"];
+    return [];
+  }
+
+  /** The order actually applied, once the segment has had its say. */
+  private effectiveSort(): "recent" | "name" | "ahead" | "stale" {
+    const keys = this.branchSortKeys();
+    return keys.includes(this.branchSort) ? this.branchSort : "recent";
   }
 
   /** A worktree row. `worktree:list/add/remove/open` have existed in the IPC
@@ -2240,10 +2354,15 @@ class App {
       meta: [span(w.head.slice(0, 7), "br-sha sec-mono")],
       time: "",
       actions,
+      // A detached or bare worktree went to `copyText` here — so activating the
+      // row performed a side effect on data the user owns (whatever was on
+      // their clipboard), navigated nowhere, and disagreed with the row's own
+      // "Open" button, while every other row in this view routes somewhere. It
+      // has a HEAD, and a commit is a page.
       onOpen: () =>
         w.branch
           ? this.routeView("refdetail", false, { ref: w.branch, id: "head" })
-          : void copyText(w.path, "Copied the path."),
+          : this.routeView("commit", false, { sha: w.head }),
       ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this window" : ""}`,
     });
     row.classList.add("ref-row");
@@ -2412,13 +2531,23 @@ class App {
         () => void this.refreshBranchesSoft(),
       );
     }
+    // Every segment, INCLUDING worktrees. `branchTab` is persisted across
+    // launches, and the Worktrees segment only renders when there is more than
+    // one — so a repo that loses its extra worktree, or whose `worktree:list`
+    // fails (the catch turns that into `[]`), reopens on a segment with no
+    // entry here. Destructuring undefined threw, and the whole Branches view
+    // rendered blank with a console error nobody sees.
     const copy: Record<string, [string, string]> = {
       local: ["No branches yet", "Every repository has at least one — this read found none."],
       remote: ["No remote branches", "Nothing has been fetched yet. Fetch brings them in."],
       tags: ["No tags", "Tag a commit to mark a release or a milestone."],
       stashes: ["No stashes", "Stashing puts your working changes aside without committing them."],
+      worktrees: [
+        "No other worktrees",
+        "A worktree checks out a second branch into its own directory, so you can work on two at once.",
+      ],
     };
-    const [title, desc] = copy[tab];
+    const [title, desc] = copy[tab] ?? ["Nothing here", "This list is empty."];
     return emptyState(title, desc, { icon: tab === "stashes" ? "archive" : "git-branch" });
   }
 

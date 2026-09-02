@@ -407,8 +407,18 @@ export function createLogPane(o: {
   /** The line a jump landed on, flashed until the next one. */
   let hitLine = -1;
 
-  function jumpToLine(docIdx: number): void {
-    // Un-collapse any group hiding the target, then center it.
+  /**
+   * `align` decides where the target lands.
+   *
+   * "center" is right for a search or error hit: you want to see what is
+   * AROUND it. "top" is right for "go to the start of this step" — centring
+   * that put the group header in the middle of the port with half a screen of
+   * the PREVIOUS step above it, so the strip immediately relabelled itself to
+   * the step you had just left and the header you asked for was not at the top
+   * of anything.
+   */
+  function jumpToLine(docIdx: number, align: "center" | "top" = "center"): void {
+    // Un-collapse any group hiding the target, then place it.
     for (const g of doc.groups) {
       const end = g.end === -1 ? doc.lines.length - 1 : g.end;
       if (docIdx > g.start && docIdx <= end && collapsed.has(g.start)) collapsed.delete(g.start);
@@ -418,9 +428,17 @@ export function createLogPane(o: {
     if (pos < 0) return;
     // A search or error jump turns following off — so the way BACK to the tail
     // has to appear, or you are stranded mid-log with no affordance.
+    //
+    // setFollow already decides this correctly, `!producing` included. The line
+    // that used to sit here re-derived it from `visible.length` alone and threw
+    // that away, so a FINISHED job grew a "Jump to latest" pill the moment you
+    // clicked an error tick or a search hit — offering to follow a tail that
+    // stopped moving before you opened the page.
     setFollow(false);
-    jumpPill.hidden = visible.length === 0;
-    scroll.scrollTop = Math.max(0, pos * LINE_H - scroll.clientHeight / 2);
+    scroll.scrollTop = Math.max(
+      0,
+      align === "top" ? pos * LINE_H : pos * LINE_H - scroll.clientHeight / 2,
+    );
     // Centring is not enough to FIND it. A CI log is a wall of monospace, and
     // an error line looks like every other line in it once it is on screen —
     // which is most of what "not practical" means here.
@@ -593,6 +611,18 @@ export function createLogPane(o: {
     top.style.height = `${first * LINE_H}px`;
     bottom.style.height = `${Math.max(0, (visible.length - last) * LINE_H)}px`;
     win.replaceChildren();
+    // A log with nothing in it used to be a full-height black rectangle — no
+    // rows, no message, no banner — while the toolbar went on offering Copy,
+    // Save and a search box. A queued job, a job that died before printing, a
+    // step that produced nothing: the reader could not tell an empty log from
+    // one that had failed to load.
+    if (!visible.length) {
+      const note = el("div", "log-empty");
+      note.textContent = producing
+        ? "Waiting for the first line of output…"
+        : "This job produced no output.";
+      win.appendChild(note);
+    }
     for (let i = first; i < last; i++) win.appendChild(lineRow(visible[i]));
     const errs = errorLines();
     errChip.hidden = errs.length === 0;
@@ -634,7 +664,7 @@ export function createLogPane(o: {
     }
     groupBar.hidden = false;
     groupBar.replaceChildren(glyph("chevron-up"), span(label, "log-groupbar-name"));
-    groupBar.onclick = () => jumpToLine(found.start);
+    groupBar.onclick = () => jumpToLine(found.start, "top");
   }
 
   /** One tick per error, positioned by its place in the whole log. */
@@ -666,8 +696,10 @@ export function createLogPane(o: {
     errMap.replaceChildren(...ticks);
   }
 
-  function enforceCap(): void {
-    if (doc.lines.length <= MAX_RENDER_LINES) return;
+  /** Returns how many lines were dropped off the FRONT, so the caller can put
+   *  the reader back where they were. */
+  function enforceCap(): number {
+    if (doc.lines.length <= MAX_RENDER_LINES) return 0;
     const drop = doc.lines.length - MAX_RENDER_LINES;
     doc.lines.splice(0, drop);
     doc.groups = doc.groups
@@ -679,6 +711,7 @@ export function createLogPane(o: {
     collapsed.clear();
     for (const c of shifted) collapsed.add(c);
     capped = true;
+    return drop;
   }
 
   const pane: LogPane = {
@@ -702,12 +735,38 @@ export function createLogPane(o: {
       if (!delta) return;
       // Grabbed BEFORE the doc changes underneath it.
       const held = matchIdx >= 0 ? doc.lines[matches[matchIdx]] : undefined;
+      // And so is the line under the top of the viewport, as the LINE OBJECT.
+      //
+      // At the 200,000-line cap `enforceCap` splices lines off the FRONT. Every
+      // remaining line then sits `drop` rows higher while `scrollTop` stays
+      // where it was, so a reader who has deliberately scrolled away — follow
+      // off, reading something — is carried forward by exactly that many rows
+      // on every 4s tick. On the biggest logs, which are the ones that reach the
+      // cap, that is the "it scrolls instead of me" complaint in its purest
+      // form: nothing in the app is scrolling, the document is sliding out from
+      // under a fixed offset.
+      //
+      // Anchored on identity, not on the count: `visible` is doc indices and a
+      // collapsed group means the rows dropped and the ROWS SHOWN differ.
+      const anchor =
+        !follow && visible.length && doc.lines.length >= MAX_RENDER_LINES
+          ? doc.lines[visible[Math.min(visible.length - 1, Math.floor(scroll.scrollTop / LINE_H))]]
+          : undefined;
+      const anchorOffset = anchor ? scroll.scrollTop % LINE_H : 0;
       appendLog(doc, delta);
-      enforceCap();
+      const dropped = enforceCap();
       rebuildVisible();
       if (query) rebuildMatches(held);
       render();
-      if (follow) scroll.scrollTop = scroll.scrollHeight;
+      if (follow) {
+        scroll.scrollTop = scroll.scrollHeight;
+      } else if (anchor && dropped) {
+        const row = visible.indexOf(doc.lines.indexOf(anchor));
+        // -1 means the reader's own line was one of the ones dropped. There is
+        // nowhere honest to put them then; the top of what survives is the
+        // closest thing to where they were.
+        scroll.scrollTop = row >= 0 ? row * LINE_H + anchorOffset : 0;
+      }
     },
     finish() {
       finishLog(doc);
@@ -726,9 +785,35 @@ export function createLogPane(o: {
       destroyed = true;
       if (raf) cancelAnimationFrame(raf);
       if (rafTimer) window.clearTimeout(rafTimer);
+      sizeWatch?.disconnect();
+      window.removeEventListener("resize", onResize);
       root.remove();
     },
   };
+
+  // The virtual window is sized from `scroll.clientHeight`, and the only things
+  // that called render() were scroll events, the keyboard, the toolbar and the
+  // tail. A height change that produces neither — resizing the Electron window
+  // taller, entering fullscreen, dragging the terminal dock down — left the
+  // window the size it was, so the log ended mid-pane with a blank band below
+  // it until you happened to scroll.
+  //
+  // A resize is not a scroll, so following must survive it (`expandBtn` learned
+  // this the hard way); render() alone touches no scroll position.
+  const onResize = (): void => {
+    if (!destroyed) render();
+  };
+  const sizeWatch =
+    typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : undefined;
+  sizeWatch?.observe(scroll);
+  // BOTH. The observer catches a pane that changes size without the window
+  // doing so (the dock being dragged, the job rail folding); the window event
+  // catches the case a reader actually hits — resizing the app, or going
+  // fullscreen — and is the one that can be driven in a test, since a
+  // ResizeObserver callback is delivered with the rendering steps and those do
+  // not run on an idle headless page.
+  window.addEventListener("resize", onResize);
+
   followBtn.classList.toggle("is-on", follow);
   return pane;
 }

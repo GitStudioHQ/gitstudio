@@ -1507,9 +1507,30 @@ export class GitBridge {
    */
   private async defaultBranch(ctx: GitContext): Promise<string | undefined> {
     try {
-      const r = await ctx.process.run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
-      const full = r.code === 0 ? r.stdout.trim() : "";
-      if (full) return full.replace(/^origin\//, "");
+      // NOT origin's only. `git clone -o upstream`, a `git remote rename`, or a
+      // fork clone leaves the default branch's pointer under another remote —
+      // and this value decides `merged`, which decides what the branch list
+      // offers to delete. Asking only origin made every ancestor of HEAD read
+      // as merged (the fallback below is the CURRENT branch), so a bulk delete
+      // was measured against a ref nobody chose.
+      const US = "\x1f";
+      const r = await ctx.process.run([
+        "for-each-ref",
+        `--format=%(refname:short)${US}%(symref:short)`,
+        "refs/remotes/*/HEAD",
+      ]);
+      if (r.code === 0) {
+        const rows = r.stdout
+          .split("\n")
+          .map((l) => l.split(US).map((x) => x.trim()))
+          .filter(([n, s]) => n && s);
+        // Prefer origin when it is there; take whatever exists otherwise.
+        const [remote, symref] = rows.find(([n]) => n === "origin") ?? rows[0] ?? [];
+        if (remote && symref) {
+          const prefix = `${remote}/`;
+          return symref.startsWith(prefix) ? symref.slice(prefix.length) : symref;
+        }
+      }
     } catch {
       /* fall through */
     }
@@ -2263,9 +2284,30 @@ export class GitBridge {
    *  asked for explicitly rather than ridden along with a single one. */
   tagPush(req: { name: string; remote?: string }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return Promise.resolve(UNSAFE_REF_RESULT);
-    const remote = req.remote ?? "origin";
-    if (!safeArg(remote)) return Promise.resolve(UNSAFE_REF_RESULT);
-    return this.staged((ctx) => ctx.tags.push(remote, req.name));
+    if (req.remote && !safeArg(req.remote)) return Promise.resolve(UNSAFE_REF_RESULT);
+    return this.staged(async (ctx) => {
+      // Not a hardcoded "origin". A fork clone, or a `git remote rename`, and
+      // the Push button on every tag could only ever fail — with git's raw
+      // "'origin' does not appear to be a git repository" in a toast — while
+      // its own tooltip promised the tag would go to origin. Same rule as
+      // publishing an unpublished branch: prefer origin, else the only remote,
+      // and refuse to guess between several.
+      let remote = req.remote;
+      if (!remote) {
+        const names = (await ctx.remotes.list()).map((r) => r.name);
+        remote = names.find((n) => n === "origin") ?? (names.length === 1 ? names[0] : undefined);
+        if (!remote) {
+          return {
+            ok: false,
+            stderr:
+              names.length === 0
+                ? `No remote is configured, so '${req.name}' can't be pushed.`
+                : `Several remotes are configured — name the one to push '${req.name}' to.`,
+          };
+        }
+      }
+      return ctx.tags.push(remote, req.name);
+    });
   }
 
   // ── Hunk / line staging (working ⇄ index) ───────────────────────────────────

@@ -59,6 +59,9 @@ interface Session {
   offset: number;
   unchangedPolls: number;
   alive: boolean;
+  /** A tail loop is running for this session. A job opened while QUEUED has
+   *  none, and needs one started the moment the runner picks it up. */
+  tailing: boolean;
 }
 
 export async function renderJobLog(
@@ -135,6 +138,8 @@ export async function renderJobLog(
 
   /** Poll deltas while the job runs; back off to 8s after two quiet polls. */
   const tail = (s: Session): void => {
+    if (s.tailing) return;
+    s.tailing = true;
     const step = (): void => {
       window.setTimeout(() => {
         void (async () => {
@@ -154,7 +159,10 @@ export async function renderJobLog(
             s.unchangedPolls++;
           }
           if (live) step();
-          else s.pane.finish();
+          else {
+            s.tailing = false;
+            s.pane.finish();
+          }
         })();
       }, s.unchangedPolls >= 2 ? 8000 : 4000);
     };
@@ -193,7 +201,7 @@ export async function renderJobLog(
         });
       },
     });
-    const s: Session = { jobId: j.id, pane, offset: 0, unchangedPolls: 0, alive: true };
+    const s: Session = { jobId: j.id, pane, offset: 0, unchangedPolls: 0, alive: true, tailing: false };
     session = s;
     logCol.replaceChildren(pane.el);
 
@@ -231,7 +239,11 @@ export async function renderJobLog(
       row.classList.toggle("is-current", j.id === currentId);
       row.setAttribute("aria-current", j.id === currentId ? "true" : "false");
       row.addEventListener("click", () => {
-        if (j.id === currentId && session) return; // already reading it
+        // "Already reading it" — unless it has since started producing and this
+        // session never got a tail, in which case re-clicking is the only thing
+        // the reader can do and it used to do nothing at all.
+        const stuck = !!session && !session.tailing && statusOf(j.id) === "in_progress";
+        if (j.id === currentId && session && !stuck) return;
         void openJob(j);
       });
       rows.set(j.id, row);
@@ -255,6 +267,15 @@ export async function renderJobLog(
           const was = JSON.stringify(jobs.map((j) => [j.id, j.status, j.conclusion]));
           jobs = fresh.jobs;
           if (sig !== was) paintRows();
+          // A job you opened while it was QUEUED has no tail: openJob decides
+          // liveness once, and a queued job takes the "finished document"
+          // branch. The runner then picks it up, the rail visibly flips to
+          // in_progress — and the log stays frozen for the rest of the run,
+          // with a re-click blocked by the "already reading it" guard. The
+          // poll already knows the moment it changes, so it starts the tail.
+          if (session?.alive && !session.tailing && statusOf(session.jobId) === "in_progress") {
+            tail(session);
+          }
           pollJobs();
         })
         .catch(() => pollJobs());

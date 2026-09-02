@@ -4733,6 +4733,157 @@
     },
 
     /**
+     * Growing the pane fills it with log, not with a blank band.
+     *
+     * The virtual window is sized from `scroll.clientHeight`, and the only
+     * things that called render() were scroll events, the keyboard, the toolbar
+     * and the tail. A height change producing none of those — resizing the
+     * window, entering fullscreen, dragging the terminal dock down — left the
+     * window the size it was, so the log stopped mid-pane with empty space
+     * below it until you happened to scroll.
+     *
+     * Driven through the window's resize event: a ResizeObserver callback is
+     * delivered with the rendering steps, and those do not run on an idle
+     * headless page — the observer is wired for the panes the window event
+     * cannot see, but this is the path that can be proven.
+     */
+    "growing-the-log-pane-fills-it": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const row = $$(".joblog-job").find((r) => /test/i.test(text(r)));
+      if (row) {
+        row.click();
+        await settle(1400);
+      }
+      const sc = $(".log-scroll");
+      const pane = $(".log-pane");
+      c.ok(!!sc && !!pane, "a log is open");
+      if (!sc || !pane) return;
+      // Only meaningful on a log taller than its pane — otherwise every line is
+      // rendered whatever the height, and this passes on any build at all.
+      c.ok(
+        sc.scrollHeight > sc.clientHeight + 200,
+        `the fixture log is longer than the pane (${sc.scrollHeight} in ${sc.clientHeight})`,
+      );
+      const before = $$(".log-line").length;
+      pane.style.height = `${pane.getBoundingClientRect().height + 600}px`;
+      window.dispatchEvent(new Event("resize"));
+      await settle(500);
+      c.ok(
+        sc.clientHeight > 0,
+        "the pane really did grow",
+      );
+      c.ok(
+        $$(".log-line").length > before,
+        `the extra height is filled with log (${before} rows before, ${$$(".log-line").length} after)`,
+      );
+      // And nothing below the last rendered row is empty space inside the port.
+      const rows = $$(".log-line");
+      const last = rows[rows.length - 1];
+      const bottomGap = sc.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom;
+      c.ok(
+        bottomGap < 40,
+        `no blank band under the last line (${Math.round(bottomGap)}px)`,
+      );
+    },
+
+    /**
+     * A control may only offer what the list beneath it can actually do.
+     *
+     * The sort button rendered on every segment and offered all four orders
+     * everywhere, but only Local applies all four: a RefInfo carries no
+     * divergence from the default branch, so "Most ahead" reordered nothing on
+     * Remotes and Tags — while the button relabelled itself and stood there
+     * naming an order the list was not in. Stashes and Worktrees apply no sort
+     * at all, so every one of the four was inert.
+     */
+    "the-sort-offers-only-what-the-segment-can-do": async (f) => {
+      const c = check(f);
+      const seg = (n) => $$(".gh-seg-btn")[n];
+      const opts = async () => {
+        const b = $(".branches-sort");
+        if (!b) return null;
+        b.click();
+        await settle(300);
+        const o = $$(".dropdown-item").map((i) => text(i));
+        document.body.click();
+        await settle(150);
+        return o;
+      };
+
+      // Local: everything, including the two that need a divergence.
+      const local = await opts();
+      c.ok(!!local, "Local has a sort control");
+      for (const w of ["Recently committed", "Name", "Most ahead", "Stalest first"]) {
+        c.ok((local || []).includes(w), `Local offers ${w}`);
+      }
+
+      // Tags: a date and a name, and nothing that could answer "most ahead".
+      seg(2)?.click();
+      await settle(400);
+      const tags = await opts();
+      c.ok(!!tags, "Tags has a sort control");
+      c.ok(!(tags || []).includes("Most ahead"), `Tags does not offer an order it cannot apply (${(tags || []).join(", ")})`);
+      c.ok((tags || []).includes("Name"), "Tags still offers the orders it can");
+
+      // Stashes are a STACK — stash@{0} is the newest and the numbering is the
+      // order — and worktrees are a handful of paths. Neither has one to pick.
+      seg(3)?.click();
+      await settle(400);
+      c.ok(!$(".branches-sort"), "Stashes offers no sort at all");
+      seg(4)?.click();
+      await settle(400);
+      c.ok(!$(".branches-sort"), "Worktrees offers no sort at all");
+    },
+
+    /**
+     * A long line scrolls the LOG, never the page.
+     *
+     * `.log-window` is `min-width: max-content` so a long line can be scrolled
+     * to rather than wrapped. But a flex item's default `min-width: auto`
+     * refuses to shrink below its content, and `.det-body` — the item carrying
+     * every detail page's body — had no `min-width: 0`, so that intrinsic width
+     * propagated all the way up instead. One 400-character CI log line took
+     * .det-body from 1384px to 3192px inside a `.det-scroll` that clips on
+     * `overflow-x: hidden`: the page silently widened, Follow / Copy / Save /
+     * Expand went off-screen, and there was nothing to scroll back with.
+     */
+    "a-long-log-line-scrolls-the-log-not-the-page": async (f) => {
+      const c = check(f);
+      const win = $(".log-window");
+      const sc = $(".log-scroll");
+      const pane = $(".log-pane");
+      c.ok(!!win && !!sc && !!pane, "a log is open");
+      if (!win || !sc || !pane) return;
+      const R = (e) => e.getBoundingClientRect();
+      const rightBefore = Math.round(R(pane).right);
+      const wide = document.createElement("div");
+      wide.className = "log-line";
+      wide.textContent = "E".repeat(400);
+      win.appendChild(wide);
+      await settle(200);
+      c.eq(Math.round(R(pane).right), rightBefore, "the pane does not grow past where it was");
+      c.ok(
+        R(pane).right <= window.innerWidth + 1,
+        `and stays inside the window (right ${Math.round(R(pane).right)} of ${window.innerWidth})`,
+      );
+      // The width has to go SOMEWHERE — the scroller is the right place.
+      c.ok(
+        sc.scrollWidth > sc.clientWidth,
+        `the log scroller takes the overflow instead (${sc.scrollWidth} in ${sc.clientWidth})`,
+      );
+      // And the toolbar is still reachable, which is the thing that was lost.
+      const tools = $$(".log-toolbar button, .log-tools button");
+      c.ok(tools.length > 0, "the toolbar is present");
+      for (const t of tools) {
+        c.ok(
+          R(t).right <= window.innerWidth + 1,
+          `${t.getAttribute("aria-label") || text(t) || "a control"} is still on screen`,
+        );
+      }
+    },
+
+    /**
      * Two ways to hold 20,000 lines in your head.
      *
      * A CI log is mostly ##[group] CONTENTS, so once you scroll past the header
@@ -4777,9 +4928,30 @@
       // The strip must sit at the TOP of the log, not somewhere down the page:
       // as a sticky LAST child it stuck only at the very end of the log, which
       // is nowhere anyone reading looks.
+      //
+      // Directly ABOVE the scroller, in a strip reserved for it — not ON the
+      // scroller's first row. It was an opaque overlay pinned to `top: 0` over
+      // 20px log rows, so while it showed, which is most of a CI log, the first
+      // line in the port was entirely hidden behind it and ArrowUp revealed
+      // nothing. Reserved permanently, so appearing does not shift the log.
       const bb = bar?.getBoundingClientRect();
       const sb = s.getBoundingClientRect();
-      c.ok(bb && Math.abs(bb.top - sb.top) < 6, `pinned to the top of the log (${Math.round((bb?.top ?? 0) - sb.top)}px off)`);
+      c.ok(!!bb, "the strip has a box");
+      c.ok(
+        bb && Math.abs(bb.bottom - sb.top) < 2,
+        `sits directly above the log, covering none of it (${Math.round((bb?.bottom ?? 0) - sb.top)}px of overlap)`,
+      );
+      // And prove it against the row that is actually first in the port.
+      const rows = $$(".log-line")
+        .map((r) => [r.getBoundingClientRect().top, r])
+        .filter(([y]) => y >= sb.top - 1)
+        .sort((x, y) => x[0] - y[0]);
+      if (bb && rows.length) {
+        c.ok(
+          bb.bottom <= rows[0][0] + 1,
+          `the first visible line is readable, not behind the strip (${Math.round(bb.bottom - rows[0][0])}px)`,
+        );
+      }
 
       // Standing ON a group's own header needs no reminder of it — and this is
       // the assertion that catches naming the group you have already LEFT: the
@@ -5244,11 +5416,40 @@
         );
       }
 
-      // Asking for a mode explicitly clears a note about a render that is gone.
+      // Asking for a mode explicitly clears a note about a render that is gone
+      // — the FALLBACK note, and only that one. The truncation warning shares
+      // its styling but not its meaning: it is about the file's CONTENT, true
+      // in either mode, and it used to share the class too, so one press of the
+      // toggle permanently deleted "this file is too large to diff in full"
+      // from every file over the 512KB cap.
       const split = $$(".cmp-mode-btn").find((b) => /split/i.test(text(b)));
       split.click();
       await settle(900);
-      c.ok(!$(".diff-truncated-note"), "choosing a mode clears the stale explanation");
+      c.ok(!$(".diff-fallback-note"), "choosing a mode clears the stale explanation");
+      // A note that survives must be the truncation one, saying so.
+      const kept = $(".diff-truncated-note");
+      if (kept) {
+        c.match(
+          text(kept),
+          /too large|first part/i,
+          `only a warning about the FILE may outlive a mode change (${JSON.stringify(text(kept))})`,
+        );
+      }
+
+      // And the toggle is still live. The guard compared the click to the
+      // STORED preference rather than to what is on screen, so after a fallback
+      // — stored "inline", showing Split — pressing Inline matched and returned,
+      // leaving the button inert for the rest of the session.
+      const backToInline = $$(".cmp-mode-btn").find((b) => /inline/i.test(text(b)));
+      if (backToInline) {
+        backToInline.click();
+        await settle(900);
+        const now = $$(".cmp-mode-btn.active").map((b) => text(b));
+        c.ok(
+          now.length > 0,
+          `pressing Inline is not a no-op — the segment still says what is rendered (${now.join(", ")})`,
+        );
+      }
     },
 
     /**

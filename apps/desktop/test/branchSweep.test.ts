@@ -83,9 +83,21 @@ const renderer = readFileSync(join(here, "..", "src", "renderer", "renderer.ts")
 test("the view's filter excludes the default branch", () => {
   assert.match(
     renderer,
-    /const finished = locals\.filter\(\s*\(b\) => !b\.current && b\.name !== defaultBranch && \(b\.merged \|\| b\.gone\),?\s*\)/,
+    /\.filter\(\(b\) => !b\.current && b\.name !== defaultBranch && \(b\.merged \|\| b\.gone\)\)/,
     "the sweep's candidate list no longer excludes the default branch by name",
   );
+});
+
+test("and it is computed downstream of the search and the facets", () => {
+  // Computed above them, the button read "Delete 6 finished…" beside a list the
+  // reader had narrowed to one, offering to delete five branches not on screen
+  // — while the age counts inches away were deliberately measured after the
+  // same filters. Two controls in one bar disagreeing about what the list is.
+  const at = renderer.indexOf("const finished = locals");
+  assert.ok(at > 0, "the sweep's candidate list moved or was renamed");
+  const block = renderer.slice(at, at + 400);
+  assert.match(block, /\.filter\(\(b\) => hit\(/, "the sweep ignores the search");
+  assert.match(block, /\.filter\(\(b\) => bar\.passes\(b\)\)/, "the sweep ignores the facets");
 });
 
 test("and the sweep itself refuses them a second time", () => {

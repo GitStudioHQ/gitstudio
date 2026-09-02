@@ -63,6 +63,9 @@ export class DiffPanel {
   private renderOpts: { whitespace: "none" | "all"; showInner?: boolean } = { whitespace: "none" };
   /** The last-shown file, so the mode toggle can re-render it. */
   private lastFile?: FileDiff;
+  /** The mode actually on screen. Diverges from the stored preference whenever
+   *  the inline worker misses its grace period and we fall back to Split. */
+  private renderedMode?: DiffMode;
   /** Fired after a tick changes the index, so the Changes list can refresh. */
   public onStagingChanged?: () => void;
 
@@ -122,7 +125,18 @@ export class DiffPanel {
       b.setAttribute("aria-pressed", String(mode === m));
       b.dataset.mode = m;
       b.addEventListener("click", () => {
-        if (this.resolveMode() === m && localStorage.getItem(LS_DIFF_MODE)) return;
+        // A no-op only when there is nothing to change on EITHER side.
+        //
+        // It used to compare the click to the stored preference alone. After a
+        // worker fallback that preference is still "inline" while the segment
+        // correctly shows Split, so pressing Inline matched and returned —
+        // leaving the button inert for the rest of the session with no way to
+        // ask for the unified view again. Comparing only to what is rendered
+        // has the mirror problem: pressing Split while Split is showing
+        // BECAUSE of a fallback is a real choice, and it has to record the
+        // preference and clear the note explaining a fallback you have now
+        // accepted.
+        if (this.renderedMode === m && localStorage.getItem(LS_DIFF_MODE) === m) return;
         try {
           localStorage.setItem(LS_DIFF_MODE, m);
         } catch {
@@ -139,7 +153,17 @@ export class DiffPanel {
     };
     seg.append(mkBtn("inline", "list-flat", "Inline"), mkBtn("split", "split-horizontal", "Split"));
     this.seg = seg;
-    bar.append(span(file.path, "diffmode-path"), seg);
+    // The path is truncated from the LEFT (the filename is the part that
+    // identifies it), which the stylesheet does with `direction: rtl`. That
+    // reorders NEUTRAL characters at the edges of the string, and a leading dot
+    // is neutral: ".github/workflows/ci.yml" rendered as
+    // "github/workflows/ci.yml." — every dotfile path in the app naming a file
+    // that does not exist. An inner LTR isolate keeps the characters in the
+    // order they were written while the outer box still ellipsises on the left.
+    const path = span("", "diffmode-path");
+    path.appendChild(span(file.path, "diffmode-path-text"));
+    path.title = file.path;
+    bar.append(path, seg);
     const body = el("div", "diffmode-body");
     wrap.append(bar, body);
     this.container.replaceChildren(wrap);
@@ -168,6 +192,9 @@ export class DiffPanel {
       this.renderMode(body, file, "split");
       return;
     }
+    // The single funnel every render passes through, so the toggle's guard can
+    // ask what is on screen rather than what was once preferred.
+    this.renderedMode = mode;
     if (mode === "split") {
       const payload: DiffInitPayload = {
         leftLabel: file.leftLabel,
@@ -211,13 +238,21 @@ export class DiffPanel {
     body.parentElement?.querySelector(".diff-staging-hint")?.remove();
     // A note left by an earlier fallback describes a render that no longer
     // exists — asking for a mode explicitly clears it.
-    body.parentElement?.querySelector(".diff-truncated-note")?.remove();
+    //
+    // The FALLBACK note only. This used to remove `.diff-truncated-note`, which
+    // was the class for both notes, so on any file over FILE_CAP_BYTES one
+    // press of the toggle permanently deleted "this file is too large to diff
+    // in full" — a warning about the CONTENT, still true in either mode, and
+    // the only thing telling the reader the diff they are drawing conclusions
+    // from stops halfway.
+    body.parentElement?.querySelector(".diff-fallback-note")?.remove();
     this.markSegment(mode);
     this.renderMode(body, file, mode);
   }
 
   /** Paint the segment to match the view that is actually rendered. */
   private markSegment(mode: DiffMode): void {
+    this.renderedMode = mode;
     for (const b of this.seg?.querySelectorAll<HTMLElement>(".cmp-mode-btn") ?? []) {
       const on = b.dataset.mode === mode;
       b.classList.toggle("active", on);
@@ -338,6 +373,10 @@ export class DiffPanel {
   private fallBackToSplit(body: HTMLElement, file: FileDiff): void {
     this.disposeEditors();
     body.replaceChildren();
+    // "Switch to Split to stage individual changes" — which is what is about to
+    // be rendered. swapMode has always cleared this; the fallback did not, so
+    // the surface flipped to Split and went on telling you to switch to Split.
+    body.parentElement?.querySelector(".diff-staging-hint")?.remove();
     workerDiffBroken = true;
     this.noteFallback(body);
     // Mark the segment to match what is ON SCREEN. The stored preference is
@@ -349,8 +388,11 @@ export class DiffPanel {
 
   /** One line above the diff saying which view this actually is, and why. */
   private noteFallback(body: HTMLElement): void {
-    if (body.parentElement?.querySelector(".diff-truncated-note")) return;
-    const note = el("div", "diff-truncated-note");
+    if (body.parentElement?.querySelector(".diff-fallback-note")) return;
+    // Its OWN class. Sharing one with the truncation note also meant that on a
+    // truncated file this early return fired against the wrong note and the
+    // fallback said nothing at all.
+    const note = el("div", "diff-truncated-note diff-fallback-note");
     note.append(
       glyph("warning"),
       span("Showing this diff side by side — the unified view didn't come back."),

@@ -3956,6 +3956,12 @@ gitstudio-graph {
   font-size: 11.5px;
   color: var(--app-muted);
 }
+/* LTR, isolated from the rtl box around it. `direction: rtl` on the parent is
+   what puts the ellipsis on the LEFT; without this isolate it also reorders the
+   neutral characters at the string's edges, and a leading dot is neutral — so
+   ".github/workflows/ci.yml" drew as "github/workflows/ci.yml.", a path naming
+   a file that does not exist. */
+.diffmode-path-text { direction: ltr; unicode-bidi: isolate; }
 .diffmode-seg { flex: 0 0 auto; }
 .diffmode-seg .cmp-mode-btn {
   display: inline-flex;
@@ -8431,6 +8437,14 @@ body.vscode-light .gh-label-chip {
 .det-body {
   display: flex;
   align-items: flex-start;
+  /* A flex item's default `min-width: auto` refuses to shrink below its
+     content, and this is the item that carries every detail page's body. One
+     unbreakable string anywhere inside — a 400-character CI log line, a long
+     path, a base64 blob — grew this box past `.det-scroll`, which clips on
+     `overflow-x: hidden`, so the page silently widened and took its own
+     toolbar off-screen with nothing to scroll back with. Measured: a 400-char
+     log line took .det-body from 1384px to 3192px. */
+  min-width: 0;
   gap: var(--sp-8);
   padding: var(--sp-5) var(--sp-6) var(--sp-8);
   /* main + gap + rail. CENTERED: uncentered, a capped column on a wide window
@@ -8848,9 +8862,11 @@ button.det-person:hover { background: var(--app-hover); }
 /* ── The log pane (virtualized, ANSI, foldable, live-tail) ── */
 .log-pane {
   --log-line-h: 20px;
+  --log-groupbar-h: 21px;
   position: relative;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   margin: var(--sp-2) 0 var(--sp-1);
   border: 1px solid var(--app-border);
   border-radius: var(--r-md);
@@ -8932,10 +8948,36 @@ button.det-person:hover { background: var(--app-hover); }
    CONTENTS, so scrolling past the header that named them leaves you reading 400
    lines with no idea which step produced them. */
 /* The scroller plus its two floating overlays. */
-.log-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; }
+/* min-width: 0 all the way down. `.log-window` is `min-width: max-content` so
+   that a long line is scrollable rather than wrapped — but a flex item's
+   default `min-width: auto` refuses to shrink below its content, so that
+   intrinsic width propagated UP the whole chain instead: one 180-character
+   line and the log page grew past the window, taking Follow, Copy, Save and
+   Expand off-screen, and the pane's width oscillated as that line scrolled in
+   and out of the virtual window. The scroller is what must give. */
+.log-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  /* RESERVED for the group strip. The strip is an opaque overlay pinned to the
+     top of the scroller, and a log row is 20px — so while it showed, which is
+     most of a CI log, the first line in the port was completely hidden behind
+     it and ArrowUp revealed nothing. Reserving the height permanently (rather
+     than only while the strip shows) keeps the bar from shifting the whole log
+     by a row every time you scroll into or out of a group, and leaves the
+     scroller's own coordinate space untouched — the row maths reads
+     scrollTop / LINE_H and must stay exact. */
+  padding-top: var(--log-groupbar-h);
+}
 .log-groupbar {
   position: absolute;
+  /* Against .log-body's PADDING box, so this sits in the strip reserved above
+     the scroller rather than on top of its first line. */
   top: 0;
+  height: var(--log-groupbar-h);
+  box-sizing: border-box;
   left: 0;
   right: 0;
   z-index: 2;
@@ -8984,6 +9026,7 @@ button.det-person:hover { background: var(--app-hover); }
 
 .log-scroll {
   flex: 1 1 auto;
+  min-width: 0;
   overflow: auto;
   /* The virtualized window resizes its two spacer divs on EVERY repaint, and
      Chrome's scroll anchoring "helpfully" compensates by moving the scroll
@@ -9015,6 +9058,14 @@ button.det-person:hover { background: var(--app-hover); }
 }
 .log-window { min-width: max-content; }
 .log-spacer { overflow-anchor: none; }
+/* Said, not implied. See logView's render(). */
+.log-empty {
+  padding: var(--sp-6) var(--sp-3);
+  color: color-mix(in srgb, var(--log-fg, #c8ccd4) 55%, transparent);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
 .log-line {
   display: flex;
   align-items: center;
@@ -9695,6 +9746,7 @@ body.vscode-light .log-pane {
 .joblog-split {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   display: flex;
   align-items: stretch;
   gap: var(--sp-3);

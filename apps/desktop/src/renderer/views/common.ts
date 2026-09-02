@@ -1014,16 +1014,29 @@ function dayLabel(epochSec: number): string {
  */
 export function commitList(
   items: CommitListItem[],
-  o: { onOpen: (sha: string) => void; onCopy?: (sha: string) => void },
+  o: {
+    onOpen: (sha: string) => void;
+    onCopy?: (sha: string) => void;
+    /**
+     * "oldest" (the default) reads the work in the order it was done — how
+     * github.com renders a pull request's commits and a compare, and the only
+     * order that makes a narrative.
+     *
+     * "newest" is for a list that is a WINDOW on an ongoing history rather than
+     * a complete set: a branch's recent commits, capped at N. Oldest-first
+     * there opens on an arbitrary window edge — the 30th-newest commit — and
+     * buries the tip, the one commit every reader came to see, at the bottom.
+     */
+    order?: "oldest" | "newest";
+  },
 ): HTMLElement {
   const root = el("div", "clist");
-  // OLDEST FIRST, always — the order the work was done in, which is how
-  // github.com reads a pull request's commits and a compare. The two callers
-  // took their order from their sources and disagreed: `pr:commits` comes back
-  // chronological, `git log base..head` comes back newest-first, so the same
-  // branch read forwards on one screen and backwards on the other. Sorting
-  // here makes that impossible rather than merely fixed.
-  const sorted = [...items].sort((a, b) => (a.date || 0) - (b.date || 0));
+  // The callers took their order from their sources and disagreed:
+  // `pr:commits` comes back chronological, `git log base..head` comes back
+  // newest-first, so the same branch read forwards on one screen and backwards
+  // on the other. Sorting here makes that impossible rather than merely fixed.
+  const dir = o.order === "newest" ? -1 : 1;
+  const sorted = [...items].sort((a, b) => dir * ((a.date || 0) - (b.date || 0)));
   let openDay = "\u0000";
   let group: HTMLElement | undefined;
 

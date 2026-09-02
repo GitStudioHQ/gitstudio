@@ -146,7 +146,7 @@ export async function renderRefDetail(
       void checkout(name, "remote", `Checked out ${local}.`), true);
   }
   if (kind === "tag") {
-    act("Push", "cloud-upload", `Publish ${name} to origin`, () => void pushTag());
+    act("Push", "cloud-upload", `Publish ${name} to the remote`, () => void pushTag());
     act("Delete…", "trash", `Delete ${name} from this clone`, () => void deleteTag());
   }
   if (kind === "stash") {
@@ -187,7 +187,12 @@ export async function renderRefDetail(
 
   let log: CompareCommit[] = [];
   try {
-    log = await host.invoke("ref:log", { ref: name, maxCount: 30 });
+    // A STASH IS ONE COMMIT. `git log stash@{0}` walks its ancestry, so this
+    // section — headed "The commit it holds", singular — filled with thirty
+    // rows: the WIP commit, then git's internal "index on <branch>: …" commit
+    // (the stash's second parent, an implementation detail no UI should show),
+    // then the branch history it was taken from. Asking for one gets one.
+    log = await host.invoke("ref:log", { ref: name, maxCount: kind === "stash" ? 1 : 30 });
   } catch (e) {
     if (!view.isConnected) return;
     historyBody.replaceChildren(
@@ -211,6 +216,11 @@ export async function renderRefDetail(
           {
             onOpen: (s) => nav("commit", { sha: s }),
             onCopy: (s) => void copyText(s, "Copied the full SHA."),
+            // NEWEST first: this is a capped window on an ongoing history, not
+            // a complete set. Oldest-first opened on the 30th-newest commit and
+            // put the branch tip — the commit every reader is here for — at the
+            // bottom, below a fold on any branch with real history.
+            order: "newest",
           },
         )
       : errorState("No history", "Git returned no commits for this ref."),
@@ -252,7 +262,7 @@ export async function renderRefDetail(
 
   async function pushTag(): Promise<void> {
     const r = await host.invoke("tag:push", { name: name! });
-    toast(r.ok ? `Pushed ${name} to origin.` : (r.message ?? "Couldn't push the tag."), r.ok ? "success" : "error");
+    toast(r.ok ? `Pushed ${name}.` : (r.message ?? "Couldn't push the tag."), r.ok ? "success" : "error");
   }
 
   async function deleteTag(): Promise<void> {
