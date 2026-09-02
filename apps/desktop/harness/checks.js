@@ -7302,6 +7302,39 @@
       }
     },
 
+    // A shell that has exited wrote one line of text and changed nothing else:
+    // the tab kept its live label, the cursor kept blinking, and `onData` kept
+    // posting every keystroke to a PTY that was gone — silently eaten, with no
+    // error and no way to tell a dead terminal from a working one.
+    "a-dead-shell-says-it-is-dead": async (f) => {
+      const c = check(f);
+      $(".dock-chevron")?.click();
+      await settle(600);
+      const tab = $$("button").find((b) => /^Terminal$/i.test((text(b) || "").trim()));
+      c.ok(!!tab, "the dock has a Terminal tab");
+      if (!tab) return;
+      tab.click();
+      await settle(1400);
+
+      const created = (window.__GS_INVOKED || []).filter((r) => r.channel === "terminal:create");
+      c.ok(created.length > 0, "a shell was opened");
+      const row = $(".term-side-row");
+      c.ok(!!row, "and it has a row in the side list");
+      if (!row) return;
+      c.ok(!row.classList.contains("is-exited"), "which does not start out dead");
+
+      const heard = window.__gsEmit("terminal:exit", { id: "pty-1" });
+      c.eq(heard, 1, "the panel is listening for its shell to exit");
+      await settle(800);
+
+      c.ok($(".term-side-row")?.classList.contains("is-exited"), "the row marks itself exited");
+      c.ok(!!$(".term-side-dead"), "and says so in words, not only by opacity");
+      c.ok(
+        /exited/i.test($(".term-side-row")?.title || ""),
+        "the tooltip agrees with the row",
+      );
+    },
+
     // The agent's OWN work destroying the record of it. Approving a commit fires
     // the file watcher, whose refreshAll() re-routed the view the agent was
     // streaming into — transcript, tool steps and Stop button all gone, while

@@ -313,6 +313,9 @@
     { path: "apps/desktop/src/renderer/renderer.ts", status: "M", staged: false },
   ];
 
+  /** Serial for the PTY ids `terminal:create` hands out. */
+  let ptySeq = 0;
+
   const fixtures = {
     // ?norepo=1 → NO repository open, which is the welcome screen: the first
     // thing anyone sees, the only screen shown after closing a repo, and
@@ -621,6 +624,12 @@
     // actions, the transcript, the tool steps and the whole streaming path have
     // never been reachable from a scene — six real defects lived there through
     // four sweeps because nothing could drive them.
+    // A real PTY id, so `terminal:exit` and `terminal:data` can be aimed at a
+    // specific shell. Without this, `terminal:create` fell into the mutation
+    // fallback and answered `{ok:true}` — the panel stored `session.id` as
+    // undefined, so no push event could ever be matched to it and the whole
+    // terminal surface was half-driveable at best.
+    "terminal:create": () => ({ id: `pty-${++ptySeq}`, cols: 80, rows: 24 }),
     "ai:settings": () =>
       params.get("ai")
         ? {
