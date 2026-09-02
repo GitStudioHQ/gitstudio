@@ -154,6 +154,19 @@ export async function renderCommit(
     return;
   }
 
+  // ABANDONED while this was in flight? Then stop: everything below builds into
+  // a detached tree, and the auto-open at the end of it calls `setPageTarget`,
+  // which writes into whatever history entry is CURRENT — some other view's.
+  // Its target then deep-links that view to a file nobody opened, on the next
+  // refresh and on every Back to that entry.
+  //
+  // It also settles a second race: two refreshes in quick succession start two
+  // builds, and the first one finishing detached used to re-stamp its own
+  // default (file #0) over the file the second had just restored.
+  //
+  // `releases.ts` and `jobLog.ts` both guard their reads here; this one did not.
+  if (!view.isConnected) return;
+
   if (!d) {
     // The object is not in this clone. That is an ordinary situation — a pull
     // request from a fork, a commit on a branch never fetched — and it is

@@ -76,6 +76,7 @@ const CASES = [
   ["the-agents-own-commit-does-not-erase-the-chat", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-failed-turn-stops-looking-like-it-is-typing", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-refresh-keeps-the-file-you-were-reading", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  ["one-notch-up-stops-the-tail", "actions~open9100~click:.gh-job-log"],
   ["every-ansi-block-can-be-read", "actions~open9100~click:.gh-job-log"],
   ["every-ansi-block-can-be-read", "actions~open9100~click:.gh-job-log", { theme: "light" }],
   ["stopping-a-run-closes-what-it-was-asking", "assistant~click:.topbar-assistant", { extra: "ai=1" }],

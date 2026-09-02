@@ -745,10 +745,16 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     const commit = el("button", "gh-branch-chip det-commit-chip");
     const subject = full.headCommitMessage.split("\n", 1)[0];
     commit.append(glyph("git-commit"), span(full.headSha.slice(0, 7)));
-    commit.title = subject
-      ? `${subject} — reveal in Commits`
-      : "Reveal this commit in the Commits view";
-    commit.addEventListener("click", () => sectionNav?.("graph", { sha: full.headSha }));
+    // The COMMIT, not the graph — the last chip in the app still doing this.
+    //
+    // "it teleports u to the commit graph which tells u nothing about the
+    // changed files" was reported about this exact behaviour, and every other
+    // sha in the app was moved to the commit page for it: pull requests,
+    // releases, notifications, ref detail. This one was missed, so the
+    // complaint was still one click away from the run page. The commit page
+    // carries a "Show in the graph" item, so the graph stays reachable.
+    commit.title = subject ? `${subject} — open this commit` : "Open this commit";
+    commit.addEventListener("click", () => sectionNav?.("commit", { sha: full.headSha }));
     sub.appendChild(commit);
   }
   const subText = el("span");

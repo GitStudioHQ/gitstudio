@@ -7236,6 +7236,40 @@
       c.eq(nameOf($(".cmt-file.is-current")), chosen, "a background refresh leaves it open");
     },
 
+    // "scrolling super fast or instead of me is pure ragebait" — still true in
+    // one state. The dead band deciding "still at the bottom" is two lines
+    // deep and the wheel is damped to 0.45, so ONE notch on a trackpad moves
+    // less than that and left `follow` armed. Four seconds later the tail poll
+    // pulled the reader back down, with nothing to say why.
+    "one-notch-up-stops-the-tail": async (f) => {
+      const c = check(f);
+      const live = $$(".joblog-job").find((r) => /running/i.test(text(r)));
+      c.ok(!!live, "the run has a job still producing output");
+      if (!live) return;
+      live.click();
+      await settle(1600);
+
+      const follow = $$(".log-tool").find((b) => /follow/i.test(b.title));
+      const scroll = $(".log-scroll");
+      c.ok(!!follow && !!scroll, "the pane has a follow control and a scroller");
+      if (!follow || !scroll) return;
+      if (!follow.classList.contains("is-on")) {
+        follow.click();
+        await settle(300);
+      }
+      scroll.scrollTop = scroll.scrollHeight;
+      await settle(200);
+      c.ok(follow.classList.contains("is-on"), "following, and at the tail");
+
+      // One small notch — deliberately smaller than the dead band.
+      scroll.dispatchEvent(
+        new WheelEvent("wheel", { deltaY: -12, deltaMode: 0, bubbles: true, cancelable: true }),
+      );
+      await settle(400);
+      c.ok(!follow.classList.contains("is-on"), "one notch upward stops the tail");
+      c.eq(follow.getAttribute("aria-pressed"), "false", "and says so");
+    },
+
     // An ANSI run that sets a BACKGROUND and no foreground. `clsOf` emits
     // `log-bg-N` alone for those, so the text took the page's default ink — and
     // then, once that was fixed, the palette's WHITE, which is invisible on the

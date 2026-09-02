@@ -386,6 +386,16 @@ export function createLogPane(o: {
       e.preventDefault();
       const step = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY) * WHEEL_SCALE, scroll.clientHeight);
       scroll.scrollTop += step;
+      // SCROLLING UP IS AN ANSWER. The dead band that decides "still at the
+      // bottom" is two lines deep, and the wheel is damped to 0.45 — so one
+      // notch on a trackpad moves less than that and the paint below leaves
+      // `follow` armed. The next tail poll then pulls the reader straight back
+      // down: they scrolled away, and four seconds later they were at the
+      // bottom again with nothing to say why.
+      //
+      // The keyboard already disarms on intent rather than on distance. This
+      // makes the wheel say the same thing.
+      if (e.deltaY < 0 && follow) setFollow(false);
       scheduleScrollFrame();
     },
     { passive: false },
