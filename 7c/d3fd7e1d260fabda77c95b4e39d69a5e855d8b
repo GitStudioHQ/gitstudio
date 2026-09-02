@@ -1,0 +1,23 @@
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_c3825f2142bbc8 2797-2802,2804-2808
+  s_26f5e669d3043c::t_8f5878e47ad108 2803
+apps/desktop/test/stageConflictMarkers.test.ts
+  s_26f5e669d3043c::t_aa3aac4eb540fc 99-123
+  s_26f5e669d3043c::t_f2c31f4bcc9e9a 96-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7cd3fd7e1d260fabda77c95b4e39d69a5e855d8b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
