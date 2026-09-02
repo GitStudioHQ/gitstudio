@@ -335,11 +335,24 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
 
   async function runGoal(goal: string, fromInput = true): Promise<void> {
     if (running || gated || !goal.trim()) return;
+    // CLAIMED BEFORE THE FIRST await. `running` is the only thing stopping a
+    // second turn, and an await hands control back to the event loop: with the
+    // flag set after it, two quick presses of Send both read `running === false`,
+    // both suspended, and both went on to start a turn into the same chat.
+    // CLAIMED BEFORE THE FIRST await. `running` is the only thing stopping a
+    // second turn, and an await hands control back to the event loop: with the
+    // flag set after it, two quick presses of Send both read `running === false`,
+    // both suspended, and both went on to start a turn into the same chat.
+    running = true;
+    syncSend();
     // Settings decide the permission, the model and the thinking level this
     // turn runs with. A ✨ goal reaches here before the gate has read them.
     await ready;
-    if (gated) return;
-    running = true;
+    if (gated) {
+      running = false;
+      syncSend();
+      return;
+    }
     // Only the text this send is ACTUALLY sending. A quick-action chip supplies
     // its own goal, so clearing here threw away a draft the user was writing.
     if (fromInput) {

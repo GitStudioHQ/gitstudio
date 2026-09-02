@@ -7245,6 +7245,38 @@
       );
     },
 
+    // `running` is the only thing stopping a second turn, and `runGoal` awaits
+    // the connection gate before it does anything else. With the flag set after
+    // that await, two quick presses both read `running === false`, both
+    // suspended, and both started a turn into the same chat.
+    "two-fast-sends-start-one-turn": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!input && !!send, "the composer is live");
+      if (!input || !send) return;
+
+      const inv = window.gitstudio.invoke;
+      let sends = 0;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:chatSend") {
+          sends++;
+          return new Promise(() => {}); // hold the turn open
+        }
+        return inv(ch, p);
+      };
+      input.value = "go";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      // Synchronously, with no await between them — that is the whole point.
+      send.click();
+      send.click();
+      send.click();
+      await settle(900);
+      c.eq(sends, 1, `three fast clicks start ONE turn, not ${sends}`);
+      c.eq($$(".assistant-bubble").length, 1, "and post one message, not three");
+      window.gitstudio.invoke = inv;
+    },
+
     // A STATE TABLE over what the diff panel does with a file it cannot draw
     // line by line. Every cell must SAY which of the several different nothings
     // it is showing — the whole point of the panel's `showEmpty(kind)` — and no

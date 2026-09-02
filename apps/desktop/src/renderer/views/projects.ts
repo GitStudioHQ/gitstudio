@@ -232,7 +232,16 @@ async function showProjectBoard(
       // this would have read. The optimistic `statusOptionId` is already
       // written to `b` and the server has confirmed it, so `b` IS the truth and
       // repainting from it costs neither a spinner nor a request.
-      void showProjectBoard(detail, p, refresh, nav, b);
+      void showProjectBoard(detail, p, refresh, nav, b).then(() => {
+        // Show the reader where it landed. A DRAG ends under the pointer, so
+        // the card is on screen by construction — but the kebab's "Move to"
+        // runs this same code from a menu, and its target column can be well
+        // off the right edge of a wide board. Without this the menu closed, the
+        // card vanished from where it was, and nothing said where it went.
+        detail
+          .querySelector(`.gh-card[data-item="${CSS.escape(it.id)}"]`)
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      });
     } catch (e) {
       toast(cleanErr(e) || "Couldn't move the item.", "error");
       it.statusOptionId = fromId;
@@ -305,6 +314,9 @@ function projectCard(
   move: (itemId: string, targetId: string | null) => Promise<void>,
 ): HTMLElement {
   const card = el("div", "gh-card");
+  // Addressable after a re-render — the move handler uses this to bring the
+  // card it just moved back into view.
+  card.dataset.item = it.id;
   registry?.set(it.id, card);
 
   // Draggable between Status columns (the kebab menu stays as the keyboard path).
