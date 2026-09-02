@@ -4816,6 +4816,12 @@ class App {
     const bar = el("div", "code-head");
     bar.append(back, crumbs, el("div", "topbar-spacer"), copyBtn, reloadBtn);
     const surface = el("div", "diff-surface code-file-surface");
+    // Something to look at while the read lands. The surface was mounted empty
+    // and filled only once the file came back, so opening or reloading a file
+    // showed a blank pane under a full toolbar — indistinguishable from a file
+    // that is genuinely empty, or from a load that failed. Every other surface
+    // in the app paints a skeleton first.
+    surface.appendChild(skeletonList(8, false));
     wrap.append(bar, surface);
     this.viewHost.replaceChildren(wrap);
 

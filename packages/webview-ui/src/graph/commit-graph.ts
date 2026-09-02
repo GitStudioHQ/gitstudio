@@ -3184,7 +3184,7 @@ export class CommitGraph extends LitElement {
           aria-hidden="true"
         ></span>
         <span class="nm"
-          >${branch || (this.head ? this.head.slice(0, 8) : "detached HEAD")}</span
+          >${branch || (this.head ? this.head.slice(0, 8) : "no commits yet")}</span
         >
       </span>
       ${count ? html`<span class="gh-count">${count}</span>` : nothing}

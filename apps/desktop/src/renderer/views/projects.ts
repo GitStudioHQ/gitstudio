@@ -144,9 +144,18 @@ async function showProjectBoard(
   const h = el("div", "gh-detail-title");
   h.textContent = p.title;
   const meta = el("div", "gh-detail-meta");
-  meta.textContent =
-    `#${p.number} · ${b.items.length} item${b.items.length === 1 ? "" : "s"}` +
-    `${b.field ? "" : " · no Status field"}`;
+  // BOTH numbers when they disagree. `p.itemCount` is what the project says it
+  // holds and what the picker directly above prints; `b.items.length` is what
+  // this board actually loaded. Printing only the second made the header
+  // contradict the control above it and silently swallowed everything past the
+  // page — the same "N of M" rule every list in this app follows.
+  const loaded = b.items.length;
+  const total = p.itemCount;
+  const count =
+    typeof total === "number" && total > loaded
+      ? `${loaded} of ${total} items`
+      : `${loaded} item${loaded === 1 ? "" : "s"}`;
+  meta.textContent = `#${p.number} · ${count}${b.field ? "" : " · no Status field"}`;
   const actions = el("div", "gh-detail-actions");
   // Labelled, like the Organizations header: a lone unlabelled glyph on its own
   // row is a guess, and this is the page's only action.

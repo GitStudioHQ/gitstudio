@@ -31,17 +31,21 @@ export function openDestinationSheet(
   const sub = el("div", "modal-message");
   sub.textContent = opts.note ?? "Pick the folder this repository is cloned into.";
 
-  // Destination row — same look as the clone dialog's.
-  const destRow = el("div", "clone-dest");
-  const destText = el("div", "clone-dest-text");
+  // Destination row — the same look as the clone dialog's, which means the same
+  // CLASSES. `.clone-dest` and `.clone-dest-text` have no rules anywhere in the
+  // stylesheet, so this row was an unstyled stack: the label and path piled on
+  // top of each other and "Choose…" sat under them instead of beside them. The
+  // styled control is `.clone-dest-control`.
   const destLabel = el("div", "clone-dest-label");
   destLabel.textContent = "Destination";
   const destValue = el("div", "clone-dest-path");
   destValue.textContent = "Loading…";
-  destText.append(destLabel, destValue);
   const chooseBtn = el("button", "mini-btn");
   chooseBtn.append(glyph("folder-opened"), span("Choose…"));
-  destRow.append(destText, chooseBtn);
+  const destControl = el("div", "clone-dest-control");
+  destControl.append(destValue, chooseBtn);
+  const destRow = el("div", "clone-field");
+  destRow.append(destLabel, destControl);
 
   // Folder-name override.
   const nameLabel = el("div", "clone-dest-label dest-name-label");
