@@ -319,6 +319,7 @@ const CASES = [
   ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
   ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
   ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  ["commit-is-dead-on-a-clean-tree", "changes", { extra: "clean=1" }],
   ["a-segment-is-not-a-filter", "prs"],
   ["clear-clears-the-filters-it-cannot-see", "issues"],
   ["picking-a-filter-keeps-the-keyboard-where-it-was", "issues"],

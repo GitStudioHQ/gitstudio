@@ -4759,6 +4759,41 @@
     },
 
     /**
+     * Commit is dead on a clean tree — except when amending.
+     *
+     * The enable rule gated on the message text alone, so on a repository with
+     * nothing to commit — the state a repository spends most of its life in —
+     * Commit was a live accent button whose only possible outcome was git's
+     * "nothing to commit". Amending is the real exception: rewording the last
+     * commit is a commit with nothing staged.
+     */
+    "commit-is-dead-on-a-clean-tree": async (f) => {
+      const c = check(f);
+      const ta = $$("textarea")[0];
+      const btn = $(".dc-commit");
+      c.ok(!!ta && !!btn, "the composer is there");
+      if (!ta || !btn) return;
+      // The scene runs with ?clean=1, so this really is an empty working tree.
+      c.eq($$(".dc-file").length, 0, "the working tree is clean");
+      c.match(text(".list-empty"), /clean/i, "and the list says so");
+
+      ta.value = "a message";
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(350);
+      c.ok(btn.disabled, "a message alone does not arm Commit over a clean tree");
+      c.match(btn.title, /nothing to commit/i, "and the button says why");
+
+      const amend = $$(".dc-toggle").find((t) => /amend/i.test(text(t)));
+      c.ok(!!amend, "the composer offers Amend");
+      if (!amend) return;
+      amend.click();
+      await settle(600);
+      const after = $(".dc-commit");
+      c.ok(!after.disabled, "amending a clean tree is legitimate and stays available");
+      c.match(text(after), /amend/i, "and the button says which commit it makes");
+    },
+
+    /**
      * A segment is not a filter, and its menus describe only what it holds.
      *
      * Pull requests fetch Merged and Closed together, so both segments read

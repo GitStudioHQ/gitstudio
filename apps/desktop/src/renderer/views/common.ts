@@ -1325,9 +1325,20 @@ export function facetBar<T>(o: {
   const loaded = new Map<string, FacetOption[]>();
 
   const optionsFor = (spec: FacetSpec<T>): FacetOption[] => {
+    // An EXPLICIT list keeps its order: a state facet reads Open / Closed /
+    // Merged because that is the sequence a pull request moves through, and
+    // alphabetising it would be worse than useless.
     if (spec.options) return spec.options;
-    if (spec.harvest) return spec.harvest(items);
-    return loaded.get(spec.key) ?? [];
+    // Everything harvested is sorted, wherever it was harvested. `harvestValues`
+    // sorts internally and the five hand-rolled harvests do not — so within one
+    // bar, Milestone and Base came out alphabetical while Author, Assignee and
+    // Label came out in list order, i.e. ordered by whichever item happened to
+    // be updated most recently. Those three are exactly the long menus where
+    // finding a name matters.
+    const byLabel = (a: FacetOption, b: FacetOption): number =>
+      (a.label ?? a.value).localeCompare(b.label ?? b.value, undefined, { numeric: true });
+    if (spec.harvest) return [...spec.harvest(items)].sort(byLabel);
+    return [...(loaded.get(spec.key) ?? [])].sort(byLabel);
   };
 
   /** The facet whose menu is open, so `sync` can refill it in place when the

@@ -424,7 +424,11 @@
       ],
     },
     "stash:list": [ { sha: "77aa88", ref: "stash@{0}", message: "WIP: palette streaming groups", time: S(30) } ],
-    "status": changedFiles,
+    // ?clean=1 → a CLEAN working tree. The app must handle it — it is the state
+    // a repository spends most of its life in — and nothing else in this shim
+    // can produce it, so the Changes view's empty state, its composer's enable
+    // rule and its toolbar were all only ever exercised with work present.
+    "status": params.get("clean") ? [] : changedFiles,
     // `?op=merge|rebase|cherry-pick|revert` puts the Changes banner on screen.
     // Without a fixture the banner NEVER rendered in the harness, which is why
     // no check could see that its Abort ran `git merge --abort` on every one of

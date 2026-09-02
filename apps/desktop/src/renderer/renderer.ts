@@ -296,6 +296,11 @@ class App {
     "notifications",
     "mywork",
   ]);
+  /** Whether the working tree has anything to commit. Read by the composer's
+   *  enable rule, which used to gate on the message text alone and offered a
+   *  live Commit button over a clean tree. */
+  private changesHaveWork = false;
+  private syncCommitEnabled: (() => void) | undefined;
   /** True while a fetch/pull/push is in flight — locks the sync trigger. */
   private syncing = false;
   /** Theme preference: follow the OS, or pin light/dark. */
@@ -4820,6 +4825,9 @@ class App {
       amendToggle.classList.toggle("is-on", amend);
       amendToggle.setAttribute("aria-checked", amend ? "true" : "false");
       syncCommitLabel();
+      // Amending needs no changes — rewording the last commit is a commit with
+      // nothing staged — so the enable rule has to be re-evaluated here too.
+      syncCommitEnabled();
       // Prefill the last commit message when amending an empty composer.
       if (amend && !textarea.value.trim()) {
         void host.invoke("repo:headCommit", undefined).then((hc) => {
@@ -4904,12 +4912,23 @@ class App {
     // there is one. They used to sit in full accent and swallow the click in
     // silence — the app's most important action, dead on arrival.
     const syncCommitEnabled = (): void => {
-      const ready = textarea.value.trim().length > 0;
+      const written = textarea.value.trim().length > 0;
+      // A message is not enough. On a CLEAN working tree the button was a live
+      // accent control that could only ever produce git's "nothing to commit",
+      // because it gated on the text alone. Amend is the exception and a real
+      // one: rewording the last commit needs no changes at all.
+      const somethingToCommit = amend || this.changesHaveWork;
+      const ready = written && somethingToCommit;
       for (const b of [commitBtn, pushBtn]) {
         b.toggleAttribute("disabled", !ready);
-        b.title = ready ? "" : "Write a commit message first";
+        b.title = !written
+          ? "Write a commit message first"
+          : somethingToCommit
+            ? ""
+            : "Nothing to commit — the working tree is clean";
       }
     };
+    this.syncCommitEnabled = syncCommitEnabled;
     textarea.addEventListener("input", syncCommitEnabled);
     syncCommitEnabled();
     // Commit options on the left, the commit buttons up on the right — one row.
@@ -5473,6 +5492,10 @@ class App {
     };
 
     lists.replaceChildren();
+    // What the composer's enable rule needs to know: is there anything here to
+    // commit at all. Set on every render, before the empty-tree early return.
+    this.changesHaveWork = files.length > 0;
+    this.syncCommitEnabled?.();
     // Rebuilt with the rows below, so a shift-range always covers what is on
     // screen rather than what was there before the last stage.
     this.rowOrder = [];
