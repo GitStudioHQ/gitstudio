@@ -7302,6 +7302,66 @@
       }
     },
 
+    // Opening the dock takes the keyboard into it; closing it used to drop the
+    // keyboard on the floor. Focus stayed on the xterm textarea inside the now
+    // hidden panel, so the view behind had no keyboard at all until you reached
+    // for the mouse.
+    "the-dock-hands-the-keyboard-back": async (f) => {
+      const c = check(f);
+      const row = $(".dc-file");
+      c.ok(!!row, "there is something to be focused on");
+      if (!row) return;
+      row.focus();
+      c.eq(document.activeElement, row, "the keyboard starts on the list");
+
+      const chev = $(".dock-chevron");
+      c.ok(!!chev, "the dock can be opened");
+      if (!chev) return;
+      chev.click();
+      await settle(900);
+      c.ok(document.activeElement !== row, "opening the dock takes the keyboard");
+
+      chev.click();
+      await settle(700);
+      c.eq(document.activeElement, row, "and closing it hands the keyboard back");
+    },
+
+    // An open dock OVERLAYS the view area and publishes its height as
+    // `--dock-reserve`. Two surfaces ignored it: the Rebase footer, which is
+    // `position: sticky; bottom: 0`, and the Assistant's composer. The Start
+    // button, the rebase preview, the composer and every quick action sat
+    // behind an open terminal, with no scroll that reached them and no dock
+    // size that revealed them.
+    "an-open-dock-does-not-bury-a-footer": async (f) => {
+      const c = check(f);
+      const chev = $(".dock-chevron");
+      c.ok(!!chev, "the dock can be opened");
+      if (!chev) return;
+      chev.click();
+      await settle(900);
+
+      // Published on the dock's HOST, which is the main stack — not on :root.
+      const host = $(".main-stack");
+      c.ok(!!host, "the dock's host is present");
+      if (!host) return;
+      const reserve =
+        parseFloat(getComputedStyle(host).getPropertyValue("--dock-reserve")) || 0;
+      c.ok(reserve > 40, `the dock reserves real space (${reserve}px)`);
+
+      const foot = $(".rb-foot");
+      c.ok(!!foot, "the Rebase view has its footer");
+      if (!foot) return;
+      const r = foot.getBoundingClientRect();
+      const body = $(".dock-body");
+      const dockTop = body ? body.getBoundingClientRect().top : window.innerHeight;
+      // The footer's own bottom edge must clear the dock. It used to sit under
+      // it by exactly the dock's height.
+      c.ok(
+        r.bottom <= dockTop + 2,
+        `the footer clears the dock (footer bottom ${Math.round(r.bottom)}, dock top ${Math.round(dockTop)})`,
+      );
+    },
+
     // Not every conflict is a content conflict. A binary one, and a
     // modify/delete one, both opened the three-pane text merge — over decoded
     // bytes in the first case, and over one deliberately blank pane that never
