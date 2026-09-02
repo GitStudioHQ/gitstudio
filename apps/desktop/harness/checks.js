@@ -3327,34 +3327,45 @@
      */
     "escape-closes-one-layer-at-a-time": async (f) => {
       const c = check(f);
-      const row = $(".list-row");
+      // The stack this used to test — a ref PEEK, its menu, then a dialog — no
+      // longer exists: a ref is a routed page now, not a modal. The rule is
+      // unchanged and the new stack is a sharper case of it, because a detail
+      // PAGE wires Escape to go BACK. A dialog over one must consume Escape
+      // first, or a single press would close the dialog and leave the page too:
+      // two layers dismissed by one key, which is exactly what this guards.
+      const tagsSeg = $$(".gh-seg-btn")[2];
+      c.ok(!!tagsSeg, "the ref manager has a Tags segment");
+      if (!tagsSeg) return;
+      tagsSeg.click();
+      await settle(500);
+      const row = $(".sec-row");
       c.ok(!!row, "the view has a row to drill into");
       if (!row) return;
       row.click();
-      await settle(800);
-      const peek = $(".peek-overlay");
-      c.ok(!!peek, "clicking it opens a peek");
-      if (!peek) return;
+      await settle(1200);
 
-      // Peek → its menu → a dialog. Three stacked layers is the real shape:
-      // the menu closes on its own when the dialog opens.
-      peek.querySelector("button").click();
-      await settle(400);
-      const rename = [...document.querySelectorAll(".dropdown button")].find((b) =>
-        /rename/i.test(b.textContent || ""),
-      );
-      c.ok(!!rename, "whose menu offers something that opens a dialog");
-      if (!rename) return;
-      rename.click();
+      const page = $(".refdetail-view");
+      c.ok(!!page, "clicking it opens the ref's page");
+      if (!page) return;
+      const del = $$(".det-tb-actions button").find((b) => /delete/i.test(text(b)));
+      c.ok(!!del, "whose top bar offers something that opens a dialog");
+      if (!del) return;
+      del.click();
       await settle(700);
       const dlg = $(".modal-overlay");
-      c.ok(!!dlg, "a dialog opens above the peek");
+      c.ok(!!dlg, "a dialog opens above the page");
       if (!dlg) return;
 
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      // CANCELABLE. A KeyboardEvent constructed without it makes
+      // `preventDefault()` a no-op, so a synthetic Escape tests a path no real
+      // keypress takes — and every handler downstream of "did someone claim
+      // this key" then behaves differently than it does for a user.
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
       await settle(500);
       c.ok(!$(".modal-overlay"), "one Escape closes the dialog");
-      c.ok(!!$(".peek-overlay"), "and leaves the peek that opened it on screen");
+      c.ok(!!$(".refdetail-view"), "and leaves the page that opened it on screen");
     },
 
     /**

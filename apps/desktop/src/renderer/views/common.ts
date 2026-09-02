@@ -840,6 +840,12 @@ function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
   if (detailStack.length > 64) detailStack = detailStack.slice(-64);
   if (detailKeysWired) return;
   detailKeysWired = true;
+  // CAPTURE. A modal's own Escape handler is capture-phase too, and it releases
+  // its layer as it closes — so a bubble-phase page handler asked
+  // "is a layer open?" AFTER the answer had already changed, and was left
+  // relying on `defaultPrevented` alone to stop it navigating out from under
+  // the dialog that had just closed. Registered first, in the same phase, the
+  // page asks while the layer is still there and stands down properly.
   document.addEventListener("keydown", (e) => {
     const esc = e.key === "Escape";
     const left = e.key === "ArrowLeft";
@@ -868,7 +874,7 @@ function wireDetailEsc(view: HTMLElement, onBack: () => void): void {
       back();
       return;
     }
-  });
+  }, true);
 }
 
 export interface DetailPageOpts {
