@@ -1188,7 +1188,9 @@ class App {
       // referenced one used to route to "graph" and call reveal(sha), which
       // shows no files, returns silently when the sha is off the loaded page,
       // and abandons wherever you were.
-      void renderCommit(this.viewHost, (v, t) => this.routeView(v, false, t), target);
+      void renderCommit(this.viewHost, (v, t) => this.routeView(v, false, t), target, (req) =>
+        this.runAction(req),
+      );
     } else if (id === "code") {
       // A path target deep-links a folder — that's how the Code browser's own
       // folder hops travel, so ⌘[/⌘] walk the folder trail like a browser.
@@ -1548,17 +1550,28 @@ class App {
       facetSlot.replaceChildren();
       if (specs.length) facetSlot.appendChild(bar.el);
 
+      const q = query.trim().toLowerCase();
+      // Beyond the name: the upstream, the tip subject and the short sha, so
+      // "the branch with the log-stream fix" is findable by what it did.
+      const hit = (...parts: Array<string | undefined>): boolean =>
+        !q || parts.some((x) => (x ?? "").toLowerCase().includes(q));
+
       // Active / Stale / All — github.com's own cut, and the difference between
       // "what I am working on" and "everything this clone has touched".
       if (this.branchTab === "local") {
+        // The counts answer "how many if I press this", so they sit downstream
+        // of the search and the facets: a segment reading (12) while the list
+        // it would produce holds three is worse than no count at all.
+        const inScope = locals.filter((b) => hit(b.name, b.upstream, b.subject)).filter((b) => bar.passes(b));
+        const stale = inScope.filter((b) => !b.current && isStale(b.date)).length;
         facetSlot.appendChild(
           segmented<"active" | "stale" | "all">({
             ariaLabel: "How recently these branches moved",
             value: this.branchAge,
             options: [
-              { value: "active", label: "Active" },
-              { value: "stale", label: "Stale" },
-              { value: "all", label: "All" },
+              { value: "active", label: `Active (${inScope.length - stale})` },
+              { value: "stale", label: `Stale (${stale})` },
+              { value: "all", label: `All (${inScope.length})` },
             ],
             onChange: (v) => {
               this.branchAge = v;
@@ -1568,12 +1581,6 @@ class App {
         );
       }
       facetSlot.appendChild(this.branchSortBtn(() => render()));
-
-      const q = query.trim().toLowerCase();
-      // Beyond the name: the upstream, the tip subject and the short sha, so
-      // "the branch with the log-stream fix" is findable by what it did.
-      const hit = (...parts: Array<string | undefined>): boolean =>
-        !q || parts.some((x) => (x ?? "").toLowerCase().includes(q));
 
       body.replaceChildren();
       ctaSlot.replaceChildren(this.branchesCta(this.branchTab));
@@ -1799,7 +1806,9 @@ class App {
       ? `Check out your local ${short}`
       : `Create ${short} from ${r.name} and check it out`;
     primary.setAttribute("aria-label", primary.title);
-    primary.addEventListener("click", () => void this.checkoutRef(mine ? short : r.name, primary));
+    primary.addEventListener("click", () =>
+      void this.checkoutRef(mine ? short : r.name, primary, mine ? "head" : "remote"),
+    );
     actions.push(primary);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
     more.setAttribute("aria-label", `More actions for ${r.name}`);
@@ -2851,8 +2860,22 @@ class App {
     if (this.currentView === "branches") void this.showBranchesView();
   }
 
-  /** Check out a branch/tag by name, then refresh refs + the view. */
-  private async checkoutRef(ref: string, btn?: HTMLElement): Promise<void> {
+  /**
+   * Check out a ref by name, then refresh refs + the view.
+   *
+   * `kind` is not decoration: it decides what checking out MEANS. A local head
+   * attaches by name; a remote branch has to create a local tracking branch
+   * (issues #12/#19); a tag genuinely detaches. Sending a name down the plain
+   * `checkout` action instead runs `git checkout origin/foo`, which detaches
+   * HEAD onto the remote-tracking ref — no branch, no upstream, and the next
+   * commit lands where nothing points at it, under a toast saying "Checked out
+   * foo."
+   */
+  private async checkoutRef(
+    ref: string,
+    btn?: HTMLElement,
+    kind: "head" | "remote" | "tag" = "head",
+  ): Promise<void> {
     // Checking out is the slowest thing this list does — it rewrites the working
     // tree — and it used to show nothing at all while it ran, so the row looked
     // like it had ignored the click.
@@ -2873,8 +2896,12 @@ class App {
     let result;
     try {
       result = await host.invoke("commit:action", {
-        action: "checkout",
+        action: "checkout-ref",
+        // `sha` is required by the request shape but unused on this path; the
+        // ref travels in `name`, where the kind can be applied to it.
         sha: ref,
+        name: ref,
+        refKind: kind,
       } as Parameters<App["runAction"]>[0]);
     } catch (e) {
       restore();
@@ -7284,7 +7311,7 @@ class App {
           label: b.name,
           icon: "cloud",
           title: `Check out ${b.name} as a local branch`,
-          onClick: () => void this.checkoutRef(b.name),
+          onClick: () => void this.checkoutRef(b.name, undefined, "remote"),
         });
       }
     }

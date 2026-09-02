@@ -33,10 +33,11 @@ import {
   openMenu,
 } from "../ui";
 import { detailPage, type SectionTarget } from "./common";
+import { confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { DiffPanel } from "../diffPanel";
 import { gget } from "../cache";
-import type { CommitDetailsPayload } from "../../shared/ipc";
+import type { CommitActionRequest, CommitDetailsPayload } from "../../shared/ipc";
 import type { CommitFileChange } from "@gitstudio/host-bridge/commitDetailsProtocol";
 
 /** Status letter → the word a person reads, and the class that colours it. */
@@ -116,6 +117,8 @@ export async function renderCommit(
   wrap: HTMLElement,
   nav: (view: string, target?: SectionTarget) => void,
   target: SectionTarget | undefined,
+  /** The app's action handler — toasts the outcome and refreshes what changed. */
+  run: (req: CommitActionRequest) => Promise<void>,
 ): Promise<void> {
   const sha = target?.sha ?? "";
   const short = sha.slice(0, 7);
@@ -143,7 +146,7 @@ export async function renderCommit(
   } catch (e) {
     main.replaceChildren(
       errorState("Couldn't read this commit", cleanErr(e) || "git failed.", () =>
-        void renderCommit(wrap, nav, target),
+        void renderCommit(wrap, nav, target, run),
       ),
     );
     return;
@@ -437,7 +440,43 @@ export async function renderCommit(
   });
   topActions.appendChild(more);
 
-  const act = (action: string): void => {
-    void host.invoke("commit:action", { action, sha: d!.sha } as never);
+  /**
+   * Run one of the page's git verbs.
+   *
+   * This used to be `void host.invoke("commit:action", {action, sha})` and
+   * nothing else, which was wrong in three ways at once:
+   *
+   *   · "Branch from here…" and "Tag this commit…" need a NAME. Without one the
+   *     main process finds no argv to run and answers `{ok: true}` — so both
+   *     items reported success, having done nothing, and the ellipsis in each
+   *     label promised a prompt that never opened.
+   *   · The result was discarded. A cherry-pick or revert that hit conflicts —
+   *     the common case, and the reason you'd look at the result — said nothing
+   *     whatsoever.
+   *   · Nothing refreshed. A revert writes a commit; the graph and the branch
+   *     list went on showing the repository as it was before the click.
+   *
+   * `run` is the app's own action handler: the same toasts, cache busting and
+   * refresh the graph's context menu has always gone through.
+   */
+  const act = async (action: CommitActionRequest["action"]): Promise<void> => {
+    let name: string | undefined;
+    if (action === "branch" || action === "tag") {
+      const asked = await promptInline(
+        action === "branch" ? "Create branch here" : "Create tag here",
+        action === "branch" ? "feature/my-branch" : "v1.0.0",
+      );
+      name = asked?.trim();
+      if (!name) return;
+    }
+    const confirms: Partial<Record<CommitActionRequest["action"], string>> = {
+      checkout: "Check out this commit directly? HEAD will be detached — not on any branch.",
+      revert: "Create a commit that undoes this one, on the current branch?",
+    };
+    const message = confirms[action];
+    if (message && !(await confirmDialog({ title: `${short} — ${action.replace(/-/g, " ")}`, message }))) {
+      return;
+    }
+    await run({ action, sha: d!.sha, name });
   };
 }

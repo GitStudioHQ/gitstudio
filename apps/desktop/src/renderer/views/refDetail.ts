@@ -137,12 +137,13 @@ export async function renderRefDetail(
   };
 
   if (kind === "head" && !ref?.isCurrent) {
-    act("Check out", "git-branch", `Check out ${name}`, () => void checkout(name, `Checked out ${name}.`), true);
+    act("Check out", "git-branch", `Check out ${name}`, () =>
+      void checkout(name, "head", `Checked out ${name}.`), true);
   }
   if (kind === "remote") {
     const local = name.split("/").slice(1).join("/") || name;
     act("Check out here", "git-branch", `Create ${local} from ${name} and check it out`, () =>
-      void checkout(name, `Checked out ${local}.`), true);
+      void checkout(name, "remote", `Checked out ${local}.`), true);
   }
   if (kind === "tag") {
     act("Push", "cloud-upload", `Publish ${name} to origin`, () => void pushTag());
@@ -216,11 +217,24 @@ export async function renderRefDetail(
   );
 
   // ── the verbs' plumbing ───────────────────────────────────────────────────
-  /** Check out a ref. Same channel every other checkout in the app uses. */
-  async function checkout(ref: string, ok: string): Promise<void> {
+  /**
+   * Check out a ref.
+   *
+   * `checkout-ref`, not `checkout` — the plain action detaches HEAD at whatever
+   * `sha` names, so handing it "origin/foo" leaves you on a detached
+   * remote-tracking ref with no branch and no upstream, while the toast claims
+   * the branch was checked out. The kind is what turns a remote into a real
+   * local tracking branch (issues #12/#19).
+   */
+  async function checkout(ref: string, refKind: "head" | "remote", ok: string): Promise<void> {
     let r;
     try {
-      r = await host.invoke("commit:action", { action: "checkout", sha: ref } as never);
+      r = await host.invoke("commit:action", {
+        action: "checkout-ref",
+        sha: ref,
+        name: ref,
+        refKind,
+      } as never);
     } catch (e) {
       toast(cleanErr(e) || "Couldn't check out.", "error");
       return;

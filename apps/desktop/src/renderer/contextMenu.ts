@@ -174,6 +174,20 @@ export class CommitContextMenu {
       });
       if (!ok) return;
     }
+    // A checkout-ref item carries the ref it is ABOUT, and the request is the
+    // only place it can travel. Left off, `name` arrived undefined and the main
+    // process — which requires it — refused every branch checkout from the
+    // graph with "unsafe ref", the exact detached-HEAD complaint of issues
+    // #12/#19 wearing a different error message.
+    if (item.ref) {
+      this.resolve({
+        action: item.action,
+        sha,
+        name: item.ref.name,
+        refKind: item.ref.kind,
+      });
+      return;
+    }
     this.resolve({ action: item.action, sha, name });
   }
 

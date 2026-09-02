@@ -314,6 +314,10 @@ const CASES = [
   ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
   ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
   ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  [
+    "the-commit-page-actually-runs-its-verbs",
+    "prs~open106~text:Commits~text:issues%3A%20full-page%20detail",
+  ],
   ["editing-a-pull-request-is-a-page-that-keeps-your-text", "prs~open106"],
   ["the-files-tab-gives-the-diff-the-room", "prs~open106~text:Files", { arg: "open" }],
   [

@@ -4697,6 +4697,42 @@
     },
 
     /**
+     * The page's git verbs are the reason it beats github.com's commit page —
+     * and every one of them was a no-op that claimed to have worked.
+     *
+     * `act()` sent `{action, sha}` and discarded the reply. For "Create branch
+     * here…" and "Create tag here…" the main process needs a NAME; with none it
+     * finds no argv to run and answers `{ok: true}`, so both items reported
+     * success having done nothing — under a label whose ellipsis promised a
+     * prompt that never opened. Cherry-pick and revert, the two that routinely
+     * fail on conflicts, said nothing either way.
+     */
+    "the-commit-page-actually-runs-its-verbs": async (f) => {
+      const c = check(f);
+      const more = $$(".det-tb-actions button").find((x) =>
+        /actions for this commit/i.test(x.getAttribute("aria-label") || ""),
+      );
+      c.ok(!!more, "the page carries an actions menu");
+      if (!more) return;
+      more.click();
+      await settle(200);
+      const items = $$(".dropdown-item");
+      c.ok(items.length > 0, "the menu opens");
+
+      const named = items.find((i) => /tag this commit/i.test(text(i)));
+      c.ok(!!named, "it offers to tag the commit");
+      if (named) {
+        // The ellipsis is a promise. Pressing it must open something that asks
+        // for the name, not fire a request the main process will discard.
+        c.match(text(named), /\u2026/, "and says so with an ellipsis");
+        named.click();
+        await settle(300);
+        const asked = $(".modal input, .modal-input, .prompt-input, .modal");
+        c.ok(!!asked, "pressing it asks for the name instead of silently doing nothing");
+      }
+    },
+
+    /**
      * Two ways to hold 20,000 lines in your head.
      *
      * A CI log is mostly ##[group] CONTENTS, so once you scroll past the header
