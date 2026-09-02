@@ -276,10 +276,28 @@ class App {
    *  back to a view restores it instantly instead of rebuilding from scratch.
    *  Cleared on a repo switch; busted per-view on an explicit refresh. */
   private viewCache = new Map<string, HTMLElement>();
+  /** Where each kept-alive view was scrolled when it was parked. Keyed by the
+   *  node itself, so a rebuilt view never inherits the old one's position. */
+  private viewScroll = new WeakMap<HTMLElement, [HTMLElement, number, number][]>();
   /** Views safe to keep alive (no Monaco surface / dispose lifecycle of their own). */
   /** A search that came back rate-limited is a REFUSAL, not an answer — caching
    *  it makes every retry a cache hit for the whole TTL. See cache.gget. */
   private static readonly SEARCH_KEEP = { cacheable: (r: { limited?: unknown }) => !r.limited };
+
+  /** Every scrolled element inside a view, with where it was.
+   *
+   *  Whole-subtree, not just the outermost scroller: these views nest them —
+   *  a list pane beside a detail pane, a rail beside a log — and restoring only
+   *  the outer one puts you back at the top of the part you were reading. */
+  private static scrollSnapshot(root: HTMLElement): [HTMLElement, number, number][] {
+    const out: [HTMLElement, number, number][] = [];
+    const walk = (n: HTMLElement): void => {
+      if (n.scrollTop > 0 || n.scrollLeft > 0) out.push([n, n.scrollTop, n.scrollLeft]);
+      for (const kid of n.children) walk(kid as HTMLElement);
+    };
+    walk(root);
+    return out;
+  }
 
   private static readonly KEEPALIVE = new Set([
     "branches",
@@ -1150,6 +1168,13 @@ class App {
     // incoming view's own cache is still dropped below, which is what force is
     // actually for.
     if (App.KEEPALIVE.has(prev) && outgoing && !stillLoading) {
+      // Take the scroll positions BEFORE the node is detached. Detaching zeroes
+      // every `scrollTop` inside it, so by the time it is re-attached there is
+      // nothing left to restore — which is why keeping the DOM alive returned
+      // you to a 90-row branch list, or a long settings page, at the top of it
+      // every time. The comment above has promised otherwise since it was
+      // written.
+      this.viewScroll.set(outgoing, App.scrollSnapshot(outgoing));
       this.viewCache.set(prev, outgoing);
     } else if (stillLoading) {
       // …and drop any older good copy, so the next visit rebuilds rather than
@@ -1207,6 +1232,19 @@ class App {
     const cached = App.KEEPALIVE.has(id) ? this.viewCache.get(id) : undefined;
     if (cached) {
       this.viewHost.replaceChildren(cached);
+      // …and put them back, on the frame after the attach so layout has run.
+      const shot = this.viewScroll.get(cached);
+      if (shot) {
+        const apply = (): void => {
+          for (const [node, top, left] of shot) {
+            if (!node.isConnected) continue;
+            node.scrollTop = top;
+            node.scrollLeft = left;
+          }
+        };
+        apply();
+        requestAnimationFrame(apply);
+      }
       return;
     }
     if (id === "refdetail") {
@@ -5430,9 +5468,29 @@ class App {
     const unstaged = files.filter((f) => !f.staged);
     syncCommitLabel();
     // A quiet context line: how many changes are staged vs. still to stage.
+    //
+    // In the same UNITS as the rows underneath it. `staged` and `unstaged` are
+    // status RECORDS, and a partially staged file (git's `MM`) appears in both
+    // — which is correct for the two-list model, where it really does have a
+    // row in each. The checkbox model deliberately collapses it to ONE row with
+    // an indeterminate tick, so counting records there put "5 staged · 6 to
+    // stage" directly above a header reading "Changes (10)": two numbers about
+    // the same list that cannot both be right.
     const sumBits: string[] = [];
-    sumBits.push(staged.length ? `${staged.length} staged` : "nothing staged");
-    if (unstaged.length) sumBits.push(`${unstaged.length} to stage`);
+    if (this.stagingModel() === "checkboxes") {
+      const paths = new Set([...staged, ...unstaged].map((f) => f.path));
+      const stagedPaths = new Set(staged.map((f) => f.path));
+      const unstagedPaths = new Set(unstaged.map((f) => f.path));
+      const partial = [...stagedPaths].filter((p) => unstagedPaths.has(p)).length;
+      const fully = stagedPaths.size - partial;
+      sumBits.push(fully ? `${fully} staged` : "nothing staged");
+      if (partial) sumBits.push(`${partial} partly staged`);
+      const todo = paths.size - fully - partial;
+      if (todo) sumBits.push(`${todo} to stage`);
+    } else {
+      sumBits.push(staged.length ? `${staged.length} staged` : "nothing staged");
+      if (unstaged.length) sumBits.push(`${unstaged.length} to stage`);
+    }
     branchSummary.textContent = `· ${sumBits.join(" · ")}`;
 
     // Mid-operation banner: a merge/rebase/cherry-pick/revert in progress gets an

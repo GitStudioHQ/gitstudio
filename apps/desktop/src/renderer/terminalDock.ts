@@ -460,6 +460,17 @@ export class TerminalDock {
   // ── Inline AI chat tabs (✨ Explain / Review / Analyze / Draft) ───────────────
 
   /** Open a named, closable AI chat tab seeded with `goal`, and reveal it. */
+  // SUPERSEDED, and deliberately so — this method has no callers.
+  //
+  // The ✨ actions used to open a chat tab down here, which split the window in
+  // half; they now route to the Assistant section (renderer.ts, where
+  // `registerAssistantTab` says why). The machinery below — ChatPanel, the
+  // chat tabs, their close buttons — is therefore dead, and left in place
+  // rather than deleted because it is the only other consumer of chatRender and
+  // deleting it is a change worth making deliberately rather than in passing.
+  //
+  // If you are reading this because you changed something in chatRender: this
+  // is the second caller, and it is not reachable from the UI.
   openChat(req: AssistantTabRequest): void {
     const id = `chat-${++this.chatSeq}`;
     const panel = new ChatPanel({ seedGoal: req.goal, seedLabel: req.title, nav: req.nav });

@@ -7302,6 +7302,33 @@
       }
     },
 
+    // Keep-alive views park their DOM so returning to one restores what you
+    // had — "the rendered DOM (scroll, expanded state)", per the comment that
+    // has said so since it was written. Detaching a node zeroes every
+    // scrollTop inside it, so the one thing named first was the one thing that
+    // did not survive: every return landed at the top of a long list.
+    "a-kept-view-comes-back-where-you-left-it": async (f) => {
+      const c = check(f);
+      const pick = () =>
+        $$("*").find((n) => n.scrollHeight > n.clientHeight + 200 && n.clientHeight > 150);
+      const sc = pick();
+      c.ok(!!sc, "the list is long enough to scroll");
+      if (!sc) return;
+      sc.scrollTop = 600;
+      sc.dispatchEvent(new Event("scroll"));
+      await settle(300);
+      c.eq(Math.round(sc.scrollTop), 600, "and it scrolled");
+
+      $('[data-view="changes"]')?.click();
+      await settle(900);
+      $('[data-view="issues"]')?.click();
+      await settle(1400);
+
+      const back = pick();
+      c.ok(back === sc, "the parked DOM was re-attached, not rebuilt");
+      c.eq(Math.round(back?.scrollTop ?? -1), 600, "and it comes back where you left it");
+    },
+
     // The job log has one route for a whole RUN and a rail of jobs inside it.
     // The history entry kept whichever job the page was entered with, and
     // refreshAll re-routes to that entry — so any refresh silently swapped the
