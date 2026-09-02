@@ -81,7 +81,26 @@ function copyStaticAssets() {
     .replace('href="./renderer.css"', `href="./renderer.css?v=${stamp}"`)
     .replace('src="./theme-boot.js"', `src="./theme-boot.js?v=${stamp}"`)
     .replace('src="./renderer.js"', `src="./renderer.js?v=${stamp}"`);
-  fs.writeFileSync(path.join(distDir, "renderer/index.html"), html);
+  // Preload the icon fonts.
+  //
+  // They used to be base64 inside the stylesheet, so they were resident the
+  // moment it parsed. As separate files they are fetched on demand, and every
+  // one of these faces is declared `font-display: block` — which renders glyphs
+  // INVISIBLE rather than falling back while it waits. Off local disk that
+  // window is sub-millisecond, but it is a new dependency on the first-paint
+  // path and it costs one line to remove: preloading starts the read alongside
+  // the stylesheet instead of after it.
+  const fonts = fs
+    .readdirSync(path.join(distDir, "renderer"))
+    .filter((f) => f.endsWith(".ttf"))
+    .sort();
+  const preloads = fonts
+    .map((f) => `    <link rel="preload" as="font" type="font/ttf" href="./${f}" crossorigin />\n`)
+    .join("");
+  fs.writeFileSync(
+    path.join(distDir, "renderer/index.html"),
+    preloads ? html.replace("  </head>", preloads + "  </head>") : html,
+  );
   // The pre-paint theme bootstrap — a same-origin file so the CSP can forbid
   // inline scripts. Copied verbatim (esbuild does not process it).
   fs.copyFileSync(
@@ -154,7 +173,14 @@ async function main() {
     platform: "browser",
     format: "iife",
     target: "chrome120",
-    loader: { ".ttf": "dataurl" },
+    // FILE, not dataurl. Six stylesheets declare @font-face for the same
+    // @vscode/codicons TTF — app.css plus the shared webview-ui sheets the
+    // desktop pulls in — and `dataurl` inlines the bytes at every import site.
+    // The shipped stylesheet came out 55% base64, with three byte-identical
+    // copies of the same 125,828-byte font in it. esbuild emits each distinct
+    // file once and rewrites every url() to point at it, so the duplication
+    // disappears without touching a single @font-face rule.
+    loader: { ".ttf": "file" },
     plugins: [problemMatcherPlugin, dompurifyRedirectPlugin, copyAssetsPlugin],
   });
 

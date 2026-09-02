@@ -22,6 +22,11 @@ PAGE="${1:-$HARNESS/page}"
 rm -rf "$PAGE"
 mkdir -p "$PAGE"
 cp "$DIST/renderer.js" "$DIST/renderer.css" "$DIST/theme-boot.js" "$PAGE/"
+# The icon fonts are separate files rather than base64 in the stylesheet, so
+# they have to travel with it. Without this every codicon in every screenshot
+# and probe renders INVISIBLE — `font-display: block` does not fall back — and
+# the harness loses its icons silently, which is the worst way to lose them.
+cp "$DIST"/*.ttf "$PAGE/" 2>/dev/null || true
 cp "$DIST"/brand-*.svg "$DIST"/icon*.png "$PAGE/" 2>/dev/null || true
 cp "$HARNESS/shim.js" "$PAGE/shim.js"
 cp "$HARNESS/perf.js" "$PAGE/perf.js"

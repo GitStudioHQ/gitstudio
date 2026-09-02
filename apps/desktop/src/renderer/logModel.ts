@@ -38,6 +38,20 @@ export interface LogGroup {
 export interface LogDoc {
   lines: LogLine[];
   groups: LogGroup[];
+  /**
+   * Indices of the error lines, kept as they are parsed.
+   *
+   * The view needs this set on every repaint — for the error count, the n/N
+   * walker and the minimap — and used to recover it by scanning every line in
+   * the document each time. Painting 87 rows of a 20,000-line log did 20,173
+   * `kind` reads to do it, and a live tail did that three times per appended
+   * line. Parsing already visits every line exactly once; recording the errors
+   * there costs nothing and makes the repaint independent of document size.
+   *
+   * Indices are document-relative, so `enforceCap` shifts them with everything
+   * else when it drops lines off the front.
+   */
+  errors: number[];
   /** A trailing partial line (no newline yet) — re-parsed on the next append. */
   danglingTail: string;
 }
@@ -46,7 +60,7 @@ const TS_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s?/;
 const CMD_RE = /^##\[(group|endgroup|error|warning|notice|command|debug|section)\](.*)$/;
 
 export function emptyLogDoc(): LogDoc {
-  return { lines: [], groups: [], danglingTail: "" };
+  return { lines: [], groups: [], errors: [], danglingTail: "" };
 }
 
 /**
@@ -124,6 +138,9 @@ export function appendLog(doc: LogDoc, delta: string): LogDoc {
     doc.lines.push(line);
     if (line.kind === "group") {
       doc.groups.push({ start: idx, end: -1 });
+    }
+    if (line.kind === "error") {
+      doc.errors.push(idx);
     }
   }
   return doc;

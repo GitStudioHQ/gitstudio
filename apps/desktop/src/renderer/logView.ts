@@ -83,6 +83,15 @@ export function createLogPane(o: {
   let doc: LogDoc = emptyLogDoc();
   const collapsed = new Set<number>(); // group START line indices
   let visible: number[] = [];
+  /**
+   * Bumped by every `rebuildVisible`, which is the only way what is on screen
+   * can change. Derived rendering keyed on it — the error minimap — can then
+   * ask one number whether it still holds, instead of being thrown away and
+   * rebuilt on every scroll frame.
+   */
+  let visibleVersion = 0;
+  /** The `visibleVersion` the error ticks were last built for. */
+  let errMapBuiltFor = -1;
   // Following is a MODE, and it belongs to the caller: a job that will never
   // produce another byte has nothing to follow, and arming it there is what
   // slammed every log you opened straight to its last line.
@@ -441,6 +450,7 @@ export function createLogPane(o: {
   }
 
   function rebuildVisible(): void {
+    visibleVersion++;
     visible = [];
     let skipUntil = -1;
     for (let i = 0; i < doc.lines.length; i++) {
@@ -544,10 +554,15 @@ export function createLogPane(o: {
     else jumpToMatch(e.shiftKey ? matchIdx - 1 : matchIdx + 1);
   });
 
-  function errorLines(): number[] {
-    const out: number[] = [];
-    for (let i = 0; i < doc.lines.length; i++) if (doc.lines[i].kind === "error") out.push(i);
-    return out;
+  /**
+   * The error lines, maintained by the parser rather than rediscovered here.
+   *
+   * `readonly` deliberately: this now hands back the document's own array
+   * instead of a fresh copy, so a future `push`/`sort`/`splice` on the result
+   * would silently corrupt the document rather than edit a local.
+   */
+  function errorLines(): readonly number[] {
+    return doc.errors;
   }
   /**
    * The keys a person expects in a document, and two this log needs.
@@ -763,19 +778,36 @@ export function createLogPane(o: {
   }
 
   /** One tick per error, positioned by its place in the whole log. */
-  function syncErrMap(errs: number[]): void {
+  function syncErrMap(errs: readonly number[]): void {
     if (errs.length === 0 || visible.length === 0) {
       errMap.replaceChildren();
       errMap.hidden = true;
+      errMapBuiltFor = -1;
       return;
     }
+    // The ticks are a pure function of `visible`, the error set and
+    // `droppedLines`, and every path that changes any of those rebuilds
+    // `visible` — so one counter answers "is what is on screen still right?".
+    // Without it, scrolling threw away every tick and built them again, with a
+    // fresh <button> and a fresh click listener each: 200 of both, per wheel
+    // notch, to redraw something identical.
+    //
+    // The counter matters for correctness too, not just cost. Each tick closes
+    // over a document index, and `enforceCap` splices lines off the front and
+    // shifts every index — so a cache that outlived a cap drop would jump to
+    // the wrong line on exactly the longest logs. It cannot: both callers of
+    // enforceCap rebuild `visible` immediately after, which moves the counter.
+    if (errMapBuiltFor === visibleVersion) return;
+    errMapBuiltFor = visibleVersion;
     errMap.hidden = false;
-    const pos = new Map<number, number>();
-    for (let i = 0; i < visible.length; i++) pos.set(visible[i], i);
+    // `visible[i] === i` whenever nothing is collapsed, which is the usual
+    // case, and then the lookup table is 20,000 pointless Map entries.
+    const pos = collapsed.size ? new Map<number, number>() : undefined;
+    if (pos) for (let i = 0; i < visible.length; i++) pos.set(visible[i], i);
     const ticks: HTMLElement[] = [];
     const seen = new Set<number>();
     for (const docIdx of errs) {
-      const at = pos.get(docIdx);
+      const at = pos ? pos.get(docIdx) : docIdx < visible.length ? docIdx : undefined;
       if (at === undefined) continue; // inside a collapsed group
       const pct = Math.round((at / Math.max(1, visible.length - 1)) * 1000) / 10;
       const key = Math.round(pct * 2); // don't stack 40 ticks on one pixel
@@ -809,6 +841,10 @@ export function createLogPane(o: {
     for (const c of collapsed) if (c - drop >= 0) shifted.add(c - drop);
     collapsed.clear();
     for (const c of shifted) collapsed.add(c);
+    // Error indices are document-relative like everything else here, so they
+    // shift with the splice. Missing this would leave the minimap and the n/N
+    // walker pointing `drop` lines too far down on any log past the cap.
+    doc.errors = doc.errors.map((i) => i - drop).filter((i) => i >= 0);
     capped = true;
     droppedLines += drop;
     return drop;
