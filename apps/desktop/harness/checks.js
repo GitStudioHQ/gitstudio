@@ -7544,8 +7544,26 @@
           row.click();
           await settle(900);
 
-          const sides = $$(".merge-bar-actions .mini-btn").map((b) => text(b) || "");
-          c.ok(sides.length >= 2, `${cell.name}: both "Take …" buttons are offered`);
+          const btns = $$(".merge-bar-actions .mini-btn");
+          const sides = btns.map((b) => text(b) || "");
+          c.ok(btns.length >= 2, `${cell.name}: both side buttons are offered`);
+          if (cell.name === "modify/delete") {
+            // Taking the side that has no file DELETES it. That button was
+            // labelled "Take <side>" with the tooltip "Replace the file with
+            // …" — the wrong verb for the only irreversible thing on this bar —
+            // and it carried `is-danger`, which was styled for menu items only,
+            // so it was pixel-identical to the button beside it that KEEPS the
+            // file.
+            const del = btns.find((b) => /delete the file/i.test(text(b) || ""));
+            c.ok(!!del, "the deleting side says it deletes");
+            const keep = btns.find((b) => b !== del && /take /i.test(text(b) || ""));
+            if (del && keep) {
+              c.ok(
+                getComputedStyle(del).color !== getComputedStyle(keep).color,
+                "and does not look identical to the one that keeps it",
+              );
+            }
+          }
           if (cell.want) {
             const note = $(".merge-notext");
             c.ok(!!note, `${cell.name}: an explanation instead of a merge editor`);

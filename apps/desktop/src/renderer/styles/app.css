@@ -3744,6 +3744,20 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
    a menu would have made Delete look like Copy path. */
 .dropdown-item.is-danger,
 .dropdown-item.is-danger .dropdown-label { color: var(--gs-danger, #ff8585); }
+/* …and the same for a small toolbar button. `is-danger` was styled for menu
+   items only, so the merge bar's "Delete the file" — the button offered for the
+   side of a modify/delete conflict that has no file — was pixel-identical to
+   the one beside it that KEEPS the file. A destructive control that looks like
+   its opposite is worse than an unlabelled one. */
+.mini-btn.is-danger {
+  color: var(--gs-danger, #ff8585);
+  border-color: color-mix(in srgb, var(--gs-danger, #ff8585) 40%, var(--app-border));
+}
+.mini-btn.is-danger .codicon { color: var(--gs-danger, #ff8585); }
+.mini-btn.is-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gs-danger, #ff8585) 12%, transparent);
+  border-color: var(--gs-danger, #ff8585);
+}
 .dropdown-item.is-danger:hover,
 .dropdown-item.is-danger:focus-visible {
   background: color-mix(in srgb, var(--gs-danger, #ff8585) 14%, transparent);
