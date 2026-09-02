@@ -7214,6 +7214,28 @@
       }
     },
 
+    // `refreshAll` re-routes the current view with its history target, and the
+    // file watcher fires it on ANY save anywhere in the repository — so a build
+    // touching one file swapped the diff you were reading for file #1, while
+    // you were reading it. `SectionTarget.file` exists for exactly this.
+    "a-refresh-keeps-the-file-you-were-reading": async (f) => {
+      const c = check(f);
+      const rows = () => $$(".cmt-file");
+      const nameOf = (r) => (text(r?.querySelector(".cmt-file-path")) || "").trim();
+      c.ok(rows().length >= 3, `the commit changed several files (${rows().length})`);
+      if (rows().length < 3) return;
+
+      rows()[2].click();
+      await settle(1400);
+      const chosen = nameOf($(".cmt-file.is-current"));
+      c.ok(!!chosen, "a file is open");
+      c.ok(chosen !== nameOf(rows()[0]), "and it is not the first one");
+
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(2600);
+      c.eq(nameOf($(".cmt-file.is-current")), chosen, "a background refresh leaves it open");
+    },
+
     // Stop must take the approval dialog with it. `onConfirm` opened a modal
     // and awaited it forever; nothing in the cancel path closed it, so pressing
     // Stop ended the turn in the main process and left "Approve destructive

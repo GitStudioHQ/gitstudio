@@ -37,6 +37,7 @@ import { detailPage, disposeOnDetach, type SectionTarget } from "./common";
 import { confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { DiffPanel } from "../diffPanel";
+import { setPageTarget } from "../navStack";
 import { gget } from "../cache";
 import type { CommitActionRequest, CommitDetailsPayload } from "../../shared/ipc";
 import type { CommitFileChange } from "@gitstudio/host-bridge/commitDetailsProtocol";
@@ -317,7 +318,12 @@ export async function renderCommit(
 
     let selected: HTMLElement | undefined;
     let gen = 0;
+    /** Which file to open on build — carried in the route target so a rebuild
+     *  lands where the reader was, not at the top of the list. */
+    const wantFile = d.files.some((x) => x.path === target?.file) ? target?.file : undefined;
     const openFile = async (f: CommitFileChange, row: HTMLElement): Promise<void> => {
+      // Remember it, without navigating — a refresh re-routes with this target.
+      setPageTarget({ file: f.path });
       selected?.classList.remove("is-current");
       selected = row;
       row.classList.add("is-current");
@@ -379,7 +385,15 @@ export async function renderCommit(
       );
       row.addEventListener("click", () => void openFile(f, row));
       list.appendChild(row);
-      if (i === 0) void openFile(f, row);
+      // The file the reader was ON, if this page is being rebuilt — falling
+      // back to the first one, which is what it always did.
+      //
+      // `refreshAll` re-routes the current view with its history target, and
+      // the file watcher fires it on ANY save anywhere in the repository. So a
+      // build touching a file swapped the diff you were reading for file #1,
+      // silently, while you were reading it. `SectionTarget.file` exists for
+      // exactly this and the Code browser already uses it.
+      if (f.path === wantFile || (!wantFile && i === 0)) void openFile(f, row);
     });
 
     // Every space-separated term must appear somewhere in the path, so

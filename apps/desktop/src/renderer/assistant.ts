@@ -135,8 +135,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const controls = el("div", "assistant-controls");
 
   /** Build a chip whose menu items are produced fresh each open. */
+  /** The three run-setting chips, so one rule can say when they take effect. */
+  const settingChips: HTMLElement[] = [];
   const makeChip = (icon: string, initial: string, items: () => MenuItem[]): { el: HTMLElement; set: (t: string) => void } => {
     const b = el("button", "assistant-chip-ctl");
+    settingChips.push(b);
     const ic = glyph(icon);
     const lab = span(initial, "assistant-chip-label");
     const car = glyph("chevron-down");
@@ -256,6 +259,14 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     for (const b of chatBtns) {
       b.disabled = gated;
       b.title = gated ? "Connect a model to use the Assistant" : b.dataset.baseTitle || "";
+    }
+    // The model, thinking level and access are read when a turn STARTS and
+    // travel with it. Changing one mid-run relabels the chip and leaves the
+    // running turn on the old value — so the chip states, in the present tense,
+    // something the agent working below it is not doing. It stays usable (you
+    // are usually setting up the next message) and says when it applies.
+    for (const b of settingChips) {
+      b.title = running ? "Applies to your next message — this turn keeps what it started with" : "";
     }
   };
 
