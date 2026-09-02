@@ -172,6 +172,13 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   header.append(controls);
 
   const transcript = el("div", "assistant-transcript");
+  // Reachable by keyboard. A scrollable region that cannot take focus cannot be
+  // scrolled by anything but a pointer — PageUp, Home and the arrows all need a
+  // focused scroller to act on, and this one had no tabindex at all. It is the
+  // longest-lived scroller in the app: a chat you have been working in all day.
+  transcript.tabIndex = 0;
+  transcript.setAttribute("role", "log");
+  transcript.setAttribute("aria-label", "Conversation");
   const composer = el("div", "assistant-composer");
   const quick = el("div", "assistant-quick");
   const chips: HTMLButtonElement[] = [];

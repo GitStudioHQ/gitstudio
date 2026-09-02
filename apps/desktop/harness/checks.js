@@ -7420,6 +7420,32 @@
       c.ok(/\d+(\.\d+)?\s?(KB|MB|GB)/.test(text(live) || ""), "sizes are formatted");
     },
 
+    // The forward-truncate ran BEFORE the "is this the same place" check, so
+    // every route that reached it discarded the forward entries — including the
+    // one `refreshAll` performs, which the file watcher fires on every save.
+    // Forward died seconds after going Back, constantly, for no visible reason.
+    "a-background-refresh-does-not-kill-forward": async (f) => {
+      const c = check(f);
+      const navs = () => $$(".topbar-nav");
+      const [back, fwd] = navs();
+      c.ok(!!back && !!fwd, "the top bar has back and forward");
+      if (!back || !fwd) return;
+
+      $('[data-view="branches"]')?.click();
+      await settle(900);
+      $('[data-view="issues"]')?.click();
+      await settle(900);
+      back.click();
+      await settle(1000);
+      c.eq(fwd.disabled, false, "going back arms Forward");
+
+      // A file is saved somewhere — the watcher fires and the app refreshes.
+      const heard = window.__gsEmit("repo:filesChanged", { gitDir: true });
+      c.eq(heard, 1, "the app is listening for the watcher");
+      await settle(2400);
+      c.eq(navs()[1].disabled, false, "and a refresh must not take Forward away");
+    },
+
     // Keep-alive views park their DOM so returning to one restores what you
     // had — "the rendered DOM (scroll, expanded state)", per the comment that
     // has said so since it was written. Detaching a node zeroes every
@@ -7547,6 +7573,39 @@
       chev.click();
       await settle(700);
       c.eq(document.activeElement, row, "and closing it hands the keyboard back");
+    },
+
+    // …and when there is nothing to hand it back TO. The dock is often opened
+    // from inside itself — the chevron, the tab strip — so nothing outside was
+    // remembered, and closing it while the keyboard was in the terminal left
+    // focus on <body>: the next Tab starts from the top of the window and no
+    // shortcut bound to a view can fire.
+    "closing-the-dock-from-inside-it-still-lands-somewhere": async (f) => {
+      const c = check(f);
+      const chev = $(".dock-chevron");
+      c.ok(!!chev, "the dock can be opened");
+      if (!chev) return;
+      chev.click(); // opened from INSIDE the dock — nothing outside remembered
+      await settle(800);
+      const tab = $$("button").find((b) => /^Terminal$/i.test((text(b) || "").trim()));
+      tab?.click();
+      await settle(1000);
+
+      const ta = $(".xterm-helper-textarea");
+      c.ok(!!ta, "the terminal has its input");
+      if (!ta) return;
+      ta.focus();
+      c.eq(document.activeElement, ta, "the keyboard is in the terminal");
+
+      chev.click();
+      await settle(900);
+      const now = document.activeElement;
+      c.ok(now !== document.body, "closing it does not drop the keyboard on <body>");
+      c.ok(now !== ta, "nor leave it in the terminal that just went away");
+      c.ok(
+        now?.classList?.contains("view-host") || $(".view-host")?.contains(now),
+        `it lands in the view behind (got ${now?.className || now?.tagName})`,
+      );
     },
 
     // An open dock OVERLAYS the view area and publishes its height as

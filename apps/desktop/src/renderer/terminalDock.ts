@@ -432,7 +432,19 @@ export class TerminalDock {
   private restoreFocus(): void {
     const back = this.returnFocusTo;
     this.returnFocusTo = null;
-    if (!back?.isConnected) return; // re-rendered away while the dock was open
+    // NOTHING to go back to is still a decision. The dock is often opened from
+    // INSIDE itself — the chevron, the tab strip — in which case nothing outside
+    // was remembered; and the remembered node may have been re-rendered away
+    // while it was open. Either way, closing it while the keyboard is in the
+    // terminal used to leave focus on <body>: the next Tab starts from the top
+    // of the window and no shortcut bound to a view can fire.
+    if (!back?.isConnected) {
+      const here = document.activeElement as HTMLElement | null;
+      if (here && here !== document.body && !this.dock.root.contains(here)) return;
+      // The view behind, as a whole — it carries tabIndex -1 for exactly this.
+      document.querySelector<HTMLElement>(".view-host")?.focus();
+      return;
+    }
     // Only when the dock still HAS the keyboard. If the reader clicked into the
     // view behind while the dock was open — which is an ordinary thing to do,
     // the dock is not modal — then focus is already where they put it, and

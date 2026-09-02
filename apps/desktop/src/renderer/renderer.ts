@@ -688,6 +688,12 @@ class App {
     const stack = el("div", "main-stack");
     this.mainStackEl = stack;
     const viewHost = el("div", "view-host");
+    // Programmatically focusable, not tab-reachable. Closing the terminal dock
+    // has to put the keyboard back somewhere in the view, and "the first
+    // focusable thing in it" is a lottery — a toolbar button, whatever happens
+    // to be first in the DOM. The container itself is the honest answer: Tab
+    // then continues from the view rather than from the top of the window.
+    viewHost.tabIndex = -1;
     this.viewHost = viewHost;
     stack.append(viewHost);
     main.append(this.buildNav(), this.buildRailResizer(), stack);
@@ -1138,7 +1144,6 @@ class App {
     // A forward-truncate on push gives browser semantics: navigating after
     // going back discards the abandoned forward entries.
     if (!this.navTravel) {
-      this.navHistory.splice(this.navPos + 1);
       const last = this.navHistory[this.navPos];
       const same = (a?: SectionTarget, b?: SectionTarget): boolean =>
         a?.number === b?.number &&
@@ -1155,6 +1160,27 @@ class App {
         a?.ref === b?.ref &&
         (a?.list ?? false) === (b?.list ?? false);
       if (!last || last.view !== id || (target && !same(last.target, target))) {
+        // The forward-truncate belongs HERE, with the push it accompanies —
+        // browser semantics are "navigating after going back discards the
+        // abandoned forward entries", and a re-route to the place you are
+        // already standing is not navigating.
+        //
+        // Above the check, it ran on every route that reached this point,
+        // including the one `refreshAll` performs — which is fired by the file
+        // watcher on every save, by a window focus whose fingerprint moved, and
+        // by every git action the app runs. So Forward died constantly, seconds
+        // after going Back, for reasons the reader could not see.
+        // The forward-truncate belongs HERE, with the push it accompanies —
+        // browser semantics are "navigating after going back discards the
+        // abandoned forward entries", and a re-route to the place you are
+        // already standing is not navigating.
+        //
+        // Above the check, it ran on every route that reached this point,
+        // including the one `refreshAll` performs — which the file watcher
+        // fires on every save, a window focus fires whenever the fingerprint
+        // moved, and every git action the app runs fires too. So Forward died
+        // constantly, seconds after going Back, for reasons nobody could see.
+        this.navHistory.splice(this.navPos + 1);
         this.navHistory.push({ view: id, target });
         this.navPos = this.navHistory.length - 1;
       }
