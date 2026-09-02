@@ -113,7 +113,17 @@ export function openDestinationSheet(
 
   openModal((c) => {
     close = c;
-    return { card, focusEl: nameInput, label: `Choose where ${fullName} goes`, onClose: () => {} };
+    return {
+      card,
+      focusEl: nameInput,
+      label: `Choose where ${fullName} goes`,
+      // Same veto as the clone dialog it follows: any file saved in the open
+      // repository fires the watcher, and the overlay sweep that follows was
+      // taking this sheet down with a destination chosen and a folder name
+      // typed into it. Compared against what it OPENED with, since it prefills.
+      hasUnsavedWork: () => !!dest || nameInput.value.trim() !== (opts.name ?? "").trim(),
+      onClose: () => {},
+    };
   });
 
   // Prefill the configured default folder; the sheet is usable before this

@@ -398,6 +398,11 @@ function projectCard(
     card.title = isPr ? `Open pull request #${num}` : `Peek issue #${num}`;
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
+      if (e.target !== card) return;
+      // Only the CARD itself. Enter on the kebab has to open the item menu —
+      // it is the documented keyboard path for what a drag does with the
+      // pointer — and without this it opened the issue instead, so "Move to"
+      // was unreachable from the keyboard entirely.
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         open();

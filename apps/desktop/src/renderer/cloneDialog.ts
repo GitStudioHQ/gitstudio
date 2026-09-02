@@ -475,6 +475,21 @@ export function openCloneDialog(
       // Always. See setBusy: the clone continues without this card, so being
       // unable to dismiss it bought nothing and cost the only way out.
       canDismiss: () => true,
+      // A background REBUILD is not a dismissal the user asked for. Any file
+      // saved anywhere in the open repository fires the watcher, and the
+      // overlay sweep that follows takes every layer down — so a clone URL
+      // half-typed, a repository picked from the list, or a clone in flight
+      // vanished because a build touched a file. `hasUnsavedWork` is the veto
+      // for exactly that, and this spec never declared one.
+      //
+      // Compared against what the form OPENED with, not against truthiness:
+      // this form prefills its own URL field, so "non-empty" would veto every
+      // dismissal from the first frame.
+      hasUnsavedWork: () =>
+        busy ||
+        !!selectedRepo ||
+        urlInput.value.trim() !== (opts.url ?? "").trim() ||
+        nameInput.value.trim() !== "",
       onClose: () => {
         if (offProgress) offProgress();
       },

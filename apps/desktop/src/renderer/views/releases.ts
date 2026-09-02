@@ -592,6 +592,11 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
       row.title = `Download ${a.name}`;
       row.addEventListener("click", download);
       row.addEventListener("keydown", (e) => {
+        // Only the ROW itself. This row carries a Delete button, and without
+        // the guard Enter on it ran the row's own action instead — so the
+        // keyboard path to the destructive control silently downloaded the
+        // asset, and the control could not be reached by keyboard at all.
+        if (e.target !== row) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           download();

@@ -7306,6 +7306,77 @@
       );
     },
 
+    // A background rebuild is not a dismissal the user asked for.
+    //
+    // Any file saved anywhere in the open repository fires the watcher, and the
+    // overlay sweep that follows takes every layer down. The clone dialog and
+    // its destination sheet declared no `hasUnsavedWork`, so a build touching
+    // one file destroyed a half-typed clone URL, a repository picked from the
+    // list, or a clone already in flight.
+    "a-half-filled-dialog-survives-a-file-save": async (f) => {
+      const c = check(f);
+      const up = () => !!$(".modal-card");
+      const input = $(".modal-input");
+      c.ok(up() && !!input, "the clone dialog is open");
+      if (!input) return;
+      input.value = "https://github.com/someone/a-repo.git";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(300);
+
+      const heard = window.__gsEmit("repo:filesChanged", { gitDir: true });
+      c.eq(heard, 1, "the app is listening for the watcher");
+      await settle(2200);
+
+      c.ok(up(), "the dialog is still there");
+      c.eq(
+        $(".modal-input")?.value,
+        "https://github.com/someone/a-repo.git",
+        "and so is what you had typed into it",
+      );
+    },
+
+    // A control NESTED inside a clickable row must keep its own Enter.
+    //
+    // Several rows bind keydown on themselves without checking `e.target`, so
+    // Enter anywhere inside ran the ROW's action: on a project card the kebab
+    // opened the issue instead of the item menu (making "Move to" unreachable
+    // by keyboard), and on a release asset the Delete button DOWNLOADED the
+    // asset — the destructive control unreachable, and a different action
+    // silently taken in its place. `orgs.ts` and `common.ts` already guard.
+    "a-nested-control-keeps-its-own-enter": async (f) => {
+      const c = check(f);
+      const outer = $(".gh-card") || $(".sec-row");
+      c.ok(!!outer, "there is a clickable row");
+      if (!outer) return;
+      const inner = outer.querySelector("button:not(:disabled)");
+      c.ok(!!inner && inner !== outer, "with a control nested inside it");
+      if (!inner) return;
+
+      // A synthetic keydown produces no native click, so the row's action
+      // firing is the only thing observable — and the only thing at issue.
+      inner.focus();
+      inner.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      await settle(600);
+      c.ok(
+        !$(".gh-drawer-scrim") && !$(".det-view") && !$(".modal-card"),
+        "Enter on the inner control does not run the row's own action",
+      );
+
+      // …and the row itself still answers Enter, which is the half a careless
+      // guard would break.
+      outer.focus();
+      outer.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      await settle(900);
+      c.ok(
+        !!$(".gh-drawer-scrim") || !!$(".det-view") || !!$(".modal-card"),
+        "but Enter on the row itself still opens it",
+      );
+    },
+
     // The gate must close as well as open. The listener returned early when the
     // Assistant was ungated, so it only ever OPENED: removing the last model
     // left the composer live and the header still advertising a connection
