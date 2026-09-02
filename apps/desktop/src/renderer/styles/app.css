@@ -10410,6 +10410,29 @@ body.vscode-light .log-pane {
 }
 .sec-row-meta > .br-remote { width: 70px; flex: 0 0 70px; text-align: right; }
 .sec-row-meta > .br-sha { width: 62px; flex: 0 0 62px; text-align: right; }
+/* …and a shrink path, because none of the slots above can give up a pixel.
+   A branch row's non-shrinkable content sums to about 717px while the list
+   gives it 648 at the window's own 880px minimum — and `.sec-row` is
+   `overflow: visible`, so the surplus does not scroll, it renders OUTSIDE the
+   window. Measured: a row's actions ending at x=941 in an 880px window,
+   unreachable by pointer and keyboard alike.
+   The upstream NAME is the biggest slot and the most droppable — the
+   ahead/behind track beside it is the part you act on, and the name is in the
+   row's own tooltip. 1040px is the breakpoint the topbar already uses. */
+@media (max-width: 1040px) {
+  .sec-row-meta > .br-upstream,
+  .sec-row-meta > .br-remote { display: none; }
+}
+/* …and a shrink path, because none of the slots above can give up a pixel.
+   A branch row's non-shrinkable content sums to about 717px while the list
+   gives it 648 at the window's own 880px minimum — and `.sec-row` is
+   `overflow: visible`, so the surplus does not scroll, it renders OUTSIDE the
+   window. Measured: a row's actions ending at x=941 in an 880px window,
+   unreachable by pointer or keyboard.
+   The upstream NAME is the biggest slot and the most droppable — the
+   ahead/behind track beside it is the part you act on, and the name is in the
+   row's own tooltip. 1040px is the breakpoint the topbar already uses. */
+
 .sec-row-meta > .stash-sel { width: 74px; flex: 0 0 74px; text-align: right; }
 
 /* The state pills a branch or a tag wears. */

@@ -7516,6 +7516,24 @@
       // looks like once the overflow has been scrolled to.
       const bar = $(".topbar");
       if (bar) c.ok(Math.round(bar.getBoundingClientRect().left) >= -2, "the topbar has not slid");
+
+      // …and the rows THEMSELVES, which the body measure above cannot see.
+      // `.sec-row` is `overflow: visible` inside a clipping ancestor, so a row
+      // whose content does not fit does not scroll — it renders outside the
+      // window and is unreachable by pointer and keyboard alike, while
+      // `document.body.scrollWidth` goes on reporting a page that fits.
+      // Measured on a branch list at 880: content 717px in a 648px row, with
+      // the row's actions ending at x=941.
+      const spilled = $$(".sec-row").filter((r) => r.scrollWidth > r.clientWidth + 2);
+      c.eq(
+        spilled.length,
+        0,
+        `no row overflows its own width (${spilled.length} of ${$$(".sec-row").length})`,
+      );
+      const past = $$(".sec-row-actions").filter(
+        (a) => Math.round(a.getBoundingClientRect().right) > win + 2,
+      );
+      c.eq(past.length, 0, `no row's actions render outside the window (${past.length})`);
     },
 
     // Every tick in the one-list staging model said "Not included" or "Included
