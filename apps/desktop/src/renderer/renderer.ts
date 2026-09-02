@@ -1734,7 +1734,20 @@ class App {
       }
 
       header.setCount?.(shown, total);
-      if (!shown) body.appendChild(this.branchesEmpty(this.branchTab, q, stashFailed));
+      if (!shown) {
+        // Which control emptied it. The search box speaks for itself; a facet
+        // or the age cut does not, and without this the view announced that the
+        // REPOSITORY had no branches over a repo with ninety.
+        const narrowed =
+          bar.activeCount() > 0 || (this.branchTab === "local" && this.branchAge !== "all");
+        body.appendChild(
+          this.branchesEmpty(this.branchTab, q, stashFailed, narrowed, () => {
+            bar.clear();
+            this.branchAge = "all";
+            render();
+          }),
+        );
+      }
     };
 
     this.reloadBranchRows = async (): Promise<void> => {
@@ -2524,12 +2537,32 @@ class App {
     tab: "local" | "remote" | "tags" | "stashes" | "worktrees",
     query: string,
     stashFailed: boolean,
+    /** A facet or the Active/Stale cut is narrowing the list, and it is not the
+     *  search box. Without this the view claimed the REPOSITORY was empty. */
+    filtered = false,
+    onClear?: () => void,
   ): HTMLElement {
     if (query) {
       return emptyState("No matches", `Nothing in ${tab} matches “${query}”.`, {
         icon: "search",
         anchor: "inline",
       });
+    }
+    // A filter emptied it, not the repository. This used to fall through to the
+    // copy below and announce "No branches yet — every repository has at least
+    // one, this read found none" over a repo with ninety of them, because a
+    // facet or the age cut had hidden them all. An empty list must say which
+    // control emptied it, and offer to undo that control.
+    if (filtered) {
+      return emptyState(
+        "No matches",
+        `No ${tab === "local" ? "branch" : tab.replace(/e?s$/, "")} here matches the filters you have set.`,
+        {
+          icon: "filter",
+          anchor: "inline",
+          ...(onClear ? { action: { label: "Clear filters", onClick: onClear } } : {}),
+        },
+      );
     }
     if (tab === "stashes" && stashFailed) {
       // A failed read is not an empty list — the old view swallowed the error

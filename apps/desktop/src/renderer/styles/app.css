@@ -9142,6 +9142,18 @@ button.det-person:hover { background: var(--app-hover); }
   --log-c4: #61afef; --log-c5: #c678dd; --log-c6: #56b6c2; --log-c7: #abb2bf;
   --log-c8: #5c6370; --log-c9: #ff7a85; --log-c10: #b5e890; --log-c11: #e5c07b;
   --log-c12: #8ac6ff; --log-c13: #de9df3; --log-c14: #6fdbe8; --log-c15: #ffffff;
+  /* The TRUE ANSI palette, the same in both themes.
+     `--log-c*` is adjusted for the ground the text sits on — in light, ANSI
+     "bright white" as a FOREGROUND has to be dark or it is invisible on white
+     paper. But the moment a span sets its own BACKGROUND it stops sitting on
+     the page and becomes a block of terminal colour, and the author's fg/bg
+     pair has to keep the contrast they chose. Light mapped both c0 (black) and
+     c15 (bright white) to #24292f, so "bright white on black" — which CI tools
+     really do emit — rendered as one solid invisible block, 1.00:1. */
+  --log-t0: #3b4048; --log-t1: #e06c75; --log-t2: #98c379; --log-t3: #d19a66;
+  --log-t4: #61afef; --log-t5: #c678dd; --log-t6: #56b6c2; --log-t7: #abb2bf;
+  --log-t8: #5c6370; --log-t9: #ff7a85; --log-t10: #b5e890; --log-t11: #e5c07b;
+  --log-t12: #8ac6ff; --log-t13: #de9df3; --log-t14: #6fdbe8; --log-t15: #ffffff;
 }
 body.vscode-light .log-pane {
   /* Was #fafbfc against a #f7f9fb toolbar — a 1/255 difference, so the pane,
@@ -9161,10 +9173,36 @@ body.vscode-light .log-pane {
 .log-fg-10 { color: var(--log-c10); } .log-fg-11 { color: var(--log-c11); }
 .log-fg-12 { color: var(--log-c12); } .log-fg-13 { color: var(--log-c13); }
 .log-fg-14 { color: var(--log-c14); } .log-fg-15 { color: var(--log-c15); }
-.log-bg-0 { background: var(--log-c0); } .log-bg-1 { background: var(--log-c1); }
-.log-bg-2 { background: var(--log-c2); } .log-bg-3 { background: var(--log-c3); }
-.log-bg-4 { background: var(--log-c4); } .log-bg-5 { background: var(--log-c5); }
-.log-bg-6 { background: var(--log-c6); } .log-bg-7 { background: var(--log-c7); }
+.log-bg-0 { background: var(--log-t0); } .log-bg-1 { background: var(--log-t1); }
+.log-bg-2 { background: var(--log-t2); } .log-bg-3 { background: var(--log-t3); }
+.log-bg-4 { background: var(--log-t4); } .log-bg-5 { background: var(--log-t5); }
+.log-bg-6 { background: var(--log-t6); } .log-bg-7 { background: var(--log-t7); }
+/* 8–15 existed in the PARSER and nowhere here: `clsOf()` emits `log-bg-N` for
+   N in 0..15 — SGR 100–107 sets 8..15 directly, and any bright 256-colour or
+   truecolor background maps into that range — so every bright background was
+   silently dropped, and a line that relied on one to be readable was not. */
+.log-bg-8 { background: var(--log-t8); } .log-bg-9 { background: var(--log-t9); }
+.log-bg-10 { background: var(--log-t10); } .log-bg-11 { background: var(--log-t11); }
+.log-bg-12 { background: var(--log-t12); } .log-bg-13 { background: var(--log-t13); }
+.log-bg-14 { background: var(--log-t14); } .log-bg-15 { background: var(--log-t15); }
+/* A foreground sitting ON one of those blocks uses the true palette too — two
+   classes, so it outranks the plain `.log-fg-N` above. */
+.log-fg-0[class*="log-bg-"] { color: var(--log-t0); }
+.log-fg-1[class*="log-bg-"] { color: var(--log-t1); }
+.log-fg-2[class*="log-bg-"] { color: var(--log-t2); }
+.log-fg-3[class*="log-bg-"] { color: var(--log-t3); }
+.log-fg-4[class*="log-bg-"] { color: var(--log-t4); }
+.log-fg-5[class*="log-bg-"] { color: var(--log-t5); }
+.log-fg-6[class*="log-bg-"] { color: var(--log-t6); }
+.log-fg-7[class*="log-bg-"] { color: var(--log-t7); }
+.log-fg-8[class*="log-bg-"] { color: var(--log-t8); }
+.log-fg-9[class*="log-bg-"] { color: var(--log-t9); }
+.log-fg-10[class*="log-bg-"] { color: var(--log-t10); }
+.log-fg-11[class*="log-bg-"] { color: var(--log-t11); }
+.log-fg-12[class*="log-bg-"] { color: var(--log-t12); }
+.log-fg-13[class*="log-bg-"] { color: var(--log-t13); }
+.log-fg-14[class*="log-bg-"] { color: var(--log-t14); }
+.log-fg-15[class*="log-bg-"] { color: var(--log-t15); }
 .log-b { font-weight: 700; } .log-dim { opacity: 0.6; }
 .log-i { font-style: italic; } .log-u { text-decoration: underline; }
 
@@ -10151,6 +10189,13 @@ body.vscode-light .log-pane {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  /* WRAPS. Five kind segments plus "Delete N finished…" is about 736px of
+     content in a row with no wrap and no ancestor that scrolls sideways, so
+     below roughly 950px the sweep button simply rendered past the window edge
+     — measured 132px out at 820px wide — with no way to reach it. A control
+     bar that cannot fit takes a second line; it does not walk off the page. */
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-4) 0;
 }

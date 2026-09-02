@@ -4759,6 +4759,139 @@
     },
 
     /**
+     * A log's ANSI colours are legible in BOTH themes, backgrounds included.
+     *
+     * `--log-c*` is adjusted for the ground the text sits on, which in light
+     * means ANSI "bright white" as a foreground is dark — correct on white
+     * paper. But light also mapped "black" to the same #24292f, so a span
+     * setting bright-white ON black, which CI tools really do emit, rendered as
+     * one solid invisible block at 1.00:1. And `.log-bg-8` through `-15` did
+     * not exist at all, though the parser emits them for SGR 100–107 and for
+     * any bright 256-colour background — so those were silently dropped.
+     */
+    "log-colours-survive-both-themes": async (f) => {
+      const c = check(f);
+      const win = $(".log-window");
+      c.ok(!!win, "a log is open");
+      if (!win) return;
+      const mk = (cls) => {
+        const s = document.createElement("span");
+        s.className = cls;
+        s.textContent = "XX";
+        const line = document.createElement("div");
+        line.className = "log-line";
+        line.appendChild(s);
+        win.appendChild(line);
+        return s;
+      };
+      const pairs = [
+        ["log-fg-15 log-bg-0", "bright white on black"],
+        ["log-fg-0 log-bg-15", "black on bright white"],
+        ["log-fg-7 log-bg-4", "white on blue"],
+      ];
+      const spans = pairs.map(([cls]) => mk(cls));
+      // Bright backgrounds, which had no rules at all.
+      const brights = [8, 9, 12, 15].map((n) => mk(`log-bg-${n}`));
+      await settle(200);
+
+      // Not "the two differ" — light mapped bright-white to #24292f and black to
+      // #3b4048, which DO differ and are still 1.34:1, a solid block you cannot
+      // read. And not a contrast floor either: ANSI white on ANSI bright-blue
+      // really is 1.11:1, and a terminal renders the author's choice faithfully
+      // rather than second-guessing it.
+      //
+      // The contract is exactness. A span that sets its own background is a
+      // block of terminal colour, so both themes must render the author's pair
+      // the SAME way — the true ANSI values, whatever the page around it is.
+      const TRUE = { 0: "rgb(59, 64, 72)", 7: "rgb(171, 178, 191)", 15: "rgb(255, 255, 255)" };
+      const expect = [
+        [spans[0], TRUE[15], TRUE[0]],
+        [spans[1], TRUE[0], TRUE[15]],
+        [spans[2], TRUE[7], "rgb(97, 175, 239)"],
+      ];
+      for (let i = 0; i < expect.length; i++) {
+        const [sp, fg, bg] = expect[i];
+        const cs = getComputedStyle(sp);
+        c.eq(cs.color, fg, `${pairs[i][1]}: the foreground is the ANSI colour asked for`);
+        c.eq(cs.backgroundColor, bg, `${pairs[i][1]}: and so is the background`);
+      }
+      for (let i = 0; i < brights.length; i++) {
+        const bg = getComputedStyle(brights[i]).backgroundColor;
+        c.ok(
+          bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent",
+          `a bright background is actually painted (log-bg class ${i}, got ${bg})`,
+        );
+      }
+    },
+
+    /**
+     * An empty list says which control emptied it — never that the repo is bare.
+     *
+     * `branchesEmpty` only knew about the search box, so the two narrowing
+     * controls added with this view — the Active/Stale/All cut and the facet
+     * bar — fell through to "No branches yet: every repository has at least
+     * one, this read found none", printed over a repository with ninety of
+     * them. A list that blames the wrong thing sends people to look for a
+     * problem that is not there.
+     */
+    "an-emptied-branch-list-blames-the-right-thing": async (f) => {
+      const c = check(f);
+      const facet = $$(".gh-facet-btn")[0];
+      c.ok(!!facet, "the branch list has facets");
+      if (!facet) return;
+      facet.click();
+      await settle(350);
+      const items = $$(".dropdown .dropdown-item");
+      c.ok(items.length > 1, "the facet offers values");
+      if (items.length < 2) return;
+      // The last value is the least likely to match everything.
+      items[items.length - 1].click();
+      await settle(700);
+      if ($$(".sec-row").length > 0) return; // nothing to assert about
+
+      const empty = $(".list-empty");
+      c.ok(!!empty, "an emptied list says something");
+      if (!empty) return;
+      const desc = text(empty.querySelector(".list-empty-desc"));
+      c.ok(
+        !/no branches yet|at least one/i.test(desc),
+        `it does not claim the repository is empty (${JSON.stringify(desc)})`,
+      );
+      c.match(desc, /filter/i, "it names the control that emptied it");
+      c.ok(
+        !!empty.querySelector(".list-empty-action"),
+        "and offers to undo that control",
+      );
+    },
+
+    /**
+     * The branch view's control bar wraps rather than walking off the page.
+     *
+     * Five kind segments plus "Delete N finished…" is ~736px in a row with no
+     * wrap and no ancestor that scrolls sideways. Below ~950px the sweep button
+     * rendered past the window edge — 132px out at 820px — unreachable by any
+     * means.
+     */
+    "the-branch-control-bar-stays-on-screen": (f) => {
+      const c = check(f);
+      const sweep = $(".branches-sweep");
+      const seg = $(".branches-segbar .gh-seg");
+      c.ok(!!sweep && !!seg, "the bar holds its segments and the sweep");
+      if (!sweep || !seg) return;
+      for (const [name, e] of [["the segments", seg], ["the sweep button", sweep]]) {
+        const r = e.getBoundingClientRect();
+        c.ok(
+          r.right <= window.innerWidth + 1,
+          `${name} stays inside the window at ${window.innerWidth}px (right edge ${Math.round(r.right)})`,
+        );
+      }
+      c.ok(
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+        "and the page does not scroll sideways instead",
+      );
+    },
+
+    /**
      * A cancelled run is not a failed one.
      *
      * `runLead`'s buckets lumped cancelled, timed_out, action_required and
