@@ -3176,10 +3176,30 @@ export function sideLabels(kind: GitOpState["kind"]): {
   oursLabel: string;
   theirsLabel: string;
 } {
-  if (kind === "rebase" || kind === "am") {
+  if (kind === "rebase") {
     return {
       oursLabel: "Upstream (what you're rebasing onto)",
       theirsLabel: "Your commit (being replayed)",
+    };
+  }
+  // `am` reads like a MERGE, not like a rebase — verified against real git.
+  //
+  // A rebase inverts the sides because it checks the upstream out first and
+  // replays your commits onto it, so stage 2 is the upstream. `git am` does
+  // nothing of the kind: it applies a mailbox patch onto the branch you are
+  // standing on, so stage 2 is YOUR branch and stage 3 is the patch. Lumping
+  // the two together — which this function did, in the same change that fixed
+  // the rebase labels — put the identical lie on the identical buttons, one
+  // operation over: "Take Upstream" handed you your own branch, and "Take Your
+  // commit (being replayed)" handed you someone else's mailed patch.
+  //
+  // `opState` never confuses the two: a rebase on the apply backend uses the
+  // same `rebase-apply/` directory but writes `rebasing`, not `applying`, and
+  // is reported as "rebase".
+  if (kind === "am") {
+    return {
+      oursLabel: "Your branch",
+      theirsLabel: "The patch being applied",
     };
   }
   return {

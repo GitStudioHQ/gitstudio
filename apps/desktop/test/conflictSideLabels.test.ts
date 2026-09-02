@@ -48,6 +48,61 @@ test("cherry-pick and revert read like a merge, because they are", () => {
   }
 });
 
+test("`git am` reads like a merge, NOT like a rebase", () => {
+  // The distinction that matters, and the one this function originally got
+  // wrong by lumping the two together: a rebase checks the upstream out and
+  // replays onto it, so stage 2 is the upstream; `git am` applies a patch onto
+  // the branch you are standing on, so stage 2 is YOURS.
+  const l = sideLabels("am");
+  assert.match(l.oursLabel, /your branch/i, "stage 2 during an am is your own branch");
+  assert.match(l.theirsLabel, /patch/i, "and stage 3 is the patch being applied");
+  assert.ok(!/rebasing onto/i.test(l.oursLabel), "it must not borrow the rebase wording");
+  assert.notEqual(l.oursLabel, sideLabels("rebase").oursLabel);
+});
+
+test("git really does NOT invert the sides during an am", () => {
+  // The premise, against real git — the same proof the rebase case gets, since
+  // the whole bug was assuming these two behaved alike.
+  const root = mkdtempSync(join(tmpdir(), "gs-am-sides-"));
+  const patches = join(root, "patches");
+  const git = (...a: string[]): string => {
+    try {
+      return execFileSync("git", a, { cwd: root, encoding: "utf8", env });
+    } catch (e) {
+      return String((e as { stdout?: Buffer }).stdout ?? "");
+    }
+  };
+  execFileSync("git", ["-c", "init.defaultBranch=main", "init", root], { env });
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "t");
+  git("config", "gc.auto", "0");
+  writeFileSync(join(root, "f.txt"), "base\n");
+  git("add", "-A");
+  git("commit", "-qm", "base");
+
+  // A patch that will conflict, exported from a side branch.
+  git("checkout", "-q", "-b", "side");
+  writeFileSync(join(root, "f.txt"), "FROM-THE-PATCH\n");
+  git("commit", "-qam", "patch commit");
+  git("format-patch", "-q", "-1", "-o", patches);
+
+  git("checkout", "-q", "main");
+  writeFileSync(join(root, "f.txt"), "MY-BRANCH\n");
+  git("commit", "-qam", "mine");
+  git("am", "--3way", join(patches, "0001-patch-commit.patch"));
+
+  assert.equal(git("show", ":2:f.txt").trim(), "MY-BRANCH", 'during an am, stage 2 is YOUR branch');
+  assert.equal(
+    git("show", ":3:f.txt").trim(),
+    "FROM-THE-PATCH",
+    "and stage 3 is the incoming patch",
+  );
+
+  const l = sideLabels("am");
+  assert.match(l.oursLabel, /your branch/i);
+  assert.match(l.theirsLabel, /patch/i);
+});
+
 test("no operation still yields usable labels", () => {
   const l = sideLabels(null);
   assert.ok(l.oursLabel.length > 0 && l.theirsLabel.length > 0);
