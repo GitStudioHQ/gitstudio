@@ -685,8 +685,37 @@ export class GitBridge {
 
   // ── Working-tree staging + commit (Changes view) ────────────────────────────
 
+  /**
+   * Stage one path.
+   *
+   * The marker guard is NOT only a bulk-action nicety. `git add` on a conflicted
+   * file is how you tell git the conflict is resolved, so adding one that still
+   * contains `<<<<<<<` marks it resolved with the markers in it — and the next
+   * commit carries them into the tree, where they compile as garbage and read,
+   * in the history, as a deliberate change. `stageAll()` has refused this since
+   * it was written; per-file Stage did not, and per-file Stage is the button
+   * people actually press while resolving.
+   *
+   * A modify/delete conflict (UD / DU) is deliberately still allowed through:
+   * it has no markers to find — git leaves one side's file in the tree and asks
+   * you to choose — and choosing is exactly what pressing Stage on that one
+   * file means. That is the distinction `stageAll()` draws too, and the reason
+   * it refuses those in bulk while this permits them singly.
+   */
   async stage(path: string): Promise<CommitActionResult> {
-    return this.staged(async (ctx) => ctx.staging.stageFile(path));
+    return this.staged(async (ctx) => {
+      if (await this.hasConflictMarkers(ctx, path)) {
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message:
+            `${path} still contains conflict markers. Staging it would mark the conflict ` +
+            `resolved and commit the markers — resolve them first.`,
+        };
+      }
+      return ctx.staging.stageFile(path);
+    });
   }
   async unstage(path: string): Promise<CommitActionResult> {
     return this.staged(async (ctx) => ctx.staging.unstageFile(path));

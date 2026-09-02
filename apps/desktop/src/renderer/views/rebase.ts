@@ -194,6 +194,30 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     return null;
   };
 
+  /**
+   * A squash/fixup whose fold target has GONE — the plan `buildRebasePlan` will
+   * refuse ("the oldest commit can't be squash").
+   *
+   * `setAction` refuses to create that state, but nothing re-checked it after,
+   * and two ordinary gestures walk straight into it: drop the commit the squash
+   * folds into (`foldTargetSubject` skips drops, so the target vanishes), or
+   * drag the squash row to the bottom, which is this view's headline feature.
+   * The row kept saying "Folds down into the commit below it" about a commit
+   * that does not exist — and with the row at the bottom the thing physically
+   * below it is the dimmed `onto` base, so it read as "folds into the base" —
+   * while the footer counted the fold and Start rebase walked the user through
+   * the force-push confirm for a plan the view could already see was dead.
+   *
+   * Above the display cap this is NOT an error: apply() appends the older
+   * commits below the cap as plain picks, so the bottom row really does have
+   * something below it to fold into and the rebase runs correctly.
+   */
+  const hiddenTail = (): boolean => (state.replayCount ?? rows.length) > rows.length;
+  const foldOrphan = (i: number): boolean =>
+    (rows[i].action === "squash" || rows[i].action === "fixup") &&
+    foldTargetSubject(i) === null &&
+    !hiddenTail();
+
   const flashBanner = (msg: string, kind: "warn" | "error" = "warn"): void => {
     banner.textContent = msg;
     banner.className = `rb-banner ${kind}`;
@@ -250,6 +274,13 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     if (dropped) bits.push(`${dropped} dropped`);
     preview.textContent = bits.join(" · ");
     count.textContent = `${rows.length} commit${rows.length === 1 ? "" : "s"}`;
+    // Re-validate the WHOLE plan on every render, not just the action being
+    // set. A fold target can disappear long after the squash was chosen.
+    const orphan = rows.some((_, i) => foldOrphan(i));
+    applyBtn.disabled = orphan || busy;
+    applyBtn.title = orphan
+      ? "A squash or fixup has nothing below it to fold into — git can't run this plan."
+      : "";
   };
 
   // ── rendering ──
@@ -305,8 +336,9 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     // which shoved every row below — including the next row's action dropdown,
     // the very control you reach for next. Choosing "squash" moved the thing you
     // were about to click before your hand got there.
-    const cons = el("span", "rb-consequence");
-    const c = consequence(r.action, foldTargetSubject(i));
+    const orphan = foldOrphan(i);
+    const cons = el("span", `rb-consequence${orphan ? " bad" : ""}`);
+    const c = consequence(r.action, foldTargetSubject(i), orphan);
     if (c) cons.append(glyph(c.icon), span(c.text));
     line.append(subj, cons, av, span(r.rel, "rb-meta"), sha);
     main.appendChild(line);
@@ -655,7 +687,14 @@ function inProgressCard(reload: () => void): HTMLElement {
   return card;
 }
 
-function consequence(action: RebaseAction, target: string | null): { icon: string; text: string } | null {
+function consequence(
+  action: RebaseAction,
+  target: string | null,
+  orphan = false,
+): { icon: string; text: string } | null {
+  if (orphan && (action === "squash" || action === "fixup")) {
+    return { icon: "warning", text: "Nothing below it to fold into — pick a different action or move it up" };
+  }
   const into = target ? `“${clip(target, 44)}”` : "the commit below it";
   switch (action) {
     case "squash":

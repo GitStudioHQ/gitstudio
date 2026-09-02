@@ -52,6 +52,7 @@ import {
 } from "./common";
 import { mdEditor } from "../mdEditor";
 import { wireDraft } from "../draftStore";
+import { setPageLabel } from "../navStack";
 import type { CommitDetailsPayload, ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
 
 /** Which sub-list the section shows. Module-scoped so it survives re-renders. */
@@ -413,6 +414,11 @@ function showReleaseDetailPage(
       main.replaceChildren(emptyState("Release unavailable", "This release couldn't be loaded."));
       return;
     }
+    // Name this page in the history. Every other detail page does; without it
+    // `detailPage` falls back to the VIEW's name, so leaving a release for its
+    // editor and pressing Back read "← Releases" while actually returning to
+    // the release — the button described the wrong destination.
+    setPageLabel(full.name || full.tagName);
     buildReleaseDetail({ main, rail, topActions, rel: full, nav, reload, back });
   })();
 }
@@ -481,7 +487,8 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
   const pills = el("div", "det-title-pills");
   if (rel.draft) pills.appendChild(statePill("Draft", "draft"));
   if (rel.prerelease) pills.appendChild(statePill("Pre-release", "prerelease"));
-  if (!rel.draft && !rel.prerelease) pills.appendChild(statePill("Published", "latest"));
+  const published = !rel.draft && !rel.prerelease ? statePill("Published", "latest") : undefined;
+  if (published) pills.appendChild(published);
   titleRow.appendChild(pills);
   // "Latest" is a property of the LIST, not of one release, so it needs the
   // list to answer — from cache, without blocking the page on a request.
@@ -489,6 +496,12 @@ function buildReleaseDetail(ctx: ReleaseDetailCtx): void {
     .then((all) => {
       if (!pills.isConnected) return;
       if (!rel.draft && !rel.prerelease && all.find((r) => !r.draft && !r.prerelease)?.id === rel.id) {
+        // REPLACING "Published", not sitting beside it. Both resolve to the same
+        // green check pill, so the latest release wore two badges that were
+        // pixel-identical and said the same thing twice — a release cannot be
+        // Latest without being Published, and the stronger word is the one worth
+        // the space.
+        published?.remove();
         pills.appendChild(statePill("Latest", "latest"));
       }
     })

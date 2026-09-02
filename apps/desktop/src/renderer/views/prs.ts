@@ -365,13 +365,22 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   const renderList = (): void => {
     if (!prs) return;
-    facets.sync(prs);
+    const inSegment = prs.filter(stateMatches);
+    // Harvested from the SEGMENT, not the superset behind it. Merged and Closed
+    // come from one "closed" fetch, so on Merged the Author menu listed
+    // everyone who has a closed pull request and the Label menu every label on
+    // one — options that filter the visible list down to nothing, offered as if
+    // they were choices.
+    facets.sync(inSegment);
     const q = query.toLowerCase();
-    const items = prs.filter(
-      (pr) =>
-        stateMatches(pr) && facets.passes(pr) && (q ? matches(pr, q) : true),
-    );
-    header.setCount?.(items.length, prs.length);
+    // The SEGMENT's own set is the total. `prs` is a superset — Merged and
+    // Closed are fetched together — so counting against it put the badge in its
+    // narrowed "N of M" form, with the accent and the "N shown of M loaded"
+    // tooltip, on a segment where no filter was set at all: "0 of 5" above
+    // "No closed pull requests". The "of" is a statement that something is
+    // being filtered OUT, and picking a segment is not filtering.
+    const items = inSegment.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true));
+    header.setCount?.(items.length, inSegment.length);
     listEl.replaceChildren();
     // The empty state has to answer the question the SEGMENT asked. It was
     // hardcoded to the open-state copy, so "Closed" reported "No open pull
@@ -428,7 +437,12 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
               : "No pull request matches these filters.",
           {
             icon: bySegment ? ec.icon : "search",
-          anchor: "inline",
+          // A filtered-empty list answers a question the toolbar asked, so it
+          // sits beside that control; a segment-empty one is the whole view's
+          // state and gets the hero — same rule the Inbox uses. Forcing
+          // `inline` here also hid the segment icon we just picked, since
+          // `.is-inline` drops the badge.
+          anchor: bySegment ? "hero" : "inline",
           secondary: facets.activeCount() > 0
             ? { label: "Clear filters", icon: "clear-all", onClick: () => facets.clear() }
             : undefined,

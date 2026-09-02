@@ -408,12 +408,19 @@
       branch: "feat/line-staging",
       inProgress: false,
       baseCommit: { shortSha: "9f8e7d6", subject: "release: extension 1.11.1" },
+      // NEWEST FIRST, the order `loadCommits` returns (`git log --topo-order`,
+      // no --reverse) and the order the hint bar promises. Listed oldest-first
+      // this fixture put every fold target on the wrong side: a `fixup!` row
+      // said it folded into the commit ABOVE the one its own subject names, and
+      // the "oldest commit has nothing below it" guard fired on the NEWEST
+      // commit — while the screenshot ran 20h → 2h downward under a hint
+      // reading "Newest first".
       commits: [
-        { sha: "18c9d0e1f2736485a1b2", shortSha: "18c9d0e", author: "Mira Holt", subject: "engine: hunk splitting groundwork", rel: "20h ago" },
-        { sha: "27b8c9d0e1f263748596", shortSha: "27b8c9d", author: "Anton Arnaudov", subject: "engine: split a hunk on a selection boundary", rel: "18h ago" },
-        { sha: "36a7b8c9d0e152637485", shortSha: "36a7b8c", author: "Anton Arnaudov", subject: "fixup! engine: split a hunk on a selection boundary", rel: "16h ago" },
-        { sha: "45968797c9d041526374", shortSha: "4596879", author: "Sora Ohta", subject: "changes: stage the lines a selection touches", rel: "9h ago" },
         { sha: "5485767869c930415263", shortSha: "5485767", author: "Anton Arnaudov", subject: "wip: notes to self", rel: "2h ago" },
+        { sha: "45968797c9d041526374", shortSha: "4596879", author: "Sora Ohta", subject: "changes: stage the lines a selection touches", rel: "9h ago" },
+        { sha: "36a7b8c9d0e152637485", shortSha: "36a7b8c", author: "Anton Arnaudov", subject: "fixup! engine: split a hunk on a selection boundary", rel: "16h ago" },
+        { sha: "27b8c9d0e1f263748596", shortSha: "27b8c9d", author: "Anton Arnaudov", subject: "engine: split a hunk on a selection boundary", rel: "18h ago" },
+        { sha: "18c9d0e1f2736485a1b2", shortSha: "18c9d0e", author: "Mira Holt", subject: "engine: hunk splitting groundwork", rel: "20h ago" },
       ],
     },
     "stash:list": [ { sha: "77aa88", ref: "stash@{0}", message: "WIP: palette streaming groups", time: S(30) } ],

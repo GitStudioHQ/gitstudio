@@ -1397,6 +1397,21 @@ export function facetBar<T>(o: {
   };
 
   const render = (): void => {
+    // Where the keyboard is, before this destroys the button it is on.
+    //
+    // `openMenu` deliberately restores focus to the trigger BEFORE running the
+    // item's action, so at this moment the facet button IS `activeElement` —
+    // and `replaceChildren` then removes it, dropping focus to <body> and
+    // restarting the next Tab at the top of the window, past the whole nav
+    // rail. Every keyboard user who filtered a list was thrown out of the page.
+    //
+    // `focusReturn`'s generic rescue cannot save this one: it matches a
+    // replacement by title, aria-label or text, and picking a value changes ALL
+    // THREE at once ("Filter by label" → "Filtering by label “bug”…", "Label" →
+    // "Label1"). Same failure already documented in views/rebase.ts. So the bar
+    // puts the keyboard back itself, by slot.
+    const held = document.activeElement as HTMLElement | null;
+    const keep = held && bar.contains(held) ? [...bar.children].indexOf(held) : -1;
     bar.replaceChildren();
     for (const spec of o.specs) {
       const value = o.state[spec.key];
@@ -1427,6 +1442,16 @@ export function facetBar<T>(o: {
       clearBtn.addEventListener("click", () => api.clear());
       bar.appendChild(clearBtn);
     }
+    // Put the keyboard back on the button in the same slot. The clamp covers
+    // Clear, which sits last and disappears once it has done its job — focus
+    // then lands on the final facet rather than on <body>. `keep === -1` when
+    // focus was never in the bar (the initial build, or a `sync()` rebuild
+    // while the dropdown itself has focus), so this never steals it.
+    if (keep >= 0 && bar.children.length) {
+      (bar.children[Math.min(keep, bar.children.length - 1)] as HTMLElement).focus({
+        preventScroll: true,
+      });
+    }
   };
 
   const activeCount = (): number => facetActiveCount(o.specs, o.state);
@@ -1437,7 +1462,15 @@ export function facetBar<T>(o: {
     serverValues: () => facetServerValues(o.specs, o.state),
     activeCount,
     clear: () => {
-      for (const spec of o.specs) delete o.state[spec.key];
+      // EVERY key in the state, not just the specs currently in the bar.
+      //
+      // A view may drop a spec on some segments — Issues hides "Closed as" on
+      // Open, because a closed reason can only match a closed issue. Clearing
+      // only the listed specs left that value set, invisible and unclearable,
+      // and it silently narrowed the list again the moment you switched back to
+      // Closed. The button's own tooltip is "Clear every filter"; this makes
+      // that true.
+      for (const key of Object.keys(o.state)) delete o.state[key];
       render();
       o.onChange();
     },

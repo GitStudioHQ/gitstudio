@@ -11,7 +11,7 @@
 // palette + gutter chrome, and the graph host-page frame. The renderer carries
 // the same look as the extension because it ships the same CSS.
 import "@gitstudio/webview-ui/styles/diff.css";
-import { clickIntent, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
+import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
@@ -145,8 +145,12 @@ class App {
    * were reading closed, the row you had selected deselected, and the list
    * jumped back to the top. Staging one file in a list of forty meant finding
    * your place again, every single time.
+   *
+   * Remembered as a row KEY (`kind:path`), never a bare path: a partially-staged
+   * file — git's `MM`, a staged edit plus a newer unstaged one — is deliberately
+   * TWO rows sharing one path, and only the kind says which half is open.
    */
-  private changesOpenPath?: string;
+  private changesOpenKey?: string;
   private changesScroll = 0;
   /** The repo changed while the graph was parked — reload in place on return. */
   private graphDirty = false;
@@ -5024,8 +5028,19 @@ class App {
     // unlabelled archive glyph sitting between two text buttons. Label it.
     const stashBtn = el("button", "mini-btn") as HTMLButtonElement;
     stashBtn.append(glyph("archive"), span("Stash"));
+    // What the button will actually do, captured when its label is written.
+    //
+    // The label used to be computed from `selectionPaths()` at toolbar-build
+    // time, when `this.rowOrder` still held the PREVIOUS render's keys — and
+    // the click then called `selectionPaths()` AGAIN, against the rebuilt
+    // order, where those keys no longer matched. So the button could read
+    // "Stash 1 selected file…" and hand `[]` to `stashPaths`, which means the
+    // whole working tree. A control must do what it says, even when the state
+    // underneath it has moved.
+    let stashScope: string[] = [];
     const syncStashBtn = (): void => {
-      const n = this.selectionPaths().length;
+      stashScope = this.selectionPaths();
+      const n = stashScope.length;
       const label =
         n === 0
           ? "Stash all changes\u2026"
@@ -5040,9 +5055,9 @@ class App {
     syncStashBtn();
     stashBtn.addEventListener("click", () => {
       // With a selection live it follows it; otherwise it means the whole tree,
-      // and the title has already said which.
-      const paths = this.selectionPaths();
-      void this.stashPaths(paths).then(() => this.clearSelection(lists, selBar));
+      // and the title has already said which. `stashScope` is what the title
+      // was written from, so the two can never disagree.
+      void this.stashPaths(stashScope).then(() => this.clearSelection(lists, selBar));
     });
 
     toolbar.append(tTitle, tSpacer, modelBtn, reviewBtn, createPrBtn, stageLinesBtn, wsBtn, stashBtn, stageAllBtn, refreshBtn);
@@ -5355,7 +5370,7 @@ class App {
       lists.querySelectorAll(".file-row.active").forEach((n) => n.classList.remove("active"));
       row.classList.add("active");
       openFile = { path: f.path, staged: !!f.staged };
-      this.changesOpenPath = f.path;
+      this.changesOpenKey = rowKey(f.staged ? "staged" : "unstaged", f.path);
       stageLinesLabel.textContent = f.staged ? "Unstage lines" : "Stage lines";
       stageLinesBtn.disabled = false;
       wsBtn.disabled = false;
@@ -5465,6 +5480,11 @@ class App {
       lists.appendChild(
         emptyState("Working tree clean", "No changes to commit.", { icon: "check-all" }),
       );
+      // Reconcile before leaving, exactly as the populated path does. Returning
+      // early left `selectedRows` holding keys for files that no longer exist,
+      // so the selection bar and the stash button went on describing a
+      // selection over a clean tree.
+      this.reconcileSelection(lists, selBar);
       return;
     }
     if (this.stagingModel() === "checkboxes") {
@@ -5570,23 +5590,26 @@ class App {
           void this.fillHunks(holder, f.path);
         }
       }
-      return;
-    }
-
-    if (staged.length) {
-      lists.appendChild(
-        this.sectionHeader(`Staged (${staged.length})`, "staged", staged, lists, selBar),
-      );
-      staged.forEach((f) => lists.appendChild(fileRow(f, "staged")));
-    }
-    if (unstaged.length) {
-      lists.appendChild(
-        // "Changes" already names the view and the pane; this group is the
-        // UNSTAGED half, and calling it "Changes" beside "Staged" made the two
-        // read as unrelated rather than as a pair.
-        this.sectionHeader(`Unstaged (${unstaged.length})`, "unstaged", unstaged, lists, selBar),
-      );
-      unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
+      // NO `return` here: the tail below is model-agnostic — it keys off the
+      // `.dc-file` rows this branch emits too — and skipping it threw the open
+      // diff away on every tick, in the one model whose whole interaction is
+      // "tick boxes while reading the diff".
+    } else {
+      if (staged.length) {
+        lists.appendChild(
+          this.sectionHeader(`Staged (${staged.length})`, "staged", staged, lists, selBar),
+        );
+        staged.forEach((f) => lists.appendChild(fileRow(f, "staged")));
+      }
+      if (unstaged.length) {
+        lists.appendChild(
+          // "Changes" already names the view and the pane; this group is the
+          // UNSTAGED half, and calling it "Changes" beside "Staged" made the two
+          // read as unrelated rather than as a pair.
+          this.sectionHeader(`Unstaged (${unstaged.length})`, "unstaged", unstaged, lists, selBar),
+        );
+        unstaged.forEach((f) => lists.appendChild(fileRow(f, "unstaged")));
+      }
     }
     this.reconcileSelection(lists, selBar);
 
@@ -5597,16 +5620,36 @@ class App {
     lists.addEventListener("scroll", () => {
       this.changesScroll = lists.scrollTop;
     });
-    const reopen = this.changesOpenPath;
+    const reopen = this.changesOpenKey;
     if (reopen) {
-      const f = [...staged, ...unstaged].find((x) => x.path === reopen);
-      const row = f
-        ? [...lists.querySelectorAll<HTMLElement>(".dc-file")].find((r) => r.title === reopen)
+      const rows = [...lists.querySelectorAll<HTMLElement>(".dc-file")];
+      // Reopen the exact HALF that was open, matched by row KEY. A partially-
+      // staged file (git's `MM`) is two rows sharing one path in the split
+      // model, and the STAGED one renders first — so matching on the path alone
+      // always landed on it. Having the unstaged half open and touching
+      // anything at all (stage, unstage, discard, Refresh, a watcher tick)
+      // moved you to the staged half, which relabels this toolbar's
+      // "Stage lines" to "Unstage lines" and flips the `reverse` its click
+      // sends. `file:diff` is HEAD↔working tree either way, so the pane looked
+      // identical and the next click unstaged what you meant to stage.
+      //
+      // The half can legitimately be gone — staged in full, or discarded — and
+      // the file's other half is then the right place to land; only when no row
+      // is left for the path at all is the open diff actually dropped.
+      const row =
+        rows.find((r) => r.dataset.key === reopen) ??
+        rows.find((r) => r.dataset.path === parseRowKey(reopen).path);
+      // The ROW decides which record to reopen with, not the other way round.
+      // A partially-staged file has a record on both sides, and the checkbox
+      // model renders only the UNSTAGED one — reading `staged` first there
+      // reopened it labelled "Unstage lines" against an unstaged row.
+      const f = row
+        ? (row.dataset.kind === "staged" ? staged : unstaged).find(
+            (x) => x.path === row.dataset.path,
+          )
         : undefined;
-      // The file may be gone (discarded) or have changed group (staged) —
-      // either is fine, it is simply re-selected wherever it is now.
       if (f && row) selectRow(row, f);
-      else this.changesOpenPath = undefined;
+      else this.changesOpenKey = undefined;
     }
     if (this.changesScroll > 0) lists.scrollTop = this.changesScroll;
   }

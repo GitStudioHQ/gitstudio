@@ -2015,6 +2015,32 @@
       c.eq(still?.title, path, "and it is the same file you had open");
     },
 
+    // The SAME guarantee, in the checkbox model, driven by the tick — which is
+    // that model's whole interaction. The check above only ever ran on the
+    // split model, so the checkbox branch's early `return` skipped the reopen
+    // restore entirely and nothing here noticed: ticking any box threw away the
+    // diff you were reading. Ticking a DIFFERENT row than the open one is the
+    // case that matters — the open file itself is untouched by the action.
+    "checkbox-tick-keeps-the-open-file": async (f) => {
+      const c = check(f);
+      const row = $(".dc-file.active");
+      c.ok(!!row, "a file is selected");
+      if (!row) return;
+      const path = row.title;
+      const other = $$(".dc-file").find((r) => r.title !== path && r.querySelector(".dc-ck"));
+      c.ok(!!other, "another row offers a tick");
+      if (!other) return;
+      other.querySelector(".dc-ck").click();
+      await settle(1400);
+      const still = $(".dc-file.active");
+      c.ok(!!still, "a file is still selected after the tick");
+      c.eq(still?.title, path, "and it is the same file you had open");
+      c.ok(
+        !$(".dc-stagelines")?.disabled,
+        "and its line-staging button is still live, not the empty state's",
+      );
+    },
+
     // ── repositories are an object you manage, not a preference ─────────────
     "repo-manager-opens-from-the-repo-chip": (f) => {
       const c = check(f);
@@ -4730,6 +4756,194 @@
         const asked = $(".modal input, .modal-input, .prompt-input, .modal");
         c.ok(!!asked, "pressing it asks for the name instead of silently doing nothing");
       }
+    },
+
+    /**
+     * A segment is not a filter, and its menus describe only what it holds.
+     *
+     * Pull requests fetch Merged and Closed together, so both segments read
+     * from a superset. Two things followed: the count badge switched to its
+     * narrowed "N of M" form — accent, "N shown of M loaded" tooltip — with no
+     * filter set at all ("0 of 5" above "No closed pull requests"); and the
+     * facet menus offered authors and labels that belong to the OTHER segment,
+     * every one of which filters the visible list to nothing.
+     */
+    "a-segment-is-not-a-filter": async (f) => {
+      const c = check(f);
+      const segs = $$(".gh-seg-btn");
+      c.ok(segs.length >= 3, "the view has segments");
+      if (segs.length < 3) return;
+
+      for (const s of segs) {
+        s.click();
+        await settle(600);
+        const badge = text(".gh-head-count");
+        const rows = $$(".sec-row").length;
+        c.ok(
+          !/ of /.test(badge),
+          `${text(s)}: the count is plain when nothing is filtering it (${JSON.stringify(badge)})`,
+        );
+        c.eq(Number(badge.replace(/\D/g, "")) || 0, rows, `${text(s)}: and counts the rows shown`);
+      }
+
+      // Now the menus. On a segment holding one row, every option offered must
+      // match something in it.
+      const merged = segs.find((s) => /merged/i.test(text(s)));
+      if (!merged) return;
+      merged.click();
+      await settle(600);
+      const shown = $$(".sec-row").length;
+      const author = $$(".gh-facet-btn").find((x) => /author/i.test(text(x)));
+      c.ok(!!author, "the bar offers an author filter");
+      if (!author || shown === 0) return;
+      author.click();
+      await settle(400);
+      const opts = $$(".dropdown .dropdown-item").map((i) => text(i));
+      // "Anyone" plus at most one real author per visible row.
+      c.ok(
+        opts.length <= shown + 1,
+        `it offers only authors present in this segment (${shown} row(s), ${opts.length} options: ${opts.join(", ")})`,
+      );
+    },
+
+    /**
+     * "Clear every filter" must clear the ones it cannot see.
+     *
+     * A view may drop a spec on some segments — Issues hides "Closed as" on
+     * Open, because a closed reason can only match a closed issue. `clear()`
+     * deleted only the keys of the specs currently IN the bar, so a value set on
+     * Closed survived a button whose own tooltip reads "Clear every filter",
+     * and silently narrowed the list again the moment you switched back.
+     */
+    "clear-clears-the-filters-it-cannot-see": async (f) => {
+      const c = check(f);
+      const seg = (n) => $$(".gh-seg-btn")[n];
+      const pick = async (facetLabel, value) => {
+        const b = $$(".gh-facet-btn").find((x) => text(x).startsWith(facetLabel));
+        if (!b) return false;
+        b.click();
+        await settle(400);
+        const r = $$(".dropdown .dropdown-item").find((i) => text(i).includes(value));
+        if (!r) return false;
+        r.click();
+        await settle(600);
+        return true;
+      };
+
+      // Set a filter that only exists on the Closed segment.
+      seg(1)?.click();
+      await settle(600);
+      c.ok(await pick("Closed as", "Not planned"), "the Closed segment offers a closed reason");
+      const narrowed = $$(".sec-row").length;
+      const total = $$(".gh-seg-btn")[1] ? narrowed : 0;
+      c.ok(narrowed >= 0, `it narrows the list (${narrowed} rows)`);
+
+      // Leave for a segment that does not show it, and press Clear there.
+      seg(0)?.click();
+      await settle(600);
+      c.ok(await pick("Label", "bug"), "the Open segment has a filter of its own");
+      const clear = $(".gh-facet-clear");
+      c.ok(!!clear, "Clear is offered");
+      if (!clear) return;
+      clear.click();
+      await settle(700);
+      c.ok(!$(".gh-facet-clear"), "and the bar reports itself fully cleared");
+
+      // Come back. Nothing may be filtering.
+      seg(1)?.click();
+      await settle(700);
+      c.eq(
+        $$(".gh-facet-btn.is-active").length,
+        0,
+        "no filter survived the clear on the segment that could not show it",
+      );
+      c.ok(
+        !/ of /.test(text(".gh-head-count")),
+        `and the count is not the narrowed form (${JSON.stringify(text(".gh-head-count"))})`,
+      );
+      void total;
+    },
+
+    /**
+     * Filtering a list must not throw the keyboard out of the page.
+     *
+     * `openMenu` restores focus to the trigger BEFORE running the item's
+     * action, and the facet's action rebuilds the whole bar — destroying the
+     * button that was just refocused. Focus landed on <body>, so the next Tab
+     * restarted at the top of the window, past the entire nav rail. The generic
+     * focus rescue cannot recover it: it matches a replacement by title,
+     * aria-label or text, and picking a value changes all three at once.
+     */
+    "picking-a-filter-keeps-the-keyboard-where-it-was": async (f) => {
+      const c = check(f);
+      const first = $$(".gh-facet-btn")[0];
+      c.ok(!!first, "the view has a facet bar");
+      if (!first) return;
+
+      first.focus();
+      first.click();
+      await settle(400);
+      const rows = $$(".dropdown .dropdown-item");
+      c.ok(rows.length > 1, "its menu offers values");
+      if (rows.length < 2) return;
+      rows[1].focus();
+      rows[1].click();
+      await settle(700);
+
+      c.ok(
+        document.activeElement !== document.body,
+        "picking a value leaves the keyboard somewhere real, not on <body>",
+      );
+      c.ok(
+        !!document.activeElement && $$(".gh-facet-btn").includes(document.activeElement),
+        `and on the facet bar it came from (${document.activeElement?.tagName}.${String(document.activeElement?.className).slice(0, 30)})`,
+      );
+
+      // Clear is the other half: it sits last in the bar and removes itself.
+      const clear = $(".gh-facet-clear");
+      c.ok(!!clear, "a filter is now set, so Clear is offered");
+      if (!clear) return;
+      clear.focus();
+      clear.click();
+      await settle(800);
+      c.ok(
+        document.activeElement !== document.body,
+        "and clearing does not drop the keyboard either",
+      );
+    },
+
+    /**
+     * Editing a release must not move the repository's "Latest" badge.
+     *
+     * "Set as the latest release" was initialised from `!init.prerelease`, so it
+     * arrived pre-ticked for EVERY published non-pre-release. Opening an old
+     * release to fix a typo in its notes and pressing Save therefore moved the
+     * badge onto it — silently, outward, and visible to everyone reading the
+     * repo. The default has to be where the badge already is.
+     */
+    "editing-a-release-leaves-the-latest-badge-alone": async (f) => {
+      const c = check(f);
+      const boxes = $$(".relc-form input[type=\"checkbox\"]");
+      c.ok(boxes.length >= 2, "the composer offers the pre-release and latest switches");
+      if (boxes.length < 2) return;
+      // `/latest/i` alone matches the PRE-RELEASE box, whose own description
+      // reads "It never becomes the latest release" — the concatenated-text
+      // trap, and it made this check read a control it was not about.
+      const latest = boxes.find((b) =>
+        /set as the latest/i.test(text(b.closest("label") || b.parentElement || b)),
+      );
+      c.ok(!!latest, "one of them is the latest switch");
+      if (!latest) return;
+      // The scene opens release 50 — published, not a pre-release, and NOT the
+      // one holding the badge (51 is). Its box must be clear.
+      c.eq(
+        latest.checked,
+        false,
+        "a release that is not the latest does not arrive asking to become it",
+      );
+      // And the badge is still elsewhere, so the checkbox is offering a real
+      // change rather than describing the status quo.
+      c.ok(!latest.disabled, "the switch is available — it just is not pre-ticked");
     },
 
     /**

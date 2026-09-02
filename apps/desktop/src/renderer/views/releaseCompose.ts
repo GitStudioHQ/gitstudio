@@ -112,6 +112,21 @@ export async function renderReleaseCompose(
   ]);
   if (!view.isConnected) return;
 
+  // Which release holds the "Latest" badge right now — the newest published,
+  // non-pre-release one, exactly as the list computes it. Read here so editing
+  // a release can leave the badge alone by default; a failed read is treated as
+  // "not this one", which is the safe direction (the badge does not move).
+  let isCurrentlyLatest = false;
+  if (existing) {
+    try {
+      const all = await host.invoke("release:list", undefined);
+      isCurrentlyLatest = all.find((r) => !r.draft && !r.prerelease)?.id === existing.id;
+    } catch {
+      isCurrentlyLatest = false;
+    }
+    if (!view.isConnected) return;
+  }
+
   const knownTags = new Set([...tags, ...remoteTags.map((t) => t.name)]);
   const tagOptions = [...knownTags].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   const init: ReleaseInput = existing
@@ -297,10 +312,18 @@ export async function renderReleaseCompose(
     "Marked as not production-ready. It never becomes the latest release.",
     !!init.prerelease,
   );
+  // NOT `!init.prerelease`. That pre-ticked the box for every published
+  // non-pre-release, so opening an OLD release to fix a typo in its notes and
+  // pressing Save moved the repository's "Latest" badge onto it — silently,
+  // outward, and visible to everyone reading the repo. Editing a release must
+  // default to leaving that badge exactly where it is.
+  //
+  // The rule is github.com's own, and the same one the list uses: the newest
+  // published, non-pre-release release holds it.
   const latest = check(
     "Set as the latest release",
     "Moves the repository's “Latest” badge onto this release.",
-    !init.prerelease,
+    init.id === undefined ? !init.prerelease : isCurrentlyLatest,
   );
   attrs.append(pre.row, latest.row);
   form.appendChild(attrs);
@@ -329,7 +352,15 @@ export async function renderReleaseCompose(
   const bar = el("div", "relc-actions");
   const cancel = el("button", "mini-btn") as HTMLButtonElement;
   cancel.textContent = "Cancel";
-  cancel.addEventListener("click", () => nav("releases", { list: true }));
+  // Back to the release you were editing, not to the list — which is where the
+  // ← button and Escape both go, and where Save lands you. Three exits from one
+  // page were doing two different things, and the visible one was the odd one
+  // out: it threw away your place in a list you may have scrolled a long way
+  // down. Creating a NEW release has no release to return to, so that keeps the
+  // list. Same rule the issue composer already follows.
+  cancel.addEventListener("click", () =>
+    nav("releases", editId != null ? { number: editId } : { list: true }),
+  );
 
   // On an already-published release "Save draft" would silently UNPUBLISH it —
   // a destructive act behind an innocuous label. That release gets one button.

@@ -7364,6 +7364,8 @@ body.vscode-light .gh-label-chip {
 .rb-row[data-action="fixup"] .rb-consequence { color: var(--status-warn); }
 .rb-row[data-action="edit"] .rb-consequence { color: var(--status-warn); }
 .rb-row[data-action="drop"] .rb-consequence { color: var(--gs-danger); }
+/* A squash/fixup that lost its fold target. Outranks the per-action colours above. */
+.rb-row[data-action] .rb-consequence.bad { color: var(--gs-danger); }
 
 .rb-banner { margin: 6px 16px; padding: 8px 12px; border-radius: 8px; font-size: 12px; }
 .rb-banner[hidden] { display: none; }

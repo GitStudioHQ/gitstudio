@@ -634,12 +634,16 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // One identity for this run, everywhere on the page: the run NUMBER. The
   // crumb used to carry the internal id ("#9100") while the title showed
   // "#411" — the same run wearing two numbers 40px apart.
+  // Every string that names this run to the user reads from this one value —
+  // including the re-run/cancel dialogs and toasts, which used to print the
+  // internal id and so named a run that appears nowhere in the Actions list.
+  const runNum = full.runNumber || full.id;
   const crumbEl = main.closest(".det-view")?.querySelector<HTMLElement>(".det-crumb");
-  if (crumbEl) crumbEl.textContent = `#${full.runNumber || full.id}`;
+  if (crumbEl) crumbEl.textContent = `#${runNum}`;
   // The run's identity is only known once it loads, so the page names itself
   // here rather than at construction. A page opened FROM this one then says
   // "← Run #411" instead of "← Actions".
-  setPageLabel(`Run #${full.runNumber || full.id}`);
+  setPageLabel(`Run #${runNum}`);
   const state = full.conclusion || full.status || "";
   const live = isLive(full.status);
   // A re-run attempt REPLACES the logs — every pane restarts from zero.
@@ -656,7 +660,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   rerunBtn.title = live
     ? "This run is still going — you can't re-run it until it finishes"
     : "Re-run all jobs in this run";
-  rerunBtn.addEventListener("click", () => void rerunRun(full.id, rerunBtn, reload));
+  rerunBtn.addEventListener("click", () => void rerunRun(full.id, runNum, rerunBtn, reload));
 
   const rerunFailedBtn = btn("mini-btn");
   rerunFailedBtn.append(glyph("debug-restart"), span("Re-run failed"));
@@ -666,7 +670,9 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   rerunFailedBtn.title = rerunFailedBtn.disabled
     ? "Nothing has failed in this run"
     : "Re-run only the failed jobs";
-  rerunFailedBtn.addEventListener("click", () => void rerunFailed(full.id, rerunFailedBtn, reload));
+  rerunFailedBtn.addEventListener("click", () =>
+    void rerunFailed(full.id, runNum, rerunFailedBtn, reload),
+  );
 
   const cancelBtn = btn("mini-btn danger");
   cancelBtn.append(glyph("circle-slash"), span("Cancel"));
@@ -675,7 +681,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   // sitting there permanently is just noise.
   cancelBtn.hidden = !live;
   cancelBtn.disabled = !live;
-  cancelBtn.addEventListener("click", () => void cancelRun(full.id, cancelBtn, reload));
+  cancelBtn.addEventListener("click", () => void cancelRun(full.id, runNum, cancelBtn, reload));
 
   // The logs are a PAGE, not an accordion on this one. Expanding every job's
   // log inline gave each of them a ~400px slot inside a page that was already
@@ -707,7 +713,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
   const titleRow = el("div", "det-title-row");
   titleRow.appendChild(runStatePill(state));
   const h = el("h1", "det-title");
-  h.append(span(full.displayTitle), span(`  #${full.runNumber || full.id}`, "det-title-num"));
+  h.append(span(full.displayTitle), span(`  #${runNum}`, "det-title-num"));
   titleRow.appendChild(h);
   if (full.runAttempt > 1) {
     const att = el("span", "gh-pill sec-attempt det-attempt");
@@ -1377,7 +1383,16 @@ async function deleteVariable(
 
 // ── Run mutations (disable → invoke → toast → bust + re-render) ────────────────
 
-async function rerunRun(id: number, btn: HTMLButtonElement, reload: () => void): Promise<void> {
+// `id` is GitHub's internal run id — what the API takes. `num` is the run
+// NUMBER the whole page wears (crumb, title, log page). Never print `id`: it
+// appears nowhere else in the UI, so a dialog naming it asks about a run the
+// user cannot find.
+async function rerunRun(
+  id: number,
+  num: number,
+  btn: HTMLButtonElement,
+  reload: () => void,
+): Promise<void> {
   btn.disabled = true;
   try {
     const r = await host.invoke("actions:rerun", id);
@@ -1386,7 +1401,7 @@ async function rerunRun(id: number, btn: HTMLButtonElement, reload: () => void):
       btn.disabled = false;
       return;
     }
-    toast(`Re-running run #${id}.`, "success");
+    toast(`Re-running run #${num}.`, "success");
     reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't re-run.", "error");
@@ -1394,7 +1409,12 @@ async function rerunRun(id: number, btn: HTMLButtonElement, reload: () => void):
   }
 }
 
-async function rerunFailed(id: number, btn: HTMLButtonElement, reload: () => void): Promise<void> {
+async function rerunFailed(
+  id: number,
+  num: number,
+  btn: HTMLButtonElement,
+  reload: () => void,
+): Promise<void> {
   btn.disabled = true;
   try {
     const r = await host.invoke("actions:rerunFailed", id);
@@ -1403,7 +1423,7 @@ async function rerunFailed(id: number, btn: HTMLButtonElement, reload: () => voi
       btn.disabled = false;
       return;
     }
-    toast(`Re-running failed jobs for run #${id}.`, "success");
+    toast(`Re-running failed jobs for run #${num}.`, "success");
     reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't re-run failed jobs.", "error");
@@ -1411,9 +1431,14 @@ async function rerunFailed(id: number, btn: HTMLButtonElement, reload: () => voi
   }
 }
 
-async function cancelRun(id: number, btn: HTMLButtonElement, reload: () => void): Promise<void> {
+async function cancelRun(
+  id: number,
+  num: number,
+  btn: HTMLButtonElement,
+  reload: () => void,
+): Promise<void> {
   const confirmed = await confirmDialog({
-    title: `Cancel run #${id}?`,
+    title: `Cancel run #${num}?`,
     message: "This stops the in-progress run on GitHub.",
     confirmLabel: "Cancel run",
     danger: true,
@@ -1427,7 +1452,7 @@ async function cancelRun(id: number, btn: HTMLButtonElement, reload: () => void)
       btn.disabled = false;
       return;
     }
-    toast(`Cancelled run #${id}.`, "success");
+    toast(`Cancelled run #${num}.`, "success");
     reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't cancel the run.", "error");
