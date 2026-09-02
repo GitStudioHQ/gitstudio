@@ -63,6 +63,7 @@ const CASES = [
   ["the-output-filter-owns-its-consequences", "changes"],
   ["a-dead-shell-says-it-is-dead", "changes"],
   ["the-agents-own-commit-does-not-erase-the-chat", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
+  ["a-declined-action-is-not-an-error", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["two-fast-sends-start-one-turn", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["every-undrawable-diff-says-which-nothing-it-is", "changes"],
   ["run-detail-one-identity", "actions~open9100"],

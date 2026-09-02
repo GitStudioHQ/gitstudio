@@ -7731,6 +7731,72 @@
       }
     },
 
+    // Declining an action is a DECISION, not a failure. The agent emits
+    // `tool_denied` and then a `tool_result` carrying the sentence it feeds
+    // back to the MODEL — "The user declined to run this action. Do not retry
+    // it" — and that was rendered like any other failure: a red step whose body
+    // instructed the person who had just made the decision not to retry it.
+    "a-declined-action-is-not-an-error": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!input && !!send, "the assistant is live");
+      if (!input || !send) return;
+
+      const inv = window.gitstudio.invoke;
+      let rid = null;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:chatSend") {
+          rid = p.requestId;
+          return new Promise(() => {});
+        }
+        return inv(ch, p);
+      };
+      try {
+        input.value = "commit this";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        send.click();
+        await settle(600);
+        c.ok(!!rid, "a turn is running");
+        if (!rid) return;
+
+        // One tool that is DENIED, and one that genuinely FAILS — the two must
+        // not look alike, which is the whole finding.
+        const emit = (e) => window.__gsEmit("ai:agentEvent", { requestId: rid, ...e });
+        emit({ kind: "tool_call", tool: "git_commit", callId: "c1", args: { message: "wip" } });
+        emit({ kind: "tool_call", tool: "git_stage", callId: "c2", args: { paths: ["a.ts"] } });
+        await settle(300);
+        emit({ kind: "tool_denied", callId: "c1", tool: "git_commit" });
+        emit({
+          kind: "tool_result",
+          callId: "c1",
+          tool: "git_commit",
+          isError: true,
+          text: "The user declined to run this action. Do not retry it; adapt or stop and explain.",
+        });
+        emit({ kind: "tool_result", callId: "c2", tool: "git_stage", isError: true, text: "fatal: pathspec did not match" });
+        await settle(500);
+
+        const denied = $('.assistant-tool[data-call="c1"]');
+        const failed = $('.assistant-tool[data-call="c2"]');
+        c.ok(!!denied && !!failed, "both steps rendered");
+        if (!denied || !failed) return;
+
+        c.ok(denied.classList.contains("is-denied"), "the declined step is marked declined");
+        c.ok(!denied.classList.contains("is-error"), "and NOT marked as an error");
+        c.ok(/declined/i.test(text(denied) || ""), "it says so in a word the reader owns");
+        // The decisive one: the model-facing instruction must not be on screen.
+        c.ok(
+          !/do not retry/i.test(text(denied) || ""),
+          "and the sentence meant for the MODEL is not shown to the person",
+        );
+        // The genuine failure still reads as one.
+        c.ok(failed.classList.contains("is-error"), "a real failure is still an error");
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // `running` is the only thing stopping a second turn, and `runGoal` awaits
     // the connection gate before it does anything else. With the flag set after
     // that await, two quick presses both read `running === false`, both
