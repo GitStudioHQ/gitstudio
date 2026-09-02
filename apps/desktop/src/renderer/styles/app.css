@@ -8349,6 +8349,26 @@ body.vscode-light .gh-label-chip {
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }
+/* Row verbs, AT REST.
+   The Branches view hid its entire action surface behind `opacity: 0` until
+   hover — which is why every deeper verb had to be exiled into a menu, and why
+   none of it could be reached by keyboard or by touch at all. Muted at rest,
+   full contrast on hover or when anything inside the row has focus, and a fixed
+   width so the column holds down the page whether a row has one verb or three. */
+.sec-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 150px;
+}
+.sec-row-actions > * { opacity: 0.62; transition: opacity var(--dur-1) var(--ease); }
+.sec-row:hover .sec-row-actions > *,
+.sec-row:focus .sec-row-actions > *,
+.sec-row:focus-within .sec-row-actions > * { opacity: 1; }
+/* Keyboard focus must never be the thing that is invisible. */
+.sec-row-actions > *:focus-visible { opacity: 1; }
 /* Overlapping avatar stack in a row's meta cluster. */
 .sec-avs { display: inline-flex; align-items: center; }
 .sec-avs .av { margin-left: -6px; outline: 2px solid var(--app-bg); border-radius: 999px; }
@@ -10052,3 +10072,110 @@ body.vscode-light .log-pane {
   cursor: pointer;
 }
 .clist-open:hover { color: var(--app-text); background: var(--app-hover); border-color: var(--app-border); }
+
+/* ── The ref manager (Branches) ─────────────────────────────────────────────
+   One KIND per screen behind a segmented switch, one row anatomy, every verb
+   visible at rest. It was four collapsible groups of four incompatible row
+   shapes, with no title, no count, no facets, and Fetch — the action that makes
+   every ahead/behind number on the screen true — buried in one row's kebab. */
+.branches-segbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) 0;
+}
+.gh-head-cta { display: flex; align-items: center; gap: var(--sp-2); }
+.gh-head-cta-blank { display: none; }
+
+/* The tip subject, riding in the chips strip. secRow is one line, and the
+   subject is the only free-text field — a fixed-width meta column cannot hold
+   it, so it goes where the strip already fades what it cannot fit. */
+.br-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-muted);
+  font-size: var(--text-xs);
+}
+
+/* Divergence from the DEFAULT branch, as a bar: "how far is this from main",
+   which a pair of upstream counts cannot answer. Scaled to the widest
+   divergence currently on screen, so the column is comparable down the list. */
+.br-ab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--app-muted);
+}
+.br-ab-n { min-width: 14px; text-align: center; }
+.br-ab-half {
+  display: inline-flex;
+  width: 32px;
+  height: 6px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--app-muted) 18%, transparent);
+}
+.br-ab-half.is-behind { justify-content: flex-end; }
+.br-ab-fill { display: block; height: 6px; border-radius: 2px; }
+.br-ab-half.is-behind .br-ab-fill { background: var(--status-mod); }
+.br-ab-half.is-ahead .br-ab-fill { background: var(--status-add); }
+
+/* Fixed-width meta columns. A meta slot with no width rule never forms a
+   column — it just sits wherever its content ends, and the list stops being
+   scannable down the page. */
+/* WIDTH, not min-width. A slot that can grow does not form a column: one long
+   upstream ("origin/redesign/issues-detail") pushed the ahead/behind pair 12px
+   left of where it sat on every other row, which is exactly the unreadable
+   ragged edge these slots exist to prevent. Fixed width plus an ellipsis. */
+.sec-row-meta > .br-track { width: 78px; flex: 0 0 78px; display: flex; gap: 4px; justify-content: flex-end; }
+.sec-row-meta > .br-upstream {
+  width: 160px;
+  flex: 0 0 160px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+.sec-row-meta > .br-remote { width: 70px; flex: 0 0 70px; text-align: right; }
+.sec-row-meta > .br-sha { width: 62px; flex: 0 0 62px; text-align: right; }
+.sec-row-meta > .stash-sel { width: 74px; flex: 0 0 74px; text-align: right; }
+
+/* The state pills a branch or a tag wears. */
+.ab-pill.current { color: var(--gs-accent); border-color: color-mix(in srgb, var(--gs-accent) 40%, var(--app-border)); }
+.ab-pill.default { color: var(--app-text); }
+.ab-pill.merged { color: var(--app-muted); }
+.ab-pill.unpublished { color: var(--app-muted); border-style: dashed; }
+.ab-pill.annotated { color: var(--status-add); border-color: color-mix(in srgb, var(--status-add) 35%, var(--app-border)); }
+.ab-pill.lightweight { color: var(--app-muted); border-style: dashed; }
+
+/* ── A ref's page ─────────────────────────────────────────────────────────── */
+.rd-head { margin-bottom: var(--sp-4); }
+.rd-title { margin: 0 0 var(--sp-2); font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; }
+.rd-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.rd-kind { text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.rd-subject { margin-top: var(--sp-2); color: var(--app-text); }
+.rd-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-5) 0 var(--sp-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--app-muted);
+}
+.rd-prop { display: flex; justify-content: space-between; gap: var(--sp-3); padding: 3px 0; font-size: var(--text-xs); }
+.rd-prop-label { color: var(--app-muted); }
+.rd-prop-value { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

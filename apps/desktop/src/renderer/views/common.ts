@@ -636,6 +636,19 @@ export interface SecRowOpts {
   /** Right-edge relative time (tabular figures, fixed slot). */
   time?: string;
   timeTitle?: string;
+  /**
+   * Row verbs, rendered AFTER the time — at rest, not on hover.
+   *
+   * Deliberately its own slot rather than more `meta`: meta sits LEFT of the
+   * time column, and "the time is the last thing on the far right" is a rule
+   * every list in the app depends on to stay scannable.
+   *
+   * At rest is the point. The Branches view hid its whole action surface behind
+   * `opacity: 0` until hover, which is why every deeper verb had to be exiled
+   * into a menu, and why nothing in that view could be reached by keyboard or
+   * touch at all. These render muted and gain contrast on hover or focus.
+   */
+  actions?: HTMLElement[];
   onOpen: () => void;
   ariaLabel?: string;
 }
@@ -714,6 +727,14 @@ export function secRow(o: SecRowOpts): HTMLElement {
     t.textContent = o.time;
     if (o.timeTitle) t.title = o.timeTitle;
     row.appendChild(t);
+  }
+  if (o.actions?.length) {
+    const acts = el("span", "sec-row-actions");
+    for (const a of o.actions) acts.appendChild(a);
+    // A click on a verb is not a click on the row. Without this, pressing
+    // Checkout would ALSO open the ref's page underneath it.
+    acts.addEventListener("click", (e) => e.stopPropagation());
+    row.appendChild(acts);
   }
   row.addEventListener("click", o.onOpen);
   return promoteToDivRow(row, o.onOpen);

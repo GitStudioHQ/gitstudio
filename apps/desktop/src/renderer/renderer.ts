@@ -17,6 +17,7 @@ import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
 import { renderReleaseCompose } from "./views/releaseCompose";
 import { renderIssueCompose } from "./views/issueCompose";
+import { renderRefDetail } from "./views/refDetail";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
 import "./styles/app.css";
@@ -73,11 +74,10 @@ import type { MenuItem } from "./ui";
 import { plural } from "./textFit";
 import { dismissLayers } from "./overlays";
 import { setFocusScope, clearFocusReturn } from "./focusReturn";
-import { openBranchPeek, openRefPeek, openStashPeek } from "./peeks";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu } from "./contextMenu";
-import { wireListNav, commitList } from "./views/common";
+import { wireListNav, commitList, ghHeader, searchField, segmented, secRow } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
 import { openCommandPalette, paletteIsOpen } from "./commandPalette";
@@ -243,12 +243,6 @@ class App {
   private navFwdBtn?: HTMLButtonElement;
   /** Current directory inside the Code (repo browser) view; "" = repo root. */
   private codePath = "";
-  /** Branches view: per-category collapse memory (label → collapsed), persisted
-   *  across re-renders so checkout/new/delete/filter don't reset expand state. */
-  private branchCatsCollapsed: Record<string, boolean> = Object.create(null) as Record<
-    string,
-    boolean
-  >;
   private compareBase?: string;
   private compareHead?: string;
   private compareMode: CompareMode = "three-dot";
@@ -410,8 +404,17 @@ class App {
     if (prefs.compareView === "commits" || prefs.compareView === "files") {
       this.compareView = prefs.compareView;
     }
-    if (prefs.branchCatsCollapsed && typeof prefs.branchCatsCollapsed === "object") {
-      this.branchCatsCollapsed = prefs.branchCatsCollapsed as Record<string, boolean>;
+    // `branchCatsCollapsed` is gone with the four collapsible groups it
+    // remembered — the Branches view shows ONE kind at a time now. An old
+    // stored value is simply ignored rather than migrated; it described a
+    // shape that no longer exists.
+    if (
+      prefs.branchTab === "local" ||
+      prefs.branchTab === "remote" ||
+      prefs.branchTab === "tags" ||
+      prefs.branchTab === "stashes"
+    ) {
+      this.branchTab = prefs.branchTab;
     }
     if (prefs.stagingModel === "checkboxes" || prefs.stagingModel === "split") {
       this.stagingModelPref = prefs.stagingModel;
@@ -883,7 +886,7 @@ class App {
       pruneOnFetch: this.pruneOnFetchPref,
       compareFileListW: this.compareFileListW,
       compareView: this.compareView,
-      branchCatsCollapsed: this.branchCatsCollapsed,
+      branchTab: this.branchTab,
       themeMode: this.themeMode,
       logoMode: this.logoMode,
       railWidth: this.railWidth,
@@ -1151,7 +1154,13 @@ class App {
       this.viewHost.replaceChildren(cached);
       return;
     }
-    if (id === "predit") {
+    if (id === "refdetail") {
+      // A ref is a PLACE. A branch's history used to be a modal peek: no route,
+      // no back-stack entry, no ⌘[/⌘], gone on Escape — and for a remote
+      // branch, a tag or a stash that modal was the ONLY door to every action
+      // they had.
+      void renderRefDetail(this.viewHost, (v, t) => this.routeView(v, false, t), target);
+    } else if (id === "predit") {
       // A pull request's title and body are the same two fields, and editing
       // one was the last surface still doing it in a modal — one with no draft
       // at all, so Escape took everything you had written.
@@ -1245,23 +1254,58 @@ class App {
   /** A real branch manager: local branches with upstream + ahead/behind + last
    *  commit, plus remotes, tags and stashes. `highlightRef` deep-links one row:
    *  its group builds expanded and the row scrolls into view with a flash. */
+  /**
+   * The ref manager: local branches, remote branches, tags and stashes.
+   *
+   * It was the last view in the app still hand-rolling its own chrome — a bare
+   * filter input, a "New branch" button, and four collapsible groups of four
+   * incompatible row shapes. No title, no count, no Refresh, no facets, no
+   * routed detail; the most-used repo-wide verb on the screen (Fetch) was a
+   * menu item inside ONE local branch's hover-revealed kebab, and remote
+   * branches, tags and stashes had no row actions at all — their entire action
+   * set required opening a modal first.
+   *
+   * Now: one KIND per screen behind a segmented switch, one row anatomy, and
+   * every verb visible at rest.
+   */
   private async showBranchesView(highlightRef?: string): Promise<void> {
-    const wrap = el("div", "list-view");
-    const headRow = el("div", "list-head list-head-row");
-    const filterInput = document.createElement("input");
-    filterInput.className = "list-filter";
-    filterInput.type = "text";
-    filterInput.placeholder = "Filter branches, tags & stashes…";
-    filterInput.setAttribute("aria-label", "Filter branches, tags and stashes");
-    const newBtn = el("button", "mini-btn");
-    newBtn.append(glyph("add"), span("New branch"));
-    newBtn.addEventListener("click", () => void this.newBranch());
-    headRow.append(filterInput, newBtn);
+    const wrap = el("div", "list-view branches-view");
     const body = el("div", "list-body");
-    // Content-shaped skeleton paints immediately; replaced once data lands.
     body.appendChild(skeletonList(8));
-    wrap.append(headRow, body);
-    wireListNav(body, ".list-row");
+
+    const header = ghHeader("Branches", undefined, () => this.refreshBranchesSoft());
+    // The search field the rest of the app uses: 110ms debounce, a clear ✕, and
+    // Escape to empty it — none of which a raw `input.list-filter` had. It also
+    // searches more than the name now (upstream, tip subject, short sha, a
+    // stash's message), because a name-only filter cannot find "the branch with
+    // the log-stream fix in it".
+    let query = "";
+    const search = searchField({
+      placeholder: "Search refs…",
+      onInput: (q) => {
+        query = q;
+        render();
+      },
+    });
+    header.querySelector(".gh-head-titlewrap")?.appendChild(search);
+
+    const tools = el("div", "gh-head-tools");
+    // FETCH, at the surface. It was reachable only from inside one local
+    // branch's ⋯ menu — the action that makes every ahead/behind number on this
+    // screen true, two hover levels deep. Refresh (in .gh-acct) re-reads what
+    // git already has; Fetch goes to the network. Different promises, so
+    // different buttons, and the titles say which is which.
+    const fetchBtn = el("button", "mini-btn") as HTMLButtonElement;
+    fetchBtn.append(glyph("sync"), span("Fetch"));
+    fetchBtn.title = "Fetch from every remote — updates what ahead and behind mean here";
+    fetchBtn.addEventListener("click", () => void this.fetchAllLive(fetchBtn));
+    const ctaSlot = el("div", "gh-head-cta");
+    tools.append(fetchBtn, ctaSlot);
+    header.querySelector(".gh-acct")?.before(tools);
+
+    const segSlot = el("div", "branches-segbar");
+    wrap.append(header, segSlot, body);
+    wireListNav(body, ".sec-row");
     this.viewHost.replaceChildren(wrap);
 
     const gen = this.routeGen;
@@ -1273,7 +1317,7 @@ class App {
       // A failed read is not an empty repository. This used to be impossible to
       // reach — the bridge turned every git failure into `[]` — so a repo with a
       // corrupt packed-refs or a held index.lock rendered as "No branches yet",
-      // which is a confident lie about a repo full of branches.
+      // which is a confident lie about a repo full of them.
       if (gen !== this.routeGen) return;
       body.replaceChildren(
         errorState("Couldn't list branches", cleanErr(e) || "Git could not read this repository's refs.", () =>
@@ -1284,174 +1328,157 @@ class App {
     }
     if (gen !== this.routeGen) return;
     // Stashes join the ref manager: they're refs too, and this is the only
-    // browsable surface they have (the peek offers apply / pop / drop).
+    // browsable surface they have.
     let stashes: StashInfo[] = [];
+    let stashFailed = false;
     try {
       stashes = await host.invoke("stash:list", undefined);
     } catch {
-      stashes = [];
+      // Swallowing this used to render "no stashes" over a repo that has some.
+      stashFailed = true;
     }
     if (gen !== this.routeGen) return;
     // Recomputed on every render so a live reload (fetch from the branch menu)
     // picks up new remote branches/tags without rebuilding the whole view.
-    let remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
+    //
+    // `refs/remotes/origin/HEAD` shortens to the bare remote NAME ("origin"),
+    // not "origin/HEAD" — so the old `endsWith("/HEAD")` guard never fired and
+    // the list carried a phantom row called "origin" offering to check out a
+    // branch that does not exist. Its symref names the DEFAULT branch, which is
+    // worth keeping; the row is not.
+    const isRemoteHead = (r: RefInfo): boolean => !!r.symref || !r.name.includes("/");
+    let remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
     let tags = this.refs.filter((r) => r.type === "tag");
+    let defaultBranch =
+      this.refs.find((r) => r.type === "remote" && r.symref)?.symref?.replace(/^origin\//, "") ??
+      locals.find((b) => b.current)?.name;
 
-    // A deep-linked ref must be visible: un-collapse its group before render.
+    // Which KIND is on screen. One homogeneous kind per screen is what makes a
+    // shared row and a facet bar possible at all — and it stops 300 tags
+    // burying six branches, which is what the four-groups-in-one-scroller shape
+    // did every time a repo had any history.
+    type Kind = "local" | "remote" | "tags" | "stashes";
     if (highlightRef) {
-      const grp = locals.some((b) => b.name === highlightRef)
-        ? "Local"
+      this.branchTab = locals.some((b) => b.name === highlightRef)
+        ? "local"
         : remotes.some((r) => r.name === highlightRef)
-          ? "Remote"
+          ? "remote"
           : tags.some((r) => r.name === highlightRef)
-            ? "Tags"
-            : stashes.some((s) => s.ref === highlightRef)
-              ? "Stashes"
-              : undefined;
-      if (grp) this.branchCatsCollapsed[grp] = false;
+            ? "tags"
+            : stashes.some((st) => st.ref === highlightRef)
+              ? "stashes"
+              : this.branchTab;
     }
 
-    // A collapsible category: a clickable header (chevron + label + count) over a
-    // body div holding its rows. Collapse state lives on the App instance so it
-    // survives re-renders; while filtering we force-expand so matches stay visible.
-    const group = (label: string, count: number, build: (host: HTMLElement) => void): void => {
-      if (!count) return;
-      const filtering = !!filterInput.value.trim();
-      const collapsed = !filtering && !!this.branchCatsCollapsed[label];
-      const head = el("button", "list-group-head" + (collapsed ? " collapsed" : ""));
-      head.append(
-        glyph("chevron-down"),
-        span(label, "list-group-label"),
-        span(String(count), "list-group-count"),
-      );
-      const groupBody = el("div", "list-group-body");
-      if (collapsed) groupBody.style.display = "none";
-      build(groupBody);
-      // Toggle from the DISPLAYED state (seeded per-render), so the first click
-      // always matches what the user sees — even when filtering force-expanded it.
-      let cur = collapsed;
-      head.addEventListener("click", () => {
-        cur = !cur;
-        this.branchCatsCollapsed[label] = cur;
-        head.classList.toggle("collapsed", cur);
-        groupBody.style.display = cur ? "none" : "";
-        this.persist();
-      });
-      body.append(head, groupBody);
-    };
+    const counts = (): Record<Kind, number> => ({
+      local: locals.length,
+      remote: remotes.length,
+      tags: tags.length,
+      stashes: stashes.length,
+    });
 
     const render = (): void => {
-      const q = filterInput.value.trim().toLowerCase();
-      const match = (n: string): boolean => !q || n.toLowerCase().includes(q);
+      const n = counts();
+      segSlot.replaceChildren(
+        segmented<Kind>({
+          ariaLabel: "Which refs to show",
+          value: this.branchTab,
+          options: [
+            { value: "local", label: `Local (${n.local})`, icon: "git-branch" },
+            { value: "remote", label: `Remotes (${n.remote})`, icon: "cloud" },
+            { value: "tags", label: `Tags (${n.tags})`, icon: "tag" },
+            { value: "stashes", label: `Stashes (${n.stashes})`, icon: "archive" },
+          ],
+          onChange: (v) => {
+            this.branchTab = v;
+            this.persist();
+            render();
+          },
+        }),
+      );
+
+      // "What is safe to delete" — the question a branch list is opened to
+      // answer at least as often as "what do I switch to", and one this view
+      // could never answer at all. A branch is finished when every commit on it
+      // is already in the default branch (merged), or when the upstream it
+      // tracked has been deleted (gone) — which is what a merged pull request
+      // leaves behind.
+      const finished = locals.filter((b) => !b.current && (b.merged || b.gone));
+      const sweep = el("button", "mini-btn branches-sweep") as HTMLButtonElement;
+      sweep.append(glyph("trash"), span(`Delete ${finished.length} finished…`));
+      sweep.title = "Branches whose work is already in the default branch, or whose upstream is gone";
+      sweep.hidden = this.branchTab !== "local" || finished.length === 0;
+      sweep.addEventListener("click", () => void this.sweepFinishedBranches(finished, defaultBranch));
+      segSlot.appendChild(sweep);
+
+      const q = query.trim().toLowerCase();
+      // Beyond the name: the upstream, the tip subject and the short sha, so
+      // "the branch with the log-stream fix" is findable by what it did.
+      const hit = (...parts: Array<string | undefined>): boolean =>
+        !q || parts.some((x) => (x ?? "").toLowerCase().includes(q));
+
       body.replaceChildren();
+      ctaSlot.replaceChildren(this.branchesCta(this.branchTab));
 
-      const localRows = locals.filter((b) => match(b.name));
-      group("Local", localRows.length, (host) => {
-        for (const b of localRows) host.appendChild(this.localBranchRow(b));
-      });
-
-      const refSection = (label: string, refs: RefInfo[], icon: string, pick: (r: RefInfo) => void): void => {
-        const rows = refs.filter((r) => match(r.name));
-        group(label, rows.length, (host) => {
-          for (const r of rows) {
-            const row = el("button", "list-row ref-row");
-            row.dataset.ref = r.name;
-            // Clicking now INSPECTS (peek with history + a deliberate Checkout
-            // action) — it used to check the ref out on the spot, the only rows
-            // in the app where a plain click mutated the repo.
-            row.setAttribute("aria-label", `Inspect ${label.toLowerCase()} ${r.name}`);
-            row.setAttribute("aria-haspopup", "dialog");
-            row.append(glyph(icon));
-            const nm = el("span", "list-row-name");
-            nm.textContent = r.name;
-            row.appendChild(nm);
-            // Parity with local rows: show the commit each ref points at, so a
-            // remote/tag row isn't a bare name floating in the list.
-            if (r.sha) {
-              const sha = el("span", "ref-sha");
-              sha.textContent = r.sha.slice(0, 7);
-              sha.title = r.sha;
-              row.appendChild(sha);
-            }
-            row.addEventListener("click", () => pick(r));
-            host.appendChild(row);
-          }
-        });
-      };
-      refSection("Remote", remotes, "cloud", (r) =>
-        openRefPeek(this.peekHost(), r, r.name.split("/").slice(1).join("/") || r.name),
-      );
-      refSection("Tags", tags, "tag", (r) => openRefPeek(this.peekHost(), r, r.name));
-
-      // Stashes — browsable at last: the peek shows the stashed files and
-      // offers apply / pop / drop. (stash:list existed in the IPC contract all
-      // along; no surface ever called it.)
-      const stashRows = stashes.filter((s) => match(s.message) || match(s.ref));
-      group("Stashes", stashRows.length, (host) => {
-        for (const s of stashRows) {
-          const row = el("button", "list-row ref-row stash-row");
-          row.dataset.ref = s.ref;
-          row.setAttribute("aria-label", `Inspect stash ${s.ref}`);
-          row.setAttribute("aria-haspopup", "dialog");
-          row.append(glyph("archive"));
-          const meta = el("div", "row-meta");
-          const top = el("div", "row-meta-title");
-          top.textContent = s.message || s.ref;
-          meta.appendChild(top);
-          const sub = el("div", "row-meta-sub");
-          sub.textContent = [s.ref, s.time ? relTime(s.time) : ""].filter(Boolean).join("  ·  ");
-          if (s.time) sub.title = absTime(s.time);
-          meta.appendChild(sub);
-          row.appendChild(meta);
-          row.addEventListener("click", () => openStashPeek(this.peekHost(), s));
-          host.appendChild(row);
-        }
-      });
-
-      if (!body.children.length) {
-        body.appendChild(
-          emptyState(q ? "No matches" : "No branches yet", q ? "Try a different filter." : "", {
-            icon: "git-branch",
-          }),
-        );
+      let shown = 0;
+      let total = 0;
+      if (this.branchTab === "local") {
+        total = locals.length;
+        const rows = locals.filter((b) => hit(b.name, b.upstream, b.subject));
+        shown = rows.length;
+        const maxAb = Math.max(1, ...rows.map((b) => Math.max(b.aheadDefault ?? 0, b.behindDefault ?? 0)));
+        for (const b of rows) body.appendChild(this.localBranchRow(b, defaultBranch, maxAb));
+      } else if (this.branchTab === "remote") {
+        total = remotes.length;
+        const rows = remotes.filter((r) => hit(r.name, r.subject, r.sha.slice(0, 7)));
+        shown = rows.length;
+        const haveLocal = new Set(locals.map((b) => b.name));
+        for (const r of rows) body.appendChild(this.remoteRefRow(r, haveLocal));
+      } else if (this.branchTab === "tags") {
+        total = tags.length;
+        const rows = tags.filter((r) => hit(r.name, r.subject, r.sha.slice(0, 7)));
+        shown = rows.length;
+        for (const r of rows) body.appendChild(this.tagRefRow(r));
+      } else {
+        total = stashes.length;
+        const rows = stashes.filter((st) => hit(st.message, st.ref));
+        shown = rows.length;
+        for (const st of rows) body.appendChild(this.stashRow(st));
       }
+
+      header.setCount?.(shown, total);
+      if (!shown) body.appendChild(this.branchesEmpty(this.branchTab, q, stashFailed));
     };
-    filterInput.addEventListener("input", render);
-    render();
 
-    // Deep-link: scroll the target row into view and flash it, like GitHub's
-    // anchor highlight — the reader's eye lands exactly where the link pointed.
-    if (highlightRef) {
-      const row = Array.from(body.querySelectorAll<HTMLElement>(".list-row")).find(
-        (r) => r.dataset.ref === highlightRef,
-      );
-      if (row) {
-        row.scrollIntoView({ block: "center" });
-        row.classList.add("row-flash");
-        row.addEventListener("animationend", () => row.classList.remove("row-flash"), {
-          once: true,
-        });
-      }
-    }
-
-    // Live row reload — refreshes counts/refs IN PLACE (no skeleton, and an
-    // open branch-actions menu survives) after fetch/pull. Stale-guarded by
-    // the route generation; cleared implicitly when another view renders.
     this.reloadBranchRows = async (): Promise<void> => {
       if (gen !== this.routeGen) return;
       await this.refreshRefs();
       locals = await gget("branches:list", undefined);
       try {
         stashes = await host.invoke("stash:list", undefined);
+        stashFailed = false;
       } catch {
-        /* keep the stashes we had */
+        stashFailed = true;
       }
       if (gen !== this.routeGen) return;
-      remotes = this.refs.filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"));
+      remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
       tags = this.refs.filter((r) => r.type === "tag");
+      defaultBranch =
+        this.refs.find((r) => r.type === "remote" && r.symref)?.symref?.replace(/^origin\//, "") ??
+        locals.find((b) => b.current)?.name;
       render();
     };
+    render();
+    if (highlightRef) {
+      const row = body.querySelector<HTMLElement>(`[data-ref="${CSS.escape(highlightRef)}"]`);
+      row?.scrollIntoView({ block: "nearest" });
+      row?.classList.add("is-flash");
+    }
   }
+
+  /** Which KIND of ref the Branches view is showing. Survives re-renders and
+   *  is persisted, the way every other section remembers its sub-tab. */
+  private branchTab: "local" | "remote" | "tags" | "stashes" = "local";
 
   /** Set while the Branches view is live — see showBranchesView. */
   private reloadBranchRows: (() => Promise<void>) | null = null;
@@ -1512,7 +1539,339 @@ class App {
     }
   }
 
-  /** Refresh branch rows in place when the Branches view is up, else fully. */
+  /**
+   * A remote branch.
+   *
+   * It used to be a single-line button showing a name and a short sha, with NO
+   * actions whatsoever — its entire verb set required opening a modal first.
+   * It now carries what it points at, when, whether you already have it
+   * locally, and the two things you actually do with one.
+   */
+  private remoteRefRow(r: RefInfo, haveLocal: Set<string>): HTMLElement {
+    // "origin/feat/x" reads as "feat/x on origin" — the remote is a column, not
+    // a prefix repeated down every title.
+    const short = r.name.split("/").slice(1).join("/") || r.name;
+    const remote = r.name.split("/")[0];
+    const mine = haveLocal.has(short);
+
+    const actions: HTMLElement[] = [];
+    const primary = el("button", "row-btn") as HTMLButtonElement;
+    primary.textContent = mine ? "Checkout" : "Check out here";
+    primary.title = mine
+      ? `Check out your local ${short}`
+      : `Create ${short} from ${r.name} and check it out`;
+    primary.setAttribute("aria-label", primary.title);
+    primary.addEventListener("click", () => void this.checkoutRef(mine ? short : r.name, primary));
+    actions.push(primary);
+    const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
+    more.setAttribute("aria-label", `More actions for ${r.name}`);
+    more.setAttribute("aria-haspopup", "menu");
+    more.appendChild(glyph("ellipsis"));
+    const menu = (): void =>
+      openMenu(more, [
+        { label: `Compare with ${short}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
+        { label: "Show in the graph", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+        { separator: true },
+        { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
+      ]);
+    more.addEventListener("click", menu);
+    actions.push(more);
+
+    const row = secRow({
+      lead: glyph("cloud"),
+      title: short,
+      titleSuffix: mine ? [] : [span("no local copy", "ab-pill unpublished")],
+      chips: r.subject ? [span(r.subject, "br-subject")] : [],
+      meta: [span(remote, "br-remote"), span(r.sha.slice(0, 7), "br-sha sec-mono")],
+      time: r.date ? relTime(r.date) : "",
+      timeTitle: r.date ? absTime(r.date) : undefined,
+      actions,
+      onOpen: () => this.routeView("refdetail", false, { ref: r.name, id: "remote" }),
+      ariaLabel: `${short} on ${remote}${mine ? "" : ", no local copy"}${r.date ? `, updated ${relTime(r.date)}` : ""}`,
+    });
+    row.classList.add("ref-row");
+    row.dataset.ref = r.name;
+    row.title = [r.name, r.subject].filter(Boolean).join("\n");
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      menu();
+    });
+    return row;
+  }
+
+  /**
+   * A tag.
+   *
+   * Annotated vs lightweight is the one fact that distinguishes the two kinds
+   * and NOTHING has ever carried it — `%(objecttype)` was there all along.
+   * Delete and Push are new: `tag:create` existed and the app could not remove
+   * or publish what it made.
+   */
+  private tagRefRow(r: RefInfo): HTMLElement {
+    const annotated = r.objectType === "tag";
+    const actions: HTMLElement[] = [];
+    const push = el("button", "row-btn") as HTMLButtonElement;
+    push.textContent = "Push";
+    push.setAttribute("aria-label", `Push tag ${r.name} to origin`);
+    push.title = `Publish ${r.name} to origin`;
+    push.addEventListener("click", () => void this.pushTagLive(r.name, push));
+    actions.push(push);
+    const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
+    more.setAttribute("aria-label", `More actions for ${r.name}`);
+    more.setAttribute("aria-haspopup", "menu");
+    more.appendChild(glyph("ellipsis"));
+    const menu = (): void =>
+      openMenu(more, [
+        { label: "Show in the graph", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+        { label: `Compare with ${r.name}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
+        { separator: true },
+        { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
+        { separator: true },
+        {
+          label: "Delete tag…",
+          icon: "trash",
+          danger: true,
+          onClick: () => void this.deleteTagLive(r.name),
+        },
+      ]);
+    more.addEventListener("click", menu);
+    actions.push(more);
+
+    const row = secRow({
+      lead: glyph("tag"),
+      title: r.name,
+      titleSuffix: [span(annotated ? "annotated" : "lightweight", `ab-pill ${annotated ? "annotated" : "lightweight"}`)],
+      chips: r.subject ? [span(r.subject, "br-subject")] : [],
+      meta: [span(r.sha.slice(0, 7), "br-sha sec-mono")],
+      time: r.date ? relTime(r.date) : "",
+      timeTitle: r.date ? absTime(r.date) : undefined,
+      actions,
+      onOpen: () => this.routeView("refdetail", false, { ref: r.name, id: "tag" }),
+      ariaLabel: `${r.name}, ${annotated ? "annotated" : "lightweight"} tag${r.date ? `, ${relTime(r.date)}` : ""}`,
+    });
+    row.classList.add("ref-row");
+    row.dataset.ref = r.name;
+    row.title = [r.name, r.subject].filter(Boolean).join("\n");
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      menu();
+    });
+    return row;
+  }
+
+  /**
+   * A stash.
+   *
+   * `stash@{n}` is POSITIONAL: dropping one renumbers every stash below it, so
+   * a row built from a stale list can act on a DIFFERENT stash than the one it
+   * names. Every mutation here re-reads the list first and refuses if the
+   * selector no longer points at the same commit.
+   */
+  private stashRow(st: StashInfo): HTMLElement {
+    const actions: HTMLElement[] = [];
+    const apply = el("button", "row-btn") as HTMLButtonElement;
+    apply.textContent = "Apply";
+    apply.setAttribute("aria-label", `Apply ${st.ref}`);
+    apply.title = `Apply ${st.ref} and keep it in the stash list`;
+    apply.addEventListener("click", () => void this.stashActLive("apply", st, apply));
+    actions.push(apply);
+    const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
+    more.setAttribute("aria-label", `More actions for ${st.ref}`);
+    more.setAttribute("aria-haspopup", "menu");
+    more.appendChild(glyph("ellipsis"));
+    const menu = (): void =>
+      openMenu(more, [
+        { label: "Pop — apply and remove", icon: "arrow-up", onClick: () => void this.stashActLive("pop", st, more) },
+        { separator: true },
+        {
+          label: "Drop this stash…",
+          icon: "trash",
+          danger: true,
+          onClick: () => void this.stashActLive("drop", st, more),
+        },
+      ]);
+    more.addEventListener("click", menu);
+    actions.push(more);
+
+    const row = secRow({
+      lead: glyph("archive"),
+      title: st.message || st.ref,
+      meta: [span(st.ref, "stash-sel sec-mono")],
+      time: st.time ? relTime(st.time) : "",
+      timeTitle: st.time ? absTime(st.time) : undefined,
+      actions,
+      onOpen: () => this.routeView("refdetail", false, { ref: st.ref, id: "stash" }),
+      ariaLabel: `${st.message || st.ref}, ${st.ref}${st.time ? `, ${relTime(st.time)}` : ""}`,
+    });
+    row.classList.add("ref-row", "stash-row");
+    row.dataset.ref = st.ref;
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      menu();
+    });
+    return row;
+  }
+
+  /** Compare the current branch against a ref, in the Compare view. */
+  private compareWithRef(head: string): void {
+    const current = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
+    this.compareBase = current ?? "HEAD";
+    this.compareHead = head;
+    this.routeView("compare", true);
+  }
+
+  /** Publish one tag. */
+  private async pushTagLive(name: string, btn: HTMLButtonElement): Promise<void> {
+    await this.refreshInPlace(btn, async () => {
+      const r = await host.invoke("tag:push", { name });
+      if (!r.ok) {
+        toast(r.message ?? `Couldn't push ${name}.`, r.expected ? "info" : "error");
+        return;
+      }
+      toast(`Pushed ${name} to origin.`, "success");
+    });
+  }
+
+  /** Delete a tag LOCALLY — and say that the pushed copy outlives it, because
+   *  "delete" on a tag that has been published is only half true. */
+  private async deleteTagLive(name: string): Promise<void> {
+    const ok = await confirmDialog({
+      title: `Delete tag ${name}?`,
+      message:
+        `This removes the tag from this clone only. If it has already been pushed, ` +
+        `the copy on the remote is untouched and a fetch brings it straight back.`,
+      confirmLabel: "Delete locally",
+      danger: true,
+    });
+    if (!ok) return;
+    const r = await host.invoke("tag:delete", name);
+    if (!r.ok) {
+      toast(r.message ?? `Couldn't delete ${name}.`, r.expected ? "info" : "error");
+      return;
+    }
+    toast(`Deleted tag ${name} locally.`, "success");
+    await this.refreshBranchesSoft();
+  }
+
+  /**
+   * Apply / pop / drop a stash, safely.
+   *
+   * `stash@{n}` is a POSITION, not an identity: dropping one renumbers every
+   * stash below it. A row built from a list that has since changed therefore
+   * names one stash and acts on another — and for `drop` that is unrecoverable.
+   * So: re-read the list first and refuse unless the selector still points at
+   * the same commit.
+   */
+  private async stashActLive(
+    action: "apply" | "pop" | "drop",
+    st: StashInfo,
+    btn: HTMLElement,
+  ): Promise<void> {
+    if (action === "drop") {
+      const ok = await confirmDialog({
+        title: `Drop ${st.ref}?`,
+        message: `“${st.message || st.ref}” is deleted permanently. This cannot be undone.`,
+        confirmLabel: "Drop",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    await this.refreshInPlace(btn, async () => {
+      let fresh: StashInfo[];
+      try {
+        fresh = await host.invoke("stash:list", undefined);
+      } catch {
+        toast("Couldn't re-read the stash list — nothing was changed.", "error");
+        return;
+      }
+      const still = fresh.find((x) => x.ref === st.ref);
+      if (!still || (st.sha && still.sha && still.sha !== st.sha)) {
+        toast(
+          `${st.ref} is not the stash it was — the list changed underneath. Refreshed instead.`,
+          "info",
+        );
+        await this.refreshBranchesSoft();
+        return;
+      }
+      const r = await host.invoke(
+        action === "apply" ? "stash:apply" : action === "pop" ? "stash:pop" : "stash:drop",
+        st.ref,
+      );
+      if (!r.ok) {
+        toast(r.message ?? `Couldn't ${action} ${st.ref}.`, r.expected ? "info" : "error");
+        return;
+      }
+      toast(
+        action === "apply"
+          ? `Applied ${st.ref}.`
+          : action === "pop"
+            ? `Popped ${st.ref}.`
+            : `Dropped ${st.ref}.`,
+        "success",
+      );
+      await this.refreshBranchesSoft();
+    });
+  }
+
+  /**
+   * Delete the branches whose work is done.
+   *
+   * The confirm NAMES every one of them, and says which ref merged-ness was
+   * measured against — because "merged" is a claim about a specific branch, a
+   * squash-merged branch reads as unmerged, and a branch merged into a release
+   * line but not into the default reads as unmerged too. A bulk delete that
+   * does not show its list is a bulk delete nobody should press.
+   *
+   * Sequential, stopping at the first failure, and it reports what actually
+   * happened rather than assuming: there is no transaction here, and claiming
+   * six deletions when the third one failed would be a lie about the repo.
+   */
+  private async sweepFinishedBranches(finished: BranchInfo[], defaultBranch?: string): Promise<void> {
+    if (!finished.length) return;
+    const names = finished.map((b) => b.name);
+    const ok = await confirmDialog({
+      title: `Delete ${finished.length} finished ${finished.length === 1 ? "branch" : "branches"}?`,
+      message:
+        `${names.join("\n")}\n\n` +
+        `“Finished” means every commit is already in ${defaultBranch ?? "the default branch"}, ` +
+        `or the upstream it tracked no longer exists. A squash-merged branch does NOT look ` +
+        `merged to git, and a branch merged somewhere other than ${defaultBranch ?? "the default branch"} ` +
+        `will not be listed here. Only the local copies are deleted.`,
+      confirmLabel: `Delete ${finished.length}`,
+      danger: true,
+    });
+    if (!ok) return;
+
+    const done: string[] = [];
+    for (const b of finished) {
+      let r;
+      try {
+        r = await host.invoke("branch:delete", { name: b.name, force: false });
+      } catch (e) {
+        toast(
+          `Deleted ${done.length} of ${finished.length}, then ${b.name} failed: ${cleanErr(e) || "git error"}.`,
+          "error",
+        );
+        break;
+      }
+      if (!r?.ok) {
+        toast(
+          done.length
+            ? `Deleted ${done.join(", ")}. Stopped at ${b.name}: ${r?.message ?? "git refused."}`
+            : `${b.name} was not deleted: ${r?.message ?? "git refused."}`,
+          "error",
+        );
+        break;
+      }
+      done.push(b.name);
+    }
+    if (done.length === finished.length) {
+      toast(`Deleted ${done.length} finished ${done.length === 1 ? "branch" : "branches"}.`, "success");
+    }
+    bust("branches");
+    await this.refreshBranchesSoft();
+  }
+
   private async refreshBranchesSoft(): Promise<void> {
     if (this.currentView === "branches" && this.reloadBranchRows) {
       await this.reloadBranchRows();
@@ -1521,106 +1880,288 @@ class App {
     }
   }
 
-  private localBranchRow(b: BranchInfo): HTMLElement {
-    const row = el("div", "list-row branch-row" + (b.current ? " is-current" : ""));
-    row.dataset.ref = b.name;
-    row.appendChild(glyph(b.current ? "check" : "git-branch"));
-    const meta = el("div", "row-meta");
-    const top = el("div", "row-meta-title branch-title");
-    const nm = el("span", "branch-name-txt");
-    nm.textContent = b.name;
-    top.appendChild(nm);
-    // Ahead and behind are the same KIND of fact and read as one pair — the
-    // divergence of this branch from its upstream. They used to be a static
-    // green count beside a blue button labelled "Pull 5", so a one-click
-    // action was styled as a passive number sitting next to a passive number.
-    if (b.ahead) {
-      const p = el("span", "ab-pill ahead");
-      p.textContent = `↑ ${b.ahead}`;
-      p.title = `${plural(b.ahead, "commit")} to push to ${b.upstream ?? "upstream"}`;
-      top.appendChild(p);
+  /**
+   * Fetch every remote, from the header.
+   *
+   * This existed only as a menu item inside ONE local branch's hover-revealed
+   * ⋯ — the action that makes every ahead/behind number on the screen true,
+   * two hover levels deep and attached to a row it has nothing to do with.
+   */
+  private async fetchAllLive(btn: HTMLButtonElement): Promise<void> {
+    await this.refreshInPlace(btn, async () => {
+      const r = await host.invoke("sync:fetch", undefined);
+      if (!r.ok) {
+        toast(r.message ?? "Fetch failed.", r.expected ? "info" : "error");
+        return;
+      }
+      bust("branches");
+      await this.refreshBranchesSoft();
+      toast("Fetched from every remote.", "success");
+    });
+  }
+
+  /** Push a branch that has never been pushed, and set its upstream. */
+  private async publishBranchLive(b: BranchInfo, btn: HTMLButtonElement): Promise<void> {
+    await this.refreshInPlace(btn, async () => {
+      const r = await host.invoke("branch:push", { name: b.name });
+      if (!r.ok) {
+        toast(r.message ?? `Couldn't publish ${b.name}.`, r.expected ? "info" : "error");
+        return;
+      }
+      bust("branches");
+      await this.refreshBranchesSoft();
+      toast(`Published ${b.name}.`, "success");
+    });
+  }
+
+  /** The per-kind primary action in the header. Each segment has exactly one
+   *  thing you come here to MAKE; Remotes has none, because Fetch is it. */
+  private branchesCta(tab: "local" | "remote" | "tags" | "stashes"): HTMLElement {
+    const mk = (label: string, icon: string, title: string, run: () => void): HTMLElement => {
+      const b = el("button", "mini-btn") as HTMLButtonElement;
+      b.append(glyph(icon), span(label));
+      b.title = title;
+      b.addEventListener("click", run);
+      return b;
+    };
+    if (tab === "local") {
+      return mk("New branch", "add", "Create a branch from the current HEAD", () => void this.newBranch());
     }
-    if (b.behind) {
-      const p = el("span", "ab-pill behind");
-      p.textContent = `↓ ${b.behind}`;
-      p.title = `${plural(b.behind, "commit")} to pull from ${b.upstream ?? "upstream"}`;
-      top.appendChild(p);
+    if (tab === "tags") {
+      return mk("New tag", "tag", "Tag the current HEAD", () => void this.newTagHere());
     }
-    // The upstream is GONE. Without this the row reads "0 ahead, 0 behind" —
-    // the same shape as perfectly in sync — about a remote branch that no
-    // longer exists, which is what every merged pull request leaves behind and
-    // the clearest sign the local copy is finished with.
-    // The upstream is GONE. Without this the row reads "0 ahead, 0 behind" —
-    // the same shape as perfectly in sync — about a remote branch that no
-    // longer exists, which is what every merged pull request leaves behind and
-    // the clearest sign the local copy is finished with.
-    if (b.gone) {
-      const p = el("span", "ab-pill gone");
-      p.textContent = "upstream gone";
-      p.title = `${b.upstream ?? "Its upstream"} no longer exists — this branch is probably finished with.`;
-      top.appendChild(p);
+    if (tab === "stashes") {
+      // The one screen that LISTS stashes could not make one.
+      return mk("Stash changes", "archive", "Stash the working tree", () => void this.stashHere());
     }
-    meta.appendChild(top);
-    const bits: string[] = [];
-    if (b.upstream) bits.push(b.upstream);
-    if (b.date) bits.push(relTime(b.date));
-    if (b.subject) bits.push(b.subject);
-    const sub = el("div", "row-meta-sub");
-    sub.textContent = bits.join("  ·  ");
-    if (b.date) sub.title = absTime(b.date);
-    meta.appendChild(sub);
-    row.appendChild(meta);
-    const actions = el("div", "row-actions");
-    // The pull ACTION lives with the other verbs rather than masquerading as a
-    // count in the badge row.
-    if (b.behind) {
-      const pull = textBtn(
-        "Pull",
-        b.current
-          ? `Pull ${plural(b.behind, "commit")} from ${b.upstream ?? "upstream"}`
-          : `Pull ${plural(b.behind, "commit")} into ${b.name} — fast-forward, no checkout`,
-        () => {},
-        false,
-        b.name,
-      ) as HTMLButtonElement;
-      pull.addEventListener("click", (e) => {
-        e.stopPropagation();
-        void this.pullBranchLive(b, pull);
+    return el("span", "gh-head-cta-blank");
+  }
+
+  /** Tag the current HEAD, from the Tags segment's own CTA. */
+  private async newTagHere(): Promise<void> {
+    const name = await promptInline("Tag name", "v1.0.0");
+    if (!name?.trim()) return;
+    const msg = await promptInline(
+      `Message for ${name.trim()}`,
+      "Leave empty for a lightweight tag",
+      "",
+      "Create tag",
+      true,
+    );
+    if (msg === null) return;
+    const r = await host.invoke("tag:create", {
+      name: name.trim(),
+      message: msg.trim() || undefined,
+    });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't create the tag.", r.expected ? "info" : "error");
+      return;
+    }
+    toast(`Created tag ${name.trim()}.`, "success");
+    await this.refreshBranchesSoft();
+  }
+
+  /** Stash the working tree. The one screen that LISTS stashes could not make
+   *  one — the verb lived only in the Changes view. */
+  private async stashHere(): Promise<void> {
+    const msg = await promptInline("Stash message", "What is this work?", "", "Stash", true);
+    if (msg === null) return;
+    const r = await host.invoke("stash:save", { message: msg.trim() || undefined });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't stash.", r.expected ? "info" : "error");
+      return;
+    }
+    toast("Stashed your working changes.", "success");
+    await this.refreshBranchesSoft();
+  }
+
+  /** Empty and error states per kind, each with the verb that fills it. */
+  private branchesEmpty(
+    tab: "local" | "remote" | "tags" | "stashes",
+    query: string,
+    stashFailed: boolean,
+  ): HTMLElement {
+    if (query) {
+      return emptyState("No matches", `Nothing in ${tab} matches “${query}”.`, {
+        icon: "search",
+        anchor: "inline",
       });
-      actions.appendChild(pull);
     }
-    if (!b.current) {
-      actions.append(
-        textBtn("Checkout", "Check out this branch", (btn) => void this.checkoutRef(b.name, btn), false, b.name),
-        textBtn("Delete", "Delete this branch", () => void this.deleteBranch(b.name), true, b.name),
+    if (tab === "stashes" && stashFailed) {
+      // A failed read is not an empty list — the old view swallowed the error
+      // and rendered "no stashes" over a repo that has some.
+      return errorState(
+        "Couldn't read the stashes",
+        "Git did not answer. The stash list is unknown, not empty.",
+        () => void this.refreshBranchesSoft(),
       );
     }
-    // Clicking a row opens the branch's PEEK — a browsable card with its recent
-    // commits, tracking state, and actions — never a stray checkout. The ⋯
-    // button keeps the quick-actions menu for one-click operations. The row
-    // contains buttons, so it can't BE a <button> — role + keyboard contract.
-    row.setAttribute("role", "button");
-    row.tabIndex = 0;
-    row.setAttribute("aria-label", `Inspect branch ${b.name}`);
-    row.setAttribute("aria-haspopup", "dialog");
-    row.classList.add("is-clickable");
-    row.addEventListener("click", () => openBranchPeek(this.peekHost(), b));
-    row.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        openBranchPeek(this.peekHost(), b);
-      }
-    });
+    const copy: Record<string, [string, string]> = {
+      local: ["No branches yet", "Every repository has at least one — this read found none."],
+      remote: ["No remote branches", "Nothing has been fetched yet. Fetch brings them in."],
+      tags: ["No tags", "Tag a commit to mark a release or a milestone."],
+      stashes: ["No stashes", "Stashing puts your working changes aside without committing them."],
+    };
+    const [title, desc] = copy[tab];
+    return emptyState(title, desc, { icon: tab === "stashes" ? "archive" : "git-branch" });
+  }
+
+  /**
+   * One local branch, on the shared `secRow` anatomy.
+   *
+   * The old row was a bespoke two-line `div[role=button]` whose entire action
+   * cluster was `opacity: 0` until hover — which is why every deeper verb had
+   * to be exiled into a ⋯ menu, and why none of them could be reached by
+   * keyboard or touch at all. One primary verb and the menu render at rest.
+   */
+  private localBranchRow(b: BranchInfo, defaultBranch?: string, maxAb = 1): HTMLElement {
+    const pills: HTMLElement[] = [];
+    const pill = (text: string, cls: string, title: string): HTMLElement => {
+      const p = span(text, `ab-pill ${cls}`);
+      p.title = title;
+      return p;
+    };
+    if (b.current) pills.push(pill("current", "current", "This is the checked-out branch"));
+    else if (b.name === defaultBranch) pills.push(pill("default", "default", "The repository's default branch"));
+    if (b.gone) {
+      // Without this the row reads "0 ahead, 0 behind" — the same shape as
+      // perfectly in sync — about a remote that no longer exists, which is what
+      // every merged pull request leaves behind.
+      pills.push(
+        pill(
+          "upstream gone",
+          "gone",
+          `${b.upstream ?? "Its upstream"} no longer exists — this branch is probably finished with.`,
+        ),
+      );
+    } else if (b.merged && !b.current && b.name !== defaultBranch) {
+      pills.push(
+        pill(
+          "merged",
+          "merged",
+          `Every commit here is already in ${defaultBranch ?? "the default branch"} — safe to delete.`,
+        ),
+      );
+    } else if (!b.upstream) {
+      pills.push(pill("unpublished", "unpublished", "This branch has never been pushed"));
+    }
+
+    const chips: HTMLElement[] = [];
+    // How far from the DEFAULT branch, as a bar — the question "how far is this
+    // from main" that a pair of upstream counts cannot answer. Scaled to the
+    // widest divergence CURRENTLY ON SCREEN, which is what makes the column
+    // comparable down the list. Absent on git < 2.41, where it renders nothing
+    // rather than a bar of zeroes.
+    if (b.aheadDefault !== undefined && b.behindDefault !== undefined && b.name !== defaultBranch) {
+      const bar = el("span", "br-ab");
+      bar.setAttribute("role", "img");
+      bar.setAttribute(
+        "aria-label",
+        `${b.aheadDefault} ahead of and ${b.behindDefault} behind ${defaultBranch ?? "the default branch"}`,
+      );
+      bar.title = bar.getAttribute("aria-label")!;
+      const half = (n: number, cls: string): HTMLElement => {
+        const h = el("span", `br-ab-half ${cls}`);
+        const fill = el("span", "br-ab-fill");
+        fill.style.width = n ? `${Math.max(3, Math.round(32 * Math.min(1, n / maxAb)))}px` : "0";
+        h.appendChild(fill);
+        return h;
+      };
+      bar.append(
+        span(String(b.behindDefault), "br-ab-n"),
+        half(b.behindDefault, "is-behind"),
+        half(b.aheadDefault, "is-ahead"),
+        span(String(b.aheadDefault), "br-ab-n"),
+      );
+      chips.push(bar);
+    }
+    if (b.subject) chips.push(span(b.subject, "br-subject"));
+
+    const meta: HTMLElement[] = [];
+    const track = el("span", "br-track");
+    // The upstream pair answers a DIFFERENT question from the bar: not "how far
+    // from main" but "what will Push and Pull do".
+    if (b.ahead) {
+      const p = span(`↑ ${b.ahead}`, "ab-pill ahead");
+      p.title = `${plural(b.ahead, "commit")} to push to ${b.upstream ?? "upstream"}`;
+      track.appendChild(p);
+    }
+    if (b.behind) {
+      const p = span(`↓ ${b.behind}`, "ab-pill behind");
+      p.title = `${plural(b.behind, "commit")} to pull from ${b.upstream ?? "upstream"}`;
+      track.appendChild(p);
+    }
+    meta.push(track);
+    meta.push(span(b.upstream ?? "", "br-upstream sec-mono"));
+
+    // ONE contextual primary verb, plus the menu. Delete deliberately does NOT
+    // live on the row: it is one stray click away from a name you are scanning.
+    const actions: HTMLElement[] = [];
+    if (b.behind) {
+      const pull = el("button", "row-btn") as HTMLButtonElement;
+      pull.textContent = "Pull";
+      pull.setAttribute("aria-label", `Pull ${b.name}`);
+      pull.title = b.current
+        ? `Pull ${plural(b.behind, "commit")} from ${b.upstream ?? "upstream"}`
+        : `Pull ${plural(b.behind, "commit")} into ${b.name} — fast-forward, no checkout`;
+      pull.addEventListener("click", () => void this.pullBranchLive(b, pull));
+      actions.push(pull);
+    } else if (!b.upstream) {
+      const pub = el("button", "row-btn") as HTMLButtonElement;
+      pub.textContent = "Publish";
+      pub.setAttribute("aria-label", `Publish ${b.name}`);
+      pub.title = `Push ${b.name} and set its upstream`;
+      pub.addEventListener("click", () => void this.publishBranchLive(b, pub));
+      actions.push(pub);
+    } else if (!b.current) {
+      const co = el("button", "row-btn") as HTMLButtonElement;
+      co.textContent = "Checkout";
+      co.setAttribute("aria-label", `Check out ${b.name}`);
+      co.title = `Check out ${b.name}`;
+      co.addEventListener("click", () => void this.checkoutRef(b.name, co));
+      actions.push(co);
+    }
     const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
     moreBtn.setAttribute("aria-label", `More actions for ${b.name}`);
     moreBtn.setAttribute("aria-haspopup", "menu");
     moreBtn.appendChild(glyph("ellipsis"));
-    moreBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
+    moreBtn.addEventListener("click", () => this.openBranchActions(b, moreBtn));
+    actions.push(moreBtn);
+
+    const row = secRow({
+      lead: glyph(b.current ? "check" : b.name === defaultBranch ? "home" : "git-branch"),
+      title: b.name,
+      titleSuffix: pills,
+      chips,
+      meta,
+      time: b.date ? relTime(b.date) : "",
+      timeTitle: b.date ? absTime(b.date) : undefined,
+      actions,
+      // The row is a PLACE now, not a modal: it routes to the branch's own page.
+      onOpen: () => this.routeView("refdetail", false, { ref: b.name, id: "head" }),
+      // What the row says out loud, rather than "Inspect branch main".
+      ariaLabel: [
+        b.name,
+        b.current ? "current branch" : "",
+        b.gone ? "upstream gone" : b.merged ? "merged" : "",
+        // The divergence as a FACT, not as the verbs the row's own buttons
+        // carry — "3 to push, 5 to pull" beside a Pull button makes a screen
+        // reader recite the actions back before it reaches them.
+        b.ahead ? `${b.ahead} ahead` : "",
+        b.behind ? `${b.behind} behind` : "",
+        b.date ? `updated ${relTime(b.date)}` : "",
+      ]
+        .filter(Boolean)
+        .join(", "),
+    });
+    row.classList.add("branch-row");
+    row.dataset.ref = b.name;
+    row.title = [b.name, b.subject, b.date ? absTime(b.date) : ""].filter(Boolean).join("\n");
+    // Right-click MIRRORS the menu — a shortcut, never a verb's only door.
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
       this.openBranchActions(b, moreBtn);
     });
-    actions.appendChild(moreBtn);
-    row.appendChild(actions);
     return row;
   }
 

@@ -622,7 +622,13 @@
       // to name its object — "More actions for gitstudio", not "More actions"
       // repeated down the page. The rule is about what a screen reader hears,
       // not about which element the actions happen to sit in.
-      const btns = $$(".row-actions .row-btn, .row-more").filter((b) => b.offsetParent !== null);
+      // `.sec-row-actions` too: the ref manager's verbs render AT REST in the
+      // shared row's own action slot, not inside a hover-revealed `.row-actions`
+      // cluster. The rule is about what a screen reader hears, not about which
+      // element the actions happen to sit in.
+      const btns = $$(".row-actions .row-btn, .sec-row-actions .row-btn, .row-more").filter(
+        (b) => b.offsetParent !== null,
+      );
       c.ok(btns.length >= 2, `the view has row actions (${btns.length})`);
       if (btns.length < 2) return;
       const names = btns.map(
@@ -1064,11 +1070,21 @@
       c.eq(sa.fontSize, sb.fontSize, "the pair shares a font size");
       c.eq(sa.borderRadius, sb.borderRadius, "the pair shares a corner radius");
       c.ok(b.left - a.right < 12, `the pair sits together (gap ${Math.round(b.left - a.right)}px)`);
-      // …and beside the name, not stranded at the far end of a wide row.
-      const name = row.querySelector(".branch-name-txt");
-      if (name) {
-        const n = name.getBoundingClientRect();
-        c.ok(a.left - n.right < 24, `the counts sit with the name (${Math.round(a.left - n.right)}px away)`);
+      // …and they form a COLUMN.
+      //
+      // They used to sit beside the branch name, which put them at a different
+      // x on every row and made the pair unreadable down a list. They live in a
+      // fixed-width meta slot now, so the arrows line up — and a check that
+      // silently skipped when it could not find the old element (`if (name)`)
+      // would have stopped testing anything at all when that moved.
+      const tracks = $$(".branch-row .br-track").filter((t) => t.children.length);
+      c.ok(tracks.length >= 2, `more than one row shows divergence (${tracks.length})`);
+      if (tracks.length >= 2) {
+        const rights = tracks.map((t) => Math.round(t.getBoundingClientRect().right));
+        c.ok(
+          Math.max(...rights) - Math.min(...rights) <= 1,
+          `the pairs share a right edge, so they read as a column (${[...new Set(rights)].join(", ")})`,
+        );
       }
     },
     "branch-pull-is-an-action": (f) => {
@@ -1077,16 +1093,21 @@
         (r) => (r.textContent || "").includes("feat/line-staging"),
       );
       if (!row) return check(f).ok(false, "the diverged branch row renders");
-      const pull = [...row.querySelectorAll(".row-actions button")].find(
+      // `.sec-row-actions` too — the ref manager's verbs live in the shared
+      // row's own action slot now, rendered at rest rather than on hover. The
+      // demand is unchanged: Pull is an ACTION on the row, not a passive count
+      // in the badge strip.
+      const acts = ".row-actions button, .sec-row-actions button";
+      const pull = [...row.querySelectorAll(acts)].find(
         (b) => (b.textContent || "").trim() === "Pull",
       );
-      c.ok(!!pull, "Pull lives with Checkout and Delete in the row's actions");
+      c.ok(!!pull, "Pull is one of the row's actions, not a count in the badges");
       const clean = $$(".branch-row, .list-row").find(
         (r) => (r.textContent || "").includes("redesign/issues-detail"),
       );
       if (clean) {
         c.ok(
-          ![...clean.querySelectorAll(".row-actions button")].some(
+          ![...clean.querySelectorAll(acts)].some(
             (b) => (b.textContent || "").trim() === "Pull",
           ),
           "an up-to-date branch offers no Pull",
@@ -5253,6 +5274,153 @@
         r.bottom <= box.bottom + 2 && r.top >= box.top - 2,
         "and the last commit can be brought fully into view",
       );
+    },
+
+    /**
+     * The ref manager, per KIND.
+     *
+     * "also local, remote, tag and stashes views inside branches should also be
+     * enhanced." It was the last view still hand-rolling its own chrome: four
+     * collapsible groups of four incompatible row shapes, no title, no count,
+     * no Refresh, no facets, no routed detail. Remote branches, tags and
+     * stashes had NO row actions at all — their entire verb set required
+     * opening a modal first — and Fetch, the action that makes every
+     * ahead/behind number on the screen true, was a menu item inside one local
+     * branch's hover-revealed kebab.
+     *
+     * `?arg=` is which segment to check.
+     */
+    "the-ref-manager-shows-one-kind-at-a-time": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const want = window.__GS_ARG || "local";
+
+      // The shared header: a title, a live count, Refresh — and FETCH, at the
+      // surface, named so it cannot be confused with Refresh.
+      c.eq(text(".list-head-title"), "Branches", "the view says what it is");
+      c.ok(!!$(".gh-head-count"), "and how many are on screen");
+      const tools = $$(".gh-head-tools button, .gh-acct button").map((b) => text(b) || b.title);
+      c.ok(
+        tools.some((t) => /^fetch/i.test(t)),
+        `Fetch is a header button, not a menu item (${tools.join(", ")})`,
+      );
+      c.ok(tools.some((t) => /refresh/i.test(t)), "Refresh is still its own control");
+      const fetchBtn = $$("button").find((b) => /^fetch$/i.test(text(b)));
+      c.match(fetchBtn?.title, /remote/i, "and Fetch says it goes to the network");
+
+      // One kind per screen.
+      const segs = $$(".gh-seg-btn").map((b) => text(b));
+      for (const kind of ["Local", "Remotes", "Tags", "Stashes"]) {
+        c.ok(segs.some((s) => s.startsWith(kind)), `${kind} has its own segment (${segs.join(" | ")})`);
+      }
+      for (const s of segs) c.match(s, /\(\d+\)/, `each segment carries its count (${s})`);
+
+      const idx = { local: 1, remote: 2, tags: 3, stashes: 4 }[want];
+      $$(".gh-seg-btn")[idx - 1].click();
+      await settle(500);
+
+      const rows = $$(".sec-row");
+      c.ok(rows.length > 0, `${want} has rows`);
+      if (!rows.length) return;
+
+      // EVERY kind carries verbs, at rest. Remote branches, tags and stashes
+      // had none at all — this is the heart of the ask.
+      for (const r of rows.slice(0, 3)) {
+        const acts = [...r.querySelectorAll(".sec-row-actions button")];
+        c.ok(acts.length >= 1, `a ${want} row carries its own verbs (${acts.length})`);
+        for (const b of acts) {
+          const name = (b.textContent || "").trim() || b.getAttribute("aria-label") || b.title;
+          c.ok(!!name, "and every one of them has a name");
+          // At rest, not on hover: an action revealed only by a pointer cannot
+          // be reached by keyboard or by touch at all.
+          c.ok(Number(getComputedStyle(b).opacity) > 0, `${name} is visible without hovering`);
+        }
+        c.ok(!!r.querySelector(".sec-row-time"), "and says when it last moved");
+      }
+
+      // Right-click MIRRORS the menu; it is a shortcut, never a verb's only door.
+      c.ok(!!rows[0].querySelector(".lv-menu-btn"), "the overflow menu is a real button on the row");
+    },
+
+    /**
+     * A remote's own HEAD ref shortens to the bare remote NAME — "origin", not
+     * "origin/HEAD" — so the `endsWith("/HEAD")` guard never fired and the list
+     * carried a phantom row called "origin" offering to check out nothing.
+     */
+    "the-remote-list-has-no-phantom-origin-row": async (f) => {
+      const c = check(f);
+      $$(".gh-seg-btn")[1].click();
+      await settle(500);
+      const names = $$(".sec-row").map((r) => (r.dataset.ref || "").trim());
+      c.ok(names.length > 0, "the remotes segment has rows");
+      c.ok(
+        !names.includes("origin"),
+        `no bare remote name is listed as a branch (${names.join(", ")})`,
+      );
+      for (const n of names) {
+        c.ok(n.includes("/"), `every remote row names a branch on a remote (${n})`);
+      }
+    },
+
+    /**
+     * A ref is a PLACE. Its history was a modal peek — no route, no back-stack
+     * entry, gone on Escape — and for a remote branch, a tag or a stash that
+     * modal was the ONLY door to every action it had.
+     */
+    "a-ref-opens-its-own-page": async (f) => {
+      const c = check(f);
+      const before = window.__GS_ROUTES.length;
+      $(".sec-row").click();
+      await settle(1200);
+      const went = window.__GS_ROUTES.slice(before).map((r) => r.view);
+      c.ok(went.includes("refdetail"), `a row opens the ref's page (went: ${went.join(" → ") || "nowhere"})`);
+      c.ok(!$(".modal-overlay"), "and nothing modal is involved");
+      c.ok(!!$(".rd-title"), "the page names the ref");
+      const back = $(".det-back");
+      c.ok(!!back, "with a way back");
+      c.match(text(back), /branches/i, "that names where it came from");
+      // Its verbs live in the top bar, where a page's verbs live.
+      const verbs = $$(".det-tb-actions button").map((b) => text(b) || b.title);
+      c.ok(verbs.length >= 2, `the page carries the ref's actions (${verbs.join(", ")})`);
+      c.ok(!!$(".rd-history"), "and what is on the ref");
+    },
+
+    /**
+     * "What is safe to delete" — a question a branch list is opened to answer
+     * at least as often as "what do I switch to", and one this view could not
+     * answer at all. A branch is finished when every commit on it is already in
+     * the default branch, or when the upstream it tracked has been deleted:
+     * exactly what a merged pull request leaves behind.
+     */
+    "finished-branches-can-be-swept": async (f) => {
+      const c = check(f);
+      const sweep = $(".branches-sweep");
+      c.ok(!!sweep && !sweep.hidden, "the local list offers to clear the finished branches");
+      if (!sweep) return;
+      c.match(text(sweep), /delete \d+ finished/i, "and says how many it means");
+      c.match(sweep.title, /default branch|upstream/i, "and what it counts as finished");
+
+      // The confirm must NAME them. A squash-merged branch does not look merged
+      // to git, so a bulk delete that does not show its list is one nobody
+      // should press.
+      sweep.click();
+      await settle(600);
+      const dlg = $(".modal-card");
+      c.ok(!!dlg, "it asks first");
+      if (!dlg) return;
+      const body = text(dlg);
+      c.match(body, /redesign\/wave-1/, "naming every branch it will delete");
+      c.match(body, /squash/i, "and warning that a squash-merge does not look merged to git");
+      c.match(body, /local/i, "and that only the local copies go");
+
+      // It is not the SEGMENT that offers this on other kinds.
+      const cancel = [...dlg.querySelectorAll("button")].find((b) => /cancel/i.test(text(b)));
+      cancel?.click();
+      await settle(300);
+      $$(".gh-seg-btn")[2].click();
+      await settle(400);
+      const after = $(".branches-sweep");
+      c.ok(after?.hidden !== false, "and it is offered only where branches are");
     },
   };
 })();

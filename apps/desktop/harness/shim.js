@@ -223,13 +223,16 @@
 
   const branches = [
     { name: "main", current: true, upstream: "origin/main", ahead: 2, behind: 0, subject: "release: extension 1.11.1", date: S(40) },
-    { name: "redesign/issues-detail", current: false, upstream: "origin/redesign/issues-detail", ahead: 0, behind: 0, subject: "issues: full-page detail as a routed state", date: S(1) },
-    { name: "fix/log-stream", current: false, upstream: undefined, ahead: 0, behind: 0, subject: "actions: stream job logs with backpressure", date: S(8) },
+    // aheadDefault/behindDefault are divergence from the DEFAULT branch, which
+    // is a different question from the upstream pair — and `aheadDefault === 0`
+    // is what "merged, safe to delete" means.
+    { name: "redesign/issues-detail", current: false, aheadDefault: 5, behindDefault: 0, upstream: "origin/redesign/issues-detail", ahead: 0, behind: 0, subject: "issues: full-page detail as a routed state", date: S(1) },
+    { name: "fix/log-stream", current: false, aheadDefault: 2, behindDefault: 12, upstream: undefined, ahead: 0, behind: 0, subject: "actions: stream job logs with backpressure", date: S(8) },
     // The state every merged pull request leaves behind: the upstream is gone,
     // and without the flag the row reads "0 ahead, 0 behind" — in sync with a
     // remote that does not exist.
-    { name: "redesign/wave-1", current: false, upstream: "origin/redesign/wave-1", ahead: 0, behind: 0, gone: true, subject: "issues: section pages land", date: S(56) },
-    { name: "feat/line-staging", current: false, upstream: "origin/feat/line-staging", ahead: 3, behind: 5, subject: "engine: hunk splitting groundwork", date: S(20) },
+    { name: "redesign/wave-1", current: false, aheadDefault: 0, behindDefault: 40, merged: true, upstream: "origin/redesign/wave-1", ahead: 0, behind: 0, gone: true, subject: "issues: section pages land", date: S(56) },
+    { name: "feat/line-staging", current: false, aheadDefault: 18, behindDefault: 3, upstream: "origin/feat/line-staging", ahead: 3, behind: 5, subject: "engine: hunk splitting groundwork", date: S(20) },
   ];
 
   const workflows = [
@@ -293,7 +296,35 @@
     // cannot express signing out, which is why nothing could see that the
     // top-bar chip kept naming the account you had just left.
     "sync:status": { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
-    "refs:list": branches.map((b) => ({ type: "head", name: b.name, fullName: "refs/heads/" + b.name, sha: "abc123", isCurrent: b.current, upstream: b.upstream })),
+    // Every KIND of ref, because the Branches view has one screen per kind and
+    // the fixture used to hold local heads ONLY — so the remote, tag and stash
+    // row shapes were never once rendered, screenshotted or checked.
+    "refs:list": [
+      ...branches.map((b) => ({
+        type: "head",
+        name: b.name,
+        fullName: "refs/heads/" + b.name,
+        sha: "abc123",
+        isCurrent: b.current,
+        upstream: b.upstream,
+        gone: b.gone,
+        date: b.date,
+        subject: b.subject,
+      })),
+      // The remote's own HEAD: `%(refname:short)` of it is the bare remote NAME
+      // ("origin"), which is why the old `endsWith("/HEAD")` guard never fired
+      // and a phantom row called "origin" sat in the list offering to check out
+      // nothing. Its symref names the DEFAULT branch, which IS worth keeping.
+      { type: "remote", name: "origin", fullName: "refs/remotes/origin/HEAD", sha: "9f8e7d6", isCurrent: false, symref: "origin/main" },
+      { type: "remote", name: "origin/main", fullName: "refs/remotes/origin/main", sha: "9f8e7d6", isCurrent: false, date: S(40), subject: "release: extension 1.11.1" },
+      { type: "remote", name: "origin/redesign/issues-detail", fullName: "refs/remotes/origin/redesign/issues-detail", sha: "a1b2c3d", isCurrent: false, date: S(1), subject: "issues: full-page detail as a routed state" },
+      { type: "remote", name: "origin/feat/line-staging", fullName: "refs/remotes/origin/feat/line-staging", sha: "18c9d0e", isCurrent: false, date: S(20), subject: "engine: hunk splitting groundwork" },
+      { type: "remote", name: "origin/chore/dependabot-bump", fullName: "refs/remotes/origin/chore/dependabot-bump", sha: "77aa88b", isCurrent: false, date: S(200), subject: "build(deps): bump electron to 33.4.11" },
+      // Annotated and lightweight — the distinction nothing has ever carried.
+      { type: "tag", name: "ext-v1.11.1", fullName: "refs/tags/ext-v1.11.1", sha: "e5f6a7b", isCurrent: false, objectType: "tag", date: S(40), subject: "Extension 1.11.1" },
+      { type: "tag", name: "desktop-v1.5.1", fullName: "refs/tags/desktop-v1.5.1", sha: "d4e5f6a", isCurrent: false, objectType: "tag", date: S(58), subject: "Desktop 1.5.1" },
+      { type: "tag", name: "nightly", fullName: "refs/tags/nightly", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(26), subject: "release: extension 1.11.1" },
+    ],
     "head:get": { detached: false, branch: "main", sha: "9f8e7d6" },
     "branches:list": branches,
     // The Rebase view had no fixture, so every screenshot of it was its ERROR

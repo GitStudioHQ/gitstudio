@@ -91,6 +91,7 @@ const VIEW_LABELS: Record<string, string> = {
   joblog: "Job log",
   releasenew: "Release composer",
   issuenew: "Issue composer",
+  refdetail: "Ref",
   predit: "Pull request composer",
 };
 

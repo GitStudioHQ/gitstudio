@@ -63,7 +63,9 @@ const CASES = [
   ["coming-back-to-a-search-costs-no-requests", "explore~type:git~key:Enter"],
   // Both shapes: a dialog, and a peek (whose card is focused with tabindex=-1).
   ["a-modal-surface-holds-the-page-behind-it", "branches~text:New%20branch"],
-  ["a-modal-surface-holds-the-page-behind-it", "branches~click:.branch-row"],
+  // A branch row opens its PAGE now, not a peek — so the second Branches
+  // scene points at a surface that is still modal.
+  ["a-modal-surface-holds-the-page-behind-it", "branches~click:.gh-seg-btn:nth-child(3)~text:New%20tag"],
   ["a-toast-is-reachable-over-a-dialog", "branches~text:Push~palette"],
   [
     "escape-still-works-after-coming-back",
@@ -99,6 +101,13 @@ const CASES = [
   ["log-toolbar-toggles-are-labelled", "actions~open9100~click:.gh-job-log"],
   ["toolbar-no-overflow", "actions", { width: 1150 }],
   ["branch-divergence-paired", "branches"],
+  ["the-ref-manager-shows-one-kind-at-a-time", "branches", { arg: "local" }],
+  ["the-ref-manager-shows-one-kind-at-a-time", "branches", { arg: "remote" }],
+  ["the-ref-manager-shows-one-kind-at-a-time", "branches", { arg: "tags" }],
+  ["the-ref-manager-shows-one-kind-at-a-time", "branches", { arg: "stashes" }],
+  ["the-remote-list-has-no-phantom-origin-row", "branches"],
+  ["a-ref-opens-its-own-page", "branches"],
+  ["finished-branches-can-be-swept", "branches"],
   ["branch-pull-is-an-action", "branches"],
   ["org-members-are-people", "orgs~text:Members"],
   ["org-people-are-chips", "orgs~text:Members"],
