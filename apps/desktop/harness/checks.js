@@ -4759,6 +4759,70 @@
     },
 
     /**
+     * A label picker batches its ticks, and Escape discards them.
+     *
+     * The issue's picker batched correctly but committed on EVERY dismissal,
+     * because `onClose` could not tell one from another — so Escape, the key
+     * that means "back out" everywhere else in this app, was the key that wrote
+     * to GitHub, and there was no way to change your mind after the first tick.
+     * The pull request's picker was worse: its items were not `checkable`, so
+     * openMenu took the close-then-act path and every single tick closed the
+     * menu and fired its own request.
+     */
+    "a-label-picker-batches-and-escape-discards": async (f) => {
+      const c = check(f);
+      const sent = [];
+      const inv = window.gitstudio.invoke;
+      window.gitstudio.invoke = async (ch, p) => {
+        if (/setLabels/.test(ch)) {
+          sent.push(p);
+          return { ok: true };
+        }
+        return inv(ch, p);
+      };
+      const open = async () => {
+        const ed = $$(".det-prop-edit").find((b) =>
+          /edit labels/i.test(b.getAttribute("aria-label") || b.title || ""),
+        );
+        if (!ed) return [];
+        ed.click();
+        await settle(900);
+        return $$(".dropdown .dropdown-item");
+      };
+
+      let rows = await open();
+      c.ok(rows.length >= 2, `the picker opens with the repo's labels (${rows.length})`);
+      if (rows.length < 2) return;
+
+      rows[0].click();
+      await settle(220);
+      rows[1].click();
+      await settle(220);
+      c.eq(sent.length, 0, "ticking sends nothing — the selection is batched");
+      c.ok(!!$(".dropdown"), "and the menu stays open so you can tick more than one");
+
+      // Escape means back out.
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+      await settle(600);
+      c.eq(sent.length, 0, "Escape discards the whole selection");
+
+      // Dismissing any other way commits, once.
+      rows = await open();
+      if (rows.length < 2) return;
+      rows[0].click();
+      await settle(200);
+      rows[1].click();
+      await settle(200);
+      document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      await settle(700);
+      c.eq(sent.length, 1, "clicking away commits the batch — once, not once per tick");
+      c.eq(sent[0]?.labels?.length, 2, "and sends the whole selection");
+      window.gitstudio.invoke = inv;
+    },
+
+    /**
      * A log's ANSI colours are legible in BOTH themes, backgrounds included.
      *
      * `--log-c*` is adjusted for the ground the text sits on, which in light

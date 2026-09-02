@@ -793,7 +793,15 @@ export interface MenuOpts {
   searchable?: boolean;
   /** Ran once when the menu closes, however it closed. Lets a multi-select menu
    *  commit the whole selection in one request instead of one per tick. */
-  onClose?: () => void;
+  /**
+   * `reason` says HOW the menu closed, because for a multi-select that is the
+   * difference between committing and discarding: "escape" means back out, the
+   * way Escape means back out everywhere else in the app. A picker that batches
+   * its ticks and applies them in `onClose` used to write on EVERY dismissal —
+   * Escape, a click away, a route change — so the one key that means "cancel"
+   * was the key that sent the request.
+   */
+  onClose?: (reason: "escape" | "dismiss" | "action") => void;
 }
 
 /** A lightweight popover menu anchored below `anchor`; full keyboard support. */
@@ -828,7 +836,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   const seps: HTMLElement[] = [];
 
   let closed = false;
-  const close = (restoreFocus = true): void => {
+  const close = (restoreFocus = true, reason: "escape" | "dismiss" | "action" = "dismiss"): void => {
     if (closed) return;
     closed = true;
     if (liveMenuClose === close) liveMenuClose = null;
@@ -839,7 +847,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     anchor.setAttribute("aria-expanded", "false");
     // Don't pull focus back to an anchor that a route change already detached.
     if (restoreFocus && anchor.isConnected) anchor.focus();
-    opts.onClose?.();
+    opts.onClose?.(reason);
   };
   liveMenuClose = close;
   const layer = registerLayer(() => close(false), "menu");
@@ -871,7 +879,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
       // listens on `document` ITSELF, and listeners on the same node all run
       // regardless.
       e.stopPropagation();
-      close();
+      close(true, "escape");
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       focusAt(cur < 0 ? 0 : cur + 1);
@@ -962,7 +970,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
         // to, and closing the menu without restoring left that as <body> — so
         // dismissing a dialog opened from a menu stranded the keyboard at the
         // top of the document instead of on the control you had used.
-        close(true);
+        close(true, "action");
         it.onClick!(row);
       });
       rows.push(row);

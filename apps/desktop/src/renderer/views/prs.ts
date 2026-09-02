@@ -1829,25 +1829,41 @@ async function doLabels(anchor: HTMLElement, pr: PullRequest, reload: () => void
     toast(cleanErr(e) || "Couldn't load labels.", "error");
     return;
   }
-  if (repoLabels.length === 0) {
+  // `gget` answers undefined for a channel that returns nothing, and reading
+  // `.length` off that threw into the unhandled-rejection boundary — the picker
+  // simply did not open, with no error anywhere a user could see.
+  if (!repoLabels?.length) {
     toast("This repo has no labels defined.", "info");
     return;
   }
-  const current = new Set(pr.labels.map((l) => l.name));
+  // The SAME control as the issue's, which it was not: because these items were
+  // plain (not `checkable`), openMenu took the close-then-act path, so every
+  // tick closed the menu and fired its own request. Labelling something with
+  // three labels meant reopening the picker three times and writing three
+  // times. Ticks are batched here too, sent once on close — and Escape
+  // discards, the way Escape does everywhere else.
+  const before = new Set(pr.labels.map((l) => l.name));
+  const picked = new Set(before);
   openMenu(
     anchor,
     repoLabels.map((l) => ({
       label: l.name,
-      icon: "tag",
-      current: current.has(l.name),
+      iconEl: swatch(l.color),
+      checkable: true,
+      current: picked.has(l.name),
       onClick: () => {
-        const next = new Set(current);
-        if (next.has(l.name)) next.delete(l.name);
-        else next.add(l.name);
-        void applyLabels(pr, [...next], reload);
+        if (picked.has(l.name)) picked.delete(l.name);
+        else picked.add(l.name);
       },
     })),
-    { searchable: true },
+    {
+      searchable: repoLabels.length > 8,
+      onClose: (reason) => {
+        if (reason === "escape") return;
+        const same = picked.size === before.size && [...picked].every((x) => before.has(x));
+        if (!same) void applyLabels(pr, [...picked], reload);
+      },
+    },
   );
 }
 

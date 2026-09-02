@@ -886,7 +886,13 @@ async function labelsMenu(anchor: HTMLElement, it: IssueInfo, reload: () => void
     })),
     {
       searchable: repoLabels.length > 8,
-      onClose: () => {
+      // Escape DISCARDS. Everything else about this control was right — ticks
+      // are batched and sent once, rather than firing a request per tick — but
+      // `onClose` ran on every dismissal, so the one key that means "back out"
+      // everywhere else in the app was the key that wrote to GitHub. There was
+      // no way to change your mind after the first tick.
+      onClose: (reason) => {
+        if (reason === "escape") return;
         const same = picked.size === before.size && [...picked].every((x) => before.has(x));
         if (!same) void applyLabels(it.number, [...picked], reload);
       },

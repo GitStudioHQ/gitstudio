@@ -469,6 +469,11 @@
     "notifications:list": notifications,
     "issue:list": issues,
     "issue:labels": Object.values(L).map((l) => ({ ...l, description: null })),
+    // The pull request's own label list. Missing entirely, so `doLabels` read
+    // undefined off it and threw into the unhandled-rejection boundary — the
+    // PR label picker could not be opened in the harness at all, which is why
+    // nothing had ever checked it.
+    "pr:labels": Object.values(L).map((l) => ({ ...l, description: null })),
     "issue:milestones": [
       { number: 5, title: "Desktop 1.6 — the redesign", state: "open", openIssues: 6, closedIssues: 3 },
       { number: 4, title: "Extension 1.12", state: "open", openIssues: 2, closedIssues: 1 },
