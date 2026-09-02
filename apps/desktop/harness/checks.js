@@ -7420,6 +7420,98 @@
       c.ok(/\d+(\.\d+)?\s?(KB|MB|GB)/.test(text(live) || ""), "sizes are formatted");
     },
 
+    // A plan that keeps NOTHING is not a rebase. Dropping every commit and
+    // pressing Start erases the whole range and then offers to force-push it —
+    // `git reset --hard` wearing a rebase's clothes. The preview said
+    // "5 → 0 commits" while the button beside it stayed lit, and the force-push
+    // confirm downstream talks about rewriting history, not deleting all of it.
+    "a-plan-that-keeps-nothing-cannot-be-started": async (f) => {
+      const c = check(f);
+      const start = () =>
+        $$(".rb-foot button").find((b) => /start rebase/i.test(text(b) || ""));
+      c.ok(!!start(), "the footer offers to start the rebase");
+      if (!start()) return;
+      c.eq(start().disabled, false, "an ordinary plan can be started");
+
+      for (const sel of $$(".rb-action")) {
+        sel.value = "drop";
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      await settle(700);
+      c.ok(/→ 0 commit/.test(text($(".rb-preview")) || ""), "the preview says nothing survives");
+      c.eq(start().disabled, true, "and Start is closed");
+      c.ok(
+        /keeps no commits/i.test(start().title || ""),
+        "with a reason that names what the plan would do",
+      );
+      c.ok(/reset/i.test(start().title || ""), "and points at the tool that means it");
+    },
+
+    // Where a dragged commit LANDS must be where the line said it would.
+    //
+    // The indicator was a fixed line under the hovered row and the insert was
+    // always `move(from, i)`. Those agree only when you drag DOWN: dragging up,
+    // `splice(i, 0, …)` puts the commit ABOVE the row while the line underneath
+    // promised below. Every upward drag landed one row off from where the app
+    // said — on the view whose entire job is to say where commits will land.
+    // It also made position 0 unreachable with a pointer.
+    "a-dragged-commit-lands-where-the-line-says": async (f) => {
+      const c = check(f);
+      const subj = () =>
+        $$(".rb-row:not(.rb-base) .rb-subj").map((n) => (text(n) || "").slice(0, 18));
+      const rowsOf = () => $$(".rb-row:not(.rb-base)");
+      c.ok(rowsOf().length >= 4, "the plan has enough commits to reorder");
+      if (rowsOf().length < 4) return;
+
+      // A real DataTransfer — a plain object is rejected by the DragEvent ctor.
+      const drag = (fromIdx, ontoIdx, where) => {
+        const rows = rowsOf();
+        const dt = new DataTransfer();
+        const fire = (type, el, y) => {
+          const e = new DragEvent(type, { bubbles: true, cancelable: true, clientY: y });
+          Object.defineProperty(e, "dataTransfer", { value: dt });
+          el.dispatchEvent(e);
+        };
+        const r = rows[ontoIdx].getBoundingClientRect();
+        const y = r.top + r.height * (where === "before" ? 0.25 : 0.75);
+        fire("dragstart", rows[fromIdx], 0);
+        fire("dragover", rows[ontoIdx], y);
+        const painted = rows[ontoIdx].classList.contains(
+          where === "before" ? "drag-over-top" : "drag-over",
+        );
+        fire("drop", rows[ontoIdx], y);
+        return painted;
+      };
+
+      // UP, onto the top half of row 1 → lands AT 1.
+      let before = subj();
+      let moved = before[3];
+      c.ok(drag(3, 1, "before"), "the line is drawn above the row");
+      await settle(500);
+      c.eq(subj().indexOf(moved), 1, "dragging up onto the top half lands above that row");
+
+      // UP, onto the bottom half of row 1 → lands AT 2.
+      before = subj();
+      moved = before[3];
+      c.ok(drag(3, 1, "after"), "the line is drawn below the row");
+      await settle(500);
+      c.eq(subj().indexOf(moved), 2, "dragging up onto the bottom half lands below it");
+
+      // DOWN, onto the bottom half of row 3 → lands AT 3.
+      before = subj();
+      moved = before[0];
+      drag(0, 3, "after");
+      await settle(500);
+      c.eq(subj().indexOf(moved), 3, "dragging down onto the bottom half lands below it");
+
+      // And the position a fixed bottom-line could never reach: the very top.
+      before = subj();
+      moved = before[2];
+      drag(2, 0, "before");
+      await settle(500);
+      c.eq(subj().indexOf(moved), 0, "the first position is reachable by pointer");
+    },
+
     // The forward-truncate ran BEFORE the "is this the same place" check, so
     // every route that reached it discarded the forward entries — including the
     // one `refreshAll` performs, which the file watcher fires on every save.

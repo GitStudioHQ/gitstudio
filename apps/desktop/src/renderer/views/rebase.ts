@@ -277,10 +277,21 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     // Re-validate the WHOLE plan on every render, not just the action being
     // set. A fold target can disappear long after the squash was chosen.
     const orphan = rows.some((_, i) => foldOrphan(i));
-    applyBtn.disabled = orphan || busy;
+    // A plan that keeps NOTHING is not a rebase. Dropping every commit and
+    // pressing Apply erases the whole range and then offers to force-push it,
+    // which is `git reset --hard` wearing a rebase's clothes — and the preview
+    // said "N → 0 commits" while the button beside it stayed lit. Nothing in
+    // the flow named the consequence, and the force-push confirm downstream
+    // talks about rewriting history, not about deleting all of it.
+    const emptyPlan = rows.length > 0 && kept === 0;
+    applyBtn.disabled = orphan || emptyPlan || busy;
     applyBtn.title = orphan
       ? "A squash or fixup has nothing below it to fold into — git can't run this plan."
-      : "";
+      : emptyPlan
+        ? "This plan keeps no commits at all. To move the branch back to " +
+          `${short(state.base)} instead, use Reset — a rebase that drops everything ` +
+          "does the same thing with no way to tell that is what happened."
+        : "";
   };
 
   // ── rendering ──
@@ -376,16 +387,38 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
       row.classList.add("dragging");
     });
     row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    /** Which half of the row the pointer is in — the drop lands on that side.
+     *
+     *  The indicator was a fixed line under the row and the insert was always
+     *  `move(from, i)`, and those two only agree when you drag DOWN. Dragging
+     *  UP, `splice(i, 0, …)` puts the commit ABOVE the row while the line
+     *  underneath it promised below — so every upward drag landed one row off
+     *  from where the app said it would, on the view whose whole job is to say
+     *  where commits will land. It also made position 0 unreachable by pointer.
+     */
+    const half = (e: DragEvent): "before" | "after" => {
+      const r = row.getBoundingClientRect();
+      return e.clientY < r.top + r.height / 2 ? "before" : "after";
+    };
+    const paint = (side: "before" | "after" | null): void => {
+      row.classList.toggle("drag-over-top", side === "before");
+      row.classList.toggle("drag-over", side === "after");
+    };
     row.addEventListener("dragover", (e) => {
       e.preventDefault();
-      row.classList.add("drag-over");
+      paint(half(e));
     });
-    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("dragleave", () => paint(null));
     row.addEventListener("drop", (e) => {
       e.preventDefault();
-      row.classList.remove("drag-over");
+      const side = half(e);
+      paint(null);
       const from = Number(e.dataTransfer?.getData("text/plain"));
-      if (!Number.isNaN(from)) move(from, i);
+      if (Number.isNaN(from)) return;
+      // Where it goes in the ORIGINAL array…
+      const at = side === "before" ? i : i + 1;
+      // …corrected for the row about to be removed from in front of it.
+      move(from, from < at ? at - 1 : at);
     });
   }
 

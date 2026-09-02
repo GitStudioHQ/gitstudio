@@ -54,6 +54,8 @@ const CASES = [
   ["a-streaming-reply-never-moves-the-reader", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-queued-job-that-starts-stops-saying-it-has-not", "actions~open9100~click:.gh-job-log"],
   ["an-expired-artifact-cannot-be-downloaded", "actions~open9097"],
+  ["a-plan-that-keeps-nothing-cannot-be-started", "rebase"],
+  ["a-dragged-commit-lands-where-the-line-says", "rebase"],
   ["a-background-refresh-does-not-kill-forward", "changes"],
   ["a-kept-view-comes-back-where-you-left-it", "issues", { extra: "many=1" }],
   ["a-refresh-keeps-you-on-the-job-you-were-reading", "actions~open9100~click:.gh-job-log"],

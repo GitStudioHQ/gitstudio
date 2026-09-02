@@ -7351,7 +7351,11 @@ body.vscode-light .gh-label-chip {
 }
 .rb-row:hover { background: var(--app-hover); }
 .rb-row.dragging { opacity: 0.4; }
+/* The drop line sits on the side the pointer is on, and the insert follows it
+   — see `wireDrag`. A fixed line under the row only agreed with the insert
+   when you dragged downward. */
 .rb-row.drag-over { box-shadow: inset 0 -2px 0 var(--gs-accent); }
+.rb-row.drag-over-top { box-shadow: inset 0 2px 0 var(--gs-accent); }
 .rb-row:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -1px; }
 .rb-row.dropped .rb-subj { text-decoration: line-through; opacity: 0.55; }
 
