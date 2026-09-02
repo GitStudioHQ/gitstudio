@@ -53,6 +53,7 @@ import {
 import { mdEditor } from "../mdEditor";
 import { wireDraft } from "../draftStore";
 import { setPageLabel } from "../navStack";
+import { pruneOnFetch } from "../prefs";
 import type { CommitDetailsPayload, ReleaseInfo, ReleaseInput, TagInfo } from "../../shared/ipc";
 
 /** Which sub-list the section shows. Module-scoped so it survives re-renders. */
@@ -345,7 +346,7 @@ function openTagPeek(t: TagInfo, nav: SectionNav, refresh: () => void): void {
                 icon: "sync",
                 onClick: () => {
                   void host
-                    .invoke("sync:fetch", undefined)
+                    .invoke("sync:fetch", { prune: pruneOnFetch() })
                     .then(() => {
                       toast("Fetched. Reopen the tag to inspect its commit.", "success");
                     })

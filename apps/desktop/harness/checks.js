@@ -4759,6 +4759,48 @@
     },
 
     /**
+     * A selection never outlives the rows it was made in.
+     *
+     * Refresh reloads the graph from the FIRST page, so after paging deep and
+     * selecting something near the bottom the selected sha was simply gone —
+     * yet `selectedSha` stayed set, no `.row.selected` existed anywhere in the
+     * DOM, and `aria-activedescendant` went on naming an id that was not
+     * there, which a screen reader announces as a row that does not exist.
+     */
+    "a-graph-selection-never-outlives-its-rows": async (f) => {
+      const c = check(f);
+      const el = document.querySelector("gitstudio-graph");
+      const sr = el?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr || !el) return;
+      const grid = () => sr.querySelector("[role=grid]");
+      const rows = [...sr.querySelectorAll(".row")];
+      c.ok(rows.length > 1, "it has rows");
+      if (rows.length < 2) return;
+
+      rows[rows.length - 1].click();
+      await settle(700);
+      const chosen = sr.querySelector(".row.selected")?.dataset.sha;
+      c.ok(!!chosen, "a row is selected");
+      c.ok(!!grid()?.getAttribute("aria-activedescendant"), "and announced to assistive tech");
+
+      // Exactly what a Refresh does after deep paging: a row set without it.
+      el.rows = el.rows.filter((r) => r.sha !== chosen);
+      await settle(600);
+
+      const aria = grid()?.getAttribute("aria-activedescendant");
+      c.eq(
+        sr.querySelectorAll(".row.selected").length,
+        0,
+        "nothing is drawn as selected once the row is gone",
+      );
+      c.ok(
+        !aria || !!sr.querySelector(`#${CSS.escape(aria)}`),
+        `and aria-activedescendant does not name a row that is not there (${aria})`,
+      );
+    },
+
+    /**
      * The Code view's Refresh refreshes the FILE LIST.
      *
      * The listing is read through `gget("repo:tree", …)`, so a Refresh that

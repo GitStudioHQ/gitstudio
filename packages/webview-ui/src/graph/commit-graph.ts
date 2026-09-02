@@ -1691,6 +1691,15 @@ export class CommitGraph extends LitElement {
     for (let i = 0; i < this.rows.length; i++) {
       this.shaToIndex.set(this.rows[i].sha, i);
     }
+    // A selection that survives a row set it is no longer part of is a lie in
+    // three places at once. Refresh reloads from the FIRST page, so after
+    // paging deep and selecting something near the bottom, the selected sha was
+    // simply gone: no `.row.selected` anywhere in the DOM, `selectedSha` still
+    // set, and `aria-activedescendant` pointing at an id that does not exist —
+    // which a screen reader announces as a row that is not there.
+    if (this.selectedSha !== undefined && !this.shaToIndex.has(this.selectedSha)) {
+      this.selectedSha = undefined;
+    }
   }
 
   /** Gutter render width: capped columns × pitch + inset + avatar half-width. */

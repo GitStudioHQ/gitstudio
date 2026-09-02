@@ -2521,7 +2521,12 @@ class App {
    */
   private async fetchAllLive(btn: HTMLButtonElement): Promise<void> {
     await this.refreshInPlace(btn, async () => {
-      const r = await host.invoke("sync:fetch", undefined);
+      // Honour the preference, as the other two fetch call sites do. Passing
+      // `undefined` here meant Settings → "Prune on fetch" was silently ignored
+      // by the Fetch button on the view whose whole job is showing which
+      // branches still exist — so a branch deleted on the remote stayed in the
+      // list after exactly the action that should have removed it.
+      const r = await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref });
       if (!r.ok) {
         toast(r.message ?? "Fetch failed.", r.expected ? "info" : "error");
         return;
