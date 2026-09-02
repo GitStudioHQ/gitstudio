@@ -704,7 +704,17 @@ export class GitBridge {
    */
   async stage(path: string): Promise<CommitActionResult> {
     return this.staged(async (ctx) => {
-      if (await this.hasConflictMarkers(ctx, path)) {
+      // Only when git says the path is UNMERGED. `stageAll` draws the same line
+      // and for the same reason: a marker check applied to every file refuses
+      // to stage a perfectly ordinary one that happens to contain
+      // marker-shaped lines — a merge tool's test fixture, documentation about
+      // conflicts — and refuses it forever, with no way to override.
+      //
+      // On an unmerged path the markers mean what they say, and `git add` there
+      // is the act of declaring the conflict resolved.
+      const st = await ctx.process.run(["status", "--porcelain=v1", "-z", "--", path]);
+      const unmerged = st.code === 0 && parsePorcelainStatus(st.stdout).some((f) => f.conflicted);
+      if (unmerged && (await this.hasConflictMarkers(ctx, path))) {
         return {
           ok: false,
           changed: false,
