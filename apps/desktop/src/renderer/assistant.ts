@@ -285,6 +285,13 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   // a working connection sitting behind it, and the only way out was to restart
   // the app.
   const onAiChanged = (): void => {
+    // This view is rebuilt on a repo switch, and each build adds a listener.
+    // The stale ones are inert — they guard on `wrap.isConnected` below — but
+    // they accumulate, so a detached one takes itself off the window.
+    if (!wrap.isConnected) {
+      window.removeEventListener("gs:ai-changed", onAiChanged);
+      return;
+    }
     if (!gated) return; // an ungated Assistant has nothing to re-open
     void (async () => {
       const s = await host.invoke("ai:settings", undefined).catch(() => undefined);

@@ -206,6 +206,11 @@ export async function renderJobLog(
   };
 
   const openJob = async (j: WorkflowJob): Promise<void> => {
+    // Not once this page has gone. `setPageTarget` below writes into whatever
+    // history entry is CURRENT, so an openJob that ran after the reader had
+    // already navigated away would stamp a jobId onto another view's target —
+    // and that view would then be re-routed with it.
+    if (!view.isConnected) return;
     currentId = j.id;
     // Tell the history WHICH job, or a refresh re-routes with the job this page
     // was entered on and swaps the reader's output out from under them.

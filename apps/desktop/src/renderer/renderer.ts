@@ -5705,7 +5705,11 @@ class App {
       // on this file.
       stageLinesBtn.disabled = true;
       wsBtn.disabled = true;
-      void this.openWorkingFile(diffPanel, f.path).then(() => {
+      // `finally`, not `then`: these buttons start CLOSED, so a rejection here
+      // would leave them shut over a file whose diff is on screen, and the only
+      // way out would be to pick a different file. A read that failed has no
+      // line editor either, which is the state this settles them into.
+      void this.openWorkingFile(diffPanel, f.path).finally(() => {
         if (this.changesOpenKey !== rowKey(f.staged ? "staged" : "unstaged", f.path)) return;
         const live = diffPanel.hasLineEditor();
         stageLinesBtn.disabled = !live;
