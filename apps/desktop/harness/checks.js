@@ -7214,6 +7214,75 @@
       }
     },
 
+    // A ✨ action fired while the agent is working must not rebuild the view.
+    //
+    // `registerAssistantTab` routed with `force: true`, which drops the
+    // kept-alive mount and calls renderAssistant again: the running turn's
+    // transcript and Stop button were destroyed, a SECOND ai:chatSend started
+    // against the same chat, and the first run's cancel lived on in a discarded
+    // closure — alive in the main process, writing into a detached node, with
+    // nothing on screen able to stop it.
+    //
+    // The guard written for this was gated on `wrap.isConnected`, and every ✨
+    // action fires from ANOTHER view, where a keep-alive Assistant is parked
+    // detached — so it was unreachable in every real case and its toast had
+    // never once been shown.
+    "a-sparkle-action-does-not-destroy-a-running-turn": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!input && !!send, "the assistant is live");
+      if (!input || !send) return;
+
+      const inv = window.gitstudio.invoke.bind(window.gitstudio);
+      let rid = null;
+      let sends = 0;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:chatSend") {
+          sends++;
+          if (sends === 1) rid = p.requestId;
+          return new Promise(() => {});
+        }
+        return inv(ch, p);
+      };
+      try {
+        input.value = "long running task";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        send.click();
+        await settle(500);
+        window.__gsEmit("ai:agentEvent", {
+          requestId: rid,
+          kind: "assistant",
+          text: "Answer in progress…",
+        });
+        await settle(300);
+        c.eq($$(".assistant-msg").length, 1, "the agent has answered something");
+        c.eq(send.title, "Stop", "and the run is stoppable");
+
+        // Go somewhere else and fire a ✨ action from there.
+        $('[data-view="issues"]')?.click();
+        await settle(900);
+        $("[data-num]")?.click();
+        await settle(1200);
+        const spark = $(".ai-mini");
+        c.ok(!!spark, "the issue page offers a ✨ action");
+        if (!spark) return;
+        spark.click();
+        await settle(1600);
+
+        c.eq(sends, 1, `it starts no second turn (${sends})`);
+        c.ok(
+          $$(".toast, .toast-msg").some((t) => /still working/i.test(text(t) || "")),
+          "and says why it did not",
+        );
+        c.eq($$(".assistant-msg").length, 1, "the running turn's answer survives");
+        c.eq($$(".assistant-bubble").length, 1, "and so does the message that started it");
+        c.eq($(".assistant-send")?.title, "Stop", "and it is still stoppable");
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // A quick action during a RUN hit `runGoal`'s `if (running) return` — a
     // chip that looked live and answered with silence.
     "quick-actions-close-while-the-agent-works": async (f) => {
@@ -7418,6 +7487,35 @@
       c.ok(/expired/i.test(btn(dead)?.title || ""), "and says why, rather than just greying out");
       // Sizes are for humans — the raw byte count is not a size.
       c.ok(/\d+(\.\d+)?\s?(KB|MB|GB)/.test(text(live) || ""), "sizes are formatted");
+    },
+
+    // NOTHING may push the app sideways at the window's own minimum width.
+    //
+    // `minWidth: 880` is what the main process allows the window to become, so
+    // every surface has to survive it. The PR detail header's action cluster —
+    // Checkout, Approve, Review, Merge, ⋯, Open on GitHub — could not shrink
+    // below its labels and had no wrap, so it overflowed the body and the
+    // topbar slid off to reveal it.
+    "no-surface-scrolls-the-app-sideways": async (f) => {
+      const c = check(f);
+      const win = window.innerWidth;
+      // The BODY's scroll width: `html` is clipped, so measuring the document
+      // element alone reports the window's width whatever is overflowing.
+      c.ok(
+        document.body.scrollWidth <= win + 2,
+        `the page fits its window (body ${document.body.scrollWidth} vs ${win})`,
+      );
+      const actions = $(".det-tb-actions");
+      if (actions) {
+        c.ok(
+          Math.round(actions.getBoundingClientRect().right) <= win + 2,
+          `the header's actions stay inside it (right ${Math.round(actions.getBoundingClientRect().right)})`,
+        );
+      }
+      // Nothing may be off the left edge either — that is what a slid topbar
+      // looks like once the overflow has been scrolled to.
+      const bar = $(".topbar");
+      if (bar) c.ok(Math.round(bar.getBoundingClientRect().left) >= -2, "the topbar has not slid");
     },
 
     // Every tick in the one-list staging model said "Not included" or "Included

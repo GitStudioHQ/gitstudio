@@ -49,11 +49,24 @@ let live:
  * refreshAll exemption fixes, reached through a different door.
  */
 export function seedAssistantGoal(goal: string, label?: string): boolean {
+  // The BUSY test asks about identity, not attachment.
+  //
+  // Every ✨ action fires from another view — an issue, a PR, the compare page
+  // — and "assistant" is keep-alive, so by the time this runs the wrap is
+  // PARKED: detached, and very much alive with a turn streaming into it. An
+  // `isConnected` guard therefore made this branch unreachable in every real
+  // case, which is the identical mistake `onAiChanged` twenty lines below
+  // carries a comment about. The toast below had never once been shown.
+  if (live?.busy()) {
+    toast("The agent is still working — stop it first, or wait for it to finish.", "info");
+    return false;
+  }
+  // The IDLE branch keeps `isConnected`, deliberately. A parked view can be
+  // evicted from the cache (leaving during the initial gate drops it), and
+  // `live` is never cleared — so running a goal into an evicted node would
+  // write it into a true orphan and the route below would then build a fresh,
+  // empty Assistant with the goal lost.
   if (live?.el.isConnected) {
-    if (live.busy()) {
-      toast("The agent is still working — stop it first, or wait for it to finish.", "info");
-      return false;
-    }
     live.run(goal, label);
     return false;
   }

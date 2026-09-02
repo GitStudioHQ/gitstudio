@@ -8512,9 +8512,17 @@ body.vscode-light .gh-label-chip {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
+  /* WRAPS rather than pushing. A PR's action cluster is Checkout + Approve +
+     Review + Merge + ⋯ + Open on GitHub, none of which can shrink below its
+     label, and the row had no wrap and no min-width:0 — so below about 900px
+     the overflow pushed the whole app sideways and the topbar slid off to
+     reveal it. The window's own minimum is 880. A two-row header is a far
+     better answer than a horizontally scrolling application. */
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
   gap: 10px;
   min-height: 46px;
-  padding: 0 var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
   border-bottom: 1px solid var(--app-border);
   background: color-mix(in srgb, var(--app-panel) 55%, var(--app-bg));
 }
@@ -8546,6 +8554,14 @@ body.vscode-light .gh-label-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+  /* So it can be the thing that WRAPS, rather than the thing that pushes. A
+     PR's cluster is Checkout + Approve + Review + Merge + ⋯ + Open on GitHub,
+     none of which shrink below its label; with no wrap and no min-width:0 it
+     overflowed the body at the window's own 880px minimum and the topbar slid
+     off to reveal it. */
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: var(--sp-2);
 }
 /* Reserve room for the dock. Its body FLOATS in `.dock-overlay` (absolute,
    bottom: 0) so opening it never reflows the view above — which means it COVERS

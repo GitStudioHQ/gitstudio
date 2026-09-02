@@ -956,7 +956,11 @@ class App {
       // `force: true` drops the view from the cache and rebuilds it, so firing
       // a second ✨ action while the agent was answering the first destroyed
       // the transcript and the Stop button and orphaned the run.
+      // NEVER with force when the goal was taken. `force` is what drops the
+      // kept-alive mount and rebuilds it — the unforced route re-attaches the
+      // same node, with its transcript and its live Stop button intact.
       if (seedAssistantGoal(req.goal, req.title)) this.routeView("assistant", true);
+      else this.routeView("assistant");
     });
     return this.terminalDock;
   }
