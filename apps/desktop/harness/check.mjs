@@ -319,6 +319,7 @@ const CASES = [
   ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
   ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
   ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  ["a-person-peeks-primary-action-is-not-dead", "prs~open106"],
   ["a-recent-repository-can-be-forgotten", "changes", { extra: "norepo=1" }],
   ["switch-account-starts-the-new-sign-in", "settings"],
   ["the-graph-search-paints-before-it-travels", "graph"],

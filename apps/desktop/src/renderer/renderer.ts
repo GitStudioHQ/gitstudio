@@ -92,7 +92,7 @@ import { renderReleases } from "./views/releases";
 import { openNotificationsPanel, fetchUnreadCount, renderNotifications } from "./views/notifications";
 import { renderExplore } from "./views/explore";
 import { repoRouteId, searchTargetId } from "./exploreRoutes";
-import { renderOrgs } from "./views/orgs";
+import { renderOrgs, setPeekNav } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
 import { renderRebase } from "./views/rebase";
@@ -1299,7 +1299,12 @@ class App {
     this.viewHost.replaceChildren(wrap);
     const target = this.sectionTarget;
     this.sectionTarget = undefined;
-    render(wrap, (v, t) => this.routeView(v, false, t), target);
+    const nav = (v: string, t?: SectionTarget): void => this.routeView(v, false, t);
+    // The person peek's router, set from the one place every section mounts —
+    // it is opened by chips on views that have nothing to do with orgs, and
+    // used to be wired only by the Organizations view itself.
+    setPeekNav(nav);
+    render(wrap, nav, target);
   }
 
   /** A real branch manager: local branches with upstream + ahead/behind + last

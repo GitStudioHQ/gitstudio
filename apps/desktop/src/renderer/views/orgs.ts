@@ -119,6 +119,20 @@ function orgAvatar(url: string | null, alt: string, size = 18): HTMLElement {
  *  row builder. */
 let sectionNav: SectionNav | undefined;
 
+/**
+ * Give the person peek a router, from wherever the app happens to be.
+ *
+ * `memberCard` is opened by every person chip in the app — an issue's author,
+ * a reviewer, a commit's committer — and its PRIMARY action routes into
+ * Explore. But `sectionNav` was only ever set by `renderOrgs`, so until you had
+ * visited Organizations in that session the app's most-reachable primary button
+ * did nothing at all: no route, no error, no toast. Set once from the router's
+ * own mount point, so it is there before any peek can open.
+ */
+export function setPeekNav(nav: SectionNav): void {
+  sectionNav = nav;
+}
+
 export const renderOrgs: SectionRender = (wrap, nav) => {
   sectionNav = nav;
   void mount(wrap, nav);

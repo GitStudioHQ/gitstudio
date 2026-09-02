@@ -4759,6 +4759,43 @@
     },
 
     /**
+     * A person peek's primary action works from wherever it was opened.
+     *
+     * `memberCard` is opened by every person chip in the app — an issue's
+     * author, a reviewer, a commit's committer — and its PRIMARY button routes
+     * into Explore. But the router it used was a module-level variable set only
+     * by the Organizations view's own render, so until you had visited
+     * Organizations in that session the app's most-reachable primary button did
+     * nothing at all: no route, no error, no toast.
+     *
+     * The scene deliberately never goes near Organizations.
+     */
+    "a-person-peeks-primary-action-is-not-dead": async (f) => {
+      const c = check(f);
+      const routes = [];
+      window.__GS_ROUTES = routes;
+      const who = $(".gh-meta-author");
+      c.ok(!!who, "the pull request names its author as a chip");
+      if (!who) return;
+      who.click();
+      await settle(900);
+      const peek = $$("[class*=peek]")[0];
+      c.ok(!!peek, "clicking it opens the person peek");
+      if (!peek) return;
+      const full = [...peek.querySelectorAll("button")].find((b) =>
+        /view full profile/i.test(text(b)),
+      );
+      c.ok(!!full, "the peek offers the full profile");
+      if (!full) return;
+      full.click();
+      await settle(900);
+      const last = routes[routes.length - 1];
+      c.ok(!!last, "pressing it routes somewhere");
+      c.eq(last?.view, "explore", "into Explore");
+      c.match(String(last?.target?.id ?? ""), /^user\//, "at that person's page");
+    },
+
+    /**
      * The welcome screen: a recent can be forgotten, and its controls nest.
      *
      * This is the first thing anyone sees and the only screen shown after

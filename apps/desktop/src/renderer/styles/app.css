@@ -3517,7 +3517,18 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
   gap: 2px;
   margin: 14px 0 12px;
   border-bottom: 1px solid var(--app-border);
+  /* The STRIP scrolls; the page does not. A gist with several files, or any
+     tab set whose labels are long, ran the last tabs off the content column and
+     off the window with nothing to scroll — one of them sitting unclickable
+     under the edge. A tab strip that cannot fit scrolls sideways, which is what
+     every tab strip does; it must not push its own container wider. */
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
+/* Tabs keep their label rather than squeezing it to nothing. */
+.gh-subtabs > .gh-subtab { flex: 0 0 auto; }
 .gh-subtab {
   display: inline-flex;
   align-items: center;
