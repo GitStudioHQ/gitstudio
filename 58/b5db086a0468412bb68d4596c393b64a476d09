@@ -1,0 +1,50 @@
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_d9ddf63ad99e93 1715-1721,1724,1726-1727
+  s_26f5e669d3043c::t_f88cde46b4745d 1815
+  s_26f5e669d3043c::t_6ac8ae1c142f41 1750
+  s_26f5e669d3043c::t_613ed61a1732d1 2654,2657
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_3adeb68ab2962f 3181-3183
+  s_26f5e669d3043c::t_caabb79779a4b5 3176-3180
+apps/desktop/src/renderer/highlight.ts
+  s_26f5e669d3043c::t_3adeb68ab2962f 86
+  s_26f5e669d3043c::t_934fc75d5ef6df 75-77,81-85
+apps/desktop/src/renderer/views/explore.ts
+  s_26f5e669d3043c::t_ce360ea70d0667 327
+  s_26f5e669d3043c::t_a4842b9e9a8f8a 266
+  s_26f5e669d3043c::t_5fb4dc1e67059f 244,246-252
+apps/desktop/src/renderer/logView.ts
+  s_26f5e669d3043c::t_1646b4bbf69de7 873-878
+  s_26f5e669d3043c::t_b718bb81c5fddb 856-861
+apps/desktop/src/renderer/views/projects.ts
+  s_26f5e669d3043c::t_142e82a8e1ecb7 511-515
+  s_26f5e669d3043c::t_7a64a90e617b61 263,344,493-498,521,527
+  s_26f5e669d3043c::t_3adeb68ab2962f 516
+  s_26f5e669d3043c::t_8adc875b8dc9f0 302-305
+  s_26f5e669d3043c::t_fd6c48573e2b02 124-131,133,136
+  s_26f5e669d3043c::t_8a5e453cdacfa4 224-235
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_9adbeb87de1b99 7042-7113
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_f287cfd79a1fd9 48-50
+apps/desktop/src/renderer/views/jobLog.ts
+  s_26f5e669d3043c::t_2b4ffd892a7845 300-304,306
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_5539277c71c1c8 60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "58b5db086a0468412bb68d4596c393b64a476d09",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
