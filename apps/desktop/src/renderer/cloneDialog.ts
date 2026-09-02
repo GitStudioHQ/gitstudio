@@ -390,11 +390,24 @@ export function openCloneDialog(
       sshBtn,
       chooseBtn,
       nameInput,
-      cancel,
     ]) {
       if (on) ctl.setAttribute("disabled", "true");
       else ctl.removeAttribute("disabled");
     }
+    // NOT disabled with the rest. A clone that hangs — a slow remote, a
+    // credential prompt that never arrives — left every control dead, Escape
+    // and the backdrop blocked by `canDismiss: () => !busy`, and no way out of
+    // the app short of quitting it.
+    //
+    // git is already running and there is no channel to stop it, so this does
+    // not pretend to cancel: it puts the dialog away and lets the clone finish
+    // in the background, which it does perfectly well — the success path opens
+    // the repository and toasts either way, whether this card is on screen or
+    // not.
+    cancel.textContent = on ? "Hide" : "Cancel";
+    cancel.title = on
+      ? "Close this and let the clone finish — you'll be told when it's done"
+      : "";
     ghList.classList.toggle("is-disabled", on);
     if (on) {
       primary.setAttribute("disabled", "true");
@@ -459,7 +472,9 @@ export function openCloneDialog(
       label: "Clone repository",
       // While a clone is in flight, dismissing (Esc/backdrop) would orphan the
       // clone and still fire onCloned() on completion — keep the modal up.
-      canDismiss: () => !busy,
+      // Always. See setBusy: the clone continues without this card, so being
+      // unable to dismiss it bought nothing and cost the only way out.
+      canDismiss: () => true,
       onClose: () => {
         if (offProgress) offProgress();
       },

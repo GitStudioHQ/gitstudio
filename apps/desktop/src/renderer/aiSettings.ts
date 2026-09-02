@@ -115,7 +115,13 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
   remove.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "Remove model",
-      message: `Remove “${c.label}”? Its stored API key will be deleted from this machine.`,
+      // Only claim the key when there IS one. A local connection that needs no
+      // key, or one you have not given a key to yet, was told its key would be
+      // deleted — a confirm that describes a consequence that cannot happen
+      // teaches people to stop reading confirms.
+      message: c.hasKey
+        ? `Remove “${c.label}”? Its stored API key will be deleted from this machine.`
+        : `Remove “${c.label}”?`,
       confirmLabel: "Remove",
       danger: true,
     });
@@ -148,6 +154,8 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
     editor.append(urlF.row, fastF.row, midF.row, deepF.row);
   }
 
+  /** The key field, when this connection has one — read by the primary Save. */
+  let keyField: HTMLInputElement | undefined;
   if (c.needsKey) {
     const keyRow = el("div", "settings-field");
     const kl = el("label", "settings-field-label") as HTMLLabelElement;
@@ -155,11 +163,16 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
     const keyInput = document.createElement("input");
     keyInput.type = "password";
     keyInput.className = "settings-input";
-    keyInput.id = "gs-ai-key";
+    // UNIQUE per connection. Two open editors both carried id="gs-ai-key", so
+    // clicking one card's "API key" label focused the OTHER card's field — and
+    // the document had two elements with the same id, which is invalid and
+    // makes every label ambiguous to a screen reader.
+    keyInput.id = `gs-ai-key-${c.id}`;
     kl.htmlFor = keyInput.id;
     keyInput.placeholder = c.hasKey ? "•••••••• (stored — leave blank to keep)" : "Paste your API key";
     keyRow.append(kl, keyInput);
     editor.append(keyRow);
+    keyField = keyInput;
 
     const saveKey = el("button", "mini-btn");
     saveKey.append(glyph("key"), span(c.hasKey ? "Update key" : "Save key"));
@@ -189,7 +202,18 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
         baseUrl: urlF.input.value.trim(),
         models: { fast: fastF.input.value.trim(), mid: midF.input.value.trim(), deep: deepF.input.value.trim() },
       });
-      toast("Saved.", "success");
+      // The key too. It has its own button because it goes to a different
+      // channel and a different store — but the PRIMARY button is the one
+      // labelled Save, and it used to send everything on the card EXCEPT the
+      // field you had just typed into, then say "Saved." The key was gone, and
+      // the only sign was that the placeholder still read "Paste your API key"
+      // the next time you opened the card.
+      const typedKey = keyField?.value.trim();
+      if (typedKey) {
+        await host.invoke("ai:setKey", { id: c.id, key: typedKey });
+        if (keyField) keyField.value = "";
+      }
+      toast(typedKey ? "Saved, and the key stored securely." : "Saved.", "success");
       void refresh();
     }),
   );
@@ -384,7 +408,13 @@ export function agentAccessCard(): HTMLElement {
     // Permission selector.
     const permWrap = el("div", "mcp-perm");
     const permLabel = el("div", "settings-field-label");
-    permLabel.textContent = "What the agent may do";
+    // What the next Add or Update will GRANT — not what any client currently
+    // has. This control is an argument to `ai:mcpInstall`, and it resets to
+    // Read-only every time the card is built; labelled as a state ("what the
+    // agent may do") it therefore announced Read-only over a client installed
+    // with write, and its description asserted "the agent cannot change your
+    // repository" about an agent that could.
+    permLabel.textContent = "Grant to the next client you add or update";
     const seg = el("div", "settings-seg");
     const perms: Array<{ id: typeof permission; label: string }> = [
       { id: "read", label: "Read-only" },
@@ -400,12 +430,14 @@ export function agentAccessCard(): HTMLElement {
       });
       seg.append(b);
     }
-    // Explain what the CURRENT level grants, so the choice is never a guess.
+    // Explain what the SELECTED level will grant, so the choice is never a
+    // guess — in the future tense, because it applies to the next install and
+    // not to what is already there.
     const permDesc = el("div", "mcp-perm-desc");
     const permDescs: Record<typeof permission, string> = {
-      read: "Inspect only — history, diffs, branches and file contents. The agent cannot change your repository.",
-      write: "Everything in Read-only, plus stage, commit and create or switch branches. It can't discard or rewrite existing work.",
-      destructive: "Everything above, plus discard, reset and force operations that can lose uncommitted work or rewrite history.",
+      read: "Adds inspect-only access — history, diffs, branches and file contents. A client added this way cannot change your repository.",
+      write: "Adds everything in Read-only, plus stage, commit and create or switch branches. It won't be able to discard or rewrite existing work.",
+      destructive: "Adds everything above, plus discard, reset and force operations that can lose uncommitted work or rewrite history.",
     };
     permDesc.textContent = permDescs[permission];
     permWrap.append(permLabel, seg, permDesc);

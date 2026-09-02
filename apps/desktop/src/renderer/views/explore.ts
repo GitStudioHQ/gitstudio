@@ -301,9 +301,23 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       }
     } catch (e) {
       if (seq !== searchSeq || !view.isConnected) return;
-      listEl.replaceChildren(
-        errorState("Search failed", cleanErr(e) || "GitHub couldn't answer that search.", () => void run()),
+      // On an APPEND the loaded pages are still good — the failure is about the
+      // NEXT page. The `limited` branch above was given this treatment
+      // deliberately; the error branch was not, so one flaky request deleted
+      // however many pages of scanning you had done and its Retry started
+      // again from page 1.
+      const failed = errorState(
+        "Search failed",
+        cleanErr(e) || "GitHub couldn't answer that search.",
+        () => void run(append),
       );
+      if (append) {
+        const spinner = listEl.querySelector(".explore-loading-more");
+        if (spinner) spinner.replaceWith(failed);
+        else listEl.appendChild(failed);
+      } else {
+        listEl.replaceChildren(failed);
+      }
     }
   };
 
