@@ -53,6 +53,7 @@ const CASES = [
   ["a-quick-action-keeps-your-draft", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-streaming-reply-never-moves-the-reader", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-queued-job-that-starts-stops-saying-it-has-not", "actions~open9100~click:.gh-job-log"],
+  ["the-output-filter-owns-its-consequences", "changes"],
   ["a-dead-shell-says-it-is-dead", "changes"],
   ["the-agents-own-commit-does-not-erase-the-chat", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["two-fast-sends-start-one-turn", "assistant~click:.topbar-assistant", { extra: "ai=1" }],

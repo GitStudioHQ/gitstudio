@@ -7302,6 +7302,65 @@
       }
     },
 
+    // "Errors only" is a CSS filter over the rows. With nothing failed it hid
+    // every one of them and left a blank panel beside a count still reading
+    // "4 commands" — and Clear hid the toggle while leaving it switched ON, so
+    // everything logged afterwards was filtered away by a control the reader
+    // could no longer see.
+    "the-output-filter-owns-its-consequences": async (f) => {
+      const c = check(f);
+      $(".dock-chevron")?.click();
+      await settle(600);
+      const tab = $$("button").find((b) => /^Output$/i.test((text(b) || "").trim()));
+      c.ok(!!tab, "the dock has an Output tab");
+      if (!tab) return;
+      tab.click();
+      await settle(700);
+
+      // Four commands, none of them failed.
+      for (let i = 0; i < 4; i++) {
+        window.__gsEmit("git:log", {
+          at: Date.now(),
+          args: ["status", "--porcelain"],
+          code: 0,
+          ms: 12,
+          action: "Status",
+        });
+      }
+      await settle(500);
+      c.eq($$(".outputs-row").length, 4, "the commands are logged");
+
+      const fail = $(".outputs-failbtn");
+      const wrap = $(".outputs-wrap");
+      c.ok(!!fail && !!wrap, "there is an Errors-only toggle");
+      if (!fail || !wrap) return;
+      fail.click();
+      await settle(400);
+      c.eq(
+        $$(".outputs-row").filter((r) => r.offsetParent !== null).length,
+        0,
+        "with nothing failed, the filter hides every row",
+      );
+      c.eq(
+        $$(".outputs-empty").filter((e) => !e.hidden).length,
+        1,
+        "so it says a filter emptied the list, rather than showing a blank panel",
+      );
+
+      // Clear, with the filter still on.
+      const clear = $$(".outputs-bar button").find((b) => /clear/i.test(text(b) || ""));
+      c.ok(!!clear, "and a Clear");
+      if (!clear) return;
+      clear.click();
+      await settle(400);
+      c.ok(fail.hidden, "Clear hides the controls, there being nothing to filter");
+      c.ok(
+        !wrap.classList.contains("failures-only"),
+        "and turns the filter OFF rather than hiding it switched on",
+      );
+      c.eq(fail.getAttribute("aria-pressed"), "false", "the button agrees");
+    },
+
     // A shell that has exited wrote one line of text and changed nothing else:
     // the tab kept its live label, the cursor kept blinking, and `onData` kept
     // posting every keystroke to a PTY that was gone — silently eaten, with no
