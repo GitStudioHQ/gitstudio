@@ -7302,6 +7302,78 @@
       }
     },
 
+    // Not every conflict is a content conflict. A binary one, and a
+    // modify/delete one, both opened the three-pane text merge — over decoded
+    // bytes in the first case, and over one deliberately blank pane that never
+    // said the word "deleted" in the second.
+    "a-conflict-with-no-text-is-not-offered-a-text-merge": async (f) => {
+      const c = check(f);
+      const row = $(".dc-file");
+      c.ok(!!row, "there is a file to open");
+      if (!row) return;
+
+      const MODEL = {
+        path: "logo.png",
+        hasBase: true,
+        base: "",
+        ours: "",
+        theirs: "",
+        result: "",
+        oursLabel: "Current change (your branch)",
+        theirsLabel: "Incoming change",
+      };
+      const CELLS = [
+        { name: "binary", model: { ...MODEL, binary: true }, want: /binary/i },
+        {
+          name: "modify/delete",
+          model: { ...MODEL, path: "notes.md", ours: "kept\n", missingSide: "theirs" },
+          want: /deleted/i,
+        },
+        {
+          name: "ordinary content",
+          model: { ...MODEL, path: "a.ts", base: "b\n", ours: "o\n", theirs: "t\n" },
+          want: null,
+        },
+      ];
+
+      const inv = window.gitstudio.invoke;
+      try {
+        for (const cell of CELLS) {
+          window.gitstudio.invoke = (ch, p) => {
+            if (ch === "file:diff")
+              return Promise.resolve({
+                path: cell.model.path,
+                leftLabel: "HEAD",
+                rightLabel: "Working Tree",
+                leftText: "x",
+                rightText: "y",
+                conflicted: true,
+              });
+            if (ch === "conflict:model") return Promise.resolve(cell.model);
+            return inv(ch, p);
+          };
+          row.click();
+          await settle(900);
+
+          const sides = $$(".merge-bar-actions .mini-btn").map((b) => text(b) || "");
+          c.ok(sides.length >= 2, `${cell.name}: both "Take …" buttons are offered`);
+          if (cell.want) {
+            const note = $(".merge-notext");
+            c.ok(!!note, `${cell.name}: an explanation instead of a merge editor`);
+            c.ok(cell.want.test(text(note) || ""), `${cell.name}: which names what happened`);
+            // "Mark resolved" saves the RESULT PANE, and there is no result
+            // pane here — leaving it would be a button with nothing behind it.
+            c.ok(!$(".merge-resolve"), `${cell.name}: no "Mark resolved" over nothing to save`);
+          } else {
+            c.ok(!$(".merge-notext"), `${cell.name}: still gets the real merge editor`);
+            c.ok(!!$(".merge-resolve"), `${cell.name}: and can still be marked resolved`);
+          }
+        }
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // "Errors only" is a CSS filter over the rows. With nothing failed it hid
     // every one of them and left a blank panel beside a count still reading
     // "4 commands" — and Clear hid the toggle while leaving it switched ON, so
