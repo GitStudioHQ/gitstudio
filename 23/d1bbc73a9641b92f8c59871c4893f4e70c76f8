@@ -1,0 +1,32 @@
+apps/desktop/src/renderer/diffPanel.ts
+  s_26f5e669d3043c::t_0ee514cc7f9ca0 136-142
+  s_26f5e669d3043c::t_fce2647282d522 102-129,144-151
+apps/desktop/test/diffSides.test.ts
+  s_26f5e669d3043c::t_61f31ad02dc2ec 1-144
+apps/desktop/src/renderer/views/commit.ts
+  s_26f5e669d3043c::t_95d5b153d4fee9 335-344
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_2cf68a04a865b0 55
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_15e6b3c80c6d90 585-588,3048
+  s_26f5e669d3043c::t_0eacd30381e082 3040-3047,3052-3053,3055
+  s_26f5e669d3043c::t_aa0bd9a9562832 576-584,618-620
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_2cf68a04a865b0 7227-7294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "23d1bbc73a9641b92f8c59871c4893f4e70c76f8",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
