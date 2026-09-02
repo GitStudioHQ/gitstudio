@@ -8481,7 +8481,18 @@ body.vscode-light .gh-label-chip {
   align-items: center;
   gap: var(--sp-2);
 }
-.det-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* Reserve room for the dock. Its body FLOATS in `.dock-overlay` (absolute,
+   bottom: 0) so opening it never reflows the view above — which means it COVERS
+   the bottom of whatever is behind it. `.code-scroll` and two other scrollers
+   already add `--dock-reserve` for exactly this; every detail page — issues,
+   pull requests, releases, commits, the log — did not, so with the dock open
+   the last screenful of any of them could not be brought into view at all. */
+.det-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--dock-reserve, 0px);
+}
 .det-body {
   display: flex;
   align-items: flex-start;

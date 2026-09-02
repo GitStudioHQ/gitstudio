@@ -4759,6 +4759,36 @@
     },
 
     /**
+     * Every long scroller clears the dock.
+     *
+     * The dock's body FLOATS in `.dock-overlay` — absolute, bottom: 0 — so
+     * opening it never reflows the view above, which means it COVERS the bottom
+     * of whatever is behind it. `--dock-reserve` exists for exactly that, and
+     * three scrollers already added it; `.det-scroll` did not, so with the dock
+     * open the last screenful of EVERY detail page — issues, pull requests,
+     * releases, commits, the log — could not be brought into view at all.
+     */
+    "a-detail-page-clears-the-dock": async (f) => {
+      const c = check(f);
+      const mount = $(".dock-mount");
+      const sc = $(".det-scroll");
+      c.ok(!!mount && !!sc, "a detail page is showing, with the dock present");
+      if (!mount || !sc) return;
+      c.eq(getComputedStyle(sc).paddingBottom, "0px", "collapsed, it reserves nothing");
+
+      // The dock publishes its height on its host; simulate it being open.
+      const host = mount.parentElement;
+      host.style.setProperty("--dock-reserve", "240px");
+      await settle(250);
+      c.eq(
+        getComputedStyle(sc).paddingBottom,
+        "240px",
+        "open, the page reserves room so its last screenful can be scrolled clear",
+      );
+      host.style.removeProperty("--dock-reserve");
+    },
+
+    /**
      * A running clone can always be left.
      *
      * setBusy disabled every control INCLUDING Cancel, and the modal's
