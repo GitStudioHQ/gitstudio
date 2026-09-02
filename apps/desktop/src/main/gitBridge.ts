@@ -582,7 +582,7 @@ export class GitBridge {
     // up as DELETED LINES — a diff of a file nobody had touched, claiming its
     // entire tail had been removed. And a file that is binary in HEAD went to
     // the editor as decoded bytes on the left of whatever is on disk now.
-    const head: { text: string; binary?: boolean; truncated?: boolean } = headName
+    const head: { text: string; binary?: boolean; truncated?: boolean; absent?: boolean } = headName
       ? await showAt(ctx, "HEAD", headName).catch(() => ({ text: "" }))
       : { text: "" };
     const headText = head.text;
@@ -611,6 +611,13 @@ export class GitBridge {
       leftLabel: `HEAD ${rel}`,
       rightLabel: gone ? `(deleted) ${rel}` : `Working Tree ${rel}`,
       ...(gone ? { deleted: true } : {}),
+      // Which side the file is missing from — the only way to tell an added
+      // binary from a deleted one, since both sides' text is empty either way.
+      ...(gone && headName
+        ? { onlySide: "deleted" as const }
+        : !headName || head.absent
+          ? { onlySide: "added" as const }
+          : {}),
       leftText: headText,
       rightText: working.text,
       conflicted,

@@ -180,3 +180,42 @@ test("both sides are capped by the same ruler", async () => {
     removeTempRepo(root);
   }
 });
+
+test("an added binary and a deleted one are told apart", async () => {
+  // Both sides of a binary FileDiff are empty by construction — the producer
+  // refuses to decode it — so nothing downstream could tell an added image from
+  // a deleted one, and all three cases read "Its contents changed."
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]), Buffer.alloc(32, 7)]);
+  const { root, git } = repo();
+  try {
+    writeFileSync(join(root, "keep.txt"), "so the repo has a commit\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+
+    // ADDED: on disk, not in HEAD.
+    writeFileSync(join(root, "new.png"), png);
+    const b = await bridge(root);
+    const added = await b.fileDiff({ path: "new.png" });
+    assert.equal(added.binary, true);
+    assert.equal(added.onlySide, "added", "an added binary says so");
+
+    // DELETED: in HEAD, not on disk.
+    writeFileSync(join(root, "old.png"), png);
+    git("add", "-A");
+    git("commit", "-qm", "add old.png");
+    execFileSync("git", ["rm", "-q", "old.png"], { cwd: root });
+    const removed = await b.fileDiff({ path: "old.png" });
+    assert.equal(removed.onlySide, "deleted", "a deleted binary says so");
+
+    // CHANGED: on both sides — neither label applies.
+    writeFileSync(join(root, "same.png"), png);
+    git("add", "-A");
+    git("commit", "-qm", "add same.png");
+    writeFileSync(join(root, "same.png"), Buffer.concat([png, Buffer.alloc(8, 9)]));
+    const edited = await b.fileDiff({ path: "same.png" });
+    assert.equal(edited.binary, true);
+    assert.equal(edited.onlySide, undefined, "an edited binary claims neither");
+  } finally {
+    removeTempRepo(root);
+  }
+});

@@ -53,6 +53,7 @@ const CASES = [
   ["a-quick-action-keeps-your-draft", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-streaming-reply-never-moves-the-reader", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-queued-job-that-starts-stops-saying-it-has-not", "actions~open9100~click:.gh-job-log"],
+  ["line-controls-need-a-line-editor", "changes"],
   ["the-dock-hands-the-keyboard-back", "changes"],
   ["an-open-dock-does-not-bury-a-footer", "rebase"],
   ["a-conflict-with-no-text-is-not-offered-a-text-merge", "changes"],

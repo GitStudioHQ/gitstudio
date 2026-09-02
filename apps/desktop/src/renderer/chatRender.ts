@@ -154,7 +154,21 @@ function scheduleStreamRender(state: TurnState): void {
 export function finalizeStream(state: TurnState): void {
   if (state.stream) {
     state.stream.classList.remove("is-streaming");
-    if (state.raw.trim()) state.stream.innerHTML = renderMarkdown(state.raw);
+    if (state.raw.trim()) {
+      const block = state.stream;
+      block.innerHTML = renderMarkdown(state.raw);
+      // The block is FINISHED, so highlight it — `markdownBlock` does this for
+      // every other rendered answer, and a streamed one is the same content.
+      // Without it a reply's code fences stayed monochrome until you left the
+      // chat and came back, at which point the restore path rendered the same
+      // text through `markdownBlock` and it gained colour: the same message,
+      // two different appearances, for no reason the reader can see.
+      //
+      // NOT in `scheduleStreamRender` — that runs per animation frame on a
+      // block whose fences are still arriving, so it would tokenize a fragment
+      // dozens of times and paint half-finished syntax.
+      highlightProse(block);
+    }
     state.stream = null;
     state.raw = "";
   }
@@ -174,8 +188,10 @@ export function onEvent(state: TurnState, e: AgentEventWire): void {
       // The step's text finished — render the final Markdown.
       if (state.stream) {
         const text = e.text && e.text.trim() ? e.text : state.raw;
-        state.stream.innerHTML = renderMarkdown(text);
-        state.stream.classList.remove("is-streaming");
+        const block = state.stream;
+        block.innerHTML = renderMarkdown(text);
+        block.classList.remove("is-streaming");
+        highlightProse(block); // settled — see finalizeStream
         state.stream = null;
         state.raw = "";
       } else if (e.text && e.text.trim()) {

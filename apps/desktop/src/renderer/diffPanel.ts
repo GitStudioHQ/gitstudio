@@ -121,8 +121,19 @@ export class DiffPanel {
     // strings is how "the diff doesn't show" happened: two blank panes, no
     // explanation, and the app looking broken over a PNG behaving normally.
     if (file.binary) {
+      // WHAT happened to it, not just that it is binary. "Its contents changed"
+      // is a specific claim, and it is wrong for the two cases where the file
+      // only exists on one side: an image that was ADDED has no previous
+      // contents to have changed, and one that was DELETED has no current
+      // ones. Both are ordinary, and both read as a puzzling non-answer.
+      const what =
+        file.onlySide === "added"
+          ? "It was added."
+          : file.onlySide === "deleted" || file.deleted
+            ? "It was deleted."
+            : "Its contents changed.";
       this.showEmpty(
-        `${file.path} is a binary file, so there is nothing to diff line by line. Its contents changed.`,
+        `${file.path} is a binary file, so there is nothing to diff line by line. ${what}`,
         { title: "Binary file", kind: "none" },
       );
       return;
@@ -680,6 +691,19 @@ export class DiffPanel {
    *
    *  ALL selections, not just the primary one: Monaco supports multi-cursor, and
    *  reading getSelection() staged the first range and dropped the rest. */
+  /** Is a line-by-line diff editor actually mounted?
+   *
+   *  The same condition `getSelectedLines` tests, exposed so the toolbar can be
+   *  set from it. "Stage lines" and the whitespace toggle were enabled by
+   *  SELECTING A ROW, before the diff had even been asked for — so over a
+   *  binary, a conflict, a truncated file or a failed read they stayed lit over
+   *  a pane with no editor in it, and answered a click with "select some lines
+   *  first": advice you cannot follow, about a control that could never work
+   *  here. */
+  hasLineEditor(): boolean {
+    return !!(this.diff?.right ?? this.inline?.getModifiedEditor());
+  }
+
   getSelectedLines(): number[] | null {
     // Both modes, not just split. `this.diff` is undefined in inline mode, and
     // inline is the DEFAULT below 1000px of surface width — so on a narrow

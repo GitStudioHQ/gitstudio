@@ -192,6 +192,15 @@ export interface FileDiff {
    * cannot tell from the text.
    */
   deleted?: boolean;
+  /**
+   * The file exists on ONE side only.
+   *
+   * For a text file the two panes show this plainly. For a BINARY one both
+   * texts are empty by construction — the producer refuses to decode it — so
+   * nothing downstream could tell an added image from a deleted one from an
+   * edited one, and all three were described as "its contents changed".
+   */
+  onlySide?: "added" | "deleted";
 }
 
 /** One change since HEAD, and how much of it the index already holds. */

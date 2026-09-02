@@ -5634,9 +5634,24 @@ class App {
       openFile = { path: f.path, staged: !!f.staged };
       this.changesOpenKey = rowKey(f.staged ? "staged" : "unstaged", f.path);
       stageLinesLabel.textContent = f.staged ? "Unstage lines" : "Stage lines";
-      stageLinesBtn.disabled = false;
-      wsBtn.disabled = false;
-      void this.openWorkingFile(diffPanel, f.path);
+      // Held CLOSED until the diff actually arrives and turns out to have a
+      // line editor in it. These used to be opened by the click that selected
+      // the row, before the diff had even been asked for — so over a binary, a
+      // conflict, a truncated file or a failed read they sat lit above a pane
+      // with no editor, and answered a press with "select some lines first":
+      // advice that cannot be followed, about a control that could never work
+      // on this file.
+      stageLinesBtn.disabled = true;
+      wsBtn.disabled = true;
+      void this.openWorkingFile(diffPanel, f.path).then(() => {
+        if (this.changesOpenKey !== rowKey(f.staged ? "staged" : "unstaged", f.path)) return;
+        const live = diffPanel.hasLineEditor();
+        stageLinesBtn.disabled = !live;
+        wsBtn.disabled = !live;
+        const why = "This file has no line-by-line diff to work with.";
+        stageLinesBtn.title = live ? "" : why;
+        wsBtn.title = live ? "Ignore whitespace-only changes" : why;
+      });
     };
 
     const fileRow = (f: ChangedFile, kind: "staged" | "unstaged"): HTMLElement => {

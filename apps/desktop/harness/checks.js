@@ -7302,6 +7302,51 @@
       }
     },
 
+    // "Stage lines" and the whitespace toggle were enabled by the click that
+    // SELECTED the row, before the diff had even been asked for. Over a binary,
+    // a conflict, a truncated file or a failed read they stayed lit above a
+    // pane with no editor in it, and answered a press with "select some lines
+    // first" — advice that cannot be followed about a control that could never
+    // work on that file.
+    "line-controls-need-a-line-editor": async (f) => {
+      const c = check(f);
+      const row = $(".dc-file");
+      c.ok(!!row, "there is a file to open");
+      if (!row) return;
+      const stage = $$("button").find((b) => /stage lines|unstage lines/i.test(text(b) || ""));
+      c.ok(!!stage, "the toolbar has a line-staging control");
+      if (!stage) return;
+
+      const inv = window.gitstudio.invoke;
+      try {
+        // A real text diff: the control applies.
+        row.click();
+        await settle(1200);
+        c.eq(stage.disabled, false, "over a real diff it is available");
+
+        // A binary: there is no line editor at all.
+        window.gitstudio.invoke = (ch, p) =>
+          ch === "file:diff"
+            ? Promise.resolve({
+                path: "logo.png",
+                leftLabel: "HEAD",
+                rightLabel: "Working Tree",
+                leftText: "",
+                rightText: "",
+                conflicted: false,
+                binary: true,
+              })
+            : inv(ch, p);
+        row.click();
+        await settle(1200);
+        c.ok(!!$(".diff-empty"), "the pane says why it cannot draw one");
+        c.eq(stage.disabled, true, "and the line control is closed, not lit over nothing");
+        c.ok(/no line-by-line/i.test(stage.title || ""), "with a reason on it");
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // Opening the dock takes the keyboard into it; closing it used to drop the
     // keyboard on the floor. Focus stayed on the xterm textarea inside the now
     // hidden panel, so the view behind had no keyboard at all until you reached
