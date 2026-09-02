@@ -428,7 +428,9 @@ export class DiffPanel {
     theirs.title = `Replace the file with “${model.theirsLabel}” and stage it`;
     const resolve = el("button", "btn btn-primary mini-btn merge-resolve") as HTMLButtonElement;
     resolve.append(glyph("check"), span("Mark resolved"));
-    resolve.title = "Save your merged result and stage the file as resolved";
+    // Armed only once the merge has actually been made — see syncResolve below.
+    resolve.disabled = true;
+    resolve.title = "Work through the conflicts first";
     actions.append(ours, theirs, resolve);
     bar.append(title, actions);
 
@@ -437,6 +439,26 @@ export class DiffPanel {
     this.container.replaceChildren(wrap);
 
     this.merge = new MergeView(surface);
+    // How much of the merge is still undone. The result pane is deliberately
+    // SEEDED WITH THE BASE — the block trackers are anchored in base
+    // coordinates and you build the answer by accepting sides, as IntelliJ does
+    // — which means "Mark resolved" pressed before accepting anything writes
+    // the BASE over the file and stages it: both sides' work discarded, under a
+    // toast reading "Resolved and staged." Nothing recovers that.
+    let pending = Number.POSITIVE_INFINITY;
+    const syncResolve = (): void => {
+      const blocked = pending > 0;
+      resolve.disabled = blocked;
+      resolve.title = blocked
+        ? pending === Number.POSITIVE_INFINITY
+          ? "Work through the conflicts first"
+          : `${pending} conflict${pending === 1 ? "" : "s"} still to settle — the result would not be your merge`
+        : "Save your merged result and stage the file as resolved";
+    };
+    this.merge.onCountsChanged = (counts) => {
+      pending = counts.conflictsPending;
+      syncResolve();
+    };
     this.merge.render({
       fileName: model.path,
       conflictType: "content",
@@ -449,6 +471,11 @@ export class DiffPanel {
       theirs: model.theirs,
       result: model.result,
     });
+    // Paint the button's initial state. `onCountsChanged` fires on the first
+    // model build, but a merge view that fails to mount at all (a cold or
+    // broken Monaco worker) never emits it — and the button must stay closed in
+    // that case, not open by default.
+    syncResolve();
     // The surface starts at 0 height until Monaco lays out — nudge it.
     requestAnimationFrame(() => (this.merge as { layout?: () => void } | undefined)?.layout?.());
 
