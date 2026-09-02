@@ -1460,7 +1460,16 @@ class App {
       // is already in the default branch (merged), or when the upstream it
       // tracked has been deleted (gone) — which is what a merged pull request
       // leaves behind.
-      const finished = locals.filter((b) => !b.current && (b.merged || b.gone));
+      //
+      // The default branch is NEVER finished, and excluding it is not a nicety:
+      // `merged` is `ahead === 0` measured against the default branch, and the
+      // default branch is zero commits ahead of itself. So `main` qualified,
+      // and any moment you were standing on a feature branch the sweep offered
+      // — in a confirm listing it by name, among five others — to delete the
+      // one branch the repository is organised around.
+      const finished = locals.filter(
+        (b) => !b.current && b.name !== defaultBranch && (b.merged || b.gone),
+      );
       const sweep = el("button", "mini-btn branches-sweep") as HTMLButtonElement;
       sweep.append(glyph("trash"), span(`Delete ${finished.length} finished…`));
       sweep.title = "Branches whose work is already in the default branch, or whose upstream is gone";
@@ -2074,6 +2083,11 @@ class App {
    * six deletions when the third one failed would be a lie about the repo.
    */
   private async sweepFinishedBranches(finished: BranchInfo[], defaultBranch?: string): Promise<void> {
+    // Belt and braces on the one destructive action here that takes a LIST: the
+    // caller already excludes the default branch and the current one, and this
+    // refuses to delete them anyway. A bulk delete is the wrong place to trust
+    // that a filter upstream still says what it said when it was written.
+    finished = finished.filter((b) => !b.current && b.name !== defaultBranch);
     if (!finished.length) return;
     const names = finished.map((b) => b.name);
     const ok = await confirmDialog({
