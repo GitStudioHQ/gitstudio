@@ -7245,6 +7245,63 @@
       );
     },
 
+    // A queued job that the runner picks up. `setProducing` flips `notStarted`,
+    // which the empty-log note reads — but it never re-rendered, so the note
+    // kept saying "This job hasn't started yet." for as long as the job ran,
+    // until the first line of output happened to arrive.
+    //
+    // (Its sibling regression — `append` not re-evaluating the jump pill — has
+    // no check, deliberately. The pill's condition reads `scrollHeight`, which
+    // on this virtualized pane comes from spacer divs sized inside a render
+    // this harness's starved rAF never completes, so the pill reads the same on
+    // a fixed and a broken build. A check that cannot fail on the old
+    // behaviour is worse than none: it reports coverage it does not have.)
+    "a-queued-job-that-starts-stops-saying-it-has-not": async (f) => {
+      const c = check(f);
+      const inv = window.gitstudio.invoke;
+      let started = false;
+      window.gitstudio.invoke = (ch, p) => {
+        // An EMPTY log — the only state where the note stays on screen long
+        // enough to go stale.
+        if (ch === "actions:jobLogChunk") return Promise.resolve({ text: "", totalLength: 0 });
+        // …and, once `started`, a runner that has picked the job up.
+        if (ch === "actions:runDetail" && started) {
+          return inv(ch, p).then((d) => ({
+            ...d,
+            jobs: (d.jobs || []).map((j) =>
+              /queued|waiting/i.test(j.status) ? { ...j, status: "in_progress" } : j,
+            ),
+          }));
+        }
+        return inv(ch, p);
+      };
+      try {
+        const queued = $$(".joblog-job").find((r) => /queued|waiting/i.test(text(r)));
+        c.ok(!!queued, "the run has a queued job");
+        if (!queued) return;
+        queued.click();
+        await settle(1200);
+        c.ok(
+          /hasn't started|has not started/i.test(text($(".log-empty")) || ""),
+          "while queued it says it has not begun",
+        );
+
+        started = true;
+        await settle(6000); // the rail poll re-reads runDetail
+        queued.click(); // the "stuck" path: re-clicking starts the tail
+        await settle(1500);
+        const note = text($(".log-empty")) || "";
+        c.ok(!!note, "an empty running log still says something");
+        c.ok(
+          !/hasn't started|has not started/i.test(note),
+          `a running job stops claiming it has not begun (“${note}”)`,
+        );
+        c.ok(/waiting for/i.test(note), "and says what it IS doing instead");
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // `running` is the only thing stopping a second turn, and `runGoal` awaits
     // the connection gate before it does anything else. With the flag set after
     // that await, two quick presses both read `running === false`, both

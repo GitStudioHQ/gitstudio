@@ -52,6 +52,7 @@ const CASES = [
   ["send-needs-something-to-send", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-quick-action-keeps-your-draft", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-streaming-reply-never-moves-the-reader", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
+  ["a-queued-job-that-starts-stops-saying-it-has-not", "actions~open9100~click:.gh-job-log"],
   ["two-fast-sends-start-one-turn", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["every-undrawable-diff-says-which-nothing-it-is", "changes"],
   ["run-detail-one-identity", "actions~open9100"],
