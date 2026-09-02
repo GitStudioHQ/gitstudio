@@ -94,7 +94,13 @@ export function computeChangeBlocks(
   workingText: string,
 ): ChangeBlock[] {
   const sinceHead = computeHunks(headText, workingText);
-  const unstaged = computeHunks(indexText, workingText);
+  // A file with nothing staged has an index blob identical to its HEAD blob,
+  // which is the ordinary case in the Changes view — and then this second diff
+  // has byte-identical inputs to the first and can only produce a byte-
+  // identical result. Recomputing it meant every open of an unstaged file
+  // diffed the same two texts twice, at file size, to reach the answer already
+  // sitting in `sinceHead`.
+  const unstaged = indexText === headText ? sinceHead : computeHunks(indexText, workingText);
 
   return sinceHead.map((block) => {
     const overlapping = unstaged
