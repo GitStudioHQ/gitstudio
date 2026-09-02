@@ -16,3 +16,9 @@ release/
 # A literal "~" directory, created by an unquoted ~ in a shell command and
 # then swept in by `git add -A`. It held npm logs, not source.
 ~/
+
+# A 584KB minified main-process bundle that `npm run package` drops beside
+# package.json. The real output is dist/main/main.js (which package.json's
+# "main" points at, and which dist/ already ignores); this copy is a build
+# side-effect and `git add -A` swept it in.
+apps/desktop/main.js
