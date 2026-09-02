@@ -1,0 +1,24 @@
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_c6c0ff77849f74 5482-5500
+  s_26f5e669d3043c::t_8fe6e075dd31c0 5604-5616
+  s_26f5e669d3043c::t_441fac2f502939 5589-5591
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_97e53e191ea9c7 3309-3323,3626-3628,3633-3634
+  s_26f5e669d3043c::t_f891a4b62fca28 3635
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2241f6aa4ec9b3176eb7f5e8e9ac4e196ac45b31",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
