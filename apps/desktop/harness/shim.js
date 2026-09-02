@@ -314,7 +314,13 @@
   ];
 
   const fixtures = {
-    "repo:current": { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio" },
+    // ?norepo=1 → NO repository open, which is the welcome screen: the first
+    // thing anyone sees, the only screen shown after closing a repo, and
+    // unreachable in this harness until now — which is why nothing had ever
+    // checked it.
+    "repo:current": params.get("norepo")
+      ? undefined
+      : { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio" },
     "repo:recent": [
       { root: "/Users/anton/Developer/GitStudioHQ/gitstudio", name: "gitstudio" },
       { root: "/Users/anton/Developer/GitStudioHQ/gistudio.dev", name: "gistudio.dev" },
@@ -825,6 +831,19 @@
       ],
       };
     },
+    // The OAuth Device Flow. Absent, so "Sign in with GitHub" — and the
+    // "Switch account" that now starts it — could only ever render "Couldn't
+    // start sign-in", and the whole flow was untestable.
+    "github:deviceStart": () => ({
+      ok: true,
+      userCode: "WDJB-MJHT",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete: "https://github.com/login/device?user_code=WDJB-MJHT",
+      deviceCode: "fixture-device-code",
+      interval: 5,
+      expiresIn: 900,
+    }),
+    "github:devicePoll": () => ({ state: "pending" }),
     "orgs:repos": () => orgRepos,
     "orgs:teams": () => [ { name: "Core", slug: "core", description: "Maintainers", privacy: "closed", htmlUrl: "" } ],
     "orgs:members": () => [u(me), u("mira-holt"), u("s-ohta"), u("dkovachev"), u("jparks")].map((p) => ({ ...p, htmlUrl: "" })),
@@ -1304,7 +1323,11 @@
     }
   }
   async function drive() {
-    await until(() => q(".screen.repo"));
+    // Either screen. With ?norepo=1 the app boots to the WELCOME screen and
+  // `.screen.repo` never appears, so the driver timed out and every probe
+  // against that scene came back with no result at all — which is why the
+  // first thing anyone sees had never been driven here.
+  await until(() => q(".screen.repo") || q(".welcome-recent") || q(".screen.welcome"));
     // Some views are NOT in the app's TABS list — Settings lives in the rail's
     // footer — and `prefs.currentView` is validated against TABS, so seeding it
     // silently fell back to "changes". The `settings` scene therefore screenshot

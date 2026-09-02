@@ -553,6 +553,12 @@ class App {
       list.appendChild(empty);
     } else {
       for (const r of recent) {
+        // A ROW holding two controls, not one control containing another: a
+        // recent whose folder has been deleted or moved looked exactly like a
+        // live one, and there was no way to get rid of it from this screen —
+        // the only screen you see when no repository is open. Opening it toasts
+        // "not inside a Git repository" and the row stays, forever.
+        const rowWrap = el("div", "recent-card-row");
         const row = el("button", "recent-card");
         const meta = el("div", "recent-card-meta");
         const name = el("div", "recent-card-name");
@@ -562,7 +568,24 @@ class App {
         meta.append(name, path);
         row.append(glyph("folder"), meta);
         row.addEventListener("click", () => void this.openPath(r.root));
-        list.appendChild(row);
+
+        const forget = el("button", "recent-card-forget") as HTMLButtonElement;
+        forget.appendChild(glyph("close"));
+        forget.title = `Forget ${r.name} — the folder itself is not touched`;
+        forget.setAttribute("aria-label", forget.title);
+        forget.addEventListener("click", (e) => {
+          e.stopPropagation();
+          void (async () => {
+            try {
+              await host.invoke("repos:removeRecent", r.root);
+            } catch {
+              /* the list is rebuilt either way */
+            }
+            void this.showWelcome();
+          })();
+        });
+        rowWrap.append(row, forget);
+        list.appendChild(rowWrap);
       }
     }
     recentWrap.append(title, list);
@@ -4167,10 +4190,24 @@ class App {
         const actions = el("div", "settings-actions");
         const switchBtn = el("button", "mini-btn");
         switchBtn.append(glyph("sign-in"), span("Switch account"));
+        // Switching means signing in as SOMEONE ELSE. This ran the sign-out
+        // code and stopped there — not even the toast — so the button labelled
+        // "Switch account" was a quieter Sign out that left you on a
+        // signed-out card with nothing started and no account to switch to.
         switchBtn.addEventListener("click", async () => {
           await host.invoke("github:disconnect", undefined);
           await this.authChanged();
-          void this.showSettingsView();
+          // AWAITED, so the card really has been rebuilt before the new
+          // sign-in is opened against it. (Not a rAF: the callback would fire
+          // before the async rebuild had replaced the card.)
+          await this.showSettingsView();
+          const fresh = document.querySelector<HTMLElement>(".settings-view");
+          const btn = fresh
+            ? [...fresh.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
+                /sign in with github/i.test(b.textContent ?? ""),
+              )
+            : undefined;
+          btn?.click();
         });
         const signOut = el("button", "mini-btn danger");
         signOut.append(span("Sign out"));

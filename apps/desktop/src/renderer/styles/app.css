@@ -489,6 +489,35 @@ body {
   font-size: 12.5px;
   padding: 8px 2px;
 }
+/* The row is the container; the card and its Forget button are siblings. A
+   button inside a button is invalid, has no accessible name of its own, and
+   Space activates the wrong one — the same reason `clist-row` puts its copy
+   button beside the subject rather than inside it. */
+.recent-card-row { display: flex; align-items: stretch; gap: 6px; }
+.recent-card-row > .recent-card { flex: 1 1 auto; min-width: 0; }
+.recent-card-forget {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: none;
+  color: var(--app-muted);
+  opacity: 0;
+  cursor: pointer;
+}
+/* Revealed on hover or keyboard focus — never only on hover, or it is
+   unreachable without a pointer. */
+.recent-card-row:hover .recent-card-forget,
+.recent-card-forget:focus-visible { opacity: 1; }
+.recent-card-forget:hover {
+  color: var(--status-del);
+  border-color: var(--app-border);
+  background: var(--app-elevated);
+}
+
 .recent-card {
   display: flex;
   align-items: center;

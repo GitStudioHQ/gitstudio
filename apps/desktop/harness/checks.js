@@ -4759,6 +4759,78 @@
     },
 
     /**
+     * The welcome screen: a recent can be forgotten, and its controls nest.
+     *
+     * This is the first thing anyone sees and the only screen shown after
+     * closing a repository, and it was unreachable in this harness until the
+     * `norepo=1` switch — so nothing had ever checked it. A recent whose folder
+     * has been deleted or moved renders identically to a live one; opening it
+     * toasts "not inside a Git repository" and the row stays, with no way to
+     * get rid of it from the one screen you can see.
+     */
+    "a-recent-repository-can-be-forgotten": async (f) => {
+      const c = check(f);
+      c.ok(!!$(".welcome-recent"), "the welcome screen is showing");
+      const rows = $$(".recent-card-row");
+      c.ok(rows.length > 0, `it lists recent repositories (${rows.length})`);
+      if (!rows.length) return;
+
+      // A control inside a control has no accessible name of its own and Space
+      // activates the wrong one.
+      c.eq($$(".recent-card button").length, 0, "no button is nested inside the card button");
+      const forget = rows[0].querySelector(".recent-card-forget");
+      c.ok(!!forget, "each recent offers to be forgotten");
+      if (!forget) return;
+      c.ok(!!forget.getAttribute("aria-label"), "and the control is named");
+      c.match(
+        forget.getAttribute("aria-label") ?? "",
+        /not touched|forget/i,
+        "saying it forgets the entry rather than deleting the folder",
+      );
+
+      // Forgetting must not also OPEN the repository — the card behind it does.
+      const sent = [];
+      const inv = window.gitstudio.invoke;
+      window.gitstudio.invoke = async (ch, p) => {
+        if (ch === "repos:removeRecent") {
+          sent.push(p);
+          return [];
+        }
+        if (ch === "repo:openPath") sent.push("OPENED");
+        return inv(ch, p);
+      };
+      forget.click();
+      await settle(900);
+      window.gitstudio.invoke = inv;
+      c.eq(sent.length, 1, `exactly one call, and it is the forget (${JSON.stringify(sent)})`);
+      c.ok(sent[0] !== "OPENED", "not an open");
+    },
+
+    /**
+     * "Switch account" switches — it does not just sign you out.
+     *
+     * It ran the sign-out code and stopped there, without even the toast the
+     * neighbouring Sign out gives you, so the button labelled Switch was a
+     * quieter Sign out that left you on a signed-out card with nothing started
+     * and no account to switch to. The verb has two halves.
+     */
+    "switch-account-starts-the-new-sign-in": async (f) => {
+      const c = check(f);
+      const sw = $$("button").find((b) => /switch account/i.test(text(b)));
+      c.ok(!!sw, "the account card offers to switch");
+      if (!sw) return;
+      sw.click();
+      await settle(1800);
+      const flow = $(".gh-flow");
+      c.ok(!!flow, "a sign-in flow is on screen");
+      c.match(
+        text(flow || { textContent: "" }),
+        /code|github\.com\/login\/device/i,
+        `and it is the device flow, already started (${JSON.stringify(text(flow || { textContent: "" }).slice(0, 60))})`,
+      );
+    },
+
+    /**
      * The Commits graph: typing paints, Enter travels, and j/k move.
      *
      * `computeMatches` selected the first match and scrolled to it on EVERY
