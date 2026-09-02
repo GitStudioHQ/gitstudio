@@ -5604,6 +5604,16 @@
       const map = $(".log-errmap");
       c.ok(!!map, "the map exists");
       if (map) {
+        // Every tick INSIDE the map. `top` was set to the raw percentage, and
+        // `top: 100%` on a 3px box puts the whole box below the track — so an
+        // error on the log's LAST line, which is where a failing job's error
+        // usually is, drew its tick outside the map on the pane's border.
+        const track = map.getBoundingClientRect();
+        const out = ticks.filter((t) => {
+          const r = t.getBoundingClientRect();
+          return r.bottom > track.bottom + 0.5 || r.top < track.top - 0.5;
+        });
+        c.eq(out.length, 0, `every error tick sits inside the map (${out.length} of ${ticks.length} outside)`);
         const mb = map.getBoundingClientRect();
         const sb = s.getBoundingClientRect();
         c.ok(

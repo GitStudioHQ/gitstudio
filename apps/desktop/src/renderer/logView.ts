@@ -687,7 +687,11 @@ export function createLogPane(o: {
       if (seen.has(key)) continue;
       seen.add(key);
       const tick = el("button", "log-errtick") as HTMLButtonElement;
-      tick.style.top = `${pct}%`;
+      // Scaled by the track MINUS the tick's own height, so 100% puts the
+      // tick's bottom on the map's bottom rather than its top — a `top: 100%`
+      // on a 3px box sits entirely outside the map, flush on the pane's border,
+      // which is exactly where an error on the log's last line landed.
+      tick.style.top = `calc(${pct / 100} * (100% - 3px))`;
       tick.title = `Error on line ${docIdx + 1}`;
       tick.tabIndex = -1;
       tick.addEventListener("click", () => jumpToLine(docIdx));

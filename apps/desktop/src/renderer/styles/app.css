@@ -10261,7 +10261,14 @@ body.vscode-light .log-pane {
 .sec-row-meta > .stash-sel { width: 74px; flex: 0 0 74px; text-align: right; }
 
 /* The state pills a branch or a tag wears. */
-.ab-pill.current { color: var(--gs-accent); border-color: color-mix(in srgb, var(--gs-accent) 40%, var(--app-border)); }
+/* --gs-accent-ink, not the raw fill. The comment on the light block says it:
+   "on light surfaces the bright blue/purple accents fail under white text or
+   as small text". This pill is 10.5px/600 text — the smallest accent-coloured
+   text in the app — and it was the one label that never got the light ink. */
+.ab-pill.current {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent-ink, var(--gs-accent)) 40%, var(--app-border));
+}
 .ab-pill.default { color: var(--app-text); }
 .ab-pill.merged { color: var(--app-muted); }
 .ab-pill.unpublished { color: var(--app-muted); border-style: dashed; }

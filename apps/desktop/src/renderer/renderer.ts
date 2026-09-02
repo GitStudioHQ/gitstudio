@@ -8042,10 +8042,22 @@ function openShortcutsHelp(): void {
       ],
     },
     {
+      // Branches answered to three keys this sheet had never heard of, and one
+      // of them CONTRADICTED what the sheet said ⌘Enter does — pressing the
+      // documented "submit" on a branch row checks it out. A sheet that is
+      // wrong about a key is worse than a sheet that omits it.
+      title: "Branches",
+      rows: [
+        ["/", "Filter the list"],
+        [`${mod}Enter`, "Run the focused row's main action — checkout, pull, publish"],
+        ["Shift+F", "Fetch from every remote"],
+      ],
+    },
+    {
       title: "Detail pages",
       rows: [
         ["Esc  or  ←", "Back to the list"],
-        [`${mod}Enter`, "Submit the open form / modal"],
+        [`${mod}Enter`, "Submit the open form"],
         ["/", "Commit page: filter the changed files"],
       ],
     },
