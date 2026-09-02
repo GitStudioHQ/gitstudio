@@ -1,0 +1,25 @@
+apps/desktop/test/conflictSideLabels.test.ts
+  s_26f5e669d3043c::t_8f93bd13a554de 1-96
+apps/desktop/src/renderer/diffPanel.ts
+  s_26f5e669d3043c::t_afa9b8544d9b20 418-422,424-425,427-428,479,482
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_b1d86274b2109b 660-668,676
+  s_26f5e669d3043c::t_3405349589692c 3044-3063,3070-3075
+  s_26f5e669d3043c::t_8c6fbbcc5e22bb 3064-3069
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8ccebe585a286c84d5eac3beb46fac6261db51f5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
