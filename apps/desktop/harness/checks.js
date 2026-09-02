@@ -4759,6 +4759,42 @@
     },
 
     /**
+     * A cancelled run is not a failed one.
+     *
+     * `runLead`'s buckets lumped cancelled, timed_out, action_required and
+     * stale in with failure — while the run's own page and the status filter
+     * both drew cancelled muted. So the same run was an urgent red error in the
+     * list and a non-event everywhere else, and a run somebody had deliberately
+     * stopped pulled the eye like a broken build.
+     */
+    "a-cancelled-run-is-not-drawn-as-a-failure": (f) => {
+      const c = check(f);
+      const rows = $$(".sec-row");
+      const lead = (needle) => {
+        const r = rows.find((x) => new RegExp(needle, "i").test(text(x)));
+        return r ? r.querySelector(".run-lead") : null;
+      };
+      const failed = lead("actions: stream");
+      const cancelled = lead("CodeMirror");
+      const ok = lead("release: extension");
+      c.ok(!!failed && !!cancelled && !!ok, "the list holds a success, a failure and a cancellation");
+      if (!failed || !cancelled || !ok) return;
+
+      c.ok(failed.classList.contains("is-failure"), "a failed run is drawn as one");
+      c.ok(
+        !cancelled.classList.contains("is-failure"),
+        `a cancelled run is not (${cancelled.className})`,
+      );
+      // And the colours really differ, not just the class names.
+      const col = (e) => getComputedStyle(e).color;
+      c.ok(
+        col(cancelled) !== col(failed),
+        `cancelled and failed read differently at a glance (both ${col(failed)})`,
+      );
+      c.ok(col(cancelled) !== col(ok), "and a cancellation is not drawn as a success either");
+    },
+
+    /**
      * Commit is dead on a clean tree — except when amending.
      *
      * The enable rule gated on the message text alone, so on a repository with

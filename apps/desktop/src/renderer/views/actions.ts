@@ -497,24 +497,34 @@ function runLead(state: string, label?: string): HTMLElement {
   if (state === "success") {
     icon = "pass-filled";
     cls = "is-success";
-  } else if (state === "failure" || state === "error" || state === "startup_failure") {
-    // Failure was drawn as a hollow ring next to a SOLID success disc, so at a
-    // glance down a list of runs the failures read as the quieter ones. The
-    // state that needs you is the state that carries the weight.
-    icon = "error";
-    cls = "is-failure";
   } else if (
     state === "failure" ||
     state === "error" ||
-    state === "cancelled" ||
-    state === "timed_out" ||
     state === "startup_failure" ||
-    state === "action_required" ||
-    state === "stale"
+    state === "timed_out"
   ) {
+    // Failure was drawn as a hollow ring next to a SOLID success disc, so at a
+    // glance down a list of runs the failures read as the quieter ones. The
+    // state that needs you is the state that carries the weight.
+    //
+    // A timeout belongs here: the run did not finish, and nobody chose that.
     icon = "error";
     cls = "is-failure";
-  } else if (state === "skipped" || state === "neutral") {
+  } else if (state === "action_required") {
+    // Not a failure — it is waiting for a person. Drawing it red sent people to
+    // read logs for an error that had not happened.
+    icon = "warning";
+    cls = "is-running";
+  } else if (
+    state === "cancelled" ||
+    state === "stale" ||
+    state === "skipped" ||
+    state === "neutral"
+  ) {
+    // A CANCELLED run is not a failed one — somebody stopped it on purpose, and
+    // usually that somebody is you. It used to fall into the failure bucket
+    // here while the run's own page and the status filter both drew it muted,
+    // so the same run was red in the list and a non-event everywhere else.
     icon = "circle-slash";
     cls = "is-muted";
   }
@@ -770,12 +780,17 @@ function buildRunDetail(ctx: RunDetailCtx): void {
 
   // ── rail ──
   // No Status section: the pill sits beside the title 900px away, and the rail
-  // repeating it was the same word twice on one screen. A LIVE run still says
-  // so here, because that is news rather than a restatement.
-  const statusProp = live ? propSection("Status") : undefined;
+  // repeating it was the same word twice on one screen.
+  //
+  // A LIVE run gets a section here, but it must not be the third statement of
+  // the same fact — the title pill already reads "in progress", and a second
+  // pill saying it again beside the words "running now" made three. What the
+  // title cannot say is HOW LONG, and on a run you are watching that is the
+  // only number you actually want.
+  const elapsed = runDuration(full);
+  const statusProp = live ? propSection("Running for") : undefined;
   if (statusProp) {
-    statusProp.body.appendChild(runStatePill(state));
-    statusProp.body.appendChild(span("running now", "det-prop-none"));
+    statusProp.body.appendChild(span(elapsed || "just started", "det-prop-value"));
   }
 
   // WHO: the run's actor — and the re-runner, when someone else re-ran it.

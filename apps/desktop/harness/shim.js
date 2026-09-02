@@ -197,6 +197,9 @@
     mkRun({ id: 9099, runNumber: 233, name: "Extension CI", workflowId: 2, displayTitle: "test: drive update-refs end-to-end", status: "completed", conclusion: "success", branch: "main", event: "push", createdAt: ISO(5), updatedAt: ISO(4.9), htmlUrl: "", actor: u("mira-holt") }),
     mkRun({ id: 9097, runNumber: 410, runAttempt: 2, name: "Desktop CI", workflowId: 1, displayTitle: "actions: stream job logs over IPC", status: "completed", conclusion: "failure", branch: "fix/log-stream", event: "pull_request", createdAt: ISO(8), updatedAt: ISO(7.7), htmlUrl: "", actor: u("s-ohta"), triggeringActor: u(me), pullRequests: [{ number: 104 }] }),
     mkRun({ id: 9095, runNumber: 88, name: "Nightly release", workflowId: 3, displayTitle: "Nightly release", status: "completed", conclusion: "success", branch: "main", event: "schedule", createdAt: ISO(26), updatedAt: ISO(25.7), htmlUrl: "", actor: u("renderbot") }),
+    // CANCELLED — somebody stopped it, which is not a failure and is a state
+    // the fixture had none of, so the list's icon bucket for it was never seen.
+    mkRun({ id: 9094, runNumber: 409, name: "Desktop CI", workflowId: 1, displayTitle: "spike: try CodeMirror instead of Monaco", status: "completed", conclusion: "cancelled", branch: "spike/monaco-swap", event: "push", createdAt: ISO(30), updatedAt: ISO(29.8), runStartedAt: ISO(29.9), htmlUrl: "", actor: u("s-ohta") }),
   ];
 
   const notifications = [
