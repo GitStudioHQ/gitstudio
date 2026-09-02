@@ -1,0 +1,22 @@
+apps/desktop/test/branchSweep.test.ts
+  s_26f5e669d3043c::t_a4de3ea5d3bb4f 1-99
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_54f03484bad4a8 2086-2090
+  s_26f5e669d3043c::t_e8c6e53106cf2a 1463-1472
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b914bb5f1a3507e27bc65a451a7bdbe70d17014f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
