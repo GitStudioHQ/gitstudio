@@ -96,6 +96,34 @@ test("resolving it first makes the very same call succeed", async () => {
   }
 });
 
+test("a conflicted file cannot be staged in PARTS either", async () => {
+  // `git add` on an unmerged path settles the whole conflict, so ticking one
+  // hunk of a conflicted file marked it resolved with every other hunk's
+  // markers still in it. Both partial-staging routes meet in `lineStageable`.
+  const { root, git } = conflicted();
+  try {
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+
+    const lines = await b.stageLines({ path: "f.txt", lines: [1] });
+    assert.equal(lines.ok, false, "line staging is refused");
+    assert.match(lines.message ?? "", /conflicted/i, "and says why");
+    assert.equal(lines.expected, true, "it is a condition, not a crash");
+
+    const hunk = await b.hunksStage({ path: "f.txt", index: 0 });
+    assert.equal(hunk.ok, false, "hunk staging is refused too");
+
+    assert.notEqual(
+      git("ls-files", "-u", "--", "f.txt").trim(),
+      "",
+      "the path is still unmerged — nothing declared the conflict settled",
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
 test("an ordinary file is unaffected", async () => {
   // The guard reads the working file on every stage; a normal edit must not be
   // slowed down or refused by it.

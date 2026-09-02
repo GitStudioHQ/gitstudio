@@ -2794,6 +2794,18 @@ async function lineStageable(
       why: `${rel} is staged as a binary file — stage or unstage it whole.`,
     };
   }
+  // A CONFLICTED path is not stageable in parts either, and this is the one
+  // place both partial-staging routes meet. `git add` on an unmerged path is
+  // how you declare the conflict RESOLVED — so ticking a single hunk on a
+  // conflicted file settled the whole thing, with every other hunk's markers
+  // still in it. The whole-file `stage()` refuses that; these two did not.
+  const st = await ctx.process.run(["status", "--porcelain=v1", "-z", "--", rel]);
+  if (st.code === 0 && parsePorcelainStatus(st.stdout).some((f) => f.conflicted)) {
+    return {
+      ok: false,
+      why: `${rel} is still conflicted — resolve it as a whole rather than staging part of it.`,
+    };
+  }
   return { ok: true };
 }
 
