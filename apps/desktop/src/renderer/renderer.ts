@@ -5983,11 +5983,21 @@ class App {
         ck.checked = isStaged;
         // Partly in, partly out — the state the two-row version could not say.
         ck.indeterminate = partial;
-        ck.title = partial
+        // NAMED FOR THE FILE, not just the state.
+        //
+        // Every tick in the list said "Not included" or "Included in the
+        // commit", so three of them shared one name — which is useless to a
+        // screen reader ("not included" — WHAT isn't?) and actively harmful to
+        // the focus rescue: `sameThing` matches on `title`, so after the
+        // rebuild a tick took focus from the FIRST checkbox with that state,
+        // and ticking the fourth file moved the keyboard to the first.
+        const stateWord = partial
           ? "Partly included — some changes to this file are staged"
           : isStaged
             ? "Included in the commit"
             : "Not included";
+        ck.title = `${stateWord} — ${f.path}`;
+        ck.setAttribute("aria-label", ck.title);
         ck.addEventListener("click", (ev) => {
           // The row opens the diff; the tick must not.
           ev.stopPropagation();

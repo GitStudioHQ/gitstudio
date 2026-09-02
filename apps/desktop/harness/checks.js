@@ -7420,6 +7420,32 @@
       c.ok(/\d+(\.\d+)?\s?(KB|MB|GB)/.test(text(live) || ""), "sizes are formatted");
     },
 
+    // Every tick in the one-list staging model said "Not included" or "Included
+    // in the commit" — so several shared one name. Useless to a screen reader
+    // ("not included" — WHAT isn't?), and actively harmful to the focus rescue,
+    // which matches on `title`: ticking the fourth file moved the keyboard to
+    // the first file with the same state.
+    "a-tick-is-named-for-its-file": async (f) => {
+      const c = check(f);
+      const ticks = () => $$(".dc-ck:not(.dc-ck-master)");
+      c.ok(ticks().length >= 4, `the list has several files (${ticks().length})`);
+      if (ticks().length < 4) return;
+
+      const titles = ticks().map((t) => t.title || "");
+      c.eq(new Set(titles).size, titles.length, "every tick has its own name");
+      c.ok(titles.every((t) => /[./]/.test(t)), "each naming a file");
+
+      const target = ticks()[3];
+      target.focus();
+      target.click();
+      await settle(1400);
+      c.eq(
+        ticks().indexOf(document.activeElement),
+        3,
+        "and ticking one leaves the keyboard on THAT file, not another",
+      );
+    },
+
     // "Create pull request" never came back once base and compare had been the
     // same ref. The swr answer ("GitHub could take a PR") was written straight
     // to `prBtn.hidden`, and the base===head path then hid the button on its

@@ -775,6 +775,12 @@ function promoteToDivRow(row: HTMLElement, onOpen: () => void): HTMLElement {
   div.addEventListener("click", onOpen);
   div.addEventListener("keydown", (e) => {
     if (e.target !== div) return;
+    // UNMODIFIED only. ⌘Enter is the app's documented "run this row's main
+    // action" — checkout, pull, publish — and `wireListNav` implements it one
+    // screen away. Without this guard both fired for one keypress: the branch
+    // was checked out AND the row opened its page, so the list you were working
+    // in disappeared underneath the action you had just taken.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key !== "Enter" && e.key !== " ") return;
     e.preventDefault();
     onOpen();

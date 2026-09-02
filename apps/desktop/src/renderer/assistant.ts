@@ -391,7 +391,16 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     transcript.replaceChildren();
     for (const t of chat.turns) {
       if (t.role === "user") addBubble(transcript, "user", t.text);
-      else transcript.append(markdownBlock(t.text));
+      else {
+        // Inside a `.assistant-turn`, exactly as the live path builds it. Only
+        // the turn carries the measure (`max-width: min(760px, 94%)`), so a
+        // restored answer ran the full 820px of the pane while the identical
+        // message, live, had been 760 — the same text at two widths depending
+        // on whether you had left the chat and come back.
+        const turn = el("div", "assistant-turn");
+        turn.append(markdownBlock(t.text));
+        transcript.append(turn);
+      }
     }
     scrollDown(transcript, true); // opening a chat lands on its latest turn
   }
