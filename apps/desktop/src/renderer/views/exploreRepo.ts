@@ -114,7 +114,16 @@ async function mount(
   refBtn.append(glyph("git-branch"), span(ref ?? defaultBranchLabel, "explore-ref-name"), glyph("chevron-down"));
   refBtn.title = "Switch branch";
   refBtn.addEventListener("click", () =>
-    void openRefMenu(refBtn, fullName, ref, (r) => goto({ ref: r, path }), defaultBranchName),
+    // `kind` too. It was the ONLY one of the seven goto call sites that dropped
+    // it, and `repoRouteId` defaults a missing kind to "tree" — so switching
+    // the branch while READING A FILE turned a blob route into a tree route at
+    // the file's own path. The title fell back to the repo name, the file body
+    // was replaced by a directory listing, and the breadcrumb presented the
+    // file as the current folder. Worse against the real API than in the
+    // fixture: `listRepoDir` normalises the contents endpoint's single-object
+    // answer with `Array.isArray(raw) ? raw : [raw]`, so the "folder" renders
+    // exactly one row — the file, listed inside itself.
+    void openRefMenu(refBtn, fullName, ref, (r) => goto({ ref: r, path, kind }), defaultBranchName),
   );
 
   // The page had no title at all — the only place the repo was named was 13px
@@ -314,7 +323,12 @@ async function renderFile(
       prose.innerHTML = renderMarkdown(file.text);
       const [owner, repo] = fullName.split("/", 2);
       wireProseNav(prose, undefined, { owner, repo }, (rel) => {
-        const target = resolveRelative(path, rel);
+        // Against the file's FOLDER, not the file. `resolveRelative` takes a
+        // base DIRECTORY — which `path` is on the README path above, but here
+        // `path` is the file itself, so "./api.md" beside docs/guide.md
+        // resolved to docs/guide.md/api.md. Every relative link inside a
+        // markdown file pointed one level too deep.
+        const target = resolveRelative(path.split("/").slice(0, -1).join("/"), rel);
         goto({ path: target, kind: /\.[A-Za-z0-9]{1,8}$/.test(target) ? "blob" : "tree" });
       });
     } catch {

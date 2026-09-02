@@ -71,7 +71,14 @@ async function colorize(text: string, lang: string): Promise<string | undefined>
   bootMonaco();
   if (!themed) refreshHighlightTheme();
   try {
-    return await monaco.editor.colorize(text, lang, { tabSize: 2 });
+    const html = await monaco.editor.colorize(text, lang, { tabSize: 2 });
+    // REAL SPACES. `colorize` emits `&nbsp;` for indentation, which renders
+    // identically inside a `<pre>` (both containers that use this are
+    // whitespace-preserving) but copies as U+00A0 — so a snippet pasted out of
+    // this app into a terminal, a file or a chat carried non-breaking spaces
+    // where its indentation used to be. Python and YAML break outright; a diff
+    // of the pasted text is unreadable.
+    return html?.replace(/&nbsp;/g, " ");
   } catch {
     return undefined;
   }

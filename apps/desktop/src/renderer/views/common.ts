@@ -321,17 +321,33 @@ export function searchField(opts: {
   clear.appendChild(glyph("close"));
   clear.hidden = !input.value;
   let timer = 0;
-  const fire = (): void => {
+  /**
+   * `now` skips the debounce.
+   *
+   * CLEARING is not typing. A field with a long debounce — Explore's code
+   * search waits for Enter with `debounceMs: 100_000`, because every keystroke
+   * there costs a rate-limited request — left the ✕ and Escape queued a hundred
+   * seconds out, so the box emptied and the results below it did not. The box
+   * said one thing and the list another, and there was no way to make them
+   * agree short of pressing Enter on an empty query.
+   */
+  const fire = (now = false): void => {
     clear.hidden = !input.value;
     window.clearTimeout(timer);
+    if (now) {
+      opts.onInput(input.value.trim());
+      return;
+    }
     timer = window.setTimeout(() => opts.onInput(input.value.trim()), opts.debounceMs ?? 110);
   };
-  input.addEventListener("input", fire);
+  // NOT `fire` directly — it now takes a `now` flag, and the InputEvent would
+  // arrive as a truthy first argument, making every keystroke skip the debounce.
+  input.addEventListener("input", () => fire());
   input.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && input.value) {
       e.stopPropagation();
       input.value = "";
-      fire();
+      fire(true);
       return;
     }
     if (e.key === "Enter" && opts.onEnter) {
@@ -342,7 +358,7 @@ export function searchField(opts: {
   });
   clear.addEventListener("click", () => {
     input.value = "";
-    fire();
+    fire(true);
     input.focus();
   });
   wrap.append(icon, input, clear);

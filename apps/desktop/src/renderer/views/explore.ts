@@ -160,7 +160,12 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     // keystroke: the long debounce is a backstop, Enter is the real trigger.
     debounceMs: tab === "code" ? 100_000 : 300,
     onInput: (q) => {
-      if (tab === "code") return;
+      // Code search costs a request per keystroke and is rate-limited hard, so
+      // it waits for Enter rather than typing-as-you-search. But CLEARING is
+      // not a search: the ✕ emptied the box and left the previous results
+      // sitting under it, so the field said one thing and the list another and
+      // the only way to agree with the box was to press Enter on nothing.
+      if (tab === "code" && q !== "") return;
       setQuery(q);
     },
     onEnter: (q) => setQuery(q),

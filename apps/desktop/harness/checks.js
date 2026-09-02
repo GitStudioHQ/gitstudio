@@ -4759,6 +4759,39 @@
     },
 
     /**
+     * Clearing a search clears the RESULTS, however long its debounce.
+     *
+     * Explore's code search waits for Enter — `debounceMs: 100_000`, because
+     * every keystroke there costs a rate-limited request. But the ✕ and Escape
+     * went through the same debounce, so the box emptied and the results below
+     * it sat there for a hundred seconds: the field said one thing and the list
+     * another, with no way to make them agree short of pressing Enter on an
+     * empty query.
+     */
+    "clearing-a-search-clears-the-results": async (f) => {
+      const c = check(f);
+      const code = $$(".explore-tab").find((b) => text(b).trim() === "Code");
+      c.ok(!!code, "Explore has a Code tab");
+      if (!code) return;
+      code.click();
+      await settle(900);
+      const field = $(".explore-search");
+      const inp = field?.querySelector("input");
+      c.ok(!!inp && inp.value.length > 0, "it is showing results for a query");
+      c.ok($$(".explore-code-row, .explore-code-hit").length > 0, "and there are rows");
+
+      field.querySelector(".gh-search-clear").click();
+      await settle(1000);
+      c.eq(inp.value, "", "the ✕ empties the box");
+      c.eq(
+        $$(".explore-code-row, .explore-code-hit").length,
+        0,
+        "and the results go with it, rather than waiting out the debounce",
+      );
+      c.ok(!!$(".list-empty"), "leaving the start state");
+    },
+
+    /**
      * A deep link SHOWS the ref it names.
      *
      * The link cleared the search box, and only that. `branchAge` defaults to
