@@ -5185,7 +5185,7 @@
      * to hold. Walk up from the list and require a real scroller before the
      * view host.
      */
-    "a-commit-list-can-be-scrolled": (f) => {
+    "a-commit-list-can-be-scrolled": async (f) => {
       const c = check(f);
       noAnimation();
       const list = $(".clist");
@@ -5216,6 +5216,28 @@
         getComputedStyle(scroller).minHeight !== "auto" ||
           scroller.getBoundingClientRect().height < scroller.scrollHeight + 1,
         "and it is height-constrained, so it will actually scroll when the list grows",
+      );
+
+      // Then prove it. The fixtures are long enough to overflow on purpose —
+      // three commits FIT, which is why the missing scroller went unnoticed.
+      c.ok(
+        scroller.scrollHeight > scroller.clientHeight,
+        `the list is longer than its pane (${scroller.scrollHeight} vs ${scroller.clientHeight})`,
+      );
+      scroller.scrollTop = 400;
+      await settle(200);
+      c.ok(scroller.scrollTop > 0, `and it moves when scrolled (at ${Math.round(scroller.scrollTop)})`);
+
+      // The last row must be reachable, not cut off under the pane's edge.
+      const rows = $$(".clist-row");
+      const last = rows[rows.length - 1];
+      last.scrollIntoView({ block: "nearest" });
+      await settle(200);
+      const r = last.getBoundingClientRect();
+      const box = scroller.getBoundingClientRect();
+      c.ok(
+        r.bottom <= box.bottom + 2 && r.top >= box.top - 2,
+        "and the last commit can be brought fully into view",
       );
     },
   };

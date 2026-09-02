@@ -302,12 +302,30 @@
     // content") the app had no basis for. A fixture the harness cannot express
     // is a defect the harness cannot catch.
     "compare:refs": {
-      ahead: 5,
+      // 27 rows listed against 27 ahead — a count that is silently a cap is
+      // worse than no count, so the two must agree unless the note says why.
+      ahead: 27,
       behind: 2,
       commits: [
         { sha: "18c9d0e1f2736485a1b2", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", date: S(20 * 60) },
         { sha: "27b8c9d0e1f263748596", shortSha: "27b8c9d", subject: "engine: split a hunk on a selection boundary", author: "Anton Arnaudov", date: S(18 * 60) },
-        { sha: "36a7b8c9d0e152637485", shortSha: "36a7b8c", subject: "changes: stage the lines a selection touches", author: "Sora Ohta", date: S(9 * 60) },
+        { sha: "36a7b8c9d0e152637485", shortSha: "36a7b8c", subject: "changes: stage the lines a selection touches", author: "Sora Ohta", date: S(9 * 60), body: "Translates the selection through the index\u2192working diff first, so the\nranges match the side git is being asked about.", isMerge: false },
+        // Enough rows that the list OVERFLOWS its pane. Compare's scroller was
+        // deleted with the old row styles and nothing noticed, because three
+        // commits fit — the surface has to be taller than the box to prove it.
+        ...Array.from({ length: 24 }, (_, i) => ({
+          sha: `4${i}b7c8d9e0f1a2b3c4d5`,
+          shortSha: `4${i}b7c8d`,
+          subject: [
+            "engine: fold adjacent hunks before scoring",
+            "engine: keep the trailing newline out of the span",
+            "changes: reuse the index text across ticks",
+            "graph: lanes survive a reordered parent",
+          ][i % 4],
+          author: ["Mira Holt", "Anton Arnaudov", "Sora Ohta"][i % 3],
+          date: S((8 - i * 0.25) * 60),
+          isMerge: i % 8 === 7,
+        })),
       ],
       files: [
         { path: "packages/engine/src/hunks.ts", status: "M" },

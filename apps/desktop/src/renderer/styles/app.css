@@ -9922,6 +9922,12 @@ body.vscode-light .log-pane {
   padding: 0 10px 10px;
 }
 .clist-day {
+  /* NOT shrinkable. `.clist` is a flex column, and a flex item's default
+     `flex-shrink: 1` let these squash to fit the pane instead of extending it —
+     so the scroller reported 4px of overflow while the rows spilled 48px past
+     its bottom edge, unreachable. A list inside a scroller must keep its
+     natural height; the scroller is what gives. */
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -9932,6 +9938,7 @@ body.vscode-light .log-pane {
 }
 .clist-day:first-child { margin-top: 0; }
 .clist-group {
+  flex: 0 0 auto;
   border: 1px solid var(--app-border);
   border-radius: var(--r-md);
   overflow: hidden;
