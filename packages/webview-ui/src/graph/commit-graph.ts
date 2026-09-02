@@ -2931,9 +2931,23 @@ export class CommitGraph extends LitElement {
       this.selectedSha !== undefined
         ? this.shaToIndex.get(this.selectedSha)
         : undefined;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    // j / k alongside the arrows, the way every other list in this app answers
+    // and the way the app's own shortcut sheet has been promising ("↑ ↓ or
+    // j k — Move between rows"). This was the one list where the documented
+    // keys did nothing. Guarded on modifiers so ⌘J and friends still reach the
+    // window, and skipped while a text field has focus — the search box sits
+    // inside this component.
+    const typing =
+      e.target instanceof HTMLElement &&
+      (e.target.tagName === "INPUT" ||
+        e.target.tagName === "TEXTAREA" ||
+        e.target.isContentEditable);
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
+    const down = e.key === "ArrowDown" || (plain && !typing && e.key === "j");
+    const up = e.key === "ArrowUp" || (plain && !typing && e.key === "k");
+    if (down || up) {
       e.preventDefault();
-      const delta = e.key === "ArrowDown" ? 1 : -1;
+      const delta = down ? 1 : -1;
       const base = current ?? (delta > 0 ? -1 : this.rows.length);
       const next = Math.max(0, Math.min(this.rows.length - 1, base + delta));
       this.select(this.rows[next].sha, true);
@@ -3003,12 +3017,25 @@ export class CommitGraph extends LitElement {
     this.renderRows();
   }
 
+  /**
+   * Re-scan for a NEW query or scope: highlight and count, but do not travel.
+   *
+   * It used to select the first match and scroll to it — on every keystroke.
+   * Selecting emits `{type: "select"}`, and the host answers by re-fetching the
+   * commit and replacing the details pane, so typing three characters into the
+   * search box threw away the diff you were reading, moved the selection three
+   * times and made three requests, before you had finished the word.
+   *
+   * `rescanMatches` right below already spells out the principle for appended
+   * pages — "that resets to the first match and scrolls there, which on every
+   * appended page would yank the view out from under someone reading". A
+   * keystroke is the same event, more often. Enter travels; typing paints.
+   */
   private computeMatches(): void {
     this.scanMatches();
-    if (this.searchMatches.length) {
-      this.matchIdx = 0;
-      this.scrollToMatch();
-    }
+    // -1, not 0: nothing is "the current match" until the reader asks for one,
+    // and `gotoMatch` maps -1 to the first (or last, going backwards).
+    this.matchIdx = -1;
   }
 
   /**
@@ -3085,11 +3112,14 @@ export class CommitGraph extends LitElement {
   }
 
   private gotoMatch(delta: number): void {
-    if (!this.searchMatches.length) {
+    const n = this.searchMatches.length;
+    if (!n) {
       return;
     }
+    // From "no match chosen yet", forward means the first and backward the
+    // last — rather than the modular arithmetic's second-to-last.
     this.matchIdx =
-      (this.matchIdx + delta + this.searchMatches.length) % this.searchMatches.length;
+      this.matchIdx < 0 ? (delta > 0 ? 0 : n - 1) : (this.matchIdx + delta + n) % n;
     this.scrollToMatch();
   }
 

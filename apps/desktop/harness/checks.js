@@ -4759,6 +4759,70 @@
     },
 
     /**
+     * The Commits graph: typing paints, Enter travels, and j/k move.
+     *
+     * `computeMatches` selected the first match and scrolled to it on EVERY
+     * keystroke — and selecting emits `{type:"select"}`, which the host answers
+     * by re-fetching the commit and replacing the details pane. So typing three
+     * characters threw away the diff you were reading, moved the selection
+     * three times and made three requests before you finished the word. The
+     * same principle was already written down one method below, for appended
+     * pages; a keystroke is the same event, more often.
+     *
+     * And j/k did nothing here — the one list in the app where the keys its own
+     * cheat sheet promises were not wired.
+     */
+    "the-graph-search-paints-before-it-travels": async (f) => {
+      const c = check(f);
+      const host = document.querySelector("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const rows = [...sr.querySelectorAll(".row")];
+      c.ok(rows.length > 2, `it has rows (${rows.length})`);
+      if (rows.length < 3) return;
+      const sel = () => {
+        const r = sr.querySelector(".row.selected");
+        return r ? (r.dataset.sha || "").slice(0, 12) : "-";
+      };
+
+      rows[0].click();
+      await settle(700);
+      const picked = sel();
+      c.ok(picked !== "-", "a commit can be selected");
+
+      const input = sr.querySelector(".gh-input");
+      c.ok(!!input, "the graph has a search box");
+      if (input) {
+        input.value = "engine";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await settle(800);
+        c.eq(sel(), picked, "typing does not move the selection out from under you");
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+        );
+        await settle(800);
+        c.ok(sel() !== picked, "and Enter is what travels");
+      }
+
+      // j / k, at the element that actually carries the handler.
+      const grid = sr.querySelector("[role=grid]");
+      c.ok(!!grid, "the rows live in a grid");
+      if (!grid) return;
+      rows[0].click();
+      await settle(500);
+      const from = sel();
+      const K = (k) =>
+        grid.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+      K("j");
+      await settle(400);
+      c.ok(sel() !== from, "j moves down, as the cheat sheet promises");
+      K("k");
+      await settle(400);
+      c.eq(sel(), from, "and k comes back");
+    },
+
+    /**
      * Clearing a search clears the RESULTS, however long its debounce.
      *
      * Explore's code search waits for Enter — `debounceMs: 100_000`, because

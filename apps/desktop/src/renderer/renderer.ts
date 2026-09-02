@@ -7730,6 +7730,14 @@ class App {
     // showing the PREVIOUS commit's files the whole time — so a slow load was
     // indistinguishable from a fast one, and a FAILED load was invisible: the
     // old commit stayed on screen as though it were the one you just clicked.
+    // The open diff belongs to the PREVIOUS commit, and `loadingState` is about
+    // to replace the node it lives in — so close it properly rather than
+    // orphaning it. Without this, a details load that FAILS returned before
+    // `renderDetails` ever ran, leaving `diff-open` on the wrapper: the graph
+    // stayed squeezed to half width around an error card, in a pane sized for a
+    // diff that was no longer in the DOM, and only opening another commit
+    // successfully could undo it.
+    this.closeGraphDiff();
     this.detailsEl?.replaceChildren(loadingState(`Loading ${sha.slice(0, 7)}…`));
     let details;
     try {
