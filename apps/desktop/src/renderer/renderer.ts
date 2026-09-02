@@ -280,6 +280,8 @@ class App {
   /** Where each kept-alive view was scrolled when it was parked. Keyed by the
    *  node itself, so a rebuilt view never inherits the old one's position. */
   private viewScroll = new WeakMap<HTMLElement, [HTMLElement, number, number, boolean][]>();
+  /** Per view root, the elements inside it that have ever been scrolled. */
+  private scrolledIn = new WeakMap<HTMLElement, Set<HTMLElement>>();
   /** Views safe to keep alive (no Monaco surface / dispose lifecycle of their own). */
   /** A search that came back rate-limited is a REFUSAL, not an answer — caching
    *  it makes every retry a cache hit for the whole TTL. See cache.gget. */
@@ -287,28 +289,42 @@ class App {
 
   /** Every scrolled element inside a view, with where it was.
    *
-   *  Whole-subtree, not just the outermost scroller: these views nest them —
+   *  Nested scrollers included, not just the outermost: these views nest them —
    *  a list pane beside a detail pane, a rail beside a log — and restoring only
-   *  the outer one puts you back at the top of the part you were reading. */
-  private static scrollSnapshot(root: HTMLElement): [HTMLElement, number, number, boolean][] {
+   *  the outer one puts you back at the top of the part you were reading.
+   *
+   *  This used to find them by walking the whole view and reading `scrollTop`
+   *  on every node, which is a layout read per element: leaving the issues list
+   *  cost 10,666 of them, and a nine-view lap of the app cost 11,774. Nothing
+   *  in it was wrong — it was just asking five thousand elements a question
+   *  only three of them can answer yes to. The scroll handler on the view host
+   *  now records the answer as it happens, so this reads only the elements that
+   *  have actually been scrolled. Measured with
+   *  `node harness/perf.mjs changes --extra=many=1 --repeat=…`. */
+  private scrollSnapshot(root: HTMLElement): [HTMLElement, number, number, boolean][] {
     const out: [HTMLElement, number, number, boolean][] = [];
-    const walk = (n: HTMLElement): void => {
-      // NOT INTO MONACO. It manages its own viewport — partly by transform,
-      // partly by scrollTop on nodes it recreates — and restores its position
-      // from the model when it is re-attached. Snapshotting those nodes and
-      // writing them back afterwards can only fight it, and this harness cannot
-      // catch that: with the animation frame starved, Monaco never lays out, so
-      // its internal scrollers all read 0 here and the walk looks harmless.
-      if (n.classList.contains("monaco-editor")) return;
+    const seen = this.scrolledIn.get(root);
+    if (!seen) return out;
+    for (const n of seen) {
+      // A node the view has since rebuilt away. Drop it rather than carry it.
+      if (!root.contains(n)) {
+        seen.delete(n);
+        continue;
+      }
+      // NOT MONACO. It manages its own viewport — partly by transform, partly
+      // by scrollTop on nodes it recreates — and restores its position from the
+      // model when it is re-attached. Snapshotting those nodes and writing them
+      // back afterwards can only fight it, and this harness cannot catch that:
+      // with the animation frame starved, Monaco never lays out, so its
+      // internal scrollers all read 0 here and it looks harmless.
+      if (n.closest(".monaco-editor")) continue;
       if (n.scrollTop > 0 || n.scrollLeft > 0) {
         // …and whether that offset WAS the bottom, which is a different
         // intention from "this many pixels down" for anything still growing.
         const atTail = n.scrollHeight - n.scrollTop - n.clientHeight <= 24;
         out.push([n, n.scrollTop, n.scrollLeft, atTail]);
       }
-      for (const kid of n.children) walk(kid as HTMLElement);
-    };
-    walk(root);
+    }
     return out;
   }
 
@@ -696,6 +712,35 @@ class App {
     // then continues from the view rather than from the top of the window.
     viewHost.tabIndex = -1;
     this.viewHost = viewHost;
+    // Which elements in a view have been scrolled — recorded as it happens,
+    // rather than discovered by asking every node in the view afterwards. See
+    // `scrollSnapshot`, which used to be the app's single most expensive
+    // operation per route change.
+    //
+    // Capture, because `scroll` does not bubble; passive, because this never
+    // calls preventDefault and saying so keeps it off the scrolling path.
+    viewHost.addEventListener(
+      "scroll",
+      (e) => {
+        const node = e.target as HTMLElement | null;
+        if (!node || node.nodeType !== 1) return;
+        // Attribute it to the view it belongs to — the direct child of the
+        // host — so a parked view keeps its own set and drops it when the
+        // cached root is dropped.
+        let root: HTMLElement | null = node;
+        while (root && root.parentElement && root.parentElement !== viewHost) {
+          root = root.parentElement;
+        }
+        if (!root || root.parentElement !== viewHost) return;
+        let set = this.scrolledIn.get(root);
+        if (!set) {
+          set = new Set();
+          this.scrolledIn.set(root, set);
+        }
+        set.add(node);
+      },
+      { capture: true, passive: true },
+    );
     stack.append(viewHost);
     main.append(this.buildNav(), this.buildRailResizer(), stack);
     screen.appendChild(main);
@@ -1220,7 +1265,7 @@ class App {
       // you to a 90-row branch list, or a long settings page, at the top of it
       // every time. The comment above has promised otherwise since it was
       // written.
-      this.viewScroll.set(outgoing, App.scrollSnapshot(outgoing));
+      this.viewScroll.set(outgoing, this.scrollSnapshot(outgoing));
       this.viewCache.set(prev, outgoing);
     } else if (stillLoading) {
       // …and drop any older good copy, so the next visit rebuilds rather than

@@ -682,23 +682,49 @@ export interface SecRowOpts {
  * would cost more than the thing it is styling.
  */
 let chipOverflowObserver: ResizeObserver | undefined;
+
+/**
+ * Measure every strip, THEN class every strip.
+ *
+ * The obvious loop — measure one, class it, measure the next — interleaves a
+ * layout read with a style write, and each write invalidates the layout the
+ * next read has to wait for. On a 300-row list that is 600 synchronous layouts
+ * for a decoration. Reading the whole batch first costs one, because nothing
+ * dirties the tree until every question has been asked.
+ */
+function syncChipOverflow(nodes: HTMLElement[]): void {
+  const clipped: boolean[] = [];
+  for (const n of nodes) clipped.push(n.scrollWidth > n.clientWidth + 1);
+  for (let i = 0; i < nodes.length; i++) nodes[i].classList.toggle("is-clipped", clipped[i]);
+}
+
+/** Strips waiting for their first measure, batched into one frame. */
+let chipPending: Set<HTMLElement> | undefined;
+
 function watchChipOverflow(chips: HTMLElement): void {
-  const sync = (el_: Element): void => {
-    const n = el_ as HTMLElement;
-    n.classList.toggle("is-clipped", n.scrollWidth > n.clientWidth + 1);
-  };
+  // One frame for the whole list, not one per row: a list builds its rows in a
+  // single pass, so scheduling a frame each meant 300 callbacks that each
+  // measured and wrote on their own.
+  if (!chipPending) {
+    chipPending = new Set();
+    requestAnimationFrame(() => {
+      const batch = [...(chipPending ?? [])].filter((n) => n.isConnected);
+      chipPending = undefined;
+      if (batch.length) syncChipOverflow(batch);
+    });
+  }
+  chipPending.add(chips);
+
   if (typeof ResizeObserver === "undefined") {
-    // No observer (older host): fall back to a one-shot measure after layout.
-    requestAnimationFrame(() => sync(chips));
+    // No observer (older host): the batched frame above is the whole story.
     return;
   }
   if (!chipOverflowObserver) {
     chipOverflowObserver = new ResizeObserver((entries) => {
-      for (const e of entries) sync(e.target);
+      syncChipOverflow(entries.map((e) => e.target as HTMLElement));
     });
   }
   chipOverflowObserver.observe(chips);
-  requestAnimationFrame(() => sync(chips));
 }
 
 export function secRow(o: SecRowOpts): HTMLElement {

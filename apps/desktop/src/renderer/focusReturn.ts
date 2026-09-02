@@ -197,11 +197,17 @@ function restoreEquivalent(lost: HTMLElement): boolean {
     'button, [role="button"], [role="option"], [role="tab"], a[href], input, select, textarea, [tabindex]',
   );
   for (const el of candidates) {
+    // Identity BEFORE visibility, deliberately. Both tests must pass, so the
+    // order cannot change which element is chosen — but `offsetParent` is a
+    // layout read and `sameThing` is two string comparisons, and this runs
+    // over every focusable element in the document, on a poll, during a
+    // rebuild. Asking the expensive question first cost 1,758 layout reads on
+    // a lap of the app; asking it only of the one candidate that matches costs
+    // one.
+    if (!sameThing(lost, el)) continue;
     if (el.offsetParent === null && el.tagName !== "INPUT") continue;
-    if (sameThing(lost, el)) {
-      el.focus({ preventScroll: true });
-      return true;
-    }
+    el.focus({ preventScroll: true });
+    return true;
   }
   return false;
 }

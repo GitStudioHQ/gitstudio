@@ -24,6 +24,11 @@ mkdir -p "$PAGE"
 cp "$DIST/renderer.js" "$DIST/renderer.css" "$DIST/theme-boot.js" "$PAGE/"
 cp "$DIST"/brand-*.svg "$DIST"/icon*.png "$PAGE/" 2>/dev/null || true
 cp "$HARNESS/shim.js" "$PAGE/shim.js"
+cp "$HARNESS/perf.js" "$PAGE/perf.js"
+# The sourcemap is what turns a stack frame into a file and a line. It is only
+# read by perf.mjs, never by the page, and it is copied rather than read from
+# dist/ so it cannot drift out of step with the bundle beside it.
+cp "$DIST/renderer.js.map" "$PAGE/renderer.js.map" 2>/dev/null || true
 cp "$HARNESS/checks.js" "$PAGE/checks.js"
 cat > "$PAGE/harness.html" <<'HTML'
 <!DOCTYPE html>
@@ -37,6 +42,7 @@ cat > "$PAGE/harness.html" <<'HTML'
     <script src="./theme-boot.js"></script>
     <div id="root"><div id="boot">Loading GitStudio…</div></div>
     <script src="./checks.js"></script>
+    <script src="./perf.js"></script>
     <script src="./shim.js"></script>
     <script src="./renderer.js"></script>
   </body>

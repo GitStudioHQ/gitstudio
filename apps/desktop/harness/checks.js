@@ -325,6 +325,57 @@
       c.ok(ticks() > 0, "which survives ignoring whitespace");
     },
 
+    /**
+     * A lap of the app must not re-measure the whole DOM.
+     *
+     * Leaving a keep-alive view saves its scroll positions, and the way it used
+     * to find them was to walk every element in the view asking for scrollTop
+     * and scrollLeft. Each of those is a layout read, and on a list of five
+     * thousand rows it is ten thousand of them — to recover three numbers. A
+     * nine-view lap cost 13,544 layout reads and 606 forced synchronous
+     * layouts, all of it invisible because none of it is wrong, only wasteful.
+     *
+     * The limits are deliberately loose. This is not pinning today's number,
+     * which would break on any honest change; it is pinning the SHAPE — that
+     * the cost of leaving a view does not scale with how much is in it. A
+     * return to walking the tree lands in the thousands and trips this at once.
+     *
+     * Runs under `?perf=1`, which installs the counters and is inert otherwise.
+     */
+    "a-lap-of-the-app-does-not-re-measure-every-node": async (f) => {
+      const c = check(f);
+      c.ok(!!window.__gsPerf, "the perf instrumentation is installed (scene needs perf=1)");
+      if (!window.__gsPerf) return;
+      const lap = ["issues", "prs", "graph", "code", "actions", "branches", "notifications", "settings", "changes"];
+      // One warm lap first: the first visit to each view builds it, and build
+      // cost is not what this is about.
+      for (const v of lap) {
+        const b = $(`[data-view="${v}"]`);
+        if (b) {
+          b.click();
+          await settle(220);
+        }
+      }
+      window.__gsPerf.reset();
+      for (const v of lap) {
+        const b = $(`[data-view="${v}"]`);
+        if (b) {
+          b.click();
+          await settle(220);
+        }
+      }
+      const r = window.__gsPerf.report(5);
+      const worst = (r.layout.bySite || [])[0];
+      c.ok(
+        r.layout.reads < 400,
+        `a nine-view lap took ${r.layout.reads} layout reads${worst ? ` (worst: ${worst.at})` : ""} — it walked the tree again`,
+      );
+      c.ok(
+        r.layout.dirtyReads < 40,
+        `and forced ${r.layout.dirtyReads} synchronous layouts${worst ? ` (worst: ${worst.at})` : ""}`,
+      );
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);
