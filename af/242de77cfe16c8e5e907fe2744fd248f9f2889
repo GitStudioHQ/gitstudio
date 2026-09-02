@@ -1,0 +1,25 @@
+apps/desktop/src/renderer/destinationSheet.ts
+  s_26f5e669d3043c::t_5f99a42c13e668 34-38,45-48
+apps/desktop/src/renderer/views/projects.ts
+  s_26f5e669d3043c::t_a3381bd6cb75f7 147-158
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_d8f36be8308cff 3187
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_2b45691f04dd4e 4819-4824
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "af242de77cfe16c8e5e907fe2744fd248f9f2889",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
