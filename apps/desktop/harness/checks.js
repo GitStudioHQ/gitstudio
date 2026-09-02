@@ -7306,6 +7306,53 @@
       );
     },
 
+    // The gate must close as well as open. The listener returned early when the
+    // Assistant was ungated, so it only ever OPENED: removing the last model
+    // left the composer live and the header still advertising a connection
+    // that no longer existed, and the next message went to a provider the app
+    // had just been told about.
+    "the-gate-closes-as-well-as-it-opens": async (f) => {
+      const c = check(f);
+      const gated = () => !!$(".assistant-empty .btn");
+      const input = () => $(".assistant-input");
+      c.eq(gated(), false, "it starts connected");
+
+      const inv = window.gitstudio.invoke.bind(window.gitstudio);
+      let enabled = true;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:settings")
+          return Promise.resolve(
+            enabled
+              ? {
+                  enabled: true,
+                  connections: [{ id: "c1", label: "Claude", usable: true }],
+                  defaultId: "c1",
+                  agent: { permission: "write", thinking: "medium", modelId: "claude-opus-5" },
+                }
+              : { enabled: false, connections: [], defaultId: null },
+          );
+        return inv(ch, p);
+      };
+      try {
+        // The last model is removed in Settings.
+        enabled = false;
+        window.dispatchEvent(new CustomEvent("gs:ai-changed"));
+        await settle(1200);
+        c.eq(gated(), true, "removing the last model re-gates it");
+        c.eq(input()?.disabled, true, "and the composer closes");
+        c.eq(text($(".assistant-model")), "", "and it stops naming a connection that is gone");
+
+        // …and connected again.
+        enabled = true;
+        window.dispatchEvent(new CustomEvent("gs:ai-changed"));
+        await settle(1400);
+        c.eq(gated(), false, "connecting one lifts it again");
+        c.eq(input()?.disabled, false, "and the composer opens");
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // Stop must take the approval dialog with it. `onConfirm` opened a modal
     // and awaited it forever; nothing in the cancel path closed it, so pressing
     // Stop ended the turn in the main process and left "Approve destructive

@@ -313,6 +313,12 @@ async function openGallery(body: HTMLElement, refresh: () => Promise<void>): Pro
   const choose = async (p: AiPresetView): Promise<void> => {
     closeOverlay();
     await host.invoke("ai:addConnection", { preset: p.id });
+    // A KEYLESS preset (a local model, a CLI agent) is usable the moment it is
+    // added — no key dialog follows, so nothing else on this path announces it.
+    // The four `setKey` / `removeConnection` / `setDefault` sites all do; this
+    // one did not, and it is the only way to connect the providers that need no
+    // key at all. Their users could never lift the Assistant's gate.
+    announceAiChanged();
     const ready = !p.needsKey;
     toast(`Added ${p.label}. ${ready ? "Ready to use." : "Add your API key to finish."}`, "success");
     await refresh();

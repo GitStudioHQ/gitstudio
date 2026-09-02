@@ -3978,10 +3978,17 @@ class App {
     // Let a theme change from anywhere else — ⌘K, the menu, an OS flip — bring
     // these two controls up to date without rebuilding the page around them.
     this.syncAppearanceCard = (): void => {
-      if (!seg.isConnected) {
-        this.syncAppearanceCard = undefined;
-        return;
-      }
+      // NOT gated on `seg.isConnected`. Settings is a keep-alive view, so
+      // leaving it PARKS this card — detached, and re-attached verbatim on
+      // return. The guard that used to sit here unsubscribed the hook on the
+      // way out, so a theme changed from anywhere else while you were away
+      // left the card showing the old one for the rest of the session, with
+      // its highlight and its `aria-pressed` both stale.
+      //
+      // Nothing accumulates: this is a single slot, overwritten by the next
+      // build, so at most one closure is ever held. Same lesson the Assistant's
+      // `gs:ai-changed` listener carries — an `isConnected` guard on a
+      // keep-alive view fires on precisely the path that matters.
       btns.forEach((b, i) => b.classList.toggle("active", modes[i].id === this.themeMode));
       logoBtns.forEach((b, i) => b.classList.toggle("active", logoModes[i].id === this.logoMode));
       // `aria-pressed` too, not just the class. `markSegment` keeps it in step

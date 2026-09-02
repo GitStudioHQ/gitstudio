@@ -391,16 +391,31 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       window.removeEventListener("gs:ai-changed", onAiChanged);
       return;
     }
-    if (!gated) return; // an ungated Assistant has nothing to re-open
+    // BOTH directions. This returned early when the Assistant was ungated, so
+    // it only ever opened the gate and never closed it: removing the last
+    // model, or the last usable key, left the composer live and the header
+    // still advertising a connection that no longer exists — and the first
+    // message went to a provider the app had just been told about.
     void (async () => {
       const s = await host.invoke("ai:settings", undefined).catch(() => undefined);
-      if (!s?.enabled || live?.el !== wrap) return;
-      gated = false;
-      transcript.replaceChildren(empty);
-      input.disabled = false;
-      controls.classList.remove("is-disabled");
-      syncSend(); // …and back on again, through the same rule
-      await runGate(); // re-seed the model, permission and thinking controls
+      if (live?.el !== wrap) return;
+      const enabled = !!s?.enabled;
+      if (gated === !enabled) return; // nothing changed for this view
+      if (enabled) {
+        gated = false;
+        transcript.replaceChildren(empty);
+        input.disabled = false;
+        controls.classList.remove("is-disabled");
+        syncSend(); // …and back on again, through the same rule
+        await runGate(); // re-seed the model, permission and thinking controls
+      } else {
+        gated = true;
+        connTag.textContent = "";
+        transcript.replaceChildren(connectPrompt(nav));
+        input.disabled = true;
+        controls.classList.add("is-disabled");
+        syncSend(); // owns send, the chips and the chat buttons
+      }
     })();
   };
   window.addEventListener("gs:ai-changed", onAiChanged);
