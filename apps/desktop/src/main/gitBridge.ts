@@ -3023,9 +3023,15 @@ async function showAt(
   // two sides were therefore cut at DIFFERENT points in the file, and the
   // difference between those two points rendered as a change — in a file where
   // nothing past the cap had been touched at all.
-  const bytes = Buffer.from(r.stdout, "utf8");
-  if (bytes.length > FILE_CAP_BYTES) {
-    return { text: bytes.subarray(0, FILE_CAP_BYTES).toString("utf8"), truncated: true };
+  // `byteLength` MEASURES without allocating; the Buffer copy is paid for only
+  // by the files that actually need cutting. This runs on every file selection
+  // in the Changes view, so copying every read would be a megabyte of garbage
+  // per click on a large repository.
+  if (Buffer.byteLength(r.stdout, "utf8") > FILE_CAP_BYTES) {
+    return {
+      text: Buffer.from(r.stdout, "utf8").subarray(0, FILE_CAP_BYTES).toString("utf8"),
+      truncated: true,
+    };
   }
   return { text: r.stdout };
 }
