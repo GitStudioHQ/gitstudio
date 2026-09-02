@@ -1829,9 +1829,13 @@ async function doLabels(anchor: HTMLElement, pr: PullRequest, reload: () => void
     toast(cleanErr(e) || "Couldn't load labels.", "error");
     return;
   }
-  // `gget` answers undefined for a channel that returns nothing, and reading
-  // `.length` off that threw into the unhandled-rejection boundary — the picker
-  // simply did not open, with no error anywhere a user could see.
+  // Optional-chained, but only as belt and braces: in the app `pr:labels` goes
+  // through `withRepo`, which either returns the handler's array or throws an
+  // ExpectedError — it cannot resolve undefined. It was the HARNESS that had no
+  // fixture for this channel and answered undefined, so reading `.length` threw
+  // into the unhandled-rejection boundary and the picker could not be opened in
+  // a test at all. Which is why the real defect below — a request fired per
+  // tick — had never been checked.
   if (!repoLabels?.length) {
     toast("This repo has no labels defined.", "info");
     return;
