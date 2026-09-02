@@ -140,6 +140,11 @@ export async function renderJobLog(
   const tail = (s: Session): void => {
     if (s.tailing) return;
     s.tailing = true;
+    // The pane may have been built for a QUEUED job — `live: false`, Follow
+    // disabled, no pill — and only now has the runner picked it up. Tell it,
+    // or it spends the rest of the run unable to follow the output it is
+    // receiving.
+    s.pane.setProducing(true);
     const step = (): void => {
       window.setTimeout(() => {
         void (async () => {
@@ -190,6 +195,7 @@ export async function renderJobLog(
       // TOP, where a document starts — it used to slam to the last line before
       // you had read a word of it.
       live: statusOf(j.id) === "in_progress",
+      queued: statusOf(j.id) === "queued",
       ariaLabel: `Log for ${j.name}`,
       onCopy: () => host.invoke("actions:jobLog", { jobId: j.id }),
       onDownload: () => {

@@ -319,6 +319,8 @@ const CASES = [
   ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
   ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
   ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  ["the-logs-states-each-say-the-right-thing", "actions~open9097~click:.gh-job-log"],
+  ["the-logs-live-states-each-say-the-right-thing", "actions~open9101~click:.gh-job-log"],
   ["a-stash-page-holds-one-commit", "branches~click:.gh-seg-btn:nth-child(4)~click:.sec-row"],
   ["the-palette-keeps-your-place-when-results-arrive", "branches~palette"],
   ["one-key-press-closes-one-layer", "branches"],
@@ -418,11 +420,29 @@ console.log(`running ${selected.length} functional checks\n`);
 let failed = 0;
 let pending = 0;
 let fixed = 0;
+/**
+ * Channels a scene asked for that the shim has no fixture for.
+ *
+ * A read with no fixture answers `undefined`, so the caller's `.ok` or
+ * `.length` throws and the control looks inert — a check can then PASS while
+ * silently exercising a throw instead of the path it was written for. The
+ * shim's own note on `commit:action` records this hiding the branch switcher's
+ * checkout; it also hid the pull request's label picker entirely.
+ *
+ * Collected across the run and printed once, as a note rather than a failure:
+ * most absences are legitimate, and turning them red would say nothing about
+ * which ones matter.
+ */
+const missedChannels = new Map();
 // Serial: each case is its own browser, and parallel Chromes fight over the GPU
 // lock and produce flaky geometry.
 for (const [id, scene, opts] of selected) {
   const r = await run(scene, id, opts);
   const fails = r.fails ?? [];
+  for (const ch of r.miss ?? []) {
+    if (!missedChannels.has(ch)) missedChannels.set(ch, new Set());
+    missedChannels.get(ch).add(id);
+  }
   // A check written BEFORE the thing it checks. `pending: true` says "this
   // describes work that is not done yet" — so a spec can be committed as a
   // failing check without turning the suite red and hiding real breakage.
@@ -448,6 +468,17 @@ for (const [id, scene, opts] of selected) {
     for (const f of fails) console.log(`         ${f}`);
   }
 }
+if (missedChannels.size) {
+  console.log(
+    `\n\x1b[33m${missedChannels.size} channel(s) were asked for with no fixture\x1b[0m` +
+      ` — a read answers undefined there, so a check touching one may be passing over a throw:`,
+  );
+  for (const [ch, ids] of [...missedChannels].sort()) {
+    const who = [...ids].slice(0, 3).join(", ");
+    console.log(`   ${ch}   (${ids.size} check${ids.size === 1 ? "" : "s"}: ${who}${ids.size > 3 ? ", …" : ""})`);
+  }
+}
+
 const passed = selected.length - failed - pending - fixed;
 const bits = [`${passed} passed`, `${failed} failed`];
 if (pending) bits.push(`${pending} pending`);

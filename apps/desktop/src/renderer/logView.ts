@@ -36,6 +36,16 @@ export interface LogPane {
   append(delta: string): void;
   /** The log's producer finished — flush the last partial line. */
   finish(): void;
+  /**
+   * The producer STARTED after the pane was built.
+   *
+   * A job opened while queued is created with `live: false`, so it has nothing
+   * to follow and Follow is correctly dead. When the runner picks it up the
+   * tail starts — but the pane was never told, so Follow stayed disabled and
+   * "Jump to latest" never appeared for the whole rest of the run. Liveness is
+   * not decided once; it is a state the job moves through.
+   */
+  setProducing(on: boolean): void;
   setFollow(on: boolean): void;
   destroy(): void;
 }
@@ -62,6 +72,11 @@ export function createLogPane(o: {
    * just jumping you to the end of a document you have not read yet.
    */
   live?: boolean;
+  /**
+   * The job exists but no runner has picked it up. Distinct from `live: false`,
+   * which on its own cannot tell "finished" from "not started".
+   */
+  queued?: boolean;
 }): LogPane {
   let doc: LogDoc = emptyLogDoc();
   const collapsed = new Set<number>(); // group START line indices
@@ -74,8 +89,29 @@ export function createLogPane(o: {
    *  thing that can happen. On a finished log it cannot, and a pill offering to
    *  jump to a latest that is not moving is just an unlabelled End key. */
   let producing = !!o.live;
+  /**
+   * The job has not been picked up by a runner yet.
+   *
+   * "Not producing" covers two OPPOSITE situations — finished, and not started
+   * — and they want opposite words. The pane cannot tell them apart on its own
+   * (both are simply `live: false`), and inferring it from "has this pane ever
+   * produced" gets a job that was already finished when opened exactly
+   * backwards. So the caller, which knows the job's status, says.
+   */
+  let notStarted = !!o.queued;
   let showTs = false;
   let capped = false; // over MAX_RENDER_LINES — oldest dropped
+  /**
+   * How many lines have been spliced off the FRONT by the cap.
+   *
+   * The gutter numbers a row by its index in `doc.lines`, which restarts at 0
+   * every time the cap drops lines — so a capped log numbered its first visible
+   * row "1" when it was really line 50,001, and every error tick's "Error on
+   * line N" named a line 50,000 rows from the one it pointed at. The number in
+   * the gutter has to be the line's number in the JOB'S output, not its offset
+   * into the window we happen to be holding.
+   */
+  let droppedLines = 0;
   let truncatedTail = false; // main sent only the 8MB tail window
   let query = "";
   let matches: number[] = []; // doc line indices
@@ -134,7 +170,12 @@ export function createLogPane(o: {
     render();
   }, "Timestamps");
   tsBtn.setAttribute("aria-pressed", "false");
-  const followBtn = toolBtn("fold-down", "Follow the newest output", () => setFollow(!follow), "Follow");
+  const followBtn = toolBtn(
+    "fold-down",
+    "Follow the newest output",
+    () => setFollow(!follow),
+    "Follow",
+  ) as HTMLButtonElement;
   // NOT a hand-stamped "false": `follow` starts ON, so a literal here made the
   // button open lit while announcing itself off. setFollow is the only writer;
   // it is called once below, after it is defined, to paint the initial state.
@@ -257,25 +298,52 @@ export function createLogPane(o: {
     return b;
   }
 
+  /** Is the viewport already at the tail? */
+  function atTail(): boolean {
+    return scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - LINE_H;
+  }
+
+  /**
+   * The Follow button's own state, and the pill's.
+   *
+   * A finished job has nothing to follow, so the button is DISABLED and says
+   * why. It used to stay enabled, reporting `aria-pressed="false"` before and
+   * after — while a press jumped you to the last line. A control that performs
+   * End under a label reading Follow, and then denies having done anything, is
+   * worse than one that refuses.
+   */
+  function syncFollowBtn(): void {
+    followBtn.disabled = !producing;
+    followBtn.classList.toggle("is-on", follow);
+    followBtn.title = !producing
+      ? notStarted
+        ? "This job hasn't started yet — there is nothing to follow"
+        : "This job has finished — there is nothing left to follow"
+      : follow
+        ? "Following the newest output"
+        : "Follow the newest output";
+    followBtn.setAttribute("aria-label", followBtn.title);
+    followBtn.setAttribute("aria-pressed", String(follow));
+    // The pill offers to take you to a tail that has moved on WITHOUT you. It
+    // needs a moving tail (producing), the reader to be away from it, and
+    // follow to be off — the third alone put a "Jump to latest" over a reader
+    // sitting on the last line, pointing at the row under their cursor.
+    jumpPill.hidden = follow || !producing || visible.length === 0 || atTail();
+  }
+
   function setFollow(on: boolean): void {
-    // You cannot follow a producer that has stopped. `End` still does what End
-    // means — take me to the last line — but arming the mode would light the
-    // button and have it announce "Following the newest output" over a job that
-    // finished hours ago, which is the lie this whole change removed.
+    // You cannot follow a producer that has stopped. The button is disabled
+    // there, so this only guards the keyboard and programmatic callers.
     if (on && !producing) {
-      scroll.scrollTop = scroll.scrollHeight;
-      render();
+      syncFollowBtn();
       return;
     }
     follow = on;
-    followBtn.classList.toggle("is-on", on);
-    followBtn.title = on ? "Following the newest output" : "Follow the newest output";
-    followBtn.setAttribute("aria-label", followBtn.title);
-    followBtn.setAttribute("aria-pressed", String(on));
-    jumpPill.hidden = on || !producing || visible.length === 0;
+    syncFollowBtn();
     if (on) {
       scroll.scrollTop = scroll.scrollHeight;
       render();
+      syncFollowBtn();
     }
   }
 
@@ -348,7 +416,7 @@ export function createLogPane(o: {
       // here is how the button came to render as ON while its own tooltip and
       // aria-pressed still said OFF.
       if (follow && !atBottom) setFollow(false);
-      if (!follow) jumpPill.hidden = atBottom || !producing || visible.length === 0;
+      if (!follow) syncFollowBtn();
       render();
     };
     raf = requestAnimationFrame(paint);
@@ -545,7 +613,7 @@ export function createLogPane(o: {
     const line = doc.lines[docIdx];
     const row = el("div", `log-line log-k-${line.kind}`);
     const num = el("span", "log-num");
-    num.textContent = String(docIdx + 1);
+    num.textContent = String(docIdx + 1 + droppedLines);
     row.appendChild(num);
     if (line.kind === "group") {
       const isCollapsed = collapsed.has(docIdx);
@@ -620,7 +688,9 @@ export function createLogPane(o: {
       const note = el("div", "log-empty");
       note.textContent = producing
         ? "Waiting for the first line of output…"
-        : "This job produced no output.";
+        : notStarted
+          ? "This job hasn't started yet."
+          : "This job produced no output.";
       win.appendChild(note);
     }
     for (let i = first; i < last; i++) win.appendChild(lineRow(visible[i]));
@@ -692,7 +762,7 @@ export function createLogPane(o: {
       // on a 3px box sits entirely outside the map, flush on the pane's border,
       // which is exactly where an error on the log's last line landed.
       tick.style.top = `calc(${pct / 100} * (100% - 3px))`;
-      tick.title = `Error on line ${docIdx + 1}`;
+      tick.title = `Error on line ${docIdx + 1 + droppedLines}`;
       tick.tabIndex = -1;
       tick.addEventListener("click", () => jumpToLine(docIdx));
       ticks.push(tick);
@@ -715,6 +785,7 @@ export function createLogPane(o: {
     collapsed.clear();
     for (const c of shifted) collapsed.add(c);
     capped = true;
+    droppedLines += drop;
     return drop;
   }
 
@@ -724,6 +795,7 @@ export function createLogPane(o: {
       doc = emptyLogDoc();
       collapsed.clear();
       capped = false;
+      droppedLines = 0;
       truncatedTail = !!opts.truncated;
       appendLog(doc, text);
       enforceCap();
@@ -733,7 +805,7 @@ export function createLogPane(o: {
       // Only when FOLLOWING. On an already-finished log this used to jump you
       // to the last line the moment it loaded, before you had read a word.
       if (follow) scroll.scrollTop = scroll.scrollHeight;
-      else jumpPill.hidden = !producing || visible.length === 0;
+      else syncFollowBtn();
     },
     append(delta) {
       if (!delta) return;
@@ -752,8 +824,18 @@ export function createLogPane(o: {
       //
       // Anchored on identity, not on the count: `visible` is doc indices and a
       // collapsed group means the rows dropped and the ROWS SHOWN differ.
+      // Taken whenever the reader is not following — NOT only once the doc has
+      // already reached the cap. That pre-check read `doc.lines.length` BEFORE
+      // the delta was appended, so on the single tick that CROSSES the cap the
+      // length was still under it, the anchor was undefined, and the correction
+      // below was skipped for exactly the drop that matters: everything the job
+      // emitted in that poll window, minus the headroom, in one jerk. Every
+      // later tick was anchored, which is what made it look fixed.
+      //
+      // The cheap part is this lookup; the O(n) `indexOf` below is already
+      // gated on `dropped`, so an unconditional anchor costs a modulo per poll.
       const anchor =
-        !follow && visible.length && doc.lines.length >= MAX_RENDER_LINES
+        !follow && visible.length
           ? doc.lines[visible[Math.min(visible.length - 1, Math.floor(scroll.scrollTop / LINE_H))]]
           : undefined;
       const anchorOffset = anchor ? scroll.scrollTop % LINE_H : 0;
@@ -772,6 +854,17 @@ export function createLogPane(o: {
         scroll.scrollTop = row >= 0 ? row * LINE_H + anchorOffset : 0;
       }
     },
+    setProducing(on) {
+      if (producing === on) return;
+      producing = on;
+      // Arm the tail the way opening a live job would have. Not `setFollow` on
+      // the way DOWN — finish() owns that, and it also flushes the last line.
+      if (on) {
+        follow = true;
+        notStarted = false;
+      }
+      syncFollowBtn();
+    },
     finish() {
       finishLog(doc);
       rebuildVisible();
@@ -780,8 +873,10 @@ export function createLogPane(o: {
       // claiming to be tailing, with a lit button that could only ever do one
       // more thing: jump you to the end.
       producing = false;
-      if (follow) setFollow(false);
-      jumpPill.hidden = true;
+      follow = false;
+      // Through the one rule: it disables the button and hides the pill, both
+      // of which are now permanently meaningless for this pane.
+      syncFollowBtn();
       render();
     },
     setFollow,
@@ -818,6 +913,8 @@ export function createLogPane(o: {
   // not run on an idle headless page.
   window.addEventListener("resize", onResize);
 
-  followBtn.classList.toggle("is-on", follow);
+  // Paint the button's initial state through the one rule that owns it, rather
+  // than stamping a class — a finished pane must open with Follow disabled.
+  syncFollowBtn();
   return pane;
 }

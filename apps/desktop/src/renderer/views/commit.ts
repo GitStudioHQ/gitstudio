@@ -30,6 +30,7 @@ import {
   relTime,
   absTime,
   commonDir,
+  copyText,
   openMenu,
 } from "../ui";
 import { detailPage, type SectionTarget } from "./common";
@@ -408,7 +409,13 @@ export async function renderCommit(
   shaBtn.append(glyph("copy"), span(d.shortSha));
   shaBtn.title = `${d.sha}\nCopy the full SHA`;
   shaBtn.setAttribute("aria-label", `Copy the full SHA ${d.sha}`);
-  shaBtn.addEventListener("click", () => void host.invoke("clipboard:write", d!.sha));
+  // `copyText`, like the other 28 copy buttons in the app — not a raw
+  // `clipboard:write`. Two things came free with it and were missing here: the
+  // navigator.clipboard path (the IPC channel is only its FALLBACK, for the
+  // contexts where the permission is refused), and the confirmation. This was
+  // the one sha button in the app that copied in silence, so the only way to
+  // know it had worked was to paste.
+  shaBtn.addEventListener("click", () => void copyText(d!.sha, "Copied the full SHA."));
   topActions.appendChild(shaBtn);
 
   // The reason to read a commit HERE rather than on github.com: the repository

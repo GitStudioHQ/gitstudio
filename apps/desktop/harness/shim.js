@@ -817,6 +817,11 @@
           { name: "Checkout", status: "completed", conclusion: "success", number: 1, startedAt: ISO(0.3), completedAt: ISO(0.29) },
           { name: "npm ci", status: "in_progress", conclusion: "", number: 2, startedAt: ISO(0.29), completedAt: "" },
         ] },
+        // QUEUED — no runner has picked it up. A third state the fixture had
+        // none of, and one the log pane must not describe as either finished or
+        // producing: Follow has nothing to follow YET, which is a different
+        // sentence from having nothing left to follow.
+        { id: 3, runId: id, runAttempt: 1, name: "build (ubuntu-latest)", status: "queued", conclusion: "", htmlUrl: "", createdAt: ISO(0.42), startedAt: "", completedAt: "", runnerName: "", runnerGroupName: "", labels: ["ubuntu-latest"], workflowName: "Desktop CI", headBranch: "main", steps: [] },
       ],
       };
     },
@@ -1263,7 +1268,22 @@
       // because a plain substring test matched ":set" inside "ai:settings" — a
       // READ answered with `{ ok: true }`, which is why aiEnabled() memoised
       // `undefined` and re-asked over IPC on every route for months.
-      if (/:(set|create|edit|comment|merge|rerun|cancel|dispatch|markRead|apply|update|upload|delete|approve|review)(?=$|[A-Z])/.test(channel)) {
+      if (
+        /:(set|create|edit|comment|merge|rerun|cancel|dispatch|markRead|markAllRead|apply|update|upload|delete|approve|review)(?=$|[A-Z])/.test(
+          channel,
+        ) ||
+        // The rest of the app's MUTATION verbs. Everything not listed here fell
+        // through to `undefined`, so the caller's `r.ok` threw and the control
+        // looked inert — the shim's own note on `commit:action` records that
+        // this is how the branch switcher's checkout hid while being tested.
+        // A mutation with no fixture should still let the flow continue; a READ
+        // with no fixture should not be invented, and still answers undefined.
+        /:(push|pull|pullFf|fetch|pop|drop|save|stage|abort|continue|skip|checkout|rename|resolve|takeSide|add|remove|open|openPath|close|kill|resize|write|install|download|check|connect|addItem|moveItem|start|test|rebase|markReady|replyThread|requestReviewers|agentRun|agentConfirm|chatSend|chatNew|chatDelete|chatSetCurrent|mcpInstall|devicePoll|deviceStart)(?=$|[A-Z])/.test(
+          channel,
+        ) ||
+        // The one mutation whose VERB is the domain rather than the action.
+        channel === "stage:lines"
+      ) {
         return Promise.resolve({ ok: true, changed: false });
       }
       return Promise.resolve(undefined);
@@ -1406,7 +1426,14 @@
       } catch (e) {
         fails.push("threw: " + (e && e.message ? e.message : String(e)));
       }
-      document.title = "CHECK " + JSON.stringify({ id: checkId, fails });
+      // Report the channels this scene asked for and the shim could not answer.
+      // NOT as failures — most are legitimately absent — but as a note the
+      // runner prints once at the end. A read with no fixture returns undefined
+      // and the caller's `.ok`/`.length` throws, so a check can pass while
+      // silently exercising a throw instead of the path it was written for.
+      // That is exactly how the pull request's label picker went unchecked.
+      document.title =
+        "CHECK " + JSON.stringify({ id: checkId, fails, miss: [...missing].sort() });
       return;
     }
     document.title = "SCENE-READY";

@@ -4759,6 +4759,95 @@
     },
 
     /**
+     * The log's four states, and what each one may say and do.
+     *
+     * A state table rather than a browse, because this surface was rewritten in
+     * one night and the owner reported it twice in anger. "Not producing"
+     * covers two OPPOSITE situations — finished, and not started — which want
+     * opposite words; and the Follow button and the "Jump to latest" pill are
+     * both claims about a tail that may not exist.
+     *
+     * finished  : Follow disabled and says the job is over; no pill, ever.
+     * queued    : Follow disabled and says it has not started; no pill.
+     * live+tail : Follow armed; no pill, because you are AT the tail.
+     * live+away : Follow off; the pill appears, because the tail moved on.
+     */
+    "the-logs-states-each-say-the-right-thing": async (f) => {
+      const c = check(f);
+      const followBtn = () =>
+        $$(".log-toolbar button").find((b) =>
+          /follow/i.test(b.getAttribute("aria-label") || b.title || ""),
+        );
+      const pill = () => $(".log-jump");
+
+      // ── finished ──
+      const b0 = followBtn();
+      c.ok(!!b0 && !!pill(), "the log pane is up");
+      if (!b0) return;
+      c.ok(b0.disabled, "finished: Follow is disabled");
+      c.match(b0.title, /finished/i, "finished: and says the job is over");
+      c.ok(!/hasn.t started/i.test(b0.title), "finished: not 'hasn\u2019t started'");
+      c.ok(pill().hidden, "finished: no jump pill — nothing is moving");
+
+      // Pressing it must not silently perform End under a Follow label.
+      const sc = $(".log-scroll");
+      sc.scrollTop = 0;
+      sc.dispatchEvent(new Event("scroll"));
+      await settle(250);
+      b0.click();
+      await settle(300);
+      c.eq(sc.scrollTop, 0, "finished: a disabled Follow moves nothing");
+    },
+
+    /** The other three cells, on the live run — queued, tailing, and away. */
+    "the-logs-live-states-each-say-the-right-thing": async (f) => {
+      const c = check(f);
+      const followBtn = () =>
+        $$(".log-toolbar button").find((b) =>
+          /follow/i.test(b.getAttribute("aria-label") || b.title || ""),
+        );
+      const pill = () => $(".log-jump");
+
+      // ── queued: nothing to follow YET, which is not the same sentence ──
+      const queued = $$(".joblog-job").find((r) => /ubuntu/i.test(text(r)));
+      c.ok(!!queued, "the run has a queued job");
+      if (queued) {
+        queued.click();
+        await settle(1200);
+        const b = followBtn();
+        c.ok(b?.disabled, "queued: Follow is disabled");
+        c.match(b?.title ?? "", /hasn.t started/i, "queued: and says it has not started");
+        c.ok(!/finished/i.test(b?.title ?? ""), "queued: never 'finished'");
+        c.ok(pill()?.hidden !== false, "queued: no jump pill");
+      }
+
+      // ── live: armed at the tail, so no pill; away from it, so a pill ──
+      const live = $$(".joblog-job").find((r) => /windows/i.test(text(r)));
+      c.ok(!!live, "the run has a live job");
+      if (!live) return;
+      live.click();
+      await settle(1400);
+      const b = followBtn();
+      c.ok(!b?.disabled, "live: Follow is available");
+      c.eq(b?.getAttribute("aria-pressed"), "true", "live: and armed");
+      c.ok(pill()?.hidden, "live+tail: no pill — you are AT the tail");
+
+      b.click();
+      await settle(400);
+      c.eq(b.getAttribute("aria-pressed"), "false", "live: it can be turned off");
+      c.ok(
+        pill()?.hidden,
+        "live+tail+off: still no pill — the tail has not moved on without you",
+      );
+
+      const sc = $(".log-scroll");
+      sc.scrollTop = 0;
+      sc.dispatchEvent(new Event("scroll"));
+      await settle(400);
+      c.ok(pill()?.hidden === false, "live+away: NOW the pill appears");
+    },
+
+    /**
      * A stash's page holds ONE commit, and says so.
      *
      * It asked `ref:log` for 30, and `git log stash@{0}` walks the stash
