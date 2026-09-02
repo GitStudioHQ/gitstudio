@@ -824,11 +824,18 @@
     "orgs:teams": () => [ { name: "Core", slug: "core", description: "Maintainers", privacy: "closed", htmlUrl: "" } ],
     "orgs:members": () => [u(me), u("mira-holt"), u("s-ohta"), u("dkovachev"), u("jparks")].map((p) => ({ ...p, htmlUrl: "" })),
     "project:board": () => board,
-    "ref:log": () => [
-      { sha: "a1", shortSha: "a1b2c3d", subject: "issues: full-page detail as a routed state", author: "Anton Arnaudov", date: S(1) },
-      { sha: "b2", shortSha: "b2c3d4e", subject: "common: sectionList + detailShell primitives", author: "Anton Arnaudov", date: S(3) },
-      { sha: "c3", shortSha: "c3d4e5f", subject: "css: list + detail tokens", author: "Mira Holt", date: S(6) },
-    ],
+    // HONOURS maxCount, as `refLog` does (it clamps to 1..100). Ignoring it hid
+    // the fact that a stash's page asked for the whole ancestry of stash@{0} —
+    // git's internal "index on …" commit included — under a heading reading
+    // "The commit it holds", singular.
+    "ref:log": (req) => {
+      const all = [
+        { sha: "a1", shortSha: "a1b2c3d", subject: "issues: full-page detail as a routed state", author: "Anton Arnaudov", date: S(1) },
+        { sha: "b2", shortSha: "b2c3d4e", subject: "common: sectionList + detailShell primitives", author: "Anton Arnaudov", date: S(3) },
+        { sha: "c3", shortSha: "c3d4e5f", subject: "css: list + detail tokens", author: "Mira Holt", date: S(6) },
+      ];
+      return all.slice(0, Math.min(Math.max((req && req.maxCount) || 25, 1), 100));
+    },
     "gist:detail": (id) => gists.find((g) => g.id === id),
     "release:detail": (id) => releases.find((r) => r.id === id),
     // GitHub's own changelog, as the composer's "Generate release notes" asks

@@ -4759,6 +4759,23 @@
     },
 
     /**
+     * A stash's page holds ONE commit, and says so.
+     *
+     * It asked `ref:log` for 30, and `git log stash@{0}` walks the stash
+     * commit's ancestry — so a section headed "The commit it holds", singular,
+     * filled with the WIP commit, then git's internal "index on <branch>: …"
+     * commit (the stash's second parent, an implementation detail no UI should
+     * show), then the whole branch history it was taken from.
+     */
+    "a-stash-page-holds-one-commit": (f) => {
+      const c = check(f);
+      const kind = text($(".rd-kind") || { textContent: "" });
+      c.eq(kind, "stash", "the page is a stash's");
+      c.match(text(".rd-section-head"), /the commit it holds/i, "and says it holds one commit");
+      c.eq($$(".clist-row").length, 1, "so it shows exactly one");
+    },
+
+    /**
      * The palette does not throw away your arrow keys when a search lands.
      *
      * Search groups are PREPENDED, and to stop the highlight sliding downward
