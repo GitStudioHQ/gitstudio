@@ -616,7 +616,49 @@
   const dynamic = {
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
-    "ai:settings": () => ({ enabled: false, connections: [], defaultId: null }),
+    // ?ai=1 → a CONNECTED model. Without this the Assistant is permanently
+    // behind its "Connect a model" gate, which means the composer, the quick
+    // actions, the transcript, the tool steps and the whole streaming path have
+    // never been reachable from a scene — six real defects lived there through
+    // four sweeps because nothing could drive them.
+    "ai:settings": () =>
+      params.get("ai")
+        ? {
+            enabled: true,
+            connections: [{ id: "c1", label: "Claude (BYOK)", usable: true }],
+            defaultId: "c1",
+            agent: { permission: "write", thinking: "medium", modelId: "claude-opus-5" },
+          }
+        : { enabled: false, connections: [], defaultId: null },
+    "ai:models": () =>
+      params.get("ai")
+        ? [
+            { id: "claude-opus-5", label: "Claude Opus 5" },
+            { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
+          ]
+        : [],
+    "ai:chatCurrent": () =>
+      params.get("ai") && params.get("chat")
+        ? {
+            id: "chat1",
+            title: "Why did the build break?",
+            connectionId: "c1",
+            turns: [
+              { role: "user", text: "Why did the build break?" },
+              { role: "assistant", text: "The renderer bundle grew past the limit.\n\n```sh\nnpm run build\n```" },
+            ],
+          }
+        : null,
+    "ai:chatList": () =>
+      params.get("ai")
+        ? [
+            { id: "chat1", title: "Why did the build break?", updatedAt: Date.now() - 6e5 },
+            { id: "chat2", title: "Rename the staging helpers", updatedAt: Date.now() - 9e6 },
+          ]
+        : [],
+    "ai:chatNew": () => ({ id: "chat-new", title: "New chat", connectionId: "c1", turns: [] }),
+    "ai:chatGet": ({ id }) => ({ id, title: "Earlier chat", connectionId: "c1", turns: [{ role: "user", text: "hello" }] }),
+    "ai:chatSetCurrent": () => ({ ok: true }),
     "settings:get": () => settingsView(),
     "settings:update": (patch) => {
       if (patch && patch.cloneDir === null) settingsState.cloneDir = null;
@@ -1263,6 +1305,9 @@
   // noticed.
   const failing = new Set((params.get("fail") || "").split(",").filter(Boolean));
 
+  /** channel → listeners, for `on()` / `__gsEmit()`. */
+  const listeners = {};
+
   window.gitstudio = {
     invoke(channel, payload) {
       invoked.push({ channel, payload });
@@ -1307,7 +1352,30 @@
       }
       return Promise.resolve(undefined);
     },
-    on() { return () => {}; },
+    // A REAL subscription registry. This returned a no-op unsubscribe and threw
+    // the listener away, so every push-driven path in the app — streamed agent
+    // deltas and tool steps, log tails, file-change notices, the unread badge —
+    // was unreachable from a scene. A probe or check drives them with
+    // `__gsEmit(channel, payload)`.
+    on(channel, fn) {
+      (listeners[channel] || (listeners[channel] = [])).push(fn);
+      return () => {
+        const a = listeners[channel] || [];
+        const i = a.indexOf(fn);
+        if (i >= 0) a.splice(i, 1);
+      };
+    },
+  };
+
+  /** Deliver a main-process push event to everything listening for it.
+   *  Returns how many listeners saw it, so a probe can tell "nothing happened"
+   *  from "nothing was listening". */
+  window.__gsEmit = (channel, payload) => {
+    const a = (listeners[channel] || []).slice();
+    for (const fn of a) {
+      try { fn(payload); } catch (e) { console.error("[shim emit]", channel, e); }
+    }
+    return a.length;
   };
 
   // ── scene driver ──

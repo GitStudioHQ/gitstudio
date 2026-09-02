@@ -7111,5 +7111,118 @@
       await settle(600);
       c.ok(/^1\/\d/.test(readout() || ""), "Enter makes it a 1-based position");
     },
+
+    // The Assistant. Every control on it was unreachable until the fixture
+    // learned to report a connected model — the gate held the whole surface,
+    // so none of this had ever been driven.
+
+    "the-connect-gate-holds-every-control": async (f) => {
+      const c = check(f);
+      c.ok(!!$(".assistant-empty .btn"), "the connect prompt is up");
+      c.eq($(".assistant-input").disabled, true, "the composer is off");
+      c.eq($(".assistant-send").disabled, true, "Send is off");
+      // These stayed live in front of the gate, and running one ended by
+      // clearing the busy state off Send — talking a gated composer back into
+      // looking usable.
+      const chips = $$(".assistant-chip");
+      c.ok(chips.length > 0, "there are quick actions to check");
+      c.ok(chips.every((b) => b.disabled), "and the quick actions are off too");
+    },
+
+    "send-needs-something-to-send": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!input && !input.disabled, "the composer is live");
+      if (!input) return;
+      c.eq(send.disabled, true, "Send is off over an empty composer");
+      input.value = "explain the failing test";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      c.eq(send.disabled, false, "typing turns it on");
+      // The composer grows with the text instead of reading it through a
+      // two-row slot with 180px of empty box underneath.
+      const grown = parseInt(input.style.height || "0", 10);
+      c.ok(grown > 0, `it sizes to its content (${grown}px)`);
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      c.eq(send.disabled, true, "and off again when you clear it");
+    },
+
+    "a-quick-action-keeps-your-draft": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const chip = $(".assistant-chip");
+      c.ok(!!input && !!chip, "a live composer and a quick action");
+      if (!input || !chip) return;
+      input.value = "my half-written question";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(150);
+      chip.click();
+      await settle(900);
+      // The chip supplies its OWN goal; clearing the box threw away a message
+      // the user was in the middle of writing, in exchange for running
+      // something else.
+      c.eq(input.value, "my half-written question", "the draft survives the chip");
+      const bubble = $(".assistant-bubble");
+      c.ok(!!bubble && !/half-written/.test(text(bubble)), "and the CHIP's goal is what ran");
+    },
+
+    // The complaint the owner made about the job log, in the other surface that
+    // streams: "scrolling super fast or instead of me is pure ragebait".
+    "a-streaming-reply-never-moves-the-reader": async (f) => {
+      const c = check(f);
+      const t = $(".assistant-transcript");
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!t && !!input, "the assistant is live");
+      if (!t || !input) return;
+
+      // Hold the turn open so it keeps streaming while we read back through it.
+      const inv = window.gitstudio.invoke;
+      let rid = null;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:chatSend") {
+          rid = p.requestId;
+          return new Promise(() => {});
+        }
+        return inv(ch, p);
+      };
+      input.value = "go";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      send.click();
+      await settle(500);
+      c.ok(!!rid, "a turn is running");
+      if (!rid) return;
+
+      // `assistant` events render synchronously. Deltas go through
+      // requestAnimationFrame, which this harness starves, so they never paint.
+      const say = (n) =>
+        window.__gsEmit("ai:agentEvent", {
+          requestId: rid,
+          kind: "assistant",
+          text: `Paragraph ${n}. ${"word ".repeat(40)}`,
+        });
+      for (let i = 0; i < 25; i++) say(i);
+      await settle(300);
+      c.ok(t.scrollHeight > t.clientHeight + 20, "the transcript overflows, so it can scroll");
+
+      t.scrollTop = 0; // the reader scrolls up to re-read
+      await settle(120);
+      for (let i = 25; i < 35; i++) say(i);
+      await settle(300);
+      c.eq(t.scrollTop, 0, "more output must NOT move a reader who scrolled up");
+
+      // And the other half of the table: a reader at the tail is still carried.
+      t.scrollTop = t.scrollHeight;
+      await settle(120);
+      for (let i = 35; i < 40; i++) say(i);
+      await settle(300);
+      c.ok(
+        t.scrollHeight - t.scrollTop - t.clientHeight <= 24,
+        "but a reader AT the bottom is kept there",
+      );
+    },
   };
 })();

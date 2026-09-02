@@ -10,6 +10,7 @@
 import { host } from "./bridge";
 import { el, span, glyph, openMenu, relTimeISO } from "./ui";
 import type { MenuItem } from "./ui";
+import { confirmDialog } from "./dialogs";
 import { runAgentTurn, addBubble, markdownBlock, errorBlock, connectPrompt, elText, setBusy, scrollDown } from "./chatRender";
 import type { SectionRender } from "./views/common";
 import type { AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
@@ -129,18 +130,23 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const transcript = el("div", "assistant-transcript");
   const composer = el("div", "assistant-composer");
   const quick = el("div", "assistant-quick");
+  const chips: HTMLButtonElement[] = [];
   for (const qa of QUICK_ACTIONS) {
-    const chip = el("button", "assistant-chip");
+    const chip = el("button", "assistant-chip") as HTMLButtonElement;
     chip.append(glyph(qa.icon), span(qa.label));
-    chip.addEventListener("click", () => void runGoal(qa.goal));
+    // `fromInput: false` — a chip carries its OWN goal, so clearing the
+    // composer would throw away a message the user had typed and not yet sent,
+    // in exchange for running something else entirely.
+    chip.addEventListener("click", () => void runGoal(qa.goal, false));
     quick.append(chip);
+    chips.push(chip);
   }
   const inputRow = el("div", "assistant-input-row");
   const input = document.createElement("textarea");
   input.className = "assistant-input";
   input.rows = 2;
   input.placeholder = "Ask the agent to do something in this repo…";
-  const send = el("button", "btn btn-primary assistant-send");
+  const send = el("button", "btn btn-primary assistant-send") as HTMLButtonElement;
   send.append(glyph("send"));
   send.title = "Send";
   inputRow.append(input, send);
@@ -153,6 +159,34 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   wrap.replaceChildren(header, transcript, composer);
 
   let running = false;
+  /** Stops the turn currently streaming — the same abort the Stop button uses,
+   *  reachable from the places that would otherwise leave a run going with its
+   *  transcript detached. */
+  let cancelRun: (() => void) | undefined;
+  /** The connection gate refused — every control stays off until Settings
+   *  changes, and nothing transient (a finished run, a re-render) may quietly
+   *  turn them back on. */
+  let gated = false;
+
+  /** Send is off with nothing to send. It used to be lit over an empty
+   *  composer, and clicking it called `runGoal("")`, which returns on its own
+   *  first line — a primary button that did nothing, with no way to tell that
+   *  from a broken one. */
+  const syncSend = (): void => {
+    send.disabled = gated || running || !input.value.trim();
+  };
+
+  /** Grow with the text, up to the height the stylesheet already budgets.
+   *  Locked at two rows, a pasted commit message or a paragraph-long task was
+   *  read through a 40px slot while 180px of empty composer sat under it. */
+  const autoGrow = (): void => {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
+  };
+  input.addEventListener("input", () => {
+    syncSend();
+    autoGrow();
+  });
 
   const empty = el("div", "assistant-empty");
   empty.append(
@@ -167,7 +201,13 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   transcript.append(empty);
 
   // Gate on a usable connection.
-  void (async () => {
+  //
+  // Held as a PROMISE: a ✨ goal seeded from another view starts at the bottom
+  // of this function, synchronously, while this is still in flight — so it ran
+  // before `permission`, `thinkLevel` and `selectedModelId` had been read out
+  // of settings, and then had its transcript wiped by the `restoreChat` below
+  // landing a quarter-second later. Both callers await it now.
+  const ready = (async () => {
     let settings: AiSettingsView | undefined;
     try {
       settings = await host.invoke("ai:settings", undefined);
@@ -175,9 +215,15 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       settings = undefined;
     }
     if (!settings || !settings.enabled) {
+      gated = true;
       transcript.replaceChildren(connectPrompt(nav));
       input.disabled = true;
-      (send as HTMLButtonElement).disabled = true;
+      send.disabled = true;
+      // The chips too. They sat live in front of the "Connect a model" panel,
+      // and clicking one ran `runGoal`, which ends by clearing the busy state
+      // off the send button — so a gated composer could be talked back into
+      // looking usable by pressing a button that could never work.
+      for (const c of chips) c.disabled = true;
       controls.classList.add("is-disabled");
     } else {
       const def = settings.connections.find((c) => c.id === settings!.defaultId) ?? settings.connections.find((c) => c.usable);
@@ -203,7 +249,10 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         const cur = await host.invoke("ai:chatCurrent", undefined);
         if (cur) {
           currentChatId = cur.id;
-          if (cur.turns.length > 0) restoreChat(cur);
+          // NOT over a turn that is already running. `restoreChat` replaces the
+          // transcript wholesale, so a ✨ action started on mount had its
+          // answer — and its Stop button — deleted mid-stream by this line.
+          if (cur.turns.length > 0 && !running) restoreChat(cur);
         }
       } catch {
         /* no prior chat */
@@ -218,10 +267,29 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       if (t.role === "user") addBubble(transcript, "user", t.text);
       else transcript.append(markdownBlock(t.text));
     }
-    scrollDown(transcript);
+    scrollDown(transcript, true); // opening a chat lands on its latest turn
+  }
+
+  /** A chat cannot be left while a turn is streaming into it: both routes here
+   *  replace the transcript, so the answer being written vanished mid-sentence
+   *  and the run kept going invisibly — writing into a detached node, with the
+   *  Stop button gone and no way to reach it. Stop first, then switch. */
+  async function leavingLiveTurn(): Promise<boolean> {
+    if (!running) return false;
+    const stop = await confirmDialog({
+      title: "The agent is still working",
+      message:
+        "Leaving this chat stops the run. Anything it has already done to your repository stays done.",
+      confirmLabel: "Stop and leave",
+      danger: true,
+    });
+    if (!stop) return true;
+    cancelRun?.();
+    return false;
   }
 
   async function newChat(): Promise<void> {
+    if (await leavingLiveTurn()) return;
     try {
       const chat = await host.invoke("ai:chatNew", undefined);
       currentChatId = chat?.id;
@@ -252,6 +320,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   }
 
   async function switchChat(id: string): Promise<void> {
+    if (await leavingLiveTurn()) return;
     try {
       const chat = await host.invoke("ai:chatGet", { id });
       if (!chat) return;
@@ -264,10 +333,20 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     }
   }
 
-  async function runGoal(goal: string): Promise<void> {
-    if (running || !goal.trim()) return;
+  async function runGoal(goal: string, fromInput = true): Promise<void> {
+    if (running || gated || !goal.trim()) return;
+    // Settings decide the permission, the model and the thinking level this
+    // turn runs with. A ✨ goal reaches here before the gate has read them.
+    await ready;
+    if (gated) return;
     running = true;
-    input.value = "";
+    // Only the text this send is ACTUALLY sending. A quick-action chip supplies
+    // its own goal, so clearing here threw away a draft the user was writing.
+    if (fromInput) {
+      input.value = "";
+      autoGrow();
+    }
+    syncSend();
     empty.remove();
     setBusy(send, true);
 
@@ -288,18 +367,32 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       return;
     }
 
+    const ac = new AbortController();
+    cancelRun = () => ac.abort();
     try {
-      await runAgentTurn(transcript, send, currentChatId, goal, {
-        allowWrite: permission !== "read",
-        allowDestructive: permission === "destructive",
-        modelId: selectedModelId,
-        thinking: thinkLevel,
-      });
+      await runAgentTurn(
+        transcript,
+        send,
+        currentChatId,
+        goal,
+        {
+          allowWrite: permission !== "read",
+          allowDestructive: permission === "destructive",
+          modelId: selectedModelId,
+          thinking: thinkLevel,
+        },
+        ac.signal,
+      );
     } finally {
       running = false;
+      cancelRun = undefined;
+      // Through the one rule — never a bare `disabled = false`, which is what
+      // let a finished run hand a gated composer a working-looking Send.
+      syncSend();
     }
   }
 
+  syncSend();
   send.addEventListener("click", () => void runGoal(input.value));
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -313,6 +406,8 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   if (pendingGoal) {
     const goal = pendingGoal;
     pendingGoal = null;
-    void runGoal(goal);
+    // `runGoal` awaits `ready` itself, so this runs with the real permission,
+    // model and thinking level rather than whatever the defaults happened to be.
+    void runGoal(goal, false);
   }
 };

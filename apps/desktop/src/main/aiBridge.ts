@@ -830,12 +830,37 @@ function summarizeArgs(tool: GitTool, args: Record<string, unknown>): string {
       return `Switch to “${String(args.ref ?? "")}”.`;
     case "git_stash_save":
       return `Stash working-tree changes${args.message ? ` (“${String(args.message)}”)` : ""}.`;
+    // The three destructive ones say what the app's OWN confirm dialogs say for
+    // the same operations. They used to be the weakest text in the app for the
+    // most dangerous thing in it: "Reset (hard) to abc123." asked you to
+    // approve, in git's vocabulary, the deletion of every uncommitted change
+    // you had — while pressing Discard on one file by hand spelled out that it
+    // could not be undone. The agent's confirm is the LAST gate before an
+    // automated actor does it, so it should read stronger, not weaker.
     case "git_discard":
-      return `Permanently discard changes to: ${asList(args.paths)}`;
+      return (
+        `Discard your changes to: ${asList(args.paths)}\n\n` +
+        "Their current contents are lost. This can't be undone, and files git " +
+        "isn't tracking are deleted from disk outright."
+      );
     case "git_delete_branch":
-      return `Delete branch “${String(args.name ?? "")}”${args.force ? " (force)" : ""}.`;
-    case "git_reset":
-      return `Reset (${String(args.mode ?? "")}) to ${String(args.ref ?? "")}.`;
+      return (
+        `Delete branch “${String(args.name ?? "")}”.` +
+        (args.force
+          ? "\n\nForced: commits on it that are not merged anywhere else go with it."
+          : "")
+      );
+    case "git_reset": {
+      const mode = String(args.mode ?? "");
+      const to = String(args.ref ?? "");
+      const consequence =
+        mode === "hard"
+          ? "\n\nEvery uncommitted change in your working tree is destroyed. This can't be undone."
+          : mode === "soft"
+            ? "\n\nThe commits are undone; their changes stay staged."
+            : "\n\nThe commits are undone; their changes stay in your working tree.";
+      return `Move this branch to ${to} (${mode || "mixed"} reset).${consequence}`;
+    }
     default:
       return `${tool.title}: ${JSON.stringify(args)}`;
   }

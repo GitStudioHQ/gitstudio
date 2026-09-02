@@ -138,7 +138,7 @@ export class ChatPanel {
 
   /** Called by the dock when this tab becomes active — land focus in the input. */
   reveal(): void {
-    scrollDown(this.transcript);
+    scrollDown(this.transcript, true); // switching to this tab shows its latest
     if (!this.input.disabled) this.input.focus();
   }
 

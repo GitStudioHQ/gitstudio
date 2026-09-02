@@ -67,7 +67,7 @@ export async function runAgentTurn(
   thinking.append(dots, thinkLabel, thinkMeta);
   turn.append(thinking);
   transcript.append(turn);
-  scrollDown(transcript);
+  scrollDown(transcript, true); // they just pressed Send — show them their turn
 
   const state: TurnState = { turn, thinking, stream: null, raw: "", pending: false, status: "Thinking" };
   const t0 = Date.now();
@@ -128,6 +128,8 @@ export async function runAgentTurn(
 
 /** Append a streamed text delta and re-render the block as Markdown (live). */
 export function onDelta(state: TurnState, delta: string): void {
+  const wrap = state.turn.parentElement as HTMLElement;
+  const stick = atBottom(wrap);
   if (!state.stream) {
     state.stream = el("div", "assistant-msg gh-body-md is-streaming");
     state.turn.insertBefore(state.stream, state.thinking);
@@ -135,7 +137,7 @@ export function onDelta(state: TurnState, delta: string): void {
   }
   state.raw += delta;
   scheduleStreamRender(state);
-  scrollDown(state.turn.parentElement as HTMLElement);
+  if (stick) scrollDown(wrap, true);
 }
 
 /** Re-render the live block as Markdown, at most once per animation frame. */
@@ -161,6 +163,8 @@ export function finalizeStream(state: TurnState): void {
 /** Apply one structured agent event to the active turn. */
 export function onEvent(state: TurnState, e: AgentEventWire): void {
   const { turn, thinking } = state;
+  const wrap = turn.parentElement as HTMLElement;
+  const stick = atBottom(wrap);
   switch (e.kind) {
     case "status":
       // A pre-token status (e.g. "Loading the agent…" on a cold start).
@@ -199,7 +203,7 @@ export function onEvent(state: TurnState, e: AgentEventWire): void {
     default:
       break;
   }
-  scrollDown(turn.parentElement as HTMLElement);
+  if (stick) scrollDown(wrap, true);
 }
 
 /** Render the confirm dialog for a write/destructive tool and answer the agent. */
@@ -252,6 +256,23 @@ function toolStep(e: AgentEventWire): HTMLElement {
 
 function finishToolStep(step: HTMLElement, e: AgentEventWire): void {
   step.querySelector(".assistant-tool-spin")?.remove();
+
+  // A DECLINED action is not an error, and its result text is not for you.
+  //
+  // `tool_denied` lands first and marks the step; the agent then emits a
+  // tool_result carrying the sentence it feeds back to the MODEL — "The user
+  // declined to run this action. Do not retry it; adapt or stop and explain."
+  // That was rendered like any other failure: a red step with a warning glyph,
+  // whose body instructed the person who had just made the decision not to
+  // retry it.
+  if (step.classList.contains("is-denied")) {
+    const said = span("Declined", "assistant-tool-verdict");
+    const status = glyph("circle-slash");
+    status.classList.add("assistant-tool-status");
+    step.querySelector(".assistant-tool-head")?.append(said, status);
+    return;
+  }
+
   step.classList.toggle("is-error", e.isError === true);
   const status = glyph(e.isError ? "error" : "check");
   status.classList.add("assistant-tool-status");
@@ -338,6 +359,32 @@ export function swapToCancel(send: HTMLElement, onCancel: () => void): { restore
   };
 }
 
-export function scrollDown(container: HTMLElement | null): void {
-  if (container) container.scrollTop = container.scrollHeight;
+/** Is the reader at the bottom RIGHT NOW?
+ *
+ *  Must be asked BEFORE the new content goes in. Asking afterwards compares
+ *  the old scrollTop against a scrollHeight that has already grown by exactly
+ *  the block just inserted, so a reader sitting at the tail measures as one
+ *  block behind it and the autoscroll that should carry them along declines to.
+ *  The log pane takes its anchor before appending for the same reason. */
+export function atBottom(container: HTMLElement | null): boolean {
+  if (!container) return false;
+  return container.scrollHeight - container.scrollTop - container.clientHeight <= 24;
+}
+
+/** Keep the newest content in view — but ONLY for a reader who is already at
+ *  the bottom.
+ *
+ *  This was unconditional, and it is called on every streamed token. Scrolling
+ *  up to re-read what the agent said thirty seconds ago lasted until the next
+ *  delta arrived, which is to say a fraction of a second: the transcript
+ *  snapped back to the tail, every time, for the whole length of a run. The
+ *  job log had the identical defect and the same complaint about it — nothing
+ *  in the app may move the viewport while the reader is reading something.
+ *
+ *  `force` is for the moments the reader DID ask: sending a message, opening a
+ *  chat, and switching to a tab. */
+export function scrollDown(container: HTMLElement | null, force = false): void {
+  if (!container) return;
+  if (!force && !atBottom(container)) return;
+  container.scrollTop = container.scrollHeight;
 }

@@ -7083,6 +7083,16 @@ body.vscode-light .gh-label-chip {
 .assistant-tool.is-error .assistant-tool-status .codicon { color: var(--gs-danger, #e15a5a); }
 .assistant-tool:not(.is-error) .assistant-tool-status .codicon { color: var(--vscode-testing-iconPassed, #4caf72); }
 .assistant-tool.is-denied { opacity: 0.66; }
+/* A declined step is neither a pass nor a failure — it is a decision. It must
+   not borrow the green tick that `:not(.is-error)` above would otherwise give
+   it, which read as "done". */
+.assistant-tool-verdict {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--app-muted);
+}
+.assistant-tool.is-denied .assistant-tool-status { margin-left: var(--sp-2); }
+.assistant-tool.is-denied .assistant-tool-status .codicon { color: var(--app-muted); }
 .assistant-tool-out { margin: 0; padding: 9px 12px; border-top: 1px solid var(--app-border); font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11px; line-height: 1.5; color: var(--app-muted); white-space: pre-wrap; max-height: 240px; overflow: auto; background: var(--app-bg); }
 
 .assistant-error { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--gs-danger, #e15a5a); background: color-mix(in srgb, var(--gs-danger, #e15a5a) 10%, transparent); border: 1px solid color-mix(in srgb, var(--gs-danger, #e15a5a) 28%, transparent); border-radius: 9px; padding: 9px 11px; }
