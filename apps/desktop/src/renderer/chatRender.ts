@@ -111,6 +111,12 @@ export async function runAgentTurn(
       turn.append(markdownBlock(done.text));
     }
   } catch (e) {
+    // SETTLE the half-written answer first. `is-streaming` draws a blinking
+    // caret after the last line, and this path did not remove it — so a turn
+    // that failed mid-sentence left its partial reply apparently still being
+    // typed, for as long as the chat stayed open, with an error underneath it.
+    // The `!done.ok` path above already goes through `finalizeStream`.
+    finalizeStream(state);
     thinking.remove();
     turn.append(errorBlock(e instanceof Error ? e.message : String(e)));
   } finally {

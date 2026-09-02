@@ -7159,6 +7159,61 @@
       );
     },
 
+    // A turn that FAILS mid-sentence. `is-streaming` draws a blinking caret
+    // after the last line, and the throw path did not remove it — so the
+    // partial reply went on looking like it was still being typed, for as long
+    // as the chat stayed open, with an error message underneath it.
+    "a-failed-turn-stops-looking-like-it-is-typing": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!input && !!send, "the assistant is live");
+      if (!input || !send) return;
+
+      const inv = window.gitstudio.invoke;
+      let rid = null;
+      let failTurn = null;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:chatSend") {
+          rid = p.requestId;
+          // HELD OPEN, so the deltas below arrive while the turn is still
+          // live. Rejecting straight away tears the listeners down in
+          // `finally` before anything can be streamed into it, and then the
+          // check proves nothing.
+          return new Promise((_res, rej) => (failTurn = rej));
+        }
+        return inv(ch, p);
+      };
+      try {
+        input.value = "go";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        send.click();
+        await settle(400);
+        c.ok(!!rid && !!failTurn, "a turn started");
+        if (!rid || !failTurn) return;
+        // Half an answer arrives AS DELTAS, then the request rejects. It has to
+        // be deltas: an `assistant` event is a SETTLED step and clears
+        // `is-streaming` on its own, so driving this with one tests nothing.
+        // `onDelta` creates the streaming block synchronously — only the text
+        // inside it waits for an animation frame this harness never gives.
+        window.__gsEmit("ai:delta", { requestId: rid, delta: "Here is half an ans" });
+        await settle(300);
+        c.eq($$(".assistant-msg.is-streaming").length, 1, "a reply is being typed");
+        failTurn(new Error("the model went away"));
+        await settle(1200);
+
+        c.ok(!!$(".assistant-error"), "the failure is reported");
+        c.eq($$(".assistant-thinking").length, 0, "and the thinking indicator is gone");
+        c.eq(
+          $$(".assistant-msg.is-streaming").length,
+          0,
+          "and nothing is left looking like it is still being typed",
+        );
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // A quick action during a RUN hit `runGoal`'s `if (running) return` — a
     // chip that looked live and answered with silence.
     "quick-actions-close-while-the-agent-works": async (f) => {
