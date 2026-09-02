@@ -213,6 +213,14 @@ async function showProjectBoard(
       }
       card.classList.remove("is-moving");
       bust("project"); // the next board read refetches the confirmed state
+      // RE-RENDER, as both the failure path above and the kebab's own move do.
+      // Busting the cache only affects the NEXT read: the board on screen kept
+      // the column widths and the empty-column dimming it had computed before
+      // the move, so a card dragged into an empty column left that column
+      // still drawn as empty and narrow, and the one it came from still drawn
+      // as though it held the card. The optimistic `statusOptionId` is already
+      // written, so this paints the state the server just confirmed.
+      void showProjectBoard(detail, p, refresh, nav);
     } catch (e) {
       toast(cleanErr(e) || "Couldn't move the item.", "error");
       it.statusOptionId = fromId;
@@ -477,7 +485,11 @@ function projectItemMenu(
   const card = anchor.closest(".gh-card") as HTMLElement | null;
   const field = board.field;
   if (field) {
-    if (items.length) items.push({ separator: true, label: "Move to" });
+    // ALWAYS the group label, not only when something sits above it. A DRAFT
+    // item has no `url`, so nothing was pushed before this and the header was
+    // skipped — leaving the menu a bare list of status names ("No status",
+    // "Todo", "In progress", "Done") with nothing saying what picking one does.
+    items.push({ separator: items.length > 0, label: "Move to" });
     // "No Status" target (clears the field).
     items.push({
       label: "No status",
