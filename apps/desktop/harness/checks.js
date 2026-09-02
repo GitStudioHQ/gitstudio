@@ -7420,6 +7420,39 @@
       c.ok(/\d+(\.\d+)?\s?(KB|MB|GB)/.test(text(live) || ""), "sizes are formatted");
     },
 
+    // "Create pull request" never came back once base and compare had been the
+    // same ref. The swr answer ("GitHub could take a PR") was written straight
+    // to `prBtn.hidden`, and the base===head path then hid the button on its
+    // own — but nothing ever un-hid it: the swr callback had already delivered
+    // its cached answer and never fires again. Picking your own current branch
+    // as the base ONCE removed the view's whole purpose for the session.
+    "create-pull-request-comes-back": async (f) => {
+      const c = check(f);
+      const pr = () => $(".cmp-pr-btn");
+      const picks = () => $$(".compare-bar .ref-pick");
+      c.ok(!!pr() && picks().length >= 2, "the compare bar and its PR button are there");
+      if (!pr() || picks().length < 2) return;
+      c.eq(pr().hidden, false, "it starts available");
+
+      const headLabel = (text(picks()[1]) || "").trim();
+      const pickBase = async (want) => {
+        picks()[0].click();
+        await settle(600);
+        const item = $$(".dropdown-item").find((b) =>
+          want === "same" ? (text(b) || "").trim() === headLabel : (text(b) || "").trim() !== headLabel,
+        );
+        item?.click();
+        await settle(1600);
+      };
+
+      await pickBase("same");
+      c.eq(pr().hidden, true, "and hides when base and compare are the same ref");
+      c.ok(/both/i.test(text($(".cmp-body")) || ""), "with the body saying why");
+
+      await pickBase("different");
+      c.eq(pr().hidden, false, "…and comes back when they differ again");
+    },
+
     // A plan that keeps NOTHING is not a rebase. Dropping every commit and
     // pressing Start erases the whole range and then offers to force-push it —
     // `git reset --hard` wearing a rebase's clothes. The preview said

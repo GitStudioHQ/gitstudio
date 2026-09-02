@@ -3352,7 +3352,14 @@ class App {
     this.compareBase =
       this.compareBase ??
       heads.find((r) => (r.name === "main" || r.name === "master") && r.name !== head)?.name ??
-      heads.find((r) => !r.isCurrent && r.name !== head)?.name;
+      heads.find((r) => !r.isCurrent && r.name !== head)?.name ??
+      // …and past the local branches. A fresh clone has ONE local head, and
+      // stopping here left the view announcing that the repository has nothing
+      // to compare against while the picker eight pixels above it listed every
+      // remote-tracking branch and tag in the repo. The upstream is the base
+      // anyone actually wants there.
+      this.refs.find((r) => r.type === "remote" && r.name.endsWith(`/${head}`))?.name ??
+      this.refs.find((r) => r.type === "remote")?.name;
 
     const wrap = el("div", "compare-view");
 
@@ -3394,11 +3401,23 @@ class App {
     swap.setAttribute("aria-label", "Swap base and compare");
     swap.appendChild(glyph("arrow-swap"));
     swap.addEventListener("click", () => {
+      // Both sides, or neither. With only one local branch there is no base to
+      // start with, and this exchanged `undefined` into the HEAD slot: the
+      // picker rendered an icon, a chevron and an EMPTY label, and the
+      // comparison ran against nothing.
+      if (!this.compareBase || !this.compareHead) return;
       [this.compareBase, this.compareHead] = [this.compareHead, this.compareBase];
-      setLabel(baseBtn, this.compareBase!);
-      setLabel(headBtn, this.compareHead!);
+      setLabel(baseBtn, this.compareBase);
+      setLabel(headBtn, this.compareHead);
       void runCompare();
     });
+    /** Swap needs two sides to exchange. */
+    const syncSwap = (): void => {
+      const ok = !!this.compareBase && !!this.compareHead;
+      (swap as HTMLButtonElement).disabled = !ok;
+      swap.title = ok ? "Swap base and compare" : "Pick a base first";
+      swap.setAttribute("aria-label", swap.title);
+    };
     const modeWrap = el("div", "cmp-mode");
     const dot3 = el("button", "cmp-mode-btn");
     dot3.textContent = "What this branch adds";
@@ -3478,6 +3497,20 @@ class App {
     prBtn.append(glyph("git-pull-request"), span("Create pull request"));
     prBtn.title = "Open a pull request from this comparison";
     prBtn.hidden = true;
+    /** Whether GitHub could take a pull request at all — the swr answer, kept.
+     *
+     *  It used to be applied straight to `prBtn.hidden`, and the base===head
+     *  path then hid the button on its own. Nothing ever un-hid it: the swr
+     *  callback had already delivered its cached answer and never fires again,
+     *  and the success path never touched the button. So picking your own
+     *  current branch as the base once removed "Create pull request" for the
+     *  rest of the session — the view's whole purpose, gone, with no way back
+     *  short of a reload. */
+    let canPr = false;
+    /** The two conditions, kept apart and re-asserted on every exit. */
+    const syncPrBtn = (): void => {
+      prBtn.hidden = !(canPr && !!this.compareBase && this.compareBase !== this.compareHead);
+    };
     prBtn.addEventListener("click", () =>
       void openCreatePr(() => this.routeView("prs", true), {
         base: this.compareBase,
@@ -3494,7 +3527,8 @@ class App {
       ttl: 60_000,
       alive: () => prBtn.isConnected,
       onData: (s) => {
-        prBtn.hidden = !(s.connected && !!s.repo);
+        canPr = s.connected && !!s.repo;
+        syncPrBtn();
       },
     });
     // The Explain / Review actions live on the right of the results row — they act
@@ -3545,14 +3579,27 @@ class App {
       // panes went on rendering those commits and files as though they were the
       // comparison now on screen, for refs that were never compared.
       last = undefined;
+      // …and so are the numbers derived from it. `last` was nulled because the
+      // previous comparison's answer is no longer an answer to anything — but
+      // only the body honoured that. The summary and both tab badges went on
+      // showing the previous comparison's counts while a new one loaded, so
+      // "Comparing A … B" sat directly under "12 commits · 9 files" describing
+      // an entirely different pair of refs.
+      summary.textContent = "";
+      commitsCount.textContent = "";
+      filesCount.textContent = "";
+      syncPrBtn();
+      syncSwap();
       // Nothing to compare yet (a single-branch repo, or base === head):
       // prompt for a second ref instead of running a doomed comparison.
       if (!this.compareBase || this.compareBase === this.compareHead) {
         summary.textContent = "";
         commitsCount.textContent = "";
         filesCount.textContent = "";
-        // …and you cannot open a pull request from a branch to itself.
-        prBtn.hidden = true;
+        // …and you cannot open a pull request from a branch to itself. Through
+        // `syncPrBtn`, which owns BOTH conditions — a bare `hidden = true` here
+        // is what made this state permanent.
+        syncPrBtn();
         body.replaceChildren(
           emptyState(
             "Pick two refs to compare",
