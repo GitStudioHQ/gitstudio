@@ -26,6 +26,20 @@ export interface LogLine {
   /** The leading ISO timestamp, "" when the line has none. */
   ts: string;
   kind: LineKind;
+  /**
+   * The line lowercased with its ANSI escapes removed, computed the first time
+   * a search needs it and kept afterwards.
+   *
+   * Search re-derived this for every line on every keystroke: 20,000
+   * `stripAnsi` calls and 20,000 `toLowerCase` allocations per character
+   * typed, of which the debounce lets through one every 110ms. Riding the line
+   * object rather than a parallel array is what makes it free of bookkeeping —
+   * `reset` builds new lines and `enforceCap` splices old ones away, and the
+   * memo goes with them either way.
+   *
+   * Undefined until the first search; a log nobody searches never pays for it.
+   */
+  q?: string;
 }
 
 export interface LogGroup {

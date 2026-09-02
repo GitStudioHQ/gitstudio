@@ -23,6 +23,7 @@ import { toast } from "../dialogs";
 import { detailPage, disposeOnDetach, type SectionTarget, type SectionNav } from "./common";
 import { createLogPane, type LogPane } from "../logView";
 import { setPageLabel, setPageTarget } from "../navStack";
+import { gget, prime } from "../cache";
 import type { WorkflowRunDetail, WorkflowJob } from "../../shared/ipc";
 
 /** A job's state as one glyph, so the rail scans vertically. */
@@ -87,7 +88,10 @@ export async function renderJobLog(
 
   let d: WorkflowRunDetail | undefined;
   try {
-    d = await host.invoke("actions:runDetail", runId);
+    // The run page fetched and cached this a moment ago, on the click that got
+    // us here — and the log request was queued behind this second copy of it,
+    // so opening a job waited on a round trip for data already in hand.
+    d = await gget("actions:runDetail", runId, 5000);
   } catch (e) {
     if (!view.isConnected) return;
     main.replaceChildren(
@@ -313,6 +317,11 @@ export async function renderJobLog(
         .invoke("actions:runDetail", runId)
         .then((fresh) => {
           if (!view.isConnected || !fresh) return;
+          // Write it through. This poll deliberately bypasses the cache to keep
+          // the rail live, but that left the cache holding an older copy than
+          // the page was showing — so a Back onto the run page could be served
+          // the staler one.
+          prime("actions:runDetail", runId, fresh);
           const sig = JSON.stringify(fresh.jobs.map((j) => [j.id, j.status, j.conclusion]));
           const was = JSON.stringify(jobs.map((j) => [j.id, j.status, j.conclusion]));
           jobs = fresh.jobs;

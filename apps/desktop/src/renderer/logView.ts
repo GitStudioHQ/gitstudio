@@ -483,7 +483,13 @@ export function createLogPane(o: {
       return;
     }
     for (let i = 0; i < doc.lines.length; i++) {
-      if (stripAnsi(doc.lines[i].text).toLowerCase().includes(q)) matches.push(i);
+      const line = doc.lines[i];
+      // Computed once per line, not once per keystroke. `stripAnsi` returns the
+      // same string when there is nothing to strip, so the common case stores a
+      // pointer; a mixed-case line does allocate, which is the cost of not
+      // rebuilding the whole index every time a character is typed.
+      line.q ??= stripAnsi(line.text).toLowerCase();
+      if (line.q.includes(q)) matches.push(i);
     }
     if (keep) matchIdx = matches.findIndex((i) => doc.lines[i] === keep);
     matchCounter.textContent = matches.length

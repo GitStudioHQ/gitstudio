@@ -132,6 +132,11 @@ export function openCommandPalette(providers: PaletteProviders): void {
   let searchGroups: PaletteGroup[] = [];
   let flat: Array<{ item: PaletteItem; el: HTMLElement }> = [];
   let selected = 0;
+  /** The row currently carrying the highlight, so `select` can move it rather
+   *  than repaint every row to find out which one moved. */
+  let selectedEl: HTMLElement | null = null;
+  /** A frame is already booked to re-measure the bottom fade. */
+  let fadePending = false;
 
   const dispose = (): void => {
     // Release BEFORE anything else: an `inert` that outlives its dialog freezes
@@ -150,18 +155,31 @@ export function openCommandPalette(providers: PaletteProviders): void {
   const select = (i: number): void => {
     if (!flat.length) return;
     selected = Math.max(0, Math.min(i, flat.length - 1));
-    flat.forEach(({ el: row }, idx) => {
-      const on = idx === selected;
-      row.classList.toggle("is-selected", on);
-      // The markup was almost right — role=dialog, aria-modal, a role=listbox
-      // of role=option rows — but the selection lived in a CSS class alone.
-      // Focus never leaves the input (correctly, so you can keep typing), so
-      // without aria-selected and aria-activedescendant a screen reader hears
-      // nothing at all as you arrow through 28 results.
-      row.setAttribute("aria-selected", on ? "true" : "false");
-      if (!row.id) row.id = `cmdk-row-${idx}`;
-    });
     const cur = flat[selected]?.el;
+    // Touch the two rows that change, not all of them.
+    //
+    // This walked every row on every call, and `select` is what a mousemove
+    // calls — so drifting the pointer across the list rewrote a class and an
+    // attribute on all 55 rows for each pixel of travel, to move one highlight.
+    //
+    // The guard is on the ELEMENT, not on `selected`. `render()` rebuilds every
+    // row from scratch and then calls `select(kept >= 0 ? kept : 0)`; on the
+    // first open `selected` is already 0 and `kept` is -1, so an index guard
+    // would return early and leave a freshly built list with nothing
+    // highlighted and no aria-activedescendant. Comparing the element cannot
+    // make that mistake: after a rebuild the row at `selected` is a new node,
+    // so the work runs.
+    if (cur === selectedEl) return;
+    if (selectedEl) {
+      selectedEl.classList.remove("is-selected");
+      selectedEl.setAttribute("aria-selected", "false");
+    }
+    selectedEl = cur ?? null;
+    if (cur) {
+      cur.classList.add("is-selected");
+      cur.setAttribute("aria-selected", "true");
+      if (!cur.id) cur.id = `cmdk-row-${selected}`;
+    }
     if (cur) input.setAttribute("aria-activedescendant", cur.id);
     cur?.scrollIntoView({ block: "nearest" });
   };
@@ -172,6 +190,29 @@ export function openCommandPalette(providers: PaletteProviders): void {
     dispose();
     hit.item.run();
   };
+
+  /**
+   * One mousemove and one click for the whole list.
+   *
+   * `list` is created once and only ever `replaceChildren()`-ed, so these two
+   * outlive every render — where per-row handlers were registered again for
+   * every row of every rebuild. The index is resolved from the node at the
+   * moment of the event rather than captured when the row was built, so it is
+   * always the row's CURRENT position: search groups are prepended, and a
+   * stale captured index would fire whatever had moved into its old slot.
+   */
+  const rowIndexFrom = (e: Event): number => {
+    const row = (e.target as HTMLElement | null)?.closest?.(".cmdk-row");
+    return row ? flat.findIndex((f) => f.el === row) : -1;
+  };
+  list.addEventListener("mousemove", (e) => {
+    const i = rowIndexFrom(e);
+    if (i >= 0) select(i);
+  });
+  list.addEventListener("click", (e) => {
+    const i = rowIndexFrom(e);
+    if (i >= 0) activate(i);
+  });
 
   /** Set when query-driven groups change shape, so the highlight resets to the
    *  top instead of tracking an item that just got pushed down the list. */
@@ -207,6 +248,8 @@ export function openCommandPalette(providers: PaletteProviders): void {
     resetSelection = false;
     list.replaceChildren();
     flat = [];
+    // Every row below is a new node, so the one we were holding is gone.
+    selectedEl = null;
     for (const group of [...searchGroups, ...groups]) {
       // A pinned group is already the answer to this query — render it as-is.
       const scored = group.pinned
@@ -237,9 +280,13 @@ export function openCommandPalette(providers: PaletteProviders): void {
         row.setAttribute("role", "option");
         row.append(glyph(item.icon), span(item.label, "cmdk-label"));
         if (item.hint) row.appendChild(span(item.hint, "cmdk-hint"));
-        const idx = flat.length;
-        row.addEventListener("mousemove", () => select(idx));
-        row.addEventListener("click", () => activate(idx));
+        // No per-row listeners, and no captured index. Both are delegated to
+        // the list below: registering two per row cost 370 registrations on a
+        // single open, and a captured index is a wrong-destination bug waiting
+        // for the day rows are reused — search groups are PREPENDED, so a row
+        // that kept its old index would activate something the reader never
+        // looked at.
+        row.setAttribute("aria-selected", "false");
         list.appendChild(row);
         flat.push({ item, el: row });
       }
@@ -253,9 +300,18 @@ export function openCommandPalette(providers: PaletteProviders): void {
     select(kept >= 0 ? kept : 0);
     // The bottom fade means "there is more below"; a list that fits must not
     // wear it, or its own last row looks cut off.
-    requestAnimationFrame(() => {
-      list.classList.toggle("is-short", list.scrollHeight <= list.clientHeight + 1);
-    });
+    //
+    // One measurement per frame, not one per render. Opening the palette
+    // renders four times as providers land, and each scheduled its own frame
+    // to read scrollHeight and clientHeight — four forced layouts to answer a
+    // question whose answer only matters once, on the last of them.
+    if (!fadePending) {
+      fadePending = true;
+      requestAnimationFrame(() => {
+        fadePending = false;
+        list.classList.toggle("is-short", list.scrollHeight <= list.clientHeight + 1);
+      });
+    }
   };
 
   const onKey = (e: KeyboardEvent): void => {

@@ -1012,7 +1012,10 @@ function jobCard(j: WorkflowJob, runId: number): HTMLElement {
 async function showArtifacts(container: HTMLElement, runId: number): Promise<void> {
   let items: ArtifactInfo[];
   try {
-    items = await host.invoke("actions:artifacts", runId);
+    // Through the cache: the run page is re-rendered by its own 12-second poll
+    // and by every Back onto it, and each of those re-asked GitHub for a list
+    // that almost never changes within a single visit.
+    items = await gget("actions:artifacts", runId, 5000);
   } catch {
     return; // best-effort: a failed artifacts read never breaks the run detail
   }
