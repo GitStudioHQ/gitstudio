@@ -415,12 +415,17 @@ export class DiffPanel {
     const title = el("div", "merge-bar-title");
     title.append(glyph("git-merge"), span(model.path, "merge-bar-path"));
     const actions = el("div", "merge-bar-actions");
+    // NAMED FOR THE OPERATION. "ours" and "theirs" are git's index stages, and
+    // which of YOUR work each holds is inverted during a rebase — so a button
+    // reading "Take ours" handed you the branch you were rebasing ONTO and
+    // discarded the commit being replayed. The model carries labels the main
+    // process derives from the operation actually in progress; use them.
     const ours = el("button", "mini-btn") as HTMLButtonElement;
-    ours.append(glyph("arrow-left"), span("Take ours"));
-    ours.title = "Replace the file with your version (current change) and stage it";
+    ours.append(glyph("arrow-left"), span(`Take ${model.oursLabel}`));
+    ours.title = `Replace the file with “${model.oursLabel}” and stage it`;
     const theirs = el("button", "mini-btn") as HTMLButtonElement;
-    theirs.append(glyph("arrow-right"), span("Take theirs"));
-    theirs.title = "Replace the file with the incoming version and stage it";
+    theirs.append(glyph("arrow-right"), span(`Take ${model.theirsLabel}`));
+    theirs.title = `Replace the file with “${model.theirsLabel}” and stage it`;
     const resolve = el("button", "btn btn-primary mini-btn merge-resolve") as HTMLButtonElement;
     resolve.append(glyph("check"), span("Mark resolved"));
     resolve.title = "Save your merged result and stage the file as resolved";
@@ -471,10 +476,10 @@ export class DiffPanel {
     };
 
     ours.addEventListener("click", () =>
-      run(ours, () => host.invoke("conflict:takeSide", { path: model.path, side: "ours" }), "Took your version."),
+      run(ours, () => host.invoke("conflict:takeSide", { path: model.path, side: "ours" }), `Took “${model.oursLabel}”.`),
     );
     theirs.addEventListener("click", () =>
-      run(theirs, () => host.invoke("conflict:takeSide", { path: model.path, side: "theirs" }), "Took the incoming version."),
+      run(theirs, () => host.invoke("conflict:takeSide", { path: model.path, side: "theirs" }), `Took “${model.theirsLabel}”.`),
     );
     resolve.addEventListener("click", () =>
       run(

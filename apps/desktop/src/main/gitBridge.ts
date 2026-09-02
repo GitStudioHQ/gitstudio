@@ -657,6 +657,15 @@ export class GitBridge {
     }
     const workingText = (await readWorking(ctx, path)).text;
     const versions = await ctx.conflict.getConflictVersions(path, { workingText });
+    // WHICH operation, because it decides what the two sides MEAN. During a
+    // rebase git replays your commits onto the upstream, so stage 2 ("ours") is
+    // the UPSTREAM and stage 3 ("theirs") is the commit of yours being replayed
+    // — the exact opposite of a merge, and the opposite of what the hardcoded
+    // labels asserted. Someone taking "your version" out of a rebase conflict
+    // was discarding their own work and keeping the branch they were rebasing
+    // onto, with the button, its tooltip and the toast all agreeing it had done
+    // the other thing.
+    const op = await this.opState();
     return {
       path,
       hasBase: versions.hasBase,
@@ -664,8 +673,7 @@ export class GitBridge {
       ours: versions.ours,
       theirs: versions.theirs,
       result: workingText,
-      oursLabel: "Current Change (ours)",
-      theirsLabel: "Incoming Change (theirs)",
+      ...sideLabels(op.kind),
     };
   }
 
@@ -3033,6 +3041,38 @@ async function readWorking(
  * reads as up to date with a remote that no longer exists. It is also exactly
  * the signal that the branch is finished and safe to delete.
  */
+/**
+ * What the two conflict sides ARE, named for the operation in progress.
+ *
+ * Git's stage 2 is "ours" and stage 3 is "theirs" — but which of YOUR work each
+ * one holds depends on the operation, and for a rebase it is inverted:
+ *
+ *   merge / cherry-pick / revert  ours = HEAD, your branch
+ *                                 theirs = the change being brought in
+ *   rebase / am                   ours = the UPSTREAM you are replaying onto
+ *                                 theirs = YOUR commit being replayed
+ *
+ * The labels were hardcoded to the merge reading, so in a rebase the button
+ * offering "your version" handed you the branch you were rebasing onto and
+ * discarded the commit you were replaying — with the tooltip and the success
+ * toast both agreeing it had done the opposite.
+ */
+export function sideLabels(kind: GitOpState["kind"]): {
+  oursLabel: string;
+  theirsLabel: string;
+} {
+  if (kind === "rebase" || kind === "am") {
+    return {
+      oursLabel: "Upstream (what you're rebasing onto)",
+      theirsLabel: "Your commit (being replayed)",
+    };
+  }
+  return {
+    oursLabel: "Current change (your branch)",
+    theirsLabel: "Incoming change",
+  };
+}
+
 export function parseTrack(track: string): { ahead: number; behind: number; gone: boolean } {
   const a = track.match(/ahead (\d+)/);
   const b = track.match(/behind (\d+)/);
