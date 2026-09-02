@@ -79,6 +79,7 @@ const CASES = [
   ["one-notch-up-stops-the-tail", "actions~open9100~click:.gh-job-log"],
   ["every-ansi-block-can-be-read", "actions~open9100~click:.gh-job-log"],
   ["every-ansi-block-can-be-read", "actions~open9100~click:.gh-job-log", { theme: "light" }],
+  ["switch-account-starts-a-sign-in", "settings"],
   ["a-half-filled-dialog-survives-a-file-save", "changes~click:.topbar-switch~text:Clone"],
   ["a-nested-control-keeps-its-own-enter", "projects"],
   ["the-gate-closes-as-well-as-it-opens", "assistant~click:.topbar-assistant", { extra: "ai=1" }],

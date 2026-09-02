@@ -7306,6 +7306,56 @@
       );
     },
 
+    // "Switch account" must actually start a sign-in.
+    //
+    // It signs you out and then looks for the Sign-in button on the rebuilt
+    // card — but `showSettingsView` returns as soon as the card's SHELL is in
+    // the DOM, and everything the card shows arrives in an async body it does
+    // not await. So it searched a card still holding a loading spinner, found
+    // nothing, started nothing, and left you signed out: a quieter Sign out
+    // under a label promising the opposite.
+    "switch-account-starts-a-sign-in": async (f) => {
+      const c = check(f);
+      const sw = $$("button").find((b) => /switch account/i.test(text(b) || ""));
+      c.ok(!!sw, "the account card offers to switch");
+      if (!sw) return;
+
+      const inv = window.gitstudio.invoke.bind(window.gitstudio);
+      let connected = true;
+      const calls = [];
+      window.gitstudio.invoke = (ch, p) => {
+        calls.push(ch);
+        // SLOW, deliberately. `github:status` is a network call in the real
+        // app, and the race only opens while it is outstanding — the fixture
+        // answers synchronously, so an unstubbed check watches the card paint
+        // before the handler looks at it and goes green over the live defect.
+        // The pre-existing check for this button did exactly that.
+        if (ch === "github:status")
+          return new Promise((r) =>
+            setTimeout(
+              () => r(connected ? { connected: true, login: "antonarnaudov" } : { connected: false }),
+              400,
+            ),
+          );
+        if (ch === "github:disconnect") {
+          connected = false;
+          return Promise.resolve({ ok: true });
+        }
+        return inv(ch, p);
+      };
+      try {
+        sw.click();
+        await settle(2600);
+        c.ok(
+          calls.includes("github:deviceStart"),
+          "it starts a new sign-in rather than stopping at the sign-out",
+        );
+        c.ok(!!text($(".gh-flow"))?.trim(), "and the device-flow card is on screen");
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // A background rebuild is not a dismissal the user asked for.
     //
     // Any file saved anywhere in the open repository fires the watcher, and the

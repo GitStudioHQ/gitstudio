@@ -4330,10 +4330,19 @@ class App {
     return row;
   }
 
+  /** Resolves once the account card's async body has painted — see below. */
+  private accountCardReady: Promise<unknown> = Promise.resolve();
+
   private settingsAccountCard(): HTMLElement {
     const { card, body } = settingsCard("GitHub Account", "github");
     body.appendChild(loadingState());
-    void (async () => {
+    // AWAITABLE. `showSettingsView` returns as soon as the card's shell is in
+    // the DOM, and everything the card actually shows arrives in this async
+    // body — so "Switch account", which awaits `showSettingsView()` and then
+    // looks for the new Sign-in button, was searching a card that still held a
+    // loading spinner. It found nothing, started nothing, and left you signed
+    // out: a quieter Sign out under a label promising the opposite.
+    this.accountCardReady = (async () => {
       let status: { connected: boolean; login?: string } = { connected: false };
       try {
         status = await host.invoke("github:status", undefined);
@@ -4369,6 +4378,8 @@ class App {
           // sign-in is opened against it. (Not a rAF: the callback would fire
           // before the async rebuild had replaced the card.)
           await this.showSettingsView();
+          // …and for the card INSIDE it, which paints on its own promise.
+          await this.accountCardReady;
           const fresh = document.querySelector<HTMLElement>(".settings-view");
           const btn = fresh
             ? [...fresh.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
@@ -4398,7 +4409,9 @@ class App {
         );
         body.append(sub, signIn, flow);
       }
-    })();
+    })().catch(() => {
+      /* the card shows its own error; the promise exists only to be awaited */
+    });
     return card;
   }
 
