@@ -246,6 +246,14 @@ export async function renderJobLog(
     const s: Session = { jobId: j.id, pane, offset: 0, unchangedPolls: 0, alive: true, tailing: false };
     session = s;
     logCol.replaceChildren(pane.el);
+    // The keyboard belongs IN the log. `detailPage` focuses the Back button on
+    // every new page, which is right for a page you read top-down and wrong for
+    // this one: the log's own keys — j/k, n/N between failures, Home, End, /
+    // for search — all live on the scroller, so the page opened with none of
+    // them working and no sign of why. Only when the reader has not already
+    // put the keyboard somewhere themselves.
+    const here = document.activeElement;
+    if (!here || here === document.body || view.contains(here)) pane.focusReader();
 
     try {
       const chunk = await host.invoke("actions:jobLogChunk", { jobId: j.id, offset: 0 });

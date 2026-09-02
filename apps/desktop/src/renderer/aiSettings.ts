@@ -42,11 +42,31 @@ export function aiModelsCard(): HTMLElement {
       "Connect any model to power the ✨ helpers and the Assistant — bring your own key, or run a local model (Ollama / LM Studio) that never leaves your machine. AI is optional and never blocks Git.";
     body.append(sub);
 
+    /** The card's one action, built where BOTH exits can use it. */
+    const addButton = (): HTMLElement => {
+      const add = el("button", "btn btn-primary ai-add-btn");
+      add.append(glyph("add"), span("Connect a model"));
+      add.addEventListener("click", () => openGallery(body, render));
+      return add;
+    };
+
     let settings: AiSettingsView;
     try {
       settings = await host.invoke("ai:settings", undefined);
     } catch (e) {
+      // A FAILED READ IS NOT AN EMPTY CARD. This returned before the button
+      // below was built, so one transient error — the settings file locked, a
+      // slow disk — left the card with an error line and nothing else: no
+      // models, no way to connect one, and no way to try again short of
+      // restarting the app. The card's entire purpose, gone, for a read that
+      // would have succeeded a second later.
       body.append(errorLine(cleanErr(e)));
+      const retry = el("button", "mini-btn");
+      retry.append(glyph("refresh"), span("Try again"));
+      retry.addEventListener("click", () => void render());
+      const row = el("div", "settings-actions");
+      row.append(retry, addButton());
+      body.append(row);
       return;
     }
 
@@ -62,10 +82,7 @@ export function aiModelsCard(): HTMLElement {
       body.append(list);
     }
 
-    const add = el("button", "btn btn-primary ai-add-btn");
-    add.append(glyph("add"), span("Connect a model"));
-    add.addEventListener("click", () => openGallery(body, render));
-    body.append(add);
+    body.append(addButton());
   };
 
   void render();

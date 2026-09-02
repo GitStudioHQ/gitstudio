@@ -182,6 +182,11 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
           (choice) => run(fullName, { dest: choice.dest, name: choice.name }),
           {
             name: suggestAltName(fullName),
+            // …and the folder they CHOSE, not the configured default. Reopening
+            // with only a name let the sheet fall back to the default, so
+            // confirming a collision retry quietly relocated the clone — on the
+            // one path whose whole premise is that they picked somewhere else.
+            dest: opts.dest,
             note: r.message || "That folder already exists — pick another spot or name.",
           },
         );

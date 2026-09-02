@@ -16,6 +16,13 @@ export function openDestinationSheet(
   opts: {
     /** Prefill the folder-name field (e.g. retrying after a collision). */
     name?: string;
+    /** Prefill the DESTINATION too.
+     *
+     *  A collision retry reopened this sheet with a new name and no
+     *  destination, so the sheet fell back to the configured default folder —
+     *  and confirming put the clone somewhere the user had not chosen, quietly,
+     *  on the one path whose whole purpose is that they had chosen elsewhere. */
+    dest?: string;
     /** One-line context above the fields (e.g. why the sheet appeared). */
     note?: string;
   } = {},
@@ -23,7 +30,7 @@ export function openDestinationSheet(
   const repo = fullName.split("/")[1] ?? fullName;
   const card = el("div", "modal-card dest-card");
   let close = (): void => {};
-  let dest = "";
+  let dest = opts.dest ?? "";
 
   const title = el("div", "modal-title");
   title.textContent = `Where should ${fullName} go?`;
@@ -39,7 +46,10 @@ export function openDestinationSheet(
   const destLabel = el("div", "clone-dest-label");
   destLabel.textContent = "Destination";
   const destValue = el("div", "clone-dest-path");
-  destValue.textContent = "Loading…";
+  // A seeded destination is shown as ITSELF, not as "Loading…" — the settings
+  // read below must not overwrite one the caller supplied.
+  destValue.textContent = opts.dest || "Loading…";
+  if (opts.dest) destValue.title = opts.dest;
   const chooseBtn = el("button", "mini-btn");
   chooseBtn.append(glyph("folder-opened"), span("Choose…"));
   const destControl = el("div", "clone-dest-control");
@@ -139,6 +149,8 @@ export function openDestinationSheet(
       }
     })
     .catch(() => {
-      destValue.textContent = "Choose a folder…";
+      // …and not over a destination the caller gave us. The `if (!dest)` guard
+      // above protects the success path; this one protects the failure path.
+      if (!dest) destValue.textContent = "Choose a folder…";
     });
 }

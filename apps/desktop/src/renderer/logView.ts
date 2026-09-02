@@ -47,6 +47,8 @@ export interface LogPane {
    */
   setProducing(on: boolean): void;
   setFollow(on: boolean): void;
+  /** Put the keyboard in the log itself, without moving the viewport. */
+  focusReader(): void;
   destroy(): void;
 }
 
@@ -915,6 +917,12 @@ export function createLogPane(o: {
       render();
     },
     setFollow,
+    focusReader() {
+      // `preventScroll` is load-bearing. A plain focus() scrolls the port to
+      // the focused element, and on a live job the reader would read that as
+      // the tail jumping — the one thing this pane must never do.
+      scroll.focus({ preventScroll: true });
+    },
     destroy() {
       destroyed = true;
       if (raf) cancelAnimationFrame(raf);
