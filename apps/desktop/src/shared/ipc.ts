@@ -201,6 +201,12 @@ export interface ConflictModel {
   result: string;
   oursLabel: string;
   theirsLabel: string;
+  /** No text to merge — the file is binary on at least one side. */
+  binary?: boolean;
+  /** A MODIFY/DELETE conflict: this side has no version of the file at all
+   *  (the index holds no stage for it). Not the same as a side that emptied
+   *  it, which is what an empty string alone looks like. */
+  missingSide?: "ours" | "theirs";
 }
 
 /** A git action requested from the graph context menu. */

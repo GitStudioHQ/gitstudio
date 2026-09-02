@@ -65,6 +65,10 @@ export class OutputsPanel {
   private total = 0;
   private failed = 0;
   private failuresOnly = false;
+  /** Set in the constructor; the one place the filter's three surfaces
+   *  (the flag, the button, the wrapper class) are changed together. */
+  private setFailuresOnly!: (on: boolean) => void;
+  private filteredEmpty!: HTMLElement;
   /** Filter + clear — hidden while there is nothing to filter or clear. */
   private readonly controls: HTMLButtonElement[];
   private ctx: ActionCtx | null = null;
@@ -87,11 +91,15 @@ export class OutputsPanel {
     failBtn.append(glyph("error"), span("Errors only"));
     failBtn.title = "Show only failed commands";
     failBtn.setAttribute("aria-pressed", "false");
+    this.setFailuresOnly = (on: boolean): void => {
+      this.failuresOnly = on;
+      failBtn.classList.toggle("is-on", on);
+      failBtn.setAttribute("aria-pressed", String(on));
+      this.el.classList.toggle("failures-only", on);
+      this.renderCount();
+    };
     failBtn.addEventListener("click", () => {
-      this.failuresOnly = !this.failuresOnly;
-      failBtn.classList.toggle("is-on", this.failuresOnly);
-      failBtn.setAttribute("aria-pressed", String(this.failuresOnly));
-      this.el.classList.toggle("failures-only", this.failuresOnly);
+      this.setFailuresOnly(!this.failuresOnly);
       if (this.stick) this.scroller.scrollTop = this.scroller.scrollHeight;
     });
     const clearBtn = el("button", "mini-btn") as HTMLButtonElement;
@@ -110,8 +118,17 @@ export class OutputsPanel {
       span("Git command log", "outputs-empty-title"),
       span("Every git command GitStudio runs will appear here.", "outputs-empty-sub"),
     );
+    // "Errors only" is a CSS filter over the rows — with nothing failed it hid
+    // every one of them and left a blank panel beside a count still reading
+    // "40 commands". A filter that empties a list has to say it was the filter.
+    this.filteredEmpty = el("div", "outputs-empty");
+    this.filteredEmpty.append(
+      span("No failures", "outputs-empty-title"),
+      span("Nothing has failed. Turn off “Errors only” to see every command.", "outputs-empty-sub"),
+    );
+    this.filteredEmpty.hidden = true;
     this.list = el("div", "outputs-list");
-    this.scroller.append(this.empty, this.list);
+    this.scroller.append(this.empty, this.filteredEmpty, this.list);
     this.el.append(this.scroller);
     this.renderCount();
 
@@ -128,6 +145,7 @@ export class OutputsPanel {
     // An empty log says so once, in the empty state below — not twice, and not
     // as a count of nothing beside two controls that would do nothing.
     for (const b of this.controls) b.hidden = this.total === 0;
+    this.filteredEmpty.hidden = !(this.total > 0 && this.failuresOnly && this.failed === 0);
     if (this.total === 0) {
       this.countEl.replaceChildren();
       return;
@@ -346,6 +364,11 @@ export class OutputsPanel {
     this.lastSingle = null;
     this.total = 0;
     this.failed = 0;
+    // Turn the filter OFF with it. `renderCount` hides both controls at zero,
+    // so clearing while "Errors only" was on left the toggle switched on and
+    // out of reach — every command logged afterwards was filtered away by a
+    // control the reader could no longer see, and the panel looked dead.
+    this.setFailuresOnly(false);
     this.renderCount();
     if (!this.empty.isConnected) this.scroller.insertBefore(this.empty, this.list);
   }

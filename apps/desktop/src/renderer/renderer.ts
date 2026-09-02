@@ -5513,24 +5513,63 @@ class App {
         if (this.currentView === "changes") void this.showChangesView();
       };
       abort.addEventListener("click", () => {
-        // Aborting an `am` throws away the patches it has ALREADY applied, and
-        // the patch files are usually a mail attachment or a pipe that no
-        // longer exists — there is no re-running it. The other aborts return
-        // you to a commit still in the reflog; this one does not, so it asks.
-        if (kind === "am") {
-          void confirmDialog({
+        // EVERY abort asks now, not only `am`.
+        //
+        // The old reasoning was that the other aborts "return you to a commit
+        // still in the reflog", so nothing is lost. That is true of the
+        // COMMITS and false of the thing that actually costs time: the conflict
+        // resolutions. Working through eight conflicted files by hand and then
+        // pressing Abort — one click, no confirm, right beside Continue —
+        // throws all of that away, and none of it was ever committed, so the
+        // reflog has no copy of it. It is the most expensive irreversible click
+        // in the app and was the only one that did not ask.
+        const ASK: Record<string, { title: string; message: string; confirmLabel: string }> = {
+          am: {
             title: "Abandon this patch series?",
             message:
               "git has applied part of the series already. Abandoning it discards those patches, and " +
               "the patch files themselves are usually not something the app can replay.",
             confirmLabel: "Abandon series",
-            danger: true,
-          }).then((yes) => {
-            if (yes) void runOp("am:abort");
-          });
-          return;
-        }
-        void runOp(`${family}:abort` as OpChannel);
+          },
+          merge: {
+            title: "Abandon this merge?",
+            message:
+              "Your branch goes back to where it was before the merge. Any conflicts you have already " +
+              "resolved are discarded with it — those were never committed, so nothing can bring them back.",
+            confirmLabel: "Abandon merge",
+          },
+          rebase: {
+            title: "Abandon this rebase?",
+            message:
+              "Your branch goes back to where it was before the rebase. Any conflicts you have already " +
+              "resolved are discarded with it — those were never committed, so nothing can bring them back.",
+            confirmLabel: "Abandon rebase",
+          },
+          "cherry-pick": {
+            title: "Abandon this cherry-pick?",
+            message:
+              "The commit is not applied, and any conflicts you have already resolved are discarded — " +
+              "those were never committed, so nothing can bring them back.",
+            confirmLabel: "Abandon cherry-pick",
+          },
+          revert: {
+            title: "Abandon this revert?",
+            message:
+              "The revert is not applied, and any conflicts you have already resolved are discarded — " +
+              "those were never committed, so nothing can bring them back.",
+            confirmLabel: "Abandon revert",
+          },
+        };
+        const ask = ASK[kind] ?? {
+          title: "Abandon this operation?",
+          message:
+            "Any conflicts you have already resolved are discarded. Those were never committed, so " +
+            "nothing can bring them back.",
+          confirmLabel: "Abandon",
+        };
+        void confirmDialog({ ...ask, danger: true }).then((yes) => {
+          if (yes) void runOp(`${kind === "am" ? "am" : family}:abort` as OpChannel);
+        });
       });
       cont.addEventListener("click", () => void runOp(`${family}:continue` as OpChannel));
       if (op.canSkip) {
@@ -5933,9 +5972,17 @@ class App {
       const model = await host.invoke("conflict:model", path);
       if (gen !== this.diffGen) return;
       if (model) {
-        diffPanel.showMerge(model, () => {
-          void this.repaintChanges();
-        });
+        // A conflicted BINARY, or a modify/delete, has no line-by-line merge to
+        // make — the three-pane editor was mounted over decoded bytes, or over
+        // one deliberately blank pane that never said the file had been deleted
+        // on that side.
+        diffPanel.showMerge(
+          model,
+          () => {
+            void this.repaintChanges();
+          },
+          { noText: model.binary ? "binary" : model.missingSide ? "modify-delete" : undefined },
+        );
         return;
       }
     }
@@ -5963,9 +6010,34 @@ class App {
     const untrackedPaths = new Set(
       files.filter((f) => f.status === "?" && !f.staged).map((f) => f.path),
     );
+    const conflictedPaths = new Set(files.filter((f) => f.conflicted).map((f) => f.path));
     const gone = paths.filter((p) => untrackedPaths.has(p));
     const reverted = paths.filter((p) => !untrackedPaths.has(p));
     const one = paths.length === 1;
+
+    // A CONFLICTED path is a third thing, and the dialog described neither of
+    // the two it knew about. Discard here does not delete the file and does not
+    // revert it to HEAD — it recreates the conflict from the index, throwing
+    // away the resolution work and nothing else. Said as "permanently discard",
+    // it read as if the file were about to be destroyed.
+    const stuck = paths.filter((p) => conflictedPaths.has(p));
+    if (stuck.length) {
+      const onlyStuck = stuck.length === paths.length;
+      return {
+        title: stuck.length === 1 ? "Start this conflict again?" : "Start these conflicts again?",
+        message: onlyStuck
+          ? (stuck.length === 1
+              ? `${stuck[0]} is still conflicted. Discarding puts the conflict back exactly as git ` +
+                `left it — whatever you have resolved in it so far is lost. The file itself stays.`
+              : `${stuck.length} of these files are still conflicted. Discarding puts their conflicts ` +
+                `back exactly as git left them — whatever you have resolved so far is lost. The files stay.`)
+          : `${stuck.length} of these ${paths.length} files are still conflicted: their conflicts come ` +
+            `back as git left them, and the resolution work in them is lost. The rest have their ` +
+            `changes reverted. Neither can be undone.`,
+        confirmLabel: stuck.length === 1 ? "Restore the conflict" : "Restore the conflicts",
+        danger: true,
+      };
+    }
 
     if (gone.length === 0) {
       return {
@@ -8125,7 +8197,9 @@ class App {
       const model = await host.invoke("conflict:model", file.path);
       if (gen !== this.diffGen || panel !== this.diffPanel) return;
       if (model) {
-        panel.showMerge(model);
+        panel.showMerge(model, undefined, {
+          noText: model.binary ? "binary" : model.missingSide ? "modify-delete" : undefined,
+        });
         return;
       }
     }

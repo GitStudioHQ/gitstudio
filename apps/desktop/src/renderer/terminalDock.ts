@@ -89,7 +89,18 @@ export class TerminalDock {
       label: "Panel",
       onResize: () => this.layoutActive(),
       onToggle: (collapsed) => {
-        if (!collapsed) this.revealActive();
+        if (!collapsed) {
+          // Remember where the keyboard WAS before the dock takes it.
+          this.rememberFocus();
+          this.revealActive();
+        } else {
+          // …and give it back. Closing the dock left focus on the xterm
+          // textarea inside it, which is now hidden: every keystroke after
+          // ⌘` ⌘` went into a terminal nobody could see, and the list you were
+          // reading before had no focus, no selection and no way back to the
+          // keyboard except the mouse.
+          this.restoreFocus();
+        }
         this.persist();
       },
       onHeightChange: () => this.persist(),
@@ -185,6 +196,9 @@ export class TerminalDock {
       panel: new TerminalPanel(surface),
       opened: false,
     };
+    // Repaint the side list when the shell dies, so the row stops claiming to
+    // be a running terminal the moment it stops being one.
+    t.panel.onExit = () => this.renderSide();
     this.terminals.push(t);
     this.termStage.appendChild(surface);
     return t;
@@ -335,8 +349,11 @@ export class TerminalDock {
         (this.termSide.querySelector(".term-side-row.active") as HTMLElement | null)?.focus();
       });
       rowEls.push(row);
-      row.append(glyph("terminal"), span(t.label, "term-side-label"));
-      row.title = t.label;
+      const dead = t.panel.isExited();
+      row.classList.toggle("is-exited", dead);
+      row.append(glyph(dead ? "circle-slash" : "terminal"), span(t.label, "term-side-label"));
+      if (dead) row.append(span("exited", "term-side-dead"));
+      row.title = dead ? `${t.label} — the shell has exited` : t.label;
       row.addEventListener("click", () => this.setActiveTerm(t.id));
       // The kill control is a SIBLING of the row, not a child of it. It used to
       // be a role=button span inside the row's <button>, which is invalid: an
@@ -345,6 +362,12 @@ export class TerminalDock {
       // tabIndex = -1 that kept it out of the Tab order was hiding the problem
       // rather than solving it. `.term-side-item` positions the two together.
       const kill = el("button", "term-side-close") as HTMLButtonElement;
+      // Roves WITH its row. The row above is a roving tabindex — only the
+      // active one is in the Tab order — but this sibling kept the default 0,
+      // so tabbing through a dock with six shells open hit six "Kill Terminal
+      // N" buttons and exactly one terminal row. The destructive control was
+      // more reachable than the thing it destroys.
+      kill.tabIndex = sel ? 0 : -1;
       kill.append(glyph("trash"));
       kill.title = `Kill ${t.label}`;
       kill.setAttribute("aria-label", `Kill ${t.label}`);
@@ -379,6 +402,26 @@ export class TerminalDock {
 
     if (this.dock.isCollapsed()) this.layoutActive();
     else this.revealActive();
+  }
+
+  /** Where the keyboard was before the dock took it, so closing hands it back.
+   *  Null when focus was already inside the dock (or nowhere in particular). */
+  private returnFocusTo: HTMLElement | null = null;
+
+  private rememberFocus(): void {
+    const a = document.activeElement as HTMLElement | null;
+    // Only somewhere OUTSIDE the dock, and only something still focusable —
+    // otherwise closing would hand focus back into the panel it just hid.
+    this.returnFocusTo =
+      a && a !== document.body && !this.dock.root.contains(a) ? a : null;
+  }
+
+  private restoreFocus(): void {
+    const back = this.returnFocusTo;
+    this.returnFocusTo = null;
+    // It may have been re-rendered away while the dock was open — the guard is
+    // what keeps this from throwing focus at a detached node.
+    if (back?.isConnected) back.focus();
   }
 
   /** Open the active shell's PTY (lazily) and re-fit it; focus the active chat. */

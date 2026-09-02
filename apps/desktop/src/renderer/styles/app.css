@@ -5434,6 +5434,16 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   background: var(--gs-accent);
 }
 .term-side-row .codicon { font-size: 13px; }
+/* A shell that has exited is not a terminal any more. It used to keep the live
+   label and a blinking cursor while swallowing every keystroke. */
+.term-side-row.is-exited { opacity: 0.62; }
+.term-side-dead {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+}
 .term-side-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The row and its kill button sit side by side rather than one inside the
    other — see the comment in terminalDock.ts. The row takes the space; the
@@ -7103,7 +7113,15 @@ body.vscode-light .gh-label-chip {
 .assistant-empty-title { font-size: 15px; font-weight: 680; color: var(--vscode-foreground); }
 .assistant-empty-sub { font-size: 12.5px; line-height: 1.5; }
 
-.assistant-composer { border-top: 1px solid var(--app-border); padding: 12px 18px 14px; background: var(--app-panel); display: flex; flex-direction: column; gap: 10px; }
+.assistant-composer {
+  border-top: 1px solid var(--app-border);
+  /* The dock overlays the bottom of the view — see `.rb-foot` above. Without
+     this the composer, its Send button and every quick action sat behind an
+     open terminal, which is the one control the Assistant cannot do without. */
+  padding: 12px 18px calc(14px + var(--dock-reserve, 0px));
+  background: var(--app-panel);
+  display: flex; flex-direction: column; gap: 10px;
+}
 .assistant-quick { display: flex; flex-wrap: wrap; gap: 7px; }
 .assistant-chip {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
@@ -7422,10 +7440,16 @@ body.vscode-light .gh-label-chip {
 .rb-banner.warn { background: color-mix(in srgb, var(--status-warn) 16%, transparent); border: 1px solid color-mix(in srgb, var(--status-warn) 40%, transparent); }
 .rb-banner.error { background: color-mix(in srgb, var(--gs-danger) 15%, transparent); border: 1px solid color-mix(in srgb, var(--gs-danger) 40%, transparent); }
 
+/* Sticky to the bottom of the VIEW, which is not the bottom of the window when
+   the dock is open — it overlays the view area and publishes its height as
+   `--dock-reserve`. At `bottom: 0` this footer sat underneath it: the Rebase
+   view's Start button, its preview line and the "move stacked branches" toggle
+   were all behind an open terminal, with no scroll that could reach them and no
+   dock size that would reveal them. Same for the Assistant's composer below. */
 .rb-foot {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 12px 18px; margin-top: auto;
-  position: sticky; bottom: 0; background: var(--app-bg);
+  position: sticky; bottom: var(--dock-reserve, 0px); background: var(--app-bg);
   border-top: 1px solid var(--app-border);
 }
 .rb-preview { color: var(--app-muted); font-size: 11.5px; }

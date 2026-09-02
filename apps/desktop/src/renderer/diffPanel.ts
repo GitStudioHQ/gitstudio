@@ -48,6 +48,34 @@ let workerDiffBroken = false;
  * the 3-pane MergeView depending on whether the opened file is conflicted,
  * disposing the previous view so Monaco editors never leak.
  */
+/** Wire one conflict-bar button: disable while it runs, toast the outcome, and
+ *  tell the caller to repaint when it worked. */
+function mergeRun(
+  btn: HTMLButtonElement,
+  op: () => Promise<{ ok: boolean; message?: string }>,
+  okMsg: string,
+  onResolved?: () => void,
+): void {
+  btn.addEventListener("click", () => {
+    void (async () => {
+      btn.disabled = true;
+      try {
+        const r = await op();
+        if (r.ok) {
+          toast(okMsg, "success");
+          onResolved?.();
+        } else {
+          toast(r.message || "Could not resolve the conflict.", "error");
+        }
+      } catch (err) {
+        toast(String(err), "error");
+      } finally {
+        btn.disabled = false;
+      }
+    })();
+  });
+}
+
 export class DiffPanel {
   private diff?: DiffView;
   private merge?: MergeView;
@@ -450,7 +478,15 @@ export class DiffPanel {
    * merge editor was previously display-only; this is the write-back path.
    * `onResolved` fires after a successful resolve so the caller can refresh.
    */
-  showMerge(model: ConflictModel, onResolved?: () => void): void {
+  showMerge(
+    model: ConflictModel,
+    onResolved?: () => void,
+    /** This file has no text to merge — a binary, or a side that does not
+     *  exist. The take-side buttons still apply; the three-pane editor does
+     *  not, and mounting it over decoded bytes is how a conflicted PNG offered
+     *  you a line-by-line merge of two walls of U+FFFD. */
+    opts: { noText?: "binary" | "modify-delete" } = {},
+  ): void {
     this.teardown();
 
     const wrap = el("div", "merge-wrap");
@@ -480,6 +516,33 @@ export class DiffPanel {
     const surface = el("div", "merge-surface");
     wrap.append(bar, surface);
     this.container.replaceChildren(wrap);
+
+    if (opts.noText) {
+      // No merge editor at all — an explanation, and the two side buttons in
+      // the bar above it, which are the only moves that make sense here.
+      resolve.remove();
+      const note = el("div", "merge-notext list-empty is-none");
+      const badge = el("div", "list-empty-badge");
+      badge.appendChild(glyph(opts.noText === "binary" ? "file-binary" : "diff-removed"));
+      const h = el("div", "list-empty-title");
+      const d = el("div", "list-empty-desc");
+      if (opts.noText === "binary") {
+        h.textContent = "Conflicted binary file";
+        d.textContent =
+          `${model.path} is binary, so there is no line-by-line merge to make. Take one side, or ` +
+          `replace the file yourself and stage it.`;
+      } else {
+        h.textContent = "Changed on one side, deleted on the other";
+        d.textContent =
+          `${model.path} was edited in “${model.oursLabel}” and deleted in “${model.theirsLabel}” — or ` +
+          `the other way round. There is nothing to merge line by line: keep the file, or accept the ` +
+          `deletion.`;
+      }
+      note.append(badge, h, d);
+      surface.appendChild(note);
+      this.wireSides(ours, theirs, model, onResolved);
+      return;
+    }
 
     this.merge = new MergeView(surface);
     // How much of the merge is still undone. The result pane is deliberately
@@ -522,45 +585,38 @@ export class DiffPanel {
     // The surface starts at 0 height until Monaco lays out — nudge it.
     requestAnimationFrame(() => (this.merge as { layout?: () => void } | undefined)?.layout?.());
 
-    const run = async (
-      btn: HTMLButtonElement,
-      op: () => Promise<{ ok: boolean; message?: string }>,
-      okMsg: string,
-    ): Promise<void> => {
-      const prev = btn.textContent;
-      btn.disabled = true;
-      try {
-        const r = await op();
-        if (r.ok) {
-          toast(okMsg, "success");
-          onResolved?.();
-        } else {
-          toast(r.message || "Could not resolve the conflict.", "error");
-        }
-      } catch (err) {
-        toast(String(err), "error");
-      } finally {
-        btn.disabled = false;
-        void prev;
-      }
-    };
+    this.wireSides(ours, theirs, model, onResolved);
+    mergeRun(
+      resolve,
+      () =>
+        host.invoke("conflict:resolve", {
+          path: model.path,
+          content: this.merge?.getResultText() ?? model.result,
+        }),
+      "Resolved and staged.",
+      onResolved,
+    );
+  }
 
-    ours.addEventListener("click", () =>
-      run(ours, () => host.invoke("conflict:takeSide", { path: model.path, side: "ours" }), `Took “${model.oursLabel}”.`),
+  /** "Take <side>" on both merge layouts — the three-pane editor and the
+   *  no-text one, which has the same two moves available and nothing else. */
+  private wireSides(
+    ours: HTMLButtonElement,
+    theirs: HTMLButtonElement,
+    model: ConflictModel,
+    onResolved?: () => void,
+  ): void {
+    mergeRun(
+      ours,
+      () => host.invoke("conflict:takeSide", { path: model.path, side: "ours" }),
+      `Took “${model.oursLabel}”.`,
+      onResolved,
     );
-    theirs.addEventListener("click", () =>
-      run(theirs, () => host.invoke("conflict:takeSide", { path: model.path, side: "theirs" }), `Took “${model.theirsLabel}”.`),
-    );
-    resolve.addEventListener("click", () =>
-      run(
-        resolve,
-        () =>
-          host.invoke("conflict:resolve", {
-            path: model.path,
-            content: this.merge?.getResultText() ?? model.result,
-          }),
-        "Resolved and staged.",
-      ),
+    mergeRun(
+      theirs,
+      () => host.invoke("conflict:takeSide", { path: model.path, side: "theirs" }),
+      `Took “${model.theirsLabel}”.`,
+      onResolved,
     );
   }
 

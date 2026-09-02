@@ -666,8 +666,39 @@ export class GitBridge {
     if (!ctx) {
       return undefined;
     }
-    const workingText = (await readWorking(ctx, path)).text;
+    const work = await readWorking(ctx, path);
+    const workingText = work.text;
     const versions = await ctx.conflict.getConflictVersions(path, { workingText });
+    // WHICH STAGES the index actually holds. `git ls-files -u` lists one row
+    // per stage: 1 = the merge base, 2 = "ours", 3 = "theirs". A MODIFY/DELETE
+    // conflict — one side changed the file, the other removed it — has only
+    // one of 2 and 3, and the missing one comes back from `getConflictVersions`
+    // as an empty string. That is indistinguishable from a side that emptied
+    // the file, so the three-pane editor drew it as an ordinary content merge
+    // with one blank pane and never said the word "deleted" anywhere.
+    const staged = await ctx.process.run(["ls-files", "-u", "--", path]);
+    const stages = new Set(
+      staged.code === 0
+        ? staged.stdout
+            .split("\n")
+            .map((l) => /^\S+ \S+ (\d)\t/.exec(l)?.[1])
+            .filter((n): n is string => !!n)
+        : [],
+    );
+    const missingSide =
+      stages.size > 0 && !stages.has("2")
+        ? ("ours" as const)
+        : stages.size > 0 && !stages.has("3")
+          ? ("theirs" as const)
+          : undefined;
+    // A conflicted BINARY has no line-by-line merge to make. The panel opened
+    // the three-pane text editor over whatever the bytes decoded to.
+    const binary =
+      work.binary === true ||
+      versions.ours.includes("\0") ||
+      versions.theirs.includes("\0") ||
+      replacementRatio(versions.ours) > 0.3 ||
+      replacementRatio(versions.theirs) > 0.3;
     // WHICH operation, because it decides what the two sides MEAN. During a
     // rebase git replays your commits onto the upstream, so stage 2 ("ours") is
     // the UPSTREAM and stage 3 ("theirs") is the commit of yours being replayed
@@ -684,6 +715,8 @@ export class GitBridge {
       ours: versions.ours,
       theirs: versions.theirs,
       result: workingText,
+      ...(binary ? { binary: true } : {}),
+      ...(missingSide ? { missingSide } : {}),
       ...sideLabels(op.kind),
     };
   }
@@ -757,9 +790,23 @@ export class GitBridge {
       // match any file(s) known to git".
       const st = await ctx.process.run(["status", "--porcelain=v1", "-z", "--", path]);
       const untracked = st.code === 0 && st.stdout.startsWith("??");
-      return untracked
-        ? ctx.staging.cleanFiles([path])
-        : ctx.staging.discardChanges(path);
+      if (untracked) return ctx.staging.cleanFiles([path]);
+      // An UNMERGED path is a third case. `git checkout -- <path>` refuses it
+      // outright — "error: path 'x' is unmerged" — so Discard on a conflicted
+      // row asked a frightening question and then failed with raw git stderr,
+      // leaving the reader unsure whether anything had happened. `--merge`
+      // recreates the conflict from the index, which is what "discard my
+      // changes to this file" means while a merge is in progress: your edits
+      // go, the conflict comes back, and you can start it again.
+      const conflicted =
+        st.code === 0 && parsePorcelainStatus(st.stdout).some((f) => f.conflicted);
+      if (conflicted) {
+        const r = await ctx.process.run(["checkout", "--merge", "--", path]);
+        return r.code === 0
+          ? { ok: true, changed: true }
+          : { ok: false, changed: false, expected: true, message: r.stderr.trim() };
+      }
+      return ctx.staging.discardChanges(path);
     });
   }
   /**

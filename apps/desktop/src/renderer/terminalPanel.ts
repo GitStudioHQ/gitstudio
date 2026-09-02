@@ -31,6 +31,11 @@ export class TerminalPanel {
   /** Unsubscribe handles for the host.on subscriptions. */
   private offData: (() => void) | null = null;
   private offExit: (() => void) | null = null;
+  /** The shell has exited. Its tab is not a live terminal any more, and
+   *  anything typed into it has nowhere to go. */
+  private exited = false;
+  /** Told when the shell exits, so the tab can stop claiming to be running. */
+  onExit: (() => void) | null = null;
   /** Set by dispose() so an in-flight open() can bail out (and not leak the PTY). */
   private disposed = false;
 
@@ -137,12 +142,24 @@ export class TerminalPanel {
     });
     this.offExit = host.on("terminal:exit", (m) => {
       if (m.id === this.id) {
-        term.write("\r\n[process exited]\r\n");
+        // Say it, and MEAN it. This wrote one line of text and changed nothing
+        // else: the tab kept its live label, the cursor kept blinking, and
+        // `onData` below kept posting every keystroke to a PTY that was gone —
+        // so a dead shell looked exactly like a working one and silently ate
+        // everything typed into it, with no error and no way to tell.
+        this.exited = true;
+        term.write("\r\n\x1b[2m[process exited — this shell is closed]\x1b[0m\r\n");
+        // A dead terminal takes no input. Without this the caret still blinks
+        // in a box that cannot receive anything.
+        term.options.disableStdin = true;
+        term.options.cursorBlink = false;
+        this.onExit?.();
       }
     });
 
     term.onData((d) => {
-      void host.invoke("terminal:write", { id: this.id!, data: d });
+      if (this.exited || !this.id) return;
+      void host.invoke("terminal:write", { id: this.id, data: d });
     });
   }
 
@@ -165,6 +182,11 @@ export class TerminalPanel {
     } catch {
       /* container hidden/zero-sized — ignore until the next layout() */
     }
+  }
+
+  /** Has the shell behind this panel exited? */
+  isExited(): boolean {
+    return this.exited;
   }
 
   /** Focus the xterm textarea. */
