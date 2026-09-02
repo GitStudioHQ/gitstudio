@@ -1,0 +1,37 @@
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_b03aef94cf3bd7 329-336
+  s_26f5e669d3043c::t_f8cfa1df88bfa5 503
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_0c373661c71297 10182-10193
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_0c373661c71297 1665-1676,1682-1700
+  s_26f5e669d3043c::t_51b9ec300f4883 1359-1368,1374
+  s_26f5e669d3043c::t_1b453b51b4206d 2113-2242
+  s_26f5e669d3043c::t_0b9205f8c5a2a0 1310-1311,1712-1719
+  s_26f5e669d3043c::t_a0683758035c16 1469-1485,1487-1494,1496-1507,1509-1517,1519-1534,1536-1571
+  s_26f5e669d3043c::t_e122729b598a53 120
+  s_26f5e669d3043c::t_8dfbc2a2d0bce0 1440-1445,1581-1583,1588-1589,1591-1606,1608-1609,1614-1617,1623-1628,1631,1636-1640
+  s_26f5e669d3043c::t_d7050a7aabe685 1590,1677-1681
+  s_26f5e669d3043c::t_7657c07829fa6b 80,86,1486,1495,1508,1518,1535
+  s_26f5e669d3043c::t_452b8b6b6bf739 417-418,1392,1395-1428,1711,2287,2348
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_7103d36fb59f42 111-114
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_7103d36fb59f42 5436-5566
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bd92ccd077f05171975a2dc32cb26d6159c089fb",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
