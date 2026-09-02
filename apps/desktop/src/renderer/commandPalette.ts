@@ -8,7 +8,7 @@
 // Self-contained overlay (same contract as peeks/modals: Esc, backdrop,
 // focus). The App supplies data + actions through PaletteProviders.
 
-import { el, span, glyph } from "./ui";
+import { el, span, glyph, closeMenu } from "./ui";
 import { createSearchScheduler } from "./searchDebounce";
 import { registerLayer, holdBackground } from "./overlays";
 
@@ -85,7 +85,19 @@ export function fuzzyScore(query: string, text: string): number {
 
 export function openCommandPalette(providers: PaletteProviders): void {
   closeCommandPalette();
-  const prevFocus = document.activeElement as HTMLElement | null;
+  // A dropdown open underneath would be STRANDED: openMenu's own Escape
+  // handler and the palette's both listen on `document`, so one Escape closed
+  // both layers at once and dropped focus on <body> — and until then a menu
+  // hung over the palette's scrim, belonging to nothing on screen. The palette
+  // is a new top layer; the menu the user was in is finished.
+  // Where to put the keyboard back when the palette closes. If a menu is open,
+  // `document.activeElement` is one of its rows — which is about to be
+  // destroyed — so remember the control that OPENED it instead. Without this,
+  // ⌘K over a dropdown ended with focus on <body> and the next Tab restarting
+  // at the top of the window.
+  const openAnchor = document.querySelector<HTMLElement>('[aria-expanded="true"]');
+  closeMenu();
+  const prevFocus = openAnchor ?? (document.activeElement as HTMLElement | null);
 
   const overlay = el("div", "cmdk-overlay");
   overlay.setAttribute("role", "dialog");

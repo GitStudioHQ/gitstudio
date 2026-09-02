@@ -863,6 +863,13 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   };
   /** Currently visible (not filtered-out) menuitem rows. */
   const visible = (): HTMLElement[] => rows.filter((r) => !r.hidden);
+  /** The caret is in a text field, so the text field owns the caret keys. */
+  const typingIn = (t: EventTarget | null): boolean => {
+    const e2 = t as HTMLElement | null;
+    return (
+      !!e2 && (e2.tagName === "INPUT" || e2.tagName === "TEXTAREA" || e2.isContentEditable === true)
+    );
+  };
   const focusAt = (i: number): void => {
     const vis = visible();
     if (!vis.length) return;
@@ -886,10 +893,16 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       focusAt(cur < 0 ? vis.length - 1 : cur - 1);
-    } else if (e.key === "Home") {
+    } else if (e.key === "Home" && !typingIn(e.target)) {
+      // NOT while the caret is in the filter field. A searchable menu (more
+      // than 8 rows — the branch switcher, the label pickers) puts focus in a
+      // text input, where Home and End mean "start / end of the line". This
+      // handler claimed them unconditionally and yanked focus onto a row, so
+      // the very next Enter activated it — which in the branch switcher is a
+      // checkout.
       e.preventDefault();
       focusAt(0);
-    } else if (e.key === "End") {
+    } else if (e.key === "End" && !typingIn(e.target)) {
       e.preventDefault();
       focusAt(vis.length - 1);
     } else if ((e.key === "Enter" || (e.key === " " && cur >= 0))) {

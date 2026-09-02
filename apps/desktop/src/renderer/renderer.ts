@@ -72,7 +72,7 @@ import {
 } from "./ui";
 import type { MenuItem } from "./ui";
 import { plural } from "./textFit";
-import { dismissLayers } from "./overlays";
+import { dismissLayers, pageOwnsKeys } from "./overlays";
 import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
@@ -387,6 +387,12 @@ class App {
       if (!this.currentRepo) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // A PAGE-LEVEL key, so any open layer outranks it — including the sheet
+      // itself. Skipping the text-field check alone let "?" open a second
+      // identical sheet over the first (its own first focusable is a button,
+      // not a field), and a third, and a fourth — each needing its own Escape.
+      // It also fired straight through an open dropdown or dialog.
+      if (!pageOwnsKeys()) return;
       e.preventDefault();
       openShortcutsHelp();
     });

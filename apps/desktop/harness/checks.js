@@ -4759,6 +4759,74 @@
     },
 
     /**
+     * One key press, one layer — and the keyboard is never dropped.
+     *
+     * Three ways the app lost track of its own floating layers:
+     * · Home and End inside a searchable menu's FILTER FIELD were claimed by
+     *   the menu and yanked focus onto a row, so the next Enter activated it —
+     *   in the branch switcher, a checkout.
+     * · ⌘K over an open dropdown left the menu on screen belonging to nothing,
+     *   and one Escape then closed both layers and dropped focus on <body>.
+     * · "?" only checked for a text field, and the shortcuts sheet's first
+     *   focusable is a button — so "?" opened a second identical sheet over the
+     *   first, and a third, each needing its own Escape.
+     */
+    "one-key-press-closes-one-layer": async (f) => {
+      const c = check(f);
+      const K = (key, extra = {}) =>
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...extra }),
+        );
+
+      // ? does not stack.
+      K("?");
+      await settle(500);
+      c.eq($$(".modal-card").length, 1, "? opens the shortcuts sheet");
+      K("?");
+      await settle(400);
+      K("?");
+      await settle(400);
+      c.eq($$(".modal-card").length, 1, "and pressing it again does not open a second one");
+      K("Escape");
+      await settle(400);
+      c.eq($$(".modal-card").length, 0, "one Escape closes it");
+
+      // Home in a menu's filter belongs to the filter.
+      const facet = $$(".gh-facet-btn")[0];
+      c.ok(!!facet, "the view has a menu with a filter");
+      if (!facet) return;
+      facet.focus();
+      facet.click();
+      await settle(500);
+      const input = $(".dropdown input");
+      if (input) {
+        input.focus();
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }),
+        );
+        await settle(250);
+        c.ok(
+          document.activeElement === input,
+          `Home stays in the filter field (went to ${document.activeElement?.tagName})`,
+        );
+      }
+
+      // ⌘K takes over cleanly and hands the keyboard back.
+      c.ok(!!$(".dropdown"), "the menu is open");
+      K("k", { metaKey: true });
+      await settle(700);
+      c.ok(!$(".dropdown"), "opening the palette closes the menu underneath it");
+      c.ok(!!$(".cmdk-card"), "and the palette is up");
+      K("Escape");
+      await settle(600);
+      c.ok(!$(".cmdk-card"), "one Escape closes the palette");
+      c.ok(
+        document.activeElement !== document.body,
+        "and the keyboard goes back to the control that opened the menu, not to <body>",
+      );
+    },
+
+    /**
      * A label picker batches its ticks, and Escape discards them.
      *
      * The issue's picker batched correctly but committed on EVERY dismissal,
