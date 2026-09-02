@@ -35,6 +35,9 @@ interface NavStackImpl {
   prev: () => NavEntry | undefined;
   /** Name the CURRENT entry, once the page knows its own identity. */
   label: (label: string) => void;
+  /** Amend the CURRENT entry's target, for a page whose identity moves within
+   *  itself. Does NOT navigate. */
+  retarget: (patch: Record<string, unknown>) => void;
 }
 
 let impl: NavStackImpl | undefined;
@@ -65,6 +68,21 @@ export function navPop(): boolean {
  */
 export function setPageLabel(label: string): void {
   impl?.label(label);
+}
+
+/**
+ * Record where WITHIN this page the reader now is, without navigating.
+ *
+ * Some pages hold several things and let you move between them — the job log
+ * has one route for a whole run and a rail of jobs inside it. The history entry
+ * kept whichever job the page was ENTERED with, and `refreshAll` re-routes to
+ * `navHistory[navPos]`, so any refresh — a rail poll, the file watcher, a
+ * window focus — silently swapped the reader onto a different job's output,
+ * mid-read, with only the crumb changing to say so. Back would return them
+ * there too.
+ */
+export function setPageTarget(patch: Record<string, unknown>): void {
+  impl?.retarget(patch);
 }
 
 /** Human name for a view id, for a back button with nothing better to say. */

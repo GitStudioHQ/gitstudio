@@ -358,6 +358,21 @@ export class OutputsPanel {
   }
 
   /** Clear the log. */
+  /** Called when the Output tab becomes visible: land on the NEWEST command.
+   *
+   *  The panel is hidden with `display: none` while another tab is up, so its
+   *  scroller has no height and `scrollTop` cannot be set — every log entry
+   *  that arrived meanwhile left it pinned at 0. Opening Output therefore
+   *  showed the OLDEST command in the session, and the next git command to
+   *  finish hit `if (this.stick)` and jerked the pane a thousand pixels to the
+   *  bottom, unasked.
+   *
+   *  A log is read from its tail; `stick` already says the reader has not
+   *  moved away from it. */
+  reveal(): void {
+    if (this.stick) this.scroller.scrollTop = this.scroller.scrollHeight;
+  }
+
   clear(): void {
     this.list.replaceChildren();
     this.ctx = null;

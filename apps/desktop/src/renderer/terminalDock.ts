@@ -445,6 +445,9 @@ export class TerminalDock {
 
   /** Open the active shell's PTY (lazily) and re-fit it; focus the active chat. */
   private revealActive(): void {
+    // The Output panel is display:none while another tab is up, so nothing that
+    // arrived meanwhile could position its scroller — see `OutputsPanel.reveal`.
+    if (this.active === "output") this.outputs.reveal();
     if (this.active === "terminal") {
       const t = this.terminals.find((x) => x.id === this.activeTermId);
       if (t) this.openTerm(t);

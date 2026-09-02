@@ -22,7 +22,7 @@ import { el, span, glyph, cleanErr, errorState, skeletonList } from "../ui";
 import { toast } from "../dialogs";
 import { detailPage, type SectionTarget, type SectionNav } from "./common";
 import { createLogPane, type LogPane } from "../logView";
-import { setPageLabel } from "../navStack";
+import { setPageLabel, setPageTarget } from "../navStack";
 import type { WorkflowRunDetail, WorkflowJob } from "../../shared/ipc";
 
 /** A job's state as one glyph, so the rail scans vertically. */
@@ -207,6 +207,9 @@ export async function renderJobLog(
 
   const openJob = async (j: WorkflowJob): Promise<void> => {
     currentId = j.id;
+    // Tell the history WHICH job, or a refresh re-routes with the job this page
+    // was entered on and swaps the reader's output out from under them.
+    setPageTarget({ jobId: j.id });
     setCrumb(j.name);
     for (const [id, row] of rows) {
       const on = id === j.id;

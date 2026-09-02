@@ -1019,6 +1019,10 @@ class App {
         const cur = this.navHistory[this.navPos];
         if (cur) cur.label = label;
       },
+      retarget: (patch) => {
+        const cur = this.navHistory[this.navPos];
+        if (cur) cur.target = { ...(cur.target ?? {}), ...patch } as SectionTarget;
+      },
     });
   }
 

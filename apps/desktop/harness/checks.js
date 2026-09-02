@@ -7302,6 +7302,39 @@
       }
     },
 
+    // The job log has one route for a whole RUN and a rail of jobs inside it.
+    // The history entry kept whichever job the page was entered with, and
+    // refreshAll re-routes to that entry — so any refresh silently swapped the
+    // reader onto a different job's output, mid-read.
+    "a-refresh-keeps-you-on-the-job-you-were-reading": async (f) => {
+      const c = check(f);
+      const rows = $$(".joblog-job");
+      c.ok(rows.length > 1, "the run has more than one job");
+      if (rows.length < 2) return;
+
+      const other = rows.find((r) => !r.classList.contains("is-current"));
+      c.ok(!!other, "and one of them is not the one that opened");
+      if (!other) return;
+      const wanted = text(other.querySelector(".joblog-job-name")) || "";
+      other.click();
+      await settle(1400);
+      c.ok(
+        $(".joblog-job.is-current") === other,
+        `the rail moved to “${wanted}”`,
+      );
+
+      // Something touches the disk — the file watcher fires refreshAll.
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(2600);
+
+      const nowOn = text($(".joblog-job.is-current .joblog-job-name")) || "";
+      c.eq(nowOn, wanted, "and a refresh leaves you on it");
+      c.ok(
+        (text($(".det-crumb")) || "").includes(wanted),
+        "with the crumb still naming it",
+      );
+    },
+
     // "Stage lines" and the whitespace toggle were enabled by the click that
     // SELECTED the row, before the diff had even been asked for. Over a binary,
     // a conflict, a truncated file or a failed read they stayed lit above a
