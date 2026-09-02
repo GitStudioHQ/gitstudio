@@ -5369,8 +5369,8 @@ class App {
     });
     const wsBtn = el("button", "topbar-icon dc-ws") as HTMLButtonElement;
     wsBtn.disabled = true;
-    wsBtn.title = "Ignore whitespace in the diff";
-    wsBtn.setAttribute("aria-label", "Ignore whitespace");
+    wsBtn.title = "Ignore leading and trailing whitespace";
+    wsBtn.setAttribute("aria-label", "Ignore leading and trailing whitespace");
     wsBtn.appendChild(glyph("whitespace"));
     wsBtn.setAttribute("aria-pressed", "false");
     // A toggle you cannot read is a toggle you cannot trust: this one was an
@@ -5380,15 +5380,15 @@ class App {
       wsBtn.classList.toggle("is-on", whitespaceIgnored);
       wsBtn.setAttribute("aria-pressed", String(whitespaceIgnored));
       wsBtn.title = whitespaceIgnored
-        ? "Whitespace is ignored in the diff — click to show it"
-        : "Ignore whitespace in the diff";
+        ? "Leading and trailing whitespace is ignored — click to show it"
+        : "Ignore leading and trailing whitespace";
       wsBtn.setAttribute("aria-label", wsBtn.title);
     };
     syncWs();
     wsBtn.addEventListener("click", () => {
       whitespaceIgnored = !whitespaceIgnored;
       syncWs();
-      diffPanel.setRenderOptions({ whitespace: whitespaceIgnored ? "all" : "none" });
+      diffPanel.setRenderOptions({ whitespace: whitespaceIgnored ? "trailing" : "none" });
     });
     const refreshBtn = el("button", "topbar-icon");
     refreshBtn.title = "Refresh";

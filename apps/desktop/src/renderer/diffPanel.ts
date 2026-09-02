@@ -10,6 +10,7 @@ import type { TickRow } from "@gitstudio/webview-ui/stageTicks";
 import { selectedLineNumbers } from "./selectionLines";
 import { MergeView } from "@gitstudio/webview-ui/mergeView";
 import { languageForFile } from "@gitstudio/webview-ui/language";
+import { ignoreTrimWhitespaceFor } from "@gitstudio/engine/lineDiff";
 import { ensureNativeTheme, nativeFontOptions } from "@gitstudio/webview-ui/theme";
 import type { DiffInitPayload, MergeInitPayload } from "@gitstudio/host-bridge/protocol";
 import type { ConflictModel, FileDiff } from "../shared/ipc";
@@ -88,7 +89,7 @@ export class DiffPanel {
   private seg?: HTMLElement;
   /** Whitespace / granularity, so a newly built editor starts where the last
    *  one left off — and so BOTH modes answer to the same setting. */
-  private renderOpts: { whitespace: "none" | "all"; showInner?: boolean } = { whitespace: "none" };
+  private renderOpts: { whitespace: "none" | "trailing"; showInner?: boolean } = { whitespace: "none" };
   /** The last-shown file, so the mode toggle can re-render it. */
   private lastFile?: FileDiff;
   /** The mode actually on screen. Diverges from the stored preference whenever
@@ -453,7 +454,14 @@ export class DiffPanel {
       // default `whitespace: "none"` to FALSE. So a trailing-whitespace-only
       // change showed in Split and vanished in Inline — the same file, the same
       // click, one view showing a diff and the other showing none.
-      ignoreTrimWhitespace: this.renderOpts.whitespace === "all",
+      //
+      // The toggle sends "trailing", never "all", for the same reason. Under
+      // "all" the engine normalizes internal whitespace runs before diffing,
+      // and Monaco has no equivalent — its only whitespace option is this flag.
+      // So "all" made the two views disagree again, the other way round: Split
+      // called `a  b` → `a b` unchanged while Inline drew it as a change. Both
+      // sides now run the same vscode-diff computer with the same flag set.
+      ignoreTrimWhitespace: ignoreTrimWhitespaceFor(this.renderOpts.whitespace),
       readOnly: true,
       automaticLayout: true,
       minimap: { enabled: false },
@@ -773,11 +781,11 @@ export class DiffPanel {
    * whitespace toggle silently did nothing in unified mode — and the two modes
    * then disagreed about what counted as a change.
    */
-  setRenderOptions(opts: { whitespace?: "none" | "all"; showInner?: boolean }): void {
+  setRenderOptions(opts: { whitespace?: "none" | "trailing"; showInner?: boolean }): void {
     this.renderOpts = { ...this.renderOpts, ...opts };
     this.diff?.setRenderOptions(opts);
     if (this.inline && opts.whitespace !== undefined) {
-      this.inline.updateOptions({ ignoreTrimWhitespace: opts.whitespace === "all" });
+      this.inline.updateOptions({ ignoreTrimWhitespace: ignoreTrimWhitespaceFor(opts.whitespace) });
     }
   }
 

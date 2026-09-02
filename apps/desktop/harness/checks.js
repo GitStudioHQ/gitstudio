@@ -243,7 +243,89 @@
       }
     },
 
-    // ── the log pane ─────────────────────────────────────────────────────────
+    /**
+     * The whitespace toggle has to MEAN something, and mean the same thing in
+     * both diff renderings. Split computes in-process through the engine;
+     * Inline computes in Monaco's own worker, whose only whitespace knob is
+     * `ignoreTrimWhitespace`. The two used to derive that flag from the app's
+     * toggle separately and drifted apart, so the same file with the same
+     * setting showed a change in one view and none in the other.
+     *
+     * This drives the half that is measurable here — Monaco paints its diff
+     * decorations on a frame this harness starves, so the unified side is
+     * pinned by `packages/engine/test/whitespaceRule.test.ts` instead, where
+     * both surfaces now read the rule from one exported function.
+     *
+     * `?ws=1` adds a file whose only change is a re-indent and some trailing
+     * spaces; `.jb-stage-tick` is one per change block and is plain DOM.
+     */
+    "whitespace-toggle-agrees-across-diff-views": async (f) => {
+      const c = check(f);
+      const ws = $(".dc-ws");
+      c.ok(!!ws, "the toolbar has a whitespace toggle");
+      if (!ws) return;
+      c.eq(ws.disabled, false, "and a file is open, so it is live");
+      c.ok(
+        /leading and trailing/i.test(ws.title),
+        `the toggle must say what it actually ignores (title: “${ws.title}”)`,
+      );
+
+      const ticks = () => $$(".jb-stage-tick").length;
+      c.ok(ticks() > 0, "with whitespace shown, the re-indent is a change");
+
+      ws.click();
+      await settle(1600);
+      c.eq(ws.getAttribute("aria-pressed"), "true", "the toggle reads as on");
+      c.eq(ticks(), 0, "with it ignored, a whitespace-only file has no changes left");
+
+      ws.click();
+      await settle(1600);
+      c.ok(ticks() > 0, "and turning it back off brings the change back");
+    },
+
+    /**
+     * The case that separates the two rules the app could have picked.
+     *
+     * This file's ONLY change is a doubled space in the middle of a line. The
+     * engine's "all" mode collapses whitespace runs and would call it
+     * unchanged; Monaco has no such mode and will always draw it as a change.
+     * So if ignoring whitespace makes this file look clean in the split view,
+     * the split view and the unified view are once again describing the same
+     * file differently — which is the bug, in the other direction.
+     */
+    "ignoring-whitespace-stops-at-the-ends-of-a-line": async (f) => {
+      const c = check(f);
+      const ws = $(".dc-ws");
+      c.ok(!!ws, "the toolbar has a whitespace toggle");
+      if (!ws) return;
+      const ticks = () => $$(".jb-stage-tick").length;
+      c.ok(ticks() > 0, "a doubled space inside a line is a change");
+      ws.click();
+      await settle(1600);
+      c.ok(
+        ticks() > 0,
+        "and stays one when whitespace is ignored — Monaco cannot hide it, so neither may we",
+      );
+    },
+
+    /**
+     * The other half of the same rule: ignoring whitespace must not swallow a
+     * real edit. Without this, the check above passes on a toggle that simply
+     * throws the diff away.
+     */
+    "ignoring-whitespace-keeps-real-changes": async (f) => {
+      const c = check(f);
+      const ws = $(".dc-ws");
+      c.ok(!!ws, "the toolbar has a whitespace toggle");
+      if (!ws) return;
+      const ticks = () => $$(".jb-stage-tick").length;
+      c.ok(ticks() > 0, "the file has a real change");
+      ws.click();
+      await settle(1600);
+      c.ok(ticks() > 0, "which survives ignoring whitespace");
+    },
+
+    // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);
       const lines = $$(".log-line");

@@ -24,6 +24,24 @@ const BASE_DIFF_OPTIONS = {
   computeMoves: false,
 };
 
+/**
+ * Whether a diff run in this mode should ignore leading/trailing whitespace.
+ *
+ * Exported because a second implementation depends on the answer: the desktop
+ * app draws its split view through this module but its unified view through
+ * Monaco's own diff worker, whose only whitespace knob is the identically named
+ * `ignoreTrimWhitespace`. When the two derived that flag separately they drifted
+ * — the same file, the same toggle, one view showing a change and the other
+ * showing none. They now read it from here.
+ *
+ * Note "all" is NOT expressible in Monaco: it additionally normalizes internal
+ * whitespace runs (below), which no editor option does. Any surface that has to
+ * agree with Monaco must offer "trailing", not "all".
+ */
+export function ignoreTrimWhitespaceFor(mode: WhitespaceMode): boolean {
+  return mode !== "none";
+}
+
 export function splitLines(text: string): string[] {
   return text.split("\n");
 }
@@ -53,7 +71,7 @@ export function diffSide(
 
   const diffOptions = {
     ...BASE_DIFF_OPTIONS,
-    ignoreTrimWhitespace: whitespace !== "none",
+    ignoreTrimWhitespace: ignoreTrimWhitespaceFor(whitespace),
   };
 
   const { changes } = linesDiffComputers

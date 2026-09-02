@@ -312,6 +312,16 @@
     { path: "apps/desktop/src/renderer/renderer.ts", status: "M", staged: true },
     { path: "apps/desktop/src/renderer/renderer.ts", status: "M", staged: false },
   ];
+  // ?ws=1 adds a file whose ONLY change is whitespace — one re-indented line
+  // and one with trailing spaces. Split computes in-process and Inline computes
+  // in Monaco's worker, so the whitespace toggle is the one setting the two
+  // implementations can read differently, and nothing here could see them
+  // disagree without such a file. It is behind a switch because every other
+  // check counts the rows in this list.
+  if (params.get("ws")) {
+    changedFiles.push({ path: "packages/engine/src/spacing.ts", status: "M", staged: false });
+    changedFiles.push({ path: "packages/engine/src/spacing-inner.ts", status: "M", staged: false });
+  }
 
   /** Serial for the PTY ids `terminal:create` hands out. */
   let ptySeq = 0;
@@ -1230,6 +1240,41 @@
   dynamic["file:diff"] = (req) => {
     const path = (req && req.path) || "apps/desktop/src/renderer/views/issues.ts";
     const name = path.split("/").pop() || path;
+    // Whitespace-ONLY: line 2 is re-indented, line 3 gains trailing spaces.
+    // With the toggle off both views must show two changed lines; with it on
+    // both must show none. Any other combination means the split view and the
+    // unified view are running different rules over the same file.
+    // The DISCRIMINATING file: its only change is a doubled space INSIDE a
+    // line. Monaco cannot ignore that — `ignoreTrimWhitespace` reaches only the
+    // ends of a line — so a split view that hides it is a split view that
+    // disagrees with the unified view about the same file. This is the fixture
+    // that fails if the toggle ever sends the engine's "all" mode again.
+    if (/spacing-inner\.ts$/.test(path)) {
+      const left = "export function pad(n: number): string {\n  return \" \".repeat(n);\n}\n";
+      const right = "export function pad(n: number): string {\n  return  \" \".repeat(n);\n}\n";
+      return {
+        path,
+        leftLabel: `HEAD ${path}`,
+        rightLabel: `Working Tree ${path}`,
+        leftText: left,
+        rightText: right,
+        conflicted: false,
+        indexText: left,
+      };
+    }
+    if (/spacing\.ts$/.test(path)) {
+      const left = "export function pad(n: number): string {\n  return \" \".repeat(n);\n}\n";
+      const right = "export function pad(n: number): string {\n      return \" \".repeat(n);\n}   \n";
+      return {
+        path,
+        leftLabel: `HEAD ${path}`,
+        rightLabel: `Working Tree ${path}`,
+        leftText: left,
+        rightText: right,
+        conflicted: false,
+        indexText: left,
+      };
+    }
     if (/\.(png|jpe?g|gif|ico|pdf|zip|dmg|vsix|woff2?)$/i.test(path)) {
       return {
         path,
