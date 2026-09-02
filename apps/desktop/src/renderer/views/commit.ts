@@ -33,7 +33,7 @@ import {
   copyText,
   openMenu,
 } from "../ui";
-import { detailPage, type SectionTarget } from "./common";
+import { detailPage, disposeOnDetach, type SectionTarget } from "./common";
 import { confirmDialog, promptInline } from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { DiffPanel } from "../diffPanel";
@@ -299,6 +299,17 @@ export async function renderCommit(
     main.appendChild(split);
 
     const diff = new DiffPanel(pane);
+    // `routeView` disposes only `activeMonacoView`, and this panel was never
+    // registered there — so every visit to a commit page left a Monaco diff
+    // editor behind, with its two models and their tokenizers, for the life of
+    // the window. Read ten commits and ten of them are still resident.
+    //
+    // No check guards this: the leak is in the editor OBJECTS, and `monaco` is
+    // not exposed to the page, so a probe can only count `.monaco-editor` DOM
+    // nodes — which go away when the host's children are replaced whether
+    // anything was disposed or not. Counting them reports success on the
+    // broken build, which is worse than not checking at all.
+    disposeOnDetach(view, () => diff.dispose());
     diff.showEmpty("Select a file to see what changed.");
     // The parent this commit is diffed against. A root commit has none, and
     // git's empty-tree hash is the standard stand-in.

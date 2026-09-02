@@ -61,6 +61,7 @@ import {
   searchField,
   secRow,
   sectionList,
+  disposeOnDetach,
   type GhGate,
   type SectionRender,
   type SectionNav,
@@ -133,11 +134,12 @@ const replyDrafts = new Map<string, string>();
 //   • when our surface is detached from the DOM (navigating to another section) —
 //     caught by a MutationObserver so the editor never leaks.
 let prDiffPanel: DiffPanel | undefined;
-let prDiffDetachObs: MutationObserver | undefined;
+/** Cancels the detach watch below. */
+let stopPrDiffWatch: (() => void) | undefined;
 
 function disposePrDiff(): void {
-  prDiffDetachObs?.disconnect();
-  prDiffDetachObs = undefined;
+  stopPrDiffWatch?.();
+  stopPrDiffWatch = undefined;
   prDiffPanel?.dispose();
   prDiffPanel = undefined;
 }
@@ -155,14 +157,13 @@ function disposePrDiff(): void {
  * that panel is still the live one.
  */
 function watchDiffDetach(surface: HTMLElement, panel: DiffPanel): void {
-  prDiffDetachObs?.disconnect();
-  const obs = new MutationObserver(() => {
-    if (surface.isConnected) return;
+  stopPrDiffWatch?.();
+  stopPrDiffWatch = disposeOnDetach(surface, () => {
+    // Only the panel this watch was created for, and only while it is still the
+    // live one — see the note above.
     if (prDiffPanel !== panel) return;
     disposePrDiff();
   });
-  obs.observe(document.body, { childList: true, subtree: true });
-  prDiffDetachObs = obs;
 }
 
 /** The PR's display state: merged beats closed beats draft beats open. */

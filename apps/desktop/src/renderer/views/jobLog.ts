@@ -20,7 +20,7 @@
 import { host } from "../bridge";
 import { el, span, glyph, cleanErr, errorState, skeletonList } from "../ui";
 import { toast } from "../dialogs";
-import { detailPage, type SectionTarget, type SectionNav } from "./common";
+import { detailPage, disposeOnDetach, type SectionTarget, type SectionNav } from "./common";
 import { createLogPane, type LogPane } from "../logView";
 import { setPageLabel, setPageTarget } from "../navStack";
 import type { WorkflowRunDetail, WorkflowJob } from "../../shared/ipc";
@@ -132,8 +132,8 @@ export async function renderJobLog(
 
   const rows = new Map<number, HTMLElement>();
   let session: Session | undefined;
-  /** Watches for this page leaving the document — see `watchPageDetach`. */
-  let detachObs: MutationObserver | undefined;
+  /** Cancels the detach watch — see `watchPageDetach`. */
+  let stopDetachWatch: (() => void) | undefined;
 
   /** Status as of the freshest poll — the tail asks before every delta. */
   const statusOf = (id: number): string => jobs.find((j) => j.id === id)?.status ?? "";
@@ -190,19 +190,15 @@ export async function renderJobLog(
    * reason: nothing else fires on the way out of a section view.
    */
   const watchPageDetach = (): void => {
-    detachObs?.disconnect();
-    const obs = new MutationObserver(() => {
-      if (view.isConnected) return;
-      obs.disconnect();
-      detachObs = undefined;
+    stopDetachWatch?.();
+    stopDetachWatch = disposeOnDetach(view, () => {
+      stopDetachWatch = undefined;
       if (session) {
         session.alive = false;
         session.pane.destroy();
         session = undefined;
       }
     });
-    obs.observe(document.body, { childList: true, subtree: true });
-    detachObs = obs;
   };
 
   const openJob = async (j: WorkflowJob): Promise<void> => {

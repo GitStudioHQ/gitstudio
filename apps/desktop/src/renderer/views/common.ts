@@ -1706,3 +1706,34 @@ export function checkStateLabel(state: string): string {
   };
   return map[state] ?? state.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 }
+
+/**
+ * Dispose something when `node` leaves the document.
+ *
+ * A section view has no teardown hook: `routeView` disposes exactly one thing —
+ * `activeMonacoView` — and a view that does not register there leaks whatever
+ * it built. That has now cost three separate leaks (the PR diff panel, the job
+ * log's pane and its 200,000-line document, and the commit page's Monaco diff
+ * editor, one per visit), each fixed with its own copy of this observer. This
+ * is that copy, once.
+ *
+ * Watching the whole document is deliberate: a view is removed by having its
+ * host's children replaced, which fires no event on the view itself. The
+ * observer disconnects the moment it fires, so it costs one callback per DOM
+ * mutation only until its node goes.
+ */
+export function disposeOnDetach(node: HTMLElement, dispose: () => void): () => void {
+  let done = false;
+  const stop = (): void => {
+    if (done) return;
+    done = true;
+    obs.disconnect();
+  };
+  const obs = new MutationObserver(() => {
+    if (node.isConnected) return;
+    stop();
+    dispose();
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  return stop;
+}
