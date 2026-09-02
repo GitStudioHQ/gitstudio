@@ -744,7 +744,13 @@ export class MergeView {
     const lineCount = model.getLineCount();
     let range: monaco.Range;
     let text: string;
-    if (span.endExclusive > lineCount) {
+    // An EMPTY result document is always at end-of-file, whatever the span
+    // says. Monaco reports one line for "", so `endExclusive > lineCount` is
+    // false for a single-block accept and the non-EOF branch appends a newline
+    // — writing a trailing blank line the accepted side never had. It is the
+    // ordinary case for a conflict with no common ancestor (git's AA/UA/AU),
+    // where the seed is the empty base.
+    if (span.endExclusive > lineCount || model.getValueLength() === 0) {
       // Block reaches end-of-file: replace to the end without a trailing newline.
       range = new monaco.Range(
         span.start,
