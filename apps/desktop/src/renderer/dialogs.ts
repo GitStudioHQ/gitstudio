@@ -203,10 +203,30 @@ export function confirmDialog(opts: {
   /** Demand this exact text before enabling Confirm — for irreversible,
    *  disk-destroying actions where a mis-aimed click must not be enough. */
   requireTyped?: string;
+  /** Close the dialog and answer `false` when this aborts.
+   *
+   *  A confirm can outlive the thing it is asking about. The agent's
+   *  tool-approval dialog is the case: pressing Stop ends the turn in the main
+   *  process, but the modal stayed on screen — and its Approve button then
+   *  posted an approval for a run that no longer existed. A dialog tied to
+   *  something cancellable should be cancelled with it. */
+  signal?: AbortSignal;
 }): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
     modal((close) => {
+      // Cancelled from OUTSIDE — see `opts.signal`. Reuses `settled` so the
+      // close hook cannot resolve a second time.
+      opts.signal?.addEventListener(
+        "abort",
+        () => {
+          if (settled) return;
+          settled = true;
+          resolve(false);
+          close();
+        },
+        { once: true },
+      );
       const card = mk("div", "modal-card");
       const h = mk("div", "modal-title");
       h.textContent = opts.title;

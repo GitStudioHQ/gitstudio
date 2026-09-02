@@ -764,6 +764,14 @@ function buildDetail(ctx: DetailCtx): void {
     send.title = ready ? "Post this comment" : "Write something first";
   };
   ta.addEventListener("input", syncSend);
+  // ⌘Enter posts, which the shortcut sheet has been promising and neither
+  // composer implemented — so the one keystroke people reach for after
+  // typing a comment did nothing at all, on both detail pages.
+  ta.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+    e.preventDefault();
+    if (!send.disabled) send.click();
+  });
   syncSend();
   send.addEventListener("click", () => void postComment(it.number, ta, send, reload));
   const draftChip = aiChip("Draft a reply", () =>

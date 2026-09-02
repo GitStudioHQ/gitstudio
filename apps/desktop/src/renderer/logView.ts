@@ -628,11 +628,24 @@ export function createLogPane(o: {
       row.tabIndex = 0;
       row.setAttribute("aria-expanded", String(!isCollapsed));
       row.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} group: ${line.text}`);
+      // Which doc line this row IS, so the rebuild below can find it again.
+      // Deliberately `data-doc-idx` and not `data-num`: focusReturn keys its
+      // remembered-row identity off `[data-num]`, and a log's line numbers
+      // would poison that map for every list in the app.
+      row.dataset.docIdx = String(docIdx);
       const toggle = (): void => {
+        // `render()` replaces the whole window of rows, so the row this
+        // keypress came from is DESTROYED by its own handler — focus fell to
+        // <body> and the next Enter went nowhere. Folding a section of a build
+        // log by keyboard therefore ended the keyboard's involvement.
+        const hadFocus = document.activeElement === row;
         if (collapsed.has(docIdx)) collapsed.delete(docIdx);
         else collapsed.add(docIdx);
         rebuildVisible();
         render();
+        if (hadFocus) {
+          win.querySelector<HTMLElement>(`[data-doc-idx="${docIdx}"]`)?.focus();
+        }
       };
       row.addEventListener("click", toggle);
       row.addEventListener("keydown", (e) => {

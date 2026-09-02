@@ -1061,6 +1061,14 @@ async function renderSubTab(
       send.title = ready ? "Post this comment" : "Write something first";
     };
     ta.addEventListener("input", syncSend);
+    // ⌘Enter posts, which the shortcut sheet has been promising and neither
+    // composer implemented — so the one keystroke people reach for after
+    // typing a comment did nothing at all, on both detail pages.
+    ta.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      if (!send.disabled) send.click();
+    });
     syncSend();
     send.addEventListener("click", () => void doComment(full.number, ta, send, reload));
     crow.appendChild(send);

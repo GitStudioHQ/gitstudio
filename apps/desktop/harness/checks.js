@@ -7214,6 +7214,82 @@
       }
     },
 
+    // Stop must take the approval dialog with it. `onConfirm` opened a modal
+    // and awaited it forever; nothing in the cancel path closed it, so pressing
+    // Stop ended the turn in the main process and left "Approve destructive
+    // action" on screen — and its Approve button then posted an approval for a
+    // run that no longer existed.
+    "stopping-a-run-closes-what-it-was-asking": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!input && !!send, "the assistant is live");
+      if (!input || !send) return;
+
+      const inv = window.gitstudio.invoke.bind(window.gitstudio);
+      let rid = null;
+      const confirms = [];
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:chatSend") { rid = p.requestId; return new Promise(() => {}); }
+        if (ch === "ai:agentConfirm") { confirms.push(p); return Promise.resolve({ ok: true }); }
+        if (ch === "ai:cancel") return Promise.resolve({ ok: true });
+        return inv(ch, p);
+      };
+      try {
+        input.value = "commit it";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        send.click();
+        await settle(600);
+        c.ok(!!rid, "a turn is running");
+        if (!rid) return;
+
+        window.__gsEmit("ai:confirmRequest", {
+          requestId: rid,
+          callId: "c1",
+          tool: "git_reset",
+          title: "Reset",
+          summary: "Move this branch to HEAD~3 (hard reset).",
+          mode: "destructive",
+        });
+        await settle(700);
+        c.ok(!!$(".modal-ok"), "the agent's approval dialog is up");
+
+        $(".assistant-send")?.click(); // Stop
+        await settle(900);
+        c.ok(!$(".modal-ok"), "and Stop takes it away with the run");
+
+        // Nothing may be answered on behalf of a turn that is over.
+        $(".modal-ok")?.click();
+        await settle(400);
+        c.eq(confirms.length, 0, `no approval is posted for a dead run (${confirms.length})`);
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
+    // Folding a group in the job log rebuilds the whole window of rows, so the
+    // row the keypress came from is destroyed by its own handler: focus fell to
+    // <body> and the next Enter went nowhere. Folding one section of a build
+    // log by keyboard ended the keyboard's involvement with it.
+    "folding-a-log-group-keeps-the-keyboard": async (f) => {
+      const c = check(f);
+      const grp = $(".log-groupline");
+      c.ok(!!grp, "the log has a foldable group");
+      if (!grp) return;
+      grp.focus();
+      c.eq(document.activeElement, grp, "the header can be focused");
+      c.eq(grp.getAttribute("aria-expanded"), "true", "and starts open");
+
+      grp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      await settle(700);
+      c.eq($(".log-groupline")?.getAttribute("aria-expanded"), "false", "Enter folds it");
+      c.ok(document.activeElement !== document.body, "and does not drop the keyboard");
+      c.ok(
+        document.activeElement?.classList?.contains("log-groupline"),
+        "leaving it on the header, so the next Enter unfolds it",
+      );
+    },
+
     // A ✨ action fired while the agent is working must not rebuild the view.
     //
     // `registerAssistantTab` routed with `force: true`, which drops the

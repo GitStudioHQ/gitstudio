@@ -84,14 +84,22 @@ export async function runAgentTurn(
   const offEvent = host.on("ai:agentEvent", (e) => {
     if (e.requestId === requestId) onEvent(state, e);
   });
+  // THIS turn's life, so anything waiting on it can be ended with it. The
+  // caller's `signal` cancels from outside; Stop and the `finally` below fire
+  // it too, so an approval dialog is never left behind by any of the three.
+  const turn$ = new AbortController();
+  signal?.addEventListener("abort", () => turn$.abort(), { once: true });
   const offConfirm = host.on("ai:confirmRequest", (c) => {
-    if (c.requestId === requestId) void onConfirm(requestId, c);
+    if (c.requestId === requestId) void onConfirm(requestId, c, turn$.signal);
   });
   const onAbort = (): void => void host.invoke("ai:cancel", { requestId });
   signal?.addEventListener("abort", onAbort, { once: true });
 
   // A cancel affordance replaces the send button while running.
-  const cancel = swapToCancel(send, () => void host.invoke("ai:cancel", { requestId }));
+  const cancel = swapToCancel(send, () => {
+    turn$.abort(); // close a pending approval before the run goes away
+    void host.invoke("ai:cancel", { requestId });
+  });
 
   try {
     const done = await host.invoke("ai:chatSend", {
@@ -132,6 +140,9 @@ export async function runAgentTurn(
     offEvent();
     offConfirm();
     signal?.removeEventListener("abort", onAbort);
+    // The turn is over however it ended — a dialog still waiting on it is
+    // waiting for something that cannot answer.
+    turn$.abort();
     cancel.restore();
     scrollDown(transcript);
   }
@@ -236,13 +247,24 @@ export function onEvent(state: TurnState, e: AgentEventWire): void {
 }
 
 /** Render the confirm dialog for a write/destructive tool and answer the agent. */
-export async function onConfirm(requestId: string, c: AgentConfirmRequest): Promise<void> {
+export async function onConfirm(
+  requestId: string,
+  c: AgentConfirmRequest,
+  /** Ends with the TURN. Without it, pressing Stop finished the run in the main
+   *  process and left this dialog on screen — and its Approve button then
+   *  posted an approval for a run that no longer existed. */
+  signal?: AbortSignal,
+): Promise<void> {
   const approved = await confirmDialog({
     title: c.mode === "destructive" ? "Approve destructive action" : "Approve action",
     message: c.summary,
     confirmLabel: c.mode === "destructive" ? "Yes, do it" : "Approve",
     danger: c.mode === "destructive",
+    signal,
   });
+  // A turn that has been stopped has nothing to answer. Posting `false` here
+  // would be harmless but pointless; posting `true` after a Stop is the bug.
+  if (signal?.aborted) return;
   await host.invoke("ai:agentConfirm", { requestId, callId: c.callId, approved });
   if (!approved) toast("Action declined.", "info");
 }
