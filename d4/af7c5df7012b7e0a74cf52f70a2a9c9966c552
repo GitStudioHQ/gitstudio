@@ -1,0 +1,19 @@
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_cdfc55de0fdb57 1832-1838
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d4af7c5df7012b7e0a74cf52f70a2a9c9966c552",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
