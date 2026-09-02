@@ -485,7 +485,7 @@ export class DiffPanel {
      *  exist. The take-side buttons still apply; the three-pane editor does
      *  not, and mounting it over decoded bytes is how a conflicted PNG offered
      *  you a line-by-line merge of two walls of U+FFFD. */
-    opts: { noText?: "binary" | "modify-delete" } = {},
+    opts: { noText?: "binary" | "modify-delete" | "too-large" } = {},
   ): void {
     this.teardown();
 
@@ -523,7 +523,15 @@ export class DiffPanel {
       resolve.remove();
       const note = el("div", "merge-notext list-empty is-none");
       const badge = el("div", "list-empty-badge");
-      badge.appendChild(glyph(opts.noText === "binary" ? "file-binary" : "diff-removed"));
+      badge.appendChild(
+        glyph(
+          opts.noText === "binary"
+            ? "file-binary"
+            : opts.noText === "too-large"
+              ? "warning"
+              : "diff-removed",
+        ),
+      );
       const h = el("div", "list-empty-title");
       const d = el("div", "list-empty-desc");
       if (opts.noText === "binary") {
@@ -531,6 +539,12 @@ export class DiffPanel {
         d.textContent =
           `${model.path} is binary, so there is no line-by-line merge to make. Take one side, or ` +
           `replace the file yourself and stage it.`;
+      } else if (opts.noText === "too-large") {
+        h.textContent = "Too large to merge here";
+        d.textContent =
+          `${model.path} is larger than this app reads in one go, so only part of it is available — ` +
+          `and saving a merge built from part of a file would delete the rest. Take one side, or ` +
+          `resolve it in an editor and stage it.`;
       } else {
         h.textContent = "Changed on one side, deleted on the other";
         d.textContent =

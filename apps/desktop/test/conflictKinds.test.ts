@@ -193,3 +193,25 @@ test("discarding an ordinary file still just reverts it", async () => {
     removeTempRepo(root);
   }
 });
+
+test("a conflicted file over the read cap refuses the text merge", async () => {
+  // `result` is the text the merge editor seeds its result pane with, and the
+  // text "Mark resolved" writes back to the file. `readWorking` caps at 512KB,
+  // so on a larger file resolving would have written the first 512KB over the
+  // whole thing and staged that as the answer — deleting the rest silently,
+  // under a toast reading "Resolved and staged."
+  const CAP = 512 * 1024;
+  // Each side comfortably over the cap on its own, so the conflicted working
+  // file — which holds both — is far past it.
+  const big = (tag: string): string => `${tag} a line of ordinary text\n`.repeat(24_000);
+  const { root } = conflicted("big.txt", big("base"), big("ours"), big("theirs"));
+  try {
+    const b = await bridge(root);
+    const m = await b.conflictModel("big.txt");
+    assert.ok(m, "there is a model");
+    assert.ok(m!.result.length <= CAP + 4096, "the working copy really was capped");
+    assert.equal(m!.truncated, true, "and the model says so, so the panel can refuse");
+  } finally {
+    removeTempRepo(root);
+  }
+});

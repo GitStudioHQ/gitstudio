@@ -203,6 +203,9 @@ export interface ConflictModel {
   theirsLabel: string;
   /** No text to merge — the file is binary on at least one side. */
   binary?: boolean;
+  /** The working copy was read only in part, so `result` is not the file and
+   *  writing it back would truncate it. No text merge is possible. */
+  truncated?: boolean;
   /** A MODIFY/DELETE conflict: this side has no version of the file at all
    *  (the index holds no stage for it). Not the same as a side that emptied
    *  it, which is what an empty string alone looks like. */

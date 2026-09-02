@@ -173,7 +173,14 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
    *  first line — a primary button that did nothing, with no way to tell that
    *  from a broken one. */
   const syncSend = (): void => {
-    send.disabled = gated || running || !input.value.trim();
+    // HANDS OFF while a turn is running. During a run this button is not Send —
+    // `swapToCancel` has turned it into Stop, and it owns its own enabled
+    // state. Including `running` in this expression meant that typing your next
+    // message while the agent worked disabled the Stop button on the first
+    // keystroke: the only way to stop a running agent, taken away by using the
+    // composer it sits next to.
+    if (running) return;
+    send.disabled = gated || !input.value.trim();
   };
 
   /** Grow with the text, up to the height the stylesheet already budgets.

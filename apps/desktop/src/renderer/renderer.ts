@@ -6002,7 +6002,13 @@ class App {
           () => {
             void this.repaintChanges();
           },
-          { noText: model.binary ? "binary" : model.missingSide ? "modify-delete" : undefined },
+          { noText: model.binary
+              ? "binary"
+              : model.truncated
+                ? "too-large"
+                : model.missingSide
+                  ? "modify-delete"
+                  : undefined },
         );
         return;
       }
@@ -6044,18 +6050,50 @@ class App {
     const stuck = paths.filter((p) => conflictedPaths.has(p));
     if (stuck.length) {
       const onlyStuck = stuck.length === paths.length;
+      // Every OTHER kind in the selection still has to be described. This
+      // branch used to return the moment it saw one conflicted path, so a
+      // selection holding a conflicted file AND an untracked one lost the
+      // sentence saying the untracked file would be DELETED from disk with
+      // nothing to restore it from — the single most important sentence this
+      // dialog can say, dropped because something else in the list was
+      // conflicted.
+      const alsoGone = gone.filter((p) => !conflictedPaths.has(p));
+      const alsoReverted = reverted.filter((p) => !conflictedPaths.has(p));
+      const parts: string[] = [
+        stuck.length === 1
+          ? `${stuck[0]} is still conflicted: discarding puts its conflict back exactly as git left ` +
+            `it, and whatever you have resolved in it is lost. The file itself stays.`
+          : `${stuck.length} of these files are still conflicted: their conflicts come back as git ` +
+            `left them, and the resolution work in them is lost. The files themselves stay.`,
+      ];
+      if (alsoGone.length) {
+        parts.push(
+          alsoGone.length === 1
+            ? `${alsoGone[0]} isn't tracked by git, so discarding it DELETES the file from disk. ` +
+              `Git has no copy of it — there is nothing to restore it from.`
+            : `${alsoGone.length} of them aren't tracked by git, so discarding them DELETES those ` +
+              `files from disk. Git has no copy of them — there is nothing to restore them from.`,
+        );
+      }
+      if (alsoReverted.length) {
+        parts.push(
+          `The other ${alsoReverted.length === 1 ? "file has its" : `${alsoReverted.length} have their`} ` +
+            `changes reverted.`,
+        );
+      }
+      if (!onlyStuck) parts.push("None of it can be undone.");
       return {
-        title: stuck.length === 1 ? "Start this conflict again?" : "Start these conflicts again?",
-        message: onlyStuck
-          ? (stuck.length === 1
-              ? `${stuck[0]} is still conflicted. Discarding puts the conflict back exactly as git ` +
-                `left it — whatever you have resolved in it so far is lost. The file itself stays.`
-              : `${stuck.length} of these files are still conflicted. Discarding puts their conflicts ` +
-                `back exactly as git left them — whatever you have resolved so far is lost. The files stay.`)
-          : `${stuck.length} of these ${paths.length} files are still conflicted: their conflicts come ` +
-            `back as git left them, and the resolution work in them is lost. The rest have their ` +
-            `changes reverted. Neither can be undone.`,
-        confirmLabel: stuck.length === 1 ? "Restore the conflict" : "Restore the conflicts",
+        title: alsoGone.length
+          ? "Discard changes and delete files?"
+          : stuck.length === 1
+            ? "Start this conflict again?"
+            : "Start these conflicts again?",
+        message: parts.join(" "),
+        confirmLabel: alsoGone.length
+          ? "Discard and delete"
+          : stuck.length === 1
+            ? "Restore the conflict"
+            : "Restore the conflicts",
         danger: true,
       };
     }
@@ -7660,7 +7698,18 @@ class App {
     // being rebuilt, so a commit or a branch op made from Changes left the cached
     // Branches DOM untouched — and returning to it re-attached that DOM verbatim
     // without refetching, showing a branch list from before the change.
+    //
+    // EXCEPT a parked Assistant. Every other kept-alive view holds a rendering
+    // of repo state that this refresh has just invalidated; the Assistant holds
+    // a conversation, and possibly a turn still streaming into it. Dropping it
+    // here is the same defect the `currentView === "assistant"` guard below
+    // fixes, reached by the other door: leave the Assistant to answer something,
+    // go and read an issue, and the agent's own commit — or any file the build
+    // touched — deleted the transcript and the Stop button out from under a run
+    // that kept going. Held by identity, so nothing is refetched or rebuilt.
+    const parkedChat = this.viewCache.get("assistant");
     this.viewCache.clear();
+    if (parkedChat) this.viewCache.set("assistant", parkedChat);
     // A parked (kept-alive) graph is now stale too — mark it before ANY early
     // return below, so returning to Commits always re-syncs in place.
     if (this.graph && this.currentView !== "graph") this.graphDirty = true;
@@ -8227,7 +8276,13 @@ class App {
       if (gen !== this.diffGen || panel !== this.diffPanel) return;
       if (model) {
         panel.showMerge(model, undefined, {
-          noText: model.binary ? "binary" : model.missingSide ? "modify-delete" : undefined,
+          noText: model.binary
+              ? "binary"
+              : model.truncated
+                ? "too-large"
+                : model.missingSide
+                  ? "modify-delete"
+                  : undefined,
         });
         return;
       }

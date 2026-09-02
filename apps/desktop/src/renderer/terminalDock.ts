@@ -419,9 +419,15 @@ export class TerminalDock {
   private restoreFocus(): void {
     const back = this.returnFocusTo;
     this.returnFocusTo = null;
-    // It may have been re-rendered away while the dock was open — the guard is
-    // what keeps this from throwing focus at a detached node.
-    if (back?.isConnected) back.focus();
+    if (!back?.isConnected) return; // re-rendered away while the dock was open
+    // Only when the dock still HAS the keyboard. If the reader clicked into the
+    // view behind while the dock was open — which is an ordinary thing to do,
+    // the dock is not modal — then focus is already where they put it, and
+    // yanking it back to wherever they happened to be when they opened the dock
+    // is the same unasked-for jump this was meant to fix, pointed the other way.
+    const here = document.activeElement as HTMLElement | null;
+    if (here && here !== document.body && !this.dock.root.contains(here)) return;
+    back.focus();
   }
 
   /** Open the active shell's PTY (lazily) and re-fit it; focus the active chat. */

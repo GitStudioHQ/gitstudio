@@ -699,6 +699,12 @@ export class GitBridge {
           : undefined;
     // A conflicted BINARY has no line-by-line merge to make. The panel opened
     // the three-pane text editor over whatever the bytes decoded to.
+    // The working copy was CAPPED, so `result` — the text the merge editor
+    // seeds its result pane with, and the text "Mark resolved" writes back to
+    // the file — is only the first 512KB of it. Resolving would have truncated
+    // the file to the cap and staged that as the answer, silently deleting
+    // everything past it. There is no text merge to be had here.
+    const truncated = work.truncated === true;
     const binary =
       work.binary === true ||
       versions.ours.includes("\0") ||
@@ -722,6 +728,7 @@ export class GitBridge {
       theirs: versions.theirs,
       result: workingText,
       ...(binary ? { binary: true } : {}),
+      ...(truncated ? { truncated: true } : {}),
       ...(missingSide ? { missingSide } : {}),
       ...sideLabels(op.kind),
     };
