@@ -121,11 +121,19 @@ async function showProjectBoard(
   p: ProjectInfo,
   refresh: () => void,
   nav: SectionNav,
+  /** A board already in hand — repaint from it instead of reading at all.
+   *  After a confirmed move the caller HAS the truth: it applied the change
+   *  locally and the server agreed. Going back through the cache to redraw it
+   *  meant `bust("project")` had just deleted the entry, so `cachePeek` missed,
+   *  the whole board was replaced with a spinner, and a successful drag blanked
+   *  the screen and refetched over the network before showing the card where
+   *  the user had already watched it land. */
+  have?: ProjectBoard,
 ): Promise<void> {
-  let board: ProjectBoard | undefined = cachePeek("project:board", p.id);
+  let board: ProjectBoard | undefined = have ?? cachePeek("project:board", p.id);
   if (!board) detail.replaceChildren(loadingState());
   try {
-    board = await gget("project:board", p.id, 15000);
+    if (!have) board = await gget("project:board", p.id, 15000);
   } catch (e) {
     if (!board) {
       detail.replaceChildren(
@@ -213,14 +221,18 @@ async function showProjectBoard(
       }
       card.classList.remove("is-moving");
       bust("project"); // the next board read refetches the confirmed state
-      // RE-RENDER, as both the failure path above and the kebab's own move do.
-      // Busting the cache only affects the NEXT read: the board on screen kept
-      // the column widths and the empty-column dimming it had computed before
-      // the move, so a card dragged into an empty column left that column
-      // still drawn as empty and narrow, and the one it came from still drawn
-      // as though it held the card. The optimistic `statusOptionId` is already
-      // written, so this paints the state the server just confirmed.
-      void showProjectBoard(detail, p, refresh, nav);
+      // RE-RENDER, as the failure path above does. Busting the cache only
+      // affects the NEXT read: the board on screen kept the column widths and
+      // the empty-column dimming it had computed before the move, so a card
+      // dragged into an empty column left that column still drawn as empty and
+      // narrow, and the one it came from still drawn as though it held the
+      // card.
+      //
+      // From `b`, NOT through the cache — the line above just deleted the entry
+      // this would have read. The optimistic `statusOptionId` is already
+      // written to `b` and the server has confirmed it, so `b` IS the truth and
+      // repainting from it costs neither a spinner nor a request.
+      void showProjectBoard(detail, p, refresh, nav, b);
     } catch (e) {
       toast(cleanErr(e) || "Couldn't move the item.", "error");
       it.statusOptionId = fromId;
@@ -248,7 +260,7 @@ async function showProjectBoard(
     colBody.appendChild(el("div", "gh-col-empty"));
     for (const it of items) {
       colBody.insertBefore(
-        projectCard(p, b, it, refresh, nav, cardsById),
+        projectCard(p, b, it, refresh, nav, cardsById, dropItem),
         colBody.querySelector(".gh-col-empty"),
       );
     }
@@ -287,7 +299,10 @@ function projectCard(
   it: ProjectItem,
   refresh: () => void,
   nav: SectionNav,
-  registry?: Map<string, HTMLElement>,
+  registry: Map<string, HTMLElement> | undefined,
+  /** The board's move — handed to the kebab so the menu and a drag run the
+   *  same code. */
+  move: (itemId: string, targetId: string | null) => Promise<void>,
 ): HTMLElement {
   const card = el("div", "gh-card");
   registry?.set(it.id, card);
@@ -326,7 +341,7 @@ function projectCard(
   kebab.appendChild(glyph("kebab-vertical"));
   kebab.addEventListener("click", (e) => {
     e.stopPropagation();
-    projectItemMenu(kebab, p, board, it, refresh);
+    projectItemMenu(kebab, p, board, it, move);
   });
   top.appendChild(kebab);
   card.appendChild(top);
@@ -475,32 +490,41 @@ function projectItemMenu(
   p: ProjectInfo,
   board: ProjectBoard,
   it: ProjectItem,
-  refresh: () => void,
+  /** The board's own move — the SAME one a drag runs. This menu is "the
+   *  keyboard path for what drag-and-drop does with the pointer", and it used
+   *  to be a second implementation that took the other path through the cache:
+   *  it refetched the whole section, so moving by keyboard blanked the board
+   *  and moving by pointer did not. */
+  move: (itemId: string, targetId: string | null) => Promise<void>,
 ): void {
   const items: MenuItem[] = [];
   if (it.url) {
     const url = it.url;
     items.push({ label: "Open on GitHub", icon: "link-external", onClick: () => window.open(url, "_blank") });
   }
-  const card = anchor.closest(".gh-card") as HTMLElement | null;
   const field = board.field;
   if (field) {
     // ALWAYS the group label, not only when something sits above it. A DRAFT
     // item has no `url`, so nothing was pushed before this and the header was
     // skipped — leaving the menu a bare list of status names ("No status",
     // "Todo", "In progress", "Done") with nothing saying what picking one does.
-    items.push({ separator: items.length > 0, label: "Move to" });
+    // `separator: true` unconditionally — it is what MAKES this a group label.
+    // `separator: items.length > 0` was false for exactly the draft case the
+    // comment above describes, and openMenu renders a non-separator item as a
+    // command button: a live, focusable "Move to" row that did nothing at all,
+    // sitting above the four statuses it was supposed to be introducing.
+    items.push({ separator: true, label: "Move to" });
     // "No Status" target (clears the field).
     items.push({
       label: "No status",
       current: it.statusOptionId === null,
-      onClick: () => void projectMoveItem(p, field.id, it, null, refresh, card),
+      onClick: () => void move(it.id, null),
     });
     for (const opt of field.options) {
       items.push({
         label: opt.name,
         current: it.statusOptionId === opt.id,
-        onClick: () => void projectMoveItem(p, field.id, it, opt.id, refresh, card),
+        onClick: () => void move(it.id, opt.id),
       });
     }
   }
@@ -508,38 +532,4 @@ function projectItemMenu(
     items.push({ label: "No actions available", disabled: true });
   }
   openMenu(anchor, items);
-}
-
-/** Move an item's Status, then re-render the section (mutation → toast → refresh). */
-async function projectMoveItem(
-  p: ProjectInfo,
-  fieldId: string,
-  it: ProjectItem,
-  optionId: string | null,
-  refresh: () => void,
-  card?: HTMLElement | null,
-): Promise<void> {
-  if (it.statusOptionId === optionId) return; // no-op
-  // Lock + dim the card while the move is in flight so it's clear it's working.
-  card?.classList.add("is-moving");
-  try {
-    const r = await host.invoke("project:moveItem", {
-      projectId: p.id,
-      itemId: it.id,
-      fieldId,
-      optionId,
-    });
-    if (!r.ok) {
-      card?.classList.remove("is-moving");
-      toast(r.message ?? "Couldn't move the item.", "error");
-      return;
-    }
-    toast("Moved item.", "success");
-    // Re-render the whole section; selectedProjectId reselects this project,
-    // reloading its board with the new Status in place (which replaces the card).
-    refresh();
-  } catch (e) {
-    card?.classList.remove("is-moving");
-    toast(cleanErr(e) || "Couldn't move the item.", "error");
-  }
 }

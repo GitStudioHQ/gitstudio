@@ -72,13 +72,18 @@ async function colorize(text: string, lang: string): Promise<string | undefined>
   if (!themed) refreshHighlightTheme();
   try {
     const html = await monaco.editor.colorize(text, lang, { tabSize: 2 });
-    // REAL SPACES. `colorize` emits `&nbsp;` for indentation, which renders
-    // identically inside a `<pre>` (both containers that use this are
-    // whitespace-preserving) but copies as U+00A0 — so a snippet pasted out of
+    // REAL SPACES. Monaco writes indentation as non-breaking spaces, which
+    // render identically inside a `<pre>` (both containers that use this are
+    // whitespace-preserving) but copy as U+00A0 — so a snippet pasted out of
     // this app into a terminal, a file or a chat carried non-breaking spaces
     // where its indentation used to be. Python and YAML break outright; a diff
     // of the pasted text is unreadable.
-    return html?.replace(/&nbsp;/g, " ");
+    //
+    // It emits the CHARACTER, not the entity: `sb.appendCharCode(0xA0)` in
+    // viewLineRenderer.js, three times. Replacing `&nbsp;` — which is what the
+    // comment here used to claim it emitted — matched nothing at all, and the
+    // paste stayed broken while this line looked like it had fixed it.
+    return html?.replace(/\u00a0/g, " ");
   } catch {
     return undefined;
   }

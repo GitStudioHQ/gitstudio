@@ -241,9 +241,15 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     listEl.classList.toggle("is-people", tab === "users" || tab === "orgs");
     if (!append) listEl.replaceChildren(skeletonList(6));
     else {
-      // A retry from the rate-limit card replaces that card, so the list never
+      // A retry from the tail card replaces that card, so the list never
       // accumulates one refusal per attempt.
-      listEl.querySelector(".explore-limited")?.remove();
+      //
+      // Both kinds, not just the rate-limit one: the error card's own Retry
+      // calls straight back into here, which appends a fresh spinner BELOW the
+      // card that is still sitting there — so a search failing three times
+      // ended with three "Search failed" cards stacked at the bottom of the
+      // list, each with its own live Retry button.
+      listEl.querySelector(".explore-more-note")?.remove();
       listEl.appendChild(loadingMore());
     }
 
@@ -257,6 +263,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         // scrolled through to punish them for asking for more.
         const limited = limitedState(result.limited.retryInMs, () => void run(append));
         if (append) {
+          limited.classList.add("explore-more-note");
           const spinner = listEl.querySelector(".explore-loading-more");
           if (spinner) spinner.replaceWith(limited);
           else listEl.appendChild(limited);
@@ -317,6 +324,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         () => void run(append),
       );
       if (append) {
+        failed.classList.add("explore-more-note");
         const spinner = listEl.querySelector(".explore-loading-more");
         if (spinner) spinner.replaceWith(failed);
         else listEl.appendChild(failed);

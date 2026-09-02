@@ -7039,5 +7039,77 @@
       await settle(300);
       c.ok(fired, `⌘Enter runs the row's verb (${text(verb)})`);
     },
+
+    // Five defects that were introduced BY the fixes made earlier in this same
+    // session. Each one is a control that a fix left correct in the state it
+    // was written for and wrong in the neighbouring state — which is why they
+    // are pinned here rather than trusted to a re-read.
+
+    // The `&nbsp;` replace in highlight.ts matched nothing: Monaco writes the
+    // CHARACTER (`sb.appendCharCode(0xA0)`), not the entity, so every
+    // highlighted block still copied with non-breaking spaces for indentation
+    // while the line that was supposed to fix it sat there looking right.
+    "highlighted-code-copies-as-real-spaces": async (f) => {
+      const c = check(f);
+      const code = $('pre > code[class*="language-"]');
+      c.ok(!!code, "the issue body has a highlighted fence");
+      if (!code) return;
+      c.ok(code.querySelectorAll("span").length > 4, "and it really was tokenized");
+      const t = code.textContent || "";
+      c.eq((t.match(/\u00a0/g) || []).length, 0, "no non-breaking spaces survive into the text");
+      c.ok((t.match(/ {2}/g) || []).length > 0, "the indentation is REAL spaces");
+    },
+
+    // `separator: items.length > 0` is false for a DRAFT item, which has no
+    // "Open on GitHub" above it — so openMenu rendered the group label as an
+    // ordinary command button: focusable, clickable, and wired to nothing.
+    "move-to-is-a-label-not-a-command": async (f) => {
+      const c = check(f);
+      const kebab = $(".gh-card-kebab");
+      c.ok(!!kebab, "a board card has a kebab");
+      if (!kebab) return;
+      kebab.click();
+      await settle(400);
+      const menu = $(".dropdown");
+      c.ok(!!menu, "the menu opens");
+      if (!menu) return;
+      const items = $$(".dropdown-item", menu).map((b) => (text(b) || "").trim());
+      const seps = $$('[role="separator"]', menu).map((s2) => (text(s2) || "").trim());
+      c.ok(seps.includes("Move to"), "“Move to” is a group label");
+      c.ok(!items.includes("Move to"), "and NOT a command that does nothing");
+      c.ok(items.length > 1, "the statuses it introduces are there");
+    },
+
+    // Typing a query no longer travels to a match, so `matchIdx` is -1 — and
+    // `matchIdx + 1` rendered that as "0/12": a position that cannot exist,
+    // reading as "found nothing" directly beside a list of twelve.
+    "graph-search-count-is-not-a-fake-position": async (f) => {
+      const c = check(f);
+      const g = $("gitstudio-graph");
+      c.ok(!!g, "the graph is mounted");
+      if (!g) return;
+      const root = g.shadowRoot || g;
+      const input = root.querySelector("input");
+      c.ok(!!input, "the graph has a search box");
+      if (!input) return;
+      const readout = () =>
+        [...new Set($$(".gheader *", root).map((n) => (n.textContent || "").trim()))].find(
+          (t) => /match|\d\/\d/.test(t) && t.length < 24,
+        );
+      input.focus();
+      input.value = "e";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(900);
+      const before = readout();
+      c.ok(!!before, "a search says how many it found");
+      c.ok(!/^0\//.test(before || ""), `it never reads as position zero (got “${before}”)`);
+      c.ok(/match/.test(before || ""), "before travelling it states a COUNT");
+      // And once you do travel, it becomes a real position.
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+      await settle(600);
+      c.ok(/^1\/\d/.test(readout() || ""), "Enter makes it a 1-based position");
+    },
   };
 })();

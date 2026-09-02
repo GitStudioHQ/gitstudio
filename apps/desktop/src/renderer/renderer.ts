@@ -1712,11 +1712,19 @@ class App {
 
       let shown = 0;
       let total = 0;
+      // Did the Active/Stale lens actually remove anything? It defaults to
+      // Active, so "is a lens set" is true before the reader has touched a
+      // control — and the empty state used that to blame "the filters you have
+      // set" for every search that matched nothing, in a repo where the lens
+      // may well be hiding nothing at all. Only a cut that HID something is a
+      // reason the list is empty.
+      let ageHid = 0;
       if (this.branchTab === "local") {
         total = locals.length;
-        const rows = locals
+        const searched = locals
           .filter((b) => hit(b.name, b.upstream, b.subject))
-          .filter((b) => bar.passes(b))
+          .filter((b) => bar.passes(b));
+        const rows = searched
           // The current branch is never "stale" — it is where you are standing.
           // Which means it belongs in Active whatever its date says, and NOT in
           // Stale: a bare `|| b.current` put it in both, so a repo left alone
@@ -1739,6 +1747,7 @@ class App {
                   : byDate(a.date, b.date),
           );
         shown = rows.length;
+        ageHid = searched.length - rows.length;
         // The sweep is a repo-level cleanup and is deliberately NOT cut by the
         // age lens — a finished branch is usually a stale one, so binding it
         // would empty the button from the segment it opens on. But then its
@@ -1803,8 +1812,7 @@ class App {
         // Which control emptied it. The search box speaks for itself; a facet
         // or the age cut does not, and without this the view announced that the
         // REPOSITORY had no branches over a repo with ninety.
-        const narrowed =
-          bar.activeCount() > 0 || (this.branchTab === "local" && this.branchAge !== "all");
+        const narrowed = bar.activeCount() > 0 || ageHid > 0;
         body.appendChild(
           this.branchesEmpty(this.branchTab, q, stashFailed, narrowed, worktreeFailed, () => {
             bar.clear();
@@ -2643,10 +2651,10 @@ class App {
     if (query || filtered) {
       const why =
         query && filtered
-          ? `No ${noun.many} match “${query}” and the filters you have set.`
+          ? `No ${noun.many} match “${query}” and the filters in effect.`
           : query
             ? `No ${noun.many} match “${query}”.`
-            : `No ${noun.many} match the filters you have set.`;
+            : `No ${noun.many} match the filters in effect.`;
       return emptyState("No matches", why, {
         icon: filtered ? "filter" : "search",
         anchor: "inline",

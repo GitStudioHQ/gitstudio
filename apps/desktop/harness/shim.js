@@ -57,7 +57,7 @@
     { number: 28, title: "Rebase drag-to-reorder flickers when dropping on the last row", state: "open", user: u(me), labels: [L.bug, L.desktop], assignees: [u(me)], comments: 1, h: 28,
       body: "Repro:\n1. Open Rebase with 6+ commits\n2. Drag the first commit to the end\n3. Drop marker jumps for a frame\n\nSuspect the placeholder index is off by one when `after === rows.length`." },
     { number: 27, title: "Support per-line staging, not just blocks", state: "open", user: u("dkovachev"), labels: [L.enhancement, L.help], assignees: [], comments: 9, h: 40,
-      body: "`applySelectedChanges` promotes the whole block a selection touches. JetBrains lets you tick single lines. This needs engine work — see the staging notes in the wiki." },
+      body: "`applySelectedChanges` promotes the whole block a selection touches. JetBrains lets you tick single lines. This needs engine work — see the staging notes in the wiki.\n\nThe shape it should have:\n\n```python\ndef stage(lines):\n    for n in lines:\n        if guard(n):\n            apply(n)\n    return True\n```\n\nNote the INDENTATION — this fence exists so a check can prove a copied snippet carries real spaces." },
     { number: 26, title: "Release drafting: attach assets from the app", state: "open", user: u("mira-holt"), labels: [L.enhancement], assignees: [u("s-ohta")], comments: 3, h: 51,
       body: "Creating a release works, but uploading a .dmg still means a browser round-trip." },
     { number: 25, title: "Graph: avatars blur on non-retina displays", state: "open", user: u("jparks"), labels: [L.bug, L.perf], assignees: [], comments: 2, h: 70,

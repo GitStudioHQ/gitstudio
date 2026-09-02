@@ -297,8 +297,13 @@ export async function renderJobLog(
   // job's failure and then the next is the whole reason a matrix run is open.
   view.addEventListener("keydown", (e) => {
     if (e.key !== "j" && e.key !== "k") return;
+    // ⌘K is the command palette, everywhere in this app. Unmodified j/k only —
+    // otherwise opening the palette from the log page ALSO stepped the rail to
+    // the previous job, so you came back from the palette looking at a
+    // different job's output than the one you left.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
     const i = jobs.findIndex((x) => x.id === currentId);
     const next = jobs[i + (e.key === "j" ? 1 : -1)];
     if (!next) return;

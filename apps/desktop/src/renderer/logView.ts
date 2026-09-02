@@ -853,6 +853,12 @@ export function createLogPane(o: {
         // closest thing to where they were.
         scroll.scrollTop = row >= 0 ? row * LINE_H + anchorOffset : 0;
       }
+      // The tail just moved, so whether there is anything to jump TO has
+      // changed — and nothing else will say so. `atTail()` is only re-read on
+      // scroll, and a reader parked at the bottom with follow off does not
+      // scroll: the log grew past them in silence, the pill stayed hidden, and
+      // the one control that would have caught them up was never offered.
+      syncFollowBtn();
     },
     setProducing(on) {
       if (producing === on) return;
@@ -864,6 +870,12 @@ export function createLogPane(o: {
         notStarted = false;
       }
       syncFollowBtn();
+      // `notStarted` is read by the empty-log note, which is on screen right
+      // now saying "This job hasn't started yet." Without a re-render it keeps
+      // saying it for as long as the job runs — until the first chunk happens
+      // to arrive, which on a slow step is minutes of a running job insisting
+      // it has not begun.
+      render();
     },
     finish() {
       finishLog(doc);

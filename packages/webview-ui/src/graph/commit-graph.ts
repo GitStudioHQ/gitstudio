@@ -3173,7 +3173,14 @@ export class CommitGraph extends LitElement {
     // same honesty the commit count beside it already uses.
     const results = q
       ? this.searchMatches.length
-        ? `${this.matchIdx + 1}/${this.searchMatches.length}${this.hasMore ? "+" : ""}`
+        ? // Before you travel to one, `matchIdx` is -1 — there is no "current"
+          // match, because typing a query no longer moves you. Rendering that
+          // as `0/12` reads as a position, and the position it reads as is one
+          // that cannot exist: every other counter in the app is 1-based, so
+          // "0 of 12" says the search found nothing while listing twelve.
+          this.matchIdx < 0
+          ? `${this.searchMatches.length.toLocaleString()}${this.hasMore ? "+" : ""} match${this.searchMatches.length === 1 ? "" : "es"}`
+          : `${this.matchIdx + 1}/${this.searchMatches.length}${this.hasMore ? "+" : ""}`
         : this.hasMore
           ? `No results in ${n.toLocaleString()} loaded`
           : "No results"
