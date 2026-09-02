@@ -7643,8 +7643,14 @@ class App {
    *  the jump in the navigation history, so back/forward reproduces it. */
   private revealInGraph(sha: string): void {
     if (this.currentView === "graph" && this.graph) {
-      this.graph.reveal(sha);
+      const found = this.graph.reveal(sha);
       void this.selectCommit(sha);
+      if (!found) {
+        toast(
+          `${sha.slice(0, 7)} is further back than the loaded history — its details are below.`,
+          "info",
+        );
+      }
       return;
     }
     this.routeView("graph", false, { sha });
@@ -7658,9 +7664,21 @@ class App {
     void this.selectCommit(sha);
     let tries = 0;
     const tryReveal = (): void => {
-      this.graph?.reveal(sha);
+      if (this.graph?.reveal(sha)) return;
       if (++tries < 6 && this.currentView === "graph") {
         window.setTimeout(tryReveal, 120);
+        return;
+      }
+      // GIVE UP OUT LOUD. The graph holds only the pages it has loaded, so a
+      // commit further back than that — which is most of the history in any
+      // real repository — can never be revealed however long we retry. The
+      // details pane below has loaded it either way, so the work is not lost;
+      // saying nothing just made the list look like it had ignored the click.
+      if (this.currentView === "graph") {
+        toast(
+          `${sha.slice(0, 7)} is further back than the loaded history — its details are below.`,
+          "info",
+        );
       }
     };
     requestAnimationFrame(tryReveal);

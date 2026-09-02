@@ -202,9 +202,11 @@ export class GraphMount {
     this.element.status = "empty";
   }
 
-  /** Select + scroll a commit (e.g. a branch tip) into view. */
-  reveal(sha: string): void {
-    this.element.reveal(sha);
+  /** Select + scroll a commit (e.g. a branch tip) into view.
+   *  Returns whether the row was found — the graph holds only its loaded
+   *  pages, and a commit further back cannot be revealed at all. */
+  reveal(sha: string): boolean {
+    return this.element.reveal(sha);
   }
 
   /** Detach the Lit element so its disconnectedCallback tears down listeners. */

@@ -2987,15 +2987,23 @@ export class CommitGraph extends LitElement {
     this.renderRows();
   }
 
-  /** Public: select + center on a sha (e.g. the host revealing a commit). */
-  reveal(sha: string): void {
+  /**
+   * Public: select + center on a sha (e.g. the host revealing a commit).
+   *
+   * Returns whether the row was actually found. The graph only holds the pages
+   * it has loaded, so a commit further back than that — which is most of the
+   * history in any real repository — cannot be revealed at all, and the caller
+   * needs to know rather than assume it worked.
+   */
+  reveal(sha: string): boolean {
     const idx = this.shaToIndex.get(sha);
     if (idx === undefined) {
-      return;
+      return false;
     }
     this.selectedSha = sha;
     this.virtualizer?.scrollToIndex(idx, { align: "center" });
     this.renderRows();
+    return true;
   }
 
   // ── Search (highlight + navigate matches across loaded rows) ───────────────
