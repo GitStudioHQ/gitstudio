@@ -97,6 +97,7 @@ import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
 import { renderRebase } from "./views/rebase";
 import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
+import { COLUMN_DROP_TAIL_AT } from "@gitstudio/webview-ui/limits";
 import type {
   BranchInfo,
   ChangedFile,
@@ -8319,11 +8320,18 @@ class App {
   private graphSplitResizer(wrap: HTMLElement): HTMLElement {
     const MIN = 320;
     const KEY = "gitstudio.graphDetailsW";
-    // The graph drops its Date and SHA columns below 760px (a container query in
-    // commit-graph), so the details column must never squeeze it past that —
-    // otherwise columns silently vanish and their resize handles go with them.
-    // Leave a little headroom above the breakpoint.
-    const GRAPH_FLOOR = 800;
+    // The graph drops its Date and SHA columns below a breakpoint of its own (a
+    // container query in commit-graph), so the details column must never
+    // squeeze it past that — otherwise columns silently vanish and their resize
+    // handles go with them.
+    //
+    // TAKEN FROM THE GRAPH, not restated here. This was a literal 800 beside a
+    // comment saying the drop happened at 760; the graph package has since
+    // raised it to 860, and nothing connected the two — so the resizer let you
+    // drag the details pane 60px past the point where the graph starts losing
+    // columns, which is exactly what the guard exists to prevent. Plus the
+    // headroom the comment always intended.
+    const GRAPH_FLOOR = COLUMN_DROP_TAIL_AT + 40;
     const maxFor = (): number =>
       Math.max(MIN, Math.min(900, Math.round(wrap.getBoundingClientRect().width) - GRAPH_FLOOR));
     const saved = Number(localStorage.getItem(KEY));

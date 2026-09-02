@@ -50,6 +50,7 @@ import {
   avatarHue,
   authorInitials,
 } from "./avatar";
+import { COLUMN_DROP_TAIL_AT } from "../limits";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
 const ROW_HEIGHT = 34;
@@ -88,7 +89,7 @@ const SUBJECT_MIN_COMPACT_TIGHT = 120;
  * row's hover tooltip and in the details dock, and both can be turned back on
  * from the Columns menu. A branch name has nowhere else to be.
  */
-const COLUMN_DROP_TAIL_AT = 860;
+
 /** `:host([compact]) .content .refs { max-width }` — a share of the MESSAGE track. */
 const COMPACT_REFS_SHARE = 0.44;
 /** The sidebar rule's `.content .refs { max-width }` — a share of the row. */
