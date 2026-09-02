@@ -319,6 +319,7 @@ const CASES = [
   ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
   ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
   ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  ["a-branch-deep-link-shows-the-branch", "actions~open9094~click:.gh-branch-chip"],
   ["the-logs-states-each-say-the-right-thing", "actions~open9097~click:.gh-job-log"],
   ["the-logs-live-states-each-say-the-right-thing", "actions~open9101~click:.gh-job-log"],
   ["a-stash-page-holds-one-commit", "branches~click:.gh-seg-btn:nth-child(4)~click:.sec-row"],

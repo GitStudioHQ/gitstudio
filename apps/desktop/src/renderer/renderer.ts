@@ -1395,10 +1395,15 @@ class App {
     // written with NO caller in any view. The segment appears only when there
     // is more than one — a single worktree is just "the repository".
     let worktrees: WorktreeInfo[] = [];
+    // A failed read is not an empty list — the same rule the stash list already
+    // follows. Swallowing it let the view assert "No other worktrees" from a
+    // git call that never answered.
+    let worktreeFailed = false;
     try {
       worktrees = await host.invoke("worktree:list", undefined);
     } catch {
       worktrees = [];
+      worktreeFailed = true;
     }
     if (gen !== this.routeGen) return;
 
@@ -1417,6 +1422,14 @@ class App {
             : stashes.some((st) => st.ref === highlightRef)
               ? "stashes"
               : this.branchTab;
+      // A deep link must SHOW the row it names, so it clears EVERY narrowing
+      // that could hide it — not just the search box. The age cut alone was
+      // enough to swallow the arrival silently: `branchAge` defaults to
+      // "active", so a link to any branch untouched for three months landed on
+      // a list that did not contain it, with nothing saying why. The facets can
+      // do the same, and they persist per segment across launches.
+      this.branchFacets[this.branchTab] = Object.create(null) as FacetState;
+      this.branchAge = "all";
     }
 
     const counts = (): Record<Kind, number> => ({
@@ -1480,7 +1493,13 @@ class App {
             // Only when there is more than one: a single worktree is just "the
             // repository", and a segment reading "Worktrees (1)" is a tab that
             // tells you nothing.
-            ...(n.worktrees > 1
+            //
+            // …unless you are STANDING on it. Removing the second-to-last
+            // worktree dropped the option out from under the reader, leaving
+            // them on a segment with no button — the bar showed four, none
+            // active, while the body still rendered worktrees. A tab may not
+            // disappear while it is the one you are looking at.
+            ...(n.worktrees > 1 || this.branchTab === "worktrees"
               ? [{ value: "worktrees" as Kind, label: `Worktrees (${n.worktrees})`, icon: "window" }]
               : []),
           ],
@@ -1692,6 +1711,18 @@ class App {
                   : byDate(a.date, b.date),
           );
         shown = rows.length;
+        // The sweep is a repo-level cleanup and is deliberately NOT cut by the
+        // age lens — a finished branch is usually a stale one, so binding it
+        // would empty the button from the segment it opens on. But then its
+        // number can exceed the rows beneath it, and a destructive control
+        // whose count contradicts the list is one nobody should press. Say so.
+        const visible = new Set(rows.map((b) => b.name));
+        const unseen = finished.filter((b) => !visible.has(b.name)).length;
+        if (unseen) {
+          sweep.title +=
+            `\n${unseen} of them ${unseen === 1 ? "is" : "are"} not shown by the current view — ` +
+            "the confirm lists every one by name.";
+        }
         // Scaled to what is ON SCREEN, so the bars stay comparable down the
         // list rather than against a branch the filter has removed.
         const maxAb = Math.max(1, ...rows.map((b) => Math.max(b.aheadDefault ?? 0, b.behindDefault ?? 0)));
@@ -1747,7 +1778,7 @@ class App {
         const narrowed =
           bar.activeCount() > 0 || (this.branchTab === "local" && this.branchAge !== "all");
         body.appendChild(
-          this.branchesEmpty(this.branchTab, q, stashFailed, narrowed, () => {
+          this.branchesEmpty(this.branchTab, q, stashFailed, narrowed, worktreeFailed, () => {
             bar.clear();
             this.branchAge = "all";
             render();
@@ -1764,7 +1795,13 @@ class App {
         stashes = await host.invoke("stash:list", undefined);
         stashFailed = false;
       } catch {
+        // The rows already on screen are kept — they are the last thing git
+        // actually said — but the failure has to REACH the reader, or a stash
+        // list that stopped updating looks like one that stopped changing.
+        // `branchesEmpty` can only speak when the list is EMPTY, so with stale
+        // rows showing this was the one path with no way to say anything.
         stashFailed = true;
+        if (stashes.length) toast("Couldn't re-read the stashes — showing the last list git gave.", "info");
       }
       // Worktrees too. This re-read everything EXCEPT them, so the list was
       // fetched exactly once when the view was first built — and every soft
@@ -1773,8 +1810,12 @@ class App {
       // Remove again ran git against a path that no longer existed.
       try {
         worktrees = await host.invoke("worktree:list", undefined);
+        worktreeFailed = false;
       } catch {
-        worktrees = [];
+        // KEEP the rows we have. Replacing them with [] on a failed refresh
+        // deleted a list git never said was gone.
+        worktreeFailed = true;
+        if (worktrees.length) toast("Couldn't re-read the worktrees — showing the last list git gave.", "info");
       }
       if (gen !== this.routeGen) return;
       remotes = this.refs.filter((r) => r.type === "remote" && !isRemoteHead(r));
@@ -2546,28 +2587,47 @@ class App {
     /** A facet or the Active/Stale cut is narrowing the list, and it is not the
      *  search box. Without this the view claimed the REPOSITORY was empty. */
     filtered = false,
+    /** `worktree:list` threw. A failed read is not an empty list. */
+    worktreeFailed = false,
     onClear?: () => void,
   ): HTMLElement {
-    if (query) {
-      return emptyState("No matches", `Nothing in ${tab} matches “${query}”.`, {
-        icon: "search",
+    // What the reader calls this list, not the internal key. `tab` is
+    // "local" / "remote" / "tags", and printing it produced "Nothing in local
+    // matches …" and "No tag here matches …".
+    const NOUN: Record<string, { one: string; many: string }> = {
+      local: { one: "branch", many: "branches" },
+      remote: { one: "remote branch", many: "remote branches" },
+      tags: { one: "tag", many: "tags" },
+      stashes: { one: "stash", many: "stashes" },
+      worktrees: { one: "worktree", many: "worktrees" },
+    };
+    const noun = NOUN[tab] ?? { one: "ref", many: "refs" };
+
+    // A NARROWING emptied it, not the repository. Both narrowings are named
+    // when both are active: the search branch used to return first, so a search
+    // that matched something and a facet that matched nothing blamed the search
+    // box alone — and offered no way to clear the filter actually responsible.
+    if (query || filtered) {
+      const why =
+        query && filtered
+          ? `No ${noun.many} match “${query}” and the filters you have set.`
+          : query
+            ? `No ${noun.many} match “${query}”.`
+            : `No ${noun.many} match the filters you have set.`;
+      return emptyState("No matches", why, {
+        icon: filtered ? "filter" : "search",
         anchor: "inline",
+        // Offered whenever there is a filter to clear — a search you can see in
+        // the box you typed it into needs no button, but a facet or an age cut
+        // three controls away does.
+        ...(filtered && onClear ? { action: { label: "Clear filters", onClick: onClear } } : {}),
       });
     }
-    // A filter emptied it, not the repository. This used to fall through to the
-    // copy below and announce "No branches yet — every repository has at least
-    // one, this read found none" over a repo with ninety of them, because a
-    // facet or the age cut had hidden them all. An empty list must say which
-    // control emptied it, and offer to undo that control.
-    if (filtered) {
-      return emptyState(
-        "No matches",
-        `No ${tab === "local" ? "branch" : tab.replace(/e?s$/, "")} here matches the filters you have set.`,
-        {
-          icon: "filter",
-          anchor: "inline",
-          ...(onClear ? { action: { label: "Clear filters", onClick: onClear } } : {}),
-        },
+    if (tab === "worktrees" && worktreeFailed) {
+      return errorState(
+        "Couldn't read the worktrees",
+        "Git did not answer. Whether this repository has others is unknown, not settled.",
+        () => void this.refreshBranchesSoft(),
       );
     }
     if (tab === "stashes" && stashFailed) {

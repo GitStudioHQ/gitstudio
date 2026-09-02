@@ -4759,6 +4759,32 @@
     },
 
     /**
+     * A deep link SHOWS the ref it names.
+     *
+     * The link cleared the search box, and only that. `branchAge` defaults to
+     * "active", so a link to any branch untouched for three months — from a
+     * graph ref chip, or from a run's branch chip, which is where a stale
+     * branch's run lives — landed on a list that did not contain it, with
+     * nothing on screen saying why. The facets could do the same, and they
+     * persist per segment across launches.
+     */
+    "a-branch-deep-link-shows-the-branch": (f) => {
+      const c = check(f);
+      c.ok(!!$(".branches-view"), "the chip routes to Branches");
+      const refs = $$(".sec-row").map((r) => r.dataset.ref);
+      c.ok(
+        refs.includes("spike/monaco-swap"),
+        `the branch it named is in the list (${refs.join(", ")})`,
+      );
+      const age = $$(".branches-facets .gh-seg-btn").find((b) => b.classList.contains("active"));
+      c.match(
+        text(age || { textContent: "" }),
+        /^All/,
+        "and the age cut was widened rather than hiding it",
+      );
+    },
+
+    /**
      * The log's four states, and what each one may say and do.
      *
      * A state table rather than a browse, because this surface was rewritten in
