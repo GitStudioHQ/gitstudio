@@ -1,0 +1,39 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_f73aab6e285718 1049-1062
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_301e138311e8d5 924-925
+  s_26f5e669d3043c::t_8c3ec8a587e5db 486-488
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_b6c4a70055a136 1549-1552
+  s_26f5e669d3043c::t_5d181088a7c2dc 1553-1562
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_b6c4a70055a136 1375-1382
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_5ef600a8e805e7 320-329
+  s_26f5e669d3043c::t_301e138311e8d5 1638-1643
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_95a7460929ab6a 228-231
+apps/desktop/test/parseTrack.test.ts
+  s_26f5e669d3043c::t_f3cca824e9ac1e 1-36
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_0cef1424f4aefb 1521
+  s_26f5e669d3043c::t_5ef600a8e805e7 1514,2855-2865,2868-2872
+  s_26f5e669d3043c::t_301e138311e8d5 2147-2151,2165-2179
+  s_26f5e669d3043c::t_19ddbf44e97729 2180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d59a255237ab34b4c7eed3bea6551df422721c19",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
