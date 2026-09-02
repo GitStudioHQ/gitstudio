@@ -4759,6 +4759,37 @@
     },
 
     /**
+     * The Code view's Refresh refreshes the FILE LIST.
+     *
+     * The listing is read through `gget("repo:tree", …)`, so a Refresh that
+     * only re-ran the view was answered from the cache: the commit bar and the
+     * README — which fetch separately — updated while the file list beneath
+     * them did not. That is the one thing the button is pressed for.
+     */
+    "code-refresh-rereads-the-listing": async (f) => {
+      const c = check(f);
+      const calls = [];
+      const inv = window.gitstudio.invoke;
+      window.gitstudio.invoke = async (ch, p) => {
+        if (ch === "repo:tree") calls.push(1);
+        return inv(ch, p);
+      };
+      const before = calls.length;
+      const r = $$("button").find((b) =>
+        /refresh/i.test(b.getAttribute("aria-label") || b.title || ""),
+      );
+      c.ok(!!r, "the Code view has a Refresh");
+      if (!r) return;
+      r.click();
+      await settle(1400);
+      window.gitstudio.invoke = inv;
+      c.ok(
+        calls.length > before,
+        `it asks git for the tree again (${calls.length - before} call(s))`,
+      );
+    },
+
+    /**
      * A person peek's primary action works from wherever it was opened.
      *
      * `memberCard` is opened by every person chip in the app — an issue's

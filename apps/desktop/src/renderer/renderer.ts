@@ -4458,7 +4458,17 @@ class App {
     refreshBtn.title = "Refresh";
     refreshBtn.setAttribute("aria-label", "Refresh");
     refreshBtn.appendChild(glyph("refresh"));
-    refreshBtn.addEventListener("click", () => void this.refreshInPlace(refreshBtn, () => this.showCodeView()));
+    refreshBtn.addEventListener("click", () =>
+      // BUST first. The listing is read through `gget("repo:tree", …)`, so a
+      // Refresh that only re-ran the view was answered from the cache — the
+      // commit bar and the README (which fetch separately) updated while the
+      // file list beneath them did not, which is the one thing Refresh is
+      // pressed for.
+      void this.refreshInPlace(refreshBtn, () => {
+        bust("repo:tree");
+        return this.showCodeView();
+      }),
+    );
     const head = el("div", "code-head");
     head.append(crumbs, countChip, el("div", "topbar-spacer"), filterInput, refreshBtn);
 
@@ -4538,9 +4548,20 @@ class App {
       listing.appendChild(up);
     }
 
-    if (!sorted.length && !this.codePath) {
+    if (!sorted.length) {
       colhead.hidden = true;
-      listing.appendChild(emptyState("Empty repository", "No tracked files at HEAD yet."));
+      // A subfolder can be empty too — and used to render as a bare card with
+      // nothing in it and nothing said, which reads as a failed load rather
+      // than as an answer. The repository-level copy is only right at the root.
+      listing.appendChild(
+        this.codePath
+          ? emptyState(
+              "This folder is empty",
+              `${this.codePath} has no tracked files at HEAD.`,
+              { icon: "folder" },
+            )
+          : emptyState("Empty repository", "No tracked files at HEAD yet."),
+      );
     }
 
     /** Rows in display order, so the filter and keyboard nav can drive them. */
