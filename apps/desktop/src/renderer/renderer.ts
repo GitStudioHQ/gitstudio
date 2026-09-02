@@ -278,7 +278,7 @@ class App {
   private viewCache = new Map<string, HTMLElement>();
   /** Where each kept-alive view was scrolled when it was parked. Keyed by the
    *  node itself, so a rebuilt view never inherits the old one's position. */
-  private viewScroll = new WeakMap<HTMLElement, [HTMLElement, number, number][]>();
+  private viewScroll = new WeakMap<HTMLElement, [HTMLElement, number, number, boolean][]>();
   /** Views safe to keep alive (no Monaco surface / dispose lifecycle of their own). */
   /** A search that came back rate-limited is a REFUSAL, not an answer — caching
    *  it makes every retry a cache hit for the whole TTL. See cache.gget. */
@@ -289,8 +289,8 @@ class App {
    *  Whole-subtree, not just the outermost scroller: these views nest them —
    *  a list pane beside a detail pane, a rail beside a log — and restoring only
    *  the outer one puts you back at the top of the part you were reading. */
-  private static scrollSnapshot(root: HTMLElement): [HTMLElement, number, number][] {
-    const out: [HTMLElement, number, number][] = [];
+  private static scrollSnapshot(root: HTMLElement): [HTMLElement, number, number, boolean][] {
+    const out: [HTMLElement, number, number, boolean][] = [];
     const walk = (n: HTMLElement): void => {
       // NOT INTO MONACO. It manages its own viewport — partly by transform,
       // partly by scrollTop on nodes it recreates — and restores its position
@@ -299,7 +299,12 @@ class App {
       // catch that: with the animation frame starved, Monaco never lays out, so
       // its internal scrollers all read 0 here and the walk looks harmless.
       if (n.classList.contains("monaco-editor")) return;
-      if (n.scrollTop > 0 || n.scrollLeft > 0) out.push([n, n.scrollTop, n.scrollLeft]);
+      if (n.scrollTop > 0 || n.scrollLeft > 0) {
+        // …and whether that offset WAS the bottom, which is a different
+        // intention from "this many pixels down" for anything still growing.
+        const atTail = n.scrollHeight - n.scrollTop - n.clientHeight <= 24;
+        out.push([n, n.scrollTop, n.scrollLeft, atTail]);
+      }
       for (const kid of n.children) walk(kid as HTMLElement);
     };
     walk(root);
@@ -1246,9 +1251,15 @@ class App {
       const shot = this.viewScroll.get(cached);
       if (shot) {
         const apply = (): void => {
-          for (const [node, top, left] of shot) {
+          for (const [node, top, left, atTail] of shot) {
             if (!node.isConnected) continue;
-            node.scrollTop = top;
+            // A node that GREW while parked is a different problem from one
+            // that did not. The Assistant's transcript keeps taking a live
+            // turn's output behind your back, so restoring the pixel offset put
+            // you permanently behind the answer — pinned to a fixed point while
+            // it wrote past you. If the reader was at the TAIL when they left,
+            // the tail is where they meant to be, wherever that now is.
+            node.scrollTop = atTail ? node.scrollHeight : top;
             node.scrollLeft = left;
           }
         };
@@ -5726,7 +5737,14 @@ class App {
         wsBtn.disabled = !live;
         const why = "This file has no line-by-line diff to work with.";
         stageLinesBtn.title = live ? "" : why;
-        wsBtn.title = live ? "Ignore whitespace-only changes" : why;
+        // `syncWs` OWNS this title — it depends on whether whitespace is
+        // currently ignored, not only on whether there is a diff to ignore it
+        // in. Writing the "turn it on" text here unconditionally relabelled a
+        // toggle that was already ON as though it were off, on every file you
+        // opened: the exact "titles never change with their state" defect the
+        // log toolbar was fixed for, reintroduced one toolbar over.
+        if (live) syncWs();
+        else wsBtn.title = why;
       });
     };
 

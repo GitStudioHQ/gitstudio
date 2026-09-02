@@ -166,10 +166,23 @@ export class DiffPanel {
       // file is empty" and "you deleted this file" are different claims, and
       // only the producer can tell them apart.
       if (file.deleted) {
+        // WHICH deletion. `deleted` says only that the path is not on disk, and
+        // two different things reach here that way: a file added to the index
+        // and then removed (git's `AD`), and a tracked file that was EMPTY in
+        // HEAD and has now been deleted. Both have two empty sides; only the
+        // first is "staged as a new file", and saying that about the second
+        // tells the reader their committed file was never committed.
+        const wasCommitted = file.onlySide === "deleted";
         this.showEmpty(
-          `${file.path} is staged as a new file but is no longer on disk. There is nothing to show ` +
-            `— committing it as it stands would add nothing.`,
-          { title: "Deleted before it was committed", kind: "none" },
+          wasCommitted
+            ? `${file.path} was empty, and has been deleted. There are no lines to show — the change ` +
+                `is the deletion itself.`
+            : `${file.path} is staged as a new file but is no longer on disk. There is nothing to ` +
+                `show — committing it as it stands would add nothing.`,
+          {
+            title: wasCommitted ? "Deleted" : "Deleted before it was committed",
+            kind: "none",
+          },
         );
         return;
       }

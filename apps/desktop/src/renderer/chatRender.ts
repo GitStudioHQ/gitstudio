@@ -103,6 +103,12 @@ export async function runAgentTurn(
       modelId: cfg.modelId,
       thinking: cfg.thinking,
     });
+    // Was the reader at the tail BEFORE the turn's last block goes in? Asked
+    // after, the block it just appended is exactly what puts them "away from
+    // the bottom", so a turn whose whole answer arrives at the end — no
+    // streaming, which is every non-streaming provider — landed below the fold
+    // and the settle at the end of `finally` politely declined to move.
+    const stickAtEnd = atBottom(transcript);
     finalizeStream(state);
     thinking.remove();
     if (!done.ok && done.message) {
@@ -110,6 +116,7 @@ export async function runAgentTurn(
     } else if (done.text && !turn.querySelector(".assistant-msg")) {
       turn.append(markdownBlock(done.text));
     }
+    if (stickAtEnd) scrollDown(transcript, true);
   } catch (e) {
     // SETTLE the half-written answer first. `is-streaming` draws a blinking
     // caret after the last line, and this path did not remove it — so a turn

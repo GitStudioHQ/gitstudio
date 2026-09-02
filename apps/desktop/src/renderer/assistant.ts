@@ -340,17 +340,26 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   // a working connection sitting behind it, and the only way out was to restart
   // the app.
   const onAiChanged = (): void => {
-    // This view is rebuilt on a repo switch, and each build adds a listener.
-    // The stale ones are inert — they guard on `wrap.isConnected` below — but
-    // they accumulate, so a detached one takes itself off the window.
-    if (!wrap.isConnected) {
+    // NOT gated on `wrap.isConnected`.
+    //
+    // Connecting a model means going to Settings, which PARKS this view in the
+    // keep-alive cache — detached, but very much alive and about to be shown
+    // again. An `isConnected` guard here therefore fired on the one path that
+    // matters and, worse, unsubscribed: the gate could then never lift, which
+    // is the whole defect this listener exists to fix, restored by the guard
+    // added to stop it leaking.
+    //
+    // The leak is answered by identity instead. Each build registers itself as
+    // `live`; only the newest one acts, and the older listeners fall out with
+    // their closures when nothing references them.
+    if (live?.el !== wrap) {
       window.removeEventListener("gs:ai-changed", onAiChanged);
       return;
     }
     if (!gated) return; // an ungated Assistant has nothing to re-open
     void (async () => {
       const s = await host.invoke("ai:settings", undefined).catch(() => undefined);
-      if (!s?.enabled || !wrap.isConnected) return;
+      if (!s?.enabled || live?.el !== wrap) return;
       gated = false;
       transcript.replaceChildren(empty);
       input.disabled = false;

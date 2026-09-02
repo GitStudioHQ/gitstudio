@@ -219,3 +219,28 @@ test("an added binary and a deleted one are told apart", async () => {
     removeTempRepo(root);
   }
 });
+
+test("a deleted EMPTY tracked file is not called a new file", async () => {
+  // Two different things arrive with both sides empty and the path gone from
+  // disk: a file added to the index and then removed (git's `AD`), and a
+  // tracked file that was empty in HEAD and has now been deleted. Only the
+  // first is "staged as a new file" — telling someone the second about a file
+  // they committed weeks ago says their commit never happened.
+  const { root, git } = repo();
+  try {
+    writeFileSync(join(root, "empty.txt"), "");
+    git("add", "-A");
+    git("commit", "-qm", "add an empty file");
+    execFileSync("git", ["rm", "-q", "empty.txt"], { cwd: root });
+
+    const b = await bridge(root);
+    const d = await b.fileDiff({ path: "empty.txt" });
+    assert.equal(d.leftText, "", "HEAD's copy was empty");
+    assert.equal(d.rightText, "", "and it is not on disk");
+    assert.equal(d.deleted, true, "the producer says it is gone");
+    // The flag that tells the two apart.
+    assert.equal(d.onlySide, "deleted", "and that it EXISTED before, so it is a deletion");
+  } finally {
+    removeTempRepo(root);
+  }
+});
