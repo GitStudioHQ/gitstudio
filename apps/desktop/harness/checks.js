@@ -7302,6 +7302,60 @@
       }
     },
 
+    // The agent's OWN work destroying the record of it. Approving a commit fires
+    // the file watcher, whose refreshAll() re-routed the view the agent was
+    // streaming into — transcript, tool steps and Stop button all gone, while
+    // the run carried on in the main process with nothing on screen to stop it.
+    "the-agents-own-commit-does-not-erase-the-chat": async (f) => {
+      const c = check(f);
+      const t = $(".assistant-transcript");
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      c.ok(!!t && !!input && !!send, "the assistant is live");
+      if (!t || !input || !send) return;
+
+      const inv = window.gitstudio.invoke;
+      let rid = null;
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "ai:chatSend") {
+          rid = p.requestId;
+          return new Promise(() => {}); // the turn is still running
+        }
+        return inv(ch, p);
+      };
+      try {
+        input.value = "commit my work";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        send.click();
+        await settle(600);
+        c.ok(!!rid, "a turn is running");
+        if (!rid) return;
+        window.__gsEmit("ai:agentEvent", {
+          requestId: rid,
+          kind: "assistant",
+          text: "Committing now.",
+        });
+        await settle(300);
+        c.eq($$(".assistant-msg").length, 1, "the agent has said something");
+        c.ok(send.classList.contains("is-cancel"), "and there is a Stop button");
+
+        // The commit lands: the watcher fires, and refreshAll() runs.
+        const heard = window.__gsEmit("repo:filesChanged", { gitDir: true });
+        c.eq(heard, 1, "the app is listening for the watcher");
+        await settle(2500);
+
+        c.eq($$(".assistant-bubble").length, 1, "your message survives");
+        c.eq($$(".assistant-msg").length, 1, "the answer survives");
+        c.ok(
+          $(".assistant-send")?.classList.contains("is-cancel"),
+          "and the run is still stoppable",
+        );
+        c.ok($(".assistant-transcript") === t, "the transcript was not rebuilt under it");
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // `running` is the only thing stopping a second turn, and `runGoal` awaits
     // the connection gate before it does anything else. With the flag set after
     // that await, two quick presses both read `running === false`, both

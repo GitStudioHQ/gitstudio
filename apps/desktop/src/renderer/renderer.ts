@@ -7682,6 +7682,14 @@ class App {
     if (this.currentView === "assistant") {
       return;
     }
+    // The Assistant, for the same reason and a sharper one. Nothing on it is
+    // derived from the repository's disk state — it is a transcript — and the
+    // agent's own work is what fires this: approve a commit and the file
+    // watcher calls refreshAll, which re-routed the view the agent was
+    // streaming into. The answer, the tool steps and the Stop button were all
+    // destroyed mid-run, while the run itself carried on in the main process
+    // with nothing left on screen to stop it or show it.
+
     // The graph reloads in place when showing; when it's PARKED (kept alive
     // behind another view) it's only marked dirty, so returning to Commits
     // re-syncs the data without ever tearing the mount down.
