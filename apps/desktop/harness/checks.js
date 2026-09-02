@@ -5605,9 +5605,23 @@
      */
     "log-colours-survive-both-themes": async (f) => {
       const c = check(f);
-      const win = $(".log-window");
-      c.ok(!!win, "a log is open");
+      // Wait for the log to have actually PAINTED, not merely to exist.
+      //
+      // This measures computed colour on probe spans appended to the window,
+      // and `getComputedStyle` on an element that is not in the rendered tree
+      // answers with an empty declaration — every colour reads "" and every
+      // assertion fails, saying nothing about colour. Under a loaded machine
+      // the pane existed but had not rendered yet, so this failed roughly one
+      // run in five and passed every time it was run alone: the worst kind of
+      // check, because a real regression here would be dismissed as the flake.
+      let win = $(".log-window");
+      for (let i = 0; i < 40 && (!win || !win.isConnected || !$$(".log-line").length); i++) {
+        await settle(100);
+        win = $(".log-window");
+      }
+      c.ok(!!win && win.isConnected, "a log is open");
       if (!win) return;
+      c.ok($$(".log-line").length > 0, "and it has painted lines to colour");
       const mk = (cls) => {
         const s = document.createElement("span");
         s.className = cls;
