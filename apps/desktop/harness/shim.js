@@ -225,6 +225,10 @@
     { name: "main", current: true, upstream: "origin/main", ahead: 2, behind: 0, subject: "release: extension 1.11.1", date: S(40) },
     { name: "redesign/issues-detail", current: false, upstream: "origin/redesign/issues-detail", ahead: 0, behind: 0, subject: "issues: full-page detail as a routed state", date: S(1) },
     { name: "fix/log-stream", current: false, upstream: undefined, ahead: 0, behind: 0, subject: "actions: stream job logs with backpressure", date: S(8) },
+    // The state every merged pull request leaves behind: the upstream is gone,
+    // and without the flag the row reads "0 ahead, 0 behind" — in sync with a
+    // remote that does not exist.
+    { name: "redesign/wave-1", current: false, upstream: "origin/redesign/wave-1", ahead: 0, behind: 0, gone: true, subject: "issues: section pages land", date: S(56) },
     { name: "feat/line-staging", current: false, upstream: "origin/feat/line-staging", ahead: 3, behind: 5, subject: "engine: hunk splitting groundwork", date: S(20) },
   ];
 

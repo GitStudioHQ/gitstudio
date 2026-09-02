@@ -1372,6 +1372,14 @@ button.list-row,
 }
 .ab-pill.ahead { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .ab-pill.behind { color: var(--status-mod); background: color-mix(in srgb, var(--status-mod) 16%, transparent); }
+/* The upstream this branch tracked is gone — a state git reports and the row
+   used to render as "in sync". Warning-coloured, because it is a fact about
+   something that has disappeared, not an error. */
+.ab-pill.gone {
+  color: var(--status-warn);
+  border-color: color-mix(in srgb, var(--status-warn) 40%, var(--app-border));
+  background: color-mix(in srgb, var(--status-warn) 12%, transparent);
+}
 
 /* The behind pill is a real Pull button: same pill face, but interactive. */
 button.ab-btn {

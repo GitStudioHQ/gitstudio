@@ -1546,6 +1546,20 @@ class App {
       p.title = `${plural(b.behind, "commit")} to pull from ${b.upstream ?? "upstream"}`;
       top.appendChild(p);
     }
+    // The upstream is GONE. Without this the row reads "0 ahead, 0 behind" —
+    // the same shape as perfectly in sync — about a remote branch that no
+    // longer exists, which is what every merged pull request leaves behind and
+    // the clearest sign the local copy is finished with.
+    // The upstream is GONE. Without this the row reads "0 ahead, 0 behind" —
+    // the same shape as perfectly in sync — about a remote branch that no
+    // longer exists, which is what every merged pull request leaves behind and
+    // the clearest sign the local copy is finished with.
+    if (b.gone) {
+      const p = el("span", "ab-pill gone");
+      p.textContent = "upstream gone";
+      p.title = `${b.upstream ?? "Its upstream"} no longer exists — this branch is probably finished with.`;
+      top.appendChild(p);
+    }
     meta.appendChild(top);
     const bits: string[] = [];
     if (b.upstream) bits.push(b.upstream);

@@ -1511,13 +1511,14 @@ export class GitBridge {
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
       const [name, head, upstream, track, date, subject] = line.split(SEP);
-      const { ahead, behind } = parseTrack(track ?? "");
+      const { ahead, behind, gone } = parseTrack(track ?? "");
       branches.push({
         name,
         current: head === "*",
         upstream: upstream || undefined,
         ahead,
         behind,
+        ...(gone ? { gone: true } : {}),
         subject: subject ?? "",
         date: Number(date) || 0,
       });
@@ -2143,7 +2144,11 @@ export class GitBridge {
     });
   }
 
-  // ── Tag creation (the Branches view's "Create tag here…") ───────────────────
+  // ── Tags (the Branches view's create / delete / push) ───────────────────────
+  //
+  // `TagOps` has had `delete` and `push` since it was written; neither had an
+  // IPC channel, so the app could CREATE a tag it could then never remove or
+  // publish. A verb you can only do in one direction is not a feature.
 
   tagCreate(req: { name: string; ref?: string; message?: string }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return Promise.resolve(UNSAFE_REF_RESULT);
@@ -2155,6 +2160,22 @@ export class GitBridge {
         annotated: req.message !== undefined && req.message.length > 0,
       }),
     );
+  }
+
+  /** `git tag -d <name>` — local only; the remote copy outlives it. */
+  tagDelete(name: string): Promise<CommitActionResult> {
+    if (!safeArg(name)) return Promise.resolve(UNSAFE_REF_RESULT);
+    return this.staged((ctx) => ctx.tags.delete(name));
+  }
+
+  /** `git push <remote> refs/tags/<name>` — publishing one tag, not `--tags`.
+   *  Pushing every tag at once is a different, much larger action and must be
+   *  asked for explicitly rather than ridden along with a single one. */
+  tagPush(req: { name: string; remote?: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.name)) return Promise.resolve(UNSAFE_REF_RESULT);
+    const remote = req.remote ?? "origin";
+    if (!safeArg(remote)) return Promise.resolve(UNSAFE_REF_RESULT);
+    return this.staged((ctx) => ctx.tags.push(remote, req.name));
   }
 
   // ── Hunk / line staging (working ⇄ index) ───────────────────────────────────
@@ -2831,11 +2852,24 @@ async function readWorking(
 
 // ── parse helpers ────────────────────────────────────────────────────────────
 
-/** Parses git's `%(upstream:track)` field, e.g. "[ahead 2, behind 1]" / "[gone]". */
-export function parseTrack(track: string): { ahead: number; behind: number } {
+/**
+ * Parses git's `%(upstream:track)` field, e.g. "[ahead 2, behind 1]" / "[gone]".
+ *
+ * `[gone]` used to be discarded, and a branch whose upstream had been deleted
+ * came back as `{ ahead: 0, behind: 0 }` — indistinguishable from perfectly in
+ * sync. That is the most common state in this app's own workflow: GitHub
+ * deletes the head branch when a pull request merges, and the local copy then
+ * reads as up to date with a remote that no longer exists. It is also exactly
+ * the signal that the branch is finished and safe to delete.
+ */
+export function parseTrack(track: string): { ahead: number; behind: number; gone: boolean } {
   const a = track.match(/ahead (\d+)/);
   const b = track.match(/behind (\d+)/);
-  return { ahead: a ? Number(a[1]) : 0, behind: b ? Number(b[1]) : 0 };
+  return {
+    ahead: a ? Number(a[1]) : 0,
+    behind: b ? Number(b[1]) : 0,
+    gone: /\bgone\b/.test(track),
+  };
 }
 
 /** Parses `git diff --name-status` (tab-separated, newline-delimited). */

@@ -483,6 +483,9 @@ function actionLabel(channel: string): string {
     "branch:create": "Create branch",
     "branch:delete": "Delete branch",
     "branch:pullFf": "Pull branch",
+    "tag:create": "Create tag",
+    "tag:delete": "Delete tag",
+    "tag:push": "Push tag",
     "compare:refs": "Compare",
     "compare:fileDiff": "Compare file",
     "repo:tree": "Read tree",
@@ -918,6 +921,8 @@ function registerIpc(): void {
   handle("rebase:continue", () => bridge.rebaseContinue());
   handle("rebase:skip", () => bridge.rebaseSkip());
   handle("tag:create", (req) => bridge.tagCreate(req));
+  handle("tag:delete", (name) => bridge.tagDelete(name));
+  handle("tag:push", (req) => bridge.tagPush(req));
 
   // ── GitHub depth (PR review / issues / actions / search / repo admin) ──
   handle("pr:fileDiff", (req) => github.withRepo((c, o, r) => prsApi.fileDiff(c, o, r, req)));

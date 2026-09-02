@@ -1046,6 +1046,20 @@
       }
       const [a, b] = pills.map((p) => p.getBoundingClientRect());
       c.eq(Math.round(a.height), Math.round(b.height), "the pair shares a height");
+
+      // And a branch whose UPSTREAM IS GONE must not read as in sync. Git
+      // reports `[gone]`, `parseTrack` threw it away, and the row then showed
+      // the same nothing a perfectly-synced branch shows — about a remote that
+      // no longer exists, which is what every merged pull request leaves.
+      const goneRow = $$(".branch-row, .list-row").find((r) =>
+        (r.textContent || "").includes("redesign/wave-1"),
+      );
+      c.ok(!!goneRow, "the fixture has a branch whose upstream was deleted");
+      if (!goneRow) return;
+      const gonePill = goneRow.querySelector(".ab-pill.gone");
+      c.ok(!!gonePill, "and the row says the upstream is gone");
+      c.match(text(gonePill), /gone/i, "in words, not just a colour");
+      c.match(gonePill?.title, /no longer exists|finished/i, "with what that means on hover");
       const sa = getComputedStyle(pills[0]), sb = getComputedStyle(pills[1]);
       c.eq(sa.fontSize, sb.fontSize, "the pair shares a font size");
       c.eq(sa.borderRadius, sb.borderRadius, "the pair shares a corner radius");

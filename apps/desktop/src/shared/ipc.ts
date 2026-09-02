@@ -317,6 +317,16 @@ export interface BranchInfo {
   upstream?: string;
   ahead: number;
   behind: number;
+  /**
+   * The upstream this branch tracks NO LONGER EXISTS (git's `[gone]`).
+   *
+   * The most common state in this app's own workflow — GitHub deletes the head
+   * branch when a pull request merges — and it used to be thrown away in
+   * `parseTrack`, so the branch read as `0 ahead, 0 behind`: perfectly in sync
+   * with a remote that is not there. It is also the clearest signal that a
+   * branch is finished and safe to delete.
+   */
+  gone?: boolean;
   /** Subject of the branch tip commit. */
   subject: string;
   /** Tip commit author date, epoch seconds. */
@@ -1625,6 +1635,12 @@ export interface IpcChannels {
   "am:continue": [void, CommitActionResult];
   // ── Tag creation (the Branches view's "Create tag here…") ──
   "tag:create": [{ name: string; ref?: string; message?: string }, CommitActionResult];
+  /** `git tag -d` — LOCAL only. A tag already pushed survives on the remote,
+   *  and the UI has to say so rather than implying the tag is gone. */
+  "tag:delete": [string, CommitActionResult];
+  /** Publish ONE tag. Pushing every tag at once is a different, much larger
+   *  action and must be asked for on its own. */
+  "tag:push": [{ name: string; remote?: string }, CommitActionResult];
   // ── PR review depth: per-file diffs + inline threads + metadata ──
   "pr:fileDiff": [{ number: number; path: string }, FileDiff | undefined];
   "pr:reviewThreads": [number, PrReviewThread[]];
