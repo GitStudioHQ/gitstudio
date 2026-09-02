@@ -10179,3 +10179,15 @@ body.vscode-light .log-pane {
 .rd-prop { display: flex; justify-content: space-between; gap: var(--sp-3); padding: 3px 0; font-size: var(--text-xs); }
 .rd-prop-label { color: var(--app-muted); }
 .rd-prop-value { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The filter row: facets, the age cut, and the sort. */
+.branches-facets {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) 0;
+}
+.branches-facets .gh-facets { margin: 0; padding: 0; border: none; }
+.branches-sort { margin-left: auto; }

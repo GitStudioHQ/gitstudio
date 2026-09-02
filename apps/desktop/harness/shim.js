@@ -326,6 +326,14 @@
       { type: "tag", name: "nightly", fullName: "refs/tags/nightly", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(26), subject: "release: extension 1.11.1" },
     ],
     "head:get": { detached: false, branch: "main", sha: "9f8e7d6" },
+    // More than one, so the Worktrees segment exists at all — the four
+    // worktree channels have been in the IPC contract since it was written
+    // with no caller in any view, and no fixture either.
+    "worktree:list": [
+      { path: "/Users/anton/Developer/GitStudioHQ/gitstudio", head: "9f8e7d6aa11", branch: "main", current: true },
+      { path: "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2", head: "a1b2c3d4e5f", branch: "redesign/issues-detail" },
+      { path: "/Users/anton/Developer/GitStudioHQ/gitstudio-hotfix", head: "77aa88b9c0d", branch: "fix/log-stream", prunable: true },
+    ],
     "branches:list": branches,
     // The Rebase view had no fixture, so every screenshot of it was its ERROR
     // state — the one surface nobody could actually look at.
@@ -492,7 +500,7 @@
     "repo:headCommit": { sha: "9f8e7d6", shortSha: "9f8e7d", author: "Anton Arnaudov", authorEmail: "anton@gitstudio.dev", date: S(40), subject: "release: extension 1.11.1", message: "release: extension 1.11.1", total: 512 },
     "repo:tree": [],
     "ssh:keys": [],
-    "worktree:list": [],
+    // (the real fixture is above — an empty array here shadowed it)
   };
 
   // E1: mutable settings so the Repositories card + destination sheet are

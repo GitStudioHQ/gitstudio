@@ -77,12 +77,13 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu } from "./contextMenu";
-import { wireListNav, commitList, ghHeader, searchField, segmented, secRow } from "./views/common";
+import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
 import { openCommandPalette, paletteIsOpen } from "./commandPalette";
 import type { PaletteGroup, PaletteItem } from "./commandPalette";
 import type { SectionRender, SectionTarget } from "./views/common";
+import type { FacetSpec, FacetState } from "./facetModel";
 import { renderIssues, openNewIssue } from "./views/issues";
 import { renderMyWork } from "./views/mywork";
 import { renderPrs, openCreatePr } from "./views/prs";
@@ -116,6 +117,7 @@ import type {
   RepoInfo,
   SshKey,
   StashInfo,
+  WorktreeInfo,
   SyncStatus,
 } from "../shared/ipc";
 
@@ -412,7 +414,8 @@ class App {
       prefs.branchTab === "local" ||
       prefs.branchTab === "remote" ||
       prefs.branchTab === "tags" ||
-      prefs.branchTab === "stashes"
+      prefs.branchTab === "stashes" ||
+      prefs.branchTab === "worktrees"
     ) {
       this.branchTab = prefs.branchTab;
     }
@@ -1304,7 +1307,8 @@ class App {
     header.querySelector(".gh-acct")?.before(tools);
 
     const segSlot = el("div", "branches-segbar");
-    wrap.append(header, segSlot, body);
+    const facetSlot = el("div", "branches-facets");
+    wrap.append(header, segSlot, facetSlot, body);
     wireListNav(body, ".sec-row");
     this.viewHost.replaceChildren(wrap);
 
@@ -1352,12 +1356,22 @@ class App {
     let defaultBranch =
       this.refs.find((r) => r.type === "remote" && r.symref)?.symref?.replace(/^origin\//, "") ??
       locals.find((b) => b.current)?.name;
+    // Worktrees: four channels that have existed since the IPC contract was
+    // written with NO caller in any view. The segment appears only when there
+    // is more than one — a single worktree is just "the repository".
+    let worktrees: WorktreeInfo[] = [];
+    try {
+      worktrees = await host.invoke("worktree:list", undefined);
+    } catch {
+      worktrees = [];
+    }
+    if (gen !== this.routeGen) return;
 
     // Which KIND is on screen. One homogeneous kind per screen is what makes a
     // shared row and a facet bar possible at all — and it stops 300 tags
     // burying six branches, which is what the four-groups-in-one-scroller shape
     // did every time a repo had any history.
-    type Kind = "local" | "remote" | "tags" | "stashes";
+    type Kind = "local" | "remote" | "tags" | "stashes" | "worktrees";
     if (highlightRef) {
       this.branchTab = locals.some((b) => b.name === highlightRef)
         ? "local"
@@ -1375,7 +1389,42 @@ class App {
       remote: remotes.length,
       tags: tags.length,
       stashes: stashes.length,
+      worktrees: worktrees.length,
     });
+
+    /**
+     * How recently a branch moved, as GitHub cuts it: Active / Stale / All.
+     *
+     * Three months is github.com's own line, and it is the difference between
+     * "the branches I am working on" and "everything this clone has ever
+     * touched" — the distinction that makes a list of ninety branches usable.
+     */
+    const STALE_AFTER = 90 * 24 * 3600;
+    const isStale = (date?: number): boolean =>
+      !!date && Date.now() / 1000 - date > STALE_AFTER;
+
+    /** The one word that describes where a branch stands. First match wins, and
+     *  the order is the order a person cares about them in. */
+    const standing = (b: BranchInfo): string => {
+      if (b.current) return "current";
+      if (b.gone) return "gone";
+      if (b.merged) return "merged";
+      if (!b.upstream) return "unpublished";
+      if (b.ahead && b.behind) return "diverged";
+      if (b.ahead) return "ahead";
+      if (b.behind) return "behind";
+      return "insync";
+    };
+    const STANDING_LABELS: Record<string, string> = {
+      current: "Current",
+      gone: "Upstream gone",
+      merged: "Merged",
+      unpublished: "Unpublished",
+      diverged: "Diverged",
+      ahead: "Ahead",
+      behind: "Behind",
+      insync: "In sync",
+    };
 
     const render = (): void => {
       const n = counts();
@@ -1388,6 +1437,12 @@ class App {
             { value: "remote", label: `Remotes (${n.remote})`, icon: "cloud" },
             { value: "tags", label: `Tags (${n.tags})`, icon: "tag" },
             { value: "stashes", label: `Stashes (${n.stashes})`, icon: "archive" },
+            // Only when there is more than one: a single worktree is just "the
+            // repository", and a segment reading "Worktrees (1)" is a tab that
+            // tells you nothing.
+            ...(n.worktrees > 1
+              ? [{ value: "worktrees" as Kind, label: `Worktrees (${n.worktrees})`, icon: "window" }]
+              : []),
           ],
           onChange: (v) => {
             this.branchTab = v;
@@ -1411,6 +1466,109 @@ class App {
       sweep.addEventListener("click", () => void this.sweepFinishedBranches(finished, defaultBranch));
       segSlot.appendChild(sweep);
 
+      // ── the filter bar ────────────────────────────────────────────────
+      //
+      // All client-side: `branches:list` and `refs:list` are whole-set reads,
+      // so every spec carries a predicate and changing one is a re-render, not
+      // a refetch. State is per KIND — a Standing filter means nothing on the
+      // tags screen.
+      const specs: FacetSpec<unknown>[] =
+        this.branchTab === "local"
+          ? [
+              {
+                key: "standing",
+                label: "Standing",
+                icon: "git-branch",
+                options: [...new Set(locals.map(standing))].map((v) => ({
+                  value: v,
+                  label: STANDING_LABELS[v] ?? v,
+                })),
+                predicate: (item: unknown, v: string) => standing(item as BranchInfo) === v,
+              },
+              {
+                key: "remote",
+                label: "Remote",
+                icon: "cloud",
+                options: [...new Set(locals.map((b) => b.upstream?.split("/")[0]).filter(Boolean))].map(
+                  (v) => ({ value: v as string, label: v as string }),
+                ),
+                predicate: (item: unknown, v: string) => (item as BranchInfo).upstream?.split("/")[0] === v,
+              },
+            ]
+          : this.branchTab === "remote"
+            ? [
+                {
+                  key: "remote",
+                  label: "Remote",
+                  icon: "cloud",
+                  options: [...new Set(remotes.map((r) => r.name.split("/")[0]))].map((v) => ({
+                    value: v,
+                    label: v,
+                  })),
+                  predicate: (item: unknown, v: string) => (item as RefInfo).name.split("/")[0] === v,
+                },
+                {
+                  key: "local",
+                  label: "Local copy",
+                  icon: "git-branch",
+                  options: [
+                    { value: "yes", label: "Have one" },
+                    { value: "no", label: "None" },
+                  ],
+                  predicate: (item: unknown, v: string) => {
+                    const short = (item as RefInfo).name.split("/").slice(1).join("/");
+                    const have = locals.some((b) => b.name === short);
+                    return v === "yes" ? have : !have;
+                  },
+                },
+              ]
+            : this.branchTab === "tags"
+              ? [
+                  {
+                    key: "kind",
+                    label: "Kind",
+                    icon: "tag",
+                    options: [
+                      { value: "annotated", label: "Annotated" },
+                      { value: "lightweight", label: "Lightweight" },
+                    ],
+                    predicate: (item: unknown, v: string) =>
+                      ((item as RefInfo).objectType === "tag" ? "annotated" : "lightweight") === v,
+                  },
+                ]
+              : [];
+
+      const state = (this.branchFacets[this.branchTab] ??= {});
+      const bar = facetBar<unknown>({
+        specs,
+        state,
+        items: [],
+        onChange: () => render(),
+      });
+      facetSlot.replaceChildren();
+      if (specs.length) facetSlot.appendChild(bar.el);
+
+      // Active / Stale / All — github.com's own cut, and the difference between
+      // "what I am working on" and "everything this clone has touched".
+      if (this.branchTab === "local") {
+        facetSlot.appendChild(
+          segmented<"active" | "stale" | "all">({
+            ariaLabel: "How recently these branches moved",
+            value: this.branchAge,
+            options: [
+              { value: "active", label: "Active" },
+              { value: "stale", label: "Stale" },
+              { value: "all", label: "All" },
+            ],
+            onChange: (v) => {
+              this.branchAge = v;
+              render();
+            },
+          }),
+        );
+      }
+      facetSlot.appendChild(this.branchSortBtn(() => render()));
+
       const q = query.trim().toLowerCase();
       // Beyond the name: the upstream, the tip subject and the short sha, so
       // "the branch with the log-stream fix" is findable by what it did.
@@ -1420,30 +1578,66 @@ class App {
       body.replaceChildren();
       ctaSlot.replaceChildren(this.branchesCta(this.branchTab));
 
+      const byName = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
+      const byDate = (a?: number, b?: number): number => (b ?? 0) - (a ?? 0);
+
       let shown = 0;
       let total = 0;
       if (this.branchTab === "local") {
         total = locals.length;
-        const rows = locals.filter((b) => hit(b.name, b.upstream, b.subject));
+        const rows = locals
+          .filter((b) => hit(b.name, b.upstream, b.subject))
+          .filter((b) => bar.passes(b))
+          // The current branch is never "stale" — it is where you are standing.
+          .filter(
+            (b) =>
+              this.branchAge === "all" ||
+              b.current ||
+              (this.branchAge === "stale" ? isStale(b.date) : !isStale(b.date)),
+          )
+          .sort((a, b) =>
+            this.branchSort === "name"
+              ? byName(a.name, b.name)
+              : this.branchSort === "ahead"
+                ? (b.ahead ?? 0) - (a.ahead ?? 0) || byDate(a.date, b.date)
+                : this.branchSort === "stale"
+                  ? (a.date ?? 0) - (b.date ?? 0)
+                  : byDate(a.date, b.date),
+          );
         shown = rows.length;
+        // Scaled to what is ON SCREEN, so the bars stay comparable down the
+        // list rather than against a branch the filter has removed.
         const maxAb = Math.max(1, ...rows.map((b) => Math.max(b.aheadDefault ?? 0, b.behindDefault ?? 0)));
         for (const b of rows) body.appendChild(this.localBranchRow(b, defaultBranch, maxAb));
       } else if (this.branchTab === "remote") {
         total = remotes.length;
-        const rows = remotes.filter((r) => hit(r.name, r.subject, r.sha.slice(0, 7)));
+        const rows = remotes
+          .filter((r) => hit(r.name, r.subject, r.sha.slice(0, 7)))
+          .filter((r) => bar.passes(r))
+          .sort((a, b) => (this.branchSort === "name" ? byName(a.name, b.name) : byDate(a.date, b.date)));
         shown = rows.length;
         const haveLocal = new Set(locals.map((b) => b.name));
         for (const r of rows) body.appendChild(this.remoteRefRow(r, haveLocal));
       } else if (this.branchTab === "tags") {
         total = tags.length;
-        const rows = tags.filter((r) => hit(r.name, r.subject, r.sha.slice(0, 7)));
+        const rows = tags
+          .filter((r) => hit(r.name, r.subject, r.sha.slice(0, 7)))
+          .filter((r) => bar.passes(r))
+          // By DATE by default, not by name: alphabetical puts v1.10.0 before
+          // v1.9.0, which is wrong about every version scheme anyone uses.
+          .sort((a, b) => (this.branchSort === "name" ? byName(a.name, b.name) : byDate(a.date, b.date)));
         shown = rows.length;
         for (const r of rows) body.appendChild(this.tagRefRow(r));
-      } else {
+      } else if (this.branchTab === "stashes") {
         total = stashes.length;
         const rows = stashes.filter((st) => hit(st.message, st.ref));
         shown = rows.length;
         for (const st of rows) body.appendChild(this.stashRow(st));
+      } else {
+        total = worktrees.length;
+        const rows = worktrees.filter((w) => hit(w.branch, w.path, w.head.slice(0, 7)));
+        shown = rows.length;
+        for (const w of rows) body.appendChild(this.worktreeRow(w));
       }
 
       header.setCount?.(shown, total);
@@ -1468,6 +1662,42 @@ class App {
         locals.find((b) => b.current)?.name;
       render();
     };
+    // ── the keyboard ──────────────────────────────────────────────────────
+    //
+    // Nothing in this view had a shortcut: not the filter, not Fetch, not New
+    // branch, not a row's own verb. `sectionList`'s ↑↓/j/k/Home/End already
+    // move between rows; these are the two that make it operable without a
+    // mouse at all.
+    wrap.addEventListener("keydown", (e) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+
+      // "/" focuses the search, the way it does in every list people already
+      // know. Not while typing — a slash is a character in a branch name.
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        search.querySelector("input")?.focus();
+        return;
+      }
+      // ⌘Enter runs the focused row's PRIMARY verb — Checkout, Pull, Publish,
+      // Push, Apply — without reaching for the pointer. Plain Enter still opens
+      // the row, which is what every other list in the app does.
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        const row = t?.closest?.(".sec-row") as HTMLElement | null;
+        const verb = row?.querySelector<HTMLButtonElement>(".sec-row-actions .row-btn:not(.lv-menu-btn)");
+        if (verb) {
+          e.preventDefault();
+          verb.click();
+        }
+        return;
+      }
+      // Shift+F fetches. The action the whole screen depends on deserves one.
+      if ((e.key === "f" || e.key === "F") && e.shiftKey && !typing && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        fetchBtn.click();
+      }
+    });
+
     render();
     if (highlightRef) {
       const row = body.querySelector<HTMLElement>(`[data-ref="${CSS.escape(highlightRef)}"]`);
@@ -1478,7 +1708,15 @@ class App {
 
   /** Which KIND of ref the Branches view is showing. Survives re-renders and
    *  is persisted, the way every other section remembers its sub-tab. */
-  private branchTab: "local" | "remote" | "tags" | "stashes" = "local";
+  private branchTab: "local" | "remote" | "tags" | "stashes" | "worktrees" = "local";
+  /** Facet state per KIND — a Standing filter means nothing on the tags screen,
+   *  so each segment keeps its own and switching back finds it as you left it. */
+  private branchFacets: Record<string, FacetState> = Object.create(null) as Record<string, FacetState>;
+  /** Active / Stale / All — github.com's own cut at three months. */
+  private branchAge: "active" | "stale" | "all" = "active";
+  /** How the list is ordered. Recency is the default because it answers "what
+   *  was I just doing", which is why this view is opened most often. */
+  private branchSort: "recent" | "name" | "ahead" | "stale" = "recent";
 
   /** Set while the Branches view is live — see showBranchesView. */
   private reloadBranchRows: (() => Promise<void>) | null = null;
@@ -1872,6 +2110,136 @@ class App {
     await this.refreshBranchesSoft();
   }
 
+  /** The sort control. Recency is the default because "what was I just doing"
+   *  is the question this view is opened for most often. */
+  private branchSortBtn(rerender: () => void): HTMLElement {
+    const LABELS: Record<string, string> = {
+      recent: "Recently committed",
+      name: "Name",
+      ahead: "Most ahead",
+      stale: "Stalest first",
+    };
+    const b = el("button", "mini-btn branches-sort") as HTMLButtonElement;
+    b.append(glyph("list-ordered"), span(LABELS[this.branchSort]));
+    b.title = "How this list is ordered";
+    b.setAttribute("aria-haspopup", "menu");
+    b.addEventListener("click", () =>
+      openMenu(
+        b,
+        (Object.keys(LABELS) as Array<"recent" | "name" | "ahead" | "stale">).map((k) => ({
+          label: LABELS[k],
+          current: this.branchSort === k,
+          onClick: () => {
+            this.branchSort = k;
+            rerender();
+          },
+        })),
+      ),
+    );
+    return b;
+  }
+
+  /** A worktree row. `worktree:list/add/remove/open` have existed in the IPC
+   *  contract with no caller in any view — the cheapest capability in the app. */
+  private worktreeRow(w: WorktreeInfo): HTMLElement {
+    const actions: HTMLElement[] = [];
+    if (!w.current) {
+      const open = el("button", "row-btn") as HTMLButtonElement;
+      open.textContent = "Open";
+      open.setAttribute("aria-label", `Open the worktree at ${w.path}`);
+      open.title = `Switch this window to ${w.path}`;
+      open.addEventListener("click", () => void this.openWorktreeLive(w, open));
+      actions.push(open);
+    }
+    const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
+    more.setAttribute("aria-label", `More actions for ${w.path}`);
+    more.setAttribute("aria-haspopup", "menu");
+    more.appendChild(glyph("ellipsis"));
+    const menu = (): void =>
+      openMenu(more, [
+        { label: "Copy path", icon: "copy", onClick: () => void copyText(w.path, "Copied the path.") },
+        { separator: true },
+        {
+          label: "Remove this worktree…",
+          icon: "trash",
+          danger: true,
+          disabled: w.current,
+          title: w.current ? "This is the worktree you are in" : undefined,
+          onClick: () => void this.removeWorktreeLive(w),
+        },
+      ]);
+    more.addEventListener("click", menu);
+    actions.push(more);
+
+    const pills: HTMLElement[] = [];
+    if (w.current) {
+      const p = span("this window", "ab-pill current");
+      p.title = "The worktree this window has open";
+      pills.push(p);
+    }
+    if (w.locked) pills.push(span("locked", "ab-pill unpublished"));
+    if (w.prunable) {
+      const p = span("prunable", "ab-pill gone");
+      p.title = "Its directory is gone — git would prune this entry";
+      pills.push(p);
+    }
+
+    const row = secRow({
+      lead: glyph("window"),
+      title: w.branch ?? (w.bare ? "(bare)" : w.head.slice(0, 7)),
+      titleSuffix: pills,
+      chips: [span(w.path, "br-subject")],
+      meta: [span(w.head.slice(0, 7), "br-sha sec-mono")],
+      time: "",
+      actions,
+      onOpen: () =>
+        w.branch
+          ? this.routeView("refdetail", false, { ref: w.branch, id: "head" })
+          : void copyText(w.path, "Copied the path."),
+      ariaLabel: `${w.branch ?? w.head.slice(0, 7)} at ${w.path}${w.current ? ", this window" : ""}`,
+    });
+    row.classList.add("ref-row");
+    row.dataset.ref = w.path;
+    row.title = w.path;
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      menu();
+    });
+    return row;
+  }
+
+  /** Point this window at another worktree. */
+  private async openWorktreeLive(w: WorktreeInfo, btn: HTMLButtonElement): Promise<void> {
+    await this.refreshInPlace(btn, async () => {
+      const repo = await host.invoke("worktree:open", w.path);
+      if (!repo) {
+        toast(`Couldn't open ${w.path}.`, "error");
+        return;
+      }
+      toast(`Opened ${w.branch ?? w.path}.`, "success");
+    });
+  }
+
+  /** Remove a worktree — the directory goes with it, so say so. */
+  private async removeWorktreeLive(w: WorktreeInfo): Promise<void> {
+    const ok = await confirmDialog({
+      title: `Remove the worktree at ${w.path}?`,
+      message:
+        `git removes the directory as well as the entry. Any uncommitted work inside ` +
+        `${w.path} goes with it. The branch ${w.branch ?? "it holds"} is not deleted.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
+    const r = await host.invoke("worktree:remove", { path: w.path, force: false });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn't remove the worktree.", r.expected ? "info" : "error");
+      return;
+    }
+    toast("Worktree removed.", "success");
+    await this.refreshBranchesSoft();
+  }
+
   private async refreshBranchesSoft(): Promise<void> {
     if (this.currentView === "branches" && this.reloadBranchRows) {
       await this.reloadBranchRows();
@@ -1916,7 +2284,7 @@ class App {
 
   /** The per-kind primary action in the header. Each segment has exactly one
    *  thing you come here to MAKE; Remotes has none, because Fetch is it. */
-  private branchesCta(tab: "local" | "remote" | "tags" | "stashes"): HTMLElement {
+  private branchesCta(tab: "local" | "remote" | "tags" | "stashes" | "worktrees"): HTMLElement {
     const mk = (label: string, icon: string, title: string, run: () => void): HTMLElement => {
       const b = el("button", "mini-btn") as HTMLButtonElement;
       b.append(glyph(icon), span(label));
@@ -1977,7 +2345,7 @@ class App {
 
   /** Empty and error states per kind, each with the verb that fills it. */
   private branchesEmpty(
-    tab: "local" | "remote" | "tags" | "stashes",
+    tab: "local" | "remote" | "tags" | "stashes" | "worktrees",
     query: string,
     stashFailed: boolean,
   ): HTMLElement {

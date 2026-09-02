@@ -5433,5 +5433,136 @@
       const after = $(".branches-sweep");
       c.ok(after?.hidden !== false, "and it is offered only where branches are");
     },
+
+    /**
+     * The list can be ASKED things.
+     *
+     * You could not ask this view what is ahead, what has no upstream, which
+     * remote branches you already have, how recently anything moved, or — the
+     * one that matters — what is safe to delete. Every facet is client-side
+     * over a whole-set read, so changing one is a re-render, not a refetch, and
+     * the state is kept per KIND because a Standing filter means nothing on the
+     * tags screen.
+     */
+    "the-ref-list-can-be-narrowed": async (f) => {
+      const c = check(f);
+      noAnimation();
+      const facets = () => $$(".branches-facets .gh-facet-btn").map((b) => text(b));
+      c.ok(facets().includes("Standing"), `local branches can be filtered by standing (${facets().join(", ")})`);
+      c.ok(facets().includes("Remote"), "and by which remote they track");
+
+      const before = $$(".sec-row").length;
+      c.ok(before > 1, "there is more than one row to narrow");
+      const btn = $$(".branches-facets .gh-facet-btn").find((b) => /standing/i.test(text(b)));
+      btn.click();
+      await settle(400);
+      const opt = $$(".dropdown-item").find((i) => /gone|merged/i.test(text(i)));
+      c.ok(!!opt, "the menu offers the states the rows actually wear");
+      if (!opt) return;
+      opt.click();
+      await settle(500);
+      const after = $$(".sec-row").length;
+      c.ok(after < before, `choosing one narrows the list (${before} → ${after})`);
+      c.match(text(".gh-head-count"), /of/, "and the count says it is narrowed");
+
+      // Per KIND: the tags screen must not inherit a branch filter.
+      $$(".gh-seg-btn")[2].click();
+      await settle(500);
+      c.ok(
+        !facets().includes("Standing"),
+        `the tags screen has its own filters (${facets().join(", ") || "none"})`,
+      );
+      c.ok($$(".sec-row").length > 0, "and is not narrowed by a filter set on another kind");
+    },
+
+    /**
+     * Active / Stale / All — github.com's own cut at three months, and the
+     * difference between "what I am working on" and "everything this clone has
+     * ever touched".
+     */
+    "branches-can-be-cut-by-how-recently-they-moved": async (f) => {
+      const c = check(f);
+      const seg = $$(".branches-facets .gh-seg-btn").map((b) => text(b));
+      c.ok(
+        seg.includes("Active") && seg.includes("Stale") && seg.includes("All"),
+        `the age cut is offered (${seg.join(", ") || "none"})`,
+      );
+      const active = $$(".sec-row").length;
+      $$(".branches-facets .gh-seg-btn").find((b) => text(b) === "All").click();
+      await settle(400);
+      c.ok($$(".sec-row").length >= active, "All shows at least what Active did");
+
+      // And the sort is a real control, not a fixed order.
+      const sort = $(".branches-sort");
+      c.ok(!!sort, "the list says how it is ordered");
+      c.match(text(sort), /recently committed/i, "and starts on recency");
+      sort.click();
+      await settle(400);
+      const opts = $$(".dropdown-item").map((i) => text(i));
+      c.ok(opts.some((o) => /name/i.test(o)), `it offers other orders (${opts.join(", ")})`);
+      const byName = $$(".dropdown-item").find((i) => /^name$/i.test(text(i)));
+      byName.click();
+      await settle(500);
+      c.match(text(".branches-sort"), /name/i, "and picking one says so");
+      const names = $$(".sec-row").map((r) => r.dataset.ref || "");
+      const sorted = [...names].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      c.eq(names.join("|"), sorted.join("|"), "and the rows are actually in that order");
+    },
+
+    /**
+     * Worktrees. `worktree:list/add/remove/open` have been in the IPC contract
+     * since it was written with no caller in any view — and no fixture, so the
+     * capability existed and nothing could reach it.
+     */
+    "worktrees-are-reachable": async (f) => {
+      const c = check(f);
+      const seg = $$(".gh-seg-btn").find((b) => /worktrees/i.test(text(b)));
+      c.ok(!!seg, "worktrees have a segment when there is more than one");
+      if (!seg) return;
+      c.match(text(seg), /\(\d+\)/, "with its count");
+      seg.click();
+      await settle(500);
+      const rows = $$(".sec-row");
+      c.ok(rows.length > 1, `they are listed (${rows.length})`);
+      const current = rows.find((r) => /this window/i.test(text(r)));
+      c.ok(!!current, "and the one this window has open says so");
+      for (const r of rows) {
+        c.ok(!!r.querySelector(".sec-row-actions button"), "each carries its verbs");
+        c.ok((r.dataset.ref || "").includes("/"), "and names the path it lives at");
+      }
+    },
+
+    /**
+     * The keyboard. Nothing in this view had a shortcut: not the filter, not
+     * Fetch, not a row's own verb.
+     */
+    "the-ref-list-answers-the-keyboard": async (f) => {
+      const c = check(f);
+      const input = $(".branches-view .gh-search input") || $(".branches-view input");
+      c.ok(!!input, "the view has a search box");
+      if (!input) return;
+      input.blur();
+      const row = $(".sec-row");
+      row.focus();
+      // "/" focuses the search, the way every list people already know does.
+      row.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true, cancelable: true }));
+      await settle(300);
+      c.eq(document.activeElement, input, "“/” puts the keyboard in the search box");
+
+      // ⌘Enter runs the focused row's PRIMARY verb.
+      input.blur();
+      const target = $$(".sec-row").find((r) => r.querySelector(".sec-row-actions .row-btn:not(.lv-menu-btn)"));
+      c.ok(!!target, "a row has a primary verb to run");
+      if (!target) return;
+      const verb = target.querySelector(".sec-row-actions .row-btn:not(.lv-menu-btn)");
+      let fired = false;
+      verb.addEventListener("click", () => (fired = true), { once: true });
+      target.focus();
+      target.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }),
+      );
+      await settle(300);
+      c.ok(fired, `⌘Enter runs the row's verb (${text(verb)})`);
+    },
   };
 })();
