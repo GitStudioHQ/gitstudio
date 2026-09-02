@@ -292,6 +292,13 @@ class App {
   private static scrollSnapshot(root: HTMLElement): [HTMLElement, number, number][] {
     const out: [HTMLElement, number, number][] = [];
     const walk = (n: HTMLElement): void => {
+      // NOT INTO MONACO. It manages its own viewport — partly by transform,
+      // partly by scrollTop on nodes it recreates — and restores its position
+      // from the model when it is re-attached. Snapshotting those nodes and
+      // writing them back afterwards can only fight it, and this harness cannot
+      // catch that: with the animation frame starved, Monaco never lays out, so
+      // its internal scrollers all read 0 here and the walk looks harmless.
+      if (n.classList.contains("monaco-editor")) return;
       if (n.scrollTop > 0 || n.scrollLeft > 0) out.push([n, n.scrollTop, n.scrollLeft]);
       for (const kid of n.children) walk(kid as HTMLElement);
     };
