@@ -630,6 +630,22 @@
     // undefined, so no push event could ever be matched to it and the whole
     // terminal surface was half-driveable at best.
     "terminal:create": () => ({ id: `pty-${++ptySeq}`, cols: 80, rows: 24 }),
+    // Void, fire-and-forget, and called on EVERY route — so with no fixture it
+    // appeared in the "asked for with no fixture" report of every single check.
+    // That report's whole value is that it only lists real gaps; one entry on
+    // every line trains you to skip it.
+    "terminal:resize": () => undefined,
+    "appearance:dockIcon": () => undefined,
+    // A REAL gap: the run page's Artifacts section read undefined and rendered
+    // whatever that produced, unchecked, for as long as this harness has run.
+    "actions:artifacts": (runId) =>
+      runId === 9097
+        ? [
+            { id: 1, name: "desktop-macos-arm64", sizeBytes: 84_213_760, expired: false, createdAt: ISO(1) },
+            { id: 2, name: "renderer-coverage", sizeBytes: 1_240_400, expired: false, createdAt: ISO(1) },
+            { id: 3, name: "old-build-logs", sizeBytes: 402_100, expired: true, createdAt: ISO(40) },
+          ]
+        : [],
     "ai:settings": () =>
       params.get("ai")
         ? {

@@ -7302,6 +7302,30 @@
       }
     },
 
+    // The run page's Artifacts section, which had no fixture until now — so
+    // `actions:artifacts` answered undefined and this whole surface has been
+    // invisible to every check ever run. It turns out to be right; pinning it
+    // is what keeps it that way.
+    "an-expired-artifact-cannot-be-downloaded": async (f) => {
+      const c = check(f);
+      const rows = $$(".gh-artifact-row");
+      c.ok(rows.length >= 3, `the run lists its artifacts (${rows.length})`);
+      if (rows.length < 3) return;
+
+      const live = rows.find((r) => !/expired/i.test(text(r) || ""));
+      const dead = rows.find((r) => /expired/i.test(text(r) || ""));
+      c.ok(!!live && !!dead, "one live artifact and one expired one");
+      if (!live || !dead) return;
+
+      const btn = (r) => r.querySelector("button");
+      c.eq(btn(live)?.disabled, false, "a live artifact can be downloaded");
+      // GitHub deletes the blob when an artifact expires; the button would 410.
+      c.eq(btn(dead)?.disabled, true, "an expired one cannot");
+      c.ok(/expired/i.test(btn(dead)?.title || ""), "and says why, rather than just greying out");
+      // Sizes are for humans — the raw byte count is not a size.
+      c.ok(/\d+(\.\d+)?\s?(KB|MB|GB)/.test(text(live) || ""), "sizes are formatted");
+    },
+
     // Keep-alive views park their DOM so returning to one restores what you
     // had — "the rendered DOM (scroll, expanded state)", per the comment that
     // has said so since it was written. Detaching a node zeroes every
