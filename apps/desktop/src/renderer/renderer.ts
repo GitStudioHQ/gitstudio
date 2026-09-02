@@ -940,8 +940,11 @@ class App {
     registerAssistantTab((req) => {
       // The TITLE is what the user bubble says — "Analyze #42", not the whole
       // prompt the action builds around the issue body and its comments.
-      seedAssistantGoal(req.goal, req.title);
-      this.routeView("assistant", true);
+      // Only route if the goal was not taken by an Assistant already on screen.
+      // `force: true` drops the view from the cache and rebuilds it, so firing
+      // a second ✨ action while the agent was answering the first destroyed
+      // the transcript and the Stop button and orphaned the run.
+      if (seedAssistantGoal(req.goal, req.title)) this.routeView("assistant", true);
     });
     return this.terminalDock;
   }

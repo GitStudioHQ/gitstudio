@@ -10,7 +10,7 @@
 import { host } from "./bridge";
 import { el, span, glyph, openMenu, relTimeISO } from "./ui";
 import type { MenuItem } from "./ui";
-import { confirmDialog } from "./dialogs";
+import { confirmDialog, toast } from "./dialogs";
 import { runAgentTurn, addBubble, markdownBlock, errorBlock, connectPrompt, elText, setBusy, scrollDown } from "./chatRender";
 import type { SectionRender } from "./views/common";
 import type { AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
@@ -29,9 +29,37 @@ let pendingGoal: string | null = null;
  *  exactly this since it was written (`seedLabel` → `runAgentTurn`'s
  *  `displayText`); the section path dropped it on the floor. */
 let pendingLabel: string | undefined;
-export function seedAssistantGoal(goal: string, label?: string): void {
+
+/** The Assistant currently on screen, if there is one — so a ✨ action can be
+ *  handed to it instead of rebuilding the view around it. Cleared when the view
+ *  is torn down. */
+let live:
+  | { run: (goal: string, label?: string) => void; busy: () => boolean; el: HTMLElement }
+  | undefined;
+
+/**
+ * Seed a goal for the Assistant, and say whether the caller still needs to
+ * route there.
+ *
+ * `false` means it has already been handed to the Assistant on screen. The
+ * caller used to route unconditionally with `force: true`, which drops the view
+ * from the cache and rebuilds it — so firing a second ✨ action while the agent
+ * was answering the first destroyed the transcript and the Stop button and
+ * orphaned the run, with no confirm and no cancel. Exactly the defect the
+ * refreshAll exemption fixes, reached through a different door.
+ */
+export function seedAssistantGoal(goal: string, label?: string): boolean {
+  if (live?.el.isConnected) {
+    if (live.busy()) {
+      toast("The agent is still working — stop it first, or wait for it to finish.", "info");
+      return false;
+    }
+    live.run(goal, label);
+    return false;
+  }
   pendingGoal = goal;
   pendingLabel = label;
+  return true;
 }
 
 /** Agent write permission, remembered across navigations within a session. */
@@ -73,14 +101,19 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   title.append(glyph("sparkle"), span("Assistant"));
   const connTag = el("span", "assistant-model");
   // New-chat + chat-history controls — sessions persist across refresh/restart.
-  const newBtn = el("button", "assistant-iconbtn");
+  const newBtn = el("button", "assistant-iconbtn") as HTMLButtonElement;
+  newBtn.dataset.baseTitle = "New chat";
   newBtn.title = "New chat";
   newBtn.append(glyph("add"));
   newBtn.addEventListener("click", () => void newChat());
-  const histBtn = el("button", "assistant-iconbtn");
+  const histBtn = el("button", "assistant-iconbtn") as HTMLButtonElement;
+  histBtn.dataset.baseTitle = "Chat history";
   histBtn.title = "Chat history";
   histBtn.append(glyph("history"));
   histBtn.addEventListener("click", () => void openHistory());
+  /** The two chat-management controls — off while the gate is closed, since
+   *  there are no chats to manage and their handlers return on their own. */
+  const chatBtns: HTMLButtonElement[] = [newBtn, histBtn];
   header.append(title, connTag, newBtn, histBtn);
 
   // Three compact dropdown "chips" — the agent's options shown directly here and
@@ -183,7 +216,31 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
    *  composer, and clicking it called `runGoal("")`, which returns on its own
    *  first line — a primary button that did nothing, with no way to tell that
    *  from a broken one. */
+  /** Everything the composer owns, in one place.
+   *
+   *  The chips and the two "New chat" entry points were enabled in states where
+   *  pressing them did nothing at all: a chip during a run hit `runGoal`'s
+   *  `if (running) return`, and New chat while gated hit its own `if (gated)
+   *  return`. Both guards are correct and neither is visible, so the control
+   *  looked live and answered with silence. */
+  const syncControls = (): void => {
+    const off = gated || running;
+    for (const c of chips) {
+      c.disabled = off;
+      c.title = gated
+        ? "Connect a model to use the Assistant"
+        : running
+          ? "The agent is still working"
+          : "";
+    }
+    for (const b of chatBtns) {
+      b.disabled = gated;
+      b.title = gated ? "Connect a model to use the Assistant" : b.dataset.baseTitle || "";
+    }
+  };
+
   const syncSend = (): void => {
+    syncControls();
     // HANDS OFF while a turn is running. During a run this button is not Send —
     // `swapToCancel` has turned it into Stop, and it owns its own enabled
     // state. Including `running` in this expression meant that typing your next
@@ -236,12 +293,10 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       gated = true;
       transcript.replaceChildren(connectPrompt(nav));
       input.disabled = true;
-      send.disabled = true;
-      // The chips too. They sat live in front of the "Connect a model" panel,
-      // and clicking one ran `runGoal`, which ends by clearing the busy state
-      // off the send button — so a gated composer could be talked back into
-      // looking usable by pressing a button that could never work.
-      for (const c of chips) c.disabled = true;
+      // The chips and the two chat controls too. They sat live in front of the
+      // "Connect a model" panel, and pressing one hit a guard that returns
+      // silently — a control that looks live and answers with nothing.
+      syncSend(); // owns send, the chips and the chat buttons
       controls.classList.add("is-disabled");
     } else {
       const def = settings.connections.find((c) => c.id === settings!.defaultId) ?? settings.connections.find((c) => c.usable);
@@ -299,13 +354,21 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       gated = false;
       transcript.replaceChildren(empty);
       input.disabled = false;
-      for (const c of chips) c.disabled = false;
       controls.classList.remove("is-disabled");
-      syncSend();
+      syncSend(); // …and back on again, through the same rule
       await runGate(); // re-seed the model, permission and thinking controls
     })();
   };
   window.addEventListener("gs:ai-changed", onAiChanged);
+
+  // Publish this Assistant so a ✨ action fired while it is on screen is handed
+  // to it, rather than routed to with `force` — which rebuilds the view and
+  // takes a running turn down with it.
+  live = {
+    el: wrap,
+    busy: () => running,
+    run: (goal, label) => void runGoal(goal, false, label),
+  };
 
   function restoreChat(chat: ChatView): void {
     empty.remove();

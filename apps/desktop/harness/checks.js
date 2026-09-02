@@ -7147,6 +7147,45 @@
       const chips = $$(".assistant-chip");
       c.ok(chips.length > 0, "there are quick actions to check");
       c.ok(chips.every((b) => b.disabled), "and the quick actions are off too");
+      // …as are the two chat-management controls. Their handlers each return
+      // on `gated`, which is correct and invisible: pressing New chat did
+      // nothing, and there was nothing to say why.
+      const chatBtns = $$(".assistant-iconbtn");
+      c.ok(chatBtns.length >= 2, "the header's chat controls exist");
+      c.ok(chatBtns.every((b) => b.disabled), "and they are off while the gate is closed");
+      c.ok(
+        chatBtns.every((b) => /connect a model/i.test(b.title || "")),
+        "each saying why, not merely greyed",
+      );
+    },
+
+    // A quick action during a RUN hit `runGoal`'s `if (running) return` — a
+    // chip that looked live and answered with silence.
+    "quick-actions-close-while-the-agent-works": async (f) => {
+      const c = check(f);
+      const input = $(".assistant-input");
+      const send = $(".assistant-send");
+      const chips = $$(".assistant-chip");
+      c.ok(!!input && chips.length > 0, "a live composer and quick actions");
+      if (!input || !send || !chips.length) return;
+      c.ok(chips.every((b) => !b.disabled), "the chips start available");
+
+      const inv = window.gitstudio.invoke;
+      window.gitstudio.invoke = (ch, p) =>
+        ch === "ai:chatSend" ? new Promise(() => {}) : inv(ch, p);
+      try {
+        input.value = "go";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        send.click();
+        await settle(800);
+        c.ok($$(".assistant-chip").every((b) => b.disabled), "and close while a turn runs");
+        c.ok(
+          /still working/i.test($(".assistant-chip")?.title || ""),
+          "with a reason on them",
+        );
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
     },
 
     "send-needs-something-to-send": async (f) => {
