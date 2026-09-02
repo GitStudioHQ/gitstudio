@@ -18,6 +18,7 @@ import {
   stripAnsi,
   type LogDoc,
   type LogGroup,
+  type LogLine,
 } from "./logModel";
 import { el, glyph, span } from "./ui";
 import { searchField } from "./views/common";
@@ -372,7 +373,17 @@ export function createLogPane(o: {
     }
   }
 
-  function rebuildMatches(): void {
+  /**
+   * `keep` is the line the reader had walked to, held as the LINE OBJECT rather
+   * than its index: a live delta re-scans the whole doc, and enforceCap may have
+   * dropped lines off the front, so the old index means nothing afterwards.
+   * Identity survives both (appendLog only pushes, the cap only splices).
+   *
+   * Without this, every 4s tick reset "2 of 11" to "11 matches" and the next
+   * Enter — pressed meaning "next match" — took the viewport back to match 1.
+   * Only a change of QUERY may throw the reader's place away.
+   */
+  function rebuildMatches(keep?: LogLine): void {
     matches = [];
     matchIdx = -1;
     const q = query.trim().toLowerCase();
@@ -384,7 +395,12 @@ export function createLogPane(o: {
     for (let i = 0; i < doc.lines.length; i++) {
       if (stripAnsi(doc.lines[i].text).toLowerCase().includes(q)) matches.push(i);
     }
-    matchCounter.textContent = matches.length ? `${matches.length} matches` : "no matches";
+    if (keep) matchIdx = matches.findIndex((i) => doc.lines[i] === keep);
+    matchCounter.textContent = matches.length
+      ? matchIdx >= 0
+        ? `${matchIdx + 1} of ${matches.length}`
+        : `${matches.length} match${matches.length === 1 ? "" : "es"}`
+      : "no matches";
     matchStepSync?.();
   }
 
@@ -684,10 +700,12 @@ export function createLogPane(o: {
     },
     append(delta) {
       if (!delta) return;
+      // Grabbed BEFORE the doc changes underneath it.
+      const held = matchIdx >= 0 ? doc.lines[matches[matchIdx]] : undefined;
       appendLog(doc, delta);
       enforceCap();
       rebuildVisible();
-      if (query) rebuildMatches();
+      if (query) rebuildMatches(held);
       render();
       if (follow) scroll.scrollTop = scroll.scrollHeight;
     },

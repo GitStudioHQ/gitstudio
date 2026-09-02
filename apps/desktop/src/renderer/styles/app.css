@@ -9949,6 +9949,16 @@ body.vscode-light .log-pane {
   overflow-y: auto;
   padding: 0 10px 10px;
 }
+/* Capped on a measure rather than filling the window. A commit subject is
+   rarely 60 characters and the sha rides the right edge, so at full width the
+   two ends of every row were a screen apart with nothing between them — the eye
+   has to travel back to find which commit a sha belongs to. The pull request's
+   copy of this list sits inside `.det-main`, which already caps itself.
+   LEFT-aligned, not centred: the toolbar above is a full-width band, and a
+   centred column under a left-aligned toolbar reads as a misalignment rather
+   than a measure. The cap goes on the children — `.clist` is the scroller, and
+   capping that would strand the scrollbar in the middle of the pane. */
+.cmp-body > .clist > * { max-width: var(--measure-wide, 1100px); }
 .clist-day {
   /* NOT shrinkable. `.clist` is a flex column, and a flex item's default
      `flex-shrink: 1` let these squash to fit the pane instead of extending it —

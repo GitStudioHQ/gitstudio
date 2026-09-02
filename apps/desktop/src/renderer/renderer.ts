@@ -1274,6 +1274,10 @@ class App {
    * every verb visible at rest.
    */
   private async showBranchesView(highlightRef?: string): Promise<void> {
+    // A deep link must SHOW the ref it names (a graph ref chip lands here), so
+    // it drops the sticky filter below — otherwise the row it asks to scroll to
+    // and flash is filtered out and the arrival looks like an empty list.
+    if (highlightRef) this.branchQuery = "";
     const wrap = el("div", "list-view branches-view");
     const body = el("div", "list-body");
     body.appendChild(skeletonList(8));
@@ -1284,11 +1288,19 @@ class App {
     // searches more than the name now (upstream, tip subject, short sha, a
     // stash's message), because a name-only filter cannot find "the branch with
     // the log-stream fix in it".
-    let query = "";
+    // Seeded from instance state, like branchTab/branchFacets beside it. Opening
+    // a ref carries a target, which forces a rebuild AND skips caching the
+    // outgoing list — so this view is reconstructed on the way back, and a
+    // closure-local query meant the filter you typed to find the branch was
+    // gone the moment you looked at it. Every other section keeps its query
+    // outside the build for exactly this reason (views/issues.ts).
+    let query = this.branchQuery;
     const search = searchField({
       placeholder: "Search refs…",
+      initial: query,
       onInput: (q) => {
         query = q;
+        this.branchQuery = q;
         render();
       },
     });
@@ -1738,6 +1750,9 @@ class App {
   /** Facet state per KIND — a Standing filter means nothing on the tags screen,
    *  so each segment keeps its own and switching back finds it as you left it. */
   private branchFacets: Record<string, FacetState> = Object.create(null) as Record<string, FacetState>;
+  /** The live text filter. Outside the build like the facets, so opening a ref
+   *  and pressing Back doesn't throw away the search that found it. */
+  private branchQuery = "";
   /** Active / Stale / All — github.com's own cut at three months. */
   private branchAge: "active" | "stale" | "all" = "active";
   /** How the list is ordered. Recency is the default because it answers "what
