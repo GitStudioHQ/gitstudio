@@ -2498,7 +2498,15 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 .code-file-crumbs .code-crumb.is-current {
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
 }
-.code-file-surface { flex: 1 1 auto; min-height: 0; position: relative; }
+/* Monaco fills this and paints its own scrollbar, so the reserve goes on the
+   surface itself — the dock overlays the bottom of the view and does not
+   reflow it, which left the last lines of every file behind an open terminal. */
+.code-file-surface {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  padding-bottom: var(--dock-reserve, 0px);
+}
 
 /* ── Compare view ──────────────────────────────────────────────────────────── */
 .compare-view {
@@ -3227,7 +3235,11 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
 /* The detail pane is already width-constrained by the master/detail split; the
    prose body (.gh-body-md) caps itself at --measure-read, so the pane just needs
    comfortable padding (percentage-centering here resolves against the WRONG box). */
+/* NOT the drawer, which is fixed and already sits above the dock — see
+   `.gh-drawer-body`. Every other user of this class is a scrolling detail pane
+   whose last rows sat behind the dock. */
 .gh-detail { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 18px 22px; }
+.gh-detail:not(.gh-drawer-body) { padding-bottom: calc(18px + var(--dock-reserve, 0px)); }
 
 /* ── Issue peek drawer (Projects board → read an issue without leaving) ──────── */
 .gh-drawer-scrim {
@@ -4924,11 +4936,15 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 }
 .gh-col-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gh-col-head .gh-pill { margin: 0 0 0 auto; align-self: center; }
+/* Clears the dock. `.dock-overlay` is absolute, opaque and does not reflow the
+   view above it — `--dock-reserve` is how a long scroller makes room. A project
+   board's columns scroll on their own and did not, so the last cards of every
+   column sat behind an open terminal. */
 .gh-col-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px;
+  padding: 8px 8px calc(8px + var(--dock-reserve, 0px));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -9341,10 +9357,15 @@ body.vscode-light .log-pane {
    themes), while the text inside it fell through to the page's default ink —
    which is near-black in the light theme. Dark text on a dark ANSI block.
    The terminal convention is the palette's own default foreground. */
-[class*="log-bg-"]:not([class*="log-fg-"]) { color: var(--log-t15); }
-/* …except on the two PALE blocks, where white on white is nothing at all. */
-.log-bg-7:not([class*="log-fg-"]),
-.log-bg-15:not([class*="log-fg-"]) { color: var(--log-t0); }
+/* The default ink is the palette's BLACK, not its white.
+   This is a dark-theme palette: measured against every one of the sixteen
+   blocks, `--log-t0` wins on fourteen of them and `--log-t15` on two — the
+   greys at 0 and 8. The first version of this rule had it the other way round
+   and left white on bright green, bright yellow and the rest at 2.4:1. With the
+   split this way the worst pairing in the set is 3.26:1. */
+[class*="log-bg-"]:not([class*="log-fg-"]) { color: var(--log-t0); }
+.log-bg-0:not([class*="log-fg-"]),
+.log-bg-8:not([class*="log-fg-"]) { color: var(--log-t15); }
 
 /* A foreground sitting ON one of those blocks uses the true palette too — two
    classes, so it outranks the plain `.log-fg-N` above. */

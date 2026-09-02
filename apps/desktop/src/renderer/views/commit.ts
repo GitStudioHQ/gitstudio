@@ -322,6 +322,15 @@ export async function renderCommit(
      *  lands where the reader was, not at the top of the list. */
     const wantFile = d.files.some((x) => x.path === target?.file) ? target?.file : undefined;
     const openFile = async (f: CommitFileChange, row: HTMLElement): Promise<void> => {
+      // NOT once this page has gone. `setPageTarget` writes into whatever
+      // history entry is CURRENT, and the auto-open below fires from a render
+      // that may already have been abandoned — so a commit page you left while
+      // it was still loading stamped its file path onto the entry of the view
+      // you had moved to, and the next refresh re-routed that view with it.
+      //
+      // The job log's `openJob` carries this exact guard, written an hour
+      // before this line and then not written here.
+      if (!view.isConnected) return;
       // Remember it, without navigating — a refresh re-routes with this target.
       setPageTarget({ file: f.path });
       selected?.classList.remove("is-current");

@@ -312,7 +312,13 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     // said "N → 0 commits" while the button beside it stayed lit. Nothing in
     // the flow named the consequence, and the force-push confirm downstream
     // talks about rewriting history, not about deleting all of it.
-    const emptyPlan = rows.length > 0 && kept === 0;
+    // …and only when the list IS the plan. `kept` counts the rows on screen,
+    // and the list is capped: above the cap the rebase replays commits this
+    // view never drew, so "every visible commit is dropped" is not "the plan
+    // keeps nothing". `total` four lines up was taught to use `replayCount`
+    // and this was not — two fixes from the same batch, in the same function,
+    // disagreeing. `foldOrphan` already applies `hiddenTail()` for this reason.
+    const emptyPlan = rows.length > 0 && kept === 0 && !hiddenTail();
     applyBtn.disabled = orphan || emptyPlan || busy;
     applyBtn.title = orphan
       ? "A squash or fixup has nothing below it to fold into — git can't run this plan."

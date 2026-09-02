@@ -4980,7 +4980,18 @@ class App {
     this.activeMonacoView?.dispose();
     const viewer = new ReadonlyFileView(surface);
     this.activeMonacoView = viewer;
+    // Which route this read belongs to. `routeView` disposes `activeMonacoView`
+    // and clears it the moment you navigate, so leaving while this fetch is in
+    // flight meant the editor was built AFTER its owner had let go of it: a
+    // Monaco instance in a detached node, with nothing holding a reference that
+    // could ever dispose it. `showCodeView` already guards its own read this
+    // way; this one did not.
+    const gen = this.routeGen;
     const file = await host.invoke("repo:file", { path });
+    if (gen !== this.routeGen || !surface.isConnected) {
+      viewer.dispose();
+      return;
+    }
     if (!file) {
       viewer.showMessage("Couldn't read this file.");
     } else if (file.binary) {

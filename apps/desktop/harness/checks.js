@@ -7236,6 +7236,42 @@
       c.eq(nameOf($(".cmt-file.is-current")), chosen, "a background refresh leaves it open");
     },
 
+    // An ANSI run that sets a BACKGROUND and no foreground. `clsOf` emits
+    // `log-bg-N` alone for those, so the text took the page's default ink — and
+    // then, once that was fixed, the palette's WHITE, which is invisible on the
+    // bright half of a dark-theme palette. Measured across all sixteen: black
+    // ink wins on fourteen of them.
+    "every-ansi-block-can-be-read": async (f) => {
+      const c = check(f);
+      const body = $(".log-body");
+      c.ok(!!body, "the log pane is up");
+      if (!body) return;
+      const lum = (col) => {
+        const p = (col.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map((v) => {
+          v = v > 1 ? v / 255 : v;
+          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+      };
+      const worst = [];
+      for (let i = 0; i < 16; i++) {
+        const sp = document.createElement("span");
+        sp.className = `log-bg-${i}`;
+        sp.textContent = "X";
+        body.appendChild(sp);
+        const st = getComputedStyle(sp);
+        const l1 = lum(st.color), l2 = lum(st.backgroundColor);
+        worst.push({ i, r: (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05) });
+        sp.remove();
+      }
+      const bad = worst.filter((w) => w.r < 3);
+      c.eq(
+        bad.length,
+        0,
+        `every ANSI block's default ink is readable (worst ${Math.min(...worst.map((w) => w.r)).toFixed(2)}:1 on block ${worst.slice().sort((a, b) => a.r - b.r)[0].i})`,
+      );
+    },
+
     // Stop must take the approval dialog with it. `onConfirm` opened a modal
     // and awaited it forever; nothing in the cancel path closed it, so pressing
     // Stop ended the turn in the main process and left "Approve destructive
