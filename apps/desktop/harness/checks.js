@@ -7578,18 +7578,40 @@
       tab.click();
       await settle(700);
 
-      // Four commands, none of them failed.
-      for (let i = 0; i < 4; i++) {
+      // In the shape `GitLogEntry` actually has. This check first emitted
+      // invented field names (`code`, `ms`, no `actionId`) and counted four
+      // rows — and that reading was an artifact of the wrong fixture. With the
+      // real shape, four commands sharing an `actionId` are ONE action and
+      // collapse into one group, which is what the panel is for.
+      const log = (i, over = {}) =>
         window.__gsEmit("git:log", {
-          at: Date.now(),
+          id: 100 + i,
           args: ["status", "--porcelain"],
-          code: 0,
-          ms: 12,
-          action: "Status",
+          command: "git status --porcelain",
+          durationMs: 12,
+          exitCode: 0,
+          failed: false,
+          at: Date.now(),
+          ...over,
         });
+
+      // Four IDENTICAL commands under one action coalesce into a single row
+      // with a ×N badge. That is what keeps the status poller from flooding
+      // this pane, and it is why counting rows is not counting commands.
+      for (let i = 0; i < 4; i++) log(i, { action: "Refresh", actionId: 7 });
+      await settle(600);
+      c.eq($$(".outputs-row").length, 1, "an identical repeat coalesces");
+      c.eq(text($(".outputs-rep")), "×4", "and says how many times it ran");
+
+      // Four DIFFERENT commands do not.
+      for (let i = 10; i < 14; i++) {
+        log(i, { action: `Thing ${i}`, actionId: 20 + i, args: ["rev-parse", `HEAD~${i}`], command: `git rev-parse HEAD~${i}` });
       }
-      await settle(500);
-      c.eq($$(".outputs-row").length, 4, "the commands are logged");
+      await settle(600);
+      c.ok(
+        $$(".outputs-row").length >= 5,
+        `distinct commands each get a row (${$$(".outputs-row").length})`,
+      );
 
       const fail = $(".outputs-failbtn");
       const wrap = $(".outputs-wrap");
@@ -7643,7 +7665,7 @@
       if (!row) return;
       c.ok(!row.classList.contains("is-exited"), "which does not start out dead");
 
-      const heard = window.__gsEmit("terminal:exit", { id: "pty-1" });
+      const heard = window.__gsEmit("terminal:exit", { id: "pty-1", exitCode: 0 });
       c.eq(heard, 1, "the panel is listening for its shell to exit");
       await settle(800);
 

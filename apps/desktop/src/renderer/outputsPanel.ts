@@ -379,11 +379,11 @@ export class OutputsPanel {
     this.lastSingle = null;
     this.total = 0;
     this.failed = 0;
+    this.setFailuresOnly(false);
     // Turn the filter OFF with it. `renderCount` hides both controls at zero,
     // so clearing while "Errors only" was on left the toggle switched on and
     // out of reach — every command logged afterwards was filtered away by a
     // control the reader could no longer see, and the panel looked dead.
-    this.setFailuresOnly(false);
     this.renderCount();
     if (!this.empty.isConnected) this.scroller.insertBefore(this.empty, this.list);
   }
