@@ -176,6 +176,22 @@ export function openCommandPalette(providers: PaletteProviders): void {
   /** Set when query-driven groups change shape, so the highlight resets to the
    *  top instead of tracking an item that just got pushed down the list. */
   let resetSelection = false;
+  /**
+   * The reader has moved the highlight with the keyboard since the query last
+   * changed. This is the whole question a late-arriving search group has to
+   * answer, and it has two opposite right answers:
+   *
+   * · NOT moved — the highlight is still on row 0 by default, and search
+   *   groups are PREPENDED, so preserving it by identity slides it down the
+   *   list with every result that lands above it. It must stay at the top.
+   * · MOVED — the reader chose that row. A group arriving ~300ms after they
+   *   stopped typing, i.e. exactly while they are arrowing, must not throw
+   *   that choice away and send Enter somewhere they never looked.
+   *
+   * Resetting unconditionally got the first right and the second wrong;
+   * preserving unconditionally does the reverse.
+   */
+  let userMoved = false;
 
   const render = (): void => {
     const q = input.value.trim();
@@ -249,9 +265,11 @@ export function openCommandPalette(providers: PaletteProviders): void {
       dispose();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
+      userMoved = true;
       select(selected + 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
+      userMoved = true;
       select(selected - 1);
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -268,6 +286,11 @@ export function openCommandPalette(providers: PaletteProviders): void {
         // list never mixes results from two different queries.
         searchGroups = [];
         resetSelection = true;
+        // NOT `userMoved = false` here. This fires when the DEBOUNCE elapses,
+        // ~300ms after the last keystroke — by which time the reader may well
+        // have arrowed, and their choice was made against a query that has not
+        // changed since. Only a change of query clears the flag, in the input
+        // handler below where the query actually changes.
         for (const p of provider(query)) {
           void p
             .then((group) => {
@@ -276,7 +299,8 @@ export function openCommandPalette(providers: PaletteProviders): void {
               if (!group || live?.overlay !== overlay) return;
               if (!scheduler?.isCurrent(generation)) return;
               searchGroups = [...searchGroups, group];
-              // NOT a reset. A new QUERY resets (above) — that is a different
+              resetSelection = !userMoved;
+              // Reset only while the reader has not moved. A new QUERY resets (above) — that is a different
               // list, and starting at the top is right. A group merely ARRIVING
               // is the same list growing.
               //
@@ -304,6 +328,7 @@ export function openCommandPalette(providers: PaletteProviders): void {
       if (q !== scheduler.lastQuery()) {
         searchGroups = [];
         resetSelection = true;
+        userMoved = false;
       }
     }
     render();
