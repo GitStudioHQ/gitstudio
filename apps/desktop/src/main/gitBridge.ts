@@ -676,13 +676,19 @@ export class GitBridge {
     // as an empty string. That is indistinguishable from a side that emptied
     // the file, so the three-pane editor drew it as an ordinary content merge
     // with one blank pane and never said the word "deleted" anywhere.
-    const staged = await ctx.process.run(["ls-files", "-u", "--", path]);
+    // `-z` and an exact path comparison, NOT a pathspec — the convention this
+    // file writes down at length in `conflictTakeSide`. A pathspec is
+    // glob-capable and environment-steerable, so a filename containing `*` or
+    // `[` would read another file's stages; and without `-z`, `core.quotePath`
+    // C-quotes every non-ASCII path while the renderer sends the raw one.
+    const staged = await ctx.process.run(["ls-files", "-u", "-z"]);
     const stages = new Set(
       staged.code === 0
         ? staged.stdout
-            .split("\n")
-            .map((l) => /^\S+ \S+ (\d)\t/.exec(l)?.[1])
-            .filter((n): n is string => !!n)
+            .split("\0")
+            .map((rec) => /^\d{6} [0-9a-f]+ (\d)\t([\s\S]*)$/.exec(rec))
+            .filter((m): m is RegExpExecArray => !!m && m[2] === path)
+            .map((m) => m[1])
         : [],
     );
     const missingSide =
