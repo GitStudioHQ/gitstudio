@@ -1,0 +1,26 @@
+apps/desktop/main.js
+  s_26f5e669d3043c::t_055844d946d87d 1-282
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_314281390a8754 322
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_32c02541b9edfe 827-838
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_314281390a8754 4762-4777
+  s_26f5e669d3043c::t_341e4663bd31d1 4761
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a68a2f7383826dc58141da5293c3bc0d16e77157",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
