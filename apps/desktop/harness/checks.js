@@ -5460,6 +5460,22 @@
       c.match(body, /squash/i, "and warning that a squash-merge does not look merged to git");
       c.match(body, /local/i, "and that only the local copies go");
 
+      // THE DEFAULT BRANCH IS NOT IN THAT LIST. `merged` is "zero commits ahead
+      // of the default branch", which the default branch satisfies against
+      // itself — so main qualified, and this confirm listed it by name among
+      // the branches that really were done. Reachable only with ?onfeature=1,
+      // because every other fixture keeps main checked out and `!b.current`
+      // hides the bug.
+      //
+      // Read the NAMES, not the whole card: `text()` concatenates the title
+      // straight onto the message, so "…branches?main" hides `main` from any
+      // word-boundary match and the assertion passes on a broken build.
+      const listed = text(".modal-message").split("\n\n")[0].split("\n").map((x) => x.trim());
+      c.ok(
+        !listed.includes("main"),
+        `the default branch is never swept (dialog listed: ${listed.join(", ")})`,
+      );
+
       // It is not the SEGMENT that offers this on other kinds.
       const cancel = [...dlg.querySelectorAll("button")].find((b) => /cancel/i.test(text(b)));
       cancel?.click();
@@ -5518,15 +5534,54 @@
      */
     "branches-can-be-cut-by-how-recently-they-moved": async (f) => {
       const c = check(f);
-      const seg = $$(".branches-facets .gh-seg-btn").map((b) => text(b));
+      const seg = $$(".branches-facets .gh-seg-btn").map((x) => text(x));
+      const named = (word) => $$(".branches-facets .gh-seg-btn").find((x) => text(x).startsWith(word));
       c.ok(
-        seg.includes("Active") && seg.includes("Stale") && seg.includes("All"),
+        !!named("Active") && !!named("Stale") && !!named("All"),
         `the age cut is offered (${seg.join(", ") || "none"})`,
       );
+      // Each carries how many it would show. A cut you cannot size before
+      // pressing is a cut you press twice — and the count has to be measured
+      // AFTER the search and the facets, or it names a list you cannot get to.
+      for (const w of ["Active", "Stale", "All"]) {
+        const btn = named(w);
+        if (btn) c.match(text(btn), /\(\d+\)/, `${w} says how many`);
+      }
       const active = $$(".sec-row").length;
-      $$(".branches-facets .gh-seg-btn").find((b) => text(b) === "All").click();
+      const all = named("All");
+      c.eq(
+        Number((text(named("Active")) .match(/\((\d+)\)/) || [])[1]),
+        active,
+        "and Active's count is the list you are looking at",
+      );
+      // Stale is the half of this control that does work — Active is just "the
+      // list". It must be non-empty in the fixture, or every assertion here
+      // passes by filtering nothing out of nothing.
+      const staleN = Number((text(named("Stale")).match(/\((\d+)\)/) || [])[1]);
+      c.ok(staleN > 0, `the fixture has branches old enough to be stale (${staleN})`);
+      named("Stale").click();
+      await settle(400);
+      c.eq($$(".sec-row").length, staleN, "pressing Stale shows exactly the stale ones");
+      // And they really are old — not merely a different subset.
+      const ages = $$(".sec-row .sec-row-time").map((x) => text(x));
+      c.ok(
+        ages.length > 0 && ages.every((t) => /mo|y/.test(t)),
+        `each of them last moved months ago (${ages.join(", ")})`,
+      );
+
+      all.click();
       await settle(400);
       c.ok($$(".sec-row").length >= active, "All shows at least what Active did");
+      c.eq(
+        $$(".sec-row").length,
+        Number((text(named("All")).match(/\((\d+)\)/) || [])[1]),
+        "and All's count was the truth about All",
+      );
+      c.eq(
+        $$(".sec-row").length,
+        active + staleN,
+        "and Active plus Stale is All — no branch falls between the two cuts",
+      );
 
       // And the sort is a real control, not a fixed order.
       const sort = $(".branches-sort");

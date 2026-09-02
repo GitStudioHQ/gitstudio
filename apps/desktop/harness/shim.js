@@ -233,7 +233,31 @@
     // remote that does not exist.
     { name: "redesign/wave-1", current: false, aheadDefault: 0, behindDefault: 40, merged: true, upstream: "origin/redesign/wave-1", ahead: 0, behind: 0, gone: true, subject: "issues: section pages land", date: S(56) },
     { name: "feat/line-staging", current: false, aheadDefault: 18, behindDefault: 3, upstream: "origin/feat/line-staging", ahead: 3, behind: 5, subject: "engine: hunk splitting groundwork", date: S(20) },
+    // STALE — past the 90-day line the Active/Stale cut is drawn at. Every
+    // branch above is hours old, so before these two the Stale segment read
+    // "(0)" and every check of that cut passed by testing an empty filter
+    // against an empty result. One is merged (so it also lands in the sweep),
+    // one is not (so "Stale" cannot be mistaken for "finished").
+    { name: "spike/monaco-swap", current: false, aheadDefault: 4, behindDefault: 210, upstream: undefined, ahead: 0, behind: 0, subject: "spike: try CodeMirror instead of Monaco", date: S(24 * 140) },
+    { name: "chore/deps-2024", current: false, aheadDefault: 0, behindDefault: 190, merged: true, upstream: "origin/chore/deps-2024", ahead: 0, behind: 0, subject: "chore: bump every dependency", date: S(24 * 200) },
   ];
+
+  // ?onfeature=1 → HEAD is a feature branch, so the DEFAULT branch is in the
+  // list without being current. That is the only state in which the sweep's
+  // worst bug is reachable: `merged` means "zero commits ahead of the default
+  // branch", which the default branch satisfies against itself, so main was
+  // offered for deletion by name — and every other fixture here keeps main
+  // checked out, where `!b.current` hides it.
+  if (params.get("onfeature")) {
+    for (const b of branches) b.current = b.name === "redesign/issues-detail";
+    // And main then carries what the bridge really computes for it. `merged` is
+    // `%(ahead-behind:<default>)`'s ahead === 0, and main measured against main
+    // is 0/0 — so the flag is not a fixture convenience here, it is the value
+    // the app receives. Without it this scene renders a main that no filter
+    // could ever have swept, and the check passes on a broken build.
+    const m = branches.find((b) => b.name === "main");
+    if (m) { m.merged = true; m.aheadDefault = 0; m.behindDefault = 0; }
+  }
 
   const workflows = [
     { id: 1, name: "Desktop CI", path: ".github/workflows/desktop.yml", state: "active", htmlUrl: "" },

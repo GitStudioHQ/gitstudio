@@ -1410,7 +1410,12 @@ class App {
     const standing = (b: BranchInfo): string => {
       if (b.current) return "current";
       if (b.gone) return "gone";
-      if (b.merged) return "merged";
+      // `merged` means "ahead === 0 against the default branch", so the default
+      // branch satisfies it trivially — and reading "Merged" beside main, in a
+      // facet grouping it with the branches whose work is done, says something
+      // false about the branch everything else is measured from. It is judged
+      // on its own upstream instead, like any other branch with one.
+      if (b.merged && b.name !== defaultBranch) return "merged";
       if (!b.upstream) return "unpublished";
       if (b.ahead && b.behind) return "diverged";
       if (b.ahead) return "ahead";
@@ -1605,11 +1610,16 @@ class App {
           .filter((b) => hit(b.name, b.upstream, b.subject))
           .filter((b) => bar.passes(b))
           // The current branch is never "stale" — it is where you are standing.
-          .filter(
-            (b) =>
-              this.branchAge === "all" ||
-              b.current ||
-              (this.branchAge === "stale" ? isStale(b.date) : !isStale(b.date)),
+          // Which means it belongs in Active whatever its date says, and NOT in
+          // Stale: a bare `|| b.current` put it in both, so a repo left alone
+          // for a year showed its own checked-out branch under Stale while the
+          // segment's count, which excludes it, said one fewer.
+          .filter((b) =>
+            this.branchAge === "all"
+              ? true
+              : this.branchAge === "stale"
+                ? !b.current && isStale(b.date)
+                : b.current || !isStale(b.date),
           )
           .sort((a, b) =>
             this.branchSort === "name"
