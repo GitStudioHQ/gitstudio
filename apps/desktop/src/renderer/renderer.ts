@@ -6216,9 +6216,11 @@ class App {
               ? "binary"
               : model.truncated
                 ? "too-large"
-                : model.missingSide
-                  ? "modify-delete"
-                  : undefined },
+                : model.bothDeleted
+                  ? "both-deleted"
+                  : model.missingSide
+                    ? "modify-delete"
+                    : undefined },
         );
         return;
       }
@@ -8507,9 +8509,11 @@ class App {
               ? "binary"
               : model.truncated
                 ? "too-large"
-                : model.missingSide
-                  ? "modify-delete"
-                  : undefined,
+                : model.bothDeleted
+                  ? "both-deleted"
+                  : model.missingSide
+                    ? "modify-delete"
+                    : undefined,
         });
         return;
       }

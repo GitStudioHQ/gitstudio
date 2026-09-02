@@ -229,6 +229,15 @@ export interface ConflictModel {
    *  (the index holds no stage for it). Not the same as a side that emptied
    *  it, which is what an empty string alone looks like. */
   missingSide?: "ours" | "theirs";
+  /**
+   * NEITHER side has this file — git's `DD`.
+   *
+   * Distinct from a modify/delete: the index lists the path with stage 1 and
+   * neither 2 nor 3. Folded into `missingSide` it was drawn as "changed on one
+   * side, deleted on the other" and offered a "Take <side>" button for a side
+   * that has nothing to take, which `conflictTakeSide` then refuses.
+   */
+  bothDeleted?: boolean;
 }
 
 /** A git action requested from the graph context menu. */

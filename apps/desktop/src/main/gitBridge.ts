@@ -699,8 +699,15 @@ export class GitBridge {
             .map((m) => m[1])
         : [],
     );
-    const missingSide =
-      stages.size > 0 && !stages.has("2")
+    // BOTH sides deleted it — git's `DD`. Listed with stage 1 and neither 2 nor
+    // 3. It fell into the first arm below and was reported as "ours is
+    // missing", which drew it as a modify/delete and offered a "Take theirs"
+    // button for a side that has nothing to take — `conflictTakeSide` then
+    // refuses it, correctly, with a message the panel had already contradicted.
+    const bothDeleted = stages.size > 0 && !stages.has("2") && !stages.has("3");
+    const missingSide = bothDeleted
+      ? undefined
+      : stages.size > 0 && !stages.has("2")
         ? ("ours" as const)
         : stages.size > 0 && !stages.has("3")
           ? ("theirs" as const)
@@ -738,6 +745,7 @@ export class GitBridge {
       ...(binary ? { binary: true } : {}),
       ...(truncated ? { truncated: true } : {}),
       ...(missingSide ? { missingSide } : {}),
+      ...(bothDeleted ? { bothDeleted: true } : {}),
       ...sideLabels(op.kind),
     };
   }
@@ -863,7 +871,26 @@ export class GitBridge {
         if (modifyDelete) {
           unresolved.push(f.path);
           needsChoice.push(f.path);
-        } else if (await this.hasConflictMarkers(ctx, f.path)) {
+          continue;
+        }
+        // A BINARY conflict cannot contain markers either — and the whole guard
+        // below is "no markers means somebody resolved it". So the one kind of
+        // conflict the app itself refuses to open a text merge for was the one
+        // kind "Stage all" waved straight through, marking it resolved with
+        // whichever side happened to be in the worktree. It needs a decision
+        // for the same reason a modify/delete does.
+        // A BINARY conflict cannot contain markers either — and the whole guard
+        // here is "no markers means somebody resolved it". So the one kind of
+        // conflict the app itself refuses to open a text merge for was the one
+        // kind "Stage all" waved straight through, marking it resolved with
+        // whichever side happened to be in the worktree. It needs a decision
+        // for the same reason a modify/delete does.
+        if ((await readWorking(ctx, f.path)).binary) {
+          unresolved.push(f.path);
+          needsChoice.push(f.path);
+          continue;
+        }
+        if (await this.hasConflictMarkers(ctx, f.path)) {
           unresolved.push(f.path);
         }
       }

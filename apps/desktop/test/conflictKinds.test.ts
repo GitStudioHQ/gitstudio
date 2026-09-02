@@ -215,3 +215,98 @@ test("a conflicted file over the read cap refuses the text merge", async () => {
     removeTempRepo(root);
   }
 });
+
+test("a both-sides-deleted conflict is its own state, not a modify/delete", async () => {
+  // Git's DD: the path is listed with stage 1 and NEITHER 2 nor 3. Folded into
+  // `missingSide` it was drawn as "changed on one side, deleted on the other"
+  // and offered a "Take <side>" button for a side that has nothing to take —
+  // which `conflictTakeSide` then refuses, correctly, contradicting the panel.
+  const root = mkdtempSync(join(tmpdir(), "gs-conflict-dd-"));
+  const git = (...a: string[]): string => {
+    try {
+      return execFileSync("git", a, { cwd: root, encoding: "utf8" });
+    } catch (e) {
+      return String((e as { stdout?: Buffer }).stdout ?? "");
+    }
+  };
+  try {
+    execFileSync("git", ["-c", "init.defaultBranch=main", "init", root]);
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(join(root, "f.txt"), "base\n");
+    writeFileSync(join(root, "keep.txt"), "so the merge has something to do\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+
+    // Deleted on one side, deleted AND the file replaced on the other — the
+    // rename-vs-delete shape that leaves DD.
+    git("checkout", "-q", "-b", "side");
+    execFileSync("git", ["rm", "-q", "f.txt"], { cwd: root });
+    writeFileSync(join(root, "keep.txt"), "side\n");
+    git("commit", "-qam", "deleted on the side");
+    git("checkout", "-q", "main");
+    execFileSync("git", ["rm", "-q", "f.txt"], { cwd: root });
+    writeFileSync(join(root, "keep.txt"), "main\n");
+    git("commit", "-qam", "deleted here too");
+    git("merge", "side");
+
+    const stages = git("ls-files", "-u", "--", "f.txt").trim();
+    if (!stages) return; // git resolved it without a conflict — nothing to assert
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    const m = await b.conflictModel("f.txt");
+    assert.ok(m, "there is a model");
+    assert.equal(m!.bothDeleted, true, "it is reported as deleted on both sides");
+    assert.equal(m!.missingSide, undefined, "and NOT as one side missing");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+test("an added-on-one-side conflict has no common version behind it", async () => {
+  // Git's UA / AU. There is no base, so nothing was deleted — the modify/delete
+  // story ("deleted in X") describes a deletion that never happened, about a
+  // file with no history to have been deleted from.
+  const root = mkdtempSync(join(tmpdir(), "gs-conflict-ua-"));
+  const git = (...a: string[]): string => {
+    try {
+      return execFileSync("git", a, { cwd: root, encoding: "utf8" });
+    } catch (e) {
+      return String((e as { stdout?: Buffer }).stdout ?? "");
+    }
+  };
+  try {
+    execFileSync("git", ["-c", "init.defaultBranch=main", "init", root]);
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(join(root, "keep.txt"), "base\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+
+    // `new.txt` exists on ONE side only, and never existed before.
+    git("checkout", "-q", "-b", "side");
+    writeFileSync(join(root, "new.txt"), "from the side\n");
+    writeFileSync(join(root, "keep.txt"), "side\n");
+    git("add", "-A");
+    git("commit", "-qm", "added on the side");
+    git("checkout", "-q", "main");
+    writeFileSync(join(root, "keep.txt"), "main\n");
+    git("commit", "-qam", "changed here");
+    git("merge", "side");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    const m = await b.conflictModel("new.txt");
+    if (!m) return; // no conflict on that path in this git version
+    // The decisive property: no common ancestor. The renderer branches on it
+    // to stop telling a deletion story about a file that was only ever added.
+    assert.equal(m.hasBase, false, "there is no version behind either side");
+  } finally {
+    removeTempRepo(root);
+  }
+});

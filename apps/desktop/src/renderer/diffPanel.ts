@@ -536,7 +536,7 @@ export class DiffPanel {
      *  exist. The take-side buttons still apply; the three-pane editor does
      *  not, and mounting it over decoded bytes is how a conflicted PNG offered
      *  you a line-by-line merge of two walls of U+FFFD. */
-    opts: { noText?: "binary" | "modify-delete" | "too-large" } = {},
+    opts: { noText?: "binary" | "modify-delete" | "too-large" | "both-deleted" } = {},
   ): void {
     this.teardown();
 
@@ -605,6 +605,29 @@ export class DiffPanel {
           `${model.path} is larger than this app reads in one go, so only part of it is available — ` +
           `and saving a merge built from part of a file would delete the rest. Take one side, or ` +
           `resolve it in an editor and stage it.`;
+      } else if (opts.noText === "both-deleted") {
+        // Git's DD. Neither side has the file, so neither "Take" button has
+        // anything to take — `conflictTakeSide` refuses both, and the panel
+        // used to offer them anyway by drawing this as a modify/delete.
+        ours.remove();
+        theirs.remove();
+        h.textContent = "Deleted on both sides";
+        d.textContent =
+          `${model.path} was deleted in “${model.oursLabel}” and in “${model.theirsLabel}”. There is ` +
+          `nothing to choose between — the file is going either way. Discard it to accept the ` +
+          `deletion and settle the conflict.`;
+      } else if (!model.hasBase) {
+        // ADDED on one side, with no common ancestor — git's UA / AU. Nothing
+        // was DELETED here: there is no base, so the file simply does not exist
+        // on the other side and never did. Telling the modify/delete story
+        // ("deleted in X") describes a deletion that never happened, about a
+        // file that has no history to have been deleted from.
+        const addedIn = model.missingSide === "ours" ? model.theirsLabel : model.oursLabel;
+        const absent = model.missingSide === "ours" ? model.oursLabel : model.theirsLabel;
+        h.textContent = "Added on one side only";
+        d.textContent =
+          `${model.path} is new in “${addedIn}” and does not exist in “${absent}” — there is no ` +
+          `earlier version behind either. Keep the new file, or leave it out.`;
       } else {
         // `missingSide` says WHICH side has no file. The note used to print
         // both readings and then "— or the other way round", which is the app
@@ -641,7 +664,15 @@ export class DiffPanel {
         : "Save your merged result and stage the file as resolved";
     };
     this.merge.onCountsChanged = (counts) => {
-      pending = counts.conflictsPending;
+      // EVERY pending block, not only the conflicting ones.
+      //
+      // The result pane is seeded with the BASE, so a block nobody has accepted
+      // still holds the base's version of those lines — conflicting or not.
+      // Gating on `conflictsPending` therefore unlocked the button while
+      // auto-mergeable hunks were still sitting at base, and saving wrote the
+      // pre-merge original over both sides' work in every one of them. The
+      // gate that was added to stop exactly this counted the wrong thing.
+      pending = counts.pending;
       syncResolve();
     };
     this.merge.render({
@@ -656,6 +687,14 @@ export class DiffPanel {
       theirs: model.theirs,
       result: model.result,
     });
+    // Start from git's own auto-merge, the way the worktree already has.
+    //
+    // Without this the correctness fix above is unusable: a file with one true
+    // conflict and forty hunks git merged cleanly would need forty gestures to
+    // redo work git had already done. Seeding them makes `pending` equal
+    // `conflictsPending` by construction, so the stricter gate is invisible in
+    // the ordinary case and only bites when a block really is unresolved.
+    this.merge.applyAllNonConflicting();
     // Paint the button's initial state. `onCountsChanged` fires on the first
     // model build, but a merge view that fails to mount at all (a cold or
     // broken Monaco worker) never emits it — and the button must stay closed in

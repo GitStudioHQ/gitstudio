@@ -179,3 +179,57 @@ test("a file that merely mentions the markers in its text is judged by both ends
     removeTempRepo(root);
   }
 });
+
+test("a conflicted BINARY is held back by Stage all too", async () => {
+  // The whole guard is "no markers means somebody resolved it" — and a binary
+  // cannot contain markers, any more than a modify/delete can. So the one kind
+  // of conflict the app itself refuses to open a text merge for was the one
+  // kind "Stage all" waved straight through, declaring it resolved with
+  // whichever side happened to be sitting in the worktree.
+  const root = mkdtempSync(`${tmpdir()}/gs-conflict-bin-`);
+  const git = (...a: string[]): string => {
+    try {
+      return execFileSync("git", a, { cwd: root }).toString();
+    } catch (e) {
+      return String((e as { stdout?: Buffer }).stdout ?? "");
+    }
+  };
+  try {
+    const nul = (tag: number): Buffer =>
+      Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]), Buffer.alloc(48, tag)]);
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    writeFileSync(`${root}/art.png`, nul(1));
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("checkout", "-q", "-b", "side");
+    writeFileSync(`${root}/art.png`, nul(2));
+    git("commit", "-qam", "theirs");
+    git("checkout", "-q", "main");
+    writeFileSync(`${root}/art.png`, nul(3));
+    git("commit", "-qam", "ours");
+    git("merge", "side");
+
+    assert.notEqual(git("ls-files", "-u", "--", "art.png").trim(), "", "the fixture is conflicted");
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const b = new GitBridge(repos);
+    const r = await b.stageAll();
+
+    // The decisive check: git must still consider the path UNMERGED. If the
+    // add had gone through, the conflict would read as settled and Continue
+    // would light up over a file nobody chose a side for.
+    assert.notEqual(
+      git("ls-files", "-u", "--", "art.png").trim(),
+      "",
+      "the binary conflict is still unmerged",
+    );
+    assert.equal(r.ok, false, "and Stage all says it could not take everything");
+    assert.match(r.message ?? "", /art\.png/, "naming the file that needs a decision");
+  } finally {
+    removeTempRepo(root);
+  }
+});
