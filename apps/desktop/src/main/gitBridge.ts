@@ -573,9 +573,19 @@ export class GitBridge {
     // Under HEAD's OWN name for it — a staged rename means HEAD has only the
     // old path, and an empty left pane renders a rename as a brand-new file.
     const headName = await headSideName(ctx, rel).catch(() => rel);
-    const headText = headName
-      ? await ctx.staging.headContent(headName).catch(() => "")
-      : "";
+    // Through `showAt`, which CLASSIFIES and CAPS — the same reader the commit
+    // and compare diffs use for their sides.
+    //
+    // This was a raw `headContent`: no binary test, and no cap. The working
+    // side is capped at FILE_CAP_BYTES, so on any file bigger than that the two
+    // panes were read to different lengths and everything past the cap showed
+    // up as DELETED LINES — a diff of a file nobody had touched, claiming its
+    // entire tail had been removed. And a file that is binary in HEAD went to
+    // the editor as decoded bytes on the left of whatever is on disk now.
+    const head: { text: string; binary?: boolean; truncated?: boolean } = headName
+      ? await showAt(ctx, "HEAD", headName).catch(() => ({ text: "" }))
+      : { text: "" };
+    const headText = head.text;
     // A DELETED file is not a file we failed to read. `readWorking` falls back
     // to the index and then HEAD when the path is gone — a fallback
     // conflictModel needs and this does not — so a deletion produced a right
@@ -605,8 +615,9 @@ export class GitBridge {
       conflicted,
       // The Changes view is the most-used diff surface in the app and was the
       // ONLY producer that did not classify its reads, so a PNG or a generated
-      // bundle opened here went to the editor as text.
-      ...diffKind({}, working),
+      // bundle opened here went to the editor as text. BOTH sides — a cap or a
+      // binary on the left is exactly as disqualifying as one on the right.
+      ...diffKind(head, working),
       // Read alongside HEAD and the working tree so the ticks describe the same
       // revision as the panes. A conflicted file has no meaningful index entry
       // to stage against, so it gets no ticks.
@@ -3026,15 +3037,22 @@ async function readWorking(
   if (!abs) return { text: "", unreadable: true };
   try {
     const buf = await readFile(abs);
-    if (buf.length > FILE_CAP_BYTES) {
-      return { text: buf.subarray(0, FILE_CAP_BYTES).toString("utf8"), truncated: true };
-    }
+    // CLASSIFY BEFORE CAPPING. The size check used to return `truncated` on its
+    // own line, above the binary tests — so anything binary and larger than the
+    // cap never reached them. A 40MB PNG, a video, a compiled bundle: the first
+    // 512KB were decoded as utf8 and mounted in a text editor, under a note
+    // reading "showing the first part of it". The pane filled with mojibake and
+    // the app claimed that was the file. Size and kind are independent
+    // questions, and the kind is the one that decides whether there is anything
+    // to show at all.
+    const head = buf.length > FILE_CAP_BYTES ? buf.subarray(0, FILE_CAP_BYTES) : buf;
     // A NUL byte is the same test git itself uses, and it runs on the BYTES —
     // decoding first is what turned a binary into replacement characters that
     // then looked like text.
-    if (buf.includes(0)) return { text: "", binary: true };
-    const text = buf.toString("utf8");
+    if (head.includes(0)) return { text: "", binary: true };
+    const text = head.toString("utf8");
     if (replacementRatio(text) > 0.3) return { text: "", binary: true };
+    if (buf.length > FILE_CAP_BYTES) return { text, truncated: true };
     return { text };
   } catch {
     return { text: "", unreadable: true };

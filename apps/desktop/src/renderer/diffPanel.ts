@@ -99,13 +99,56 @@ export class DiffPanel {
       );
       return;
     }
+    // NOTHING CAME BACK, because the file was too big to send.
+    //
+    // A producer that hits its size limit and has nothing to show returns two
+    // EMPTY sides with `truncated` set — GitHub's Contents API does this for
+    // any blob over its inline cap, for both the base and the head ref. The
+    // panel mounted an editor over two empty strings and then wrote "showing
+    // the first part of it" underneath: two blank panes under a note claiming
+    // they held something.
+    if (file.truncated && !file.leftText && !file.rightText) {
+      this.showEmpty(
+        `${file.path} is too large to fetch a diff for, so none of it could be read. Nothing here is a ` +
+          `statement about what changed in it.`,
+        { title: "Too large to diff", kind: "none" },
+      );
+      return;
+    }
+    // EMPTY ON BOTH SIDES, genuinely. Two empty strings mount an editor over
+    // nothing: a blank field, no note, no hint that the file simply has no
+    // contents. It fell through every guard here because the identical-sides
+    // test below requires a non-zero length, and it is a real state —
+    // `touch`ing a file and staging it, or emptying one without deleting it.
+    if (!file.leftText && !file.rightText) {
+      this.showEmpty(`${file.path} is empty on both sides — there are no lines to compare.`, {
+        title: "Empty file",
+        kind: "none",
+      });
+      return;
+    }
     // IDENTICAL SIDES. A rename with no edit, or a mode-only change, has two
     // equal texts — and the inline editor is built with
     // `hideUnchangedRegions`, which then collapses the entire file and renders
     // as an empty box, while Split shows two identical panes. That is exactly
     // "sometimes it doesn't show the diff on just one of the two views". Say
     // what happened instead of drawing nothing.
+    //
+    // NOT when the file was truncated. Then these are not the file's contents,
+    // they are the first N bytes of each side — and two large files whose
+    // openings match are the ordinary case, not a rename. This branch returned
+    // before the truncation note below could be added, so a half-read file was
+    // confidently declared "renamed, or only its file mode changed" with
+    // nothing on screen saying the rest had not been looked at.
     if (file.leftText === file.rightText && file.leftText.length > 0) {
+      if (file.truncated) {
+        this.showEmpty(
+          `${file.path} is too large to diff in full. The part that could be read is identical on ` +
+            `both sides, so whatever changed is further into the file.`,
+          { title: "Too large to diff", kind: "none" },
+        );
+        return;
+      }
       this.showEmpty(
         `${file.path} has the same contents on both sides — it was renamed, or only its file mode changed.`,
         { title: "No line changes", kind: "none" },

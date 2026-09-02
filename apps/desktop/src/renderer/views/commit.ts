@@ -332,7 +332,16 @@ export async function renderCommit(
           rightLabel: `${d!.shortSha} · this commit`,
         });
       }
-      else diff.showEmpty(`Couldn't read the diff for ${f.path}.`);
+      // With no `kind` this defaulted to "waiting" — the reader got the
+      // "Nothing selected" heading and the pick-a-file icon over a row that was
+      // still highlighted, so a FAILURE read as an instruction to do the thing
+      // they had just done. Both sibling callers (Compare, Changes) were given
+      // this treatment; this one was missed.
+      else
+        diff.showEmpty(
+          `${f.path} is listed as changed in this commit, so this is a failure to read it — not a file with nothing in it.`,
+          { title: "Couldn't read this file", kind: "error" },
+        );
     };
 
     const rowFor = new Map<HTMLElement, string>();

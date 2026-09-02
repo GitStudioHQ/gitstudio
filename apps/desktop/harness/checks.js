@@ -7224,5 +7224,73 @@
         "but a reader AT the bottom is kept there",
       );
     },
+
+    // A STATE TABLE over what the diff panel does with a file it cannot draw
+    // line by line. Every cell must SAY which of the several different nothings
+    // it is showing — the whole point of the panel's `showEmpty(kind)` — and no
+    // cell may mount an editor over two empty strings, which is the shape of
+    // every "sometimes the diff doesn't show" report this project has had.
+    "every-undrawable-diff-says-which-nothing-it-is": async (f) => {
+      const c = check(f);
+      const surface = $(".dc-diff") || $(".diff-surface") || $(".cmp-diff");
+      c.ok(!!surface, "the Changes view has a diff surface");
+      if (!surface) return;
+
+      const row = $(".dc-file");
+      c.ok(!!row, "there is a file to open");
+      if (!row) return;
+
+      const base = {
+        path: "src/thing.ts",
+        leftLabel: "HEAD",
+        rightLabel: "Working Tree",
+        leftText: "",
+        rightText: "",
+        conflicted: false,
+      };
+      const CELLS = [
+        {
+          name: "binary",
+          diff: { ...base, path: "logo.png", binary: true },
+          want: /binary/i,
+        },
+        {
+          name: "too large, nothing came back",
+          diff: { ...base, truncated: true },
+          want: /too large/i,
+        },
+        {
+          name: "empty on both sides",
+          diff: { ...base },
+          want: /empty/i,
+        },
+        {
+          name: "too large, the readable part matches",
+          diff: { ...base, leftText: "same\n", rightText: "same\n", truncated: true },
+          want: /too large/i,
+        },
+        {
+          name: "identical sides (a rename)",
+          diff: { ...base, leftText: "same\n", rightText: "same\n" },
+          want: /renamed|file mode/i,
+        },
+      ];
+
+      const inv = window.gitstudio.invoke;
+      for (const cell of CELLS) {
+        window.gitstudio.invoke = (ch, p) =>
+          ch === "file:diff" ? Promise.resolve(cell.diff) : inv(ch, p);
+        row.click();
+        await settle(700);
+        const note = $(".diff-empty", surface);
+        c.ok(!!note, `${cell.name}: says something rather than drawing nothing`);
+        if (!note) continue;
+        const said = text(note) || "";
+        c.ok(cell.want.test(said), `${cell.name}: names what it is (“${said.slice(0, 70)}”)`);
+        // The decisive one: no editor may be mounted over two empty strings.
+        c.ok(!$(".monaco-editor", surface), `${cell.name}: no editor over nothing`);
+      }
+      window.gitstudio.invoke = inv;
+    },
   };
 })();
