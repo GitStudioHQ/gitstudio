@@ -7635,7 +7635,9 @@ class App {
       const mine = ++gen;
       let status: GitHubStatus;
       try {
-        status = await host.invoke("github:status", undefined);
+        // Cached: the top bar and the section headers both ask on every route,
+        // and this is the copy that was not sharing with the others.
+        status = await gget("github:status", undefined);
         lastKnown = status;
       } catch {
         // Keep saying what we last knew to be true; only an actual answer of
@@ -7953,12 +7955,25 @@ class App {
     }
   }
 
-  /** Snapshot the on-disk state so the next focus can tell "changed" from "same". */
+  /**
+   * Snapshot the on-disk state so the next focus can tell "changed" from "same".
+   *
+   * Read through the cache. These run alongside the view's own status and HEAD
+   * reads — at boot inside the same tick, and after an external git operation
+   * right behind the refresh that just repopulated them — so raw invokes meant
+   * the app ran `git status` over the whole worktree twice to learn one thing
+   * once. `gget` shares the in-flight promise rather than starting a second.
+   *
+   * Both reads here must stay value-comparable with the ones in
+   * `refreshIfDiskMoved`, which are deliberately RAW: that side is the
+   * forced-fresh half of the comparison, and caching it would compare a value
+   * against itself.
+   */
   private async recordDiskFingerprint(): Promise<void> {
     try {
       const [status, head] = await Promise.all([
-        host.invoke("status", undefined),
-        host.invoke("head:get", undefined),
+        gget("status", undefined),
+        gget("head:get", undefined),
       ]);
       this.diskFingerprint = JSON.stringify({ status, head });
     } catch {
