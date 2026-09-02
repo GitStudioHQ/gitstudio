@@ -319,6 +319,7 @@ const CASES = [
   ["the-issue-body-gets-the-window", "issues~text:New%20issue"],
   ["composing-an-issue-can-decide-who-it-is-for", "issues~text:New%20issue"],
   ["the-commit-page-says-who-when-and-where", "prs~open106~text:Commits~text:issues%3A%20full-page%20detail"],
+  ["the-palette-keeps-your-place-when-results-arrive", "branches~palette"],
   ["one-key-press-closes-one-layer", "branches"],
   ["one-key-press-closes-one-layer", "issues"],
   ["a-label-picker-batches-and-escape-discards", "issues~open31"],

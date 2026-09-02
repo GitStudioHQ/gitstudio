@@ -276,7 +276,15 @@ export function openCommandPalette(providers: PaletteProviders): void {
               if (!group || live?.overlay !== overlay) return;
               if (!scheduler?.isCurrent(generation)) return;
               searchGroups = [...searchGroups, group];
-              resetSelection = true;
+              // NOT a reset. A new QUERY resets (above) — that is a different
+              // list, and starting at the top is right. A group merely ARRIVING
+              // is the same list growing.
+              //
+              // Measured, typing "git" and pressing ↓↓ before the debounced
+              // search lands: with the reset, the highlight jumped to row 0
+              // ("Search GitHub for “git”") — the two key presses discarded,
+              // and Enter would have fired a row the reader never chose. Without
+              // it the highlight stays down the list where they put it.
               render();
             })
             .catch(() => {

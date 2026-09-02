@@ -4759,6 +4759,51 @@
     },
 
     /**
+     * The palette does not throw away your arrow keys when a search lands.
+     *
+     * Search groups are PREPENDED, and to stop the highlight sliding downward
+     * as rows arrived above it the palette reset the selection to row 0 every
+     * time a group resolved — which fires ~300ms after you stop typing, i.e.
+     * exactly while you are arrowing. The two presses were discarded and Enter
+     * fired the top row, which is "Search GitHub for …": a whole different
+     * destination from the one under the highlight a moment earlier.
+     */
+    "the-palette-keeps-your-place-when-results-arrive": async (f) => {
+      const c = check(f);
+      const inp = $(".cmdk-card input");
+      c.ok(!!inp, "the palette is open");
+      if (!inp) return;
+      const K = (k) =>
+        inp.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+      const idx = () => $$(".cmdk-row").findIndex((r) => r.classList.contains("is-selected"));
+
+      // A query matching BOTH local commands and the search fixtures, so a
+      // group really does arrive after the local list is already on screen.
+      inp.value = "git";
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(120);
+      const localRows = $$(".cmdk-row").length;
+      c.ok(localRows > 2, `the local list is up (${localRows} rows)`);
+
+      K("ArrowDown");
+      await settle(60);
+      K("ArrowDown");
+      await settle(60);
+      const chose = idx();
+      c.ok(chose > 0, `two presses move the highlight down (row ${chose})`);
+
+      await settle(2000);
+      c.ok(
+        $$(".cmdk-row").length > localRows,
+        `a search group arrived (${localRows} → ${$$(".cmdk-row").length} rows)`,
+      );
+      c.ok(
+        idx() > 0,
+        `and the highlight is still where the reader put it, not back at row 0 (row ${idx()})`,
+      );
+    },
+
+    /**
      * One key press, one layer — and the keyboard is never dropped.
      *
      * Three ways the app lost track of its own floating layers:
