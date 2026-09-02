@@ -4673,7 +4673,7 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
 .notif-dot.is-read { visibility: hidden; box-shadow: none; }
 /* Read rows recede — dim the title + icon so unread stands out. */
 .notif-read .row-meta-title { font-weight: 500; color: var(--app-muted); }
-.notif-read .notif-lead .glyph { opacity: 0.55; }
+.notif-read .notif-lead .glyph { color: var(--app-muted); opacity: 1; }
 /* Subject-type pill sits before the (hover-revealed) action cluster. */
 .notif-type {
   flex: 0 0 auto; margin-left: 8px;
@@ -7717,9 +7717,15 @@ body.vscode-light .gh-label-chip {
 /* ── 4 · Design-audit CSS-only consistency fixes ────────────────────────────── */
 
 /* Notifications: dim the WHOLE read row (was an inline style.opacity=0.72), so the
-   view can drop the inline rule and just toggle .notif-read. The existing
-   .notif-read title/icon rules above still apply for finer recede. */
-.notif-read { opacity: 0.72; }
+   view can drop the inline rule and just toggle .notif-read.
+   
+   The row-level fade MULTIPLIES with the finer recede above it, and opacity is
+   theme-blind — fading toward a light ground costs far more contrast than
+   fading toward a dark one. At 0.72 the read title landed at 3.04:1 on the
+   light page and its type glyph, which also carried its own 0.55, at 1.75:1:
+   invisible. The row still recedes, but the text does its receding with a
+   COLOUR (which each theme picks) rather than by stacking a second fade. */
+.notif-read { opacity: 0.85; }
 
 /* Gists: a semantic lead-icon colour (member of the .gh-lead-* family) so the
    Gists view can drop its inline style.color on the leading code glyph. */
