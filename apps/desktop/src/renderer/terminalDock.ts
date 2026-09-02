@@ -56,6 +56,11 @@ export interface TerminalDockOptions {
   onStateChange: (s: { expanded: boolean; height: number }) => void;
 }
 
+/** How many shells one window will hold. A held-down "+" must not be able
+ *  to spawn unbounded PTYs; the button reports the limit rather than
+ *  swallowing the click. */
+const MAX_TERMINALS = 16;
+
 export class TerminalDock {
   private readonly dock: BottomDock;
   private readonly outputs: OutputsPanel;
@@ -207,7 +212,8 @@ export class TerminalDock {
   /** Public: add a terminal, focus it, switch to the Terminal tab + expand. */
   newTerminal(): void {
     // Cap concurrent terminals so a held-down "+" can't spawn unbounded PTYs.
-    if (this.terminals.length >= 16) return;
+    // The button says so rather than swallowing the click — see `syncAddBtn`.
+    if (this.terminals.length >= MAX_TERMINALS) return;
     const t = this.createTerminal();
     this.activeTermId = t.id;
     this.active = "terminal";
@@ -316,10 +322,17 @@ export class TerminalDock {
 
   private renderSide(): void {
     this.termSide.replaceChildren();
-    const addBtn = el("button", "term-side-add");
+    const addBtn = el("button", "term-side-add") as HTMLButtonElement;
     addBtn.append(glyph("add"), span("New terminal"));
-    addBtn.title = "New terminal";
-    addBtn.setAttribute("aria-label", "New terminal");
+    // At the cap the button used to stay fully lit and do nothing — a click
+    // that `newTerminal`'s own guard swallowed, with no message anywhere. A
+    // control that cannot act says so.
+    const atCap = this.terminals.length >= MAX_TERMINALS;
+    addBtn.disabled = atCap;
+    addBtn.title = atCap
+      ? `${MAX_TERMINALS} terminals is the most this window will open at once — close one first`
+      : "New terminal";
+    addBtn.setAttribute("aria-label", addBtn.title);
     addBtn.addEventListener("click", () => this.newTerminal());
     this.termSide.appendChild(addBtn);
 

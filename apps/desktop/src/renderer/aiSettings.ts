@@ -17,6 +17,17 @@ import { trapTab } from "./views/common";
 import { registerLayer, holdBackground } from "./overlays";
 import type { AiConnectionView, AiPresetView, AiSettingsView, McpInfo } from "../shared/ipc";
 
+/** Say that the set of usable models may have changed.
+ *
+ *  The Assistant gates itself ONCE, on mount, and it is a keep-alive view — so
+ *  its cached DOM was re-attached unchanged on every later visit. Connecting a
+ *  model in Settings therefore never lifted the "Connect a model" panel: the
+ *  Assistant stayed gated for the rest of the session, with a working
+ *  connection sitting behind it. */
+export function announceAiChanged(): void {
+  window.dispatchEvent(new CustomEvent("gs:ai-changed"));
+}
+
 /** The "AI Models" card: manage model connections. */
 export function aiModelsCard(): HTMLElement {
   const { card, body } = settingsCard("AI Models", "sparkle");
@@ -90,6 +101,7 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
     star.addEventListener("click", () =>
       void runBusy(star, async () => {
         await host.invoke("ai:setDefault", { id: c.id });
+        announceAiChanged();
         void refresh();
       }),
     );
@@ -127,6 +139,7 @@ function connectionRow(c: AiConnectionView, isDefault: boolean, refresh: () => P
     });
     if (!ok) return;
     await host.invoke("ai:removeConnection", { id: c.id });
+    announceAiChanged();
     toast("Model removed.", "info");
     void refresh();
   });
@@ -183,6 +196,7 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
       }
       void runBusy(saveKey, async () => {
         await host.invoke("ai:setKey", { id: c.id, key: keyInput.value.trim() });
+        announceAiChanged();
         keyInput.value = "";
         toast("Key stored securely.", "success");
         void refresh();
@@ -211,6 +225,7 @@ function buildEditor(editor: HTMLElement, c: AiConnectionView, refresh: () => Pr
       const typedKey = keyField?.value.trim();
       if (typedKey) {
         await host.invoke("ai:setKey", { id: c.id, key: typedKey });
+        announceAiChanged();
         if (keyField) keyField.value = "";
       }
       toast(typedKey ? "Saved, and the key stored securely." : "Saved.", "success");

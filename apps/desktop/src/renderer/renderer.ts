@@ -913,7 +913,9 @@ class App {
     // full height, instead of a chat tab splitting the window in half from
     // the bottom dock.
     registerAssistantTab((req) => {
-      seedAssistantGoal(req.goal);
+      // The TITLE is what the user bubble says — "Analyze #42", not the whole
+      // prompt the action builds around the issue body and its comments.
+      seedAssistantGoal(req.goal, req.title);
       this.routeView("assistant", true);
     });
     return this.terminalDock;
@@ -8268,7 +8270,17 @@ class App {
     const diff = await host.invoke("file:diff", { path: file.path, sha });
     if (gen !== this.diffGen || panel !== this.diffPanel) return;
     if (!diff) {
-      panel.showEmpty("This file has no textual changes to show.", { kind: "none" });
+      // The FOURTH caller of this shape, and the last one still laundering a
+      // failure into good news. `fileDiff` returns undefined when there is no
+      // repository open or the path failed its containment check — never
+      // because the two sides matched. Saying "no textual changes" with a green
+      // tick asserts something the app has no basis for, about a file that is
+      // in this list precisely because it differs. Changes, Compare and the
+      // commit page each got this treatment; this one was missed.
+      panel.showEmpty(
+        `${file.path} is listed as changed, so this is a failure to read it — not a file with nothing in it.`,
+        { title: "Couldn't read this file", kind: "error" },
+      );
       return;
     }
     if (diff.conflicted) {

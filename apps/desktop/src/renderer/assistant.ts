@@ -19,8 +19,19 @@ import type { AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
  *  by the next render. The ✨ flow used to open a CHAT TAB in the bottom dock,
  *  which split the screen in half; now it lands here, in the one AI surface. */
 let pendingGoal: string | null = null;
-export function seedAssistantGoal(goal: string): void {
+/** What the USER BUBBLE should say for that goal.
+ *
+ *  A ✨ action's goal is a whole prompt — "Analyze this issue:" plus the title,
+ *  the body and every comment on it — and it was posted verbatim as the user's
+ *  chat message. Opening ✨ Analyze on a busy issue put several screens of
+ *  quoted text into the transcript as if the reader had typed it, burying the
+ *  answer below the fold. The dock's chat tab has carried a short label for
+ *  exactly this since it was written (`seedLabel` → `runAgentTurn`'s
+ *  `displayText`); the section path dropped it on the floor. */
+let pendingLabel: string | undefined;
+export function seedAssistantGoal(goal: string, label?: string): void {
   pendingGoal = goal;
+  pendingLabel = label;
 }
 
 /** Agent write permission, remembered across navigations within a session. */
@@ -214,7 +225,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   // before `permission`, `thinkLevel` and `selectedModelId` had been read out
   // of settings, and then had its transcript wiped by the `restoreChat` below
   // landing a quarter-second later. Both callers await it now.
-  const ready = (async () => {
+  const runGate = async (): Promise<void> => {
     let settings: AiSettingsView | undefined;
     try {
       settings = await host.invoke("ai:settings", undefined);
@@ -265,7 +276,29 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         /* no prior chat */
       }
     }
-  })();
+  };
+  const ready = runGate();
+
+  // Connecting a model in Settings must LIFT the gate. This view is kept alive,
+  // so its gated DOM was re-attached unchanged on every later visit — the
+  // Assistant stayed behind "Connect a model" for the rest of the session with
+  // a working connection sitting behind it, and the only way out was to restart
+  // the app.
+  const onAiChanged = (): void => {
+    if (!gated) return; // an ungated Assistant has nothing to re-open
+    void (async () => {
+      const s = await host.invoke("ai:settings", undefined).catch(() => undefined);
+      if (!s?.enabled || !wrap.isConnected) return;
+      gated = false;
+      transcript.replaceChildren(empty);
+      input.disabled = false;
+      for (const c of chips) c.disabled = false;
+      controls.classList.remove("is-disabled");
+      syncSend();
+      await runGate(); // re-seed the model, permission and thinking controls
+    })();
+  };
+  window.addEventListener("gs:ai-changed", onAiChanged);
 
   function restoreChat(chat: ChatView): void {
     empty.remove();
@@ -296,6 +329,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   }
 
   async function newChat(): Promise<void> {
+    // A gated Assistant has no chats. This replaced the "Connect a model" panel
+    // with an empty-state that invites you to type into a composer that cannot
+    // be typed into — the one explanation of why nothing works, deleted by a
+    // menu item that was never disabled.
+    if (gated) return;
     if (await leavingLiveTurn()) return;
     try {
       const chat = await host.invoke("ai:chatNew", undefined);
@@ -327,6 +365,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   }
 
   async function switchChat(id: string): Promise<void> {
+    if (gated) return;
     if (await leavingLiveTurn()) return;
     try {
       const chat = await host.invoke("ai:chatGet", { id });
@@ -340,7 +379,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     }
   }
 
-  async function runGoal(goal: string, fromInput = true): Promise<void> {
+  async function runGoal(goal: string, fromInput = true, display?: string): Promise<void> {
     if (running || gated || !goal.trim()) return;
     // CLAIMED BEFORE THE FIRST await. `running` is the only thing stopping a
     // second turn, and an await hands control back to the event loop: with the
@@ -380,10 +419,13 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       }
     }
     if (!currentChatId) {
-      addBubble(transcript, "user", goal);
+      addBubble(transcript, "user", display ?? goal);
       transcript.append(errorBlock("Couldn't start a chat — open a repository and connect a model."));
       running = false;
-      setBusy(send, false);
+      // Through the one rule. A bare `setBusy(send, false)` left Send fully lit
+      // over a composer this path has just emptied, so the button invited a
+      // click that `runGoal`'s own empty-goal guard then swallowed in silence.
+      syncSend();
       return;
     }
 
@@ -402,6 +444,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
           thinking: thinkLevel,
         },
         ac.signal,
+        display,
       );
     } finally {
       running = false;
@@ -425,9 +468,11 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   // the moment this surface is up.
   if (pendingGoal) {
     const goal = pendingGoal;
+    const label = pendingLabel;
     pendingGoal = null;
+    pendingLabel = undefined;
     // `runGoal` awaits `ready` itself, so this runs with the real permission,
     // model and thinking level rather than whatever the defaults happened to be.
-    void runGoal(goal, false);
+    void runGoal(goal, false, label);
   }
 };

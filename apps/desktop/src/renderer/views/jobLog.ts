@@ -132,6 +132,8 @@ export async function renderJobLog(
 
   const rows = new Map<number, HTMLElement>();
   let session: Session | undefined;
+  /** Watches for this page leaving the document — see `watchPageDetach`. */
+  let detachObs: MutationObserver | undefined;
 
   /** Status as of the freshest poll — the tail asks before every delta. */
   const statusOf = (id: number): string => jobs.find((j) => j.id === id)?.status ?? "";
@@ -174,6 +176,35 @@ export async function renderJobLog(
     step();
   };
 
+  /**
+   * Tear the pane down when this PAGE goes away, not only when the job changes.
+   *
+   * `destroy()` was called on a job SWITCH, so leaving the page — Back, the
+   * rail, a deep link, ⌘[ — left the last session's pane alive: its window
+   * resize listener still attached, and its whole parsed document (up to
+   * 200,000 lines, plus the ANSI spans for the window it had rendered) still
+   * reachable from that listener's closure. Open six runs' logs in a session
+   * and six of them are held for the life of the window.
+   *
+   * A mutation observer, the same shape the PR diff panel uses for the same
+   * reason: nothing else fires on the way out of a section view.
+   */
+  const watchPageDetach = (): void => {
+    detachObs?.disconnect();
+    const obs = new MutationObserver(() => {
+      if (view.isConnected) return;
+      obs.disconnect();
+      detachObs = undefined;
+      if (session) {
+        session.alive = false;
+        session.pane.destroy();
+        session = undefined;
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    detachObs = obs;
+  };
+
   const openJob = async (j: WorkflowJob): Promise<void> => {
     currentId = j.id;
     setCrumb(j.name);
@@ -189,6 +220,7 @@ export async function renderJobLog(
       session.alive = false;
       session.pane.destroy();
     }
+    watchPageDetach();
     const pane = createLogPane({
       fill: true,
       // Follow only a job that is still producing. A completed log opens at the

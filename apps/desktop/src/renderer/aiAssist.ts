@@ -103,7 +103,16 @@ export async function streamInto(
     btn.replaceChildren(glyph("loading"), span("Writing…"));
   }
   const prev = textarea.value;
-  textarea.value = "";
+  // Through an `input` event, always. Every control that watches this box —
+  // both Commit buttons, the character counter — learns about it that way, and
+  // a bare assignment is invisible to all of them. So emptying the composer to
+  // stream a generated message into it left Commit fully enabled over a box
+  // with nothing in it, for as long as the model took to produce a first token.
+  const setComposer = (v: string): void => {
+    textarea.value = v;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  setComposer("");
   let got = false;
   /**
    * Stop the moment the box we are writing into leaves the document.
@@ -118,8 +127,7 @@ export async function streamInto(
   const res = await streamTask(task, input, (d) => {
     if (gone()) return;
     got = true;
-    textarea.value += d;
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    setComposer(textarea.value + d);
   });
   if (gone()) {
     if (btn) {
@@ -133,18 +141,19 @@ export async function streamInto(
     if (original) btn.innerHTML = original;
   }
   if (!res.ok || (!got && !res.text)) {
-    textarea.value = prev; // restore on failure
+    // …and through the same helper. This one was a bare assignment, so putting
+    // the reader's message BACK after a failure left both Commit buttons
+    // disabled over it — the state the empty box had put them in.
+    setComposer(prev); // restore on failure
     toast(res.message ?? "Couldn't generate that.", "error");
     return;
   }
   if (!got && res.text) {
-    textarea.value = res.text;
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    setComposer(res.text);
   }
   // The trim is a programmatic write like any other: if the model returned
   // only whitespace this empties the box, and without the event the commit
   // buttons would stay enabled over an empty message.
-  textarea.value = textarea.value.trim();
-  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  setComposer(textarea.value.trim());
   textarea.focus();
 }
