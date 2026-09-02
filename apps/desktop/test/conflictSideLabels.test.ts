@@ -48,6 +48,59 @@ test("cherry-pick and revert read like a merge, because they are", () => {
   }
 });
 
+test("git agrees about cherry-pick and revert too", () => {
+  // The claim above was an assertion about `sideLabels` agreeing with itself,
+  // which proves nothing about git. `am` was wrong for exactly that reason —
+  // it was grouped by assumption and never checked. So: real conflicts, real
+  // stages, for both remaining operations.
+  const root = mkdtempSync(join(tmpdir(), "gs-pick-sides-"));
+  const git = (...a: string[]): string => {
+    try {
+      return execFileSync("git", a, { cwd: root, encoding: "utf8", env });
+    } catch (e) {
+      return String((e as { stdout?: Buffer }).stdout ?? "");
+    }
+  };
+  execFileSync("git", ["-c", "init.defaultBranch=main", "init", root], { env });
+  git("config", "user.email", "t@t");
+  git("config", "user.name", "t");
+  git("config", "gc.auto", "0");
+  writeFileSync(join(root, "f.txt"), "base\n");
+  git("add", "-A");
+  git("commit", "-qm", "base");
+
+  // A commit on a side branch, to be picked onto main.
+  git("checkout", "-q", "-b", "side");
+  writeFileSync(join(root, "f.txt"), "PICKED\n");
+  git("commit", "-qam", "the pick");
+  const picked = git("rev-parse", "HEAD").trim();
+
+  git("checkout", "-q", "main");
+  writeFileSync(join(root, "f.txt"), "MINE\n");
+  git("commit", "-qam", "mine");
+
+  git("cherry-pick", picked); // conflicts
+  assert.equal(git("show", ":2:f.txt").trim(), "MINE", "cherry-pick: stage 2 is YOUR branch");
+  assert.equal(git("show", ":3:f.txt").trim(), "PICKED", "and stage 3 is the commit picked");
+  git("cherry-pick", "--abort");
+
+  // And a revert: undoing an earlier commit against a since-changed file.
+  writeFileSync(join(root, "g.txt"), "one\n");
+  git("add", "-A");
+  git("commit", "-qm", "add g");
+  const target = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(root, "g.txt"), "two\n");
+  git("commit", "-qam", "change g");
+  git("revert", "--no-edit", target); // conflicts
+  assert.equal(git("show", ":2:g.txt").trim(), "two", "revert: stage 2 is YOUR branch");
+
+  // Which is what the labels say for both.
+  for (const kind of ["cherry-pick", "revert"] as const) {
+    assert.match(sideLabels(kind).oursLabel, /your branch/i, kind);
+    assert.match(sideLabels(kind).theirsLabel, /incoming/i, kind);
+  }
+});
+
 test("`git am` reads like a merge, NOT like a rebase", () => {
   // The distinction that matters, and the one this function originally got
   // wrong by lumping the two together: a rebase checks the upstream out and
