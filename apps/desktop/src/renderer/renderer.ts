@@ -5479,6 +5479,25 @@ class App {
         : kind === "am" ? "am"
         : "merge";
       const buttons: HTMLButtonElement[] = [];
+      /** Ask, with the trigger held down for the whole dialog.
+       *
+       *  A confirm that leaves its own button live stacks one dialog per click:
+       *  three impatient presses of Abort opened three modals, and dismissing
+       *  them one at a time then fired the command once per Yes. `runOp`
+       *  already locks the banner, but only once it starts — the window
+       *  between the click and the answer belonged to nobody. */
+      const askThen = (
+        btn: HTMLButtonElement,
+        opts: Parameters<typeof confirmDialog>[0],
+        go: () => void,
+      ): void => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        void confirmDialog(opts).then((yes) => {
+          btn.disabled = false;
+          if (yes) go();
+        });
+      };
       const runOp = async (ch: OpChannel): Promise<void> => {
         // Disabled for the whole round trip, and deliberately NOT restored:
         // the repaint below rebuilds the banner with fresh buttons. Restoring
@@ -5567,9 +5586,9 @@ class App {
             "nothing can bring them back.",
           confirmLabel: "Abandon",
         };
-        void confirmDialog({ ...ask, danger: true }).then((yes) => {
-          if (yes) void runOp(`${kind === "am" ? "am" : family}:abort` as OpChannel);
-        });
+        askThen(abort, { ...ask, danger: true }, () =>
+          runOp(`${kind === "am" ? "am" : family}:abort` as OpChannel),
+        );
       });
       cont.addEventListener("click", () => void runOp(`${family}:continue` as OpChannel));
       if (op.canSkip) {
@@ -5582,17 +5601,19 @@ class App {
         // Skipping discards work — a patch, or a commit — and cannot be undone
         // from inside the app. It asks, and it is never the primary button.
         skip.addEventListener("click", () => {
-          void confirmDialog({
-            title: kind === "am" ? "Skip this patch?" : "Skip this commit?",
-            message:
-              kind === "am"
-                ? "The patch git is stuck on is dropped and the rest of the series carries on. The app cannot replay it."
-                : "This commit is dropped from the rebase and the rest carries on.",
-            confirmLabel: kind === "am" ? "Skip patch" : "Skip commit",
-            danger: true,
-          }).then((yes) => {
-            if (yes) void runOp(`${family}:skip` as OpChannel);
-          });
+          askThen(
+            skip,
+            {
+              title: kind === "am" ? "Skip this patch?" : "Skip this commit?",
+              message:
+                kind === "am"
+                  ? "The patch git is stuck on is dropped and the rest of the series carries on. The app cannot replay it."
+                  : "This commit is dropped from the rebase and the rest carries on.",
+              confirmLabel: kind === "am" ? "Skip patch" : "Skip commit",
+              danger: true,
+            },
+            () => runOp(`${family}:skip` as OpChannel),
+          );
         });
         acts.append(abort, skip, cont);
         buttons.push(abort, skip, cont);

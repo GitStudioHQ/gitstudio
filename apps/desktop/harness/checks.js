@@ -3306,7 +3306,21 @@
       if (!abort) return;
       const before = window.__GS_INVOKED.length;
       abort.click();
-      await new Promise((r) => setTimeout(r, 120));
+      await settle(300);
+      // Abort ASKS now. Working through a conflicted merge by hand and then
+      // pressing Abort — which sits right beside Continue — discards every
+      // resolution, and none of them were ever committed, so nothing can bring
+      // them back. It was the only irreversible click in the app that did not
+      // confirm.
+      const modal = $(".modal-ok");
+      c.ok(!!modal, "Abort asks before discarding the resolutions");
+      if (!modal) return;
+      c.ok(
+        /resolved|abandon/i.test(text($(".modal-message")) || ""),
+        "and says what is lost, not just that something will happen",
+      );
+      modal.click();
+      await settle(300);
       const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /:(abort|continue)$/.test(ch));
       const family = { merge: "merge", rebase: "rebase", "cherry-pick": "cherryPick", revert: "revert" }[op];
       c.eq(sent[0], `${family}:abort`, `Abort ends the ${op}, not something else`);
@@ -3609,9 +3623,15 @@
       c.ok(!!abort, "with an Abort");
       if (!abort) return;
       const before = window.__GS_INVOKED.length;
+      // Three clicks on Abort. It opens a confirm now, so the second and third
+      // land on the scrim — which must not stack three dialogs, and answering
+      // once must not send the command three times.
       abort.click();
       abort.click();
       abort.click();
+      await settle(400);
+      c.eq($$(".modal-ok").length, 1, "three clicks open ONE dialog");
+      $(".modal-ok")?.click();
       await settle(400);
       const sent = window.__GS_INVOKED.slice(before).map((r) => r.channel).filter((ch) => /:(abort|continue|skip)$/.test(ch));
       c.eq(sent.length, 1, `three clicks send ONE command, not ${sent.length} (${sent.join(", ")})`);
