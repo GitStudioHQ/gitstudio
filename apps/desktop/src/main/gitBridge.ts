@@ -610,6 +610,7 @@ export class GitBridge {
       path: rel,
       leftLabel: `HEAD ${rel}`,
       rightLabel: gone ? `(deleted) ${rel}` : `Working Tree ${rel}`,
+      ...(gone ? { deleted: true } : {}),
       leftText: headText,
       rightText: working.text,
       conflicted,
@@ -1397,7 +1398,9 @@ export class GitBridge {
       if (r.stdout.includes("\0") || replacementRatio(r.stdout) > 0.3) {
         return { path: rel, text: "", binary: true };
       }
-      if (r.stdout.length > FILE_CAP_BYTES) {
+      // Bytes, not UTF-16 code units — see `showAt` for why the distinction
+      // matters when two sides of one diff are capped by different rulers.
+      if (Buffer.byteLength(r.stdout, "utf8") > FILE_CAP_BYTES) {
         return { path: rel, text: "", truncated: true };
       }
       return { path: rel, text: r.stdout };
@@ -3005,8 +3008,17 @@ async function showAt(
   if (r.stdout.includes("\0") || replacementRatio(r.stdout) > 0.3) {
     return { text: "", binary: true };
   }
-  if (r.stdout.length > FILE_CAP_BYTES) {
-    return { text: r.stdout.slice(0, FILE_CAP_BYTES), truncated: true };
+  // BY BYTES, like every other reader here — the constant is named for them.
+  //
+  // `r.stdout` is a JS string, so `.length` counts UTF-16 code units and
+  // `.slice` cuts by them. The working side of the very same diff is a Buffer
+  // cut at FILE_CAP_BYTES actual bytes. On any file that is not pure ASCII the
+  // two sides were therefore cut at DIFFERENT points in the file, and the
+  // difference between those two points rendered as a change — in a file where
+  // nothing past the cap had been touched at all.
+  const bytes = Buffer.from(r.stdout, "utf8");
+  if (bytes.length > FILE_CAP_BYTES) {
+    return { text: bytes.subarray(0, FILE_CAP_BYTES).toString("utf8"), truncated: true };
   }
   return { text: r.stdout };
 }

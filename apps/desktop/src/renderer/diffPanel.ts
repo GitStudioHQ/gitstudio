@@ -149,6 +149,19 @@ export class DiffPanel {
     // test below requires a non-zero length, and it is a real state —
     // `touch`ing a file and staging it, or emptying one without deleting it.
     if (!file.leftText && !file.rightText) {
+      // NOT NECESSARILY AN EMPTY FILE. A path added to the index and then
+      // deleted from the working tree — git's `AD` — has nothing in HEAD and
+      // nothing on disk, and reads exactly like a file with no contents. "This
+      // file is empty" and "you deleted this file" are different claims, and
+      // only the producer can tell them apart.
+      if (file.deleted) {
+        this.showEmpty(
+          `${file.path} is staged as a new file but is no longer on disk. There is nothing to show ` +
+            `— committing it as it stands would add nothing.`,
+          { title: "Deleted before it was committed", kind: "none" },
+        );
+        return;
+      }
       this.showEmpty(`${file.path} is empty on both sides — there are no lines to compare.`, {
         title: "Empty file",
         kind: "none",
@@ -174,6 +187,20 @@ export class DiffPanel {
           `${file.path} is too large to diff in full. The part that could be read is identical on ` +
             `both sides, so whatever changed is further into the file.`,
           { title: "Too large to diff", kind: "none" },
+        );
+        return;
+      }
+      // …and not a rename either, if the INDEX holds something different from
+      // both. That is git's `MM` with the working copy edited back to HEAD: a
+      // staged change that the working tree has since undone. HEAD and the
+      // working tree match, so the two panes are identical — but there is a
+      // real staged change sitting between them, and calling it a rename hides
+      // the one thing about this state worth knowing.
+      if (file.indexText !== undefined && file.indexText !== file.leftText) {
+        this.showEmpty(
+          `${file.path} is back to its committed contents, but a different version of it is STAGED. ` +
+            `Committing now would commit the staged version, not what is on disk.`,
+          { title: "Staged, then undone on disk", kind: "none" },
         );
         return;
       }
@@ -499,12 +526,21 @@ export class DiffPanel {
     // reading "Take ours" handed you the branch you were rebasing ONTO and
     // discarded the commit being replayed. The model carries labels the main
     // process derives from the operation actually in progress; use them.
-    const ours = el("button", "mini-btn") as HTMLButtonElement;
-    ours.append(glyph("arrow-left"), span(`Take ${model.oursLabel}`));
-    ours.title = `Replace the file with “${model.oursLabel}” and stage it`;
-    const theirs = el("button", "mini-btn") as HTMLButtonElement;
-    theirs.append(glyph("arrow-right"), span(`Take ${model.theirsLabel}`));
-    theirs.title = `Replace the file with “${model.theirsLabel}” and stage it`;
+    // A MODIFY/DELETE conflict has a side with no file at all, and taking that
+    // side does not replace the file — it removes it. The button read "Take
+    // <side>" with the tooltip "Replace the file with …", which is the wrong
+    // verb for the only irreversible thing on this bar.
+    const deletes = (side: "ours" | "theirs"): boolean => model.missingSide === side;
+    const sideBtn = (side: "ours" | "theirs", icon: string, label: string): HTMLButtonElement => {
+      const b = el("button", "mini-btn" + (deletes(side) ? " is-danger" : "")) as HTMLButtonElement;
+      b.append(glyph(deletes(side) ? "trash" : icon), span(deletes(side) ? "Delete the file" : `Take ${label}`));
+      b.title = deletes(side)
+        ? `“${label}” has no version of this file — taking that side removes it and stages the deletion`
+        : `Replace the file with “${label}” and stage it`;
+      return b;
+    };
+    const ours = sideBtn("ours", "arrow-left", model.oursLabel);
+    const theirs = sideBtn("theirs", "arrow-right", model.theirsLabel);
     const resolve = el("button", "btn btn-primary mini-btn merge-resolve") as HTMLButtonElement;
     resolve.append(glyph("check"), span("Mark resolved"));
     // Armed only once the merge has actually been made — see syncResolve below.
@@ -546,11 +582,16 @@ export class DiffPanel {
           `and saving a merge built from part of a file would delete the rest. Take one side, or ` +
           `resolve it in an editor and stage it.`;
       } else {
+        // `missingSide` says WHICH side has no file. The note used to print
+        // both readings and then "— or the other way round", which is the app
+        // declining to answer the only question the reader has, about a state
+        // where one of the two buttons below DELETES their file.
+        const goneSide = model.missingSide === "ours" ? model.oursLabel : model.theirsLabel;
+        const keptSide = model.missingSide === "ours" ? model.theirsLabel : model.oursLabel;
         h.textContent = "Changed on one side, deleted on the other";
         d.textContent =
-          `${model.path} was edited in “${model.oursLabel}” and deleted in “${model.theirsLabel}” — or ` +
-          `the other way round. There is nothing to merge line by line: keep the file, or accept the ` +
-          `deletion.`;
+          `${model.path} was edited in “${keptSide}” and deleted in “${goneSide}”. There is nothing ` +
+          `to merge line by line: keep the edited file, or accept the deletion.`;
       }
       note.append(badge, h, d);
       surface.appendChild(note);

@@ -182,6 +182,16 @@ export interface FileDiff {
   binary?: boolean;
   /** One side was longer than the read cap and is shown only in part. */
   truncated?: boolean;
+  /**
+   * The file is not on disk.
+   *
+   * Two empty sides are not always an empty file: a path added to the index and
+   * then deleted from the working tree (git's `AD`) reads as empty on both
+   * sides of a HEAD-vs-working diff, and calling that "an empty file" is a
+   * different claim from "you deleted it". The producer knows which; the panel
+   * cannot tell from the text.
+   */
+  deleted?: boolean;
 }
 
 /** One change since HEAD, and how much of it the index already holds. */

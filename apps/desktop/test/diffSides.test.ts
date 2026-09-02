@@ -142,3 +142,41 @@ test("an ordinary small edit is still an ordinary diff", async () => {
     removeTempRepo(root);
   }
 });
+
+test("both sides are capped by the same ruler", async () => {
+  // `showAt` cut a JS STRING at FILE_CAP_BYTES — which counts UTF-16 code
+  // units — while `readWorking` cut a Buffer at that many actual BYTES. On any
+  // file that is not pure ASCII the two sides of one diff were therefore cut at
+  // different points in the file, and the gap between those points rendered as
+  // a change in a region nobody had touched.
+  const { root, git } = repo();
+  try {
+    // Three bytes per character, so the two rulers disagree by a factor of ~3.
+    const line = "日本語のテキストが一行ずつ並んでいます\n";
+    const big = line.repeat(20_000);
+    // Over the cap in BYTES and under it in CODE UNITS — the sharpest form of
+    // the mismatch. The old `showAt` measured code units, so it did not
+    // truncate at all, while `readWorking` measured bytes and did: the left
+    // pane held the whole file and the right one stopped a third of the way in,
+    // so two thirds of an untouched file rendered as deleted lines.
+    assert.ok(Buffer.byteLength(big, "utf8") > CAP, "the fixture exceeds the cap in bytes");
+    assert.ok(big.length < CAP, "and does NOT exceed it in code units");
+    writeFileSync(join(root, "jp.txt"), big);
+    git("add", "-A");
+    git("commit", "-qm", "jp");
+    // One edit at the very top; everything past it is identical.
+    writeFileSync(join(root, "jp.txt"), `EDITED\n${big}`);
+
+    const b = await bridge(root);
+    const d = await b.fileDiff({ path: "jp.txt" });
+    assert.equal(d.truncated, true);
+    // The decisive property: cut at the same byte offset, the two sides differ
+    // only by the line that was actually added.
+    assert.ok(
+      Math.abs(Buffer.byteLength(d.leftText, "utf8") - Buffer.byteLength(d.rightText, "utf8")) < 64,
+      `both sides stop at the same BYTE (left ${Buffer.byteLength(d.leftText, "utf8")}, right ${Buffer.byteLength(d.rightText, "utf8")})`,
+    );
+  } finally {
+    removeTempRepo(root);
+  }
+});
