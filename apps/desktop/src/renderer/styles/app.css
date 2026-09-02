@@ -5450,13 +5450,27 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .term-side-row .codicon { font-size: 13px; }
 /* A shell that has exited is not a terminal any more. It used to keep the live
    label and a blinking cursor while swallowing every keystroke. */
-.term-side-row.is-exited { opacity: 0.62; }
+/* Receding by COLOUR, not by opacity. A blanket `opacity: 0.62` multiplies with
+   whatever each child already uses to recede, so the "exited" badge — already
+   at --app-muted — took both and measured 2.41:1 in light, 2.84:1 in dark. The
+   row's NAME is the only thing that says which shell died, and it sat at
+   3.72:1. Same treatment `.notif-read` was given. */
+/* Receding by COLOUR, not by opacity. A blanket `opacity: 0.62` multiplies with
+   whatever each child already uses to recede, so the "exited" badge — already
+   at --app-muted — took both and measured 2.41:1 in light. The row's NAME is
+   the only thing that says which shell died, and it sat at 3.72:1. */
+.term-side-row.is-exited { opacity: 1; }
+.term-side-row.is-exited .term-side-label { color: var(--app-muted); }
+.term-side-row.is-exited .codicon { opacity: 0.7; }
 .term-side-dead {
   margin-left: auto;
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--app-muted);
+  /* Its own ink, not the muted one it sits beside — at 10px and uppercase this
+     is the smallest text in the dock and needs the contrast most. */
+  color: var(--vscode-foreground);
+  opacity: 0.75;
 }
 .term-side-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The row and its kill button sit side by side rather than one inside the
@@ -9294,6 +9308,19 @@ body.vscode-light .log-pane {
 .log-bg-10 { background: var(--log-t10); } .log-bg-11 { background: var(--log-t11); }
 .log-bg-12 { background: var(--log-t12); } .log-bg-13 { background: var(--log-t13); }
 .log-bg-14 { background: var(--log-t14); } .log-bg-15 { background: var(--log-t15); }
+/* A background with NO foreground beside it.
+   `clsOf()` emits `log-fg-N` only when the code actually set one, so
+   `ESC[41m ERROR ESC[0m` — background set, foreground left default — produced a
+   span carrying `log-bg-1` and nothing else. The block is painted from the
+   theme-INDEPENDENT true palette (deliberately: ANSI red is red in both
+   themes), while the text inside it fell through to the page's default ink —
+   which is near-black in the light theme. Dark text on a dark ANSI block.
+   The terminal convention is the palette's own default foreground. */
+[class*="log-bg-"]:not([class*="log-fg-"]) { color: var(--log-t15); }
+/* …except on the two PALE blocks, where white on white is nothing at all. */
+.log-bg-7:not([class*="log-fg-"]),
+.log-bg-15:not([class*="log-fg-"]) { color: var(--log-t0); }
+
 /* A foreground sitting ON one of those blocks uses the true palette too — two
    classes, so it outranks the plain `.log-fg-N` above. */
 .log-fg-0[class*="log-bg-"] { color: var(--log-t0); }

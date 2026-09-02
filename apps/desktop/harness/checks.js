@@ -7997,6 +7997,68 @@
         /exited/i.test($(".term-side-row")?.title || ""),
         "the tooltip agrees with the row",
       );
+
+      // READABLE while it recedes. This receded with a blanket `opacity: 0.62`,
+      // which multiplies with whatever each child already uses — so the badge,
+      // already at --app-muted, took both and measured 2.41:1 in light. The
+      // row's NAME is the only thing that says which shell died.
+      const lum = (c2) => {
+        const p = (c2.match(/\d+/g) || []).map(Number).map((v) => {
+          v /= 255;
+          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+      };
+      const ratio = (a, b) => {
+        const l1 = lum(a), l2 = lum(b);
+        return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      };
+      // `css` is a PROBE helper and does not exist in a check — the third time
+      // this has caught me. `getComputedStyle` is the one that works here.
+      /** The nearest ancestor that actually PAINTS a ground. `document.body`'s
+       *  is transparent in this app, and measuring against it makes every
+       *  contrast come out as 1.00:1 — a check that fails on everything is as
+       *  useless as one that passes on everything. */
+      const groundOf = (el2) => {
+        for (let n = el2; n; n = n.parentElement) {
+          const bg = getComputedStyle(n).backgroundColor;
+          const p = (bg.match(/[\d.]+/g) || []).map(Number);
+          if (p.length < 4 || p[3] > 0.9) return bg;
+        }
+        return "rgb(255,255,255)";
+      };
+      const groundEl = $(".term-side") || $(".term-side-row") || document.body;
+      const ground = groundOf(groundEl);
+      /** The colour actually on screen, opacity folded in.
+       *
+       *  `getComputedStyle(el).color` does NOT account for an ancestor's
+       *  `opacity` — that is a paint-time composite — so measuring the colour
+       *  alone reports the same ratio for a row at `opacity: 1` and the same
+       *  row at `0.62`, and a check built on it passes on both. Walk up
+       *  multiplying, then blend toward the ground by what is left. */
+      const painted = (el2, groundEl) => {
+        // Only the opacities BETWEEN the text and the surface it sits on. Going
+        // further up folds in things that fade the whole panel — and in this
+        // harness `.dock-body` sits at `opacity: 0` behind a transition that
+        // never completes, which drove every measurement to 1.00:1.
+        let a = 1;
+        for (let n = el2; n && n !== groundEl; n = n.parentElement) {
+          a *= parseFloat(getComputedStyle(n).opacity || "1");
+        }
+        const fg = (getComputedStyle(el2).color.match(/\d+/g) || []).map(Number);
+        const bg = (ground.match(/\d+/g) || []).map(Number);
+        return `rgb(${fg.map((v, i) => Math.round(bg[i] + (v - bg[i]) * a)).join(",")})`;
+      };
+      const label = $(".term-side-row.is-exited .term-side-label");
+      const badge = $(".term-side-dead");
+      if (label) {
+        const r = ratio(painted(label, groundEl), ground);
+        c.ok(r >= 4.5, `the dead shell's NAME stays readable (${r.toFixed(2)}:1)`);
+      }
+      if (badge) {
+        const r = ratio(painted(badge, groundEl), ground);
+        c.ok(r >= 4.5, `and so does the "exited" badge (${r.toFixed(2)}:1)`);
+      }
     },
 
     // The agent's OWN work destroying the record of it. Approving a commit fires

@@ -55,28 +55,43 @@ export class TerminalPanel {
       "--vscode-editor-selectionBackground",
       "#264f78",
     );
+    // The SIXTEEN ANSI entries follow the theme too.
+    //
+    // `background` and `foreground` were read from the live tokens while the
+    // palette below was hardcoded to VS Code's DARK one — so in the light theme
+    // the terminal painted a dark palette onto a white ground. Measured against
+    // #ffffff: brightWhite #ffffff is 1.00:1, literally invisible; yellow
+    // #e5e510 is 1.09:1; brightYellow, brightGreen and white are all under 2:1.
+    // Any tool that colours its output — git, npm, a test runner — printed
+    // whole lines nobody could read.
+    //
+    // The light row is GitHub's, which is what `body.vscode-light .log-pane`
+    // already ships for the job log one pane over; matching it means one ANSI
+    // vocabulary across both surfaces rather than two.
+    // The one signal every other surface keys off — see desktopTheme.ts.
+    const light = document.body.classList.contains("vscode-light");
+    const ansi = light
+      ? {
+          black: "#24292f", red: "#cf222e", green: "#116329", yellow: "#4d2d00",
+          blue: "#0969da", magenta: "#8250df", cyan: "#1b7c83", white: "#6e7781",
+          brightBlack: "#57606a", brightRed: "#a40e26", brightGreen: "#1a7f37",
+          brightYellow: "#633c01", brightBlue: "#218bff", brightMagenta: "#a475f9",
+          brightCyan: "#3192aa", brightWhite: "#8c959f",
+        }
+      : {
+          black: "#000000", red: "#cd3131", green: "#0dbc79", yellow: "#e5e510",
+          blue: "#2472c8", magenta: "#bc3fbc", cyan: "#11a8cd", white: "#e5e5e5",
+          brightBlack: "#666666", brightRed: "#f14c4c", brightGreen: "#23d18b",
+          brightYellow: "#f5f543", brightBlue: "#3b8eea", brightMagenta: "#d670d6",
+          brightCyan: "#29b8db", brightWhite: "#ffffff",
+        };
     return {
       background,
       foreground,
       cursor: foreground,
       cursorAccent: background,
       selectionBackground,
-      black: "#000000",
-      red: "#cd3131",
-      green: "#0dbc79",
-      yellow: "#e5e510",
-      blue: "#2472c8",
-      magenta: "#bc3fbc",
-      cyan: "#11a8cd",
-      white: "#e5e5e5",
-      brightBlack: "#666666",
-      brightRed: "#f14c4c",
-      brightGreen: "#23d18b",
-      brightYellow: "#f5f543",
-      brightBlue: "#3b8eea",
-      brightMagenta: "#d670d6",
-      brightCyan: "#29b8db",
-      brightWhite: "#ffffff",
+      ...ansi,
     };
   }
 

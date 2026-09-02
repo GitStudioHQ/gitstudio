@@ -68,6 +68,7 @@ const CASES = [
   ["a-conflict-with-no-text-is-not-offered-a-text-merge", "changes"],
   ["the-output-filter-owns-its-consequences", "changes"],
   ["a-dead-shell-says-it-is-dead", "changes"],
+  ["a-dead-shell-says-it-is-dead", "changes", { theme: "light" }],
   ["the-agents-own-commit-does-not-erase-the-chat", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["a-failed-turn-stops-looking-like-it-is-typing", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
   ["quick-actions-close-while-the-agent-works", "assistant~click:.topbar-assistant", { extra: "ai=1" }],
