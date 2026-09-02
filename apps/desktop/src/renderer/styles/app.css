@@ -9002,7 +9002,12 @@ button.det-person:hover { background: var(--app-hover); }
    see. A 20,000-line log has no shape without it: you scroll and hope. */
 .log-errmap {
   position: absolute;
-  top: 2px;
+  /* Below the group strip. An absolutely positioned box is laid out against its
+     ancestor's PADDING box, so `top: 2px` still measured from the top of
+     .log-body while the scroller now starts a strip's height lower — leaving
+     the map 19px taller than the log it maps and every tick a few pixels above
+     the line it points at. A map that does not line up is worse than none. */
+  top: calc(var(--log-groupbar-h) + 2px);
   right: 2px;
   bottom: 2px;
   width: 8px;

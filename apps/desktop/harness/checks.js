@@ -5045,6 +5045,26 @@
       const ticks = $$(".log-errtick");
       c.ok(ticks.length > 0, "every error has a tick on the map");
       for (const t of ticks) c.ok(!!t.title, "each tick says which line it is");
+
+      // The map has to span the LOG, not the box around it. It is positioned
+      // against .log-body's padding box, and the group strip's reserved height
+      // is padding — so the map ran 19px taller than the scroller and every
+      // tick sat a few pixels above the line it pointed at. A map that does not
+      // line up is worse than no map.
+      const map = $(".log-errmap");
+      c.ok(!!map, "the map exists");
+      if (map) {
+        const mb = map.getBoundingClientRect();
+        const sb = s.getBoundingClientRect();
+        c.ok(
+          Math.abs(mb.top - sb.top) <= 4,
+          `the map starts where the log does (${Math.round(mb.top - sb.top)}px off)`,
+        );
+        c.ok(
+          Math.abs(mb.height - sb.height) <= 8,
+          `and is as tall as the log (${Math.round(mb.height - sb.height)}px difference)`,
+        );
+      }
     },
 
     /**
