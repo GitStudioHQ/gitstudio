@@ -353,10 +353,14 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         const cur = await host.invoke("ai:chatCurrent", undefined);
         if (cur) {
           currentChatId = cur.id;
-          // NOT over a turn that is already running. `restoreChat` replaces the
-          // transcript wholesale, so a ✨ action started on mount had its
-          // answer — and its Stop button — deleted mid-stream by this line.
-          if (cur.turns.length > 0 && !running) restoreChat(cur);
+          // `restoreChat` replaces the transcript wholesale, so this used to
+          // delete a ✨ turn's answer and its Stop button mid-stream. The
+          // ordering is settled now — `runGoal` awaits this gate before writing
+          // its first bubble — so the guard that skipped the restore is no
+          // longer needed, and skipping it was its own bug: the seeded turn
+          // then ran into a chat whose HISTORY was never drawn, so the answer
+          // arrived with no sign of the conversation it was continuing.
+          if (cur.turns.length > 0) restoreChat(cur);
         }
       } catch {
         /* no prior chat */

@@ -171,11 +171,19 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
 
   // A note from the host (base fell back, or the list was capped) is worth
   // showing — otherwise the range silently isn't what the user asked for.
-  if (state.message) {
+  /** The host's own note — the base fell back, or the list was capped. It is
+   *  the only thing telling the reader the range is not what they asked for,
+   *  and it is PERSISTENT: it belongs on screen for as long as the plan does. */
+  const showHostNote = (): void => {
+    if (!state.message) {
+      banner.hidden = true;
+      return;
+    }
     banner.textContent = state.message;
     banner.className = "rb-banner warn";
     banner.hidden = false;
-  }
+  };
+  showHostNote();
 
   // ── model helpers ──
 
@@ -218,12 +226,22 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     foldTargetSubject(i) === null &&
     !hiddenTail();
 
+  /** Transient messages share the banner with the host's note — so a flash has
+   *  to give it BACK. It used to hide the banner outright after four seconds,
+   *  which permanently destroyed the note saying the range had been capped or
+   *  the base substituted: one refused squash, and the reader lost the only
+   *  statement that their plan was not the whole story, for the rest of the
+   *  session. Sequenced, so an interrupted flash cannot restore over a newer
+   *  one. */
+  let flashSeq = 0;
   const flashBanner = (msg: string, kind: "warn" | "error" = "warn"): void => {
+    const mine = ++flashSeq;
     banner.textContent = msg;
     banner.className = `rb-banner ${kind}`;
     banner.hidden = false;
     window.setTimeout(() => {
-      banner.hidden = true;
+      if (mine !== flashSeq) return;
+      showHostNote();
     }, 4200);
   };
 
@@ -269,11 +287,22 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
     const kept = rows.filter((r) => r.action !== "drop" && r.action !== "squash" && r.action !== "fixup").length;
     const dropped = rows.filter((r) => r.action === "drop").length;
     const folded = rows.filter((r) => r.action === "squash" || r.action === "fixup").length;
-    const bits = [`${rows.length} → ${kept} commit${kept === 1 ? "" : "s"}`];
+    // The TOTAL the rebase will replay, not the number of rows on screen.
+    //
+    // The list is capped, and `state.replayCount` is how many commits the
+    // rebase actually covers — which is what the confirm dialog beside this
+    // preview was fixed to use. The preview went on counting rows, so on a
+    // range longer than the cap it read "50 → 50 commits" for a rebase the
+    // dialog one line down correctly called 214, and the reader was told a
+    // smaller, safer number by the more prominent of the two.
+    const total = Math.max(state.replayCount ?? rows.length, rows.length);
+    const hidden = total - rows.length;
+    const bits = [`${total} → ${total - dropped - folded} commit${total - dropped - folded === 1 ? "" : "s"}`];
+    if (hidden) bits.push(`${hidden} not shown`);
     if (folded) bits.push(`${folded} folded`);
     if (dropped) bits.push(`${dropped} dropped`);
     preview.textContent = bits.join(" · ");
-    count.textContent = `${rows.length} commit${rows.length === 1 ? "" : "s"}`;
+    count.textContent = `${total} commit${total === 1 ? "" : "s"}`;
     // Re-validate the WHOLE plan on every render, not just the action being
     // set. A fold target can disappear long after the squash was chosen.
     const orphan = rows.some((_, i) => foldOrphan(i));

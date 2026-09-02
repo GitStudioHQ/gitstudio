@@ -208,8 +208,12 @@ body.vscode-light {
   --vscode-editor-font-size: 12.5px;
   --vscode-editor-background: #ffffff;
   --vscode-editor-foreground: #2b2f36;
-  --vscode-editorLineNumber-foreground: #b3b9c2;
-  --vscode-editorLineNumber-activeForeground: #6a7280;
+  /* Line numbers are read, not decoration. #b3b9c2 on white is 1.93:1 — under
+     the 2:1 the log pane's own gutter was raised off, in the surface where a
+     number is how you refer to a line at all. The active/inactive step is
+     kept, both above AA. */
+  --vscode-editorLineNumber-foreground: #6e7781;
+  --vscode-editorLineNumber-activeForeground: #24292f;
   --vscode-editorCursor-foreground: #2b2f36;
   --vscode-editor-selectionBackground: #cfe2ff;
   --vscode-editor-inactiveSelectionBackground: #e2ecfb;
@@ -6558,7 +6562,12 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   line-height: 1.5;
   padding: 1px 8px;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--chip, #888) 70%, var(--vscode-foreground) 30%);
+  /* 45/55, not 70/30. The light theme was tuned to that ratio and dark was
+     left at the original — so a chip whose GitHub hex is DARK (the `bug` red,
+     `documentation` blue) rendered at 3.20:1 on the near-black canvas: the
+     one theme the tuning was not applied to, carrying the one class of hex it
+     cannot survive. The tint and border still carry the colour. */
+  color: color-mix(in srgb, var(--chip, #888) 45%, var(--vscode-foreground) 55%);
   background: color-mix(in srgb, var(--chip, #888) 18%, var(--app-elevated));
   border: 1px solid color-mix(in srgb, var(--chip, #888) 34%, var(--app-border));
   white-space: nowrap;
