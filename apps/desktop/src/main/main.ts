@@ -775,6 +775,7 @@ function registerIpc(): void {
   handle("issue:deleteComment", (id) =>
     github.withRepo((c, o, r) => issuesApi.deleteIssueComment(c, o, r, id)),
   );
+  handle("issue:react", (req) => github.withRepo((c, o, r) => issuesApi.reactTo(c, o, r, req)));
   handle("issue:setState", (req) => github.withRepo((c, o, r) => issuesApi.setIssueState(c, o, r, req)));
   handle("issue:edit", (req) => github.withRepo((c, o, r) => issuesApi.editIssue(c, o, r, req)));
   handle("issue:labels", () => github.withRepo((c, o, r) => issuesApi.listLabels(c, o, r)));

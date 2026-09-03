@@ -412,6 +412,17 @@ export interface PrRef {
 }
 /** The emoji reaction tallies GitHub keeps on issues, PRs, and comments.
  *  Only non-zero buckets are rendered, so a quiet item shows nothing. */
+/** GitHub's own names for the eight reactions — the values its API takes. */
+export type ReactionContent =
+  | "+1"
+  | "-1"
+  | "laugh"
+  | "hooray"
+  | "confused"
+  | "heart"
+  | "rocket"
+  | "eyes";
+
 export interface ReactionSummary {
   total: number;
   plusOne: number;
@@ -422,6 +433,15 @@ export interface ReactionSummary {
   heart: number;
   rocket: number;
   eyes: number;
+  /**
+   * The ones YOU left, so a chip can render as already-pressed.
+   *
+   * Not in GitHub's reaction summary — it counts, it does not say who — so it
+   * is filled by a second read, and only for subjects that have any reactions
+   * at all. Undefined means "not looked up", which is different from "you have
+   * not reacted" and is why it is optional rather than an empty array.
+   */
+  mine?: ReactionContent[];
 }
 
 /** How the author relates to the repo (OWNER / MEMBER / CONTRIBUTOR / …) —
@@ -1574,6 +1594,15 @@ export interface IpcChannels {
   "issue:editComment": [{ id: number; body: string }, CommitActionResult];
   /** Delete a comment. Irreversible on GitHub's side. */
   "issue:deleteComment": [number, CommitActionResult];
+  /**
+   * Add or remove one of your reactions. `on` is the state you want, not a
+   * toggle: the caller knows what the chip currently says, and a toggle that
+   * disagrees with the screen double-reacts.
+   */
+  "issue:react": [
+    { subject: "issue" | "comment"; id: number; content: ReactionContent; on: boolean },
+    CommitActionResult,
+  ];
   "issue:setState": [
     { number: number; state: "open" | "closed"; reason?: "completed" | "not_planned" },
     CommitActionResult,

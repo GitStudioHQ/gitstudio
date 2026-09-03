@@ -68,6 +68,7 @@ import type {
   IssueDetail,
   IssueInfo,
   MilestoneInfo,
+  ReactionContent,
   ReactionSummary,
   RepoCollaborator,
   RepoLabel,
@@ -148,6 +149,9 @@ function commentCard(
     comment?: { id: number; htmlUrl?: string; reload: () => void };
     /** Drop the body into the reply box, quoted. */
     onQuote?: (body: string) => void;
+    /** The issue body reacts to the ISSUE, not to a comment — a different
+     *  endpoint, so the caller supplies it rather than this inferring it. */
+    onIssueReact?: (content: ReactionContent, on: boolean) => void;
   } = {},
 ): HTMLElement {
   const card = el("div", "gh-comment");
@@ -230,7 +234,11 @@ function commentCard(
     bd.textContent = "No description provided.";
   }
   card.appendChild(bd);
-  const reactions = reactionRow(extra.reactions);
+  const react = extra.comment
+    ? (content: ReactionContent, on: boolean) =>
+        void toggleReaction("comment", extra.comment!.id, content, on, extra.comment!.reload)
+    : extra.onIssueReact;
+  const reactions = reactionRow(extra.reactions, react);
   if (reactions) card.appendChild(reactions);
   return card;
 }
@@ -287,6 +295,34 @@ async function editComment(
       save.disabled = false;
     }
   });
+}
+
+/**
+ * Add or remove one of your reactions, then reload so the counts on screen are
+ * GitHub's rather than a guess.
+ *
+ * No optimistic update. It would be a nicer animation and a worse screen: two
+ * people reacting at once, or a POST that fails on a rate limit, would leave a
+ * count that is simply wrong and no way for the reader to know. This is a
+ * single click on a number nobody is watching change in real time.
+ */
+async function toggleReaction(
+  subject: "issue" | "comment",
+  id: number,
+  content: ReactionContent,
+  on: boolean,
+  reload: () => void,
+): Promise<void> {
+  try {
+    const r = await host.invoke("issue:react", { subject, id, content, on });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn’t change the reaction.", "error");
+      return;
+    }
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn’t change the reaction.", "error");
+  }
 }
 
 /** Delete, after asking — GitHub has no undo for this. */
@@ -972,6 +1008,8 @@ function buildDetail(ctx: DetailCtx): void {
       association: it.authorAssociation,
       reactions: it.reactions,
       onQuote: (text) => quoteInto(text, it.user?.login),
+      onIssueReact: (content, on) =>
+        void toggleReaction("issue", it.number, content, on, reload),
     }),
   );
   for (const c of d.comments) {

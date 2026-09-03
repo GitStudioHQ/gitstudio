@@ -614,6 +614,54 @@
       c.match((ta && ta.value) || "", /^@\S+ said:\n>/, "and the quote lands in it, credited");
     },
 
+    /**
+     * Reactions must be something you can leave, not a tally you are outside of.
+     *
+     * The strip was read-only spans: the app rendered how many people had
+     * reacted and gave you no way to be one of them. It also has to know which
+     * are YOURS — GitHub's summary counts without saying who, so that is a
+     * second read, and a chip that cannot tell would either lie about your
+     * having reacted or silently double-react.
+     */
+    "reactions-can-be-left-and-taken-back": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const chips = $$("button.gh-reaction:not(.gh-reaction-add)");
+      c.ok(chips.length > 0, `reaction chips are buttons (${chips.length})`);
+      const mine = $$(".gh-reaction.is-mine");
+      c.eq(mine.length, 1, "the one you left is marked as yours");
+      c.eq(
+        mine[0]?.getAttribute("aria-pressed"),
+        "true",
+        "and says so to a screen reader, not only in colour",
+      );
+
+      const calls = [];
+      const inv = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = (ch, p) => {
+        if (ch === "issue:react") calls.push(p);
+        return inv(ch, p);
+      };
+      try {
+        // Pressing your own chip TAKES IT BACK. Sending `on: true` here would
+        // double-react, which is the bug a toggle-without-state produces.
+        mine[0].click();
+        await settle(500);
+        c.eq(calls.length, 1, "clicking your own reaction sends one request");
+        c.eq(calls[0]?.on, false, "and asks to remove it, not to add it again");
+
+        const add = $$(".gh-reaction-add")[0];
+        c.ok(!!add, "there is a way to add one that is not already on screen");
+        if (!add) return;
+        add.click();
+        await settle(400);
+        const items = $$(".dropdown-item").map((i) => text(i) || "");
+        c.eq(items.length, 8, `all eight are offered (${items.length})`);
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

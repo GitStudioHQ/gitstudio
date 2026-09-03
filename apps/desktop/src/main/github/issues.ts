@@ -32,6 +32,8 @@ import type {
   IssueDetail,
   IssueInfo,
   MilestoneInfo,
+  ReactionContent,
+  ReactionSummary,
   RepoLabel,
 } from "../../shared/ipc";
 
@@ -146,7 +148,101 @@ export async function getIssueDetail(
     )
     .then((raw) => raw.map(mapComment))
     .catch(() => [] as IssueComment[]);
+  await fillViewerReactions(client, owner, repo, issue, comments);
   return { issue, comments, assignees: issue.assignees.map((a) => a.login) };
+}
+
+/**
+ * Mark which reactions are YOURS, so a chip can render as already-pressed.
+ *
+ * GitHub's reaction summary counts and does not say who, so this is a second
+ * read — and the reason it is affordable is that it only asks about subjects
+ * that have any reactions at all. Most comments have none, so the cost is
+ * proportional to the reactions actually there rather than to the length of
+ * the thread: a fifty-comment issue with two reactions costs two requests.
+ *
+ * Best-effort throughout. A reaction lookup that fails leaves `mine` undefined,
+ * which the view reads as "not known" and renders exactly as it did before —
+ * never as "you have not reacted", which would be a claim we cannot make.
+ */
+async function fillViewerReactions(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  issue: IssueInfo,
+  comments: IssueComment[],
+): Promise<void> {
+  const me = await client
+    .request<{ login?: string }>("GET", "/user")
+    .then((u) => u.login)
+    .catch(() => undefined);
+  if (!me) return;
+
+  const subjects: Array<{ path: string; target: ReactionSummary }> = [];
+  if (issue.reactions && issue.reactions.total > 0) {
+    subjects.push({
+      path: `/repos/${enc(owner)}/${enc(repo)}/issues/${issue.number}/reactions?per_page=100`,
+      target: issue.reactions,
+    });
+  }
+  for (const c of comments) {
+    if (c.reactions && c.reactions.total > 0) {
+      subjects.push({
+        path: `/repos/${enc(owner)}/${enc(repo)}/issues/comments/${c.id}/reactions?per_page=100`,
+        target: c.reactions,
+      });
+    }
+  }
+  await Promise.all(
+    subjects.map(async ({ path, target }) => {
+      try {
+        const raw = await client.request<Array<{ content?: string; user?: { login?: string } }>>(
+          "GET",
+          path,
+        );
+        target.mine = raw
+          .filter((r) => r.user?.login === me)
+          .map((r) => r.content as ReactionContent)
+          .filter(Boolean);
+      } catch {
+        /* leave undefined — "not known", which the view renders as before */
+      }
+    }),
+  );
+}
+
+/** Add or remove one of your reactions on an issue or a comment. */
+export async function reactTo(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { subject: "issue" | "comment"; id: number; content: ReactionContent; on: boolean },
+): Promise<CommitActionResult> {
+  const base =
+    req.subject === "issue"
+      ? `/repos/${enc(owner)}/${enc(repo)}/issues/${req.id}/reactions`
+      : `/repos/${enc(owner)}/${enc(repo)}/issues/comments/${req.id}/reactions`;
+  try {
+    if (req.on) {
+      await client.requestBody("POST", base, { content: req.content });
+      return { ok: true, changed: true };
+    }
+    // Removing needs the reaction's OWN id, which the add call returned and
+    // nobody kept — so it is looked up. Filtering by content AND by login
+    // matters: two people reacting with the same emoji are two reactions, and
+    // deleting the wrong one removes a stranger's.
+    const me = await client.request<{ login?: string }>("GET", "/user").then((u) => u.login);
+    const all = await client.request<Array<{ id: number; content?: string; user?: { login?: string } }>>(
+      "GET",
+      `${base}?per_page=100`,
+    );
+    const mine = all.find((r) => r.content === req.content && r.user?.login === me);
+    if (!mine) return { ok: true, changed: false };
+    await client.request("DELETE", `${base}/${mine.id}`);
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, ...errorFields(err) };
+  }
 }
 
 /** The repo's defined labels, for the label picker (GET …/labels). */

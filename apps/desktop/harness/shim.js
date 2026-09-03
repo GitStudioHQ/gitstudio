@@ -86,7 +86,7 @@
     31: [
       { id: 1, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-1", author: u(me), createdAt: ISO(4), body: "Agreed — this is the #1 usability debt in the app. The plan:\n\n1. Lists go **full width** with richer rows\n2. Opening an item replaces the list with a **full detail view** (Esc / ← goes back)\n3. Properties move to a right rail with inline editing\n\nSame pattern for Issues, PRs, Actions, Releases." },
       { id: 2, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-2", author: u("mira-holt"), createdAt: ISO(3.5), updatedAt: ISO(3.4), authorAssociation: "MEMBER", body: "Yes. Also please keep keyboard flow: `↑↓` in the list, `Enter` to open, `Esc` back, `c` to comment." },
-      { id: 3, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-3", author: u("jparks"), createdAt: ISO(3), authorAssociation: "FIRST_TIME_CONTRIBUTOR", reactions: { total: 4, plusOne: 3, minusOne: 0, laugh: 0, hooray: 0, confused: 0, heart: 1, rocket: 0, eyes: 0 }, body: "While you're in there — the *Open on GitHub* buttons everywhere feel like the app giving up. If the data's already on screen, let me act on it in place." },
+      { id: 3, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-3", author: u("jparks"), createdAt: ISO(3), authorAssociation: "FIRST_TIME_CONTRIBUTOR", reactions: { total: 4, plusOne: 3, minusOne: 0, laugh: 0, hooray: 0, confused: 0, heart: 1, rocket: 0, eyes: 0, mine: ["+1"] }, body: "While you're in there — the *Open on GitHub* buttons everywhere feel like the app giving up. If the data's already on screen, let me act on it in place." },
       { id: 4, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-4", author: u(me), createdAt: ISO(2), body: "> the app giving up\n\nFair. In-app actions become primary; the GitHub link stays as a small escape hatch on every detail view.\n\nDuring Tuesday's GitHub outage the local half of the app kept working fine — the redesign should make the GitHub half feel just as solid." },
     ],
   };
@@ -918,6 +918,7 @@
     // cannot: a qualifier reaches an issue outside the loaded page, so a check
     // can tell the two paths apart rather than watching the same rows survive
     // either one.
+    "issue:react": () => ({ ok: true, changed: true }),
     "issue:editComment": () => ({ ok: true, changed: true }),
     "issue:deleteComment": () => ({ ok: true, changed: true }),
     "issue:search": (req) => {

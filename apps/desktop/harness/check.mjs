@@ -40,6 +40,7 @@ const CASES = [
   ["commit-enabled-after-typing", "changes~click:.dc-message~type:fix%3A%20a%20thing"],
   ["changes-rows-share-left-edge", "changes"],
   ["changes-toolbar-stable", "changes"],
+  ["reactions-can-be-left-and-taken-back", "issues~open31"],
   ["a-comment-can-be-acted-on", "issues~open31"],
   ["issue-search-reaches-past-what-is-loaded", "issues"],
   ["home-is-made-of-doors", "dashboard"],

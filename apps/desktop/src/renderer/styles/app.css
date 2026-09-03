@@ -2539,6 +2539,23 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
    the card does not jump when you start editing. */
 .gh-comment-edit { display: flex; flex-direction: column; gap: var(--sp-2); }
 
+/* A reaction you left is a pressed button, not a tally you happen to be in.
+   The strip was read-only spans: the app said how many people had reacted and
+   gave you no way to be one of them. */
+.gh-reaction.is-mine {
+  border-color: var(--gs-accent);
+  background: color-mix(in srgb, var(--gs-accent) 16%, transparent);
+  color: var(--gs-accent-ink, var(--gs-accent));
+}
+button.gh-reaction { cursor: pointer; }
+button.gh-reaction:hover { border-color: var(--gs-accent); }
+button.gh-reaction:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+/* The add affordance is quiet until the comment is hovered — the strip should
+   read as reactions, not as a row of buttons. */
+.gh-reaction-add { opacity: 0; transition: opacity 100ms; }
+.gh-comment:hover .gh-reaction-add,
+.gh-reaction-add:focus-visible { opacity: 1; }
+
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of

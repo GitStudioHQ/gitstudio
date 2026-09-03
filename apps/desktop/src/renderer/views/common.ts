@@ -23,7 +23,7 @@ import {
   absTime,
   type MenuItem,
 } from "../ui";
-import type { ReactionSummary } from "../../shared/ipc";
+import type { ReactionContent, ReactionSummary } from "../../shared/ipc";
 import {
   facetActiveCount,
   facetPasses,
@@ -1297,18 +1297,79 @@ const REACTION_EMOJI: Array<[keyof ReactionSummary, string, string]> = [
   ["eyes", "👀", "eyes"],
 ];
 
-/** A read-only reaction strip — only the buckets someone actually used.
- *  Undefined when nobody reacted, so callers append conditionally. */
-export function reactionRow(r: ReactionSummary | undefined): HTMLElement | undefined {
-  if (!r || r.total <= 0) return undefined;
+/** GitHub's API name for each bucket, which is what a POST/DELETE takes. */
+const REACTION_CONTENT: Record<string, ReactionContent> = {
+  plusOne: "+1",
+  minusOne: "-1",
+  laugh: "laugh",
+  hooray: "hooray",
+  confused: "confused",
+  heart: "heart",
+  rocket: "rocket",
+  eyes: "eyes",
+};
+
+/**
+ * The reaction strip.
+ *
+ * Read-only without `onToggle` — that is still how the PR side renders it. With
+ * one, every chip becomes a button that adds or removes YOUR reaction, and an
+ * "add" affordance appears offering the eight GitHub has. Before this the
+ * counts were dead spans: the app rendered how many people had reacted and
+ * gave you no way to be one of them.
+ *
+ * `mine` being undefined means "we did not look it up", which is deliberately
+ * different from "you have not reacted" — an unlooked-up chip renders unpressed
+ * but never claims you have not pressed it.
+ */
+export function reactionRow(
+  r: ReactionSummary | undefined,
+  onToggle?: (content: ReactionContent, on: boolean) => void,
+): HTMLElement | undefined {
+  if (!onToggle && (!r || r.total <= 0)) return undefined;
   const row = el("div", "gh-reactions");
+  const mine = new Set(r?.mine ?? []);
   for (const [key, emoji, name] of REACTION_EMOJI) {
-    const n = r[key] as number;
+    const n = (r?.[key] as number) ?? 0;
     if (!n) continue;
-    const chip = span("", "gh-reaction");
+    const content = REACTION_CONTENT[key as string];
+    const on = mine.has(content);
+    if (!onToggle) {
+      const chip = span("", "gh-reaction");
+      chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
+      chip.title = `${n} ${name}`;
+      row.appendChild(chip);
+      continue;
+    }
+    const chip = el("button", "gh-reaction" + (on ? " is-mine" : "")) as HTMLButtonElement;
     chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
-    chip.title = `${n} ${name}`;
+    chip.title = on ? `Remove your ${name}` : `React with ${name}`;
+    chip.setAttribute("aria-pressed", String(on));
+    chip.addEventListener("click", () => onToggle(content, !on));
     row.appendChild(chip);
+  }
+  if (onToggle) {
+    const add = el("button", "gh-reaction gh-reaction-add") as HTMLButtonElement;
+    add.appendChild(glyph("smiley"));
+    add.title = "Add a reaction";
+    add.setAttribute("aria-label", "Add a reaction");
+    add.setAttribute("aria-haspopup", "menu");
+    add.addEventListener("click", () => {
+      openMenu(
+        add,
+        REACTION_EMOJI.map(([key, emoji, name]) => {
+          const content = REACTION_CONTENT[key as string];
+          const on = mine.has(content);
+          return {
+            label: `${emoji}  ${name}`,
+            checkable: true,
+            current: on,
+            onClick: () => onToggle(content, !on),
+          };
+        }),
+      );
+    });
+    row.appendChild(add);
   }
   return row.childElementCount ? row : undefined;
 }
