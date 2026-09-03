@@ -18,7 +18,15 @@ export class ReadonlyFileView {
   show(path: string, text: string): void {
     this.teardown();
     const hostEl = document.createElement("div");
-    hostEl.className = "cmp-diff-editor"; // reuse the absolute-inset host rule
+    // Its OWN class, with its own rule.
+    //
+    // This borrowed `cmp-diff-editor` from the Compare view — and then Compare
+    // moved to the shared DiffPanel and that rule stopped matching anything, as
+    // the stylesheet says in so many words beside where it used to live. The
+    // borrower was not updated, so the host had no height rule at all and every
+    // file opened in the Code browser mounted an editor FIVE PIXELS tall inside
+    // an 800-pixel pane.
+    hostEl.className = "code-file-editor";
     this.container.replaceChildren(hostEl);
     this.model = monaco.editor.createModel(text, languageForFile(path));
     this.editor = monaco.editor.create(hostEl, {

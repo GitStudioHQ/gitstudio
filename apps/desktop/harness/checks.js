@@ -383,6 +383,36 @@
       );
     },
 
+    /**
+     * A file opened in the Code browser must fill the pane it opened in.
+     *
+     * The editor host borrowed a class from the Compare view, Compare moved to
+     * the shared diff panel, and that rule stopped matching anything — so the
+     * host had no height rule at all and Monaco mounted itself FIVE PIXELS tall
+     * inside an eight-hundred-pixel pane. Nothing failed, nothing logged; the
+     * page simply had no file on it.
+     *
+     * Height, not line count: Monaco paints its lines on an animation frame
+     * this harness starves, so counting `.view-line` here would report the
+     * broken build as fine.
+     */
+    "an-opened-file-fills-its-pane": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const surface = $(".code-file-surface");
+      c.ok(!!surface, "the file surface is mounted");
+      const ed = $(".monaco-editor");
+      c.ok(!!ed, "an editor is mounted in it");
+      if (!surface || !ed) return;
+      const sh = surface.getBoundingClientRect().height;
+      const eh = ed.getBoundingClientRect().height;
+      c.ok(sh > 200, `the surface has room to fill (${Math.round(sh)}px)`);
+      c.ok(
+        eh > sh * 0.8,
+        `the editor fills it — ${Math.round(eh)}px of ${Math.round(sh)}px`,
+      );
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

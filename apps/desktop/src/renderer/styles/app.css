@@ -2506,6 +2506,16 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   min-height: 0;
   position: relative;
   padding-bottom: var(--dock-reserve, 0px);
+  display: flex;
+  flex-direction: column;
+}
+/* Monaco sizes itself to its container, so the container has to have a size.
+   A column flex child fills the surface's CONTENT box, which is what keeps the
+   dock reserve above working: `position: absolute; inset: 0` would cover the
+   padding and put the last lines of the file back behind the terminal. */
+.code-file-surface > .code-file-editor {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ── Compare view ──────────────────────────────────────────────────────────── */

@@ -40,6 +40,7 @@ const CASES = [
   ["commit-enabled-after-typing", "changes~click:.dc-message~type:fix%3A%20a%20thing"],
   ["changes-rows-share-left-edge", "changes"],
   ["changes-toolbar-stable", "changes"],
+  ["an-opened-file-fills-its-pane", "code~text:README.md"],
   ["a-lap-of-the-app-does-not-re-measure-every-node", "changes", { extra: "perf=1&many=1" }],
   ["whitespace-toggle-agrees-across-diff-views", "changes~text:spacing.ts", { extra: "ws=1" }],
   ["ignoring-whitespace-keeps-real-changes", "changes~text:prs.ts", { extra: "ws=1" }],
