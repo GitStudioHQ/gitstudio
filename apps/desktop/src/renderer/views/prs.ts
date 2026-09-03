@@ -68,6 +68,7 @@ import {
   type SectionTarget,
   subTabs,
   checkStateLabel,
+  checkIcon,
 } from "./common";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";
@@ -1139,7 +1140,7 @@ async function renderSubTab(
     for (const c of checks) {
       const row = el("div", "gh-check-row");
       const state = c.conclusion || c.status || "";
-      const dot = el("span", `gh-check-dot gh-checks-${state}`);
+      const dot = checkIcon(state);
       const name = el("span", "gh-check-name");
       name.textContent = c.name;
       const st = el("span", "gh-check-state");

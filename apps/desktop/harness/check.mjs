@@ -41,6 +41,7 @@ const CASES = [
   ["changes-rows-share-left-edge", "changes"],
   ["changes-toolbar-stable", "changes"],
   ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1" }],
+  ["a-real-choice-of-remote-is-offered", "branches", { extra: "tworemotes=1" }],
   // …and at the width where the squeeze actually bit. At 1600px there is slack
   // enough to hide a bad rule; 1150px is where the row has to choose.
   ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1", width: 1150 }],

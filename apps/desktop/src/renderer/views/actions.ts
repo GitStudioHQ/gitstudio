@@ -52,6 +52,7 @@ import {
   type SectionNav,
   type SectionRender,
   type SectionTarget,
+  checkIcon,
 } from "./common";
 import { prime } from "../cache";
 import { setPageLabel } from "../navStack";
@@ -903,7 +904,7 @@ function jobCard(j: WorkflowJob, runId: number): HTMLElement {
   const head = el("div", "gh-job-head" + (open ? " open" : ""));
   const chevron = glyph("chevron-right");
   chevron.classList.add("gh-job-chevron");
-  const dot = el("span", `gh-check-dot gh-checks-${state}`);
+  const dot = checkIcon(state);
   const name = el("span", "gh-check-name");
   name.textContent = j.name;
   const st = el("span", "gh-check-state");
@@ -949,7 +950,7 @@ function jobCard(j: WorkflowJob, runId: number): HTMLElement {
   j.steps.forEach((s, i) => {
     const row = el("div", "gh-step-row");
     const sState = s.conclusion || s.status || "";
-    const sdot = el("span", `gh-check-dot gh-checks-${sState}`);
+    const sdot = checkIcon(sState);
     const sname = el("span", "gh-check-name");
     sname.textContent = s.name || "(step)";
     const bar = el("span", "gh-step-bar");

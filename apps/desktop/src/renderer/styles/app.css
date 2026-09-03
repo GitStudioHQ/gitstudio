@@ -3611,6 +3611,19 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
   cursor: pointer;
 }
 .gh-check-row:hover { background: var(--app-hover); }
+/* The state icon on a check, job or step row. Replaced a 9px coloured disc:
+   see checkIcon() — the shape carries the meaning, the colour reinforces it. */
+.gh-check-icon {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--app-muted);
+}
+.gh-check-icon.is-success { color: var(--status-add); }
+.gh-check-icon.is-failure { color: var(--status-del); }
+.gh-check-icon.is-running { color: var(--status-mod); }
+.gh-check-icon.is-waiting { color: var(--status-mod); }
+.gh-check-icon.is-skipped { color: var(--app-muted); }
 .gh-check-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--app-muted); }
 .gh-check-dot.gh-checks-success { background: var(--status-add); }
 .gh-check-dot.gh-checks-failure, .gh-check-dot.gh-checks-error, .gh-check-dot.gh-checks-cancelled { background: var(--status-del); }

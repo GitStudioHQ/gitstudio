@@ -727,6 +727,47 @@ function watchChipOverflow(chips: HTMLElement): void {
   chipOverflowObserver.observe(chips);
 }
 
+/**
+ * The icon for a check, job or step state — a tick, a cross, a slash.
+ *
+ * This was a 9px coloured disc. Green, grey and red circles carry their whole
+ * meaning in hue: they are unreadable to anyone who cannot separate red from
+ * green, they look identical at a glance, and a column of them tells you a run
+ * went badly without telling you which part. A tick, a cross and a slash say
+ * what happened in the shape, and keep the colour as reinforcement.
+ *
+ * Same vocabulary as the run's own leading icon, so a job and the run it
+ * belongs to never disagree about what a state looks like.
+ */
+export function checkIcon(state: string): HTMLElement {
+  let icon = "sync";
+  let cls = "is-running"; // in_progress / queued / pending / requested / waiting
+  if (state === "success") {
+    icon = "pass-filled";
+    cls = "is-success";
+  } else if (
+    state === "failure" ||
+    state === "error" ||
+    state === "startup_failure" ||
+    state === "timed_out"
+  ) {
+    icon = "error";
+    cls = "is-failure";
+  } else if (state === "action_required") {
+    // Waiting for a person, not broken. Red would send them to read logs for an
+    // error that has not happened.
+    icon = "warning";
+    cls = "is-waiting";
+  } else if (state === "cancelled" || state === "skipped" || state === "neutral" || state === "stale") {
+    // Nobody's failure: skipped by a condition, or stopped on purpose.
+    icon = "circle-slash";
+    cls = "is-skipped";
+  }
+  const g = glyph(icon);
+  g.classList.add("gh-check-icon", cls);
+  return g;
+}
+
 export function secRow(o: SecRowOpts): HTMLElement {
   const row = el("button", "sec-row");
   if (o.ariaLabel) row.setAttribute("aria-label", o.ariaLabel);

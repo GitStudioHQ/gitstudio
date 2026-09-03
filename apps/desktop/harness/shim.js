@@ -311,6 +311,14 @@
     }
   }
 
+  // ?tworemotes=1 gives two branches upstreams on DIFFERENT remotes, which is
+  // what makes the "Remote" filter a real choice. The default fixture has one
+  // remote, where that menu can only offer the state the list is already in.
+  if (params.get("tworemotes")) {
+    const forked = branches.filter((b) => b.upstream)[0];
+    if (forked) forked.upstream = "upstream/" + forked.name;
+  }
+
   const changedFiles = [
     { path: "apps/desktop/src/renderer/views/issues.ts", status: "M", staged: true },
     { path: "apps/desktop/src/renderer/views/common.ts", status: "M", staged: true },

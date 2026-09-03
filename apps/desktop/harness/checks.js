@@ -7123,7 +7123,14 @@
       noAnimation();
       const facets = () => $$(".branches-facets .gh-facet-btn").map((b) => text(b));
       c.ok(facets().includes("Standing"), `local branches can be filtered by standing (${facets().join(", ")})`);
-      c.ok(facets().includes("Remote"), "and by which remote they track");
+      // …and NOT by remote, here. This fixture has one remote, so that menu
+      // could only offer the state the list is already in. A filter with a
+      // single choice is furniture; the ?tworemotes=1 case below proves it
+      // comes back the moment there is an actual choice to make.
+      c.ok(
+        !facets().includes("Remote"),
+        `a one-remote repo is not offered a remote filter (${facets().join(", ")})`,
+      );
 
       const before = $$(".sec-row").length;
       c.ok(before > 1, "there is more than one row to narrow");
@@ -7147,6 +7154,23 @@
         `the tags screen has its own filters (${facets().join(", ") || "none"})`,
       );
       c.ok($$(".sec-row").length > 0, "and is not narrowed by a filter set on another kind");
+    },
+
+    /**
+     * The other half of the rule above: a filter with a real choice is offered.
+     *
+     * Without this, "drop single-option facets" is only ever tested by watching
+     * something disappear — which any bug that drops the facet bar entirely
+     * would also satisfy.
+     */
+    "a-real-choice-of-remote-is-offered": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const facets = $$(".branches-facets .gh-facet-btn").map((b) => text(b));
+      c.ok(
+        facets.includes("Remote"),
+        `two remotes means a remote filter (${facets.join(", ") || "none"})`,
+      );
     },
 
     /**
