@@ -3646,13 +3646,19 @@
       if (!opener) return;
       opener.click();
       await settle(700);
-      const dlg = $(".modal-overlay");
-      c.ok(!!dlg, `a dialog opens above the ${which}`);
-      if (!dlg) return;
+      // A MODAL OR A MENU. What this is about is layering — one Escape closes
+      // the top layer and leaves the one beneath it standing — and a dropdown
+      // is as much a layer as a dialog. Insisting on `.modal-overlay` tied the
+      // invariant to one implementation of it: "Close issue" became a menu of
+      // two verbs (close as completed / as not planned) and this failed,
+      // reporting a layering bug where the layer had simply changed shape.
+      const layer = () => $(".modal-overlay") || $(".dropdown");
+      c.ok(!!layer(), `a dialog or menu opens above the ${which}`);
+      if (!layer()) return;
 
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       await settle(500);
-      c.ok(!$(".modal-overlay"), "one Escape closes the dialog");
+      c.ok(!layer(), "one Escape closes it");
       c.ok(!!$(sel), `and leaves the ${which} that opened it on screen`);
     },
 
