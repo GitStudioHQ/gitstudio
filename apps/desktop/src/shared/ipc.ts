@@ -1558,6 +1558,15 @@ export interface IpcChannels {
   /** Close or reopen. `reason` is GitHub's `state_reason` and only means
    *  anything when closing — "not planned" is triage, and the app has always
    *  been able to display and filter on it without being able to set it. */
+  /**
+   * Search this repository's issues through GitHub. The list channel reads the
+   * 300 most recently updated; this reaches the rest, and is the only path on
+   * which qualifiers (`author:@me`, `no:assignee`, `label:"…"`) mean anything.
+   */
+  "issue:search": [
+    { query: string; state?: "open" | "closed" | "all" },
+    { items: IssueInfo[]; totalCount: number; incomplete: boolean },
+  ];
   "issue:setState": [
     { number: number; state: "open" | "closed"; reason?: "completed" | "not_planned" },
     CommitActionResult,

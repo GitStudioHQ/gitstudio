@@ -2518,6 +2518,16 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   min-height: 0;
 }
 
+/* Says WHICH set of results is on screen — the issues already loaded, or what
+   GitHub returned for the query. A search that quietly searched a subset is
+   the defect this line exists to make impossible. */
+.gh-search-note {
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
+  border-bottom: 1px solid var(--app-border);
+}
+
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of

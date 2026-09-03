@@ -8,6 +8,7 @@
 // busts the SWR cache and re-fetches so the UI stays authoritative.
 
 import { host } from "../bridge";
+import { createSearchScheduler } from "../searchDebounce";
 import { mdEditor } from "../mdEditor";
 import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
 import {
@@ -79,6 +80,21 @@ let issueState: "open" | "closed" | "all" = "open";
 const issueFacets: FacetState = {};
 /** The live text query — kept so Back from a detail restores the search. */
 let query = "";
+/**
+ * What GitHub returned for the current query, or null when the list on screen
+ * is the locally-filtered one.
+ *
+ * The box does two things at once, deliberately. Typing filters what is
+ * already loaded INSTANTLY, because that costs nothing and is usually the
+ * answer. A moment later the same query goes to `/search/issues`, which reaches
+ * past the 300 most recently updated and is the only path on which
+ * `author:@me`, `no:assignee` or `label:"…"` mean anything at all. When that
+ * lands it replaces the list, and the header says which of the two you are
+ * looking at — a search that quietly searched a subset is the defect this
+ * exists to fix, so it must never be ambiguous which one answered.
+ */
+let serverHits: IssueInfo[] | null = null;
+let serverNote = "";
 /**
  * Unsent comment drafts, per issue — navigating away must never eat one.
  *
@@ -258,14 +274,51 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const passesFacets = (it: IssueInfo): boolean => facets.passes(it);
   const facetsActive = (): boolean => facets.activeCount() > 0;
 
+  /** A line under the header saying WHICH set is on screen. */
+  const noteEl = el("div", "gh-search-note");
+  noteEl.hidden = true;
+  // Above the rows, below the header — it is about the list, so it sits with it.
+  listEl.before(noteEl);
+  const setSearchNote = (text: string): void => {
+    noteEl.textContent = text;
+    noteEl.hidden = !text;
+  };
+
+  const searcher = createSearchScheduler((q, gen) => {
+    void (async () => {
+      try {
+        const res = await host.invoke("issue:search", { query: q, state: issueState });
+        if (!searcher.isCurrent(gen) || !view.isConnected || query.trim() !== q) return;
+        serverHits = res.items;
+        serverNote = res.incomplete
+          ? `${res.items.length} from GitHub — it gave up early, so there may be more`
+          : res.totalCount > res.items.length
+            ? `${res.items.length} of ${res.totalCount} matching issues on GitHub`
+            : `${res.items.length} matching ${res.items.length === 1 ? "issue" : "issues"} on GitHub`;
+        renderList();
+      } catch {
+        // Leave the local filter on screen and say so, rather than emptying
+        // the list because the network hiccuped.
+        if (!searcher.isCurrent(gen) || !view.isConnected) return;
+        serverHits = null;
+        serverNote = "Couldn’t reach GitHub — showing matches from the issues already loaded";
+        renderList();
+      }
+    })();
+  }, { delayMs: 450, minChars: 2 });
+
   const renderList = (): void => {
     if (!issues) return;
     // Re-harvest before painting: the bar is built before the first fetch
     // lands, and a facet menu that offers nothing is worse than no facet.
     facets.sync(issues);
     const q = query.toLowerCase();
-    const items = issues.filter((it) => passesFacets(it) && (q ? matches(it, q) : true));
-    header.setCount?.(items.length, issues.length);
+    // GitHub's answer wins when we have one for THIS query: it saw every issue
+    // in the repository, and the local filter only ever saw the loaded page.
+    const source = q && serverHits ? serverHits : issues;
+    const items = source.filter((it) => passesFacets(it) && (q && !serverHits ? matches(it, q) : true));
+    header.setCount?.(items.length, serverHits && q ? undefined : issues.length);
+    setSearchNote(serverNote);
     listEl.replaceChildren();
     if (issues.length === 0) {
       const emptyCopy: Record<typeof issueState, { title: string; desc: string; icon: string }> = {
@@ -423,7 +476,13 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       initial: query,
       onInput: (q) => {
         query = q;
+        // The old answer is not about the new query. Dropping it here is what
+        // stops a stale "12 matching issues on GitHub" sitting above results
+        // for something else entirely.
+        serverHits = null;
+        serverNote = q.trim() ? "Searching GitHub…" : "";
         renderList();
+        searcher.queue(q);
       },
     }),
   );

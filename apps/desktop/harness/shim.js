@@ -912,6 +912,37 @@
       localCopies = localCopies.filter((c) => c.root !== root);
       return { ok: true, changed: true };
     },
+    // Server-side issue search. Deliberately returns something the LOCAL filter
+    // cannot: a qualifier reaches an issue outside the loaded page, so a check
+    // can tell the two paths apart rather than watching the same rows survive
+    // either one.
+    "issue:search": (req) => {
+      const raw = String((req && req.query) || "");
+      const words = raw.replace(/\b[a-z]+:\S+/gi, "").trim().toLowerCase();
+      const hits = issues
+        .filter((i) =>
+          !words ||
+          `${i.title} ${i.user} ${(i.labels || []).map((l) => l.name).join(" ")}`
+            .toLowerCase()
+            .includes(words),
+        )
+        .map(iss);
+      if (/\b[a-z]+:\S+/i.test(raw)) {
+        hits.push(
+          iss({
+            number: 7,
+            title: "Ancient issue only reachable by qualifier",
+            state: "open",
+            h: 9000,
+            user: me,
+            comments: 0,
+            labels: [],
+            assignees: [],
+          }),
+        );
+      }
+      return { items: hits, totalCount: hits.length, incomplete: false };
+    },
     "issue:detail": (n) => {
       const it = issues.find((i) => i.number === n);
       if (!it) return undefined;

@@ -537,6 +537,48 @@
       );
     },
 
+    /**
+     * Searching issues must reach the whole repository, not the loaded page.
+     *
+     * The box was a substring test over the 300 most recently updated issues.
+     * On any real backlog that cannot find an older issue by title, and every
+     * qualifier people type — author:@me, no:assignee, label:"…" — matched
+     * exactly zero, silently, because none of them are substrings of anything.
+     *
+     * The fixture's search answers with an issue that is NOT in the loaded
+     * list, which is the only way to tell the two paths apart: a check that
+     * watched the same rows survive either one would pass on the old build.
+     */
+    "issue-search-reaches-past-what-is-loaded": async (f) => {
+      const c = check(f);
+      await settle(1000);
+      const input = $$("input").find((i) => /search issues/i.test(i.placeholder || ""));
+      c.ok(!!input, "there is a search box");
+      if (!input) return;
+
+      const loaded = $$(".sec-row").length;
+      c.ok(loaded > 0, `the list has rows to begin with (${loaded})`);
+
+      input.value = "no:assignee";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      // It says it is working before it has an answer, rather than showing a
+      // stale count over the wrong rows.
+      await settle(250);
+      c.match(text(".gh-search-note") || "", /Searching GitHub/i, "it says it is asking GitHub");
+
+      await settle(1400);
+      const rows = $$(".sec-row").map((r) => text(r) || "");
+      c.ok(
+        rows.some((t) => /Ancient issue only reachable by qualifier/.test(t)),
+        "a qualifier reaches an issue that is not in the loaded page",
+      );
+      c.match(
+        text(".gh-search-note") || "",
+        /on GitHub/i,
+        "and the header says which set you are looking at",
+      );
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

@@ -40,6 +40,7 @@ const CASES = [
   ["commit-enabled-after-typing", "changes~click:.dc-message~type:fix%3A%20a%20thing"],
   ["changes-rows-share-left-edge", "changes"],
   ["changes-toolbar-stable", "changes"],
+  ["issue-search-reaches-past-what-is-loaded", "issues"],
   ["home-is-made-of-doors", "dashboard"],
   ["repositories-groups-by-folder-and-knows-what-you-have", "repositories"],
   ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1" }],

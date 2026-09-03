@@ -23,6 +23,7 @@ import {
   type RawUser,
 } from "./maps";
 import { PAGE_CAPS } from "../githubPaging";
+import { issueSearchPath } from "./searchQuery";
 import { errorFields } from "../githubErrors";
 import type {
   CommitActionResult,
@@ -86,6 +87,42 @@ export async function listIssues(
     PAGE_CAPS.list,
   );
   return raw.filter((i) => !i.pull_request).map(mapIssue);
+}
+
+/**
+ * Search this repository's issues through GitHub, rather than filtering the
+ * ones that happen to be loaded.
+ *
+ * `listIssues` reads the three most recent pages — 300 issues — because that
+ * is a sensible amount to render. It is not a sensible amount to SEARCH: on
+ * any repository with a real backlog, looking for an older issue by title
+ * found nothing, and every qualifier people type (`author:@me`, `no:assignee`,
+ * `label:"…"`) matched zero, silently, because the box was a substring test.
+ *
+ * Returns the same `IssueInfo` the list renders, so the view can swap one for
+ * the other without knowing which it has. `incomplete` is GitHub telling us it
+ * gave up early; the caller says so rather than pretending the list is whole.
+ */
+export async function searchIssues(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { query: string; state?: "open" | "closed" | "all" },
+): Promise<{ items: IssueInfo[]; totalCount: number; incomplete: boolean }> {
+  const path = issueSearchPath(`${owner}/${repo}`, req.query, { state: req.state });
+  const raw = await client.request<{
+    items?: RawIssue[];
+    total_count?: number;
+    incomplete_results?: boolean;
+  }>("GET", path);
+  return {
+    // `/search/issues` returns pull requests too when the query asks for them;
+    // this box is the issue list, so anything carrying a `pull_request` is not
+    // what was asked for.
+    items: (raw.items ?? []).filter((i) => !i.pull_request).map(mapIssue),
+    totalCount: raw.total_count ?? 0,
+    incomplete: !!raw.incomplete_results,
+  };
 }
 
 /**

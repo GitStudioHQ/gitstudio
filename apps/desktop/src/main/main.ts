@@ -768,6 +768,7 @@ function registerIpc(): void {
   handle("github:myWork", () => github.withRepo((c, o, r) => myWorkApi.myWork(c, o, r)));
   handle("issue:create", (req) => github.withRepo((c, o, r) => issuesApi.createIssue(c, o, r, req)));
   handle("issue:comment", (req) => github.withRepo((c, o, r) => issuesApi.commentIssue(c, o, r, req)));
+  handle("issue:search", (req) => github.withRepo((c, o, r) => issuesApi.searchIssues(c, o, r, req)));
   handle("issue:setState", (req) => github.withRepo((c, o, r) => issuesApi.setIssueState(c, o, r, req)));
   handle("issue:edit", (req) => github.withRepo((c, o, r) => issuesApi.editIssue(c, o, r, req)));
   handle("issue:labels", () => github.withRepo((c, o, r) => issuesApi.listLabels(c, o, r)));

@@ -71,6 +71,53 @@ export function codeSearchPath(query: string, page = 1): string {
   })}`;
 }
 
+/**
+ * The `q` for searching the issues of ONE repository.
+ *
+ * This is what makes the qualifiers people actually type work — `author:@me`,
+ * `label:"needs design"`, `no:assignee`, `sort:comments-desc` — none of which
+ * meant anything when the search box was a substring test over the issues that
+ * happened to be loaded.
+ *
+ * Two things are added only when the caller has not said otherwise:
+ *
+ *   `repo:` — always, and always FIRST, because this box searches this
+ *   repository. A `repo:` the user typed themselves is left in place too: they
+ *   would be asking about another repository on purpose, and the results are
+ *   labelled with their own repo anyway.
+ *
+ *   `is:issue` / `is:pr` and the open/closed state — only if absent. Typing
+ *   `is:closed` must not fight the segment above the list; whoever typed it
+ *   meant it.
+ */
+export function issueSearchQuery(
+  repoFullName: string,
+  query: string,
+  opts: { state?: "open" | "closed" | "all"; kind?: "issue" | "pr" } = {},
+): string {
+  const q = normalizeQuery(query);
+  const parts = [`repo:${repoFullName}`];
+  if (!/\bis:\s*(issue|pr)\b/i.test(q)) parts.push(`is:${opts.kind ?? "issue"}`);
+  // `is:open`/`is:closed`, or `state:` which GitHub also accepts.
+  const saysState = /\b(is:\s*(open|closed)|state:\s*(open|closed))\b/i.test(q);
+  if (!saysState && opts.state && opts.state !== "all") parts.push(`is:${opts.state}`);
+  if (q) parts.push(q);
+  return parts.join(" ");
+}
+
+/** `/search/issues?…` for one page of one repository's issues. */
+export function issueSearchPath(
+  repoFullName: string,
+  query: string,
+  opts: { state?: "open" | "closed" | "all"; kind?: "issue" | "pr"; page?: number } = {},
+): string {
+  return `/search/issues?${qs({
+    q: issueSearchQuery(repoFullName, query, opts),
+    per_page: SEARCH_PER_PAGE,
+    page: opts.page ?? 1,
+  })}`;
+}
+
 /** True when this page would reach past GitHub's hard 1000-result ceiling —
  *  asking anyway earns a 422, so the UI stops offering "Load more" instead. */
 export function beyondCeiling(page: number): boolean {
