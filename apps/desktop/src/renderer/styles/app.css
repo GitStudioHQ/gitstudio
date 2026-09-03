@@ -2518,6 +2518,86 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   min-height: 0;
 }
 
+/* ── Repositories ───────────────────────────────────────────────────────────
+   The folder a repo was found in is the grouping, because that is how people
+   describe where their work is ("the client stuff is in ~/work"). The header
+   is a quiet band rather than a row: it is a place label, not something you
+   act on, and the two controls on it stay muted until you reach for them. */
+.repo-folder-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.repo-folder-head > .codicon { color: var(--app-muted); font-size: 14px; }
+.repo-folder-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The path is the identity of the group, so it is the last thing to shrink —
+     the same rule the branch list learned the hard way. */
+  flex: 1 1 auto;
+  min-width: 12ch;
+}
+.repo-folder-count {
+  flex: 0 0 auto;
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
+  font-variant-numeric: tabular-nums;
+}
+.repo-folder-chip {
+  flex: 0 0 auto;
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.repo-folder-chip.is-warn { color: var(--status-mod); border-color: var(--status-mod); }
+.repo-folder-spring { flex: 0 0 auto; margin-left: auto; }
+/* Muted until you go looking for them: a group header is a label first. */
+.repo-folder-head .mini-btn { opacity: 0.55; transition: opacity 100ms; }
+.repo-folder-head:hover .mini-btn,
+.repo-folder-head .mini-btn:focus-visible { opacity: 1; }
+.repo-folder-head.is-missing .repo-folder-path { color: var(--app-muted); text-decoration: line-through; }
+.repo-folder-empty {
+  padding: var(--sp-3) var(--sp-4) var(--sp-3) calc(var(--sp-4) + 22px);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+/* The "owner/repo" a local clone points at, and the description of a remote
+   one — both are context beside the name, never competing with it. */
+.repo-origin, .repo-desc, .repo-lang {
+  color: var(--app-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--app-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.repo-stars .codicon { font-size: 11px; }
+.sec-row-meta > .repo-lang { width: 92px; flex: 0 0 92px; text-align: right; }
+.sec-row-meta > .repo-stars { width: 62px; flex: 0 0 62px; justify-content: flex-end; }
+.gh-pill.is-current { color: var(--status-add); border-color: var(--status-add); }
+.gh-pill.is-have { color: var(--gs-accent-ink, var(--gs-accent)); border-color: var(--gs-accent); }
+.gh-pill.is-warn { color: var(--status-mod); border-color: var(--status-mod); }
+
 /* ── Compare view ──────────────────────────────────────────────────────────── */
 .compare-view {
   flex: 1 1 auto;

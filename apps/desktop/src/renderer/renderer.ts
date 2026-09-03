@@ -95,6 +95,7 @@ import { repoRouteId, searchTargetId } from "./exploreRoutes";
 import { renderOrgs, setPeekNav } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
+import { renderRepositories } from "./views/repositories";
 import { renderRebase } from "./views/rebase";
 import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
 import { COLUMN_DROP_TAIL_AT } from "@gitstudio/webview-ui/limits";
@@ -340,6 +341,7 @@ class App {
     "orgs",
     "projects",
     "gists",
+    "repositories",
     "notifications",
     "mywork",
   ]);
@@ -810,7 +812,11 @@ class App {
     { id: "projects", label: "Projects", icon: "project" },
     // Account-scoped (not repo-scoped) surfaces get their own quiet group.
     // Explore leads it: discovery comes before the things you already have.
-    { id: "explore", label: "Explore", icon: "telescope", divider: true, dividerLabel: "Account" },
+    // Repositories leads the account group: "where is my work" comes before
+    // anything you might do inside one of them, and it is the only destination
+    // that still means something when no repository is open at all.
+    { id: "repositories", label: "Repositories", icon: "repo", divider: true, dividerLabel: "Account" },
+    { id: "explore", label: "Explore", icon: "telescope" },
     { id: "orgs", label: "Organizations", icon: "organization" },
     // `gist` — was `code`, a duplicate of the Code tab's glyph.
     { id: "gists", label: "Gists", icon: "gist" },
@@ -1421,6 +1427,8 @@ class App {
       this.mountSection(renderProjects);
     } else if (id === "gists") {
       this.mountSection(renderGists);
+    } else if (id === "repositories") {
+      this.mountSection(renderRepositories);
     } else if (id === "settings") {
       void this.showSettingsView();
     } else {

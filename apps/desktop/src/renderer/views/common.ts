@@ -1687,17 +1687,36 @@ export function segmented<V extends string>(o: {
   const seg = el("div", "gh-seg");
   seg.setAttribute("role", "group");
   seg.setAttribute("aria-label", o.ariaLabel);
+  // The control tracks its OWN selection.
+  //
+  // It used to compare against the `o.value` it was built with, and never move
+  // its own classes — correct only for callers that rebuild the whole segment
+  // on every change. For anyone else it was worse than stale: because the
+  // captured value never moved, clicking back to the option it started on hit
+  // the "already selected" guard and did nothing at all, permanently. Owning
+  // the state costs three lines and cannot be got wrong by a caller.
+  let current = o.value;
+  const buttons: Array<{ value: V; el: HTMLElement }> = [];
+  const paint = (): void => {
+    for (const { value, el: b } of buttons) {
+      b.classList.toggle("active", value === current);
+      b.setAttribute("aria-pressed", String(value === current));
+    }
+  };
   for (const opt of o.options) {
-    const b = el("button", "gh-seg-btn" + (opt.value === o.value ? " active" : ""));
+    const b = el("button", "gh-seg-btn");
     if (opt.icon) b.appendChild(glyph(opt.icon));
     b.appendChild(span(opt.label));
-    b.setAttribute("aria-pressed", String(opt.value === o.value));
     b.addEventListener("click", () => {
-      if (opt.value === o.value) return;
+      if (opt.value === current) return;
+      current = opt.value;
+      paint();
       o.onChange(opt.value);
     });
+    buttons.push({ value: opt.value, el: b });
     seg.appendChild(b);
   }
+  paint();
   return seg;
 }
 

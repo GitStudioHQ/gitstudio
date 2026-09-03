@@ -646,6 +646,35 @@
     },
   ];
 
+  let repoFolders = [
+    {
+      path: "/Users/demo/GitStudio",
+      display: "~/GitStudio",
+      isCloneDir: true,
+      repoCount: 3,
+      missing: false,
+    },
+    { path: "/Users/demo/Code", display: "~/Code", isCloneDir: false, repoCount: 2, missing: false },
+    {
+      path: "/Users/demo/Archive",
+      display: "~/Archive",
+      isCloneDir: false,
+      repoCount: 0,
+      missing: true,
+    },
+  ];
+
+  // What the signed-in account can reach: own repos, one collaborated on, and
+  // two through an organisation — including one ALREADY cloned locally, which
+  // is the row that must offer Open rather than Clone.
+  const ghRepos = [
+    { fullName: "GitStudioHQ/gitstudio", name: "gitstudio", owner: "GitStudioHQ", description: "A Git client that shows you what is about to happen.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gitstudio.git", sshUrl: "git@github.com:GitStudioHQ/gitstudio.git", defaultBranch: "main", stars: 1284, language: "TypeScript", updatedAt: ISO(1) },
+    { fullName: "GitStudioHQ/gistudio.dev", name: "gistudio.dev", owner: "GitStudioHQ", description: "Marketing site and the error collector.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gistudio.dev.git", sshUrl: "git@github.com:GitStudioHQ/gistudio.dev.git", defaultBranch: "main", stars: 12, language: "TypeScript", updatedAt: ISO(30) },
+    { fullName: "antonarnaudov/dotfiles", name: "dotfiles", owner: "antonarnaudov", description: null, private: true, fork: false, cloneUrl: "https://github.com/antonarnaudov/dotfiles.git", sshUrl: "git@github.com:antonarnaudov/dotfiles.git", defaultBranch: "main", stars: 0, language: "Shell", updatedAt: ISO(80) },
+    { fullName: "vercel/next.js", name: "next.js", owner: "vercel", description: "The React framework.", private: false, fork: true, cloneUrl: "https://github.com/vercel/next.js.git", sshUrl: "git@github.com:vercel/next.js.git", defaultBranch: "canary", stars: 121000, language: "JavaScript", updatedAt: ISO(4) },
+    { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", description: "Org repo you have access to through a team.", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
+  ];
+
   const dynamic = {
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
@@ -838,6 +867,32 @@
     }),
     // E2: the local-copies manager. Mutable so Remove/Delete are exercisable.
     "repos:local": () => localCopies,
+    // The folders the Repositories view groups by. The clone folder leads and
+    // cannot be untracked; ~/Code is the "I keep work here too" case; the last
+    // is the one that has gone missing, which the row has to say out loud.
+    "repos:folders": () => repoFolders,
+    "repos:addFolder": () => {
+      if (!repoFolders.some((f) => f.path === "/Users/demo/Sites")) {
+        repoFolders.push({
+          path: "/Users/demo/Sites",
+          display: "~/Sites",
+          isCloneDir: false,
+          repoCount: 0,
+          missing: false,
+        });
+      }
+      return repoFolders;
+    },
+    "repos:removeFolder": (dir) => {
+      repoFolders = repoFolders.filter((f) => f.path !== dir || f.isCloneDir);
+      return repoFolders;
+    },
+    "github:repos": () => ghRepos,
+    "clone:pickDir": () => "/Users/demo/Code",
+    "clone:start": (req) => ({
+      ok: true,
+      root: `${req.parentDir}/${req.name}`,
+    }),
     "repos:reveal": () => true,
     "repos:removeRecent": (root) => {
       const hit = localCopies.find((c) => c.root === root);
