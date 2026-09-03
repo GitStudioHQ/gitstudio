@@ -33,6 +33,7 @@ import type {
   IssueInfo,
   MilestoneInfo,
   ReactionContent,
+  TimelineEvent,
   ReactionSummary,
   RepoLabel,
 } from "../../shared/ipc";
@@ -148,8 +149,108 @@ export async function getIssueDetail(
     )
     .then((raw) => raw.map(mapComment))
     .catch(() => [] as IssueComment[]);
+  const events = await fetchTimeline(client, owner, repo, n);
   await fillViewerReactions(client, owner, repo, issue, comments);
-  return { issue, comments, assignees: issue.assignees.map((a) => a.login) };
+  return { issue, comments, assignees: issue.assignees.map((a) => a.login), events };
+}
+
+/** Raw timeline entries — only the fields the kinds below actually read. */
+interface RawTimelineEvent {
+  event?: string;
+  created_at?: string;
+  actor?: { login?: string } | null;
+  label?: { name?: string; color?: string };
+  assignee?: { login?: string } | null;
+  milestone?: { title?: string };
+  rename?: { from?: string; to?: string };
+  state_reason?: string | null;
+  commit_id?: string | null;
+  source?: {
+    type?: string;
+    issue?: { number?: number; title?: string; html_url?: string; pull_request?: unknown };
+  };
+}
+
+/** GitHub's event names, mapped to the ones worth drawing a line for. */
+const TIMELINE_KINDS: Record<string, TimelineEvent["kind"]> = {
+  closed: "closed",
+  reopened: "reopened",
+  labeled: "labeled",
+  unlabeled: "unlabeled",
+  assigned: "assigned",
+  unassigned: "unassigned",
+  renamed: "renamed",
+  milestoned: "milestoned",
+  demilestoned: "demilestoned",
+  locked: "locked",
+  unlocked: "unlocked",
+  referenced: "referenced",
+  cross_referenced: "cross-referenced",
+  marked_as_duplicate: "marked-duplicate",
+};
+
+/**
+ * The things that happened to an issue besides being commented on.
+ *
+ * The thread was comments only, so an issue closed between two of them never
+ * said it had been closed, by whom, or why: the rail read CLOSED AS NOT PLANNED
+ * while the conversation skipped straight past the moment it happened.
+ *
+ * Comments are NOT taken from here even though this endpoint carries them — the
+ * separate comment read already carries reactions and author associations that
+ * are wired through the card, and swapping the source to save one request would
+ * risk all of that to fix none of it. This adds the events and nothing else.
+ *
+ * Best-effort: a failure returns an empty list and the thread renders as it
+ * always did, rather than the whole detail page failing over a decoration.
+ */
+async function fetchTimeline(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  n: number,
+): Promise<TimelineEvent[]> {
+  let raw: RawTimelineEvent[];
+  try {
+    raw = await client.requestPaged<RawTimelineEvent>(
+      `/repos/${enc(owner)}/${enc(repo)}/issues/${n}/timeline?per_page=100`,
+      PAGE_CAPS.detail,
+    );
+  } catch {
+    return [];
+  }
+  const out: TimelineEvent[] = [];
+  for (const e of raw) {
+    const kind = e.event ? TIMELINE_KINDS[e.event] : undefined;
+    if (!kind || !e.created_at) continue;
+    const ev: TimelineEvent = {
+      kind,
+      actor: e.actor?.login ?? null,
+      createdAt: e.created_at,
+    };
+    if (e.label?.name) ev.label = { name: e.label.name, color: e.label.color ?? "888888" };
+    if (kind === "assigned" || kind === "unassigned") ev.assignee = e.assignee?.login ?? null;
+    if (e.milestone?.title) ev.milestone = e.milestone.title;
+    if (e.rename?.from && e.rename?.to) ev.rename = { from: e.rename.from, to: e.rename.to };
+    if (e.state_reason) ev.reason = e.state_reason;
+    if (kind === "referenced" && e.commit_id) {
+      ev.source = { kind: "commit", ref: e.commit_id.slice(0, 7) };
+    }
+    if (kind === "cross-referenced" && e.source?.issue?.number) {
+      const i = e.source.issue;
+      ev.source = {
+        // A pull request IS an issue to this API and only the presence of
+        // `pull_request` tells them apart — calling a PR an issue here would
+        // send the reader to the wrong kind of page.
+        kind: i.pull_request ? "pr" : "issue",
+        ref: `#${i.number}`,
+        title: i.title,
+        url: i.html_url,
+      };
+    }
+    out.push(ev);
+  }
+  return out;
 }
 
 /**

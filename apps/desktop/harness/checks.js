@@ -662,6 +662,60 @@
       }
     },
 
+    /**
+     * The thread must record what HAPPENED, not only what was said.
+     *
+     * It was comments and nothing else, so an issue closed between two comments
+     * never said it had been closed, by whom, or why: the rail read CLOSED AS
+     * NOT PLANNED while the conversation skipped straight past the moment.
+     *
+     * Interleaving is the part worth pinning. Events appended in a block after
+     * the comments would satisfy "the events are present" and still be useless
+     * — a thread that bunches every label and close at the end is not a record
+     * of anything.
+     */
+    "the-thread-records-what-happened": async (f) => {
+      const c = check(f);
+      await settle(1600);
+      const timeline = $(".gh-comment")?.parentElement;
+      c.ok(!!timeline, "the thread renders");
+      if (!timeline) return;
+      const kinds = [...timeline.children].map((k) => k.className.split(" ")[0]);
+      const events = kinds.filter((k) => k === "gh-event").length;
+      c.ok(events >= 3, `it carries non-comment events (${events})`);
+
+      // Interleaved: at least one event has a COMMENT after it. Appending them
+      // all at the end would pass a naive presence check and fail this one.
+      const lastComment = kinds.lastIndexOf("gh-comment");
+      const firstEvent = kinds.indexOf("gh-event");
+      c.ok(
+        firstEvent >= 0 && firstEvent < lastComment,
+        `events sit among the comments, not after them (${kinds.join(",")})`,
+      );
+
+      const text0 = $$(".gh-event").map((e) => text(e) || "");
+      c.ok(
+        text0.some((t) => /added the .* label/.test(t)),
+        "a label change says which label",
+      );
+      c.ok(
+        text0.some((t) => /changed the title from .* to /.test(t)),
+        "a rename says what it was called before",
+      );
+      // A cross-reference is only worth drawing if it takes you there.
+      const link = $(".gh-event-link");
+      c.ok(!!link, "a cross-reference is a link");
+      if (link) {
+        window.__GS_ROUTES = [];
+        link.click();
+        await settle(600);
+        c.ok(
+          (window.__GS_ROUTES || []).some((r) => r.view === "prs" || r.view === "issues"),
+          "and following it goes to the thing it mentions",
+        );
+      }
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

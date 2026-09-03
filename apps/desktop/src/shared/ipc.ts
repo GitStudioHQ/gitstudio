@@ -559,10 +559,55 @@ export interface IssueComment {
   /** Permalink to this comment on github.com — what "Copy link" copies. */
   htmlUrl?: string;
 }
+/**
+ * One non-comment thing that happened to an issue.
+ *
+ * The thread used to be comments and nothing else, so an issue closed between
+ * two comments never said it had been closed, by whom, or why — the rail said
+ * CLOSED AS NOT PLANNED and the conversation itself skipped straight past it.
+ * Only the kinds worth a line are modelled; GitHub emits several dozen and most
+ * of them are noise in a reading view.
+ */
+export interface TimelineEvent {
+  kind:
+    | "closed"
+    | "reopened"
+    | "labeled"
+    | "unlabeled"
+    | "assigned"
+    | "unassigned"
+    | "renamed"
+    | "milestoned"
+    | "demilestoned"
+    | "locked"
+    | "unlocked"
+    | "referenced"
+    | "cross-referenced"
+    | "marked-duplicate";
+  actor: string | null;
+  createdAt: string;
+  /** Label name + colour, for the two label events. */
+  label?: { name: string; color: string };
+  /** The assignee, for assigned/unassigned. */
+  assignee?: string | null;
+  /** Milestone title. */
+  milestone?: string;
+  /** Old and new titles, for a rename. */
+  rename?: { from: string; to: string };
+  /** Why it was closed: GitHub's state_reason. */
+  reason?: string;
+  /** The commit or issue/PR that referenced this one. */
+  source?: { kind: "commit" | "issue" | "pr"; ref: string; title?: string; url?: string };
+}
+
 export interface IssueDetail {
   issue: IssueInfo;
   comments: IssueComment[];
   assignees: string[];
+  /** Everything that is not a comment, in the order it happened. Best-effort:
+   *  an empty array means the read failed or the endpoint had nothing, and the
+   *  thread renders as it always did. */
+  events?: TimelineEvent[];
 }
 /** One entry on the My Work page: something in this repo that involves YOU —
  *  a review you were asked for, an item assigned to you, a PR you authored, or

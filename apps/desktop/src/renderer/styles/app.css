@@ -2556,6 +2556,38 @@ button.gh-reaction:focus-visible { outline: 1px solid var(--gs-accent); outline-
 .gh-comment:hover .gh-reaction-add,
 .gh-reaction-add:focus-visible { opacity: 1; }
 
+/* A timeline EVENT is bookkeeping, not writing: it belongs in the reading order
+   so the thread does not lose the plot, and it must not compete with the
+   comments around it. Hence a line, not a card. */
+.gh-event {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-1) var(--sp-2) var(--sp-3);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.gh-event-icon { flex: 0 0 auto; font-size: 13px; align-self: center; }
+.gh-event-icon.is-done { color: var(--gs-accent-ink, var(--gs-accent)); }
+.gh-event-icon.is-open { color: var(--status-add); }
+.gh-event-icon.is-muted { color: var(--app-muted); }
+.gh-event-text { flex: 1 1 auto; min-width: 0; }
+.gh-event-actor { color: var(--vscode-foreground); font-weight: 550; }
+.gh-event-was { text-decoration: line-through; }
+.gh-event-now { color: var(--vscode-foreground); }
+.gh-event-ref { color: var(--vscode-foreground); }
+.gh-event-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--gs-accent-ink, var(--gs-accent));
+  cursor: pointer;
+  text-align: left;
+}
+.gh-event-link:hover { text-decoration: underline; }
+.gh-event-when { flex: 0 0 auto; }
+
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of

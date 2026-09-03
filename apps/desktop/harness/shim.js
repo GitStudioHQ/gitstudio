@@ -82,6 +82,26 @@
 
   // Every comment carries a permalink, because "Copy link" is one of the four
   // things a comment can do and a fixture without one silently hides it.
+  // Non-comment history. Timestamps sit BETWEEN comment timestamps on purpose:
+  // a thread that bunches every label and close at the end is not a record of
+  // anything, and only interleaved fixtures can catch that.
+  const issueEvents = {
+    31: [
+      { kind: "labeled", actor: "mira-holt", createdAt: ISO(3.8), label: { name: "ux", color: "8a63d2" } },
+      { kind: "assigned", actor: me, createdAt: ISO(3.2), assignee: me },
+      { kind: "renamed", actor: me, createdAt: ISO(2.5), rename: { from: "Split views are bad", to: "Split views make Issues and PRs unreadable on a 13\" screen" } },
+      { kind: "cross-referenced", actor: "jparks", createdAt: ISO(1.5), source: { kind: "pr", ref: "#106", title: "desktop: full-page detail views for Issues", url: "" } },
+      { kind: "milestoned", actor: me, createdAt: ISO(0.5), milestone: "1.6 — desktop polish" },
+    ],
+    // A CLOSED issue is where a close event belongs. #22 is closed as not
+    // planned, and its thread never said so — the rail claimed it while the
+    // conversation skipped the moment entirely.
+    22: [
+      { kind: "labeled", actor: "mira-holt", createdAt: ISO(30), label: { name: "wontfix", color: "cfd3d7" } },
+      { kind: "closed", actor: "mira-holt", createdAt: ISO(26), reason: "not_planned" },
+    ],
+  };
+
   const issueComments = {
     31: [
       { id: 1, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-1", author: u(me), createdAt: ISO(4), body: "Agreed — this is the #1 usability debt in the app. The plan:\n\n1. Lists go **full width** with richer rows\n2. Opening an item replaces the list with a **full detail view** (Esc / ← goes back)\n3. Properties move to a right rail with inline editing\n\nSame pattern for Issues, PRs, Actions, Releases." },
@@ -951,7 +971,14 @@
     "issue:detail": (n) => {
       const it = issues.find((i) => i.number === n);
       if (!it) return undefined;
-      return { issue: iss(it), comments: issueComments[n] || [], assignees: it.assignees.map((a) => a.login) };
+      return {
+        issue: iss(it),
+        comments: issueComments[n] || [],
+        assignees: it.assignees.map((a) => a.login),
+        // Interleaved with the comments by time, so a check can prove the two
+        // are merged rather than appended in two blocks.
+        events: issueEvents[n] || [],
+      };
     },
     "pr:detail": (n) => {
       const pr = prs.find((p) => p.number === n);

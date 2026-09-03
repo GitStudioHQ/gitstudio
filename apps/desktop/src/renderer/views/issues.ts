@@ -68,8 +68,10 @@ import type {
   IssueDetail,
   IssueInfo,
   MilestoneInfo,
+  IssueComment,
   ReactionContent,
   ReactionSummary,
+  TimelineEvent,
   RepoCollaborator,
   RepoLabel,
 } from "../../shared/ipc";
@@ -345,6 +347,118 @@ async function deleteComment(id: number, reload: () => void): Promise<void> {
   } catch (e) {
     toast(cleanErr(e) || "Couldn’t delete the comment.", "error");
   }
+}
+
+/**
+ * One non-comment event, drawn as a quiet line rather than a card.
+ *
+ * A card is for something somebody wrote. "mira-holt added the bug label" is
+ * bookkeeping — it belongs in the reading order, because a thread that skips it
+ * loses the plot, but it must not compete with the writing around it.
+ */
+function timelineEvent(ev: TimelineEvent, nav: SectionNav): HTMLElement {
+  const row = el("div", "gh-event");
+  const who = ev.actor ?? "somebody";
+  const icons: Record<TimelineEvent["kind"], string> = {
+    closed: "issue-closed",
+    reopened: "issue-reopened",
+    labeled: "tag",
+    unlabeled: "tag",
+    assigned: "person",
+    unassigned: "person",
+    renamed: "edit",
+    milestoned: "milestone",
+    demilestoned: "milestone",
+    locked: "lock",
+    unlocked: "unlock",
+    referenced: "git-commit",
+    "cross-referenced": "cross-reference",
+    "marked-duplicate": "copy",
+  };
+  const g = glyph(icons[ev.kind] ?? "circle-small");
+  g.classList.add("gh-event-icon");
+  if (ev.kind === "closed") g.classList.add(ev.reason === "not_planned" ? "is-muted" : "is-done");
+  if (ev.kind === "reopened") g.classList.add("is-open");
+  row.appendChild(g);
+
+  const text = el("span", "gh-event-text");
+  const add = (t: string, cls?: string): void => {
+    text.appendChild(span(t, cls));
+  };
+  add(who, "gh-event-actor");
+  switch (ev.kind) {
+    case "closed":
+      add(ev.reason === "not_planned" ? " closed this as not planned" : " closed this");
+      break;
+    case "reopened":
+      add(" reopened this");
+      break;
+    case "labeled":
+    case "unlabeled":
+      add(ev.kind === "labeled" ? " added the " : " removed the ");
+      if (ev.label) {
+        const chip = span(ev.label.name, "gh-label");
+        chip.style.setProperty("--label", `#${ev.label.color}`);
+        text.appendChild(chip);
+      }
+      add(" label");
+      break;
+    case "assigned":
+    case "unassigned":
+      // "assigned themselves" reads better than "x assigned x", and it is the
+      // most common assignment there is.
+      if (ev.assignee && ev.assignee === ev.actor) add(ev.kind === "assigned" ? " self-assigned this" : " unassigned themselves");
+      else add(`${ev.kind === "assigned" ? " assigned " : " unassigned "}${ev.assignee ?? "someone"}`);
+      break;
+    case "renamed":
+      add(" changed the title");
+      if (ev.rename) {
+        const from = span(ev.rename.from, "gh-event-was");
+        from.title = ev.rename.from;
+        text.append(span(" from "), from, span(" to "), span(ev.rename.to, "gh-event-now"));
+      }
+      break;
+    case "milestoned":
+      add(` added this to ${ev.milestone ?? "a milestone"}`);
+      break;
+    case "demilestoned":
+      add(` removed this from ${ev.milestone ?? "a milestone"}`);
+      break;
+    case "locked":
+      add(" locked the conversation");
+      break;
+    case "unlocked":
+      add(" unlocked the conversation");
+      break;
+    case "marked-duplicate":
+      add(" marked this as a duplicate");
+      break;
+    case "referenced":
+      add(" referenced this in ");
+      if (ev.source) add(ev.source.ref, "gh-event-ref sec-mono");
+      break;
+    case "cross-referenced": {
+      add(" mentioned this in ");
+      const src = ev.source;
+      if (src) {
+        // A link, because the whole value of a cross-reference is going there.
+        const link = el("button", "gh-event-link");
+        link.textContent = `${src.ref}${src.title ? ` ${src.title}` : ""}`;
+        link.title = src.title ?? src.ref;
+        link.addEventListener("click", () => {
+          const num = Number(src.ref.replace("#", ""));
+          if (Number.isFinite(num)) nav(src.kind === "pr" ? "prs" : "issues", { number: num });
+        });
+        text.appendChild(link);
+      }
+      break;
+    }
+  }
+  row.appendChild(text);
+  const when = span(relTimeISO(ev.createdAt), "gh-event-when");
+  when.title = absTimeISO(ev.createdAt);
+  row.appendChild(when);
+  return row;
 }
 
 // ── The section view ─────────────────────────────────────────────────────────
@@ -1012,7 +1126,24 @@ function buildDetail(ctx: DetailCtx): void {
         void toggleReaction("issue", it.number, content, on, reload),
     }),
   );
-  for (const c of d.comments) {
+  // Comments and events, in the order they happened.
+  //
+  // Merged by timestamp rather than appended in two blocks: a thread where
+  // every label and close is bunched at the end is not a record of anything.
+  // Comments win a tie — an event fired by posting a comment (closing with a
+  // comment, say) reads as the comment first and then what it did.
+  type Entry = { at: string; comment?: IssueComment; event?: TimelineEvent };
+  const merged: Entry[] = [
+    ...d.comments.map((c): Entry => ({ at: c.createdAt, comment: c })),
+    ...(d.events ?? []).map((e): Entry => ({ at: e.createdAt, event: e })),
+  ].sort((a, b) => (a.at === b.at ? (a.comment ? -1 : 1) : a.at < b.at ? -1 : 1));
+
+  for (const entry of merged) {
+    if (entry.event) {
+      timeline.appendChild(timelineEvent(entry.event, nav));
+      continue;
+    }
+    const c = entry.comment!;
     timeline.appendChild(
       commentCard(c.author?.login ?? "unknown", "commented", c.body, c.createdAt, {
         updatedAt: c.updatedAt,
