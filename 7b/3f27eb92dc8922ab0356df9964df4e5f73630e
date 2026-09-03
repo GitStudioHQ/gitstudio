@@ -1,0 +1,34 @@
+apps/desktop/test/repoFolders.test.ts
+  s_26f5e669d3043c::t_d81a9dfaaf48ff 1-85
+apps/desktop/src/main/localRepos.ts
+  s_26f5e669d3043c::t_a4bc0c5e4aae2d 31-32,34-43,152-155,157-169,171
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_1cfe319dd5cf8c 1033-1034
+  s_26f5e669d3043c::t_95d40b3d29f449 1012-1025,1502-1509
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_501acb236396a6 568-584,1143-1174
+  s_26f5e669d3043c::t_95d40b3d29f449 700-707
+  s_26f5e669d3043c::t_bad317e05792bf 22
+  s_26f5e669d3043c::t_7bb7fcf942bfb3 54
+  s_26f5e669d3043c::t_cff40becb84e72 21
+  s_26f5e669d3043c::t_6439ba10f0cf8f 1138,1175-1201
+  s_26f5e669d3043c::t_163ea5f28d5af4 420-422
+apps/desktop/src/main/appSettings.ts
+  s_26f5e669d3043c::t_1cfe319dd5cf8c 10,16-17,45-49,66-107,115,128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7b3f27eb92dc8922ab0356df9964df4e5f73630e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
