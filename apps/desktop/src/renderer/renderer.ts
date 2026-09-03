@@ -1768,15 +1768,27 @@ class App {
                 ]
               : [];
 
+      // A menu that offers one value is not a filter, it is furniture.
+      //
+      // Most repositories have exactly one remote, so "Remote" offered
+      // "origin" and nothing else — a dropdown whose only choice was the state
+      // the list is already in. Same for any other facet the current set
+      // happens to agree on. They cost a control each in a toolbar the owner
+      // called complicated, and they can only ever narrow to what is already
+      // shown.
+      // Only when the options are STATED. A facet that harvests or loads its
+      // options has none yet at this point, and dropping those would remove
+      // working filters rather than empty ones.
+      const usableSpecs = specs.filter((sp) => !sp.options || sp.options.length > 1);
       const state = (this.branchFacets[this.branchTab] ??= {});
       const bar = facetBar<unknown>({
-        specs,
+        specs: usableSpecs,
         state,
         items: [],
         onChange: () => render(),
       });
       facetSlot.replaceChildren();
-      if (specs.length) facetSlot.appendChild(bar.el);
+      if (usableSpecs.length) facetSlot.appendChild(bar.el);
 
       const q = query.trim().toLowerCase();
       // Beyond the name: the upstream, the tip subject and the short sha, so
@@ -1903,8 +1915,7 @@ class App {
         }
         // Scaled to what is ON SCREEN, so the bars stay comparable down the
         // list rather than against a branch the filter has removed.
-        const maxAb = Math.max(1, ...rows.map((b) => Math.max(b.aheadDefault ?? 0, b.behindDefault ?? 0)));
-        for (const b of rows) body.appendChild(this.localBranchRow(b, defaultBranch, maxAb));
+        for (const b of rows) body.appendChild(this.localBranchRow(b, defaultBranch));
       } else if (this.branchTab === "remote") {
         total = remotes.length;
         const rows = remotes
@@ -2849,7 +2860,7 @@ class App {
    * to be exiled into a ⋯ menu, and why none of them could be reached by
    * keyboard or touch at all. One primary verb and the menu render at rest.
    */
-  private localBranchRow(b: BranchInfo, defaultBranch?: string, maxAb = 1): HTMLElement {
+  private localBranchRow(b: BranchInfo, defaultBranch?: string): HTMLElement {
     const pills: HTMLElement[] = [];
     const pill = (text: string, cls: string, title: string): HTMLElement => {
       const p = span(text, `ab-pill ${cls}`);
@@ -2882,34 +2893,20 @@ class App {
     }
 
     const chips: HTMLElement[] = [];
-    // How far from the DEFAULT branch, as a bar — the question "how far is this
-    // from main" that a pair of upstream counts cannot answer. Scaled to the
-    // widest divergence CURRENTLY ON SCREEN, which is what makes the column
-    // comparable down the list. Absent on git < 2.41, where it renders nothing
-    // rather than a bar of zeroes.
-    if (b.aheadDefault !== undefined && b.behindDefault !== undefined && b.name !== defaultBranch) {
-      const bar = el("span", "br-ab");
-      bar.setAttribute("role", "img");
-      bar.setAttribute(
-        "aria-label",
-        `${b.aheadDefault} ahead of and ${b.behindDefault} behind ${defaultBranch ?? "the default branch"}`,
-      );
-      bar.title = bar.getAttribute("aria-label")!;
-      const half = (n: number, cls: string): HTMLElement => {
-        const h = el("span", `br-ab-half ${cls}`);
-        const fill = el("span", "br-ab-fill");
-        fill.style.width = n ? `${Math.max(3, Math.round(32 * Math.min(1, n / maxAb)))}px` : "0";
-        h.appendChild(fill);
-        return h;
-      };
-      bar.append(
-        span(String(b.behindDefault), "br-ab-n"),
-        half(b.behindDefault, "is-behind"),
-        half(b.aheadDefault, "is-ahead"),
-        span(String(b.aheadDefault), "br-ab-n"),
-      );
-      chips.push(bar);
-    }
+    // NO divergence bar.
+    //
+    // There used to be one here: two numbers either side of a 64px sparkline
+    // showing distance from the default branch, scaled to the widest divergence
+    // on screen. It cost about a hundred pixels on every row, it was the second
+    // thing your eye hit after the name, and nobody could read a quantity off
+    // it — the scale changed with whatever else happened to be listed. Those
+    // hundred pixels came out of the branch NAME, which is the only thing
+    // anyone scans this list for.
+    //
+    // The number is still available where it can be stated plainly: the
+    // branch's own page, and the row tooltip. What stays on the row is the
+    // ahead/behind pair, which is not decoration — it says what Push and Pull
+    // will do, and the row has buttons for both.
     if (b.subject) chips.push(span(b.subject, "br-subject"));
 
     const meta: HTMLElement[] = [];
@@ -2926,8 +2923,25 @@ class App {
       p.title = `${plural(b.behind, "commit")} to pull from ${b.upstream ?? "upstream"}`;
       track.appendChild(p);
     }
-    meta.push(track);
-    meta.push(span(b.upstream ?? "", "br-upstream sec-mono"));
+    // Only when it HAS a count. The slot is a fixed 78px so the pairs line up
+    // down the list, and it was pushed onto every row — including the many with
+    // nothing to push or pull, where it reserved 78px to align nothing at all
+    // against a branch name that was being cut off four pixels short.
+    if (track.childElementCount) meta.push(track);
+    // The upstream, ONLY when it is not the obvious one.
+    //
+    // A 160px right-aligned column held `origin/<this branch's name>` on nearly
+    // every row — the same string as the name three columns to its left, and
+    // truncated from the LEFT, so a list of long branches read
+    // "…ly-long-descriptive-name" over and over, identical on every line. It
+    // told you nothing and it took its width from the name.
+    //
+    // A branch tracking a DIFFERENTLY named upstream is a real and surprising
+    // fact, so that still shows.
+    const conventionalUpstream = !!b.upstream && b.upstream.endsWith("/" + b.name);
+    if (b.upstream && !conventionalUpstream) {
+      meta.push(span(b.upstream, "br-upstream sec-mono"));
+    }
 
     // ONE contextual primary verb, plus the menu. Delete deliberately does NOT
     // live on the row: it is one stray click away from a name you are scanning.
@@ -2991,7 +3005,18 @@ class App {
     });
     row.classList.add("branch-row");
     row.dataset.ref = b.name;
-    row.title = [b.name, b.subject, b.date ? absTime(b.date) : ""].filter(Boolean).join("\n");
+    row.title = [
+      b.name,
+      b.subject,
+      // The divergence the bar used to draw, said in words.
+      b.aheadDefault !== undefined && b.behindDefault !== undefined && b.name !== defaultBranch
+        ? `${b.aheadDefault} ahead of and ${b.behindDefault} behind ${defaultBranch ?? "the default branch"}`
+        : "",
+      b.upstream && conventionalUpstream ? `tracking ${b.upstream}` : "",
+      b.date ? absTime(b.date) : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
     // Right-click MIRRORS the menu — a shortcut, never a verb's only door.
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();

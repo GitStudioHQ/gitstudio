@@ -413,6 +413,40 @@
       );
     },
 
+    /**
+     * A branch list must show branch names. All of them.
+     *
+     * The row carried ten things — icon, name, state pill, a divergence
+     * sparkline, the tip subject, ahead/behind counts, a 160px upstream column,
+     * a time, a verb and a menu — and the NAME was the only one set to shrink
+     * first. So a realistic name was cut off while a fixed column beside it
+     * printed the same name again, truncated from the other end.
+     *
+     * `?longnames=1` gives the fixture the names real repositories carry;
+     * without it every name is short enough to fit anything and this cannot
+     * fail.
+     */
+    "a-branch-list-shows-whole-branch-names": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const rows = $$(".branch-row");
+      c.ok(rows.length >= 4, `the list rendered (${rows.length} rows)`);
+      const clipped = [];
+      for (const r of rows) {
+        const t = r.querySelector(".sec-row-title");
+        if (!t) continue;
+        if (t.scrollWidth > t.clientWidth + 1) clipped.push((t.textContent || "").trim().slice(0, 40));
+      }
+      c.ok(
+        clipped.length === 0,
+        `no branch name may be cut off — clipped: ${clipped.join(", ") || "none"}`,
+      );
+      // …and the column that used to print the name a second time, truncated
+      // from the left, is gone whenever it says nothing the name did not.
+      const upstreams = $$(".br-upstream").map((n) => (n.textContent || "").trim());
+      c.eq(upstreams.length, 0, `no row repeats its own name as an upstream (${upstreams.join(", ")})`);
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

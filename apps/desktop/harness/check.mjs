@@ -40,6 +40,10 @@ const CASES = [
   ["commit-enabled-after-typing", "changes~click:.dc-message~type:fix%3A%20a%20thing"],
   ["changes-rows-share-left-edge", "changes"],
   ["changes-toolbar-stable", "changes"],
+  ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1" }],
+  // …and at the width where the squeeze actually bit. At 1600px there is slack
+  // enough to hide a bad rule; 1150px is where the row has to choose.
+  ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1", width: 1150 }],
   ["an-opened-file-fills-its-pane", "code~text:README.md"],
   ["a-lap-of-the-app-does-not-re-measure-every-node", "changes", { extra: "perf=1&many=1" }],
   ["whitespace-toggle-agrees-across-diff-views", "changes~text:spacing.ts", { extra: "ws=1" }],

@@ -299,6 +299,18 @@
     ],
   };
 
+  // ?longnames=1 gives the branch list the names real repositories actually
+  // carry. Every fixture name here is short enough to fit whatever the row
+  // gives it, so the one thing the owner reported — long names cut off — was
+  // structurally unreachable in this harness.
+  if (params.get("longnames")) {
+    for (const b of branches) {
+      if (b.current) continue;
+      b.name = "feature/" + b.name + "-with-a-realistically-long-descriptive-name";
+      if (b.upstream) b.upstream = "origin/" + b.name;
+    }
+  }
+
   const changedFiles = [
     { path: "apps/desktop/src/renderer/views/issues.ts", status: "M", staged: true },
     { path: "apps/desktop/src/renderer/views/common.ts", status: "M", staged: true },

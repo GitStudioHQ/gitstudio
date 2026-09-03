@@ -10406,30 +10406,31 @@ body.vscode-light .log-pane {
   font-size: var(--text-xs);
 }
 
-/* Divergence from the DEFAULT branch, as a bar: "how far is this from main",
-   which a pair of upstream counts cannot answer. Scaled to the widest
-   divergence currently on screen, so the column is comparable down the list. */
-.br-ab {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--app-muted);
+/* The divergence bar that used to live here is gone — see localBranchRow.
+   It spent ~100px of every row on a sparkline whose scale changed with
+   whatever else was listed, and those pixels came out of the branch name. */
+
+/* THE NAME WINS.
+   A branch row carries a name, pills, a subject, ahead/behind counts, a time,
+   a verb and a menu, and the name was the only one of them set to shrink
+   first — `flex: 0 1 auto` against fixed-width neighbours — so a realistic
+   name like `feature/fix/log-stream-with-a-long-descriptive-name` was cut off
+   while a 160px column beside it printed the same name again, truncated from
+   the other end. The name is what this list is FOR: it grows into whatever is
+   free, and it is the last thing asked to give a pixel back. */
+.branch-row .sec-row-title {
+  flex: 1 1 auto;
+  min-width: 16ch;
 }
-.br-ab-n { min-width: 14px; text-align: center; }
-.br-ab-half {
-  display: inline-flex;
-  width: 32px;
-  height: 6px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--app-muted) 18%, transparent);
+/* The subject is context, not identity, so it yields first and by a lot. */
+.branch-row .sec-row-chips { flex-shrink: 8; }
+/* …and below a width where both cannot fit, it yields COMPLETELY. Shrinking it
+   to a few characters helps nobody: "actions: stream job l…" is not context,
+   it is noise wearing an ellipsis, and it was still taking the room the name
+   needed. The subject is in the row's tooltip and on the branch's own page. */
+@media (max-width: 1400px) {
+  .branch-row .br-subject { display: none; }
 }
-.br-ab-half.is-behind { justify-content: flex-end; }
-.br-ab-fill { display: block; height: 6px; border-radius: 2px; }
-.br-ab-half.is-behind .br-ab-fill { background: var(--status-mod); }
-.br-ab-half.is-ahead .br-ab-fill { background: var(--status-add); }
 
 /* Fixed-width meta columns. A meta slot with no width rule never forms a
    column — it just sits wherever its content ends, and the list stops being
