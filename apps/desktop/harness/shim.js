@@ -16,10 +16,18 @@
 
   // Pre-seed prefs so the app boots straight into the scene's view, terminal
   // collapsed, fixed rail width — deterministic screenshots.
+  //
+  // `?firstrun=1` seeds NO view, which is the one state this harness could not
+  // express: every scene names a view and therefore forces one, so "where does
+  // the app open when it has no memory of you" — the actual first-run
+  // experience — was untestable. A check asserting the landing view from a
+  // scene that had already chosen it was only ever confirming its own input.
+  const firstRun = params.get("firstrun") === "1";
+  window.__GS_FIRST_RUN = firstRun;
   localStorage.setItem(
     "gitstudio.ui.prefs",
     JSON.stringify({
-      currentView: view === "inbox" ? "notifications" : view,
+      ...(firstRun ? {} : { currentView: view === "inbox" ? "notifications" : view }),
       themeMode: theme,
       railWidth: 216,
       railCollapsed: false,
@@ -1547,7 +1555,11 @@
     // and checked the CHANGES view for as long as this harness has existed, and
     // Settings had no coverage at all. Click the rail item when the seed did not
     // take, so a scene name always means the view it names.
-    const rail = q(`[data-view="${view}"]`);
+    // …except on a first run, where the whole point is to see where the app
+    // takes you when nothing has chosen for it. Driving to the scene's view
+    // here would answer the question with its own input, which is exactly what
+    // the landing check used to do.
+    const rail = firstRun ? null : q(`[data-view="${view}"]`);
     if (rail && rail.getAttribute("aria-current") !== "page" && !rail.classList.contains("active")) {
       rail.click();
       await wait(250);

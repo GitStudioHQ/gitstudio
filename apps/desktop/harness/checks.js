@@ -498,6 +498,45 @@
       c.ok(fresh ? /Clone/.test(text(fresh) || "") : false, "one you do not have offers Clone");
     },
 
+    /**
+     * Home has to be actionable, not a poster.
+     *
+     * Every line that states a fact you would want to do something about must
+     * be a button that goes there — a dashboard you can only read is a screen
+     * you visit once. The greeting is deliberately not asserted: it depends on
+     * the hour, and a check pinned to "Good morning" fails every afternoon.
+     */
+    "home-is-made-of-doors": async (f) => {
+      const c = check(f);
+      await settle(1600);
+      const titles = $$(".dash-card-title").map((t) => text(t));
+      c.eq(titles.length, 3, `three cards (${titles.join(", ")})`);
+
+      const lines = $$(".dash-line");
+      c.ok(lines.length >= 5, `with something in them (${lines.length} lines)`);
+      // The uncommitted-work line and the ahead/behind line are the two that
+      // exist to be acted on; both must lead somewhere.
+      const work = lines.find((l) => /to stage|staged|files changed/.test(text(l) || ""));
+      c.ok(!!work, "it says what is uncommitted");
+      c.ok(work ? work.tagName === "BUTTON" : false, "and that is a button, not a label");
+      const sync = lines.find((l) => /to push|to pull|never been pushed/.test(text(l) || ""));
+      c.ok(!!sync, "it says how far from the remote you are");
+      c.ok(sync ? sync.tagName === "BUTTON" : false, "and that is a button too");
+
+      // Nothing on this page may claim a hint it then cuts in half.
+      const clipped = $$(".dash-line-hint").filter((h) => h.scrollWidth > h.clientWidth + 1);
+      c.eq(clipped.length, 0, `no hint is cut off (${clipped.map((h) => text(h)).join(", ")})`);
+
+      // Clicking through must actually route.
+      window.__GS_ROUTES = [];
+      work?.click();
+      await settle(700);
+      c.ok(
+        (window.__GS_ROUTES || []).some((r) => r.view === "changes"),
+        "and the uncommitted line opens Changes",
+      );
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);
@@ -2325,16 +2364,44 @@
     },
 
     // ── the app does not open on a file tree ────────────────────────────────
-    "landing-is-the-working-tree": (f) => {
+    /**
+     * The app opens on a screen that answers what you arrive with.
+     *
+     * This used to assert the landing view was CHANGES, which was itself a fix:
+     * Code — a read-only file tree of HEAD — held the first slot, in an app
+     * whose user already has those files open in an editor, and it is the one
+     * view nothing else in the app navigates to.
+     *
+     * Home replaced Changes for the same reason Changes replaced Code, one step
+     * further out. Changes answers "what have I edited", which is the right
+     * question once you are working and, most of the time, an empty list to be
+     * greeted by. So what is pinned here is the RULE, not the name: the app
+     * opens on its first rail entry, that entry is Home or Changes and never
+     * Code, Changes is still near the top, and whatever opens has content in it.
+     */
+    "landing-answers-what-you-arrive-with": (f) => {
       const c = check(f);
       const rail = $$(".nav-item").map((n) => (n.textContent || "").trim());
       c.ok(rail.length > 6, `the rail renders (${rail.length})`);
-      // Code — a read-only file tree of HEAD — held the first slot and was the
-      // default view, in an app whose user already has those files open in an
-      // editor. It is the one view nothing else navigates to.
-      c.eq(rail[0], "Changes", `the first destination is the working tree (got "${rail[0]}")`);
+      c.ok(
+        rail[0] === "Home" || rail[0] === "Changes",
+        `the first destination is a working screen (got "${rail[0]}")`,
+      );
+      // Only meaningful with no stored view: every other scene names the view
+      // it wants, so asserting the landing there confirms the scene's own
+      // input. `?firstrun=1` seeds nothing, which is the real first run.
+      if (window.__GS_FIRST_RUN) {
+        c.eq(text(".nav-item.active"), rail[0], "and that is where the app opens");
+      }
       c.ok(rail.indexOf("Code") > 2, `Code is demoted, not removed (position ${rail.indexOf("Code")})`);
-      c.eq(text(".nav-item.active"), "Changes", "and that is where the app opens");
+      c.ok(rail.indexOf("Changes") >= 0 && rail.indexOf("Changes") <= 2, "Changes is still to hand");
+      // …and the screen it opened on is not blank. A landing view that answers
+      // nothing is the defect this check has existed for twice now.
+      const host = $(".view-host");
+      c.ok(
+        !!host && (host.textContent || "").trim().length > 20,
+        "and the screen it opens on has something on it",
+      );
     },
 
     // ── nothing pretends to be loading ──────────────────────────────────────

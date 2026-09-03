@@ -40,6 +40,7 @@ const CASES = [
   ["commit-enabled-after-typing", "changes~click:.dc-message~type:fix%3A%20a%20thing"],
   ["changes-rows-share-left-edge", "changes"],
   ["changes-toolbar-stable", "changes"],
+  ["home-is-made-of-doors", "dashboard"],
   ["repositories-groups-by-folder-and-knows-what-you-have", "repositories"],
   ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1" }],
   ["a-real-choice-of-remote-is-offered", "branches", { extra: "tworemotes=1" }],
@@ -272,7 +273,9 @@ const CASES = [
   ["staging-does-not-blank-the-list", "changes~text:app.css"],
   ["repo-manager-opens-from-the-repo-chip", "code~click:.topbar-switch~text:Manage%20repositories"],
   ["settings-holds-preferences-not-repositories", "code~text:Settings"],
-  ["landing-is-the-working-tree", "changes"],
+  ["landing-answers-what-you-arrive-with", "changes"],
+  // …and the real first run, where nothing has chosen a view yet.
+  ["landing-answers-what-you-arrive-with", "changes", { extra: "firstrun=1" }],
   ["assistant-has-no-phantom-skeleton", "code~click:.topbar-assistant"],
   ["menu-toggles-on-its-own-trigger", "orgs"],
   ["pr-commit-rows-are-real-controls", "prs~open106~click:.gh-subtab%5Bdata-sub%3Dcommits%5D"],

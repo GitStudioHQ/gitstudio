@@ -96,6 +96,7 @@ import { renderOrgs, setPeekNav } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
 import { renderRepositories } from "./views/repositories";
+import { renderDashboard } from "./views/dashboard";
 import { renderRebase } from "./views/rebase";
 import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
 import { COLUMN_DROP_TAIL_AT } from "@gitstudio/webview-ui/limits";
@@ -180,7 +181,16 @@ class App {
    * A returning user does not see this at all: `prefs.currentView` puts you
    * back on the surface you were last working in.
    */
-  private currentView = "changes";
+  /**
+   * Where the app opens with no memory of you.
+   *
+   * This is a literal rather than `TABS[0].id` only because a static field
+   * cannot be read before its own class finishes initialising — but it MEANS
+   * the first rail entry, and `landing-answers-what-you-arrive-with` fails if
+   * the two ever drift apart. They did: this said "changes" while the rail led
+   * with Home, so a first run and a returning run landed on different screens.
+   */
+  private currentView = "dashboard";
   /** Guards re-entrant disk-triggered refreshes (see refreshFromDisk). */
   private refreshingFromDisk = false;
   /** "split" (staged/unstaged groups) or "checkboxes" (one ticked list) — issue #16. */
@@ -786,6 +796,12 @@ class App {
     // it (and are separated in the rail); the other two take glyphs that say
     // what those screens actually are.
     //
+    // HOME is the front door. Changes answers "what have I edited", which is
+    // the right question once you are working and a strange thing to be
+    // greeted by — most of the time it is an empty list, and it says nothing
+    // about the other repositories you have on the go or the review that has
+    // been waiting since yesterday. Changes keeps its seat, one below.
+    { id: "dashboard", label: "Home", icon: "home" },
     // Changes is a set of pending file diffs, not the SCM view's fork.
     { id: "changes", label: "Changes", icon: "diff-multiple" },
     { id: "graph", label: "Commits", icon: "git-commit" },
@@ -1429,6 +1445,8 @@ class App {
       this.mountSection(renderGists);
     } else if (id === "repositories") {
       this.mountSection(renderRepositories);
+    } else if (id === "dashboard") {
+      this.mountSection(renderDashboard);
     } else if (id === "settings") {
       void this.showSettingsView();
     } else {

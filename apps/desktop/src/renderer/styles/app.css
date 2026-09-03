@@ -2518,6 +2518,83 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   min-height: 0;
 }
 
+/* ── Home ───────────────────────────────────────────────────────────────────
+   Three cards, each a door. The grid is auto-fit rather than a fixed column
+   count so a narrow window stacks them instead of squeezing three columns of
+   truncated text — this page is the first thing anyone sees and it must not
+   be the first thing that looks broken. */
+.dash { padding: var(--sp-6) var(--sp-6) var(--sp-8); overflow-y: auto; height: 100%; }
+.dash-head { margin-bottom: var(--sp-5); }
+.dash-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--vscode-foreground);
+}
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+.dash-card {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-panel);
+  overflow: hidden;
+}
+.dash-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--app-border);
+}
+.dash-card-head > .codicon { color: var(--app-muted); font-size: 14px; }
+.dash-card-title { font-size: var(--text-sm); font-weight: 600; color: var(--vscode-foreground); }
+.dash-card-spring { flex: 1 1 auto; }
+.dash-card-body { padding: var(--sp-2) 0; min-height: 76px; }
+.dash-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-4);
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--vscode-foreground);
+  font-size: var(--text-sm);
+}
+.dash-line.is-clickable { cursor: pointer; }
+.dash-line.is-clickable:hover { background: var(--app-hover); }
+.dash-line.is-clickable:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -2px; }
+.dash-line-icon { flex: 0 0 auto; color: var(--app-muted); font-size: 14px; }
+.dash-line-icon.is-ok { color: var(--status-add); }
+.dash-line-icon.is-warn { color: var(--status-mod); }
+.dash-line-icon.is-muted { color: var(--app-muted); }
+/* The label is the identity of the row; the hint gives way first. */
+.dash-line-text {
+  flex: 1 1 auto;
+  min-width: 8ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-line-hint {
+  /* Short hints — "Review", "Assigned" — must never clip: a one-word label
+     shortened to "Assigned t…" is worse than the word it was replacing. Long
+     ones (an owner/repo) still truncate, but inside their own share. */
+  flex: 0 0 auto;
+  max-width: 40%;
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Repositories ───────────────────────────────────────────────────────────
    The folder a repo was found in is the grouping, because that is how people
    describe where their work is ("the client stuff is in ~/work"). The header
