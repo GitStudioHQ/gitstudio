@@ -447,6 +447,57 @@
       c.eq(upstreams.length, 0, `no row repeats its own name as an upstream (${upstreams.join(", ")})`);
     },
 
+    /**
+     * The Repositories page groups local repos by the folder they live in, and
+     * says which side of the fence each remote one is on.
+     *
+     * Two things worth pinning. A folder that has gone missing must SAY so
+     * rather than render as an empty group — "I added this and nothing
+     * appeared" is a question the screen should answer. And a remote repo you
+     * already have on disk must offer Open rather than Clone: cloning a second
+     * copy is how you end up editing the wrong one.
+     */
+    "repositories-groups-by-folder-and-knows-what-you-have": async (f) => {
+      const c = check(f);
+      await settle(1200);
+      const heads = $$(".repo-folder-head");
+      c.ok(heads.length >= 2, `local repos are grouped by folder (${heads.length} groups)`);
+      const clone = heads.find((h) => /clones land here/.test(text(h) || ""));
+      c.ok(!!clone, "the clone folder says that it is the clone folder");
+      // …and cannot be untracked, because it is where clones land.
+      c.eq(
+        clone ? clone.querySelectorAll("button").length : -1,
+        1,
+        "and offers reveal but no stop-tracking",
+      );
+      const missing = heads.find((h) => /missing/.test(text(h) || ""));
+      c.ok(!!missing, "a folder that has gone is marked missing");
+      c.ok(
+        $$(".repo-folder-empty").some((e) => /gone/i.test(text(e) || "")),
+        "and says what to do about it instead of showing an empty group",
+      );
+
+      const seg = $$(".gh-seg-btn").find((b) => /On GitHub/.test(text(b) || ""));
+      c.ok(!!seg, "there is a GitHub side");
+      if (!seg) return;
+      seg.click();
+      await settle(1200);
+      c.ok(
+        $$(".gh-seg-btn").find((b) => /On GitHub/.test(text(b) || ""))?.classList.contains("active"),
+        "which the segment reflects",
+      );
+      const rows = $$(".sec-row");
+      c.ok(rows.length >= 3, `remote repositories list (${rows.length})`);
+      const already = rows.find((r) => /on this machine/.test(text(r) || ""));
+      c.ok(!!already, "one you already have is marked as such");
+      c.ok(
+        already ? /Open/.test(text(already)) && !/Clone/.test(text(already)) : false,
+        "and offers Open rather than Clone",
+      );
+      const fresh = rows.find((r) => !/on this machine/.test(text(r) || ""));
+      c.ok(fresh ? /Clone/.test(text(fresh) || "") : false, "one you do not have offers Clone");
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

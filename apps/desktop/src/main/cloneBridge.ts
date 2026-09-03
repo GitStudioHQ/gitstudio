@@ -16,6 +16,7 @@ import { validateTargetName } from "../shared/cloneName";
 
 export { validateTargetName };
 import { join } from "node:path";
+import { PAGE_CAPS } from "./githubPaging";
 import type { CloneProgress, CloneRequest, CloneResult, GhRepoBrief } from "../shared/ipc";
 import type { GitHubClient } from "./githubClient";
 import { ALLOWED_PROTOCOLS, validateCloneUrl } from "./cloneUrl";
@@ -188,9 +189,13 @@ interface RawGhRepo {
 
 /** List the signed-in user's clonable GitHub repositories. */
 export async function listGhRepos(client: GitHubClient, search?: string): Promise<GhRepoBrief[]> {
-  const repos = await client.request<RawGhRepo[]>(
-    "GET",
+  // PAGED. `per_page=100` on its own silently truncates: anyone in a couple of
+  // organisations passes a hundred accessible repositories without noticing,
+  // and a list that stops at exactly 100 looks complete. PAGE_CAPS.account is
+  // the same ceiling org repos and gists already use.
+  const repos = await client.requestPaged<RawGhRepo>(
     "/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member",
+    PAGE_CAPS.account,
   );
   let out: GhRepoBrief[] = (repos ?? []).map((r) => ({
     fullName: r.full_name ?? "",

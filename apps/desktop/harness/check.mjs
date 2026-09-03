@@ -40,6 +40,7 @@ const CASES = [
   ["commit-enabled-after-typing", "changes~click:.dc-message~type:fix%3A%20a%20thing"],
   ["changes-rows-share-left-edge", "changes"],
   ["changes-toolbar-stable", "changes"],
+  ["repositories-groups-by-folder-and-knows-what-you-have", "repositories"],
   ["a-branch-list-shows-whole-branch-names", "branches", { extra: "longnames=1" }],
   ["a-real-choice-of-remote-is-offered", "branches", { extra: "tworemotes=1" }],
   // …and at the width where the squeeze actually bit. At 1600px there is slack
