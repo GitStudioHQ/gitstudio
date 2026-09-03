@@ -7,12 +7,14 @@
 //   • askWhereEveryTime  — force the destination sheet on every clone/open
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { AppSettingsView } from "../shared/ipc";
 
 interface Persisted {
   cloneDir?: string;
   askWhereEveryTime?: boolean;
+  /** Folders GitStudio scans for repositories, besides the clone folder. */
+  repoFolders?: string[];
 }
 
 export class AppSettings {
@@ -40,6 +42,11 @@ export class AppSettings {
         const r = raw as Record<string, unknown>;
         if (typeof r.cloneDir === "string" && r.cloneDir.trim()) data.cloneDir = r.cloneDir;
         if (typeof r.askWhereEveryTime === "boolean") data.askWhereEveryTime = r.askWhereEveryTime;
+        if (Array.isArray(r.repoFolders)) {
+          data.repoFolders = r.repoFolders.filter(
+            (f): f is string => typeof f === "string" && !!f.trim(),
+          );
+        }
       }
     } catch {
       data = {}; // missing / unreadable / malformed — start fresh
@@ -56,6 +63,48 @@ export class AppSettings {
     return this.data.askWhereEveryTime ?? false;
   }
 
+  /** Folders scanned for repositories, besides the clone folder. */
+  repoFolders(): string[] {
+    return this.data.repoFolders ?? [];
+  }
+
+  /**
+   * Track a folder, if it is not already covered.
+   *
+   * Returns whether anything changed, so callers on a hot path — every repo
+   * open goes through here — can skip a write and a re-render when it did not.
+   * The clone folder is never added: it is always scanned, and listing it here
+   * as well would let "remove" imply it could be untracked.
+   */
+  async addRepoFolder(dir: string): Promise<boolean> {
+    const next = dir.trim();
+    if (!next) return false;
+    if (resolve(next) === resolve(this.effectiveCloneDir())) return false;
+    const have = this.repoFolders();
+    if (have.some((f) => resolve(f) === resolve(next))) return false;
+    this.data.repoFolders = [...have, next];
+    await this.persist();
+    return true;
+  }
+
+  async removeRepoFolder(dir: string): Promise<boolean> {
+    const have = this.repoFolders();
+    const kept = have.filter((f) => resolve(f) !== resolve(dir));
+    if (kept.length === have.length) return false;
+    this.data.repoFolders = kept;
+    await this.persist();
+    return true;
+  }
+
+  private async persist(): Promise<void> {
+    try {
+      await mkdir(join(this.file, ".."), { recursive: true });
+      await writeFile(this.file, JSON.stringify(this.data, null, 2), "utf8");
+    } catch {
+      /* best-effort — settings still apply for this session */
+    }
+  }
+
   view(): AppSettingsView {
     const dir = this.effectiveCloneDir();
     return {
@@ -63,6 +112,7 @@ export class AppSettings {
       cloneDirDisplay: dir.startsWith(this.home) ? `~${dir.slice(this.home.length)}` : dir,
       cloneDirIsDefault: this.data.cloneDir === undefined,
       askWhereEveryTime: this.askWhereEveryTime(),
+      repoFolders: this.repoFolders(),
     };
   }
 
@@ -75,12 +125,7 @@ export class AppSettings {
     if (typeof patch.askWhereEveryTime === "boolean") {
       this.data.askWhereEveryTime = patch.askWhereEveryTime;
     }
-    try {
-      await mkdir(join(this.file, ".."), { recursive: true });
-      await writeFile(this.file, JSON.stringify(this.data, null, 2), "utf8");
-    } catch {
-      /* best-effort — settings still apply for this session */
-    }
+    await this.persist();
     return this.view();
   }
 }

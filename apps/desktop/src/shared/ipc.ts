@@ -1009,6 +1009,20 @@ export interface LocalCopy {
   missing: boolean;
 }
 
+/** A folder GitStudio scans for repositories. */
+export interface RepoFolder {
+  /** Absolute path. */
+  path: string;
+  /** "~/…"-style rendering for UI copy. */
+  display: string;
+  /** The configured clone folder: always scanned, cannot be removed. */
+  isCloneDir: boolean;
+  /** How many repositories were found in it. */
+  repoCount: number;
+  /** The folder is gone or unreadable. */
+  missing: boolean;
+}
+
 /** The app-wide preferences (Settings → Repositories card). */
 export interface AppSettingsView {
   /** Effective absolute default clone parent. */
@@ -1016,6 +1030,8 @@ export interface AppSettingsView {
   /** "~/GitStudio"-style rendering for UI copy. */
   cloneDirDisplay: string;
   cloneDirIsDefault: boolean;
+  /** Extra folders GitStudio scans for repositories. */
+  repoFolders: string[];
   askWhereEveryTime: boolean;
 }
 
@@ -1483,6 +1499,14 @@ export interface IpcChannels {
   "repos:reveal": [string, boolean];
   /** Forget a root from the recent list (never touches disk). */
   "repos:removeRecent": [string, LocalCopy[]];
+  /** Every folder scanned for repositories: the clone folder, then the ones
+   *  added by hand or learned from an open or a clone. */
+  "repos:folders": [void, RepoFolder[]];
+  /** Pick a folder to track (native dialog). Undefined when cancelled. */
+  "repos:addFolder": [void, RepoFolder[] | undefined];
+  /** Stop tracking a folder. Never touches disk, and refuses the clone
+   *  folder — that one is always scanned. */
+  "repos:removeFolder": [string, RepoFolder[]];
   /** Move a managed clone to the trash. Refuses anything outside the clone
    *  folder, and the repo that's currently open. */
   "repos:trash": [string, CommitActionResult];

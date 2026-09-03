@@ -28,8 +28,19 @@ const PROBE_TIMEOUT_MS = 5_000;
 export const SCAN_TTL_MS = 30_000;
 
 export interface ScanInput {
-  /** The configured clone folder (its top-level dirs are candidates). */
+  /** The configured clone folder — where clones land, and the only place a
+   *  managed clone may be trashed from. Always scanned. */
   cloneDir: string;
+  /**
+   * Every OTHER folder the user has asked GitStudio to keep track of.
+   *
+   * One clone folder was never the shape of a real machine: people keep work
+   * under ~/work, ~/src, a client folder and whatever the last `git clone`
+   * landed in. Each of these is scanned for repos exactly like the clone
+   * folder is; none of them can be trashed from, because the app did not put
+   * anything there.
+   */
+  folders?: string[];
   /** Recently-opened repo roots (candidates from anywhere on disk). */
   recents: string[];
   /** The repo the app currently has open, if any. */
@@ -138,17 +149,26 @@ export class LocalRepoScanner {
 export async function scanLocalCopies(input: ScanInput): Promise<LocalCopy[]> {
   const realCloneDir = await realOrResolve(input.cloneDir);
   const realCurrent = input.current ? await realOrResolve(input.current) : undefined;
+  // The clone folder first, then every other tracked folder, deduped so a user
+  // who adds the clone folder by hand does not get everything in it twice.
+  const roots = [input.cloneDir, ...(input.folders ?? [])];
+  const scanned = new Set<string>();
   const managedRoots: string[] = [];
-  try {
-    const names = await readdir(input.cloneDir, { withFileTypes: true });
-    for (const d of names) {
-      if (!d.isDirectory() || d.name.startsWith(".")) continue;
-      const root = join(input.cloneDir, d.name);
-      if (await isRepoDir(root)) managedRoots.push(root);
-      if (managedRoots.length >= MAX_ENTRIES) break;
+  for (const dir of roots) {
+    if (!dir || scanned.has(resolve(dir))) continue;
+    scanned.add(resolve(dir));
+    try {
+      const names = await readdir(dir, { withFileTypes: true });
+      for (const d of names) {
+        if (!d.isDirectory() || d.name.startsWith(".")) continue;
+        const root = join(dir, d.name);
+        if (await isRepoDir(root)) managedRoots.push(root);
+        if (managedRoots.length >= MAX_ENTRIES) break;
+      }
+    } catch {
+      /* folder missing / unreadable — the others, and recents, still list */
     }
-  } catch {
-    /* clone dir missing / unreadable — recents still list */
+    if (managedRoots.length >= MAX_ENTRIES) break;
   }
   managedRoots.sort((a, b) => basename(a).localeCompare(basename(b)));
 

@@ -18,8 +18,8 @@ import {
 } from "electron";
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from "electron";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { join, basename, extname } from "node:path";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { join, basename, extname, dirname, resolve as resolvePath } from "node:path";
+import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore } from "./repoStore";
 import { GitBridge } from "./gitBridge";
@@ -51,6 +51,7 @@ import type {
   CommitActionResult,
   IpcChannel,
   LocalCopy,
+  RepoFolder,
   IpcEvents,
   IpcRequest,
   IpcResponse,
@@ -416,6 +417,9 @@ async function openRepoDialog(): Promise<RepoInfo | undefined> {
 
 async function openRepoPath(path: string): Promise<RepoInfo | undefined> {
   const info = await repos.open(path);
+  // Opening a repo teaches the app where you keep repos. See
+  // rememberRepoFolder: the next one you put beside it needs no introduction.
+  if (info) void rememberRepoFolder(info.root);
   if (!info) {
     // In-app, not a native alert. This is the most likely first-run failure
     // (open the wrong folder) and dialogs.ts is explicit that native dialogs
@@ -561,6 +565,23 @@ function registerIpc(): void {
     shell.showItemInFolder(root);
     return true;
   });
+  handle("repos:folders", () => listRepoFolders());
+  handle("repos:addFolder", async () => {
+    if (!mainWindow) return undefined;
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: "Track a folder of repositories",
+      message: "GitStudio will list every repository inside this folder.",
+      properties: ["openDirectory", "createDirectory"],
+      defaultPath: appSettings.effectiveCloneDir(),
+    });
+    if (picked.canceled || !picked.filePaths.length) return undefined;
+    if (await appSettings.addRepoFolder(picked.filePaths[0])) localRepos.invalidate();
+    return listRepoFolders();
+  });
+  handle("repos:removeFolder", async (dir) => {
+    if (await appSettings.removeRepoFolder(dir)) localRepos.invalidate();
+    return listRepoFolders();
+  });
   handle("repos:removeRecent", async (root) => {
     if (repos.removeRecent(root)) {
       void saveState();
@@ -676,7 +697,14 @@ function registerIpc(): void {
 
   // Clone / browse repos.
   handle("clone:pickDir", (req) => pickCloneDir(req?.defaultPath ?? appSettings.effectiveCloneDir()));
-  handle("clone:start", (req) => startClone(req, (p) => send("clone:progress", p)));
+  handle("clone:start", async (req) => {
+    const r = await startClone(req, (p) => send("clone:progress", p));
+    // Cloning somewhere teaches the app where you keep repos, exactly as
+    // opening one does — including when the destination was a one-off folder
+    // chosen in the sheet rather than the configured clone folder.
+    if (r.ok) await rememberRepoFolder(r.root);
+    return r;
+  });
   handle("github:repos", (req) =>
     github.withClient((c) => listGhRepos(c, req?.search)),
   );
@@ -1107,7 +1135,67 @@ function assetContentType(name: string): string {
 function scanLocalCopies(): Promise<LocalCopy[]> {
   return localRepos.scan({
     cloneDir: appSettings.effectiveCloneDir(),
+    folders: appSettings.repoFolders(),
     recents: repos.recentRepos().map((r) => r.root),
     current: repos.current()?.root,
   });
+}
+
+/**
+ * Every folder scanned for repositories, with what is in it.
+ *
+ * The clone folder leads and cannot be removed — it is where clones land, so
+ * untracking it would mean the app could not see what it had just written.
+ */
+async function listRepoFolders(): Promise<RepoFolder[]> {
+  const home = app.getPath("home");
+  const show = (p: string): string => (p.startsWith(home) ? `~${p.slice(home.length)}` : p);
+  const cloneDir = appSettings.effectiveCloneDir();
+  const dirs = [cloneDir, ...appSettings.repoFolders()];
+  const copies = await scanLocalCopies();
+  return Promise.all(
+    dirs.map(async (path) => {
+      let missing = false;
+      try {
+        missing = !(await stat(path)).isDirectory();
+      } catch {
+        missing = true;
+      }
+      return {
+        path,
+        display: show(path),
+        isCloneDir: resolvePath(path) === resolvePath(cloneDir),
+        // Counted from the same scan the list is built from, so the number
+        // beside a folder can never disagree with the rows under it.
+        repoCount: copies.filter((c) => resolvePath(dirname(c.root)) === resolvePath(path)).length,
+        missing,
+      };
+    }),
+  );
+}
+
+/**
+ * Remember the folder a repository was found in.
+ *
+ * The point is that you should not have to tell GitStudio about a repo twice.
+ * Clone something into ~/work and the app knows about ~/work from then on, so
+ * the next repo you clone there by hand — or with the CLI, or by unzipping
+ * something — is simply THERE the next time you look, without ever having
+ * opened it here.
+ *
+ * The parent, not the repo: a repo root is one repository, and its parent is
+ * where you keep repositories.
+ */
+async function rememberRepoFolder(root: string | undefined): Promise<void> {
+  if (!root) return;
+  const parent = dirname(root);
+  // Never the home directory itself. Scanning it would enumerate every folder
+  // in it on every listing, and "I keep my repos in ~" is a claim about one
+  // repo, not about the folder.
+  if (!parent || resolvePath(parent) === resolvePath(app.getPath("home"))) return;
+  try {
+    if (await appSettings.addRepoFolder(parent)) localRepos.invalidate();
+  } catch {
+    /* best-effort: a folder we failed to remember is one you can still add */
+  }
 }
