@@ -323,6 +323,7 @@ export interface RawIssueComment {
   updated_at?: string;
   author_association?: string;
   reactions?: RawReactions | null;
+  html_url?: string;
 }
 
 export function mapComment(c: RawIssueComment): IssueComment {
@@ -334,6 +335,7 @@ export function mapComment(c: RawIssueComment): IssueComment {
     updatedAt: c.updated_at,
     authorAssociation: c.author_association,
     reactions: mapReactions(c.reactions),
+    htmlUrl: c.html_url,
   };
 }
 

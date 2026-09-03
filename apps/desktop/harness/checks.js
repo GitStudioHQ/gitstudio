@@ -579,6 +579,41 @@
       );
     },
 
+    /**
+     * A comment must be something you can act on.
+     *
+     * Every comment carried its id across the IPC boundary and the view threw
+     * it away, so five comment cards had zero buttons between them: no edit, no
+     * delete, no quote, no copy link. The id was delivered and discarded.
+     */
+    "a-comment-can-be-acted-on": async (f) => {
+      const c = check(f);
+      await settle(1400);
+      const cards = $$(".gh-comment");
+      c.ok(cards.length >= 2, `the thread renders (${cards.length} cards)`);
+      const card = cards[1];
+      const menu = card?.querySelector(".gh-comment-menu");
+      c.ok(!!menu, "a comment offers its actions");
+      if (!menu) return;
+      menu.click();
+      await settle(400);
+      const items = $$(".dropdown-item").map((i) => text(i) || "");
+      for (const wanted of ["Quote reply", "Copy link", "Edit", "Delete"]) {
+        c.ok(
+          items.some((t) => t.startsWith(wanted)),
+          `it offers ${wanted} (${items.join(", ")})`,
+        );
+      }
+
+      // Quote reply has to reach the box you would type in, or it is a menu
+      // entry that does nothing.
+      $$(".dropdown-item").find((i) => /Quote/.test(text(i) || ""))?.click();
+      await settle(500);
+      const ta = $(".gh-composer .md-text");
+      c.ok(!!ta, "the reply box is there to quote into");
+      c.match((ta && ta.value) || "", /^@\S+ said:\n>/, "and the quote lands in it, credited");
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

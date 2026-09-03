@@ -311,6 +311,41 @@ export async function commentIssue(
   }
 }
 
+/** Rewrite a comment's body. */
+export async function editIssueComment(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { id: number; body: string },
+): Promise<CommitActionResult> {
+  try {
+    await client.requestBody(
+      "PATCH",
+      `/repos/${enc(owner)}/${enc(repo)}/issues/comments/${req.id}`,
+      { body: req.body },
+    );
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, ...errorFields(err) };
+  }
+}
+
+/** Delete a comment. There is no undo on GitHub's side, so the caller asks
+ *  first — this function only carries it out. */
+export async function deleteIssueComment(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  id: number,
+): Promise<CommitActionResult> {
+  try {
+    await client.request("DELETE", `/repos/${enc(owner)}/${enc(repo)}/issues/comments/${id}`);
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, ...errorFields(err) };
+  }
+}
+
 /** Close or reopen an issue (PATCH state). */
 export async function setIssueState(
   client: GitHubClient,

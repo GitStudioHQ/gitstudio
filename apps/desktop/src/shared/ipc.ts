@@ -536,6 +536,8 @@ export interface IssueComment {
   updatedAt?: string;
   authorAssociation?: AuthorAssociation;
   reactions?: ReactionSummary;
+  /** Permalink to this comment on github.com — what "Copy link" copies. */
+  htmlUrl?: string;
 }
 export interface IssueDetail {
   issue: IssueInfo;
@@ -1567,6 +1569,11 @@ export interface IpcChannels {
     { query: string; state?: "open" | "closed" | "all" },
     { items: IssueInfo[]; totalCount: number; incomplete: boolean },
   ];
+  /** Edit a comment's body. The comment id has always been on the wire and
+   *  the view threw it away, so none of these were reachable. */
+  "issue:editComment": [{ id: number; body: string }, CommitActionResult];
+  /** Delete a comment. Irreversible on GitHub's side. */
+  "issue:deleteComment": [number, CommitActionResult];
   "issue:setState": [
     { number: number; state: "open" | "closed"; reason?: "completed" | "not_planned" },
     CommitActionResult,

@@ -94,6 +94,27 @@ let query = "";
  * exists to fix, so it must never be ambiguous which one answered.
  */
 let serverHits: IssueInfo[] | null = null;
+/**
+ * The reply box currently on screen, so "Quote reply" has somewhere to put
+ * what it quoted. Set when the detail page builds its composer and cleared
+ * when it goes — a stale one would drop a quote into a box nobody can see.
+ */
+let liveComposer: { get(): string; set(v: string): void; focus(): void } | undefined;
+
+/** Drop a comment into the reply box as a markdown quote, the way GitHub does:
+ *  the body prefixed with "> ", the author credited, and the cursor after it. */
+function quoteInto(body: string, author?: string | null): void {
+  if (!liveComposer) return;
+  const quoted = body
+    .trim()
+    .split("\n")
+    .map((l) => `> ${l}`)
+    .join("\n");
+  const prefix = author ? `@${author} said:\n` : "";
+  const existing = liveComposer.get().trim();
+  liveComposer.set(`${existing ? `${existing}\n\n` : ""}${prefix}${quoted}\n\n`);
+  liveComposer.focus();
+}
 let serverNote = "";
 /**
  * Unsent comment drafts, per issue — navigating away must never eat one.
@@ -119,6 +140,14 @@ function commentCard(
     updatedAt?: string;
     association?: string;
     reactions?: ReactionSummary;
+    /**
+     * The comment's own id and a way to refresh. Present on comments, absent
+     * on the issue body — which is edited through the composer page, not here.
+     * Without it the card renders exactly as it always did.
+     */
+    comment?: { id: number; htmlUrl?: string; reload: () => void };
+    /** Drop the body into the reply box, quoted. */
+    onQuote?: (body: string) => void;
   } = {},
 ): HTMLElement {
   const card = el("div", "gh-comment");
@@ -140,6 +169,51 @@ function commentCard(
     ed.title = `Edited ${absTimeISO(extra.updatedAt)}`;
     hd.appendChild(ed);
   }
+  // Everything a comment can do, in the place GitHub puts it. The id has been
+  // delivered on every comment since this view was written and thrown away by
+  // it, so editing, deleting, quoting and copying a link were all unreachable
+  // — five comment cards with zero buttons between them.
+  if (extra.comment || extra.onQuote) {
+    const spring = el("span", "gh-comment-spring");
+    hd.appendChild(spring);
+    const more = el("button", "mini-btn gh-icon-btn gh-comment-menu");
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-label", `Actions for ${author}'s comment`);
+    more.appendChild(glyph("ellipsis"));
+    more.addEventListener("click", () => {
+      const items: Array<{ label: string; icon?: string; danger?: boolean; onClick: () => void }> = [];
+      if (extra.onQuote) {
+        items.push({
+          label: "Quote reply",
+          icon: "quote",
+          onClick: () => extra.onQuote?.(body),
+        });
+      }
+      const c = extra.comment;
+      if (c?.htmlUrl) {
+        items.push({
+          label: "Copy link",
+          icon: "link",
+          onClick: () => void navigator.clipboard?.writeText(c.htmlUrl!),
+        });
+      }
+      if (c) {
+        items.push({
+          label: "Edit",
+          icon: "edit",
+          onClick: () => void editComment(c.id, body, card, c.reload),
+        });
+        items.push({
+          label: "Delete…",
+          icon: "trash",
+          danger: true,
+          onClick: () => void deleteComment(c.id, c.reload),
+        });
+      }
+      openMenu(more, items);
+    });
+    hd.appendChild(more);
+  }
   card.appendChild(hd);
   const bd = el("div", "gh-body-md");
   if (body.trim()) {
@@ -159,6 +233,82 @@ function commentCard(
   const reactions = reactionRow(extra.reactions);
   if (reactions) card.appendChild(reactions);
   return card;
+}
+
+/**
+ * Edit in place, in the same editor the composer uses.
+ *
+ * Not a modal: a comment is edited where it sits, so you can still read what
+ * you are replying to and what came before it. Cancel restores the rendered
+ * body without a request.
+ */
+async function editComment(
+  id: number,
+  body: string,
+  card: HTMLElement,
+  reload: () => void,
+): Promise<void> {
+  const bd = card.querySelector<HTMLElement>(".gh-body-md");
+  if (!bd) return;
+  const was = bd.innerHTML;
+  const ed = mdEditor({ value: body, rows: 6, label: "Edit comment" });
+  const row = el("div", "gh-composer-actions");
+  const save = el("button", "btn btn-primary") as HTMLButtonElement;
+  save.textContent = "Save";
+  const cancel = el("button", "mini-btn");
+  cancel.textContent = "Cancel";
+  row.append(save, cancel);
+  const wrap = el("div", "gh-comment-edit");
+  wrap.append(ed.root, row);
+  bd.replaceChildren(wrap);
+  ed.focus();
+
+  cancel.addEventListener("click", () => {
+    bd.innerHTML = was;
+  });
+  save.addEventListener("click", async () => {
+    const next = ed.get().trim();
+    if (!next) {
+      toast("A comment cannot be empty — delete it instead.", "info");
+      return;
+    }
+    save.disabled = true;
+    try {
+      const r = await host.invoke("issue:editComment", { id, body: next });
+      if (!r.ok) {
+        toast(r.message ?? "Couldn’t save the edit.", "error");
+        save.disabled = false;
+        return;
+      }
+      toast("Comment updated.", "success");
+      reload();
+    } catch (e) {
+      toast(cleanErr(e) || "Couldn’t save the edit.", "error");
+      save.disabled = false;
+    }
+  });
+}
+
+/** Delete, after asking — GitHub has no undo for this. */
+async function deleteComment(id: number, reload: () => void): Promise<void> {
+  const ok = await confirmDialog({
+    title: "Delete this comment?",
+    message: "It will be removed from the issue on GitHub. This cannot be undone.",
+    confirmLabel: "Delete comment",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const r = await host.invoke("issue:deleteComment", id);
+    if (!r.ok) {
+      toast(r.message ?? "Couldn’t delete the comment.", "error");
+      return;
+    }
+    toast("Comment deleted.", "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn’t delete the comment.", "error");
+  }
 }
 
 // ── The section view ─────────────────────────────────────────────────────────
@@ -815,9 +965,13 @@ function buildDetail(ctx: DetailCtx): void {
   // whole h1 by grabbing the "#31" suffix).
   wireProseNav(timeline, nav);
   timeline.appendChild(
+    // No `comment` here: the issue BODY is edited through the composer page,
+    // which is a different endpoint and a different screen. Quoting it is
+    // still the same gesture, so that stays.
     commentCard(it.user?.login ?? "author", "opened this issue", it.body ?? "", it.createdAt, {
       association: it.authorAssociation,
       reactions: it.reactions,
+      onQuote: (text) => quoteInto(text, it.user?.login),
     }),
   );
   for (const c of d.comments) {
@@ -826,6 +980,8 @@ function buildDetail(ctx: DetailCtx): void {
         updatedAt: c.updatedAt,
         association: c.authorAssociation,
         reactions: c.reactions,
+        comment: { id: c.id, htmlUrl: c.htmlUrl, reload },
+        onQuote: (text) => quoteInto(text, c.author?.login),
       }),
     );
   }
@@ -854,6 +1010,9 @@ function buildDetail(ctx: DetailCtx): void {
     },
   });
   const ta = ed.textarea;
+  // Quote reply writes here. Cleared by the next detail render, which replaces
+  // this composer with its own.
+  liveComposer = ed;
   const crow = el("div", "gh-composer-actions");
   const send = el("button", "btn btn-primary") as HTMLButtonElement;
   send.append(glyph("comment"), span("Comment"));

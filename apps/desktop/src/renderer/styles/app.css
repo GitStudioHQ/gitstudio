@@ -2528,6 +2528,17 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   border-bottom: 1px solid var(--app-border);
 }
 
+/* A comment's actions live at the end of its header, revealed on hover the way
+   GitHub does it — always in the DOM (so the keyboard reaches them) and quiet
+   until you go looking. */
+.gh-comment-spring { flex: 1 1 auto; }
+.gh-comment-menu { opacity: 0; transition: opacity 100ms; }
+.gh-comment:hover .gh-comment-menu,
+.gh-comment-menu:focus-visible { opacity: 1; }
+/* The in-place editor replaces the rendered body, so it inherits its width and
+   the card does not jump when you start editing. */
+.gh-comment-edit { display: flex; flex-direction: column; gap: var(--sp-2); }
+
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of
