@@ -279,11 +279,15 @@ export async function setIssueState(
   client: GitHubClient,
   owner: string,
   repo: string,
-  req: { number: number; state: "open" | "closed" },
+  req: { number: number; state: "open" | "closed"; reason?: "completed" | "not_planned" },
 ): Promise<CommitActionResult> {
   try {
     await client.requestBody("PATCH", `/repos/${enc(owner)}/${enc(repo)}/issues/${req.number}`, {
       state: req.state,
+      // Only when closing, and only when asked. Sending `state_reason` on a
+      // reopen is meaningless, and sending it unset would overwrite the reason
+      // a previous close recorded.
+      ...(req.state === "closed" && req.reason ? { state_reason: req.reason } : {}),
     });
     return { ok: true, changed: true };
   } catch (err) {

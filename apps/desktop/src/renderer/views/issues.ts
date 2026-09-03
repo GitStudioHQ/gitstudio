@@ -8,6 +8,7 @@
 // busts the SWR cache and re-fetches so the UI stays authoritative.
 
 import { host } from "../bridge";
+import { mdEditor } from "../mdEditor";
 import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
 import {
   avatar,
@@ -582,9 +583,36 @@ function buildDetail(ctx: DetailCtx): void {
   const closing = it.state === "open";
   const stateBtn = el("button", closing ? "btn btn-primary" : "mini-btn");
   stateBtn.append(glyph(closing ? "issue-closed" : "issue-opened"), span(closing ? "Close issue" : "Reopen"));
-  stateBtn.addEventListener("click", () =>
-    void changeState(it.number, closing ? "closed" : "open", stateBtn, reload),
-  );
+  if (closing) {
+    // WHY it is being closed, not just that it is.
+    //
+    // The app has always drawn and filtered the difference — the pill reads
+    // "Closed as not planned", and the list carries a whole "Closed as" facet —
+    // while the only control it had was a yes/no confirmation that always sent
+    // `completed`. So triage (won't fix, invalid, out of scope) had to happen on
+    // github.com and this app could only report the result afterwards.
+    //
+    // A menu of two verbs rather than a confirm dialog: "are you sure" is a
+    // worse question than "which of these did you mean", and the answer to the
+    // second is also the confirmation.
+    stateBtn.setAttribute("aria-haspopup", "menu");
+    stateBtn.addEventListener("click", () => {
+      openMenu(stateBtn, [
+        {
+          label: "Close as completed",
+          icon: "pass-filled",
+          onClick: () => void changeState(it.number, "closed", stateBtn, reload, "completed"),
+        },
+        {
+          label: "Close as not planned",
+          icon: "circle-slash",
+          onClick: () => void changeState(it.number, "closed", stateBtn, reload, "not_planned"),
+        },
+      ]);
+    });
+  } else {
+    stateBtn.addEventListener("click", () => void changeState(it.number, "open", stateBtn, reload));
+  }
   actions.push(stateBtn);
 
   // The de-emphasized escape hatch: everything above is doable in-app.
@@ -746,32 +774,35 @@ function buildDetail(ctx: DetailCtx): void {
 
   // ── composer ──
   const composer = el("div", "gh-composer");
-  const ta = document.createElement("textarea");
-  ta.className = "gh-composer-input";
-  ta.placeholder = "Leave a comment…";
-  ta.rows = 4;
-  ta.value = commentDrafts.get(draftKey(it.number)) ?? "";
-  ta.addEventListener("input", () => {
-    if (ta.value.trim()) commentDrafts.set(draftKey(it.number), ta.value);
-    else commentDrafts.delete(draftKey(it.number));
+  // The SAME editor the New Issue form uses.
+  //
+  // Writing an issue got Write/Preview and a formatting toolbar; replying to
+  // one — the far more frequent act — got a four-row box with none of it, in
+  // the same renderer, a few hundred lines apart. Markdown you cannot preview
+  // is markdown you find out about after you post it.
+  const ed = mdEditor({
+    value: commentDrafts.get(draftKey(it.number)) ?? "",
+    placeholder: "Leave a comment…",
+    rows: 4,
+    label: `Comment on issue #${it.number}`,
+    onInput: (v) => {
+      if (v.trim()) commentDrafts.set(draftKey(it.number), v);
+      else commentDrafts.delete(draftKey(it.number));
+      syncSend();
+    },
+    onSubmit: () => {
+      if (!send.disabled) send.click();
+    },
   });
+  const ta = ed.textarea;
   const crow = el("div", "gh-composer-actions");
   const send = el("button", "btn btn-primary") as HTMLButtonElement;
   send.append(glyph("comment"), span("Comment"));
   const syncSend = (): void => {
-    const ready = ta.value.trim().length > 0;
+    const ready = ed.get().trim().length > 0;
     send.disabled = !ready;
     send.title = ready ? "Post this comment" : "Write something first";
   };
-  ta.addEventListener("input", syncSend);
-  // ⌘Enter posts, which the shortcut sheet has been promising and neither
-  // composer implemented — so the one keystroke people reach for after
-  // typing a comment did nothing at all, on both detail pages.
-  ta.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
-    e.preventDefault();
-    if (!send.disabled) send.click();
-  });
   syncSend();
   send.addEventListener("click", () => void postComment(it.number, ta, send, reload));
   const draftChip = aiChip("Draft a reply", () =>
@@ -785,7 +816,7 @@ function buildDetail(ctx: DetailCtx): void {
   draftChip.hidden = true;
   void aiEnabled().then((ok) => (draftChip.hidden = !ok));
   crow.append(draftChip, send);
-  composer.append(ta, crow);
+  composer.append(ed.root, crow);
   main.appendChild(composer);
 }
 
@@ -838,23 +869,23 @@ async function changeState(
   state: "open" | "closed",
   btn: HTMLElement,
   reload: () => void,
+  reason?: "completed" | "not_planned",
 ): Promise<void> {
-  if (state === "closed") {
-    const ok = await confirmDialog({
-      title: `Close issue #${n}?`,
-      message: "This closes the issue on GitHub.",
-      confirmLabel: "Close issue",
-    });
-    if (!ok) return;
-  }
   (btn as HTMLButtonElement).disabled = true;
   try {
-    const r = await host.invoke("issue:setState", { number: n, state });
+    const r = await host.invoke("issue:setState", { number: n, state, reason });
     if (!r.ok) {
       toast(r.message ?? "Couldn't update the issue.", "error");
       return;
     }
-    toast(state === "closed" ? `Closed issue #${n}.` : `Reopened issue #${n}.`, "success");
+    toast(
+      state === "closed"
+        ? reason === "not_planned"
+          ? `Closed #${n} as not planned.`
+          : `Closed issue #${n}.`
+        : `Reopened issue #${n}.`,
+      "success",
+    );
     reload();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't update the issue.", "error");

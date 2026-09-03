@@ -11,6 +11,7 @@
 // and re-renders the affected surface.
 
 import { host } from "../bridge";
+import { mdEditor } from "../mdEditor";
 import { peek as cachePeek, gget, bust, prime, cacheScope } from "../cache";
 import {
   el,
@@ -1041,15 +1042,24 @@ async function renderSubTab(
 
     // A real composer (not a prompt) — same pattern as the Issues detail.
     const composer = el("div", "gh-composer");
-    const ta = document.createElement("textarea");
-    ta.className = "gh-composer-input";
-    ta.placeholder = "Leave a comment…";
-    ta.rows = 3;
-    ta.value = commentDrafts.get(draftKey(full.number)) ?? "";
-    ta.addEventListener("input", () => {
-      if (ta.value.trim()) commentDrafts.set(draftKey(full.number), ta.value);
-      else commentDrafts.delete(draftKey(full.number));
+    // The same editor the issue composer and the New Issue form use — see the
+    // note there. A PR reply is the single most-written box in this app and it
+    // was the only one with no preview and no formatting.
+    const ed = mdEditor({
+      value: commentDrafts.get(draftKey(full.number)) ?? "",
+      placeholder: "Leave a comment…",
+      rows: 3,
+      label: `Comment on pull request #${full.number}`,
+      onInput: (v) => {
+        if (v.trim()) commentDrafts.set(draftKey(full.number), v);
+        else commentDrafts.delete(draftKey(full.number));
+        syncSend();
+      },
+      onSubmit: () => {
+        if (!send.disabled) send.click();
+      },
     });
+    const ta = ed.textarea;
     const crow = el("div", "gh-composer-actions");
     const send = el("button", "btn btn-primary") as HTMLButtonElement;
     send.append(glyph("comment"), span("Comment"));
@@ -1057,23 +1067,14 @@ async function renderSubTab(
     // it answered with a toast telling you off. A button that cannot do
     // anything should look like it cannot do anything.
     const syncSend = (): void => {
-      const ready = ta.value.trim().length > 0;
+      const ready = ed.get().trim().length > 0;
       send.disabled = !ready;
       send.title = ready ? "Post this comment" : "Write something first";
     };
-    ta.addEventListener("input", syncSend);
-    // ⌘Enter posts, which the shortcut sheet has been promising and neither
-    // composer implemented — so the one keystroke people reach for after
-    // typing a comment did nothing at all, on both detail pages.
-    ta.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
-      e.preventDefault();
-      if (!send.disabled) send.click();
-    });
     syncSend();
     send.addEventListener("click", () => void doComment(full.number, ta, send, reload));
     crow.appendChild(send);
-    composer.append(ta, crow);
+    composer.append(ed.root, crow);
     content.appendChild(composer);
   } else if (id === "commits") {
     let commits;

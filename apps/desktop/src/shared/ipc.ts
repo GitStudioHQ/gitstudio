@@ -1531,7 +1531,13 @@ export interface IpcChannels {
     { ok: boolean; number?: number; message?: string },
   ];
   "issue:comment": [{ number: number; body: string }, CommitActionResult];
-  "issue:setState": [{ number: number; state: "open" | "closed" }, CommitActionResult];
+  /** Close or reopen. `reason` is GitHub's `state_reason` and only means
+   *  anything when closing — "not planned" is triage, and the app has always
+   *  been able to display and filter on it without being able to set it. */
+  "issue:setState": [
+    { number: number; state: "open" | "closed"; reason?: "completed" | "not_planned" },
+    CommitActionResult,
+  ];
   "issue:edit": [{ number: number; title?: string; body?: string }, CommitActionResult];
   "issue:labels": [void, RepoLabel[]];
   "issue:setLabels": [{ number: number; labels: string[] }, CommitActionResult];

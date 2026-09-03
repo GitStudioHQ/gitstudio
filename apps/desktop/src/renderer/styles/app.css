@@ -3633,16 +3633,21 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
    the same grey, so "Failed" and "Passed" were distinguishable only by an icon
    two columns away. */
 .gh-check-state { font-size: 11.5px; color: var(--app-muted); }
+/* Keyed on the classes `checkIcon()` actually emits. The success branch listed
+   both the new `.is-success` and the old `.gh-checks-success`; the FAILURE
+   branch listed only the old ones. So "Passed" was green and "Failed" printed
+   in the same muted grey as "Running" — the one row you must not miss was the
+   dimmest text in the list, under a comment claiming this had been fixed. */
 .gh-check-row:has(.is-success) .gh-check-state,
-.gh-step-row:has(.is-success) .gh-check-state,
-.gh-check-row:has(.gh-checks-success) .gh-check-state,
-.gh-step-row:has(.gh-checks-success) .gh-check-state { color: var(--status-add); }
-.gh-check-row:has(.gh-checks-failure) .gh-check-state,
-.gh-step-row:has(.gh-checks-failure) .gh-check-state,
-.gh-check-row:has(.gh-checks-timed_out) .gh-check-state,
-.gh-step-row:has(.gh-checks-timed_out) .gh-check-state { color: var(--status-del); font-weight: 600; }
-.gh-check-row:has(.gh-checks-in_progress) .gh-check-state,
-.gh-step-row:has(.gh-checks-in_progress) .gh-check-state { color: var(--status-mod); }
+.gh-step-row:has(.is-success) .gh-check-state { color: var(--status-add); }
+.gh-check-row:has(.is-failure) .gh-check-state,
+.gh-step-row:has(.is-failure) .gh-check-state { color: var(--status-del); font-weight: 600; }
+.gh-check-row:has(.is-running) .gh-check-state,
+.gh-step-row:has(.is-running) .gh-check-state { color: var(--status-mod); }
+.gh-check-row:has(.is-waiting) .gh-check-state,
+.gh-step-row:has(.is-waiting) .gh-check-state { color: var(--status-mod); }
+.gh-check-row:has(.is-skipped) .gh-check-state,
+.gh-step-row:has(.is-skipped) .gh-check-state { color: var(--app-muted); }
 
 /* ── Glyphs — the real VS Code codicon font ─────────────────────────────────────
  * The `codicon` @font-face is registered at document scope by the imported
@@ -6544,7 +6549,11 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .gh-row-lead .codicon { font-size: 17px; }
 .gh-lead-icon { display: inline-flex; }
 .gh-lead-open, .gh-lead-open-pr { color: var(--status-add); }
-.gh-lead-closed { color: var(--status-del); }
+/* DONE, not broken. This was --status-del: the same token as a deleted line
+   and a failed check, so a completed issue and a broken build wore the same
+   red — while a merged PR, which is the same "done" idea, wore the accent.
+   GitHub paints a completed issue purple for exactly this reason. */
+.gh-lead-closed { color: var(--gs-accent-ink, var(--gs-accent)); }
 .gh-lead-merged { color: var(--gs-accent-ink, var(--gs-accent)); }
 .gh-lead-draft { color: var(--app-muted); }
 /* Closed as not-planned: gray, like GitHub — "we're not doing this" reads
@@ -8483,6 +8492,24 @@ body.vscode-light .gh-label-chip {
 .sec-row-meta > .sec-avs { min-width: 54px; justify-content: flex-end; }
 .sec-row-meta > .sec-diffstat { min-width: 104px; justify-content: flex-end; }
 .sec-row-meta > .gh-stat { min-width: 44px; justify-content: flex-end; }
+/* Below the width where a row can hold everything, the DIFFSTAT goes first.
+   A pull-request row reserved 292px of fixed meta columns — two avatar stacks,
+   a +/- diffstat and a comment count — and gave the title 312px, so at 1150px
+   the title ellipsised mid-word and the label strip beside it was sliced into
+   a 6px rounded sliver with no text in it: a chip that says nothing, costing
+   the room that would have let the title finish.
+   The diffstat is the most droppable of the four — it is on the PR's own page,
+   in its Files tab, and in the row's tooltip — and dropping it returns more
+   width than the sliver ever needed. */
+@media (max-width: 1300px) {
+  .sec-row-meta > .sec-diffstat { display: none; }
+}
+/* A chip strip too narrow to hold one whole chip shows none. A fragment is not
+   a shortened label, it is a rounded rectangle with nothing in it. */
+.sec-row-chips { min-width: 0; }
+@media (max-width: 1100px) {
+  .sec-row .sec-row-chips { display: none; }
+}
 .sec-row-meta > .gist-filecount { min-width: 54px; text-align: right; }
 .sec-row-meta > .notif-repo { min-width: 190px; text-align: right; justify-content: flex-end; }
 .sec-row-meta > .notif-reason { min-width: 114px; text-align: right; }
@@ -8666,6 +8693,10 @@ body.vscode-light .gh-label-chip {
 .det-title-row .det-title-pills { margin-top: 3px; flex: 0 0 auto; }
 .det-title-pills { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .det-title {
+  /* The UA stylesheet's h1 margin — 14px top and bottom — was never reset, so
+     the title sat 14px lower than the pill beside it in a flex-start row and
+     the pill appeared to float above the thing it labels. */
+  margin: 0;
   font-size: 21px;
   line-height: 1.25;
   font-weight: 650;
