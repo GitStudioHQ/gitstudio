@@ -1,0 +1,29 @@
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_569d91b02dab4b 563-570,712-719
+apps/desktop/harness/requirements.js
+  s_26f5e669d3043c::t_806834b15317cd 206-224
+apps/desktop/src/renderer/views/repositories.ts
+  s_26f5e669d3043c::t_10376ddb679977 46-47,65,88-93,182-186,380,384-387
+apps/desktop/src/main/localRepos.ts
+  s_26f5e669d3043c::t_9c14d3e1d3ce33 25-27,160-175,177,179-189,191-195
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_5cd7ac0c7b6cff 606,608-625,628,650
+apps/desktop/test/repoFolders.test.ts
+  s_26f5e669d3043c::t_214faf8e2e5273 86-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "95c478cd9c899f980c2c00f9406103f4ccefe642",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
