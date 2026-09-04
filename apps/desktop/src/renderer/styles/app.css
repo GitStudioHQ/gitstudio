@@ -2611,6 +2611,10 @@ button.repo-folder-chip { cursor: pointer; font: inherit; }
 button.repo-folder-chip:hover { border-color: var(--gs-accent); color: var(--gs-accent-ink, var(--gs-accent)); }
 button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
 
+/* A rail entry waiting on a repository. Dimmed, not hidden — see NEEDS_REPO. */
+.nav-item.is-unavailable { opacity: 0.42; cursor: default; }
+.nav-item.is-unavailable:hover { background: none; }
+
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of

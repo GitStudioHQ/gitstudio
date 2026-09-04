@@ -339,6 +339,31 @@ class App {
     return out;
   }
 
+  /**
+   * Views that mean nothing without a repository open.
+   *
+   * The rail shows them disabled rather than hiding them: a destination that
+   * vanishes and reappears is harder to learn than one that is visibly not
+   * available yet, and the first thing a new user should see is the shape of
+   * the whole app.
+   */
+  private static readonly NEEDS_REPO = new Set([
+    "changes",
+    "graph",
+    "branches",
+    "compare",
+    "rebase",
+    "code",
+    "notifications",
+    "mywork",
+    "prs",
+    "issues",
+    "actions",
+    "releases",
+    "projects",
+    "assistant",
+  ]);
+
   private static readonly KEEPALIVE = new Set([
     "branches",
     "explore",
@@ -539,14 +564,12 @@ class App {
 
     try {
       const current = await host.invoke("repo:current", undefined);
-      if (current) {
-        this.showRepoScreen(current);
-      } else {
-        await this.showWelcome();
-      }
+      // The shell either way. With nothing open it lands on Home, whose first
+      // card is the Open / Browse door.
+      this.showRepoScreen(current);
     } catch (e) {
       toast(cleanErr(e) || "Couldn't open the repository.", "error");
-      await this.showWelcome();
+      this.showRepoScreen(undefined);
     }
   }
 
@@ -556,135 +579,43 @@ class App {
    * entirely CSS-var / inline-SVG driven and re-themes itself from the body class.
    */
   private rerenderForTheme(): void {
-    if (!this.currentRepo) {
-      void this.showWelcome();
-    }
+    // The shell re-themes itself from the body class; there is no longer a
+    // separate hand-painted screen that needs rebuilding on a theme change.
   }
 
   // ── Welcome / repo-picker screen ────────────────────────────────────────────
 
-  private async showWelcome(): Promise<void> {
-    this.currentRepo = undefined;
-    const screen = el("div", "screen welcome");
-    const card = el("div", "welcome-card");
+  // The welcome screen used to live here: a full-screen card with a logo, a
+  // tagline, Open/Clone buttons and its own list of recent repositories, shown
+  // whenever no repository was open.
+  //
+  // It is gone because it pre-empted everything. With no repo open there was no
+  // rail, so the first page could not be the dashboard however the dashboard
+  // was configured, and Repositories — the one destination that still means
+  // something with nothing open — was unreachable. Its recents list was also a
+  // third place repositories were listed, disagreeing with the other two.
+  //
+  // `showRepoScreen(undefined)` mounts the same shell with the repo-scoped
+  // views disabled, and Home's first card is the Open / Browse door.
 
-    const dark = document.body.classList.contains("vscode-dark");
-
-    const hero = el("div", "welcome-hero");
-    const logo = document.createElement("img");
-    logo.className = "welcome-logo";
-    // The squircle app-icon mark, theme-swapped so its tile matches the page
-    // (a light-tile sibling on light theme — never a dark square on a light page).
-    logo.src = dark ? "./brand-icon.svg" : "./brand-icon-light.svg";
-    logo.alt = "GitStudio";
-    hero.appendChild(logo);
-
-    // Wordmark as crafted text (not the brand SVG, which carries its own cube and
-    // would double the mark) — tracks the theme via CSS with no asset swap.
-    const wordmark = el("div", "welcome-wordmark");
-    wordmark.append(span("Git", "wm-git"), span("Studio", "wm-studio"));
-
-    const tagline = el("div", "welcome-tagline");
-    tagline.textContent =
-      "A JetBrains-grade Git client — your whole workflow, beautifully.";
-
-    const actions = el("div", "welcome-actions");
-    const open = el("button", "btn btn-primary welcome-open");
-    open.append(glyph("folder-opened"), span("Open repository…"));
-    open.addEventListener("click", () => void this.openRepo());
-    const clone = el("button", "btn btn-soft welcome-clone");
-    clone.append(glyph("cloud-download"), span("Clone repository…"));
-    clone.addEventListener("click", () =>
-      openCloneDialog((root) => void this.openPath(root)),
-    );
-    actions.append(open, clone);
-
-    card.append(hero, wordmark, tagline, actions);
-
-    const recentWrap = el("div", "welcome-recent");
-    const title = el("div", "welcome-recent-title");
-    title.textContent = "Your repositories";
-    const list = el("div", "welcome-recent-list");
-    /**
-     * EVERYTHING the app knows about, not just what you have opened here.
-     *
-     * This listed `repo:recent`, so a repository the app had discovered in one
-     * of your tracked folders — the whole point of tracking them — was absent
-     * from the one screen you see when nothing is open. "so you can easily open
-     * the repo from our ui even if you havent told us about it" was true
-     * everywhere except the place you would first look.
-     *
-     * Recents lead, because the thing you were last working on is the thing you
-     * most likely want; everything else follows, and a folder that is gone is
-     * marked rather than silently offered.
-     */
-    const known = await host.invoke("repos:local", undefined).catch(() => []);
-    const recent = known
-      .filter((c) => !c.missing)
-      .sort((a, b) => (a.recent === b.recent ? a.name.localeCompare(b.name) : a.recent ? -1 : 1))
-      .slice(0, 12);
-    if (recent.length === 0) {
-      const empty = el("div", "welcome-recent-empty");
-      empty.textContent = "No repositories yet — open one, or clone one, to begin.";
-      list.appendChild(empty);
-    } else {
-      for (const r of recent) {
-        // A ROW holding two controls, not one control containing another: a
-        // recent whose folder has been deleted or moved looked exactly like a
-        // live one, and there was no way to get rid of it from this screen —
-        // the only screen you see when no repository is open. Opening it toasts
-        // "not inside a Git repository" and the row stays, forever.
-        const rowWrap = el("div", "recent-card-row");
-        const row = el("button", "recent-card");
-        const meta = el("div", "recent-card-meta");
-        const name = el("div", "recent-card-name");
-        name.textContent = r.name;
-        const path = el("div", "recent-card-path");
-        path.textContent = r.root;
-        meta.append(name, path);
-        row.append(glyph("folder"), meta);
-        row.addEventListener("click", () => void this.openPath(r.root));
-
-        const forget = el("button", "recent-card-forget") as HTMLButtonElement;
-        forget.appendChild(glyph("close"));
-        forget.hidden = !r.recent; // nothing to forget about a discovered repo
-        forget.title = `Forget ${r.name} — the folder itself is not touched`;
-        forget.setAttribute("aria-label", forget.title);
-        forget.addEventListener("click", (e) => {
-          e.stopPropagation();
-          void (async () => {
-            try {
-              await host.invoke("repos:removeRecent", r.root);
-            } catch {
-              /* the list is rebuilt either way */
-            }
-            void this.showWelcome();
-          })();
-        });
-        rowWrap.append(row, forget);
-        list.appendChild(rowWrap);
-      }
-    }
-    recentWrap.append(title, list);
-    card.appendChild(recentWrap);
-
-    const footer = el("div", "welcome-footer");
-    footer.append(
-      span("Open source", "welcome-footer-tag"),
-      span("·"),
-      span("Free forever", "welcome-footer-tag"),
-      span("·"),
-      span("Desktop & VS Code", "welcome-footer-tag"),
-    );
-    card.appendChild(footer);
-
-    screen.appendChild(card);
-    document.getElementById("root")!.replaceChildren(screen);
-  }
 
   // ── Repo screen (the full window is dedicated to the open repo) ──────────────
 
-  private showRepoScreen(info: RepoInfo): void {
+  /**
+   * The application shell — rail, top bar, view host — with or without a
+   * repository open.
+   *
+   * `info` is optional because the alternative was a separate full-screen
+   * welcome card with no rail on it, which pre-empted every route: on a fresh
+   * install, after Close repository, or when the last repo was moved, the first
+   * page could not be the dashboard however the dashboard was configured. It
+   * also meant a THIRD list of repositories, and the one destination that still
+   * means something with nothing open — Repositories — was unreachable.
+   *
+   * With no repo the shell still mounts; the views that need one are disabled
+   * in the rail and the router refuses them.
+   */
+  private showRepoScreen(info?: RepoInfo): void {
     this.currentRepo = info;
     this.selectedSha = undefined;
     this.codePath = "";
@@ -697,7 +628,7 @@ class App {
     this.navPos = -1;
     // Namespace (and wipe) the SWR cache so the previous repo's branches/status/
     // graph can never bleed into this one.
-    setCacheScope(info.root);
+    setCacheScope(info?.root);
     // A different repo makes every remembered row meaningless — issue #31 in
     // one repo is not issue #31 in another.
     clearFocusReturn();
@@ -710,7 +641,7 @@ class App {
     // "Back to main menu" and straight back into the SAME repo (the recent-repo
     // list is right there, one click away) destroyed the message, and so did
     // every re-open of the repo you were already in. Ask which repo first.
-    if (this.composerDraftRoot !== info.root) {
+    if (info && this.composerDraftRoot !== info.root) {
       this.composerDraft = { message: "", amend: false, signoff: false, coAuthors: [], prefilled: undefined, caret: undefined };
       this.composerDraftRoot = undefined;
     }
@@ -873,6 +804,15 @@ class App {
       btn.setAttribute("role", "tab");
       btn.setAttribute("aria-label", label);
       btn.append(glyph(icon), span(label, "nav-label"));
+      // Visibly not available yet, rather than absent: with no repository open
+      // these lead nowhere, and a destination that vanishes and reappears is
+      // harder to learn than one you can see is waiting on something.
+      if (!this.currentRepo && App.NEEDS_REPO.has(id)) {
+        (btn as HTMLButtonElement).disabled = true;
+        btn.classList.add("is-unavailable");
+        btn.title = `${label} — open a repository first`;
+        btn.setAttribute("aria-label", btn.title);
+      }
       btn.addEventListener("click", () => this.routeView(id));
       btn.addEventListener("keydown", (e) => {
         const i = this.navButtons.indexOf(btn);
@@ -1212,6 +1152,13 @@ class App {
     // exception: a sha-only graph reveal, which works against the live
     // kept-alive mount — forcing would tear it down and refetch history for a
     // scroll that needs nothing rebuilt.
+    // A view that needs a repository, with none open, is not a destination.
+    // Reached by a deep link, a restored preference or a keyboard shortcut, it
+    // would render a screen with nothing to render.
+    if (!this.currentRepo && App.NEEDS_REPO.has(id)) {
+      id = "dashboard";
+      target = undefined;
+    }
     const shaOnlyGraphReveal =
       id === "graph" &&
       !!target?.sha &&
@@ -4246,8 +4193,8 @@ class App {
     manageSub.textContent = "Open, reveal or remove any clone GitStudio knows about.";
     manageText.append(manageLabel, manageSub);
     const manageBtn = el("button", "mini-btn") as HTMLButtonElement;
-    manageBtn.append(glyph("repo"), span("Manage repositories…"));
-    manageBtn.addEventListener("click", () => this.openRepoManager());
+    manageBtn.append(glyph("repo"), span("Open Repositories"));
+    manageBtn.addEventListener("click", () => this.routeView("repositories"));
     manageRow.append(manageText, manageBtn);
 
     body.append(sub, row, askRow, manageRow);
@@ -7510,7 +7457,9 @@ class App {
     });
   }
 
-  private topbar(info: RepoInfo): HTMLElement {
+  /** The top bar. `info` is optional: with no repository open the chip says so
+   *  and still opens the picker, rather than the whole bar being absent. */
+  private topbar(info?: RepoInfo): HTMLElement {
     const bar = el("header", "topbar");
 
     // Sidebar toggle — a flat icon at the far left (above the rail), the way
@@ -7545,10 +7494,10 @@ class App {
 
     const repoSwitch = el("button", "topbar-switch");
     const repoName = el("span", "switch-name");
-    repoName.textContent = info.name;
+    repoName.textContent = info?.name ?? "No repository";
     this.repoSwitchName = repoName;
     repoSwitch.append(glyph("folder"), repoName, glyph("chevron-down"));
-    repoSwitch.title = info.root;
+    repoSwitch.title = info?.root ?? "Open or clone a repository";
     repoSwitch.addEventListener("click", () => void this.openRepoMenu(repoSwitch));
 
     const branchSwitch = el("button", "topbar-switch topbar-branch");
@@ -7561,7 +7510,11 @@ class App {
     // Left cluster: brand + repo + branch, with the sync (fetch/pull/push)
     // widget sitting right next to the branch switcher.
     const left = el("div", "topbar-left");
-    left.append(home, sidebarToggle, backBtn, fwdBtn, repoSwitch, branchSwitch, this.buildSyncWidget());
+    // The branch chip and the push/pull widget are ABOUT a repository. With
+    // none open they said "main" and offered "Push 2" — a branch and a count
+    // belonging to whatever was open last, which is worse than saying nothing.
+    left.append(home, sidebarToggle, backBtn, fwdBtn, repoSwitch);
+    if (info) left.append(branchSwitch, this.buildSyncWidget());
     this.syncRailToggle();
 
     // Right edge: the notifications center (bell + unread badge) sitting right
@@ -7787,11 +7740,9 @@ class App {
 
   private wireHostEvents(): void {
     host.on("repo:changed", (info) => {
-      if (info) {
-        this.showRepoScreen(info);
-      } else {
-        void this.showWelcome();
-      }
+      // Closing the repository keeps the shell and lands on Home, rather than
+      // dropping you onto a separate card with no navigation on it.
+      this.showRepoScreen(info);
     });
     // Forgetting or trashing a clone changes the welcome screen's recent list
     // (and the repo switcher, which re-reads on open) — repaint the one surface
@@ -7803,7 +7754,11 @@ class App {
       if (typeof n === "number") this.setNotifBadge(n);
     });
     host.on("repo:recentChanged", () => {
-      if (!this.currentRepo) void this.showWelcome();
+      // Home's "other repositories" card and the Repositories list both read
+      // this, so repaint whichever is showing rather than a bespoke screen.
+      if (this.currentView === "dashboard" || this.currentView === "repositories") {
+        this.routeView(this.currentView, true);
+      }
     });
     host.on("app:notice", (n) => {
       toast(n.message, n.kind === "error" ? "error" : n.kind === "warn" ? "error" : "info");
@@ -8148,10 +8103,14 @@ class App {
     }
     items.push({ separator: true });
     items.push({
-      label: "Manage repositories…",
+      // The DESTINATION, not a modal listing the same clones a third time.
+      // "move the repos in a dedicated space" was answered by ADDING a space
+      // while two older pickers stayed wired — this menu, which is the most
+      // used gesture for switching repository, did not even offer the new one.
+      label: "All repositories",
       icon: "repo",
-      title: "Every clone on this machine",
-      onClick: () => this.openRepoManager(),
+      title: "Every repository on this machine and on GitHub",
+      onClick: () => this.routeView("repositories"),
     });
     items.push({
       // Was "Back to the main menu" — a name for a destination that does not

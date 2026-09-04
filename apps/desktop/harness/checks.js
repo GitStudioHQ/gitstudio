@@ -464,12 +464,16 @@
       c.ok(heads.length >= 2, `local repos are grouped by folder (${heads.length} groups)`);
       const clone = heads.find((h) => /clones land here/.test(text(h) || ""));
       c.ok(!!clone, "the clone folder says that it is the clone folder");
-      // …and cannot be untracked, because it is where clones land.
-      c.eq(
-        clone ? clone.querySelectorAll("button").length : -1,
-        1,
-        "and offers reveal but no stop-tracking",
-      );
+      // …and cannot be untracked, because it is where clones land. Asserted as
+      // the RULE, not as a button count: counting them broke the moment the
+      // band legitimately gained a control (changing which folder is the
+      // default), reporting a regression where a feature had been added.
+      const stopTracking = clone
+        ? [...clone.querySelectorAll("button")].filter((b) =>
+            /stop tracking/i.test(`${b.getAttribute("aria-label") || ""} ${b.title || ""}`),
+          ).length
+        : -1;
+      c.eq(stopTracking, 0, "and cannot be untracked");
       const missing = heads.find((h) => /missing/.test(text(h) || ""));
       c.ok(!!missing, "a folder that has gone is marked missing");
       c.ok(

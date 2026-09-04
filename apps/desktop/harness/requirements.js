@@ -48,6 +48,42 @@ window.__GS_REQUIREMENTS = (() => {
       },
     },
 
+    {
+      // The clause is about the FIRST page, and the first page anyone sees is
+      // the one with no repository open. A welcome splash with no rail on it
+      // pre-empted every route, so the dashboard could not be first however it
+      // was configured.
+      id: "the-first-page-is-the-dashboard-even-with-no-repo",
+      says: "the main/first page can be like a dashboard",
+      scene: "changes",
+      extra: "norepo=1",
+      async run() {
+        await settle(1600);
+        const splash = !!$(".screen.welcome");
+        const dash = !!$(".dash");
+        const rail = $$(".nav-item").length;
+        const disabled = $$(".nav-item.is-unavailable").length;
+        return r(
+          !splash && dash && rail > 10 && disabled > 0,
+          `welcome splash: ${splash}, dashboard: ${dash}, rail entries: ${rail}, of which waiting on a repo: ${disabled}`,
+        );
+      },
+    },
+    {
+      // "MOVE", not "add a third". The top-bar chip is the most-used gesture
+      // for switching repository and it offered a legacy modal instead.
+      id: "one-place-for-repositories",
+      says: "i want to move the repos in a dedicated space",
+      scene: "changes~click:.topbar-switch",
+      async run() {
+        await settle(800);
+        const items = $$(".dropdown-item").map((i) => text(i) || "");
+        const legacy = items.some((t) => /manage repositories/i.test(t));
+        const destination = items.some((t) => /all repositories/i.test(t));
+        return r(destination && !legacy, `repo menu: ${items.join(" | ")}`);
+      },
+    },
+
     // ── "i want to move the repos in a dedicated space" ─────────────────────
     {
       id: "repos-have-their-own-space",
