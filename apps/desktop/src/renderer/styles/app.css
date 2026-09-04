@@ -2588,6 +2588,27 @@ button.gh-reaction:focus-visible { outline: 1px solid var(--gs-accent); outline-
 .gh-event-link:hover { text-decoration: underline; }
 .gh-event-when { flex: 0 0 auto; }
 
+/* The owner band on the GitHub side. Same rhythm as the folder band on the
+   local side — two lists of repositories on one screen must not invent two
+   ways of grouping them. */
+.repo-owner-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-panel);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.repo-owner-head > .codicon { color: var(--app-muted); font-size: 14px; }
+/* "clones land here" is a control, not a caption: it is where you change which
+   folder that is, so it has to look pressable on hover. */
+button.repo-folder-chip { cursor: pointer; font: inherit; }
+button.repo-folder-chip:hover { border-color: var(--gs-accent); color: var(--gs-accent-ink, var(--gs-accent)); }
+button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of

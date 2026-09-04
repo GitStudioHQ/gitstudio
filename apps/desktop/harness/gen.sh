@@ -35,6 +35,8 @@ cp "$HARNESS/perf.js" "$PAGE/perf.js"
 # dist/ so it cannot drift out of step with the bundle beside it.
 cp "$DIST/renderer.js.map" "$PAGE/renderer.js.map" 2>/dev/null || true
 cp "$HARNESS/checks.js" "$PAGE/checks.js"
+# The owner's requests, as executable clauses — see validate.mjs.
+cp "$HARNESS/requirements.js" "$PAGE/requirements.js"
 cat > "$PAGE/harness.html" <<'HTML'
 <!DOCTYPE html>
 <html lang="en">
@@ -47,6 +49,7 @@ cat > "$PAGE/harness.html" <<'HTML'
     <script src="./theme-boot.js"></script>
     <div id="root"><div id="boot">Loading GitStudio…</div></div>
     <script src="./checks.js"></script>
+    <script src="./requirements.js"></script>
     <script src="./perf.js"></script>
     <script src="./shim.js"></script>
     <script src="./renderer.js"></script>

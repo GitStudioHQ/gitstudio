@@ -1209,6 +1209,18 @@ export interface GhRepoBrief {
   fullName: string;
   name: string;
   owner: string;
+  /**
+   * Whether the owner is a person or an organisation, and whether that person
+   * is YOU.
+   *
+   * The request names three kinds of remote repository — "yours", "the ones you
+   * have access to", and "the ones belonging to orgs you are part of" — and a
+   * flat list of everything answers none of them. `owner` alone cannot tell an
+   * org from a collaborator's account.
+   */
+  ownerType: "User" | "Organization";
+  /** True when the owner is the signed-in account. */
+  mine: boolean;
   description: string | null;
   private: boolean;
   fork: boolean;

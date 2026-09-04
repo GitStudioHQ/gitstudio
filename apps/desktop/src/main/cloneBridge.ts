@@ -174,7 +174,7 @@ function messageOf(err: unknown): string {
 interface RawGhRepo {
   full_name?: string;
   name?: string;
-  owner?: { login?: string };
+  owner?: { login?: string; type?: string };
   description?: string | null;
   private?: boolean;
   fork?: boolean;
@@ -197,10 +197,17 @@ export async function listGhRepos(client: GitHubClient, search?: string): Promis
     "/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member",
     PAGE_CAPS.account,
   );
+  // Who is asking, so "yours" can be told from "shared with you".
+  const me = await client
+    .request<{ login?: string }>("GET", "/user")
+    .then((u) => u.login)
+    .catch(() => undefined);
   let out: GhRepoBrief[] = (repos ?? []).map((r) => ({
     fullName: r.full_name ?? "",
     name: r.name ?? "",
     owner: r.owner?.login ?? "",
+    ownerType: r.owner?.type === "Organization" ? "Organization" : "User",
+    mine: !!me && r.owner?.login === me,
     description: r.description ?? null,
     private: !!r.private,
     fork: !!r.fork,

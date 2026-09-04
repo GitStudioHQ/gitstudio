@@ -698,11 +698,11 @@
   // two through an organisation — including one ALREADY cloned locally, which
   // is the row that must offer Open rather than Clone.
   const ghRepos = [
-    { fullName: "GitStudioHQ/gitstudio", name: "gitstudio", owner: "GitStudioHQ", description: "A Git client that shows you what is about to happen.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gitstudio.git", sshUrl: "git@github.com:GitStudioHQ/gitstudio.git", defaultBranch: "main", stars: 1284, language: "TypeScript", updatedAt: ISO(1) },
-    { fullName: "GitStudioHQ/gistudio.dev", name: "gistudio.dev", owner: "GitStudioHQ", description: "Marketing site and the error collector.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gistudio.dev.git", sshUrl: "git@github.com:GitStudioHQ/gistudio.dev.git", defaultBranch: "main", stars: 12, language: "TypeScript", updatedAt: ISO(30) },
-    { fullName: "antonarnaudov/dotfiles", name: "dotfiles", owner: "antonarnaudov", description: null, private: true, fork: false, cloneUrl: "https://github.com/antonarnaudov/dotfiles.git", sshUrl: "git@github.com:antonarnaudov/dotfiles.git", defaultBranch: "main", stars: 0, language: "Shell", updatedAt: ISO(80) },
-    { fullName: "vercel/next.js", name: "next.js", owner: "vercel", description: "The React framework.", private: false, fork: true, cloneUrl: "https://github.com/vercel/next.js.git", sshUrl: "git@github.com:vercel/next.js.git", defaultBranch: "canary", stars: 121000, language: "JavaScript", updatedAt: ISO(4) },
-    { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", description: "Org repo you have access to through a team.", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
+    { fullName: "GitStudioHQ/gitstudio", name: "gitstudio", owner: "GitStudioHQ", ownerType: "Organization", mine: false, description: "A Git client that shows you what is about to happen.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gitstudio.git", sshUrl: "git@github.com:GitStudioHQ/gitstudio.git", defaultBranch: "main", stars: 1284, language: "TypeScript", updatedAt: ISO(1) },
+    { fullName: "GitStudioHQ/gistudio.dev", name: "gistudio.dev", owner: "GitStudioHQ", ownerType: "Organization", mine: false, description: "Marketing site and the error collector.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gistudio.dev.git", sshUrl: "git@github.com:GitStudioHQ/gistudio.dev.git", defaultBranch: "main", stars: 12, language: "TypeScript", updatedAt: ISO(30) },
+    { fullName: "antonarnaudov/dotfiles", name: "dotfiles", owner: "antonarnaudov", ownerType: "User", mine: true, description: null, private: true, fork: false, cloneUrl: "https://github.com/antonarnaudov/dotfiles.git", sshUrl: "git@github.com:antonarnaudov/dotfiles.git", defaultBranch: "main", stars: 0, language: "Shell", updatedAt: ISO(80) },
+    { fullName: "vercel/next.js", name: "next.js", owner: "vercel", ownerType: "Organization", mine: false, description: "The React framework.", private: false, fork: true, cloneUrl: "https://github.com/vercel/next.js.git", sshUrl: "git@github.com:vercel/next.js.git", defaultBranch: "canary", stars: 121000, language: "JavaScript", updatedAt: ISO(4) },
+    { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", ownerType: "Organization", mine: false, description: "Org repo you have access to through a team.", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
   ];
 
   const dynamic = {
@@ -861,7 +861,7 @@
     "search:repos": (req) => {
       const q = (req.query || "").toLowerCase();
       const all = [
-        { id: 1, fullName: "GitStudioHQ/gitstudio", owner: "GitStudioHQ", ownerAvatarUrl: null, description: "The open-source Git workspace — desktop app + VS Code extension.", language: "TypeScript", stars: 2140, forks: 96, openIssues: 31, updatedAt: ISO(2), pushedAt: ISO(1), private: false, fork: false, archived: false, topics: ["git", "electron"], license: "MIT", htmlUrl: "https://github.com/GitStudioHQ/gitstudio", defaultBranch: "main" },
+        { id: 1, fullName: "GitStudioHQ/gitstudio", owner: "GitStudioHQ", ownerType: "Organization", mine: false, ownerAvatarUrl: null, description: "The open-source Git workspace — desktop app + VS Code extension.", language: "TypeScript", stars: 2140, forks: 96, openIssues: 31, updatedAt: ISO(2), pushedAt: ISO(1), private: false, fork: false, archived: false, topics: ["git", "electron"], license: "MIT", htmlUrl: "https://github.com/GitStudioHQ/gitstudio", defaultBranch: "main" },
         { id: 2, fullName: "libgit2/libgit2", owner: "libgit2", ownerAvatarUrl: null, description: "A cross-platform, linkable library implementation of Git.", language: "C", stars: 9800, forks: 2400, openIssues: 380, updatedAt: ISO(20), pushedAt: ISO(6), private: false, fork: false, archived: false, topics: ["git"], license: "GPL-2.0", htmlUrl: "https://github.com/libgit2/libgit2", defaultBranch: "main" },
         { id: 3, fullName: "desktop/desktop", owner: "desktop", ownerAvatarUrl: null, description: "Focus on what matters instead of fighting with Git.", language: "TypeScript", stars: 12400, forks: 9600, openIssues: 1200, updatedAt: ISO(30), pushedAt: ISO(12), private: false, fork: false, archived: false, topics: ["git", "electron"], license: "MIT", htmlUrl: "https://github.com/desktop/desktop", defaultBranch: "development" },
         { id: 4, fullName: "jesseduffield/lazygit", owner: "jesseduffield", ownerAvatarUrl: null, description: "Simple terminal UI for git commands.", language: "Go", stars: 48200, forks: 1700, openIssues: 420, updatedAt: ISO(9), pushedAt: ISO(3), private: false, fork: false, archived: false, topics: ["git", "tui"], license: "MIT", htmlUrl: "https://github.com/jesseduffield/lazygit", defaultBranch: "master" },
@@ -901,6 +901,19 @@
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
     "repos:folders": () => repoFolders,
+    "settings:update": (patch) => {
+      if (patch && typeof patch.cloneDir === "string") {
+        for (const f of repoFolders) f.isCloneDir = f.path === patch.cloneDir;
+      }
+      const cur = repoFolders.find((f) => f.isCloneDir) || repoFolders[0];
+      return {
+        cloneDir: cur.path,
+        cloneDirDisplay: cur.display,
+        cloneDirIsDefault: false,
+        askWhereEveryTime: false,
+        repoFolders: repoFolders.filter((f) => !f.isCloneDir).map((f) => f.path),
+      };
+    },
     "repos:addFolder": () => {
       if (!repoFolders.some((f) => f.path === "/Users/demo/Sites")) {
         repoFolders.push({
@@ -1485,7 +1498,7 @@
       ? {
           connected: true,
           ...(nameKnown ? { login: me } : {}),
-          repo: { owner: "GitStudioHQ", repo: "gitstudio" },
+          repo: { owner: "GitStudioHQ", ownerType: "Organization", mine: false, repo: "gitstudio" },
         }
       : { connected: false };
   dynamic["github:disconnect"] = () => {

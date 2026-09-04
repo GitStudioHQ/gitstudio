@@ -211,8 +211,17 @@ function folderHeader(folder: RepoFolder, refresh: () => Promise<void>): HTMLEle
   if (folder.isCloneDir) {
     // Named, not just implied: this is where a one-click clone lands, and it
     // is the reason this folder has no "stop tracking".
-    const chip = span("clones land here", "repo-folder-chip");
-    chip.title = "New clones go here unless you choose somewhere else";
+    const chip = el("button", "repo-folder-chip is-clone");
+    chip.textContent = "clones land here";
+    chip.title = "New clones go here unless you choose somewhere else — click to change it";
+    chip.addEventListener("click", async () => {
+      const picked = await host.invoke("clone:pickDir", { defaultPath: folder.path });
+      if (!picked) return;
+      const r = await host.invoke("settings:update", { cloneDir: picked });
+      bust("repos");
+      toast(`New clones will land in ${r.cloneDirDisplay}.`, "success");
+      await refresh();
+    });
     h.appendChild(chip);
   }
   if (folder.missing) h.appendChild(span("missing", "repo-folder-chip is-warn"));
@@ -227,6 +236,23 @@ function folderHeader(folder: RepoFolder, refresh: () => Promise<void>): HTMLEle
   reveal.addEventListener("click", () => void host.invoke("repos:reveal", folder.path));
   h.appendChild(reveal);
 
+  // "a defaulted repos dir you can assign" — assignable HERE, on the screen that
+  // is about repositories, rather than only in Settings under different words.
+  // Which folder new clones land in is a fact about this list, and the place to
+  // change a fact is where it is stated.
+  if (!folder.isCloneDir && !folder.missing) {
+    const mk = el("button", "mini-btn gh-icon-btn");
+    mk.appendChild(glyph("root-folder"));
+    mk.title = `Make ${folder.display} the folder new clones land in`;
+    mk.setAttribute("aria-label", mk.title);
+    mk.addEventListener("click", async () => {
+      const r = await host.invoke("settings:update", { cloneDir: folder.path });
+      bust("repos");
+      toast(`New clones will land in ${r.cloneDirDisplay}.`, "success");
+      await refresh();
+    });
+    h.appendChild(mk);
+  }
   if (!folder.isCloneDir) {
     const stop = el("button", "mini-btn gh-icon-btn");
     stop.appendChild(glyph("close"));
@@ -377,7 +403,58 @@ async function paintRemote(
     );
     return;
   }
-  listEl.replaceChildren(...shown.map((r) => remoteRow(r, have.get(r.fullName.toLowerCase()), folders, nav, refresh)));
+  // GROUPED BY OWNER, because the three kinds are three different questions.
+  //
+  // Your own repositories, the organisations you belong to, and the accounts
+  // that have shared something with you are not one list — a flat dump of
+  // everything mixes "my side project" with "the company monorepo" and with
+  // "someone added me to this once", and the only way to find any of them is to
+  // already know its name.
+  const groups = new Map<string, { label: string; kind: "mine" | "org" | "shared"; rows: GhRepoBrief[] }>();
+  for (const r of shown) {
+    const key = r.mine ? "\u0000mine" : r.owner;
+    const g =
+      groups.get(key) ??
+      {
+        label: r.mine ? "Your repositories" : r.owner,
+        kind: r.mine ? ("mine" as const) : r.ownerType === "Organization" ? ("org" as const) : ("shared" as const),
+        rows: [],
+      };
+    g.rows.push(r);
+    groups.set(key, g);
+  }
+  // Yours first — it is the one you came for — then organisations by name, then
+  // the accounts that shared something with you.
+  const order = { mine: 0, org: 1, shared: 2 };
+  const sorted = [...groups.values()].sort(
+    (a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label),
+  );
+
+  const out: HTMLElement[] = [];
+  for (const g of sorted) {
+    out.push(ownerHeader(g.label, g.kind, g.rows.length));
+    for (const r of g.rows) {
+      out.push(remoteRow(r, have.get(r.fullName.toLowerCase()), folders, nav, refresh));
+    }
+  }
+  listEl.replaceChildren(...out);
+}
+
+/** The band above each owner's repositories, saying WHY they are yours to see. */
+function ownerHeader(label: string, kind: "mine" | "org" | "shared", n: number): HTMLElement {
+  const h = el("div", "repo-owner-head");
+  h.appendChild(glyph(kind === "mine" ? "person" : kind === "org" ? "organization" : "people"));
+  h.appendChild(span(label, "repo-folder-path"));
+  h.appendChild(span(n === 1 ? "1 repository" : `${n} repositories`, "repo-folder-count"));
+  if (kind !== "mine") {
+    const why = span(kind === "org" ? "organisation" : "shared with you", "repo-folder-chip");
+    why.title =
+      kind === "org"
+        ? "You can see these because you belong to this organisation"
+        : "You have access to these as a collaborator";
+    h.appendChild(why);
+  }
+  return h;
 }
 
 function remoteRow(
