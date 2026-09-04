@@ -83,6 +83,7 @@ import type {
   PrReviewEvent,
   PrReviewThread,
   PullRequest,
+  ReactionContent,
   ReactionSummary,
   RepoCollaborator,
   RepoLabel,
@@ -1013,6 +1014,10 @@ async function renderSubTab(
           association: full.authorAssociation,
           reactions: full.reactions,
           createdAt: full.createdAt,
+          onQuote: (t) => quoteIntoPr(t, full.user?.login),
+          // A pull request IS an issue to the reactions endpoint, so its body
+          // reacts by PR number.
+          onReact: (content, on) => void togglePrReaction("issue", full.number, content, on, reload),
         }),
       );
     }
@@ -1032,6 +1037,17 @@ async function renderSubTab(
       timeline.appendChild(
         commentCard(c.author, undefined, c.body, c.kind === "review" ? c.state : undefined, {
           createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+          association: c.authorAssociation,
+          reactions: c.reactions,
+          // Only a plain comment: a REVIEW is a different object at a different
+          // endpoint, and offering Edit on one would fail at the request.
+          comment: c.kind === "comment" && c.id ? { id: c.id, htmlUrl: c.htmlUrl, reload } : undefined,
+          onQuote: (t) => quoteIntoPr(t, c.author),
+          onReact:
+            c.kind === "comment" && c.id
+              ? (content, on) => void togglePrReaction("comment", c.id!, content, on, reload)
+              : undefined,
         }),
       );
     }
@@ -1060,6 +1076,7 @@ async function renderSubTab(
       },
     });
     const ta = ed.textarea;
+    livePrComposer = ed;
     const crow = el("div", "gh-composer-actions");
     const send = el("button", "btn btn-primary") as HTMLButtonElement;
     send.append(glyph("comment"), span("Comment"));
@@ -1488,7 +1505,19 @@ function commentCard(
   suffix: string | undefined,
   body: string,
   reviewState?: string,
-  extra: { association?: string; reactions?: ReactionSummary; createdAt?: string } = {},
+  extra: {
+    association?: string;
+    reactions?: ReactionSummary;
+    createdAt?: string;
+    updatedAt?: string;
+    /** A plain comment can be edited, deleted, quoted and linked, exactly as on
+     *  an issue — it is the same object at the same endpoint. A REVIEW cannot:
+     *  different object, different endpoint, and the view offers less rather
+     *  than offering something that would fail. */
+    comment?: { id: number; htmlUrl?: string; reload: () => void };
+    onQuote?: (body: string) => void;
+    onReact?: (content: ReactionContent, on: boolean) => void;
+  } = {},
 ): HTMLElement {
   const card = el("div", "gh-comment");
   const hd = el("div", "gh-comment-head");
@@ -1509,15 +1538,147 @@ function commentCard(
     when.title = absTimeISO(extra.createdAt);
     hd.appendChild(when);
   }
+  // A comment edited after posting is a different artifact from what people
+  // replied to. The issue thread has said so for a while; this one did not.
+  if (extra.updatedAt && extra.createdAt && extra.updatedAt !== extra.createdAt) {
+    const ed = span("edited", "gh-comment-edited");
+    ed.title = `Edited ${absTimeISO(extra.updatedAt)}`;
+    hd.appendChild(ed);
+  }
+  if (extra.comment || extra.onQuote) {
+    hd.appendChild(el("span", "gh-comment-spring"));
+    const more = el("button", "mini-btn gh-icon-btn gh-comment-menu");
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-label", `Actions for ${author}'s comment`);
+    more.appendChild(glyph("ellipsis"));
+    more.addEventListener("click", () => {
+      const items: Array<{ label: string; icon?: string; danger?: boolean; onClick: () => void }> = [];
+      if (extra.onQuote) items.push({ label: "Quote reply", icon: "quote", onClick: () => extra.onQuote?.(body) });
+      const c = extra.comment;
+      if (c?.htmlUrl) {
+        items.push({ label: "Copy link", icon: "link", onClick: () => void navigator.clipboard?.writeText(c.htmlUrl!) });
+      }
+      if (c) {
+        items.push({ label: "Edit", icon: "edit", onClick: () => void editPrComment(c.id, body, card, c.reload) });
+        items.push({
+          label: "Delete…",
+          icon: "trash",
+          danger: true,
+          onClick: () => void deletePrComment(c.id, c.reload),
+        });
+      }
+      openMenu(more, items);
+    });
+    hd.appendChild(more);
+  }
   card.appendChild(hd);
   if (body && body.trim()) {
     const bd = el("div", "gh-body-md");
     bd.innerHTML = renderMarkdown(body);
     card.appendChild(bd);
   }
-  const reactions = reactionRow(extra.reactions);
+  const reactions = reactionRow(extra.reactions, extra.onReact);
   if (reactions) card.appendChild(reactions);
   return card;
+}
+
+/** The reply box on screen, so Quote reply has somewhere to land. */
+let livePrComposer: { get(): string; set(v: string): void; focus(): void } | undefined;
+
+function quoteIntoPr(body: string, author?: string | null): void {
+  if (!livePrComposer) return;
+  const quoted = body
+    .trim()
+    .split("\n")
+    .map((l) => `> ${l}`)
+    .join("\n");
+  const prefix = author ? `@${author} said:\n` : "";
+  const existing = livePrComposer.get().trim();
+  livePrComposer.set(`${existing ? `${existing}\n\n` : ""}${prefix}${quoted}\n\n`);
+  livePrComposer.focus();
+}
+
+/** Edit in place — the same gesture, the same endpoint, as on an issue. */
+async function editPrComment(id: number, body: string, card: HTMLElement, reload: () => void): Promise<void> {
+  const bd = card.querySelector<HTMLElement>(".gh-body-md");
+  if (!bd) return;
+  const was = bd.innerHTML;
+  const ed = mdEditor({ value: body, rows: 6, label: "Edit comment" });
+  const row = el("div", "gh-composer-actions");
+  const save = el("button", "btn btn-primary") as HTMLButtonElement;
+  save.textContent = "Save";
+  const cancel = el("button", "mini-btn");
+  cancel.textContent = "Cancel";
+  row.append(save, cancel);
+  const wrap = el("div", "gh-comment-edit");
+  wrap.append(ed.root, row);
+  bd.replaceChildren(wrap);
+  ed.focus();
+  cancel.addEventListener("click", () => {
+    bd.innerHTML = was;
+  });
+  save.addEventListener("click", async () => {
+    const next = ed.get().trim();
+    if (!next) {
+      toast("A comment cannot be empty — delete it instead.", "info");
+      return;
+    }
+    save.disabled = true;
+    try {
+      const r = await host.invoke("issue:editComment", { id, body: next });
+      if (!r.ok) {
+        toast(r.message ?? "Couldn’t save the edit.", "error");
+        save.disabled = false;
+        return;
+      }
+      toast("Comment updated.", "success");
+      reload();
+    } catch (e) {
+      toast(cleanErr(e) || "Couldn’t save the edit.", "error");
+      save.disabled = false;
+    }
+  });
+}
+
+async function deletePrComment(id: number, reload: () => void): Promise<void> {
+  const ok = await confirmDialog({
+    title: "Delete this comment?",
+    message: "It will be removed from the pull request on GitHub. This cannot be undone.",
+    confirmLabel: "Delete comment",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    const r = await host.invoke("issue:deleteComment", id);
+    if (!r.ok) {
+      toast(r.message ?? "Couldn’t delete the comment.", "error");
+      return;
+    }
+    toast("Comment deleted.", "success");
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn’t delete the comment.", "error");
+  }
+}
+
+/** Add or remove one of your reactions on a PR or one of its comments. */
+async function togglePrReaction(
+  subject: "issue" | "comment",
+  id: number,
+  content: ReactionContent,
+  on: boolean,
+  reload: () => void,
+): Promise<void> {
+  try {
+    const r = await host.invoke("issue:react", { subject, id, content, on });
+    if (!r.ok) {
+      toast(r.message ?? "Couldn’t change the reaction.", "error");
+      return;
+    }
+    reload();
+  } catch (e) {
+    toast(cleanErr(e) || "Couldn’t change the reaction.", "error");
+  }
 }
 
 // ── Mutations (disable trigger → toast → bust cache → re-render) ──────────────

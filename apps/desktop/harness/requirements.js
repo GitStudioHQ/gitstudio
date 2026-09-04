@@ -246,6 +246,23 @@ window.__GS_REQUIREMENTS = (() => {
       },
     },
     {
+      // The owner's complaint names issues AND prs together. A capability built
+      // for one and not the other is the "missing details" he is describing.
+      id: "a-pr-conversation-matches-an-issue-thread",
+      says: "issues and prs still look kinda crappy and dont allow all features of github",
+      scene: "prs~open106",
+      async run() {
+        await settle(1700);
+        const menus = $$(".gh-comment-menu").length;
+        const reactions = $$("button.gh-reaction").length;
+        const edited = $$(".gh-comment-edited").length;
+        return r(
+          menus > 0 && reactions > 0 && edited > 0,
+          `comment menus: ${menus}, pressable reactions: ${reactions}, edited markers: ${edited}`,
+        );
+      },
+    },
+    {
       id: "a-pull-request-can-be-reviewed",
       says: "issues and prs still look kinda crappy and dont allow all features of github",
       scene: "prs~open106",

@@ -716,6 +716,64 @@
       }
     },
 
+    /**
+     * A pull request conversation is the same artifact an issue thread is.
+     *
+     * It was not. The same words, posted to the same endpoint, rendered without
+     * an edited marker, without reactions, without the author's association and
+     * with no way to edit, delete, quote or link them — because none of it was
+     * mapped. A comment does not become a lesser thing for being on a PR.
+     *
+     * The asymmetry that IS correct: a REVIEW is a different object at a
+     * different endpoint, so it offers Quote and nothing that would fail.
+     */
+    "a-pr-comment-is-a-comment": async (f) => {
+      const c = check(f);
+      await settle(1700);
+      const cards = $$(".gh-comment");
+      c.ok(cards.length >= 4, `the conversation renders (${cards.length} cards)`);
+      c.ok($$(".gh-comment-edited").length > 0, "an edited comment says so");
+      c.ok($$("button.gh-reaction").length > 0, "reactions are pressable");
+      c.ok($$(".gh-reaction.is-mine").length > 0, "and one of them is marked as yours");
+
+      const menuOf = async (card) => {
+        const m = card.querySelector(".gh-comment-menu");
+        if (!m) return null;
+        m.click();
+        await settle(300);
+        const items = $$(".dropdown-item").map((i) => text(i) || "");
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await settle(150);
+        return items;
+      };
+
+      // Neither the DESCRIPTION (edited through the composer page) nor a
+      // review. The description reads "· description" in its head and was
+      // matching "owner" here, so the check was asserting a comment menu on the
+      // one card that deliberately has none.
+      const headOf = (k) => text(k.querySelector(".gh-comment-head")) || "";
+      const plain = cards.find(
+        (k) => !/description/i.test(headOf(k)) && !/approved|changes requested/i.test(headOf(k)),
+      );
+      c.ok(!!plain, "there is a plain comment");
+      if (plain) {
+        const items = await menuOf(plain);
+        for (const w of ["Quote reply", "Copy link", "Edit", "Delete"]) {
+          c.ok((items || []).some((t) => t.startsWith(w)), `a comment offers ${w} (${(items || []).join(", ")})`);
+        }
+      }
+
+      const review = cards.find((k) => /approved|changes requested/i.test(headOf(k)));
+      c.ok(!!review, "there is a review");
+      if (review) {
+        const items = await menuOf(review);
+        c.ok(
+          (items || []).length > 0 && !(items || []).some((t) => t.startsWith("Edit")),
+          `a review offers no Edit — different object, different endpoint (${(items || []).join(", ")})`,
+        );
+      }
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

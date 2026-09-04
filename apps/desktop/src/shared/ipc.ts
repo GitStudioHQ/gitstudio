@@ -1292,6 +1292,23 @@ export interface PrComment {
   kind: "comment" | "review";
   /** For reviews: APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED. */
   state?: string;
+  /**
+   * Everything below exists so a PR conversation is the same artifact an issue
+   * thread is.
+   *
+   * It was not: the same words, posted to the same endpoint, rendered without
+   * an edited marker, without reactions, without the author's association, and
+   * with no way to edit or delete them — because none of it was mapped. A
+   * comment does not become a lesser thing for being on a pull request.
+   *
+   * `id` and `htmlUrl` are absent on REVIEWS, which are a different object with
+   * a different endpoint; the view offers correspondingly less on those.
+   */
+  id?: number;
+  updatedAt?: string;
+  authorAssociation?: AuthorAssociation;
+  reactions?: ReactionSummary;
+  htmlUrl?: string;
 }
 
 /** A CI check run for a PR's Pipelines tab. */

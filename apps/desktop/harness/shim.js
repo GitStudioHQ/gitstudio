@@ -121,10 +121,14 @@
 
   const prConversation = {
     106: [
-      { kind: "comment", author: "mira-holt", createdAt: ISO(2.5), body: "Tried the branch — night and day. Full-width rows read like a real tracker now." },
+      // A plain comment carries everything an issue comment does — id, an edit
+      // time, an association, reactions, a permalink — because it IS one, at
+      // the same endpoint. Without these on the fixture, the parity is
+      // unreachable from the harness and nothing can check it.
+      { kind: "comment", id: 9001, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/pull/106#issuecomment-9001", author: "mira-holt", authorAssociation: "MEMBER", createdAt: ISO(2.5), updatedAt: ISO(2.4), reactions: { total: 3, plusOne: 2, minusOne: 0, laugh: 0, hooray: 0, confused: 0, heart: 1, rocket: 0, eyes: 0, mine: ["+1"] }, body: "Tried the branch — night and day. Full-width rows read like a real tracker now." },
       { kind: "review", state: "APPROVED", author: "s-ohta", createdAt: ISO(2), body: "Navigation history integration is clean. Ship it." },
       { kind: "review", state: "CHANGES_REQUESTED", author: "jparks", createdAt: ISO(1.8), body: "The Esc handler swallows the key while a menu is open — see the comment on issues.ts." },
-      { kind: "comment", author: me, createdAt: ISO(1.2), body: "PRs view converts next on this pattern, then Actions." },
+      { kind: "comment", id: 9002, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/pull/106#issuecomment-9002", author: me, authorAssociation: "OWNER", createdAt: ISO(1.2), body: "PRs view converts next on this pattern, then Actions." },
     ],
   };
   // NINE files, because the PR says "Files (9)" — three made the count a lie and

@@ -7,7 +7,7 @@
 import { ExpectedError } from "./expectedError";
 import { githubHttpError, graphqlError, networkError } from "./githubErrors";
 import { nextPagePath, PAGE_CAPS } from "./githubPaging";
-import { mapIssue, mapPull, mapUser, type RawIssue, type RawPull, type RawUser } from "./github/maps";
+import { mapIssue, mapPull, mapReactions, mapUser, type RawIssue, type RawPull, type RawUser } from "./github/maps";
 import type {
   CheckRun,
   GitHubUser,
@@ -330,7 +330,20 @@ export class GitHubClient {
     ]);
     const out: PrComment[] = [];
     for (const c of comments) {
-      out.push({ author: c.user?.login ?? "unknown", body: c.body ?? "", createdAt: c.created_at, kind: "comment" });
+      out.push({
+        author: c.user?.login ?? "unknown",
+        body: c.body ?? "",
+        createdAt: c.created_at,
+        kind: "comment",
+        // The same fields an issue comment carries. They were on the wire and
+        // dropped here, which is why a PR conversation could not do anything an
+        // issue thread could.
+        id: c.id,
+        updatedAt: c.updated_at,
+        authorAssociation: c.author_association,
+        reactions: mapReactions(c.reactions),
+        htmlUrl: c.html_url,
+      });
     }
     for (const r of reviews) {
       if (r.state === "PENDING") continue;
@@ -439,9 +452,14 @@ interface RawPrCommit {
   html_url?: string;
 }
 interface RawComment {
+  id?: number;
   user?: RawUser | null;
   body?: string;
   created_at: string;
+  updated_at?: string;
+  author_association?: string;
+  reactions?: { total_count?: number; [k: string]: unknown };
+  html_url?: string;
 }
 interface RawReview {
   user?: RawUser | null;
