@@ -4209,187 +4209,21 @@ class App {
    * scroll through preferences, and so that "Delete from disk" sits in a file
    * management context rather than beside the theme switcher.
    */
-  private openRepoManager(): void {
-    const body = el("div", "repo-manager");
-    const sub = el("div", "settings-sub");
-    sub.textContent =
-      "Every clone GitStudio knows about — the ones in your clone folder plus anything you've opened.";
-    const list = el("div", "settings-copies");
-    list.appendChild(loadingState("Looking for local copies…"));
+  // The "Manage repositories…" modal used to live here, with its row builder:
+  // a second surface titled Repositories, listing the same clones flat, with
+  // its own Open / Reveal / Forget / Trash. It was wired from the top-bar chip
+  // and from Settings while the actual Repositories destination was wired from
+  // neither — which is how "move the repos in a dedicated space" became three
+  // places that list repositories and disagree about what they show.
+  //
+  // Both doors route to `repositories` now, which does everything this did and
+  // also groups by folder, separates local from remote, and can clone.
 
-    const renderCopies = (copies: LocalCopy[]): void => {
-      list.replaceChildren();
-      if (!copies.length) {
-        list.appendChild(
-          emptyState(
-            "No local copies yet",
-            "Open or clone a repository and it will show up here.",
-            {
-              icon: "repo",
-              action: {
-                label: "Clone repository…",
-                icon: "cloud-download",
-                onClick: () => openCloneDialog((root) => void this.openPath(root)),
-              },
-            },
-          ),
-        );
-        return;
-      }
-      for (const c of copies) list.appendChild(this.localCopyRow(c, renderCopies));
-    };
-    void host
-      .invoke("repos:local", undefined)
-      .then(renderCopies)
-      .catch((e) => {
-        list.replaceChildren(
-          emptyState("Couldn't list local copies", cleanErr(e) || "Try again in a moment."),
-        );
-      });
-
-    openModal((close) => {
-      const card = el("div", "modal-card repo-manager-card");
-      const h = el("div", "modal-title");
-      h.textContent = "Repositories";
-      card.append(h, sub, list);
-
-      const actions = el("div", "modal-actions");
-      const openBtn = el("button", "mini-btn") as HTMLButtonElement;
-      openBtn.append(glyph("folder-opened"), span("Open repository…"));
-      openBtn.addEventListener("click", () => {
-        close();
-        void this.openRepo();
-      });
-      const cloneBtn = el("button", "btn btn-primary") as HTMLButtonElement;
-      cloneBtn.append(glyph("cloud-download"), span("Clone repository…"));
-      cloneBtn.addEventListener("click", () => {
-        close();
-        openCloneDialog((root) => void this.openPath(root));
-      });
-      const doneBtn = el("button", "mini-btn") as HTMLButtonElement;
-      doneBtn.textContent = "Done";
-      doneBtn.addEventListener("click", close);
-      actions.append(openBtn, cloneBtn, doneBtn);
-      card.appendChild(actions);
-
-      return { card, focusEl: cloneBtn, label: "Repositories", onClose: () => {} };
-    });
-  }
 
   /** One row in the local-copies manager: what it is, where it lives, and the
    *  actions that only make sense for THAT copy (a missing folder can't be
    *  opened; an unmanaged one can't be deleted from here). */
-  private localCopyRow(c: LocalCopy, refresh: (copies: LocalCopy[]) => void): HTMLElement {
-    const row = el("div", "settings-copy" + (c.missing ? " is-missing" : "") + (c.current ? " is-current" : ""));
-    row.appendChild(glyph(c.missing ? "warning" : "repo"));
 
-    const meta = el("div", "settings-copy-meta");
-    const top = el("div", "settings-copy-name");
-    top.textContent = c.name;
-    if (c.origin) {
-      const chip = span(c.origin, "settings-copy-origin");
-      chip.title = `origin → github.com/${c.origin}`;
-      top.appendChild(chip);
-    }
-    for (const [label, on] of [
-      ["Open", c.current],
-      ["Managed", c.managed && !c.current],
-      ["Recent", c.recent && !c.managed && !c.current],
-      ["Missing", c.missing],
-    ] as Array<[string, boolean]>) {
-      if (on) top.appendChild(span(label, "settings-copy-badge"));
-    }
-    const bottom = el("div", "settings-copy-path");
-    bottom.textContent = c.root;
-    bottom.title = c.root;
-    meta.append(top, bottom);
-    row.appendChild(meta);
-
-    // ONE shape for every row: the thing you'd actually do, spelled out, plus
-    // an overflow menu for the rest. The cluster used to be two to five
-    // unlabelled icons whose set changed with an invisible flag — two rows
-    // both badged MANAGED offered different buttons because one happened to
-    // also be in recents. A toolbar that changes shape per row can't be
-    // scanned; a menu whose ITEMS vary by what's possible can.
-    const acts = el("div", "settings-copy-acts");
-    if (!c.missing && !c.current) {
-      acts.appendChild(
-        textBtn("Open", `Open ${c.name} in GitStudio`, () => void this.openPath(c.root), false, c.name),
-      );
-    }
-
-    const items: MenuItem[] = [];
-    if (!c.missing) {
-      items.push({
-        label: "Reveal in Finder",
-        icon: "link-external",
-        onClick: () => {
-          void host
-            .invoke("repos:reveal", c.root)
-            .catch(() => toast("Couldn't reveal that folder.", "error"));
-        },
-      });
-    }
-    items.push({
-      label: "Copy path",
-      icon: "copy",
-      onClick: () => void copyText(c.root, "Path copied."),
-    });
-    if (c.recent) {
-      items.push({
-        label: "Remove from recents",
-        sub: "Keeps the folder on disk",
-        icon: "close",
-        onClick: () => {
-          void host
-            .invoke("repos:removeRecent", c.root)
-            .then(refresh)
-            .catch((e) => toast(cleanErr(e) || "Couldn't update the list.", "error"));
-        },
-      });
-    }
-    if (c.managed && !c.current && !c.missing) {
-      items.push({ separator: true });
-      items.push({
-        label: "Delete from disk",
-        sub: `Moves ${c.name} to the Trash`,
-        icon: "trash",
-        danger: true,
-        onClick: () => {
-          void (async () => {
-            const ok = await confirmDialog({
-              title: `Delete ${c.name}?`,
-              message: `${c.root} moves to the Trash. Anything not pushed to ${c.origin ?? "a remote"} is gone with it.`,
-              confirmLabel: "Move to Trash",
-              danger: true,
-              requireTyped: c.name,
-            });
-            if (!ok) return;
-            try {
-              const r = await host.invoke("repos:trash", c.root);
-              if (!r.ok) {
-                toast(r.message || "Couldn't delete that clone.", "error");
-                return;
-              }
-              toast(`Moved ${c.name} to the Trash.`, "success");
-              refresh(await host.invoke("repos:local", undefined));
-            } catch (e) {
-              toast(cleanErr(e) || "Couldn't delete that clone.", "error");
-            }
-          })();
-        },
-      });
-    }
-    const more = el("button", "icon-btn settings-copy-more");
-    more.title = `More actions for ${c.name}`;
-    more.setAttribute("aria-label", more.title);
-    more.appendChild(glyph("kebab-horizontal"));
-    more.addEventListener("click", () => openMenu(more, items));
-    acts.appendChild(more);
-
-    row.appendChild(acts);
-    return row;
-  }
 
   /** Resolves once the account card's async body has painted — see below. */
   private accountCardReady: Promise<unknown> = Promise.resolve();

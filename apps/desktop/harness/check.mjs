@@ -276,7 +276,7 @@ const CASES = [
     { extra: "staging=checkboxes" },
   ],
   ["staging-does-not-blank-the-list", "changes~text:app.css"],
-  ["repo-manager-opens-from-the-repo-chip", "code~click:.topbar-switch~text:Manage%20repositories"],
+  ["repo-manager-opens-from-the-repo-chip", "code~click:.topbar-switch~text:All%20repositories"],
   ["settings-holds-preferences-not-repositories", "code~text:Settings"],
   ["landing-answers-what-you-arrive-with", "changes"],
   // …and the real first run, where nothing has chosen a view yet.
@@ -293,8 +293,8 @@ const CASES = [
   ["settings-checkbox-styled", "code~text:Settings"],
   // These two moved with the list they assert about: the clone manager is its
   // own surface now, not a card in Settings.
-  ["settings-local-copies", "code~click:.topbar-switch~text:Manage%20repositories"],
-  ["settings-copy-actions-one-shape", "code~click:.topbar-switch~text:Manage%20repositories"],
+  ["settings-local-copies", "repositories"],
+  ["settings-copy-actions-one-shape", "repositories"],
   ["settings-icon-preview-is-not-a-control", "code~text:Settings"],
   ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=merge" }],
   ["an-operation-is-ended-by-its-own-command", "changes", { extra: "op=rebase" }],
@@ -389,7 +389,7 @@ const CASES = [
   ["a-graph-selection-never-outlives-its-rows", "graph"],
   ["code-refresh-rereads-the-listing", "code"],
   ["a-person-peeks-primary-action-is-not-dead", "prs~open106"],
-  ["a-recent-repository-can-be-forgotten", "changes", { extra: "norepo=1" }],
+  ["a-recent-repository-can-be-forgotten", "repositories"],
   ["switch-account-starts-the-new-sign-in", "settings"],
   ["the-graph-search-paints-before-it-travels", "graph"],
   ["clearing-a-search-clears-the-results", "explore~type:git"],

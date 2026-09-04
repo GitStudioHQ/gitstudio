@@ -2620,18 +2620,24 @@
       // Reveal in Finder and Delete from disk on each row. Choosing a
       // repository is the most frequent thing anyone does in a Git client, and
       // nothing on a preferences page should be able to Trash 2GB of work.
-      c.ok(!!$(".repo-manager-card"), "the repository manager opens as its own surface");
-      c.eq(text(".modal-title"), "Repositories", "and says what it is");
-      c.ok($$(".settings-copy").length >= 3, `it lists the clones (${$$(".settings-copy").length})`);
-      const acts = $$(".repo-manager-card .modal-actions button").map((b) => b.textContent.trim());
-      c.ok(acts.some((a) => /Open repository/.test(a)), "with a way to open one");
-      c.ok(acts.some((a) => /Clone repository/.test(a)), "and a way to get another");
+      // The chip leads to the repositories DESTINATION now, not to a modal
+      // that listed the same clones a second time. Choosing a repository is the
+      // most frequent thing anyone does in a Git client; it deserves a place,
+      // not a dialog.
+      c.eq(text(".nav-item.active"), "Repositories", "the chip leads to Repositories");
+      c.ok($$(".sec-row").length >= 3, `which lists the repositories (${$$(".sec-row").length})`);
+      c.ok($$(".repo-folder-head").length >= 1, "grouped by the folder they live in");
+      const tools = $$("button").map((b) => (b.textContent || "").trim());
+      c.ok(tools.some((t) => /^Open…?$/.test(t)), "with a way to open one from anywhere");
+      c.ok(tools.some((t) => /Add folder/.test(t)), "and a way to track more of them");
     },
     "settings-holds-preferences-not-repositories": (f) => {
       const c = check(f);
       c.eq($$(".settings-copy").length, 0, "Settings no longer lists every clone on the machine");
       c.ok(
-        $$("button").some((b) => /Manage repositories/.test(b.textContent || "")),
+        // The label changed with the destination: Settings points AT the
+        // Repositories page rather than opening a second list of its own.
+        $$("button").some((b) => /Open Repositories/i.test(b.textContent || "")),
         "but still points at where they live",
       );
       // The actual preference — where clones land — stays.
@@ -3815,45 +3821,55 @@
     },
     "settings-local-copies": (f) => {
       const c = check(f);
-      const rows = $$(".settings-copy");
-      c.ok(rows.length >= 4, "local copies list renders");
-      const open = $(".settings-copy.is-current");
-      c.ok(!!open, "the open repo is marked");
-      c.ok(!open?.querySelector('button[title^="Open "]'), "the open repo must not offer Open");
-      const missing = $(".settings-copy.is-missing");
+      // The same invariants, on the surface that lists repositories now: the
+      // one you have open is marked and is not offered to be opened again, and
+      // a clone whose folder is gone is listed rather than silently dropped —
+      // but is not offered either, because that click cannot work.
+      const rows = $$(".sec-row");
+      c.ok(rows.length >= 4, `the repository list renders (${rows.length})`);
+      const openRow = rows.find((r) => /\bopen\b/i.test(text(r.querySelector(".gh-pill")) || ""));
+      c.ok(!!openRow, "the open repo is marked");
+      c.ok(
+        ![...(openRow?.querySelectorAll("button") || [])].some((b) => /^Open$/i.test((b.textContent || "").trim())),
+        "the open repo must not offer Open",
+      );
+      const missing = rows.find((r) => /missing/i.test(text(r.querySelector(".gh-pill")) || ""));
       c.ok(!!missing, "a missing clone is listed rather than dropped");
-      c.ok(!missing?.querySelector('button[title^="Open "]'), "a missing clone must not offer Open");
+      c.ok(
+        ![...(missing?.querySelectorAll("button") || [])].some((b) => /^Open$/i.test((b.textContent || "").trim())),
+        "a missing clone must not offer Open",
+      );
     },
     // Every row's actions have the SAME shape, whatever the row's state: two
     // rows both badged MANAGED used to carry different icon sets because one
     // was also, invisibly, in recents.
     "settings-copy-actions-one-shape": (f) => {
       const c = check(f);
-      const rows = $$(".settings-copy");
-      if (!rows.length) return c.ok(false, "local copies render");
+      const rows = $$(".sec-row");
+      if (!rows.length) return c.ok(false, "the repository list renders");
       const kebabs = [];
       for (const r of rows) {
-        const acts = r.querySelector(".settings-copy-acts");
-        const who = (r.querySelector(".settings-copy-name")?.textContent || "").trim().slice(0, 24);
-        const more = acts?.querySelector(".settings-copy-more");
+        const acts = r.querySelector(".sec-row-actions");
+        const who = (r.querySelector(".sec-row-title")?.textContent || "").trim().slice(0, 24);
+        const more = acts?.querySelector(".lv-menu-btn");
         c.ok(!!more, `${who} has an overflow menu`);
         if (more) kebabs.push(more.getBoundingClientRect().right);
         // No icon-only verb clusters: one labelled action plus the menu.
         const bare = [...(acts?.querySelectorAll("button") || [])].filter(
-          (b) => !b.classList.contains("settings-copy-more") && !b.textContent.trim(),
+          (b) => !b.classList.contains("lv-menu-btn") && !b.textContent.trim(),
         );
         c.eq(bare.length, 0, `${who} offers no unlabelled icon buttons`);
       }
-      // Two rows with the same badge offer the same actions.
+      // Two rows in the same state offer the same actions.
       const shapeOf = (r) =>
-        [...r.querySelectorAll(".settings-copy-acts button")]
+        [...r.querySelectorAll(".sec-row-actions button")]
           .map((b) => b.textContent.trim() || "more")
           .join("|");
       const byBadge = new Map();
       for (const r of rows) {
-        // The WHOLE badge set — a row can be RECENT *and* MISSING, and those
-        // two facts together are what licenses a different action set.
-        const badge = $$(".settings-copy-badge", r).map((b) => b.textContent.trim()).join(" ");
+        // The WHOLE state set — a row can be open, missing, or neither, and
+        // those facts together are what licenses a different action set.
+        const badge = $$(".gh-pill", r).map((b) => b.textContent.trim()).join(" ");
         if (!badge) continue;
         if (byBadge.has(badge)) {
           c.eq(shapeOf(r), byBadge.get(badge), `both ${badge} rows offer the same actions`);
@@ -5428,8 +5444,15 @@
      */
     "a-running-clone-can-always-be-left": async (f) => {
       const c = check(f);
-      const open = $$("button").find((b) => /clone/i.test(text(b)));
-      c.ok(!!open, "the welcome screen offers to clone");
+      // The welcome screen is gone; cloning with no repository open starts
+      // from the repository chip, which is on screen in every state now.
+      const chip = $(".topbar-switch");
+      if (chip) {
+        chip.click();
+        await settle(400);
+      }
+      const open = $$(".dropdown-item, button").find((b) => /clone/i.test(text(b)));
+      c.ok(!!open, "there is a way to clone with no repository open");
       if (!open) return;
       open.click();
       await settle(900);
@@ -5599,23 +5622,23 @@
      */
     "a-recent-repository-can-be-forgotten": async (f) => {
       const c = check(f);
-      c.ok(!!$(".welcome-recent"), "the welcome screen is showing");
-      const rows = $$(".recent-card-row");
-      c.ok(rows.length > 0, `it lists recent repositories (${rows.length})`);
+      // Forgetting moved off the welcome screen — which no longer exists —
+      // into the row menu on the Repositories page, where the rest of a
+      // repository's actions already live. The invariant is unchanged: it must
+      // be reachable, named, and must not open the repository on the way.
+      await settle(1200);
+      const rows = $$(".sec-row");
+      c.ok(rows.length > 0, `the repository list renders (${rows.length})`);
       if (!rows.length) return;
 
-      // A control inside a control has no accessible name of its own and Space
-      // activates the wrong one.
-      c.eq($$(".recent-card button").length, 0, "no button is nested inside the card button");
-      const forget = rows[0].querySelector(".recent-card-forget");
-      c.ok(!!forget, "each recent offers to be forgotten");
+      const withMenu = rows.find((r) => r.querySelector(".lv-menu-btn"));
+      c.ok(!!withMenu, "a repository offers its actions");
+      if (!withMenu) return;
+      withMenu.querySelector(".lv-menu-btn").click();
+      await settle(400);
+      const forget = $$(".dropdown-item").find((i) => /forget/i.test(text(i) || ""));
+      c.ok(!!forget, `a recent repository can be forgotten (${$$(".dropdown-item").map((i) => text(i)).join(", ")})`);
       if (!forget) return;
-      c.ok(!!forget.getAttribute("aria-label"), "and the control is named");
-      c.match(
-        forget.getAttribute("aria-label") ?? "",
-        /not touched|forget/i,
-        "saying it forgets the entry rather than deleting the folder",
-      );
 
       // Forgetting must not also OPEN the repository — the card behind it does.
       const sent = [];
