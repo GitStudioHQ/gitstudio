@@ -560,7 +560,14 @@ function registerIpc(): void {
     // Only reveal something the app already lists. `showItemInFolder` on an
     // arbitrary renderer-supplied string is the one shell call here with no
     // natural bound, and every real caller passes a row from this same scan.
-    const known = (await scanLocalCopies()).some((c) => samePath(c.root, root));
+    // A REPOSITORY the app lists, or a FOLDER it tracks. The guard checked only
+    // the first, so "Show this folder in Finder" — the control on every folder
+    // band — was dead on all of them: it passed a tracked folder path, which is
+    // never a repo root, and got a silent false back.
+    const copies = await scanLocalCopies();
+    const folders = [appSettings.effectiveCloneDir(), ...appSettings.repoFolders()];
+    const known =
+      copies.some((c) => samePath(c.root, root)) || folders.some((f) => samePath(f, root));
     if (!known) return false;
     shell.showItemInFolder(root);
     return true;
@@ -702,7 +709,14 @@ function registerIpc(): void {
     // Cloning somewhere teaches the app where you keep repos, exactly as
     // opening one does — including when the destination was a one-off folder
     // chosen in the sheet rather than the configured clone folder.
-    if (r.ok) await rememberRepoFolder(r.root);
+    if (r.ok) {
+      await rememberRepoFolder(r.root);
+      // The scan is cached for 30 seconds, so without this the repository you
+      // just cloned is missing from the list that sent you to clone it —
+      // `rememberRepoFolder` only invalidates when the FOLDER is new, and
+      // cloning into the folder you already use is the common case.
+      localRepos.invalidate();
+    }
     return r;
   });
   handle("github:repos", (req) =>

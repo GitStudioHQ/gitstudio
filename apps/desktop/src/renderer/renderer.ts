@@ -603,12 +603,29 @@ class App {
 
     const recentWrap = el("div", "welcome-recent");
     const title = el("div", "welcome-recent-title");
-    title.textContent = "Recent repositories";
+    title.textContent = "Your repositories";
     const list = el("div", "welcome-recent-list");
-    const recent = await host.invoke("repo:recent", undefined);
+    /**
+     * EVERYTHING the app knows about, not just what you have opened here.
+     *
+     * This listed `repo:recent`, so a repository the app had discovered in one
+     * of your tracked folders — the whole point of tracking them — was absent
+     * from the one screen you see when nothing is open. "so you can easily open
+     * the repo from our ui even if you havent told us about it" was true
+     * everywhere except the place you would first look.
+     *
+     * Recents lead, because the thing you were last working on is the thing you
+     * most likely want; everything else follows, and a folder that is gone is
+     * marked rather than silently offered.
+     */
+    const known = await host.invoke("repos:local", undefined).catch(() => []);
+    const recent = known
+      .filter((c) => !c.missing)
+      .sort((a, b) => (a.recent === b.recent ? a.name.localeCompare(b.name) : a.recent ? -1 : 1))
+      .slice(0, 12);
     if (recent.length === 0) {
       const empty = el("div", "welcome-recent-empty");
-      empty.textContent = "No recent repositories yet — open one to begin.";
+      empty.textContent = "No repositories yet — open one, or clone one, to begin.";
       list.appendChild(empty);
     } else {
       for (const r of recent) {
@@ -630,6 +647,7 @@ class App {
 
         const forget = el("button", "recent-card-forget") as HTMLButtonElement;
         forget.appendChild(glyph("close"));
+        forget.hidden = !r.recent; // nothing to forget about a discovered repo
         forget.title = `Forget ${r.name} — the folder itself is not touched`;
         forget.setAttribute("aria-label", forget.title);
         forget.addEventListener("click", (e) => {

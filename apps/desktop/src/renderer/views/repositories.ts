@@ -43,6 +43,8 @@ type Side = "local" | "remote";
 /** Which side was last on screen — kept across visits, like every other view. */
 let side: Side = "local";
 let query = "";
+/** Set by the mounted view so its empty state can clear the box it is about. */
+let clearFilter: () => void = () => {};
 
 export const renderRepositories: SectionRender = (wrap, nav) => {
   void mount(wrap, nav);
@@ -60,7 +62,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   const addBtn = el("button", "mini-btn");
   addBtn.append(glyph("new-folder"), span("Add folder…"));
   addBtn.title = "Track a folder so every repository inside it is listed here";
-  addBtn.addEventListener("click", () => void addFolder());
+  addBtn.addEventListener("click", () => void addFolder(refresh));
 
   const seg = segmented<Side>({
     options: [
@@ -83,6 +85,12 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       void refresh();
     },
   });
+  clearFilter = (): void => {
+    query = "";
+    const input = search.querySelector("input");
+    if (input) input.value = "";
+    void refresh();
+  };
 
   tools.append(seg, search, openBtn, addBtn);
   const { view, listEl } = sectionList();
@@ -171,7 +179,11 @@ async function paintLocal(
     listEl.replaceChildren(
       query.trim()
         ? emptyState("Nothing matches", `No repository matches “${query.trim()}”.`, {
-            secondary: { label: "Clear filter", onClick: () => location.reload() },
+            // Clears the FILTER. This reloaded the entire application — the
+            // heaviest possible response to a text box having the wrong four
+            // characters in it, throwing away every other piece of state on the
+            // way.
+            secondary: { label: "Clear filter", onClick: () => clearFilter() },
           })
         : emptyState(
             "No repositories yet",
@@ -365,10 +377,14 @@ async function openFromDisk(nav: SectionNav): Promise<void> {
   }
 }
 
-async function addFolder(): Promise<void> {
+async function addFolder(refresh: () => Promise<void>): Promise<void> {
   const next = await host.invoke("repos:addFolder", undefined);
   if (!next) return; // cancelled
   bust("repos");
+  // …and actually list them. The toast said "its repositories are listed here
+  // now" over a list that had not changed, which is the app telling you
+  // something it had not done.
+  await refresh();
   toast("Tracking that folder — its repositories are listed here now.", "success");
 }
 

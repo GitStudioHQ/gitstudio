@@ -83,3 +83,31 @@ test("an unreadable tracked folder does not sink the others", async () => {
   });
   assert.deepEqual(list.map((c) => c.name), ["alpha"]);
 });
+
+test("a folder of folders of repositories is found, two levels deep", async () => {
+  const home = await mkdtemp(join(tmpdir(), "gs-deep-"));
+  const cloneDir = join(home, "GitStudio");
+  const work = join(home, "work");
+  await repoAt(join(cloneDir, "top-level"));
+  // The ordinary shape of a machine: a client folder holding repositories.
+  await repoAt(join(work, "acme", "website"));
+  await repoAt(join(work, "acme", "api"));
+  await repoAt(join(work, "personal", "blog"));
+
+  const list = await scanLocalCopies({ cloneDir, folders: [work], recents: [] });
+  assert.deepEqual(
+    list.map((c) => c.name).sort(),
+    ["api", "blog", "top-level", "website"],
+    "every repository under a tracked folder is listed",
+  );
+});
+
+test("a repository inside a repository is not listed separately", async () => {
+  const home = await mkdtemp(join(tmpdir(), "gs-nest-"));
+  const cloneDir = join(home, "GitStudio");
+  await repoAt(join(cloneDir, "outer"));
+  // A submodule or a vendored copy is part of its parent, not a repo of yours.
+  await repoAt(join(cloneDir, "outer", "vendor", "inner"));
+  const list = await scanLocalCopies({ cloneDir, recents: [] });
+  assert.deepEqual(list.map((c) => c.name), ["outer"]);
+});

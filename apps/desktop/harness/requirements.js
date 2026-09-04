@@ -203,6 +203,25 @@ window.__GS_REQUIREMENTS = (() => {
       },
     },
 
+    {
+      // The clause names the point of tracking folders at all, and the first
+      // screen with no repo open is where it is first tested.
+      id: "a-discovered-repo-is-openable-with-no-repo-open",
+      says:
+        "so you can easily open the repo from our ui even if you havent told us about it",
+      scene: "changes",
+      extra: "norepo=1",
+      async run() {
+        await settle(1500);
+        const rows = $$(".recent-card").map((r) => text(r) || "");
+        // `design` is in the fixture's clone folder and has never been opened,
+        // so it is absent from recents and present only if the screen lists
+        // what the app DISCOVERED.
+        const discovered = rows.some((t) => /design/.test(t));
+        return r(discovered, `first screen lists ${rows.length}: ${rows.map((t) => t.split("/")[0]).join(", ")}`);
+      },
+    },
+
     // ── "actions have green gray and red dots that look trash, replace them
     //     with check, x and skipped icons in the corresponding colours" ──────
     {

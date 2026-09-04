@@ -22,6 +22,9 @@ import type { LocalCopy } from "../shared/ipc";
 
 /** Don't shell out to git hundreds of times for a huge folder. */
 const MAX_ENTRIES = 300;
+/** How many directory levels of a tracked folder are searched for repos.
+ *  Two: ~/work/acme/website is the ordinary shape of a machine. */
+export const SCAN_DEPTH = 2;
 /** Parallel `git remote get-url` probes. */
 const PROBE_CONCURRENCY = 8;
 const PROBE_TIMEOUT_MS = 5_000;
@@ -154,20 +157,42 @@ export async function scanLocalCopies(input: ScanInput): Promise<LocalCopy[]> {
   const roots = [input.cloneDir, ...(input.folders ?? [])];
   const scanned = new Set<string>();
   const managedRoots: string[] = [];
+  /**
+   * Walk a tracked folder, two levels deep.
+   *
+   * One level was wrong for how people actually keep repositories: ~/work/acme,
+   * ~/work/personal, ~/src/github.com/owner — a folder of FOLDERS of repos is
+   * the normal shape, and scanning only the top level found a fraction of what
+   * was there while the folder's own count said that fraction was all of it.
+   *
+   * Two, not unlimited: a repository is not itself scanned (a nested repo is a
+   * submodule or a vendored copy, and listing those as separate repositories is
+   * noise), and an unbounded walk of a home directory is how a file listing
+   * becomes a minute of disk.
+   */
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    if (managedRoots.length >= MAX_ENTRIES) return;
+    let names;
+    try {
+      names = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // missing / unreadable — the others, and recents, still list
+    }
+    for (const d of names) {
+      if (!d.isDirectory() || d.name.startsWith(".")) continue;
+      if (managedRoots.length >= MAX_ENTRIES) return;
+      const root = join(dir, d.name);
+      if (await isRepoDir(root)) {
+        managedRoots.push(root);
+        continue; // do not descend INTO a repository
+      }
+      if (depth > 0) await walk(root, depth - 1);
+    }
+  };
   for (const dir of roots) {
     if (!dir || scanned.has(resolve(dir))) continue;
     scanned.add(resolve(dir));
-    try {
-      const names = await readdir(dir, { withFileTypes: true });
-      for (const d of names) {
-        if (!d.isDirectory() || d.name.startsWith(".")) continue;
-        const root = join(dir, d.name);
-        if (await isRepoDir(root)) managedRoots.push(root);
-        if (managedRoots.length >= MAX_ENTRIES) break;
-      }
-    } catch {
-      /* folder missing / unreadable — the others, and recents, still list */
-    }
+    await walk(dir, SCAN_DEPTH - 1);
     if (managedRoots.length >= MAX_ENTRIES) break;
   }
   managedRoots.sort((a, b) => basename(a).localeCompare(basename(b)));
