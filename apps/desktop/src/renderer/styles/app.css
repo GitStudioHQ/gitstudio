@@ -2532,7 +2532,7 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
    GitHub does it — always in the DOM (so the keyboard reaches them) and quiet
    until you go looking. */
 .gh-comment-spring { flex: 1 1 auto; }
-.gh-comment-menu { opacity: 0; transition: opacity 100ms; }
+.gh-comment-menu { opacity: 0.6; transition: opacity 100ms; }
 .gh-comment:hover .gh-comment-menu,
 .gh-comment-menu:focus-visible { opacity: 1; }
 /* The in-place editor replaces the rendered body, so it inherits its width and
@@ -2552,7 +2552,9 @@ button.gh-reaction:hover { border-color: var(--gs-accent); }
 button.gh-reaction:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
 /* The add affordance is quiet until the comment is hovered — the strip should
    read as reactions, not as a row of buttons. */
-.gh-reaction-add { opacity: 0; transition: opacity 100ms; }
+/* Never fully invisible: a control you can only find by hovering is a control
+   most people never find, and this is the only way to add a reaction. */
+.gh-reaction-add { opacity: 0.6; transition: opacity 100ms; }
 .gh-comment:hover .gh-reaction-add,
 .gh-reaction-add:focus-visible { opacity: 1; }
 
@@ -2663,7 +2665,11 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .dash-line.is-clickable:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: -2px; }
 .dash-line-icon { flex: 0 0 auto; color: var(--app-muted); font-size: 14px; }
 .dash-line-icon.is-ok { color: var(--status-add); }
-.dash-line-icon.is-warn { color: var(--status-mod); }
+/* AMBER, not the blue that means "modified file" everywhere else. Every
+   is-warn added for the new surfaces used --status-mod, so "missing",
+   "never been pushed" and "3 staged, 4 to stage" were all painted the same
+   blue as a changed file and no warning read as a warning. */
+.dash-line-icon.is-warn { color: var(--status-warn); }
 .dash-line-icon.is-muted { color: var(--app-muted); }
 /* The label is the identity of the row; the hint gives way first. */
 .dash-line-text {
@@ -2730,10 +2736,17 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
   border-radius: 999px;
   padding: 1px 8px;
 }
-.repo-folder-chip.is-warn { color: var(--status-mod); border-color: var(--status-mod); }
+.repo-folder-chip.is-warn {
+  color: color-mix(in srgb, var(--status-warn) 90%, var(--vscode-foreground));
+  border-color: var(--status-warn);
+  background: color-mix(in srgb, var(--status-warn) 20%, var(--app-elevated));
+}
 .repo-folder-spring { flex: 0 0 auto; margin-left: auto; }
 /* Muted until you go looking for them: a group header is a label first. */
-.repo-folder-head .mini-btn { opacity: 0.55; transition: opacity 100ms; }
+/* 0.55 on a muted colour computed to 2.69:1 — under the 3:1 floor a UI icon
+   needs to be seen at all, on the ONLY controls a folder band has. Quiet is
+   fine; invisible is not. */
+.repo-folder-head .mini-btn { opacity: 0.75; transition: opacity 100ms; }
 .repo-folder-head:hover .mini-btn,
 .repo-folder-head .mini-btn:focus-visible { opacity: 1; }
 .repo-folder-head.is-missing .repo-folder-path { color: var(--app-muted); text-decoration: line-through; }
@@ -2764,7 +2777,11 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .sec-row-meta > .repo-stars { width: 62px; flex: 0 0 62px; justify-content: flex-end; }
 .gh-pill.is-current { color: var(--status-add); border-color: var(--status-add); }
 .gh-pill.is-have { color: var(--gs-accent-ink, var(--gs-accent)); border-color: var(--gs-accent); }
-.gh-pill.is-warn { color: var(--status-mod); border-color: var(--status-mod); }
+.gh-pill.is-warn {
+  color: color-mix(in srgb, var(--status-warn) 90%, var(--vscode-foreground));
+  border-color: var(--status-warn);
+  background: color-mix(in srgb, var(--status-warn) 20%, var(--app-elevated));
+}
 
 /* ── Compare view ──────────────────────────────────────────────────────────── */
 .compare-view {

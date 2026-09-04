@@ -740,10 +740,20 @@ function watchChipOverflow(chips: HTMLElement): void {
  * belongs to never disagree about what a state looks like.
  */
 export function checkIcon(state: string): HTMLElement {
+  // THE MARKS THEMSELVES: a check, a cross, a slash — which is what was asked
+  // for, and what the first attempt did not deliver.
+  //
+  // `pass-filled` is a solid disc with a tick knocked out of it, and at 13px
+  // the tick disappears: it reads as a green DOT, the exact thing being
+  // replaced. Worse, it was the only FILLED glyph in the set — `error` and
+  // `circle-slash` are hollow rings — so successes carried all the weight down
+  // a column and the failures receded, which is backwards.
+  //
+  // One weight for the whole family, colour doing the rest.
   let icon = "sync";
   let cls = "is-running"; // in_progress / queued / pending / requested / waiting
   if (state === "success") {
-    icon = "pass-filled";
+    icon = "check";
     cls = "is-success";
   } else if (
     state === "failure" ||
@@ -751,7 +761,7 @@ export function checkIcon(state: string): HTMLElement {
     state === "startup_failure" ||
     state === "timed_out"
   ) {
-    icon = "error";
+    icon = "close";
     cls = "is-failure";
   } else if (state === "action_required") {
     // Waiting for a person, not broken. Red would send them to read logs for an

@@ -993,6 +993,10 @@ async function renderSubTab(
   nav: SectionNav,
 ): Promise<void> {
   content.replaceChildren(loadingState());
+  // Who is reading, so a comment offers only what this account may do.
+  const viewerLogin = await gget("github:status", undefined, 30_000)
+    .then((st) => st.login)
+    .catch(() => undefined);
   if (id === "conversation") {
     let conv: PrComment[] = [];
     let convFailed: unknown;
@@ -1042,7 +1046,10 @@ async function renderSubTab(
           reactions: c.reactions,
           // Only a plain comment: a REVIEW is a different object at a different
           // endpoint, and offering Edit on one would fail at the request.
-          comment: c.kind === "comment" && c.id ? { id: c.id, htmlUrl: c.htmlUrl, reload } : undefined,
+          comment:
+            c.kind === "comment" && c.id
+              ? { id: c.id, htmlUrl: c.htmlUrl, mine: c.author === viewerLogin, reload }
+              : undefined,
           onQuote: (t) => quoteIntoPr(t, c.author),
           onReact:
             c.kind === "comment" && c.id
@@ -1514,7 +1521,7 @@ function commentCard(
      *  an issue — it is the same object at the same endpoint. A REVIEW cannot:
      *  different object, different endpoint, and the view offers less rather
      *  than offering something that would fail. */
-    comment?: { id: number; htmlUrl?: string; reload: () => void };
+    comment?: { id: number; htmlUrl?: string; mine: boolean; reload: () => void };
     onQuote?: (body: string) => void;
     onReact?: (content: ReactionContent, on: boolean) => void;
   } = {},
@@ -1558,7 +1565,10 @@ function commentCard(
       if (c?.htmlUrl) {
         items.push({ label: "Copy link", icon: "link", onClick: () => void navigator.clipboard?.writeText(c.htmlUrl!) });
       }
-      if (c) {
+      // Yours only — see the note on the issue side. Offering Edit on somebody
+      // else's comment buys a 403 at Save and a confirm dialog for a delete
+      // that cannot happen.
+      if (c && c.mine) {
         items.push({ label: "Edit", icon: "edit", onClick: () => void editPrComment(c.id, body, card, c.reload) });
         items.push({
           label: "Delete…",

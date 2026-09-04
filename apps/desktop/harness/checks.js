@@ -591,22 +591,44 @@
       await settle(1400);
       const cards = $$(".gh-comment");
       c.ok(cards.length >= 2, `the thread renders (${cards.length} cards)`);
-      const card = cards[1];
-      const menu = card?.querySelector(".gh-comment-menu");
-      c.ok(!!menu, "a comment offers its actions");
-      if (!menu) return;
-      menu.click();
-      await settle(400);
-      const items = $$(".dropdown-item").map((i) => text(i) || "");
-      for (const wanted of ["Quote reply", "Copy link", "Edit", "Delete"]) {
-        c.ok(
-          items.some((t) => t.startsWith(wanted)),
-          `it offers ${wanted} (${items.join(", ")})`,
-        );
-      }
+      // YOUR comment: Edit and Delete are only yours to make. They used to be
+      // offered on everyone's, where Edit failed at Save with a 403 and Delete
+      // raised a confirm dialog for something that could not happen.
+      const mine = cards.find((k) =>
+        /antonarnaudov/.test(text(k.querySelector(".gh-comment-author")) || ""),
+      );
+      const theirs = cards.find(
+        (k) =>
+          k !== mine &&
+          !!k.querySelector(".gh-comment-menu") &&
+          !/antonarnaudov/.test(text(k.querySelector(".gh-comment-author")) || ""),
+      );
+      c.ok(!!mine && !!theirs, "the thread has a comment of yours and one of somebody else's");
+      if (!mine || !theirs) return;
 
+      const menuOf = async (card) => {
+        card.querySelector(".gh-comment-menu").click();
+        await settle(350);
+        const items = $$(".dropdown-item").map((i) => text(i) || "");
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await settle(150);
+        return items;
+      };
+
+      const items = await menuOf(mine);
+      for (const wanted of ["Quote reply", "Copy link", "Edit", "Delete"]) {
+        c.ok(items.some((t) => t.startsWith(wanted)), `your own offers ${wanted} (${items.join(", ")})`);
+      }
+      const other = await menuOf(theirs);
+      c.ok(other.some((t) => t.startsWith("Quote reply")), "somebody else's can still be quoted");
+      c.ok(
+        !other.some((t) => t.startsWith("Edit") || t.startsWith("Delete")),
+        `and offers no Edit or Delete (${other.join(", ")})`,
+      );
       // Quote reply has to reach the box you would type in, or it is a menu
       // entry that does nothing.
+      mine.querySelector(".gh-comment-menu").click();
+      await settle(350);
       $$(".dropdown-item").find((i) => /Quote/.test(text(i) || ""))?.click();
       await settle(500);
       const ta = $(".gh-composer .md-text");
@@ -752,15 +774,30 @@
       // matching "owner" here, so the check was asserting a comment menu on the
       // one card that deliberately has none.
       const headOf = (k) => text(k.querySelector(".gh-comment-head")) || "";
+      // YOUR plain comment: Edit and Delete are only yours to make, on a PR
+      // exactly as on an issue.
       const plain = cards.find(
-        (k) => !/description/i.test(headOf(k)) && !/approved|changes requested/i.test(headOf(k)),
+        (k) =>
+          !/description/i.test(headOf(k)) &&
+          !/approved|changes requested/i.test(headOf(k)) &&
+          /antonarnaudov/.test(headOf(k)),
       );
-      c.ok(!!plain, "there is a plain comment");
+      c.ok(!!plain, "there is a plain comment of your own");
       if (plain) {
         const items = await menuOf(plain);
         for (const w of ["Quote reply", "Copy link", "Edit", "Delete"]) {
-          c.ok((items || []).some((t) => t.startsWith(w)), `a comment offers ${w} (${(items || []).join(", ")})`);
+          c.ok((items || []).some((t) => t.startsWith(w)), `your own offers ${w} (${(items || []).join(", ")})`);
         }
+      }
+      const others = cards.find(
+        (k) => !/description|approved|changes requested|antonarnaudov/i.test(headOf(k)) && !!k.querySelector(".gh-comment-menu"),
+      );
+      if (others) {
+        const items = await menuOf(others);
+        c.ok(
+          !(items || []).some((t) => t.startsWith("Edit")),
+          `somebody else's offers no Edit (${(items || []).join(", ")})`,
+        );
       }
 
       const review = cards.find((k) => /approved|changes requested/i.test(headOf(k)));

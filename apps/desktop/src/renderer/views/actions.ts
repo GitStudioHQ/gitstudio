@@ -493,10 +493,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
 /** A colored leading status icon for a run, keyed off its conclusion/status. */
 function runLead(state: string, label?: string): HTMLElement {
+  // The same marks as `checkIcon` in common.ts — a check, a cross, a slash, one
+  // weight. These are two copies of one vocabulary, and they must not drift:
+  // the run's leading icon and its jobs' icons appearing in different shapes
+  // for the same state is how a list stops being scannable.
   let icon = "sync";
   let cls = "is-running"; // in_progress / queued / pending
   if (state === "success") {
-    icon = "pass-filled";
+    icon = "check";
     cls = "is-success";
   } else if (
     state === "failure" ||
@@ -509,7 +513,7 @@ function runLead(state: string, label?: string): HTMLElement {
     // state that needs you is the state that carries the weight.
     //
     // A timeout belongs here: the run did not finish, and nobody chose that.
-    icon = "error";
+    icon = "close";
     cls = "is-failure";
   } else if (state === "action_required") {
     // Not a failure — it is waiting for a person. Drawing it red sent people to

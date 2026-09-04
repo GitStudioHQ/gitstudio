@@ -148,7 +148,7 @@ function commentCard(
      * on the issue body — which is edited through the composer page, not here.
      * Without it the card renders exactly as it always did.
      */
-    comment?: { id: number; htmlUrl?: string; reload: () => void };
+    comment?: { id: number; htmlUrl?: string; mine: boolean; reload: () => void };
     /** Drop the body into the reply box, quoted. */
     onQuote?: (body: string) => void;
     /** The issue body reacts to the ISSUE, not to a comment — a different
@@ -203,7 +203,12 @@ function commentCard(
           onClick: () => void navigator.clipboard?.writeText(c.htmlUrl!),
         });
       }
-      if (c) {
+      // YOUR comment only. These were offered on everyone's: Edit opened the
+      // editor, let you type, and failed at Save with a 403; Delete raised a
+      // confirm saying "this cannot be undone" about something that could not
+      // be done at all. An action you are not allowed to take should not be on
+      // the menu, not merely fail politely afterwards.
+      if (c && c.mine) {
         items.push({
           label: "Edit",
           icon: "edit",
@@ -846,7 +851,10 @@ function showDetailPage(
       main.replaceChildren(emptyState("Issue unavailable", "This issue couldn't be loaded."));
       return;
     }
-    buildDetail({ main, rail, topActions, d, nav, reload });
+    const viewer = await gget("github:status", undefined, 30_000)
+      .then((st) => st.login)
+      .catch(() => undefined);
+    buildDetail({ main, rail, topActions, d, nav, reload, viewer });
   })();
 }
 
@@ -871,6 +879,12 @@ export async function renderIssueDetailInto(
     void renderIssueDetailInto(container, number, nav, onMutated);
   };
   container.replaceChildren(skeletonList(4, false));
+  // Who is reading, so a comment's menu can offer only what this account may
+  // actually do. Cached and cheap; undefined when signed out, which correctly
+  // makes every comment somebody else's.
+  const viewer = await gget("github:status", undefined, 30_000)
+    .then((st) => st.login)
+    .catch(() => undefined);
   let d: IssueDetail | undefined;
   try {
     d = await gget("issue:detail", number, 8000);
@@ -887,7 +901,7 @@ export async function renderIssueDetailInto(
   }
   const main = el("div", "det-main det-main-drawer");
   container.replaceChildren(main);
-  buildDetail({ main, rail: null, topActions: null, d, nav, reload });
+  buildDetail({ main, rail: null, topActions: null, d, nav, reload, viewer });
 }
 
 interface DetailCtx {
@@ -899,6 +913,10 @@ interface DetailCtx {
   d: IssueDetail;
   nav: SectionNav;
   reload: () => void;
+  /** The signed-in login, so a comment offers only what this account may do.
+   *  Undefined when signed out, which correctly makes every comment
+   *  somebody else's. */
+  viewer?: string;
 }
 
 function buildDetail(ctx: DetailCtx): void {
@@ -1149,7 +1167,7 @@ function buildDetail(ctx: DetailCtx): void {
         updatedAt: c.updatedAt,
         association: c.authorAssociation,
         reactions: c.reactions,
-        comment: { id: c.id, htmlUrl: c.htmlUrl, reload },
+        comment: { id: c.id, htmlUrl: c.htmlUrl, mine: c.author?.login === ctx.viewer, reload },
         onQuote: (text) => quoteInto(text, c.author?.login),
       }),
     );

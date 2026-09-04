@@ -282,6 +282,51 @@ window.__GS_REQUIREMENTS = (() => {
       },
     },
     {
+      // He named the icons himself. `pass-filled` is a solid disc with a tick
+      // knocked out of it, invisible at 13px — a green DOT, which is what he
+      // asked to be rid of.
+      id: "action-icons-are-the-marks-he-named",
+      says: "replace them with check, x and skipped icons in the corresponding colours",
+      scene: "actions~open9100",
+      async run() {
+        await settle(1300);
+        const icons = $$(".gh-check-icon").map((i) => i.className);
+        const dotty = icons.filter((c) => /pass-filled|circle-filled|primitive-dot/.test(c));
+        const check = icons.some((c) => /codicon-check\b/.test(c));
+        return r(
+          check && dotty.length === 0,
+          `check marks: ${check}, disc-shaped icons remaining: ${dotty.length}`,
+        );
+      },
+    },
+    {
+      // Offering an action that will 403 is worse than not offering it.
+      id: "only-your-own-comments-can-be-edited",
+      says: "issues and prs still look kinda crappy and dont allow all features of github",
+      scene: "issues~open31",
+      async run() {
+        await settle(1600);
+        const menus = $$(".gh-comment").filter((k) => k.querySelector(".gh-comment-menu"));
+        let mineWithEdit = 0;
+        let theirsWithEdit = 0;
+        for (const card of menus) {
+          card.querySelector(".gh-comment-menu").click();
+          await settle(260);
+          const items = $$(".dropdown-item").map((i) => text(i) || "");
+          const hasEdit = items.some((t) => t.startsWith("Edit"));
+          const isMine = /antonarnaudov/.test(text(card.querySelector(".gh-comment-author")) || "");
+          if (hasEdit && isMine) mineWithEdit++;
+          if (hasEdit && !isMine) theirsWithEdit++;
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          await settle(120);
+        }
+        return r(
+          mineWithEdit > 0 && theirsWithEdit === 0,
+          `editable of yours: ${mineWithEdit}, editable of others: ${theirsWithEdit}`,
+        );
+      },
+    },
+    {
       id: "a-pull-request-can-be-reviewed",
       says: "issues and prs still look kinda crappy and dont allow all features of github",
       scene: "prs~open106",
