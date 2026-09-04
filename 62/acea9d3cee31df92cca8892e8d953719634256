@@ -1,0 +1,36 @@
+apps/extension/src/extension.ts
+  s_c75a78e26043a9::t_f155cac5ed2c18 3,108-117
+  s_c75a78e26043a9::t_9cbc5e8535d845 118
+apps/extension/CHANGELOG.md
+  s_c75a78e26043a9::t_30821fccd1e0d9 7-20
+packages/git-service/src/spawnAudit.ts
+  s_c75a78e26043a9::t_f155cac5ed2c18 1-86
+packages/git-service/src/RebaseRunner.ts
+  s_c75a78e26043a9::t_41c2fed1f76a52 2,205-206,209
+packages/git-service/src/NodeGitAdapter.ts
+  s_c75a78e26043a9::t_f155cac5ed2c18 2,31-34
+apps/extension/package.json
+  s_c75a78e26043a9::t_3d4277884a185c 5,191-195,898-902
+apps/extension/src/debug/processAudit.ts
+  s_c75a78e26043a9::t_f155cac5ed2c18 1-101
+packages/git-service/src/GitProcess.ts
+  s_c75a78e26043a9::t_41c2fed1f76a52 2,151-166
+apps/extension/src/ai/cliProvider.ts
+  s_c75a78e26043a9::t_f155cac5ed2c18 8,87-89,122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "62acea9d3cee31df92cca8892e8d953719634256",
+  "prompts": {},
+  "sessions": {
+    "s_c75a78e26043a9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f410696e-4ada-4b27-9674-a4159826a9f2",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
