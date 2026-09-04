@@ -167,14 +167,35 @@ window.__GS_REQUIREMENTS = (() => {
       async run() {
         await settle(1200);
         const open = $$("button").some((b) => /^open…?$/i.test((text(b) || "").trim()));
+        // …and a way to CLONE a URL, not only the per-row clone of something
+        // already listed. Most clones start from a link somebody sent you.
+        const cloneUrl = $$("button").some((b) => /^clone…$/i.test((text(b) || "").trim()));
         const rowOpen = $$(".sec-row button").some((b) => /^open$/i.test((text(b) || "").trim()));
         const remote = $$(".gh-seg-btn").find((b) => /GitHub/i.test(text(b) || ""));
         remote?.click();
         await settle(1300);
         const clone = $$("button").some((b) => /^clone$/i.test((text(b) || "").trim()));
         return r(
-          (open || rowOpen) && clone,
-          `open control: ${open || rowOpen}, clone control: ${clone}`,
+          (open || rowOpen) && clone && cloneUrl,
+          `open: ${open || rowOpen}, clone a listed repo: ${clone}, clone a URL: ${cloneUrl}`,
+        );
+      },
+    },
+
+    {
+      id: "the-keyboard-finds-a-discovered-repo",
+      says:
+        "so you can easily open the repo from our ui even if you havent told us about it",
+      scene: "code~palette~type:design",
+      async run() {
+        await settle(900);
+        // `design` sits in a tracked folder and has never been opened here, so
+        // it is absent from recents and present only if the palette searches
+        // what the app DISCOVERED.
+        const rows = $$(".cmdk-row").map((r) => text(r) || "");
+        return r(
+          rows.some((t) => /^design/.test(t)),
+          `palette rows: ${rows.map((t) => t.split("/")[0]).join(" | ")}`,
         );
       },
     },

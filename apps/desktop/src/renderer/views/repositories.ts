@@ -25,6 +25,7 @@
 
 import { el, span, glyph, openMenu, avatar, emptyState, relTimeISO } from "../ui";
 import { toast } from "../dialogs";
+import { openCloneDialog } from "../cloneDialog";
 import { host } from "../bridge";
 import { gget, bust } from "../cache";
 import {
@@ -64,6 +65,22 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   addBtn.title = "Track a folder so every repository inside it is listed here";
   addBtn.addEventListener("click", () => void addFolder(refresh));
 
+  // "open and clone buttons and menus can be part of the same screens" — this
+  // screen had Open and per-row Clone but no way to clone a URL somebody sent
+  // you, which is how most clones actually start. The screen that is about
+  // repositories should be able to get one.
+  const cloneBtn = el("button", "mini-btn");
+  cloneBtn.append(glyph("repo-clone"), span("Clone…"));
+  cloneBtn.title = "Clone a repository from a URL";
+  cloneBtn.addEventListener("click", () =>
+    openCloneDialog((root) => {
+      bust("repos");
+      void host.invoke("repo:openPath", root).then((info) => {
+        if (info) nav("changes");
+      });
+    }),
+  );
+
   const seg = segmented<Side>({
     options: [
       { value: "local", label: "On this machine", icon: "device-desktop" },
@@ -92,7 +109,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     void refresh();
   };
 
-  tools.append(seg, search, openBtn, addBtn);
+  tools.append(seg, search, openBtn, cloneBtn, addBtn);
   const { view, listEl } = sectionList();
   // `sectionList` hands back a shell and a list and leaves the assembly to the
   // caller — the same order every other section uses.

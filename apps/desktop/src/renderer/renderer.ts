@@ -7174,20 +7174,32 @@ class App {
         // three times per palette open — same answer, three round trips.
         const status = host.invoke("github:status", undefined).catch(() => undefined);
         return [
+        // EVERY repository the app knows about, not only the ones opened here.
+        //
+        // This read `repo:recent`, so ⌘K — the fastest way to reach anything —
+        // could not find a repository the app had discovered in one of your
+        // tracked folders. "so you can easily open the repo from our ui even if
+        // you havent told us about it" was true of the Repositories page and of
+        // the first screen, and false at the keyboard, which is where it would
+        // have been worth the most.
         host
-          .invoke("repo:recent", undefined)
+          .invoke("repos:local", undefined)
           .then((rs): PaletteGroup | undefined => {
-            const others = rs.filter((r) => r.root !== this.currentRepo?.root);
+            const others = rs.filter(
+              (r) => r.root !== this.currentRepo?.root && !r.missing,
+            );
             return others.length
               ? {
-                  title: "Recent repositories",
+                  title: "Repositories",
                   items: others.map((r) => ({
                     icon: "repo",
                     label: r.name,
                     // Middle-truncated: the right-hand ellipsis ate the repo
                     // folder, which is the only part that tells two clones apart.
                     hint: middleTruncate(r.root, 46),
-                    keywords: r.root,
+                    // The origin too, so "gitstudio" finds a clone in a folder
+                    // named something else entirely.
+                    keywords: `${r.root} ${r.origin ?? ""}`,
                     run: () => void this.openPath(r.root),
                   })),
                 }
