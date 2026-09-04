@@ -135,6 +135,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   await refresh();
 }
 
+/**
+ * A path shortened from the MIDDLE, keeping the home-relative head and the
+ * folder itself.
+ *
+ * Truncating from the right eats the folder name, which is the only part that
+ * tells two clones of the same project apart — the exact mistake the branch
+ * list made with its upstream column.
+ */
+function middlePath(root: string): string {
+  const parts = root.split("/").filter(Boolean);
+  if (parts.length <= 3) return root;
+  return `…/${parts.slice(-2).join("/")}`;
+}
+
 /** 1284 → "1.3k", 121000 → "121k" — a star count you can read at a glance. */
 function compactCount(n: number): string {
   if (n < 1000) return String(n);
@@ -305,6 +319,16 @@ function localRow(c: LocalCopy, nav: SectionNav, refresh: () => Promise<void>): 
   if (c.current) pills.push(span("open", "gh-pill is-current"));
   if (c.missing) pills.push(span("missing", "gh-pill is-warn"));
 
+  // WHERE it is. The remote side carries a description, a language, a star
+  // count and a time; the local side carried a name and, sometimes, an origin —
+  // so the screen for keeping track of repositories tracked less about the ones
+  // you actually have. The folder is what tells two clones of the same project
+  // apart, and it is the one fact a local row cannot do without.
+  const meta: HTMLElement[] = [];
+  const where = span(middlePath(c.root), "repo-path sec-mono");
+  where.title = c.root;
+  meta.push(where);
+
   const actions: HTMLElement[] = [];
   if (!c.missing && !c.current) {
     const open = el("button", "row-btn");
@@ -369,7 +393,7 @@ function localRow(c: LocalCopy, nav: SectionNav, refresh: () => Promise<void>): 
     title: c.name,
     titleSuffix: pills,
     chips,
-    meta: [],
+    meta,
     time: "",
     actions,
     ariaLabel: [c.name, c.origin, c.current ? "currently open" : "", c.missing ? "missing" : ""]
@@ -539,11 +563,16 @@ function remoteRow(
     where.setAttribute("aria-label", `Choose where to clone ${r.fullName}`);
     where.appendChild(glyph("chevron-down"));
     where.addEventListener("click", () => {
-      const items = folders.map((f) => ({
-        label: f.isCloneDir ? `${f.display} (default)` : f.display,
-        icon: f.isCloneDir ? "root-folder" : "folder",
-        onClick: () => void cloneInto(r, f.path, clone, nav, refresh),
-      }));
+      // Not a folder the same page says is gone. Offering it is offering a
+      // clone that cannot succeed, two rows under the words "This folder is
+      // gone".
+      const items = folders
+        .filter((f) => !f.missing)
+        .map((f) => ({
+          label: f.isCloneDir ? `${f.display} (default)` : f.display,
+          icon: f.isCloneDir ? "root-folder" : "folder",
+          onClick: () => void cloneInto(r, f.path, clone, nav, refresh),
+        }));
       items.push({
         label: "Choose a folder…",
         icon: "new-folder",
@@ -588,6 +617,13 @@ async function cloneInto(
   btn.disabled = true;
   const was = btn.textContent;
   btn.textContent = "Cloning…";
+  // A clone of anything real takes long enough that a button reading "Cloning…"
+  // and never changing is indistinguishable from one that has hung. The main
+  // process already streams progress; nothing was listening to it.
+  const off = host.on("clone:progress", (p) => {
+    if (typeof p?.percent === "number") btn.textContent = `${Math.round(p.percent)}%`;
+    else if (p?.phase) btn.textContent = p.phase;
+  });
   try {
     const res = await host.invoke("clone:start", {
       url: r.cloneUrl,
@@ -608,6 +644,7 @@ async function cloneInto(
   } catch (e) {
     toast(String((e as Error)?.message ?? e) || `Couldn't clone ${r.fullName}.`, "error");
   } finally {
+    off?.();
     btn.disabled = false;
     btn.textContent = was;
   }

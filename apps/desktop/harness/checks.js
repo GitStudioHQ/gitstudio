@@ -815,6 +815,58 @@
       }
     },
 
+    /**
+     * A clone must not be offered somewhere the same screen says is gone, and
+     * must say it is working.
+     *
+     * The destination menu listed every tracked folder including one the band
+     * two rows up marks "missing" and describes as "This folder is gone" — an
+     * offer that cannot succeed. And the button read "Cloning…" for the whole
+     * clone, which for anything real is indistinguishable from having hung,
+     * while the main process was streaming progress nobody listened to.
+     */
+    "a-clone-goes-somewhere-real-and-says-it-is-working": async (f) => {
+      const c = check(f);
+      await settle(1400);
+      const caret = $$(".sec-row button").find((b) =>
+        (b.getAttribute("aria-label") || "").startsWith("Choose where"),
+      );
+      c.ok(!!caret, "a repository you do not have offers a choice of destination");
+      if (!caret) return;
+      caret.click();
+      await settle(400);
+      const items = $$(".dropdown-item").map((i) => text(i) || "");
+      c.ok(items.length > 0, `the menu offers destinations (${items.join(" | ")})`);
+      c.ok(
+        !items.some((t) => /Archive/.test(t)),
+        `and not the folder the app knows is gone (${items.join(" | ")})`,
+      );
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+
+      // Progress: hold the clone open and emit what the main process emits.
+      const row = caret.closest(".sec-row");
+      const clone = [...row.querySelectorAll("button")].find((b) => /^Clone$/.test((b.textContent || "").trim()));
+      c.ok(!!clone, "and a one-click clone");
+      if (!clone) return;
+      const inv = window.gitstudio.invoke;
+      window.gitstudio.invoke = (ch, p) =>
+        ch === "clone:start" ? new Promise(() => {}) : inv(ch, p);
+      try {
+        clone.click();
+        await settle(300);
+        window.__gsEmit("clone:progress", { phase: "Receiving objects", percent: 42, raw: "" });
+        await settle(300);
+        c.match(
+          (clone.textContent || "").trim(),
+          /42|Receiving/,
+          `the button reports progress (${(clone.textContent || "").trim()})`,
+        );
+      } finally {
+        window.gitstudio.invoke = inv;
+      }
+    },
+
     // ── the log pane ─────────────────────────────────────────
     "log-no-blank-endgroup-rows": (f) => {
       const c = check(f);

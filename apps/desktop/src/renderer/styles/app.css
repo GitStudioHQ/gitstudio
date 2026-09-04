@@ -2615,6 +2615,20 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .nav-item.is-unavailable { opacity: 0.42; cursor: default; }
 .nav-item.is-unavailable:hover { background: none; }
 
+/* Where a local clone lives — the column that tells two copies of one project
+   apart. Right-aligned with the other meta slots so it forms a column. */
+.sec-row-meta > .repo-path {
+  width: 220px;
+  flex: 0 1 220px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--app-muted);
+  font-size: var(--text-2xs);
+}
+@media (max-width: 1200px) { .sec-row-meta > .repo-path { display: none; } }
+
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of
