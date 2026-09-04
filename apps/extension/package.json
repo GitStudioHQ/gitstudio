@@ -2,7 +2,7 @@
   "name": "gitstudio",
   "displayName": "GitStudio \u2014 JetBrains-style Git Graph, Blame & Merge",
   "description": "Free, open-source Git GUI & commit graph for VS Code and Cursor. Git Studio brings a JetBrains-style Git workflow into the editor \u2014 inline blame, file history, hunk & line staging, 3-pane merge, interactive rebase with universal Undo, stash/shelf, worktrees, and in-editor GitHub PRs. A free alternative to GitLens, GitKraken & Sourcetree.",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "publisher": "gitstudio",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -188,6 +188,11 @@
       }
     ],
     "commands": [
+      {
+        "command": "gitstudio.debug.showProcessAudit",
+        "title": "Show Process Audit",
+        "category": "GitStudio"
+      },
       {
         "command": "gitstudio.showWelcome",
         "title": "Welcome",
@@ -890,6 +895,11 @@
     "configuration": {
       "title": "GitStudio",
       "properties": {
+        "gitstudio.debug.logChildProcesses": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log every child process GitStudio launches - the binary, its full arguments, the working directory, and the environment variables GitStudio adds - to the GitStudio: Process Audit output channel. Turn this on only while reproducing a problem you want to report: it is how an OS-level prompt raised by a child process (a credential helper, a git hook, an editor binary) is traced back to the exact command that caused it. Secret-looking values are scrubbed."
+        },
         "gitstudio.fetch.prune": {
           "type": "boolean",
           "default": true,

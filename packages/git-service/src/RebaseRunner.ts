@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { auditSpawn } from "./spawnAudit";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -201,9 +202,11 @@ function spawnGit(
     // hit a credential helper; with an open stdin git blocks on the prompt
     // forever and this promise never settles, wedging the whole rebase with no
     // way out. Closed stdin + GIT_TERMINAL_PROMPT=0 makes git fail fast instead.
+    const childEnv: NodeJS.ProcessEnv = { GIT_TERMINAL_PROMPT: "0", ...env };
+    auditSpawn({ bin: opts.gitPath || "git", args, cwd, env: childEnv });
     const child = spawn(opts.gitPath || "git", args, {
       cwd,
-      env: { GIT_TERMINAL_PROMPT: "0", ...env },
+      env: childEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";

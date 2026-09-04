@@ -5,6 +5,7 @@
 // HTTP providers. It spawns a process, so it lives here (not in the shared core).
 
 import { spawn } from "node:child_process";
+import { auditSpawn } from "@gitstudio/git-service/spawnAudit";
 import type { GitBrainProvider, CompleteRequest } from "./gitBrain";
 
 interface CliSpec {
@@ -83,7 +84,9 @@ export class CliProvider implements GitBrainProvider {
     return new Promise((resolve) => {
       let child: ReturnType<typeof spawn>;
       try {
-        child = spawn(spec.command, spec.args(prompt, model), {
+        const argv = spec.args(prompt, model);
+        auditSpawn({ bin: spec.command, args: argv, cwd: this.opts.cwd(), env: process.env });
+        child = spawn(spec.command, argv, {
           cwd: this.opts.cwd(),
           env: process.env,
           stdio: ["ignore", "pipe", "pipe"],
@@ -116,6 +119,7 @@ function binaryExists(cmd: string): Promise<boolean> {
   return new Promise((resolve) => {
     try {
       const finder = process.platform === "win32" ? "where" : "which";
+      auditSpawn({ bin: finder, args: [cmd] });
       const c = spawn(finder, [cmd], { stdio: "ignore" });
       c.on("error", () => resolve(false));
       c.on("close", (code) => resolve(code === 0));

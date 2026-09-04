@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { auditSpawn } from "./spawnAudit";
 
 export interface GitProcessOptions {
   cwd: string;
@@ -147,20 +148,22 @@ export class GitProcess {
   }
 
   private spawnChild(args: string[]): ChildProcessWithoutNullStreams {
-    const child = spawn(this.gitPath, [...HARDENED_ARGS, ...args], {
-      cwd: this.cwd,
-      env: {
-        ...process.env,
-        GIT_OPTIONAL_LOCKS: "0",
-        // Neither host has a terminal, so a git credential/passphrase prompt is
-        // an unanswerable question that blocks forever — a fetch/pull/push over
-        // HTTPS on a repo with no cached credential froze the sync UI with no
-        // way out. Fail fast instead; real credential HELPERS (osxkeychain,
-        // manager, GUI askpass) are unaffected — this only disables the
-        // read-from-the-tty fallback.
-        GIT_TERMINAL_PROMPT: "0",
-      },
-    });
+    const argv = [...HARDENED_ARGS, ...args];
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      GIT_OPTIONAL_LOCKS: "0",
+      // Neither host has a terminal, so a git credential/passphrase prompt is
+      // an unanswerable question that blocks forever — a fetch/pull/push over
+      // HTTPS on a repo with no cached credential froze the sync UI with no
+      // way out. Fail fast instead; real credential HELPERS (osxkeychain,
+      // manager, GUI askpass) are unaffected — this only disables the
+      // read-from-the-tty fallback.
+      GIT_TERMINAL_PROMPT: "0",
+    };
+    // Recorded BEFORE the spawn: a child that hangs on an OS prompt never
+    // reaches onRun, and that is exactly the case worth reading afterwards.
+    auditSpawn({ bin: this.gitPath, args: argv, cwd: this.cwd, env });
+    const child = spawn(this.gitPath, argv, { cwd: this.cwd, env });
     this.children.add(child);
     return child;
   }

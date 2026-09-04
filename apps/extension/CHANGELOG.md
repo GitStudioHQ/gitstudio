@@ -4,6 +4,20 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-09-04
+
+### Added
+- **Process Audit — a diagnostic for tracing OS password/permission prompts.**
+  A new setting, `gitstudio.debug.logChildProcesses` (off by default), records
+  every child process GitStudio launches — the binary, its full arguments, the
+  working directory, and the environment variables GitStudio adds — to a
+  **GitStudio: Process Audit** output channel (open it from the command palette).
+  It exists for one job: when a macOS/Windows credential or authorization prompt
+  appears while you work, this shows exactly what GitStudio handed the OS at that
+  moment, so a prompt raised by a credential helper, a git hook, or the editor's
+  own updater can be traced to its real source rather than guessed at. It costs
+  nothing when off, and secret-looking values are scrubbed.
+
 ## [1.12.0] - 2026-08-26
 
 ### Added
