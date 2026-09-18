@@ -26,3 +26,6 @@ apps/desktop/main.js
 # Python bytecode from the brand asset scripts.
 __pycache__/
 *.pyc
+
+# Build outputs collected by download.sh.
+downloads/

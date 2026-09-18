@@ -97,8 +97,11 @@ jobs:
           # so building on 24.04 (glibc 2.39) breaks Ubuntu 22.04/Debian 12 users.
           # No *.blockmap here — AppImage/deb don't emit one, and a non-matching
           # glob would fail the upload.
+          # .rpm and .tar.gz join .AppImage and .deb: gitstudio.dev has offered
+          # Fedora/RHEL and portable downloads all along and the release never
+          # produced them, so both links 404'd.
           - os: ubuntu-22.04
-            artifact: 'apps/desktop/release/*.AppImage apps/desktop/release/*.deb apps/desktop/release/latest-linux.yml'
+            artifact: 'apps/desktop/release/*.AppImage apps/desktop/release/*.deb apps/desktop/release/*.rpm apps/desktop/release/*.tar.gz apps/desktop/release/latest-linux.yml'
     runs-on: ${{ matrix.os }}
     env:
       # electron-builder reads these; when absent it builds UNSIGNED (it does not
@@ -118,6 +121,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+
+      # electron-builder shells out to `rpmbuild` for the .rpm target and it is
+      # not on the ubuntu runner image. Without this the Linux build fails at
+      # the very end, after everything else has already been produced.
+      - name: Install rpm tooling (Linux only)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm
 
       - name: Install (workspace root)
         run: npm ci
@@ -176,7 +186,7 @@ jobs:
           # runners emit an identically-named file and would clobber each other
           # — see the matrix note above and autoUpdate.ts). Requiring it here
           # would fail every release.
-          for want in ".dmg" ".zip" ".exe" ".AppImage" "latest.yml"; do
+          for want in ".dmg" ".zip" ".exe" ".AppImage" ".deb" ".rpm" ".tar.gz" "latest.yml" "latest-linux.yml"; do
             case "$ASSETS" in
               *"$want"*) ;;
               *) echo "::error::No asset matching '$want' — refusing to publish ${GITHUB_REF_NAME}."; exit 1 ;;

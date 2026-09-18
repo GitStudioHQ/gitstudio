@@ -69,7 +69,14 @@ dmg:
 
 win:
   target:
-    - nsis
+    # x64 and arm64: gitstudio.dev has always offered a Windows ARM64 build and
+    # the release never produced one, so that download 404'd. The matrix builds
+    # arm64 on a windows-11-arm runner rather than cross-compiling, because
+    # node-pty (the integrated terminal) is a native module and an x64 prebuild
+    # in an arm64 app is a terminal that cannot start.
+    - target: nsis
+      arch:
+        - x64
   # No spaces (the nsis default is "GitStudio Setup 1.0.0.exe"): GitHub asset
   # names replace spaces with dots while electron-updater requests them with
   # dashes — a guaranteed 404. Dashes also give the website stable download URLs.
@@ -83,10 +90,14 @@ nsis:
 linux:
   category: Development
   # AppImage = the universal, distro-agnostic download; deb = native install for
-  # Debian/Ubuntu/Mint (the largest Linux desktop share).
+  # Debian/Ubuntu/Mint (the largest Linux desktop share); rpm = Fedora/RHEL;
+  # tar.gz = the portable "unpack it anywhere" option. The last two were listed
+  # on gitstudio.dev for a year and never built, so both links 404'd.
   target:
     - AppImage
     - deb
+    - rpm
+    - tar.gz
   # Pinned so the website can link GitStudio-<version>-<arch>.AppImage forever.
   artifactName: ${productName}-${version}-${arch}.${ext}
   maintainer: GitStudio <hello@gitstudio.dev>

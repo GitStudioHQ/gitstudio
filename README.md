@@ -60,7 +60,7 @@ brew install --cask gitstudio             # add --force if you already have GitS
 | **macOS — Apple Silicon** | `GitStudio-<version>-arm64.dmg` |
 | **macOS — Intel** | `GitStudio-<version>-x64.dmg` |
 | **Windows** | `GitStudio-Setup-<version>.exe` (NSIS — choose your install dir) |
-| **Linux** | `GitStudio-<version>-x86_64.AppImage` (universal) · `GitStudio-<version>-amd64.deb` (Debian/Ubuntu) |
+| **Linux** | `GitStudio-<version>-x86_64.AppImage` (universal) · `GitStudio-<version>-amd64.deb` (Debian/Ubuntu) · `GitStudio-<version>-x86_64.rpm` (Fedora/RHEL) · `GitStudio-<version>.tar.gz` (portable) |
 
 Every release carries a `SHA256SUMS.txt`; the one-line installers verify against
 it and refuse to install on a mismatch.
