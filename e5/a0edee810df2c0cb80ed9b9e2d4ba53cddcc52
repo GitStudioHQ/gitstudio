@@ -1,0 +1,82 @@
+packages/git-service/test/rewordKeying.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 33,90
+apps/desktop/test/dashNamedPath.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 39,128
+apps/desktop/test/discardUndo.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 42
+apps/desktop/test/branchPush.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 39
+apps/desktop/test/defaultBranch.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 43,59,147
+apps/desktop/test/nameStatus.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 29
+apps/desktop/test/binaryConflict.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 45,123
+apps/desktop/test/remoteBranchRestore.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 40
+apps/desktop/test/conflictResolve.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 31
+apps/desktop/test/rewordAcrossStop.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 34,260,435,496,544
+apps/desktop/test/refWho.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 52
+apps/desktop/test/appSettings.test.ts
+  s_26f5e669d3043c::t_592990654cc1ce 5,11-14,16
+  s_26f5e669d3043c::t_bb16af2f6368b8 59
+apps/desktop/test/stagingSafety.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 23
+apps/desktop/test/rebaseAlreadyApplied.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 30
+apps/desktop/test/mergeReport.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 31
+apps/desktop/test/stageLines.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 30
+apps/desktop/test/conflictKinds.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 47,104,186,240,290
+apps/desktop/test/conflictSideLabels.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 68,133,182
+apps/desktop/test/branchesPeople.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 51
+apps/desktop/test/hunkIpc.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 31
+apps/desktop/test/stashRestore.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 32
+apps/desktop/test/opState.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 28
+apps/desktop/test/tagRestore.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 33
+apps/desktop/test/diffSides.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 39
+apps/desktop/test/conflictWriteSafety.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 42
+apps/desktop/test/graphLoadRace.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 43
+apps/desktop/test/rebaseUpdateRefs.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 28,245,314,370,423,587,667,797
+apps/desktop/test/brokenRepo.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 33,75
+apps/desktop/test/opMatrix.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 62
+apps/desktop/test/editors.test.ts
+  s_26f5e669d3043c::t_d0ae27a75994b2 3,63-67,69,71,74-75,77
+apps/desktop/src/main/editors.ts
+  s_26f5e669d3043c::t_6cfb7d19db77e0 21,99-116,119-120,124,133-135,141,144-145,152,156,165,175
+apps/desktop/test/stageConflictMarkers.test.ts
+  s_26f5e669d3043c::t_73abfdf4cc1da5 37,138,164,207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e5a0edee810df2c0cb80ed9b9e2d4ba53cddcc52",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
