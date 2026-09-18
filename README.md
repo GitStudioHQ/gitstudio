@@ -49,7 +49,8 @@ irm https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install
 
 ```bash
 brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio
-brew install --cask gitstudio
+brew trust gitstudiohq/gitstudio          # Homebrew asks this of every third-party tap
+brew install --cask gitstudio             # add --force if you already have GitStudio.app
 ```
 
 **Or download it** from the [latest GitHub Release](https://github.com/GitStudioHQ/gitstudio/releases/latest) or [gitstudio.dev](https://gitstudio.dev):

@@ -95,6 +95,9 @@ artifact set and nothing to keep in sync by hand:
   verification, then runs the NSIS installer (`-Silent` for unattended).
 - **Homebrew** — `Casks/gitstudio.rb`, tapped straight from this repo:
   `brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio`.
+  Homebrew requires `brew trust` for any third-party tap, and refuses to
+  overwrite an existing `/Applications/GitStudio.app` without `--force`; both
+  are in the README and the cask's caveats.
   The `finalize-release` job rewrites the cask's `version` and both `sha256`
   values from the assets it just published, attaches the result to the release,
   and opens a one-file PR to land it on `main`. Merge that PR and the tap
