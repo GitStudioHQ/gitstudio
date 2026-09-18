@@ -1,0 +1,21 @@
+.github/workflows/release-desktop.yml
+  s_26f5e669d3043c::t_f6b4cb158a8931 199,201,223-226,229-248,250
+RELEASING.md
+  s_26f5e669d3043c::t_48eb4d76ce1da9 99-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7f3b1b85c0452791eae57b6d2c99aa9b6a4b35df",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
