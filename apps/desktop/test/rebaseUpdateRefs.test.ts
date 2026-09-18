@@ -25,6 +25,7 @@ function stackRepo(): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0"); // no background gc racing the cleanup
+  git("config", "core.autocrlf", "false"); // and no line-ending rewriting
   const commit = (n: string): void => {
     writeFileSync(`${root}/${n}.txt`, `${n}\n`);
     git("add", "-A");
@@ -241,6 +242,7 @@ test("a branch below the display cap is carried across the rewrite too", async (
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     git("commit", "-q", "--allow-empty", "-m", "base");
     git("branch", "trunk");
     // Real content per commit, not `--allow-empty`: every empty commit has the
@@ -309,6 +311,7 @@ test("a plan is refused once the branch has moved under it", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/f.txt`, "base\n");
     git("add", "-A");
     git("commit", "-qm", "base");
@@ -364,6 +367,7 @@ test("the plan reports every commit it will replay, not just the page shown", as
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     git("commit", "-q", "--allow-empty", "-m", "base");
     git("branch", "trunk");
     for (let i = 1; i <= 205; i++) {
@@ -416,6 +420,7 @@ test("a branch on a squashed commit moves with the fold, not before it", async (
       git("config", "user.email", "t@t");
       git("config", "user.name", "t");
       git("config", "gc.auto", "0");
+      git("config", "core.autocrlf", "false");
       git("commit", "-q", "--allow-empty", "-m", "base");
       git("branch", "trunk");
       for (const n of ["c1", "c2", "c3", "c4"]) {
@@ -579,6 +584,7 @@ function mergeRangeRepo(): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   const commit = (n: string): void => {
     writeFileSync(`${root}/${n}.txt`, `${n}\n`);
     git("add", "-A");
@@ -658,6 +664,7 @@ function interleavedRepo(): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   const at = (n: string, when: string): void => {
     writeFileSync(`${root}/${n}.txt`, `${n}\n`);
     execFileSync("git", ["add", "-A"], { cwd: root });
@@ -787,6 +794,7 @@ test("a patch already on the base is not in the plan, and does not wedge the reb
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/m.txt`, "m\n");
     git("add", "-A");
     git("commit", "-qm", "m1");

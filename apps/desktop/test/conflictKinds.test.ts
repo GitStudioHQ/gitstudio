@@ -44,6 +44,7 @@ function conflicted(
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   writeFileSync(join(root, name), base);
   git("add", "-A");
   git("commit", "-qm", "base");
@@ -100,6 +101,7 @@ test("the other direction is named the other way round", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(join(root, "f.txt"), "base\n");
     git("add", "-A");
     git("commit", "-qm", "base");
@@ -181,6 +183,7 @@ test("discarding an ordinary file still just reverts it", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(join(root, "a.txt"), "one\n");
     git("add", "-A");
     git("commit", "-qm", "a");
@@ -234,6 +237,7 @@ test("a both-sides-deleted conflict is its own state, not a modify/delete", asyn
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(join(root, "f.txt"), "base\n");
     writeFileSync(join(root, "keep.txt"), "so the merge has something to do\n");
     git("add", "-A");
@@ -283,6 +287,7 @@ test("an added-on-one-side conflict has no common version behind it", async () =
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(join(root, "keep.txt"), "base\n");
     git("add", "-A");
     git("commit", "-qm", "base");

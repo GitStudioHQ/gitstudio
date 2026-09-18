@@ -48,6 +48,7 @@ beforeEach(() => {
   git("config", "user.email", "anton@example.com");
   git("config", "user.name", "Anton");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   commitAs("Anton", "anton@example.com", "a.txt", "first");
   ctx = new GitContext({ root: repo });
   bridge = new GitBridge({ getContext: () => ctx } as unknown as RepoStore);

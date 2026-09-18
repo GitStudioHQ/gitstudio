@@ -18,7 +18,7 @@ import { spawn } from "node:child_process";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, join, posix, win32 } from "node:path";
 import { promisify } from "node:util";
 import { app, nativeImage, shell } from "electron";
 import type { EditorView } from "../shared/ipc";
@@ -96,13 +96,32 @@ export interface DetectEnv {
   exists: (p: string) => boolean;
 }
 
+/**
+ * Join for the platform being DETECTED, not the one we happen to run on.
+ *
+ * `DetectEnv.platform` is a parameter — the tests drive every branch from any
+ * host — but the paths were assembled with node:path's host-native `join`, so
+ * asking about darwin from Windows produced `\Users\dev\Applications` and
+ * matched nothing. In production the two always agree, which is why this never
+ * showed until the suite first ran on a Windows runner.
+ */
+function joiner(platform: NodeJS.Platform): (...parts: string[]) => string {
+  return platform === "win32" ? win32.join : posix.join;
+}
+
+/** And the PATH separator belongs to that platform too. */
+function pathDelimiter(platform: NodeJS.Platform): string {
+  return platform === "win32" ? ";" : ":";
+}
+
 /** Directories a CLI can live in beyond the (minimal) PATH of a GUI app. */
 function cliDirs(env: DetectEnv): string[] {
-  const fromPath = env.path ? env.path.split(delimiter).filter(Boolean) : [];
+  const j = joiner(env.platform);
+  const fromPath = env.path ? env.path.split(pathDelimiter(env.platform)).filter(Boolean) : [];
   if (env.platform === "win32") {
     return [
       ...fromPath,
-      ...(env.localAppData ? [join(env.localAppData, "JetBrains", "Toolbox", "scripts")] : []),
+      ...(env.localAppData ? [j(env.localAppData, "JetBrains", "Toolbox", "scripts")] : []),
     ];
   }
   return [
@@ -111,28 +130,30 @@ function cliDirs(env: DetectEnv): string[] {
     "/opt/homebrew/bin",
     "/usr/bin",
     "/snap/bin",
-    join(env.home, ".local", "bin"),
-    join(env.home, "Library", "Application Support", "JetBrains", "Toolbox", "scripts"),
-    join(env.home, ".local", "share", "JetBrains", "Toolbox", "scripts"),
+    j(env.home, ".local", "bin"),
+    j(env.home, "Library", "Application Support", "JetBrains", "Toolbox", "scripts"),
+    j(env.home, ".local", "share", "JetBrains", "Toolbox", "scripts"),
   ];
 }
 
 /** Where a macOS app bundle can be. */
 function appDirs(env: DetectEnv): string[] {
+  const j = joiner(env.platform);
   return [
     "/Applications",
-    join(env.home, "Applications"),
-    join(env.home, "Applications", "JetBrains Toolbox"),
+    j(env.home, "Applications"),
+    j(env.home, "Applications", "JetBrains Toolbox"),
   ];
 }
 
 /** Find one editor. App bundle first (needs no CLI), then a CLI, then a
  *  Windows install path. */
 export function detectEditor(spec: EditorSpec, env: DetectEnv): DetectedEditor | undefined {
+  const j = joiner(env.platform);
   if (env.platform === "darwin") {
     for (const dir of appDirs(env)) {
       for (const app of spec.apps) {
-        const p = join(dir, `${app}.app`);
+        const p = j(dir, `${app}.app`);
         if (env.exists(p)) return { id: spec.id, name: spec.name, via: "app", location: p };
       }
     }
@@ -141,7 +162,7 @@ export function detectEditor(spec: EditorSpec, env: DetectEnv): DetectedEditor |
   for (const dir of cliDirs(env)) {
     for (const cli of spec.cli) {
       for (const ext of exts) {
-        const p = join(dir, cli + ext);
+        const p = j(dir, cli + ext);
         if (env.exists(p)) return { id: spec.id, name: spec.name, via: "cli", location: p };
       }
     }
@@ -151,7 +172,7 @@ export function detectEditor(spec: EditorSpec, env: DetectEnv): DetectedEditor |
       const [kind, rel] = w.split(/:(.+)/);
       const base = kind === "local" ? env.localAppData : env.programFiles;
       if (!base) continue;
-      const p = join(base, rel);
+      const p = j(base, rel);
       if (env.exists(p)) return { id: spec.id, name: spec.name, via: "path", location: p };
     }
   }

@@ -28,6 +28,7 @@ beforeEach(() => {
   git("config", "user.email", "dev@example.com");
   git("config", "user.name", "Dev");
     git("config", "gc.auto", "0"); // no background gc racing the cleanup
+    git("config", "core.autocrlf", "false"); // and no line-ending rewriting
   writeFileSync(join(repo, "f.txt"), BASE);
   git("add", ".");
   git("commit", "-m", "base");

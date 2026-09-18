@@ -34,6 +34,7 @@ function conflicted(): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   writeFileSync(`${root}/f.txt`, "base\n");
   git("add", "-A");
   git("commit", "-qm", "base");
@@ -134,6 +135,7 @@ test("an ordinary file is unaffected", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/f.txt`, "one\n");
     git("add", "-A");
     git("commit", "-qm", "base");
@@ -159,6 +161,7 @@ test("a file that merely mentions the markers in its text is judged by both ends
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/README.md`, "A conflict opens with a line of seven `<` characters.\n");
     git("add", "-A");
     git("commit", "-qm", "base");
@@ -201,6 +204,7 @@ test("a conflicted BINARY is held back by Stage all too", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/art.png`, nul(1));
     git("add", "-A");
     git("commit", "-qm", "base");

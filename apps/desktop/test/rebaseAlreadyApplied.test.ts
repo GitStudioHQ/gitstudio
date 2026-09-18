@@ -27,6 +27,7 @@ function repo(name: string): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   return { root, git };
 }
 

@@ -40,6 +40,7 @@ function makeOrigin(): string {
   run(dir, "config", "user.email", "dev@example.com");
   run(dir, "config", "user.name", "Dev");
   run(dir, "config", "gc.auto", "0");
+  run(dir, "config", "core.autocrlf", "false");
   writeFileSync(join(dir, "f.txt"), "one\n");
   run(dir, "add", ".");
   run(dir, "commit", "-m", "first");
@@ -55,6 +56,7 @@ function makeClone(remoteName: string): string {
   run(dir, "config", "user.email", "dev@example.com");
   run(dir, "config", "user.name", "Dev");
   run(dir, "config", "gc.auto", "0");
+  run(dir, "config", "core.autocrlf", "false");
   run(dir, "checkout", "-q", "-b", "work");
   writeFileSync(join(dir, "g.txt"), "work\n");
   run(dir, "add", ".");
@@ -142,6 +144,7 @@ test("no remote at all falls back to the checked-out branch, without throwing", 
   run(clone, "config", "user.email", "dev@example.com");
   run(clone, "config", "user.name", "Dev");
   run(clone, "config", "gc.auto", "0");
+  run(clone, "config", "core.autocrlf", "false");
   writeFileSync(join(clone, "f.txt"), "one\n");
   run(clone, "add", ".");
   run(clone, "commit", "-m", "first");

@@ -40,6 +40,7 @@ beforeEach(() => {
   git("config", "user.email", "dev@example.com");
   git("config", "user.name", "Dev");
     git("config", "gc.auto", "0"); // no background gc racing the cleanup
+    git("config", "core.autocrlf", "false"); // and no line-ending rewriting
   for (let i = 0; i < 12; i++) {
     writeFileSync(join(repo, `f${i}.txt`), `${i}\n`);
     git("add", ".");

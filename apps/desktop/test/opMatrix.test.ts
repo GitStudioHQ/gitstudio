@@ -59,6 +59,7 @@ function repo(name: string): Repo {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   return {
     root,
     git,

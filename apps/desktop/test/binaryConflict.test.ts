@@ -42,6 +42,7 @@ function conflictedBinaryRepo(): { root: string; ours: Buffer; theirs: Buffer } 
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
 
   writeFileSync(`${root}/logo.png`, binary(1));
   git("add", "-A");
@@ -119,6 +120,7 @@ test("a text conflict still resolves to the chosen side", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/f.txt`, "base\n");
     git("add", "-A");
     git("commit", "-qm", "base");

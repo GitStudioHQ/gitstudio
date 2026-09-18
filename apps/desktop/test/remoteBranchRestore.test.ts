@@ -37,6 +37,7 @@ beforeEach(() => {
   git("config", "user.email", "dev@example.com");
   git("config", "user.name", "Dev");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   git("remote", "add", "origin", remote);
   writeFileSync(join(repo, "a.txt"), "one\n");
   git("add", ".");

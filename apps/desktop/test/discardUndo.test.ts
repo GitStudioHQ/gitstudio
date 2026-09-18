@@ -39,6 +39,7 @@ beforeEach(() => {
   git("config", "user.email", "dev@example.com");
   git("config", "user.name", "Dev");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   write("a.txt", "committed a\n");
   write("b.txt", "committed b\n");
   git("add", ".");

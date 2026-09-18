@@ -28,6 +28,7 @@ function conflictRepo(): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0"); // no background gc racing the cleanup
+  git("config", "core.autocrlf", "false"); // and no line-ending rewriting
   writeFileSync(`${root}/f.txt`, "one\n");
   git("add", ".");
   git("commit", "-qm", "base");

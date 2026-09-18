@@ -31,6 +31,7 @@ function conflictingStack(): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
 
   writeFileSync(`${root}/shared.txt`, "base\n");
   writeFileSync(`${root}/other.txt`, "o\n");
@@ -256,6 +257,7 @@ test("an edit stop is reported as a pause, and keeps the rewords below it", asyn
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     for (const n of ["m1", "c1", "c2", "c3"]) {
       writeFileSync(`${root}/${n}.txt`, `${n}\n`);
       git("add", "-A");
@@ -430,6 +432,7 @@ test("an interrupted git am is not reported as a rebase", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/f.txt`, "one\n");
     git("add", "-A");
     git("commit", "-qm", "base");
@@ -490,6 +493,7 @@ test("a reword keeps the body and the trailers", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/a.txt`, "a\n");
     git("add", "-A");
     git("commit", "-qm", "base");
@@ -537,6 +541,7 @@ test("a reword message keeps its hashes, and a squash still loses its boilerplat
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/a.txt`, "a\n");
     git("add", "-A");
     git("commit", "-qm", "base");

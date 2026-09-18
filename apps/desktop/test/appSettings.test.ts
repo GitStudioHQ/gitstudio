@@ -2,14 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { AppSettings } from "../src/main/appSettings";
 
 // The settings store behind Settings → Repositories: defaults, persistence,
 // the null-reset contract, and the "~"-shortened display path.
 
+// A POSIX home, joined with POSIX rules. `join` is the HOST's, so on a Windows
+// runner it turned "/Users/someone" + "GitStudio" into "\\Users\\someone\\GitStudio",
+// which no longer starts with the home this test declared — and the `~` display
+// this file exists to check had nothing to match against.
 const HOME = "/Users/someone";
-const DEF = join(HOME, "GitStudio");
+const DEF = posix.join(HOME, "GitStudio");
 
 function dir(): string {
   return mkdtempSync(join(tmpdir(), "gitstudio-settings-"));
@@ -52,7 +56,7 @@ test("cloneDir: null resets to the default", async () => {
 
 test("a home-relative custom dir displays with ~", async () => {
   const s = await AppSettings.load(dir(), { defaultCloneDir: DEF, home: HOME });
-  const v = await s.update({ cloneDir: join(HOME, "Code") });
+  const v = await s.update({ cloneDir: posix.join(HOME, "Code") });
   assert.equal(v.cloneDirDisplay, "~/Code");
 });
 

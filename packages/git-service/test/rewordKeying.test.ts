@@ -30,6 +30,7 @@ function repo(): { root: string; git: (...a: string[]) => string } {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   for (const n of ["m1", "A", "B", "C"]) {
     writeFileSync(`${root}/${n}.txt`, `${n}\n`);
     git("add", "-A");
@@ -86,6 +87,7 @@ test("an entry with no real key renames nothing — not even a conflicted pick",
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/shared.txt`, "base\n");
     git("add", "-A");
     git("commit", "-qm", "m1");

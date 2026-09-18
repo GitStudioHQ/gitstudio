@@ -36,6 +36,7 @@ function conflicted(name: string): string {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   writeFileSync(`${root}/${name}`, "base\n");
   git("add", "-A");
   git("commit", "-qm", "base");
@@ -124,6 +125,7 @@ test("a modify/delete conflict on a filename that could be read as a glob", asyn
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
     writeFileSync(`${root}/${name}`, "base\n");
     writeFileSync(`${root}/i`, "an innocent bystander\n");
     git("add", "-A");

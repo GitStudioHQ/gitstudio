@@ -65,6 +65,7 @@ test("git agrees about cherry-pick and revert too", () => {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   writeFileSync(join(root, "f.txt"), "base\n");
   git("add", "-A");
   git("commit", "-qm", "base");
@@ -129,6 +130,7 @@ test("git really does NOT invert the sides during an am", () => {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   writeFileSync(join(root, "f.txt"), "base\n");
   git("add", "-A");
   git("commit", "-qm", "base");
@@ -177,6 +179,7 @@ test("git really does invert the sides during a rebase", () => {
   git("config", "user.email", "t@t");
   git("config", "user.name", "t");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   writeFileSync(join(root, "f.txt"), "base\n");
   git("add", "-A");
   git("commit", "-qm", "base");

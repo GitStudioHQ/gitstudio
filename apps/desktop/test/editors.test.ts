@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import {
   EDITOR_CATALOG,
   commandFor,
@@ -60,17 +60,21 @@ test("PATH entries are searched first, in order", () => {
 });
 
 test("Windows finds the .cmd shim, then the known install path", () => {
+  // win32.join, not the host's join: the detector builds paths for the platform
+  // it was ASKED about, so describing a Windows filesystem from macOS has to use
+  // Windows separators or the fake `exists` set never matches. This test used the
+  // host's separator and only agreed with the detector by accident, on a host
+  // that happened to be the same platform.
   const local = "C:\\Users\\dev\\AppData\\Local";
-  const cli = env("win32", [join(local, "JetBrains", "Toolbox", "scripts", "webstorm.cmd")], { localAppData: local });
+  const cli = env("win32", [win32.join(local, "JetBrains", "Toolbox", "scripts", "webstorm.cmd")], { localAppData: local });
   assert.equal(detectEditor(spec("webstorm"), cli)?.via, "cli");
-  const installed = env("win32", [join(local, "Programs/cursor/Cursor.exe")], { localAppData: local });
+  const installed = env("win32", [win32.join(local, "Programs/cursor/Cursor.exe")], { localAppData: local });
   const hit = detectEditor(spec("cursor"), installed);
   assert.equal(hit?.via, "path");
-  assert.equal(hit?.location, join(local, "Programs/cursor/Cursor.exe"));
-  // Program Files entries need the variable to be present at all. (Joined
-  // with the host's own separator, as the detector does.)
+  assert.equal(hit?.location, win32.join(local, "Programs/cursor/Cursor.exe"));
+  // Program Files entries need the variable to be present at all.
   const pf = "C:\\Program Files";
-  const subl = join(pf, "Sublime Text/sublime_text.exe");
+  const subl = win32.join(pf, "Sublime Text/sublime_text.exe");
   assert.equal(detectEditor(spec("sublime"), env("win32", [subl])), undefined);
   assert.equal(detectEditor(spec("sublime"), env("win32", [subl], { programFiles: pf }))?.via, "path");
 });

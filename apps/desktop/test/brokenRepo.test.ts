@@ -30,6 +30,7 @@ test("a repo git cannot read fails loudly, but as an expected condition", async 
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0"); // no background gc racing the cleanup
+    git("config", "core.autocrlf", "false"); // and no line-ending rewriting
     writeFileSync(`${root}/a.txt`, "a\n");
     git("add", ".");
     git("commit", "-qm", "one");
@@ -71,6 +72,7 @@ test("a healthy repo still reads its working tree", async () => {
     git("config", "user.email", "t@t");
     git("config", "user.name", "t");
     git("config", "gc.auto", "0"); // no background gc racing the cleanup
+    git("config", "core.autocrlf", "false"); // and no line-ending rewriting
     writeFileSync(`${root}/a.txt`, "a\n");
     git("add", ".");
     git("commit", "-qm", "one");

@@ -49,6 +49,7 @@ beforeEach(() => {
   git("config", "user.email", "tagger@example.com");
   git("config", "user.name", "The Tagger");
   git("config", "gc.auto", "0");
+  git("config", "core.autocrlf", "false");
   commitAs("Mira Holt", "mira@example.com", "a.txt", "first");
   ctx = new GitContext({ root: repo });
 });
