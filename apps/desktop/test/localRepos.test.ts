@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import {
   LocalRepoScanner,
   SCAN_TTL_MS,
@@ -250,9 +250,12 @@ test("samePath compares resolved paths, not strings", () => {
 // match.
 
 test("worktreeMainRoot reads a worktree gitfile and nothing else", () => {
-  const wt = `gitdir: ${join("/Users/x/dev/app", ".git", "worktrees", "wt-design")}\n`;
+  // posix.join: git writes forward slashes in a worktree gitfile on every
+  // platform (this file's own assertions below say so), and the host's join
+  // turned the POSIX path into a Windows one on the Windows runner.
+  const wt = `gitdir: ${posix.join("/Users/x/dev/app", ".git", "worktrees", "wt-design")}\n`;
   assert.equal(worktreeMainRoot(wt), "/Users/x/dev/app");
-  const sub = `gitdir: ${join("..", ".git", "modules", "vendored")}\n`;
+  const sub = `gitdir: ${posix.join("..", ".git", "modules", "vendored")}\n`;
   assert.equal(worktreeMainRoot(sub), undefined, "a submodule is its own repository");
   assert.equal(worktreeMainRoot("not a gitfile"), undefined);
   assert.equal(worktreeMainRoot(""), undefined);

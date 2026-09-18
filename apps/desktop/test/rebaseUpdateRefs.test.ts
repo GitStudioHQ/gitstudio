@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, chmodSync, existsSync } from "node:fs";
+import { writeFileSync, mkdtempSync, existsSync } from "node:fs";
 import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
@@ -695,14 +695,22 @@ function interleavedRepo(): { root: string; git: (...a: string[]) => string } {
  * no matter what. Exiting 1 makes git abort with the repository untouched.
  */
 function nativeTodo(root: string, base: string): string[] {
-  const editor = mkdtempSync(`${tmpdir()}/gs-seq-`) + "/seq.sh";
-  writeFileSync(editor, '#!/bin/sh\ncat "$1"\nexit 1\n');
-  chmodSync(editor, 0o755);
+  // A NODE sequence editor, not a `#!/bin/sh` script.
+  //
+  // The shell version could not run on Windows — git reported no editor output
+  // at all and the todo came back empty — and it needed `chmodSync`, which
+  // means nothing there either. `node` is on PATH wherever this suite runs, and
+  // git hands the value to a shell, so forward slashes and quotes travel.
+  const editor = mkdtempSync(`${tmpdir()}/gs-seq-`) + "/seq.cjs";
+  writeFileSync(
+    editor,
+    'const fs=require("fs");process.stdout.write(fs.readFileSync(process.argv[2],"utf8"));process.exit(1);\n',
+  );
   let out = "";
   try {
     execFileSync("git", ["rebase", "-i", base], {
       cwd: root,
-      env: { ...process.env, GIT_SEQUENCE_EDITOR: editor },
+      env: { ...process.env, GIT_SEQUENCE_EDITOR: `node "${editor.replace(/\\/g, "/")}"` },
       encoding: "utf8",
     });
   } catch (e) {

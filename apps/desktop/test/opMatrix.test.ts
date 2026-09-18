@@ -205,12 +205,22 @@ test("rebase paused at an `edit` stop: Continue only, never Skip", async () => {
     r.git("add", "-A");
     r.git("commit", "-qm", "the commit to edit");
 
-    const seq = `${r.root}/seq.sh`;
-    writeFileSync(seq, '#!/bin/sh\nsed -i.bak "s/^pick /edit /" "$1"\n');
-    execFileSync("chmod", ["+x", seq]);
+    // A NODE sequence editor: `#!/bin/sh` + `chmod` + `sed -i.bak` is three
+    // POSIX-only mechanisms in one line, none of which works on a Windows
+    // runner — and `sed -i.bak` left a stray backup file beside the todo.
+    const seq = `${r.root}/seq.cjs`;
+    writeFileSync(
+      seq,
+      'const fs=require("fs");const p=process.argv[2];' +
+        'fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace(/^pick /gm,"edit "));\n',
+    );
     execFileSync("git", ["rebase", "-i", "trunk"], {
       cwd: r.root,
-      env: { ...process.env, GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: "true" },
+      env: {
+        ...process.env,
+        GIT_SEQUENCE_EDITOR: `node "${seq.replace(/\\/g, "/")}"`,
+        GIT_EDITOR: "true",
+      },
       stdio: "ignore",
     });
 
