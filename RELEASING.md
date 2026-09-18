@@ -96,8 +96,14 @@ artifact set and nothing to keep in sync by hand:
 - **Homebrew** — `Casks/gitstudio.rb`, tapped straight from this repo:
   `brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio`.
   The `finalize-release` job rewrites the cask's `version` and both `sha256`
-  values from the assets it just published and pushes that back to `main`, so
-  the tap is correct the moment the release is. Never hand-edit those lines.
+  values from the assets it just published, attaches the result to the release,
+  and opens a one-file PR to land it on `main`. Merge that PR and the tap
+  resolves to the new release. Never hand-edit those lines.
+
+  It opens a PR rather than pushing because the ruleset on `main` requires one
+  and the Actions token has no bypass; the step is `continue-on-error` so a
+  housekeeping commit can never take a release down. If you grant the Actions
+  app a ruleset bypass, the push can go straight to `main` instead.
 - **Direct download** — the installer table in the README.
 
 `SHA256SUMS.txt` is generated in `finalize-release` by downloading the published
