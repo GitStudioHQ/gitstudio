@@ -1,0 +1,26 @@
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_6c84075f37c64f 90-113,133
+  s_26f5e669d3043c::t_7687b3ee184266 40-41,43-46,144-158
+  s_26f5e669d3043c::t_5d69c00450e2ec 58-69,71-89,134-139,159-162
+  s_26f5e669d3043c::t_03adfb5860da4d 13-39,57,70,140-141,166-169,240
+  s_26f5e669d3043c::t_1b52a4b7a23db3 114-117
+  s_26f5e669d3043c::t_c466b615e5ca19 12,170-239
+  s_26f5e669d3043c::t_479c300e2b8345 118-132
+  s_26f5e669d3043c::t_ace4aa708d24c4 42,47-56,142-143,163-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e4734fc7026a997d78780ec7d002a762b3ce1ec8",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
