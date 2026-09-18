@@ -1,0 +1,24 @@
+Casks/gitstudio.rb
+  s_26f5e669d3043c::t_1dd0c0690569ce 14,18,34
+  s_26f5e669d3043c::t_ae13742599cd55 51-53
+README.md
+  s_26f5e669d3043c::t_44c194a2b83e96 52-53
+RELEASING.md
+  s_26f5e669d3043c::t_b3e0b9e9b69a53 98-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3ce07ada790e25a0b8f68b5056915210a8453a05",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
