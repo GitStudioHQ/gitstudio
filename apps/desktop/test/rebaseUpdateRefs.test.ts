@@ -706,17 +706,47 @@ function nativeTodo(root: string, base: string): string[] {
     "feature",
     "capturing git's todo must not run the rebase",
   );
-  return out
-    .split("\n")
-    .filter((l) => l.startsWith("pick "))
-    .map((l) => l.split(/\s+/)[2]);
+  // `pick <sha> <subject>` — take everything after the sha, not the third
+  // whitespace-separated token. Indexing by token assumed a one-word subject
+  // and a single space, which is true of this fixture and not of git: the
+  // instruction format is configurable, abbreviated commands write `p` instead
+  // of `pick`, and a subject with a space would have silently returned its
+  // first word. The raw todo travels with the failure so a machine whose git
+  // formats this differently says so instead of reporting a bare mismatch.
+  const picks = out
+    .split(/\r?\n/)
+    .map((l) => /^(?:pick|p)\s+(\S+)\s+(.*)$/.exec(l.trim()))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => m[2].trim());
+  assert.ok(
+    picks.length > 0,
+    `git's todo had no pick lines. git ${gitVersion()} wrote:\n${out || "(nothing)"}`,
+  );
+  lastTodo = out;
+  return picks;
 }
+
+/** For a failure message — the parse below depends on git's todo format. */
+function gitVersion(): string {
+  try {
+    return execFileSync("git", ["--version"], { encoding: "utf8" }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+/** The raw todo from the last nativeTodo() call, for diagnosing a mismatch. */
+let lastTodo = "";
 
 test("the plan replays in the order git itself would", async () => {
   const { root } = interleavedRepo();
   try {
     const native = nativeTodo(root, "trunk");
-    assert.deepEqual(native, ["A", "B", "C"], "git's own todo, for reference");
+    assert.deepEqual(
+      native,
+      ["A", "B", "C"],
+      `git's own todo, for reference. ${gitVersion()} wrote:\n${lastTodo}`,
+    );
 
     const repos = new RepoStore([]);
     await repos.open(root);
