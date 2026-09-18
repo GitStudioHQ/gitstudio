@@ -83,6 +83,27 @@ A `create-release` job makes the Release once (so the matrix jobs never race eac
 
 Artifact names are pinned in `electron-builder.yml` (no spaces, arch-suffixed) so the website can link them predictably: `https://github.com/GitStudioHQ/gitstudio/releases/download/app-v<version>/<name>`.
 
+**Install channels.** Four, all fed by the same Release assets, so there is one
+artifact set and nothing to keep in sync by hand:
+
+- **`curl | bash`** — `scripts/install.sh` (macOS, Linux). Resolves the newest
+  `app-v*` tag, picks the asset for the host OS/arch, verifies it against
+  `SHA256SUMS.txt`, mounts the dmg into `/Applications` (clearing the Gatekeeper
+  quarantine) or installs the AppImage into `~/.local/bin` with a `.desktop`
+  entry.
+- **`irm | iex`** — `scripts/install.ps1` (Windows). Same resolution and
+  verification, then runs the NSIS installer (`-Silent` for unattended).
+- **Homebrew** — `Casks/gitstudio.rb`, tapped straight from this repo:
+  `brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio`.
+  The `finalize-release` job rewrites the cask's `version` and both `sha256`
+  values from the assets it just published and pushes that back to `main`, so
+  the tap is correct the moment the release is. Never hand-edit those lines.
+- **Direct download** — the installer table in the README.
+
+`SHA256SUMS.txt` is generated in `finalize-release` by downloading the published
+assets and hashing them there, rather than trusting a value from a build job
+that might have been re-run.
+
 **Auto-update:** Windows and Linux update in-app (`latest.yml` / `latest-linux.yml` ship with the release). macOS update checks are intentionally disabled in the app (two per-arch runners would clobber each other's `latest-mac.yml`, and unsigned builds can't apply Squirrel.Mac updates) — mac users update via the website/Release page.
 
 > Unsigned macOS/Windows builds trigger the OS "unidentified developer" prompt. Add the signing secrets above to remove it. macOS notarization also needs the Apple secrets.

@@ -33,7 +33,26 @@ cursor --install-extension gitstudio.gitstudio    # Cursor
 
 ### Desktop app
 
-Download the installer for your platform from the [latest GitHub Release](https://github.com/GitStudioHQ/gitstudio/releases/latest) or from [gitstudio.dev](https://gitstudio.dev):
+**One line:**
+
+```bash
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install.sh | bash
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install.ps1 | iex
+```
+
+**Homebrew** (macOS):
+
+```bash
+brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio
+brew install --cask gitstudio
+```
+
+**Or download it** from the [latest GitHub Release](https://github.com/GitStudioHQ/gitstudio/releases/latest) or [gitstudio.dev](https://gitstudio.dev):
 
 | Platform | Installer |
 |---|---|
@@ -42,7 +61,13 @@ Download the installer for your platform from the [latest GitHub Release](https:
 | **Windows** | `GitStudio-Setup-<version>.exe` (NSIS — choose your install dir) |
 | **Linux** | `GitStudio-<version>-x86_64.AppImage` (universal) · `GitStudio-<version>-amd64.deb` (Debian/Ubuntu) |
 
-Windows and Linux (AppImage) builds check GitHub Releases and update in-app (electron-updater); macOS updates are manual until signed builds ship.
+Every release carries a `SHA256SUMS.txt`; the one-line installers verify against
+it and refuse to install on a mismatch.
+
+Windows and Linux (AppImage) builds check GitHub Releases and update in-app
+(electron-updater); macOS updates are manual until signed builds ship — two
+per-arch runners would clobber each other's `latest-mac.yml`, and Squirrel.Mac
+cannot apply an unsigned update.
 
 ## The idea
 

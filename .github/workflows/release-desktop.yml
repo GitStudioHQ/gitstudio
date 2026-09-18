@@ -179,6 +179,57 @@ jobs:
             esac
           done
 
+      # The installers (scripts/install.sh, scripts/install.ps1) verify what they
+      # download, and the Homebrew cask cannot exist without a sha256. Both need
+      # the real digests of the assets the matrix just uploaded, so they are
+      # computed HERE, from the files as published, rather than trusted from a
+      # build job that could have been re-run.
+      - name: Publish checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-sums && cd dist-sums
+          gh release download "${GITHUB_REF_NAME}" \
+            --pattern '*.dmg' --pattern '*.zip' --pattern '*.exe' \
+            --pattern '*.AppImage' --pattern '*.deb'
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "${GITHUB_REF_NAME}" SHA256SUMS.txt --clobber
+
+      - name: Stamp the Homebrew cask
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#app-v}"
+          ARM=$(awk -v f="GitStudio-${VERSION}-arm64.dmg" '$2==f{print $1}' dist-sums/SHA256SUMS.txt)
+          X64=$(awk -v f="GitStudio-${VERSION}-x64.dmg"   '$2==f{print $1}' dist-sums/SHA256SUMS.txt)
+          if [ -z "$ARM" ] || [ -z "$X64" ]; then
+            echo "::error::Missing a mac dmg checksum — arm64='$ARM' x64='$X64'"; exit 1
+          fi
+          python3 - "$VERSION" "$ARM" "$X64" <<'PY'
+          import re, sys
+          version, arm, x64 = sys.argv[1], sys.argv[2], sys.argv[3]
+          p = "Casks/gitstudio.rb"
+          s = open(p).read()
+          s = re.sub(r'^  version "[^"]*"$', f'  version "{version}"', s, count=1, flags=re.M)
+          # Two sha256 lines, in on_arm then on_intel order — replace positionally.
+          shas = iter([arm, x64])
+          s = re.sub(r'sha256 "[0-9a-f]{64}"', lambda m: f'sha256 "{next(shas)}"', s, count=2)
+          open(p, "w").write(s)
+          print(s)
+          PY
+          if git diff --quiet Casks/gitstudio.rb; then
+            echo "Cask already current."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Casks/gitstudio.rb
+            git commit -m "release(cask): GitStudio ${VERSION}"
+            # The tag is built from main; push the stamp back to main so the tap
+            # a user installs from resolves to the release that was just made.
+            git push origin HEAD:main
+          fi
+
       - name: Publish the release
         shell: bash
         run: gh release edit "${GITHUB_REF_NAME}" --draft=false --latest

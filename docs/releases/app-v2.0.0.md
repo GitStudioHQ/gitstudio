@@ -1,4 +1,4 @@
-# GitStudio 1.7.0 — a Home that knows what is going on, Issues and PRs that read like a tracker, and reviews that post as one
+# GitStudio 2.0 — a Home that knows what is going on, Issues and PRs that read like a tracker, and reviews that post as one
 
 This is the redesign wave. The split panes are gone; every GitHub section is a
 full-width list that opens into a full-page detail with a property rail, the
@@ -130,3 +130,35 @@ pinned instead of floating invisibly over the rows sliding beneath it.
 If you are on 1.6.0, the app will offer this release on its own: on macOS it
 downloads the right installer to your Downloads folder and opens it; on Windows
 and Linux it downloads in place and restarts into 1.7.0 when you say so.
+
+## Installing
+
+Four ways in, all fed by the same release assets:
+
+```bash
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install.sh | bash
+
+# Homebrew (macOS)
+brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio
+brew install --cask gitstudio
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install.ps1 | iex
+```
+
+Or take the `.dmg`, `.exe`, `.AppImage` or `.deb` from the assets below. Every
+release carries a `SHA256SUMS.txt`, and the one-line installers verify against
+it and refuse to install on a mismatch.
+
+## Why 2.0
+
+The version number is the honest one. Split panes are gone, Home is a
+workbench, repositories are understood by the folders they live in, and the app
+reads GitHub without cloning. The polish round that closed it out put the file
+diff in the bottom panel at full width, freed the Commits layout from a
+divider with four pixels of travel, gave every selected control its hover state
+back, made the Output log selectable and copyable, and redrew the app icon so
+its nodes are part of the mark rather than holes punched through it.

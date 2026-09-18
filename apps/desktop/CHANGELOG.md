@@ -9,7 +9,13 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [1.7.0] - 2026-09-18
+## [2.0.0] - 2026-09-18
+
+The version number is the honest one: this is not a point release. Split panes
+are gone, Home is a workbench, repositories are understood by the folders they
+live in, and the app reads GitHub without cloning. The desktop app also
+installs three new ways — `curl`, Homebrew, and the Windows installer it
+always had.
 
 The redesign wave: full-page details instead of split panes, a Home that is a
 workbench, and repositories understood by the folders they live in.
