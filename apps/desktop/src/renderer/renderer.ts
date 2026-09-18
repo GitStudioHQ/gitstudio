@@ -13,6 +13,7 @@
 import "@gitstudio/webview-ui/styles/diff.css";
 import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
+import { clearUndo, didUndoable, installUndoKey, undoOrText } from "./undo";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
 import { renderReleaseCompose } from "./views/releaseCompose";
@@ -20,6 +21,7 @@ import { renderIssueCompose } from "./views/issueCompose";
 import { renderRefDetail } from "./views/refDetail";
 import "@gitstudio/webview-ui/styles/graph.css";
 import "@gitstudio/webview-ui/commit-details";
+import { gravatarUrl } from "@gitstudio/webview-ui/graph/avatar";
 import "./styles/app.css";
 // The COMPLETE codicon codepoint map from the real @vscode/codicons library —
 // imported last so its correct codepoints override any legacy hand-typed one.
@@ -33,8 +35,12 @@ import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant, seedAssistantGoal } from "./assistant";
 import { aiModelsCard, agentAccessCard } from "./aiSettings";
+import { openInButton } from "./openIn";
+import { editorsCard } from "./views/editorsCard";
 import { aiChip, openAssistantTab, registerAssistantTab, streamInto, aiEnabled } from "./aiAssist";
-import { toast, confirmDialog, promptInline, openModal } from "./dialogs";
+import { toast, confirmDialog, promptInline, promptChoice, openModal } from "./dialogs";
+import { createBranchFlow } from "./branchCreate";
+import type { BranchStart } from "../shared/branchStart";
 import { TerminalDock } from "./terminalDock";
 import { openCloneDialog } from "./cloneDialog";
 import { gget, peek, bust, setCacheScope, swr, sameData} from "./cache";
@@ -76,7 +82,7 @@ import { dismissLayers, pageOwnsKeys } from "./overlays";
 import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
-import { CommitContextMenu } from "./contextMenu";
+import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
@@ -91,7 +97,7 @@ import { renderActions } from "./views/actions";
 import { renderReleases } from "./views/releases";
 import { openNotificationsPanel, fetchUnreadCount, renderNotifications } from "./views/notifications";
 import { renderExplore } from "./views/explore";
-import { repoRouteId, searchTargetId } from "./exploreRoutes";
+import { parseRepoRoute, repoRouteId, searchTargetId } from "./exploreRoutes";
 import { renderOrgs, setPeekNav } from "./views/orgs";
 import { renderProjects } from "./views/projects";
 import { renderGists } from "./views/gists";
@@ -99,7 +105,6 @@ import { renderRepositories } from "./views/repositories";
 import { renderDashboard } from "./views/dashboard";
 import { renderRebase } from "./views/rebase";
 import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
-import { COLUMN_DROP_TAIL_AT } from "@gitstudio/webview-ui/limits";
 import type {
   BranchInfo,
   ChangedFile,
@@ -123,6 +128,32 @@ import type {
   WorktreeInfo,
   SyncStatus,
 } from "../shared/ipc";
+
+
+/**
+ * Do two route targets ask for the same CONTENT?
+ *
+ * Identity fields only — `list` is deliberately ignored, because `undefined`
+ * and `{list: true}` are two spellings of "the list", and treating them as
+ * different would refuse a perfectly good parked list (losing its scroll and
+ * filters) whenever the two spellings met. Used by the keep-alive restore; the
+ * history's own push comparison keeps `list` because there it separates a
+ * detail entry from a list entry.
+ */
+function sameTargetContent(a: SectionTarget | undefined, b: SectionTarget | undefined): boolean {
+  return (
+    a?.number === b?.number &&
+    a?.jobId === b?.jobId &&
+    a?.id === b?.id &&
+    a?.sha === b?.sha &&
+    a?.path === b?.path &&
+    a?.file === b?.file &&
+    a?.ref === b?.ref &&
+    // The lens IS content for the keep-alive comparison: a parked full list
+    // restored over a door that promised "the merged ones" is a dead click.
+    a?.lens === b?.lens
+  );
+}
 
 class App {
   private graph?: GraphMount;
@@ -288,6 +319,20 @@ class App {
    *  back to a view restores it instantly instead of rebuilding from scratch.
    *  Cleared on a repo switch; busted per-view on an explicit refresh. */
   private viewCache = new Map<string, HTMLElement>();
+  /**
+   * What each parked DOM was SHOWING when it was parked — the route target it
+   * was rendered with. The cache is one slot per view id, and a sectioned view
+   * renders very different things under one id: the Issues route holds the
+   * issues LIST and every issue's detail page. Restoring by id alone handed a
+   * rail click asking for the list whatever happened to be parked — the last
+   * issue you read — while the history recorded the click as the list. Screen
+   * and history then disagreed, and the detail's back button (which pops the
+   * history) stepped somewhere its own label never named.
+   */
+  private viewCacheTarget = new Map<string, SectionTarget | undefined>();
+  /** The target the CURRENT view was routed with — recorded so the park below
+   *  can say what the DOM it is parking actually shows. */
+  private currentTarget?: SectionTarget;
   /** Where each kept-alive view was scrolled when it was parked. Keyed by the
    *  node itself, so a rebuilt view never inherits the old one's position. */
   private viewScroll = new WeakMap<HTMLElement, [HTMLElement, number, number, boolean][]>();
@@ -428,18 +473,29 @@ class App {
     // Power-user view switching: Cmd/Ctrl+1..8 jumps between sidebar views; Cmd/Ctrl+, opens Settings.
     window.addEventListener("keydown", (e) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
-      if (!this.currentRepo || !this.navButtons.length) return;
-      if (/^[1-8]$/.test(e.key)) {
+      // Per-branch repo guards, not one at the top. The single early return
+      // used to gate EVERY branch on an open repository — so ⌘K, ⌘, and even
+      // ⌘1 (Home) were dead on first launch, on the exact screen whose whole
+      // job is helping you get a repository open. Each branch now states what
+      // it actually needs: a digit needs a repo only when its VIEW does; the
+      // palette, Settings and history never did.
+      if (!this.navButtons.length) return;
+      if (/^[1-9]$/.test(e.key)) {
         const idx = Number(e.key) - 1;
         if (idx < App.TABS.length) {
+          const id = App.TABS[idx].id;
+          if (!this.currentRepo && App.NEEDS_REPO.has(id)) return;
           e.preventDefault();
-          this.routeView(App.TABS[idx].id);
+          this.routeView(id);
           this.navButtons[idx]?.focus();
         }
       } else if (e.key === ",") {
         e.preventDefault();
         this.routeView("settings");
       } else if (e.key === "`") {
+        // The terminal opens a shell IN the repository — without one there is
+        // no working directory to give it.
+        if (!this.currentRepo) return;
         e.preventDefault();
         this.toggleTerminal();
       } else if (e.key === "[") {
@@ -496,7 +552,15 @@ class App {
 
     // Restore persisted UI preferences so the app reopens where you left it.
     const prefs = loadPrefs();
-    if (typeof prefs.currentView === "string" && App.TABS.some((t) => t.id === prefs.currentView)) {
+    // Rail entries are not the only real places. Settings lives in the rail's
+    // footer and Search left the rail altogether — both are still surfaces a
+    // session can end on, and a restore that silently falls back to "changes"
+    // teaches people their place isn't kept.
+    const OFF_RAIL = new Set(["settings", "explore"]);
+    if (
+      typeof prefs.currentView === "string" &&
+      (App.TABS.some((t) => t.id === prefs.currentView) || OFF_RAIL.has(prefs.currentView))
+    ) {
       this.currentView = prefs.currentView;
     }
     if (typeof prefs.compareFileListW === "number" && prefs.compareFileListW >= 180) {
@@ -711,7 +775,14 @@ class App {
     // screen is in the DOM so xterm measures cleanly), starting collapsed or
     // expanded per the saved preference.
     this.mountTerminalDock();
-    this.routeView(this.currentView);
+    // A browse page is IDENTIFIED by its target — a repository, an account, a
+    // search. Re-routing to "explore" carries no target (they belong to the
+    // context that just went away, along with the history wiped above), so
+    // what rendered was the empty Search shell with its Back disabled: you
+    // opened a repository and landed nowhere near it. The repository you just
+    // opened is the answer.
+    const staleBrowse = this.currentView === "explore" && !!this.currentTarget;
+    this.routeView(staleBrowse ? "code" : this.currentView);
     void this.refreshRefs();
     void this.updateSync();
   }
@@ -751,8 +822,16 @@ class App {
     // about the other repositories you have on the go or the review that has
     // been waiting since yesterday. Changes keeps its seat, one below.
     { id: "dashboard", label: "Home", icon: "home" },
+    // Repositories rides shotgun. It is the only destination that still means
+    // something with no repository open, and "which repo am I working in" is
+    // the decision that precedes every other entry on this rail — filing it
+    // under ACCOUNT, fifteen rows down, buried the front door's hallway.
+    { id: "repositories", label: "Repositories", icon: "repo" },
     // Changes is a set of pending file diffs, not the SCM view's fork.
-    { id: "changes", label: "Changes", icon: "diff-multiple" },
+    // It leads the group of views ABOUT the open repository, and the divider
+    // says so — the rail's principle is where the data lives: this machine,
+    // then this repository, then this repository on GitHub, then your account.
+    { id: "changes", label: "Changes", icon: "diff-multiple", divider: true, dividerLabel: "This repository" },
     { id: "graph", label: "Commits", icon: "git-commit" },
     { id: "branches", label: "Branches", icon: "git-branch" },
     { id: "compare", label: "Compare", icon: "git-compare" },
@@ -775,16 +854,17 @@ class App {
     { id: "actions", label: "Actions", icon: "play-circle" },
     { id: "releases", label: "Releases", icon: "tag" },
     { id: "projects", label: "Projects", icon: "project" },
-    // Account-scoped (not repo-scoped) surfaces get their own quiet group.
-    // Explore leads it: discovery comes before the things you already have.
-    // Repositories leads the account group: "where is my work" comes before
-    // anything you might do inside one of them, and it is the only destination
-    // that still means something when no repository is open at all.
-    { id: "repositories", label: "Repositories", icon: "repo", divider: true, dividerLabel: "Account" },
-    { id: "explore", label: "Explore", icon: "telescope" },
+    // Organizations and Gists are GitHub surfaces like everything above them —
+    // the old "Account" group was a distinction between kinds of GitHub data
+    // that nobody shopping the rail was making, and with Search gone and
+    // Repositories promoted it held two orphans under a heading.
     { id: "orgs", label: "Organizations", icon: "organization" },
-    // `gist` — was `code`, a duplicate of the Code tab's glyph.
     { id: "gists", label: "Gists", icon: "gist" },
+    // Search has NO rail entry — deliberately. It is a routed surface (the
+    // view keeps its `explore` id, deep links and entity pages), but the way
+    // IN is the search vocabulary the app already has everywhere: the topbar
+    // field, ⌘K, and Home's box. A search you navigate to from a sidebar is a
+    // filing cabinet; a search that is one keystroke from anywhere is a tool.
   ];
 
   private buildNav(): HTMLElement {
@@ -837,16 +917,29 @@ class App {
     App.TABS.forEach((it, i) => {
       if (it.divider) {
         const sep = el("div", "nav-divider");
+        // The group is "this repository, ON THIS MACHINE" — so name it. While
+        // you read someone else's repository on a browse page, "This
+        // repository" pointed at the one NOT on screen, over six items that
+        // stay live. They are not disabled, because reading libgit2 is no
+        // reason to take away your own Changes tab; the label tells the truth
+        // instead. TABS is static, so this resolves here, not in the literal.
+        const isRepoGroup = it.dividerLabel === "This repository";
+        const label = isRepoGroup
+          ? (this.currentRepo?.name ?? "This repository")
+          : (it.dividerLabel ?? "GitHub");
         // Collapsed to icons the label is hidden, so the group's name lives on
         // the rule itself.
-        sep.title = it.dividerLabel ?? "GitHub";
+        sep.title =
+          isRepoGroup && this.currentRepo
+            ? `${this.currentRepo.name} — the repository open on this machine`
+            : label;
         sep.setAttribute("role", "separator");
         sep.setAttribute("aria-label", sep.title);
         sep.setAttribute("aria-hidden", "true");
-        sep.append(span(it.dividerLabel ?? "GitHub", "nav-divider-label"));
+        sep.append(span(label, "nav-divider-label"));
         nav.appendChild(sep);
       }
-      nav.appendChild(mkItem(it.id, it.label, it.icon, i < 8 ? `${mod}${i + 1}` : undefined));
+      nav.appendChild(mkItem(it.id, it.label, it.icon, i < 9 ? `${mod}${i + 1}` : undefined));
     });
     // Footer: just Settings, pinned to the bottom of the rail. The terminal lives
     // permanently in the bottom footer dock; the sidebar toggle lives in the top
@@ -968,6 +1061,7 @@ class App {
         this.terminalHeight = height;
         this.persist();
       },
+      onCloseDetails: () => this.closeGraphDiff(),
     });
     // Shrinking the window must not leave the dock covering the whole view.
     window.addEventListener("resize", () => this.terminalDock?.handleWindowResize());
@@ -1059,6 +1153,77 @@ class App {
     return this.logoMode === "auto" ? resolveTheme(this.themeMode) : this.logoMode;
   }
 
+  /**
+   * The top bar drops things in a STATED order when it runs out of room.
+   *
+   * Everything on the left is about the repository and the row is not always
+   * wide enough for all of it. Left to flexbox, whatever happens to be last
+   * gets squeezed — which is how the branch ended up unreadable so that an
+   * editor's full name could fit. The order is: the editor's NAME first (its
+   * icon still says which editor it is), then the search box's label. The
+   * branch and the sync state never yield; they are what this bar is for.
+   *
+   * Measured, not a media query: `redesign/wave-2` and `fix/a` need different
+   * amounts of room at the very same window size.
+   *
+   * The collapsed labels keep `max-width: 0` rather than `display: none`, so
+   * this can still ask what putting them back would COST. That is what makes
+   * the decision stable — computing the need from the current, already-shrunk
+   * layout is how a fit pass ends up flip-flopping between two states.
+   */
+  private wireTopbarFit(bar: HTMLElement): void {
+    /** What a cluster WANTS, not what flex has already squeezed it to.
+     *  `offsetWidth` on a shrunken flex item reports the squeeze, not the need,
+     *  so the row could never tell "it fits" from "it has already given up". */
+    const naturalWidth = (elx: HTMLElement): number => {
+      const flex = elx.style.flex;
+      const width = elx.style.width;
+      elx.style.flex = "0 0 auto";
+      elx.style.width = "max-content";
+      const w = elx.offsetWidth;
+      elx.style.flex = flex;
+      elx.style.width = width;
+      return w;
+    };
+    const fit = (): void => {
+      const left = bar.querySelector<HTMLElement>(".topbar-left");
+      const right = bar.querySelector<HTMLElement>(".topbar-right");
+      if (!left || !right || !bar.clientWidth) return;
+      const natural = (sel: string): number => bar.querySelector<HTMLElement>(sel)?.scrollWidth ?? 0;
+      const editorLabel = natural(".topbar-openin .openin-label");
+      const searchLabel = natural(".topbar-cmdk-label");
+      // What the row would need with EVERYTHING shown, whatever state it is in
+      // right now — a collapsed label still reports its full scrollWidth, which
+      // is what stops this flip-flopping between the two states.
+      const need =
+        naturalWidth(left) +
+        naturalWidth(right) +
+        (bar.classList.contains("is-tight") ? editorLabel : 0) +
+        (bar.classList.contains("is-tighter") ? searchLabel : 0);
+      const have = bar.clientWidth - 24; // the bar's own padding, and a little slack
+      const tight = need > have;
+      bar.classList.toggle("is-tight", tight);
+      bar.classList.toggle("is-tighter", tight && need - editorLabel > have);
+    };
+    this.fitTopbar = fit;
+    const ro = new ResizeObserver(fit);
+    ro.observe(bar);
+    const left = bar.querySelector(".topbar-left");
+    if (left) {
+      ro.observe(left);
+      // A branch name changing does not change any BOX — the switch is capped —
+      // so a ResizeObserver alone never hears about the one event that most
+      // changes how much room this row wants. Attributes are deliberately not
+      // watched: `fit` toggles classes, and watching those would loop.
+      new MutationObserver(fit).observe(left, { subtree: true, childList: true, characterData: true });
+    }
+    fit();
+  }
+
+  /** Re-run the top bar's fit after something on it changes length (a branch
+   *  name, a push count) rather than only when the window resizes. */
+  private fitTopbar?: () => void;
+
   /** Push the resolved dock icon variant to the main process (best-effort). */
   private syncDockIcon(): void {
     void host.invoke("appearance:dockIcon", { variant: this.dockVariant() }).catch(() => {});
@@ -1142,11 +1307,18 @@ class App {
     // menu used to survive navigation and hover over the next view, filtering
     // a list that was no longer on screen.
     dismissLayers();
+    // A deep-link landing mark belongs to the screen it landed on. Leaving is
+    // an action, so it counts as the dismissal — and it stops the two document
+    // listeners outliving the row they point at.
+    this.clearLanded?.();
     // Which list a row belongs to, so Escaping out of a detail can put the
     // keyboard back on the row you opened instead of on <body>.
     setFocusScope(id);
     // The Assistant has no rail item to light up; its launcher is its tab.
-    queueMicrotask(() => this.syncAssistantChip?.());
+    queueMicrotask(() => {
+      this.syncAssistantChip?.();
+      this.syncWhereChip?.();
+    });
     // Deep-linking an item must rebuild the section so it can select that item —
     // never restore a stale cached view (which wouldn't have it open). The ONE
     // exception: a sha-only graph reveal, which works against the live
@@ -1166,17 +1338,32 @@ class App {
       target.ref === undefined &&
       target.path === undefined;
     if (target && !shaOnlyGraphReveal) force = true;
-    this.sectionTarget = target;
-    // Re-clicking the section you're already on (or navigating to it) should do
-    // nothing — the view is already there. Only an explicit refresh rebuilds.
-    if (!force && id === this.currentView && this.viewHost.firstChild) {
-      if (shaOnlyGraphReveal && target?.sha) this.revealWhenReady(target.sha);
-      return;
-    }
     // The Code browser's identity includes its folder: a plain "code" route is
     // normalized to carry the CURRENT folder, so its history entry restores the
     // exact place on back/forward instead of whatever codePath happens to be.
+    // Normalized BEFORE the no-op guard below, so re-clicking Code in the rail
+    // compares folder-to-folder and stays a no-op, rather than comparing
+    // undefined-to-folder and pointlessly rebuilding the listing.
     if (id === "code" && !target) target = { path: this.codePath };
+    this.sectionTarget = target;
+    // Re-clicking the section you're already on should do nothing — WHEN the
+    // screen already shows what the click asks for. The guard used to compare
+    // only the view id, and a section's id covers both its list and every one
+    // of its detail pages: with issue #31 open, clicking "Issues" in the rail
+    // asked for the list and was swallowed as "already there". A primary nav
+    // control that silently does nothing is the deadest kind of click — the
+    // request's own words were "clicking … should return me to the issues
+    // page". Same id + same CONTENT is a no-op; same id + different content
+    // falls through and rebuilds, which renders the list.
+    if (
+      !force &&
+      id === this.currentView &&
+      this.viewHost.firstChild &&
+      sameTargetContent(this.currentTarget, target)
+    ) {
+      if (shaOnlyGraphReveal && target?.sha) this.revealWhenReady(target.sha);
+      return;
+    }
     // Record real navigation (not back/forward travel) in the history stack.
     // A forward-truncate on push gives browser semantics: navigating after
     // going back discards the abandoned forward entries.
@@ -1237,6 +1424,12 @@ class App {
     const outgoing = this.viewHost.firstElementChild as HTMLElement | null;
     const stillLoading =
       !!outgoing?.querySelector(".skeleton, .sk-row, .list-loading, .loading-state, .spinner");
+    // An EMPTY or ERROR state is not worth keeping either. A list that painted
+    // "No issues" because its first fetch raced repo start-up was parked as a
+    // finished view and restored — empty, forever, while the data sat one
+    // fetch away. Rebuilding a view that shows nothing costs one cheap read;
+    // restoring a stale nothing costs the user their trust in the screen.
+    const showsNothing = !!outgoing?.querySelector(".list-empty, .error-state");
     // NOT gated on `force`. `force` means "rebuild the view I am going TO with
     // fresh data" — and it is set by every navigation that carries a target,
     // which is every navigation INTO a detail page. Letting it also throw away
@@ -1245,7 +1438,7 @@ class App {
     // that branch was gone and you were back at the top of ninety rows. The
     // incoming view's own cache is still dropped below, which is what force is
     // actually for.
-    if (App.KEEPALIVE.has(prev) && outgoing && !stillLoading) {
+    if (App.KEEPALIVE.has(prev) && outgoing && !stillLoading && !showsNothing) {
       // Take the scroll positions BEFORE the node is detached. Detaching zeroes
       // every `scrollTop` inside it, so by the time it is re-attached there is
       // nothing left to restore — which is why keeping the DOM alive returned
@@ -1254,7 +1447,10 @@ class App {
       // written.
       this.viewScroll.set(outgoing, this.scrollSnapshot(outgoing));
       this.viewCache.set(prev, outgoing);
-    } else if (stillLoading) {
+      // `currentTarget` still belongs to the OUTGOING route here — it is
+      // reassigned a few lines down, when the incoming view takes over.
+      this.viewCacheTarget.set(prev, this.currentTarget);
+    } else if (stillLoading || showsNothing) {
       // …and drop any older good copy, so the next visit rebuilds rather than
       // restoring something staler than what we just abandoned.
       this.viewCache.delete(prev);
@@ -1263,6 +1459,7 @@ class App {
       this.viewCache.delete(id); // a refresh must rebuild with fresh data
     }
     this.currentView = id;
+    this.currentTarget = target;
     this.persist();
     this.routeGen++; // supersede any in-flight async work from the prior view
     // Free the previous view's Monaco surface before swapping the DOM under it.
@@ -1307,7 +1504,15 @@ class App {
     // time ran `stash drop` against an index that now names a DIFFERENT stash —
     // destroying work the user never chose.
     this.reloadBranchRows = null;
-    const cached = App.KEEPALIVE.has(id) ? this.viewCache.get(id) : undefined;
+    // …and only when the parked DOM shows what THIS route asks for. The slot
+    // is content-checked, not just id-checked: a stashed detail must never
+    // answer a request for the list, or the screen contradicts the history the
+    // back button walks. A mismatch simply falls through to a rebuild — the
+    // slot is overwritten at the next park, so nothing needs deleting.
+    const cached =
+      App.KEEPALIVE.has(id) && sameTargetContent(this.viewCacheTarget.get(id), target)
+        ? this.viewCache.get(id)
+        : undefined;
     if (cached) {
       this.viewHost.replaceChildren(cached);
       // …and put them back, on the frame after the attach so layout has run.
@@ -1379,7 +1584,7 @@ class App {
       // stream in (e.g. "View in Commits" from a peek, or a tag detail).
       if (target?.sha) this.revealWhenReady(target.sha);
     } else if (id === "branches") {
-      void this.showBranchesView(target?.ref);
+      void this.showBranchesView(target?.ref, target?.lens, target?.refKind);
     } else if (id === "changes") {
       void this.showChangesView();
     } else if (id === "compare") {
@@ -1456,11 +1661,35 @@ class App {
    * Now: one KIND per screen behind a segmented switch, one row anatomy, and
    * every verb visible at rest.
    */
-  private async showBranchesView(highlightRef?: string): Promise<void> {
+  private async showBranchesView(
+    highlightRef?: string,
+    lens?: string,
+    highlightKind?: string,
+  ): Promise<void> {
     // A deep link must SHOW the ref it names (a graph ref chip lands here), so
     // it drops the sticky filter below — otherwise the row it asks to scroll to
     // and flash is filtered out and the arrival looks like an empty list.
     if (highlightRef) this.branchQuery = "";
+    // A door that COUNTED something lands on the list it counted: Home's
+    // "2 branches merged — clean up?" preselects the standing facet rather
+    // than dropping you at the top of ninety branches with the answer buried.
+    // A lens is a VISIT preset, not a choice made in the view: it arrives
+    // with the door click and leaves with the next ordinary entrance. Facet
+    // stickiness is for filters people set on the bar themselves — a door's
+    // filter surviving onto a plain rail click reads as "why is my branch
+    // list mysteriously short?".
+    if (lens) {
+      this.branchTab = "local";
+      this.branchFacets.local = { standing: lens };
+      // And the age cut opens on All: a merged branch is usually a stale one,
+      // and landing the lens inside "Active" would empty the very list the
+      // door just counted (the sweep button documents the same trap).
+      this.branchAge = "all";
+      this.branchLensApplied = true;
+    } else if (this.branchLensApplied) {
+      this.branchFacets.local = {};
+      this.branchLensApplied = false;
+    }
     const wrap = el("div", "list-view branches-view");
     const body = el("div", "list-body");
     body.appendChild(skeletonList(8));
@@ -1500,7 +1729,9 @@ class App {
     fetchBtn.title = "Fetch from every remote — updates what ahead and behind mean here";
     fetchBtn.addEventListener("click", () => void this.fetchAllLive(fetchBtn));
     const ctaSlot = el("div", "gh-head-cta");
-    tools.append(fetchBtn, ctaSlot);
+    const verbs = el("div", "gh-head-verbs");
+    verbs.append(fetchBtn, ctaSlot);
+    tools.append(verbs);
     header.querySelector(".gh-acct")?.before(tools);
 
     const segSlot = el("div", "branches-segbar");
@@ -1522,7 +1753,7 @@ class App {
       if (gen !== this.routeGen) return;
       body.replaceChildren(
         errorState("Couldn't list branches", cleanErr(e) || "Git could not read this repository's refs.", () =>
-          void this.showBranchesView(highlightRef),
+          void this.showBranchesView(highlightRef, undefined, highlightKind),
         ),
       );
       return;
@@ -1573,7 +1804,18 @@ class App {
     // did every time a repo had any history.
     type Kind = "local" | "remote" | "tags" | "stashes" | "worktrees";
     if (highlightRef) {
-      this.branchTab = locals.some((b) => b.name === highlightRef)
+      // The kind the caller KNEW, when it knew one, beats the name search —
+      // which is ordered locals-first and so always picks a branch over a tag
+      // of the same name.
+      const byKind: Record<string, Kind | undefined> = {
+        head: "local",
+        currentHead: "local",
+        remoteHead: "remote",
+        remote: "remote",
+        tag: "tags",
+      };
+      const asked = highlightKind ? byKind[highlightKind] : undefined;
+      const found = locals.some((b) => b.name === highlightRef)
         ? "local"
         : remotes.some((r) => r.name === highlightRef)
           ? "remote"
@@ -1581,7 +1823,24 @@ class App {
             ? "tags"
             : stashes.some((st) => st.ref === highlightRef)
               ? "stashes"
-              : this.branchTab;
+              : undefined;
+      // A kind that names a segment the ref is not actually in is worse than
+      // no kind, so it only wins when that segment really holds the ref.
+      const inAsked =
+        asked === "local"
+          ? locals.some((b) => b.name === highlightRef)
+          : asked === "remote"
+            ? remotes.some((r) => r.name === highlightRef)
+            : asked === "tags"
+              ? tags.some((r) => r.name === highlightRef)
+              : false;
+      this.branchTab = (inAsked ? asked : found) ?? this.branchTab;
+      // Nothing matched anywhere. The filters have already been cleared by the
+      // time we get here, so failing silently leaves the user staring at a
+      // list they did not ask for with no idea why.
+      if (!found && !inAsked) {
+        toast(`${highlightRef} is not in this repository's refs any more.`, "info");
+      }
       // A deep link must SHOW the row it names, so it clears EVERY narrowing
       // that could hide it — not just the search box. The age cut alone was
       // enough to swallow the arrival silently: `branchAge` defaults to
@@ -1749,9 +2008,11 @@ class App {
                     key: "kind",
                     label: "Kind",
                     icon: "tag",
+                    // Human words. "Annotated"/"Lightweight" is git's own
+                    // jargon and it read as noise on the very row it labeled.
                     options: [
-                      { value: "annotated", label: "Annotated" },
-                      { value: "lightweight", label: "Lightweight" },
+                      { value: "annotated", label: "With message" },
+                      { value: "lightweight", label: "Bare pointer" },
                     ],
                     predicate: (item: unknown, v: string) =>
                       ((item as RefInfo).objectType === "tag" ? "annotated" : "lightweight") === v,
@@ -1863,6 +2124,39 @@ class App {
       // may well be hiding nothing at all. Only a cut that HID something is a
       // reason the list is empty.
       let ageHid = 0;
+      // WHO, part two: one log walk per branch is too slow to hold the list
+      // for, so rows paint with tip authors and this upgrades the slots in
+      // place — creator + contributor stack — when the read lands. Local AND
+      // remote tabs: the walk covers refs/remotes too, and both rows carry
+      // data-branch. The slot is fixed-width, so nothing shifts when it fills.
+      const fillPeople = (): void => {
+        void gget("branches:people", undefined, 60_000)
+          .then((people) => {
+            if (!body.isConnected) return;
+            for (const slot of body.querySelectorAll<HTMLElement>(".br-people[data-branch]")) {
+              const p = people[slot.dataset.branch ?? ""];
+              if (!p) continue;
+              const stack = el("span", "br-people-stack");
+              const faces = [...p.contributors];
+              const ci = faces.findIndex((f) => f.email.toLowerCase() === p.creator.email.toLowerCase());
+              if (ci > 0) faces.unshift(...faces.splice(ci, 1));
+              for (const f of faces.slice(0, 3)) {
+                stack.appendChild(avatar(f.name, gravatarUrl(f.email, 36), 18));
+              }
+              const names = p.contributors.map((f) => `${f.name} (${f.count})`).join(", ");
+              stack.title =
+                `Created by ${p.creator.name}` +
+                (p.contributors.length > 1 ? `\nContributors: ${names}` : "");
+              if (p.contributors.length > 3) {
+                stack.appendChild(span(`+${p.contributors.length - 3}`, "br-people-more"));
+              }
+              slot.replaceChildren(stack);
+            }
+          })
+          .catch(() => {
+            /* the tip author already on the row is the honest fallback */
+          });
+      };
       if (this.branchTab === "local") {
         total = locals.length;
         const searched = locals
@@ -1907,6 +2201,7 @@ class App {
         // Scaled to what is ON SCREEN, so the bars stay comparable down the
         // list rather than against a branch the filter has removed.
         for (const b of rows) body.appendChild(this.localBranchRow(b, defaultBranch));
+        fillPeople();
       } else if (this.branchTab === "remote") {
         total = remotes.length;
         const rows = remotes
@@ -1922,6 +2217,7 @@ class App {
         shown = rows.length;
         const haveLocal = new Set(locals.map((b) => b.name));
         for (const r of rows) body.appendChild(this.remoteRefRow(r, haveLocal));
+        fillPeople();
       } else if (this.branchTab === "tags") {
         total = tags.length;
         const rows = tags
@@ -2041,8 +2337,11 @@ class App {
     render();
     if (highlightRef) {
       const row = body.querySelector<HTMLElement>(`[data-ref="${CSS.escape(highlightRef)}"]`);
-      row?.scrollIntoView({ block: "nearest" });
-      row?.classList.add("is-flash");
+      // `block: "center"`, not "nearest": a row already just inside the
+      // viewport edge was never scrolled at all, so the only evidence you had
+      // arrived was a mark you might not be looking at. Put it where the eye is.
+      row?.scrollIntoView({ block: "center" });
+      if (row) this.markLanded(row);
     }
   }
 
@@ -2052,6 +2351,9 @@ class App {
   /** Facet state per KIND — a Standing filter means nothing on the tags screen,
    *  so each segment keeps its own and switching back finds it as you left it. */
   private branchFacets: Record<string, FacetState> = Object.create(null) as Record<string, FacetState>;
+  /** True while the current Branches facet state came from a door's lens
+   *  rather than the facet bar — the next lens-less entrance clears it. */
+  private branchLensApplied = false;
   /** The live text filter. Outside the build like the facets, so opening a ref
    *  and pressing Back doesn't throw away the search that found it. */
   private branchQuery = "";
@@ -2060,6 +2362,39 @@ class App {
   /** How the list is ordered. Recency is the default because it answers "what
    *  was I just doing", which is why this view is opened most often. */
   private branchSort: "recent" | "name" | "ahead" | "stale" = "recent";
+
+  /** Dismisses the current deep-link landing mark, if one is showing. */
+  private clearLanded?: () => void;
+
+  /**
+   * Mark the row a navigation pointed at, and KEEP it marked.
+   *
+   * It used to be a 1.6s fade, which is the wrong instrument: the animation
+   * was over before the eye finished crossing a long list, so arriving looked
+   * exactly like nothing having happened. The mark is a state now, and the
+   * next thing you do clears it — a pointerdown or a key press anywhere.
+   *
+   * The listeners go on in a later task deliberately. The click that CAUSED
+   * the navigation is still being dispatched while this runs, and binding
+   * synchronously would let that very click dismiss the mark it just created.
+   */
+  private markLanded(row: HTMLElement): void {
+    this.clearLanded?.();
+    row.classList.add("row-landed");
+    const clear = (): void => {
+      row.classList.remove("row-landed");
+      document.removeEventListener("pointerdown", clear, true);
+      document.removeEventListener("keydown", clear, true);
+      if (this.clearLanded === clear) this.clearLanded = undefined;
+    };
+    this.clearLanded = clear;
+    setTimeout(() => {
+      // Nothing to arm if the mark was already cleared or replaced.
+      if (this.clearLanded !== clear) return;
+      document.addEventListener("pointerdown", clear, true);
+      document.addEventListener("keydown", clear, true);
+    }, 0);
+  }
 
   /** Set while the Branches view is live — see showBranchesView. */
   private reloadBranchRows: (() => Promise<void>) | null = null;
@@ -2153,7 +2488,7 @@ class App {
     const menu = (): void =>
       openMenu(more, [
         { label: `Compare with ${short}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
-        { label: "Show in the graph", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+        { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
         { separator: true },
         { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
       ]);
@@ -2163,9 +2498,29 @@ class App {
     const row = secRow({
       lead: glyph("cloud"),
       title: short,
-      titleSuffix: mine ? [] : [span("no local copy", "ab-pill unpublished")],
-      chips: r.subject ? [span(r.subject, "br-subject")] : [],
-      meta: [span(remote, "br-remote"), span(r.sha.slice(0, 7), "br-sha sec-mono")],
+      meta: [
+        (() => {
+          const c = el("span", "br-state-col");
+          if (!mine) c.appendChild(span("no local copy", "ab-pill unpublished"));
+          return c;
+        })(),
+        span(r.subject ?? "", "br-subject br-subject-col"),
+        // WHO — the tip author now, the creator + contributor stack when the
+        // per-branch walk lands (the fill matches on data-branch, and remote
+        // branches are walked too).
+        (() => {
+          const p = el("span", "br-people");
+          p.dataset.branch = r.name;
+          if (r.who) {
+            const a = avatar(r.who.name, gravatarUrl(r.who.email, 36), 18);
+            a.title = `Last commit by ${r.who.name}`;
+            p.appendChild(a);
+          }
+          return p;
+        })(),
+        span(remote, "br-remote"),
+        span(r.sha.slice(0, 7), "br-sha sec-mono"),
+      ],
       time: r.date ? relTime(r.date) : "",
       timeTitle: r.date ? absTime(r.date) : undefined,
       actions,
@@ -2205,7 +2560,7 @@ class App {
     more.appendChild(glyph("ellipsis"));
     const menu = (): void =>
       openMenu(more, [
-        { label: "Show in the graph", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
+        { label: "View in Commits", icon: "git-commit", onClick: () => this.routeView("graph", false, { sha: r.sha }) },
         { label: `Compare with ${r.name}`, icon: "git-compare", onClick: () => this.compareWithRef(r.name) },
         { separator: true },
         { label: "Copy name", icon: "copy", onClick: () => void copyText(r.name, `Copied “${r.name}”.`) },
@@ -2223,14 +2578,32 @@ class App {
     const row = secRow({
       lead: glyph("tag"),
       title: r.name,
-      titleSuffix: [span(annotated ? "annotated" : "lightweight", `ab-pill ${annotated ? "annotated" : "lightweight"}`)],
-      chips: r.subject ? [span(r.subject, "br-subject")] : [],
-      meta: [span(r.sha.slice(0, 7), "br-sha sec-mono")],
+      meta: [
+        // No "annotated"/"lightweight" pill: git's own jargon for "carries a
+        // message and a tagger" vs "bare pointer" explained nothing on a row
+        // ("wtf is lightweight/annotated tag?"). The state slot stays for the
+        // column rhythm; the DISTINCTION now lives where it means something —
+        // who is shown, and what their tooltip says.
+        el("span", "br-state-col"),
+        span(r.subject ?? "", "br-subject br-subject-col"),
+        (() => {
+          const p = el("span", "br-people");
+          if (r.who) {
+            const a = avatar(r.who.name, gravatarUrl(r.who.email, 36), 18);
+            a.title = r.who.tagger
+              ? `Tagged by ${r.who.name} — this tag carries its own message and date`
+              : `Points at ${r.who.name}'s commit — the tag itself records nothing`;
+            p.appendChild(a);
+          }
+          return p;
+        })(),
+        span(r.sha.slice(0, 7), "br-sha sec-mono"),
+      ],
       time: r.date ? relTime(r.date) : "",
       timeTitle: r.date ? absTime(r.date) : undefined,
       actions,
       onOpen: () => this.routeView("refdetail", false, { ref: r.name, id: "tag" }),
-      ariaLabel: `${r.name}, ${annotated ? "annotated" : "lightweight"} tag${r.date ? `, ${relTime(r.date)}` : ""}`,
+      ariaLabel: `${r.name}, ${annotated ? "tag with its own message" : "tag"}${r.who ? `, by ${r.who.name}` : ""}${r.date ? `, ${relTime(r.date)}` : ""}`,
     });
     row.classList.add("ref-row");
     row.dataset.ref = r.name;
@@ -2332,7 +2705,21 @@ class App {
       toast(r.message ?? `Couldn't delete ${name}.`, r.expected ? "info" : "error");
       return;
     }
-    toast(`Deleted tag ${name} locally.`, "success");
+    if (r.was) {
+      const sha = r.was;
+      didUndoable(`Deleted tag ${name} locally.`, {
+        label: `Put ${name} back`,
+        undo: async () => {
+          const back = await host.invoke("tag:restore", { name, sha });
+          if (!back.ok) return back.message ?? `Couldn't put ${name} back.`;
+          bust("branches");
+          return undefined;
+        },
+        after: () => this.refreshBranchesSoft(),
+      });
+    } else {
+      toast(`Deleted tag ${name} locally.`, "success");
+    }
     await this.refreshBranchesSoft();
   }
 
@@ -2353,7 +2740,10 @@ class App {
     if (action === "drop") {
       const ok = await confirmDialog({
         title: `Drop ${st.ref}?`,
-        message: `“${st.message || st.ref}” is deleted permanently. This cannot be undone.`,
+        // Not "permanently": the commit behind a stash outlives the ref, and
+        // the app can put it back. The dialog stays — this removes something
+        // you meant to keep — but it must not describe a loss that is not one.
+        message: `“${st.message || st.ref}” is removed from the stash list. You can undo this straight afterwards.`,
         confirmLabel: "Drop",
         danger: true,
       });
@@ -2384,14 +2774,33 @@ class App {
         toast(r.message ?? `Couldn't ${action} ${st.ref}.`, r.expected ? "info" : "error");
         return;
       }
-      toast(
-        action === "apply"
-          ? `Applied ${st.ref}.`
-          : action === "pop"
-            ? `Popped ${st.ref}.`
-            : `Dropped ${st.ref}.`,
-        "success",
-      );
+      // A drop removes a ref; the commit behind it is untouched, so this is
+      // one of the few destructive-looking actions that is genuinely free to
+      // reverse. Pop and apply are not offered an undo: they have already put
+      // the changes into the working tree, and taking them back out is a
+      // different and much less safe operation than it looks.
+      if (action === "drop" && st.sha) {
+        const sha = st.sha;
+        didUndoable(`Dropped ${st.ref}.`, {
+          label: "Put the stash back",
+          undo: async () => {
+            const back = await host.invoke("stash:restore", { sha, message: st.message });
+            if (!back.ok) return back.message ?? "Couldn't put the stash back.";
+            bust("branches");
+            return undefined;
+          },
+          after: () => this.refreshBranchesSoft(),
+        });
+      } else {
+        toast(
+          action === "apply"
+            ? `Applied ${st.ref}.`
+            : action === "pop"
+              ? `Popped ${st.ref}.`
+              : `Dropped ${st.ref}.`,
+          "success",
+        );
+      }
       await this.refreshBranchesSoft();
     });
   }
@@ -2431,6 +2840,7 @@ class App {
     if (!ok) return;
 
     const done: string[] = [];
+    const restorable: Array<{ name: string; was: string; upstream?: string }> = [];
     for (const b of finished) {
       let r;
       try {
@@ -2452,9 +2862,34 @@ class App {
         break;
       }
       done.push(b.name);
+      if (r.was) restorable.push({ name: b.name, was: r.was, upstream: r.upstream });
     }
     if (done.length === finished.length) {
-      toast(`Deleted ${done.length} finished ${done.length === 1 ? "branch" : "branches"}.`, "success");
+      const msg = `Deleted ${done.length} finished ${done.length === 1 ? "branch" : "branches"}.`;
+      // All of them, in one go — a sweep is the action most likely to take
+      // something you wanted, and undoing it one branch at a time would be a
+      // worse offer than the sweep was.
+      if (restorable.length === done.length) {
+        didUndoable(msg, {
+          label: `Restore ${done.length === 1 ? done[0] : `${done.length} branches`}`,
+          undo: async () => {
+            const failed: string[] = [];
+            for (const b of restorable) {
+              const back = await host.invoke("branch:create", {
+                name: b.name,
+                startPoint: b.was,
+                upstream: b.upstream,
+              });
+              if (!back.ok) failed.push(b.name);
+            }
+            bust("branches");
+            return failed.length ? `Couldn't restore ${failed.join(", ")}.` : undefined;
+          },
+          after: () => this.refreshBranchesSoft(),
+        });
+      } else {
+        toast(msg, "success");
+      }
     }
     bust("branches");
     await this.refreshBranchesSoft();
@@ -2597,9 +3032,17 @@ class App {
     const row = secRow({
       lead: glyph("window"),
       title: w.branch ?? (w.bare ? "(bare)" : w.head.slice(0, 7)),
-      titleSuffix: pills,
-      chips: [span(w.path, "br-subject")],
-      meta: [span(w.head.slice(0, 7), "br-sha sec-mono")],
+      meta: [
+        // Same table the other four tabs keep: state pills in their own
+        // column, the path where the subject column lives, the sha aligned.
+        (() => {
+          const c = el("span", "br-state-col");
+          for (const p of pills) c.appendChild(p);
+          return c;
+        })(),
+        span(w.path, "br-subject br-subject-col"),
+        span(w.head.slice(0, 7), "br-sha sec-mono"),
+      ],
       time: "",
       actions,
       // A detached or bare worktree went to `copyText` here — so activating the
@@ -2731,7 +3174,7 @@ class App {
     if (!name?.trim()) return;
     const msg = await promptInline(
       `Message for ${name.trim()}`,
-      "Leave empty for a lightweight tag",
+      "Optional — a message makes the tag carry its own note",
       "",
       "Create tag",
       true,
@@ -2898,9 +3341,34 @@ class App {
     // branch's own page, and the row tooltip. What stays on the row is the
     // ahead/behind pair, which is not decoration — it says what Push and Pull
     // will do, and the row has buttons for both.
-    if (b.subject) chips.push(span(b.subject, "br-subject"));
-
     const meta: HTMLElement[] = [];
+    // The STATE is a column too. As a title-suffix every pill landed wherever
+    // its branch's name happened to end — eleven rows put eleven pills at
+    // eleven x-positions, which is the picture that came back captioned
+    // "retarded". One fixed slot, every pill on one line down the page.
+    const stateCol = el("span", "br-state-col");
+    for (const p of pills) stateCol.appendChild(p);
+    meta.push(stateCol);
+    // The subject is a COLUMN now, not a tail pinned to the name. As a chip it
+    // started wherever the name (and its pills) happened to end, so five rows
+    // put five different x-positions under one heading — the "mess" was mostly
+    // this. A fixed-basis column reads down the page like a table.
+    const subjectCol = span(b.subject ?? "", "br-subject br-subject-col");
+    if (b.subject) subjectCol.title = b.subject;
+    meta.push(subjectCol);
+
+    // WHO — the tip author immediately (free, from for-each-ref), upgraded in
+    // place to creator + contributors when branches:people lands. The slot is
+    // reserved either way, so late data never shifts the columns.
+    const people = el("span", "br-people");
+    people.dataset.branch = b.name;
+    if (b.tipAuthor) {
+      const a = avatar(b.tipAuthor.name, gravatarUrl(b.tipAuthor.email, 36), 18);
+      a.title = `Last commit by ${b.tipAuthor.name}`;
+      people.appendChild(a);
+    }
+    meta.push(people);
+
     const track = el("span", "br-track");
     // The upstream pair answers a DIFFERENT question from the bar: not "how far
     // from main" but "what will Push and Pull do".
@@ -2918,7 +3386,10 @@ class App {
     // down the list, and it was pushed onto every row — including the many with
     // nothing to push or pull, where it reserved 78px to align nothing at all
     // against a branch name that was being cut off four pixels short.
-    if (track.childElementCount) meta.push(track);
+    // Always reserved: with the subject in its own column the 78px no longer
+    // comes out of the name, and an empty slot is what keeps the time column
+    // straight on rows with nothing to push or pull.
+    meta.push(track);
     // The upstream, ONLY when it is not the obvious one.
     //
     // A 160px right-aligned column held `origin/<this branch's name>` on nearly
@@ -2931,7 +3402,14 @@ class App {
     // fact, so that still shows.
     const conventionalUpstream = !!b.upstream && b.upstream.endsWith("/" + b.name);
     if (b.upstream && !conventionalUpstream) {
-      meta.push(span(b.upstream, "br-upstream sec-mono"));
+      // INSIDE the subject column, not a slot of its own. A fixed 160px column
+      // that only SOME rows carry pushed that one row's faces, counts and time
+      // 172px left of every neighbour's — one surprising branch broke the
+      // table for the whole list. The surprising fact rides where the context
+      // lives; the subject makes room.
+      const up = span(`↪ ${b.upstream}`, "br-upstream sec-mono");
+      up.title = `Tracks ${b.upstream} — a differently named upstream`;
+      subjectCol.append(up);
     }
 
     // ONE contextual primary verb, plus the menu. Delete deliberately does NOT
@@ -2971,8 +3449,6 @@ class App {
     const row = secRow({
       lead: glyph(b.current ? "check" : b.name === defaultBranch ? "home" : "git-branch"),
       title: b.name,
-      titleSuffix: pills,
-      chips,
       meta,
       time: b.date ? relTime(b.date) : "",
       timeTitle: b.date ? absTime(b.date) : undefined,
@@ -3100,9 +3576,26 @@ class App {
         onClick: () => void run(`merge ${b.name}`, host.invoke("branch:merge", { name: b.name })),
       });
       items.push({
-        label: `Rebase current onto ${b.name}`,
+        label: `Rebase current onto ${b.name}…`,
         icon: "git-pull-request",
-        onClick: () => void run(`rebase onto ${b.name}`, host.invoke("branch:rebase", { onto: b.name })),
+        // ASKED FIRST. Every other item in this menu is additive or reversible;
+        // this one rewrites the current branch's history, and it sat one
+        // mis-aimed click below "Merge" with nothing between the pointer and
+        // the rewrite. The ellipsis now tells the truth about what follows.
+        onClick: () =>
+          void (async () => {
+            const current = this.currentBranchName() ?? "the current branch";
+            const ok = await confirmDialog({
+              title: `Rebase ${current} onto ${b.name}?`,
+              message:
+                `Every commit on ${current} that is not on ${b.name} is rewritten with a new ` +
+                `identity. If you have already pushed ${current}, the next push needs a force.`,
+              confirmLabel: "Rebase",
+              danger: true,
+            });
+            if (!ok) return;
+            await run(`rebase onto ${b.name}`, host.invoke("branch:rebase", { onto: b.name }));
+          })(),
       });
       items.push({ separator: true });
     }
@@ -3114,13 +3607,22 @@ class App {
     items.push({
       label: "Rename…",
       icon: "edit",
-      onClick: () => {
-        void (async (): Promise<void> => {
-          const to = await promptInline("Rename branch", "new-name", b.name, "Rename");
-          if (to && to.trim() && to.trim() !== b.name)
-            await run("rename branch", host.invoke("branch:rename", { from: b.name, to: to.trim() }));
-        })();
-      },
+      onClick: () => void this.renameBranchFlow(b),
+    });
+    items.push({
+      label: `New branch from ${b.name}…`,
+      icon: "add",
+      onClick: () =>
+        void createBranchFlow(
+          {
+            kind: "branch",
+            ref: b.name,
+            label: b.name,
+            sha: this.refs.find((r) => r.type === "head" && r.name === b.name)?.sha?.slice(0, 7),
+            current: this.currentBranchName(),
+          },
+          { refs: this.refs, after: () => this.refreshAfterBranchChange() },
+        ),
     });
     items.push({
       label: "Set upstream…",
@@ -3146,7 +3648,7 @@ class App {
           // anyway — a Cancel that performs the action, on an object nothing in
           // the app can delete afterwards.
           const msg = await promptInline(
-            "Tag message (optional — blank = lightweight)",
+            "Tag message (optional — it rides with the tag)",
             "Release 1.0.0",
             "",
             "Create tag",
@@ -3169,11 +3671,37 @@ class App {
           void (async (): Promise<void> => {
             const ok = await confirmDialog({
               title: "Delete remote branch",
-              message: `Delete ${b.upstream} from ${remote}? This affects everyone.`,
+              message:
+                `Delete ${b.upstream} from ${remote}? This affects everyone. You can push it ` +
+                `back straight afterwards, as long as nobody has re-made it.`,
               confirmLabel: "Delete remote branch",
               danger: true,
             });
-            if (ok) await run("delete remote branch", host.invoke("branch:deleteRemote", { remote, name: rname }));
+            if (!ok) return;
+            const gone = await host.invoke("branch:deleteRemote", { remote, name: rname });
+            if (!gone.ok) {
+              toast(gone.message ?? `Couldn't delete ${b.upstream}.`, gone.expected ? "info" : "error");
+              return;
+            }
+            bust("branches");
+            await this.refreshBranchesSoft();
+            // The undo is a push, so it can fail in ways the others cannot —
+            // it reports whatever the remote says rather than claiming success.
+            if (gone.was) {
+              const sha = gone.was;
+              didUndoable(`Deleted ${b.upstream} from ${remote}.`, {
+                label: `Push ${rname} back to ${remote}`,
+                undo: async () => {
+                  const back = await host.invoke("branch:restoreRemote", { remote, name: rname, sha });
+                  if (!back.ok) return back.message ?? `Couldn't push ${rname} back.`;
+                  bust("branches");
+                  return undefined;
+                },
+                after: () => this.refreshBranchesSoft(),
+              });
+            } else {
+              toast(`Deleted ${b.upstream} from ${remote}.`, "success");
+            }
           })();
         },
       });
@@ -3277,19 +3805,197 @@ class App {
     }
   }
 
-  private async newBranch(): Promise<void> {
-    const name = await promptInline("New branch", "feature/my-change");
-    if (!name) return;
-    const r = await host.invoke("branch:create", { name, checkout: true });
-    if (!r.ok) {
-      toast(r.message || `Couldn't create branch '${name}'.`, "error");
-      return; // nothing changed — don't refresh as if it had
-    }
-    toast(`Created and checked out ${name}.`, "success");
-    bust();
+  /** The branch you are standing on, for a "you are still on X" sentence. */
+  private currentBranchName(): string | undefined {
+    return this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
+  }
+
+  /** Whatever was showing the branch state, redrawn. Shared by every branch
+   *  mutation so they cannot drift into refreshing different things. */
+  private async refreshAfterBranchChange(): Promise<void> {
     await this.refreshRefs();
     await this.updateSync();
     if (this.currentView === "branches") void this.showBranchesView();
+  }
+
+  /** New branch — from HEAD unless the caller says where. */
+  private newBranch(start?: BranchStart): void {
+    const head = this.refs.find((r) => r.type === "head" && r.isCurrent);
+    void createBranchFlow(
+      start ?? {
+        kind: "head",
+        label: head?.name ?? "HEAD",
+        sha: head?.sha?.slice(0, 7),
+        detached: !head,
+        current: head?.name,
+      },
+      { refs: this.refs, after: () => this.refreshAfterBranchChange() },
+    );
+  }
+
+  /**
+   * Rename a branch, then make the remote agree if it needs to.
+   *
+   * Deliberately NOT through the local `run()` helper: that toasts a literal
+   * "rename branch ✓" (which names nothing), refreshes even on failure, and
+   * would fire a second toast alongside the undo one below.
+   */
+  private async renameBranchFlow(b: BranchInfo): Promise<void> {
+    const to = await promptInline(`Rename ${b.name}`, "new-name", b.name, "Rename", false, {
+      hint: "Only the local name changes — the commits, and the branch on the remote, stay where they are.",
+      validate: "refName",
+      extra: (v) =>
+        v !== b.name && this.refs.some((r) => r.type === "head" && r.name === v)
+          ? `A branch called ${v} already exists.`
+          : null,
+    });
+    if (!to || to === b.name) return;
+
+    const r = await host.invoke("branch:rename", { from: b.name, to });
+    if (!r.ok) {
+      toast(cleanErr(r.message) || `Couldn't rename ${b.name}.`, r.expected ? "info" : "error");
+      return; // nothing changed — don't refresh as if it had
+    }
+
+    const fixed = await this.reconcileUpstreamAfterRename(b, to);
+    const back = { from: to, to: b.name };
+    const after = (): Promise<void> => this.refreshAfterBranchChange();
+    if (!fixed) {
+      didUndoable(`Renamed ${b.name} → ${to}.`, {
+        label: `Rename ${to} back to ${b.name}`,
+        undo: async () => {
+          const u = await host.invoke("branch:rename", back);
+          if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          bust();
+          return undefined;
+        },
+        after,
+      });
+    } else if (fixed.done === "publish") {
+      didUndoable(`Renamed ${b.name} → ${to}, and published it to ${fixed.remote}.`, {
+        // `${fixed.remote}/${to}` is deliberately left standing: creating a
+        // remote branch is not destructive, and deleting one other people may
+        // already have fetched is not an undo.
+        label: `Rename ${to} back to ${b.name}`,
+        undo: async () => {
+          const u = await host.invoke("branch:rename", back);
+          if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          if (b.upstream) await host.invoke("branch:setUpstream", { name: b.name, upstream: b.upstream });
+          bust();
+          return undefined;
+        },
+        after,
+      });
+    } else {
+      didUndoable(`Renamed ${b.name} → ${to}, on ${fixed.remote} too.`, {
+        label: `Put ${b.upstream} back`,
+        undo: async () => {
+          // The remote half is the destructive one and the only half that can
+          // refuse. Do it FIRST: the undo stack pops before running, so a
+          // half-done reversal gets no second try — better to fail having
+          // changed nothing than to leave the local rename undone against a
+          // remote that is still renamed.
+          if (fixed.was) {
+            const put = await host.invoke("branch:restoreRemote", {
+              remote: fixed.remote,
+              name: b.name,
+              sha: fixed.was,
+            });
+            if (!put.ok) return cleanErr(put.message) || `Couldn't put ${b.upstream} back.`;
+          }
+          const u = await host.invoke("branch:rename", back);
+          if (!u.ok) return cleanErr(u.message) || `Couldn't rename ${to} back.`;
+          bust();
+          return undefined;
+        },
+        after,
+      });
+    }
+    await this.refreshAfterBranchChange();
+  }
+
+  /**
+   * A rename leaves a published branch tracking its OLD name on the remote.
+   *
+   * `git branch -m` keeps the tracking config on purpose — the branch on the
+   * server was not renamed — so the config still points at refs/heads/<old>.
+   * Everything downstream then quietly refers to the old branch: this row's
+   * ↑/↓ counts, the menu's Push, and for the current branch the top-bar push
+   * too. Renaming and then pushing "into the new branch" is the obvious thing
+   * to want, and it silently did not happen.
+   *
+   * Git cannot decide this for us — tracking a differently-named branch is
+   * legal and sometimes deliberate — so ask, common intent first. Only fires
+   * when the upstream actually named the OLD branch.
+   */
+  private async reconcileUpstreamAfterRename(
+    b: BranchInfo,
+    to: string,
+  ): Promise<{ done: "rename" | "publish"; remote: string; was?: string } | null> {
+    const up = b.upstream;
+    if (!up) return null; // unpublished
+    const slash = up.indexOf("/");
+    if (slash <= 0) return null;
+    if (up.slice(slash + 1) !== b.name) return null; // deliberately tracking something else
+    return this.reconcileUpstream(to, up, b.name);
+  }
+
+  /** Offer to make the remote agree with `local`, which tracks `upstream`
+   *  under the name `onRemote`. */
+  private async reconcileUpstream(
+    local: string,
+    upstream: string,
+    onRemote: string,
+  ): Promise<{ done: "rename" | "publish"; remote: string; was?: string } | null> {
+    const remote = upstream.slice(0, upstream.indexOf("/"));
+    const ways = [
+      {
+        id: "rename",
+        label: `Rename on ${remote}`,
+        sub: `Push ${local}, track it, and delete ${upstream}.`,
+        icon: "cloud-upload",
+      },
+      {
+        id: "publish",
+        label: `Publish ${local}, keep ${onRemote}`,
+        sub: `Push ${local} and track it, but leave ${upstream} where it is.`,
+        icon: "repo-forked",
+      },
+      {
+        id: "keep",
+        label: `Keep tracking ${upstream}`,
+        sub: "Git's default. The new name stays local-only.",
+        icon: "link",
+      },
+    ];
+    // The gate for the destructive half below: a modal the user must choose in,
+    // which absorbs a second click exactly as a confirm dialog does.
+    const choice = await promptChoice({
+      title: `Rename ${onRemote} on ${remote} too?`,
+      hint: `${local} still tracks ${upstream} — renaming it here doesn't rename it on the remote.`,
+      choices: ways,
+      cancelId: "keep",
+    });
+    if (choice === "keep") return null;
+
+    const pushed = await host.invoke("branch:publish", { name: local, remote });
+    if (!pushed.ok) {
+      const why = pushed.message ? ` — ${cleanErr(pushed.message)}` : "";
+      toast(`Renamed to ${local}, but publishing it to ${remote} failed${why}. It still tracks ${upstream}.`, pushed.expected ? "info" : "error");
+      return null; // the rename stands, and stays undoable
+    }
+    if (choice === "publish") return { done: "publish", remote };
+
+    // The destructive half. A failure here is reported and never undoes the push.
+    const gone = await host.invoke("branch:deleteRemote", { remote, name: onRemote });
+    if (!gone.ok) {
+      toast(
+        `${local} is published and tracked, but ${upstream} couldn't be deleted${gone.message ? ` — ${cleanErr(gone.message)}` : ""}.`,
+        gone.expected ? "info" : "error",
+      );
+      return { done: "publish", remote }; // the half that worked is the half we can undo
+    }
+    return { done: "rename", remote, was: gone.was };
   }
 
   private async deleteBranch(name: string): Promise<void> {
@@ -3300,7 +4006,11 @@ class App {
     // unmerged branch) and is not a substitute for this one.
     const ok = await confirmDialog({
       title: "Delete branch",
-      message: `Delete '${name}'? Commits that are only on this branch may become unreachable.`,
+      // Still worth asking — this removes a ref you meant to keep — but the
+      // second sentence now says what actually happens next.
+      message:
+        `Delete '${name}'? Commits that are only on this branch stop being reachable by name. ` +
+        `You can undo this straight afterwards.`,
       confirmLabel: "Delete branch",
       danger: true,
     });
@@ -3322,7 +4032,33 @@ class App {
       toast(r.message || `Couldn't delete branch '${name}'.`, "error");
       return; // branch still exists — don't refresh as if it were gone
     }
-    toast(`Deleted ${name}.`, "success");
+    // A branch is a name and a commit, so putting one back is genuinely
+    // possible — and the confirm above is exactly the moment people say yes
+    // and then realise. `was` is missing only if the tip could not be read,
+    // and no undo is offered then rather than a broken one.
+    const restore = r.was;
+    const upstream = r.upstream;
+    if (restore) {
+      didUndoable(`Deleted ${name}.`, {
+        label: `Restore ${name}`,
+        undo: async () => {
+          const back = await host.invoke("branch:create", {
+            name,
+            startPoint: restore,
+            upstream,
+          });
+          if (!back.ok) return back.message ?? `Couldn't restore ${name}.`;
+          bust();
+          return undefined;
+        },
+        after: async () => {
+          await this.refreshRefs();
+          if (this.currentView === "branches") void this.showBranchesView();
+        },
+      });
+    } else {
+      toast(`Deleted ${name}.`, "success");
+    }
     // The peek this was very likely launched from is ABOUT the branch that no
     // longer exists. Leaving it open left a card offering Checkout, Merge,
     // Rename and Push on a ref git would refuse — and a second Delete on
@@ -3965,6 +4701,7 @@ class App {
       this.settingsAppearanceCard(),
       this.settingsAccountCard(),
       this.settingsRepositoriesCard(),
+      editorsCard(),
       aiModelsCard(),
       agentAccessCard(),
       this.settingsIdentityCard(),
@@ -4067,6 +4804,7 @@ class App {
     // so it lost the border, gained a plinth, and stands off by --sp-4.
     logoRow.append(logoSeg, preview);
 
+
     body.append(sub, seg, logoLabel, logoSub, logoRow);
     return card;
   }
@@ -4147,17 +4885,45 @@ class App {
       resetBtn.hidden = v.cloneDirIsDefault;
       askBox.checked = v.askWhereEveryTime;
     };
+    // Both of these change the same setting the Repositories screen changes,
+    // and offer the same way back. A setting that is undoable on one screen and
+    // not on another is a seam the reader has to learn.
+    const cloneDirChanged = (v: AppSettingsView, before: string | null): void => {
+      apply(v);
+      bust("repos");
+      didUndoable(`New clones will land in ${v.cloneDirDisplay}.`, {
+        label: "Put the clone folder back",
+        undo: async () => {
+          const back = await host.invoke("settings:update", { cloneDir: before });
+          apply(back);
+          bust("repos");
+        },
+      });
+    };
+    const cloneDirNow = async (): Promise<string | null> => {
+      const v = await host.invoke("settings:get", undefined);
+      return v.cloneDirIsDefault ? null : v.cloneDir;
+    };
     changeBtn.addEventListener("click", () => {
-      void host
-        .invoke("settings:pickCloneDir", undefined)
-        .then((v) => v && apply(v))
-        .catch((e) => toast(cleanErr(e) || "Couldn't choose a folder.", "error"));
+      void (async (): Promise<void> => {
+        try {
+          const before = await cloneDirNow();
+          const v = await host.invoke("settings:pickCloneDir", undefined);
+          if (v) cloneDirChanged(v, before);
+        } catch (e) {
+          toast(cleanErr(e) || "Couldn't choose a folder.", "error");
+        }
+      })();
     });
     resetBtn.addEventListener("click", () => {
-      void host
-        .invoke("settings:update", { cloneDir: null })
-        .then(apply)
-        .catch((e) => toast(cleanErr(e) || "Couldn't reset the folder.", "error"));
+      void (async (): Promise<void> => {
+        try {
+          const before = await cloneDirNow();
+          cloneDirChanged(await host.invoke("settings:update", { cloneDir: null }), before);
+        } catch (e) {
+          toast(cleanErr(e) || "Couldn't reset the folder.", "error");
+        }
+      })();
     });
     askBox.addEventListener("change", () => {
       void host
@@ -4193,7 +4959,7 @@ class App {
     manageSub.textContent = "Open, reveal or remove any clone GitStudio knows about.";
     manageText.append(manageLabel, manageSub);
     const manageBtn = el("button", "mini-btn") as HTMLButtonElement;
-    manageBtn.append(glyph("repo"), span("Open Repositories"));
+    manageBtn.append(glyph("repo"), span("Open repositories"));
     manageBtn.addEventListener("click", () => this.routeView("repositories"));
     manageRow.append(manageText, manageBtn);
 
@@ -4541,7 +5307,13 @@ class App {
       }),
     );
     const head = el("div", "code-head");
-    head.append(crumbs, countChip, el("div", "topbar-spacer"), filterInput, refreshBtn);
+    head.append(
+      crumbs,
+      countChip,
+      el("div", "topbar-spacer"),
+      filterInput,
+      refreshBtn,
+    );
 
     // The connected "file card": a latest-commit header (repo root only), a
     // Name / Size column header, then the rows — one bordered surface, the way
@@ -4558,6 +5330,12 @@ class App {
     listing.appendChild(skeletonList(8, false));
     wrap.append(head, scroll);
     this.viewHost.replaceChildren(wrap);
+    // The header's right inset is the column's inset PLUS whatever the column
+    // loses to a scroll bar (classic bars on Windows and Linux, "Always" on a
+    // Mac) — otherwise Refresh sits a bar's width past the card's edge.
+    const syncGutter = (): void => head.style.setProperty("--code-gutter", `${scroll.offsetWidth - scroll.clientWidth}px`);
+    syncGutter();
+    new ResizeObserver(syncGutter).observe(scroll);
     // The view's own keys — "/" to jump to the filter, Backspace to go up a
     // folder — are bound on `wrap`, so they only fire for keys pressed INSIDE
     // it. Nothing here had focus after a render, so both were dead until you
@@ -4764,10 +5542,22 @@ class App {
         // renderMarkdown is escape-first (XSS-safe); guard anyway so a malformed
         // README can never abort the surrounding Code-view render.
         try {
-          bodyEl.innerHTML = renderMarkdown(text);
+          const baseDir = this.codePath;
+          // Relative images resolve to the file BESIDE the README on disk —
+          // the renderer's origin is the app's own index.html, and against
+          // that every `brand/icon.svg` in every README was a broken glyph.
+          const root = this.currentRepo?.root;
+          bodyEl.innerHTML = renderMarkdown(text, 0, {
+            resolveImage: root
+              ? (rel) => {
+                  const clean = rel.replace(/^\.\//, "");
+                  const joined = [root, baseDir, clean].filter(Boolean).join("/");
+                  return `file://${joined}`;
+                }
+              : undefined,
+          });
           // README links to this repo's issues/PRs/commits stay IN the app —
           // and RELATIVE links ("./docs/x.md") open in the Code browser.
-          const baseDir = this.codePath;
           wireProseNav(
             bodyEl,
             (v, t) => this.routeView(v, false, t),
@@ -4807,11 +5597,21 @@ class App {
     subj.textContent = hc.subject || "(no commit message)";
     meta.append(who, subj);
 
+    // The sha OPENS the commit. It only copied before, which made the one
+    // identifier on this bar a dead end: the commit it names is a click away in
+    // Commits, and reading it was the thing people actually wanted.
     const sha = el("button", "code-latest-sha");
-    sha.title = "Copy full SHA";
-    sha.setAttribute("aria-label", "Copy full SHA");
+    sha.title = `Open ${hc.shortSha} in Commits`;
+    sha.setAttribute("aria-label", `Open commit ${hc.shortSha}`);
     sha.append(glyph("git-commit"), span(hc.shortSha));
-    sha.addEventListener("click", () => void copyText(hc.sha, "Commit SHA copied"));
+    sha.addEventListener("click", () => this.routeView("graph", false, { sha: hc.sha }));
+
+    // …and copying keeps its own affordance rather than being the only one.
+    const copy = el("button", "code-latest-copy");
+    copy.title = "Copy full SHA";
+    copy.setAttribute("aria-label", "Copy full SHA");
+    copy.append(glyph("copy"));
+    copy.addEventListener("click", () => void copyText(hc.sha, "Commit SHA copied"));
 
     const when = el("span", "code-latest-when");
     if (hc.date) {
@@ -4819,10 +5619,13 @@ class App {
       when.title = absTime(hc.date);
     }
 
-    const count = el("span", "code-latest-count");
+    // The history, from the page that shows the files it produced.
+    const count = el("button", "code-latest-count");
+    count.title = "Show this repository's commits";
     count.append(glyph("history"), span(`${hc.total.toLocaleString()} commit${hc.total === 1 ? "" : "s"}`));
+    count.addEventListener("click", () => this.routeView("graph"));
 
-    bar.append(av, meta, sha, when, count);
+    bar.append(av, meta, sha, copy, when, count);
     return bar;
   }
 
@@ -4993,7 +5796,6 @@ class App {
     textarea.addEventListener("input", () => {
       if (prefilled !== undefined && textarea.value !== prefilled) {
         prefilled = undefined;
-        this.composerDraft.prefilled = undefined;
         this.composerDraft.prefilled = undefined;
       }
     });
@@ -5220,9 +6022,17 @@ class App {
     const createPrBtn = el("button", "mini-btn dc-createpr");
     createPrBtn.append(glyph("git-pull-request"), span("Create pull request"));
     createPrBtn.hidden = true;
-    createPrBtn.addEventListener("click", () =>
-      void openCreatePr(() => this.routeView("prs", true), { head: curBranch }),
-    );
+    createPrBtn.addEventListener("click", () => {
+      // LIVE, for the same reason syncCommitLabel above reads it live: the
+      // `curBranch` const is resolved when the composer is BUILT, and HEAD is
+      // usually still resolving at that moment — so the form opened with no
+      // head branch at all, and after a checkout it opened with the branch you
+      // had left. A form that pre-fills the wrong side of a pull request is
+      // worse than one that pre-fills nothing.
+      const h = this.headInfo;
+      const live = h && !h.detached ? h.branch : undefined;
+      void openCreatePr(() => this.routeView("prs", true), { head: live ?? curBranch });
+    });
     swr("github:status", undefined, {
       ttl: 60_000,
       alive: () => createPrBtn.isConnected,
@@ -5382,16 +6192,24 @@ class App {
     const divider = el("div", "cmp-vsplit dc-vsplit");
     divider.append(el("div", "cmp-vsplit-grip"));
     const surface = el("div", "diff-surface");
+    // ONE writer for the width, because there were two and they disagreed: the
+    // keyboard set `listCol`, the pointer drag set `lists` — the inner list
+    // INSIDE that column — to `0 0 Wpx`, which also destroyed the `1 1 auto`
+    // the list needs to fill its column. Dragging appeared to do nothing to the
+    // column it was dragging, and left the list in a state the keyboard path
+    // never produced. `listCol` is declared below; this only ever runs after
+    // the view is built, so there is no temporal-dead-zone hit.
+    const setListW = (w: number): void => {
+      this.changesListW = w;
+      listCol.style.flex = `0 1 ${w}px`;
+    };
     wireResizerKeys(divider, {
       orientation: "vertical",
       label: "Resize file list",
       min: 220,
       max: () => 640,
       get: () => this.changesListW,
-      set: (w) => {
-        this.changesListW = w;
-        listCol.style.flex = `0 1 ${w}px`;
-      },
+      set: setListW,
       onCommit: () => this.persist(),
     });
     divider.addEventListener("pointerdown", (e) => {
@@ -5400,9 +6218,7 @@ class App {
       const startX = e.clientX;
       const startW = this.changesListW;
       const move = (ev: PointerEvent): void => {
-        const w = Math.max(220, Math.min(640, startW + (ev.clientX - startX)));
-        this.changesListW = w;
-        lists.style.flex = `0 0 ${w}px`;
+        setListW(Math.max(220, Math.min(640, startW + (ev.clientX - startX))));
       };
       const up = (): void => {
         document.body.classList.remove("resizing-h");
@@ -6226,11 +7042,14 @@ class App {
     }
 
     if (gone.length === 0) {
+      // Tracked files are recoverable now: the app records a restore point
+      // before the discard and offers Undo. Still a confirm — this throws away
+      // work — but the dialog must not go on claiming otherwise.
       return {
         title: "Discard changes?",
         message: one
-          ? `Discard your changes to ${paths[0]}? This can't be undone.`
-          : `Discard your changes to ${paths.length} files? This can't be undone.`,
+          ? `Discard your changes to ${paths[0]}? You can undo this straight afterwards.`
+          : `Discard your changes to ${paths.length} files? You can undo this straight afterwards.`,
         confirmLabel: "Discard",
         danger: true,
       };
@@ -6252,7 +7071,7 @@ class App {
       message:
         `${gone.length} of these ${paths.length} files aren't tracked by git and will be ` +
         `DELETED from disk with no way to restore them. The other ${reverted.length} will have ` +
-        `their changes reverted. Neither can be undone.`,
+        `their changes reverted, and that part can be undone.`,
       confirmLabel: "Discard and delete",
       danger: true,
     };
@@ -6424,17 +7243,17 @@ class App {
       const checked = keysFor("checked");
       const unchecked = keysFor("unchecked");
       const items: MenuItem[] = [
-        { label: `Select All (${all.length})`, icon: "check-all", onClick: () => selectKeys(keysFor("all")) },
+        { label: `Select all (${all.length})`, icon: "check-all", onClick: () => selectKeys(keysFor("all")) },
       ];
       if (checked.length > 0) {
-        items.push({ label: `Select Checked (${checked.length})`, icon: "check", onClick: () => selectKeys(checked) });
+        items.push({ label: `Select checked (${checked.length})`, icon: "check", onClick: () => selectKeys(checked) });
       }
       if (unchecked.length > 0) {
-        items.push({ label: `Select Unchecked (${unchecked.length})`, icon: "circle-outline", onClick: () => selectKeys(unchecked) });
+        items.push({ label: `Select unchecked (${unchecked.length})`, icon: "circle-outline", onClick: () => selectKeys(unchecked) });
       }
       items.push({ separator: true });
       items.push({
-        label: "Stash All Changes", icon: "archive",
+        label: "Stash all changes", icon: "archive",
         onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
       });
       openMenu(head, items);
@@ -6464,17 +7283,17 @@ class App {
     }
     items.push({ separator: true });
     items.push({
-      label: "Stash This File", icon: "archive",
+      label: "Stash this file", icon: "archive",
       onClick: () => void this.stashPaths([f.path]).then(() => this.clearSelection(lists, selBar)),
     });
     items.push({
-      label: "Stash All Changes", icon: "archive",
+      label: "Stash all changes", icon: "archive",
       onClick: () => void this.stashPaths([]).then(() => this.clearSelection(lists, selBar)),
     });
     if (kind !== "staged") {
       items.push({ separator: true });
       items.push({
-        label: "Discard Changes", icon: "discard",
+        label: "Discard changes", icon: "discard",
         onClick: () => {
           void confirmDialog(this.discardConfirm([f.path])).then((ok) => {
             if (ok) void this.changesAction("discard", f.path);
@@ -6489,7 +7308,9 @@ class App {
   private multiRowMenu(lists: HTMLElement, selBar: HTMLElement): MenuItem[] {
     const entries = this.selectionEntries();
     const paths = this.selectionPaths();
-    const noun = (n: number) => (n === 1 ? "1 File" : `${n} Files`);
+    // Sentence case, like every other menu in the app — this one read
+    // "Stash 3 Files" beside a "Stash all changes" twin three lines above it.
+    const noun = (n: number) => (n === 1 ? "1 file" : `${n} files`);
     const stageable = entries.filter((e) => e.kind !== "staged");
     const unstageable = entries.filter((e) => e.kind === "staged");
 
@@ -6539,6 +7360,7 @@ class App {
     lists: HTMLElement,
     selBar: HTMLElement,
   ): Promise<void> {
+    const restore = channel === "discard" ? await this.beforeDiscard(paths) : undefined;
     let failed = 0;
     for (const path of paths) {
       const r = await host.invoke(channel, path);
@@ -6549,6 +7371,51 @@ class App {
     }
     this.clearSelection(lists, selBar);
     void this.repaintChanges();
+    if (!failed) this.offerDiscardUndo(restore);
+  }
+
+  /**
+   * Record where the working tree was, just before a discard throws part of it
+   * away.
+   *
+   * Only the TRACKED paths: an untracked file is deleted by `git clean` and git
+   * has no copy of it to restore from, so it must not be listed as recoverable
+   * — the confirm dialog says as much, and an Undo that silently skipped it
+   * would contradict the sentence the user just read.
+   */
+  private async beforeDiscard(
+    paths: string[],
+  ): Promise<{ sha: string; paths: string[] } | undefined> {
+    const files = peek("status", undefined) ?? [];
+    const untracked = new Set(
+      files.filter((f) => f.status === "?" && !f.staged).map((f) => f.path),
+    );
+    // Only paths this list can actually vouch for. A path the cached status
+    // knows nothing about might be an untracked file — which `git clean`
+    // deletes and no snapshot holds — and offering to bring back something
+    // that cannot come back is the one thing this must not do.
+    const known = new Set(files.map((f) => f.path));
+    const restorable = paths.filter((p) => known.has(p) && !untracked.has(p));
+    if (!restorable.length) return undefined;
+    try {
+      const snap = await host.invoke("discard:snapshot", undefined);
+      return snap.sha ? { sha: snap.sha, paths: restorable } : undefined;
+    } catch {
+      return undefined; // no restore point, so no undo is offered
+    }
+  }
+
+  private offerDiscardUndo(restore: { sha: string; paths: string[] } | undefined): void {
+    if (!restore) return;
+    const n = restore.paths.length;
+    didUndoable(n === 1 ? `Discarded changes to ${restore.paths[0]}.` : `Discarded changes to ${n} files.`, {
+      label: n === 1 ? "Bring the changes back" : `Bring ${n} files' changes back`,
+      undo: async () => {
+        const r = await host.invoke("discard:undo", restore);
+        return r.ok ? undefined : (r.message ?? "Couldn't bring them back.");
+      },
+      after: () => this.repaintChanges(),
+    });
   }
 
   /** Stash the given paths, then refresh. Empty means the whole tree. */
@@ -6558,7 +7425,16 @@ class App {
       toast(r.message ?? "Could not stash.", r.expected ? "info" : "error");
       return;
     }
-    toast(paths.length === 1 ? "Stashed 1 file." : `Stashed ${paths.length} files.`);
+    // An empty `paths` means "the whole working tree", which is how the Stash
+    // button on the toolbar calls this — and it read as "Stashed 0 files.",
+    // which says the opposite of what just happened.
+    toast(
+      paths.length === 0
+        ? "Stashed all changes."
+        : paths.length === 1
+          ? "Stashed 1 file."
+          : `Stashed ${paths.length} files.`,
+    );
     void this.repaintChanges();
   }
 
@@ -6591,6 +7467,7 @@ class App {
     channel: "stage" | "unstage" | "discard" | "stageAll" | "unstageAll",
     path: string | undefined,
   ): Promise<void> {
+    const restore = channel === "discard" && path ? await this.beforeDiscard([path]) : undefined;
     try {
       const r =
         channel === "stageAll"
@@ -6604,6 +7481,8 @@ class App {
           : channel === "unstageAll" ? "unstage all changes"
           : `${channel} ${path ?? ""}`.trim();
         toast(r.message || `Couldn't ${verb}.`, "error");
+      } else if (restore) {
+        this.offerDiscardUndo(restore);
       }
     } catch (e) {
       toast(cleanErr(e) || "The operation failed.", "error");
@@ -6938,7 +7817,12 @@ class App {
       onContext: (sha, x, y) => this.contextMenu.open(sha, x, y, this.refsOn(sha)),
       // Ref labels are LINKS now: click a branch/tag chip in the graph and land
       // on that ref in Branches, scrolled + flashed.
-      onRefClick: (name) => this.routeView("branches", false, { ref: name }),
+      // `kind` too. The chip knows whether it is a branch, a remote or a tag,
+      // and dropping it left the Branches view guessing by name alone, locals
+      // first — so a tag sharing a name with a branch (git allows it, and
+      // `%(refname:short)` does NOT disambiguate across namespaces) landed on
+      // the branch and marked the wrong row without a word.
+      onRefClick: (name, kind) => this.routeView("branches", false, { ref: name, refKind: kind }),
       // Show the pane again WITHOUT re-selecting: selectCommit() would call
       // closeGraphDiff() and dispose a diff the user still has open.
       onShowDetails: () => this.setGraphDetailsVisible(true),
@@ -6983,17 +7867,23 @@ class App {
         main.title = title;
         main.onclick = fn;
       };
+      // Every one of these acts on the repository OPEN on this machine — which,
+      // while you are reading someone else's repository on the browse page, is
+      // not the repository filling the screen. "Push 2 commits to origin/main"
+      // named neither, so the one live write control in the chrome was silently
+      // aimed at a repository nothing else on screen mentioned. Name it.
+      const where = this.currentRepo?.name ?? "this repository";
       if (s.noUpstream) {
-        set("cloud", "Publish", "Publish this branch to its remote", () => void this.doSync("publish"));
+        set("cloud", "Publish", `Publish this branch of ${where} to its remote`, () => void this.doSync("publish"));
         wrap.classList.add("has-action");
       } else if (s.behind > 0) {
-        set("arrow-down", `Pull ${s.behind}`, `Pull ${plural(s.behind, "commit")} from ${s.upstream}`, () => void this.doSync("pull"));
+        set("arrow-down", `Pull ${s.behind}`, `Pull ${plural(s.behind, "commit")} into ${where} from ${s.upstream}`, () => void this.doSync("pull"));
         wrap.classList.add("has-action");
       } else if (s.ahead > 0) {
-        set("arrow-up", `Push ${s.ahead}`, `Push ${plural(s.ahead, "commit")} to ${s.upstream}`, () => void this.doSync("push"));
+        set("arrow-up", `Push ${s.ahead}`, `Push ${plural(s.ahead, "commit")} from ${where} to ${s.upstream}`, () => void this.doSync("push"));
         wrap.classList.add("has-action");
       } else {
-        set("sync", "Fetch", `Up to date with ${s.upstream} — fetch for updates`, () => void this.doSync("fetch"));
+        set("sync", "Fetch", `${where} is up to date with ${s.upstream} — fetch for updates`, () => void this.doSync("fetch"));
         wrap.classList.remove("has-action");
       }
     };
@@ -7085,10 +7975,15 @@ class App {
    *  PRs/issues, and the headline actions. Local groups are instant; the
    *  GitHub groups stream in as they resolve. */
   private openPalette(): void {
-    if (!this.currentRepo) return;
+    // No repo required. The palette's repo-scoped groups (branches, files,
+    // PRs) simply come back empty from their own providers; the commands,
+    // views and repository list are exactly what a repo-less user needs.
     const go = (v: string, t?: SectionTarget): void => this.routeView(v, false, t);
     openCommandPalette({
       local: (): PaletteGroup[] => {
+        // These act on the repository open on this machine, which is not
+        // necessarily the one on screen — ⌘K is reachable from a browse page.
+        const here = this.currentRepo?.name ?? "";
         const views: PaletteItem[] = App.TABS.map((t) => ({
           icon: t.icon,
           label: t.label,
@@ -7129,22 +8024,30 @@ class App {
         ];
 
         const actions: PaletteItem[] = [
-          { icon: "add", label: "New branch…", run: () => void this.newBranch() },
+          { icon: "add", label: "New branch…", hint: here, run: () => void this.newBranch() },
           {
             icon: "git-pull-request",
             label: "New pull request…",
             run: () => void openCreatePr(() => this.routeView("prs", true)),
           },
           { icon: "issues", label: "New issue…", run: () => void openNewIssue(go) },
-          { icon: "sync", label: "Fetch", run: () => void this.doSync("fetch") },
-          { icon: "arrow-down", label: "Pull", run: () => void this.doSync("pull") },
-          { icon: "arrow-up", label: "Push", run: () => void this.doSync("push") },
+          { icon: "sync", label: "Fetch", hint: here, run: () => void this.doSync("fetch") },
+          { icon: "arrow-down", label: "Pull", hint: here, run: () => void this.doSync("pull") },
+          { icon: "arrow-up", label: "Push", hint: here, run: () => void this.doSync("push") },
           {
             icon: "repo-clone",
             label: "Clone repository…",
             run: () => openCloneDialog((root) => void this.openPath(root)),
           },
           { icon: "folder-opened", label: "Open repository…", run: () => void this.openRepo() },
+          // Search left the rail (it is a tool, not a destination) — this row
+          // is how "search" typed into ⌘K still lands on the full page.
+          {
+            icon: "telescope",
+            label: "Search GitHub & this machine",
+            keywords: "explore find repositories code people",
+            run: () => this.routeView("explore"),
+          },
           { icon: "terminal", label: "Toggle terminal", keywords: "dock shell", run: () => this.toggleTerminal() },
           { icon: "color-mode", label: "Theme: System", keywords: "theme auto", run: () => this.setThemeMode("system") },
           { icon: "color-mode", label: "Theme: Light", keywords: "theme", run: () => this.setThemeMode("light") },
@@ -7165,7 +8068,7 @@ class App {
 
         return [
           { title: "Go to", items: views },
-          { title: "Branches & tags", items: refs },
+          { title: `Branches & tags in ${here || "this repository"}`, items: refs },
           { title: "Actions", items: actions },
         ];
       },
@@ -7257,6 +8160,15 @@ class App {
               label: `Search GitHub for “${query}”`,
               hint: "",
               run: () => go("explore", { id: searchTargetId("repos", query) }),
+            },
+            // The free sibling: the same query against this machine. One
+            // search system, three mouths — the palette must reach both
+            // worlds or it is only most of a search.
+            {
+              icon: "vm",
+              label: `Search local repositories for “${query}”`,
+              hint: "",
+              run: () => go("explore", { id: `q/local/${query}` }),
             },
           ],
         }),
@@ -7359,8 +8271,62 @@ class App {
     // The branch chip and the push/pull widget are ABOUT a repository. With
     // none open they said "main" and offered "Push 2" — a branch and a count
     // belonging to whatever was open last, which is worse than saying nothing.
-    left.append(home, sidebarToggle, backBtn, fwdBtn, repoSwitch);
-    if (info) left.append(branchSwitch, this.buildSyncWidget());
+    // The repository you are READING, left of the one you are WORKING IN.
+    //
+    // The bar is built once per repo-open and no route ever touched it, so
+    // while you read libgit2/libgit2 it said `gitstudio · main · Push 2 · Open
+    // in Cursor`: four live controls about a different repository, with nothing
+    // separating them from the one filling the screen. Nothing is hidden and
+    // nothing is dimmed — these controls WORK, they were simply unlabelled.
+    // (`opacity: .42` already means *unavailable* in this app.)
+    const where = el("span", "topbar-where");
+    where.append(glyph("globe"), span("", "topbar-where-name"));
+    where.hidden = true;
+    const working = span("working in", "topbar-working");
+    working.hidden = true;
+    left.append(home, sidebarToggle, backBtn, fwdBtn, where, working, repoSwitch);
+    let primedStatus = false;
+    const syncWhere = (): void => {
+      const route =
+        this.currentView === "explore" ? parseRepoRoute(this.currentTarget?.id) : undefined;
+      where.hidden = !route;
+      if (route) {
+        const nameEl = where.querySelector(".topbar-where-name");
+        if (nameEl) nameEl.textContent = route.fullName;
+        // True whether or not a clone exists. "Do I have it?" is answered on
+        // the page's own rail, not up here.
+        where.title = `Reading ${route.fullName} on github.com`;
+        where.setAttribute("aria-label", where.title);
+      }
+      // The clause only earns its words when the two names differ. Unknown is
+      // NOT the same as equal: with the slug uncached the clause shows, which
+      // is a redundancy, never a false claim.
+      const open = peek("github:status", undefined)?.repo;
+      const openName = open ? `${open.owner}/${open.repo}`.toLowerCase() : undefined;
+      if (!open && !primedStatus) {
+        primedStatus = true;
+        void gget("github:status", undefined, 30_000)
+          .then(() => syncWhere())
+          .catch(() => {});
+      }
+      working.hidden = !route || !info || openName === route.fullName.toLowerCase();
+      // `hidden` is an ATTRIBUTE, and wireTopbarFit's MutationObserver
+      // deliberately does not watch attributes — so ask for the re-measure.
+      this.fitTopbar?.();
+    };
+    syncWhere();
+    this.syncWhereChip = syncWhere;
+    if (info) {
+      left.append(branchSwitch, this.buildSyncWidget());
+      // Beside Push, not inside the Code page: opening the repository in your
+      // editor is something you do from wherever you happen to be.
+      const openIn = openInButton({
+        root: () => this.currentRepo?.root,
+        nav: (v) => this.routeView(v),
+      });
+      openIn.classList.add("topbar-openin");
+      left.append(openIn);
+    }
     this.syncRailToggle();
 
     // Right edge: the notifications center (bell + unread badge) sitting right
@@ -7380,6 +8346,7 @@ class App {
     right.append(cmdk, this.buildAssistantLauncher(), this.buildNotifBell(), this.buildAccountChip());
 
     bar.append(left, right);
+    this.wireTopbarFit(bar);
     return bar;
   }
 
@@ -7407,6 +8374,7 @@ class App {
 
   /** Repaint the Assistant launcher's current-view state after a route change. */
   private syncAssistantChip?: () => void;
+  private syncWhereChip?: () => void;
 
   /** The notifications center: a bell in the top bar (next to the account chip)
    *  with an unread-count badge, opening the inbox as a floating panel. Replaces
@@ -7586,6 +8554,11 @@ class App {
 
   private wireHostEvents(): void {
     host.on("repo:changed", (info) => {
+      // Every pending undo belongs to the repository it was recorded in. A
+      // branch restored into whatever repo happens to be open now would be a
+      // brand-new branch in the wrong place — the one outcome an undo must
+      // never produce — so switching repositories drops them.
+      clearUndo();
       // Closing the repository keeps the shell and lands on Home, rather than
       // dropping you onto a separate card with no navigation on it.
       this.showRepoScreen(info);
@@ -7626,6 +8599,21 @@ class App {
     window.addEventListener("focus", () => {
       void this.refreshIfDiskMoved();
     });
+    installUndoKey();
+    // Home's Push/Fetch buttons ride the topbar's own sync flow — same busy
+    // state, same toasts, same refresh — rather than forking a second one out
+    // of raw IPC calls. The event is the only coupling the view needs.
+    window.addEventListener("gs:sync", (e) => {
+      const action = (e as CustomEvent<{ action?: string }>).detail?.action;
+      if (action === "push" || action === "fetch" || action === "pull") void this.doSync(action);
+    });
+    // "Take me to the repository that just became the open one." Used by the
+    // clone flow, which otherwise leaves you on whatever view was current when
+    // you started — a browse page that no longer has a target.
+    window.addEventListener("gs:go", (e) => {
+      const view = (e as CustomEvent<{ view?: string }>).detail?.view;
+      if (view) this.routeView(view);
+    });
     host.on("menu:command", (msg) => {
       if (msg.command === "openRepo") void this.openRepo();
       else if (msg.command === "refresh") void this.refreshAll();
@@ -7634,6 +8622,7 @@ class App {
       else if (msg.command === "cloneRepo") openCloneDialog((root) => void this.openPath(root));
       else if (msg.command === "toggleSidebar") this.toggleRail();
       else if (msg.command === "palette") this.openPalette();
+      else if (msg.command === "undo") void undoOrText();
     });
     // App updates: the main process polls; the USER decides. Nothing downloads
     // or installs without a confirm here.
@@ -8145,6 +9134,8 @@ class App {
       // The name truncates in the slim bar — expose the full ref as a tooltip.
       const sw = this.branchSwitchName.closest(".topbar-switch") as HTMLElement | null;
       if (sw) sw.title = head?.detached ? `Detached HEAD at ${head.sha.slice(0, 12)}` : `On branch ${label} — switch branch`;
+      // A longer branch name needs more room than the last one did.
+      this.fitTopbar?.();
     }
   }
 
@@ -8156,14 +9147,15 @@ class App {
     // showing the PREVIOUS commit's files the whole time — so a slow load was
     // indistinguishable from a fast one, and a FAILED load was invisible: the
     // old commit stayed on screen as though it were the one you just clicked.
-    // The open diff belongs to the PREVIOUS commit, and `loadingState` is about
-    // to replace the node it lives in — so close it properly rather than
-    // orphaning it. Without this, a details load that FAILS returned before
-    // `renderDetails` ever ran, leaving `diff-open` on the wrapper: the graph
-    // stayed squeezed to half width around an error card, in a pane sized for a
-    // diff that was no longer in the DOM, and only opening another commit
-    // successfully could undo it.
+    // The open diff belongs to the PREVIOUS commit, so it goes with it — the
+    // dock's Diff tab must never sit there showing a file from a commit that is
+    // no longer selected.
     this.closeGraphDiff();
+    // And the pane has to be OPEN for anything this load is about to say. It
+    // could be closed (the panel's own X), in which case both the loading state
+    // and a failure card were written into a `display: none` column: clicking a
+    // commit after closing the panel looked like nothing happened at all.
+    this.setGraphDetailsVisible(true);
     this.detailsEl?.replaceChildren(loadingState(`Loading ${sha.slice(0, 7)}…`));
     let details;
     try {
@@ -8272,8 +9264,10 @@ class App {
       this.activeMonacoView = undefined;
     }
     this.diffSurfaceEl = undefined;
-    this.graphViewWrap?.classList.remove("diff-open");
-    this.detailsEl?.querySelector(".details-diff")?.remove();
+    // Drops the Diff tab from the dock's tab strip and, if it was the tab on
+    // screen, hands the dock back to Terminal. The dock itself stays where the
+    // user put it — closing a diff is not a reason to close their terminal.
+    this.terminalDock?.setDetailsVisible(false);
   }
 
   /** Show/hide the commit-details column beside the graph. */
@@ -8289,7 +9283,21 @@ class App {
    * splits graph|details. Width persists across sessions.
    */
   private graphSplitResizer(wrap: HTMLElement): HTMLElement {
-    const MIN = 320;
+    // Free dragging, with a floor on the GRAPH rather than a ceiling on the
+    // details column.
+    //
+    // It used to be the other way round: `max = min(900, wrapWidth - 900)`,
+    // where 900 came from the graph's own column-drop breakpoint plus headroom.
+    // On a 1280px window that arithmetic collapses — min, max and current all
+    // land on 320 and the divider has ZERO travel; at 1440 it has four pixels.
+    // So a guard meant to protect the graph's columns instead froze the control
+    // on exactly the laptop widths most people use, while the widths it was
+    // protecting were already violated. The graph degrades honestly on its own
+    // (it ellipsises, and its own container queries drop columns in order), so
+    // the only real floor is the width below which its toolbar stops working —
+    // measured at ~312px. Below MIN the details column is not a column.
+    const MIN = 160;
+    const GRAPH_MIN = 320;
     const KEY = "gitstudio.graphDetailsW";
     // The graph drops its Date and SHA columns below a breakpoint of its own (a
     // container query in commit-graph), so the details column must never
@@ -8302,9 +9310,8 @@ class App {
     // drag the details pane 60px past the point where the graph starts losing
     // columns, which is exactly what the guard exists to prevent. Plus the
     // headroom the comment always intended.
-    const GRAPH_FLOOR = COLUMN_DROP_TAIL_AT + 40;
     const maxFor = (): number =>
-      Math.max(MIN, Math.min(900, Math.round(wrap.getBoundingClientRect().width) - GRAPH_FLOOR));
+      Math.max(MIN, Math.round(wrap.getBoundingClientRect().width) - GRAPH_MIN);
     const saved = Number(localStorage.getItem(KEY));
     /**
      * What the user ASKED for, kept apart from what currently fits.
@@ -8384,6 +9391,18 @@ class App {
       this.routeView("rebase", true);
       return;
     }
+    if (id === "open-remote") {
+      // The details header emitted this and NOTHING listened: the button was
+      // drawn whenever the repo has a remote, and clicking it did nothing at
+      // all. It only ever meant one thing — this commit, on github.com.
+      const repo = peek("github:status", undefined)?.repo;
+      if (!repo) {
+        toast("This repository has no GitHub remote the app can open.", "info");
+        return;
+      }
+      window.open(`https://github.com/${repo.owner}/${repo.repo}/commit/${sha}`, "_blank", "noopener");
+      return;
+    }
     const map: Record<string, string> = {
       checkout: "checkout",
       branch: "branch",
@@ -8394,42 +9413,62 @@ class App {
       "copy-sha": "copy-sha",
     };
     const action = map[id];
-    if (action) {
-      await this.runAction({ action, sha } as Parameters<App["runAction"]>[0]);
+    if (!action) return;
+    // THE SAME QUESTIONS the right-click menu asks. This toolbar offers the
+    // identical seven actions and used to dispatch every one of them raw:
+    // Checkout detached HEAD with no warning, Revert and Reset changed history
+    // in silence, and Branch and Tag went out with no name at all — which came
+    // back as an error blaming the user for a request the app had failed to
+    // build. One table, asked from both doors.
+    const item = commitActionItem(action);
+    if (item) {
+      const asked = await askForCommitAction(item);
+      if (!asked.ok) return;
+      await this.runAction({ action, sha, name: asked.name } as Parameters<App["runAction"]>[0]);
+      return;
     }
+    await this.runAction({ action, sha } as Parameters<App["runAction"]>[0]);
   }
 
   private async openFile(file: ChangedFile, sha?: string): Promise<void> {
-    // The diff opens INSIDE the Commits view: the details column widens and
-    // the editor sits right beside the commit's file list. It used to open in
-    // the bottom dock's "Diff" tab — graph left, details right, diff BOTTOM —
-    // three regions for one task, the literal "split screen" complaint.
-    const split = this.detailsEl?.querySelector(".details-split") as HTMLElement | null;
-    if (!split) return;
-    let pane = split.querySelector(".details-diff") as HTMLElement | null;
-    if (!pane) {
-      pane = el("div", "details-diff");
-      const head = el("div", "details-diff-head");
-      head.append(glyph(fileIcon(file.path.split("/").pop() ?? "")), el("span", "details-diff-name"));
-      const close = el("button", "peek-nav-btn details-diff-close");
-      close.title = "Close diff";
-      close.setAttribute("aria-label", "Close diff");
-      close.appendChild(glyph("close"));
-      close.addEventListener("click", () => this.closeGraphDiff());
-      head.appendChild(close);
-      const surface = el("div", "details-diff-surface");
-      pane.append(head, surface);
-      split.appendChild(pane);
-      this.diffSurfaceEl = surface;
+    // The diff opens in the BOTTOM DOCK, beside Terminal and Output.
+    //
+    // It used to open inside the commit-details column, and that was measurably
+    // the wrong home: code needs WIDTH. In the column the editor got 571px of a
+    // 1600px window — below Monaco's 1000px threshold, so every diff silently
+    // downgraded itself to Inline — while `.diff-open` pinned the graph to 34%
+    // (471px, under its own 620px breakpoint, so the column header and four
+    // columns vanished) and left the graph|details divider on screen as a dead
+    // control that moved nothing. In the dock the same diff gets the full
+    // window width, and the dock's height is already draggable, which is the
+    // axis you actually trade when you are reading code.
+    //
+    // ORDER MATTERS: make the tab, activate it, THEN read the surface. The
+    // dock body is `display: none` while collapsed or while another tab is up,
+    // so a DiffPanel built before the tab is active mounts into a 0x0 box.
+    const dock = this.mountTerminalDock();
+    if (!dock) return;
+    dock.setDetailsVisible(true);
+    dock.openDetails();
+    const surface = dock.detailsSurface();
+    if (!surface) return;
+    // NO header of our own. DiffPanel already draws one carrying the path and
+    // the Inline/Split toggle, so adding a second printed the filename twice,
+    // one line above itself. The file's identity goes on the TAB instead, which
+    // is where you look to see what is open, and the ✕ goes with it.
+    let body = surface.querySelector(".dock-diff-surface") as HTMLElement | null;
+    if (!body) {
+      body = el("div", "dock-diff-surface");
+      surface.replaceChildren(body);
+      this.diffSurfaceEl = body;
     }
-    const nameEl = pane.querySelector(".details-diff-name") as HTMLElement;
-    nameEl.textContent = file.path;
-    nameEl.title = file.path;
-    // Widen the details side so the editor has real room; the graph yields.
-    this.graphViewWrap?.classList.add("diff-open");
+    dock.setDetailsLabel(file.path);
     if (!this.diffPanel && this.diffSurfaceEl) {
       this.diffPanel = new DiffPanel(this.diffSurfaceEl);
       this.activeMonacoView = this.diffPanel;
+      // Follow the dock's own drag rather than the ResizeObserver, which lands
+      // a frame late and leaves the editor trailing the pointer.
+      dock.onDetailsLayout = () => this.diffPanel?.layout();
     }
     // Capture the panel — re-reading `this.diffPanel` after an await threw
     // "cannot read showDiff of undefined" when the user picked another commit

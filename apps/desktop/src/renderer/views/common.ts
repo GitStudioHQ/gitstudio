@@ -43,6 +43,10 @@ export type { FacetOption, FacetSpec, FacetState };
 export interface SectionTarget {
   /** The issue / PR number to auto-open in the destination section. */
   number?: number;
+  /** Pre-filled body text for a composer route — how "Reference in new issue"
+   *  starts the new one already pointing at the old. Never an identity field:
+   *  two routes differing only here are the same place. */
+  seedBody?: string;
   /** A string-keyed item to open (gist id, project id) — the string-shaped
    *  sibling of `number` for sections whose items aren't numbered. */
   id?: string;
@@ -65,9 +69,24 @@ export interface SectionTarget {
    * Forward could not return to the file, because neither ever knew about it.
    */
   file?: string;
+  /** A standing lens for the Branches view — "merged" preselects the facet
+   *  the door was ABOUT, so "2 branches merged — clean up?" lands on the two
+   *  branches it counted, not the full list with the answer buried. Counts as
+   *  identity in the keep-alive comparison: restoring a parked full list over
+   *  a door that promised the merged ones would be a dead click. */
+  lens?: string;
   /** A ref (branch / remote / tag / stash selector) for the Branches view to
-   *  scroll to and flash on entry. */
+   *  scroll to and mark on entry. */
   ref?: string;
+  /**
+   * WHICH KIND of ref `ref` is — "head", "currentHead", "remote", "tag".
+   *
+   * A bare name is ambiguous: git happily lets a tag and a branch share one,
+   * and the Branches view picks its segment by searching locals first. So a
+   * tag chip called `v1.7.0` landed on the local BRANCH `v1.7.0` and marked
+   * the wrong row, silently. The chip already knows which it is; carry it.
+   */
+  refKind?: string;
   /**
    * Which section the user came FROM, when it is not the one that owns the
    * item.
@@ -184,6 +203,11 @@ export function ghHeader(
   const t = el("div", "list-head-title");
   t.textContent = title;
   const countPill = el("span", "gh-head-count");
+  // Filtering is the one interaction here whose whole result is a number
+  // changing somewhere else on the page. Announce it, politely, so the list
+  // shrinking is not a silent event.
+  countPill.setAttribute("aria-live", "polite");
+  countPill.setAttribute("aria-atomic", "true");
   if (typeof count === "number") countPill.textContent = String(count);
   else countPill.hidden = true;
   left.append(t, countPill);
@@ -314,6 +338,14 @@ export function searchField(opts: {
   input.className = "gh-search-input";
   input.placeholder = opts.placeholder;
   input.setAttribute("aria-label", opts.placeholder);
+  // A searchbox, said out loud. `type="text"` announces as "edit text", which
+  // tells a screen-reader user nothing about what the field does; the role
+  // says "search" without the native type's own clear button turning up
+  // beside the one this field already draws.
+  input.setAttribute("role", "searchbox");
+  // Off: the browser's saved-value dropdown covers the list this field
+  // filters, and it offers values from unrelated fields.
+  input.autocomplete = "off";
   input.spellcheck = false;
   if (opts.initial) input.value = opts.initial;
   const clear = el("button", "gh-search-clear");
@@ -552,10 +584,16 @@ export function peoplePickerModal(opts: {
   okLabel: string;
   people: { login: string; avatarUrl?: string | null }[];
   selected?: string[];
+  /** Pre-checked AND disabled — people already in the set, whom this dialog
+   *  cannot remove (GitHub's DELETE only lifts PENDING requests). Shown so the
+   *  list is honest about who is already asked, without promising a removal
+   *  that would silently do nothing. */
+  locked?: string[];
 }): Promise<string[] | null> {
   return new Promise((resolve) => {
     let settled = false;
-    const pre = new Set(opts.selected ?? []);
+    const pre = new Set([...(opts.selected ?? []), ...(opts.locked ?? [])]);
+    const locked = new Set(opts.locked ?? []);
     openModal((close) => {
       const card = el("div", "modal-card modal-card-form people-picker");
       const h = el("div", "modal-title");
@@ -573,6 +611,11 @@ export function peoplePickerModal(opts: {
         const cb = document.createElement("input");
         cb.type = "checkbox";
         cb.checked = pre.has(p.login);
+        if (locked.has(p.login)) {
+          cb.disabled = true;
+          row.classList.add("is-locked");
+          row.title = "Already requested";
+        }
         row.append(cb, avatar(p.login, p.avatarUrl ?? null, 22), span(p.login, "people-login"));
         list.appendChild(row);
         boxes.push({ login: p.login, cb, row });
@@ -632,6 +675,55 @@ export function sectionList(): { view: HTMLElement; listEl: HTMLElement } {
   const listEl = el("div", "sec-list");
   wireListNav(listEl, ".sec-row");
   return { view, listEl };
+}
+
+/** A `.sec-list` whose sticky heads are wired; see `wireStickyHeads`. */
+export type StickyList = HTMLElement & { syncSticky?: () => void };
+
+/**
+ * A section head that is PINNED looks pinned.
+ *
+ * `position: sticky` hands a pinned head the same surface it had in the flow,
+ * so a head holding the top of a scroller is indistinguishable from one that
+ * merely happens to be there — and the rows sliding under it have nothing to
+ * slide under. This puts `.is-stuck` on the head that is holding the top; the
+ * stylesheet does the rest.
+ *
+ * EXACTLY ONE head carries it. Heads that pin in the same containing block
+ * stack at top:0 and cover one another, so flagging every head at-or-above the
+ * edge would paint the same shadow several times in one pixel row. The LAST one
+ * in document order is the one you can actually see; during a push the one
+ * being pushed out is already fully above the edge, so the handoff has no
+ * flicker.
+ *
+ * A plain `scroll` listener, and deliberately NOT requestAnimationFrame and NOT
+ * an IntersectionObserver: headless Chrome composites nothing on an idle page,
+ * so neither ever runs there and this behaviour would be untestable — the same
+ * trap the check suite documents about its own virtual clock, where the failure
+ * mode is a check that passes on a broken build.
+ *
+ * The sync is hung on the element, the way `ghHeader` hangs `setCount`, so a
+ * view that changes the list's height WITHOUT scrolling it — a fold, a repaint
+ * — can ask for a fresh answer.
+ */
+export function wireStickyHeads(listEl: HTMLElement, selector: string): void {
+  const sync = (): void => {
+    const heads = [...listEl.querySelectorAll<HTMLElement>(selector)];
+    if (!heads.length) return;
+    // Measure every head, THEN class every head. The obvious loop interleaves a
+    // layout read with a style write, and each write invalidates the layout the
+    // next read waits for — the rule `syncChipOverflow` already follows.
+    const top = listEl.getBoundingClientRect().top;
+    const tops = heads.map((h) => h.getBoundingClientRect().top);
+    let pinned = -1;
+    for (let i = 0; i < heads.length; i++) if (tops[i] <= top + 0.5) pinned = i;
+    for (let i = 0; i < heads.length; i++) {
+      const want = i === pinned;
+      if (heads[i].classList.contains("is-stuck") !== want) heads[i].classList.toggle("is-stuck", want);
+    }
+  };
+  listEl.addEventListener("scroll", sync, { passive: true });
+  (listEl as StickyList).syncSticky = sync;
 }
 
 /** One single-line row on a section list page: state icon, muted #number,
@@ -985,6 +1077,12 @@ export interface DetailPageOpts {
   backLabel: string;
   /** Muted crumb after the back button, e.g. "#31". */
   crumb?: string;
+  /**
+   * A small, non-interactive tag after the crumb: where this page's data comes
+   * from. It belongs to the crumb — it names the thing you are reading — not to
+   * the action cluster, which names things you can do.
+   */
+  crumbTag?: HTMLElement;
   /** The cold-start fallback, used only when the history is empty. */
   onBack: () => void;
   /** The top-bar action cluster (rightmost); one primary action at most. */
@@ -1001,6 +1099,26 @@ export interface DetailPageOpts {
 /** The full-page detail shell: a slim top bar (← back · crumb · actions) over
  *  a scrolling body of `main` (measure-capped content column) + `rail` (the
  *  sticky properties column). Esc goes back (see wireDetailEsc). */
+/** Whether detail pages show their property rail. One preference for every
+ *  page that has one — see the note in `detailPage`. */
+const RAIL_KEY = "gitstudio.detailRail";
+
+function detailRailShown(): boolean {
+  try {
+    return window.localStorage.getItem(RAIL_KEY) !== "hidden";
+  } catch {
+    return true; // private window, cleared storage — the rail is the default
+  }
+}
+
+function setDetailRailShown(shown: boolean): void {
+  try {
+    window.localStorage.setItem(RAIL_KEY, shown ? "shown" : "hidden");
+  } catch {
+    /* the choice still applies for this session */
+  }
+}
+
 export function detailPage(o: DetailPageOpts): {
   view: HTMLElement;
   main: HTMLElement;
@@ -1039,6 +1157,7 @@ export function detailPage(o: DetailPageOpts): {
     crumb.textContent = o.crumb;
     bar.appendChild(crumb);
   }
+  if (o.crumbTag) bar.appendChild(o.crumbTag);
   const topActions = el("div", "det-tb-actions");
   for (const a of o.actions ?? []) topActions.appendChild(a);
   bar.appendChild(topActions);
@@ -1047,6 +1166,39 @@ export function detailPage(o: DetailPageOpts): {
   const main = el("div", "det-main");
   const rail = el("div", "det-rail");
   body.append(main, rail);
+
+  // THE PROPERTY RAIL FOLDS, and the choice is remembered across every page
+  // that has one. It is 264px of context beside a reading column — useful when
+  // you want it, and a quarter of the window when you are reading a long diff
+  // or a file. One preference, not one per page: a rail you hid on an issue and
+  // found open on the next pull request is a setting that does not work.
+  const railShown = detailRailShown();
+  body.classList.toggle("rail-hidden", !railShown);
+  const railBtn = el("button", "mini-btn gh-icon-btn det-rail-toggle") as HTMLButtonElement;
+  const paintRailBtn = (): void => {
+    const shown = !body.classList.contains("rail-hidden");
+    // The TITLE is the action, because a tooltip answers "what happens if I
+    // click this". The accessible NAME is the thing, because `aria-pressed`
+    // already carries the state — and naming the action as well produced a
+    // sentence that contradicted itself: with the panel hidden a reader heard
+    // "Show the details panel, toggle button, pressed", which says showing is
+    // in force over a panel that is not there.
+    railBtn.title = shown ? "Hide the details panel" : "Show the details panel";
+    railBtn.setAttribute("aria-label", "Details panel");
+    railBtn.setAttribute("aria-pressed", String(shown));
+    railBtn.replaceChildren(glyph(shown ? "layout-sidebar-right" : "layout-sidebar-right-off"));
+  };
+  railBtn.addEventListener("click", () => {
+    const next = body.classList.contains("rail-hidden");
+    body.classList.toggle("rail-hidden", !next);
+    setDetailRailShown(next);
+    paintRailBtn();
+  });
+  paintRailBtn();
+  // On the BAR, not inside `topActions`: several callers rebuild that cluster
+  // with `replaceChildren` when their data lands, which silently swallowed the
+  // toggle on exactly the pages that have the most to read.
+  bar.appendChild(railBtn);
   scroll.appendChild(body);
   view.append(bar, scroll);
   // The IDENTICAL function, so Escape, ← and the button can never disagree
@@ -1159,7 +1311,12 @@ export function commitList(
     // accessible name of its own and Space activates the wrong one.
     const subject = el("button", "clist-subject") as HTMLButtonElement;
     subject.textContent = c.subject;
-    subject.title = `Open commit ${c.shortSha}`;
+    // BOTH, in one assignment. These were two statements, so the second threw
+    // the first away one line after it was written: the tooltip meant to carry
+    // what the ellipsis clips never survived, and a truncated subject had no
+    // way to be read at all. One edit here fixes Compare, the pull request's
+    // Commits tab and the ref page's history together.
+    subject.title = `${c.subject}\nOpen commit ${c.shortSha}`;
     subject.addEventListener("click", () => o.onOpen(c.sha));
     const subjRow = el("div", "clist-subjrow");
     subjRow.appendChild(subject);
@@ -1230,6 +1387,26 @@ export function commitList(
 
 /** One property in the detail rail: an uppercase label (with a hover-revealed
  *  edit affordance when `onEdit` is given) over a small value body. */
+/**
+ * Where a repository lives, in the app's one vocabulary: a clone on this
+ * machine (writable), or read-only on github.com.
+ *
+ * Rows in an all-GitHub list show only the local case — pilling every row "on
+ * GitHub" is noise. A PAGE shows whichever applies, because it has no list to
+ * contrast itself against.
+ *
+ * The lowercase wording is load-bearing: two harness checks find "a repository
+ * that is not on this machine" with a case-sensitive match over row text.
+ */
+export function whereChip(where: "local" | "remote"): HTMLElement {
+  const c = el("span", `gs-where is-${where}`);
+  c.append(
+    glyph(where === "local" ? "folder" : "globe"),
+    span(where === "local" ? "on this machine" : "on GitHub"),
+  );
+  return c;
+}
+
 export function propSection(
   label: string,
   opts: { onEdit?: (anchor: HTMLElement) => void; editTitle?: string } = {},
@@ -1334,60 +1511,125 @@ const REACTION_CONTENT: Record<string, ReactionContent> = {
  */
 export function reactionRow(
   r: ReactionSummary | undefined,
-  onToggle?: (content: ReactionContent, on: boolean) => void,
+  /** Commits the change. Resolving `false` means it did not stick, and the
+   *  strip puts itself back. */
+  onToggle?: (content: ReactionContent, on: boolean) => Promise<boolean> | void,
 ): HTMLElement | undefined {
   if (!onToggle && (!r || r.total <= 0)) return undefined;
   const row = el("div", "gh-reactions");
-  const mine = new Set(r?.mine ?? []);
-  for (const [key, emoji, name] of REACTION_EMOJI) {
-    const n = (r?.[key] as number) ?? 0;
-    if (!n) continue;
-    const content = REACTION_CONTENT[key as string];
-    const on = mine.has(content);
-    if (!onToggle) {
-      const chip = span("", "gh-reaction");
+
+  // LIVE, LOCAL STATE.
+  //
+  // This used to call the caller's `reload()`, which refetches the issue and
+  // repaints the entire detail page — every comment, the timeline and the rail
+  // — to change one number by one. On a thread of any size that reads as a
+  // whole-screen flash on a single click, which is what a server-rendered page
+  // does and what a desktop app must not.
+  //
+  // The old note here argued a guess could be wrong. So this is not a guess: it
+  // applies the change, and if the request does not stick it puts the exact
+  // previous value back. The only window in which the strip can be wrong is the
+  // one where the request is still in flight — and a stale count elsewhere on
+  // the page was always possible anyway, because nothing polls.
+  const counts = new Map<ReactionContent, number>();
+  for (const [key] of REACTION_EMOJI) {
+    counts.set(REACTION_CONTENT[key as string], (r?.[key] as number) ?? 0);
+  }
+  const mine = new Set<ReactionContent>(r?.mine ?? []);
+  let busy = false;
+
+  const paint = (): void => {
+    // A repaint destroys the button that was clicked, so remember where the
+    // keyboard was and put it back on the equivalent control.
+    const active = document.activeElement as HTMLElement | null;
+    const focused = row.contains(active) ? active?.dataset.reaction ?? "add" : undefined;
+    row.replaceChildren();
+    for (const [key, emoji, name] of REACTION_EMOJI) {
+      const content = REACTION_CONTENT[key as string];
+      const n = counts.get(content) ?? 0;
+      if (!n) continue;
+      const on = mine.has(content);
+      if (!onToggle) {
+        const chip = span("", "gh-reaction");
+        chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
+        chip.title = `${n} ${name}`;
+        row.appendChild(chip);
+        continue;
+      }
+      const chip = el("button", "gh-reaction" + (on ? " is-mine" : "")) as HTMLButtonElement;
+      chip.dataset.reaction = content;
       chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
-      chip.title = `${n} ${name}`;
+      chip.title = on ? `Remove your ${name}` : `React with ${name}`;
+      chip.setAttribute("aria-pressed", String(on));
+      chip.addEventListener("click", () => void toggle(content, !on));
       row.appendChild(chip);
-      continue;
     }
-    const chip = el("button", "gh-reaction" + (on ? " is-mine" : "")) as HTMLButtonElement;
-    chip.append(span(emoji, "gh-reaction-emoji"), span(String(n), "gh-reaction-n"));
-    chip.title = on ? `Remove your ${name}` : `React with ${name}`;
-    chip.setAttribute("aria-pressed", String(on));
-    chip.addEventListener("click", () => onToggle(content, !on));
-    row.appendChild(chip);
-  }
-  if (onToggle) {
-    const add = el("button", "gh-reaction gh-reaction-add") as HTMLButtonElement;
-    add.appendChild(glyph("smiley"));
-    add.title = "Add a reaction";
-    add.setAttribute("aria-label", "Add a reaction");
-    add.setAttribute("aria-haspopup", "menu");
-    add.addEventListener("click", () => {
-      openMenu(
-        add,
-        REACTION_EMOJI.map(([key, emoji, name]) => {
-          const content = REACTION_CONTENT[key as string];
-          const on = mine.has(content);
-          return {
-            label: `${emoji}  ${name}`,
-            checkable: true,
-            current: on,
-            onClick: () => onToggle(content, !on),
-          };
-        }),
-      );
-    });
-    row.appendChild(add);
-  }
+    if (onToggle) {
+      const add = el("button", "gh-reaction gh-reaction-add") as HTMLButtonElement;
+      add.dataset.reaction = "add";
+      add.appendChild(glyph("smiley"));
+      add.title = "Add a reaction";
+      add.setAttribute("aria-label", "Add a reaction");
+      add.setAttribute("aria-haspopup", "menu");
+      add.addEventListener("click", () => {
+        openMenu(
+          add,
+          REACTION_EMOJI.map(([key, emoji, name]) => {
+            const content = REACTION_CONTENT[key as string];
+            const on = mine.has(content);
+            return {
+              label: `${emoji}  ${name}`,
+              checkable: true,
+              current: on,
+              onClick: () => void toggle(content, !on),
+            };
+          }),
+        );
+      });
+      row.appendChild(add);
+    }
+    if (focused) {
+      const back = row.querySelector<HTMLElement>(`[data-reaction="${focused}"]`) ?? row.lastElementChild;
+      (back as HTMLElement | null)?.focus?.();
+    }
+  };
+
+  const toggle = async (content: ReactionContent, on: boolean): Promise<void> => {
+    if (!onToggle || busy) return;
+    const wasN = counts.get(content) ?? 0;
+    const wasMine = mine.has(content);
+    if (on === wasMine) return; // already in that state
+    busy = true;
+    counts.set(content, Math.max(0, wasN + (on ? 1 : -1)));
+    if (on) mine.add(content);
+    else mine.delete(content);
+    paint();
+    try {
+      const ok = await onToggle(content, on);
+      if (ok === false) {
+        counts.set(content, wasN);
+        if (wasMine) mine.add(content);
+        else mine.delete(content);
+        paint();
+      }
+    } finally {
+      busy = false;
+    }
+  };
+
+  paint();
   return row.childElementCount ? row : undefined;
 }
 
-/** The dashed "add / set" affordance used by empty rail properties. */
-export function propAddBtn(label: string, onClick: () => void): HTMLElement {
+/**
+ * The dashed "add / set" affordance used by empty rail properties.
+ *
+ * `icon` because the hardcoded "add" reads as *create* — wrong on a Clone or
+ * Open affordance, which reaches for something that already exists.
+ */
+export function propAddBtn(label: string, onClick: () => void, icon = "add"): HTMLElement {
   const b = el("button", "det-prop-add");
-  b.append(glyph("add"), span(label));
+  b.append(glyph(icon), span(label));
   b.addEventListener("click", onClick);
   return b;
 }
@@ -1749,13 +1991,49 @@ export function subTabs<I extends string>(o: {
   return { el: bar, select, current: () => active };
 }
 
+/**
+ * Decide, from measured widths, whether a tools row's facet slot shares a line
+ * with the segment and the verbs or takes the next line whole. CSS cannot
+ * know whether a flex row wrapped; left to itself the slot became a tall
+ * narrow column of stacked pills with the segment floating vertically centred
+ * beside it. The need is computed from the pills' NATURAL widths (they never
+ * shrink), so the answer is stable whichever layout is currently applied.
+ */
+export function wireToolsWrap(tools: HTMLElement): void {
+  const slot = tools.querySelector<HTMLElement>(":scope > .gh-facet-slot, :scope > .gh-facets");
+  if (!slot) return;
+  const measure = (): void => {
+    const gap = parseFloat(getComputedStyle(tools).columnGap || "8") || 8;
+    const slotGap = parseFloat(getComputedStyle(slot).columnGap || "6") || 6;
+    let need = 0;
+    let n = 0;
+    for (const kid of tools.children) {
+      if (kid === slot) {
+        const pills = [...slot.children].filter((k) => (k as HTMLElement).offsetParent !== null);
+        need += pills.reduce((w, k) => w + k.getBoundingClientRect().width, 0) + Math.max(0, pills.length - 1) * slotGap;
+      } else {
+        need += kid.getBoundingClientRect().width;
+      }
+      n++;
+    }
+    need += Math.max(0, n - 1) * gap;
+    tools.classList.toggle("is-wrapped", need > tools.clientWidth + 0.5);
+  };
+  measure();
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(measure);
+    ro.observe(tools);
+    ro.observe(slot);
+  }
+}
+
 export function segmented<V extends string>(o: {
   options: Array<{ value: V; label: string; icon?: string }>;
   value: V;
   ariaLabel: string;
   onChange: (value: V) => void;
-}): HTMLElement {
-  const seg = el("div", "gh-seg");
+}): HTMLElement & { setLabel(value: V, label: string): void } {
+  const seg = el("div", "gh-seg") as HTMLElement & { setLabel(value: V, label: string): void };
   seg.setAttribute("role", "group");
   seg.setAttribute("aria-label", o.ariaLabel);
   // The control tracks its OWN selection.
@@ -1767,7 +2045,7 @@ export function segmented<V extends string>(o: {
   // the "already selected" guard and did nothing at all, permanently. Owning
   // the state costs three lines and cannot be got wrong by a caller.
   let current = o.value;
-  const buttons: Array<{ value: V; el: HTMLElement }> = [];
+  const buttons: Array<{ value: V; el: HTMLElement; lab: HTMLElement }> = [];
   const paint = (): void => {
     for (const { value, el: b } of buttons) {
       b.classList.toggle("active", value === current);
@@ -1777,17 +2055,25 @@ export function segmented<V extends string>(o: {
   for (const opt of o.options) {
     const b = el("button", "gh-seg-btn");
     if (opt.icon) b.appendChild(glyph(opt.icon));
-    b.appendChild(span(opt.label));
+    const lab = span(opt.label);
+    b.appendChild(lab);
     b.addEventListener("click", () => {
       if (opt.value === current) return;
       current = opt.value;
       paint();
       o.onChange(opt.value);
     });
-    buttons.push({ value: opt.value, el: b });
+    buttons.push({ value: opt.value, el: b, lab });
     seg.appendChild(b);
   }
   paint();
+  // Relabel in place — for the counts a list learns AFTER the control was
+  // built. The tab counts used to appear only on the NEXT visit, and the
+  // control changed width on the way back.
+  seg.setLabel = (value, label) => {
+    const hit = buttons.find((x) => x.value === value);
+    if (hit) hit.lab.textContent = label;
+  };
   return seg;
 }
 

@@ -171,6 +171,20 @@ export class RepoStore {
     return this.recent.length !== before;
   }
 
+  /**
+   * Put a root back in the recent list — the undo of `removeRecent`.
+   *
+   * It goes to the FRONT rather than to wherever it was: a list that reorders
+   * itself constantly has no position to restore, and the thing you just
+   * un-forgot is the thing you are most likely to want. Returns false when it
+   * is already there, so the caller can skip persisting.
+   */
+  restoreRecent(root: string): boolean {
+    if (this.recent.some((r) => sameRoot(r, root))) return false;
+    this.promoteRecent(root);
+    return true;
+  }
+
   private promoteRecent(root: string): void {
     this.recent = promoteRecentList(this.recent, root);
   }

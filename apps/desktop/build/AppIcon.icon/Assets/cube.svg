@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900" viewBox="33 33 446 446"><defs>
+<linearGradient id="fTop" x1="0.1" y1="0" x2="0.7" y2="1">
+  <stop offset="0%" stop-color="#7B79A6"/><stop offset="100%" stop-color="#5D5B82"/></linearGradient>
+<linearGradient id="fLeft" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0%" stop-color="#39375A"/><stop offset="100%" stop-color="#2A2845"/></linearGradient>
+<linearGradient id="fRight" x1="0" y1="0" x2="0.4" y2="1">
+  <stop offset="0%" stop-color="#55527C"/><stop offset="100%" stop-color="#403E63"/></linearGradient>
+<linearGradient id="lane" gradientUnits="userSpaceOnUse" x1="256.0" y1="66.0" x2="256.0" y2="446.0">
+  <stop offset="0%" stop-color="#C4ADFF"/><stop offset="100%" stop-color="#9A78FF"/></linearGradient></defs><g>
+<path d="M256.0,66.0 L420.5,161.0 L256.0,256.0 L91.5,161.0 Z" fill="url(#fTop)"/>
+<path d="M420.5,161.0 L420.5,351.0 L256.0,446.0 L256.0,256.0 Z" fill="url(#fRight)"/>
+<path d="M91.5,161.0 L256.0,256.0 L256.0,446.0 L91.5,351.0 Z" fill="url(#fLeft)"/>
+<path d="M256.0,66.0 L420.5,161.0 L256.0,256.0 L91.5,161.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="4.6" stroke-linejoin="round"/>
+<path d="M256.0,66.0 L420.5,161.0 L420.5,351.0 L256.0,446.0 L91.5,351.0 L91.5,161.0 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.26" stroke-width="4.6" stroke-linejoin="round"/>
+<g fill="none" stroke-width="33" stroke-linecap="round">
+<path d="M256.0,256.0 L91.5,161.0" stroke="url(#lane)"/>
+<path d="M256.0,256.0 L420.5,161.0" stroke="url(#lane)"/>
+<path d="M256.0,256.0 L256.0,446.0" stroke="url(#lane)"/></g>
+<circle cx="91.5" cy="161.0" r="37" fill="#B49BFF"/><circle cx="420.5" cy="161.0" r="37" fill="#B49BFF"/><circle cx="256.0" cy="446.0" r="37" fill="#B49BFF"/><circle cx="256.0" cy="256.0" r="41.5" fill="#C2ABFF"/><circle cx="91.5" cy="161.0" r="17.0" fill="#2A2845"/><circle cx="420.5" cy="161.0" r="17.0" fill="#2A2845"/><circle cx="256.0" cy="446.0" r="17.0" fill="#2A2845"/><circle cx="256.0" cy="256.0" r="19.0" fill="#2A2845"/></g></svg>

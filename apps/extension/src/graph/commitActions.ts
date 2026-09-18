@@ -382,7 +382,7 @@ async function createTag(
 ): Promise<boolean> {
   const name = await promptInput({
     title: `Create tag at ${short(commit.sha)}`,
-    hint: `${commit.subject} — a lightweight tag, local until you push it.`,
+    hint: `${commit.subject} — the tag stays local until you push it.`,
     placeholder: "v1.0.0",
     confirmLabel: "Create Tag",
     validate: "refName",

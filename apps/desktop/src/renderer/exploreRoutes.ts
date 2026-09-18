@@ -7,12 +7,16 @@
 //   q/<tab>/<query>
 //   repo/<owner>/<name>
 //   repo/<owner>/<name>/(tree|blob)/<ref>/<path…>
+//   repo/<owner>/<name>/commits/<ref>
 //   user/<login>   org/<login>
 //
 // That makes these parsers load-bearing for navigation: a wrong parse doesn't
 // throw, it silently strands someone on the wrong page. Hence the tests.
 
 export type ExploreTab = "repos" | "users" | "orgs" | "code";
+
+/** Where a search runs. "local" is this machine — no network, no account. */
+export type ExploreScope = "github" | "local";
 
 /** A parsed `repo/…` target. */
 export interface RepoRoute {
@@ -21,33 +25,40 @@ export interface RepoRoute {
   path: string;
   /** Undefined = the repo's default branch. */
   ref?: string;
-  kind: "tree" | "blob";
+  /** "commits" is the history of `ref`; it carries no path. */
+  kind: "tree" | "blob" | "commits";
 }
 
-/** `q/<tab>/<query>` — the routed form of a search. */
+/** `q/<tab>/<query>` — the routed form of a search. `q/local/<query>` is the
+ *  this-machine scope, which has no tabs: local search is over repositories. */
 export function searchTargetId(tab: ExploreTab, query: string): string {
   return `q/${tab}/${query}`;
+}
+
+export function localSearchTargetId(query: string): string {
+  return `q/local/${query}`;
 }
 
 /** Parse a routed search target. Unknown shapes are ignored rather than
  *  throwing — a stale history entry must never break the view. */
 export function parseExploreTarget(
   id: string | undefined,
-): { tab: ExploreTab; query: string } | undefined {
+): { tab: ExploreTab; query: string; scope: ExploreScope } | undefined {
   if (!id) return undefined;
-  const m = /^q\/(repos|users|orgs|code)\/([\s\S]*)$/.exec(id);
+  const m = /^q\/(repos|users|orgs|code|local)\/([\s\S]*)$/.exec(id);
   if (!m) return undefined;
-  return { tab: m[1] as ExploreTab, query: m[2] };
+  if (m[1] === "local") return { tab: "repos", query: m[2], scope: "local" };
+  return { tab: m[1] as ExploreTab, query: m[2], scope: "github" };
 }
 
 /** `repo/<owner>/<name>[/tree|blob/<ref>/<path>]` → a route, or undefined. */
 export function parseRepoRoute(id: string | undefined): RepoRoute | undefined {
   if (!id) return undefined;
-  const m = /^repo\/([^/]+)\/([^/]+)(?:\/(tree|blob)\/([^/]+)(?:\/([\s\S]*))?)?$/.exec(id);
+  const m = /^repo\/([^/]+)\/([^/]+)(?:\/(tree|blob|commits)\/([^/]+)(?:\/([\s\S]*))?)?$/.exec(id);
   if (!m) return undefined;
   return {
     fullName: `${m[1]}/${m[2]}`,
-    kind: (m[3] as "tree" | "blob") ?? "tree",
+    kind: (m[3] as "tree" | "blob" | "commits") ?? "tree",
     // "HEAD" is the sentinel a path-carrying route uses when no explicit ref
     // was chosen — it must parse back to "the default branch", or walking into
     // a file would silently pin the ref and relabel the switcher.
@@ -61,11 +72,14 @@ export function repoRouteId(o: {
   fullName: string;
   path?: string;
   ref?: string;
-  kind?: "tree" | "blob";
+  kind?: "tree" | "blob" | "commits";
 }): string {
   const base = `repo/${o.fullName}`;
-  if (!o.path && !o.ref) return base;
+  // The history is a PLACE even on the default branch, so it always routes —
+  // unlike a tree at the root, which is just the repo page.
+  if (o.kind !== "commits" && !o.path && !o.ref) return base;
   const ref = encodeURIComponent(o.ref ?? "HEAD");
+  if (o.kind === "commits") return `${base}/commits/${ref}`;
   return `${base}/${o.kind ?? "tree"}/${ref}${o.path ? `/${o.path}` : ""}`;
 }
 

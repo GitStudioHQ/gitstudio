@@ -58,11 +58,11 @@
     { number: 31, title: "Split views make Issues and PRs unreadable on a 13\" screen", state: "open", user: u("mira-holt"), labels: [L.ux, L.desktop], assignees: [u(me)], comments: 6, h: 5, assoc: "MEMBER",
       reactions: { total: 9, plusOne: 6, minusOne: 0, laugh: 0, hooray: 2, confused: 0, heart: 1, rocket: 0, eyes: 0 },
       body: "On a MacBook Air the list pane and detail pane fight for space — the list truncates every title and the detail wraps the action buttons onto three rows.\n\n**Expected**: reading an issue should use the full width, like Linear does.\n\n**Actual**: two cramped panes, both scrolling independently." },
-    { number: 30, title: "Workflow logs: streaming stops after ~400 lines", state: "open", user: u("s-ohta"), labels: [L.bug], assignees: [], comments: 2, h: 9,
+    { number: 30, title: "Workflow logs: streaming stops after ~400 lines", state: "open", user: u("s-ohta"), labels: [L.bug], assignees: [], comments: 2, h: 9, milestone: { number: 3, title: "v1.6" },
       body: "Long jobs stop appending output. Re-opening the run shows the full log, so it's a streaming bug, not a data bug." },
     { number: 29, title: "Notifications: mark-as-done needs a keyboard shortcut", state: "open", user: u("jparks"), labels: [L.enhancement, L.ux], assignees: [u("mira-holt")], comments: 4, h: 16,
       body: "Triaging 40 notifications with the mouse is painful. `e` to archive like every inbox, please." },
-    { number: 28, title: "Rebase drag-to-reorder flickers when dropping on the last row", state: "open", user: u(me), labels: [L.bug, L.desktop], assignees: [u(me)], comments: 1, h: 28,
+    { number: 28, title: "Rebase drag-to-reorder flickers when dropping on the last row", state: "open", user: u(me), labels: [L.bug, L.desktop], assignees: [u(me)], comments: 1, h: 28, milestone: { number: 3, title: "v1.6" },
       body: "Repro:\n1. Open Rebase with 6+ commits\n2. Drag the first commit to the end\n3. Drop marker jumps for a frame\n\nSuspect the placeholder index is off by one when `after === rows.length`." },
     { number: 27, title: "Support per-line staging, not just blocks", state: "open", user: u("dkovachev"), labels: [L.enhancement, L.help], assignees: [], comments: 9, h: 40,
       body: "`applySelectedChanges` promotes the whole block a selection touches. JetBrains lets you tick single lines. This needs engine work — see the staging notes in the wiki.\n\nThe shape it should have:\n\n```python\ndef stage(lines):\n    for n in lines:\n        if guard(n):\n            apply(n)\n    return True\n```\n\nNote the INDENTATION — this fence exists so a check can prove a copied snippet carries real spaces." },
@@ -90,7 +90,16 @@
       { kind: "labeled", actor: "mira-holt", createdAt: ISO(3.8), label: { name: "ux", color: "8a63d2" } },
       { kind: "assigned", actor: me, createdAt: ISO(3.2), assignee: me },
       { kind: "renamed", actor: me, createdAt: ISO(2.5), rename: { from: "Split views are bad", to: "Split views make Issues and PRs unreadable on a 13\" screen" } },
-      { kind: "cross-referenced", actor: "jparks", createdAt: ISO(1.5), source: { kind: "pr", ref: "#106", title: "desktop: full-page detail views for Issues", url: "" } },
+      { kind: "cross-referenced", actor: "jparks", createdAt: ISO(1.5), source: { kind: "pr", ref: "#106", title: "desktop: full-page detail views for Issues", url: "", state: "open", merged: false } },
+      // A second linked PR, MERGED — the Development rail must colour the two
+      // differently or "was this fixed" still cannot be answered at a glance.
+      { kind: "cross-referenced", actor: "sohta", createdAt: ISO(1.2), source: { kind: "pr", ref: "#98", title: "issues: routed detail groundwork", url: "", state: "closed", merged: true } },
+      // A cross-reference from ANOTHER project, deliberately numbered #106 to
+      // collide with the local one above. Both defects it pins were silent: the
+      // rail keyed its linked PRs by number alone, so this one replaced the
+      // local #106 and two pieces of work showed as one; and its link routed by
+      // number into THIS repository, opening an unrelated pull request.
+      { kind: "cross-referenced", actor: "mira-holt", createdAt: ISO(1.1), source: { kind: "pr", repo: "libgit2/libgit2", ref: "#106", title: "cmake: drop the vendored zlib", url: "https://github.com/libgit2/libgit2/pull/106", state: "open", merged: false } },
       { kind: "milestoned", actor: me, createdAt: ISO(0.5), milestone: "1.6 — desktop polish" },
     ],
     // A CLOSED issue is where a close event belongs. #22 is closed as not
@@ -107,7 +116,7 @@
       { id: 1, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-1", author: u(me), createdAt: ISO(4), body: "Agreed — this is the #1 usability debt in the app. The plan:\n\n1. Lists go **full width** with richer rows\n2. Opening an item replaces the list with a **full detail view** (Esc / ← goes back)\n3. Properties move to a right rail with inline editing\n\nSame pattern for Issues, PRs, Actions, Releases." },
       { id: 2, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-2", author: u("mira-holt"), createdAt: ISO(3.5), updatedAt: ISO(3.4), authorAssociation: "MEMBER", body: "Yes. Also please keep keyboard flow: `↑↓` in the list, `Enter` to open, `Esc` back, `c` to comment." },
       { id: 3, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-3", author: u("jparks"), createdAt: ISO(3), authorAssociation: "FIRST_TIME_CONTRIBUTOR", reactions: { total: 4, plusOne: 3, minusOne: 0, laugh: 0, hooray: 0, confused: 0, heart: 1, rocket: 0, eyes: 0, mine: ["+1"] }, body: "While you're in there — the *Open on GitHub* buttons everywhere feel like the app giving up. If the data's already on screen, let me act on it in place." },
-      { id: 4, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-4", author: u(me), createdAt: ISO(2), body: "> the app giving up\n\nFair. In-app actions become primary; the GitHub link stays as a small escape hatch on every detail view.\n\nDuring Tuesday's GitHub outage the local half of the app kept working fine — the redesign should make the GitHub half feel just as solid." },
+      { id: 4, htmlUrl: "https://github.com/GitStudioHQ/gitstudio/issues/31#issuecomment-4", author: u(me), createdAt: ISO(2), body: "> the app giving up\n\nFair. In-app actions become primary; the GitHub link stays as a small escape hatch on every detail view.\n\nDuring Tuesday's GitHub outage the local half of the app kept working fine — the redesign should make the GitHub half feel just as solid.\n\nPrior art in #98 here, and libgit2/libgit2#106 over there." },
     ],
   };
 
@@ -258,18 +267,22 @@
     { id: 49, tagName: "desktop-v1.6.0-beta.1", targetCommitish: "main", name: "Desktop 1.6.0 beta 1", draft: true, prerelease: true, htmlUrl: "", author: u(me), createdAt: ISO(12), publishedAt: null, assets: [], body: "The redesign preview build." },
   ];
 
-  const branches = [
-    { name: "main", current: true, upstream: "origin/main", ahead: 2, behind: 0, subject: "release: extension 1.11.1", date: S(40) },
+  let branches = [
+    // As git ≥2.41 actually reports it: the default branch is "merged" into
+    // itself (aheadDefault 0), and only isDefault says so. A cleanup counter
+    // that ignores the flag offers to tidy away main, forever — the fixture
+    // carries the trap so a check can prove the counter steps over it.
+    { name: "main", current: true, isDefault: true, merged: true, aheadDefault: 0, behindDefault: 0, upstream: "origin/main", ahead: 2, behind: 0, subject: "release: extension 1.11.1", tipAuthor: { name: "Anton Arnaudov", email: "12345+antonarnaudov@users.noreply.github.com" }, date: S(40) },
     // aheadDefault/behindDefault are divergence from the DEFAULT branch, which
     // is a different question from the upstream pair — and `aheadDefault === 0`
     // is what "merged, safe to delete" means.
-    { name: "redesign/issues-detail", current: false, aheadDefault: 5, behindDefault: 0, upstream: "origin/redesign/issues-detail", ahead: 0, behind: 0, subject: "issues: full-page detail as a routed state", date: S(1) },
-    { name: "fix/log-stream", current: false, aheadDefault: 2, behindDefault: 12, upstream: undefined, ahead: 0, behind: 0, subject: "actions: stream job logs with backpressure", date: S(8) },
+    { name: "redesign/issues-detail", current: false, aheadDefault: 5, behindDefault: 0, upstream: "origin/redesign/issues-detail", ahead: 0, behind: 0, subject: "issues: full-page detail as a routed state", tipAuthor: { name: "Mira Holt", email: "mira@example.com" }, date: S(1) },
+    { name: "fix/log-stream", current: false, aheadDefault: 2, behindDefault: 12, upstream: undefined, ahead: 0, behind: 0, subject: "actions: stream job logs with backpressure", tipAuthor: { name: "Sora Ohta", email: "sora@example.com" }, date: S(8) },
     // The state every merged pull request leaves behind: the upstream is gone,
     // and without the flag the row reads "0 ahead, 0 behind" — in sync with a
     // remote that does not exist.
-    { name: "redesign/wave-1", current: false, aheadDefault: 0, behindDefault: 40, merged: true, upstream: "origin/redesign/wave-1", ahead: 0, behind: 0, gone: true, subject: "issues: section pages land", date: S(56) },
-    { name: "feat/line-staging", current: false, aheadDefault: 18, behindDefault: 3, upstream: "origin/feat/line-staging", ahead: 3, behind: 5, subject: "engine: hunk splitting groundwork", date: S(20) },
+    { name: "redesign/wave-1", current: false, aheadDefault: 0, behindDefault: 40, merged: true, upstream: "origin/redesign/wave-1", ahead: 0, behind: 0, gone: true, subject: "issues: section pages land", tipAuthor: { name: "Anton Arnaudov", email: "12345+antonarnaudov@users.noreply.github.com" }, date: S(56) },
+    { name: "feat/line-staging", current: false, aheadDefault: 18, behindDefault: 3, upstream: "origin/feat/line-staging", ahead: 3, behind: 5, subject: "engine: hunk splitting groundwork", tipAuthor: { name: "Mira Holt", email: "mira@example.com" }, date: S(20) },
     // STALE — past the 90-day line the Active/Stale cut is drawn at. Every
     // branch above is hours old, so before these two the Stale segment read
     // "(0)" and every check of that cut passed by testing an empty filter
@@ -353,7 +366,7 @@
     if (forked) forked.upstream = "upstream/" + forked.name;
   }
 
-  const changedFiles = [
+  let changedFiles = [
     { path: "apps/desktop/src/renderer/views/issues.ts", status: "M", staged: true },
     { path: "apps/desktop/src/renderer/views/common.ts", status: "M", staged: true },
     { path: "apps/desktop/src/renderer/styles/app.css", status: "M", staged: false },
@@ -417,13 +430,13 @@
       // nothing. Its symref names the DEFAULT branch, which IS worth keeping.
       { type: "remote", name: "origin", fullName: "refs/remotes/origin/HEAD", sha: "9f8e7d6", isCurrent: false, symref: "origin/main" },
       { type: "remote", name: "origin/main", fullName: "refs/remotes/origin/main", sha: "9f8e7d6", isCurrent: false, date: S(40), subject: "release: extension 1.11.1" },
-      { type: "remote", name: "origin/redesign/issues-detail", fullName: "refs/remotes/origin/redesign/issues-detail", sha: "a1b2c3d", isCurrent: false, date: S(1), subject: "issues: full-page detail as a routed state" },
-      { type: "remote", name: "origin/feat/line-staging", fullName: "refs/remotes/origin/feat/line-staging", sha: "18c9d0e", isCurrent: false, date: S(20), subject: "engine: hunk splitting groundwork" },
-      { type: "remote", name: "origin/chore/dependabot-bump", fullName: "refs/remotes/origin/chore/dependabot-bump", sha: "77aa88b", isCurrent: false, date: S(200), subject: "build(deps): bump electron to 33.4.11" },
+      { type: "remote", name: "origin/redesign/issues-detail", fullName: "refs/remotes/origin/redesign/issues-detail", sha: "a1b2c3d", isCurrent: false, date: S(1), subject: "issues: full-page detail as a routed state", who: { name: "Mira Holt", email: "mira@example.com" } },
+      { type: "remote", name: "origin/feat/line-staging", fullName: "refs/remotes/origin/feat/line-staging", sha: "18c9d0e", isCurrent: false, date: S(20), subject: "engine: hunk splitting groundwork", who: { name: "Sora Ohta", email: "sora@example.com" } },
+      { type: "remote", name: "origin/chore/dependabot-bump", fullName: "refs/remotes/origin/chore/dependabot-bump", sha: "77aa88b", isCurrent: false, date: S(200), subject: "build(deps): bump electron to 33.4.11", who: { name: "dependabot[bot]", email: "49699333+dependabot[bot]@users.noreply.github.com" } },
       // Annotated and lightweight — the distinction nothing has ever carried.
-      { type: "tag", name: "ext-v1.11.1", fullName: "refs/tags/ext-v1.11.1", sha: "e5f6a7b", isCurrent: false, objectType: "tag", date: S(40), subject: "Extension 1.11.1" },
-      { type: "tag", name: "desktop-v1.5.1", fullName: "refs/tags/desktop-v1.5.1", sha: "d4e5f6a", isCurrent: false, objectType: "tag", date: S(58), subject: "Desktop 1.5.1" },
-      { type: "tag", name: "nightly", fullName: "refs/tags/nightly", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(26), subject: "release: extension 1.11.1" },
+      { type: "tag", name: "ext-v1.11.1", fullName: "refs/tags/ext-v1.11.1", sha: "e5f6a7b", isCurrent: false, objectType: "tag", date: S(40), subject: "Extension 1.11.1", who: { name: "Anton Arnaudov", email: "12345+antonarnaudov@users.noreply.github.com", tagger: true } },
+      { type: "tag", name: "desktop-v1.5.1", fullName: "refs/tags/desktop-v1.5.1", sha: "d4e5f6a", isCurrent: false, objectType: "tag", date: S(58), subject: "Desktop 1.5.1", who: { name: "Anton Arnaudov", email: "12345+antonarnaudov@users.noreply.github.com", tagger: true } },
+      { type: "tag", name: "nightly", fullName: "refs/tags/nightly", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(26), subject: "release: extension 1.11.1" , who: { name: "Sora Ohta", email: "sora@example.com" } },
     ],
     "head:get": { detached: false, branch: "main", sha: "9f8e7d6" },
     // More than one, so the Worktrees segment exists at all — the four
@@ -434,7 +447,8 @@
       { path: "/Users/anton/Developer/GitStudioHQ/gitstudio-wave2", head: "a1b2c3d4e5f", branch: "redesign/issues-detail" },
       { path: "/Users/anton/Developer/GitStudioHQ/gitstudio-hotfix", head: "77aa88b9c0d", branch: "fix/log-stream", prunable: true },
     ],
-    "branches:list": branches,
+    // NOTE: `branches:list` lives in `dynamic` — deleting one replaces the
+    // array, and a value captured here would keep answering with the old list.
     // The Rebase view had no fixture, so every screenshot of it was its ERROR
     // state — the one surface nobody could actually look at.
     // Compare had no fixture either — every shot of it was "Couldn't compare
@@ -499,12 +513,14 @@
         { sha: "18c9d0e1f2736485a1b2", shortSha: "18c9d0e", author: "Mira Holt", subject: "engine: hunk splitting groundwork", rel: "20h ago" },
       ],
     },
-    "stash:list": [ { sha: "77aa88", ref: "stash@{0}", message: "WIP: palette streaming groups", time: S(30) } ],
+    // NOTE: `stash:list` lives in `dynamic` — dropping one replaces the array.
     // ?clean=1 → a CLEAN working tree. The app must handle it — it is the state
     // a repository spends most of its life in — and nothing else in this shim
     // can produce it, so the Changes view's empty state, its composer's enable
     // rule and its toolbar were all only ever exercised with work present.
-    "status": params.get("clean") ? [] : changedFiles,
+    // NOTE: `status` lives in `dynamic` (below) rather than here, because a
+    // discard replaces the array and a value captured at map-build time would
+    // keep answering with the pre-discard list.
     // `?op=merge|rebase|cherry-pick|revert` puts the Changes banner on screen.
     // Without a fixture the banner NEVER rendered in the harness, which is why
     // no check could see that its Abort ran `git merge --abort` on every one of
@@ -562,6 +578,10 @@
     "gist:list": gists,
     "project:list": projects,
     "git:identity": { name: "Anton Arnaudov", email: "anton@gitstudio.dev" },
+    // NOTE: {scope:"all"} is answered by the dynamic handler below — the
+    // cross-repo answer carries `repo` on every item and includes two items
+    // sharing one number in different repos, which a number-only dedupe
+    // silently collapses. This bare-payload fixture stays the repo-scoped one.
     "github:myWork": [
       { kind: "review-requested", type: "pr", number: 104, title: "actions: stream job logs over IPC with backpressure", state: "open", draft: false, updatedAt: ISO(2), comments: 2, author: "s-ohta" },
       { kind: "review-requested", type: "pr", number: 103, title: "engine: per-line staging groundwork (hunk splitting)", state: "open", draft: true, updatedAt: ISO(6), comments: 11, author: "dkovachev" },
@@ -570,6 +590,9 @@
       { kind: "my-prs", type: "pr", number: 106, title: "desktop: full-page detail views for Issues (kills the split pane)", state: "open", draft: false, updatedAt: ISO(1), comments: 4, author: me },
       { kind: "mentions", type: "issue", number: 27, title: "Support per-line staging, not just blocks", state: "open", draft: false, updatedAt: ISO(40), comments: 9, author: "dkovachev" },
     ],
+    // `dockSwappable: true` is the majority case — Windows, Linux and macOS 11–25,
+    // where dock.setIcon works and Settings offers the App icon control. macOS 26
+    // answers false and the control is hidden; the `nodock` scene covers that.
     "app:info": { version: "1.5.1", platform: "darwin" },
     "github:userInfo": { login: "antonarnaudov", name: "Anton Arnaudov", avatarUrl: null, bio: "Building GitStudio — the open-source Git workspace.", company: "@GitStudioHQ", location: "Sofia, Bulgaria", blog: "gistudio.dev", htmlUrl: "https://github.com/antonarnaudov", followers: 412, following: 63, publicRepos: 24, createdAt: ISO(3000), type: "User", twitter: "antonarnaudov", email: null },
     // The graph is the app's centrepiece and was unreviewable with an empty
@@ -633,6 +656,81 @@
     };
   };
 
+  // "Open in <editor>": three editors found on the demo machine, none hidden,
+  // no custom ones — every preference the Settings card can change is mutable
+  // here so the card, the split button and the row menus are drivable.
+  // `?noeditors=1` is the machine with nothing installed.
+  const editorsState = {
+    detected: params.get("noeditors")
+      ? []
+      : [
+          // `icon` is what app.getFileIcon() hands back in the real app — the
+          // OS's own mark for each editor, as a data URL.
+          { id: "vscode", name: "VSCode", via: "app", location: "/Applications/Visual Studio Code.app", icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23007ACC'/%3E%3C/svg%3E" },
+          { id: "cursor", name: "Cursor", via: "app", location: "/Applications/Cursor.app", icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111827'/%3E%3C/svg%3E" },
+          { id: "zed", name: "Zed", via: "cli", location: "/opt/homebrew/bin/zed", icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23084CCF'/%3E%3C/svg%3E" },
+        ],
+    hidden: [],
+    defaultId: undefined,
+    custom: [],
+    customSeq: 0,
+    /** Every editor id an `editors:open` asked for, in order. */
+    opened: [],
+  };
+  window.__GS_EDITORS = editorsState;
+  const editorsView = () => {
+    const all = [
+      ...editorsState.detected.map((d) => ({ ...d, shown: !editorsState.hidden.includes(d.id), isDefault: false })),
+      ...editorsState.custom.map((c) => ({
+        id: c.id, name: c.name, via: "custom", location: c.command,
+        shown: !editorsState.hidden.includes(c.id), isDefault: false,
+      })),
+    ];
+    const shown = all.filter((e) => e.shown);
+    const chosen = shown.find((e) => e.id === editorsState.defaultId) || shown[0];
+    if (chosen) chosen.isDefault = true;
+    return { editors: all, defaultId: chosen && chosen.id };
+  };
+
+  // The Assistant's restored conversation (`?ai=1&chat=…`). One real-sized
+  // answer, so a transcript with a second turn streaming under it scrolls —
+  // the "Jump to latest" pill has nothing to do in a chat that fits.
+  const CHAT1 = {
+    id: "chat1",
+    title: "Why did the build break?",
+    connectionId: "c1",
+    turns: [
+      { role: "user", text: "Why did the build break?" },
+      {
+        role: "assistant",
+        text:
+          "The renderer bundle grew past the size limit the workflow enforces, so `check-bundle` failed before the tests ran.\n\n" +
+          "**What grew**\n\n" +
+          "- `src/renderer/renderer.ts` — the Settings view pulled in the whole Monaco languages set (+1.9 MB)\n" +
+          "- `src/renderer/views/prs.ts` — the review composer imports the diff engine directly (+410 KB)\n" +
+          "- `node_modules/@vscode/codicons` — now bundled twice, once from `ui.ts` and once from the harness copy (+180 KB)\n\n" +
+          "**What to do**\n\n" +
+          "1. Register only the languages the file viewer needs — `monaco.languages.register` for the twelve in `LANGS`.\n" +
+          "2. Load the diff engine through the existing worker (`diffWorker.ts`) instead of importing it.\n" +
+          "3. Drop the harness import from `ui.ts`; the harness page carries its own copy.\n\n" +
+          "```sh\nnpm run build\nnode scripts/bundle-size.js   # should read 9.8 MB, under the 10 MB gate\n```\n\n" +
+          "The first item is most of it. Want me to make that change and show you the diff?",
+      },
+    ],
+  };
+  // A streamed answer for `?chat=live` (never settles — the screenshot lands
+  // mid-run) and `?chat=done` (settles after the stream).
+  const LIVE_ANSWER =
+    "Here is what your working tree changes, heaviest first:\n\n" +
+    "1. **`assistant.ts`** — the composer sends on Enter and keeps Shift+Enter for a new line; the empty state grew six quick-action cards.\n" +
+    "2. **`app.css`** — the transcript is a centred column; answers wear a sparkle and a copy button.\n" +
+    "3. **`editors.test.ts`** (new) — detection, commands and the Settings view for *Open in <editor>*.\n\n" +
+    "Nothing here touches Git behaviour. Two things worth a look before you commit:\n\n" +
+    "- `runGoal` clears the composer before the turn is confirmed to have started — a failed start loses the draft.\n" +
+    "- The copy button copies the Markdown source, not the rendered text. Right for code; say so in the tooltip.\n\n" +
+    "```sh\ngit add -p apps/desktop/src/renderer/assistant.ts\ngit commit -m \"feat(assistant): Enter sends, quick-action cards, copy an answer\"\n```\n\n" +
+    "Want me to draft the commit message for the whole set?";
+
   let localCopies = [
     {
       root: "/Users/demo/GitStudio/gitstudio",
@@ -651,6 +749,18 @@
       recent: true,
       current: false,
       missing: false,
+    },
+    {
+      // A linked worktree of gitstudio — a checkout, not another repository.
+      // The row must SAY so and the folder head must not count it.
+      root: "/Users/demo/GitStudio/gitstudio-wt-design",
+      name: "gitstudio-wt-design",
+      origin: "GitStudioHQ/gitstudio",
+      managed: true,
+      recent: false,
+      current: false,
+      missing: false,
+      worktreeOf: "/Users/demo/GitStudio/gitstudio",
     },
     {
       root: "/Users/demo/GitStudio/design",
@@ -680,33 +790,233 @@
     },
   ];
 
+  let stashes = [
+    { sha: "77aa88", ref: "stash@{0}", message: "WIP: palette streaming groups", time: S(30) },
+  ];
+
+  /** Branches that were deleted, so undo can put them back where they were. */
+  const deletedBranches = new Map();
+
+  /** What a drop took away — the commit outlives the ref, so undo is real. */
+  const dropped = new Map();
+
+  /** Which issues are locked right now — mutated by issue:setLocked so a
+   *  check can watch lock → reload → unlock actually round-trip. */
+  const lockedIssues = new Map();
+  if (params.get("locked") === "1") lockedIssues.set(31, { reason: "too heated" });
+
+  /** What a discard took away, so its undo can put it back. */
+  const discarded = new Map();
+
+  /** What Forget and Move-to-Trash took away, so undo can put it back. */
+  const forgotten = new Map();
+  const trashed = new Map();
+
+  // ── where a repository renders ─────────────────────────────────────────────
+  // The same rule src/shared/repoGrouping.ts ships, restated here because the
+  // shim IS the main process for the harness and main is where the real one
+  // runs. test/repoGrouping.test.ts asserts the shipped function agrees with
+  // these fixtures, so the two cannot drift apart quietly.
+  const norm = (p) => p.replace(/\/+$/, "");
+  const under = (parent, child) =>
+    norm(child).length > norm(parent).length && norm(child).startsWith(norm(parent) + "/");
+  /** A FOLDER's key inside another keeps its own name; a repository's does not. */
+  const relPath = (outer, inner) =>
+    under(outer, inner) ? norm(inner).slice(norm(outer).length + 1) : "";
+  const relDir = (folder, root) => {
+    if (!under(folder, root)) return "";
+    const rest = norm(root).slice(norm(folder).length + 1);
+    const cut = rest.lastIndexOf("/");
+    return cut < 0 ? "" : rest.slice(0, cut);
+  };
+  /** Stamp band + group on every copy, from the SHALLOWEST folder holding it. */
+  const claimed = (copies) => {
+    const dirs = repoFolders.map((f) => f.path).sort((a, b) => norm(a).length - norm(b).length);
+    return copies.map((c) => {
+      const band = dirs.find((d) => under(d, c.root));
+      return band ? { ...c, band, group: relDir(band, c.root) } : c;
+    });
+  };
+  /** The two counts a head needs, derived rather than typed. */
+  const counts = (folderPath) => {
+    // Mirrors main.ts: repoCount and containedCount are REPOSITORIES (the
+    // labels the heads print — a checkout is not another repository), while
+    // containedAnyCount includes worktrees and guards deletion: a folder
+    // holding only worktrees is not empty.
+    const stamped = claimed(localCopies);
+    const repos = stamped.filter((c) => !c.worktreeOf);
+    return {
+      repoCount: repos.filter((c) => c.band === folderPath && c.group === "").length,
+      containedCount: repos.filter((c) => under(folderPath, c.root)).length,
+      containedAnyCount: stamped.filter((c) => under(folderPath, c.root)).length,
+    };
+  };
+
   let repoFolders = [
     {
       path: "/Users/demo/GitStudio",
       display: "~/GitStudio",
+      real: "/Users/demo/GitStudio",
       isCloneDir: true,
-      repoCount: 3,
+      isDefaultCloneDir: true,
       missing: false,
     },
-    { path: "/Users/demo/Code", display: "~/Code", isCloneDir: false, repoCount: 2, missing: false },
+    {
+      path: "/Users/demo/Code",
+      display: "~/Code",
+      real: "/Users/demo/Code",
+      isCloneDir: false,
+      isDefaultCloneDir: false,
+      missing: false,
+    },
     {
       path: "/Users/demo/Archive",
       display: "~/Archive",
+      real: "/Users/demo/Archive",
       isCloneDir: false,
-      repoCount: 0,
+      isDefaultCloneDir: false,
       missing: true,
     },
   ];
+
+  // ?nested=1 — the shape the owner actually has, which no fixture had: ONE
+  // tracked folder holding some repositories loose and the rest in project
+  // folders, plus a second tracked folder INSIDE it. Every existing
+  // repositories check keeps the flat fixture above and stays green.
+  if (params.get("nested") === "1") {
+    repoFolders = [
+      {
+        path: "/Users/demo/GitStudio",
+        display: "~/GitStudio",
+        real: "/Users/demo/GitStudio",
+        isCloneDir: true,
+        isDefaultCloneDir: true,
+        missing: false,
+      },
+      {
+        path: "/Users/demo/Developer",
+        display: "~/Developer",
+        real: "/Users/demo/Developer",
+        isCloneDir: false,
+        isDefaultCloneDir: false,
+        missing: false,
+      },
+      // Tracked AND inside ~/Developer — the state opening a repository
+      // creates on its own, because that tracks the repository's parent.
+      {
+        path: "/Users/demo/Developer/GitStudioHQ",
+        display: "~/Developer/GitStudioHQ",
+        real: "/Users/demo/Developer/GitStudioHQ",
+        isCloneDir: false,
+        isDefaultCloneDir: false,
+        missing: false,
+      },
+    ];
+    const at = (root, over) => ({
+      root,
+      name: root.split("/").pop(),
+      origin: `antonarnaudov/${root.split("/").pop()}`,
+      managed: false,
+      recent: false,
+      current: false,
+      missing: false,
+      ...over,
+    });
+    localCopies = [
+      // loose in ~/Developer
+      at("/Users/demo/Developer/antonarnaudov"),
+      at("/Users/demo/Developer/gistudio.dev", { origin: "GitStudioHQ/gistudio.dev" }),
+      at("/Users/demo/Developer/reshapedpdf"),
+      at("/Users/demo/Developer/reshapedpdf-public"),
+      at("/Users/demo/Developer/reshapedpdf-site"),
+      at("/Users/demo/Developer/spool", { recent: true }),
+      // the tracked folder nested inside it
+      at("/Users/demo/Developer/GitStudioHQ/gitstudio", {
+        origin: "GitStudioHQ/gitstudio",
+        current: true,
+        recent: true,
+      }),
+      at("/Users/demo/Developer/GitStudioHQ/merge-conflict-tests"),
+      at("/Users/demo/Developer/GitStudioHQ/merge-studio", { origin: "GitStudioHQ/merge-studio" }),
+      at("/Users/demo/Developer/GitStudioHQ/vscode-extension-starter"),
+      // project folders the scan found
+      at("/Users/demo/Developer/FlexiMeal/flexi-meal-ai"),
+      at("/Users/demo/Developer/FlexiMeal/flexi-meal-api"),
+      at("/Users/demo/Developer/FlexiMeal/v0-meal-planning-app"),
+      at("/Users/demo/Developer/FlexiMeal/v0-meal-planning-app-design-lab", {
+        origin: "antonarnaudov/v0-meal-planning-app",
+      }),
+      at("/Users/demo/Developer/FlexiMeal/wt-design", {
+        origin: "antonarnaudov/v0-meal-planning-app",
+      }),
+      at("/Users/demo/Developer/Uncaged/getuncaged.dev", { origin: "getuncaged/getuncaged.dev" }),
+      at("/Users/demo/Developer/Uncaged/homebrew-tap", { origin: "getuncaged/homebrew-tap" }),
+      at("/Users/demo/Developer/Uncaged/uncaged", { origin: "getuncaged/uncaged" }),
+      at("/Users/demo/Developer/Uncaged/uncaged-brand", { origin: "getuncaged/uncaged-brand" }),
+      at("/Users/demo/Developer/Uncaged/warp"),
+      at("/Users/demo/Developer/Yugo/backend", { origin: "YugoFinance/backend" }),
+      at("/Users/demo/Developer/Yugo/real-finance-web", { origin: "YugoFinance/real-finance-web" }),
+      at("/Users/demo/Developer/Yugo/yugo-telegram-bot", { origin: "YugoFinance/yugo-telegram-bot" }),
+      at("/Users/demo/Developer/TrustGlobe/trust-globe"),
+      at("/Users/demo/Developer/TrustGlobe/trust-globe copy", { origin: "antonarnaudov/trust-globe" }),
+      at("/Users/demo/Developer/coding/price-models-testing-ui"),
+      at("/Users/demo/Developer/coding/v0-ckd-cats-guide", { origin: "yoanaxst/v0-ckd-cats-guide" }),
+      // and one that really is from somewhere else, so the heading that used
+      // to hold everything can be seen holding only what belongs in it.
+      at("/Users/demo/scratch/one-off", { recent: true }),
+    ];
+  }
+
+  // `?manyrepos=1` — the scan's cap, hit. main stops at 300 entries, and a
+  // capped list must SAY it is a prefix — the note under the list is the only
+  // honest part of a truncation, and this switch is how a check sees it.
+  if (params.get("manyrepos") === "1") {
+    const pad = [];
+    for (let i = localCopies.length; i < 300; i++) {
+      pad.push({
+        root: `/Users/demo/Code/fleet/repo-${String(i).padStart(3, "0")}`,
+        name: `repo-${String(i).padStart(3, "0")}`,
+        managed: false,
+        recent: false,
+        current: false,
+        missing: false,
+      });
+    }
+    localCopies = [...localCopies, ...pad];
+  }
+
+  // `?emptyclonedir=1` — the app made the clone folder, nothing ever landed in
+  // it, and it can go. Said by REMOVING what is in it rather than by overriding
+  // the count, so the derived numbers and the rows cannot contradict each other
+  // (they did: the head printed 0 while three copies sat inside, and the
+  // delete refused over a folder the screen called empty).
+  if (params.get("emptyclonedir") === "1") {
+    localCopies = localCopies.filter((c) => !under("/Users/demo/GitStudio", c.root));
+  }
+
+  /** A folder row as main sends it: counts derived, nesting resolved. */
+  const folderRow = (f) => {
+    const outer = repoFolders
+      .map((o) => o.real)
+      .find((r) => r !== f.real && under(r, f.real));
+    return {
+      ...f,
+      ...counts(f.path),
+      // `?emptyclonedir=1` is the one case a count cannot express: the app made
+      // the clone folder, nothing ever landed in it, and it can be deleted.
+      ...(outer ? { nestedIn: outer, group: relPath(outer, f.real) } : {}),
+    };
+  };
 
   // What the signed-in account can reach: own repos, one collaborated on, and
   // two through an organisation — including one ALREADY cloned locally, which
   // is the row that must offer Open rather than Clone.
   const ghRepos = [
-    { fullName: "GitStudioHQ/gitstudio", name: "gitstudio", owner: "GitStudioHQ", ownerType: "Organization", mine: false, description: "A Git client that shows you what is about to happen.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gitstudio.git", sshUrl: "git@github.com:GitStudioHQ/gitstudio.git", defaultBranch: "main", stars: 1284, language: "TypeScript", updatedAt: ISO(1) },
-    { fullName: "GitStudioHQ/gistudio.dev", name: "gistudio.dev", owner: "GitStudioHQ", ownerType: "Organization", mine: false, description: "Marketing site and the error collector.", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gistudio.dev.git", sshUrl: "git@github.com:GitStudioHQ/gistudio.dev.git", defaultBranch: "main", stars: 12, language: "TypeScript", updatedAt: ISO(30) },
-    { fullName: "antonarnaudov/dotfiles", name: "dotfiles", owner: "antonarnaudov", ownerType: "User", mine: true, description: null, private: true, fork: false, cloneUrl: "https://github.com/antonarnaudov/dotfiles.git", sshUrl: "git@github.com:antonarnaudov/dotfiles.git", defaultBranch: "main", stars: 0, language: "Shell", updatedAt: ISO(80) },
+    { fullName: "GitStudioHQ/gitstudio", name: "gitstudio", owner: "GitStudioHQ", ownerType: "Organization", mine: false, description: "GitStudio \u2014 a JetBrains-grade Git experience for VS Code & Cursor, with a real merge tool", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gitstudio.git", sshUrl: "git@github.com:GitStudioHQ/gitstudio.git", defaultBranch: "main", stars: 1284, language: "TypeScript", updatedAt: ISO(1) },
+    { fullName: "GitStudioHQ/gistudio.dev", name: "gistudio.dev", owner: "GitStudioHQ", ownerType: "Organization", mine: false, description: "gitstudio.dev \u2014 the GitStudio site & blog (Astro), plus the anonymous crash-report collector", private: false, fork: false, cloneUrl: "https://github.com/GitStudioHQ/gistudio.dev.git", sshUrl: "git@github.com:GitStudioHQ/gistudio.dev.git", defaultBranch: "main", stars: 12, language: "TypeScript", updatedAt: ISO(30) },
+    { fullName: "antonarnaudov/merge-studio-conflict-tests", name: "merge-studio-conflict-tests", owner: "antonarnaudov", ownerType: "User", mine: true, description: null, private: true, fork: false, cloneUrl: "https://github.com/antonarnaudov/dotfiles.git", sshUrl: "git@github.com:antonarnaudov/dotfiles.git", defaultBranch: "main", stars: 0, language: "Shell", updatedAt: ISO(80) },
     { fullName: "vercel/next.js", name: "next.js", owner: "vercel", ownerType: "Organization", mine: false, description: "The React framework.", private: false, fork: true, cloneUrl: "https://github.com/vercel/next.js.git", sshUrl: "git@github.com:vercel/next.js.git", defaultBranch: "canary", stars: 121000, language: "JavaScript", updatedAt: ISO(4) },
-    { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", ownerType: "Organization", mine: false, description: "Org repo you have access to through a team.", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
+    { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", ownerType: "Organization", mine: false, description: "Every PDF is just material. Reshape it \u2014 a local-first PDF editor for macOS, Windows and Linux", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
   ];
 
   const dynamic = {
@@ -755,18 +1065,43 @@
             { id: "claude-sonnet-5", label: "Claude Sonnet 5" },
           ]
         : [],
-    "ai:chatCurrent": () =>
-      params.get("ai") && params.get("chat")
-        ? {
-            id: "chat1",
-            title: "Why did the build break?",
-            connectionId: "c1",
-            turns: [
-              { role: "user", text: "Why did the build break?" },
-              { role: "assistant", text: "The renderer bundle grew past the limit.\n\n```sh\nnpm run build\n```" },
-            ],
-          }
-        : null,
+    "ai:chatCurrent": () => (params.get("ai") && params.get("chat") ? CHAT1 : null),
+    // The agent turn. Without `?chat=live|done` it is the old no-op — the
+    // request succeeds with nothing in it, so a check about the composer is
+    // not also a check about streaming. With it, the main process's push
+    // events arrive the way they do in the app: a status, two tool steps with
+    // their results, then the answer in chunks.
+    "ai:chatSend": ({ requestId }) => {
+      const mode = params.get("chat");
+      if (mode !== "live" && mode !== "done") return { ok: true, changed: false };
+      const emit = (kind, extra) => window.__gsEmit("ai:agentEvent", { requestId, kind, ...extra });
+      const delta = (t) => window.__gsEmit("ai:delta", { requestId, delta: t });
+      return new Promise((resolve) => {
+        setTimeout(() => emit("status", { text: "Reading the repository" }), 80);
+        setTimeout(() => emit("tool_call", { tool: "git_status", callId: "c1", args: {} }), 260);
+        setTimeout(
+          () =>
+            emit("tool_result", {
+              callId: "c1",
+              text: " M apps/desktop/src/renderer/assistant.ts\n M apps/desktop/src/renderer/styles/app.css\n?? apps/desktop/test/editors.test.ts",
+            }),
+          520,
+        );
+        setTimeout(() => emit("tool_call", { tool: "git_diff", callId: "c2", args: { paths: ["apps/desktop/src/renderer/assistant.ts"] } }), 680);
+        setTimeout(() => emit("tool_result", { callId: "c2", text: "+212 −48 across 2 files" }), 940);
+        const chunks = LIVE_ANSWER.match(/[\s\S]{1,28}/g);
+        chunks.forEach((c, i) => setTimeout(() => delta(c), 1000 + i * 40));
+        const end = 1000 + chunks.length * 40 + 120;
+        if (mode === "done") {
+          setTimeout(() => {
+            emit("assistant", { text: LIVE_ANSWER });
+            resolve({ ok: true, text: LIVE_ANSWER });
+          }, end);
+        } else {
+          setTimeout(() => resolve({ ok: true, text: LIVE_ANSWER }), 120000);
+        }
+      });
+    },
     "ai:chatList": () =>
       params.get("ai")
         ? [
@@ -775,8 +1110,32 @@
           ]
         : [],
     "ai:chatNew": () => ({ id: "chat-new", title: "New chat", connectionId: "c1", turns: [] }),
-    "ai:chatGet": ({ id }) => ({ id, title: "Earlier chat", connectionId: "c1", turns: [{ role: "user", text: "hello" }] }),
+    "ai:chatGet": ({ id }) => (id === "chat1" ? CHAT1 : { id, title: "Earlier chat", connectionId: "c1", turns: [{ role: "user", text: "hello" }] }),
     "ai:chatSetCurrent": () => ({ ok: true }),
+    "editors:list": () => editorsView(),
+    "editors:refresh": () => editorsView(),
+    "editors:open": ({ id }) => {
+      editorsState.opened.push(id);
+      return { ok: true };
+    },
+    "editors:setShown": ({ id, shown }) => {
+      editorsState.hidden = editorsState.hidden.filter((h) => h !== id);
+      if (!shown) editorsState.hidden.push(id);
+      return editorsView();
+    },
+    "editors:setDefault": ({ id }) => {
+      editorsState.defaultId = id || undefined;
+      return editorsView();
+    },
+    "editors:addCustom": ({ name, command }) => {
+      editorsState.custom.push({ id: `custom-${++editorsState.customSeq}`, name, command });
+      return editorsView();
+    },
+    "editors:removeCustom": ({ id }) => {
+      editorsState.custom = editorsState.custom.filter((c) => c.id !== id);
+      return editorsView();
+    },
+    "editors:reveal": () => undefined,
     "settings:get": () => settingsView(),
     "settings:update": (patch) => {
       if (patch && patch.cloneDir === null) settingsState.cloneDir = null;
@@ -809,7 +1168,30 @@
       createdAt: ISO(900),
       homepage: "https://gistudio.dev",
     }),
+    // Opening a repository you already have. Like a clone, main emits
+    // repo:changed from inside the handler, so the shell has rebuilt by the
+    // time the invoke resolves.
+    "repo:openPath": (root) => {
+      const name = String(root).split("/").filter(Boolean).pop();
+      window.__gsEmit("repo:changed", { root, name });
+      return { root, name, branch: "main" };
+    },
+    // The clone the browse page starts. Main emits repo:changed from INSIDE the
+    // handler, before the invoke resolves — mirror that, or the renderer's
+    // landing hook is never exercised and a check passes over the bug.
+    "ghrepo:open": ({ fullName }) => {
+      const name = String(fullName).split("/")[1];
+      const root = `/Users/demo/GitStudio/${name}`;
+      window.__gsEmit("repo:changed", { root, name });
+      return { ok: true, root, cloned: true };
+    },
     // E4: entity pages — remote tree/file/readme at a ref, branches, paths.
+    "ghrepo:commits": ({ ref }) =>
+      [
+        { sha: "9f8e7d6c5b4a39281706", shortSha: "9f8e7d6", subject: "release: extension 1.11.1", author: "Anton Arnaudov", login: "antonarnaudov", date: ISO(1) },
+        { sha: "18c9d0e7f6a5b4c3d2e1", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", login: "mira-holt", date: ISO(3) },
+        { sha: "c3d4e5f60718293a4b5c", shortSha: "c3d4e5f", subject: `actions: stream job logs (${ref ?? "default"})`, author: "Sora Ohta", date: ISO(8) },
+      ],
     "ghrepo:branches": () => [
       { name: "main", sha: "9f8e7d6", protected: true },
       { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
@@ -850,7 +1232,10 @@
     }),
     "ghrepo:readme": () => ({
       name: "README.md",
-      text: "# GitStudio\n\nThe open-source Git workspace — a desktop app and a VS Code extension that share one engine.\n\n## Why\n\nBecause a Git client should let you *read* a repository, not just launch a browser.\n\n- Full-page sections, no split panes\n- Everything GitHub does, in the app\n- Works when GitHub doesn't\n",
+      // The shapes a real README carries: a RELATIVE image (must be rewritten
+      // to raw.githubusercontent.com or it 404s against the app's own origin)
+      // and a third-party badge (must survive as-is).
+      text: "# GitStudio\n\n<img alt=\"GitStudio\" src=\"brand/gitstudio-icon.svg\" width=\"116\">\n\n![CI](https://img.shields.io/badge/ci-passing-brightgreen)\n\nThe open-source Git workspace — a desktop app and a VS Code extension that share one engine.\n\n## Why\n\nBecause a Git client should let you *read* a repository, not just launch a browser.\n\n- Full-page sections, no split panes\n- Everything GitHub does, in the app\n- Works when GitHub doesn't\n",
     }),
     "users:repos": () => [
       { name: "gitstudio", fullName: "GitStudioHQ/gitstudio", htmlUrl: "", description: "The open-source Git workspace — desktop app + VS Code extension.", private: false, fork: false, archived: false, language: "TypeScript", stargazersCount: 2140, pushedAt: ISO(1) },
@@ -900,20 +1285,207 @@
       hasMore: false,
     }),
     // E2: the local-copies manager. Mutable so Remove/Delete are exercisable.
-    "repos:local": () => localCopies,
+    // Stamped the way main stamps them — the renderer buckets by band, and an
+    // unstamped answer empties every band on the screen.
+    "repos:local": () => claimed(localCopies),
+    // The scan-cap truth. The dedupe pass in main pulls the list length back
+    // under the cap even when truncation happened, so the note reads THIS.
+    "repos:scanTruncated": () => params.get("manyrepos") === "1",
+    // Home-row working-tree signals. gistudio.dev has unpushed work, design
+    // is stale, everything else is clean and must show NOTHING.
+    "repos:localStatus": (roots) =>
+      Object.fromEntries(
+        (roots || []).map((r) => [
+          r,
+          r.endsWith("/gistudio.dev")
+            ? { branch: "main", dirty: 3, ahead: 1, behind: 0 }
+            : r.endsWith("/design")
+              ? { branch: "main", dirty: 0, ahead: 0, behind: 2 }
+              : { branch: "main", dirty: 0, ahead: 0, behind: 0 },
+        ]),
+      ),
     // The folders the Repositories view groups by. The clone folder leads and
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
-    "repos:folders": () => repoFolders,
+    "branches:list": () => branches,
+    // The per-branch log walk's answer. feat/line-staging is the interesting
+    // one: created by one person, carried by three — a number-only "last
+    // commit by" could never say that.
+    "branches:people": () => ({
+      "redesign/issues-detail": {
+        creator: { name: "Mira Holt", email: "mira@example.com" },
+        contributors: [
+          { name: "Mira Holt", email: "mira@example.com", count: 4 },
+          { name: "Anton Arnaudov", email: "12345+antonarnaudov@users.noreply.github.com", count: 1 },
+        ],
+      },
+      "feat/line-staging": {
+        creator: { name: "Sora Ohta", email: "sora@example.com" },
+        contributors: [
+          { name: "Mira Holt", email: "mira@example.com", count: 9 },
+          { name: "Sora Ohta", email: "sora@example.com", count: 6 },
+          { name: "Anton Arnaudov", email: "12345+antonarnaudov@users.noreply.github.com", count: 2 },
+          { name: "J. Parks", email: "jparks@example.com", count: 1 },
+        ],
+      },
+      "fix/log-stream": {
+        creator: { name: "Sora Ohta", email: "sora@example.com" },
+        contributors: [{ name: "Sora Ohta", email: "sora@example.com", count: 2 }],
+      },
+      // Remote branches are walked too — same question, same answer shape.
+      "origin/redesign/issues-detail": {
+        creator: { name: "Mira Holt", email: "mira@example.com" },
+        contributors: [
+          { name: "Mira Holt", email: "mira@example.com", count: 4 },
+          { name: "Anton Arnaudov", email: "12345+antonarnaudov@users.noreply.github.com", count: 1 },
+        ],
+      },
+    }),
+    // Branch delete returns the tip it deleted, which is the whole reason the
+    // delete can be undone — `?nowas=1` is the case where the tip could not be
+    // read and no undo may be offered.
+    "branch:delete": ({ name }) => {
+      const hit = branches.find((b) => b.name === name);
+      if (!hit) return { ok: false, changed: false, message: "no such branch" };
+      deletedBranches.set(name, hit);
+      branches = branches.filter((b) => b.name !== name);
+      return params.get("nowas") === "1"
+        ? { ok: true, changed: true }
+        : { ok: true, changed: true, was: "b1a5ded", upstream: hit.upstream };
+    },
+    "branch:create": ({ name, startPoint }) => {
+      const was = deletedBranches.get(name);
+      if (was && startPoint) {
+        deletedBranches.delete(name);
+        branches = [...branches, was];
+        return { ok: true, changed: true };
+      }
+      if (branches.some((b) => b.name === name)) {
+        return { ok: false, changed: false, message: "a branch of that name already exists" };
+      }
+      branches = [...branches, { name, current: false, ahead: 0, behind: 0, subject: "new", date: S(0) }];
+      return { ok: true, changed: true };
+    },
+    // A rename carries the tracking over UNCHANGED, exactly as `git branch -m`
+    // does — which is the whole reason the reconcile question exists.
+    "branch:rename": ({ from, to }) => {
+      const hit = branches.find((b) => b.name === from);
+      if (!hit) return { ok: false, changed: false, message: "no such branch" };
+      if (branches.some((b) => b.name === to)) {
+        return { ok: false, changed: false, message: "a branch of that name already exists" };
+      }
+      branches = branches.map((b) => (b.name === from ? { ...b, name: to } : b));
+      return { ok: true, changed: true };
+    },
+    "branch:publish": ({ name, remote }) => {
+      if (params.get("publishfails")) {
+        return { ok: false, changed: false, message: "failed to push some refs" };
+      }
+      branches = branches.map((b) => (b.name === name ? { ...b, upstream: `${remote}/${name}` } : b));
+      return { ok: true, changed: true };
+    },
+    "branch:setUpstream": ({ name, upstream }) => {
+      branches = branches.map((b) => (b.name === name ? { ...b, upstream } : b));
+      return { ok: true, changed: true };
+    },
+    "branch:deleteRemote": ({ name }) =>
+      params.get("noremotewas") === "1"
+        ? { ok: true, changed: true }
+        : { ok: true, changed: true, was: "18c9d0e" },
+    "branch:restoreRemote": () => ({ ok: true, changed: true }),
+    "status": () => (params.get("clean") ? [] : changedFiles),
+    // The little external card that opens for an item living in ANOTHER
+    // repository — Inbox and the cross-repo My Work rows both use it.
+    "github:externalItem": ({ owner, repo, number, kind }) => ({
+      kind,
+      number,
+      repo: `${owner}/${repo}`,
+      title: repo === "trust-globe" ? "Globe tiles blank on Apple Silicon" : `Item #${number}`,
+      state: "open",
+      body: "Reported from the field: tiles render black above zoom 9 on M-series GPUs.",
+      htmlUrl: `https://github.com/${owner}/${repo}/${kind === "pull" ? "pull" : "issues"}/${number}`,
+      author: "mira-holt",
+      createdAt: ISO(12),
+      comments: [{ author: "s-ohta", body: "Reproduced on an M2 Air.", createdAt: ISO(5) }],
+    }),
+    "github:myWork": (req) => {
+      if (!req || req.scope !== "all") return fixtures["github:myWork"];
+      const at = (kind, type, number, repo, title, over) => ({
+        kind, type, number, title, state: "open", draft: false,
+        updatedAt: ISO(3), comments: 2, author: "s-ohta",
+        repo: { owner: "GitStudioHQ", name: repo },
+        ...over,
+      });
+      return [
+        at("review-requested", "pr", 104, "gitstudio", "actions: stream job logs over IPC with backpressure"),
+        // The SAME number in two different repositories — both must render.
+        at("assigned", "issue", 31, "gitstudio", "Split views make Issues and PRs unreadable"),
+        at("assigned", "issue", 31, "trust-globe", "Globe tiles blank on Apple Silicon", { repo: { owner: "antonarnaudov", name: "trust-globe" } }),
+        at("mentions", "issue", 28, "gitstudio", "Rebase drag-to-reorder flickers"),
+        // Work in progress, NOT waiting on you — Home must not list it.
+        at("my-prs", "pr", 106, "gitstudio", "desktop: full-page detail views"),
+      ];
+    },
+    // Stash drop, and the restore that undoes it. Mutating, for the same
+    // reason the discard fixtures are.
+    "stash:list": () => stashes,
+    "stash:drop": (ref) => {
+      const hit = stashes.find((s) => s.ref === ref);
+      if (!hit) return { ok: false, changed: false, message: "no such stash" };
+      dropped.set(hit.sha, hit);
+      stashes = stashes.filter((s) => s.ref !== ref);
+      return { ok: true, changed: true };
+    },
+    "stash:restore": ({ sha }) => {
+      const was = dropped.get(sha);
+      if (!was) return { ok: false, changed: false, message: "That stash is no longer in the repository." };
+      dropped.delete(sha);
+      stashes = [was, ...stashes];
+      return { ok: true, changed: true };
+    },
+    // Discard, and the restore point that makes it undoable. Mutating for
+    // real: a check that watched a row vanish and come back against a fixture
+    // that returned a bare {ok:true} would be watching the harness, not the
+    // app. `?nosnap=1` is the case where git has nothing to record — no
+    // restore point, and therefore no undo may be offered.
+    discard: (path) => {
+      const had = changedFiles.filter((f) => f.path === path);
+      if (!had.length) return { ok: false, changed: false, message: "no such path" };
+      discarded.set(path, had);
+      changedFiles = changedFiles.filter((f) => f.path !== path);
+      return { ok: true, changed: true };
+    },
+    "discard:snapshot": () => (params.get("nosnap") === "1" ? {} : { sha: "5na9sh0t" }),
+    "discard:undo": ({ sha, paths }) => {
+      if (sha !== "5na9sh0t") return { ok: false, message: "unknown restore point" };
+      let any = false;
+      for (const p of paths || []) {
+        const was = discarded.get(p);
+        if (!was) continue;
+        discarded.delete(p);
+        changedFiles = [...changedFiles, ...was];
+        any = true;
+      }
+      return any ? { ok: true } : { ok: false, message: "nothing to restore" };
+    },
+    "repos:folders": () => repoFolders.map(folderRow),
     "settings:update": (patch) => {
       if (patch && typeof patch.cloneDir === "string") {
         for (const f of repoFolders) f.isCloneDir = f.path === patch.cloneDir;
+      }
+      if (patch && patch.cloneDir === null) {
+        for (const f of repoFolders) {
+          f.isCloneDir = f.path === "/Users/demo/GitStudio";
+          f.isDefaultCloneDir = f.isCloneDir;
+        }
+      } else if (patch && typeof patch.cloneDir === "string") {
+        for (const f of repoFolders) f.isDefaultCloneDir = false;
       }
       const cur = repoFolders.find((f) => f.isCloneDir) || repoFolders[0];
       return {
         cloneDir: cur.path,
         cloneDirDisplay: cur.display,
-        cloneDirIsDefault: false,
+        cloneDirIsDefault: !!cur.isDefaultCloneDir,
         askWhereEveryTime: false,
         repoFolders: repoFolders.filter((f) => !f.isCloneDir).map((f) => f.path),
       };
@@ -923,16 +1495,43 @@
         repoFolders.push({
           path: "/Users/demo/Sites",
           display: "~/Sites",
+          real: "/Users/demo/Sites",
           isCloneDir: false,
-          repoCount: 0,
+          isDefaultCloneDir: false,
           missing: false,
         });
       }
-      return repoFolders;
+      return repoFolders.map(folderRow);
     },
     "repos:removeFolder": (dir) => {
       repoFolders = repoFolders.filter((f) => f.path !== dir || f.isCloneDir);
-      return repoFolders;
+      return repoFolders.map(folderRow);
+    },
+    // Undo's half of the two above. These are not decoration: an unfixtured
+    // channel answers `undefined`, so an undo check would PASS over an undo
+    // that never ran.
+    "repos:addFolderPath": (dir) => {
+      if (!repoFolders.some((f) => f.path === dir)) {
+        const home = "/Users/demo/";
+        repoFolders.push({
+          path: dir,
+          display: dir.startsWith(home) ? `~/${dir.slice(home.length)}` : dir,
+          // `real` is not optional: containment is decided on real paths, and a
+          // row without one makes every folder read answer with a throw.
+          real: dir,
+          isCloneDir: false,
+          isDefaultCloneDir: false,
+          missing: false,
+        });
+      }
+      return repoFolders.map(folderRow);
+    },
+    "repos:deleteEmptyFolder": (dir) => {
+      const hit = repoFolders.find((f) => f.path === dir);
+      const held = hit ? counts(hit.path).containedCount : 0;
+      if (held) return { ok: false, message: "That folder isn't empty." };
+      repoFolders = repoFolders.filter((f) => f.path !== dir);
+      return { ok: true };
     },
     "github:repos": () => ghRepos,
     "clone:pickDir": () => "/Users/demo/Code",
@@ -944,12 +1543,33 @@
     "repos:removeRecent": (root) => {
       const hit = localCopies.find((c) => c.root === root);
       if (hit) hit.recent = false;
+      forgotten.set(root, hit);
       localCopies = localCopies.filter((c) => c.recent || c.managed);
-      return localCopies;
+      return claimed(localCopies);
+    },
+    "repos:restoreRecent": (root) => {
+      const was = forgotten.get(root);
+      if (was && !localCopies.some((c) => c.root === root)) {
+        localCopies = [{ ...was, recent: true }, ...localCopies];
+      }
+      return claimed(localCopies);
     },
     "repos:trash": (root) => {
+      const gone = localCopies.find((c) => c.root === root);
+      trashed.set(`/Users/demo/.Trash/${root.split("/").pop()}`, gone);
       localCopies = localCopies.filter((c) => c.root !== root);
-      return { ok: true, changed: true };
+      // `trashed` is what makes undo possible, and the app must not offer one
+      // without it — `?notrashpath=1` is that case.
+      return params.get("notrashpath") === "1"
+        ? { ok: true, changed: true }
+        : { ok: true, changed: true, trashed: `/Users/demo/.Trash/${root.split("/").pop()}` };
+    },
+    "repos:untrash": ({ from, to }) => {
+      const was = trashed.get(from);
+      if (!was) return { ok: false, message: "It is no longer in the Trash." };
+      trashed.delete(from);
+      localCopies = [{ ...was, root: to }, ...localCopies];
+      return { ok: true };
     },
     // Server-side issue search. Deliberately returns something the LOCAL filter
     // cannot: a qualifier reaches an issue outside the loaded page, so a check
@@ -985,11 +1605,29 @@
       }
       return { items: hits, totalCount: hits.length, incomplete: false };
     },
+    // A review submit. The generic mutation fallback would answer {ok:true}
+    // anyway — this exists so the fixture-gap report stays clean AND so the
+    // payload shape is asserted where it is produced: a submit carrying
+    // queued comments must name a file and a line for each.
+    "pr:review": (req) => {
+      for (const cm of req?.comments ?? []) {
+        if (!cm.path || !cm.line || !cm.body) {
+          throw new Error(`pr:review comment missing path/line/body: ${JSON.stringify(cm)}`);
+        }
+      }
+      return { ok: true };
+    },
+    "issue:setLocked": ({ number, locked, reason }) => {
+      lockedIssues.set(number, locked ? { reason: reason ?? null } : undefined);
+      if (!locked) lockedIssues.delete(number);
+      return { ok: true, changed: true };
+    },
     "issue:detail": (n) => {
       const it = issues.find((i) => i.number === n);
       if (!it) return undefined;
+      const lock = lockedIssues.get(n);
       return {
-        issue: iss(it),
+        issue: { ...iss(it), locked: !!lock, activeLockReason: lock?.reason ?? null },
         comments: issueComments[n] || [],
         assignees: it.assignees.map((a) => a.login),
         // Interleaved with the comments by time, so a check can prove the two
@@ -1612,7 +2250,24 @@
   };
 
   // ── scene driver ──
-  const q = (sel) => document.querySelector(sel);
+  /**
+   * Scene selectors pierce ONE level of shadow DOM.
+   *
+   * The commit graph is a Lit element, so its ref chips live in a shadow root
+   * and `document.querySelector` cannot see them. That made the graph's
+   * richest interaction — clicking a branch chip — unreachable from any scene,
+   * which is exactly why the deep-link landing shipped broken and unscreenshot.
+   */
+  const q = (sel) => {
+    const direct = document.querySelector(sel);
+    if (direct) return direct;
+    for (const host of document.querySelectorAll("*")) {
+      if (!host.shadowRoot) continue;
+      const hit = host.shadowRoot.querySelector(sel);
+      if (hit) return hit;
+    }
+    return null;
+  };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   async function until(fn, timeout = 8000) {
     const t0 = Date.now();

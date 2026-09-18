@@ -158,7 +158,14 @@ export function openCloneDialog(
   cancel.addEventListener("click", () => close());
   const primary = el("button", "btn btn-primary modal-ok clone-go");
   const primaryLabel = span("Clone");
-  primary.append(primaryLabel);
+  // A real spinner, because the button was marked `is-loading` and that class
+  // has never had a rule: the only sign a clone had started was the label
+  // changing to "Cloning…", on a control that had also just gone disabled and
+  // therefore dimmed. A clone can take a minute; it needs to look alive.
+  const primarySpin = glyph("loading");
+  primarySpin.classList.add("spin");
+  primarySpin.hidden = true;
+  primary.append(primarySpin, primaryLabel);
   primary.setAttribute("disabled", "true");
   primary.addEventListener("click", () => void runClone());
   actions.append(cancel, primary);
@@ -411,10 +418,10 @@ export function openCloneDialog(
     ghList.classList.toggle("is-disabled", on);
     if (on) {
       primary.setAttribute("disabled", "true");
-      primary.classList.add("is-loading");
+      primarySpin.hidden = false;
       primaryLabel.textContent = "Cloning…";
     } else {
-      primary.classList.remove("is-loading");
+      primarySpin.hidden = true;
       primaryLabel.textContent = "Clone";
       refreshClone();
     }

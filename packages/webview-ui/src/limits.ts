@@ -19,3 +19,19 @@ export const LARGE_FILE_LINE_THRESHOLD = 20000;
  * exists to prevent.
  */
 export const COLUMN_DROP_TAIL_AT = 860;
+
+/**
+ * Host width below which the graph stops being a table of columns and becomes
+ * a one-line list: the refs flow inline before the message and the column
+ * header goes.
+ *
+ * This used to be 620, which sacrificed the two things that identify a commit
+ * at a glance — the graph gutter's header and the Branch/Tag column — long
+ * before the message was in any trouble. Between this and
+ * COLUMN_DROP_TAIL_AT the graph now keeps gutter + Branch/Tag + message and
+ * drops only the trailing metadata, so "which branch is this?" survives every
+ * width a person would actually drag to. Below it the inline list is still the
+ * right answer, because a fixed ref column in a genuinely narrow pane spends
+ * ~120px on rows that have no refs at all.
+ */
+export const INLINE_LIST_BELOW = 460;

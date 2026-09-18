@@ -31,13 +31,17 @@ import {
   openMenu,
   relTimeISO,
   skeletonList,
-  span,
-} from "../ui";
+  span, copyText } from "../ui";
+import type { MenuItem } from "../ui";
 import { openGhRepoInApp, openGhRepoChooseLocation } from "../ghOpen";
 import { openCloneDialog } from "../cloneDialog";
 import { openPeek } from "../peek";
+import { splitBand } from "../../shared/repoGrouping";
+import { fuzzyScore } from "../commandPalette";
+import type { LocalCopy } from "../../shared/ipc";
 import { memberCard } from "./orgs";
 import {
+  localSearchTargetId,
   parseAccountTarget,
   parseExploreTarget,
   parseRepoRoute,
@@ -48,6 +52,8 @@ export { searchTargetId } from "../exploreRoutes";
 import { renderRepoPage } from "./exploreRepo";
 import { renderAccountPage } from "./exploreUser";
 import {
+  segmented,
+  connectPrompt,
   ghGate,
   searchField,
   secRow,
@@ -55,7 +61,9 @@ import {
   type SectionNav,
   type SectionRender,
   type SectionTarget,
+  whereChip,
 } from "./common";
+import { localCopyIndex, middlePath } from "../localCopy";
 import type {
   SearchCodeFragment,
   SearchCodeItem,
@@ -77,12 +85,24 @@ const TABS: ReadonlyArray<{ id: Tab; label: string; icon: string }> = [
 // ── Section state (survives list ⇄ detail round trips, like the other views) ──
 let tab: Tab = "repos";
 let query = "";
+/** Which world the search runs in. "local" is this machine: repos:local, no
+ *  network, no account — reachable signed-out and repo-less, which is the
+ *  point. Kept across visits like the tab. */
+let scope: "github" | "local" = "github";
 let repoSort: SearchSort = "best";
 /** Pages accumulated for the CURRENT (tab, query, sort) — "Load more" appends. */
 let pages = 1;
 
 /** Guards against a slow earlier query overwriting a newer one's results. */
 let searchSeq = 0;
+
+/**
+ * Local copies keyed by lowercased origin, so a GitHub hit can say "you
+ * already have this" — offering to clone something twice is how people end up
+ * with two copies and no idea which one they edited. Refreshed per mount;
+ * betterCopy picks when several copies share an origin.
+ */
+let localByOrigin = new Map<string, LocalCopy>();
 /**
  * Where the result list was scrolled when we left it — and WHICH search that
  * was. Keyed, because a bare number is applied to whatever runs next: leave a
@@ -105,14 +125,16 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 
   const repoRoute = parseRepoRoute(target?.id);
   if (repoRoute) {
-    const gate = await ghGate(wrap, nav, true, () => renderExplore(wrap, nav, target));
+    // needsRepo=false, here and below: browsing GitHub does not require the
+    // OPEN repository to have a GitHub origin — or to exist at all.
+    const gate = await ghGate(wrap, nav, false, () => renderExplore(wrap, nav, target));
     if (!gate) return;
     renderRepoPage(wrap, nav, repoRoute, backToSearch);
     return;
   }
   const account = parseAccountTarget(target?.id);
   if (account) {
-    const gate = await ghGate(wrap, nav, true, () => renderExplore(wrap, nav, target));
+    const gate = await ghGate(wrap, nav, false, () => renderExplore(wrap, nav, target));
     if (!gate) return;
     renderAccountPage(wrap, nav, account.login, backToSearch);
     return;
@@ -125,15 +147,29 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     // search, so resetting unconditionally meant every visit re-paged from one:
     // eight "Load more" clicks thrown away, and the row you had just read gone
     // back above the fold.
-    const same = routed.tab === tab && routed.query === query;
+    const same = routed.tab === tab && routed.query === query && routed.scope === scope;
     tab = routed.tab;
     query = routed.query;
+    scope = routed.scope;
     if (!same) pages = 1;
   }
 
   const refresh = (): void => renderExplore(wrap, nav, target);
-  const gate = await ghGate(wrap, nav, true, refresh);
-  if (!gate) return;
+  // The SHELL is free. The page used to await the GitHub gate before drawing
+  // anything, which walled the whole view — including the local scope, whose
+  // entire reason to exist is working with no account and no network — behind
+  // "Sign in with GitHub". The gate now guards only the GitHub scope's
+  // RESULTS; the shell, the toggle and the local world render for everyone.
+  const status = await gget("github:status", undefined, 12000).catch(() => undefined);
+  const connected = !!status?.connected;
+
+  // The have-it-already join, refreshed while the shell builds. Free (disk),
+  // and best-effort: without it a hit is merely offered a clone it may not need.
+  void gget("repos:local", undefined, 8000)
+    .then((copies) => {
+      localByOrigin = localCopyIndex(copies);
+    })
+    .catch(() => {});
 
   const { view, listEl } = sectionList();
   view.classList.add("explore-view");
@@ -141,13 +177,37 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
   // ── search-first header ──
   const head = el("div", "explore-head");
   const title = el("h1", "explore-title");
-  title.textContent = "Explore GitHub";
+  title.textContent = "Search";
   const sub = el("div", "explore-sub");
-  sub.textContent = "Repositories, people, organizations and code — all of GitHub, opened here.";
+  sub.textContent =
+    scope === "local"
+      ? "Your repositories on this machine — names, folders and origins."
+      : "Repositories, people, organizations and code — all of GitHub, opened here.";
+
+  // One search system, two worlds. The toggle flips the SAME query into the
+  // other world, so a search is never retyped — and the local side is the free
+  // one: no network, no sign-in, exactly what the machine can answer alone.
+  const scopeSeg = segmented<"local" | "github">({
+    options: [
+      { value: "local", label: "This machine" },
+      { value: "github", label: "On GitHub" },
+    ],
+    value: scope,
+    ariaLabel: "Search scope",
+    onChange: (v) => {
+      scope = v;
+      pages = 1;
+      if (query) nav("explore", { id: v === "local" ? localSearchTargetId(query) : searchTargetId(tab, query) });
+      else renderExplore(wrap, nav, undefined);
+    },
+  });
+  scopeSeg.classList.add("explore-scope");
 
   const field = searchField({
     placeholder:
-      tab === "code"
+      scope === "local"
+        ? "Search your repositories — name, folder or origin"
+        : tab === "code"
         ? "Search code — press Enter (code search is rate-limited)"
         : tab === "repos"
           ? "Search repositories — try  stars:>1000 language:TypeScript"
@@ -171,7 +231,12 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     onEnter: (q) => setQuery(q),
   });
   field.classList.add("explore-search");
-  head.append(title, sub, field);
+  const fieldRow = el("div", "explore-field-row");
+  // Toggle to the RIGHT: the box's left edge is the line the results and the
+  // empty state hang from, and a control in front of it pushed the box 224px
+  // off that line.
+  fieldRow.append(field, scopeSeg);
+  head.append(title, sub, fieldRow);
 
   const tabBar = el("div", "explore-tabs");
   tabBar.setAttribute("role", "tablist");
@@ -193,7 +258,11 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
 
   const tools = el("div", "explore-tools");
   tools.appendChild(tabBar);
-  if (tab === "repos") {
+  // The four GitHub kind-tabs mean nothing on this machine — local search is
+  // over repositories. Hidden, not unmounted, so the tab row's position in
+  // the DOM (which several checks address by nth-child) never shifts.
+  if (scope === "local") tools.hidden = true;
+  if (scope === "github" && tab === "repos") {
     const sortBtn = el("button", "mini-btn explore-sort");
     const sortLabel = (s: SearchSort): string =>
       s === "stars" ? "Most stars" : s === "updated" ? "Recently updated" : "Best match";
@@ -224,13 +293,27 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
     if (q === query) return;
     query = q;
     pages = 1;
-    if (q) nav("explore", { id: searchTargetId(tab, q) });
+    if (q) nav("explore", { id: scope === "local" ? localSearchTargetId(q) : searchTargetId(tab, q) });
     else run();
   };
 
   // ── running the search ──
   const run = async (append = false): Promise<void> => {
     const seq = ++searchSeq;
+    if (scope === "local") {
+      await runLocal(listEl, nav, query, seq, () => searchSeq, (q) => {
+        // The flip door: same query, other world.
+        scope = "github";
+        nav("explore", { id: searchTargetId(tab, q) });
+      });
+      return;
+    }
+    // The gate, exactly where the money is: GitHub answers GitHub searches.
+    // The shell above stays alive either way.
+    if (!connected) {
+      listEl.replaceChildren(connectPrompt(nav));
+      return;
+    }
     if (!query) {
       listEl.replaceChildren(startState());
       return;
@@ -249,7 +332,13 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
       // card that is still sitting there — so a search failing three times
       // ended with three "Search failed" cards stacked at the bottom of the
       // list, each with its own live Retry button.
+      // run() owns the button's disabled state, because run() is the only thing
+      // that knows when the append is over. The button used to disable ITSELF
+      // on click and nothing ever put it back, so one failed append left a
+      // permanently dead "Load more" under an error card.
+      listEl.querySelector(".explore-more")?.setAttribute("disabled", "true");
       listEl.querySelector(".explore-more-note")?.remove();
+      listEl.querySelectorAll(".explore-loading-more").forEach((n) => n.remove());
       listEl.appendChild(loadingMore());
     }
 
@@ -267,6 +356,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
           const spinner = listEl.querySelector(".explore-loading-more");
           if (spinner) spinner.replaceWith(limited);
           else listEl.appendChild(limited);
+          listEl.querySelector(".explore-more")?.removeAttribute("disabled");
         } else {
           listEl.replaceChildren(limited);
         }
@@ -328,6 +418,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget)
         const spinner = listEl.querySelector(".explore-loading-more");
         if (spinner) spinner.replaceWith(failed);
         else listEl.appendChild(failed);
+        listEl.querySelector(".explore-more")?.removeAttribute("disabled");
       } else {
         listEl.replaceChildren(failed);
       }
@@ -421,7 +512,7 @@ function exploreRow(o: {
   timeTitle?: string;
   ariaLabel: string;
   onOpen: () => void;
-  actions: Array<{ label: string; title: string; run: () => void }>;
+  actions: RowAction[];
   extraClass?: string;
 }): HTMLElement {
   const row = el("div", "sec-row list-row explore-row" + (o.extraClass ? ` ${o.extraClass}` : ""));
@@ -471,6 +562,9 @@ function exploreRow(o: {
 }
 
 function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
+  // Already on this machine? Say so, and lead with Open — the row otherwise
+  // offers to clone a repository that is twenty gigabytes into ~/Developer.
+  const have = localByOrigin.get(r.fullName.toLowerCase());
   const meta: HTMLElement[] = [];
   if (r.language) meta.push(span(r.language, "explore-lang"));
   // Formatted: the footer on the same screen writes "1,284 matches" while the
@@ -482,6 +576,7 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
     lead: glyph(r.private ? "lock" : r.fork ? "repo-forked" : "repo"),
     title: r.fullName,
     titleSuffix: [
+      ...(have ? [whereChip("local")] : []),
       ...(r.archived ? [pill("archived")] : []),
       ...(r.license ? [pill(r.license)] : []),
     ],
@@ -492,24 +587,223 @@ function repoRow(r: SearchRepoItem, nav: SectionNav): HTMLElement {
     ariaLabel: `Repository ${r.fullName}`,
     // E4 turns this into the full in-app repository page.
     onOpen: () => nav("explore", { id: `repo/${r.fullName}` }),
+    // One verb and the shared ⌄, the way the Repositories screen and the
+    // organization cards already do it — for two reasons that turned out to be
+    // the same reason. Four labelled buttons measured ~300px of every row,
+    // invisible until hover but reserved always, which is description the row
+    // never got to show. And because two of the four labels change with whether
+    // you already have the repository ("Reveal" vs "Choose location…"), rows
+    // reserved DIFFERENT widths — so the language, stars and time columns of a
+    // cloned row sat 13px left of everyone else's, and the list stopped
+    // scanning as columns.
     actions: [
-      { label: "Open", title: `Clone ${r.fullName} if needed, then open it`, run: () => openGhRepoInApp(r.fullName) },
+      have
+        ? {
+            label: "Open",
+            title: `Already cloned at ${have.root}`,
+            ariaLabel: `Open ${r.fullName}`,
+            run: () => void openLocal(have, nav),
+          }
+        : {
+            label: "Open",
+            title: `Clone ${r.fullName} if needed, then open it`,
+            ariaLabel: `Open ${r.fullName}`,
+            run: () => openGhRepoInApp(r.fullName),
+          },
       {
-        label: "Choose location…",
-        title: "Pick the folder it's cloned into",
-        run: () => openGhRepoChooseLocation(r.fullName),
+        title: `More actions for ${r.fullName}`,
+        ariaLabel: `More actions for ${r.fullName}`,
+        // A row that says "on this machine" must not offer to choose where to
+        // clone it: that is a question about a copy you already have. Cloning
+        // stays reachable there, but BY NAME, so it cannot be mistaken for the
+        // thing to press.
+        menu: () => [
+          ...(have
+            ? [
+                {
+                  label: "Show in Finder",
+                  sub: middlePath(have.root),
+                  icon: "folder-opened",
+                  onClick: () => void host.invoke("repos:reveal", have.root),
+                },
+              ]
+            : [
+                {
+                  label: "Choose location…",
+                  sub: "Pick the folder it's cloned into",
+                  icon: "root-folder",
+                  onClick: () => openGhRepoChooseLocation(r.fullName),
+                },
+              ]),
+          {
+            label: have ? "Clone another copy…" : "Clone…",
+            sub: have ? `You already have this at ${have.root}` : undefined,
+            icon: "repo-clone",
+            onClick: () =>
+              openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+                url: `https://github.com/${r.fullName}.git`,
+              }),
+          },
+          { separator: true },
+          {
+            label: "Open on GitHub",
+            icon: "link-external",
+            onClick: () => window.open(r.htmlUrl, "_blank", "noopener"),
+          },
+          {
+            label: "Copy clone URL",
+            icon: "copy",
+            onClick: () =>
+              void copyText(`https://github.com/${r.fullName}.git`, "Clone URL copied."),
+          },
+        ],
       },
-      {
-        label: "Clone…",
-        title: "Open the clone dialog for this repository",
-        run: () =>
-          openCloneDialog((root) => void host.invoke("repo:openPath", root), {
-            url: `https://github.com/${r.fullName}.git`,
-          }),
-      },
-      { label: "GitHub", title: "Open on github.com", run: () => window.open(r.htmlUrl, "_blank", "noopener") },
     ],
   });
+}
+
+// ── the this-machine scope ───────────────────────────────────────────────────
+//
+// The free half of the search system: repos:local and repos:folders, filtered
+// and ranked in the renderer, no network and no account. Reachable signed out,
+// reachable with no repository open — because "where is that repo" is a
+// question about this machine, and this machine can always answer it.
+
+async function runLocal(
+  listEl: HTMLElement,
+  nav: SectionNav,
+  q: string,
+  seq: number,
+  currentSeq: () => number,
+  searchGitHubInstead: (q: string) => void,
+): Promise<void> {
+  let copies: LocalCopy[] = [];
+  try {
+    copies = await gget("repos:local", undefined, 8000);
+  } catch {
+    copies = [];
+  }
+  if (seq !== currentSeq() || !listEl.isConnected) return;
+  const alive = copies.filter((c) => !c.missing);
+
+  if (!q.trim()) {
+    // The pre-query canvas: your repositories grouped by where they live — a
+    // launcher while the box is empty, not a blank stare.
+    listEl.replaceChildren(...localCanvas(alive, nav));
+    return;
+  }
+
+  const needle = q.trim().toLowerCase();
+  const scored = alive
+    .map((c) => ({
+      c,
+      score: Math.max(
+        fuzzyScore(needle, c.name),
+        fuzzyScore(needle, c.origin ?? "") * 0.95,
+        fuzzyScore(needle, c.root) * 0.85,
+      ),
+    }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (!scored.length) {
+    // A dead end here is one keypress from the other world: the door carries
+    // the query with it, so nothing is retyped.
+    const empty = emptyState("Nothing on this machine", `No repository name, folder or origin matches “${q}”.`, {
+      icon: "search",
+      anchor: "inline",
+      action: { label: `Search GitHub for “${q}”`, icon: "github", onClick: () => searchGitHubInstead(q) },
+    });
+    listEl.replaceChildren(empty);
+    return;
+  }
+  listEl.replaceChildren(...scored.map(({ c }) => localHitRow(c, nav)));
+}
+
+/** Every living repository, grouped by the tracked folder that holds it. */
+function localCanvas(copies: LocalCopy[], nav: SectionNav): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  const byBand = new Map<string, LocalCopy[]>();
+  for (const c of copies) {
+    const key = c.band ?? "";
+    const list = byBand.get(key) ?? [];
+    list.push(c);
+    byBand.set(key, list);
+  }
+  // The unhomed band sorts LAST — a catch-all that leads the list reads as if
+  // the machine's organizing principle were "elsewhere".
+  const ordered = [...byBand].sort((a, b) =>
+    a[0] === "" ? 1 : b[0] === "" ? -1 : a[0].localeCompare(b[0]),
+  );
+  for (const [band, list] of ordered) {
+    const label = el("div", "explore-local-band");
+    label.textContent = band ? shortenHome(band) : "Opened from elsewhere";
+    out.push(label);
+    const { loose, groups } = splitBand(band, list, (c) => c.group ?? "");
+    for (const c of loose) out.push(localHitRow(c, nav));
+    for (const g of groups) for (const c of g.items) out.push(localHitRow(c, nav));
+  }
+  const manage = el("button", "mini-btn explore-local-manage");
+  manage.append(glyph("repo"), span("Manage in Repositories"));
+  manage.addEventListener("click", () => nav("repositories"));
+  out.push(manage);
+  return out;
+}
+
+function shortenHome(p: string): string {
+  const home = "/Users/";
+  if (!p.startsWith(home)) return p;
+  const rest = p.slice(home.length);
+  const cut = rest.indexOf("/");
+  return cut < 0 ? "~" : `~${rest.slice(cut)}`;
+}
+
+/** One local repository, with the vocabulary the Repositories screen uses. */
+function localHitRow(c: LocalCopy, nav: SectionNav): HTMLElement {
+  const sub = c.group ? `${c.group} · ${c.origin ?? ""}` : (c.origin ?? "");
+  return exploreRow({
+    lead: glyph(c.current ? "check" : "repo"),
+    title: c.name,
+    titleSuffix: [
+      ...(c.current ? [pill("open")] : []),
+      ...(c.worktreeOf ? [pill("worktree")] : []),
+    ],
+    sub: sub || undefined,
+    meta: [],
+    ariaLabel: `Repository ${c.name} on this machine`,
+    onOpen: () => void openLocal(c, nav),
+    actions: [
+      {
+        label: "Open",
+        title: `Open ${c.root}`,
+        ariaLabel: `Open ${c.name}`,
+        run: () => void openLocal(c, nav),
+      },
+      {
+        title: `More actions for ${c.name}`,
+        ariaLabel: `More actions for ${c.name}`,
+        menu: () => [
+          {
+            label: "Show in Finder",
+            sub: middlePath(c.root),
+            icon: "folder-opened",
+            onClick: () => void host.invoke("repos:reveal", c.root),
+          },
+          {
+            label: "Copy path",
+            sub: middlePath(c.root),
+            icon: "copy",
+            onClick: () => void copyText(c.root, "Path copied."),
+          },
+        ],
+      },
+    ],
+  });
+}
+
+async function openLocal(c: LocalCopy, nav: SectionNav): Promise<void> {
+  const info = await host.invoke("repo:openPath", c.root);
+  if (info) nav("code");
 }
 
 function userRow(u: SearchUserItem, nav: SectionNav): HTMLElement {
@@ -529,9 +823,15 @@ function userRow(u: SearchUserItem, nav: SectionNav): HTMLElement {
       {
         label: "Profile",
         title: `A quick look at @${u.login}`,
+        ariaLabel: `A quick look at ${u.login}`,
         run: () => openPeek(memberCard({ login: u.login, avatarUrl: u.avatarUrl, htmlUrl: u.htmlUrl })),
       },
-      { label: "GitHub", title: "Open on github.com", run: () => window.open(u.htmlUrl, "_blank", "noopener") },
+      {
+        label: "GitHub",
+        title: "Open on github.com",
+        ariaLabel: `Open ${u.login} on github.com`,
+        run: () => window.open(u.htmlUrl, "_blank", "noopener"),
+      },
     ],
   });
 }
@@ -580,6 +880,7 @@ function codeRow(c: SearchCodeItem, nav: SectionNav): HTMLElement {
       {
         label: "GitHub",
         title: "Open this file on github.com",
+        ariaLabel: `Open ${c.path} in ${c.repoFullName} on github.com`,
         run: () => window.open(c.htmlUrl, "_blank", "noopener"),
       },
     ],
@@ -613,15 +914,37 @@ function statBit(icon: string, n: number): HTMLElement {
   return s;
 }
 
-function rowActions(actions: Array<{ label: string; title: string; run: () => void }>): HTMLElement {
+/**
+ * One hover-revealed control on a result row.
+ *
+ * `menu` makes it the shared ⌄ overflow the repository lists use instead of a
+ * labelled verb. `ariaLabel` is not optional: the cluster is read out row after
+ * row, and four buttons all announcing "Open" name no object at all.
+ */
+type RowAction = {
+  label?: string;
+  title: string;
+  ariaLabel: string;
+  run?: () => void;
+  menu?: () => MenuItem[];
+};
+
+function rowActions(actions: RowAction[]): HTMLElement {
   const acts = el("div", "row-actions");
   for (const a of actions) {
-    const b = el("button", "row-btn");
-    b.textContent = a.label;
+    const b = el("button", "row-btn" + (a.menu ? " lv-menu-btn" : "")) as HTMLButtonElement;
+    if (a.menu) {
+      b.appendChild(glyph("chevron-down"));
+      b.setAttribute("aria-haspopup", "menu");
+    } else {
+      b.textContent = a.label ?? "";
+    }
     b.title = a.title;
+    b.setAttribute("aria-label", a.ariaLabel);
     b.addEventListener("click", (e) => {
       e.stopPropagation();
-      a.run();
+      if (a.menu) openMenu(b, a.menu());
+      else a.run?.();
     });
     acts.appendChild(b);
   }
@@ -651,6 +974,9 @@ function limitedState(retryInMs: number, retry: () => void): HTMLElement {
   const wrap = emptyState("Search is catching its breath", line(secs(retryInMs)), {
     icon: "watch",
   });
+  // A marker only — there is no `.explore-limited` rule and there should not
+  // be one; the card styles itself through emptyState. Kept because the rate
+  // limit is the one empty state a check needs to tell apart from "no results".
   wrap.classList.add("explore-limited");
   const btn = el("button", "btn btn-soft list-empty-action");
   btn.append(glyph("sync"), span("Retry now"));
@@ -688,10 +1014,7 @@ function footer(result: SearchPage<unknown>, more: () => void): HTMLElement {
   if (result.hasMore) {
     const btn = el("button", "btn btn-soft explore-more");
     btn.append(glyph("chevron-down"), span("Load more"));
-    btn.addEventListener("click", () => {
-      btn.setAttribute("disabled", "true");
-      more();
-    });
+    btn.addEventListener("click", () => more());
     f.appendChild(btn);
   }
   return f;

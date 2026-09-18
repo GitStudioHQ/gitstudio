@@ -223,3 +223,55 @@ test("empty and whitespace input render empty", () => {
   assert.equal(renderMarkdown(""), "");
   assert.equal(renderMarkdown("\n\n  \n").trim(), "");
 });
+
+// ── relative images, anchored by the surface ─────────────────────────────────
+//
+// "images dont load and appear broken everywhere, issues, prs, md files."
+// Three breakages stacked: the CSP (fixed in index.html, pinned by a check),
+// and relative srcs resolving against the app's own origin — these pin the
+// resolver that fixes the third.
+
+test("a relative image src is rewritten by the surface's resolver", () => {
+  const html = renderMarkdown("![icon](brand/icon.svg)", 0, {
+    resolveImage: (rel) => `https://raw.githubusercontent.com/o/r/HEAD/${rel}`,
+  });
+  assert.match(html, /src="https:\/\/raw\.githubusercontent\.com\/o\/r\/HEAD\/brand\/icon\.svg"/);
+});
+
+test("an absolute image src is NOT handed to the resolver", () => {
+  const html = renderMarkdown("![badge](https://img.shields.io/badge.svg)", 0, {
+    resolveImage: () => "https://wrong.example/x",
+  });
+  assert.match(html, /src="https:\/\/img\.shields\.io\/badge\.svg"/);
+});
+
+test("a raw <img> tag's relative src is resolved too — same document, same anchor", () => {
+  const html = renderMarkdown('<img src="brand/icon.svg" width="116">', 0, {
+    resolveImage: (rel) => `https://raw.example/${rel}`,
+  });
+  assert.match(html, /src="https:\/\/raw\.example\/brand\/icon\.svg"/);
+});
+
+test("a resolver may mint file: — only a resolver, never the document", () => {
+  const resolved = renderMarkdown("![x](docs/a.png)", 0, {
+    resolveImage: (rel) => `file:///repo/${rel}`,
+  });
+  assert.match(resolved, /src="file:\/\/\/repo\/docs\/a\.png"/);
+  // The document writing file: itself still dies in the filter.
+  const direct = renderMarkdown("![x](file:///etc/passwd)");
+  assert.doesNotMatch(direct, /src="file:/);
+});
+
+test("a resolver that produces javascript: is neutered like any other source", () => {
+  const html = renderMarkdown("![x](a.png)", 0, {
+    resolveImage: () => "javascript:alert(1)",
+  });
+  assert.doesNotMatch(html, /javascript:/);
+});
+
+test("the resolver is cleared after the render, error or not", () => {
+  renderMarkdown("![a](one.png)", 0, { resolveImage: (r) => `https://x.example/${r}` });
+  // A second render WITHOUT a resolver must not inherit the first one's.
+  const plain = renderMarkdown("![b](two.png)");
+  assert.match(plain, /src="two\.png"/);
+});

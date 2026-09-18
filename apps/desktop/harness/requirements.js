@@ -30,6 +30,436 @@ window.__GS_REQUIREMENTS = (() => {
   const r = (met, detail) => ({ met: !!met, detail });
 
   return [
+    // ── The regrouping round, quoted as it arrived ──────────────────────────
+    {
+      id: "tags-and-remote-branches-say-whose-they-are",
+      says: "i cant see who created the tags and remote branches, and wtf is lightweight/annotated tag?",
+      scene: "branches~click:.gh-seg-btn:nth-child(2)",
+      async run() {
+        await settle(2000);
+        const remoteFaces = $$(".ref-row .br-people").filter((p) => p.querySelector("img, .av")).length;
+        const stack = $$(".br-people-stack").find((st) => /Created by/.test(st.title));
+        // Cross to Tags without a new scene.
+        $$(".gh-seg-btn").find((b) => /Tags/.test(text(b) || ""))?.click();
+        await settle(1500);
+        const tagRows = $$(".ref-row");
+        const jargon = tagRows.filter((r) => /annotated|lightweight/i.test(text(r) || "")).length;
+        const tagFaces = tagRows.filter((r) => r.querySelector(".br-people img, .br-people .av")).length;
+        const tagged = $$(".br-people [title]").map((a) => a.title).filter((t) => /Tagged by/.test(t)).length;
+        return r(
+          remoteFaces >= 3 && !!stack && jargon === 0 && tagFaces >= 3 && tagged >= 2,
+          `${remoteFaces} remote rows carry faces (one says "${(stack?.title ?? "").split("\n")[0]}"); ` +
+            `${tagFaces} tag rows carry faces, ${tagged} say "Tagged by …"; ` +
+            `the words annotated/lightweight appear on ${jargon} rows`,
+        );
+      },
+    },
+
+    {
+      id: "gists-and-orgs-live-with-the-github-things",
+      says: "gitsts and orgs go into the github related stuff",
+      scene: "dashboard",
+      async run() {
+        await settle(1200);
+        const rail = $$(".nav-item").map((n) => text(n) || "");
+        const github = rail.indexOf("Inbox");
+        const orgs = rail.indexOf("Organizations");
+        const gists = rail.indexOf("Gists");
+        const dividers = $$(".nav-divider, .nav-group-label").map((d) => text(d) || "");
+        const noAccountGroup = !dividers.some((d) => /account/i.test(d));
+        return r(
+          github >= 0 && orgs > github && gists > github && noAccountGroup,
+          `Organizations and Gists sit inside the GitHub group (${dividers.join(" · ")}); ` +
+            `the Account heading is gone`,
+        );
+      },
+    },
+
+    // ── The alignment-and-people round, quoted as it arrived ────────────────
+    {
+      id: "branches-are-aligned-and-say-whose-they-are",
+      says:
+        "branches section is still a mess, at least allign everything so it looks " +
+        "nice, also it would be cool to see who created the branch and who contributed to it",
+      scene: "branches",
+      async run() {
+        await settle(1800);
+        const rows = $$(".branch-row");
+        const col = (sel) => [
+          ...new Set(
+            rows
+              .map((r) => {
+                const e = r.querySelector(sel);
+                return e && e.offsetParent ? Math.round(e.getBoundingClientRect().left) : null;
+              })
+              .filter((x) => x !== null),
+          ),
+        ].length;
+        const aligned = col(".br-subject-col") === 1 && col(".br-people") === 1 && col(".sec-row-time") === 1;
+        const stack = $$(".br-people-stack").find((st) => /Created by/.test(st.title));
+        const faces = $$(".br-people").filter((p) => p.querySelector("img, .av")).length;
+        return r(
+          aligned && !!stack && faces >= 4,
+          `subject/people/time each hold one column: ${aligned}; ` +
+            `${faces} rows carry faces; a stack says "${(stack?.title ?? "").split("\n")[0]}"`,
+        );
+      },
+    },
+
+    {
+      id: "lists-say-who-made-what",
+      says:
+        "also show who created/assigned for pr's section, and issues and show who created releases",
+      scene: "prs",
+      async run() {
+        await settle(1600);
+        const prRows = $$(".sec-row");
+        const prPeople = prRows.filter((row) => row.querySelectorAll(".sec-row-meta img, .sec-row-meta .av").length > 0).length;
+        // Cross into Releases without a new scene: the rail is right there.
+        $$(".nav-item").find((n) => /^Releases$/.test(text(n) || ""))?.click();
+        await settle(1600);
+        const relFaces = $$(".rel-author").filter((a) => a.querySelector("img, .av")).length;
+        const relNames = $$(".rel-author").map((a) => text(a) || "").filter(Boolean).length;
+        // And Issues.
+        $$(".nav-item").find((n) => /^Issues$/.test(text(n) || ""))?.click();
+        await settle(1600);
+        const issPeople = $$(".sec-row").filter((row) => row.querySelectorAll(".sec-row-meta img, .sec-row-meta .av").length > 0).length;
+        return r(
+          prPeople >= 3 && relFaces >= 3 && issPeople >= 3,
+          `${prPeople} PR rows carry author/assignee faces; ` +
+            `${relFaces} releases show who cut them (${relNames} named); ` +
+            `${issPeople} issue rows carry faces`,
+        );
+      },
+    },
+
+    {
+      id: "search-lives-in-the-app-not-the-rail",
+      says:
+        "account search section needs to find a new home, i dont like it as a standalone " +
+        "section at all it should be integrated in the app itself",
+      scene: "dashboard",
+      async run() {
+        await settle(1400);
+        const rail = $$(".nav-item").map((n) => text(n) || "");
+        const offRail = !rail.some((t) => /^Search$/.test(t));
+        // The ways IN that remain: the topbar field, ⌘K, and Home's box.
+        const topbar = !!$(".topbar-cmdk");
+        const homeBox = !!$(".dash-search input");
+        // And the page itself still answers when reached through one of them.
+        const input = $(".dash-search input");
+        input.value = "gitstudio";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        await settle(1400);
+        const landed = text(".explore-title") === "Search";
+        const carried = ($(".explore-search input") || {}).value === "gitstudio";
+        return r(
+          offRail && topbar && homeBox && landed && carried,
+          `rail has no Search entry: ${offRail}; topbar field: ${topbar}; Home box: ${homeBox}; ` +
+            `Enter landed on the Search page with the query carried: ${landed && carried}`,
+        );
+      },
+    },
+
+    // ── The workbench round of feedback, quoted as it arrived ───────────────
+    {
+      id: "the-home-page-is-a-workbench",
+      says:
+        "i want you to redesign and improve the home page, we can do much better " +
+        "than that and good inspiration would be gitkraken, but we can improve on it as well",
+      scene: "dashboard",
+      async run() {
+        await settle(1600);
+        const search = !!$(".dash-search input");
+        const hero = $(".dash-hero");
+        const heroLines = hero ? [...hero.querySelectorAll(".dash-line")].length : 0;
+        const heroActs = hero
+          ? [...hero.querySelectorAll(".dash-hero-top button")].map((b) => text(b) || "")
+          : [];
+        const cols = $$(".dash-col").length;
+        const repoRows = $$(".dash-col")[0]
+          ? [...$$(".dash-col")[0].querySelectorAll(".dash-line")].length
+          : 0;
+        return r(
+          search && heroLines >= 4 && cols === 2 && repoRows >= 3 &&
+            heroActs.some((t) => /Push|Fetch/.test(t)),
+          `search box: ${search}; hero states ${heroLines} facts with [${heroActs.join(", ")}]; ` +
+            `${cols} columns; ${repoRows} repositories one click away`,
+        );
+      },
+    },
+
+    {
+      id: "repositories-sits-at-the-top-of-the-rail",
+      says: "also move repositories up top",
+      scene: "dashboard",
+      async run() {
+        await settle(1200);
+        const rail = $$(".nav-item").map((n) => text(n) || "");
+        return r(rail[1] === "Repositories", `the rail reads: ${rail.slice(0, 3).join(" · ")}, …`);
+      },
+    },
+
+    {
+      id: "explore-is-a-general-search-with-a-scope-toggle",
+      says:
+        "i want to somehow integrate the repositories and explore in a better way, " +
+        "explore can be a general search with toggle if you want to search repos in " +
+        "github or locally or other thigs",
+      scene: "explore",
+      async run() {
+        await settle(1400);
+        // VISIBLE buttons — a toggle in the DOM with hidden/display:none set is
+        // not a toggle anyone can use, and .click() fires on it all the same.
+        const btns = $$(".explore-scope .gh-seg-btn").filter((b) => b.offsetParent !== null);
+        const scopes = btns.map((b) => text(b) || "");
+        if (scopes.length !== 2) return r(false, `no usable scope toggle (${scopes.join(", ")})`);
+        // Flip to this machine and search LOCALLY — no network, no account.
+        $$(".explore-scope .gh-seg-btn").find((b) => /machine/i.test(text(b) || ""))?.click();
+        await settle(900);
+        const input = $(".explore-search input");
+        input.value = "gitstudio";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await settle(900);
+        const localHits = $$(".sec-row, .explore-row").length;
+        // And the same box searches GitHub when flipped back.
+        $$(".explore-scope .gh-seg-btn").find((b) => /github/i.test(text(b) || ""))?.click();
+        await settle(1200);
+        const kept = ($(".explore-search input") || {}).value === "gitstudio";
+        return r(
+          localHits > 0 && kept,
+          `toggle [${scopes.join(" | ")}]; local search found ${localHits}; ` +
+            `the query survived the flip: ${kept}`,
+        );
+      },
+    },
+
+    // ── The issues round of feedback, quoted as it arrived ──────────────────
+    {
+      id: "back-from-an-issue-returns-to-the-issues-page",
+      says:
+        "clicking the back arrow on issue should return me to the issues page, " +
+        "instead it sends me somewere else, like the last open page e.g. prs",
+      scene: "issues",
+      async run() {
+        await settle(1300);
+        // The exact reproduction: open an issue, visit PRs, come back through
+        // the rail, open another issue, press back.
+        $$(".sec-row")[0]?.click();
+        await settle(900);
+        $$(".nav-item").find((n) => /^Pull Requests$/.test(text(n) || ""))?.click();
+        await settle(1100);
+        $$(".nav-item").find((n) => /^Issues$/.test(text(n) || ""))?.click();
+        await settle(1100);
+        const listShown = !$(".det-back") && $$(".sec-row").length > 0;
+        $$(".sec-row")[1]?.click();
+        await settle(900);
+        const back = $(".det-back");
+        const says = text(back);
+        back?.click();
+        await settle(1000);
+        const landed = text(".nav-item.active");
+        return r(
+          listShown && landed === "Issues" && says === "Issues",
+          `rail return showed the ${listShown ? "list" : "PARKED DETAIL"}; ` +
+            `back said "${says}" and landed on ${landed}`,
+        );
+      },
+    },
+
+    {
+      id: "the-issue-page-has-the-options-github-has",
+      says:
+        "the single page should also be better and is still missing options i reported",
+      scene: "issues~open31",
+      async run() {
+        await settle(1500);
+        const sections = $$(".det-prop-label").map((t) => text(t) || "");
+        const hasDev = sections.some((t) => /development/i.test(t));
+        const hasParts = sections.some((t) => /participant/i.test(t));
+        const more = $$("button").find((b) => b.getAttribute("aria-label") === "More actions");
+        if (!more) return r(false, "no overflow menu — the reported gap");
+        more.click();
+        await settle(300);
+        const items = $$(".dropdown-item").map((t) => text(t) || "");
+        document.body.click();
+        await settle(150);
+        const canLock = items.some((t) => /lock conversation/i.test(t));
+        const canCopy = items.some((t) => /copy link/i.test(t));
+        const canRef = items.some((t) => /reference in new issue/i.test(t));
+        return r(
+          hasDev && hasParts && canLock && canCopy && canRef,
+          `rail: development ${hasDev}, participants ${hasParts}; ` +
+            `menu: lock ${canLock}, copy link ${canCopy}, reference ${canRef}`,
+        );
+      },
+    },
+
+    {
+      id: "the-issues-list-shows-more-and-can-be-reordered",
+      says:
+        "the issues list screen can have improvements in terms of visibility and things we show",
+      scene: "issues",
+      async run() {
+        await settle(1400);
+        const sortNamed = /recently updated/i.test(text(".gh-sort-btn") || "");
+        const milestones = $$(".sec-milestone").length;
+        $(".gh-sort-btn")?.click();
+        await settle(300);
+        const orders = $$(".dropdown-item").length;
+        document.body.click();
+        await settle(150);
+        return r(
+          sortNamed && milestones >= 2 && orders >= 5,
+          `the order is named (${sortNamed}), ${milestones} rows show their milestone, ` +
+            `${orders} orders offered`,
+        );
+      },
+    },
+
+    // ── "this should find the concrete dirs better" ─────────────────────────
+    {
+      id: "nested-folders-of-repos-are-displayed-as-folders",
+      says:
+        "this should find the concrete dirs better, i added the whole developers " +
+        "dir, and ther are plain repos there but there are nested folders with " +
+        "repos which should be better displayed",
+      scene: "repositories",
+      extra: "nested=1",
+      async run() {
+        await settle(1600);
+        // Both halves of the sentence, because it names two things that must
+        // both be true at once: the plain repositories read as plain, and the
+        // nested folders read as folders.
+        const nodes = $$(".repo-folder-head, .repo-group-head, .sec-row");
+        const band = nodes.find((n) =>
+          n.classList.contains("repo-folder-head") &&
+          /Developer/.test(text(n.querySelector(".repo-folder-path")) || ""),
+        );
+        if (!band) return r(false, "the folder he added is not a band on the screen");
+
+        const groups = $$(".repo-group-head").map((h) => text(h.querySelector(".repo-group-name")));
+        const at = nodes.indexOf(band);
+        const firstGroup = nodes.findIndex((n, i) => i > at && n.classList.contains("repo-group-head"));
+        const plain = nodes
+          .slice(at + 1, firstGroup < 0 ? nodes.length : firstGroup)
+          .filter((n) => n.classList.contains("sec-row"));
+
+        // And nothing is left claiming to have come from somewhere else when it
+        // was found inside the folder he added — which was the whole symptom.
+        const elsewhere = nodes.find((n) => /Opened from elsewhere/.test(text(n) || ""));
+        const stranded = elsewhere
+          ? nodes
+              .slice(nodes.indexOf(elsewhere) + 1)
+              .filter((n) => n.classList.contains("sec-row"))
+              .filter((n) => /\/Developer\//.test(n.dataset?.root || "")).length
+          : 0;
+
+        const count = text(band.querySelector(".repo-folder-count"));
+        return r(
+          groups.length >= 5 && plain.length === 6 && stranded === 0 && /27/.test(count || ""),
+          `${groups.length} nested folders shown as folders (${groups.join(", ")}); ` +
+            `${plain.length} plain repositories at the top level; ` +
+            `the band says "${count}"; ` +
+            `${stranded} of them still stranded under "Opened from elsewhere"`,
+        );
+      },
+    },
+
+    // ── The night's second round of feedback, quoted as it arrived ──────────
+    {
+      id: "folders-can-be-added-edited-and-deleted",
+      says:
+        "I CANT EDIT THE FOLDERS OR ADD NEW ONES AS REQUESTED OR EDIT/DELETE " +
+        "FOLDERS TOO LIKE THIS RANDOM GITSTUDIO DIR IN MY ROOT",
+      scene: "repositories",
+      extra: "emptyclonedir=1",
+      async run() {
+        await settle(1400);
+        const add = $$("button").some((b) => /add folder/i.test(text(b) || ""));
+        const heads = $$(".repo-folder-head");
+        const menus = heads.filter((h) => h.querySelector(".repo-folder-menu"));
+        // Every band, the clone folder included — that one is the "random
+        // GitStudio dir" and it used to be the only row with no menu at all.
+        const clone = heads.find((h) => h.querySelector(".repo-folder-chip.is-clone"));
+        if (!clone) return r(false, "no clone folder band on screen");
+        clone.querySelector(".repo-folder-menu")?.click();
+        await settle(300);
+        const labels = $$(".dropdown-item").map((i) => text(i) || "");
+        const canMove = labels.some((l) => /move the clone folder/i.test(l));
+        const del = $$(".dropdown-item").find((i) => /delete this folder/i.test(text(i) || ""));
+        const canDelete = !!del && del.getAttribute("aria-disabled") !== "true";
+        const others = heads.filter((h) => !h.querySelector(".repo-folder-chip.is-clone"));
+        let canUntrack = true;
+        for (const h of others) {
+          h.querySelector(".repo-folder-menu")?.click();
+          await settle(250);
+          if (!$$(".dropdown-item").some((i) => /stop tracking/i.test(text(i) || ""))) {
+            canUntrack = false;
+          }
+        }
+        return r(
+          add && menus.length === heads.length && canMove && canDelete && canUntrack,
+          `add: ${add}; ${menus.length}/${heads.length} folders have a menu; ` +
+            `clone folder can be moved: ${canMove}, deleted: ${canDelete}; ` +
+            `every other folder can be untracked: ${canUntrack}`,
+        );
+      },
+    },
+
+    {
+      id: "destructive-actions-can-be-reversed",
+      says: "ALSO DELETING A REPO AND OTHER ACTIONS HAVE NO REVERSAL OR CTRL Z",
+      scene: "repositories",
+      async run() {
+        await settle(1400);
+        // Take the action, then look for BOTH ways back: the button beside
+        // what happened, and the keystroke every other app on the machine uses.
+        const band = $$(".repo-folder-head").find((h) => (text(h) || "").includes("Code"));
+        if (!band) return r(false, "no folder to act on");
+        band.querySelector(".repo-folder-menu")?.click();
+        await settle(300);
+        $$(".dropdown-item").find((i) => /stop tracking/i.test(text(i) || ""))?.click();
+        await settle(700);
+        const gone = !$$(".repo-folder-head").some((h) => (text(h) || "").includes("Code"));
+        const button = !!$(".toast-action");
+        (document.activeElement || document.body).dispatchEvent(
+          new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true, cancelable: true }),
+        );
+        await settle(900);
+        const back = $$(".repo-folder-head").some((h) => (text(h) || "").includes("Code"));
+        return r(
+          gone && button && back,
+          `the action took effect: ${gone}; an Undo button was offered: ${button}; ` +
+            `⌘Z reversed it: ${back}`,
+        );
+      },
+    },
+
+    {
+      // "THIS HP RANDOM THING" — an owner with no avatar image showed the
+      // initials of the URL its picture would have come from.
+      id: "an-avatar-never-invents-initials",
+      says: "THIS HAS LOTS OF VISUAL BUGS, INCLUDING THIS HP RANDOM THING",
+      scene: "repositories~text:On%20GitHub",
+      async run() {
+        await settle(1600);
+        const bad = [];
+        for (const a of $$(".avatar, .gh-avatar")) {
+          const t = (a.textContent || "").trim();
+          if (!t) continue; // a real image, nothing to get wrong
+          const row = a.closest(".sec-row, .repo-folder-head");
+          const owner = (text(row?.querySelector(".sec-row-title")) || "").split("/")[0];
+          // Whatever the fallback draws must come from the OWNER's name.
+          if (owner && !owner.toLowerCase().startsWith(t[0].toLowerCase())) {
+            bad.push(`"${t}" for ${owner}`);
+          }
+        }
+        return r(!bad.length, bad.length ? `initials that match nothing: ${bad.join(", ")}` : "every fallback tile reads from its owner's login");
+      },
+    },
+
     // ── "the main/first page can be like a dashboard" ───────────────────────
     {
       id: "dashboard-is-the-first-page",
@@ -270,12 +700,23 @@ window.__GS_REQUIREMENTS = (() => {
       extra: "norepo=1",
       async run() {
         await settle(1500);
-        const rows = $$(".recent-card").map((r) => text(r) || "");
         // `design` is in the fixture's clone folder and has never been opened,
         // so it is absent from recents and present only if the screen lists
         // what the app DISCOVERED.
-        const discovered = rows.some((t) => /design/.test(t));
-        return r(discovered, `first screen lists ${rows.length}: ${rows.map((t) => t.split("/")[0]).join(", ")}`);
+        //
+        // Asked of whatever renders it. The predicate used to look for
+        // `.recent-card` — the welcome screen's class, and that screen is gone
+        // — so it was reporting on a selector rather than on the clause. What
+        // the sentence asks is that the repo be listed AND openable, so both
+        // are asked here.
+        const listed = $$("button, [role=button]").filter((b) => /design/.test(text(b) || ""));
+        const openable = listed.some((b) => !b.disabled && b.offsetParent !== null);
+        return r(
+          listed.length > 0 && openable,
+          listed.length
+            ? `a repository the app discovered on its own is on the first screen and clickable (${listed.length} control${listed.length === 1 ? "" : "s"})`
+            : "nothing on the first screen offers a repository that was never opened here",
+        );
       },
     },
 
@@ -424,6 +865,251 @@ window.__GS_REQUIREMENTS = (() => {
         return r(
           has(/merge commit/) && has(/squash/) && has(/rebase/),
           menu.length ? `merge methods: ${menu.join(" | ")}` : "merge offers no method choice",
+        );
+      },
+    },
+
+    // ── The editors / icon / Assistant round, quoted as it arrived ──────────
+    {
+      id: "the-code-section-and-the-readme-line-up",
+      says: "improve the code section and readme allignment",
+      scene: "code",
+      async run() {
+        await settle(1500);
+        const head = $(".code-head");
+        const card = $(".code-readme-card");
+        const md = $(".code-md");
+        if (!head || !card || !md) return r(false, "no Code header, README card or README body on screen");
+        // The header's CONTENT edges (its padding is the column's inset), not
+        // its first child — at the repo root the breadcrumb is hidden.
+        const hb = box(head);
+        const hp = css(head, "padding-left", "padding-right");
+        const h1 = { x: hb.x + parseFloat(hp["padding-left"]), w: 0 };
+        const h2 = { x: hb.x + hb.w - parseFloat(hp["padding-right"]), w: 0 };
+        const c = box(card);
+        const m = box(md);
+        const leftOk = Math.abs(h1.x - c.x) <= 1;
+        const rightOk = Math.abs(h2.x + h2.w - (c.x + c.w)) <= 1;
+        const fills = c.w - m.w <= 4;
+        const rule = md.querySelector("h1, h2");
+        const rw = rule ? box(rule).w : 0;
+        const ruleOk = rule ? m.w - rw <= 72 : true; // the heading rule runs the body's width, bar its padding
+        return r(
+          leftOk && rightOk && fills && ruleOk,
+          `header starts at ${h1.x} vs the card's ${c.x}, ends at ${h2.x + h2.w} vs ${c.x + c.w}; ` +
+            `README body ${m.w}px wide in a ${c.w}px card${rule ? `, its heading rule ${rw}px` : ""}`,
+        );
+      },
+    },
+
+    {
+      id: "open-the-repo-with-any-editor-installed",
+      says: "add buttons to open the repo with any editor installed (configurable in settings which editor should show up)",
+      scene: "code",
+      async run() {
+        await settle(800);
+        // The control moved to the TOP BAR beside Push (his later instruction:
+        // "show that in the top bar next to the push button instead of the code
+        // section"). The clause is about having the buttons, not about which
+        // screen carries them, so `says` stands and only the lookup moves.
+        const btn = $(".topbar-openin");
+        if (!btn) return r(false, "there is no Open in control in the top bar");
+        btn.querySelector(".openin-more").click();
+        await settle(300);
+        const rows = $$(".dropdown .dropdown-item").map((x) => text(x) || "");
+        const stop = rows.findIndex((x) => /^(Reveal in Finder|Show in)/.test(x));
+        const editors = (stop < 0 ? rows : rows.slice(0, stop)).filter(Boolean);
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await settle(200);
+        // Configurable: Settings carries the card — a tick per editor, one default.
+        const rail = $('[data-view="settings"]');
+        if (rail) rail.click();
+        await settle(1200);
+        const card = $(".editors-card");
+        const ticks = card ? $$('.editors-row input[type="checkbox"]', card).length : 0;
+        // The favourite is a pressed star now, not a tag.
+        const def = card ? $$(".editors-fav.is-on", card).length : 0;
+        return r(
+          editors.length >= 3 && !!card && ticks === editors.length && def === 1,
+          `Open in offers ${editors.length} editors (${editors.join(", ")}); ` +
+            (card ? `Settings ▸ Editors lists ${ticks} with a tick each and ${def} marked as the favourite` : "Settings has no Editors card"),
+        );
+      },
+    },
+
+    {
+      id: "the-app-mark-is-the-extension-mark-in-colour",
+      says: "improve this logo in the app to match the one in vscode and cursor but ofc coloured version",
+      scene: "dashboard",
+      async run() {
+        await settle(600);
+        const svg = $(".topbar-mark svg");
+        if (!svg) return r(false, "no mark in the top bar");
+        const norm = (d) => (d || "").replace(/\s+/g, " ").trim();
+        const top = norm(svg.querySelector(".bm-face-top")?.getAttribute("d"));
+        const lanes = norm(svg.querySelector(".bm-lane")?.getAttribute("d"));
+        const faces = svg.querySelectorAll(".bm-face").length;
+        const nodes = svg.querySelectorAll(".bm-node").length;
+        // The extension's activity-bar geometry (apps/extension/media/activitybar.svg).
+        const sameTop = top === "M12 2.5 L20.2 7.25 L12 12 L3.8 7.25 Z";
+        const sameLanes = lanes === "M12 12 L3.8 7.25 M12 12 L20.2 7.25 M12 12 L12 21.5";
+        const lane = getComputedStyle(svg.querySelector(".bm-lane")).stroke;
+        const face = getComputedStyle(svg.querySelector(".bm-face-top")).fill;
+        const grey = /^rgba?\((\d+), \1, \1[,)]/.test(lane);
+        return r(
+          sameTop && sameLanes && faces === 3 && nodes === 4 && lane !== face && !grey,
+          `${faces} faces, ${nodes} nodes; top face "${top}"${sameTop ? " (the extension's)" : ""}; ` +
+            `lanes "${lanes}"${sameLanes ? " (the extension's)" : ""}; lanes stroke ${lane}, faces fill ${face}`,
+        );
+      },
+    },
+
+    {
+      id: "the-assistant-screen-and-its-functionality-got-attention",
+      says: "imrpve the assisstent screen and functionality because we didnt touch on this one and diserves attention",
+      scene: "assistant~click:.topbar-assistant",
+      extra: "ai=1&chat=1",
+      async run() {
+        await settle(1200);
+        const title = text(".assistant-chat-title") || "";
+        const copy = $$(".assistant-transcript .assistant-copy").length;
+        const context = text(".assistant-context") || "";
+        const hint = text(".assistant-hint") || "";
+        const chips = $$(".assistant-chip").length;
+        const hist = $$(".assistant-iconbtn").find((b) => /history/i.test(b.title));
+        if (hist) hist.click();
+        await settle(300);
+        const canDelete = $$(".dropdown .dropdown-item").some((x) => /Delete this chat/.test(text(x) || ""));
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await settle(200);
+        // A reading column: the answer is inset from both edges of a wide pane.
+        const t = box(".assistant-transcript");
+        const turn = box(".assistant-transcript .assistant-turn");
+        const inset = t && turn ? Math.min(turn.x - t.x, t.x + t.w - (turn.x + turn.w)) : 0;
+        return r(
+          !!title && copy >= 1 && /gitstudio/.test(context) && /Enter to send/.test(hint) && chips >= 6 && canDelete && inset > 40,
+          `the header names "${title}"; ${copy} copy button(s); the composer says "${context}" and "${hint}"; ` +
+            `${chips} quick actions; the history menu ${canDelete ? "can" : "cannot"} delete the chat; answer column inset ${inset}px`,
+        );
+      },
+    },
+    {
+      id: "the-app-says-which-repo-you-are-browsing-and-which-you-have",
+      says:
+        "we will have to kind of show in the app which repo you are browsing and " +
+        "wich you have on the machine and ofc the capabilities change accordingly",
+      scene: "explore~type:git~key:Enter~text:libgit2/libgit2",
+      async run() {
+        await settle(2000);
+        // The page names the repository you are reading, and which world it is in.
+        const crumb = text(".det-crumb") || "";
+        const tag = text(".det-topbar .gs-where") || "";
+        const loc = text(".det-loc") || "";
+        // The bar names the OTHER one, the one its controls act on, separately.
+        const browsed = text(".topbar-where-name") || "";
+        const working = text(".topbar-switch .switch-name") || "";
+        const clause = $(".topbar-working")?.offsetParent !== null;
+        // The capability is labelled, not taken away: the six local
+        // destinations stay reachable while you read someone else's code.
+        // "graph" IS the Commits tab — its label and its view id differ.
+        const repoTabs = ["changes", "graph", "branches", "compare", "rebase", "code"];
+        const live = repoTabs.filter((v) => {
+          const n = $(`.nav-item[data-view="${v}"]`);
+          return n && !n.classList.contains("is-unavailable") && !n.hasAttribute("disabled");
+        }).length;
+        // And the page offers the one thing you CAN do, and no write verb.
+        const verbs = /\b(push|pull|fetch|stage|discard|stash|rebase|merge|commit)\b/i;
+        const writes = $$(".det-view button").filter((b) => verbs.test(text(b) || "")).length;
+        const clone = $$(".det-view button").some((b) => /clone/i.test(text(b) || ""));
+        return r(
+          crumb === "libgit2/libgit2" &&
+            tag === "on GitHub" &&
+            /nothing of this is on your disk/i.test(loc) &&
+            browsed === "libgit2/libgit2" &&
+            working === "gitstudio" &&
+            browsed !== working &&
+            clause &&
+            live === repoTabs.length &&
+            writes === 0 &&
+            clone,
+          `the page reads "${crumb}" and marks it "${tag}"; the bar reads "${browsed}" ` +
+            `working in "${working}"${clause ? " with the joining clause shown" : ""}; ` +
+            `${live}/${repoTabs.length} local destinations still reachable; ${writes} write verbs on the page; ` +
+            `${clone ? "a clone is offered" : "no clone offered"}`,
+        );
+      },
+    },
+    {
+      id: "single-item-pages-use-the-full-screen",
+      says:
+        "single pr, issue, action, release, org repo, gist, branch and assistent are " +
+        "not responsive and are not utilising the full screen size when app is full screen",
+      scene: "prs~open106",
+      width: 2560,
+      async run() {
+        await settle(1800);
+        const sc = $(".det-scroll");
+        const main = $(".det-main");
+        if (!sc || !main) return r(false, "the pull request page did not render a detail body");
+        const sb = sc.getBoundingClientRect();
+        const mb = main.getBoundingClientRect();
+        // The column has to GROW with the window, and the pane must not be left
+        // mostly empty beside it. Running text keeps its own measure inside.
+        const prose = $$(".gh-body-md").map((e) => Math.round(e.getBoundingClientRect().width));
+        const widest = prose.length ? Math.max(...prose) : 0;
+        const col = Math.round(mb.width);
+        const pane = Math.round(sb.width);
+        return r(
+          col >= 1400 && col / pane > 0.6 && (!widest || widest <= 900),
+          `the reading column is ${col}px of a ${pane}px pane` +
+            (widest ? `, and the widest rendered markdown block is ${widest}px` : ""),
+        );
+      },
+    },
+    {
+      id: "light-mode-is-readable",
+      says: "ok now we just have to nail the light mode",
+      scene: "issues",
+      theme: "light",
+      async run() {
+        await settle(1500);
+        // The three tokens the whole light theme leans on. A border within
+        // 1.15:1 of the page is not a hairline and a hover within 1.05:1 is not
+        // a hover — both were true, on every screen, before this pass.
+        const rgb = (c) => {
+          const m = String(c).trim();
+          if (m.startsWith("#")) {
+            const h = m.slice(1);
+            return [0, 2, 4].map((i) => parseInt(h.substr(i, 2), 16));
+          }
+          const n = m.match(/[0-9.]+/g) || [0, 0, 0];
+          return [Number(n[0]), Number(n[1]), Number(n[2])];
+        };
+        const lum = (c) => {
+          const a = rgb(c).map((v) => {
+            v /= 255;
+            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+          });
+          return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+        };
+        const ratio = (a, b) => {
+          const l1 = lum(a);
+          const l2 = lum(b);
+          return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        };
+        const cs = getComputedStyle(document.body);
+        const g = (n) => cs.getPropertyValue(n).trim();
+        const page = cs.backgroundColor;
+        const border = ratio(g("--app-border"), page);
+        const hover = ratio(g("--app-hover"), "#ffffff");
+        // …and the rail's group label, which was dimmed under the minimum on
+        // every screen in BOTH themes.
+        const label = $(".nav-divider-label");
+        const labelOpacity = label ? Number(getComputedStyle(label).opacity) : 0;
+        return r(
+          border >= 1.3 && hover >= 1.2 && labelOpacity >= 0.99,
+          `border ${border.toFixed(2)}:1 against the page, hover ${hover.toFixed(2)}:1 on a white row, ` +
+            `rail label opacity ${labelOpacity}`,
         );
       },
     },

@@ -15,6 +15,7 @@ import { highlightProse } from "./highlight";
 import { parseGitHubItemUrl } from "./ui";
 import { openExternalItem } from "./views/notifications";
 import type { SectionNav } from "./views/common";
+import { HAS_ISSUE_REF, splitIssueRefs } from "../shared/issueRefs";
 
 /** Wire a rendered-markdown container — ONCE, on a stable pane. A
  *  MutationObserver keeps re-rendered bodies linkified, so callers never
@@ -86,8 +87,10 @@ export function wireProseNav(
       return;
     }
 
-    // Bare #123 spans linkified below carry just the number.
+    // Spans linkified below carry the number, and `owner/repo` when the
+    // reference named one.
     const refNum = a.dataset.ghref ? Number(a.dataset.ghref) : undefined;
+    const refQualified = a.dataset.ghrepo;
     const hit = refNum ? undefined : parseGitHubItemUrl(href);
     // Commit links land in the Commits view when they're the open repo's.
     const commit = hit || refNum
@@ -110,8 +113,16 @@ export function wireProseNav(
         // #123 means "the repo this prose belongs to" — the browsed remote
         // repo when refRepo is set, otherwise the open repo. GitHub's issues
         // namespace covers PRs too, so Issues is always a safe landing.
-        const home = refRepo ?? status.repo;
-        if (!refRepo && nav && open) {
+        //
+        // owner/repo#123 says which one, and it is usually NOT this one — so it
+        // overrides both, and only lands in the app's own Issues page when it
+        // happens to name the repository already open.
+        const qual = refQualified
+          ? { owner: refQualified.split("/")[0], repo: refQualified.split("/")[1] }
+          : undefined;
+        const home = qual ?? refRepo ?? status.repo;
+        const qualIsOpen = !!refQualified && refQualified.toLowerCase() === open;
+        if ((!refQualified || qualIsOpen) && !refRepo && nav && open) {
           nav("issues", { number: refNum });
         } else if (home && status.connected) {
           openExternalItem({
@@ -161,12 +172,15 @@ export function resolveRelative(baseDir: string, rel: string): string {
   return parts.join("/");
 }
 
-/** Turn bare `#123` text into clickable references — outside code, pre, and
- *  existing links. GitHub does this server-side; we do it at wire time. */
+/** Turn `#123` and `owner/repo#123` text into clickable references — outside
+ *  code, pre, and existing links. GitHub does this server-side; we do it at
+ *  wire time. The qualified form is the one that most needs saying, because it
+ *  points at a different project, and it used to render as plain grey text
+ *  beside a bare number that WAS a link. */
 function linkifyIssueRefs(container: HTMLElement): void {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
-      if (!/(^|\s)#\d+/.test(node.textContent ?? "")) return NodeFilter.FILTER_REJECT;
+      if (!HAS_ISSUE_REF.test(node.textContent ?? "")) return NodeFilter.FILTER_REJECT;
       for (let p = node.parentElement; p && p !== container; p = p.parentElement) {
         const tag = p.tagName;
         if (tag === "A" || tag === "CODE" || tag === "PRE" || tag === "KBD") {
@@ -179,20 +193,22 @@ function linkifyIssueRefs(container: HTMLElement): void {
   const targets: Text[] = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) targets.push(n as Text);
   for (const text of targets) {
-    const parts = (text.textContent ?? "").split(/(^#\d+\b|(?<=\s)#\d+\b)/);
-    if (parts.length < 2) continue;
+    const parts = splitIssueRefs(text.textContent ?? "");
+    if (!parts.some((p) => p.ref)) continue;
     const frag = document.createDocumentFragment();
     for (const part of parts) {
-      const m = /^#(\d+)$/.exec(part);
-      if (m) {
+      if (part.ref) {
         const a = document.createElement("a");
         a.href = "#";
-        a.dataset.ghref = m[1];
-        a.textContent = part;
-        a.title = `Open ${part} in GitStudio`;
+        a.dataset.ghref = String(part.ref.number);
+        if (part.ref.repo) a.dataset.ghrepo = part.ref.repo;
+        a.textContent = part.text;
+        a.title = part.ref.repo
+          ? `Open ${part.text} — in ${part.ref.repo}, not this repository`
+          : `Open ${part.text} in GitStudio`;
         frag.appendChild(a);
-      } else if (part) {
-        frag.appendChild(document.createTextNode(part));
+      } else {
+        frag.appendChild(document.createTextNode(part.text));
       }
     }
     text.replaceWith(frag);

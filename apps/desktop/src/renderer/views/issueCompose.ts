@@ -116,7 +116,9 @@ export async function renderIssueCompose(
   }
 
   const initTitle = existingPr?.title ?? existing?.issue.title ?? "";
-  const initBody = existingPr?.body ?? existing?.issue.body ?? "";
+  // A seed only fills a NEW composer: an edit's initial text is the issue's
+  // own, and overwriting it with a reference line would eat the description.
+  const initBody = existingPr?.body ?? existing?.issue.body ?? target?.seedBody ?? "";
   // Editing an issue changes its TEXT. Labels, assignees and the milestone are
   // separate GitHub requests and the issue's own page already owns them — so
   // the sidebar is offered while composing (where it saves a round trip and a
@@ -211,7 +213,7 @@ export async function renderIssueCompose(
   };
 
   const bar = el("div", "isc-actions");
-  const cancel = el("button", "mini-btn") as HTMLButtonElement;
+  const cancel = el("button", "btn") as HTMLButtonElement;
   cancel.textContent = "Cancel";
   cancel.addEventListener("click", () => nav(section, editNo ? { number: editNo } : { list: true }));
   const submitBtn = el("button", "btn btn-primary") as HTMLButtonElement;

@@ -22,6 +22,14 @@ interface RawSearchIssue {
   updated_at: string;
   comments?: number;
   user?: { login?: string } | null;
+  /** ".../repos/{owner}/{repo}" — the only place a search hit names its repo. */
+  repository_url?: string;
+}
+
+/** "{owner}/{name}" out of a search hit's repository_url, or undefined. */
+function repoOf(it: RawSearchIssue): { owner: string; name: string } | undefined {
+  const m = /\/repos\/([^/]+)\/([^/]+)$/.exec(it.repository_url ?? "");
+  return m ? { owner: m[1], name: m[2] } : undefined;
 }
 
 async function search(client: GitHubClient, q: string): Promise<RawSearchIssue[]> {
@@ -34,29 +42,51 @@ async function search(client: GitHubClient, q: string): Promise<RawSearchIssue[]
 
 export async function myWork(
   client: GitHubClient,
-  owner: string,
-  repo: string,
+  owner: string | undefined,
+  repo: string | undefined,
 ): Promise<MyWorkItem[]> {
-  const scope = `repo:${owner}/${repo} is:open`;
+  // No owner/repo = the CROSS-REPO answer, for Home: everything waiting on
+  // you anywhere, not just in the repository that happens to be open. The
+  // qualifier simply drops out of the search.
+  const scope = owner && repo ? `repo:${owner}/${repo} is:open` : `is:open`;
+  // Best-effort per bucket — one failing search must not blank the page. But
+  // ALL FOUR failing is not "you have no work": a rate-limited or offline
+  // client used to resolve [] here, and Home then said a green "Nothing
+  // waiting on you" about a question it never got answered. Total failure
+  // throws, and the caller says "couldn't reach GitHub" like it means it.
+  let failures = 0;
+  const soft = (q: string): Promise<RawSearchIssue[]> =>
+    search(client, q).catch(() => {
+      failures++;
+      return [] as RawSearchIssue[];
+    });
   const [rev, assigned, mine, mentions] = await Promise.all([
-    search(client, `${scope} is:pr review-requested:@me`).catch(() => [] as RawSearchIssue[]),
-    search(client, `${scope} assignee:@me`).catch(() => [] as RawSearchIssue[]),
-    search(client, `${scope} is:pr author:@me`).catch(() => [] as RawSearchIssue[]),
-    search(client, `${scope} mentions:@me -author:@me`).catch(() => [] as RawSearchIssue[]),
+    soft(`${scope} is:pr review-requested:@me`),
+    soft(`${scope} assignee:@me`),
+    soft(`${scope} is:pr author:@me`),
+    soft(`${scope} mentions:@me -author:@me`),
   ]);
+  if (failures === 4) {
+    throw new Error("GitHub didn't answer any of the work searches.");
+  }
 
   const out: MyWorkItem[] = [];
   const seen = new Set<string>();
   const push = (kind: MyWorkItem["kind"], items: RawSearchIssue[]): void => {
     for (const it of items) {
       const type: MyWorkItem["type"] = it.pull_request ? "pr" : "issue";
-      const key = `${type}#${it.number}`;
+      const where = repoOf(it);
+      // The repo is part of the identity. Cross-repo, issue #31 here and
+      // issue #31 somewhere else are different items — a number-only key
+      // silently dropped one of them.
+      const key = `${where ? `${where.owner}/${where.name}` : ""}${type}#${it.number}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push({
         kind,
         type,
         number: it.number,
+        ...(where ? { repo: where } : {}),
         title: it.title,
         state: it.state,
         draft: !!it.draft,

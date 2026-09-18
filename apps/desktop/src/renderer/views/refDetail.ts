@@ -94,8 +94,10 @@ export async function renderRefDetail(
   const facts = el("div", "rd-facts");
   facts.appendChild(span(kindLabel(kind), "rd-kind"));
   if (ref?.objectType === "tag") {
-    const a = span("annotated", "ab-pill annotated");
-    a.title = "This tag is its own object, with a tagger and a message";
+    // Said in words, not git's own jargon — "annotated" answered nothing on
+    // the list rows and answers nothing here either.
+    const a = span("has its own message", "ab-pill annotated");
+    a.title = "An annotated tag: it records who tagged, when, and why";
     facts.appendChild(a);
   }
   if (ref?.isCurrent) facts.appendChild(span("checked out", "ab-pill current"));
@@ -155,7 +157,7 @@ export async function renderRefDetail(
     act("Drop…", "trash", `Delete ${name} permanently`, () => void stashAct("drop"));
   }
   if (sha) {
-    act("Show in the graph", "git-commit", "Find this commit in the graph", () =>
+    act("View in Commits", "git-commit", "Reveal this commit in the Commits view", () =>
       nav("graph", { sha }));
   }
 

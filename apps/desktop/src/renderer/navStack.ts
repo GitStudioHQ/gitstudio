@@ -87,6 +87,10 @@ export function setPageTarget(patch: Record<string, unknown>): void {
 
 /** Human name for a view id, for a back button with nothing better to say. */
 const VIEW_LABELS: Record<string, string> = {
+  // Home IS a place: a detail reached from a dashboard door pops back to it,
+  // and a back button with no name for it fell back to naming the LIST — so
+  // it said "Pull requests" and landed on Home, a button that lies.
+  dashboard: "Home",
   changes: "Changes",
   graph: "Commits",
   branches: "Branches",
@@ -94,7 +98,7 @@ const VIEW_LABELS: Record<string, string> = {
   compare: "Compare",
   rebase: "Rebase",
   issues: "Issues",
-  prs: "Pull requests",
+  prs: "Pull Requests",
   actions: "Actions",
   releases: "Releases",
   orgs: "Organizations",
@@ -102,7 +106,7 @@ const VIEW_LABELS: Record<string, string> = {
   gists: "Gists",
   notifications: "Inbox",
   mywork: "My Work",
-  explore: "Explore",
+  explore: "Search",
   settings: "Settings",
   assistant: "Assistant",
   commit: "Commit",

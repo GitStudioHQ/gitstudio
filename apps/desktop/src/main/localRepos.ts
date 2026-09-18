@@ -15,13 +15,15 @@
 // under plain node in tests.
 
 import { execFile } from "node:child_process";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { parseGitHubRemote } from "./githubRemote";
-import type { LocalCopy } from "../shared/ipc";
+import { MAX_LOCAL_REPOS } from "../shared/repoGrouping";
+import type { LocalCopy, LocalRepoStatus } from "../shared/ipc";
 
-/** Don't shell out to git hundreds of times for a huge folder. */
-const MAX_ENTRIES = 300;
+/** Don't shell out to git hundreds of times for a huge folder. Shared, so the
+ *  views that render the list can say when it is a prefix rather than all. */
+const MAX_ENTRIES = MAX_LOCAL_REPOS;
 /** How many directory levels of a tracked folder are searched for repos.
  *  Two: ~/work/acme/website is the ordinary shape of a machine. */
 export const SCAN_DEPTH = 2;
@@ -68,6 +70,27 @@ function originOf(root: string): Promise<string | undefined> {
 
 /** Two paths that name the same place, compared the way the rest of this
  *  module does (resolve only — realpath needs I/O and a missing path has none). */
+/**
+ * Which tracked folders are worth showing.
+ *
+ * The DEFAULT clone folder is a promise about where the next clone will land,
+ * not a directory that has to exist — the app creates it when it first needs
+ * it. Before that it is nothing on disk, and listing it as a band reading
+ * "0 repositories · missing" is both noise and, once the folder menu could
+ * delete it, the reason deleting it looked like it had not worked.
+ *
+ * A clone folder somebody CHOSE is kept even when it goes missing: they meant
+ * it to be there, and its absence is news.
+ */
+export function visibleRepoFolders<
+  T extends { isDefaultCloneDir: boolean; missing: boolean; containedCount: number },
+>(folders: T[]): T[] {
+  // `containedCount`, never `repoCount`. A folder whose repositories all sit
+  // one level down has repoCount 0 and is emphatically not empty; hiding it on
+  // that basis would take a folder full of work off the screen.
+  return folders.filter((f) => !(f.isDefaultCloneDir && f.missing && f.containedCount === 0));
+}
+
 export function samePath(a: string, b: string): boolean {
   return resolve(a) === resolve(b);
 }
@@ -83,7 +106,7 @@ export function isInside(parent: string, child: string): boolean {
  *  Load-bearing on macOS, where /var is a symlink to /private/var: comparing a
  *  resolved repo path against an UNresolved clone dir marks every managed
  *  clone as unmanaged (and so undeletable). */
-async function realOrResolve(p: string): Promise<string> {
+export async function realOrResolve(p: string): Promise<string> {
   try {
     return await realpath(p);
   } catch {
@@ -97,6 +120,102 @@ async function realOrResolve(p: string): Promise<string> {
       return resolve(p);
     }
   }
+}
+
+/**
+ * The main repository a linked worktree belongs to, from its gitfile.
+ *
+ * A worktree's `.git` is a FILE reading `gitdir: <main>/.git/worktrees/<name>`.
+ * Pure so the parse is testable; returns undefined for anything else a gitfile
+ * can say (a submodule's gitdir points into the parent's `.git/modules/`, and
+ * that is a different thing — a submodule IS its own repository).
+ */
+export function worktreeMainRoot(gitfile: string): string | undefined {
+  const m = /^gitdir:\s*(.+?)\s*$/m.exec(gitfile);
+  if (!m) return undefined;
+  // git writes FORWARD slashes into gitfiles on every platform (and Windows
+  // tools sometimes rewrite them) — a needle built from path.sep alone is
+  // dead on one OS or the other, so both separators are accepted.
+  const i = Math.max(
+    m[1].lastIndexOf("/.git/worktrees/"),
+    m[1].lastIndexOf("\\.git\\worktrees\\"),
+  );
+  return i > 0 ? m[1].slice(0, i) : undefined;
+}
+
+/**
+ * One repo's working-tree signals, parsed from `git status --porcelain=v2
+ * --branch`. Pure — the shape of porcelain v2 is a contract worth pinning:
+ *
+ *   # branch.head main            (or "(detached)")
+ *   # branch.ab +2 -1             (absent entirely without an upstream)
+ *   1 .M ... path                 (changed)     2 R. ... path (renamed)
+ *   u UU ... path                 (conflicted)  ? path        (untracked)
+ */
+export function parsePorcelainV2(out: string): LocalRepoStatus {
+  let branch = "";
+  let ahead = 0;
+  let behind = 0;
+  let dirty = 0;
+  for (const line of out.split("\n")) {
+    if (line.startsWith("# branch.head ")) {
+      const h = line.slice("# branch.head ".length).trim();
+      branch = h === "(detached)" ? "" : h;
+    } else if (line.startsWith("# branch.ab ")) {
+      const m = /\+(\d+) -(\d+)/.exec(line);
+      if (m) {
+        ahead = Number(m[1]);
+        behind = Number(m[2]);
+      }
+    } else if (/^[12u?] /.test(line)) {
+      dirty++;
+    }
+  }
+  return { branch, dirty, ahead, behind };
+}
+
+/** The signals for one root, or undefined when git can't answer (missing,
+ *  not a repo, or slower than the timeout — a Home row must never wait). */
+export function statusOf(root: string): Promise<LocalRepoStatus | undefined> {
+  return new Promise((res) => {
+    execFile(
+      "git",
+      ["-C", root, "--no-optional-locks", "status", "--porcelain=v2", "--branch"],
+      { timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+      (err, stdout) => res(err ? undefined : parsePorcelainV2(stdout)),
+    );
+  });
+}
+
+/** How many roots one localStatus request will probe — the Home card shows 8;
+ *  anything asking for more is a bug wearing a loop. */
+export const STATUS_ROOTS_CAP = 16;
+
+/**
+ * The status TTL lives HERE, not in the renderer's SWR cache — the file
+ * watcher's refreshAll() busts that cache on every save, which turned "at
+ * most one probe per 10s" into eight git subprocesses per keystroke-save
+ * while Home was open. Main's clock is the one the busts can't reach.
+ */
+const STATUS_TTL_MS = 10_000;
+let statusCache: { at: number; key: string; value: Record<string, LocalRepoStatus | undefined> } | undefined;
+
+export async function localStatuses(
+  roots: string[],
+  now: () => number = () => Date.now(),
+): Promise<Record<string, LocalRepoStatus | undefined>> {
+  const take = roots.slice(0, STATUS_ROOTS_CAP);
+  const key = JSON.stringify(take);
+  if (statusCache && statusCache.key === key && now() - statusCache.at < STATUS_TTL_MS) {
+    return statusCache.value;
+  }
+  const answers = await mapLimit(take, 4, statusOf);
+  const out: Record<string, LocalRepoStatus | undefined> = {};
+  take.forEach((r, i) => {
+    out[r] = answers[i];
+  });
+  statusCache = { at: now(), key, value: out };
+  return out;
 }
 
 /** A directory that is (or contains) a git repo — `.git` may be a dir or a file
@@ -123,6 +242,14 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
   });
   await Promise.all(workers);
   return out;
+}
+
+/** Whether the most recent UNCACHED scan hit the MAX_ENTRIES cap. Module
+ *  state on purpose: one main process, one scan shape — and threading a flag
+ *  through the array-shaped cache and IPC would cost every caller its type. */
+let lastScanTruncated = false;
+export function wasLastScanTruncated(): boolean {
+  return lastScanTruncated;
 }
 
 export class LocalRepoScanner {
@@ -198,7 +325,13 @@ export async function scanLocalCopies(input: ScanInput): Promise<LocalCopy[]> {
   managedRoots.sort((a, b) => basename(a).localeCompare(basename(b)));
 
   // Recents first (they carry the app's own ordering), then managed folders.
-  const candidates = [...input.recents, ...managedRoots].slice(0, MAX_ENTRIES);
+  const all = [...input.recents, ...managedRoots];
+  const candidates = all.slice(0, MAX_ENTRIES);
+  // The truth the LIST cannot carry: dedupe and missing-path merging pull the
+  // final length back under the cap, so `copies.length >= 300` misses real
+  // truncation on exactly the machines the cap note was written for. Recorded
+  // here, read over its own channel.
+  lastScanTruncated = all.length > MAX_ENTRIES || managedRoots.length >= MAX_ENTRIES;
 
   // Dedupe by REAL path: a recent entry and a managed folder can be the same
   // repo reached through a symlink, and showing it twice with two different
@@ -235,8 +368,22 @@ export async function scanLocalCopies(input: ScanInput): Promise<LocalCopy[]> {
   const origins = await mapLimit(list, PROBE_CONCURRENCY, (c) =>
     c.missing ? Promise.resolve(undefined) : originOf(c.root),
   );
+  // A linked worktree is a CHECKOUT of a repository, not another repository —
+  // FlexiMeal read "5" while holding three repos and two worktrees of one of
+  // them. Mark them so the counts can skip them and the rows can say so.
+  const worktrees = await mapLimit(list, PROBE_CONCURRENCY, async (c) => {
+    if (c.missing) return undefined;
+    try {
+      const st = await stat(join(c.root, ".git"));
+      if (!st.isFile()) return undefined;
+      return worktreeMainRoot(await readFile(join(c.root, ".git"), "utf8"));
+    } catch {
+      return undefined;
+    }
+  });
   list.forEach((c, i) => {
     if (origins[i]) c.origin = origins[i];
+    if (worktrees[i]) c.worktreeOf = worktrees[i];
   });
 
   // Present ones first, then by name — a deleted clone shouldn't head the list.

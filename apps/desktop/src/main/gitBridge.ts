@@ -349,6 +349,7 @@ export class GitBridge {
         ...(r.subject ? { subject: r.subject } : {}),
         ...(r.objectType ? { objectType: r.objectType } : {}),
         ...(r.symref ? { symref: r.symref } : {}),
+        ...(r.who ? { who: r.who } : {}),
       }));
     } catch {
       return [];
@@ -811,6 +812,47 @@ export class GitBridge {
   async unstage(path: string): Promise<CommitActionResult> {
     return this.staged(async (ctx) => ctx.staging.unstageFile(path));
   }
+  /**
+   * A restore point for a discard, taken without disturbing anything.
+   *
+   * `git stash create` only writes objects — no ref is moved, the working tree
+   * and index are untouched, and the commit it prints is unreachable until
+   * somebody names it. That makes it exactly right for "keep a copy in case
+   * they meant it": free to take, invisible if never used, and garbage
+   * collected on its own if the undo is never taken.
+   */
+  async discardSnapshot(): Promise<{ sha?: string }> {
+    const ctx = this.ctx();
+    if (!ctx) return {};
+    const r = await ctx.process.run(["stash", "create", "gitstudio: before discard"]);
+    const sha = r.code === 0 ? r.stdout.trim() : "";
+    return { sha: sha || undefined };
+  }
+
+  /**
+   * Put `paths` back to their state in `sha`'s tree.
+   *
+   * `--worktree` and no `--staged`: the discard did not change what was in the
+   * index, so neither does undoing it. `git checkout <sha> -- <path>` would
+   * have restored the file AND staged it, quietly turning an undo into a
+   * staging change.
+   */
+  async discardUndo(req: { sha: string; paths: string[] }): Promise<{ ok: boolean; message?: string }> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, message: "No repository is open." };
+    if (!safeArg(req.sha)) return { ok: false, message: "That restore point is not usable." };
+    const paths = req.paths.filter((p) => p);
+    if (!paths.length) return { ok: false, message: "Nothing to restore." };
+    const r = await ctx.process.run([
+      "restore",
+      `--source=${req.sha}`,
+      "--worktree",
+      "--",
+      ...paths,
+    ]);
+    return r.code === 0 ? { ok: true } : { ok: false, message: r.stderr.trim() || "Couldn't restore." };
+  }
+
   async discard(path: string): Promise<CommitActionResult> {
     return this.staged(async (ctx) => {
       // `git checkout --` only restores TRACKED paths; an untracked file must
@@ -1068,6 +1110,32 @@ export class GitBridge {
   async stashDrop(ref: string): Promise<CommitActionResult> {
     if (!safeArg(ref)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => ctx.stashes.drop(ref));
+  }
+  /**
+   * Undo a drop: `git stash store` re-creates a stash ref pointing at a commit
+   * that was never deleted — dropping only removed the reflog entry.
+   *
+   * It lands on TOP of the stack, not back at its old index. `store` has no
+   * way to insert, and inventing one by re-writing the reflog to put it back
+   * where it was is the kind of cleverness that loses somebody's work.
+   */
+  async stashRestore(req: { sha: string; message?: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.sha)) return UNSAFE_REF_RESULT;
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository is open." };
+    // Refuse a sha that is not a commit rather than letting `stash store` write
+    // a stash ref pointing at nothing.
+    const kind = await ctx.process.run(["cat-file", "-t", req.sha]);
+    if (kind.code !== 0 || kind.stdout.trim() !== "commit") {
+      return { ok: false, changed: false, expected: true, message: "That stash is no longer in the repository." };
+    }
+    const args = ["stash", "store"];
+    if (req.message) args.push("-m", req.message);
+    args.push(req.sha);
+    const r = await ctx.process.run(args);
+    return r.code === 0
+      ? { ok: true, changed: true }
+      : { ok: false, changed: false, expected: true, message: r.stderr.trim() || "Couldn't put the stash back." };
   }
   /**
    * The changes inside one file that are not staged yet (#20), so the Changes
@@ -1614,6 +1682,23 @@ export class GitBridge {
    * push, and only the checked-out branch — so an ahead or unpublished branch
    * was unpushable from the list it was displayed in.
    */
+  /**
+   * Push a branch under its own name and set it as the upstream.
+   *
+   * `setUpstream: true` is load-bearing, not a convenience: without it
+   * SyncOps.push rewrites the destination to the upstream this branch already
+   * tracks — and every caller is here BECAUSE that upstream is wrong. With it
+   * the push is refs/heads/<name>:refs/heads/<name> --set-upstream.
+   */
+  async branchPublishAs(req: { name: string; remote: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.name) || !safeArg(req.remote)) return UNSAFE_REF_RESULT;
+    // push-force-reviewed: publishes under a name with no remote history, so
+    // there is nothing on the server this could overwrite.
+    return this.staged((ctx) =>
+      ctx.sync.push({ remote: req.remote, branch: req.name, setUpstream: true }),
+    );
+  }
+
   async branchPush(name: string): Promise<CommitActionResult> {
     if (!safeArg(name)) return UNSAFE_REF_RESULT;
     return this.staged(async (ctx) => {
@@ -1759,7 +1844,7 @@ export class GitBridge {
     const base = await this.defaultBranch(ctx);
     const fmt =
       `%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
-      `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(contents:subject)`;
+      `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(authorname)${SEP}%(authoremail)${SEP}%(contents:subject)`;
     // No catch-and-return-[]: `for-each-ref` exits 0 with no output in a repo
     // that genuinely has no branches, so a non-zero exit means the read FAILED
     // and "No branches yet" would be a lie about a repo full of them.
@@ -1774,11 +1859,12 @@ export class GitBridge {
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
-      const [name, head, upstream, track, date, subject] = line.split(SEP);
+      const [name, head, upstream, track, date, authorName, authorEmail, subject] = line.split(SEP);
       const { ahead, behind, gone } = parseTrack(track ?? "");
       const vs = base ? divergence.get(name) : undefined;
       branches.push({
         ...(vs ? { aheadDefault: vs.ahead, behindDefault: vs.behind, merged: vs.ahead === 0 } : {}),
+        ...(base && name === base ? { isDefault: true } : {}),
         name,
         current: head === "*",
         upstream: upstream || undefined,
@@ -1786,6 +1872,10 @@ export class GitBridge {
         behind,
         ...(gone ? { gone: true } : {}),
         subject: subject ?? "",
+        // %(authoremail) arrives wrapped in angle brackets.
+        ...(authorName
+          ? { tipAuthor: { name: authorName, email: (authorEmail ?? "").replace(/^<|>$/g, "") } }
+          : {}),
         date: Number(date) || 0,
       });
     }
@@ -1818,15 +1908,136 @@ export class GitBridge {
     return out;
   }
 
-  async branchCreate(req: { name: string; checkout?: boolean }): Promise<CommitActionResult> {
+  async branchCreate(req: {
+    name: string;
+    checkout?: boolean;
+    startPoint?: string;
+    upstream?: string;
+  }): Promise<CommitActionResult> {
     if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) =>
-      req.checkout ? ctx.branches.checkoutNew(req.name) : ctx.branches.create(req.name),
+    if (req.startPoint && !safeArg(req.startPoint)) return UNSAFE_REF_RESULT;
+    if (req.upstream && !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
+    const made = await this.staged((ctx) =>
+      req.checkout
+        ? ctx.branches.checkoutNew(req.name, req.startPoint)
+        : ctx.branches.create(req.name, req.startPoint),
     );
+    // Best-effort: a branch that exists again but tracks nothing is still the
+    // branch back, and failing the whole call over the tracking config would
+    // turn a working undo into a failed one.
+    if (made.ok && req.upstream) {
+      const ctx = this.ctx();
+      if (ctx) await ctx.branches.setUpstream(req.name, req.upstream);
+    }
+    return made;
   }
-  async branchDelete(req: { name: string; force?: boolean }): Promise<CommitActionResult> {
+  /**
+   * Who is behind each branch — see the ipc.ts contract.
+   *
+   * `git log <base>..<branch>` per branch, oldest-first so the FIRST line is
+   * the branch's first unique commit: its author is the nearest thing git
+   * records to "who created this branch". Bounded twice — at most 40 branches
+   * walked, at most 200 commits read per branch — because this is a garnish on
+   * a list, not an audit, and an unbounded walk of a long-lived branch is a
+   * minute of disk. Failures per branch are skipped: one odd ref must not
+   * blank everyone else's faces.
+   */
+  async branchesPeople(): Promise<
+    Record<string, { creator: { name: string; email: string }; contributors: Array<{ name: string; email: string; count: number }> }>
+  > {
+    const ctx = this.ctx();
+    if (!ctx) return {};
+    const base = await this.defaultBranch(ctx);
+    if (!base) return {};
+    // Local heads AND remote branches — "who created the remote branch" is
+    // the same question with the same answer. The remote HEAD pointer and the
+    // default branch's own mirror are skipped (measuring main against main
+    // yields nothing). The 40-branch cap is SPLIT between the namespaces:
+    // for-each-ref lists refs/heads first, so on a repo with 40+ local
+    // branches a shared cap starved every remote of its "created by" — the
+    // exact fact the owner asked for on remote branches.
+    const heads = await ctx.process.run([
+      "for-each-ref",
+      "--format=%(refname)\x1f%(refname:short)",
+      "refs/heads",
+      "refs/remotes",
+    ]);
+    if (heads.code !== 0) return {};
+    const all = heads.stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => {
+        const [full, short] = l.split("\x1f");
+        return { full, short };
+      })
+      .filter((r) => r.short && !/\/HEAD$/.test(r.short));
+    const locals = all.filter((r) => r.full.startsWith("refs/heads/")).map((r) => r.short);
+    const remotes = all.filter((r) => r.full.startsWith("refs/remotes/")).map((r) => r.short);
+    const CAP = 40;
+    const half = CAP / 2;
+    // Each side gets half; whatever one side leaves unused, the other may take.
+    const takeLocals = Math.min(locals.length, Math.max(half, CAP - remotes.length));
+    const names = [
+      ...locals.slice(0, takeLocals),
+      ...remotes.slice(0, CAP - takeLocals),
+    ];
+    const US = "\x1f";
+    const out: Record<string, { creator: { name: string; email: string }; contributors: Array<{ name: string; email: string; count: number }> }> = {};
+    await Promise.all(
+      names.map(async (name) => {
+        // The base itself, and any remote mirror OF the base.
+        if (name === base || name.endsWith(`/${base}`)) return;
+        try {
+          const r = await ctx.process.run([
+            "log",
+            "--reverse",
+            `--format=%aN${US}%aE`,
+            "--max-count=200",
+            `${base}..${name}`,
+            "--",
+          ]);
+          if (r.code !== 0) return;
+          const lines = r.stdout.split("\n").filter(Boolean);
+          if (!lines.length) return; // nothing unique — merged, or base itself
+          const byEmail = new Map<string, { name: string; email: string; count: number }>();
+          for (const line of lines) {
+            const [n, e] = line.split(US);
+            const key = (e ?? "").toLowerCase();
+            const held = byEmail.get(key);
+            if (held) held.count++;
+            else byEmail.set(key, { name: n ?? "", email: e ?? "", count: 1 });
+          }
+          const [firstName, firstEmail] = lines[0].split(US);
+          out[name] = {
+            creator: { name: firstName ?? "", email: firstEmail ?? "" },
+            contributors: [...byEmail.values()].sort((a, b) => b.count - a.count),
+          };
+        } catch {
+          /* one branch's failure is that branch's alone */
+        }
+      }),
+    );
+    return out;
+  }
+
+  async branchDelete(
+    req: { name: string; force?: boolean },
+  ): Promise<CommitActionResult & { was?: string; upstream?: string }> {
     if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.delete(req.name, { force: req.force }));
+    // Read the tip and the tracking config FIRST. After the delete both are
+    // gone, and an undo that re-creates the branch at HEAD instead of where it
+    // was is not an undo — it is a new branch wearing the old name.
+    const ctx = this.ctx();
+    let was: string | undefined;
+    let upstream: string | undefined;
+    if (ctx) {
+      const tip = await ctx.process.run(["rev-parse", "--verify", `refs/heads/${req.name}`]);
+      if (tip.code === 0) was = tip.stdout.trim() || undefined;
+      const up = await ctx.branches.upstreamOf(req.name);
+      if (up) upstream = `${up.remote}/${up.branch}`;
+    }
+    const r = await this.staged((c) => c.branches.delete(req.name, { force: req.force }));
+    return r.ok ? { ...r, was, upstream } : r;
   }
 
   /**
@@ -2081,9 +2292,62 @@ export class GitBridge {
     return this.staged((ctx) => ctx.branches.setUpstream(req.name, req.upstream));
   }
 
-  async branchDeleteRemote(req: { remote: string; name: string }): Promise<CommitActionResult> {
+  async branchDeleteRemote(
+    req: { remote: string; name: string },
+  ): Promise<CommitActionResult & { was?: string }> {
     if (!safeArg(req.remote) || !safeArg(req.name)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.deleteRemoteBranch(req.remote, req.name));
+    // The remote-tracking ref is the local record of where that branch was,
+    // and the delete removes it too — so read it first or there is nothing to
+    // push back.
+    const ctx = this.ctx();
+    let was: string | undefined;
+    if (ctx) {
+      const r = await ctx.process.run([
+        "rev-parse",
+        "--verify",
+        `refs/remotes/${req.remote}/${req.name}`,
+      ]);
+      if (r.code === 0) was = r.stdout.trim() || undefined;
+    }
+    const out = await this.staged((c) => c.branches.deleteRemoteBranch(req.remote, req.name));
+    return out.ok ? { ...out, was } : out;
+  }
+
+  /**
+   * Push a deleted remote branch back to where it was.
+   *
+   * Not a force push: `refs/heads/<name>` is expected to be absent, so this is
+   * a create. If somebody has re-made the branch in the meantime the push is
+   * refused by the remote rather than overwriting their work, and that refusal
+   * is reported as-is.
+   */
+  async branchRestoreRemote(req: {
+    remote: string;
+    name: string;
+    sha: string;
+  }): Promise<CommitActionResult> {
+    if (!safeArg(req.remote) || !safeArg(req.name) || !safeArg(req.sha)) return UNSAFE_REF_RESULT;
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository is open." };
+    // `--force-with-lease=<ref>:` with an EMPTY expected value means "only if
+    // that ref does not exist". Without it this is an ordinary push, and an
+    // ordinary push to a branch somebody has re-made in the meantime is a
+    // fast-forward whenever the old tip happens to be an ancestor of theirs —
+    // so the undo silently moved another person's branch. Tested.
+    const r = await ctx.process.run([
+      "push",
+      `--force-with-lease=refs/heads/${req.name}:`,
+      req.remote,
+      `${req.sha}:refs/heads/${req.name}`,
+    ]);
+    return r.code === 0
+      ? { ok: true, changed: true }
+      : {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: r.stderr.trim() || `Couldn't push ${req.name} back to ${req.remote}.`,
+        };
   }
 
   // ── In-progress operation state + abort/continue ────────────────────────────
@@ -2429,9 +2693,40 @@ export class GitBridge {
   }
 
   /** `git tag -d <name>` — local only; the remote copy outlives it. */
-  tagDelete(name: string): Promise<CommitActionResult> {
-    if (!safeArg(name)) return Promise.resolve(UNSAFE_REF_RESULT);
-    return this.staged((ctx) => ctx.tags.delete(name));
+  async tagDelete(name: string): Promise<CommitActionResult & { was?: string }> {
+    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+    // What the ref points AT, read before it stops existing. Deliberately not
+    // `<name>^{commit}`: an annotated tag is its own object carrying a message
+    // and a tagger, and restoring the commit it names would silently turn an
+    // annotated tag into a lightweight one.
+    const ctx = this.ctx();
+    let was: string | undefined;
+    if (ctx) {
+      const r = await ctx.process.run(["rev-parse", "--verify", `refs/tags/${name}`]);
+      if (r.code === 0) was = r.stdout.trim() || undefined;
+    }
+    const out = await this.staged((c) => c.tags.delete(name));
+    return out.ok ? { ...out, was } : out;
+  }
+
+  /**
+   * Put a deleted tag back, exactly as it was.
+   *
+   * `update-ref` rather than `git tag`: it writes the ref to the object that
+   * was there, whatever kind it was, so an annotated tag comes back annotated.
+   */
+  async tagRestore(req: { name: string; sha: string }): Promise<CommitActionResult> {
+    if (!safeArg(req.name) || !safeArg(req.sha)) return UNSAFE_REF_RESULT;
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository is open." };
+    const exists = await ctx.process.run(["rev-parse", "--verify", `refs/tags/${req.name}`]);
+    if (exists.code === 0) {
+      return { ok: false, changed: false, expected: true, message: `A tag named ${req.name} is there again.` };
+    }
+    const r = await ctx.process.run(["update-ref", `refs/tags/${req.name}`, req.sha]);
+    return r.code === 0
+      ? { ok: true, changed: true }
+      : { ok: false, changed: false, expected: true, message: r.stderr.trim() || "Couldn't put the tag back." };
   }
 
   /** `git push <remote> refs/tags/<name>` — publishing one tag, not `--tags`.

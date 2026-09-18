@@ -17,7 +17,7 @@
 // - A sticky toolbar shows totals, filters to failures only, and clears.
 
 import { host } from "./bridge";
-import { el, span, glyph } from "./ui";
+import { el, span, glyph, copyText } from "./ui";
 import type { GitLogEntry } from "../shared/ipc";
 
 /** Hard cap on rendered top-level blocks (rows/groups). */
@@ -87,14 +87,27 @@ export class OutputsPanel {
     const bar = el("div", "outputs-bar");
     this.bar = bar;
     this.countEl = el("span", "outputs-count");
-    const failBtn = el("button", "mini-btn outputs-failbtn") as HTMLButtonElement;
-    failBtn.append(glyph("error"), span("Errors only"));
+    // Footer-native buttons, NOT `.mini-btn`.
+    //
+    // These live in the dock's 23px status bar, and `.mini-btn` is a 28px
+    // bordered pill with a sheen — so the pair stood 5px proud of the bar it
+    // sits in, bled over the hairline above and, with the dock collapsed,
+    // 3px past the bottom of the window. They also read as the loudest thing
+    // on screen next to the quiet "Output / Terminal" tabs.
+    const failBtn = el("button", "outputs-act-btn outputs-failbtn") as HTMLButtonElement;
+    // A FILTER, not an error. `error` is a filled ✕-in-a-circle and `clear-all`
+    // is a ✕ with lines, so the two adjacent controls both wore a cross and the
+    // pair read as "cancel / cancel". The filled variant carries the pressed
+    // state in SHAPE as well as colour.
+    const failIcon = glyph("filter");
+    failBtn.append(failIcon, span("Errors only"));
     failBtn.title = "Show only failed commands";
     failBtn.setAttribute("aria-pressed", "false");
     this.setFailuresOnly = (on: boolean): void => {
       this.failuresOnly = on;
-      failBtn.classList.toggle("is-on", on);
       failBtn.setAttribute("aria-pressed", String(on));
+      failIcon.className = `glyph codicon codicon-${on ? "filter-filled" : "filter"}`;
+      failBtn.title = on ? "Showing only failed commands" : "Show only failed commands";
       this.el.classList.toggle("failures-only", on);
       this.renderCount();
     };
@@ -102,14 +115,18 @@ export class OutputsPanel {
       this.setFailuresOnly(!this.failuresOnly);
       if (this.stick) this.scroller.scrollTop = this.scroller.scrollHeight;
     });
-    const clearBtn = el("button", "mini-btn") as HTMLButtonElement;
+    const copyBtn = el("button", "outputs-act-btn") as HTMLButtonElement;
+    copyBtn.append(glyph("copy"), span("Copy"));
+    copyBtn.title = "Copy the whole log";
+    copyBtn.addEventListener("click", () => void this.copyAll());
+    const clearBtn = el("button", "outputs-act-btn") as HTMLButtonElement;
     clearBtn.append(glyph("clear-all"), span("Clear"));
     clearBtn.title = "Clear the log";
     clearBtn.addEventListener("click", () => this.clear());
-    bar.append(this.countEl, failBtn, clearBtn);
+    bar.append(this.countEl, failBtn, copyBtn, clearBtn);
     // Nothing logged yet means nothing to filter and nothing to clear. The
     // controls used to sit there enabled beside a defiant "0 commands".
-    this.controls = [failBtn, clearBtn];
+    this.controls = [failBtn, copyBtn, clearBtn];
 
     // ── Scrolling log ──────────────────────────────────────────────────────
     this.scroller = el("div", "outputs-panel");
@@ -386,6 +403,26 @@ export class OutputsPanel {
     // control the reader could no longer see, and the panel looked dead.
     this.renderCount();
     if (!this.empty.isConnected) this.scroller.insertBefore(this.empty, this.list);
+  }
+
+  /**
+   * The whole log as text, for the clipboard.
+   *
+   * Reading the DOM rather than a parallel model on purpose: what a person
+   * means by "copy this" is what they can see, which includes the ×N
+   * coalescing, the durations and the stderr — and it stays correct for free
+   * when the rendering changes. When "Errors only" is on, this copies what the
+   * filter left, because that is what is on screen.
+   */
+  private async copyAll(): Promise<void> {
+    const rows = [...this.list.querySelectorAll<HTMLElement>(".outputs-line, .outputs-group-head")];
+    const visible = rows.filter((r) => r.offsetParent !== null);
+    const text = visible
+      .map((r) => (r.innerText ?? r.textContent ?? "").replace(/\s*\n\s*/g, " ").trim())
+      .filter(Boolean)
+      .join("\n");
+    if (!text) return;
+    await copyText(text, this.failuresOnly ? "Failed commands copied." : "Command log copied.");
   }
 
   dispose(): void {

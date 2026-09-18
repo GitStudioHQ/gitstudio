@@ -31,6 +31,31 @@ the page after the scene driver finishes and returns a list of failures. The
 runner exits non-zero if anything fails, so it can gate a commit. Add a case by
 writing the assertion in `checks.js` and listing `[id, scene]` in `check.mjs`.
 
+## Measuring, rather than asserting
+
+A check pins one named invariant. These three sweep every scene and report what
+is wrong, which is how you find the defects nobody thought to write a check for
+— and all three report things a screenshot review cannot see.
+
+```sh
+node harness/contrast.mjs --sweep --theme=light   # WCAG ratio for every text node
+node harness/affordance.mjs --sweep               # cursor, name, hit size, hover, focus
+node harness/fit.mjs --sweep                      # overflow, clipping, overlap, stranded space
+node harness/contrast.mjs issues --theme=light    # one scene
+```
+
+Each exits non-zero when it finds anything, so they gate a run too. Two traps
+worth knowing before trusting a result: headless Chrome's virtual clock leaves
+views mid-entrance-animation, so all three kill animations before measuring;
+and `document.styleSheets[].cssRules` throws on a `file://` page, which is why
+`affordance.mjs` reads the built stylesheet in node and passes the selectors in
+rather than scanning it from inside the page.
+
+Each gives Chrome a throwaway `--user-data-dir` so runs cannot share state, and
+removes it on the way out — on a clean finish, on Ctrl-C, and on the `pkill` a
+stalled sweep gets. Without that they accumulate: one night of sweeps left 380
+profiles and 2.2GB in the temp folder.
+
 `shim.js` fakes the preload's `window.gitstudio` bridge (see `shared/ipc.ts`)
 with fixtures for the GitStudio repo itself. Unstubbed channels log
 `[shim missing] <channel>` to the console and resolve safely — add a fixture

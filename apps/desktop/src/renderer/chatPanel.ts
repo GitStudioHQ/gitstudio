@@ -51,8 +51,10 @@ export class ChatPanel {
     this.input.rows = 1;
     this.input.placeholder = "Ask a follow-up…";
     this.send = el("button", "btn btn-primary assistant-send");
-    this.send.append(glyph("send"));
-    this.send.title = "Send";
+    this.send.append(glyph("arrow-up"));
+    this.send.title = "Send · Enter";
+    this.send.setAttribute("aria-keyshortcuts", "Enter");
+    (this.send as HTMLButtonElement).disabled = true; // nothing to send yet
     inputRow.append(this.input, this.send);
     composer.append(inputRow);
 
@@ -66,6 +68,7 @@ export class ChatPanel {
         void this.runGoal(this.input.value);
       }
     });
+    this.input.addEventListener("input", () => this.syncSend());
 
     void this.start();
   }
@@ -82,7 +85,7 @@ export class ChatPanel {
     if (!settings || !settings.enabled) {
       this.transcript.replaceChildren(connectPrompt(this.opts.nav ?? (() => undefined)));
       this.input.disabled = true;
-      (this.send as HTMLButtonElement).disabled = true;
+      this.syncSend(); // derives both the disabled state and the reason
       return;
     }
     this.modelId = settings.agent.modelId;
@@ -112,7 +115,7 @@ export class ChatPanel {
       addBubble(this.transcript, "user", goal);
       this.transcript.append(errorBlock("Couldn't start a chat — open a repository and connect a model."));
       this.running = false;
-      setBusy(this.send, false);
+      this.syncSend();
       return;
     }
 
@@ -132,8 +135,23 @@ export class ChatPanel {
       );
     } finally {
       this.running = false;
+      this.syncSend();
       if (!this.disposed) this.input.focus();
     }
+  }
+
+  /** The one rule for this button's enabled state — never a bare
+   *  `disabled = false`, which is what left Send lit over an empty box after a
+   *  turn and made clicking it hit `runGoal`'s silent `!goal.trim()` guard.
+   *
+   *  HANDS OFF while a turn runs: the button is Stop then, and typing the next
+   *  message must not take away the only way to stop the agent. Same rule and
+   *  same reason as assistant.ts's syncSend. */
+  private syncSend(): void {
+    if (this.running) return;
+    const send = this.send as HTMLButtonElement;
+    send.disabled = this.input.disabled || !this.input.value.trim();
+    send.title = this.input.disabled ? "Connect a model to use the Assistant" : "Send · Enter";
   }
 
   /** Called by the dock when this tab becomes active — land focus in the input. */

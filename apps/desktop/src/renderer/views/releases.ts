@@ -9,7 +9,7 @@
 // local modal on the shared .modal-* CSS.
 
 import { host } from "../bridge";
-import {
+import { avatar,
   el,
   span,
   glyph,
@@ -129,7 +129,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   newBtn.title = "Draft a new release";
   newBtn.addEventListener("click", () => sectionNav?.("releasenew"));
 
-  tools.append(seg, newBtn);
+  const verbs = el("div", "gh-head-verbs");
+  verbs.appendChild(newBtn);
+  tools.append(seg, verbs);
   header.querySelector(".gh-acct")?.before(tools);
   view.append(header, listEl);
   wrap.replaceChildren(view);
@@ -169,7 +171,21 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     const downloads = rel.assets.reduce((sum, a) => sum + (a.downloadCount || 0), 0);
     const meta: HTMLElement[] = [
       span(rel.tagName, "sec-mono rel-tag"),
-      blankable(span(rel.author?.login ?? "", "rel-author"), !!rel.author?.login),
+      // WHO cut it — a face beside the name, not a bare string. On this very
+      // repository the answer is usually github-actions[bot] (tags trigger the
+      // publish), and that is worth SEEING: it says the release went out
+      // through CI, not by hand.
+      blankable(
+        (() => {
+          const who = el("span", "rel-author");
+          if (rel.author) {
+            who.append(avatar(rel.author.login, rel.author.avatarUrl, 18), span(rel.author.login));
+            who.title = `Released by ${rel.author.login}`;
+          }
+          return who;
+        })(),
+        !!rel.author?.login,
+      ),
       withClass(
         blankable(statBit("file", rel.assets.length, "", "assets"), rel.assets.length > 0),
         // NOT "rel-assets" — that name already belongs to the detail page's

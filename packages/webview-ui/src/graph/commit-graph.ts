@@ -50,12 +50,22 @@ import {
   avatarHue,
   authorInitials,
 } from "./avatar";
-import { COLUMN_DROP_TAIL_AT } from "../limits";
+import { COLUMN_DROP_TAIL_AT, INLINE_LIST_BELOW } from "../limits";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
 const ROW_HEIGHT = 34;
 /** The commit subject never shrinks below this — metadata columns yield first. */
 const SUBJECT_MIN_WIDTH = 220;
+/**
+ * The narrowest the Branch/Tag track may get before it stops doing its job.
+ *
+ * A ref cell holds one chip plus a "+N" overflow pill, and the chip is a glyph,
+ * padding and a name. Below this the name starts ellipsising — measured at
+ * 107px, where "main" rendered 13 of the 27px it needs, which is a column that
+ * is present but no longer answers "which branch is this?". A floor, not a
+ * fixed width: the user's own dragged width still wins above it.
+ */
+const REFS_MIN_READABLE = 150;
 /**
  * The width at which a commit message stops feeling cramped. Above the hard
  * SUBJECT_MIN_WIDTH floor: the Branch/Tag track auto-fits only with whatever is
@@ -434,7 +444,12 @@ export class CommitGraph extends LitElement {
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: color-mix(in srgb, var(--vscode-foreground) 50%, transparent);
+      /* Mixed into the BACKGROUND, not into transparent. Mixing toward
+         transparent dims correctly over a dark ground and washes out over a
+         light one: the same 50% measured 4.11:1 in dark and 2.93:1 in light.
+         Against the background it composites the same way in both — 6.24:1
+         and 4.56:1. */
+      color: color-mix(in srgb, var(--vscode-foreground) 66%, var(--vscode-editor-background));
       user-select: none;
     }
     .gh-menuitem {
@@ -616,7 +631,9 @@ export class CommitGraph extends LitElement {
     /* Metadata recedes: smaller, dimmer, hugging the right edge. */
     :host([compact]) .row .author,
     :host([compact]) .row .date { font-size: 11px; opacity: 0.72; }
-    :host([compact]) .colhead { font-size: 10px; letter-spacing: 0.06em; opacity: 0.66; }
+    /* No opacity here: the colour above already carries the muting, and
+       stacking 0.66 on top of it put the compact header back under AA. */
+    :host([compact]) .colhead { font-size: 10px; letter-spacing: 0.06em; }
     /* The header and the rows must share a padding-right, or their grid tracks
        resolve against different widths and every compact column sits 2px off
        the label naming it. */
@@ -663,6 +680,32 @@ export class CommitGraph extends LitElement {
       :host(:not([compact])) .colhead .col-resize[data-col="date"],
       :host(:not([compact])) .colhead .col-resize[data-col="author"] { display: none; }
     }
+    /* ── Still a table, just a narrower one ─────────────────────────────────
+       Between the inline floor and the tail drop, the two things that identify
+       a commit at a glance — the graph gutter and the Branch/Tag column — are
+       the LAST to go, not the first. Only the trailing metadata falls away.
+
+       This tier did not exist: below 860 the layout kept Changes and Author
+       (~200px of the width) and then, at 620, threw the header and the whole
+       Branch/Tag COLUMN away in one step. So the columns worth keeping were
+       sacrificed to two the reader can get from the details panel anyway. */
+    @container (max-width: ${COLUMN_DROP_TAIL_AT - 200}px) {
+      :host(:not([compact])) .colhead,
+      :host(:not([compact])) .row {
+        --gs-grid:
+          var(--gs-gutter-w, ${MIN_GUTTER_WIDTH}px)
+          minmax(0, clamp(${REFS_MIN_READABLE}px, var(--col-refs-w, ${col("refs")}px), 240px))
+          minmax(${Math.round(SUBJECT_MIN_WIDTH * 0.5)}px, 1fr);
+      }
+      :host(:not([compact])) .colhead .ch-changes,
+      :host(:not([compact])) .colhead .ch-author,
+      :host(:not([compact])) .row .changes,
+      :host(:not([compact])) .row .author { display: none; }
+      /* Their grips would survive as 0x0 hit targets otherwise. */
+      :host(:not([compact])) .colhead .col-resize[data-col="changes"],
+      :host(:not([compact])) .colhead .col-resize[data-col="refs"][data-invert="0"] { display: none; }
+    }
+
     /* Compact narrowing, on compact's OWN grid — date goes first, then author,
        so the message keeps the width. Mirrors the column-mode ladder above
        without ever reintroducing a Branch/Tag track (refs flow inline here). */
@@ -694,12 +737,12 @@ export class CommitGraph extends LitElement {
     }
 
     /* ── Sidebar (inline) mode ──────────────────────────────────────────────
-       Below ~620px (every practical sidebar width) the refs stop being a fixed
-       column — they flow INLINE right before the message, so a commit with no
-       refs uses the FULL width instead of starting behind a ~120px empty gap.
-       The column header, resize handles and all trailing columns fall away; it
-       reads as a clean commit list, not a cramped spreadsheet. */
-    @container (max-width: 620px) {
+       Below INLINE_LIST_BELOW the refs stop being a fixed column — they flow
+       INLINE right before the message, so a commit with no refs uses the FULL
+       width instead of starting behind a ~120px empty gap. The trailing
+       columns and their handles go; the HEADER stays, labelling what is left.
+       It reads as a clean commit list, not a cramped spreadsheet. */
+    @container (max-width: ${INLINE_LIST_BELOW}px) {
       /* Same reasons as above, compact guard included. */
       :host(:not([compact])) .colhead,
       :host(:not([compact])) .row {
@@ -714,8 +757,16 @@ export class CommitGraph extends LitElement {
          its own floor — see the compact ladder above. Dropping the header here
          took every lever with it, which is what made the panel look like it had
          none at all. */
-      :host(:not([compact])) .colhead { display: none; }
-      :host(:not([compact])) .col-resize { display: none; }
+      /* The header STAYS. Dropping it took the Graph and Commit labels and
+         every resize lever with it, so the pane looked like it had none — the
+         same regret already recorded for compact mode two blocks up. It keeps
+         the two tracks that still exist and says what they are. */
+      :host(:not([compact])) .colhead .ch-refs,
+      :host(:not([compact])) .colhead .ch-changes,
+      :host(:not([compact])) .colhead .ch-author { display: none; }
+      :host(:not([compact])) .col-resize[data-col="refs"],
+      :host(:not([compact])) .col-resize[data-col="changes"],
+      :host(:not([compact])) .col-resize[data-col="author"] { display: none; }
       :host(:not([compact])) .row .changes,
       :host(:not([compact])) .row .author,
       :host(:not([compact])) .row .date,
@@ -762,7 +813,12 @@ export class CommitGraph extends LitElement {
       font-weight: 600;
       letter-spacing: 0.05em;
       text-transform: uppercase;
-      color: color-mix(in srgb, var(--vscode-foreground) 50%, transparent);
+      /* Mixed into the BACKGROUND, not into transparent. Mixing toward
+         transparent dims correctly over a dark ground and washes out over a
+         light one: the same 50% measured 4.11:1 in dark and 2.93:1 in light.
+         Against the background it composites the same way in both — 6.24:1
+         and 4.56:1. */
+      color: color-mix(in srgb, var(--vscode-foreground) 66%, var(--vscode-editor-background));
       user-select: none;
     }
     /* Header cells let the right-edge grip escape (overflow:visible); the label
@@ -1301,7 +1357,10 @@ export class CommitGraph extends LitElement {
       font-family: var(--vscode-editor-font-family, monospace);
       font-variant-numeric: tabular-nums;
       font-size: 11px;
-      opacity: 0.8;
+      /* An explicit ink rather than opacity over an already-muted inherited
+         colour, which compounded to 3.29:1. 70% into the background measures
+         6.89:1 dark and 5.18:1 light. */
+      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
       border-radius: 4px;
       transition: color 120ms ease, opacity 120ms ease, background 120ms ease;
     }
@@ -1311,7 +1370,7 @@ export class CommitGraph extends LitElement {
       opacity: 0;
       transition: opacity 120ms ease;
     }
-    .row:hover .sha { opacity: 1; }
+    .row:hover .sha { color: var(--vscode-foreground); }
     .row:hover .sha[data-sha-cell]:hover {
       color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
       text-decoration: underline;
@@ -2220,6 +2279,16 @@ export class CommitGraph extends LitElement {
         (n.classList.contains("gh-pop") || n.classList.contains("gh-anchor")),
     );
     if (!insidePop) this.closePopovers();
+    // A pinned "+N" card is dismissed the same way, unless the pointer went
+    // down inside the card itself (that is a row being taken).
+    if (
+      this.refTip.isPinned &&
+      !path.some(
+        (n) => n instanceof HTMLElement && (n.classList.contains("reftip") || n.classList.contains("chip-overflow")),
+      )
+    ) {
+      this.refTip.dismiss();
+    }
   };
 
   private onPopoverKeyDown = (e: KeyboardEvent): void => {
@@ -2624,6 +2693,21 @@ export class CommitGraph extends LitElement {
   /** Set by a completed drag; consumed by the very next click. */
   private suppressNextClick = false;
 
+  /** A row of the pinned "+N" card — the same navigation its chips perform. */
+  private onTipClick = (e: MouseEvent): void => {
+    const row = (e.target as HTMLElement | null)?.closest(
+      ".tip-row[data-ref]",
+    ) as HTMLElement | null;
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const name = row.dataset.ref;
+    const sha = this.refTip.sha;
+    if (!name || !sha) return;
+    this.refTip.dismiss();
+    this.onAction({ type: "refClick", sha, name, kind: row.dataset.kind ?? "head" });
+  };
+
   private onClick = (e: MouseEvent): void => {
     if (this.suppressNextClick) {
       this.suppressNextClick = false;
@@ -2647,6 +2731,17 @@ export class CommitGraph extends LitElement {
     // A ref chip is a LINK to that branch/tag, not a row selection — the
     // labels used to be purely decorative, which made the graph's richest
     // data its least useful.
+    // The "+N" pill is the only route to the refs it folded away, and it used
+    // to swallow the click and select the row instead — so those refs could be
+    // read on hover and opened never. Clicking it PINS the card open, which is
+    // also what makes them reachable without a steady hand.
+    const more = target?.closest(".chip-overflow") as HTMLElement | null;
+    if (more) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.refTip.pin(more);
+      return;
+    }
     const chip = target?.closest(".chip[data-ref]") as HTMLElement | null;
     if (chip) {
       const row = chip.closest(".row") as HTMLElement | null;
@@ -2934,6 +3029,14 @@ export class CommitGraph extends LitElement {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    // A pinned "+N" card is the innermost thing on screen, so it takes Escape
+    // first — before the row selection or the host's details dock.
+    if (e.key === "Escape" && this.refTip.isPinned) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.refTip.dismiss();
+      return;
+    }
     if (this.rows.length === 0) {
       return;
     }
@@ -3428,7 +3531,7 @@ export class CommitGraph extends LitElement {
         <div class="sizer"></div>
         <div class="insert-line" hidden></div>
       </div>
-      <div class="reftip" role="tooltip" hidden></div>
+      <div class="reftip" role="tooltip" hidden @click=${this.onTipClick}></div>
       <div class="authortip reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;
   }
 

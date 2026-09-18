@@ -43,6 +43,7 @@ import {
   facetBar,
   harvestValues,
   segmented,
+  wireToolsWrap,
   swatch,
   type FacetState,
   associationLabel,
@@ -105,8 +106,97 @@ let query = "";
 /** Which PRs to fetch. GitHub has no "merged" state — merged PRs arrive under
  *  `closed` carrying `mergedAt` — so "merged" asks for closed and narrows here. */
 let prState: "open" | "closed" | "merged" | "all" = "open";
+/**
+ * The PENDING review — line comments queued locally, posted as ONE review.
+ *
+ * GitHub's own flow: "Start a review" batches your remarks and a single
+ * submit publishes them with a verdict — one notification, one review row.
+ * This app used to have only the other mode, where every line comment fired
+ * immediately as its own standalone review: ten remarks, ten emails. The
+ * queue lives here (per PR number) so it survives tab hops within the detail;
+ * it is deliberately NOT persisted — an unsent review that outlives a restart
+ * would post against a PR that may have changed under it.
+ */
+interface PendingComment {
+  path: string;
+  line: number;
+  startLine?: number;
+  /** LEFT for a remark on the code being REMOVED — the only side a deleted
+   *  file has; RIGHT (the default) 422s on every line of one. */
+  side?: "LEFT" | "RIGHT";
+  body: string;
+}
+const pendingReviews = new Map<string, PendingComment[]>();
+
+/** The side a comment on this file can anchor to. A DELETED file has no
+ *  right-hand side — every RIGHT comment on one is a guaranteed 422. */
+function sideFor(f: PrFile): "LEFT" | undefined {
+  return f.status === "removed" ? "LEFT" : undefined;
+}
+
+/** Keyed by repo scope + number: #106 here and #106 in the next repo are
+ *  different PRs, and a queue must never cross a repo switch. */
+function pendingKey(n: number): string {
+  return `${cacheScope()}#${n}`;
+}
+
+/** Repaints the header's Review button after a queue change. Set by the open
+ *  detail's header render; harmless when stale — it touches a detached node. */
+let syncPendingUi: (() => void) | null = null;
+
+function pendingFor(n: number): PendingComment[] {
+  const k = pendingKey(n);
+  let q = pendingReviews.get(k);
+  if (!q) {
+    q = [];
+    pendingReviews.set(k, q);
+  }
+  return q;
+}
+
+/** The list order — client-side re-sorts of the loaded page, like Issues. */
+type PrSort = "updated" | "newest" | "oldest" | "commented" | "reviewed";
+let prSort: PrSort = "updated";
+
+/** Re-order a copy; the cache's array is shared. */
+function sortPrs(items: PullRequest[]): PullRequest[] {
+  const out = [...items];
+  switch (prSort) {
+    case "updated":
+      return out; // the API's own order
+    case "newest":
+      return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    case "oldest":
+      return out.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+    case "commented":
+      return out.sort((a, b) => (b.comments ?? 0) - (a.comments ?? 0));
+    case "reviewed":
+      return out.sort((a, b) => (b.reviewComments ?? 0) - (a.reviewComments ?? 0));
+  }
+}
 /** Client-side PR facets, kept across list ⇄ detail round trips. */
 const prFacets: FacetState = {};
+/**
+ * The repository the list state above was last used for.
+ *
+ * All of it is ABOUT a repository — a text query, a state segment, a sort, a
+ * set of facet ticks — and nothing reset it when the open repository changed.
+ * Switching repos landed on Pull requests still filtered by the last one's
+ * search, usually matching nothing, with the header explaining that zero of
+ * zero matched a query the screen had typed on your behalf.
+ */
+let stateScope = "";
+
+/** Start clean when the repository under the list has changed. */
+function scopeListState(): void {
+  const now = cacheScope();
+  if (now === stateScope) return;
+  stateScope = now;
+  query = "";
+  prState = "open";
+  prSort = "updated";
+  for (const k of Object.keys(prFacets)) delete prFacets[k];
+}
 /**
  * Unsent comment drafts, per PR — navigating away must never eat one.
  *
@@ -169,6 +259,20 @@ function watchDiffDetach(surface: HTMLElement, panel: DiffPanel): void {
   });
 }
 
+/** One state for a set of check runs: any failure wins, then anything still
+ *  running, then success. The same precedence GitHub's merge box uses. */
+function rollupChecks(
+  rows: ReadonlyArray<{ status?: string | null; conclusion?: string | null }>,
+): "success" | "failure" | "pending" | "" {
+  if (!rows.length) return "";
+  const failed = new Set(["failure", "timed_out", "action_required", "startup_failure", "cancelled"]);
+  if (rows.some((r) => failed.has(r.conclusion ?? ""))) return "failure";
+  if (rows.some((r) => !r.conclusion || /queued|in_progress|waiting|pending|requested/.test(r.status ?? ""))) {
+    return "pending";
+  }
+  return "success";
+}
+
 /** The PR's display state: merged beats closed beats draft beats open. */
 function prKind(pr: PullRequest): "open-pr" | "draft" | "merged" | "closed" {
   if (pr.mergedAt) return "merged";
@@ -186,6 +290,7 @@ export const renderPrs: SectionRender = (wrap, nav, target) => {
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
   sectionNav = nav;
+  scopeListState();
   // A re-render replaces the whole view subtree — drop any live Monaco diff from
   // the previous render so it can't leak or write into detached DOM.
   disposePrDiff();
@@ -217,11 +322,17 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // Pull Requests was permanently open-only while Issues had a state control
   // one rail item away. "Merged" is a fourth option because it is the state
   // people actually look for, even though GitHub does not have it.
+  // Counts on the tabs when they are KNOWN, like Issues — a bare word rather
+  // than a guess for a state that has never been fetched. Merged and Closed
+  // share one "closed" fetch and are split from it.
+  const cachedOpen = cachePeek("pr:list", { state: "open" });
+  const cachedClosed = cachePeek("pr:list", { state: "closed" });
+  const n = (k: number | undefined): string => (typeof k === "number" ? ` (${k})` : "");
   const stateSeg = segmented<"open" | "closed" | "merged" | "all">({
     options: [
-      { value: "open", label: "Open" },
-      { value: "merged", label: "Merged" },
-      { value: "closed", label: "Closed" },
+      { value: "open", label: `Open${n(cachedOpen?.length)}` },
+      { value: "merged", label: `Merged${n(cachedClosed?.filter((x) => x.mergedAt).length)}` },
+      { value: "closed", label: `Closed${n(cachedClosed?.filter((x) => !x.mergedAt).length)}` },
       { value: "all", label: "All" },
     ],
     value: prState,
@@ -232,12 +343,46 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     },
   });
   const facetSlot = el("div", "gh-facet-slot");
+
+  // The order, named — the same five the Issues list offers, because "what is
+  // oldest and still open" and "what has everyone piled onto" are the same
+  // questions on either list, and only one of them could answer.
+  const SORT_LABELS: Record<PrSort, string> = {
+    updated: "Recently updated",
+    newest: "Newest",
+    oldest: "Oldest",
+    commented: "Most commented",
+    reviewed: "Most review comments",
+  };
+  const sortBtn = el("button", "mini-btn gh-sort-btn");
+  const sortLabel = span(SORT_LABELS[prSort]);
+  sortBtn.append(glyph("sort-precedence"), sortLabel, glyph("chevron-down"));
+  sortBtn.title = "Change the list order";
+  sortBtn.setAttribute("aria-haspopup", "menu");
+  sortBtn.addEventListener("click", () =>
+    openMenu(
+      sortBtn,
+      (Object.keys(SORT_LABELS) as PrSort[]).map((k) => ({
+        label: SORT_LABELS[k],
+        current: k === prSort,
+        onClick: () => {
+          prSort = k;
+          sortLabel.textContent = SORT_LABELS[k];
+          renderList();
+        },
+      })),
+    ),
+  );
+
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("git-pull-request"), span("New PR"));
   newBtn.title = "Open a new pull request";
   newBtn.addEventListener("click", () => void openCreatePr(refresh));
-  tools.append(stateSeg, facetSlot, newBtn);
+  const verbs = el("div", "gh-head-verbs");
+  verbs.append(sortBtn, newBtn);
+  tools.append(stateSeg, facetSlot, verbs);
   header.querySelector(".gh-acct")?.before(tools);
+  wireToolsWrap(tools);
   view.append(header, listEl);
   wrap.replaceChildren(view);
 
@@ -269,7 +414,22 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
         // worth seeing in the LIST, not only after you open it.
         ...(pr.headRepoFullName ? [forkChip(pr.headRepoFullName)] : []),
       ],
-      chips: pr.labels.map((l) => labelChip(l.name, l.color)),
+      chips: [
+        ...pr.labels.map((l) => labelChip(l.name, l.color)),
+        // The milestone rides with the labels, same as the Issues list — the
+        // meta columns pack right-to-left and a variable-width chip in there
+        // breaks the avatar columns (learned there, applied here).
+        ...(pr.milestone
+          ? [
+              (() => {
+                const m = span("", "sec-milestone");
+                m.append(glyph("milestone"), span(pr.milestone.title));
+                m.title = `Milestone: ${pr.milestone.title}`;
+                return m;
+              })(),
+            ]
+          : []),
+      ],
       meta,
       time: relTimeISO(pr.updatedAt),
       timeTitle: pr.updatedAt ? `Updated ${absTimeISO(pr.updatedAt)}` : undefined,
@@ -301,6 +461,46 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const facets = facetBar<PullRequest>({
     specs: [
       {
+        key: "label",
+        label: "Label",
+        icon: "tag",
+        anyLabel: "All labels",
+        harvest: (items) => {
+          const seen = new Map<string, string>();
+          for (const pr of items) for (const l of pr.labels) if (!seen.has(l.name)) seen.set(l.name, l.color);
+          return [...seen].map(([name, color]) => ({ value: name, iconEl: () => swatch(color) }));
+        },
+        predicate: (pr, v) => pr.labels.some((l) => l.name === v),
+      },
+      // Assignee and Milestone — the two filters Issues always had and this
+      // list did not, though its rows display both facts and its rail edits
+      // them. "Show me the PRs assigned to X in milestone Y" is the same
+      // question either way; the two lists must answer alike.
+      {
+        key: "assignee",
+        label: "Assignee",
+        icon: "person",
+        anyLabel: "Anyone",
+        harvest: (items) => {
+          const seen = new Map<string, string | null>();
+          for (const pr of items) for (const a of pr.assignees ?? []) if (!seen.has(a.login)) seen.set(a.login, a.avatarUrl);
+          return [...seen].map(([login, avatarUrl]) => ({
+            value: login,
+            label: `@${login}`,
+            iconEl: () => avatar(login, avatarUrl, 18),
+          }));
+        },
+        predicate: (pr, v) => (pr.assignees ?? []).some((a) => a.login === v),
+      },
+      {
+        key: "milestone",
+        label: "Milestone",
+        icon: "milestone",
+        anyLabel: "Any milestone",
+        harvest: harvestValues<PullRequest>((pr) => pr.milestone?.title),
+        predicate: (pr, v) => pr.milestone?.title === v,
+      },
+      {
         key: "author",
         label: "Author",
         icon: "account",
@@ -315,18 +515,6 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
           }));
         },
         predicate: (pr, v) => pr.user?.login === v,
-      },
-      {
-        key: "label",
-        label: "Label",
-        icon: "tag",
-        anyLabel: "All labels",
-        harvest: (items) => {
-          const seen = new Map<string, string>();
-          for (const pr of items) for (const l of pr.labels) if (!seen.has(l.name)) seen.set(l.name, l.color);
-          return [...seen].map(([name, color]) => ({ value: name, iconEl: () => swatch(color) }));
-        },
-        predicate: (pr, v) => pr.labels.some((l) => l.name === v),
       },
       {
         key: "base",
@@ -383,8 +571,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     // tooltip, on a segment where no filter was set at all: "0 of 5" above
     // "No closed pull requests". The "of" is a statement that something is
     // being filtered OUT, and picking a segment is not filtering.
-    const items = inSegment.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true));
+    const items = sortPrs(inSegment.filter((pr) => facets.passes(pr) && (q ? matches(pr, q) : true)));
     header.setCount?.(items.length, inSegment.length);
+    // The tabs learn their counts the moment the list lands.
+    if (fetchState === "open") stateSeg.setLabel("open", `Open (${prs.length})`);
+    else {
+      stateSeg.setLabel("merged", `Merged (${prs.filter((x) => x.mergedAt).length})`);
+      stateSeg.setLabel("closed", `Closed (${prs.filter((x) => !x.mergedAt).length})`);
+    }
     listEl.replaceChildren();
     // The empty state has to answer the question the SEGMENT asked. It was
     // hardcoded to the open-state copy, so "Closed" reported "No open pull
@@ -680,8 +874,21 @@ function buildDetail(ctx: DetailCtx): void {
   approveBtn.addEventListener("click", () => void doReview(full.number, "APPROVE", approveBtn, reload));
 
   const reviewBtn = el("button", "mini-btn");
-  reviewBtn.append(glyph("comment"), span("Review"), glyph("chevron-down"));
-  reviewBtn.title = "Submit a review";
+  const paintReview = (): void => {
+    const q = pendingFor(full.number).length;
+    reviewBtn.replaceChildren(
+      glyph("comment"),
+      span(q > 0 ? `Review (${q} pending)` : "Review"),
+      glyph("chevron-down"),
+    );
+    reviewBtn.classList.toggle("has-pending", q > 0);
+    reviewBtn.title =
+      q > 0
+        ? `Submit your review — ${q} queued comment${q === 1 ? "" : "s"} will post with it`
+        : "Submit a review";
+  };
+  paintReview();
+  syncPendingUi = paintReview;
   reviewBtn.addEventListener("click", () =>
     openMenu(reviewBtn, [
       { label: "Comment", icon: "comment", onClick: () => void doReview(full.number, "COMMENT", reviewBtn, reload) },
@@ -763,7 +970,12 @@ function buildDetail(ctx: DetailCtx): void {
     sub.appendChild(who);
   }
   const when = el("span");
-  when.textContent = `opened ${relTimeISO(full.createdAt)} · updated ${relTimeISO(full.updatedAt)}`;
+  // The same contract as the issue page next door: opened · N comments. The
+  // "updated" time lives in the ABOUT rail (and in this hover) on both.
+  const nComments = typeof full.comments === "number" ? full.comments : undefined;
+  when.textContent =
+    `opened ${relTimeISO(full.createdAt)}` +
+    (nComments !== undefined ? ` · ${nComments} comment${nComments === 1 ? "" : "s"}` : "");
   when.title = full.updatedAt ? `Updated ${absTimeISO(full.updatedAt)}` : "";
   sub.appendChild(when);
   main.appendChild(sub);
@@ -798,7 +1010,7 @@ function buildDetail(ctx: DetailCtx): void {
 
   // ── property rail ──
   const reviewersProp = propSection("Reviewers", {
-    onEdit: () => void doRequestReviewers(full.number),
+    onEdit: () => void doRequestReviewers(full.number, false, full, reload),
     editTitle: "Request reviewers",
   });
   // Who was ASKED but hasn't answered — the single most useful thing a PR rail
@@ -813,7 +1025,9 @@ function buildDetail(ctx: DetailCtx): void {
       reviewersProp.body.appendChild(chip);
     }
   }
-  const requestBtn = propAddBtn("Request review", () => void doRequestReviewers(full.number));
+  const requestBtn = propAddBtn("Request review", () =>
+    void doRequestReviewers(full.number, false, full, reload),
+  );
   reviewersProp.body.appendChild(requestBtn);
   // GitHub drops a reviewer from `requestedReviewers` the moment they SUBMIT,
   // so this section listed only the people who had not answered yet — and told
@@ -890,19 +1104,38 @@ function buildDetail(ctx: DetailCtx): void {
   branchesProp.body.appendChild(flow);
 
   const checksProp = propSection("Checks");
-  if (d.checks) {
+  const paintChecksPill = (state: string): void => {
+    checksProp.body.replaceChildren();
+    if (!state) {
+      checksProp.body.appendChild(propNone("No checks"));
+      return;
+    }
     const c = el("button", "gh-pill det-checks-pill");
-    c.classList.add(`gh-checks-${d.checks}`);
+    c.classList.add(`gh-checks-${state}`);
     // Humanised, like every other status in the app. This pill sat one column
     // from a Checks tab that says "Passed"/"Running" and read a raw lowercase
     // `success` / `pending`.
-    c.textContent = checkStateLabel(d.checks);
+    c.textContent = checkStateLabel(state);
     c.title = "Open the Checks tab";
     c.addEventListener("click", () => selectSub("checks"));
     checksProp.body.appendChild(c);
-  } else {
-    checksProp.body.appendChild(propNone("No checks"));
-  }
+  };
+  paintChecksPill(d.checks);
+  // The pill and the Checks tab must tell ONE story. The combined-status API
+  // behind `d.checks` knows only legacy statuses, so it read "Pending" beside
+  // a tab listing a failed run and a running one. Roll the check runs up
+  // (the tab fetches the same list) and let them overrule it; the tab's
+  // label gets the count its siblings already carry.
+  void gget("pr:checks", full.number, 15_000)
+    .then((rows) => {
+      if (!checksProp.body.isConnected) return;
+      if (rows.length) paintChecksPill(rollupChecks(rows));
+      const lab = tabs.el.querySelector<HTMLElement>('[data-sub="checks"] span:last-of-type');
+      if (lab) lab.textContent = `Checks (${rows.length})`;
+    })
+    .catch(() => {
+      /* the combined status stands */
+    });
 
   // Who pressed merge — often NOT the author, and the answer to "who shipped
   // this?" that used to require opening github.com.
@@ -957,7 +1190,7 @@ function buildDetail(ctx: DetailCtx): void {
     about.body.appendChild(fact("From fork", full.headRepoFullName, full.headRepoFullName));
   }
   if (full.authorAssociation && full.authorAssociation !== "NONE") {
-    about.body.appendChild(fact("Author is", associationLabel(full.authorAssociation)));
+    about.body.appendChild(fact("Author", associationLabel(full.authorAssociation)));
   }
   about.body.appendChild(fact("Created", relTimeISO(full.createdAt), absTimeISO(full.createdAt)));
   about.body.appendChild(fact("Updated", relTimeISO(full.updatedAt), absTimeISO(full.updatedAt)));
@@ -1014,14 +1247,14 @@ async function renderSubTab(
     wireProseNav(timeline, sectionNav);
     if (full.body && full.body.trim()) {
       timeline.appendChild(
-        commentCard(full.user?.login ?? "author", "description", full.body, undefined, {
+        commentCard(full.user?.login ?? "author", "opened this pull request", full.body, undefined, {
           association: full.authorAssociation,
           reactions: full.reactions,
           createdAt: full.createdAt,
           onQuote: (t) => quoteIntoPr(t, full.user?.login),
           // A pull request IS an issue to the reactions endpoint, so its body
           // reacts by PR number.
-          onReact: (content, on) => void togglePrReaction("issue", full.number, content, on, reload),
+          onReact: (content, on) => togglePrReaction("issue", full.number, content, on),
         }),
       );
     }
@@ -1053,7 +1286,7 @@ async function renderSubTab(
           onQuote: (t) => quoteIntoPr(t, c.author),
           onReact:
             c.kind === "comment" && c.id
-              ? (content, on) => void togglePrReaction("comment", c.id!, content, on, reload)
+              ? (content, on) => togglePrReaction("comment", c.id!, content, on)
               : undefined,
         }),
       );
@@ -1183,7 +1416,16 @@ async function renderSubTab(
         // External CI keeps the browser.
         const gha = /\/actions\/runs\/(\d+)(?:\/jobs?\/(\d+))?/.exec(c.detailsUrl);
         row.title = gha ? "Open the run's logs in-app" : "Open check details";
-        row.addEventListener("click", () => {
+        // ROLE AND TABINDEX, because these rows are the only interactive thing
+        // on the Checks tab and they were bare divs: the pointer got a cursor
+        // and a hover, the keyboard got nothing, and a failing check's logs
+        // could not be reached at all without a mouse. role="button" rather
+        // than a real <button> — there is no button reset in this stylesheet,
+        // and .gh-check-row is written for a div.
+        row.setAttribute("role", "button");
+        row.tabIndex = 0;
+        row.setAttribute("aria-label", `${c.name} — ${checkStateLabel(state)}. ${row.title}`);
+        const open = (): void => {
           if (gha) {
             const jobId = gha[2] ? Number(gha[2]) : undefined;
             const runId = Number(gha[1]);
@@ -1192,6 +1434,12 @@ async function renderSubTab(
           } else {
             window.open(c.detailsUrl!, "_blank");
           }
+        };
+        row.addEventListener("click", open);
+        row.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter" && e.key !== " ") return;
+          e.preventDefault();
+          open();
         });
       }
       content.appendChild(row);
@@ -1224,11 +1472,19 @@ function renderFilesTab(content: HTMLElement, full: PullRequest, files: PrFile[]
 
   // Threads are (re)fetched on each file open so a just-added comment / resolve
   // shows immediately. A failure is non-fatal — the diff still renders.
-  const loadThreads = async (): Promise<PrReviewThread[]> => {
+  /**
+   * Carries the failure rather than erasing it.
+   *
+   * An empty array and "GitHub would not answer" rendered identically, as
+   * "No comments on this file" — so a network blip looked exactly like a file
+   * nobody had reviewed, and the reader had no way to tell the difference or
+   * to try again.
+   */
+  const loadThreads = async (): Promise<{ threads: PrReviewThread[]; error?: unknown }> => {
     try {
-      return await host.invoke("pr:reviewThreads", full.number);
-    } catch {
-      return [];
+      return { threads: await host.invoke("pr:reviewThreads", full.number) };
+    } catch (e) {
+      return { threads: [], error: e };
     }
   };
 
@@ -1312,7 +1568,7 @@ async function showFileDiff(
   detail: HTMLElement,
   full: PullRequest,
   f: PrFile,
-  loadThreads: () => Promise<PrReviewThread[]>,
+  loadThreads: () => Promise<{ threads: PrReviewThread[]; error?: unknown }>,
 ): Promise<void> {
   const surface = el("div", "diff-surface pr-diff-surface");
   const threadsSlot = el("div", "pr-threads");
@@ -1335,7 +1591,7 @@ async function showFileDiff(
     threadsSlot.replaceChildren(loadingState("Refreshing comments…"));
     const next = await loadThreads();
     if (prDiffPanel !== panel) return;
-    renderThreadsPanel(threadsSlot, full, f, next, () => void refreshThreads());
+    renderThreadsPanel(threadsSlot, full, f, next.threads, () => void refreshThreads(), next.error);
   };
 
   const threadsReady = loadThreads();
@@ -1356,9 +1612,10 @@ async function showFileDiff(
     panel.showDiff(diff);
   }
 
-  const threads = await threadsReady;
+  const loaded = await threadsReady;
+  const threads = loaded.threads;
   if (prDiffPanel !== panel) return;
-  renderThreadsPanel(threadsSlot, full, f, threads, () => void refreshThreads());
+  renderThreadsPanel(threadsSlot, full, f, threads, () => void refreshThreads(), loaded.error);
 }
 
 /** The inline-review panel beneath a file's diff: existing threads (grouped by
@@ -1369,6 +1626,8 @@ function renderThreadsPanel(
   f: PrFile,
   threads: PrReviewThread[],
   reloadFile: () => void,
+  /** Set when the fetch FAILED, which is not the same as "there are none". */
+  loadError?: unknown,
 ): void {
   slot.replaceChildren();
   const mine = threads
@@ -1380,33 +1639,103 @@ function renderThreadsPanel(
   // on a file with nothing to discuss. It opens by itself when this file has an
   // unresolved thread, which is the case where the comment is the point.
   const unresolved = mine.filter((t) => !t.isResolved).length;
-  const open = unresolved > 0;
+  // The PENDING remarks on this file are content too — a queued comment must
+  // open the panel it will post from, not hide behind a "No comments" head.
+  const pendingHere = pendingFor(full.number).filter((c) => c.path === f.filename);
+  const foldable = mine.length + pendingHere.length > 0;
+  const open = unresolved > 0 || pendingHere.length > 0;
   slot.classList.toggle("is-open", open);
 
   const head = el("button", "pr-threads-head") as HTMLButtonElement;
   head.setAttribute("aria-expanded", String(open));
   const chevron = glyph(open ? "chevron-down" : "chevron-right");
+  // The head must COUNT the pending remarks, not just make room for them. With
+  // no posted threads it read "No comments on this file" directly above the
+  // comments you had just queued on that very file.
+  const pendingSuffix = pendingHere.length
+    ? ` · ${pendingHere.length} pending`
+    : "";
   const title = span(
     mine.length === 0
-      ? "No comments on this file"
+      ? loadError
+        ? "Couldn't load the review comments"
+        : pendingHere.length
+          ? `${pendingHere.length} pending comment${pendingHere.length === 1 ? "" : "s"} on this file`
+          : "No comments on this file"
       : unresolved
-        ? `Review comments (${unresolved} open of ${mine.length})`
-        : `Review comments (${mine.length}, all resolved)`,
+        ? `Review comments (${unresolved} open of ${mine.length})${pendingSuffix}`
+        : `Review comments (${mine.length}, all resolved)${pendingSuffix}`,
     "pr-threads-title",
   );
-  head.append(chevron, glyph("comment-discussion"), title);
-  head.title = open ? "Hide the review comments" : "Show the review comments";
-  slot.appendChild(head);
+  if (foldable) head.appendChild(chevron);
+  head.append(glyph("comment-discussion"), title);
+  head.title = loadError
+    ? cleanErr(loadError) || "GitHub did not answer. The comments on this file are unknown."
+    : !foldable
+      ? ""
+      : open
+        ? "Hide the review comments"
+        : "Show the review comments";
+  head.disabled = !foldable; // nothing to fold — a plain status line, not a dead toggle
+  const headRow = el("div", "pr-threads-headrow");
+  headRow.appendChild(head);
+  slot.appendChild(headRow);
 
   const bodyEl = el("div", "pr-threads-body");
   bodyEl.hidden = !open;
   const addBtn = el("button", "mini-btn pr-threads-add");
   addBtn.append(glyph("comment"), span("Add a comment"));
   addBtn.title = "Comment on a line of this file";
-  addBtn.addEventListener("click", () => void addInlineComment(full.number, f.filename, addBtn, reloadFile));
-  const tools = el("div", "pr-threads-tools");
-  tools.appendChild(addBtn);
-  bodyEl.appendChild(tools);
+  addBtn.setAttribute("aria-haspopup", "menu");
+  addBtn.addEventListener("click", () =>
+    openMenu(addBtn, [
+      {
+        label: "Add to your review",
+        sub: "Queues it — one submit posts everything",
+        icon: "checklist",
+        onClick: () =>
+          void addInlineComment(full.number, f.filename, addBtn, reloadFile, "queue", sideFor(f)),
+      },
+      {
+        label: "Add single comment",
+        sub: "Posts immediately, on its own",
+        icon: "comment",
+        onClick: () =>
+          void addInlineComment(full.number, f.filename, addBtn, reloadFile, "single", sideFor(f)),
+      },
+    ]),
+  );
+  // Beside the head, OUTSIDE the folding body: the only way to start a
+  // comment used to be hidden inside a panel that is folded on precisely the
+  // files that have no comments yet.
+  headRow.appendChild(addBtn);
+
+  // The PENDING remarks on this file — visible, editable, deletable, and
+  // clearly not posted yet. A queue you cannot see is a queue you double-post.
+  for (const c of pendingHere) {
+    const card = el("div", "pr-thread pr-thread-pending");
+    const hd = el("div", "pr-thread-head");
+    const at = c.startLine && c.startLine !== c.line ? `${c.startLine}–${c.line}` : `${c.line}`;
+    hd.append(glyph("checklist"), span(`${f.filename}:${at}`, "pr-thread-anchor"), pill("pending"));
+    const drop = el("button", "mini-btn gh-icon-btn");
+    drop.appendChild(glyph("trash"));
+    drop.title = "Remove from your review";
+    drop.setAttribute("aria-label", `Remove the pending comment on line ${at}`);
+    drop.addEventListener("click", () => {
+      // By IDENTITY, not by the index captured at render — a double-click
+      // before the panel repaints would splice a NEIGHBOUR out by stale index.
+      const q = pendingFor(full.number);
+      const idx = q.indexOf(c);
+      if (idx >= 0) q.splice(idx, 1);
+      syncPendingUi?.();
+      reloadFile();
+    });
+    hd.appendChild(drop);
+    const bd = el("div", "gh-body-md pr-thread-body");
+    bd.textContent = c.body;
+    card.append(hd, bd);
+    bodyEl.appendChild(card);
+  }
 
   head.addEventListener("click", () => {
     const now = bodyEl.hidden === true;
@@ -1417,14 +1746,8 @@ function renderThreadsPanel(
     head.replaceChildren(glyph(now ? "chevron-down" : "chevron-right"), glyph("comment-discussion"), title);
   });
 
-  if (mine.length === 0) {
-    const none = el("div", "pr-threads-empty");
-    none.textContent = "No inline comments on this file yet.";
-    bodyEl.appendChild(none);
-  } else {
-    for (const t of mine) bodyEl.appendChild(threadCard(full.number, t, reloadFile));
-  }
-  slot.appendChild(bodyEl);
+  for (const t of mine) bodyEl.appendChild(threadCard(full.number, t, reloadFile));
+  if (foldable) slot.appendChild(bodyEl);
 }
 
 /** One review thread: a line anchor + its comments + resolve / reply controls. */
@@ -1523,7 +1846,7 @@ function commentCard(
      *  than offering something that would fail. */
     comment?: { id: number; htmlUrl?: string; mine: boolean; reload: () => void };
     onQuote?: (body: string) => void;
-    onReact?: (content: ReactionContent, on: boolean) => void;
+    onReact?: (content: ReactionContent, on: boolean) => Promise<boolean> | void;
   } = {},
 ): HTMLElement {
   const card = el("div", "gh-comment");
@@ -1563,7 +1886,11 @@ function commentCard(
       if (extra.onQuote) items.push({ label: "Quote reply", icon: "quote", onClick: () => extra.onQuote?.(body) });
       const c = extra.comment;
       if (c?.htmlUrl) {
-        items.push({ label: "Copy link", icon: "link", onClick: () => void navigator.clipboard?.writeText(c.htmlUrl!) });
+        items.push({
+          label: "Copy link",
+          icon: "link",
+          onClick: () => void copyText(c.htmlUrl!, "Link copied."),
+        });
       }
       // Yours only — see the note on the issue side. Offering Edit on somebody
       // else's comment buys a 403 at Save and a confirm dialog for a delete
@@ -1577,7 +1904,7 @@ function commentCard(
           onClick: () => void deletePrComment(c.id, c.reload),
         });
       }
-      openMenu(more, items);
+      openMenu(more, items, { align: "end" });
     });
     hd.appendChild(more);
   }
@@ -1671,23 +1998,27 @@ async function deletePrComment(id: number, reload: () => void): Promise<void> {
   }
 }
 
-/** Add or remove one of your reactions on a PR or one of its comments. */
+/** Add or remove one of your reactions on a PR or one of its comments.
+ *
+ *  Answers whether it STUCK; the strip has already drawn the change and puts
+ *  itself back on `false`. See the note on `reactionRow`: reloading the whole
+ *  PR to move one number by one is what made a click feel like a page load. */
 async function togglePrReaction(
   subject: "issue" | "comment",
   id: number,
   content: ReactionContent,
   on: boolean,
-  reload: () => void,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const r = await host.invoke("issue:react", { subject, id, content, on });
     if (!r.ok) {
       toast(r.message ?? "Couldn’t change the reaction.", "error");
-      return;
+      return false;
     }
-    reload();
+    return true;
   } catch (e) {
     toast(cleanErr(e) || "Couldn’t change the reaction.", "error");
+    return false;
   }
 }
 
@@ -1726,22 +2057,45 @@ async function doReview(
   // answered several paragraphs of considered feedback with a toast over an
   // empty screen, with no way back to the text. `formWithRetry` re-opens the
   // card carrying exactly what was written, and says why inside it.
-  (btn as HTMLButtonElement).disabled = true;
+  //
+  // The trigger is NOT disabled while the composer is open: disabling a
+  // focused button drops focus to <body>, and openModal captures that as the
+  // place to return the keyboard to — so Escape out of the composer stranded
+  // focus at the top of the document. The modal already blocks re-entry; the
+  // button is disabled only for the submit itself.
   try {
     await formWithRetry<{ event: PrReviewEvent; body: string }>(
       (seed, error) => reviewModal(n, seed?.event ?? event, seed?.body ?? "", error),
       async (choice) => {
+        (btn as HTMLButtonElement).disabled = true;
+        // The pending queue rides along — one review object, one notification.
+        // Snapshot it: clearing happens only after GitHub says yes, so a
+        // failed submit keeps every queued remark for the retry.
+        const queued = pendingFor(n);
+        // Pin the review to the head the reviewer READ. Without this a push
+        // that lands mid-review re-anchors every queued line to code nobody
+        // looked at — GitHub pins its own pending reviews the same way.
+        const headSha = cachePeek("pr:detail", n)?.pr.head.sha;
         try {
           const r = await host.invoke("pr:review", {
             number: n,
             event: choice.event,
             body: choice.body || undefined,
+            ...(queued.length > 0 ? { comments: queued.map((c) => ({ ...c })) } : {}),
+            ...(headSha ? { commitId: headSha } : {}),
           });
           if (!r.ok) return r.message ?? "Couldn't submit the review.";
         } catch (e) {
           return cleanErr(e) || "Couldn't submit the review.";
         }
-        toast(`Review submitted on PR #${n}.`, "success");
+        pendingReviews.delete(pendingKey(n));
+        syncPendingUi?.();
+        toast(
+          queued.length > 0
+            ? `Review submitted on PR #${n} — ${queued.length} comment${queued.length === 1 ? "" : "s"} posted with it.`
+            : `Review submitted on PR #${n}.`,
+          "success",
+        );
         reload();
         return undefined;
       },
@@ -1778,6 +2132,59 @@ function reviewModal(
       h.textContent = `Review pull request #${n}`;
       card.appendChild(h);
 
+      // The queue, IN the composer — visible, removable, and honest about
+      // orphans. A queued comment whose file left the diff (force-push,
+      // rename) can never render in the Files tab again, yet GitHub refuses
+      // the whole review while it rides along; without this list it was
+      // invisible, undeletable, and blocked every submit.
+      const queue = pendingFor(n);
+      if (queue.length > 0) {
+        const box = el("div", "review-pending-list");
+        const knownFiles = new Set((cachePeek("pr:detail", n)?.files ?? []).map((f) => f.filename));
+        const paintQueue = (): void => {
+          box.replaceChildren();
+          if (queue.length === 0) {
+            box.remove();
+            return;
+          }
+          const head = el("div", "review-pending-note");
+          head.append(
+            glyph("checklist"),
+            span(
+              `${queue.length} pending comment${queue.length === 1 ? "" : "s"} will post with this review.`,
+            ),
+          );
+          box.appendChild(head);
+          for (const c of [...queue]) {
+            const row = el("div", "review-pending-row");
+            const at = c.startLine && c.startLine !== c.line ? `${c.startLine}–${c.line}` : `${c.line}`;
+            const anchor = span(`${c.path}:${at}`, "review-pending-anchor sec-mono");
+            anchor.title = c.body;
+            row.appendChild(anchor);
+            if (knownFiles.size > 0 && !knownFiles.has(c.path)) {
+              const warn = span("no longer in the diff", "review-pending-orphan");
+              warn.title =
+                "This file left the diff (a force-push or a rename). GitHub refuses the whole review while this remains — remove it to submit.";
+              row.appendChild(warn);
+            }
+            const rm = el("button", "mini-btn gh-icon-btn");
+            rm.appendChild(glyph("trash"));
+            rm.title = "Remove from your review";
+            rm.setAttribute("aria-label", `Remove the comment on ${c.path}:${at}`);
+            rm.addEventListener("click", () => {
+              const idx = queue.indexOf(c);
+              if (idx >= 0) queue.splice(idx, 1);
+              syncPendingUi?.();
+              paintQueue();
+            });
+            row.appendChild(rm);
+            box.appendChild(row);
+          }
+        };
+        paintQueue();
+        card.appendChild(box);
+      }
+
       let selected: PrReviewEvent = initial;
       const verdictRows: HTMLElement[] = [];
       const verdicts = el("div", "review-verdicts");
@@ -1810,7 +2217,7 @@ function reviewModal(
 
       const ta = document.createElement("textarea");
       ta.className = "gh-form-textarea";
-      ta.placeholder = "Leave a review comment… (required for Request changes)";
+      ta.placeholder = "Sum up your review… (optional only when approving)";
       ta.rows = 5;
       ta.value = initialBody;
       card.appendChild(ta);
@@ -1834,9 +2241,14 @@ function reviewModal(
 
       const submit = (): void => {
         const body = ta.value.trim();
-        if (!body && selected === "REQUEST_CHANGES") {
+        if (!body && (selected === "REQUEST_CHANGES" || selected === "COMMENT")) {
           ta.focus();
-          toast("A comment is required to request changes.", "error");
+          toast(
+            selected === "COMMENT"
+              ? "Write a summary — GitHub requires one to comment."
+              : "A comment is required to request changes.",
+            "error",
+          );
           return;
         }
         finish({ event: selected, body });
@@ -1854,8 +2266,13 @@ function reviewModal(
         card,
         focusEl: ta,
         label: `Review pull request #${n}`,
-        // A route change (a window focus counts) must not take a written review.
-        hasUnsavedWork: () => ta.value.trim() !== initialBody.trim(),
+        // A route change (a window focus counts) must not take a written
+        // review. On a RETRY the seed IS the failed text — comparing against
+        // it reported "nothing unsaved" and a background refocus destroyed
+        // the very paragraphs formWithRetry exists to hand back; after a
+        // failed submit, any text at all is unsaved.
+        hasUnsavedWork: () =>
+          ta.value.trim() !== "" && (error !== undefined || ta.value.trim() !== initialBody.trim()),
         onClose: () => {
           if (!settled) resolve(null);
         },
@@ -1957,17 +2374,49 @@ async function doMerge(n: number, method: "merge" | "squash" | "rebase", reload:
 
 /** Request reviewers (or re-request the same set, when `reRequest` is set — the
  *  GitHub re-request just re-POSTs the chosen logins to the same endpoint). */
-async function doRequestReviewers(n: number, reRequest = false): Promise<void> {
+/**
+ * `reload` is not optional in spirit: without it this was the one rail mutation
+ * on the page that did not repaint. You picked two people, got "Requested 2
+ * reviewers", and the Reviewers rail stayed empty — and re-opening the picker
+ * re-read the stale list, so the same people could be asked twice, each with
+ * its own notification. Every sibling (labels, assignees) calls the page's
+ * reloader, which busts the cache itself.
+ */
+async function doRequestReviewers(
+  n: number,
+  reRequest = false,
+  pr?: PullRequest,
+  reload?: () => void,
+): Promise<void> {
   let people: RepoCollaborator[] = [];
   try {
     people = await gget("pr:reviewers", undefined, 60000);
   } catch {
     /* fall through to the free-text path */
   }
+  // Honest picker: the author cannot review their own PR, and the people
+  // already asked are shown checked-and-locked — GitHub's DELETE lifts only
+  // pending requests, so an unchecked box here could never promise a removal.
+  const author = pr?.user?.login;
+  const pending = (pr?.requestedReviewers ?? []).map((r) => r.login);
+  if (author) people = people.filter((p) => p.login !== author);
   const verb = reRequest ? "Re-request review" : "Request reviewers";
   let chosen: string[] | null;
   if (people.length) {
-    chosen = await peoplePickerModal({ title: verb, okLabel: reRequest ? "Re-request" : "Request", people, selected: [] });
+    chosen = await peoplePickerModal({
+      title: verb,
+      okLabel: reRequest ? "Re-request" : "Request",
+      people,
+      selected: [],
+      locked: reRequest ? [] : pending,
+    });
+    // Only the ADDITIONS go over the wire — re-posting a pending request is a
+    // no-op GitHub still counts as a notification.
+    if (chosen && !reRequest) chosen = chosen.filter((c) => !pending.includes(c));
+    if (chosen && chosen.length === 0 && !reRequest) {
+      toast("Everyone you picked has already been asked.", "info");
+      return;
+    }
   } else {
     const raw = await promptInline(
       verb,
@@ -1990,6 +2439,7 @@ async function doRequestReviewers(n: number, reRequest = false): Promise<void> {
         : `Requested ${chosen.length} reviewer${chosen.length === 1 ? "" : "s"} on PR #${n}.`,
       "success",
     );
+    reload?.();
   } catch (e) {
     toast(cleanErr(e) || "Couldn't request reviewers.", "error");
   }
@@ -2116,30 +2566,62 @@ async function doUpdateBranch(n: number, reload: () => void, btn?: HTMLElement):
   }
 }
 
-/** Add a new inline review comment: prompt for a line + body → pr:addReviewComment. */
+/**
+ * Add an inline review comment — into the pending review, or immediately.
+ *
+ * Queueing is the default the moment a review is in progress (matching
+ * github.com, where "Add single comment" is the escape hatch, not the mode).
+ * A line RANGE ("12-18") makes a multi-line comment.
+ */
 async function addInlineComment(
   n: number,
   path: string,
   btn: HTMLElement,
   reloadFile: () => void,
+  mode?: "queue" | "single",
+  side?: "LEFT" | "RIGHT",
 ): Promise<void> {
   const lineRaw = await promptInline(
     `Comment on ${path}`,
-    "Line number (on the head side)",
+    side === "LEFT" ? "Line, or a range like 12-18 (in the removed file)" : "Line, or a range like 12-18 (head side)",
     "",
     "Next",
   );
   if (lineRaw === null) return;
-  const line = Number(lineRaw);
-  if (!Number.isInteger(line) || line <= 0) {
-    toast("Enter a valid line number.", "error");
+  const m = /^\s*(\d+)(?:\s*-\s*(\d+))?\s*$/.exec(lineRaw);
+  if (!m) {
+    toast("Enter a line number, or a range like 12-18.", "error");
     return;
   }
-  const body = await promptInline(`Comment on ${path}:${line}`, "Leave a review comment…", "", "Comment");
+  const a1 = Number(m[1]);
+  const a2 = m[2] ? Number(m[2]) : a1;
+  const startLine = Math.min(a1, a2);
+  const line = Math.max(a1, a2);
+  const at = startLine === line ? `${line}` : `${startLine}–${line}`;
+  const body = await promptInline(`Comment on ${path}:${at}`, "Leave a review comment…", "", "Comment");
   if (!body) return;
+
+  const chosen = mode ?? (pendingFor(n).length > 0 ? "queue" : "single");
+  if (chosen === "queue") {
+    pendingFor(n).push({
+      path,
+      line,
+      ...(startLine !== line ? { startLine } : {}),
+      ...(side ? { side } : {}),
+      body,
+    });
+    syncPendingUi?.();
+    toast(
+      `Added to your review — ${pendingFor(n).length} pending. Nothing posts until you submit.`,
+      "success",
+    );
+    reloadFile(); // the pending card renders where the thread will land
+    return;
+  }
+
   (btn as HTMLButtonElement).disabled = true;
   try {
-    const r = await host.invoke("pr:addReviewComment", { number: n, path, line, side: "RIGHT", body });
+    const r = await host.invoke("pr:addReviewComment", { number: n, path, line, side: side ?? "RIGHT", body });
     if (!r.ok) {
       toast(r.message ?? "Couldn't add the comment.", "error");
       return;
@@ -2235,16 +2717,11 @@ export async function openCreatePr(
     branches.find((b) => b.name !== base)?.name ??
     branches[0].name;
 
+  // The form validates itself before it closes, so anything that arrives here
+  // is already complete — checking again after the fact is what destroyed the
+  // description.
   const res = await createPrModal({ branches, defaultBase: base, defaultHead: head });
   if (!res) return; // cancelled
-  if (!res.title.trim()) {
-    toast("A title is required.", "error");
-    return;
-  }
-  if (res.head === res.base) {
-    toast("Head and base must differ.", "error");
-    return;
-  }
   try {
     const r = await host.invoke("pr:create", {
       title: res.title.trim(),
@@ -2334,7 +2811,22 @@ function createPrModal(opts: {
       card.append(h, head.row, base.row, titleRow, bodyRow, draftRow, actions);
 
       cancel.addEventListener("click", close);
-      ok.addEventListener("click", () => {
+      // VALIDATED HERE, not after the modal has gone. The checks used to live
+      // in openCreatePr, which ran them on the resolved value — so an empty
+      // title or head === base closed the form, threw away however many
+      // paragraphs of description had been written, and then toasted the
+      // complaint over an empty screen.
+      const submit = (): void => {
+        if (!title.value.trim()) {
+          title.focus();
+          toast("A title is required.", "error");
+          return;
+        }
+        if (head.sel.value === base.sel.value) {
+          head.sel.focus();
+          toast("Head and base must differ.", "error");
+          return;
+        }
         settled = true;
         resolve({
           title: title.value,
@@ -2344,11 +2836,22 @@ function createPrModal(opts: {
           draft: draft.checked,
         });
         close();
+      };
+      ok.addEventListener("click", submit);
+      // ⌘Enter submits, the way the review composer beside it already does.
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          submit();
+        }
       });
       return {
         card,
         focusEl: title,
         label: "New pull request",
+        // A background route change must not take a written description with
+        // it — the same veto the issue composer carries.
+        hasUnsavedWork: () => title.value.trim() !== "" || body.value.trim() !== "",
         onClose: () => {
           if (!settled) resolve(null);
         },

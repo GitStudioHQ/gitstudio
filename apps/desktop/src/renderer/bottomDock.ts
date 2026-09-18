@@ -188,10 +188,18 @@ export class BottomDock {
   }
 
   /**
-   * The dock may never take more than this share of the window: below that the
-   * view above it (graph + details) stops being usable.
+   * The dock may never take more than this share of the window.
+   *
+   * It was 0.6, on the reasoning that below 40% the view above stops being
+   * usable. That is the wrong party's decision: a person reading a long diff in
+   * the dock is not using the graph behind it at that moment, and stopping
+   * their drag at 60% reads as the app refusing. What the ceiling is really for
+   * is making sure there is always a way BACK — enough of the view above to
+   * aim at, and the dock's own footer to collapse from. 0.9 gives that with a
+   * tenth of the window to spare, and `reclamp()` still snaps a dock that no
+   * longer fits after the window shrinks.
    */
-  private static readonly MAX_SHARE = 0.6;
+  private static readonly MAX_SHARE = 0.9;
 
   static clampHeight(h: number, min = 120): number {
     const ceiling = Math.max(min, Math.round(window.innerHeight * BottomDock.MAX_SHARE));

@@ -79,6 +79,19 @@ export class ComparePanel {
   private base: string;
   private head: string;
   private threeDot = true;
+  /**
+   * What the last render was built FROM, so an update that changes nothing
+   * repaints nothing.
+   *
+   * repoManager's onDidChange fires on every watcher tick, every SCM refresh
+   * and every window-focus fingerprint — and update() answered each one by
+   * REPLACING the webview's HTML wholesale. Every expanded file diff, every
+   * scroll position, gone, "about every 30 seconds to 2 minutes even when
+   * neither branch is changing" (issue #24). Two refs that haven't moved
+   * produce a byte-identical comparison; a byte-identical comparison must be
+   * a no-op on screen.
+   */
+  private lastRenderKey = "";
 
   private constructor(
     private readonly repos: RepoManager,
@@ -116,9 +129,18 @@ export class ComparePanel {
 
   /** Re-run the comparison and re-render. */
   private async update(): Promise<void> {
-    this.panel.title = `Compare: ${this.base} ↔ ${this.head}`;
+    // Snapshot the inputs. update() is deliberately unserialized and
+    // onDidChange fires often; a mode flip or ref pick landing while the git
+    // call is in flight used to marry the NEW inputs to the OLD result for
+    // one paint (and key that mislabeled paint as current). The snapshot runs
+    // the call, builds the key, and bails if the world moved underneath.
+    const base = this.base;
+    const head = this.head;
+    const threeDot = this.threeDot;
+    this.panel.title = `Compare: ${base} ↔ ${head}`;
     const active = this.repos.getActive();
     if (!active) {
+      this.lastRenderKey = "";
       this.panel.webview.html = this.errorHtml("No active repository.");
       return;
     }
@@ -126,14 +148,15 @@ export class ComparePanel {
     try {
       result = await compareRefsData(
         active,
-        this.base,
-        this.head,
-        this.threeDot,
+        base,
+        head,
+        threeDot,
       );
     } catch {
       if (this.disposed) {
         return;
       }
+      this.lastRenderKey = "";
       this.panel.webview.html = this.errorHtml(
         `Couldn't compare ${this.base} with ${this.head}.`,
       );
@@ -144,6 +167,17 @@ export class ComparePanel {
     if (this.disposed) {
       return;
     }
+    // The refs, the mode, and the whole result — anything that could change
+    // what render() draws is in the key. Same key, same screen: skip, and the
+    // reader's open diffs stay open.
+    if (base !== this.base || head !== this.head || threeDot !== this.threeDot) {
+      return; // superseded mid-flight — the newer update() paints
+    }
+    const key = JSON.stringify([base, head, threeDot, result]);
+    if (key === this.lastRenderKey) {
+      return;
+    }
+    this.lastRenderKey = key;
     this.panel.webview.html = this.render(result);
   }
 
@@ -555,13 +589,25 @@ const COMPARE_CSS = `
 // ── Webview JS (client-rendered lists + inline diff parser/renderer) ─────────
 const COMPARE_JS = String.raw`
 const vscode = acquireVsCodeApi();
+// The webview's HTML is REPLACED when the comparison genuinely changes, and a
+// replacement script starts from zero — which used to close every diff the
+// reader had open the moment new commits landed on either ref. The webview
+// state API survives the swap (and the tab being backgrounded), so the open
+// set, the filter and the layout ride it. Same-comparison repaints are
+// already skipped upstream; this covers the repaints that must happen.
+const SAVED = (function () { try { return vscode.getState() || {}; } catch (e) { return {}; } })();
+function saveViewState() {
+  try {
+    vscode.setState({ open: Array.from(openPaths), filter: filter, diffMode: diffMode, showTree: showTree });
+  } catch (e) { /* state is a convenience, never a requirement */ }
+}
 const $ = (id) => document.getElementById(id);
 const patches = new Map();     // path -> patch text ("" = binary/empty)
-const openPaths = new Set();    // paths whose inline diff is expanded (survives re-render)
+const openPaths = new Set(Array.isArray(SAVED.open) ? SAVED.open : []); // expanded diffs — survives re-render AND the html swap
 const collapsedDirs = new Set();// tree-sidebar folder paths the user collapsed
-let diffMode = "unified";      // "unified" | "split"
-let showTree = true;           // the left file-tree sidebar (optional, toggleable)
-let filter = "";
+let diffMode = SAVED.diffMode === "split" ? "split" : "unified"; // "unified" | "split"
+let showTree = SAVED.showTree !== false; // the left file-tree sidebar (optional, toggleable)
+let filter = typeof SAVED.filter === "string" ? SAVED.filter : "";
 
 function escText(s) { const d = document.createElement("span"); d.textContent = s; return d.innerHTML; }
 function el(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; }
@@ -595,7 +641,10 @@ $("mode-3").onclick = () => vscode.postMessage({ type: "setMode", threeDot: true
 $("mode-2").onclick = () => vscode.postMessage({ type: "setMode", threeDot: false });
 
 const filterInput = $("file-filter");
-filterInput.addEventListener("input", () => { filter = filterInput.value.trim().toLowerCase(); renderFiles(); });
+// A restored filter shows in the box, or the list is silently narrowed by
+// text nobody can see.
+if (filter) filterInput.value = filter;
+filterInput.addEventListener("input", () => { filter = filterInput.value.trim().toLowerCase(); saveViewState(); renderFiles(); });
 
 // ---- File-tree sidebar toggle (GitHub/GitLab-style) ----
 const layoutEl = $("files-layout");
@@ -604,7 +653,7 @@ function applyTree() {
   $("toggle-tree").classList.toggle("on", showTree);
   $("toggle-tree").setAttribute("aria-pressed", String(showTree));
 }
-$("toggle-tree").onclick = () => { showTree = !showTree; applyTree(); if (showTree) renderTreeNav(); };
+$("toggle-tree").onclick = () => { showTree = !showTree; saveViewState(); applyTree(); if (showTree) renderTreeNav(); };
 // Auto-hide the sidebar on a narrow panel (like GitHub) — but honour an explicit
 // user toggle afterwards.
 let userToggledTree = false;
@@ -640,6 +689,7 @@ $("diff-unified").onclick = () => setDiffMode("unified");
 $("diff-split").onclick = () => setDiffMode("split");
 function setDiffMode(m) {
   diffMode = m;
+  saveViewState();
   $("diff-unified").classList.toggle("on", m === "unified");
   $("diff-split").classList.toggle("on", m === "split");
   // Re-render any already-open diffs from cache.
@@ -739,8 +789,9 @@ function toggleFile(fileEl) {
   const opening = !fileEl.classList.contains("open");
   fileEl.classList.toggle("open", opening);
   const p = fileEl.dataset.path;
-  if (!opening) { openPaths.delete(p); return; }
+  if (!opening) { openPaths.delete(p); saveViewState(); return; }
   openPaths.add(p);
+  saveViewState();
   loadDiffInto(fileEl);
 }
 

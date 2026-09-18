@@ -497,7 +497,7 @@ export async function renderCommit(
       { separator: true },
       // The graph is a good way to see a commit's SHAPE — just not an answer to
       // "what changed", which is why it stopped being the destination.
-      { label: "Show in the graph", icon: "git-commit", onClick: () => nav("graph", { sha: d!.sha }) },
+      { label: "View in Commits", icon: "git-commit", onClick: () => nav("graph", { sha: d!.sha }) },
     ];
     openMenu(more, items);
   });

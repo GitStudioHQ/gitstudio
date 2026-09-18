@@ -34,6 +34,9 @@ export interface RefInfo {
   subject?: string;
   /** "tag" for an ANNOTATED tag, "commit" otherwise. */
   objectType?: string;
+  /** The person behind the ref: the tagger for an annotated tag (they cut
+   *  it), otherwise the tip commit's author. */
+  who?: { name: string; email: string; tagger?: boolean };
   /** For a remote's own HEAD ref, the DEFAULT branch it points at. (Written
    *  without the literal path, because the star-slash in it closes a comment.) */
   symref?: string;
@@ -390,8 +393,16 @@ export interface BranchInfo {
   behindDefault?: number;
   /** Every commit on this branch is reachable from the default branch. */
   merged?: boolean;
+  /** This IS the default branch. `merged` is true on it by definition (it is
+   *  merged into itself), so anything counting "branches safe to delete" must
+   *  read this flag or it will offer to delete main, forever. */
+  isDefault?: boolean;
   /** Subject of the branch tip commit. */
   subject: string;
+  /** Who made the tip commit — the branch's most recent hand. Free out of the
+   *  same for-each-ref that lists the branch, unlike the full contributor
+   *  picture, which costs a log walk per branch (see branches:people). */
+  tipAuthor?: { name: string; email: string };
   /** Tip commit author date, epoch seconds. */
   date: number;
 }
@@ -528,6 +539,13 @@ export interface IssueInfo {
   stateReason?: string | null;
   authorAssociation?: AuthorAssociation;
   reactions?: ReactionSummary;
+  /** The conversation is locked — only collaborators may comment. The composer
+   *  and the overflow menu both read this, so they can never disagree about
+   *  whether commenting is possible. */
+  locked?: boolean;
+  /** GitHub's lock reason, when one was given: off-topic | too heated |
+   *  resolved | spam. */
+  activeLockReason?: string | null;
 }
 export interface ProjectInfo {
   /** GraphQL node id (ProjectV2) — the handle for item queries + mutations. */
@@ -596,8 +614,22 @@ export interface TimelineEvent {
   rename?: { from: string; to: string };
   /** Why it was closed: GitHub's state_reason. */
   reason?: string;
-  /** The commit or issue/PR that referenced this one. */
-  source?: { kind: "commit" | "issue" | "pr"; ref: string; title?: string; url?: string };
+  /** The commit or issue/PR that referenced this one. `state`/`merged` are
+   *  carried for PRs so the Development rail can colour them — a merged PR is
+   *  the answer to "was this fixed", and grey text cannot say it. */
+  source?: {
+    kind: "commit" | "issue" | "pr";
+    ref: string;
+    /** `owner/repo` for a cross-reference — often NOT the repository you are
+     *  reading, and the app has no page for another project's issue, so the
+     *  renderer says which one it is and sends you there rather than to the
+     *  same number in this one. */
+    repo?: string;
+    title?: string;
+    url?: string;
+    state?: string;
+    merged?: boolean;
+  };
 }
 
 export interface IssueDetail {
@@ -616,6 +648,12 @@ export interface MyWorkItem {
   kind: "review-requested" | "assigned" | "my-prs" | "mentions";
   type: "issue" | "pr";
   number: number;
+  /** Where it lives — attached whenever the search result names it (both
+   *  scopes), so Home can prefix the row and the renderer can route an item
+   *  from ANOTHER repo through the external-item flow instead of into the
+   *  current repo's page for the same number. Absent only when GitHub's
+   *  repository_url failed to parse. */
+  repo?: { owner: string; name: string };
   title: string;
   state: string;
   draft: boolean;
@@ -660,6 +698,24 @@ export interface PrReviewRequest {
   number: number;
   event: PrReviewEvent;
   body?: string;
+  /**
+   * Line comments that post WITH the review, as one submission — one
+   * notification, one review object, the way GitHub's own "Start a review"
+   * works. Without this every line comment fired immediately as its own
+   * standalone review, so ten remarks meant ten emails and ten review rows.
+   * `startLine` (with `line` as the end) makes a multi-line comment.
+   */
+  comments?: Array<{
+    path: string;
+    line: number;
+    startLine?: number;
+    side?: "LEFT" | "RIGHT";
+    body: string;
+  }>;
+  /** The head SHA the reviewer was looking at. Sent so a mid-review push
+   *  cannot silently re-anchor the queued comments to code they never read —
+   *  GitHub pins its own pending reviews the same way. */
+  commitId?: string;
 }
 
 // ── Actions (control) ──
@@ -976,6 +1032,23 @@ export interface GhRepoBranch {
   protected: boolean;
 }
 
+/** One commit from a repository you are BROWSING, not one you have cloned.
+ *  Deliberately a smaller shape than the local `CommitRow`: the API gives no
+ *  graph lanes and no diffstat without a request per commit, and a browse page
+ *  is for reading history, not replaying it. */
+export interface GhRepoCommit {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  /** The commit author's display name, from the git metadata. */
+  author: string;
+  /** The GitHub login, when the commit is linked to an account. */
+  login?: string;
+  avatarUrl?: string;
+  /** ISO-8601, as the API returns it. */
+  date?: string;
+}
+
 /** Every blob path in a remote repo — the go-to-file index. */
 export interface GhRepoPaths {
   paths: string[];
@@ -1059,6 +1132,20 @@ export interface SearchPage<T> {
 export type SearchSort = "best" | "stars" | "updated";
 
 /** One repository copy on this machine (Settings → Repositories manager). */
+/** Working-tree signals for a repository the app does NOT have open — the
+ *  Home repo rows wear these so "which of my repos has unpushed work" is
+ *  answerable without opening each one. One `git status --porcelain=v2
+ *  --branch` per repo, capped and cached in main. */
+export interface LocalRepoStatus {
+  /** Current branch name, "" when detached. */
+  branch: string;
+  /** Changed paths (staged + unstaged + untracked + conflicted). */
+  dirty: number;
+  /** Commits ahead of upstream; 0 when there is no upstream. */
+  ahead: number;
+  behind: number;
+}
+
 export interface LocalCopy {
   /** Absolute repo root. */
   root: string;
@@ -1074,6 +1161,29 @@ export interface LocalCopy {
   current: boolean;
   /** The folder is gone (a recent someone deleted outside GitStudio). */
   missing: boolean;
+  /**
+   * The tracked folder this copy renders under — the SHALLOWEST one containing
+   * it. Absent means it is inside none of them, which is the only thing that
+   * has ever deserved the heading "Opened from elsewhere".
+   *
+   * Decided in the main process, not here: the renderer has no realpath, so a
+   * folder reached through a symlink is a question only main can answer, and
+   * the count a band prints has to come from the same pass that produced the
+   * rows under it.
+   */
+  band?: string;
+  /**
+   * The directory below that band, "" when the copy sits directly in it.
+   * Multi-segment when a repository is found more than one level down.
+   */
+  group?: string;
+  /**
+   * The main repository's root when this copy is a linked worktree of it —
+   * a CHECKOUT of a repository, not another repository. Rows say so, and the
+   * folder counts skip it (FlexiMeal read "5" over three repos + two
+   * worktrees). Submodules don't get this: a submodule is its own repo.
+   */
+  worktreeOf?: string;
 }
 
 /** A folder GitStudio scans for repositories. */
@@ -1082,15 +1192,84 @@ export interface RepoFolder {
   path: string;
   /** "~/…"-style rendering for UI copy. */
   display: string;
-  /** The configured clone folder: always scanned, cannot be removed. */
+  /** The configured clone folder: always scanned, and tracked for as long as
+   *  it is the clone folder — point clones somewhere else to stop. */
   isCloneDir: boolean;
-  /** How many repositories were found in it. */
+  /** The clone folder is the built-in ~/GitStudio, not one that was chosen.
+   *  The folder the app made in your home directory without being asked needs
+   *  to be as removable as any other, and "reset to the default" is only
+   *  meaningful when the default is not what you already have. */
+  isDefaultCloneDir: boolean;
+  /**
+   * Repositories that render DIRECTLY under this head — what the head prints.
+   *
+   * Not the same number as `containedCount`, and the difference is the whole
+   * bug: ~/Developer had six repositories sitting loose in it and nineteen more
+   * in project folders inside it, and the head printed six.
+   */
   repoCount: number;
+  /**
+   * Every repository at or below this folder, at any depth.
+   *
+   * What decides whether "Delete this folder" may be offered, and whether a
+   * folder that has gone missing is still worth listing. A clone folder whose
+   * repositories all sit one level down has `repoCount: 0` — offering to delete
+   * it on that basis is how a menu comes to read "It's empty — nothing is lost"
+   * over a directory full of work.
+   */
+  containedCount: number;
+  /**
+   * EVERYTHING inside, linked worktrees included — the number that guards
+   * deletion. `containedCount` excludes worktrees (a checkout is not another
+   * repository, and the band head prints repositories), but trashing a folder
+   * eats its worktrees all the same, so the guard counts them.
+   */
+  containedAnyCount: number;
+  /** The resolved path. Containment is decided on real paths, because a folder
+   *  tracked through a symlink otherwise contains nothing. */
+  real: string;
+  /**
+   * This tracked folder is itself inside another tracked folder, and renders
+   * as a group inside that one's band rather than as a band of its own.
+   *
+   * Opening a repository quietly tracks its parent, so a tracked folder nested
+   * in a tracked folder is not an exotic state — it is what this machine had.
+   * Given its own band it would be torn out of the alphabetical run its path
+   * puts it in, and its parent would print a count that excluded it.
+   */
+  nestedIn?: string;
+  /** Its group key within `nestedIn` — how the renderer finds the head to
+   *  hang this folder's chip and menu on. */
+  group?: string;
   /** The folder is gone or unreadable. */
   missing: boolean;
 }
 
 /** The app-wide preferences (Settings → Repositories card). */
+/** One editor the Open-in menu can offer. */
+export interface EditorView {
+  /** The OS's own icon for this editor, as a data URL — so the menus show the
+   *  real marks rather than one generic glyph repeated down the list. Absent
+   *  for a custom command, which is a command and not an application. */
+  icon?: string;
+  id: string;
+  name: string;
+  /** How it was found — a macOS app bundle, a CLI, a known install path — or
+   *  "custom" for one the user added by command. */
+  via: "app" | "cli" | "path" | "custom";
+  /** Listed in the Open-in menu. Detected editors are shown unless hidden in
+   *  Settings; a newly installed editor therefore appears on its own. */
+  shown: boolean;
+  /** The primary "Open in …" button's editor. */
+  isDefault: boolean;
+  /** The bundle / executable / command that opens it — Settings shows it. */
+  location?: string;
+}
+export interface EditorsView {
+  editors: EditorView[];
+  defaultId?: string;
+}
+
 export interface AppSettingsView {
   /** Effective absolute default clone parent. */
   cloneDir: string;
@@ -1489,6 +1668,21 @@ export interface IpcChannels {
   "stage": [string, CommitActionResult];
   "unstage": [string, CommitActionResult];
   "discard": [string, CommitActionResult];
+  /**
+   * Take a restore point before discarding, so the discard can be undone.
+   *
+   * `git stash create` writes a commit for the current index + working tree and
+   * prints its sha WITHOUT touching either — so this is a pure read as far as
+   * the user is concerned. Empty sha means there was nothing to record.
+   *
+   * It cannot record an UNTRACKED file: git has no copy of one to make a
+   * commit from, and discarding it deletes it. Callers must not offer an undo
+   * for those.
+   */
+  "discard:snapshot": [void, { sha?: string }];
+  /** Put the named paths back to how they were in a snapshot's tree. Restores
+   *  the WORKING TREE only: what was staged stays staged. */
+  "discard:undo": [{ sha: string; paths: string[] }, { ok: boolean; message?: string }];
   "stageAll": [void, CommitActionResult];
   "unstageAll": [void, CommitActionResult];
   /** The still-unstaged changes within one file, for per-hunk ticks (#20). */
@@ -1501,6 +1695,16 @@ export interface IpcChannels {
   "stash:apply": [string, CommitActionResult];
   "stash:pop": [string, CommitActionResult];
   "stash:drop": [string, CommitActionResult];
+  /**
+   * Put a dropped stash back — `git stash store <sha>`.
+   *
+   * Dropping a stash does not destroy anything: it removes a ref, and the
+   * commit it pointed at is still there until git collects it. So the drop is
+   * reversible for as long as anyone would want to reverse it. It comes back
+   * on TOP of the stack rather than at its old index, which is what `store`
+   * does and what the message says.
+   */
+  "stash:restore": [{ sha: string; message?: string }, CommitActionResult];
   /**
    * Stash the whole tree, a selection of paths, or just the index.
    *
@@ -1528,13 +1732,46 @@ export interface IpcChannels {
   "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, CommitActionResult];
   /** Push (or publish) ONE named branch, not just the checked-out one. */
   "branch:push": [{ name: string }, CommitActionResult];
+  /**
+   * Publish a branch UNDER ITS OWN NAME and track it.
+   *
+   * NOT what `branch:push` does: that one deliberately targets the name the
+   * branch already TRACKS, which after a `git branch -m` is the OLD name — the
+   * exact thing this call exists to correct.
+   */
+  "branch:publish": [{ name: string; remote: string }, CommitActionResult];
   // ── Branch management ──
   "branches:list": [void, BranchInfo[]];
+  /**
+   * Who is BEHIND each branch: the author of its first unique commit (the
+   * nearest thing git records to "who created it") and everyone who authored
+   * commits the default branch does not have. One log walk per branch, so it
+   * is a separate, deliberately-async read: the list paints instantly with
+   * tip authors and this fills the rest in when it lands. Branches with no
+   * unique commits (merged, or the default itself) are simply absent.
+   */
+  "branches:people": [
+    void,
+    Record<string, { creator: { name: string; email: string }; contributors: Array<{ name: string; email: string; count: number }> }>,
+  ];
   /** Recent commits reachable from ONE ref (branch / remote / tag / stash sha) —
    *  feeds the peek cards so any ref is browsable without loading the graph. */
   "ref:log": [{ ref: string; maxCount?: number }, CompareCommit[]];
-  "branch:create": [{ name: string; checkout?: boolean }, CommitActionResult];
-  "branch:delete": [{ name: string; force?: boolean }, CommitActionResult];
+  /** Create a branch. `startPoint` is what makes undoing a delete possible —
+   *  a branch restored at HEAD is a different branch with the same name.
+   *  `upstream` ("origin/foo") re-establishes the tracking a delete took with
+   *  it, so the restored branch is ahead/behind the same thing it was. */
+  "branch:create": [
+    { name: string; checkout?: boolean; startPoint?: string; upstream?: string },
+    CommitActionResult,
+  ];
+  /** Delete a local branch. `was` is the tip it pointed at and `upstream` what
+   *  it tracked, both read BEFORE the delete — git prints the sha and throws
+   *  the tracking config away, and undo needs both. */
+  "branch:delete": [
+    { name: string; force?: boolean },
+    CommitActionResult & { was?: string; upstream?: string },
+  ];
   /** Fast-forward a local branch straight from its upstream WITHOUT checking
    *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`). */
   "branch:pullFf": [{ name: string }, CommitActionResult];
@@ -1571,6 +1808,18 @@ export interface IpcChannels {
    *  it's the fallback that makes auto-copies (device-flow code) reliable. */
   "clipboard:write": [string, void];
   // ── App settings (Settings → Repositories) ──
+  // ── Open in editor ──
+  "editors:list": [void, EditorsView];
+  /** Detect again (after installing an editor mid-session). */
+  "editors:refresh": [void, EditorsView];
+  /** Open a folder (the current repository when `root` is absent). */
+  "editors:open": [{ id: string; root?: string }, { ok: boolean; message?: string }];
+  "editors:setShown": [{ id: string; shown: boolean }, EditorsView];
+  "editors:setDefault": [{ id: string | null }, EditorsView];
+  "editors:addCustom": [{ name: string; command: string }, EditorsView];
+  "editors:removeCustom": [{ id: string }, EditorsView];
+  /** Finder / Explorer on the folder (the current repository when absent). */
+  "editors:reveal": [{ root?: string } | void, void];
   "settings:get": [void, AppSettingsView];
   /** Patch settings; `cloneDir: null` resets to the built-in default. */
   "settings:update": [{ cloneDir?: string | null; askWhereEveryTime?: boolean }, AppSettingsView];
@@ -1584,6 +1833,8 @@ export interface IpcChannels {
   "ghrepo:branches": [string, GhRepoBranch[]];
   /** Every blob path at a ref, for go-to-file. */
   "ghrepo:paths": [{ fullName: string; ref?: string }, GhRepoPaths];
+  /** The commits on a ref of a repository you have not cloned. */
+  "ghrepo:commits": [{ fullName: string; ref?: string }, GhRepoCommit[]];
   // ── Global GitHub search (Explore) ──
   "search:repos": [{ query: string; sort?: SearchSort; page?: number }, SearchPage<SearchRepoItem>];
   "search:users": [{ query: string; kind: "users" | "orgs"; page?: number }, SearchPage<SearchUserItem>];
@@ -1591,21 +1842,45 @@ export interface IpcChannels {
   // ── Local repository copies (Settings → Repositories manager) ──
   /** Every clone GitStudio knows about: the clone folder ∪ recents. */
   "repos:local": [void, LocalCopy[]];
+  /** Signals for a HANDFUL of repo roots (Home's rows). Capped in main. */
+  "repos:localStatus": [string[], Record<string, LocalRepoStatus | undefined>];
+  /** Did the last scan stop at its cap? The list itself cannot say — dedupe
+   *  pulls its length back under 300 even when folders went unwalked. */
+  "repos:scanTruncated": [void, boolean];
   /** Reveal a root in Finder/Explorer. */
   "repos:reveal": [string, boolean];
   /** Forget a root from the recent list (never touches disk). */
   "repos:removeRecent": [string, LocalCopy[]];
+  /** Put a forgotten root BACK in the recent list — the undo of the line
+   *  above. Silently ignores a root that is no longer on disk. */
+  "repos:restoreRecent": [string, LocalCopy[]];
   /** Every folder scanned for repositories: the clone folder, then the ones
    *  added by hand or learned from an open or a clone. */
   "repos:folders": [void, RepoFolder[]];
   /** Pick a folder to track (native dialog). Undefined when cancelled. */
   "repos:addFolder": [void, RepoFolder[] | undefined];
+  /** Track a folder BY PATH, with no dialog — how undo puts back a folder you
+   *  stopped tracking, and how a folder is re-added after being moved. */
+  "repos:addFolderPath": [string, RepoFolder[]];
   /** Stop tracking a folder. Never touches disk, and refuses the clone
    *  folder — that one is always scanned. */
   "repos:removeFolder": [string, RepoFolder[]];
   /** Move a managed clone to the trash. Refuses anything outside the clone
-   *  folder, and the repo that's currently open. */
-  "repos:trash": [string, CommitActionResult];
+   *  folder, and the repo that's currently open.
+   *
+   *  `trashed` is where it actually landed, when that could be established —
+   *  the app diffs the trash folder around the call, because the OS renames on
+   *  a name collision and will not say so. Without it there is no undo, and
+   *  the UI must not offer one it cannot honour. */
+  "repos:trash": [string, CommitActionResult & { trashed?: string }];
+  /** Move a trashed folder back where it came from — the undo of the line
+   *  above. Refuses if anything now occupies the destination. */
+  "repos:untrash": [{ from: string; to: string }, { ok: boolean; message?: string }];
+  /** Delete a directory that is EMPTY — nothing else. This exists for exactly
+   *  one thing: the clone folder the app made in your home directory and then
+   *  gave you no way to get rid of. A non-empty folder is refused, so the
+   *  worst case is a folder that stays. */
+  "repos:deleteEmptyFolder": [string, { ok: boolean; message?: string }];
   // ── App info + updates ──
   "app:info": [void, { version: string; platform: string }];
   /** Poll the release feed now (the Settings "Check for updates" button). */
@@ -1677,6 +1952,12 @@ export interface IpcChannels {
     { subject: "issue" | "comment"; id: number; content: ReactionContent; on: boolean },
     CommitActionResult,
   ];
+  /** Lock or unlock the conversation. `reason` is GitHub's vocabulary:
+   *  off-topic | too heated | resolved | spam — or none. */
+  "issue:setLocked": [
+    { number: number; locked: boolean; reason?: string },
+    CommitActionResult,
+  ];
   "issue:setState": [
     { number: number; state: "open" | "closed"; reason?: "completed" | "not_planned" },
     CommitActionResult,
@@ -1687,7 +1968,10 @@ export interface IpcChannels {
   "issue:setAssignees": [{ number: number; assignees: string[] }, CommitActionResult];
   /** Everything in the current repo that involves the signed-in user (search
    *  API, @me qualifiers): review requests, assignments, own PRs, mentions. */
-  "github:myWork": [void, MyWorkItem[]];
+  /** `{scope:"all"}` searches across every repository the account touches —
+   *  what Home shows. The bare call keeps its repo-scoped meaning for the
+   *  My Work page. The two are different cache entries by design. */
+  "github:myWork": [{ scope?: "all" } | void, MyWorkItem[]];
   // Read-only fetch of an issue/PR from ANY repo (used to open notifications for
   // OTHER repositories in-app instead of bouncing to github.com).
   "github:externalItem": [
@@ -1828,7 +2112,19 @@ export interface IpcChannels {
   "branch:rebase": [{ onto: string }, CommitActionResult];
   "branch:rename": [{ from: string; to: string }, CommitActionResult];
   "branch:setUpstream": [{ name: string; upstream: string }, CommitActionResult];
-  "branch:deleteRemote": [{ remote: string; name: string }, CommitActionResult];
+  /** Delete a branch ON the remote. `was` is the commit the remote-tracking
+   *  ref named just before, which is the only thing that makes this reversible
+   *  — the push that deletes it also removes the local copy of that ref. */
+  "branch:deleteRemote": [
+    { remote: string; name: string },
+    CommitActionResult & { was?: string },
+  ];
+  /** Push a commit back to a branch name on a remote — the undo of the line
+   *  above. Refuses if the branch is there again. */
+  "branch:restoreRemote": [
+    { remote: string; name: string; sha: string },
+    CommitActionResult,
+  ];
   // ── In-progress operation state + abort/continue ──
   "git:opState": [void, GitOpState];
   "merge:abort": [void, CommitActionResult];
@@ -1849,7 +2145,12 @@ export interface IpcChannels {
   "tag:create": [{ name: string; ref?: string; message?: string }, CommitActionResult];
   /** `git tag -d` — LOCAL only. A tag already pushed survives on the remote,
    *  and the UI has to say so rather than implying the tag is gone. */
-  "tag:delete": [string, CommitActionResult];
+  /** Delete a tag locally. `was` is what `refs/tags/<name>` pointed at before
+   *  — the annotated tag object where there is one — so undo can put the tag
+   *  back exactly as it was rather than as a lightweight copy of it. */
+  "tag:delete": [string, CommitActionResult & { was?: string }];
+  /** Put a deleted tag back at the object it pointed at. */
+  "tag:restore": [{ name: string; sha: string }, CommitActionResult];
   /** Publish ONE tag. Pushing every tag at once is a different, much larger
    *  action and must be asked for on its own. */
   "tag:push": [{ name: string; remote?: string }, CommitActionResult];
@@ -1932,7 +2233,10 @@ export interface IpcEvents {
       | "toggleTerminal"
       | "cloneRepo"
       | "toggleSidebar"
-      | "palette";
+      | "palette"
+      /** ⌘Z. The renderer decides: its own undo stack if anything is on it,
+       *  otherwise the text undo the keystroke used to mean. */
+      | "undo";
   };
   /** A chunk of PTY output for a terminal session. */
   "terminal:data": TerminalData;

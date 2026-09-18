@@ -8,7 +8,7 @@
 // view state, so it is safe to instantiate many chats at once.
 
 import { host } from "./bridge";
-import { el, span, glyph } from "./ui";
+import { el, span, glyph, copyText } from "./ui";
 import { renderMarkdown } from "./markdown";
 import { highlightProse } from "./highlight";
 import { confirmDialog, toast } from "./dialogs";
@@ -56,6 +56,9 @@ export async function runAgentTurn(
   /** What the user bubble shows, when it should differ from the sent goal — e.g.
    *  "Analyze #42" instead of the full issue body embedded in the prompt. */
   displayText?: string,
+  /** Re-runs the same goal — offered on the error card, so a turn that failed
+   *  on a flaky connection is one click from trying again. */
+  retry?: () => void,
 ): Promise<void> {
   addBubble(transcript, "user", displayText ?? goal);
   const turn = el("div", "assistant-turn");
@@ -123,7 +126,7 @@ export async function runAgentTurn(
     finalizeStream(state);
     thinking.remove();
     if (!done.ok && done.message) {
-      turn.append(errorBlock(done.message));
+      turn.append(errorBlock(done.message, retry));
     } else if (done.text && !turn.querySelector(".assistant-msg")) {
       turn.append(markdownBlock(done.text));
     }
@@ -136,7 +139,7 @@ export async function runAgentTurn(
     // The `!done.ok` path above already goes through `finalizeStream`.
     finalizeStream(state);
     thinking.remove();
-    turn.append(errorBlock(e instanceof Error ? e.message : String(e)));
+    turn.append(errorBlock(e instanceof Error ? e.message : String(e), retry));
   } finally {
     window.clearInterval(ticker);
     offDelta();
@@ -193,7 +196,17 @@ function scheduleStreamRender(state: TurnState): void {
   state.pending = true;
   const paint = (): void => {
     state.pending = false;
-    if (state.stream) state.stream.innerHTML = renderMarkdown(state.raw);
+    if (!state.stream) return;
+    // The reader's place is measured HERE, at the write, not in onDelta: the
+    // delta scrolled before this throttled paint grew the block, so a paint
+    // that added more than a line's worth left them behind the tail — and
+    // every later delta then read them as "scrolled up" and stopped
+    // following. Streaming quietly lost the reader partway through any long
+    // answer.
+    const wrap = state.turn.parentElement;
+    const stick = atBottom(wrap);
+    state.stream.innerHTML = renderMarkdown(state.raw);
+    if (stick) scrollDown(wrap, true);
   };
   const since = Date.now() - state.lastRenderAt;
   if (since >= STREAM_RENDER_MS) {
@@ -229,6 +242,7 @@ export function finalizeStream(state: TurnState): void {
       // block whose fences are still arriving, so it would tokenize a fragment
       // dozens of times and paint half-finished syntax.
       highlightProse(block);
+      decorateMessage(block, state.raw);
     }
     state.stream = null;
     state.raw = "";
@@ -253,6 +267,7 @@ export function onEvent(state: TurnState, e: AgentEventWire): void {
         block.innerHTML = renderMarkdown(text);
         block.classList.remove("is-streaming");
         highlightProse(block); // settled — see finalizeStream
+        decorateMessage(block, text);
         state.stream = null;
         state.raw = "";
       } else if (e.text && e.text.trim()) {
@@ -318,7 +333,26 @@ export function markdownBlock(md: string): HTMLElement {
   const block = el("div", "assistant-msg gh-body-md");
   block.innerHTML = renderMarkdown(md);
   highlightProse(block);
+  decorateMessage(block, md);
   return block;
+}
+
+/** What each rendered answer was made from, for Copy. */
+const sources = new WeakMap<HTMLElement, string>();
+
+/** A settled answer gets its copy button — copying the Markdown it was made
+ *  from, so a code fence comes out as a code fence. Called after every
+ *  innerHTML write, since each one throws the previous button away. */
+function decorateMessage(block: HTMLElement, src: string): void {
+  if (!src.trim()) return;
+  sources.set(block, src);
+  block.querySelector(":scope > .assistant-copy")?.remove();
+  const btn = el("button", "assistant-copy");
+  btn.title = "Copy this answer (as Markdown)";
+  btn.setAttribute("aria-label", "Copy this answer");
+  btn.append(glyph("copy"));
+  btn.addEventListener("click", () => void copyText(sources.get(block) ?? "", "Copied the answer."));
+  block.append(btn);
 }
 
 function toolStep(e: AgentEventWire): HTMLElement {
@@ -390,9 +424,18 @@ function argSummary(args?: Record<string, unknown>): string {
   return "";
 }
 
-export function errorBlock(msg: string): HTMLElement {
+export function errorBlock(msg: string, retry?: () => void): HTMLElement {
   const b = el("div", "assistant-error");
-  b.append(glyph("error"), span(msg));
+  b.append(glyph("error"), span(msg, "assistant-error-text"));
+  if (retry) {
+    const again = el("button", "mini-btn assistant-retry");
+    again.append(glyph("refresh"), span("Try again"));
+    again.addEventListener("click", () => {
+      b.remove();
+      retry();
+    });
+    b.append(again);
+  }
   return b;
 }
 
@@ -427,9 +470,15 @@ export function setBusy(btn: HTMLElement, busy: boolean): void {
 /** Swap the send button into a Cancel button for the duration of a run. */
 export function swapToCancel(send: HTMLElement, onCancel: () => void): { restore: () => void } {
   const original = send.innerHTML;
+  // The RESTING title, not a hardcoded one. Restoring "Send" unconditionally
+  // dropped the keyboard hint after the first turn and — worse — handed a
+  // composer that went gated mid-run a title claiming it could still send.
+  const originalTitle = send.title;
   (send as HTMLButtonElement).disabled = false;
   send.classList.add("is-cancel");
-  send.replaceChildren(glyph("stop-circle"));
+  // A single filled square. `codicon-stop-circle` is two thin concentric
+  // outlines — a circle inside a circular button, which mushes at this size.
+  send.replaceChildren(glyph("debug-stop"));
   send.title = "Stop";
   const handler = (ev: Event): void => {
     ev.stopImmediatePropagation();
@@ -441,7 +490,7 @@ export function swapToCancel(send: HTMLElement, onCancel: () => void): { restore
       send.removeEventListener("click", handler, true);
       send.classList.remove("is-cancel");
       send.innerHTML = original;
-      send.title = "Send";
+      send.title = originalTitle;
       (send as HTMLButtonElement).disabled = false;
     },
   };

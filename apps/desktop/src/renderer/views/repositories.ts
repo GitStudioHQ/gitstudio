@@ -23,10 +23,13 @@
 // other tracked folders and a one-off picker a click away — the point being
 // that the common case is one click and the uncommon case is still on screen.
 
-import { el, span, glyph, openMenu, avatar, emptyState, relTimeISO } from "../ui";
-import { toast } from "../dialogs";
+import { el, span, glyph, openMenu, avatar, emptyState, relTimeISO, copyText } from "../ui";
+import type { MenuItem } from "../ui";
+import { toast, confirmDialog } from "../dialogs";
+import { didUndoable } from "../undo";
 import { openCloneDialog } from "../cloneDialog";
 import { host } from "../bridge";
+import { editorItems, loadEditors, REVEAL_LABEL } from "../openIn";
 import { gget, bust } from "../cache";
 import {
   ghHeader,
@@ -34,10 +37,17 @@ import {
   secRow,
   segmented,
   searchField,
+  whereChip,
+  wireStickyHeads,
+  type StickyList,
   type SectionRender,
   type SectionNav,
 } from "./common";
 import type { GhRepoBrief, LocalCopy, RepoFolder } from "../../shared/ipc";
+import { MAX_LOCAL_REPOS } from "../../shared/repoGrouping";
+import { splitBand } from "../../shared/repoGrouping";
+import { middlePath, openPath, openLocalCopy, localCopyIndex } from "../localCopy";
+import { plural } from "../textFit";
 
 type Side = "local" | "remote";
 
@@ -76,7 +86,7 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     openCloneDialog((root) => {
       bust("repos");
       void host.invoke("repo:openPath", root).then((info) => {
-        if (info) nav("changes");
+        if (info) nav("code");
       });
     }),
   );
@@ -109,13 +119,20 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
     void refresh();
   };
 
-  tools.append(seg, search, openBtn, cloneBtn, addBtn);
+  // The verbs go in the shared wrapper, which is what pins them to the right
+  // while the segment and the filter stay beside the title.
+  const verbs = el("div", "gh-head-verbs");
+  verbs.append(openBtn, cloneBtn, addBtn);
+  tools.append(seg, search, verbs);
   const { view, listEl } = sectionList();
   // `sectionList` hands back a shell and a list and leaves the assembly to the
   // caller — the same order every other section uses.
   head.querySelector(".gh-acct")?.before(tools);
   if (!tools.isConnected) head.appendChild(tools);
   view.append(head, listEl);
+  // A pinned head has to LOOK pinned. Both tabs' heads pin in this one
+  // scroller, and listEl outlives every repaint, so one call covers both.
+  wireStickyHeads(listEl, ".repo-owner-head, .repo-folder-head");
   wrap.replaceChildren(view);
 
   async function refresh(force = false): Promise<void> {
@@ -129,24 +146,14 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
         emptyState("Couldn’t list repositories", String((e as Error)?.message ?? e), { icon: "warning" }),
       );
     }
-    head.setCount?.(listEl.querySelectorAll(".sec-row").length);
+    // Repositories, not checkouts: a worktree row renders (it is openable)
+    // but the page's number must agree with the band heads below it.
+    head.setCount?.(listEl.querySelectorAll(".sec-row:not([data-worktree])").length);
+    // New head elements every paint, and a repaint fires no scroll event.
+    (listEl as StickyList).syncSticky?.();
   }
 
   await refresh();
-}
-
-/**
- * A path shortened from the MIDDLE, keeping the home-relative head and the
- * folder itself.
- *
- * Truncating from the right eats the folder name, which is the only part that
- * tells two clones of the same project apart — the exact mistake the branch
- * list made with its upstream column.
- */
-function middlePath(root: string): string {
-  const parts = root.split("/").filter(Boolean);
-  if (parts.length <= 3) return root;
-  return `…/${parts.slice(-2).join("/")}`;
 }
 
 /** 1284 → "1.3k", 121000 → "121k" — a star count you can read at a glance. */
@@ -170,40 +177,101 @@ async function paintLocal(
   nav: SectionNav,
   refresh: () => Promise<void>,
 ): Promise<void> {
-  const [folders, copies] = await Promise.all([
+  const [folders, copies, truncated] = await Promise.all([
     gget("repos:folders", undefined, 5000),
     gget("repos:local", undefined, 5000),
+    gget("repos:scanTruncated", undefined, 5000).catch(() => false),
   ]);
 
+  // A pure join. Every question about where a repository lives — which folder
+  // claims it, which directory inside that folder, whether a tracked folder is
+  // itself inside another one — was answered in the main process, on real
+  // paths, in the same pass that produced the counts. There is no path
+  // arithmetic left here; the previous version's `parentOf(root) ===
+  // folder.path` is what put nineteen of this machine's twenty-seven
+  // repositories under a heading claiming they came from somewhere else.
   const rows: HTMLElement[] = [];
-  const placed = new Set<string>();
 
-  for (const folder of folders) {
-    const inFolder = copies.filter((c) => parentOf(c.root) === normalize(folder.path));
-    inFolder.forEach((c) => placed.add(c.root));
-    const shown = inFolder.filter((c) => matches(`${c.name} ${c.origin ?? ""} ${c.root}`));
-    // A folder with nothing MATCHING is hidden while filtering, but a folder
-    // with nothing IN it still shows — "I added this and nothing appeared" is
-    // a question the screen should answer rather than leave you guessing.
-    if (query.trim() && !shown.length) continue;
-    rows.push(folderHeader(folder, refresh));
-    if (!shown.length) {
+  // A tracked folder nested inside another renders as a GROUP in that one's
+  // band, not as a band of its own — so it keeps the alphabetical place its
+  // path gives it, and its parent's count includes it.
+  const bands = folders.filter((f) => !f.nestedIn);
+  const trackedGroups = new Map<string, RepoFolder>();
+  for (const f of folders) {
+    if (f.nestedIn) trackedGroups.set(`${f.nestedIn}\u0000${f.group ?? ""}`, f);
+  }
+
+  for (const band of bands) {
+    const mine = copies.filter((c) => c.band === band.path);
+    const { loose, groups } = splitBand(band.path, mine, (c) => c.group ?? "");
+
+    // Filtering hides what does not match, but never the band itself while
+    // nothing is typed: "I added this and nothing appeared" is a question the
+    // screen has to answer rather than leave you guessing at.
+    const shownLoose = loose.filter(matchesCopy);
+    const shownGroups = groups
+      .map((g) => ({ ...g, items: g.items.filter(matchesCopy) }))
+      .filter((g) => g.items.length > 0);
+    // The filtered number the head prints beside "of M repositories" — M
+    // excludes worktrees, so N must too or a filter can read "5 of 3".
+    const isRepo = (c: LocalCopy): boolean => !c.worktreeOf;
+    const shown =
+      shownLoose.filter(isRepo).length +
+      shownGroups.reduce((n, g) => n + g.items.filter(isRepo).length, 0);
+    if (query.trim() && !shown) continue;
+
+    rows.push(folderHeader(band, refresh, query.trim() ? shown : undefined));
+    if (!shown && !query.trim()) {
       const none = el("div", "repo-folder-empty");
-      none.textContent = folder.missing
+      none.textContent = band.missing
         ? "This folder is gone. Stop tracking it, or put it back."
         : "No repositories in this folder yet.";
       rows.push(none);
       continue;
     }
-    for (const c of shown) rows.push(localRow(c, nav, refresh));
+
+    // The plain repositories first, at the band's own indent and outside every
+    // fold — "there are plain repos there" was half of what was reported, and
+    // burying them under the projects would answer only the other half.
+    for (const c of shownLoose) rows.push(localRow(c, nav, refresh, "band"));
+
+    for (const g of shownGroups) {
+      const tracked = trackedGroups.get(`${band.path}\u0000${g.label}`);
+      const head = groupHead(g.label, g.path, g.items.length, tracked, refresh);
+      rows.push(head);
+      const folded = !query.trim() && isFolded(g.path);
+      for (const c of g.items) {
+        const row = localRow(c, nav, refresh, "group");
+        // Folding HIDES rather than removes: the page's own count must not
+        // report that repositories ceased to exist because a folder was
+        // closed, and list navigation already skips anything with no
+        // offsetParent.
+        if (folded) row.hidden = true;
+        row.dataset.group = g.path;
+        rows.push(row);
+      }
+      applyFoldState(head, g.path, folded);
+    }
   }
 
-  // Anything reached from somewhere untracked — a recent you opened once from
-  // a folder the app declined to remember, like ~ itself.
-  const loose = copies.filter((c) => !placed.has(c.root) && matches(`${c.name} ${c.origin ?? ""}`));
+  // Anything inside none of the tracked folders — a repository opened once
+  // from a folder the app declined to remember, like the home directory
+  // itself. On this machine that is now nothing at all, which is the point.
+  const loose = copies.filter((c) => !c.band && matchesCopy(c));
   if (loose.length) {
     rows.push(groupLabel("Opened from elsewhere"));
-    for (const c of loose) rows.push(localRow(c, nav, refresh));
+    for (const c of loose) rows.push(localRow(c, nav, refresh, "loose"));
+  }
+
+  // The scan stops at a cap, and a capped list must not present itself as an
+  // inventory — that's how a machine with 350 repositories reads "300" with a
+  // straight face. Only ever a NOTE at the bottom: everything above is real.
+  if (truncated && !query.trim()) {
+    const capped = el("div", "repo-scan-capped");
+    capped.textContent =
+      `The scan stops at ${MAX_LOCAL_REPOS} repositories — there may be more. ` +
+      "Tracking fewer, more specific folders keeps this list complete.";
+    rows.push(capped);
   }
 
   if (!rows.length) {
@@ -226,45 +294,229 @@ async function paintLocal(
   listEl.replaceChildren(...rows);
 }
 
-function normalize(p: string): string {
-  return p.replace(/\/+$/, "");
+/** Does this copy survive the filter box? Its PATH counts too — searching
+ *  "yugo" for a repository in ~/Developer/Yugo used to match nothing. */
+function matchesCopy(c: LocalCopy): boolean {
+  return matches(`${c.name} ${c.origin ?? ""} ${c.root}`);
 }
 
-function parentOf(root: string): string {
-  return normalize(root.slice(0, root.lastIndexOf("/")));
+// ── folding ────────────────────────────────────────────────────────────────
+//
+// Groups fold, and default OPEN. A screen that hides twenty-one of his
+// twenty-seven repositories on first paint is the "where did my work go"
+// report waiting to be filed; compression is something to ask for, not
+// something to be given. "Collapse all projects" in the band menu is the one
+// click that asks for it, and the choice sticks.
+
+const FOLD_KEY = "gitstudio.repos.folded";
+
+/** Folded group paths, read once per session and written on every change. */
+let foldedPaths: Set<string> | null = null;
+
+function folded(): Set<string> {
+  if (foldedPaths) return foldedPaths;
+  try {
+    const raw = window.localStorage.getItem(FOLD_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    foldedPaths = new Set(Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    foldedPaths = new Set(); // private window, cleared storage, malformed — open
+  }
+  return foldedPaths;
+}
+
+function isFolded(path: string): boolean {
+  return folded().has(path);
+}
+
+function setFolded(path: string, on: boolean): void {
+  const set = folded();
+  if (on) set.add(path);
+  else set.delete(path);
+  try {
+    window.localStorage.setItem(FOLD_KEY, JSON.stringify([...set]));
+  } catch {
+    /* the fold still applies for this session */
+  }
+}
+
+/** Put a head and its rows into a state without repainting the list.
+ *
+ *  Never through refresh(): that replaces the list's children, which drops
+ *  focus to <body> and restarts keyboard navigation at row 0 — a teleport,
+ *  for a control whose whole job is to keep your place. */
+function applyFoldState(head: HTMLElement, path: string, on: boolean): void {
+  head.setAttribute("aria-expanded", on ? "false" : "true");
+  // The chevron ROTATES; it is not a different glyph. `.repo-group-chevron` has
+  // carried a transform transition since the day it was written, and the rest
+  // of the app folds this way (.list-group-head, .outputs-group).
+  head.classList.toggle("is-folded", on);
+  const list = head.parentElement;
+  if (!list) return;
+  for (const row of list.querySelectorAll<HTMLElement>(`.sec-row[data-group="${cssEscape(path)}"]`)) {
+    row.hidden = on;
+  }
+}
+
+/** A path is not a CSS identifier — it has slashes, dots and spaces in it. */
+function cssEscape(v: string): string {
+  return v.replace(/["\\]/g, "\\$&");
+}
+
+/** Owner sections share the local fold store, whose every key is an absolute
+ *  path — an "owner:" prefix cannot collide with one. Nor can "@me" collide
+ *  with a real owner: "@" is not legal in a GitHub login, and a login is unique
+ *  across users AND organisations. The old grouping key also must never reach a
+ *  data- attribute: the CSS tokenizer rewrites U+0000 to U+FFFD, so
+ *  applyFoldState's [data-group="…"] would silently match no rows and folding
+ *  would hide nothing. */
+function ownerFoldKey(mine: boolean, owner: string): string {
+  return mine ? "owner:@me" : `owner:${owner}`;
+}
+
+/**
+ * A directory the scan found inside a tracked folder.
+ *
+ * Not a band: a band is a place you named, this is a place that was found.
+ * The difference is carried by the class, the font and the indent rather than
+ * by a label saying so — and by what it offers, which is what you can do to a
+ * folder you have not asked the app to watch: look at it, copy it, or start
+ * watching it.
+ *
+ * `tracked` is set when this directory IS a tracked folder in its own right,
+ * which happens on any machine where a repository has been opened (that tracks
+ * its parent). It then keeps its place in the list and gains the band's chip
+ * and its full menu, rather than being torn out into a band of its own.
+ */
+function groupHead(
+  label: string,
+  path: string,
+  count: number,
+  tracked: RepoFolder | undefined,
+  refresh: () => Promise<void>,
+): HTMLElement {
+  const h = el("div", "repo-group-head");
+  h.dataset.group = path;
+  h.setAttribute("role", "button");
+  h.tabIndex = 0;
+
+  const chevron = glyph("chevron-down");
+  chevron.classList.add("repo-group-chevron");
+  h.appendChild(chevron);
+  h.appendChild(glyph("folder"));
+
+  const name = span(label, "repo-group-name");
+  name.title = path;
+  h.appendChild(name);
+  h.appendChild(span(String(count), "repo-group-count"));
+  if (tracked) h.appendChild(span("tracked", "repo-folder-chip"));
+
+  h.appendChild(el("span", "repo-folder-spring"));
+
+  const more = el("button", "mini-btn gh-icon-btn repo-folder-menu");
+  more.appendChild(glyph("ellipsis"));
+  more.title = `Manage ${label}`;
+  more.setAttribute("aria-label", more.title);
+  more.setAttribute("aria-haspopup", "menu");
+  more.addEventListener("click", (e) => {
+    // The menu is not the fold. Without this, reaching for either does both.
+    e.stopPropagation();
+    openMenu(
+      more,
+      tracked
+        ? folderMenu(tracked, refresh)
+        : [
+            {
+              label: "Show in Finder",
+              icon: "folder-opened",
+              onClick: () => void host.invoke("repos:reveal", path),
+            },
+            {
+              label: "Copy path",
+              icon: "copy",
+              onClick: () => void copyText(path, "Path copied."),
+            },
+            { separator: true },
+            {
+              label: "Track this folder",
+              sub: "Watch it for new repositories",
+              icon: "eye",
+              onClick: () => void trackFolder(path, refresh),
+            },
+          ],
+    );
+  });
+  h.appendChild(more);
+
+  const toggle = (): void => {
+    const next = !isFolded(path);
+    setFolded(path, next);
+    applyFoldState(h, path, next);
+    (h.closest(".sec-list") as StickyList | null)?.syncSticky?.();
+  };
+  h.addEventListener("click", toggle);
+  h.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target !== h) return; // the menu button keeps its own keys
+    e.preventDefault();
+    toggle();
+  });
+  return h;
+}
+
+/** Start watching a directory the scan found — the group menu's one verb. */
+async function trackFolder(path: string, refresh: () => Promise<void>): Promise<void> {
+  await host.invoke("repos:addFolderPath", path);
+  bust("repos");
+  await refresh();
+  didUndoable(`Now watching ${path.split("/").pop()}.`, {
+    label: "Stop watching it",
+    undo: async () => {
+      await host.invoke("repos:removeFolder", path);
+      bust("repos");
+    },
+    after: refresh,
+  });
 }
 
 function groupLabel(text: string): HTMLElement {
-  const h = el("div", "repo-folder-head");
+  // A category, not a folder: no icon, and CSS gives its label the icon
+  // column's offset so it starts on the same x as every other band's path.
+  const h = el("div", "repo-folder-head is-label");
   h.appendChild(span(text, "repo-folder-path"));
   return h;
 }
 
-function folderHeader(folder: RepoFolder, refresh: () => Promise<void>): HTMLElement {
+function folderHeader(
+  folder: RepoFolder,
+  refresh: () => Promise<void>,
+  shown?: number,
+): HTMLElement {
   const h = el("div", "repo-folder-head" + (folder.missing ? " is-missing" : ""));
   h.appendChild(glyph(folder.isCloneDir ? "root-folder" : "folder"));
   const path = span(folder.display, "repo-folder-path");
   path.title = folder.path;
   h.appendChild(path);
+  // What the band HOLDS, not what renders directly under it: a reader counting
+  // the rows below a head is counting everything in the folder, groups
+  // included. While filtering it says both, because "3 repositories" over
+  // three of twenty-seven is a different fact than the same words unfiltered.
+  const total = folder.containedCount;
   const n = span(
-    folder.repoCount === 1 ? "1 repository" : `${folder.repoCount} repositories`,
+    shown === undefined
+      ? total === 1
+        ? "1 repository"
+        : `${total} repositories`
+      : `${shown} of ${total} repositories`,
     "repo-folder-count",
   );
   h.appendChild(n);
   if (folder.isCloneDir) {
-    // Named, not just implied: this is where a one-click clone lands, and it
-    // is the reason this folder has no "stop tracking".
+    // Named, not just implied: this is where a one-click clone lands.
     const chip = el("button", "repo-folder-chip is-clone");
     chip.textContent = "clones land here";
     chip.title = "New clones go here unless you choose somewhere else — click to change it";
-    chip.addEventListener("click", async () => {
-      const picked = await host.invoke("clone:pickDir", { defaultPath: folder.path });
-      if (!picked) return;
-      const r = await host.invoke("settings:update", { cloneDir: picked });
-      bust("repos");
-      toast(`New clones will land in ${r.cloneDirDisplay}.`, "success");
-      await refresh();
-    });
+    chip.addEventListener("click", () => void moveCloneFolder(folder, refresh));
     h.appendChild(chip);
   }
   if (folder.missing) h.appendChild(span("missing", "repo-folder-chip is-warn"));
@@ -272,62 +524,263 @@ function folderHeader(folder: RepoFolder, refresh: () => Promise<void>): HTMLEle
   const spring = el("span", "repo-folder-spring");
   h.appendChild(spring);
 
-  const reveal = el("button", "mini-btn gh-icon-btn");
-  reveal.appendChild(glyph("folder-opened"));
-  reveal.title = "Show this folder in Finder";
-  reveal.setAttribute("aria-label", `Show ${folder.display} in Finder`);
-  reveal.addEventListener("click", () => void host.invoke("repos:reveal", folder.path));
-  h.appendChild(reveal);
-
-  // "a defaulted repos dir you can assign" — assignable HERE, on the screen that
-  // is about repositories, rather than only in Settings under different words.
-  // Which folder new clones land in is a fact about this list, and the place to
-  // change a fact is where it is stated.
-  if (!folder.isCloneDir && !folder.missing) {
-    const mk = el("button", "mini-btn gh-icon-btn");
-    mk.appendChild(glyph("root-folder"));
-    mk.title = `Make ${folder.display} the folder new clones land in`;
-    mk.setAttribute("aria-label", mk.title);
-    mk.addEventListener("click", async () => {
-      const r = await host.invoke("settings:update", { cloneDir: folder.path });
-      bust("repos");
-      toast(`New clones will land in ${r.cloneDirDisplay}.`, "success");
-      await refresh();
-    });
-    h.appendChild(mk);
-  }
-  if (!folder.isCloneDir) {
-    const stop = el("button", "mini-btn gh-icon-btn");
-    stop.appendChild(glyph("close"));
-    stop.title = "Stop tracking this folder (nothing is deleted)";
-    stop.setAttribute("aria-label", `Stop tracking ${folder.display}`);
-    stop.addEventListener("click", async () => {
-      await host.invoke("repos:removeFolder", folder.path);
-      bust("repos");
-      toast(`Stopped tracking ${folder.display}.`, "success");
-      await refresh();
-    });
-    h.appendChild(stop);
-  }
+  // ONE menu, with words in it.
+  //
+  // This row used to carry up to three icon-only buttons — a folder, a
+  // different folder, and an ×  — which between them meant "show in Finder",
+  // "make this the clone folder" and "stop tracking", and said none of it
+  // unless you hovered. The owner's read was that the folders could not be
+  // managed at all, and on the clone folder he was right: it had no menu, no
+  // remove, and no way to get the directory GitStudio had made in his home
+  // folder back out of it.
+  const more = el("button", "mini-btn gh-icon-btn repo-folder-menu");
+  more.appendChild(glyph("ellipsis"));
+  more.title = `Manage ${folder.display}`;
+  more.setAttribute("aria-label", more.title);
+  more.setAttribute("aria-haspopup", "menu");
+  more.addEventListener("click", () => openMenu(more, folderMenu(folder, refresh)));
+  h.appendChild(more);
   return h;
 }
 
-function localRow(c: LocalCopy, nav: SectionNav, refresh: () => Promise<void>): HTMLElement {
-  const chips: HTMLElement[] = [];
-  if (c.origin) chips.push(span(c.origin, "repo-origin sec-mono"));
+/** What you can do to a tracked folder. */
+function folderMenu(folder: RepoFolder, refresh: () => Promise<void>): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (!folder.missing) {
+    items.push({
+      label: "Show in Finder",
+      icon: "folder-opened",
+      onClick: () => void host.invoke("repos:reveal", folder.path),
+    });
+  }
+  items.push({
+    label: "Copy path",
+    icon: "copy",
+    onClick: () => void copyText(folder.path, "Path copied."),
+  });
+  items.push({ separator: true });
+
+  // Scoped to THIS band, by path, because the bands and their groups are
+  // siblings in one flat list — there is no per-band element to query inside.
+  // Querying the whole document meant "Collapse all projects" in one tracked
+  // folder's menu also collapsed every project in every other tracked folder,
+  // and the "N folders" subtitle counted all of them, so the menu said out
+  // loud that it was about to overreach and did it anyway.
+  const groupsInBand = (): HTMLElement[] =>
+    [...document.querySelectorAll<HTMLElement>(".repo-group-head")].filter((g) =>
+      (g.dataset.group ?? "").startsWith(`${folder.path}/`),
+    );
+  const mine = groupsInBand();
+  if (mine.length > 1) {
+    const allFolded = mine.every((g) => isFolded(g.dataset.group ?? ""));
+    items.push({
+      label: allFolded ? "Expand all projects" : "Collapse all projects",
+      sub: `${mine.length} folders`,
+      icon: allFolded ? "unfold" : "fold",
+      onClick: () => {
+        // In place, never through a repaint: replacing the list drops focus to
+        // <body> and restarts keyboard navigation at the first row.
+        for (const g of groupsInBand()) {
+          const path = g.dataset.group ?? "";
+          setFolded(path, !allFolded);
+          applyFoldState(g, path, !allFolded);
+        }
+      },
+    });
+    items.push({ separator: true });
+  }
+  if (folder.isCloneDir) {
+    items.push({
+      label: "Move the clone folder…",
+      sub: "Choose where new clones land",
+      icon: "root-folder",
+      onClick: () => void moveCloneFolder(folder, refresh),
+    });
+    if (!folder.isDefaultCloneDir) {
+      items.push({
+        label: "Use the default folder",
+        sub: "~/GitStudio",
+        icon: "discard",
+        onClick: () => void setCloneDir(null, folder, refresh),
+      });
+    }
+    // The one the owner actually asked for: get this directory out of my home
+    // folder. Offered only when it holds nothing — deleting a folder with
+    // repositories in it is not something a menu item should be able to do —
+    // and the main process re-checks, so a race ends in a message, not a loss.
+    const repos = folder.containedCount;
+    const checkouts = folder.containedAnyCount - repos;
+    const holds =
+      repos && checkouts
+        ? `${repos === 1 ? "1 repository" : `${repos} repositories`} and ${checkouts === 1 ? "a worktree" : `${checkouts} worktrees`} are in it`
+        : repos
+          ? `${repos === 1 ? "1 repository is" : `${repos} repositories are`} in it`
+          : checkouts
+            ? `${checkouts === 1 ? "1 worktree is" : `${checkouts} worktrees are`} in it`
+            : "";
+    items.push({
+      label: "Delete this folder",
+      sub: holds || "It's empty — nothing is lost",
+      icon: "trash",
+      danger: true,
+      // `containedAnyCount`, never `repoCount` or even `containedCount`. A
+      // folder whose repositories all sit one level down reports zero DIRECT
+      // ones, and a folder holding only WORKTREES reports zero repositories —
+      // but trashing it eats those checkouts all the same. The guard counts
+      // everything; the label says what kind.
+      disabled: folder.containedAnyCount > 0 || folder.missing,
+      title: folder.containedAnyCount
+        ? "Move or delete what's inside it first"
+        : `Delete ${folder.display} from disk`,
+      onClick: () => void deleteEmptyFolder(folder, refresh),
+    });
+  } else {
+    if (!folder.missing) {
+      items.push({
+        label: "Clone new repositories here",
+        sub: "Makes this the clone folder",
+        icon: "root-folder",
+        onClick: () => void setCloneDir(folder.path, folder, refresh),
+      });
+    }
+    items.push({
+      label: "Stop tracking",
+      sub: "Nothing on disk is touched",
+      icon: "eye-closed",
+      danger: true,
+      onClick: () => void stopTracking(folder, refresh),
+    });
+  }
+  return items;
+}
+
+async function moveCloneFolder(folder: RepoFolder, refresh: () => Promise<void>): Promise<void> {
+  const picked = await host.invoke("clone:pickDir", { defaultPath: folder.path });
+  if (!picked) return;
+  await setCloneDir(picked, folder, refresh);
+}
+
+/** Point clones somewhere else — and be able to point them back. */
+async function setCloneDir(
+  next: string | null,
+  _was: RepoFolder,
+  refresh: () => Promise<void>,
+): Promise<void> {
+  // Where clones land RIGHT NOW, read before changing it.
+  //
+  // The first version worked this out from the folder the menu was opened on,
+  // which is only the clone folder when you are moving the clone folder. Point
+  // clones at ~/Code from ~/Code's own menu and the "previous" value was ~/Code
+  // — so Undo set the setting to what it had just been changed to and reported
+  // success. The previous value is a fact about the SETTING, not about the row.
+  const before = await currentCloneDir();
+  const r = await host.invoke("settings:update", { cloneDir: next });
+  bust("repos");
+  await refresh();
+  didUndoable(`New clones will land in ${r.cloneDirDisplay}.`, {
+    label: "Put the clone folder back",
+    undo: async () => {
+      // `null` restores the built-in default, which is what it meant on the
+      // way in too.
+      await host.invoke("settings:update", { cloneDir: before });
+      bust("repos");
+    },
+    after: refresh,
+  });
+}
+
+/** The configured clone folder, or null when it is the built-in default. */
+async function currentCloneDir(): Promise<string | null> {
+  const folders = await host.invoke("repos:folders", undefined);
+  const clone = folders.find((f) => f.isCloneDir);
+  return clone && !clone.isDefaultCloneDir ? clone.path : null;
+}
+
+async function stopTracking(folder: RepoFolder, refresh: () => Promise<void>): Promise<void> {
+  await host.invoke("repos:removeFolder", folder.path);
+  bust("repos");
+  await refresh();
+  didUndoable(`Stopped tracking ${folder.display}.`, {
+    label: `Track ${folder.display} again`,
+    undo: async () => {
+      await host.invoke("repos:addFolderPath", folder.path);
+      bust("repos");
+    },
+    after: refresh,
+  });
+}
+
+async function deleteEmptyFolder(folder: RepoFolder, refresh: () => Promise<void>): Promise<void> {
+  const r = await host.invoke("repos:deleteEmptyFolder", folder.path);
+  if (!r.ok) {
+    toast(r.message ?? "Couldn't delete that folder.", "error");
+    return;
+  }
+  bust("repos");
+  await refresh();
+  // No undo entry: re-creating an empty directory would restore the folder but
+  // not the fact that it was there, and offering "undo" for something that
+  // leaves no trace to restore is theatre. It says what happened instead.
+  toast(`Deleted ${folder.display}. It comes back the next time you clone.`, "success");
+}
+
+/**
+ * Where a row sits, which decides two things: its indent, and whether the path
+ * column still earns the 220px it takes.
+ *
+ * `band`   — directly in a tracked folder, at the band's own indent.
+ * `group`  — inside a project folder found in one, indented a step further.
+ * `loose`  — inside no tracked folder at all.
+ */
+type Place = "band" | "group" | "loose";
+
+function localRow(
+  c: LocalCopy,
+  nav: SectionNav,
+  refresh: () => Promise<void>,
+  place: Place = "loose",
+): HTMLElement {
+  // No chips. The origin used to sit in the chip cluster, which follows the
+  // NAME — and since the name flexes, every row started its origin at a
+  // different x: five rows, five columns, 26px apart. Both the origin and the
+  // path are answers to "which copy is this", so they belong together in the
+  // fixed-width cluster on the right, where they line up.
   const pills: HTMLElement[] = [];
   if (c.current) pills.push(span("open", "gh-pill is-current"));
   if (c.missing) pills.push(span("missing", "gh-pill is-warn"));
+  if (c.worktreeOf) {
+    const wt = span("worktree", "gh-pill is-worktree");
+    const of = c.worktreeOf.split("/").pop() || c.worktreeOf;
+    wt.title = `A linked worktree of ${of} — another checkout of that repository, not a separate one`;
+    pills.push(wt);
+  }
 
-  // WHERE it is. The remote side carries a description, a language, a star
-  // count and a time; the local side carried a name and, sometimes, an origin —
-  // so the screen for keeping track of repositories tracked less about the ones
-  // you actually have. The folder is what tells two clones of the same project
-  // apart, and it is the one fact a local row cannot do without.
+  // THE ORIGIN SITS WITH THE NAME. Pinned against the far edge in the meta
+  // cluster, behind a spring that grows, it sat ~470px from the name on a
+  // 1280px window — and the SHORTER the name, the further away it was — so the
+  // two facts that identify one row could not be read as one.
+  // It goes FIRST, before the state pills: the title's column floor is what
+  // makes the origin's left edge a column, and a pill in front of it would
+  // break that column on the few rows that carry one.
+  const titleSuffix: HTMLElement[] = [];
+  if (c.origin) {
+    const origin = span(c.origin, "repo-origin repo-origin-col sec-mono");
+    origin.title = c.origin;
+    titleSuffix.push(origin);
+  }
+  titleSuffix.push(...pills);
+
   const meta: HTMLElement[] = [];
-  const where = span(middlePath(c.root), "repo-path sec-mono");
-  where.title = c.root;
-  meta.push(where);
+  // The path column, only where nothing above the row already says it. Under a
+  // head reading "Yugo", beside a title reading "backend", "…/Yugo/backend" is
+  // the same fact for the third time — and it costs 220px the name and the
+  // origin would rather have. A loose row has no head naming its location, so
+  // it keeps it.
+  if (place === "loose") {
+    const where = span(middlePath(c.root), "repo-path sec-mono");
+    where.title = c.root;
+    meta.push(where);
+  }
 
   const actions: HTMLElement[] = [];
   if (!c.missing && !c.current) {
@@ -341,27 +794,41 @@ function localRow(c: LocalCopy, nav: SectionNav, refresh: () => Promise<void>): 
   more.setAttribute("aria-label", `More actions for ${c.name}`);
   more.setAttribute("aria-haspopup", "menu");
   more.appendChild(glyph("ellipsis"));
-  more.addEventListener("click", () => {
-    const items: Array<{ label: string; icon?: string; danger?: boolean; onClick: () => void }> = [
+  more.addEventListener("click", async () => {
+    // The editors first — "open this one in Cursor" is what a row's menu is
+    // for far more often than forgetting it.
+    const editors = await loadEditors();
+    const items: MenuItem[] = [
+      ...editorItems(editors, c.root, nav),
+      { separator: true },
       {
-        label: "Show in Finder",
+        label: REVEAL_LABEL,
         icon: "folder-opened",
         onClick: () => void host.invoke("repos:reveal", c.root),
       },
       {
         label: "Copy path",
         icon: "copy",
-        onClick: () => void navigator.clipboard?.writeText(c.root),
+        onClick: () => void copyText(c.root, "Path copied."),
       },
     ];
     if (c.recent) {
       items.push({
         label: "Forget",
+        sub: "Removes it from this list only",
         icon: "eye-closed",
         onClick: async () => {
           await host.invoke("repos:removeRecent", c.root);
           bust("repos");
           await refresh();
+          didUndoable(`Forgot ${c.name}.`, {
+            label: `Remember ${c.name}`,
+            undo: async () => {
+              await host.invoke("repos:restoreRecent", c.root);
+              bust("repos");
+            },
+            after: refresh,
+          });
         },
       });
     }
@@ -373,14 +840,47 @@ function localRow(c: LocalCopy, nav: SectionNav, refresh: () => Promise<void>): 
         icon: "trash",
         danger: true,
         onClick: async () => {
+          // The ellipsis promises a dialog, and there was none: one click sent
+          // a whole working copy to the Trash. The undo below is a good safety
+          // net but it is not a substitute for being asked — the folder can
+          // hold uncommitted work, which is the one thing git cannot get back,
+          // and a menu item next to "Copy path" should not be able to take it.
+          const ok = await confirmDialog({
+            title: `Move ${c.name} to the Trash?`,
+            message:
+              `The folder at ${c.root} goes to the Trash, including anything in it ` +
+              `that has not been committed. You can put it back straight afterwards, ` +
+              `or from the Trash later.`,
+            confirmLabel: "Move to Trash",
+            danger: true,
+          });
+          if (!ok) return;
           const r = await host.invoke("repos:trash", c.root);
           if (!r.ok) {
             toast(r.message ?? "Couldn't move it to the Trash.", "error");
             return;
           }
           bust("repos");
-          toast(`Moved ${c.name} to the Trash.`, "success");
           await refresh();
+          // Undo only when the app knows WHERE it went. When it doesn't, say
+          // where to look instead of offering a button that would fail —
+          // an undo you cannot honour is worse than none.
+          if (r.trashed) {
+            didUndoable(`Moved ${c.name} to the Trash.`, {
+              label: `Put ${c.name} back`,
+              undo: async () => {
+                const back = await host.invoke("repos:untrash", { from: r.trashed!, to: c.root });
+                if (!back.ok) return back.message ?? "Couldn't put it back.";
+                // The list is cached; without this the folder is back on disk
+                // and absent from the screen, which reads as a failed undo.
+                bust("repos");
+                return undefined;
+              },
+              after: refresh,
+            });
+          } else {
+            toast(`Moved ${c.name} to the Trash — recover it from there.`, "success");
+          }
         },
       });
     }
@@ -388,13 +888,14 @@ function localRow(c: LocalCopy, nav: SectionNav, refresh: () => Promise<void>): 
   });
   actions.push(more);
 
-  return secRow({
+  const row = secRow({
     lead: glyph(c.current ? "check" : "repo"),
     title: c.name,
-    titleSuffix: pills,
-    chips,
+    titleSuffix,
     meta,
-    time: "",
+    // No `time`: nothing on this screen has one, and `time: ""` still rendered
+    // the slot (secRow branches on `!== undefined`), reserving an empty 58px
+    // .sec-row-time column on every local row.
     actions,
     ariaLabel: [c.name, c.origin, c.current ? "currently open" : "", c.missing ? "missing" : ""]
       .filter(Boolean)
@@ -403,18 +904,52 @@ function localRow(c: LocalCopy, nav: SectionNav, refresh: () => Promise<void>): 
       if (!c.missing && !c.current) void openPath(c.root, nav);
     },
   });
+  if (c.worktreeOf) row.dataset.worktree = "1";
+  // Tagged so the stylesheet can give the NAME priority over the
+  // description beside it — see .repo-row in app.css, and so the indent can be
+  // driven by where the row actually sits.
+  row.classList.add("repo-row", `is-${place}`);
+  // The absolute path stops being visible on a banded row, so it must stay
+  // REACHABLE: the tooltip is now the only place it appears, and data-root is
+  // how a check names a row without depending on which columns rendered.
+  row.dataset.root = c.root;
+  row.title = c.root;
+  return row;
 }
 
-async function openPath(root: string, nav: SectionNav): Promise<void> {
-  const info = await host.invoke("repo:openPath", root);
-  if (info) nav("changes");
+/**
+ * Clicking a repository on the GitHub tab.
+ *
+ * It used to do NOTHING at all unless you already had the repo cloned, which
+ * made the whole list a catalogue you could only read. The two cases are
+ * genuinely different questions:
+ *
+ *  · Not on this machine — browse it in place, the way you would on github.com:
+ *    the code, its branches, go-to-file. Cloning is offered there, not demanded
+ *    here.
+ *  · On this machine WITH uncommitted work — "open" is ambiguous, so ask: the
+ *    code, the changes, or your editor. With a clean tree there is nothing to
+ *    choose between, so it just opens.
+ */
+async function openRemoteRepo(
+  r: GhRepoBrief,
+  local: LocalCopy | undefined,
+  nav: SectionNav,
+): Promise<void> {
+  if (!local || local.missing) {
+    nav("explore", { id: `repo/${r.fullName}` });
+    return;
+  }
+  await openLocalCopy(r.fullName, local, nav, {
+    onBrowse: () => nav("explore", { id: `repo/${r.fullName}` }),
+  });
 }
 
 async function openFromDisk(nav: SectionNav): Promise<void> {
   const info = await host.invoke("repo:open", undefined);
   if (info) {
     bust("repos");
-    nav("changes");
+    nav("code");
   }
 }
 
@@ -445,8 +980,14 @@ async function paintRemote(
   // "Do I already have this?" answered by ORIGIN, not by folder name — a repo
   // cloned into a differently-named directory is still the same repo, and
   // offering to clone it again is how you end up with two copies.
-  const have = new Map<string, LocalCopy>();
-  for (const c of copies) if (c.origin) have.set(c.origin.toLowerCase(), c);
+  //
+  // Several copies can share one origin — a worktree, or a folder literally
+  // named "trust-globe copy" beside "trust-globe". The last one to be written
+  // used to win, and the list arrives name-sorted, so "Open" on the GitHub row
+  // for trust-globe opened the COPY. Pick deliberately instead: the one that is
+  // open, else one that is not missing, else the shallowest path — and never
+  // let a later row silently replace an earlier answer.
+  const have = localCopyIndex(copies);
 
   const shown = repos.filter((r) => matches(`${r.fullName} ${r.description ?? ""} ${r.language ?? ""}`));
   if (!shown.length) {
@@ -455,7 +996,7 @@ async function paintRemote(
         query.trim() ? "Nothing matches" : "No repositories",
         query.trim()
           ? `No repository of yours matches “${query.trim()}”.`
-          : "Repositories you own, collaborate on, or share through an organisation appear here.",
+          : "Repositories you own, collaborate on, or share through an organization appear here.",
       ),
     );
     return;
@@ -467,12 +1008,23 @@ async function paintRemote(
   // everything mixes "my side project" with "the company monorepo" and with
   // "someone added me to this once", and the only way to find any of them is to
   // already know its name.
-  const groups = new Map<string, { label: string; kind: "mine" | "org" | "shared"; rows: GhRepoBrief[] }>();
+  // The owner's UNFILTERED total, so a filtered head can say "2 of 7".
+  const totals = new Map<string, number>();
+  for (const r of repos) {
+    const k = ownerFoldKey(r.mine, r.owner);
+    totals.set(k, (totals.get(k) ?? 0) + 1);
+  }
+
+  const groups = new Map<
+    string,
+    { key: string; label: string; kind: "mine" | "org" | "shared"; rows: GhRepoBrief[] }
+  >();
   for (const r of shown) {
-    const key = r.mine ? "\u0000mine" : r.owner;
+    const key = ownerFoldKey(r.mine, r.owner);
     const g =
       groups.get(key) ??
       {
+        key,
         label: r.mine ? "Your repositories" : r.owner,
         kind: r.mine ? ("mine" as const) : r.ownerType === "Organization" ? ("org" as const) : ("shared" as const),
         rows: [],
@@ -487,30 +1039,130 @@ async function paintRemote(
     (a, b) => order[a.kind] - order[b.kind] || a.label.localeCompare(b.label),
   );
 
+  const filtering = !!query.trim();
   const out: HTMLElement[] = [];
   for (const g of sorted) {
-    out.push(ownerHeader(g.label, g.kind, g.rows.length));
+    // A section wrapper, so the head pins WITHIN its own owner and is pushed
+    // out by the next one. Flat siblings all pin at top:0 in one containing
+    // block and simply pile up behind each other, which is why several owners
+    // meant several heads stacked in the same few pixels.
+    const sec = el("div", "repo-owner-sec");
+    // Folds default OPEN, and a FILTER overrides them: a filter that hides its
+    // own matches is a filter that lies. Same rule as the local side.
+    const isShut = !filtering && isFolded(g.key);
+    const head = ownerHeader(g.label, g.kind, g.rows.length, g.key, filtering ? totals.get(g.key) : undefined);
+    sec.appendChild(head);
     for (const r of g.rows) {
-      out.push(remoteRow(r, have.get(r.fullName.toLowerCase()), folders, nav, refresh));
+      const row = remoteRow(r, have.get(r.fullName.toLowerCase()), folders, nav, refresh);
+      row.dataset.group = g.key;
+      // Hidden, not removed — the page's own count must not report that
+      // repositories ceased to exist because a section was closed.
+      if (isShut) row.hidden = true;
+      sec.appendChild(row);
     }
+    applyFoldState(head, g.key, isShut);
+    out.push(sec);
   }
   listEl.replaceChildren(...out);
 }
 
-/** The band above each owner's repositories, saying WHY they are yours to see. */
-function ownerHeader(label: string, kind: "mine" | "org" | "shared", n: number): HTMLElement {
+/** "⌥" on a Mac, "Alt" elsewhere — named in the head's tooltip, which is the
+ *  only place the bulk fold is announced. */
+const FOLD_ALL_KEY = navigator.platform.toLowerCase().includes("mac") ? "⌥" : "Alt";
+
+/**
+ * The band above each owner's repositories: what they are called, why they are
+ * yours to see, how many, and a disclosure.
+ *
+ * It folds with the SAME machinery the local tab's project folders use — same
+ * chevron class, same `applyFoldState`, same persisted Set — one "owner:"
+ * prefix apart, so the two can never drift into two ways of folding.
+ */
+function ownerHeader(
+  label: string,
+  kind: "mine" | "org" | "shared",
+  n: number,
+  key: string,
+  /** The owner's UNFILTERED total — passed only while the filter box has text. */
+  total?: number,
+): HTMLElement {
   const h = el("div", "repo-owner-head");
-  h.appendChild(glyph(kind === "mine" ? "person" : kind === "org" ? "organization" : "people"));
-  h.appendChild(span(label, "repo-folder-path"));
-  h.appendChild(span(n === 1 ? "1 repository" : `${n} repositories`, "repo-folder-count"));
+  h.dataset.group = key;
+  h.setAttribute("role", "button");
+  h.tabIndex = 0;
+  h.title = `Show or hide ${label} — ${FOLD_ALL_KEY}-click for every owner`;
+
+  // `repo-group-chevron` is not decoration: applyFoldState finds the chevron by
+  // that class, so the local project folders and these sections fold through
+  // ONE function rather than two that drift.
+  const chevron = glyph("chevron-down");
+  chevron.classList.add("repo-group-chevron");
+  h.appendChild(chevron);
+
+  // A NAME, not a path. This head used `.repo-folder-path`, which is monospace
+  // because on the local side it holds `~/Developer` — something you read
+  // character by character. A GitHub login in that face reads as one more row.
+  h.appendChild(span(label, "repo-owner-name"));
+
   if (kind !== "mine") {
-    const why = span(kind === "org" ? "organisation" : "shared with you", "repo-folder-chip");
+    const why = span(kind === "org" ? "organization" : "shared with you", "repo-folder-chip");
     why.title =
       kind === "org"
-        ? "You can see these because you belong to this organisation"
+        ? "You can see these because you belong to this organization"
         : "You have access to these as a collaborator";
     h.appendChild(why);
   }
+
+  h.appendChild(el("span", "repo-folder-spring"));
+
+  // The count goes LAST so its right edge is the same on every head — a column
+  // the eye runs down. While filtering it says both numbers, because "3
+  // repositories" over three of twenty-seven is a different fact from the same
+  // words unfiltered; the local band already says it this way.
+  h.appendChild(
+    span(
+      total === undefined
+        ? n === 1
+          ? "1 repository"
+          : `${n} repositories`
+        : `${n} of ${total} repositories`,
+      "repo-folder-count",
+    ),
+  );
+
+  const toggle = (all: boolean): void => {
+    // NOT h.parentElement — that is the section wrapper now, not the scroller.
+    const list = h.closest(".sec-list") as StickyList | null;
+    // Asked BEFORE the fold: a head holding the top of the scroller has to
+    // still be there afterwards.
+    const wasStuck = h.classList.contains("is-stuck");
+    const next = !isFolded(key);
+    const heads = all ? [...(list ?? document).querySelectorAll<HTMLElement>(".repo-owner-head")] : [h];
+    for (const head of heads) {
+      const k = head.dataset.group ?? "";
+      if (!k) continue;
+      setFolded(k, next);
+      // In place, never through refresh(): replacing the list's children drops
+      // focus to <body> and restarts keyboard navigation at row 0.
+      applyFoldState(head, k, next);
+    }
+    if (!list) return;
+    // Its own section is now only as tall as its head, so a folded head cannot
+    // pin. Without this the head you just clicked scrolls out from under the
+    // pointer. At the list's end this resolves to a no-op, which is also right.
+    if (wasStuck) {
+      list.scrollTop += h.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    }
+    list.syncSticky?.();
+  };
+
+  h.addEventListener("click", (e) => toggle(e.altKey));
+  h.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target !== h) return; // nothing else on this head takes keys — yet
+    e.preventDefault();
+    toggle(e.altKey);
+  });
   return h;
 }
 
@@ -526,7 +1178,13 @@ function remoteRow(
   if (r.fork) pills.push(span("fork", "gh-pill"));
 
   const chips: HTMLElement[] = [];
-  if (r.description) chips.push(span(r.description, "repo-desc"));
+  if (r.description) {
+    const d = span(r.description, "repo-desc");
+    // It ellipsizes when the window is narrow; the whole sentence stays
+    // reachable rather than becoming unreadable.
+    d.title = r.description;
+    chips.push(d);
+  }
 
   const meta: HTMLElement[] = [];
   if (r.language) meta.push(span(r.language, "repo-lang"));
@@ -535,7 +1193,7 @@ function remoteRow(
     // 121000 is not a number anyone reads; 121k is. Same rule the Explore
     // footer already follows.
     s.append(glyph("star-full"), span(compactCount(r.stars)));
-    s.title = `${r.stars.toLocaleString()} stars`;
+    s.title = plural(r.stars, "star");
     meta.push(s);
   }
 
@@ -548,7 +1206,44 @@ function remoteRow(
     open.setAttribute("aria-label", `Open ${r.fullName}`);
     open.addEventListener("click", () => void openPath(local.root, nav));
     actions.push(open);
-    pills.push(span("on this machine", "gh-pill is-have"));
+    pills.push(whereChip("local"));
+
+    // The same ⌄ its neighbours have. A row you have already cloned used to be
+    // the one row on the page with a single verb and no menu — so "show me
+    // where this is" and "open it on GitHub" were available for every
+    // repository except the ones you actually work in.
+    const more = el("button", "row-btn lv-menu-btn");
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-label", `More actions for ${r.fullName}`);
+    more.appendChild(glyph("chevron-down"));
+    more.addEventListener("click", () => {
+      openMenu(more, [
+        {
+          label: "Open",
+          sub: middlePath(local.root),
+          icon: "repo",
+          onClick: () => void openPath(local.root, nav),
+        },
+        {
+          label: "Show in Finder",
+          icon: "folder-opened",
+          onClick: () => void host.invoke("repos:reveal", local.root),
+        },
+        { separator: true },
+        {
+          label: "Open on GitHub",
+          icon: "link-external",
+          onClick: () => window.open(`https://github.com/${r.fullName}`, "_blank", "noopener"),
+        },
+        {
+          label: "Copy clone URL",
+          icon: "copy",
+          onClick: () =>
+            void copyText(`https://github.com/${r.fullName}.git`, "Clone URL copied."),
+        },
+      ]);
+    });
+    actions.push(more);
   } else {
     const clone = el("button", "row-btn") as HTMLButtonElement;
     clone.textContent = "Clone";
@@ -578,13 +1273,30 @@ function remoteRow(
         icon: "new-folder",
         onClick: () => void cloneInto(r, undefined, clone, nav, refresh, true),
       });
-      openMenu(where, items);
+      openMenu(where, [
+        ...items,
+        { separator: true },
+        {
+          label: "Open on GitHub",
+          icon: "link-external",
+          onClick: () => window.open(`https://github.com/${r.fullName}`, "_blank", "noopener"),
+        },
+        {
+          label: "Copy clone URL",
+          icon: "copy",
+          onClick: () =>
+            void copyText(`https://github.com/${r.fullName}.git`, "Clone URL copied."),
+        },
+      ]);
     });
     actions.push(where);
   }
 
-  return secRow({
-    lead: avatar(`https://github.com/${r.owner}.png?size=48`, r.owner, 18),
+  const row = secRow({
+    // avatar(LOGIN, URL) — passing these the other way round made every
+    // fallback tile compute its initials from "https://github.com/…", which is
+    // why an owner with no avatar loaded showed "HP".
+    lead: avatar(r.owner, `https://github.com/${r.owner}.png?size=48`, 18),
     title: r.fullName,
     titleSuffix: pills,
     chips,
@@ -594,10 +1306,12 @@ function remoteRow(
     ariaLabel: [r.fullName, r.private ? "private" : "", local ? "already on this machine" : ""]
       .filter(Boolean)
       .join(", "),
-    onOpen: () => {
-      if (local) void openPath(local.root, nav);
-    },
+    onOpen: () => void openRemoteRepo(r, local, nav),
   });
+  // Tagged so the stylesheet can give the NAME priority over the
+  // description beside it — see .repo-row in app.css.
+  row.classList.add("repo-row");
+  return row;
 }
 
 async function cloneInto(
@@ -639,7 +1353,7 @@ async function cloneInto(
     // Straight into it — cloning is something you do in order to work, and
     // making you find it again afterwards is a step nobody wants.
     const info = await host.invoke("repo:openPath", res.root);
-    if (info) nav("changes");
+    if (info) nav("code");
     else await refresh();
   } catch (e) {
     toast(String((e as Error)?.message ?? e) || `Couldn't clone ${r.fullName}.`, "error");

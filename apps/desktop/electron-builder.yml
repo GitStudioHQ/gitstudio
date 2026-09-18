@@ -36,10 +36,23 @@ publish:
   owner: GitStudioHQ
   repo: gitstudio
 
-# A single ≥512px PNG in buildResources (build/icon.png); electron-builder
-# converts it to .icns / .ico per platform automatically.
+# Icons. Windows and Linux take build/icon.png (the full-bleed tile) and
+# electron-builder converts it per platform. macOS gets two things:
+#   - build/icon.icns — the tile on Apple's icon grid (824/1024, transparent
+#     margins), so on macOS 11–15 it sits at the size of every other Dock icon.
+#     A full-bleed PNG converted by electron-builder rendered oversized there.
+#   - build/mac/Assets.car + CFBundleIconName — the Icon Composer icon
+#     (build/AppIcon.icon, compiled by build/compile-icon.sh) that macOS 26
+#     renders itself, with the system's glass, per appearance. Without it Tahoe
+#     frames the legacy icns as a smaller "old" icon on its own backing.
 mac:
   category: public.app-category.developer-tools
+  icon: build/icon.icns
+  extendInfo:
+    CFBundleIconName: AppIcon
+  extraResources:
+    - from: build/mac/Assets.car
+      to: Assets.car
   # dmg is the human download; zip is REQUIRED for electron-updater to deliver
   # macOS auto-updates (it can't update from a .dmg).
   target:

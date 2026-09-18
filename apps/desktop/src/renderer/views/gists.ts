@@ -83,7 +83,9 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("add"), span("New gist"));
   newBtn.addEventListener("click", () => void newGist(nav, refresh));
-  tools.append(newBtn);
+  const verbs = el("div", "gh-head-verbs");
+  verbs.appendChild(newBtn);
+  tools.append(verbs);
   header.querySelector(".gh-acct")?.before(tools);
   view.append(header, listEl);
   wrap.replaceChildren(view);
@@ -627,7 +629,12 @@ function gistDialog(opts: {
         // must not take a file someone is typing. Esc, the backdrop and Cancel
         // are unaffected: those are the user asking. `formWithRetry` gives the
         // text back after a failed SUBMIT; this is the other half.
+        // On a RETRY the opts ARE the failed values (formWithRetry seeds
+        // them back), so comparing against them says "nothing unsaved" and a
+        // background refocus eats the file — same hole as the review modal:
+        // after a failed submit, any content at all is unsaved.
         hasUnsavedWork: () =>
+          (opts.error !== undefined && (contentIn.value.trim() !== "" || fileIn.value.trim() !== "")) ||
           descIn.value !== (opts.description ?? "") ||
           fileIn.value !== (opts.filename ?? "") ||
           contentIn.value !== (opts.content ?? ""),

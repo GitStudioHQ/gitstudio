@@ -21,7 +21,14 @@ const REF_FORMAT =
   `%(refname:short)${FIELD_SEP}%(HEAD)${FIELD_SEP}%(upstream:short)` +
   `${FIELD_SEP}%(upstream:track)${FIELD_SEP}%(*objectname)` +
   `${FIELD_SEP}%(committerdate:unix)${FIELD_SEP}%(contents:subject)` +
-  `${FIELD_SEP}%(objecttype)${FIELD_SEP}%(symref:short)`;
+  `${FIELD_SEP}%(objecttype)${FIELD_SEP}%(symref:short)` +
+  // WHO. For a commit-pointing ref, authorname/email answer directly; for an
+  // ANNOTATED tag they are empty (the ref points at a tag object), so the
+  // dereferenced pair (*authorname) answers for the commit underneath and the
+  // tagger pair says who cut the tag — the fact a release row actually wants.
+  `${FIELD_SEP}%(authorname)${FIELD_SEP}%(authoremail)` +
+  `${FIELD_SEP}%(*authorname)${FIELD_SEP}%(*authoremail)` +
+  `${FIELD_SEP}%(taggername)${FIELD_SEP}%(taggeremail)`;
 
 /** Parses `%(upstream:track)` ("[ahead 2, behind 3]", "[gone]", or "") into
  *  ahead/behind counts. Returns undefined counts when not tracked/clean. */
@@ -77,8 +84,10 @@ export class RefProvider {
       this.proc.run(["stash", "list", STASH_FORMAT]),
     ]);
     for (const line of splitLines(branchesAndTags.stdout)) {
-      const [objectname, refname, short, head, upstream, track, peeled, date, subject, objectType, symref] =
-        line.split(FIELD_SEP);
+      const [
+        objectname, refname, short, head, upstream, track, peeled, date, subject, objectType, symref,
+        authorName, authorEmail, peeledAuthorName, peeledAuthorEmail, taggerName, taggerEmail,
+      ] = line.split(FIELD_SEP);
       const type = refTypeFromFullName(refname);
       if (!type) {
         continue;
@@ -103,6 +112,20 @@ export class RefProvider {
       }
       if (symref) {
         ref.symref = symref;
+      }
+      // The person behind the ref. Priority: the tagger (they CUT this tag),
+      // else the commit author, else the dereferenced commit's author (the
+      // annotated-tag case when no tagger was recorded). Emails arrive in
+      // angle brackets.
+      {
+        const strip = (e: string | undefined): string => (e ?? "").replace(/^<|>$/g, "");
+        if (taggerName) {
+          ref.who = { name: taggerName, email: strip(taggerEmail), tagger: true };
+        } else if (authorName) {
+          ref.who = { name: authorName, email: strip(authorEmail) };
+        } else if (peeledAuthorName) {
+          ref.who = { name: peeledAuthorName, email: strip(peeledAuthorEmail) };
+        }
       }
       if (upstream) {
         ref.upstream = upstream;

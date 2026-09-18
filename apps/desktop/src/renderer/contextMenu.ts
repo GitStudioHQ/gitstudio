@@ -22,7 +22,7 @@ interface MenuItem {
   danger?: boolean;
 }
 
-const ITEMS: MenuItem[] = [
+export const ITEMS: MenuItem[] = [
   { label: "Checkout", action: "checkout", confirm: "Checkout this commit (detached HEAD)?" },
   { label: "Create branch here…", action: "branch", prompt: "feature/my-branch" },
   { label: "Create tag here…", action: "tag", prompt: "v1.0.0" },
@@ -33,6 +33,42 @@ const ITEMS: MenuItem[] = [
   { label: "Reset (hard)", action: "reset-hard", confirm: "DISCARD all changes and reset HEAD here? This cannot be undone.", danger: true },
   { label: "Copy SHA", action: "copy-sha" },
 ];
+
+/**
+ * The question a commit action has to ask before it runs — the name it needs,
+ * or the confirmation it owes — resolved from ONE table.
+ *
+ * This used to live inside the context menu's own dispatch, so the identical
+ * actions on the commit-details toolbar ran with neither: "Checkout" detached
+ * HEAD with no warning, "Revert" and "Reset" rewrote or added commits in
+ * silence, and "Branch" and "Tag" dispatched with no name at all and came back
+ * as an error blaming the user for a request the app had failed to build.
+ */
+export async function askForCommitAction(
+  item: MenuItem,
+): Promise<{ ok: boolean; name?: string }> {
+  let name: string | undefined;
+  if (item.prompt) {
+    const value = (await promptInline(item.label.replace(/…$/, ""), item.prompt))?.trim();
+    if (!value) return { ok: false };
+    name = value;
+  }
+  if (item.confirm) {
+    const ok = await confirmDialog({
+      title: item.label,
+      message: item.confirm,
+      confirmLabel: item.danger ? "Reset" : item.label.replace(/…$/, ""),
+      danger: item.danger,
+    });
+    if (!ok) return { ok: false };
+  }
+  return { ok: true, name };
+}
+
+/** The menu entry for an action id, for callers outside this menu. */
+export function commitActionItem(action: string): MenuItem | undefined {
+  return ITEMS.find((i) => i.action === action);
+}
 
 export class CommitContextMenu {
   private menu?: HTMLElement;
@@ -160,19 +196,14 @@ export class CommitContextMenu {
 
   private async dispatch(item: MenuItem, sha: string): Promise<void> {
     let name: string | undefined;
-    if (item.prompt) {
-      const value = (await promptInline(item.label.replace(/…$/, ""), item.prompt))?.trim();
-      if (!value) return;
-      name = value;
-    }
-    if (item.confirm) {
-      const ok = await confirmDialog({
-        title: item.label,
-        message: item.confirm,
-        confirmLabel: item.danger ? "Reset" : item.label.replace(/…$/, ""),
-        danger: item.danger,
-      });
-      if (!ok) return;
+    // Only awaited when the table says there is something to ask. An
+    // unconditional await defers even a question-less item by a microtask, so
+    // a ref checkout stopped resolving in the same tick — which is the shape
+    // `checkoutRequest.test.ts` asserts, and the shape the graph relies on.
+    if (item.prompt || item.confirm) {
+      const asked = await askForCommitAction(item);
+      if (!asked.ok) return;
+      name = asked.name;
     }
     // A checkout-ref item carries the ref it is ABOUT, and the request is the
     // only place it can travel. Left off, `name` arrived undefined and the main

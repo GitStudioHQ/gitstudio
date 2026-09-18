@@ -24,6 +24,15 @@ export function openRemoteRepoBrowser(fullName: string): void {
 }
 
 /** Split "owner/repo" into the shape proseNav wants for #123 resolution. */
+
+/** Relative images in a browsed repo live on raw.githubusercontent.com, at the
+ *  default branch (this browser always reads HEAD), beside the document. */
+function rawImage(fullName: string, baseDir: string) {
+  return (rel: string): string =>
+    `https://raw.githubusercontent.com/${fullName}/HEAD/` +
+    resolveRelative(baseDir, rel.replace(/^\.\//, ""));
+}
+
 function ownerRepoOf(fullName: string): { owner: string; repo: string } {
   const [owner, repo] = fullName.split("/", 2);
   return { owner, repo };
@@ -103,7 +112,7 @@ export function repoDirCard(fullName: string, path: string): PeekCard {
         rbody.classList.add("peek-readme");
         const prose = el("div", "gh-body-md");
         try {
-          prose.innerHTML = renderMarkdown(readme.text);
+          prose.innerHTML = renderMarkdown(readme.text, 0, { resolveImage: rawImage(fullName, "") });
           // #123 and github.com links resolve against the BROWSED repo, and
           // RELATIVE links ("./docs/x.md") open right here as more cards.
           wireProseNav(prose, undefined, ownerRepoOf(fullName), (rel) =>
@@ -191,8 +200,8 @@ function repoFileCard(fullName: string, path: string): PeekCard {
       if (/\.(md|markdown|mdx)$/i.test(name)) {
         const prose = el("div", "gh-body-md");
         try {
-          prose.innerHTML = renderMarkdown(f.text);
           const baseDir = path.split("/").slice(0, -1).join("/");
+          prose.innerHTML = renderMarkdown(f.text, 0, { resolveImage: rawImage(fullName, baseDir) });
           wireProseNav(prose, undefined, ownerRepoOf(fullName), (rel) =>
             ctx.push(cardForPath(fullName, resolveRelative(baseDir, rel))),
           );

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AppSettings } from "../src/main/appSettings";
-import { scanLocalCopies } from "../src/main/localRepos";
+import { scanLocalCopies, visibleRepoFolders } from "../src/main/localRepos";
 
 /**
  * One clone folder was never the shape of a real machine — people keep work
@@ -110,4 +110,46 @@ test("a repository inside a repository is not listed separately", async () => {
   await repoAt(join(cloneDir, "outer", "vendor", "inner"));
   const list = await scanLocalCopies({ cloneDir, recents: [] });
   assert.deepEqual(list.map((c) => c.name), ["outer"]);
+});
+
+// The clone folder the app makes in your home directory can be deleted from
+// the Repositories screen. It must then actually LEAVE the screen — it used to
+// come straight back as a band reading "0 repositories · missing", because the
+// clone folder is always in the list whether or not it exists.
+test("the default clone folder is listed only once something is in it", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    path: "/Users/x/GitStudio",
+    display: "~/GitStudio",
+    isCloneDir: true,
+    isDefaultCloneDir: true,
+    missing: true,
+    // What it CONTAINS, at any depth — not what renders directly under its
+    // head. A folder whose repositories all sit one level down has zero direct
+    // ones and is emphatically not empty; hiding it on that basis would take a
+    // folder full of work off the screen.
+    containedCount: 0,
+    ...over,
+  });
+
+  assert.deepEqual(visibleRepoFolders([row()]), [], "not there and empty: not shown");
+  assert.equal(
+    visibleRepoFolders([row({ missing: false })]).length,
+    1,
+    "it exists: shown, even empty — that is where clones land",
+  );
+  assert.equal(
+    visibleRepoFolders([row({ containedCount: 2 })]).length,
+    1,
+    "gone but holding repositories — at ANY depth — is shown, because that is worth knowing",
+  );
+  assert.equal(
+    visibleRepoFolders([row({ isDefaultCloneDir: false })]).length,
+    1,
+    "a clone folder somebody CHOSE is shown when it goes missing",
+  );
+  assert.equal(
+    visibleRepoFolders([row({ isCloneDir: false, isDefaultCloneDir: false })]).length,
+    1,
+    "an ordinary tracked folder is never hidden",
+  );
 });

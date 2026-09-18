@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  localSearchTargetId,
   parseAccountTarget,
   parseExploreTarget,
   parseRepoRoute,
@@ -80,12 +81,12 @@ test("an account target with extra path segments is not an account page", () => 
 
 test("a search target round-trips, tab and all", () => {
   const id = searchTargetId("code", "createLogPane");
-  assert.deepEqual(parseExploreTarget(id), { tab: "code", query: "createLogPane" });
+  assert.deepEqual(parseExploreTarget(id), { tab: "code", query: "createLogPane", scope: "github" });
 });
 
 test("a query containing slashes and spaces survives", () => {
   const id = searchTargetId("repos", "org:acme path:src/renderer");
-  assert.deepEqual(parseExploreTarget(id), { tab: "repos", query: "org:acme path:src/renderer" });
+  assert.deepEqual(parseExploreTarget(id), { tab: "repos", query: "org:acme path:src/renderer", scope: "github" });
 });
 
 test("an unknown tab is not a search target", () => {
@@ -95,5 +96,41 @@ test("an unknown tab is not a search target", () => {
 });
 
 test("an empty query still parses (the page shows its start state)", () => {
-  assert.deepEqual(parseExploreTarget("q/repos/"), { tab: "repos", query: "" });
+  assert.deepEqual(parseExploreTarget("q/repos/"), { tab: "repos", query: "", scope: "github" });
+});
+
+// ── the this-machine scope ───────────────────────────────────────────────────
+
+test("a local search routes as q/local and parses back as the local scope", () => {
+  const id = localSearchTargetId("yugo backend");
+  assert.equal(id, "q/local/yugo backend");
+  assert.deepEqual(parseExploreTarget(id), { tab: "repos", query: "yugo backend", scope: "local" });
+});
+
+test("an empty local query still parses (the pre-query canvas state)", () => {
+  assert.deepEqual(parseExploreTarget("q/local/"), { tab: "repos", query: "", scope: "local" });
+});
+
+test("the history of a ref is a routed place of its own", () => {
+  assert.equal(repoRouteId({ fullName: "o/r", kind: "commits" }), "repo/o/r/commits/HEAD");
+  assert.equal(repoRouteId({ fullName: "o/r", kind: "commits", ref: "main" }), "repo/o/r/commits/main");
+  // A ref with a slash survives the round trip.
+  const id = repoRouteId({ fullName: "o/r", kind: "commits", ref: "release/1.7" });
+  assert.deepEqual(parseRepoRoute(id), {
+    fullName: "o/r",
+    kind: "commits",
+    ref: "release/1.7",
+    path: "",
+  });
+});
+
+test("commits parses back as commits, not as a folder called commits", () => {
+  const r = parseRepoRoute("repo/o/r/commits/HEAD");
+  assert.equal(r?.kind, "commits");
+  assert.equal(r?.ref, undefined, "HEAD still means the default branch");
+  assert.equal(r?.path, "");
+  // …and a real folder named "commits" still routes as a tree.
+  const t = parseRepoRoute("repo/o/r/tree/main/commits");
+  assert.equal(t?.kind, "tree");
+  assert.equal(t?.path, "commits");
 });

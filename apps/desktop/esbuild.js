@@ -40,6 +40,47 @@ const dompurifyRedirectPlugin = {
   },
 };
 
+/**
+ * Drop Monaco's four LANGUAGE SERVICES (css / html / json / typescript).
+ *
+ * `import * as monaco from "monaco-editor"` resolves to editor.main.js, which
+ * pulls in those four alongside the 81 basic-language tokenizers. Each service
+ * wants its OWN web worker — ts.worker, json.worker and so on — and we ship
+ * only the base editor worker. So every TypeScript file opened in a diff fired
+ * language requests at a worker with no handler for them, and the renderer took
+ * seven uncaught errors per file click:
+ *
+ *   Uncaught Error: Missing requestHandler or method: getNavigationTree
+ *   Uncaught Error: Missing requestHandler or method: provideInlayHints
+ *   (unhandled rejection) Missing requestHandler or method: getSyntacticDiagnostics
+ *
+ * This was known and written off in monacoBoot.ts as "harmless noise" filtered
+ * by the error boundary. It is neither: they reach window.onerror, they are
+ * uncaught, and the person using the app sees them. Filtering the symptom was
+ * the wrong move — the services should not be loaded at all. Nothing is lost:
+ * the app has never offered IntelliSense, diffing lives in the BASE worker, and
+ * syntax highlighting comes from the basic-language tokenizers, which stay.
+ *
+ * Kept as a build-time redirect rather than a curated import list so a Monaco
+ * upgrade cannot quietly re-add a service, and so the three renderer modules go
+ * on importing "monaco-editor" plainly.
+ * @type {import('esbuild').Plugin}
+ */
+const monacoLanguageServicesPlugin = {
+  name: "monaco-drop-language-services",
+  setup(build) {
+    const SERVICES = /[\\/]language[\\/](css|html|json|typescript)[\\/]monaco\.contribution(\.js)?$/;
+    build.onResolve({ filter: SERVICES }, (args) => {
+      if (!args.importer.includes("monaco-editor")) return null;
+      return { path: args.path, namespace: "monaco-dropped" };
+    });
+    build.onLoad({ filter: /.*/, namespace: "monaco-dropped" }, () => ({
+      contents: "",
+      loader: "js",
+    }));
+  },
+};
+
 /** @type {import('esbuild').Plugin} */
 const problemMatcherPlugin = {
   name: "esbuild-problem-matcher",
@@ -118,6 +159,10 @@ function copyStaticAssets() {
     // Light-tile sibling of the dock mark, so the dock icon can theme-swap at
     // runtime (main's `appearance:dockIcon` picks light/dark per the app theme).
     "brand/gitstudio-icon-light-512.png": "icon-light.png",
+    // The Dock tiles: the same artwork on Apple's icon grid (see main.ts
+    // dockIconPath) so a runtime theme swap never shrinks the icon.
+    "brand/gitstudio-dock-1024.png": "dock.png",
+    "brand/gitstudio-dock-light-1024.png": "dock-light.png",
     "brand/gitstudio-icon.svg": "brand-icon.svg",
     "brand/gitstudio-icon-light.svg": "brand-icon-light.svg",
     "brand/gitstudio-wordmark-light.svg": "brand-wordmark-light.svg",
@@ -181,7 +226,12 @@ async function main() {
     // file once and rewrites every url() to point at it, so the duplication
     // disappears without touching a single @font-face rule.
     loader: { ".ttf": "file" },
-    plugins: [problemMatcherPlugin, dompurifyRedirectPlugin, copyAssetsPlugin],
+    plugins: [
+      problemMatcherPlugin,
+      dompurifyRedirectPlugin,
+      monacoLanguageServicesPlugin,
+      copyAssetsPlugin,
+    ],
   });
 
   // Monaco's editor worker, bundled standalone; loaded via a blob shim at runtime.

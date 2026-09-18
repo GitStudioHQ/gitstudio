@@ -51,6 +51,8 @@ const KIND_ICON: Record<WireRef["kind"], string> = {
  * ~10× slower and reset on every pointer move.
  */
 const OPEN_DELAY_MS = 90;
+/** Long enough to cross the gap between the pill and the card below it. */
+const LEAVE_GRACE_MS = 140;
 /** Gap between the pill and the card, and the minimum margin to the viewport. */
 const GAP = 6;
 
@@ -96,6 +98,12 @@ export class RefTip {
    * merely sweep the pointer across.
    */
   handleOver(e: Event): void {
+    // A PINNED card was opened by a click and is dismissed by one — not by the
+    // pointer wandering off. Without this guard, moving towards the card (which
+    // means leaving the pill) closed the very card you were reaching into, so
+    // its rows could never be clicked with a real mouse. The headless click in
+    // the check never moved a pointer, so it passed regardless.
+    if (this.pinned) return;
     const pill = pillOf(e);
     if (pill && !shouldOpen(pill)) {
       if (this.anchor) this.hide();
@@ -104,7 +112,8 @@ export class RefTip {
     if (!pill) {
       // Moving OFF a pill onto anything else closes: pointerout alone misses
       // the case where the pill is removed from under the pointer mid-scroll.
-      if (this.anchor) {
+      // Not when the pointer is inside the card itself — that is not "off".
+      if (this.anchor && !this.overCard) {
         this.hide();
       }
       return;
@@ -117,11 +126,77 @@ export class RefTip {
     this.timer = window.setTimeout(() => this.paint(pill), OPEN_DELAY_MS);
   }
 
-  /** Pointer left something. Closes only when it actually left the pill. */
+  /**
+   * Pointer left something. Closes only when it actually left the pill — and
+   * then not immediately, because the card's rows are links and the pointer
+   * has to cross the gap between pill and card to reach them. A card that
+   * vanishes as you reach for it is a card you cannot click.
+   */
   handleOut(e: Event): void {
+    if (this.pinned) return;
     if (this.anchor && pillOf(e) === this.anchor) {
-      this.hide();
+      window.setTimeout(() => {
+        if (!this.overCard && !this.pinned) this.hide();
+      }, LEAVE_GRACE_MS);
     }
+  }
+
+  /** True while the pointer is inside the card itself. */
+  private overCard = false;
+  /** Set by a CLICK on the pill: the card stays until dismissed. */
+  private pinned = false;
+
+  /** Open now, with no hover delay, and keep it open. */
+  pin(pill: HTMLElement): void {
+    if (this.timer) {
+      window.clearTimeout(this.timer);
+      this.timer = 0;
+    }
+    if (this.anchor === pill && this.pinned) {
+      this.dismiss();
+      return;
+    }
+    this.pinned = false;
+    this.hide();
+    this.anchor = pill;
+    this.paint(pill);
+    this.pinned = true;
+  }
+
+  /** Close a pinned card (an outside click, Escape, or a row being taken). */
+  dismiss(): void {
+    this.pinned = false;
+    this.overCard = false;
+    this.hide();
+  }
+
+  /** True while a pinned card is on screen, so the host can route Escape. */
+  get isPinned(): boolean {
+    return this.pinned;
+  }
+
+  /** The commit the open card belongs to, for the action a row click emits. */
+  get sha(): string | undefined {
+    return this.anchorSha;
+  }
+
+  private anchorSha?: string;
+
+  /**
+   * The card carries interactive rows, so it needs its own pointer tracking.
+   * Bound once per element — `find()` returns the same node for the life of
+   * the component.
+   */
+  private bindCard(el: HTMLElement): void {
+    if (el.dataset.gsTipBound) return;
+    el.dataset.gsTipBound = "1";
+    el.addEventListener("pointerenter", () => {
+      this.overCard = true;
+    });
+    el.addEventListener("pointerleave", () => {
+      this.overCard = false;
+      if (!this.pinned) this.hide();
+    });
   }
 
   hide(): void {
@@ -130,6 +205,7 @@ export class RefTip {
       this.timer = 0;
     }
     this.anchor = null;
+    this.anchorSha = undefined;
     const el = this.find();
     if (el) {
       el.hidden = true;
@@ -140,6 +216,8 @@ export class RefTip {
   private paint(pill: HTMLElement): void {
     this.timer = 0;
     const el = this.find();
+    if (el) this.bindCard(el);
+    this.anchorSha = (pill.closest("[data-sha]") as HTMLElement | null)?.dataset.sha;
     // The pill can be recycled out of the DOM during the open delay — the rows
     // are virtualized and repaint on every scroll tick.
     if (!el || !pill.isConnected) {
@@ -219,8 +297,12 @@ function rowHtml(ref: TipRef): string {
   const also = ref.remotes?.length
     ? `<span class="tip-also">· also on ${escapeTip(ref.remotes.join(", "))}</span>`
     : "";
+  // A LINK, like the chips it stands in for. A ref folded behind "+N" used to
+  // be the one ref on the row you could read but not open — and on a busy row
+  // that is most of them.
   return (
-    `<div class="tip-row tip-${ref.kind}">` +
+    `<div class="tip-row tip-${ref.kind}" role="link" tabindex="0"` +
+    ` data-ref="${escapeTip(ref.name)}" data-kind="${escapeTip(ref.kind)}">` +
     `<span class="codicon codicon-${KIND_ICON[ref.kind]}" aria-hidden="true"></span>` +
     `<span class="tip-name">${escapeTip(ref.name)}</span>` +
     `<span class="tip-kind">${REF_KIND_LABEL[ref.kind]}</span>` +
@@ -289,6 +371,17 @@ export const refTipStyles = css`
     gap: 5px;
     padding: 1px 9px;
     white-space: nowrap;
+  }
+  /* The rows are links, so they have to look like it — a card that opens a
+     branch while reading like a read-only legend is a control nobody finds. */
+  .tip-row[data-ref] {
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .tip-row[data-ref]:hover,
+  .tip-row[data-ref]:focus-visible {
+    background: var(--vscode-list-hoverBackground, rgba(127, 127, 127, 0.18));
+    outline: none;
   }
   .tip-row .codicon {
     font-size: 11px;

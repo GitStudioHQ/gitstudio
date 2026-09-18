@@ -486,9 +486,27 @@ function build(wrap: HTMLElement, nav: (view: string) => void, state: RebasePlan
 
   // ── actions ──
   resetBtn.addEventListener("click", () => {
-    rows = original.map((r) => ({ ...r }));
-    render();
-    toast("Plan reset.", "info");
+    void (async () => {
+      // Only ask when there is something to lose. A plan you have not touched
+      // has nothing to discard, and a confirm on a no-op is just noise — but a
+      // plan with reorders, drops and reworded messages is typing that exists
+      // nowhere else, and this button threw all of it away on one click.
+      const changed = JSON.stringify(rows) !== JSON.stringify(original);
+      if (changed) {
+        const ok = await confirmDialog({
+          title: "Reset the plan?",
+          message:
+            "Every action, reorder and reworded message goes back to how the plan started. " +
+            "Nothing has been written to the repository yet, so this is the only copy of that work.",
+          confirmLabel: "Reset plan",
+          danger: true,
+        });
+        if (!ok) return;
+      }
+      rows = original.map((r) => ({ ...r }));
+      render();
+      toast("Plan reset.", "info");
+    })();
   });
 
   applyBtn.addEventListener("click", () => {

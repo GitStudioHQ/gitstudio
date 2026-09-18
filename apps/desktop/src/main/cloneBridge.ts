@@ -12,6 +12,7 @@
 import { dialog } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { validateTargetName } from "../shared/cloneName";
 
 export { validateTargetName };
@@ -85,6 +86,19 @@ export async function startClone(
   // A target dir starting with "-" would be read by git as an option, not a path.
   if (name.startsWith("-")) {
     return { ok: false, code: "bad-name", message: "Couldn't derive a safe folder name from the URL." };
+  }
+  // The destination folder may simply not be there — the clone folder can be
+  // deleted from the Repositories screen, and a folder somebody moved is the
+  // same case. `spawn` with a missing cwd fails with a bare ENOENT that says
+  // nothing about what to do, so create it: the user asked to put a clone
+  // here, and "here" not existing yet is not an error.
+  try {
+    await mkdir(req.parentDir, { recursive: true });
+  } catch (err) {
+    return {
+      ok: false,
+      message: `Couldn't create ${req.parentDir}: ${messageOf(err)}`,
+    };
   }
   // Pre-check the destination so a collision is a clean, coded failure instead
   // of git's stderr (which the UI used to have to string-match).

@@ -167,8 +167,29 @@ interface RawTimelineEvent {
   commit_id?: string | null;
   source?: {
     type?: string;
-    issue?: { number?: number; title?: string; html_url?: string; pull_request?: unknown };
+    issue?: {
+      number?: number;
+      title?: string;
+      html_url?: string;
+      state?: string;
+      pull_request?: { merged_at?: string | null } | null;
+      /** Present on a cross-reference: the repository the reference came FROM,
+       *  which is very often not this one. */
+      repository?: { full_name?: string } | null;
+    };
   };
+}
+
+/**
+ * `owner/repo` out of an issue or pull-request URL.
+ *
+ * The timeline payload carries `repository` on a cross-reference, but not
+ * always — the html_url always says it, and parsing one is cheaper than a
+ * second request.
+ */
+function repoFromUrl(url: string | undefined): string | undefined {
+  const m = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+)\/(?:issues|pull)\//.exec(url ?? "");
+  return m ? `${m[1]}/${m[2]}` : undefined;
 }
 
 /** GitHub's event names, mapped to the ones worth drawing a line for. */
@@ -239,6 +260,11 @@ async function fetchTimeline(
     if (kind === "cross-referenced" && e.source?.issue?.number) {
       const i = e.source.issue;
       ev.source = {
+        // WHICH repository mentioned this. Dropped, "#12" was rendered as a
+        // link into the repository you were looking at — so a mention from
+        // some other project sent you to this project's issue 12, a different
+        // conversation entirely, with nothing on screen saying so.
+        repo: i.repository?.full_name || repoFromUrl(i.html_url),
         // A pull request IS an issue to this API and only the presence of
         // `pull_request` tells them apart — calling a PR an issue here would
         // send the reader to the wrong kind of page.
@@ -246,6 +272,11 @@ async function fetchTimeline(
         ref: `#${i.number}`,
         title: i.title,
         url: i.html_url,
+        // For the Development rail: an open PR is work in flight, a merged one
+        // is the fix, a closed-unmerged one is a dead end. The list payload
+        // says merged only through merged_at.
+        state: i.state,
+        merged: Boolean(i.pull_request?.merged_at),
       };
     }
     out.push(ev);
@@ -544,6 +575,31 @@ export async function deleteIssueComment(
 }
 
 /** Close or reopen an issue (PATCH state). */
+/**
+ * Lock or unlock the conversation.
+ *
+ * Two different verbs to the API — PUT with an optional `lock_reason`, DELETE
+ * to unlock. Both answer 204 with no body, so success is the status alone.
+ */
+export async function setIssueLocked(
+  client: GitHubClient,
+  owner: string,
+  repo: string,
+  req: { number: number; locked: boolean; reason?: string },
+): Promise<CommitActionResult> {
+  try {
+    const path = `/repos/${enc(owner)}/${enc(repo)}/issues/${req.number}/lock`;
+    if (req.locked) {
+      await client.requestBody("PUT", path, req.reason ? { lock_reason: req.reason } : {});
+    } else {
+      await client.request("DELETE", path);
+    }
+    return { ok: true, changed: true };
+  } catch (err) {
+    return { ok: false, changed: false, ...errorFields(err) };
+  }
+}
+
 export async function setIssueState(
   client: GitHubClient,
   owner: string,

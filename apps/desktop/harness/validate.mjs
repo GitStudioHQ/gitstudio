@@ -77,10 +77,15 @@ try {
 `;
     const probe = encodeURIComponent(body);
     const extra = req.extra ? `&${req.extra}` : "";
-    const url = `file://${PAGE}?scene=${req.scene}&theme=dark&probe=${probe}${extra}`;
+    // A clause may need a THEME or a WIDTH: "nail the light mode" cannot be
+    // judged in dark, and "use the full screen" cannot be judged at 1600px.
+    // Both default to what every earlier clause already assumed.
+    const theme = req.theme ?? "dark";
+    const width = req.width ?? 1600;
+    const url = `file://${PAGE}?scene=${req.scene}&theme=${theme}&probe=${probe}${extra}`;
     execFile(
       CHROME,
-      ["--headless", "--disable-gpu", "--hide-scrollbars", "--window-size=1600,1000", "--virtual-time-budget=20000", "--dump-dom", url],
+      ["--headless", "--disable-gpu", "--hide-scrollbars", `--window-size=${width},1000`, "--virtual-time-budget=20000", "--dump-dom", url],
       { maxBuffer: 64 * 1024 * 1024, timeout: 120_000, killSignal: "SIGKILL" },
       (err, stdout) => {
         const m = /<title>PROBE ([\s\S]*?)<\/title>/.exec(stdout || "");
@@ -104,20 +109,45 @@ try {
   });
 }
 
-/** Pull scene/extra/says out of requirements.js without executing it. */
+/** Pull scene/extra/theme/width/says out of requirements.js without running it. */
 function readRequirements() {
   const src = readFileSync(resolve(HERE, "requirements.js"), "utf8");
   const out = [];
-  const re = /id:\s*"([^"]+)",\s*says:\s*([\s\S]*?),\s*scene:\s*"([^"]+)",(?:\s*extra:\s*"([^"]+)",)?/g;
+  // Match up to the clause's own `run`, then read each setting by NAME from
+  // that slice. The old form listed the keys in one fixed order, so a clause
+  // carrying `theme` or `width` silently lost them and ran in dark at 1600px —
+  // which is exactly the wrong answer for "nail the light mode" and for "use
+  // the full screen size".
+  const re = /id:\s*"([^"]+)",\s*says:\s*([\s\S]*?),\s*(?=async run\(\)|run\(\))/g;
   let m;
   while ((m = re.exec(src))) {
-    const says = m[2]
+    const head = m[2];
+    const sceneM = /scene:\s*"([^"]+)"/.exec(head);
+    if (!sceneM) continue;
+    const saysRaw = head.slice(0, sceneM.index);
+    const says = saysRaw
       .split("\n")
       .map((l) => l.trim().replace(/^"|",?$/g, "").replace(/\\"/g, '"'))
       .join(" ")
       .replace(/\s+/g, " ")
+      .replace(/\+$/, "")
       .trim();
-    out.push({ id: m[1], says, scene: m[3], extra: m[4] });
+    const pick = (k) => {
+      const hit = new RegExp(k + ':\\s*"([^"]+)"').exec(head);
+      return hit ? hit[1] : undefined;
+    };
+    const num = (k) => {
+      const hit = new RegExp(k + ":\\s*(\\d+)").exec(head);
+      return hit ? Number(hit[1]) : undefined;
+    };
+    out.push({
+      id: m[1],
+      says,
+      scene: sceneM[1],
+      extra: pick("extra"),
+      theme: pick("theme"),
+      width: num("width"),
+    });
   }
   return out;
 }

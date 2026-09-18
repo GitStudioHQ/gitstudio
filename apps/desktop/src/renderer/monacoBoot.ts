@@ -26,10 +26,17 @@ export function bootMonaco(): void {
   const url = new URL("./editor.worker.js", document.baseURI).toString();
   window.__JBMERGE__ = { workerUri: url };
   configureMonacoWorkers();
-  // NOTE: we bundle only the base editor worker (highlighting + diff), not the
-  // TS/JS language workers, so Monaco's language services reject methods like
-  // getSyntacticDiagnostics / getNavigationTree / provideInlayHints. Those are
-  // harmless noise; the per-editor options below (inlayHints/codeLens/etc. off)
-  // cut most of them, and the renderer's error boundary filters the rest
-  // (isBenignError). Nothing is lost — we never offered IntelliSense.
+  // Only the BASE editor worker is bundled — highlighting and diff — because
+  // that is all this app has ever needed.
+  //
+  // This note used to say the TS/JS language services were left loaded and
+  // their rejections were "harmless noise" the error boundary filtered. They
+  // were not harmless: opening any TypeScript file in a diff took SEVEN
+  // uncaught errors, measured over CDP against the packaged app —
+  // getNavigationTree and provideInlayHints as uncaught exceptions,
+  // getSyntacticDiagnostics as an unhandled rejection — all reaching
+  // window.onerror. Filtering a symptom that fires once per file click was the
+  // wrong answer; the services are now dropped at BUILD time instead, by
+  // monacoLanguageServicesPlugin in esbuild.js. The basic-language tokenizers
+  // stay, so highlighting is unchanged.
 }

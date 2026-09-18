@@ -32,6 +32,8 @@ export interface RefLike {
   type: "head" | "remote" | "tag" | "stash";
   name: string;
   isCurrent: boolean;
+  /** Set only on `refs/remotes/<remote>/HEAD` — the remote's default branch. */
+  symref?: string;
 }
 
 /** Inputs gathered by the host before assembling the wire rows. */
@@ -74,6 +76,12 @@ export function wireRefs(refs: readonly RefLike[] | undefined): WireRef[] {
     if (ref.type === "head") {
       out.push({ name: ref.name, kind: ref.isCurrent ? "currentHead" : "head" });
     } else if (ref.type === "remote") {
+      // `refs/remotes/<remote>/HEAD` shortens to the bare remote name, so this
+      // drew a chip labelled "origin" that is not a branch and matches nothing
+      // in the Branches list — a dead link sitting on the same commit as the
+      // real `origin/main` chip beside it. A symref is a POINTER; the thing it
+      // points at is already here under its own name.
+      if (ref.symref) continue;
       out.push({ name: ref.name, kind: "remoteHead" });
     } else if (ref.type === "tag") {
       out.push({ name: ref.name, kind: "tag" });

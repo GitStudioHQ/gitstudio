@@ -45,6 +45,8 @@ interface TopTabDesc {
   icon: string;
   /** True for an AI chat tab — gets the ✨ accent + a close button. */
   chat?: boolean;
+  /** Carries a ✕ without the chat styling (the Diff tab). */
+  closable?: boolean;
 }
 
 export interface TerminalDockOptions {
@@ -54,6 +56,8 @@ export interface TerminalDockOptions {
   height: number;
   /** Persist the dock's expanded + height state. */
   onStateChange: (s: { expanded: boolean; height: number }) => void;
+  /** The Diff tab's ✕ — the renderer owns the DiffPanel's lifecycle. */
+  onCloseDetails?: () => void;
 }
 
 /** How many shells one window will hold. A held-down "+" must not be able
@@ -76,6 +80,9 @@ export class TerminalDock {
   // Commit-details (added only on the commits view; surface owned by renderer).
   private detailsVisible = false;
   private detailsEl?: HTMLElement;
+  /** The Diff tab's label — the open file's basename. */
+  private detailsLabel = "";
+  private detailsTitle = "";
 
   // The single Terminal view: a stage (the shell surfaces) + a side tab list.
   private readonly termGroup: HTMLElement;
@@ -106,6 +113,10 @@ export class TerminalDock {
           // keyboard except the mouse.
           this.restoreFocus();
         }
+        // The footer's actions belong to the tab that is showing, and a
+        // collapsed dock is showing none. showActive() is the one place that
+        // decides; collapsing never used to reach it.
+        this.showActive();
         this.persist();
       },
       onHeightChange: () => this.persist(),
@@ -250,7 +261,18 @@ export class TerminalDock {
     const tabs: TopTabDesc[] = [];
     // The commit metadata now lives beside the graph; this tab is where a file
     // DIFF opens, so the dock shows code rather than duplicating the details.
-    if (this.detailsVisible) tabs.push({ id: "commit-details", label: "Diff", icon: "diff" });
+    // Named for the FILE it is showing, not "Diff" — the tab strip is where you
+    // look to see what is open, and a diff of one file among nine should say
+    // which. Closable, like a chat tab, because the close belongs on the thing
+    // being closed rather than in a second header inside the body.
+    if (this.detailsVisible) {
+      tabs.push({
+        id: "commit-details",
+        label: this.detailsLabel || "Diff",
+        icon: "diff",
+        closable: true,
+      });
+    }
     tabs.push({ id: "output", label: "Output", icon: "output" });
     tabs.push({ id: "terminal", label: "Terminal", icon: "terminal" });
     for (const c of this.chats) tabs.push({ id: c.id, label: c.label, icon: "sparkle", chat: true });
@@ -274,15 +296,19 @@ export class TerminalDock {
         "term-tab" + (sel ? " active" : "") + (t.id === "output" ? " is-output" : "") + (t.chat ? " is-chat" : "");
       const btn = el("button", cls);
       btn.append(glyph(t.icon), span(t.label, "term-tab-label"));
-      btn.title = t.label;
+      // The full path on the diff tab: a basename alone cannot tell two
+      // like-named files in different folders apart.
+      const full = t.id === "commit-details" && this.detailsTitle ? this.detailsTitle : t.label;
+      btn.title = full;
       btn.setAttribute("role", "tab");
-      btn.setAttribute("aria-label", t.label);
+      btn.setAttribute("aria-label", t.id === "commit-details" ? `Diff of ${full}` : t.label);
       btn.setAttribute("aria-selected", sel ? "true" : "false");
       btn.tabIndex = sel ? 0 : -1;
       btn.addEventListener("click", () => this.setActiveTab(t.id));
       btn.addEventListener("keydown", (e) => this.onTabKey(e, t.id));
-      // Chat tabs carry an inline close affordance (✕), like a browser tab.
-      if (t.chat) {
+      // Chat and diff tabs carry an inline close affordance (✕), like a
+      // browser tab.
+      if (t.chat || t.closable) {
         const close = el("span", "term-tab-close");
         close.append(glyph("close"));
         close.title = `Close ${t.label}`;
@@ -291,7 +317,8 @@ export class TerminalDock {
         close.tabIndex = -1;
         const doClose = (e: Event): void => {
           e.stopPropagation();
-          this.closeChat(t.id);
+          if (t.chat) this.closeChat(t.id);
+          else this.opts.onCloseDetails?.();
         };
         close.addEventListener("click", doClose);
         close.addEventListener("keydown", (e) => {
@@ -400,7 +427,10 @@ export class TerminalDock {
   /** Show the active top surface; within the Terminal, the active shell. */
   private showActive(): void {
     this.outputs.el.style.display = this.active === "output" ? "" : "none";
-    this.outputs.bar.hidden = this.active !== "output";
+    // Collapsed counts as "no tab is showing" — see .dock-mount.collapsed
+    // .dock-actions in app.css, which is the rule that actually survives a
+    // collapse path that never repaints.
+    this.outputs.bar.hidden = this.active !== "output" || this.dock.isCollapsed();
     if (this.detailsEl) this.detailsEl.style.display = this.active === "commit-details" ? "" : "none";
     this.termGroup.style.display = this.active === "terminal" ? "" : "none";
 
@@ -523,11 +553,22 @@ export class TerminalDock {
   }
 
   private layoutActive(): void {
-    if (this.dock.isCollapsed() || this.active !== "terminal") return;
+    if (this.dock.isCollapsed()) return;
+    // The diff needs telling too. Its own ResizeObserver does fire, but a frame
+    // late — so dragging the dock's top edge left Monaco trailing the pointer
+    // instead of following it.
+    if (this.active === "commit-details") {
+      this.onDetailsLayout?.();
+      return;
+    }
+    if (this.active !== "terminal") return;
     const t = this.terminals.find((x) => x.id === this.activeTermId);
     if (t && t.opened) t.panel.layout();
-    // The commit-details diff (DiffView) relayouts via its own ResizeObserver.
   }
+
+  /** Set by the renderer when it mounts a diff into the Diff tab, so a dock
+   *  resize can relayout Monaco on the same frame as the drag. */
+  onDetailsLayout?: () => void;
 
   // ── Diff tab (present only on the commits/graph view) ───────────────────────
 
@@ -543,6 +584,8 @@ export class TerminalDock {
     }
     if (!this.detailsVisible) return;
     this.detailsVisible = false;
+    this.detailsLabel = "";
+    this.detailsTitle = "";
     this.detailsEl?.remove();
     this.detailsEl = undefined;
     if (this.active === "commit-details") {
@@ -555,6 +598,15 @@ export class TerminalDock {
   /** The element the renderer mounts the file diff into (when the tab exists). */
   detailsSurface(): HTMLElement | undefined {
     return this.detailsEl;
+  }
+
+  /** Name the Diff tab after the file it is showing. */
+  setDetailsLabel(path: string): void {
+    const base = path.split("/").pop() || path;
+    if (base === this.detailsLabel) return;
+    this.detailsLabel = base;
+    this.detailsTitle = path;
+    this.renderTabs();
   }
 
   /** Activate the Diff tab and expand the dock (when a file is opened). */

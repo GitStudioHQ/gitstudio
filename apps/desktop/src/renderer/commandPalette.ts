@@ -11,6 +11,10 @@
 import { el, span, glyph, closeMenu } from "./ui";
 import { createSearchScheduler } from "./searchDebounce";
 import { registerLayer, holdBackground } from "./overlays";
+import { fuzzyScore } from "../shared/fuzzy";
+
+// Re-exported so existing import sites keep one place to reach for it.
+export { fuzzyScore };
 
 export interface PaletteItem {
   /** Codicon for the row. */
@@ -62,27 +66,6 @@ export function closeCommandPalette(): void {
  * fuzzy matcher would drift from the palette's feel for no reason. The "/"
  * word-boundary bonus already suits paths.
  */
-export function fuzzyScore(query: string, text: string): number {
-  if (!query) return 1;
-  const q = query.toLowerCase();
-  const t = text.toLowerCase();
-  let qi = 0;
-  let score = 0;
-  let streak = 0;
-  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
-    if (t[ti] === q[qi]) {
-      qi++;
-      streak++;
-      score += 2 + streak; // consecutive hits compound
-      if (ti === 0 || t[ti - 1] === " " || t[ti - 1] === "/" || t[ti - 1] === "-") score += 4;
-    } else {
-      streak = 0;
-    }
-  }
-  if (qi < q.length) return 0;
-  return score + Math.max(0, 24 - t.length / 4); // shorter targets edge ahead
-}
-
 export function openCommandPalette(providers: PaletteProviders): void {
   closeCommandPalette();
   // A dropdown open underneath would be STRANDED: openMenu's own Escape

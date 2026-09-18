@@ -172,6 +172,12 @@ function run(fullName: string, opts: { dest?: string; name?: string }): void {
             : `Opened ${fullName}.`,
           "success",
         );
+        // A clone is something you do in order to WORK. `repo:changed` rebuilds
+        // the shell and re-routes to whatever view was current — which, started
+        // from the browse page, is Explore with no target: the empty Search
+        // page, with Back disabled because the rebuild just emptied the
+        // history. You cloned a repository and landed nowhere near it.
+        window.dispatchEvent(new CustomEvent("gs:go", { detail: { view: "code" } }));
         return;
       }
       // A folder COLLISION is fixable in place: reopen the sheet prefilled

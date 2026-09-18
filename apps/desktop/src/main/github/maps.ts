@@ -289,6 +289,8 @@ export interface RawIssue {
   state_reason?: string | null;
   author_association?: string;
   reactions?: RawReactions | null;
+  locked?: boolean;
+  active_lock_reason?: string | null;
 }
 
 export function mapIssue(i: RawIssue): IssueInfo {
@@ -312,6 +314,8 @@ export function mapIssue(i: RawIssue): IssueInfo {
     stateReason: i.state_reason ?? null,
     authorAssociation: i.author_association,
     reactions: mapReactions(i.reactions),
+    locked: i.locked ?? false,
+    activeLockReason: i.active_lock_reason ?? null,
   };
 }
 

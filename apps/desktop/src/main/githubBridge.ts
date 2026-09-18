@@ -45,6 +45,18 @@ export class GitHubBridge {
   private login: string | undefined;
   private loaded = false;
   private readonly client = new GitHubClient(() => this.token);
+
+  /**
+   * The raw token, for ONE caller: the webRequest hook that authenticates
+   * issue/PR attachment images. GitHub serves a private repository's
+   * `user-attachments` URL only to an authenticated request, and an <img> tag
+   * carries no headers of its own — so without this, every screenshot in a
+   * private repo's issues is a broken glyph while the public ones load.
+   * Nothing else should touch this; API calls go through `client`.
+   */
+  peekToken(): string | undefined {
+    return this.token;
+  }
   private ownerRepoRoot: string | undefined;
   private cachedOwnerRepo: { owner: string; repo: string } | undefined;
   /** Lazily built: `app.getPath` is only valid once Electron is ready. */

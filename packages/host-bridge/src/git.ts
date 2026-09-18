@@ -49,6 +49,9 @@ export interface GitRef {
   isCurrent: boolean;
   /** Short upstream ref name (e.g. "origin/main"), when set. */
   upstream?: string;
+  /** The person behind the ref: the tagger for an annotated tag (they cut
+   *  it), otherwise the tip commit's author. */
+  who?: { name: string; email: string; tagger?: boolean };
   /** Commits ahead of the upstream (from `%(upstream:track)`), when tracked. */
   ahead?: number;
   /** Commits behind the upstream (from `%(upstream:track)`), when tracked. */

@@ -7,6 +7,7 @@
 import { registerLayer, isMenuOpen, holdBackground } from "./overlays";
 import { mdEditor } from "./mdEditor";
 import { wireDraft } from "./draftStore";
+import { refNameProblem, sanitizeRefName } from "../shared/refName";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -23,7 +24,25 @@ function gl(name: string): HTMLElement {
 export type ToastKind = "error" | "success" | "info";
 
 /** A non-blocking, auto-dismissing in-app toast (replaces native alert()). */
-export function toast(message: string, kind: ToastKind = "info", timeoutMs?: number): void {
+/**
+ * An action offered on a toast — almost always Undo.
+ *
+ * A reversible action that announces itself and then gives you no way back is
+ * only reversible in principle. "Stopped tracking ~/Developer" is a sentence
+ * you can read after the list has already changed under you, and the only
+ * remedy was to find the folder again in a file picker.
+ */
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export function toast(
+  message: string,
+  kind: ToastKind = "info",
+  timeoutMs?: number,
+  action?: ToastAction,
+): void {
   let stack = document.getElementById("toast-stack");
   if (!stack) {
     stack = mk("div", "toast-stack");
@@ -39,10 +58,23 @@ export function toast(message: string, kind: ToastKind = "info", timeoutMs?: num
   const close = mk("button", "toast-close");
   close.setAttribute("aria-label", "Dismiss");
   close.appendChild(gl("close"));
-  t.append(icon, msg, close);
+  t.append(icon, msg);
+  if (action) {
+    const act = mk("button", "toast-action");
+    act.textContent = action.label;
+    act.addEventListener("click", () => {
+      // Dismiss FIRST: the handler re-renders, and a toast still on screen
+      // afterwards reads as though the undo had not happened.
+      dismiss();
+      action.onClick();
+    });
+    t.appendChild(act);
+  }
+  t.append(close);
   stack.appendChild(t);
   requestAnimationFrame(() => t.classList.add("in"));
   let timer = 0;
+  // eslint-disable-next-line prefer-const -- referenced by the action above.
   const dismiss = (): void => {
     if (!t.isConnected) return;
     window.clearTimeout(timer);
@@ -52,7 +84,12 @@ export function toast(message: string, kind: ToastKind = "info", timeoutMs?: num
     window.setTimeout(() => t.remove(), 280);
   };
   close.addEventListener("click", dismiss);
-  timer = window.setTimeout(dismiss, timeoutMs ?? (kind === "error" ? 7000 : 4000));
+  // An undoable action gets longer to be undone in: four seconds is not enough
+  // to read a sentence and decide you did not mean it.
+  timer = window.setTimeout(
+    dismiss,
+    timeoutMs ?? (kind === "error" ? 7000 : action ? 10000 : 4000),
+  );
 }
 
 export interface ModalSpec {
@@ -305,6 +342,42 @@ export function confirmDialog(opts: {
  * its labels, its assignees and its milestone.
  */
 
+/** The named validators a prompt can opt into. One for now; the vocabulary
+ *  grows when a caller needs it, not before. */
+export type DialogValidator = "refName";
+
+const VALIDATORS: Record<DialogValidator, (v: string) => string | null> = {
+  refName: refNameProblem,
+};
+
+/** An optional single checkbox in a prompt. `checked` is IN and OUT: seeded
+ *  from here, and overwritten with the state at submit — read it back after the
+ *  promise resolves. One mutable object rather than a richer return type,
+ *  because changing what promptInline resolves would touch 22 call sites. */
+export interface PromptCheck {
+  label: string;
+  checked: boolean;
+  /** What the primary button says while the box is ticked. A button has to
+   *  state what the click will do. */
+  okLabelChecked?: string;
+}
+
+export interface PromptOpts {
+  /** One line under the title saying what this does — and what it does not. */
+  hint?: string;
+  /** Opt in to live validation. When ABSENT nothing changes: no `input`
+   *  listener is attached and `ok` is never given `disabled`. */
+  validate?: DialogValidator;
+  /** Offer the repaired form when what was typed is refused. Defaults on for
+   *  `refName`. */
+  suggest?: boolean;
+  /** The caller's own rule on top of the validator — a message blocks, null
+   *  allows. Where "that name is already taken" lives, which this app can
+   *  answer from the refs it already has rather than a round trip. */
+  extra?: (v: string) => string | null;
+  check?: PromptCheck;
+}
+
 export function promptInline(
   title: string,
   placeholder: string,
@@ -313,6 +386,7 @@ export function promptInline(
   /** When true, an empty submission resolves "" (not null) — null then means
    *  ONLY an explicit cancel/dismiss. Lets callers tell "cleared" from "cancelled". */
   allowEmpty = false,
+  opts: PromptOpts = {},
 ): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false;
@@ -330,6 +404,7 @@ export function promptInline(
       input.className = "modal-input";
       input.placeholder = placeholder;
       input.value = value;
+      input.id = "gs-prompt-input";
       const actions = mk("div", "modal-actions");
       const cancel = mk("button", "mini-btn");
       cancel.textContent = "Cancel";
@@ -338,21 +413,219 @@ export function promptInline(
       okSpan.textContent = okLabel;
       ok.appendChild(okSpan);
       actions.append(cancel, ok);
-      card.append(h, input, actions);
+      card.append(h);
+
+      let hintEl: HTMLElement | undefined;
+      if (opts.hint) {
+        hintEl = mk("div", "modal-message");
+        hintEl.id = "gs-prompt-hint";
+        hintEl.textContent = opts.hint;
+        card.append(hintEl);
+      }
+      card.append(input);
+
+      // The reason the primary button is off, in the field's own words.
+      const err = mk("div", "prompt-error");
+      err.id = "gs-prompt-error";
+      err.setAttribute("role", "alert");
+      err.hidden = true;
+      // "Use instead <name> [Use]" — a correction offered, never imposed.
+      const sug = mk("div", "prompt-suggest");
+      sug.hidden = true;
+      const sugCode = mk("code");
+      const sugUse = mk("button", "mini-btn prompt-suggest-use");
+      sugUse.textContent = "Use";
+      sugUse.title = "Replace what you typed with this";
+      (sugUse as HTMLButtonElement).type = "button";
+      const sugLead = mk("span");
+      sugLead.textContent = "Use instead";
+      sug.append(sugLead, sugCode, sugUse);
+      if (opts.validate) {
+        card.append(err, sug);
+        input.spellcheck = false;
+        input.setAttribute("autocapitalize", "off");
+        input.setAttribute("autocomplete", "off");
+        input.setAttribute("aria-describedby", `${hintEl ? "gs-prompt-hint " : ""}gs-prompt-error`);
+      } else if (hintEl) {
+        input.setAttribute("aria-describedby", "gs-prompt-hint");
+      }
+
+      let box: HTMLInputElement | undefined;
+      if (opts.check) {
+        const wrap = mk("label", "modal-check");
+        box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = opts.check.checked;
+        const relabel = (): void => {
+          okSpan.textContent =
+            box!.checked && opts.check!.okLabelChecked ? opts.check!.okLabelChecked : okLabel;
+        };
+        box.addEventListener("change", relabel);
+        relabel();
+        wrap.append(box, document.createTextNode(opts.check.label));
+        card.append(wrap);
+      }
+      card.append(actions);
+
+      const problem = (v: string): string | null =>
+        (opts.validate ? VALIDATORS[opts.validate](v) : null) ?? opts.extra?.(v) ?? null;
+
+      /**
+       * THE COMPATIBILITY RULE: with no `opts.validate`, nothing below runs —
+       * no listener, and `ok` never gets `disabled`. The harness (and several
+       * Actions prompts) set `.modal-input.value` directly and click Ok WITHOUT
+       * dispatching an `input` event; a disabled button fires no click, so a
+       * blanket disable would turn those into silent no-ops.
+       */
+      const sync = (): void => {
+        const v = input.value.trim();
+        // An empty field is refusable but never shouted at — it starts empty,
+        // and scolding someone before they have typed is hostile.
+        const msg = v ? problem(v) : null;
+        err.textContent = msg ?? "";
+        err.hidden = !msg;
+        input.classList.toggle("is-invalid", !!msg);
+        input.setAttribute("aria-invalid", String(!!msg));
+        const fix =
+          opts.validate === "refName" && opts.suggest !== false && v && msg
+            ? sanitizeRefName(v)
+            : "";
+        const offer = !!fix && fix !== v && !problem(fix);
+        if (offer) sugCode.textContent = fix; // textContent: git allows < > & in a ref
+        sug.hidden = !offer;
+        if ((!v && !allowEmpty) || msg) ok.setAttribute("disabled", "true");
+        else ok.removeAttribute("disabled");
+      };
+      if (opts.validate) {
+        input.addEventListener("input", sync);
+        sugUse.addEventListener("click", () => {
+          input.value = sugCode.textContent ?? "";
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+          sync();
+        });
+        sync(); // so the button starts honest
+      }
+
+      const done = (): void => {
+        if (opts.validate && problem(input.value.trim())) return;
+        if (opts.check && box) opts.check.checked = box.checked;
+        finish(submit(input.value), close);
+      };
       cancel.addEventListener("click", () => finish(null, close));
-      ok.addEventListener("click", () => finish(submit(input.value), close));
+      ok.addEventListener("click", done);
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          finish(submit(input.value), close);
+          done();
         }
       });
       return {
         card,
         focusEl: input,
         label: title,
+        // A half-typed branch name is work; openModal already knows what to do.
+        hasUnsavedWork: () => input.value.trim() !== value.trim(),
         onClose: () => {
           if (!settled) resolve(null);
+        },
+      };
+    });
+  });
+}
+
+/** One row of `promptChoice`. */
+export interface ChoiceOption {
+  id: string;
+  label: string;
+  /** What will actually happen, in full. It WRAPS — which is the whole reason
+   *  this is a modal and not a menu. */
+  sub: string;
+  /** codicon name, without the `codicon-` prefix. */
+  icon?: string;
+}
+
+/**
+ * Ask a consequential either/or.
+ *
+ * Not a menu: a menu row's sub-label is one nowrap, ellipsised line on the
+ * label's own row, so a sentence like "Push feat/x, track it, and delete
+ * origin/feat-x" comes out truncated — and a menu needs an anchor, which is
+ * gone by the time a question like this gets asked.
+ *
+ * Always resolves an id: Escape, the backdrop and Cancel all resolve
+ * `cancelId`, so no caller can forget the null branch.
+ */
+export function promptChoice(opts: {
+  title: string;
+  hint?: string;
+  choices: readonly ChoiceOption[];
+  cancelId: string;
+}): Promise<string> {
+  return new Promise((resolve) => {
+    let settled = false;
+    modal((close) => {
+      const card = mk("div", "modal-card");
+      const h = mk("div", "modal-title");
+      h.textContent = opts.title;
+      card.append(h);
+      if (opts.hint) {
+        const hint = mk("div", "modal-message");
+        hint.textContent = opts.hint;
+        card.append(hint);
+      }
+      const list = mk("div", "modal-choices");
+      const rows: HTMLElement[] = [];
+      for (const c of opts.choices) {
+        const row = mk("button", "modal-choice");
+        (row as HTMLButtonElement).type = "button";
+        if (c.icon) row.append(gl(c.icon));
+        const text = mk("div", "modal-choice-text");
+        const label = mk("div", "modal-choice-label");
+        label.textContent = c.label;
+        const sub = mk("div", "modal-choice-sub");
+        sub.textContent = c.sub;
+        text.append(label, sub);
+        row.append(text);
+        // A pick IS the commit here — there is no confirm button to press after.
+        row.addEventListener("click", () => {
+          settled = true;
+          resolve(c.id);
+          close();
+        });
+        rows.push(row);
+        list.append(row);
+      }
+      // Keys on the ROWS, never on document: a handler on document throws
+      // inside any e.target.closest() guard and passes on a broken build.
+      list.addEventListener("keydown", (e) => {
+        const i = rows.indexOf(document.activeElement as HTMLElement);
+        if (i < 0) return;
+        let next = -1;
+        if (e.key === "ArrowDown") next = (i + 1) % rows.length;
+        else if (e.key === "ArrowUp") next = (i - 1 + rows.length) % rows.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = rows.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        rows[next].focus();
+      });
+      const actions = mk("div", "modal-actions");
+      const cancel = mk("button", "mini-btn");
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => {
+        settled = true;
+        resolve(opts.cancelId);
+        close();
+      });
+      actions.append(cancel);
+      card.append(list, actions);
+      return {
+        card,
+        focusEl: rows[0],
+        label: opts.title,
+        onClose: () => {
+          if (!settled) resolve(opts.cancelId);
         },
       };
     });

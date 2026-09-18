@@ -24,8 +24,9 @@ import {
 } from "../ui";
 import { openGhRepoInApp, openGhRepoChooseLocation } from "../ghOpen";
 import { repoRouteId } from "../exploreRoutes";
-import { detailPage, propSection, searchField, type SectionNav } from "./common";
-import type { GhUserInfo, OrgInfo, OrgRepo } from "../../shared/ipc";
+import { detailPage, propSection, searchField, whereChip, type SectionNav } from "./common";
+import { localCopyIndex } from "../localCopy";
+import type { GhUserInfo, LocalCopy, OrgInfo, OrgRepo } from "../../shared/ipc";
 
 export { parseAccountTarget } from "../exploreRoutes";
 
@@ -38,12 +39,25 @@ export function renderAccountPage(
   void mount(wrap, nav, login, onBack);
 }
 
+/**
+ * "Do I have this one?" for the rows on this page. Primed the way the search
+ * page primes it; warm on the normal path, because you arrive through search.
+ * Cold, a row simply omits its affirmative chip — the existing failure mode.
+ */
+let localByOrigin = new Map<string, LocalCopy>();
+
 async function mount(
   wrap: HTMLElement,
   nav: SectionNav,
   login: string,
   onBack: () => void,
 ): Promise<void> {
+  void gget("repos:local", undefined, 8000)
+    .then((copies) => {
+      localByOrigin = localCopyIndex(copies);
+    })
+    .catch(() => {});
+
   const ghBtn = el("button", "mini-btn gh-icon-btn");
   ghBtn.appendChild(glyph("link-external"));
   ghBtn.title = `Open @${login} on GitHub`;
@@ -106,11 +120,22 @@ async function mount(
 
     let filter = "";
     const list = el("div", "explore-tree");
+    // Declared before paint, because paint writes it. The count used to be a
+    // one-off `${repos.length} repositories` printed beside the filter box, so
+    // it went on claiming the full total while the list under it shrank to one
+    // row — the header and the list disagreeing about the same thing.
+    const count = span("", "explore-account-count");
     const paint = (): void => {
       const q = filter.toLowerCase();
       const shown = q
         ? repos.filter((r) => `${r.name} ${r.description ?? ""}`.toLowerCase().includes(q))
         : repos;
+      // Set BEFORE the no-match early return below, or a filter that matches
+      // nothing leaves the previous number standing.
+      count.textContent =
+        shown.length === repos.length
+          ? `${repos.length} ${repos.length === 1 ? "repository" : "repositories"}`
+          : `${shown.length} of ${repos.length}`;
       list.replaceChildren();
       if (!shown.length) {
         list.appendChild(span("No repository matches that.", "gotofile-empty"));
@@ -119,7 +144,7 @@ async function mount(
       for (const r of shown) list.appendChild(repoRow(r, nav));
     };
     const head = el("div", "explore-account-repos-head");
-    head.append(span(`${repos.length} repositories`, "explore-account-count"));
+    head.append(count);
     head.appendChild(
       searchField({
         placeholder: "Filter repositories…",
@@ -155,6 +180,7 @@ function repoRow(r: OrgRepo, nav: SectionNav): HTMLElement {
   const head = el("div", "explore-row-head");
   head.appendChild(span(r.name, "sec-row-title"));
   if (r.archived) head.appendChild(span("archived", "gh-pill explore-pill"));
+  if (localByOrigin.get(r.fullName.toLowerCase())) head.appendChild(whereChip("local"));
   body.appendChild(head);
   if (r.description) {
     const d = el("div", "explore-desc");

@@ -95,17 +95,19 @@ background. Mutations `bust("<channel prefix>")` then re-render.
 
 ## Rail IA
 
-Local: Code · Changes · Commits · Branches · Rebase · Compare
-GitHub: **Inbox** · **My Work** · Pull Requests · Issues · Actions · Releases · Projects
-Account: Organizations · Gists
+Home · Repositories
+This repository: Changes · Commits · Branches · Compare · Rebase · Code
+GitHub: **Inbox** · **My Work** · Pull Requests · Issues · Actions · Releases · Projects · Organizations · Gists
 
 My Work is the workday-first page: review requests, items assigned to you,
 your own PRs, and mentions — four `@me` searches, deduped, grouped by what
 each item needs from you.
 
 Inbox is the notifications view promoted to a rail item (the bell popover
-stays for a quick glance). Orgs and Gists are account-scoped, not repo-scoped
-— they get their own divider group.
+stays for a quick glance). Orgs and Gists moved INTO the GitHub group
+("gitsts and orgs go into the github related stuff") — the Account group is
+gone, and Search left the rail entirely: its ways in are the topbar field,
+⌘K, and Home's search box.
 
 ## CSS
 
@@ -299,7 +301,8 @@ line of code. Now a rail page.
   nested action buttons).
 - Routed via `target.id` micro-paths (`q/<tab>/<query>`, `repo/<owner>/<name>`,
   `user/…`, `org/…`) so ⌘[ walks the trail — no SectionTarget change.
-- Rail: **Explore heads the Account group** — discovery before inventory.
+- Rail: superseded — Search (né Explore) has no rail entry at all now; see
+  "Rail IA" above.
 - Harness: `search:*` fixtures; the `key:` driver step now dispatches at the
   FOCUSED element (a real Enter goes to the input, not the window).
 - Tests: `test/searchQuery.test.ts` (11), `test/searchGuard.test.ts` (5).

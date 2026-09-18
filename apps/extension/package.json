@@ -189,6 +189,11 @@
     ],
     "commands": [
       {
+        "command": "gitstudio.debug.showProcessAudit",
+        "title": "Show Process Audit",
+        "category": "GitStudio"
+      },
+      {
         "command": "gitstudio.showWelcome",
         "title": "Welcome",
         "category": "GitStudio",
@@ -890,6 +895,11 @@
     "configuration": {
       "title": "GitStudio",
       "properties": {
+        "gitstudio.debug.logChildProcesses": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log every child process GitStudio launches - the binary, its full arguments, the working directory, and the environment variables GitStudio adds - to the GitStudio: Process Audit output channel. Turn this on only while reproducing a problem you want to report: it is how an OS-level prompt raised by a child process (a credential helper, a git hook, an editor binary) is traced back to the exact command that caused it. Secret-looking values are scrubbed."
+        },
         "gitstudio.fetch.prune": {
           "type": "boolean",
           "default": true,

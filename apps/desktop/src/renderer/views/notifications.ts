@@ -35,6 +35,7 @@ import {
   ghGate,
   segmented,
   ghHeader,
+  wireToolsWrap,
   harvestValues,
   searchField,
   wireListNav,
@@ -81,6 +82,9 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
   // action cluster (toggle + mark-all-read) so the chrome matches the other
   // section views while exposing the actions unique to a list-of-actions view.
   const header = ghHeader("Inbox", gate.login, refresh);
+  // On the page this is a .gh-head-tools row like every sibling list's —
+  // segment first, facets, then the verb pinned right — so the header is
+  // the same two lines at the same height. The popover keeps its own shape.
   const actions = el("div", "notif-actions");
 
   // A segment shows which mode you are IN. The old button was labelled with the
@@ -101,7 +105,13 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
 
   const markAllBtn = el("button", "mini-btn notif-markall");
   markAllBtn.append(glyph("check-all"), span("Mark all read"));
-  markAllBtn.title = "Mark all read";
+  // A tooltip that repeats the label tells nobody anything — and in the bell
+  // popover the label is hidden, so this title is the button's ONLY name.
+  // It says what the click really does, which is more than the list shows:
+  // the request marks the whole inbox on GitHub, not just the 150 threads
+  // loaded here, so it deliberately quotes no number.
+  markAllBtn.title = "Mark every notification in your inbox as read on GitHub";
+  markAllBtn.setAttribute("aria-label", markAllBtn.title);
   markAllBtn.addEventListener("click", () => void markAllRead(markAllBtn, refresh));
 
   // The facet bar belongs to the full Inbox page. In the 520px bell popover it
@@ -165,8 +175,15 @@ async function mount(wrap: HTMLElement, nav: SectionNav): Promise<void> {
       }),
     );
   }
-  if (!inPopover) actions.appendChild(facets.el);
-  actions.append(toggleBtn, markAllBtn);
+  if (inPopover) {
+    actions.append(toggleBtn, markAllBtn);
+  } else {
+    actions.classList.add("gh-head-tools");
+    const verbs = el("div", "gh-head-verbs");
+    verbs.appendChild(markAllBtn);
+    actions.append(toggleBtn, facets.el, verbs);
+    wireToolsWrap(actions);
+  }
   // ghHeader returns a flex row: [title] [.gh-acct]. Insert the action cluster
   // just before the account block so it reads: title … [actions] @login ↻.
   const acct = header.querySelector(".gh-acct");
@@ -464,7 +481,7 @@ export function openExternalItem(o: {
     const head = el("div", "ext-item-head");
     const stateKind = item.kind === "pull"
       ? item.state === "merged" ? "merged" : item.state === "draft" ? "draft" : item.state === "closed" ? "closed" : "open-pr"
-      : item.state === "closed" ? "closed" : "open";
+      : item.state === "closed" ? "completed" : "open";
     head.appendChild(statePill(item.state === "open" ? (item.kind === "pull" ? "Open" : "Open") : item.state.charAt(0).toUpperCase() + item.state.slice(1), stateKind));
     const sub = el("span", "ext-item-sub");
     sub.textContent = `${item.repo} #${item.number}${item.author ? ` · ${item.author}` : ""}${item.createdAt ? ` · ${relTimeISO(item.createdAt)}` : ""}`;

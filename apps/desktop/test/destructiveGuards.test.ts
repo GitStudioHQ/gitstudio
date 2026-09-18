@@ -20,8 +20,9 @@ import { fileURLToPath } from "node:url";
  *
  * Two shapes count as a guard, and they defend different things:
  *
- *   · A CONFIRM DIALOG. A second click lands on the dialog's scrim, not on the
- *     button, so the double-click race cannot happen at all.
+ *   · A CONFIRM DIALOG — `confirmDialog`, or `promptChoice` where the question
+ *     is "which of these", not "are you sure". A second click lands on the
+ *     dialog's scrim, not on the button, so the race cannot happen at all.
  *   · DISABLING IN FLIGHT — `disabled = true`, an `is-busy` class, or
  *     `runBusy`. Necessary where there is no dialog to absorb the second press.
  *
@@ -36,10 +37,11 @@ const ROOT = fileURLToPath(new URL("../src/renderer", import.meta.url));
  * index, the next patch in a series).
  */
 const DESTRUCTIVE =
-  /"(stash:drop|branch:delete|branch:deleteRemote|gist:delete|release:delete|release:deleteAsset|actions:deleteSecret|actions:deleteVariable|ai:removeConnection|rebase:abort|merge:abort|cherryPick:abort|revert:abort|am:abort|rebase:skip|cherryPick:skip|revert:skip|am:skip|git:discard|discard:all|reset:hard|commit:reset)"/;
+  /"(stash:drop|branch:delete|branch:deleteRemote|gist:delete|release:delete|release:deleteAsset|actions:deleteSecret|actions:deleteVariable|ai:removeConnection|rebase:abort|merge:abort|cherryPick:abort|revert:abort|am:abort|rebase:skip|cherryPick:skip|revert:skip|am:skip|git:discard|discard:all|reset:hard|commit:reset|repos:trash|branch:rebase)"/;
 
 /** Anything in the enclosing lines that makes a second press harmless. */
-const GUARD = /confirmDialog|confirmDanger|requireTyped|disabled = true|is-busy|runBusy|refreshInPlace/;
+const GUARD =
+  /confirmDialog|confirmDanger|requireTyped|promptChoice|askForCommitAction|disabled = true|is-busy|runBusy|refreshInPlace/;
 
 /** Call sites reviewed and found safe without either guard. */
 const REVIEWED: Record<string, string> = {

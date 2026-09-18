@@ -8,10 +8,11 @@
 // run and torn down when it ends, so navigating away never leaks.
 
 import { host } from "./bridge";
+import { gget } from "./cache";
 import { el, span, glyph, openMenu, relTimeISO } from "./ui";
 import type { MenuItem } from "./ui";
 import { confirmDialog, toast } from "./dialogs";
-import { runAgentTurn, addBubble, markdownBlock, errorBlock, connectPrompt, elText, setBusy, scrollDown } from "./chatRender";
+import { runAgentTurn, addBubble, markdownBlock, errorBlock, connectPrompt, elText, setBusy, scrollDown, atBottom } from "./chatRender";
 import type { SectionRender } from "./views/common";
 import type { AiModelOption, AiSettingsView, ChatView } from "../shared/ipc";
 
@@ -97,11 +98,46 @@ const accessText = (id: string): string => ACCESS_OPTS.find((o) => o.id === id)?
 /** Trim a long model id for the chip ("anthropic/claude-sonnet-4-6" → "claude-sonnet-4-6"). */
 const shortModel = (id: string): string => id.split("/").pop() ?? id;
 
-const QUICK_ACTIONS: Array<{ icon: string; label: string; goal: string }> = [
-  { icon: "git-commit", label: "Draft a commit", goal: "Draft a commit message for my staged changes and show it to me. Don't commit unless I confirm." },
-  { icon: "list-unordered", label: "Summarize my changes", goal: "Summarize my current working-tree changes in a few bullet points." },
-  { icon: "git-compare", label: "What does this branch add?", goal: "Compare the current branch against main and explain, concisely, what it changes." },
-  { icon: "tag", label: "Draft release notes", goal: "Draft release notes from the commits since the last tag." },
+/** The six things people ask a repository agent first. Each is a card in the
+ *  empty state (label + what it does) and a chip in the composer once a
+ *  conversation is under way. Every goal says what it may NOT do. */
+const QUICK_ACTIONS: Array<{ icon: string; label: string; desc: string; goal: string }> = [
+  {
+    icon: "git-commit",
+    label: "Draft a commit",
+    desc: "A message for what's staged, for you to approve.",
+    goal: "Draft a commit message for my staged changes and show it to me. Don't commit unless I confirm.",
+  },
+  {
+    icon: "list-unordered",
+    label: "Summarize my changes",
+    desc: "What the working tree changes, in a few bullets.",
+    goal: "Summarize my current working-tree changes in a few bullet points.",
+  },
+  {
+    icon: "eye",
+    label: "Review my changes",
+    desc: "Bugs, risks and regrets, before they are committed.",
+    goal: "Review my uncommitted changes: point out bugs, risks and anything I would regret committing. Don't change anything.",
+  },
+  {
+    icon: "git-compare",
+    label: "What does this branch add?",
+    desc: "This branch against the default branch, explained.",
+    goal: "Compare the current branch against the default branch and explain, concisely, what it changes.",
+  },
+  {
+    icon: "tag",
+    label: "Draft release notes",
+    desc: "From the commits since the last tag.",
+    goal: "Draft release notes from the commits since the last tag.",
+  },
+  {
+    icon: "git-branch",
+    label: "Which branches can go?",
+    desc: "Merged and stale branches, and which are safe to delete.",
+    goal: "List the local branches that are merged or stale and say which are safe to delete. Don't delete anything.",
+  },
 ];
 
 export const renderAssistant: SectionRender = (wrap, nav) => {
@@ -110,8 +146,20 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   let currentChatId: string | undefined;
 
   const header = el("div", "assistant-head");
+  const titleWrap = el("div", "assistant-title-wrap");
   const title = el("div", "assistant-title");
   title.append(glyph("sparkle"), span("Assistant"));
+  // The chat's own subject, once it has one — "Assistant" alone said nothing
+  // about which of your conversations was on screen.
+  const chatTitle = el("span", "assistant-chat-title");
+  chatTitle.hidden = true;
+  const setChatTitle = (t: string | undefined): void => {
+    const v = (t ?? "").trim();
+    chatTitle.textContent = v;
+    chatTitle.title = v;
+    chatTitle.hidden = !v;
+  };
+  titleWrap.append(title, chatTitle);
   const connTag = el("span", "assistant-model");
   // New-chat + chat-history controls — sessions persist across refresh/restart.
   const newBtn = el("button", "assistant-iconbtn") as HTMLButtonElement;
@@ -127,12 +175,28 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   /** The two chat-management controls — off while the gate is closed, since
    *  there are no chats to manage and their handlers return on their own. */
   const chatBtns: HTMLButtonElement[] = [newBtn, histBtn];
-  header.append(title, connTag, newBtn, histBtn);
+  header.append(titleWrap, newBtn, histBtn);
 
   // Three compact dropdown "chips" — the agent's options shown directly here and
   // propagated from the connected provider (no Settings setup needed). Each pick
   // is remembered (persisted to the agent config).
   const controls = el("div", "assistant-controls");
+  /**
+   * Disabled in the ACCESSIBILITY tree, not only in CSS.
+   *
+   * `.is-disabled` sets `opacity: .5` and `pointer-events: none`, which tells a
+   * sighted mouse user everything and a screen-reader user nothing: the chips
+   * still announced as ordinary buttons, and their labels measured 2.93:1 with
+   * no state to explain why.
+   */
+  const setControlsDisabled = (off: boolean): void => {
+    controls.classList.toggle("is-disabled", off);
+    controls.setAttribute("aria-disabled", String(off));
+    for (const b of controls.querySelectorAll("button")) {
+      b.setAttribute("aria-disabled", String(off));
+      b.tabIndex = off ? -1 : 0;
+    }
+  };
 
   /** Build a chip whose menu items are produced fresh each open. */
   /** The three run-setting chips, so one rule can say when they take effect. */
@@ -184,7 +248,9 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       },
     })),
   );
-  controls.append(modelChip.el, thinkChip.el, accessChip.el);
+  // The connection's name leads its own settings, at the right — after the
+  // chat's title it read as part of the title.
+  controls.append(connTag, modelChip.el, thinkChip.el, accessChip.el);
   header.append(controls);
 
   const transcript = el("div", "assistant-transcript");
@@ -195,12 +261,25 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   transcript.tabIndex = 0;
   transcript.setAttribute("role", "log");
   transcript.setAttribute("aria-label", "Conversation");
+  // The transcript and the "Jump to latest" pill share a frame, so the pill
+  // floats over the tail of the conversation instead of scrolling with it.
+  const body = el("div", "assistant-body");
+  const jump = el("button", "assistant-jump") as HTMLButtonElement;
+  jump.append(glyph("arrow-down"), span("Jump to latest"));
+  jump.hidden = true;
+  jump.addEventListener("click", () => {
+    scrollDown(transcript, true);
+    jump.hidden = true;
+  });
+  body.append(transcript, jump);
+
   const composer = el("div", "assistant-composer");
   const quick = el("div", "assistant-quick");
   const chips: HTMLButtonElement[] = [];
   for (const qa of QUICK_ACTIONS) {
     const chip = el("button", "assistant-chip") as HTMLButtonElement;
     chip.append(glyph(qa.icon), span(qa.label));
+    chip.title = qa.desc;
     // `fromInput: false` — a chip carries its OWN goal, so clearing the
     // composer would throw away a message the user had typed and not yet sent,
     // in exchange for running something else entirely.
@@ -212,18 +291,53 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   const input = document.createElement("textarea");
   input.className = "assistant-input";
   input.rows = 2;
-  input.placeholder = "Ask the agent to do something in this repo…";
+  input.placeholder = "Ask about this repository, or tell the agent what to do…";
+  input.setAttribute("aria-label", "Message the agent");
   const send = el("button", "btn btn-primary assistant-send") as HTMLButtonElement;
-  send.append(glyph("send"));
-  send.title = "Send";
+  // An up arrow, not a paper plane: `codicon-send` is a thin diagonal outline
+  // whose mass sits optically off-centre in a round button, and it suffers most
+  // in a single-weight icon font. Up is orthogonal, centrable, and literal —
+  // the transcript it feeds is directly above.
+  send.append(glyph("arrow-up"));
+  send.title = "Send · Enter";
+  send.setAttribute("aria-keyshortcuts", "Enter");
   inputRow.append(input, send);
-  composer.append(quick, inputRow);
+  // Under the box: where the agent is working, and how to send.
+  const foot = el("div", "assistant-foot");
+  const context = el("span", "assistant-context");
+  const hint = el("span", "assistant-hint");
+  hint.textContent = "Enter to send · Shift+Enter for a new line";
+  foot.append(context, hint);
+  composer.append(quick, inputRow, foot);
 
   // replaceChildren, not append: mountSection puts a loading skeleton in this
   // container first, and the Assistant renders synchronously — so appending
   // left a six-row shimmer pinned above the header, 278px of the pane,
   // pretending to load something forever.
-  wrap.replaceChildren(header, transcript, composer);
+  wrap.replaceChildren(header, body, composer);
+
+  // "gitstudio · main" — the agent acts on the OPEN repository, and the
+  // composer says which before you tell it to do anything to it.
+  void (async () => {
+    const [repo, sync] = await Promise.all([
+      gget("repo:current", undefined, 4000).catch(() => undefined),
+      gget("sync:status", undefined, 4000).catch(() => undefined),
+    ]);
+    if (!repo) return;
+    context.replaceChildren(glyph("repo"), span(repo.name, "assistant-context-repo"));
+    if (sync?.branch) context.append(span("·", "assistant-context-dot"), span(sync.branch, "assistant-context-branch"));
+    context.title = repo.root;
+  })();
+
+  // The pill shows when content lands below a reader who has scrolled up — the
+  // one case where the transcript deliberately does NOT move (chatRender's
+  // scrollDown) and so needs a way back down.
+  transcript.addEventListener("scroll", () => {
+    if (atBottom(transcript)) jump.hidden = true;
+  });
+  new MutationObserver(() => {
+    jump.hidden = atBottom(transcript) || transcript.scrollHeight <= transcript.clientHeight + 24;
+  }).observe(transcript, { childList: true, subtree: true, characterData: true });
 
   let running = false;
   /** Stops the turn currently streaming — the same abort the Stop button uses,
@@ -280,6 +394,10 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     // composer it sits next to.
     if (running) return;
     send.disabled = gated || !input.value.trim();
+    // Say WHY it is off. The chips beside it already do, so gated and empty
+    // used to be indistinguishable on the one primary action of the surface.
+    // The gated string is verbatim the chips' string above.
+    send.title = gated ? "Connect a model to use the Assistant" : "Send · Enter";
   };
 
   /** Grow with the text, up to the height the stylesheet already budgets.
@@ -301,10 +419,35 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     elText(
       "div",
       "assistant-empty-sub",
-      "It reads real status, diffs and history before acting — and asks before it writes. Try a quick action, or describe a task.",
+      "It reads real status, diffs and history before acting, and asks before it writes anything. Start with one of these, or describe a task.",
     ),
   );
-  transcript.append(empty);
+  // The quick actions as CARDS, each with a line of what it does — the same
+  // six the composer's chips run once a conversation is under way.
+  const grid = el("div", "assistant-qa-grid");
+  for (const qa of QUICK_ACTIONS) {
+    const card = el("button", "assistant-qa-card") as HTMLButtonElement;
+    card.append(glyph(qa.icon), elText("span", "assistant-qa-title", qa.label), elText("span", "assistant-qa-desc", qa.desc));
+    card.addEventListener("click", () => void runGoal(qa.goal, false));
+    grid.append(card);
+    chips.push(card);
+  }
+  empty.append(grid);
+  /** `is-empty` on the view hides the composer's chips while the cards are up
+   *  — the same six actions twice on one screen read as a mistake. */
+  const showEmpty = (): void => {
+    transcript.replaceChildren(empty);
+    wrap.classList.add("is-empty");
+  };
+  const hideEmpty = (): void => {
+    empty.remove();
+    wrap.classList.remove("is-empty");
+  };
+  const showGatePrompt = (): void => {
+    transcript.replaceChildren(connectPrompt(nav));
+    wrap.classList.add("is-empty");
+  };
+  showEmpty();
 
   // Gate on a usable connection.
   //
@@ -322,16 +465,16 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     }
     if (!settings || !settings.enabled) {
       gated = true;
-      transcript.replaceChildren(connectPrompt(nav));
+      showGatePrompt();
       input.disabled = true;
       // The chips and the two chat controls too. They sat live in front of the
       // "Connect a model" panel, and pressing one hit a guard that returns
       // silently — a control that looks live and answers with nothing.
       syncSend(); // owns send, the chips and the chat buttons
-      controls.classList.add("is-disabled");
+      setControlsDisabled(true);
     } else {
       const def = settings.connections.find((c) => c.id === settings!.defaultId) ?? settings.connections.find((c) => c.usable);
-      connTag.textContent = def ? `· ${def.label}` : "";
+      connTag.textContent = def ? def.label : "";
       // Seed the controls from the saved agent config.
       permission = settings.agent.permission;
       thinkLevel = settings.agent.thinking;
@@ -353,6 +496,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         const cur = await host.invoke("ai:chatCurrent", undefined);
         if (cur) {
           currentChatId = cur.id;
+          setChatTitle(cur.turns.length > 0 ? cur.title : "");
           // `restoreChat` replaces the transcript wholesale, so this used to
           // delete a ✨ turn's answer and its Stop button mid-stream. The
           // ordering is settled now — `runGoal` awaits this gate before writing
@@ -403,17 +547,17 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       if (gated === !enabled) return; // nothing changed for this view
       if (enabled) {
         gated = false;
-        transcript.replaceChildren(empty);
+        showEmpty();
         input.disabled = false;
-        controls.classList.remove("is-disabled");
+        setControlsDisabled(false);
         syncSend(); // …and back on again, through the same rule
         await runGate(); // re-seed the model, permission and thinking controls
       } else {
         gated = true;
         connTag.textContent = "";
-        transcript.replaceChildren(connectPrompt(nav));
+        showGatePrompt();
         input.disabled = true;
-        controls.classList.add("is-disabled");
+        setControlsDisabled(true);
         syncSend(); // owns send, the chips and the chat buttons
       }
     })();
@@ -430,7 +574,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
   };
 
   function restoreChat(chat: ChatView): void {
-    empty.remove();
+    hideEmpty();
     transcript.replaceChildren();
     for (const t of chat.turns) {
       if (t.role === "user") addBubble(transcript, "user", t.text);
@@ -479,7 +623,8 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
     } catch {
       currentChatId = undefined;
     }
-    transcript.replaceChildren(empty);
+    setChatTitle("");
+    showEmpty();
   }
 
   async function openHistory(): Promise<void> {
@@ -499,7 +644,46 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         onClick: () => void switchChat(c.id),
       });
     }
+    if (currentChatId) {
+      items.push({ separator: true });
+      items.push({ label: "Delete this chat", icon: "trash", danger: true, onClick: () => void deleteChat() });
+    }
     openMenu(histBtn, items);
+  }
+
+  /** The main process titles a chat from its first message; pick that up once
+   *  a turn has landed, so the header stops reading "Assistant" alone. */
+  async function refreshTitle(): Promise<void> {
+    if (!currentChatId) return;
+    const id = currentChatId;
+    try {
+      const chat = await host.invoke("ai:chatGet", { id });
+      if (chat && currentChatId === id && chat.turns.length > 0) setChatTitle(chat.title);
+    } catch {
+      /* the header keeps what it had */
+    }
+  }
+
+  async function deleteChat(): Promise<void> {
+    if (!currentChatId || gated) return;
+    if (await leavingLiveTurn()) return;
+    const id = currentChatId;
+    const ok = await confirmDialog({
+      title: "Delete this chat?",
+      message: "It leaves this repository's chat history. Nothing the agent did to your files is undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await host.invoke("ai:chatDelete", { id });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Couldn't delete the chat.", "error");
+      return;
+    }
+    currentChatId = undefined;
+    setChatTitle("");
+    showEmpty();
   }
 
   async function switchChat(id: string): Promise<void> {
@@ -510,8 +694,9 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       if (!chat) return;
       await host.invoke("ai:chatSetCurrent", { id });
       currentChatId = id;
+      setChatTitle(chat.turns.length > 0 ? chat.title : "");
       if (chat.turns.length > 0) restoreChat(chat);
-      else transcript.replaceChildren(empty);
+      else showEmpty();
     } catch {
       /* ignore */
     }
@@ -544,7 +729,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       autoGrow();
     }
     syncSend();
-    empty.remove();
+    hideEmpty();
     setBusy(send, true);
 
     // Ensure this conversation has a persisted chat (created lazily on first send).
@@ -583,6 +768,7 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
         },
         ac.signal,
         display,
+        () => void runGoal(goal, false, display),
       );
     } finally {
       running = false;
@@ -590,16 +776,20 @@ export const renderAssistant: SectionRender = (wrap, nav) => {
       // Through the one rule — never a bare `disabled = false`, which is what
       // let a finished run hand a gated composer a working-looking Send.
       syncSend();
+      void refreshTitle();
     }
   }
 
   syncSend();
   send.addEventListener("click", () => void runGoal(input.value));
+  // Enter sends; Shift+Enter breaks a line; ⌘/Ctrl+Enter still sends, for
+  // hands that learnt it. An Enter that ends an IME composition is the
+  // composition's, not ours.
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      void runGoal(input.value);
-    }
+    if (e.key !== "Enter" || e.isComposing) return;
+    if (e.shiftKey && !e.metaKey && !e.ctrlKey) return;
+    e.preventDefault();
+    void runGoal(input.value);
   });
 
   // A goal seeded from another view (✨ Explain / Review / …) starts running

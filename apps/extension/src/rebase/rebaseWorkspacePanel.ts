@@ -558,6 +558,14 @@ function foldTargetSubject(i) {
   return null;
 }
 function consequenceHtml(action, targetSubj) {
+  // A fold whose target has DISAPPEARED (its commit dropped after the fold was
+  // chosen) is a plan git cannot run — say so on the row, loudly, instead of
+  // pretending "the commit below it" still exists. The desktop's sibling
+  // re-validates the same way; this panel used to validate only the action
+  // being SET, so a later drop orphaned the fold silently.
+  if ((action === "squash" || action === "fixup") && targetSubj === null) {
+    return '<i class="codicon codicon-warning"></i> Nothing below it to fold into — pick a different action or move it up';
+  }
   const into = targetSubj ? ' <b>' + escText(clip(targetSubj, 44)) + '</b>' : ' the commit below it';
   switch (action) {
     case "squash": return '<i class="codicon codicon-fold-down"></i> Folds down into' + into + ' — keeps both messages';
@@ -637,10 +645,23 @@ function renderList() {
 }
 
 function setAction(i, action) {
-  // Guard: the first surviving row can't fold upward.
+  // A squash folds into the nearest kept commit BELOW — the list is
+  // newest-first (issue #18), and git melds into the entry before it in the
+  // todo file. So the commit that CANNOT fold is the OLDEST kept one, not the
+  // first row.
+  //
+  // The old guard checked i === firstKept, the TOP of the list — which is
+  // HEAD. It refused the most ordinary interactive rebase there is ("fold my
+  // latest commit into the one before it", issue #27) while accepting a
+  // squash on the oldest commit, which git cannot execute. The desktop's
+  // sibling was fixed and this one missed the boat; foldTargetSubject
+  // already scans the right way and skips drop/fold chains, so ask it.
+  // (No backticks in these comments: this whole script lives inside a
+  // template literal, and one stray backtick ends it.)
   if (action === "squash" || action === "fixup") {
-    const firstKept = rows.findIndex((r) => r.action !== "drop");
-    if (i === firstKept) { flashBanner("The top commit has nothing above it to fold into.", "warn"); renderList(); return; }
+    if (foldTargetSubject(i) === null) {
+      flashBanner("The oldest commit has nothing below it to fold into.", "warn"); renderList(); return;
+    }
   }
   rows[i].action = action;
   renderList();
@@ -678,6 +699,20 @@ document.addEventListener("keydown", (e) => {
 function updatePreview() {
   const kept = rows.filter((r) => r.action === "pick" || r.action === "reword" || r.action === "edit").length;
   $("rb-preview").innerHTML = "<b>" + rows.length + "</b> → <b>" + kept + "</b> commit" + (kept === 1 ? "" : "s");
+  // Re-validate the WHOLE plan, not just the action last set: a fold's target
+  // can disappear long after the fold was chosen (drop the row below it, or
+  // drag it to the bottom). Start stays off until the plan is one git can run
+  // — the shared builder would refuse it anyway, but a disabled button with a
+  // reason beats a refusal after the confirm.
+  const orphaned = rows.some((r, i) =>
+    (r.action === "squash" || r.action === "fixup") && foldTargetSubject(i) === null);
+  const apply = $("rb-apply");
+  if (!busy) {
+    apply.disabled = orphaned;
+    apply.title = orphaned
+      ? "A squash or fixup has nothing below it to fold into — git can't run this plan."
+      : "";
+  }
 }
 
 let bannerTimer = null;

@@ -12,6 +12,11 @@ import {
   scanLocalCopies,
   trashRefusal,
   trashRefusalResolved,
+  worktreeMainRoot,
+  parsePorcelainV2,
+  statusOf,
+  localStatuses,
+  STATUS_ROOTS_CAP,
 } from "../src/main/localRepos";
 import { removeTempRepo } from "./tmpRepo";
 
@@ -233,4 +238,111 @@ test("samePath compares resolved paths, not strings", () => {
   assert.equal(samePath("/a/b", "/a/./b"), true);
   assert.equal(samePath("/a/b", "/a/b/"), true);
   assert.equal(samePath("/a/b", "/a/c"), false);
+});
+
+// ── Worktrees ───────────────────────────────────────────────────────────────
+//
+// "FlexiMeal 5" — three repositories and two linked worktrees of one of them,
+// and the folder head counted all five. A worktree's `.git` is a FILE naming
+// the main repo's `.git/worktrees/<name>`; the scan marks it, the count in
+// main.ts skips it, the row says "worktree". A submodule also uses a gitfile
+// but IS its own repository, so its gitdir (into `.git/modules/`) must not
+// match.
+
+test("worktreeMainRoot reads a worktree gitfile and nothing else", () => {
+  const wt = `gitdir: ${join("/Users/x/dev/app", ".git", "worktrees", "wt-design")}\n`;
+  assert.equal(worktreeMainRoot(wt), "/Users/x/dev/app");
+  const sub = `gitdir: ${join("..", ".git", "modules", "vendored")}\n`;
+  assert.equal(worktreeMainRoot(sub), undefined, "a submodule is its own repository");
+  assert.equal(worktreeMainRoot("not a gitfile"), undefined);
+  assert.equal(worktreeMainRoot(""), undefined);
+  // git writes forward slashes on every platform; Windows tools may rewrite.
+  assert.equal(worktreeMainRoot("gitdir: C:/dev/app/.git/worktrees/wt\n"), "C:/dev/app");
+  assert.equal(worktreeMainRoot("gitdir: C:\\dev\\app\\.git\\worktrees\\wt\n"), "C:\\dev\\app");
+});
+
+test("a linked worktree scans as a checkout of its repo, not another repo", async () => {
+  const main = makeRepo(join(cloneDir, "app"));
+  writeFileSync(join(main, "a.txt"), "hello\n");
+  execFileSync("git", ["-C", main, "add", "."], { stdio: "ignore" });
+  execFileSync("git", ["-C", main, "commit", "-m", "first"], {
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com",
+      GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com",
+    },
+  });
+  execFileSync("git", ["-C", main, "worktree", "add", join(cloneDir, "app-wt"), "-b", "design"], {
+    stdio: "ignore",
+  });
+
+  const copies = await scanLocalCopies({ cloneDir, recents: [] });
+  const wt = copies.find((c) => c.name === "app-wt");
+  const repo = copies.find((c) => c.name === "app");
+  assert.ok(wt, "the worktree still LISTS — it is openable");
+  assert.equal(
+    wt?.worktreeOf?.endsWith("app"),
+    true,
+    `it names its repository (got ${wt?.worktreeOf})`,
+  );
+  assert.equal(repo?.worktreeOf, undefined, "the main repo carries no such mark");
+});
+
+// ── Home-row working-tree signals ───────────────────────────────────────────
+//
+// One `git status --porcelain=v2 --branch` per repo answers "which of my
+// repositories has unpushed work" without opening any of them. The parse is
+// pinned separately from the probe because porcelain v2's header lines are a
+// format contract, and the branch.ab line VANISHES without an upstream — the
+// zero has to come from the parser's default, not from git.
+
+test("parsePorcelainV2 reads the headers and counts every kind of change", () => {
+  const out = [
+    "# branch.oid 1234567",
+    "# branch.head feature/x",
+    "# branch.upstream origin/feature/x",
+    "# branch.ab +2 -1",
+    "1 .M N... 100644 100644 100644 abc def src/a.ts",
+    "2 R. N... 100644 100644 100644 abc def R100 new.ts\told.ts",
+    "u UU N... 100644 100644 100644 100644 abc def ghi both.ts",
+    "? scratch.txt",
+  ].join("\n");
+  assert.deepEqual(parsePorcelainV2(out), { branch: "feature/x", dirty: 4, ahead: 2, behind: 1 });
+});
+
+test("no upstream means ahead 0, not a crash; detached means no branch", () => {
+  const out = ["# branch.oid 1234567", "# branch.head (detached)"].join("\n");
+  assert.deepEqual(parsePorcelainV2(out), { branch: "", dirty: 0, ahead: 0, behind: 0 });
+});
+
+test("statusOf answers for a real repo and undefined for a plain folder", async () => {
+  const repo = makeRepo(join(cloneDir, "signals"));
+  writeFileSync(join(repo, "w.txt"), "work\n");
+  const st = await statusOf(repo);
+  assert.equal(st?.dirty, 1, "the untracked file counts");
+  assert.equal(st?.ahead, 0, "no upstream reads as zero");
+  const not = await statusOf(join(cloneDir, "no-such-dir"));
+  assert.equal(not, undefined);
+});
+
+test("localStatuses caps the roots it will probe", async () => {
+  const many = Array.from({ length: STATUS_ROOTS_CAP + 5 }, (_, i) => join(cloneDir, `r${i}`));
+  const out = await localStatuses(many);
+  assert.equal(Object.keys(out).length, STATUS_ROOTS_CAP, "a bug wearing a loop stays capped");
+});
+
+test("localStatuses answers from its own clock, immune to renderer busts", async () => {
+  // The renderer's SWR cache is busted by refreshAll() on every watcher tick;
+  // this TTL is the one those busts can't reach.
+  const repo = makeRepo(join(cloneDir, "ttl"));
+  let t = 0;
+  const first = await localStatuses([repo], () => t);
+  writeFileSync(join(repo, "new.txt"), "x\n");
+  t = 5_000;
+  const cached = await localStatuses([repo], () => t);
+  assert.equal(cached, first, "within the TTL the SAME answer object returns — no probes ran");
+  t = 20_000;
+  const fresh = await localStatuses([repo], () => t);
+  assert.equal(fresh[repo]?.dirty, 1, "past the TTL the new file is seen");
 });

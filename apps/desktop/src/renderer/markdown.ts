@@ -119,12 +119,65 @@ function safeUrl(raw: string): string {
   return "#";
 }
 
+/**
+ * Where a RELATIVE image src points, decided by the surface rendering it.
+ *
+ * A markdown file's images are addressed from the file: `brand/icon.svg` in a
+ * README means "beside me", which is a file on disk for the Code view and a
+ * raw.githubusercontent.com URL for a repo browsed remotely. The renderer
+ * cannot know which — so the surface hands in a resolver, and with none set a
+ * relative src is left as-is (it will 404 against the app's own origin, which
+ * is what every surface got before any resolver existed).
+ *
+ * Module state rather than a threaded parameter because rendering is
+ * synchronous and recursive (blockquotes re-enter renderMarkdown), and the
+ * sanitizer's tag filter — a different entry point — must see the same
+ * resolver for a raw `<img>` tag as the markdown image syntax gets.
+ */
+let imageResolver: ((src: string) => string) | null = null;
+
+/**
+ * file: URLs the ACTIVE resolver produced, verbatim.
+ *
+ * Rendering filters twice — once as the markdown is built, once in the
+ * sanitizer pass over the finished HTML — and the second pass sees the
+ * already-resolved absolute URL. A blanket "admit file: while a resolver is
+ * set" would also admit a file: URL the DOCUMENT wrote; remembering exactly
+ * what the resolver minted admits those and nothing else. Cleared with the
+ * resolver.
+ */
+const mintedFileUrls = new Set<string>();
+
+/** Absolute (any scheme), root-relative nothing — the resolver only sees what
+ *  is genuinely relative to the document. */
+function isRelativeSrc(url: string): boolean {
+  return !/^[a-z][a-z0-9+.-]*:/i.test(url) && !url.startsWith("#") && !url.startsWith("//");
+}
+
 /** Image sources: http(s), relative, or a raster data: URI (never data:image/svg). */
 function safeImgSrc(raw: string): string {
   const url = decodeEntities(raw.trim());
   if (/^data:image\/(png|jpe?g|gif|webp|avif);base64,[a-z0-9+/=\s]+$/i.test(url)) {
     return encodeUrl(url.replace(/\s+/g, ""));
   }
+  // The resolver runs BEFORE the safety filter, and its OUTPUT goes through
+  // it: a resolver that produced javascript: would be neutered like any other
+  // source, so the hook cannot widen what the sanitizer admits.
+  if (imageResolver && isRelativeSrc(url)) {
+    const resolved = imageResolver(url);
+    // file: is admitted only for what the resolver itself minted: app code,
+    // never document content, and the Code view's README genuinely needs the
+    // image beside the file on disk. An absolute file: URL written in the
+    // markdown still dies in safeUrl.
+    if (/^file:\/\//i.test(resolved)) {
+      mintedFileUrls.add(resolved);
+      return encodeUrl(resolved);
+    }
+    return safeUrl(resolved);
+  }
+  // The sanitizer's second pass over the finished HTML lands here with the
+  // RESOLVED url — re-admit it only if this very render minted it.
+  if (mintedFileUrls.has(url)) return encodeUrl(url);
   return safeUrl(url);
 }
 
@@ -437,7 +490,30 @@ function isBlockBoundary(line: string, next: string | undefined): boolean {
  * task lists, bounded nested lists, blockquotes, GFM tables, horizontal rules,
  * raw HTML blocks, and paragraphs with hard line breaks.
  */
-export function renderMarkdown(src: string, depth = 0): string {
+export interface MarkdownOpts {
+  /** Turn a RELATIVE image src into an absolute URL — the surface knows where
+   *  the document lives; the renderer does not. See `imageResolver`. */
+  resolveImage?: (src: string) => string;
+}
+
+export function renderMarkdown(src: string, depth = 0, opts?: MarkdownOpts): string {
+  if (depth === 0 && opts?.resolveImage) {
+    imageResolver = opts.resolveImage;
+    try {
+      return renderMarkdownBody(src, 0);
+    } finally {
+      // Always cleared, error or not — a resolver left behind would quietly
+      // re-anchor the NEXT surface's images to this one's repository, and a
+      // minted file: URL outliving its render would let a later document
+      // replay it.
+      imageResolver = null;
+      mintedFileUrls.clear();
+    }
+  }
+  return renderMarkdownBody(src, depth);
+}
+
+function renderMarkdownBody(src: string, depth = 0): string {
   const lines = src.replace(/\r\n?/g, "\n").split("\n");
   const html: string[] = [];
 
@@ -532,7 +608,7 @@ export function renderMarkdown(src: string, depth = 0): string {
       const inner =
         depth >= MAX_QUOTE_DEPTH
           ? `<p>${inline(escText(buf.join("\n")))}</p>`
-          : renderMarkdown(buf.join("\n"), depth + 1);
+          : renderMarkdownBody(buf.join("\n"), depth + 1);
       html.push(`<blockquote>${inner}</blockquote>`);
       continue;
     }

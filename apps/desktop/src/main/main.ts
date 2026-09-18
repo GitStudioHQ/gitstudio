@@ -6,7 +6,7 @@
 // wrap @gitstudio/git-service + @gitstudio/engine. No git logic lives here — it
 // all delegates to GitBridge, which reuses the shared core verbatim.
 
-import {
+import { session,
   app,
   BrowserWindow,
   clipboard,
@@ -19,7 +19,7 @@ import {
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions, WebContents } from "electron";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { join, basename, extname, dirname, resolve as resolvePath } from "node:path";
-import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat, readdir, rename, rmdir, rm } from "node:fs/promises";
 import { redactCredentials } from "@gitstudio/host-bridge/scrub";
 import { RepoStore } from "./repoStore";
 import { GitBridge } from "./gitBridge";
@@ -29,9 +29,19 @@ import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
 import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
 import { AppSettings } from "./appSettings";
-import { LocalRepoScanner, samePath, trashRefusalResolved } from "./localRepos";
+import {
+  visibleRepoFolders,
+  realOrResolve,
+  localStatuses,
+  wasLastScanTruncated,
+  LocalRepoScanner,
+  samePath,
+  trashRefusalResolved,
+} from "./localRepos";
+import { claimRepos, countFolder, isUnder, relativePath } from "../shared/repoGrouping";
 import { openGitHubRepo, managedReposDir } from "./ghRepoOpen";
 import { initAutoUpdate } from "./autoUpdate";
+import { editorsView, openEditor, revealRoot, withIcons } from "./editors";
 import type { UpdateManager } from "./autoUpdate";
 import { ErrorReporter } from "./errorReporter";
 import { isExpectedError } from "./expectedError";
@@ -209,16 +219,39 @@ function iconPath(variant: "dark" | "light"): string {
   return join(__dirname, variant === "light" ? "../renderer/icon-light.png" : "../renderer/icon.png");
 }
 
+/** The DOCK tile for a theme variant: the same artwork on Apple's icon grid
+ *  (the tile is 824/1024 of the canvas, transparent margins), so it sits at
+ *  the size of every other icon in the Dock. The window icon above stays
+ *  full-bleed — Windows and Linux taskbars expect that. */
+function dockIconPath(variant: "dark" | "light"): string {
+  return join(__dirname, variant === "light" ? "../renderer/dock-light.png" : "../renderer/dock.png");
+}
+
+
 /** Brand icon for the window `icon:`; electron-builder embeds the platform icon,
  *  this is the dev/window one. Tracks the OS scheme so it isn't visibly wrong. */
 function appIcon(): string {
   return iconPath(nativeTheme.shouldUseDarkColors ? "dark" : "light");
 }
 
-/** Swap the macOS dock icon to the given brand variant (best-effort). */
+/**
+ * Swap the macOS dock icon to the given brand variant (best-effort).
+ *
+ * This used to return early on macOS 26 — the system renders the bundle's Icon
+ * Composer icon itself, and the worry was that handing `dock.setIcon` a PNG
+ * would get it framed as a smaller "legacy" icon on its own backing. The result
+ * was a Settings control that did nothing: the dock never matched what the
+ * selector said was picked.
+ *
+ * The framing concern is already answered by the artwork. `brand/margined.py`
+ * puts the tile on Apple's grid (824px of a 1024 canvas, transparent margins),
+ * which is exactly the geometry the legacy path expects — that script exists
+ * because a full-bleed PNG rendered visibly larger than its neighbours. So the
+ * swap runs everywhere now, and a picked icon is the icon you get.
+ */
 function setDockIcon(variant: "dark" | "light"): void {
   try {
-    app.dock?.setIcon(iconPath(variant));
+    app.dock?.setIcon(dockIconPath(variant));
   } catch {
     /* non-macOS or missing — harmless */
   }
@@ -309,7 +342,16 @@ function buildMenu(): void {
     {
       label: "Edit",
       submenu: [
-        { role: "undo" },
+        // NOT `role: "undo"`. That role means "undo some typing", and it owns
+        // the ⌘Z accelerator app-wide — so with it here, undoing anything that
+        // is not text is unreachable from the keyboard. The renderer takes the
+        // keystroke and picks: its own stack when something is on it, the
+        // text undo below it when there isn't.
+        {
+          label: "Undo",
+          accelerator: "CmdOrCtrl+Z",
+          click: () => send("menu:command", { command: "undo" }),
+        },
         { role: "redo" },
         { type: "separator" },
         { role: "cut" },
@@ -497,6 +539,8 @@ function actionLabel(channel: string): string {
     "repo:open": "Open repository",
     "repo:openPath": "Open repository",
     "repos:local": "List local repositories",
+    "repos:localStatus": "Check local repositories for changes",
+    "repos:scanTruncated": "Report whether the repository scan was cut short",
     "repos:reveal": "Reveal repository",
     "repos:removeRecent": "Forget repository",
     "repos:trash": "Delete clone",
@@ -555,7 +599,12 @@ function registerIpc(): void {
   handle("search:repos", (req) => github.withClient((c) => searchApi.searchRepos(c, req)));
   handle("search:users", (req) => github.withClient((c) => searchApi.searchUsers(c, req)));
   handle("search:code", (req) => github.withClient((c) => searchApi.searchCode(c, req)));
-  handle("repos:local", () => scanLocalCopies());
+  handle("repos:local", () => localCopiesWithBands());
+  handle("repos:localStatus", (roots) => localStatuses(roots));
+  handle("repos:scanTruncated", async () => {
+    await scanLocalCopies(); // the flag describes the scan the list came from
+    return wasLastScanTruncated();
+  });
   handle("repos:reveal", async (root) => {
     // Only reveal something the app already lists. `showItemInFolder` on an
     // arbitrary renderer-supplied string is the one shell call here with no
@@ -585,6 +634,10 @@ function registerIpc(): void {
     if (await appSettings.addRepoFolder(picked.filePaths[0])) localRepos.invalidate();
     return listRepoFolders();
   });
+  handle("repos:addFolderPath", async (dir) => {
+    if (await appSettings.addRepoFolder(dir)) localRepos.invalidate();
+    return listRepoFolders();
+  });
   handle("repos:removeFolder", async (dir) => {
     if (await appSettings.removeRepoFolder(dir)) localRepos.invalidate();
     return listRepoFolders();
@@ -596,7 +649,60 @@ function registerIpc(): void {
       buildMenu(); // the Recent Repositories submenu is built from this list
       send("repo:recentChanged", repos.recentRepos());
     }
-    return scanLocalCopies();
+    // Same shape repos:local answers with — the renderer buckets by band,
+    // and an unstamped answer would empty every band on the screen.
+    return localCopiesWithBands();
+  });
+  handle("repos:restoreRecent", async (root) => {
+    // Only if it is still there: putting a path back in a list of things you
+    // can open, when it cannot be opened, is not an undo.
+    let exists = false;
+    try {
+      exists = (await stat(root)).isDirectory();
+    } catch {
+      exists = false;
+    }
+    if (exists && repos.restoreRecent(root)) {
+      void saveState();
+      localRepos.invalidate();
+      buildMenu();
+      send("repo:recentChanged", repos.recentRepos());
+    }
+    // Same shape repos:local answers with — the renderer buckets by band,
+    // and an unstamped answer would empty every band on the screen.
+    return localCopiesWithBands();
+  });
+  handle("repos:untrash", async ({ from, to }) => {
+    try {
+      if (await exists(to)) return { ok: false, message: "Something is there again — not overwriting it." };
+      if (!(await exists(from))) return { ok: false, message: "It is no longer in the Trash." };
+      await rename(from, to);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Couldn't put it back." };
+    }
+    localRepos.invalidate();
+    return { ok: true };
+  });
+  handle("repos:deleteEmptyFolder", async (dir) => {
+    // rmdir, never rm -r. The check and the delete are not atomic, but rmdir
+    // itself refuses a non-empty directory, so the race ends in an error and
+    // not in someone's work being deleted.
+    try {
+      const entries = await readdir(dir);
+      // .DS_Store is Finder's, not the user's, and rmdir fails on a directory
+      // holding only that. Nothing else is ever removed here: anything else
+      // present means the folder is not empty and the answer is no.
+      const JUNK = new Set([".DS_Store"]);
+      if (entries.some((e) => !JUNK.has(e))) {
+        return { ok: false, message: "That folder isn't empty, so GitStudio won't delete it." };
+      }
+      for (const junk of entries) await rm(join(dir, junk), { force: true });
+      await rmdir(dir);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Couldn't delete that folder." };
+    }
+    localRepos.invalidate();
+    return { ok: true };
   });
   handle("repos:trash", async (root) => {
     // Deleting someone's working copy is the most destructive thing this app
@@ -607,6 +713,13 @@ function registerIpc(): void {
       current: repos.current()?.root,
     });
     if (refusal) return { ok: false, changed: false, expected: true, message: refusal };
+    // Where it lands is not returned by trashItem, and the OS renames on a
+    // name collision ("gitstudio 2"), so guessing ~/.Trash/<basename> would
+    // hand undo the wrong path — and undo moving the WRONG folder back is a
+    // worse bug than having no undo. Diff the folder around the call instead,
+    // and offer undo only when exactly one thing appeared.
+    const trash = join(app.getPath("home"), ".Trash");
+    const before = await trashEntries(trash);
     try {
       await shell.trashItem(root);
     } catch (e) {
@@ -621,7 +734,9 @@ function registerIpc(): void {
     localRepos.invalidate();
     buildMenu();
     send("repo:recentChanged", repos.recentRepos());
-    return { ok: true, changed: true };
+    const after = await trashEntries(trash);
+    const added = [...after].filter((e) => !before.has(e));
+    return { ok: true, changed: true, trashed: added.length === 1 ? join(trash, added[0]) : undefined };
   });
   handle("repo:current", async () => repos.current());
   handle("repo:close", async () => {
@@ -677,12 +792,17 @@ function registerIpc(): void {
   // and it rides through in opts.
   handle("sync:push", (opts) => bridge.syncPush(opts || undefined));
   handle("branch:push", (a) => bridge.branchPush(a.name));
+  handle("branch:publish", (req) => bridge.branchPublishAs(req));
 
   // Branch management.
   handle("branches:list", () => bridge.branchesList());
   handle("ref:log", (req) => bridge.refLog(req));
+  handle("stash:restore", (req) => bridge.stashRestore(req));
+  handle("discard:snapshot", () => bridge.discardSnapshot());
+  handle("discard:undo", (req) => bridge.discardUndo(req));
   handle("branch:create", (req) => bridge.branchCreate(req));
   handle("branch:delete", (req) => bridge.branchDelete(req));
+  handle("branches:people", () => bridge.branchesPeople());
   handle("branch:pullFf", (req) => bridge.branchPullFf(req.name));
 
   // Compare (base…head).
@@ -739,6 +859,36 @@ function registerIpc(): void {
 
   // App info + updates (poll → confirm → pull → apply).
   handle("app:info", async () => ({ version: app.getVersion(), platform: process.platform }));
+  // ── Open in editor ──
+  const editorsNow = (force = false) => withIcons(editorsView(appSettings.editorPrefs(), force));
+  handle("editors:list", () => editorsNow());
+  handle("editors:refresh", () => editorsNow(true));
+  handle("editors:open", async ({ id, root }) => {
+    const target = root ?? repos.current()?.root;
+    if (!target) return { ok: false, message: "Open a repository first." };
+    return openEditor(id, target, appSettings.editorPrefs());
+  });
+  handle("editors:setShown", async ({ id, shown }) => {
+    await appSettings.setEditorShown(id, shown);
+    return editorsNow();
+  });
+  handle("editors:setDefault", async ({ id }) => {
+    await appSettings.setDefaultEditor(id);
+    return editorsNow();
+  });
+  handle("editors:addCustom", async ({ name, command }) => {
+    if (!name.trim() || !command.trim()) return editorsNow();
+    await appSettings.addCustomEditor(name, command);
+    return editorsNow();
+  });
+  handle("editors:removeCustom", async ({ id }) => {
+    await appSettings.removeCustomEditor(id);
+    return editorsNow();
+  });
+  handle("editors:reveal", async (req) => {
+    const target = (req && req.root) || repos.current()?.root;
+    if (target) revealRoot(target);
+  });
   handle("settings:get", () => Promise.resolve(appSettings.view()));
   handle("settings:update", (patch) => appSettings.update(patch));
   handle("settings:pickCloneDir", async () => {
@@ -779,7 +929,14 @@ function registerIpc(): void {
   handle("issue:detail", (n) => github.withRepo((c, o, r) => issuesApi.getIssueDetail(c, o, r, n)));
   // Cross-repo read-only item view (notifications for OTHER repos open in-app).
   handle("github:externalItem", (req) => github.externalItem(req));
-  handle("github:myWork", () => github.withRepo((c, o, r) => myWorkApi.myWork(c, o, r)));
+  handle("github:myWork", (req) =>
+    // {scope:"all"} runs on the CLIENT alone — withRepo would refuse when no
+    // repository is open or its origin is not GitHub, and the whole point of
+    // the cross-repo answer is that it does not depend on what is open.
+    req && req.scope === "all"
+      ? github.withClient((c) => myWorkApi.myWork(c, undefined, undefined))
+      : github.withRepo((c, o, r) => myWorkApi.myWork(c, o, r)),
+  );
   handle("issue:create", (req) => github.withRepo((c, o, r) => issuesApi.createIssue(c, o, r, req)));
   handle("issue:comment", (req) => github.withRepo((c, o, r) => issuesApi.commentIssue(c, o, r, req)));
   handle("issue:search", (req) => github.withRepo((c, o, r) => issuesApi.searchIssues(c, o, r, req)));
@@ -791,6 +948,7 @@ function registerIpc(): void {
   );
   handle("issue:react", (req) => github.withRepo((c, o, r) => issuesApi.reactTo(c, o, r, req)));
   handle("issue:setState", (req) => github.withRepo((c, o, r) => issuesApi.setIssueState(c, o, r, req)));
+  handle("issue:setLocked", (req) => github.withRepo((c, o, r) => issuesApi.setIssueLocked(c, o, r, req)));
   handle("issue:edit", (req) => github.withRepo((c, o, r) => issuesApi.editIssue(c, o, r, req)));
   handle("issue:labels", () => github.withRepo((c, o, r) => issuesApi.listLabels(c, o, r)));
   handle("issue:setLabels", (req) => github.withRepo((c, o, r) => issuesApi.setIssueLabels(c, o, r, req)));
@@ -893,6 +1051,9 @@ function registerIpc(): void {
   handle("ghrepo:paths", (req) =>
     github.withClient((c) => repoBrowseApi.listRepoPaths(c, req.fullName, req.ref)),
   );
+  handle("ghrepo:commits", (req) =>
+    github.withClient((c) => repoBrowseApi.listRepoCommits(c, req.fullName, req.ref)),
+  );
   handle("orgs:teamMembers", (req) => github.withClient((c) => orgsApi.listTeamMembers(c, req.org, req.slug)));
   handle("github:userInfo", (login) => github.withClient((c) => orgsApi.getUserInfo(c, login)));
   handle("users:repos", (login) => github.withClient((c) => orgsApi.listUserRepos(c, login)));
@@ -972,6 +1133,8 @@ function registerIpc(): void {
   handle("rebase:skip", () => bridge.rebaseSkip());
   handle("tag:create", (req) => bridge.tagCreate(req));
   handle("tag:delete", (name) => bridge.tagDelete(name));
+  handle("tag:restore", (req) => bridge.tagRestore(req));
+  handle("branch:restoreRemote", (req) => bridge.branchRestoreRemote(req));
   handle("tag:push", (req) => bridge.tagPush(req));
 
   // ── GitHub depth (PR review / issues / actions / search / repo admin) ──
@@ -1050,6 +1213,23 @@ async function boot(): Promise<void> {
   });
   bridge = new GitBridge(repos);
   github = new GitHubBridge(repos);
+  // Authenticate ATTACHMENT images from the renderer. A private repository's
+  // issue screenshots live at github.com/user-attachments/…, which answers a
+  // 302-to-S3 only for an authenticated request — and an <img> tag sends no
+  // headers. The hook injects the token for EXACTLY that path and nothing
+  // else: the S3 hop has its own signed URL (and AWS rejects a request
+  // carrying both a signature and an Authorization header), and Chromium
+  // re-runs this filter per hop, so the token never travels past github.com.
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ["https://github.com/user-attachments/*"] },
+    (details, callback) => {
+      const token = github.peekToken();
+      if (token) {
+        details.requestHeaders["Authorization"] = `Bearer ${token}`;
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    },
+  );
   rebase = new RebaseBridge(repos);
   ai = new AiBridge(repos, send);
   repos.onChange((info) => {
@@ -1164,36 +1344,124 @@ function scanLocalCopies(): Promise<LocalCopy[]> {
 }
 
 /**
+ * The scan, with each copy told where it renders.
+ *
+ * The renderer used to work this out itself, from the two payloads, with string
+ * arithmetic on `dirname` — which matched only direct children, so nineteen of
+ * this machine's twenty-seven repositories fell through into a heading reading
+ * "Opened from elsewhere". It cannot do better on its own: it has no realpath,
+ * so a tracked folder reached through a symlink contains nothing as far as it
+ * can tell. Decided here, once, and shipped.
+ */
+async function localCopiesWithBands(): Promise<LocalCopy[]> {
+  const copies = await scanLocalCopies();
+  const dirs = [appSettings.effectiveCloneDir(), ...appSettings.repoFolders()];
+  const reals = await Promise.all(dirs.map((d) => realOrResolve(d)));
+  const bandOf = new Map(reals.map((r, i) => [r, dirs[i]]));
+  const claims = claimRepos(reals, copies.map((c) => c.root));
+  return copies.map((c) => {
+    const claim = claimFor(c.root, claims, bandOf);
+    return claim ? { ...c, band: claim.band, group: claim.group } : c;
+  });
+}
+
+/**
  * Every folder scanned for repositories, with what is in it.
  *
  * The clone folder leads and cannot be removed — it is where clones land, so
  * untracking it would mean the app could not see what it had just written.
  */
+/** Does this path exist? */
+async function exists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The names in ~/.Trash right now, or an empty set if it can't be read
+ *  (another platform, or a sandbox). An empty set simply means no undo. */
+async function trashEntries(dir: string): Promise<Set<string>> {
+  try {
+    return new Set(await readdir(dir));
+  } catch {
+    return new Set();
+  }
+}
+
 async function listRepoFolders(): Promise<RepoFolder[]> {
   const home = app.getPath("home");
   const show = (p: string): string => (p.startsWith(home) ? `~${p.slice(home.length)}` : p);
   const cloneDir = appSettings.effectiveCloneDir();
   const dirs = [cloneDir, ...appSettings.repoFolders()];
   const copies = await scanLocalCopies();
-  return Promise.all(
-    dirs.map(async (path) => {
+
+  // Real paths on both sides. A folder tracked through a symlink contains
+  // nothing at all if the comparison is made on the path as typed — and
+  // scanLocalCopies already hands back realpath'd roots, so only this side was
+  // missing. `realOrResolve` falls back for a folder that is not there.
+  const reals = await Promise.all(dirs.map((d) => realOrResolve(d)));
+
+  // ONE pass decides where every repository renders, and the counts are read
+  // off that same pass. The head's number and the rows under it can then not
+  // disagree, which the previous comment claimed and the arithmetic did not
+  // deliver: it counted direct children only, so ~/Developer said "6" while
+  // standing over twenty-seven.
+  const claims = claimRepos(reals, copies.map((c) => c.root));
+  const bandOf = new Map(reals.map((r, i) => [r, dirs[i]]));
+
+  const rows = await Promise.all(
+    dirs.map(async (path, i) => {
+      const real = reals[i];
       let missing = false;
       try {
         missing = !(await stat(path)).isDirectory();
       } catch {
         missing = true;
       }
+      // Worktrees keep their claims (they render, in their band, labeled) but
+      // the LABEL count is of repositories, and a worktree is a checkout of
+      // one — while containedCount guards DELETION, and a folder holding only
+      // worktrees is emphatically not empty (trashing it eats live checkouts).
+      const repoOnly = countFolder(
+        real,
+        copies.filter((c) => !c.worktreeOf).map((c) => c.root),
+        claims,
+      );
+      const everything = countFolder(real, copies.map((c) => c.root), claims);
+      // A tracked folder inside another tracked folder renders as a GROUP in
+      // that one's band, in the place its path puts it, rather than as a band
+      // of its own torn out of the alphabetical run.
+      const outer = reals.find((r) => r !== real && isUnder(r, real));
       return {
         path,
         display: show(path),
+        real,
         isCloneDir: resolvePath(path) === resolvePath(cloneDir),
-        // Counted from the same scan the list is built from, so the number
-        // beside a folder can never disagree with the rows under it.
-        repoCount: copies.filter((c) => resolvePath(dirname(c.root)) === resolvePath(path)).length,
+        isDefaultCloneDir:
+          resolvePath(path) === resolvePath(cloneDir) && appSettings.view().cloneDirIsDefault,
+        repoCount: repoOnly.direct,
+        containedCount: repoOnly.contained,
+        containedAnyCount: everything.contained,
         missing,
+        ...(outer
+          ? { nestedIn: bandOf.get(outer) ?? outer, group: relativePath(outer, real) }
+          : {}),
       };
     }),
   );
+  return visibleRepoFolders(rows);
+}
+
+/** The claim for one repository, in the terms the renderer draws with. */
+function claimFor(root: string, claims: ReturnType<typeof claimRepos>, bandOf: Map<string, string>):
+  | { band: string; group: string }
+  | undefined {
+  const c = claims.get(root);
+  if (!c) return undefined;
+  return { band: bandOf.get(c.band) ?? c.band, group: c.group };
 }
 
 /**

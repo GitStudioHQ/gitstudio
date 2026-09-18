@@ -10,7 +10,6 @@
   --gs-accent: #7c5cf0;
   --gs-accent-2: #4aa5ff;
 
-
   /* Type ramp — one intentional scale instead of scattered px values. */
   --text-2xs: 10.5px;
   --text-xs: 11.5px;
@@ -47,6 +46,16 @@
      measure (see .settings-sub). */
   --measure-settings: 1040px;
   --measure-wide: 1100px;
+  /* How wide a DETAIL PAGE's reading column may get. Deliberately far wider
+     than --measure-read, because a detail page is not only prose: the same
+     column carries diffs, job logs, file trees, commit lists and gist source,
+     and those are tables, not paragraphs. Running text does not sprawl when
+     this grows, because .gh-body-md caps ITSELF at --measure-read. */
+  --measure-detail: 1600px;
+  /* Code is a FILE TABLE plus a toolbar, not prose, so it earns the window.
+     Kept separate from --measure-wide because that token also caps the
+     Compare commit list, which is capped deliberately. */
+  --measure-code: 1800px;
 
   /* Modal widths — three sizes, not eleven. Dialogs opened seconds apart used
      to be 420/480/520/540/560/640/760px wide with no structural reason.
@@ -91,7 +100,10 @@ body.vscode-dark {
   --vscode-editor-font-size: 12.5px;
   --vscode-editor-background: #12151c;
   --vscode-editor-foreground: #d7dae0;
-  --vscode-editorLineNumber-foreground: #4b5363;
+  /* 2.36:1 on the gutter was dimmer than any editor renders line numbers —
+     VS Code's own dark gutter sits near 4.3:1. This clears AA at 4.55:1 and
+     still reads as gutter furniture rather than as code. */
+  --vscode-editorLineNumber-foreground: #767f93;
   --vscode-editorLineNumber-activeForeground: #8b93a1;
   --vscode-editorCursor-foreground: #d7dae0;
   --vscode-editor-selectionBackground: #2a3a5a;
@@ -227,19 +239,32 @@ body.vscode-light {
   --app-bg: #eef1f5;
   --app-panel: #f7f9fb;
   --app-elevated: #ffffff;
-  --app-border: #dde2ea;
-  --app-hover: #e9edf3;
-  --app-active: #dde8fb;
+  /* A BORDER HAS TO BE VISIBLE. #dde2ea was 1.15:1 against the page canvas,
+     which is not a hairline, it is a rumour — every card edge, list separator
+     and segmented-control outline in light theme was effectively absent. These
+     are the three tokens the whole light theme leans on, so they are tuned
+     against the surfaces they actually sit on, not against white alone:
+       border  1.39:1 on the canvas, 1.57:1 on a white card
+       hover   1.12:1 on the canvas, 1.27:1 on a white row
+       active  a fill you can see under a selected row, not a 1.09:1 hint */
+  --app-border: #c7cfdb;
+  --app-hover: #dee5ef;
+  --app-active: #cfe0fa;
   --app-muted: #5b636f; /* ≥5:1 on the light page + hover surfaces */
   /* On light surfaces the bright blue/purple accents fail under white text or
      as small text — darken them for light theme only (fills keep --gs-accent). */
   --gs-accent-2: #1f6fd6;
   --gs-accent-ink: #6a45e8;
-  /* Status inks darkened so the A/M/D letters clear AA (≥4.5:1) on the light
-     page and on the #e9edf3 hover row. */
-  --status-add: #0f7a44;
-  --status-mod: #1a63c4;
-  --status-del: #b82f5e;
+  /* Status inks darkened so the A/M/D letters clear AA (>=4.5:1) on EVERY
+     light surface they land on, which is four: the page, a hover row, a white
+     card, and — the one they used to miss — a SELECTED row, whose fill got
+     stronger when the old 1.09:1 selection was fixed.
+       add  4.04 -> 4.73 on the selected row
+       mod  4.33 -> 4.96
+       del  4.35 -> 4.88 */
+  --status-add: #0d6e3d;
+  --status-mod: #175ab5;
+  --status-del: #ab2b57;
   --status-warn: #92610f;
   --gs-amber: #92610f;
 
@@ -329,8 +354,12 @@ body {
 .row-meta-sub, .gh-row-sub {
   user-select: text;
 }
-/* Row meta stays copyable but must never hijack the row's click. */
-.gh-row-sub, .row-meta-sub { cursor: default; }
+/* Row meta stays copyable but must never hijack the row's click. `inherit`,
+   not `default`: these sit INSIDE clickable rows, so `default` turned the hand
+   back into an arrow as the pointer crossed the second line of a row that was
+   still one click target. `.gh-sub-link` below re-asserts pointer for the
+   fragments that navigate somewhere of their own. */
+.gh-row-sub, .row-meta-sub { cursor: inherit; }
 /* Clickable fragments INSIDE a row's meta line (branch / author / repo). */
 .gh-sub-link {
   color: inherit;
@@ -645,6 +674,7 @@ button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
 .ref-pick:focus-visible,
 .sync-main:focus-visible,
 .sync-caret:focus-visible,
+.toast-action:focus-visible,
 .toast-close:focus-visible,
 .cmp-collapse:focus-visible,
 .cmp-restore:focus-visible,
@@ -664,6 +694,20 @@ button.is-busy, .btn.is-busy, .btn-primary.is-busy, .btn-danger.is-busy,
 .ai-chip:focus-visible,
 .assistant-send:focus-visible,
 .dock-chevron:focus-visible,
+/* All of these had :hover and no focus ring, so the pointer got an affordance
+   the keyboard did not. The repo name on Home is that page's main door, the
+   folder chip re-opens a clone from a Repositories row, and the three
+   latest-commit controls on Code are the only way to reach that commit. */
+.dash-hero-name:focus-visible,
+button.repo-folder-chip:focus-visible,
+.gh-check-row.is-link:focus-visible,
+.code-latest-sha:focus-visible,
+.code-latest-copy:focus-visible,
+.code-latest-count:focus-visible,
+/* The command palette button had :hover but no focus ring, which is the wrong
+   way round for the one control in the top bar whose whole purpose is the
+   keyboard. */
+.topbar-cmdk:focus-visible,
 .tab:focus-visible {
   outline: 2px solid var(--gs-focus-ring);
   outline-offset: -2px;
@@ -810,7 +854,14 @@ html.is-mac .topbar { padding-left: 78px; }
  * themes); the merge-Y lanes + nodes are the violet accent (legible on both). */
 .topbar-mark { width: 26px; height: 26px; display: block; color: var(--vscode-foreground); }
 .topbar-mark svg { display: block; }
-.topbar-mark .bm-cube { stroke: currentColor; stroke-opacity: 0.42; }
+/* The cube's three faces carry a slate body (top light, right deep, left mid)
+   under violet lanes and nodes — the extension's activity-bar mark, coloured.
+   Faces are a tint of the foreground so they hold on both themes. */
+.topbar-mark .bm-face { fill: currentColor; }
+.topbar-mark .bm-face-top { fill-opacity: 0.16; }
+.topbar-mark .bm-face-right { fill-opacity: 0.34; }
+.topbar-mark .bm-face-left { fill-opacity: 0.24; }
+.topbar-mark .bm-cube { stroke: currentColor; stroke-opacity: 0.5; }
 .topbar-mark .bm-lane { stroke: var(--gs-accent-ink, var(--gs-accent)); }
 .topbar-mark .bm-node { fill: var(--gs-accent-ink, var(--gs-accent)); }
 .topbar-switch {
@@ -874,6 +925,33 @@ html.is-mac .topbar { padding-left: 78px; }
 .topbar-sidebar.is-collapsed { color: var(--gs-accent-ink, var(--gs-accent)); }
 
 /* ── Sync widget (fetch / pull / push) ──────────────────────────────────────── */
+/* Open in <editor>, beside Push. Same 28px height and 8px radius as the repo
+   and branch switches either side of it, so the left cluster reads as one row
+   of controls rather than a toolbar with something bolted on. */
+.topbar-openin .mini-btn { height: 28px; }
+.topbar-openin .openin-primary { max-width: 190px; padding: 0 9px; }
+.topbar-openin .openin-more { padding: 0 4px; }
+/* WHICH THING GOES FIRST when the bar runs out of room is decided by measuring
+   (see wireTopbarFit), not by a viewport width — a long branch name and a short
+   one need different amounts of room at the same window size. The order is:
+   the editor's NAME, then the search box's label. The branch and the sync
+   widget never yield.
+   Collapsed with max-width rather than display:none so the fit pass can still
+   measure what putting the label back would cost; that is what keeps it from
+   oscillating between the two states. */
+.topbar.is-tight .topbar-openin .openin-label,
+.topbar.is-tighter .topbar-cmdk-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+/* …and the gap the label left behind goes with it. */
+.topbar.is-tight .topbar-openin .openin-primary { gap: 0; padding: 0 7px; }
+.topbar.is-tighter .topbar-cmdk { gap: 0; }
+/* The branch is the one thing on this bar that must stay readable. */
+.topbar-branch { flex: 0 0 auto; }
+.topbar-sync { flex: 0 0 auto; }
+
 .topbar-sync {
   display: inline-flex;
   align-items: stretch;
@@ -1028,6 +1106,7 @@ html.is-mac .topbar { padding-left: 78px; }
   gap: 7px;
   margin: 10px 8px 3px;
   color: var(--app-muted);
+  min-width: 0;
 }
 .nav-divider-label {
   font-size: 9.5px;
@@ -1035,6 +1114,10 @@ html.is-mac .topbar { padding-left: 78px; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   opacity: 0.8;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .nav-divider::after {
   content: "";
@@ -1213,7 +1296,11 @@ html.is-mac .topbar { padding-left: 78px; }
 }
 .list-row.is-current {
   background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
-  cursor: default;
+  /* `default` here said "this row is inert", which it is not — the current
+     repository, branch or file is still a click target, and taking the hand
+     away from the one row you are most likely to aim at reads as the app
+     having gone unresponsive. */
+  cursor: inherit;
 }
 .list-row.is-current .glyph,
 .list-row.is-current .list-row-name { color: var(--gs-accent-ink, var(--gs-accent)); }
@@ -1516,6 +1603,134 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
 .modal-ok { height: 30px; padding: 0 16px; font-size: var(--text-sm); }
 /* A wider form modal (issue/PR edit) with a real body textarea. */
 .modal-card-form { width: min(var(--modal-md), 92vw); }
+
+/* An invalid value keeps its red edge while the field is still focused. Equal
+   specificity to `.modal-input:focus` above, so this wins only by coming after
+   it — do not move either rule. */
+.modal-input.is-invalid,
+.modal-input.is-invalid:focus {
+  border-color: var(--vscode-editorError-foreground, #e5534b);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-editorError-foreground, #e5534b) 20%, transparent);
+}
+/* Why the primary button is off, in the field's own words. */
+.prompt-error {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--vscode-editorError-foreground, #e5534b);
+  margin-top: -4px;
+}
+/* "Use instead <name> [Use]" — the repaired ref name, offered, never imposed. */
+.prompt-suggest {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: -2px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.prompt-suggest code {
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--app-border);
+  background: var(--app-panel);
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+.prompt-suggest-use { height: 22px; padding: 0 8px; font-size: var(--text-xs); }
+
+/* ── The commits of a repository you are BROWSING ───────────────────────────
+   A list, not the graph: the API gives no lanes and no diffstat, and drawing
+   either would be a picture of history rather than history. */
+.explore-commits {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-lg);
+  background: var(--app-panel);
+  overflow: hidden;
+}
+.explore-commit {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 9px 12px;
+  border-top: 1px solid var(--app-border);
+  color: var(--vscode-foreground);
+  text-decoration: none;
+  transition: background var(--dur-1) var(--ease);
+}
+.explore-commit:first-child { border-top: 0; }
+.explore-commit:hover { background: var(--app-hover); }
+.explore-commit-av {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--app-elevated);
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  color: var(--app-muted);
+}
+.explore-commit-av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.explore-commit-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.explore-commit-subject {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore-commit-meta { display: flex; align-items: center; gap: 5px; font-size: var(--text-xs); color: var(--app-muted); }
+.explore-commit-dot { opacity: 0.6; }
+.explore-commit-sha {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-sm);
+  background: var(--app-elevated);
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+/* Said plainly: this is the recent history, not all of it. */
+.explore-commits-note {
+  padding: 9px 12px;
+  border-top: 1px solid var(--app-border);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+/* A consequential either/or: full-width explained rows in a column. A menu
+   cannot do this job — its sub-label is one nowrap, ellipsised line on the
+   label's own row, so a whole sentence comes out truncated. */
+.modal-choices { display: flex; flex-direction: column; gap: var(--sp-2); }
+.modal-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-lg);
+  background: var(--app-panel);
+  color: var(--vscode-foreground);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+}
+.modal-choice:hover { background: var(--app-hover); border-color: var(--accent-line); }
+.modal-choice:focus-visible { outline: 2px solid var(--gs-focus-ring); outline-offset: 1px; }
+.modal-choice > .glyph { flex: 0 0 auto; margin-top: 1px; color: var(--gs-accent-ink, var(--gs-accent)); }
+.modal-choice-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.modal-choice-label { font-size: var(--text-sm); font-weight: 620; }
+/* It WRAPS. That is the whole reason this is a modal and not a menu. */
+.modal-choice-sub { font-size: var(--text-xs); line-height: 1.45; color: var(--app-muted); }
 /* Searchable, avatar-rich people picker (PR reviewers + issue assignees). */
 .people-picker { width: min(var(--modal-sm), 92vw); }
 .people-list {
@@ -1529,6 +1744,7 @@ button.ab-btn:disabled { cursor: default; opacity: 0.85; }
   padding: 4px;
   background: var(--app-bg);
 }
+.people-row.is-locked { opacity: 0.6; cursor: default; }
 .people-row {
   display: flex;
   align-items: center;
@@ -2073,16 +2289,9 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   padding: 1px 5px;
   opacity: 0.85;
 }
-@media (max-width: 1100px) { .topbar-cmdk-label { display: none; } }
+/* A hard floor under the measured pass: below this nobody wants the label. */
+@media (max-width: 900px) { .topbar-cmdk-label { display: none; } }
 
-/* Deep-link landing flash — a fading accent wash on the row a navigation
-   pointed at (branches ref targets), like GitHub's anchor highlight. */
-@keyframes gs-row-flash {
-  0% { background: color-mix(in srgb, var(--gs-accent) 28%, transparent); }
-  100% { background: transparent; }
-}
-.row-flash { animation: gs-row-flash 1.6s var(--ease) both; }
-@media (prefers-reduced-motion: reduce) { .row-flash { animation: none; } }
 
 /* Tag detail (Releases → Tags): the commit card under the tag header. */
 .gh-tag-commit { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
@@ -2190,6 +2399,32 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   color: var(--vscode-foreground);
   word-break: break-word;
 }
+/* The way back, beside what happened. Reads as the one thing to click in the
+   toast without shouting: same weight as the message, a border rather than a
+   fill, and set apart from the dismiss × so "undo" and "go away" are never
+   the same gesture by accident. */
+.toast-action {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 4px 10px;
+  margin: -1px 2px -1px 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.toast-action:hover {
+  background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-foreground) 34%, var(--app-border));
+}
+.toast-action:active { background: color-mix(in srgb, var(--vscode-foreground) 14%, transparent); }
+
 .toast-close {
   flex: 0 0 auto;
   display: inline-flex;
@@ -2276,12 +2511,16 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
   flex-direction: column;
   background: var(--app-bg);
 }
+/* The header's inset is the COLUMN's inset, so the count chip starts where the
+   file card starts and Refresh ends where it ends — one set of edges down the
+   page rather than a full-bleed toolbar over a centred column. */
 .code-head {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 10px calc(max(16px, calc((100% - var(--measure-code)) / 2)) + var(--code-gutter, 0px)) 10px
+    max(16px, calc((100% - var(--measure-code)) / 2));
   border-bottom: 1px solid var(--app-border);
 }
 .code-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
@@ -2331,7 +2570,7 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
    keep theirs. */
 .code-view:focus { outline: none; }
 
-.code-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px max(16px, calc((100% - var(--measure-wide)) / 2)) calc(28px + var(--dock-reserve, 0px)); }
+.code-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px max(16px, calc((100% - var(--measure-code)) / 2)) calc(28px + var(--dock-reserve, 0px)); }
 
 /* The GitHub-style "latest commit" bar that crowns the repo-root listing. */
 .code-latest-slot:empty { display: none; }
@@ -2399,19 +2638,47 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
 .code-latest-sha:hover { background: var(--app-hover); border-color: var(--accent-line); }
 .code-latest-sha .glyph .codicon { font-size: 13px; }
 .code-latest-when { flex: 0 0 auto; font-size: var(--text-xs); color: var(--app-muted); }
+/* Copying the sha keeps an affordance of its own, now that the sha itself
+   opens the commit rather than copying it. */
+.code-latest-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-left: -3px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-muted);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.code-latest-copy:hover { background: var(--app-hover); border-color: var(--app-border); color: var(--vscode-foreground); }
+.code-latest-copy .glyph .codicon { font-size: 12px; }
+/* The commit count is a DOOR to the history, not a caption. */
 .code-latest-count {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  padding-left: 12px;
+  padding: 0 8px 0 12px;
   margin-left: 2px;
+  height: 22px;
+  border: 1px solid transparent;
   border-left: 1px solid var(--app-border);
+  border-radius: 0 7px 7px 0;
+  background: transparent;
+  font-family: inherit;
   font-size: var(--text-xs);
   font-weight: 600;
   color: var(--app-muted);
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
 }
+.code-latest-count:hover { background: var(--app-hover); color: var(--vscode-foreground); }
 .code-latest-count .glyph .codicon { font-size: 14px; color: var(--gs-accent-ink, var(--gs-accent)); }
 /* The connected file card: latest-commit header + column header + rows share
    one bordered, rounded surface — github.com's directory table. */
@@ -2482,8 +2749,11 @@ button.peek-row:hover .peek-row-chev, button.peek-row:focus-visible .peek-row-ch
    (see ".gh-body-md, .code-md" further down), so a README here and a PR body
    there can never drift apart again. */
 .code-md {
-  padding: 24px 28px;
-  max-width: 920px;
+  padding: 24px 32px 28px;
+  /* Fills its card, the way a README does on GitHub: the heading rules run
+     edge to edge and line up with the file list above. A 920px cap left a
+     fifth of the card empty on the right, rules stopping short of the edge. */
+  max-width: none;
 }
 .code-md-plain {
   white-space: pre-wrap;
@@ -2565,7 +2835,11 @@ button.gh-reaction:focus-visible { outline: 1px solid var(--gs-accent); outline-
   display: flex;
   align-items: baseline;
   gap: var(--sp-2);
+  /* Symmetric: cards carry a 10px bottom margin, so the line gets 8px of
+     top padding (18 from the card above) and its own 10px bottom margin
+     after 8px of bottom padding (18 to the card below). */
   padding: var(--sp-2) var(--sp-1) var(--sp-2) var(--sp-3);
+  margin-bottom: 10px;
   font-size: var(--text-xs);
   color: var(--app-muted);
 }
@@ -2593,22 +2867,48 @@ button.gh-reaction:focus-visible { outline: 1px solid var(--gs-accent); outline-
 /* The owner band on the GitHub side. Same rhythm as the folder band on the
    local side — two lists of repositories on one screen must not invent two
    ways of grouping them. */
+/* This band FOLDS, so it leads with a chevron, and its name starts on the same
+   column as the repository names beneath it: 12px padding + an 18px lead slot +
+   a 10px gap = 40px, which is .sec-row's own padding, .sec-row-lead's own width
+   and .sec-row's own gap. Change any of those three and change this with them. */
 .repo-owner-head {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  gap: 10px;
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+  border-top: 1px solid var(--app-border);
   border-bottom: 1px solid var(--app-border);
-  background: var(--app-panel);
+  background: var(--app-elevated);
   position: sticky;
   top: 0;
   z-index: 1;
 }
-.repo-owner-head > .codicon { color: var(--app-muted); font-size: 14px; }
+.repo-owner-head > .codicon { flex: 0 0 18px; width: 18px; font-size: 14px; color: var(--app-muted); }
+/* The topmost band sits directly under the toolbar's own rule; two hairlines
+   that close together read as a double line rather than as a band. */
+.sec-list > .repo-folder-head:first-child,
+.sec-list > .repo-owner-head:first-child { border-top-color: transparent; }
 /* "clones land here" is a control, not a caption: it is where you change which
    folder that is, so it has to look pressable on hover. */
-button.repo-folder-chip { cursor: pointer; font: inherit; }
-button.repo-folder-chip:hover { border-color: var(--gs-accent); color: var(--gs-accent-ink, var(--gs-accent)); }
+/* `background: transparent` is not cosmetic here. `.repo-folder-chip` sets a
+   colour and a border but no background, which is right for the span version —
+   and this one is a BUTTON, so it inherited the UA's grey button face. Muted
+   grey text on a mid-grey fill: 1.7:1 in dark, effectively unreadable, on the
+   one control that says where your clones land. */
+button.repo-folder-chip {
+  cursor: pointer;
+  font: inherit;
+  background: transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+button.repo-folder-chip:hover {
+  border-color: var(--gs-accent);
+  color: var(--gs-accent-ink, var(--gs-accent));
+  background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+}
 button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
 
 /* A rail entry waiting on a repository. Dimmed, not hidden — see NEEDS_REPO. */
@@ -2628,14 +2928,183 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
   font-size: var(--text-2xs);
 }
 @media (max-width: 1200px) { .sec-row-meta > .repo-path { display: none; } }
+/* A state pill belongs to the line it labels.
+   `.gh-pill` is written for `.gh-row`, a stacked card where the pill hugs the
+   TOP line — `align-self: flex-start` plus a 3px nudge. Dropped into a single
+   line row it floats 10px above the name it is about, which reads as a
+   rendering fault rather than a label. */
+.sec-row > .gh-pill { align-self: center; margin-top: 0; }
+
+/* THE NAME WINS, on both sides of this screen.
+   A repository row carries a name, state pills, a description, a language, a
+   star count, a time and its actions — and the name was set to shrink first,
+   so \GitStudioHQ/gitstudio\ truncated to \GitStudioHQ/gitstu…\ while the
+   description beside it sat whole. The name is what the row IS; the
+   description is context, and context yields. Same rule the branch list
+   learned. */
+/* The title does not GROW. It used to, and so did the spring beside it, so
+   the two split the leftover space between them — which made the name column
+   as wide as the row's other content was short. Five rows, five different
+   offsets for the description that follows. A floor instead: short names pad
+   out to a common column, long ones push past it, and nothing is squeezed. */
+.repo-row .sec-row-title {
+  flex: 0 1 auto;
+  min-width: 34ch;
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+/* A local row's name is followed by its ORIGIN, not by a description, so its
+   column can be tighter than the remote side's. The remote side keeps its
+   documented 34ch alignment. */
+.repo-row.is-band .sec-row-title,
+.repo-row.is-group .sec-row-title,
+.repo-row.is-loose .sec-row-title { min-width: 28ch; }
+/* The NAME is the brightest thing in a repository row; the icon says "kind",
+   not "look here". Folder icons are accent, repository icons muted — see
+   .repo-folder-head > .codicon. */
+.repo-row .sec-row-lead .codicon { color: var(--app-muted); }
+/* …except the one you have open, which the green pill beside it already names.
+   This must stay AFTER the rule above: it wins on order, not specificity. */
+.repo-row .sec-row-lead .codicon-check { color: var(--status-add); }
+/* A linked worktree is another checkout of a repository already in this list.
+   It keeps the row shape (it is openable) and loses the repository weight. */
+.repo-row[data-worktree] .sec-row-title { font-weight: 550; }
+/* THE ORIGIN SITS WITH THE NAME. Behind `.sec-row-spring { flex: 1 1 0 }` in
+   the right-hand meta cluster it sat ~470px from the name on a 1280px window —
+   and the SHORTER the name, the further away — so the two facts that identify
+   one row could not be read as one. It is a direct child of the row now,
+   straight after the title's column, so it starts at the same x on every row.
+   The explicit size is not decoration: `.sec-mono` at the same specificity six
+   thousand lines later was silently winning it down to 10.5px. */
+.repo-row > .repo-origin-col {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 52ch;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+}
+/* Below this there is no room for a second column beside the name; the origin
+   stays reachable in its own tooltip. */
+@media (max-width: 900px) { .repo-row > .repo-origin-col { display: none; } }
+.repo-row .sec-row-chips { flex-shrink: 12; min-width: 0; }
+/* A description is prose, and prose that runs out of room ends in an ellipsis.
+   `.sec-row-chips > *` pins every child at `flex: 0 0 auto` — right for pills,
+   which should never be squeezed — so the description stayed at its full width
+   inside a narrower box and was cut mid-word by the container's overflow. Its
+   own text-overflow never fired, because the element itself was not overflowing:
+   the box around it was. */
+.repo-row .sec-row-chips > .repo-desc { flex: 0 1 auto; min-width: 0; }
+/* Below the width where both fit, the description goes entirely rather than
+   becoming three words and an ellipsis. */
+@media (max-width: 1500px) { .repo-row .repo-desc { display: none; } }
 
 /* ── Home ───────────────────────────────────────────────────────────────────
    Three cards, each a door. The grid is auto-fit rather than a fixed column
    count so a narrow window stacks them instead of squeezing three columns of
    truncated text — this page is the first thing anyone sees and it must not
    be the first thing that looks broken. */
-.dash { padding: var(--sp-6) var(--sp-6) var(--sp-8); overflow-y: auto; height: 100%; }
-.dash-head { margin-bottom: var(--sp-5); }
+.dash {
+  padding: var(--sp-6) var(--sp-6) var(--sp-8);
+  overflow-y: auto;
+  height: 100%;
+  /* The host is a flex column, so a block child SHRINKS to content here —
+     without the explicit width the whole page rendered as a 500px strip down
+     the middle of a 1600px pane, stacking the two columns. */
+  /* NO max-width. At 2560 the old 1180px cap stranded 582px of empty page on
+     EACH side of the first screen anyone sees, and the two data cards were
+     558px wide with 2344px available. The hero's rows are kept honest by the
+     grid on .dash-hero-body below rather than by refusing the window. */
+  width: 100%;
+}
+.dash-head {
+  margin-bottom: var(--sp-5);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+}
+
+/* The door into the one search system. A real field, not a fourth engine:
+   Enter routes to Search's free local scope with the text carried along. */
+.dash-search {
+  flex: 1 1 340px;
+  max-width: 560px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 38px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-panel);
+}
+.dash-search > .codicon { color: var(--app-muted); }
+.dash-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.dash-search:focus-within {
+  border-color: var(--gs-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gs-accent) 22%, transparent);
+}
+
+/* The hero: the open repository's whole situation in one card. */
+.dash-hero { margin-bottom: var(--sp-4); }
+.dash-hero-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--app-border);
+  flex-wrap: wrap;
+}
+.dash-hero-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+.dash-hero-name:hover { background: var(--app-hover); }
+.dash-hero-repo { font-size: var(--text-base); font-weight: 650; }
+.dash-hero-dot { color: var(--app-muted); }
+.dash-hero-branch {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-sm);
+  color: var(--app-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+.dash-hero-cta { height: 30px; padding: 0 14px; }
+/* FLOWS, rather than stretching. With the page cap gone, a hero status row was
+   one short sentence spread across 2180px with its tiny hint ("Review",
+   "Assigned") marooned at the far edge. Columns put the hint back beside the
+   label it belongs to, and use the width for MORE rows at once instead. */
+.dash-hero-body {
+  padding: var(--sp-2) 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 0 var(--sp-5);
+  align-content: start;
+}
+
 .dash-title {
   margin: 0;
   font-size: 24px;
@@ -2693,10 +3162,26 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .dash-line-text {
   flex: 1 1 auto;
   min-width: 8ch;
+  /* …but it stops GROWING well before the row does. Left to take the whole
+     width, a six-word sentence dragged its hint to the far edge of a wide
+     hero and the two stopped reading as one row. */
+  max-width: 92ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Working-tree signals on a Home repo row — quiet until they have news. */
+.dash-repo-state {
+  display: inline-flex;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.dash-state-bit.is-dirty { color: var(--status-mod); }
+.dash-state-bit.is-ahead { color: var(--status-add); }
+.dash-state-bit.is-behind { color: var(--status-warn); }
+
 .dash-line-hint {
   /* Short hints — "Review", "Assigned" — must never clip: a one-word label
      shortened to "Assigned t…" is worse than the word it was replacing. Long
@@ -2718,27 +3203,52 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .repo-folder-head {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+  gap: 10px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+  border-top: 1px solid var(--app-border);
   border-bottom: 1px solid var(--app-border);
-  background: var(--app-panel);
+  background: var(--app-elevated);
   position: sticky;
   top: 0;
   z-index: 1;
 }
-.repo-folder-head > .codicon { color: var(--app-muted); font-size: 14px; }
+/* Folders are accent, repositories are muted — the same rule the Code view
+   already gives a directory against a file (.code-row.is-dir .glyph). It was
+   running BACKWARDS on this screen: the leaf icons were the brightest marks on
+   the page and the container icons the dimmest. */
+.repo-folder-head > .codicon {
+  flex: 0 0 18px;
+  width: 18px;
+  font-size: 14px;
+  color: var(--gs-accent-ink, var(--gs-accent));
+}
+/* A folder that is gone is not a place you can go: it keeps the muted ink its
+   struck-through path already carries. */
+.repo-folder-head.is-missing > .codicon { color: var(--app-muted); }
 .repo-folder-path {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--vscode-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* The path is the identity of the group, so it is the last thing to shrink —
-     the same rule the branch list learned the hard way. */
-  flex: 1 1 auto;
+  /* It does not GROW. Growing pinned the count and the chips to the far right
+     of a thousand-pixel strip with nothing connecting them to the folder they
+     describe. It is still the last thing to SHRINK, which is what the identity
+     rule actually asked for. */
+  flex: 0 1 auto;
   min-width: 12ch;
+}
+/* "Opened from elsewhere" is a category, not a path: it does not want the
+   folder family's monospace face, and it carries no icon, so its label takes
+   the icon column's offset rather than starting 28px left of every other band. */
+.repo-folder-head.is-label .repo-folder-path {
+  font-family: inherit;
+  font-weight: 600;
+  color: var(--app-muted);
+  margin-left: calc(18px + 10px);
 }
 .repo-folder-count {
   flex: 0 0 auto;
@@ -2760,16 +3270,218 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
   background: color-mix(in srgb, var(--status-warn) 20%, var(--app-elevated));
 }
 .repo-folder-spring { flex: 0 0 auto; margin-left: auto; }
-/* Muted until you go looking for them: a group header is a label first. */
+
+/* ── Sticky section heads: pinned vs. sitting in the flow ───────────────────
+   This block sits after BOTH head base rules on purpose, and the ORDER INSIDE
+   IT is load-bearing: `.repo-owner-head.is-stuck` and `.repo-owner-head:hover`
+   are both (0,2,0), so `:hover` comes LAST or a pinned head would stop
+   answering the pointer. Do not reorder. */
+
+/* The section wrapper exists ONLY so its head pins within its own owner and is
+   pushed out by the next one, instead of every head piling up at top:0 in one
+   containing block. It must never get `transform`, `filter`, `opacity < 1`,
+   `will-change`, `contain: paint` or a `z-index`: any of those creates a
+   stacking context and traps the head under the next section's rows. */
+
+/* A GitHub login is a NAME, not a path — the mono of `.repo-folder-path`
+   belongs to `~/Developer`. Bigger and heavier than a row title is the whole
+   hierarchy here; no box, no fill. It shrinks before the count does. */
+.repo-owner-name {
+  flex: 0 1 auto;
+  min-width: 8ch;
+  font-size: var(--text-md);
+  font-weight: 650;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 10.5px muted at the right edge is a number you cannot read; 11.5px is one you
+   can. Scoped here so the local band keeps its own size. */
+.repo-owner-head .repo-folder-count { font-size: var(--text-xs); }
+/* Closed, the count is the only evidence the section holds anything, so it
+   stops being the quietest thing on the line. A typographic state change, not a
+   badge — and the WORDS never change, because "0 repositories" on a section you
+   just closed is the app telling you your work vanished. */
+.repo-owner-head.is-folded .repo-folder-count {
+  color: var(--vscode-foreground);
+  font-weight: 550;
+}
+/* The owner chevron folds the way the project folders' does. */
+.repo-owner-head > .repo-group-chevron { transition: transform var(--dur-1) var(--ease); }
+.repo-owner-head.is-folded .repo-group-chevron { transform: rotate(-90deg); }
+/* PINNED. A head holding the top of the scroller is floating over rows passing
+   beneath it and has to say so. The band already sits on --app-elevated, so the
+   cue is structural rather than a surface step: its bottom edge doubles to 2px
+   of --app-border and the small shadow lifts it off the rows. Both themes get
+   the cue they respond to — dark reads the lift, light reads the doubled rule.
+   Put on by wireStickyHeads() and by nothing else, on at most one head at a
+   time, which is what stops these shadows stacking where heads cover up. */
+.repo-owner-head.is-stuck,
+.repo-folder-head.is-stuck {
+  box-shadow: 0 1px 0 var(--app-border), var(--shadow-sm);
+}
+/* Hovering a head that folds looks like hovering a row that opens — the same
+   surface, and opaque, because rows are sliding underneath it. A pinned head
+   keeps its shadow while hovered; only the fill changes. */
+.repo-owner-head:hover { background: var(--app-hover); }
+.repo-owner-head:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: -2px;
+}
+
+/* ── A folder found inside a folder you named ───────────────────────────────
+   Three tiers, told apart by what they are rather than by decoration:
+
+     BAND   a path you typed — mono, `~/…`, sticky, the folder menu
+     GROUP  a name the scan found — UI font, one word, folds, its own small menu
+     ROW    a repository
+
+   ONE sticky level, deliberately. A sticky element's containing block is its
+   PARENT, and heads and rows are all flat siblings of `.sec-list` — so a second
+   sticky level does not stack under the first, it overlaps it. Making the group
+   heads sticky too meant pinning them at a hard-coded offset equal to the
+   band's measured height, which is set by its tallest child (a chip, a longer
+   path, a wrapped count) and therefore is not one number. The group head
+   scrolls. */
+/* Twelve above, four below: a label belongs to what is UNDER it. This head sat
+   flush against the row above with a border UNDER it, which reads as the bottom
+   of the run above rather than the top of a folder. No fill and no border — the
+   55%-panel background it carried composited to a 3/255 step on --app-bg, so it
+   was pretending to be a surface. The chevron moves into a gutter to the LEFT
+   of the group's own level, so a found folder and a band-level repository are
+   siblings on one x and the children step in cleanly beneath them.
+   background-image / -repeat / -size / -position stay separate longhands: a
+   `background` shorthand in any state rule below would erase the rail. */
+.repo-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-4);
+  margin-top: var(--sp-3);
+  border: none;
+  border-radius: var(--r-sm);
+  background-color: transparent;
+  background-image: linear-gradient(var(--app-border), var(--app-border));
+  background-repeat: no-repeat;
+  background-size: 1px 50%;
+  background-position: var(--repo-rail) 100%;
+  cursor: pointer;
+  user-select: none;
+}
+/* background-COLOR, never the shorthand, or the hover deletes the rail. */
+.repo-group-head:hover { background-color: var(--app-hover); }
+.repo-group-head:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: -2px;
+}
+.repo-group-head > .codicon:not(.repo-group-chevron) {
+  flex: 0 0 18px;
+  width: 18px;
+  font-size: 14px;
+  color: var(--gs-accent-ink, var(--gs-accent));
+}
+/* The chevron is a CONTROL, not identity — muted, and in the gutter one step to
+   the LEFT of the folder it opens. It used to consume the entire indent step
+   from inside the head's own padding, which left five pixels between a folder's
+   name and its children's names: the whole of "the nesting is subtle". Written
+   as a descendant of the head, not as the bare class, so it beats the generic
+   `.codicon { font-size: 16px }` on specificity rather than on file order. */
+.repo-group-head > .repo-group-chevron {
+  flex: 0 0 14px;
+  width: 14px;
+  font-size: 13px;
+  color: var(--app-muted);
+  transition: transform var(--dur-1) var(--ease);
+}
+/* A name, not a path: the band above it already said where this is. Smaller
+   than a repository's name and a weight step heavier — a label over its
+   contents, which is what a container is. */
+.repo-group-name {
+  flex: 0 1 auto;
+  min-width: 8ch;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The indent, in one place. Left padding only — no wrapper and no narrower
+   container — so every row's right edge stays on the one line the whole page
+   shares, and the action clusters keep lining up. */
+/* --repo-rail is the x of the vertical guide: the centre of a project folder's
+   own 18px icon column, which is also the centre of a band-level row's lead
+   icon — so the guide falls out of the layout rather than being a number
+   somebody chose. */
+:root {
+  --repo-step: 24px;
+  --repo-rail: calc(var(--sp-4) + var(--repo-step) + 9px);
+}
+/* A repository directly in a tracked folder, and one in no tracked folder at
+   all, are both one step in from their own head. `.is-loose` had NO rule at
+   all, so rows under "Opened from elsewhere" sat a full step left of every
+   other row on the page — left of their own head's label. */
+.sec-row.repo-row.is-band,
+.sec-row.repo-row.is-loose { padding-left: calc(var(--sp-4) + var(--repo-step)); }
+/* Keyboard navigation otherwise parks the focused row underneath the pinned
+   band: wireListNav scrolls with block:"nearest", which knows nothing about
+   sticky. 42px is the band's height (8 + 24px menu + 8 + two 1px rules). */
+.sec-row.repo-row { scroll-margin-top: 42px; }
+.sec-row.repo-row.is-group {
+  padding-left: calc(var(--sp-4) + var(--repo-step) * 2);
+  /* The guide that ties a row to the folder above it, drawn down that folder's
+     own icon centre. Hard stops at full --app-border: at a 70% mix it was a 1px
+     line about three percent off the page — the one structural signal this
+     screen has, unpainted. Kept on THIS selector (0,3,0) because
+     `.sec-row:hover { background: … }` is a SHORTHAND at (0,2,0) and would
+     otherwise reset background-image to none on hover. */
+  background-image: linear-gradient(
+    to right,
+    transparent var(--repo-rail),
+    var(--app-border) var(--repo-rail),
+    var(--app-border) calc(var(--repo-rail) + 1px),
+    transparent calc(var(--repo-rail) + 1px)
+  );
+}
+/* A folded folder has no rows under it, so the connector must not dangle. */
+.repo-group-head.is-folded { background-image: none; }
+/* The chevron ROTATES — the same fold the rail's own groups and the Output
+   panel use. It has carried a transform transition since the day it was
+   written and nothing ever animated it. */
+.repo-group-head.is-folded .repo-group-chevron { transform: rotate(-90deg); }
 /* 0.55 on a muted colour computed to 2.69:1 — under the 3:1 floor a UI icon
    needs to be seen at all, on the ONLY controls a folder band has. Quiet is
-   fine; invisible is not. */
-.repo-folder-head .mini-btn { opacity: 0.75; transition: opacity 100ms; }
-.repo-folder-head:hover .mini-btn,
-.repo-folder-head .mini-btn:focus-visible { opacity: 1; }
+   fine; invisible is not.
+   A folder head's menu is a quiet mark on a signpost, not a toolbar button. As
+   a bordered, elevated .mini-btn with an accent glyph the ellipsis was the
+   loudest thing on the head it belonged to — a column of bright boxes down the
+   folder tier — and its 28px height was what made a CONTAINER taller than the
+   repositories inside it. --app-muted at full opacity is ~6:1 on the band,
+   comfortably past the floor the old opacity failed. */
+.repo-folder-head .repo-folder-menu,
+.repo-group-head .repo-folder-menu {
+  height: 24px;
+  padding: 0 6px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--app-muted);
+}
+.repo-folder-head .repo-folder-menu:hover,
+.repo-group-head .repo-folder-menu:hover,
+.repo-folder-head .repo-folder-menu:focus-visible,
+.repo-group-head .repo-folder-menu:focus-visible {
+  background: var(--app-hover);
+  border-color: var(--app-border);
+  color: var(--vscode-foreground);
+}
+.repo-folder-head .repo-folder-menu .glyph,
+.repo-group-head .repo-folder-menu .glyph { color: inherit; font-size: 15px; }
 .repo-folder-head.is-missing .repo-folder-path { color: var(--app-muted); text-decoration: line-through; }
 .repo-folder-empty {
-  padding: var(--sp-3) var(--sp-4) var(--sp-3) calc(var(--sp-4) + 22px);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) calc(var(--sp-4) + var(--repo-step));
   font-size: var(--text-xs);
   color: var(--app-muted);
 }
@@ -2794,11 +3506,22 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
 .sec-row-meta > .repo-lang { width: 92px; flex: 0 0 92px; text-align: right; }
 .sec-row-meta > .repo-stars { width: 62px; flex: 0 0 62px; justify-content: flex-end; }
 .gh-pill.is-current { color: var(--status-add); border-color: var(--status-add); }
-.gh-pill.is-have { color: var(--gs-accent-ink, var(--gs-accent)); border-color: var(--gs-accent); }
 .gh-pill.is-warn {
   color: color-mix(in srgb, var(--status-warn) 90%, var(--vscode-foreground));
   border-color: var(--status-warn);
   background: color-mix(in srgb, var(--status-warn) 20%, var(--app-elevated));
+}
+.gh-pill.is-worktree {
+  color: var(--app-muted);
+  border-style: dashed;
+  border-width: 1px;
+}
+/* The cap note under a scan that stopped early — quiet, factual, bottom. */
+.repo-scan-capped {
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  text-align: center;
 }
 
 /* ── Compare view ──────────────────────────────────────────────────────────── */
@@ -2944,7 +3667,6 @@ button.repo-folder-chip:focus-visible { outline: 1px solid var(--gs-accent); out
  * two renderers that had drifted apart. Both surfaces use `commitList()` and
  * the `.clist-*` rules now — see "A list of commits" further down.
  */
-
 
 /* Changed-files master/detail: file list (left) + native diff (right). */
 .cmp-split { flex: 1 1 auto; min-height: 0; display: flex; }
@@ -3817,7 +4539,11 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
   text-align: center;
   margin-top: 4px;
 }
-.gh-files .file-row { cursor: default; }
+/* NOT the rows: `.gh-files .file-row` is a <button> with a click handler
+   (views/prs.ts builds it and binds openFile), and two class selectors here beat
+   the one in `.file-row`, so every file in a pull request sat under an arrow
+   cursor while being perfectly clickable. */
+.gh-files .file-row { cursor: pointer; }
 .gh-adds { font-family: var(--vscode-editor-font-family); font-size: 11px; color: var(--app-muted); margin-left: auto; }
 
 /* PR detail sub-tabs (Conversation / Commits / Checks / Files). */
@@ -3880,7 +4606,13 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
   background: var(--app-panel);
   border-bottom: 1px solid var(--app-border);
 }
-.gh-comment .gh-body-md { margin: 0; padding: 10px 12px; }
+/* `margin: 0 auto`, not `margin: 0`. A comment body keeps its reading measure
+   — it IS conversation — but it used to be pinned to the left of a card that
+   can be 1600px wide, with the author-and-time header bar running the full width
+   above it. Centring the column costs nothing and stops the card looking
+   broken on a wide window. The shorthand matters: plain `margin: 0` here beat
+   any margin-inline added upstream on .gh-body-md. */
+.gh-comment .gh-body-md { margin: 0 auto; padding: 10px 12px; }
 .gh-review-approved { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .gh-review-changes_requested { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
 
@@ -3891,9 +4623,8 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
   gap: 10px;
   padding: 9px 8px;
   border-radius: 8px;
-  cursor: pointer;
 }
-.gh-check-row:hover { background: var(--app-hover); }
+.gh-check-row.is-link:hover { background: var(--app-hover); }
 /* The state icon on a check, job or step row. Replaced a 9px coloured disc:
    see checkIcon() — the shape carries the meaning, the colour reinforces it. */
 .gh-check-icon {
@@ -4131,19 +4862,27 @@ body.resizing-h .cmp-diffpane .monaco-editor { pointer-events: none; }
 .dropdown-item.is-disabled { color: var(--app-muted); cursor: default; opacity: 0.5; }
 .dropdown-item.is-disabled:hover { background: transparent; }
 .dropdown-label {
-  flex: 1 1 auto;
+  /* Not `1 1 auto`: a growing label pushed the sub against its cap even in a
+     menu with room to spare. The label takes what it needs, keeps a floor so a
+     long sub can never reduce it to an ellipsis, and the ROW is what grows. */
+  flex: 0 1 auto;
+  min-width: 12ch;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .dropdown-sub {
   flex: 0 1 auto;
+  min-width: 0;
   font-size: 10.5px;
   color: var(--app-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 46%;
+  /* Was `max-width: 46%` — a percentage OF the menu, whose width is decided by
+     this very row. So the sub capped itself: "Choose where new clones land"
+     came out as "Choose where new clones l…" inside a menu that had 90px of
+     unused space. The menu's own max-width is the real limit. */
 }
 .dropdown-item .glyph:last-child { margin-left: auto; }
 
@@ -4365,7 +5104,7 @@ gitstudio-graph {
    child (the details split, or the empty-state placeholder) fills + centers. */
 /* Fill the dock body (a flex row) like .term-surface does — otherwise it shrinks
    to content width and the commit details ignore the available space. */
-.dock-details-surface { flex: 1 1 auto; width: 100%; min-width: 0; height: 100%; min-height: 0; display: flex; }
+.dock-details-surface { flex: 1 1 auto; width: 100%; min-width: 0; height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .dock-details-surface > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
 
 /* Docked commit details = a wide, short split: the metadata/file panel on the
@@ -4381,59 +5120,35 @@ gitstudio-graph {
 /* Commit details fill the dock by default (no diff pane). The metadata/file
    panel scrolls ITSELF (<gitstudio-commit-details> has :host{overflow:hidden} +
    an internal .scroll) — so NO overflow here, or you get a double scrollbar.
-   Opening a file (.diff-open) docks the panel to a fixed left column and reveals
-   the diff filling the rest. */
+   The file diff no longer lives here at all — it opens in the bottom dock. */
 .details-split .details-panel {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
-/* ── In-view commit diff ─────────────────────────────────────────────────────
-   Opening a file docks the commit panel to a fixed-width left rail and the
-   Monaco diff fills the rest of the (widened) details column — the whole
-   commit lives in ONE region. The graph narrows but never below its column
-   breakpoint's floor. */
-.graph-view.diff-open .graph-host-full { flex: 0 1 34%; min-width: 300px; }
-.graph-view.diff-open .graph-details { flex: 1 1 auto; }
-.graph-view.diff-open .details-split .details-panel {
-  flex: 0 0 340px;
-  border-right: 1px solid var(--app-border);
-}
-.details-diff {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--app-bg);
-}
-.details-diff-head {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 6px 0 12px;
-  border-bottom: 1px solid var(--app-border);
-  background: var(--app-panel);
-}
-.details-diff-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl; /* long paths keep their FILENAME visible, not their prefix */
-  text-align: left;
-  font-family: var(--vscode-editor-font-family);
-  font-size: 12px;
-  color: var(--vscode-foreground);
-  user-select: text;
-}
-/* Same hosting contract as the dock's old diff surface: the panel's wrap
-   flexes to fill (Monaco needs a real box, not absolute hacks). */
-.details-diff-surface { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
-.details-diff-surface > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+/* ── The commit diff, in the bottom dock ─────────────────────────────────────
+   A file diff opens in the dock beside Terminal and Output, at the full width
+   of the window.
+
+   What was here before pinned the graph to `flex: 0 1 34%` and handed the rest
+   to the details column. Three separate defects came out of those two lines,
+   all of them measured: the graph landed at 471px, under the 620px container
+   query inside <gitstudio-graph>, so its column header and four of its columns
+   disappeared; `.graph-view.diff-open .graph-details { flex: 1 1 auto }` (three
+   classes) outranked the `--graph-details-w` rule (two), so the divider between
+   graph and details stayed on screen, kept its col-resize cursor, and moved
+   nothing at all; and the diff itself got 571px, below DiffPanel's 1000px
+   split/inline threshold, so every diff quietly opened Inline no matter what
+   the user had chosen. Closing the details panel with a diff open then left
+   913px of empty background.
+
+   Nothing replaces them. With the diff in the dock the graph and the details
+   column keep one sizing rule in every state. */
+/* No header of our own: DiffPanel draws one with the path and the Inline/Split
+   toggle, and a second one printed the filename twice, a line above itself.
+   The file's name is on the TAB. Monaco needs a real box, not absolute hacks. */
+.dock-diff-surface { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.dock-diff-surface > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
 
 .diff-empty {
   display: flex;
@@ -4513,7 +5228,7 @@ gitstudio-graph {
 
 /* ── issues ── */
 /* ── Issues: header tools, label/assignee chips, composer ───────────────────── */
-.gh-head-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.gh-head-tools { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
 /* Header action buttons (primary CTAs in a section header) are slim — the same
    28px height as the secondary mini-btn beside them, so a header never mixes a
    gigantic 40px .btn with a slim button. The .btn-primary fill/sheen is kept. */
@@ -4600,7 +5315,7 @@ gitstudio-graph {
 .gh-assign-label { font-size: 11px; color: var(--app-muted); }
 
 /* Comment head meta + empty-body placeholder. */
-.gh-comment-when { font-weight: 400; color: var(--app-muted); }
+.gh-comment-when { font-weight: 400; color: var(--app-muted); white-space: nowrap; }
 .gh-empty-body { color: var(--app-muted); font-style: italic; }
 
 /* Comment composer at the bottom of the issue detail. */
@@ -4662,6 +5377,9 @@ gitstudio-graph {
 .gh-state-open { color: var(--status-add); background: color-mix(in srgb, var(--status-add) 16%, transparent); }
 .gh-state-closed { color: var(--status-del); background: color-mix(in srgb, var(--status-del) 16%, transparent); }
 .gh-state-merged { color: var(--gs-accent-ink, var(--gs-accent)); background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
+/* A completed issue is an accomplishment, painted the merged-purple family —
+   never the red of a closed-unmerged PR. Its own kind so "closed" stays red. */
+.gh-state-completed { color: var(--gs-accent-ink, var(--gs-accent)); background: color-mix(in srgb, var(--gs-accent) 16%, transparent); }
 .gh-state-not-planned { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 16%, transparent); }
 .gh-state-draft { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 20%, transparent); }
 /* Semantic variants so Releases/Gists pills stop collapsing into gray "draft". */
@@ -4672,10 +5390,22 @@ gitstudio-graph {
 /* On the light page a 15-20% tint of a saturated ink lands close enough to the
    ink itself that the word inside stops being legible. Light gets a paler tint
    and a darker word, so every badge clears AA on both grounds. */
-body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
+/* :not(.gh-check-dot) is load-bearing. This selector is (0,2,1) and outranks
+   `.gh-check-dot.gh-state-open` below, so the light theme was repainting the
+   board's STATUS DOTS with an 11%-into-white tint — a green dot at 9.4:1 in
+   dark became a ghost disc at 1.03:1 in light. The dots want the ink, not the
+   wash; only the capsules want the wash. */
+body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged, .gh-state-completed,
   .gh-state-prerelease, .gh-state-latest, .gh-state-public, .gh-state-not-planned,
-  .gh-state-private, .gh-state-draft) {
+  .gh-state-private, .gh-state-draft):not(.gh-check-dot) {
   background: color-mix(in srgb, currentColor 11%, var(--app-elevated));
+  /* That tint is mixed into --app-elevated (white) while these pills sit on
+     --app-bg, so the fill lands LIGHTER than the page and the capsule has no
+     shape at all: 1.02–1.03:1, against 1.24–1.36:1 in dark. Darkening the
+     tint would buy the edge and spend the word — 18% measured 3.74:1 on
+     "Open", under AA at 11px. A ring is painted rather than laid out, so it
+     adds the edge without moving a single pill. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 38%, transparent);
 }
 
 /* Check rows that link out get the affordance only when clickable. */
@@ -4748,21 +5478,73 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
      to its left — switching Actions from Runs to Workflows dropped five facet
      pills and the segment jumped ~730px; picking an Issues author widened one
      pill and shunted the rest. The slack now lives in the facet region. */
+  /* STRUCTURAL, not opt-in: the tools row always owns the header's second
+     line and the refresh cluster always rides the title line at the right.
+     This used to depend on whether the tools happened to fit beside the title
+     — which changed with the window width, with the count pill appearing
+     after the first fetch, and with which tab's facets were showing — and
+     every time they did not fit, the refresh button (a LATER sibling) fell to
+     a third line alone at the far left. A pre-release audit found it stranded
+     on the PR list at every width from 1281 up, on Issues Closed/All at
+     1281–1520, and on every list for the first frames of every refresh. One
+     rule, one geometry: 87px, two lines, everywhere. */
+  /* LEFT, like the facet rows below. The scope segment and the filter box say
+     WHICH things you are looking at, so they belong beside the word that names
+     them — pushed right they sat as far from the title as the header allows,
+     huddled against the action buttons, and the eye had to cross the whole
+     header to answer "what am I looking at?". `.gh-head-verbs` carries its own
+     `margin-left: auto`, so the right-hand cluster stays pinned right; every
+     view that has verbs now wraps them in one. */
   flex: 1 1 auto;
-  margin-left: var(--sp-4);
-  margin-right: 12px;
+  margin-left: 0;
   flex-wrap: wrap;
   row-gap: 8px;
-  justify-content: flex-end;
+  justify-content: flex-start;
   min-width: 0;
 }
+/* …for the rows that carry FACETS. A tools row that is one or two verbs
+   (Gists: New gist; Branches: Fetch + New branch; Releases: a segment and a
+   button) stays on the title line beside the refresh cluster, as it always
+   did — round two of the audit found those stranded at the far left of an
+   empty 87px second line when the rule was applied to everything. */
+.gh-head-tools:has(> .gh-facet-slot),
+.gh-head-tools:has(> .gh-facets),
+.gh-head-tools.gh-tools-own-line {
+  flex: 1 1 100%;
+  order: 2;
+  margin-left: 0;
+  justify-content: flex-start;
+}
+.gh-head:has(> .gh-head-tools > .gh-facet-slot) > .gh-acct,
+.gh-head:has(> .gh-head-tools > .gh-facets) > .gh-acct,
+.gh-head:has(> .gh-head-tools.gh-tools-own-line) > .gh-acct { order: 1; margin-left: auto; }
+/* When the facets cannot share a line with the segment and the verbs, the
+   SLOT takes the second tools line whole (segment left, verbs right on the
+   first) — set by wireToolsWrap() from measured widths, because CSS cannot
+   know whether a row wrapped. Without this the slot became a tall narrow
+   column and the segment floated vertically centred beside it. */
+.gh-head-tools.is-wrapped > .gh-facet-slot { flex: 1 1 100%; order: 3; }
 /* The facet region absorbs the row's slack, so pills grow and disappear into
-   free space instead of pushing their neighbours. */
+   free space instead of pushing their neighbours. A ZERO basis, not auto: with
+   an auto basis the slot was a 722px atom that wrapped whole onto its own line
+   below the segment (a three-row toolbar at 13-inch widths), while its inner
+   flex-wrap never got the chance to flow the pills beside the segment. */
 .gh-head-tools > .gh-facets,
 .gh-head-tools > .gh-facet-slot {
   flex: 1 1 auto;
   justify-content: flex-start;
   min-width: 0;
+}
+/* Sort + the primary verb stay pinned to the RIGHT of the tools row together,
+   whatever wraps. With a left-justified tools row they fell to the far left of
+   whichever line they landed on. */
+.gh-head-verbs { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
+/* Facet pills carry a label already; their leading glyph is decoration that
+   costs ~22px each — seven of them are the difference between the PR list's
+   toolbar fitting one line at 1600 and wrapping to two. */
+@media (max-width: 1700px) {
+  .gh-head-tools .gh-facet-btn > .glyph:first-child,
+  .gh-head-tools .gh-sort-btn > .glyph:first-child { display: none; }
 }
 /* Present even when empty — an empty slot is the row's spring. It also keeps
    the row's HEIGHT, because an empty flex box is 0px tall: on Actions/Workflows
@@ -4773,30 +5555,18 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
 .gh-facet-slot {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  /* 6px, and 9px of pill padding: the PR list's seven pills plus segment and
+     verbs came to 1351px against a 1344px row at 1600 — seven pixels that
+     wrapped Origin alone onto a second line and floated the segment between
+     the two. This buys ~40px of slack so a three-digit count cannot undo it. */
+  gap: 6px;
   min-width: 0;
   min-height: 28px;
 }
-/* Opted into by a view whose tools row gains and loses controls as you move
-   between its own tabs. Actions is the case: Runs carries twelve controls and
-   Workflows four, so the row fitted beside the title on one tab and wrapped
-   below it on the other, and the Runs/Workflows segment jumped 297px between
-   two tabs of the same screen. Claiming the line makes the geometry a constant.
-   Views whose tools row never changes shape are left alone. */
-.gh-head-tools.gh-tools-own-line {
-  flex: 1 1 100%;
-  justify-content: flex-start;
-  margin-left: 0;
-  /* Ordered AFTER the refresh cluster, which is a later sibling in the DOM.
-     Without this the tools row claimed line 2 and stranded Refresh alone on a
-     line 3 of its own, at the far left — the one view in the app whose Refresh
-     was not where every other view's Refresh is. */
-  order: 2;
-}
-.gh-head:has(> .gh-head-tools.gh-tools-own-line) > .gh-acct {
-  order: 1;
-  margin-left: auto;
-}
+.gh-head-tools .gh-facet-btn { padding-left: 8px; padding-right: 8px; }
+/* `.gh-tools-own-line` used to be an opt-in for exactly this layout (Actions
+   took it); it is the default now, so the class is inert and kept only so an
+   old caller cannot break. */
 .gh-head-titlewrap { min-width: 0; display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; row-gap: 8px; }
 /* The search field must keep a floor and its own line when the row is tight —
    below ~1200px it used to collide with the first facet pill, losing its right
@@ -4823,8 +5593,6 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
      1280x820 default — with a 125px header eating 15% of the window before a
      single row of content. Same shape, 89px. */
   .gh-head-titlewrap { flex: 1 1 auto; order: 0; }
-  .gh-head > .gh-acct { order: 1; margin-left: auto; }
-  .gh-head-tools { flex: 1 1 100%; justify-content: flex-start; margin-left: 0; order: 2; }
 }
 /* The ≤1280px rule below gives .gh-head-titlewrap and .gh-head-tools a basis of
    100% each, which only means "take your own line" if this container WRAPS.
@@ -4833,7 +5601,7 @@ body.vscode-light :is(.gh-state-open, .gh-state-closed, .gh-state-merged,
    (Issues: 53px at 1600, 87px at 1281, 123px at 1280). row-gap has been sitting
    here unused for the same reason. align-items goes to flex-start so the title
    stops floating in the vertical middle of a four-row toolbar. */
-.gh-head { align-items: flex-start; row-gap: 8px; flex-wrap: wrap; }
+.gh-head { align-items: center; row-gap: 8px; column-gap: 12px; flex-wrap: wrap; }
 
 /* Run row: status dot inline with an ellipsised title. */
 .gh-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -5227,7 +5995,12 @@ select.gh-dispatch-input { padding-right: 6px; height: 30px; }
      within a comfortable card width; many columns then scroll past min-width. */
   flex: 1 1 0;
   min-width: 264px;
-  max-width: 360px;
+  /* The hard 360px cap defeated this rule's own stated intent above ~1550px:
+     the columns stopped growing and left 1014px of empty board at 2560. A
+     kanban column is a data surface — a state dot, a two-line title, a meta
+     line — not prose, so it earns the width. Nothing at or below 1440px moves,
+     because the columns are already narrower than the clamp floor there. */
+  max-width: clamp(360px, 30vw, 720px);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -5854,12 +6627,55 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .outputs-bar[hidden] { display: none; }
 .outputs-count { font-size: var(--text-xs); color: var(--app-muted); display: inline-flex; gap: 4px; }
 .outputs-count-f { color: var(--gs-danger, #ff8585); font-weight: 600; }
-.outputs-failbtn.is-on {
+/* Status-bar scale, not app scale.
+   These sit in a 23px dock footer beside two quiet tab buttons. Built from
+   `.mini-btn` they were 28px bordered pills with a sheen: 5px proud of the bar,
+   bleeding over the hairline above and — with the dock collapsed — 3px past the
+   bottom of the window, and by some distance the loudest thing on screen. This
+   is `.dock-icon-btn` with a label on it. */
+.outputs-act-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--app-muted);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.outputs-act-btn:hover {
+  background: var(--app-hover);
+  color: var(--vscode-foreground);
+}
+.outputs-act-btn:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: 1px;
+}
+.outputs-act-btn .codicon { font-size: 12px; color: inherit; }
+.outputs-act-btn[hidden] { display: none; }
+/* Driven off aria-pressed, so the visual state and the announced state cannot
+   drift apart — they did, as `.is-on` and the attribute were set separately.
+   `color: inherit` on the glyph matters: `.mini-btn .glyph` used to pin it to
+   accent purple, so the pressed "failed" state was a purple icon in a red
+   pill. */
+.outputs-failbtn[aria-pressed="true"] {
   color: var(--gs-danger, #ff8585);
-  border-color: color-mix(in srgb, var(--gs-danger, #ff8585) 42%, transparent);
-  background: color-mix(in srgb, var(--gs-danger, #ff8585) 12%, var(--app-panel, transparent));
+  background: color-mix(in srgb, var(--gs-danger, #ff8585) 16%, transparent);
 }
 .outputs-panel {
+  /* A log you cannot copy is a log you have to retype. The body-level
+     `user-select: none` (see CONTENT IS SELECTABLE above) covered this whole
+     panel, so dragging across a failed command and its stderr selected
+     nothing at all and ⌘C had nothing to copy. One declaration here covers
+     every row, line and <pre> inside. */
+  user-select: text;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
@@ -6292,6 +7108,67 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .det-person.is-approved > .glyph { color: var(--status-add); font-size: 12px; }
 .det-person.is-blocking > .glyph { color: var(--status-del); font-size: 12px; }
 
+/* ── Issue rail: Development / Participants / Lock ─────────────────────────
+   A linked pull request is a BUTTON — it goes somewhere — and its icon carries
+   the state in the colours the rest of the app already uses for PRs. */
+.det-dev-pr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.det-dev-pr:hover { background: var(--app-hover); }
+.det-dev-pr .codicon.is-open { color: var(--status-add); }
+.det-dev-pr .codicon.is-merged { color: var(--gs-accent-ink, var(--gs-accent)); }
+.det-dev-pr .codicon.is-closed { color: var(--gs-danger, #d1494e); }
+.det-dev-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Once the rail is pinned, anything that used to widen it must truncate. */
+.det-rail .gh-label-chip, .det-rail .gh-pill, .det-rail .gh-branch-chip { max-width: 100%; }
+.det-rail .gh-label-chip { overflow: hidden; text-overflow: ellipsis; }
+.det-rail .gh-meta-flow { display: flex; flex-wrap: wrap; }
+.det-lock-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+
+/* The milestone on a LIST row: same right-aligned meta discipline as the other
+   columns, quiet, and it truncates before the counts beside it do. */
+.sec-milestone {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  overflow: hidden;
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
+  white-space: nowrap;
+}
+.sec-milestone > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sec-milestone .codicon { font-size: 12px; }
+
+/* The sort button says the ORDER, so it changes width with its label; a fixed
+   flex-basis would clip "Recently updated" to make room for nothing. */
+.gh-sort-btn { flex: 0 0 auto; white-space: nowrap; }
+
 .det-milestone-chip { align-self: flex-start; }
 .det-prop-when { font-size: var(--text-xs); color: var(--app-muted); align-self: center; }
 .gh-fork-chip {
@@ -6315,6 +7192,29 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 }
 .explore-title { font-size: 22px; font-weight: 650; margin: 0; color: var(--vscode-foreground); }
 .explore-sub { font-size: var(--text-sm); color: var(--app-muted); margin-top: -6px; }
+/* ── Search: the scope toggle and the local world ──────────────────────────
+   The toggle sits beside the box because it modifies the box: same query,
+   other world. */
+.explore-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.explore-field-row .explore-search { flex: 1 1 auto; }
+.explore-scope { flex: 0 0 auto; }
+
+.explore-local-band {
+  padding: var(--sp-3) var(--sp-3) var(--sp-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--app-muted);
+}
+.explore-local-manage {
+  align-self: flex-start;
+  margin: var(--sp-3);
+}
+
 .explore-search { max-width: 720px; width: 100%; }
 .explore-search .gh-search-input { height: 38px; font-size: var(--text-base); }
 .explore-tools { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
@@ -6470,7 +7370,26 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 /* ── Explore entity pages: repository + account ────────────────────────────── */
 /* The primary button's shadow bled downward past the toolbar's hairline into
    the content area. Keep the lift, contain the bleed. */
-.det-split { display: inline-flex; align-items: stretch; padding: 0; overflow: hidden; box-shadow: none; }
+/* A GROUP of two real buttons sharing an edge — see the note in exploreRepo.ts
+   about why this stopped being one button wrapping two spans. */
+/* ONE control, on the `.topbar-sync` model: the WRAPPER owns the face — the
+   radius, the clip and the shadow — and the two halves are faceless.
+   
+   It used to be the other way round, and it lost every fight in the cascade:
+   `.det-tb-actions .btn` (two class selectors, ~3000 lines later) re-applied a
+   full 6px radius and 12px padding to BOTH halves, and `.det-topbar
+   .btn-primary` re-applied a drop shadow to each after `.det-split > .btn`
+   had tried to remove it. The halves were flush to the pixel and still read as
+   two separate purple blocks, because each was individually rounded and
+   individually shadowed. Clipping at the wrapper means no descendant rule can
+   re-round a half again. */
+.det-split {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
 .det-split-main {
   display: inline-flex;
   align-items: center;
@@ -6481,11 +7400,19 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .det-split-more {
   display: inline-flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 9px;
   cursor: pointer;
   border-left: 1px solid color-mix(in srgb, #000 22%, transparent);
 }
-.det-split-more:hover { background: color-mix(in srgb, #000 14%, transparent); }
+/* Match every other caret in the app (.openin-more, .sync-caret) — this one
+   was the default 16px inside a 28px half. */
+.det-split-more .codicon { font-size: 14px; }
+/* The hovered or focused half rises so its focus ring draws whole. */
+.det-split > .btn:hover, .det-split > .btn:focus-visible { z-index: 1; }
+/* TINT, not replace. `background:` is a shorthand, so it reset background-image
+   and deleted the primary button's purple gradient outright — hovering the
+   caret turned it into a flat dark grey rectangle beside a purple one. */
+.det-split-more:hover { background-color: color-mix(in srgb, #000 14%, transparent); }
 
 .explore-crumbs {
   display: flex;
@@ -6558,7 +7485,17 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
   font-weight: 600;
   color: var(--app-muted);
 }
-.explore-readme .gh-body-md { padding: 20px 24px 26px; }
+/* A README FILLS its card.
+   `.gh-body-md` caps every prose surface at --measure-read (820px) — the right
+   call for a paragraph of conversation, the wrong one for a document. The card
+   is 1040px at a 1600px window and 1600px at 2560, and the body sat flush LEFT
+   inside it: the card's own header rule and every h1/h2 underline ran the full
+   width while the text stopped 219px (or 779px) short, so the page read as
+   badly aligned rather than as a narrow column. A README carries tables, code
+   blocks and badge rows that a reading measure actively breaks — github.com
+   renders it full width for the same reason. */
+.explore-readme .gh-body-md { padding: 20px 24px 26px; max-width: none; }
+.peek-readme .gh-body-md { max-width: none; }
 
 .explore-file {
   display: flex;
@@ -6832,12 +7769,14 @@ body.resizing-v .dock-resizer-grip { background: var(--gs-accent); height: 2px; 
 .gh-row-lead .codicon { font-size: 17px; }
 .gh-lead-icon { display: inline-flex; }
 .gh-lead-open, .gh-lead-open-pr { color: var(--status-add); }
-/* DONE, not broken. This was --status-del: the same token as a deleted line
-   and a failed check, so a completed issue and a broken build wore the same
-   red — while a merged PR, which is the same "done" idea, wore the accent.
-   GitHub paints a completed issue purple for exactly this reason. */
-.gh-lead-closed { color: var(--gs-accent-ink, var(--gs-accent)); }
+/* DONE, not broken. A completed issue wears the merged-purple "accomplishment"
+   family — never --status-del, the token of a deleted line and a failed check.
+   This rides its own `completed` kind (not `closed`) so a closed-UNMERGED PR,
+   which genuinely IS a rejection, keeps its red on both the lead and the pill.
+   GitHub draws exactly this split: purple completed issue, red closed PR. */
+.gh-lead-completed { color: var(--gs-accent-ink, var(--gs-accent)); }
 .gh-lead-merged { color: var(--gs-accent-ink, var(--gs-accent)); }
+.gh-lead-closed { color: var(--status-del); }
 .gh-lead-draft { color: var(--app-muted); }
 /* Closed as not-planned: gray, like GitHub — "we're not doing this" reads
    differently from "done", and the color is the whole signal. */
@@ -6939,7 +7878,10 @@ body.vscode-light .gh-label-chip {
 .gh-state-pill.gh-state-draft { color: var(--app-muted); background: color-mix(in srgb, var(--app-muted) 16%, transparent); }
 
 /* ── Header: live count pill + tighter layout ──────────────────────────────── */
-.gh-head { align-items: flex-start; }
+/* Centred, not flex-start: this later rule silently overrode the header's
+   own alignment and left a 20px title block pinned to the top of a 28px line —
+   4px above the refresh button beside it on Repositories. */
+.gh-head { align-items: center; }
 .gh-head-titlewrap { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .gh-head-count {
   display: inline-flex;
@@ -7048,9 +7990,12 @@ body.vscode-light .gh-label-chip {
 .list-error .list-empty-badge .codicon { color: var(--status-del); }
 
 /* ── Code view: balanced reading column + richer file rows ──────────────────── */
+/* The cards fill the column (`.code-scroll` already caps it at --measure-wide);
+   a cap of their own left a 10px sliver each side that the header, aligned to
+   the column, could not match. */
 .code-filecard, .code-readme {
   width: 100%;
-  max-width: 1080px;
+  max-width: none;
   margin-left: auto;
   margin-right: auto;
 }
@@ -7360,7 +8305,19 @@ body.vscode-light .gh-label-chip {
 .mcp-snippet-code { margin: 0; padding: 11px 13px; font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11.5px; line-height: 1.5; color: var(--vscode-foreground); background: var(--app-bg); white-space: pre; overflow-x: auto; }
 
 /* ── Assistant view ── */
-.assistant-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* The chat column. A transcript still needs a measure — an answer run across
+   2344px is unreadable — but 820px left most of a large window empty, and the
+   Assistant does not only produce paragraphs: it prints code, diffs and tool
+   output, which want the room. Wider, still bounded. */
+.assistant-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; --assistant-measure: 1100px; }
+.assistant-title-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The conversation's subject, after the product name. */
+.assistant-chat-title {
+  font-size: 13px; color: var(--app-muted); max-width: 380px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.assistant-chat-title::before { content: "›"; margin-right: 8px; opacity: 0.6; }
+.assistant-chat-title[hidden] { display: none; }
 .assistant-head {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
   padding: 12px 18px; border-bottom: 1px solid var(--app-border);
@@ -7397,7 +8354,27 @@ body.vscode-light .gh-label-chip {
 .assistant-chip-label { font-weight: 550; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-chip-caret .codicon { font-size: 11px; color: var(--app-muted); }
 
-.assistant-transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.assistant-body { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* A centred reading column. An answer used to run the full width of the pane —
+   a 200-character line in a wide window — with the composer full-width under
+   it; both sit in the same measure now. */
+.assistant-transcript {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding: 22px max(18px, calc((100% - var(--assistant-measure)) / 2)) 28px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+/* "Jump to latest": floats over the tail when new content lands below a reader
+   who scrolled up (the transcript will not move them — see scrollDown). */
+.assistant-jump {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 2;
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px 0 10px;
+  border-radius: 999px; border: 1px solid var(--app-border); background: var(--app-elevated);
+  box-shadow: var(--shadow-sm); color: var(--vscode-foreground);
+  font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.assistant-jump[hidden] { display: none; }
+.assistant-jump:hover { background: var(--app-hover); border-color: var(--accent-line); }
+.assistant-jump .codicon { font-size: 13px; color: var(--gs-accent-ink, var(--gs-accent)); }
 .assistant-bubble {
   align-self: flex-end; max-width: min(680px, 86%);
   padding: 9px 13px; border-radius: 13px 13px 4px 13px;
@@ -7405,11 +8382,35 @@ body.vscode-light .gh-label-chip {
   color: var(--vscode-foreground); font-size: 13px; line-height: 1.5; white-space: pre-wrap;
 }
 .assistant-turn { align-self: flex-start; max-width: min(760px, 94%); display: flex; flex-direction: column; gap: 8px; }
+/* In the Assistant proper every answer wears the sparkle — the reader can tell
+   a turn from a bubble at a glance down a long transcript. (The compact dock
+   chat has no room for it.) The turn takes the column's whole measure. */
+.assistant-transcript > .assistant-turn { position: relative; max-width: 100%; padding-left: 36px; }
+.assistant-transcript > .assistant-turn::before {
+  content: "\ec10"; font-family: "codicon"; font-size: 13px; line-height: 24px; text-align: center;
+  position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
+  color: var(--gs-accent-ink, var(--gs-accent));
+  background: color-mix(in srgb, var(--gs-accent) 14%, var(--app-elevated));
+  border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, var(--app-border));
+}
 /* AI chat prose rides THE prose system (chatRender adds .gh-body-md to every
    .assistant-msg container), scaled down to bubble size. The old standalone
    ruleset here collapsed h3–h6 to 1em and skipped tables/links/details — the
    same markdown rendered differently in chat than in a PR body. */
-.assistant-msg { font-size: 13.5px; }
+.assistant-msg { font-size: 13.5px; position: relative; }
+/* Room for the copy button, wherever an answer has one (the dock chat too). */
+.assistant-msg:has(> .assistant-copy) { padding-right: 32px; }
+/* Copy, on hover, in the answer's top-right corner. */
+.assistant-copy {
+  position: absolute; top: 0; right: 0; width: 26px; height: 26px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--app-border); background: var(--app-elevated); color: var(--app-muted);
+  cursor: pointer; opacity: 0;
+  transition: opacity var(--dur-1) var(--ease), color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.assistant-msg:hover > .assistant-copy, .assistant-copy:focus-visible { opacity: 1; }
+.assistant-copy:hover { color: var(--vscode-foreground); background: var(--app-hover); }
+.assistant-copy .codicon { font-size: 13px; }
 .assistant-msg h1 { font-size: 1.35em; }
 .assistant-msg h2 { font-size: 1.2em; }
 .assistant-msg pre code { font-size: 12px; }
@@ -7473,10 +8474,31 @@ body.vscode-light .gh-label-chip {
 .assistant-tool.is-denied .assistant-tool-status .codicon { color: var(--app-muted); }
 .assistant-tool-out { margin: 0; padding: 9px 12px; border-top: 1px solid var(--app-border); font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11px; line-height: 1.5; color: var(--app-muted); white-space: pre-wrap; max-height: 240px; overflow: auto; background: var(--app-bg); }
 
+.assistant-error-text { flex: 1 1 auto; min-width: 0; }
+.assistant-retry { flex: 0 0 auto; height: 24px; padding: 0 9px; font-size: 11.5px; align-self: center; }
 .assistant-error { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--gs-danger, #e15a5a); background: color-mix(in srgb, var(--gs-danger, #e15a5a) 10%, transparent); border: 1px solid color-mix(in srgb, var(--gs-danger, #e15a5a) 28%, transparent); border-radius: 9px; padding: 9px 11px; }
 .assistant-error .codicon { margin-top: 1px; }
 
-.assistant-empty { margin: auto; max-width: 420px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 9px; color: var(--app-muted); }
+.assistant-empty { margin: auto; max-width: 640px; width: 100%; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 9px; color: var(--app-muted); }
+/* The quick actions as cards: what each does, not just its name. */
+.assistant-qa-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; margin-top: 14px; text-align: left; }
+.assistant-qa-card {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 11px; row-gap: 3px; align-items: start;
+  padding: 12px 14px; border: 1px solid var(--app-border); border-radius: 12px;
+  background: var(--app-elevated); box-shadow: var(--sheen); color: var(--vscode-foreground);
+  font-family: inherit; cursor: pointer; text-align: left;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.assistant-qa-card:hover:not(:disabled) { background: var(--app-hover); border-color: color-mix(in srgb, var(--gs-accent) 45%, var(--app-border)); }
+.assistant-qa-card:active:not(:disabled) { transform: translateY(0.5px); }
+.assistant-qa-card:disabled { opacity: 0.55; cursor: default; }
+.assistant-qa-card > .glyph { grid-row: span 2; margin-top: 1px; }
+.assistant-qa-card > .glyph .codicon { font-size: 16px; color: var(--gs-accent-ink, var(--gs-accent)); }
+.assistant-qa-title { font-size: 13px; font-weight: 620; }
+.assistant-qa-desc { font-size: 12px; line-height: 1.4; color: var(--app-muted); }
+@media (max-width: 900px) { .assistant-qa-grid { grid-template-columns: minmax(0, 1fr); } }
+/* While the cards are up the composer's chips would be the same six again. */
+.assistant-view.is-empty .assistant-quick { display: none; }
 .assistant-empty > .glyph .codicon, .assistant-empty > .glyph { font-size: 30px; color: var(--gs-accent-ink, var(--gs-accent)); }
 .assistant-empty-title { font-size: 15px; font-weight: 680; color: var(--vscode-foreground); }
 .assistant-empty-sub { font-size: 12.5px; line-height: 1.5; }
@@ -7486,10 +8508,19 @@ body.vscode-light .gh-label-chip {
   /* The dock overlays the bottom of the view — see `.rb-foot` above. Without
      this the composer, its Send button and every quick action sat behind an
      open terminal, which is the one control the Assistant cannot do without. */
-  padding: 12px 18px calc(14px + var(--dock-reserve, 0px));
+  padding: 12px max(18px, calc((100% - var(--assistant-measure)) / 2)) calc(10px + var(--dock-reserve, 0px));
   background: var(--app-panel);
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: 9px;
 }
+/* Under the box: the repository the agent works in, and how to send. */
+/* 14px = the row's 1px border + the textarea's 13px padding, so "gitstudio ·
+   main" starts at the same x as the placeholder directly above it. */
+.assistant-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px 0 14px; min-height: 16px; font-size: var(--text-xs); color: var(--app-muted); }
+.assistant-context { display: inline-flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.assistant-context .codicon { font-size: 13px; }
+.assistant-context-repo { font-weight: 600; color: var(--vscode-foreground); }
+.assistant-context-branch { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); }
+.assistant-hint { flex: 0 0 auto; }
 .assistant-quick { display: flex; flex-wrap: wrap; gap: 7px; }
 .assistant-chip {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
@@ -7499,24 +8530,126 @@ body.vscode-light .gh-label-chip {
 }
 .assistant-chip:hover { background: var(--app-hover); border-color: color-mix(in srgb, var(--gs-accent) 50%, var(--app-border)); }
 .assistant-chip .codicon { font-size: 13px; color: var(--gs-accent-ink, var(--gs-accent)); }
-.assistant-input-row { display: flex; align-items: flex-end; gap: 9px; }
+/* THE COMPOSER IS ONE CONTROL. The border, the radius and the focus ring used
+   to belong to the textarea alone, so the ring the app draws when you focus to
+   type literally excluded the Send button sitting 9px outside it. They move up
+   to the row; the textarea below is bare; the action sits in the field's own
+   bottom-right corner. The same shape as `.gh-search` and `.md-editor` — a
+   bordered wrapper holding its own controls — and it DELETES a box rather than
+   adding one. NO `overflow: hidden` here (unlike `.md-editor`): it would clip
+   the send button's focus ring, which draws outside the disc. */
+.assistant-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-lg);
+  background: var(--app-elevated);
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+/* Focus belongs to the FIELD, for the reason already written on
+   `.md-editor:focus-within` — and now the lit region contains the action. */
+.assistant-input-row:focus-within {
+  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 20%, transparent);
+}
+/* Gated (no model connected): the field dissolves into the panel it sits on, so
+   it stops looking live in front of the "Connect a model" prompt. Both
+   consumers set `input.disabled` when gated, so `:has()` reaches it with no new
+   class. */
+.assistant-input-row:has(.assistant-input:disabled) {
+  background: var(--app-panel);
+  border-color: color-mix(in srgb, var(--app-border) 70%, transparent);
+}
 .assistant-input {
-  flex: 1 1 auto; resize: none; min-height: 40px; max-height: 180px;
-  padding: 10px 13px; border-radius: 11px; border: 1px solid var(--app-border);
-  background: var(--app-elevated); color: var(--vscode-foreground);
-  font-family: inherit; font-size: 13px; line-height: 1.5; outline: none;
+  flex: 1 1 auto;
+  resize: none;
+  min-height: 40px;
+  max-height: 180px;
+  padding: 10px 10px 10px 13px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: 1.5;
+  outline: none;
 }
-.assistant-input:focus { border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 20%, transparent); }
-.assistant-send { flex: 0 0 auto; height: 40px; width: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-.assistant-send.is-cancel { background: var(--status-del); }
-/* Stop the shared .btn-primary:hover (purple) from winning on the cancel button —
-   a stop/cancel action must stay danger-red on hover, not flip to accent. */
+/* Every other input in this app puts its placeholder on the palette; this one
+   was left to Chromium's UA grey, off-hue against everything beside it. */
+.assistant-input::placeholder { color: var(--app-muted); }
+/* THE ACTION: a 30px DISC in the field's corner — the shape the composer's own
+   chips already use. Three states, one shape, one position: only the VALUE
+   changes, so nothing moves when the state flips. 30 + 5 + 5 = 40 = the field's
+   minimum height, so it is exactly centred when the box is smallest and pinned
+   to the corner as it grows. The FLAT fill replaces `.btn-primary`'s gradient
+   so empty-to-ready is one interpolatable cross-fade, and it drops that skin's
+   accent glow, which inside a field reads as a sticker pasted on the text box. */
+.assistant-send {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  margin: 0 5px 5px 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--gs-accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease),
+    transform 100ms var(--ease);
+}
+.assistant-send .codicon { font-size: 17px; }
+/* `.btn-primary:hover` is (0,2,0) and would put its 28px purple bloom back on
+   top of the field this button now sits inside. (0,4,0) beats it whatever the
+   order, so the hover stays accent and never falls back to `.btn:hover`'s grey. */
+.assistant-send:hover:not(:disabled):not(.is-cancel) {
+  background: color-mix(in srgb, var(--gs-accent) 88%, white 12%);
+}
+/* Stop is a DIFFERENT OBJECT, not a louder one: same disc, red value, solid
+   square glyph. A halt control must not be the quietest of the three states. */
+.assistant-send.is-cancel {
+  background: color-mix(in srgb, var(--status-del) 84%, black 16%);
+}
 .assistant-send.is-cancel:hover {
-  background: color-mix(in srgb, var(--status-del) 88%, white 12%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 6px 18px color-mix(in srgb, var(--status-del) 40%, transparent);
+  background: color-mix(in srgb, var(--status-del) 92%, black 8%);
 }
-.assistant-send .codicon { font-size: 16px; }
+.assistant-send.is-cancel .codicon { font-size: 14px; }
+/* Nothing to send is not a broken button. The disc stays; only the fill goes.
+   This deliberately opts out of the global `button:disabled` face (opacity .5 +
+   grayscale .25): half of a saturated purple is still the most chromatic object
+   in the composer at the one moment it cannot be used, which is exactly what
+   read as half-loaded. The SECOND selector is not optional — `button:disabled:hover`
+   is (0,2,1) and beats a lone `.assistant-send:disabled` (0,2,0) on `filter`.
+   `cursor: default`, not `not-allowed`: nothing is forbidden, there is simply
+   nothing to send yet. Written AFTER `.is-cancel` (both (0,2,0)) so that if the
+   two ever coexist the safe reading is "off", never a live-looking Stop. */
+.assistant-send:disabled,
+.assistant-send:disabled:hover {
+  opacity: 1;
+  filter: none;
+  cursor: default;
+  background: color-mix(in srgb, var(--vscode-foreground) 10%, transparent);
+  box-shadow: none;
+}
+/* `.btn-primary .glyph { color: #fff }` is (0,2,0) and `color` on the button
+   cannot reach past it — `glyph()` returns ONE span carrying both `.glyph` and
+   `.codicon` — so the off face must restate the glyph itself. */
+.assistant-send:disabled .glyph { color: var(--app-muted); }
+/* The shared focus list earlier in this file still names `.assistant-send` and
+   hands it `outline-offset: -2px; border-radius: 7px` — a rounded SQUARE ring
+   drawn INSIDE the fill, and a third radius on this one control. That list is
+   NOT edited (removing a line from a 20-selector list is how this file has
+   eaten a declaration three times); this rule is later at equal specificity and
+   wins on all three declarations. +2px puts the ring in the disc's own margin. */
+.assistant-send:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Inline AI affordances (✨ chips, the footer chat tabs, header launcher) and
@@ -7583,12 +8716,18 @@ body.vscode-light .gh-label-chip {
   flex: 0 0 auto; padding: 8px 10px;
   border-top: 1px solid var(--app-border); background: var(--app-panel);
 }
-.chat-panel .assistant-input-row { display: flex; gap: 8px; align-items: flex-end; }
+/* The dock chat runs the same composer one notch down. `gap: 8px` here would
+   reopen the gap the field just closed and 38x34 would re-square the disc into
+   an oval half-hanging out of the box, so both must GO rather than be left
+   behind. 26 + 4 + 4 = 34 = this field's declared minimum height. */
+.chat-panel .assistant-input-row { gap: 0; }
 .chat-panel .assistant-input { flex: 1 1 auto; resize: none; min-height: 34px; max-height: 140px; }
-.chat-panel .assistant-send {
-  flex: 0 0 auto; height: 34px; width: 38px; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-}
+.chat-panel .assistant-send { width: 26px; height: 26px; margin: 0 4px 4px 0; }
+.chat-panel .assistant-send .codicon { font-size: 15px; }
+/* Required: `.chat-panel .assistant-send .codicon` above is (0,3,0) and later
+   than `.assistant-send.is-cancel .codicon` (0,3,0), so without this the
+   compact Stop square renders at 15px. */
+.chat-panel .assistant-send.is-cancel .codicon { font-size: 12px; }
 
 /* ── Prose supplements ───────────────────────────────────────────────────────
    The element rules live in THE prose system (".gh-body-md, .code-md" earlier
@@ -7619,6 +8758,82 @@ body.vscode-light .gh-label-chip {
   color: var(--app-muted);
   padding: 4px 0;
 }
+
+/* ── "Open in <editor>" — the split button (openIn.ts) ──────────────────────
+   Two mini-btns sharing a border: the primary half opens the default editor,
+   the chevron lists every shown editor plus the folder itself. The halves
+   overlap by a pixel so the pair reads as one control, and the hovered half
+   rises above the other so its highlight border draws whole. */
+.openin { display: inline-flex; align-items: stretch; flex: 0 0 auto; }
+.openin .mini-btn { position: relative; }
+.openin .mini-btn:hover, .openin .mini-btn:focus-visible { z-index: 1; }
+.openin-primary { border-radius: 8px 0 0 8px; max-width: 240px; }
+/* The editor's OWN icon, as the OS draws it — see main/editors.ts iconFor. A
+   square box either way, so a row does not jump when one editor has an icon and
+   the next (a custom command) falls back to a glyph. */
+.openin-mark { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: 0 0 16px; }
+.openin-mark .codicon { font-size: 14px; color: var(--gs-accent-ink, var(--gs-accent)); }
+.editor-mark { width: 16px; height: 16px; object-fit: contain; display: block; }
+/* In a menu the mark takes the row's own leading slot. */
+.dropdown-item .editor-mark { width: 16px; height: 16px; }
+.openin-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.openin-more { border-radius: 0 8px 8px 0; margin-left: -1px; padding: 0 5px; }
+.openin-more .codicon { font-size: 14px; color: var(--app-muted); }
+.openin-more:hover .codicon { color: var(--vscode-foreground); }
+
+/* ── Settings ▸ Editors (views/editorsCard.ts) ── */
+.editors-list {
+  display: flex; flex-direction: column;
+  margin-top: 10px;
+  border: 1px solid var(--app-border); border-radius: 10px;
+  background: var(--app-panel); overflow: hidden;
+}
+.editors-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--app-border); }
+/* The editor's own icon, between its tick and its name. */
+.editors-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: 0 0 20px; }
+.editors-icon .editor-mark { width: 20px; height: 20px; }
+.editors-icon .codicon { font-size: 16px; color: var(--app-muted); }
+.editors-row:first-child { border-top: 0; }
+.editors-row .settings-check { margin-top: 0; flex: 1 1 auto; min-width: 0; align-items: center; }
+.editors-row .settings-check-text { min-width: 0; }
+.editors-row.is-hidden .settings-check-text { opacity: 0.55; }
+.editors-name { display: flex; align-items: center; gap: 7px; }
+.editors-tag {
+  font-size: 10px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 999px; padding: 1px 6px;
+}
+.editors-where {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.editors-row-side { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+/* The favourite is a control, not a caption: pressed it reads as the state it
+   is in, unpressed it reads as the thing you can do. */
+.editors-fav { height: 24px; padding: 0 9px; font-size: 11.5px; font-weight: 500; color: var(--app-muted); }
+.editors-fav .codicon { font-size: 13px; }
+.editors-fav:hover:not(:disabled) { color: var(--vscode-foreground); }
+.editors-fav.is-on {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--gs-accent) 12%, transparent);
+  opacity: 1;
+}
+.editors-fav.is-on:disabled { opacity: 1; filter: none; cursor: default; }
+.editors-fav.is-on .codicon { color: var(--gs-accent-ink, var(--gs-accent)); }
+.editors-remove { height: 24px; }
+.editors-remove .glyph .codicon { font-size: 14px; }
+.editors-remove:hover { color: var(--gs-danger, #e15a5a); border-color: color-mix(in srgb, var(--gs-danger, #e15a5a) 40%, var(--app-border)); }
+.editors-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.editors-found { margin: 0; }
+.editors-add-form {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 12px;
+  border: 1px dashed var(--app-border); border-radius: 10px;
+}
+.editors-add-btns { justify-content: flex-end; }
+.editors-save { border-color: color-mix(in srgb, var(--gs-accent) 45%, var(--app-border)); background: color-mix(in srgb, var(--gs-accent) 14%, var(--app-elevated)); }
+.editors-save:hover { background: color-mix(in srgb, var(--gs-accent) 22%, var(--app-elevated)); }
+.editors-none { display: flex; align-items: flex-start; gap: 8px; padding: 12px; color: var(--app-muted); font-size: var(--text-sm); line-height: 1.45; }
+.editors-none .codicon { margin-top: 2px; }
 
 /* Code view: instant in-folder filter + keyboard navigation affordances. */
 .code-filter {
@@ -7730,7 +8945,9 @@ body.vscode-light .gh-label-chip {
 .rb-row[data-action="drop"] .rb-node { background: var(--app-bg); border: 2px solid var(--gs-danger); }
 .rb-row.rb-base .rb-node { background: var(--app-bg); border: 2px solid var(--app-muted); }
 .rb-row.rb-base .rb-rail::before { bottom: 50%; }
-.rb-row.rb-base { opacity: 0.72; }
+/* The base row is context, not an action — but 0.72 took its own "onto" label
+   and sha under the readable minimum (3.04:1). It recedes by ink instead. */
+.rb-row.rb-base { color: var(--app-muted); }
 .rb-onto {
   /* Sized and aligned like the action select it stands in for. */
   align-self: flex-start; margin-top: 1px;
@@ -7764,7 +8981,10 @@ body.vscode-light .gh-label-chip {
   flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 9px; font-weight: 700; color: #fff;
-  background: hsl(var(--h, 250) 55% 45%);
+  /* 45% lightness left white initials at 2.57:1 on the lighter hues — the
+     circle's colour is hashed from the author, so the worst hue is the one
+     that has to clear the bar. 30% does, for every hue. */
+  background: hsl(var(--h, 250) 55% 30%);
 }
 .rb-meta { flex: 0 0 auto; color: var(--app-muted); font-size: 11px; }
 .rb-sha {
@@ -8388,10 +9608,23 @@ body.vscode-light .gh-label-chip {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
   overflow-y: auto;
   padding-bottom: 4px;
 }
-.pr-threads-tools { display: flex; justify-content: flex-end; }
+/* The BODY scrolls; the cards do not shrink. `.gh-comment { overflow:hidden }`
+   zeroes each card's flex minimum, so inside a 42%-capped column the cards
+   absorbed the shortfall instead of the body scrolling — comment bodies and
+   the reply box were simply unreachable. */
+.pr-threads-body > * { flex: 0 0 auto; }
+/* The fold head and the add button share one row, so "Add a comment" is
+   visible in EVERY fold state — it used to live inside the folding body,
+   which is hidden on precisely the files that have no comments yet. */
+/* 6px of right padding: the panel sits 2px in and the diff header's
+   Inline/Split segment 8px in, so the Add button overhung it by exactly the
+   difference. */
+.pr-threads-headrow { display: flex; align-items: center; gap: var(--sp-2); padding-right: 6px; }
+.pr-threads-headrow > .pr-threads-head { flex: 1 1 auto; width: auto; min-width: 0; }
 .pr-threads-head {
   display: flex;
   align-items: center;
@@ -8407,6 +9640,8 @@ body.vscode-light .gh-label-chip {
   cursor: pointer;
 }
 .pr-threads-head:hover { background: var(--app-hover); }
+.pr-threads-head:disabled { cursor: default; opacity: 1; }
+.pr-threads-head:disabled:hover { background: none; }
 .pr-threads-title {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -8426,6 +9661,32 @@ body.vscode-light .gh-label-chip {
 .pr-thread.is-resolved {
   opacity: 0.65;
   border-color: color-mix(in srgb, var(--status-add) 32%, var(--app-border));
+}
+
+/* A queued review comment — visibly local, visibly unsent. */
+.pr-thread-pending {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--gs-accent) 45%, var(--app-border));
+  background: color-mix(in srgb, var(--gs-accent) 5%, var(--app-panel));
+}
+.pr-thread-pending .pr-thread-anchor {
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+}
+.review-pending-note {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px dashed color-mix(in srgb, var(--gs-accent) 45%, var(--app-border));
+  border-radius: var(--r-sm);
+  font-size: var(--text-sm);
+  color: var(--app-muted);
+}
+.mini-btn.has-pending {
+  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
 }
 /* .pr-thread-head extends .gh-comment-head — make it a space-between row so the
    resolve toggle sits opposite the file:line anchor. */
@@ -8787,17 +10048,27 @@ body.vscode-light .gh-label-chip {
 @media (max-width: 1300px) {
   .sec-row-meta > .sec-diffstat { display: none; }
 }
-/* A chip strip too narrow to hold one whole chip shows none. A fragment is not
-   a shortened label, it is a rounded rectangle with nothing in it. */
+/* Below 1100px the chips used to vanish on EVERY row — including rows with
+   100–200px of free space. The fade mask above already handles a strip that
+   is too narrow; a strip with room keeps its chips. */
 .sec-row-chips { min-width: 0; }
-@media (max-width: 1100px) {
-  .sec-row .sec-row-chips { display: none; }
-}
 .sec-row-meta > .gist-filecount { min-width: 54px; text-align: right; }
 .sec-row-meta > .notif-repo { min-width: 190px; text-align: right; justify-content: flex-end; }
 .sec-row-meta > .notif-reason { min-width: 114px; text-align: right; }
 .sec-row-meta > .rel-tag { min-width: 148px; text-align: right; }
-.sec-row-meta > .rel-author { min-width: 110px; text-align: right; }
+.sec-row-meta > .rel-author {
+  min-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow: hidden;
+}
+.sec-row-meta > .rel-author > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sec-row-meta > .rel-asset-count { min-width: 42px; justify-content: flex-end; }
 .sec-row-meta > .rel-downloads { min-width: 76px; justify-content: flex-end; }
 /* Explore's own two — the only list in the app whose meta cluster did not form
@@ -8849,14 +10120,21 @@ body.vscode-light .gh-label-chip {
 .sec-row-actions > *:focus-visible { opacity: 1; }
 /* Overlapping avatar stack in a row's meta cluster. */
 .sec-avs { display: inline-flex; align-items: center; }
-.sec-avs .av { margin-left: -6px; outline: 2px solid var(--app-bg); border-radius: 999px; }
+/* A 2px overlap, not 6: these are INITIALS tiles, and a 6px overlap hid the
+   second letter of every one ("MH" read "MI"). Three at 18px still fit the
+   54px column. */
+.sec-avs .av { margin-left: 0; outline: 2px solid var(--app-bg); border-radius: 999px; }
 .sec-avs .av:first-child { margin-left: 0; }
 .sec-avs-more { margin-left: 3px; font-size: var(--text-2xs); color: var(--app-muted); }
 /* The row is one flat click target; the empty/loading states center themselves. */
 /* No top margin on the empty state: `.list-empty` is already `min-height:100%`
    of the scroller, so a margin pushed it past the bottom, made the pane scroll,
    and left the four lists' empties at different heights. */
-.sec-list > .list-loading, .sec-list > .sk-list { margin-top: var(--sp-6); }
+.sec-list > .list-loading { margin-top: var(--sp-6); }
+/* The skeleton stands exactly where the rows land: same top, same inset, same
+   height — content used to jump 34px when the data arrived. */
+.sec-list > .sk-list { margin-top: 0; padding: 0; gap: 0; }
+.sec-list > .sk-list > .sk-row { min-height: 40px; padding: 0 var(--sp-3); }
 
 /* ── The detail page ── */
 .det-view {
@@ -8949,12 +10227,35 @@ body.vscode-light .gh-label-chip {
   /* main + gap + rail. CENTERED: uncentered, a capped column on a wide window
      hugs the left and strands ~400px of dead gutter on the right — the exact
      thing --measure-* was introduced to stop. */
-  max-width: calc(var(--measure-read) + var(--sp-8) + 264px + var(--sp-6) * 2);
+  max-width: calc(var(--measure-detail) + var(--sp-8) + 264px + var(--sp-6) * 2);
   margin-inline: auto;
 }
-.det-main { flex: 1 1 auto; min-width: 0; max-width: var(--measure-read); }
+/* Capping this at --measure-read pinned EVERY detail page — issue, pull
+   request, run, release, gist, branch, org repo — to an 820px column with
+   ~600px of empty pane beside it on a large window, and it never moved when
+   the window did. The cap was also redundant: .gh-body-md already holds
+   running text to the reading measure, so lifting it widens the diff, the log,
+   the file list and the commit list, and leaves paragraphs exactly as they
+   were. */
+.det-main { flex: 1 1 auto; min-width: 0; max-width: var(--measure-detail); }
+/* Folded away, the reading column takes the room rather than leaving a gap
+   where the rail was — the whole point of folding it. */
+.det-body.rail-hidden > .det-rail { display: none; }
+/* Last on the bar, past the page's own verbs — a view control, not an action
+   on the thing you are looking at. */
+.det-rail-toggle { flex: 0 0 auto; margin-left: var(--sp-2); }
+/* Below this the rail already stacks under the main column, so folding it is
+   not a question worth asking. */
+@media (max-width: 1080px) { .det-rail-toggle { display: none; } }
+.det-body.rail-hidden > .det-main { max-width: none; }
 .det-rail {
   flex: 0 0 264px;
+  /* A flex item's default min-width:auto let the widest nowrap child (a
+     linked PR's title, a long head-branch chip) widen the rail past 264px and
+     squeeze the reading column — 284px on one issue, 271px on the PR next
+     door, so the main/rail split shifted between pages. Pinned; the children
+     truncate instead. */
+  min-width: 0;
   position: sticky;
   top: var(--sp-4);
   display: flex;
@@ -8962,7 +10263,9 @@ body.vscode-light .gh-label-chip {
   gap: var(--sp-5);
   padding-bottom: var(--sp-6);
 }
-@media (max-width: 980px) {
+/* 1040, not 980: four sub-tabs with counts need a 1024px window beside a
+   264px rail; at 1000 "Files (9)" was cut to "Files (" with nothing to scroll. */
+@media (max-width: 1040px) {
   .det-body { flex-direction: column; gap: var(--sp-4); }
   .det-rail { position: static; flex: none; width: 100%; flex-direction: row; flex-wrap: wrap; gap: var(--sp-5) var(--sp-8); }
 }
@@ -9027,7 +10330,7 @@ body.vscode-light .gh-label-chip {
      its people and NOTHING that said they could be changed — the only way to
      find out was to sweep the pointer over the heading and hope. Hover is a
      way to emphasise an affordance, never the way to discover one. */
-  opacity: 0.55;
+  opacity: 0.8;
   transition: opacity var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
 }
 .det-prop:hover .det-prop-edit, .det-prop-edit:focus-visible { opacity: 1; }
@@ -9047,7 +10350,10 @@ body.vscode-light .gh-label-chip {
   align-items: center;
   gap: 7px;
   padding: 2px 8px 2px 3px;
-  border: none;
+  /* A real (transparent) border, so the verdict rings can colour it and the
+     pending chip's dashed ring does not add 2px of height. `border: none`
+     here silently undid both. */
+  border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
   color: var(--vscode-foreground);
@@ -9089,6 +10395,14 @@ button.det-person:hover { background: var(--app-hover); }
 
 /* Detail top-bar buttons stay slim (match .mini-btn height). */
 .det-tb-actions .btn { height: 28px; padding: 0 12px; font-size: var(--text-sm); border-radius: var(--r-sm); gap: 6px; }
+/* …but NOT the halves of a split button: the wrapper owns their shape now, and
+   this rule is what used to re-round both of them into separate blocks. */
+.det-tb-actions .det-split > .btn {
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0 12px;
+}
+.det-tb-actions .det-split > .det-split-more { padding: 0 9px; }
 .det-tb-actions .mini-btn { border-radius: var(--r-sm); }
 
 /* The timeline inside det-main reuses .gh-comment cards; give the column its
@@ -9199,9 +10513,13 @@ button.det-person:hover { background: var(--app-hover); }
   display: flex;
   flex-direction: column;
 }
+/* In Files mode the tab strip is a flex item of a bounded column, and its own
+   overflow-x:auto zeroes its min-height — so the diff below squeezed it to a
+   19px sliver with the labels cut and the active underline never visible. */
+.det-view.det-files-mode .det-main > .gh-subtabs { flex: 0 0 auto; margin-top: 0; }
 
 /* Threads panel bits that used to be inline styles in prs.ts. */
-.pr-threads-add { margin-left: auto; }
+.pr-threads-add { margin-left: 0; flex: 0 0 auto; }
 .pr-thread-resolve { margin-left: auto; }
 .pr-thread-body { margin: 0; padding: 0; }
 
@@ -9757,6 +11075,22 @@ body.vscode-light .log-pane {
 .review-verdict.is-selected > .glyph:last-child { opacity: 1; }
 
 /* ── My Work group headers ── */
+/* Which repository a cross-repo row came from — sits after the title. */
+.mywork-repo-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  color: var(--app-muted);
+  border: 1px solid var(--app-border);
+  border-radius: var(--r-sm);
+  padding: 0 var(--sp-2);
+  line-height: 16px;
+}
+
 .mywork-group {
   display: flex;
   align-items: center;
@@ -9771,15 +11105,24 @@ body.vscode-light .log-pane {
 }
 .sec-list > .mywork-group:first-child { margin-top: var(--sp-2); }
 .mywork-group .codicon { font-size: 13px; }
-.mywork-group-count {
+/* The count in a group heading — My Work's category rows and the Repositories
+   screen's project folders are the same object. A bare muted numeral beside a
+   name reads as part of the name ("FlexiMeal 5", "coding 2"); in a capsule it
+   reads as a quantity. The three added declarations are no-ops on My Work,
+   which already sets this size and ink on the parent. */
+.mywork-group-count,
+.repo-group-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   min-width: 18px;
   height: 16px;
   padding: 0 5px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--app-muted) 18%, transparent);
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
   font-variant-numeric: tabular-nums;
 }
 /* A group header interrupts the row run — suppress the hairline right below it. */
@@ -9814,9 +11157,22 @@ body.vscode-light .log-pane {
 /* The hover cluster is Open, plus Mark read only while a thread is unread —
    two widths, so a read row's time, reason and repo columns landed ~79px right
    of an unread one's. The cluster reserves the wider of the two. */
-.notif-line .row-actions { flex: 0 0 138px; justify-content: flex-end; }
-/* Time keeps a fixed right slot so rows align like the section lists. */
-.notif-line .sec-row-time { min-width: 46px; }
+/* The Inbox list carries the same inset as every .sec-list, so its time column
+   ends where the Issues list's does — it sat 8px further right on .list-body's
+   8px padding. */
+.list-body.notif-body { padding: var(--sp-1) var(--sp-4) calc(var(--sp-5) + var(--dock-reserve, 0px)); }
+.notif-line { position: relative; }
+.notif-line .row-actions {
+  position: absolute;
+  right: var(--sp-3);
+  top: 50%;
+  transform: translateY(-50%);
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-left: 18px;
+  background: linear-gradient(to right, transparent, var(--app-hover) 18px, var(--app-hover));
+}
+.notif-line:focus-within .row-actions { background: linear-gradient(to right, transparent, var(--app-active) 18px, var(--app-active)); }
 
 /* End-of-list note for capped (paged) lists. */
 .sec-cap-note {
@@ -9879,7 +11235,10 @@ body.vscode-light .log-pane {
 /* The repository above a file's own title — context, set below the title's
    weight so the file stays the subject of the page. */
 .explore-repo-eyebrow {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
   font-size: var(--text-xs);
   color: var(--app-muted);
   font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
@@ -9888,10 +11247,21 @@ body.vscode-light .log-pane {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.explore-repo-eyebrow .codicon {
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+.explore-repo-eyebrow > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* The Assistant launcher, while you are in the Assistant. */
 .topbar-assistant.is-current {
   background: var(--app-active);
+  /* See the light segmented-control rule at the end of this file: accent ink
+     on the blue selection lands at 4.32:1, so light gets an accent-tinted fill
+     of its own. */
   color: var(--gs-accent-ink, var(--gs-accent));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 35%, transparent);
 }
@@ -9929,6 +11299,14 @@ body.vscode-light .log-pane {
 .gh-head .btn-primary,
 .gh-head .btn-primary:hover {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+/* The split button's shadow belongs to the wrapper (see .det-split). Left on
+   the halves, the pair carried two shadows and a seam down the middle. */
+.det-topbar .det-split > .btn,
+.det-topbar .det-split > .btn:hover,
+.gh-head .det-split > .btn,
+.gh-head .det-split > .btn:hover {
+  box-shadow: none;
 }
 
 /* A checkbox's own label: sentence case at reading size, unlike the uppercase
@@ -10200,6 +11578,12 @@ body.vscode-light .log-pane {
    Release notes, issue bodies and comments were each a bare textarea with no
    preview and no toolbar. One component now, and its preview renders through
    the same `renderMarkdown` as the published body, so the two cannot drift. */
+/* Focus is visible on the composer as a whole — the textarea inside carries
+   outline:none, so a focused composer looked identical to an idle one. */
+.md-editor:focus-within {
+  border-color: color-mix(in srgb, var(--gs-accent) 55%, var(--app-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gs-accent) 22%, transparent);
+}
 .md-editor {
   display: flex;
   flex-direction: column;
@@ -10574,7 +11958,26 @@ body.vscode-light .log-pane {
    centred column under a left-aligned toolbar reads as a misalignment rather
    than a measure. The cap goes on the children — `.clist` is the scroller, and
    capping that would strand the scrollbar in the middle of the pane. */
-.cmp-body > .clist > * { max-width: var(--measure-wide, 1100px); }
+/* SUPERSEDED by real tracks below. The cap above was solving the right problem
+   the wrong way: it kept the sha near its subject by refusing the window, which
+   at 2560 left a 1234px empty band. Giving the row actual columns keeps the two
+   ends together AND lets the list use the pane. */
+.cmp-body > .clist > * { max-width: none; }
+.cmp-body > .clist .clist-row {
+  display: grid;
+  grid-template-columns: 20px minmax(240px, 760px) minmax(0, 320px) max-content minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--sp-3);
+}
+/* The inner wrapper stops being a box and becomes the row's tracks, so the
+   subject, the meta and the body sit in columns instead of stacking inside one
+   flex child that then had to stretch the full width. */
+.cmp-body > .clist .clist-main { display: contents; }
+/* The ellipsis used to live on .clist-main's min-width:0; it moves with it. */
+.cmp-body > .clist .clist-subjrow { min-width: 0; }
+.cmp-body > .clist .clist-meta { align-self: center; }
+/* The one thing here that IS prose keeps a reading measure. */
+.cmp-body > .clist .clist-body { grid-column: 2 / -1; max-width: var(--measure-read, 820px); }
 .clist-day {
   /* NOT shrinkable. `.clist` is a flex column, and a flex item's default
      `flex-shrink: 1` let these squash to fit the pane instead of extending it —
@@ -10598,6 +12001,9 @@ body.vscode-light .log-pane {
   overflow: hidden;
   background: var(--app-panel);
 }
+/* Every commit row is the same height: one with a Verified chip beside its SHA
+   measured 56px against 55 for its neighbours, so a column of rows jittered. */
+.clist-row { min-height: 56px; }
 .clist-row {
   display: flex;
   align-items: flex-start;
@@ -10639,6 +12045,9 @@ body.vscode-light .log-pane {
   display: inline-flex;
   align-items: center;
   padding: 0 4px;
+  /* The 1px border must not add to the row: a commit with a disclosure was
+     2px taller than its siblings and its subject sat 1px lower. */
+  margin-block: -1px;
   border: 1px solid var(--app-border);
   border-radius: var(--r-sm);
   background: none;
@@ -10724,6 +12133,132 @@ body.vscode-light .log-pane {
 /* The tip subject, riding in the chips strip. secRow is one line, and the
    subject is the only free-text field — a fixed-width meta column cannot hold
    it, so it goes where the strip already fades what it cannot fit. */
+/* ── Branch rows as a TABLE ─────────────────────────────────────────────────
+   Name (floored, like the repo list learned) · subject column · people ·
+   ↑↓ slot · time · one primary verb. Every slot right of the name is a fixed
+   width — reserved even when empty — because five rows with five different
+   x-positions under one heading is what "a mess" meant. */
+/* The name NEVER shrinks. Flexbox distributes shrink proportionally, so any
+   shrink factor at all meant a long name lost a 2-3px sliver whenever the
+   row was tight — permanently clipped by just enough to fail. Instead the
+   name is rigid up to a hard cap (the row's width minus what the fixed right
+   side needs at minimum), and every give comes from the columns. */
+.branch-row .sec-row-title,
+.ref-row .sec-row-title {
+  /* max-content, not auto: an auto basis resolves through fractional flex
+     arithmetic and lands the box a pixel or two short of its own text — a
+     permanent phantom "clip" that fails the whole-names check without being
+     visible. max-content sizes the box to the text exactly. */
+  flex: 0 0 max-content;
+  min-width: 22ch;
+  max-width: calc(100% - 400px);
+}
+/* The state column: every pill on ONE vertical line, capsule geometry shared
+   so "current", "merged" and "unpublished" read as three values of one field
+   rather than three different decorations. Left-aligned within the slot —
+   a ragged right edge inside the slot is fine; a ragged LEFT edge down the
+   page was the complaint. */
+.br-state-col {
+  width: 118px;
+  /* Shrinkable (unlike the faces and the ↑↓ slot): when a long name spends
+     the subject's whole column and still wants more, the state pill gives
+     before the name does. */
+  flex: 0 10 118px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+.br-state-col .ab-pill {
+  border: 1px solid var(--app-border);
+  white-space: nowrap;
+}
+.br-state-col .ab-pill.current {
+  border-color: color-mix(in srgb, var(--gs-accent-ink, var(--gs-accent)) 40%, var(--app-border));
+}
+.br-state-col .ab-pill.gone { border-color: var(--status-warn); }
+
+/* The meta CLUSTER must yield or nothing inside it can: shrink factors only
+   compete within one flex container, and the title lives one level up. The
+   cluster shrinks hard; inside it the subject (0 30) absorbs every lost pixel
+   while the fixed slots hold their columns. */
+.branch-row .sec-row-meta,
+.ref-row .sec-row-meta { gap: var(--sp-3); min-width: 0; flex: 0 30 auto; }
+/* The NAME gives way last. The subject column carries a shrink factor thirty
+   times the title's, so a realistically long branch name eats the SUBJECT's
+   width — the context — rather than being cut off itself; the longnames check
+   holds this. */
+.br-subject-col {
+  width: 400px;
+  flex: 0 30 400px;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1460px) { .br-subject-col { width: 260px; flex-basis: 260px; } }
+/* …and UP. At a fixed 400px a long subject lost ~170px to the ellipsis while
+   the row's spring held 1150px of nothing beside it. The basis stays FIXED at
+   each step rather than growing: a grow factor lands the state, subject, faces
+   and ahead/behind columns at a different x on every row, which is the one
+   thing this column exists to prevent. */
+@media (min-width: 1900px) { .br-subject-col { width: 560px; flex-basis: 560px; } }
+@media (min-width: 2200px) { .br-subject-col { width: 760px; flex-basis: 760px; } }
+/* Below 1180 the subject goes, and with it the licence to shrink: the cluster
+   is fixed slots only from here, and letting it shrink further clipped the
+   faces it was reserving space for. The faces yield too — at this width the
+   name and the verbs are the row's job — and the ↑↓ slot collapses to
+   only-when-present. */
+@media (max-width: 1180px) {
+  .br-subject-col { display: none; }
+  /* Doubled selector on purpose: the base .br-people block sits LATER in this
+     file, and at equal specificity later source order wins — this rule was
+     silently dead and the faces wandered between two x-positions at narrow
+     widths. The fourth time this file has paid for that exact mechanism. */
+  .branch-row .br-people,
+  .ref-row .br-people { display: none; }
+  .branch-row .sec-row-meta,
+  .ref-row .sec-row-meta { flex-shrink: 0; min-width: auto; }
+  .branch-row .br-track { width: auto; flex: 0 1 auto; }
+  .branch-row .br-track:empty { display: none; }
+  /* The state slot goes content-sized: with the cluster no longer allowed to
+     shrink, a reserved 118px is the difference between fitting and pushing
+     the actions off a narrow window. The pills trail at ragged x again below
+     this width — a fair trade against rows that scroll the app sideways. */
+  .br-state-col { width: auto; flex: 0 0 auto; }
+  .branch-row .sec-row-title,
+  .ref-row .sec-row-title { min-width: 16ch; }
+}
+.br-people {
+  width: 58px;
+  flex: 0 0 58px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.br-people-stack { display: inline-flex; align-items: center; }
+/* The overlap every avatar stack in the app uses — faces, not a queue. */
+.br-people-stack > * + * { margin-left: -6px; }
+.br-people-more {
+  margin-left: 3px;
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
+  font-variant-numeric: tabular-nums;
+}
+.branch-row .br-track {
+  width: 84px;
+  flex: 0 0 84px;
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+/* The one primary verb: Checkout / Publish / Pull are different words, and
+   different widths made the ⋯ next to them jitter down the list. */
+.branch-row .sec-row-actions .row-btn:not(.lv-menu-btn) { min-width: 82px; }
+
 .br-subject {
   min-width: 0;
   overflow: hidden;
@@ -10745,11 +12280,10 @@ body.vscode-light .log-pane {
    while a 160px column beside it printed the same name again, truncated from
    the other end. The name is what this list is FOR: it grows into whatever is
    free, and it is the last thing asked to give a pixel back. */
-.branch-row .sec-row-title {
-  flex: 1 1 auto;
-  min-width: 16ch;
-}
-/* The subject is context, not identity, so it yields first and by a lot. */
+/* (The earlier `.branch-row .sec-row-title { flex: 1 1 auto }` rule that
+   lived here was retired with the columnar layout: a GROWING title is what
+   made every column after it ragged, and the table block above — max-content
+   basis, hard cap — is now the one source of truth for the name's width.) */
 .branch-row .sec-row-chips { flex-shrink: 8; }
 /* …and below a width where both cannot fit, it yields COMPLETELY. Shrinking it
    to a few characters helps nobody: "actions: stream job l…" is not context,
@@ -10767,14 +12301,12 @@ body.vscode-light .log-pane {
    left of where it sat on every other row, which is exactly the unreadable
    ragged edge these slots exist to prevent. Fixed width plus an ellipsis. */
 .sec-row-meta > .br-track { width: 78px; flex: 0 0 78px; display: flex; gap: 4px; justify-content: flex-end; }
-.sec-row-meta > .br-upstream {
-  width: 160px;
-  flex: 0 0 160px;
-  text-align: right;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
+/* Rides inside the subject column now (see localBranchRow): a 160px slot only
+   some rows carried broke the table for every row beside them. */
+.br-subject-col > .br-upstream {
+  margin-left: var(--sp-2);
+  font-size: var(--text-2xs);
+  color: var(--app-muted);
 }
 .sec-row-meta > .br-remote { width: 70px; flex: 0 0 70px; text-align: right; }
 .sec-row-meta > .br-sha { width: 62px; flex: 0 0 62px; text-align: right; }
@@ -10855,3 +12387,509 @@ body.vscode-light .log-pane {
 }
 .branches-facets .gh-facets { margin: 0; padding: 0; border: none; }
 .branches-sort { margin-left: auto; }
+
+/* ── Where a repository lives ────────────────────────────────────────────────
+   One chip, one vocabulary. "on this machine" is a clone on disk and writable;
+   "on GitHub" is read-only and nothing of it is local. The same two words carry
+   the same mark and the same ink on Repositories rows, on Explore and account
+   rows, and in the browse page's header and rail — so the app answers "which do
+   I have?" identically wherever it is asked.
+
+   It has a real border, which the .gh-pill family never got: the base .gh-pill
+   declares none, so every .gh-pill.is-* border-color has always been inert. */
+.gs-where {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gs-where .codicon {
+  font-size: 11px;
+}
+/* In a row the chip centres against taller siblings; in the rail's fact COLUMN
+   that same rule centres it horizontally, leaving it floating above a
+   left-aligned sentence about itself. */
+.det-prop-facts > .gs-where {
+  align-self: flex-start;
+}
+.gs-where.is-local {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  border-color: color-mix(in srgb, var(--gs-accent) 40%, transparent);
+  background: var(--accent-soft);
+}
+.gs-where.is-remote {
+  color: var(--app-muted);
+  border-color: color-mix(in srgb, var(--app-muted) 32%, transparent);
+  background: color-mix(in srgb, var(--app-muted) 12%, transparent);
+}
+
+/* The repository you are READING on github.com, sitting left of the one you are
+   WORKING IN. Shaped like .topbar-switch so the two read as peers of one row,
+   but with no chevron and no pointer, because it opens nothing — it names the
+   page you are on. */
+.topbar-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 240px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--app-muted) 32%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--app-muted) 10%, transparent);
+  color: var(--app-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: default;
+}
+.topbar-where .codicon {
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+.topbar-where-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The joining clause between the two halves of the bar. It borrows
+   .nav-divider-label's typography because it is the same job: naming a group,
+   not labelling a control. */
+.topbar-working {
+  flex: 0 0 auto;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-muted);
+  opacity: 0.8;
+}
+
+/* Dropped by WIDTH, not by .is-tight. wireTopbarFit adds a collapsed label's
+   scrollWidth back into `need`; an item hidden with display:none reports 0,
+   understates the need, and the bar oscillates between tight and not. Same
+   escape hatch the search label already uses. */
+@media (max-width: 1180px) {
+  .topbar-working {
+    display: none;
+  }
+}
+
+/* ── Deep-link landing ───────────────────────────────────────────────────────
+   AT THE END ON PURPOSE. `.sec-row { background: transparent }` lives ~7500
+   lines below where this used to sit, and at equal specificity the later rule
+   wins — so the mark was applied and painted nothing. The old version only
+   worked around that by accident, because an ANIMATION outranks a normal
+   declaration whatever the source order. A static rule has no such luck. */
+@keyframes gs-row-land {
+  from { background: color-mix(in srgb, var(--gs-accent) 42%, transparent); }
+}
+.row-landed {
+  background: color-mix(in srgb, var(--gs-accent) 15%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--gs-accent);
+  animation: gs-row-land 0.9s var(--ease);
+}
+/* ONE class on purpose: `.sec-row:hover` outranks it, so the landed row still
+   lights under the cursor like every other row. */
+@media (prefers-reduced-motion: reduce) {
+  .row-landed { animation: none; }
+}
+
+/* ── Dimmed by OPACITY, and dimmed too far ──────────────────────────────────
+   Fading ink toward a DARK ground keeps most of its contrast; fading the same
+   ink toward a white one spends it. That is why a dark-first habit shows up as
+   a light-theme bug — and why three of these turned out to fail in both themes
+   once measured, so they are corrected for both.
+
+   Measured, before → after:
+     .nav-divider-label   light 3.55 → 4.99   dark 4.33 → 5.41   (both themes)
+     .gh-col.is-empty     light 2.93 → 4.62   dark 3.39 → 4.99   (both themes)
+     .det-person.is-pending  4.29 → 4.94 in each                 (both themes)
+     .topbar-cmdk-kbd     light 4.13 → 4.86                      (light only)
+     .sec-row-actions     light 4.07 → 5.15                      (light only)
+     .notif-read          light 3.92 → 4.61                      (light only) */
+.nav-divider-label {
+  opacity: 1;
+}
+/* An empty board column should recede, but not take its own count with it —
+   "0" is the one thing an empty column has to say. It recedes by SURFACE
+   instead, below. */
+.gh-col.is-empty {
+  opacity: 1;
+}
+body.vscode-light .gh-col.is-empty .gh-col-head {
+  color: var(--app-muted);
+}
+/* A pending reviewer's avatar is dimmed to say "not yet", which at 0.75 also
+   took the initials inside it under the minimum. */
+.det-person.is-pending {
+  opacity: 0.9;
+}
+body.vscode-light .topbar-cmdk-kbd {
+  opacity: 1;
+}
+body.vscode-light .sec-row-actions > * {
+  opacity: 0.82;
+}
+body.vscode-light .notif-read {
+  opacity: 1;
+}
+/* …and a read notification keeps its "already seen" cue as colour rather than
+   as a veil over the whole row, so the title stays legible while still reading
+   as secondary. */
+body.vscode-light .notif-read .notif-line-title {
+  color: var(--app-muted);
+  font-weight: 500;
+}
+
+/* The SELECTED segment, in light. Two things were fighting: a fill dark enough
+   to read as "selected" pushed the accent ink under AA (4.32:1 on the blue
+   --app-active), and a fill light enough for the ink left the segment with no
+   shape at all. So stop asking the fill to do both — a painted ring carries the
+   edge, which lets the fill stay light enough for the word on top of it.
+     ink vs fill   4.32 → 4.58
+     ring vs page  none → 1.62
+   .explore-tab is the same control wearing a different class. */
+body.vscode-light .gh-seg-btn.active,
+body.vscode-light .settings-seg-btn.active,
+body.vscode-light .cmp-seg-btn.active,
+body.vscode-light .explore-tab.active {
+  background: color-mix(in srgb, var(--gs-accent) 12%, var(--app-elevated));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gs-accent) 42%, transparent);
+}
+
+/* The board's status dots keep their own ink in light. Excluding them from the
+   capsule wash (see the :not(.gh-check-dot) above) is necessary but not
+   sufficient: their own three rules live ~1700 lines earlier, so they also need
+   to win on source order here. */
+body.vscode-light .gh-check-dot.gh-state-open { background: var(--status-add); }
+body.vscode-light .gh-check-dot.gh-state-closed { background: var(--status-del); }
+body.vscode-light .gh-check-dot.gh-state-merged { background: var(--gs-accent); }
+
+/* The Assistant chip while you are in the Assistant: the same problem the
+   segmented controls had — accent ink on the blue selection fill, 4.32:1. */
+body.vscode-light .topbar-assistant.is-current {
+  background: color-mix(in srgb, var(--gs-accent) 12%, var(--app-elevated));
+}
+/* MY OWN, and it had the same bug as everything else it was fixing: the clause
+   joining the two halves of the top bar was dimmed to 0.8 and measured 3.72:1.
+   --app-muted, uppercase and letterspaced, already says "label, not control". */
+.topbar-working {
+  opacity: 1;
+}
+
+/* The Go to file picker borrows the shared error state so a failed listing can
+   be retried in place. That block is dimensioned for a full pane — 56px of
+   padding around a 60px badge — which inside a 46vh list reads as a different
+   screen rather than a message. Same words, card-sized. */
+.gotofile-list .list-empty {
+  min-height: 0;
+  padding: 18px 12px;
+  gap: 6px;
+}
+.gotofile-list .list-empty-badge {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 2px;
+  border-radius: 11px;
+}
+.gotofile-list .list-empty-badge .glyph {
+  width: 17px;
+  height: 17px;
+}
+.gotofile-note.is-error {
+  color: var(--gs-danger);
+}
+
+/* ── The bottom dock's footer, tidied ───────────────────────────────────────
+   The footer bar is ALWAYS visible — that is the whole point of the dock, and
+   it is where the tab strip lives. But the ACTIONS in it belong to whichever
+   tab is showing, and with the dock collapsed no tab is showing. So "89
+   commands · Errors only · Clear" sat in the status bar over a closed dock,
+   offering to filter and clear a log that was not on screen.
+   Done in CSS rather than only in the paint path so that any future footer
+   action inherits the rule, and so a collapse that does not happen to re-run
+   showActive() cannot leave them behind. */
+.dock-mount.collapsed .dock-actions { display: none; }
+
+/* A drag that starts and ends inside a group header's one-line label still
+   fires a click, which would collapse the group you were trying to read. The
+   header is a button; buttons are chrome. */
+.outputs-group-head { user-select: none; }
+
+/* ── Segmented controls speak ONE language ──────────────────────────────────
+   There were three live implementations of the same control at three heights
+   (26 / 29 / 30), three radii (7 / 9 / 8) and three weights (650 / 550 / 650),
+   with two different active treatments — and Settings used the one that pins
+   no height at all, so its buttons were sized by padding alone. Standing two
+   of them side by side (the theme segment and the app-icon segment) made the
+   inconsistency impossible to miss.
+
+   Normalised here rather than by deleting the classes: the three are built by
+   different call sites with their own markup, and one late block converges the
+   LOOK without a refactor that a check might be pinning. `.explore-tab` is
+   deliberately left out — it is a tab strip, not a segmented control.
+
+   The numbers are `.gh-seg`'s, moved onto the app's small-control size so a
+   segment sits flush beside a `.mini-btn` (28px) instead of 2px short of it. */
+.gh-seg,
+.settings-seg,
+.cmp-seg {
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  overflow: hidden;
+}
+.gh-seg-btn,
+.settings-seg-btn,
+.cmp-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--app-muted);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.gh-seg-btn + .gh-seg-btn,
+.settings-seg-btn + .settings-seg-btn,
+.cmp-seg-btn + .cmp-seg-btn {
+  border-left: 1px solid var(--app-border);
+}
+.gh-seg-btn:hover,
+.settings-seg-btn:hover,
+.cmp-seg-btn:hover {
+  color: var(--vscode-foreground);
+  background: var(--app-hover);
+}
+.gh-seg-btn:focus-visible,
+.settings-seg-btn:focus-visible,
+.cmp-seg-btn:focus-visible {
+  outline: 2px solid var(--gs-focus-ring);
+  outline-offset: -2px;
+}
+.gh-seg-btn.active,
+.settings-seg-btn.active,
+.cmp-seg-btn.active {
+  color: var(--gs-accent-ink, var(--gs-accent));
+  background: var(--app-active);
+}
+.gh-seg-btn .glyph .codicon,
+.settings-seg-btn .glyph .codicon,
+.cmp-seg-btn .glyph .codicon {
+  font-size: 14px;
+}
+
+/* The app-icon preview stood 44px tall beside a 28px segment, so the row had
+   two horizontal rhythms. At the segment's own height it reads as part of the
+   row instead of an object parked next to it. */
+.settings-logo-preview {
+  width: 32px;
+  height: 32px;
+  padding: 3px;
+}
+
+/* ── A SELECTED thing still answers the pointer ─────────────────────────────
+   "many dropdowns ... have no hover effect to show your selected option."
+
+   One cascade mistake, repeated eighteen times. Everywhere in this file the
+   shape is:
+
+       .thing:hover  { background: var(--app-hover); }
+       .thing.active { background: var(--app-active); }
+
+   Both selectors are (0,2,0) and the state rule comes second, so it wins
+   unconditionally — the selected tab, segment, row or menu item is the ONE
+   element on screen that cannot light up under the pointer. On a menu that is
+   worst of all: you open the branch switcher to change branch, run the mouse
+   down the list, and the row you are currently on is the only one that gives
+   no feedback, which reads as "this row is dead" rather than "this row is the
+   one you are already on".
+
+   The fix is one rule per family at (0,3,0) — the state fill a shade stronger,
+   so hovering a selected thing deepens it instead of replacing it. Modelled on
+   `.dc-toggle.is-on:hover`, which is the only place in this file that already
+   got this right.
+
+   Light mode needs the same rules mirrored: there the state overrides live
+   under `body.vscode-light` at (0,3,1), so a (0,3,0) rule would lose to them. */
+.dropdown-item.is-current:hover,
+.dropdown-item.is-current:focus-visible,
+.nav-item.active:hover,
+.cmp-mode-btn.active:hover,
+.cmp-seg-btn.active:hover,
+.settings-seg-btn.active:hover,
+.gh-seg-btn.active:hover,
+.gh-row.is-current:hover,
+.gh-row-rich.is-current:hover,
+.gh-subtab.active:hover,
+.file-row.active:hover,
+.term-tab.active:hover,
+.term-side-row.is-current:hover,
+.explore-tab.active:hover,
+.rb-chip.is-active:hover,
+.gotofile-row.is-sel:hover,
+.review-verdict.is-selected:hover,
+.cmt-file.active:hover,
+.md-tab.active:hover,
+.joblog-job.is-current:hover,
+.list-row.is-current:hover,
+.gh-combo-item.active:hover {
+  background: color-mix(in srgb, var(--gs-accent) 26%, transparent);
+}
+body.vscode-light .dropdown-item.is-current:hover,
+body.vscode-light .nav-item.active:hover,
+body.vscode-light .cmp-seg-btn.active:hover,
+body.vscode-light .settings-seg-btn.active:hover,
+body.vscode-light .gh-seg-btn.active:hover,
+body.vscode-light .gh-subtab.active:hover,
+body.vscode-light .explore-tab.active:hover,
+body.vscode-light .term-tab.active:hover,
+body.vscode-light .list-row.is-current:hover {
+  background: color-mix(in srgb, var(--gs-accent) 20%, var(--app-elevated));
+}
+
+/* A toggle that is ON stops answering too — same mistake, different clothes. */
+.gh-facet-btn.is-active:hover,
+.outputs-failbtn[aria-pressed="true"]:hover,
+.editors-fav.is-on:hover,
+.log-tool.is-on:hover {
+  background: color-mix(in srgb, currentColor 22%, transparent);
+}
+
+/* ── Controls that looked inert and were not ─────────────────────────────────
+   A native <select> gets Chrome's arrow cursor unless told otherwise, and the
+   two in this app (the New-pull-request branch pickers and Run workflow's
+   inputs) had no cursor and no hover rule at all — the literal "dropdowns that
+   stay on the arrow". */
+.gh-form-select,
+select.rb-action {
+  cursor: pointer;
+}
+.gh-form-select:hover,
+select.rb-action:hover {
+  border-color: var(--accent-line, var(--app-border));
+  background-color: var(--app-hover);
+}
+
+/* The collapsed dock bar expands on click (bottomDock wires pointerdown on the
+   whole footer) but said nothing about it. */
+.dock-mount.collapsed .dock-footer,
+.dock-mount.collapsed .dock-spacer {
+  cursor: pointer;
+}
+.dock-mount.collapsed .dock-footer:hover {
+  background: var(--app-hover);
+}
+
+/* A span with role="button" does not get a cursor for free. */
+.term-tab-close { cursor: pointer; }
+
+/* A README's <details> twisty had the pointer and no feedback under it. */
+.gh-body-md summary:hover,
+.code-md summary:hover {
+  color: var(--gs-accent-ink, var(--gs-accent));
+}
+
+/* ── The selected segment is a PILL, not a clipped rectangle ────────────────
+   The light-mode selection was a fill plus `box-shadow: inset 0 0 0 1px` — a
+   SQUARE ring — drawn inside a wrapper with `border-radius: 8px; overflow:
+   hidden`. Two things went wrong and both are visible at 1x: the ring's corners
+   were sliced flat by the wrapper's rounded clip, so the selected button read
+   as a rectangle jammed into a rounded box; and on its inner edge the ring's
+   1px stacked against the `border-left` divider of the next button, making a
+   2px seam. Unfinished, and bugged at the corners — exactly as reported.
+
+   Fixing the radius per first/last child would only chase it. The real problem
+   is asking a clipped child to draw its own edge, so the selection stops being
+   an edge: the wrapper gets a little padding and becomes the track, each button
+   rounds itself, and the selected one is a pill floating inside with a soft
+   shadow. That is how a segmented control is drawn on both platforms, it needs
+   no dividers, and there are no corners left to clip.
+
+   The contrast reasoning above still holds — the fill stays light enough for
+   accent ink to clear AA; the SHADOW, not a ring, supplies the shape. */
+.gh-seg,
+.settings-seg,
+.cmp-seg {
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+}
+.gh-seg-btn,
+.settings-seg-btn,
+.cmp-seg-btn {
+  border-radius: 7px;
+  /* 22 + 3 + 3 = 28, the app's control height — so a segment sits on exactly
+     the same baseline as the .mini-btn and .btn beside it in a header. At the
+     full 28px the track became 34px and the segment floated 4px above the
+     verbs it shares a line with. */
+  height: 22px;
+  padding: 0 10px;
+}
+/* No dividers: the track and the pill carry the structure now, and a hairline
+   between two unselected buttons only adds noise. */
+.gh-seg-btn + .gh-seg-btn,
+.settings-seg-btn + .settings-seg-btn,
+.cmp-seg-btn + .cmp-seg-btn {
+  border-left: none;
+}
+.gh-seg-btn.active,
+.settings-seg-btn.active,
+.cmp-seg-btn.active {
+  background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+  box-shadow: none;
+}
+body.vscode-light .gh-seg-btn.active,
+body.vscode-light .settings-seg-btn.active,
+body.vscode-light .cmp-seg-btn.active {
+  background: var(--app-elevated);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+/* Hover on the track's unselected buttons stays inside their own radius. */
+.gh-seg-btn:hover,
+.settings-seg-btn:hover,
+.cmp-seg-btn:hover {
+  background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+}
+.gh-seg-btn.active:hover,
+.settings-seg-btn.active:hover,
+.cmp-seg-btn.active:hover {
+  background: color-mix(in srgb, var(--gs-accent) 30%, transparent);
+}
+body.vscode-light .gh-seg-btn.active:hover,
+body.vscode-light .settings-seg-btn.active:hover,
+body.vscode-light .cmp-seg-btn.active:hover {
+  background: var(--app-elevated);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+}
+
+/* The title does not grow, and the account cluster goes to the far right.
+   With the tools row now starting on the left, a title block that still took
+   `flex: 1 1 auto` opened a gap between the word "Repositories" and the scope
+   segment — and the refresh button sat inside that gap, between the title and
+   the controls it refreshes. On the FACET rows this is already handled (the
+   rule above gives .gh-acct `order: 1; margin-left: auto` when a facet slot is
+   present); this is the same arrangement for the verb-only rows, which are the
+   ones that stayed inline. */
+.gh-head-titlewrap { flex: 0 0 auto; }
+.gh-head:not(:has(> .gh-head-tools > .gh-facet-slot)):not(:has(> .gh-head-tools > .gh-facets)):not(:has(> .gh-head-tools.gh-tools-own-line)) > .gh-acct {
+  order: 3;
+  margin-left: 8px;
+}

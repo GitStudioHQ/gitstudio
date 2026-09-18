@@ -12,7 +12,7 @@
 
 import { GitHubClient, enc } from "../githubClient";
 import { PAGE_CAPS } from "../githubPaging";
-import type { GhRepoBranch, GhRepoEntry, GhRepoFile, GhRepoPaths } from "../../shared/ipc";
+import type { GhRepoBranch, GhRepoCommit, GhRepoEntry, GhRepoFile, GhRepoPaths } from "../../shared/ipc";
 
 /** Encode a repo-relative path segment-by-segment (slashes must survive). */
 function encPath(path: string): string {
@@ -137,6 +137,46 @@ export async function listRepoBranches(
     sha: b.commit?.sha ?? "",
     protected: b.protected ?? false,
   }));
+}
+
+interface RawCommit {
+  sha?: string;
+  commit?: { message?: string; author?: { name?: string; date?: string } };
+  author?: { login?: string; avatar_url?: string } | null;
+}
+
+/**
+ * The commits on a ref, for a repository nobody has cloned.
+ *
+ * `?sha=<ref>` is the API's spelling of "starting at this ref" — NOT `?ref=`,
+ * which this file's other calls use and which the commits endpoint ignores.
+ * Only the first page: a browse page is for reading the recent history, and
+ * paging the whole log of a large repository over the API is a different
+ * feature with a different cost.
+ */
+export async function listRepoCommits(
+  client: GitHubClient,
+  fullName: string,
+  ref?: string,
+): Promise<GhRepoCommit[]> {
+  const at = ref ? `&sha=${encodeURIComponent(ref)}` : "";
+  const raw = await client.request<RawCommit[]>(
+    "GET",
+    `/repos/${ownerRepo(fullName)}/commits?per_page=50${at}`,
+  );
+  return (raw ?? []).map((c) => {
+    const sha = c.sha ?? "";
+    return {
+      sha,
+      shortSha: sha.slice(0, 7),
+      // The API returns the whole message; a list wants its first line.
+      subject: (c.commit?.message ?? "").split("\n", 1)[0] || "(no commit message)",
+      author: c.commit?.author?.name ?? c.author?.login ?? "Unknown",
+      login: c.author?.login,
+      avatarUrl: c.author?.avatar_url,
+      date: c.commit?.author?.date,
+    };
+  });
 }
 
 interface RawTree {

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ErrorReporter } from "./reporting/errorReporter";
+import { ProcessAudit } from "./debug/processAudit";
 import { RepoManager } from "./git/repoManager";
 import { BlameController } from "./blame/blameController";
 import {
@@ -103,6 +104,17 @@ export function activate(context: vscode.ExtensionContext): void {
   // before any command runs. On by default but honors VS Code's telemetry
   // opt-out and a blank endpoint — see reporting/errorReporter.ts.
   context.subscriptions.push(new ErrorReporter(context));
+
+  // Child-process audit — OFF by default. macOS blames the EDITOR for a prompt
+  // raised by any child it is responsible for, so when a user reports one this
+  // is the only record of what GitStudio actually launched. See debug/processAudit.
+  const processAudit = new ProcessAudit();
+  context.subscriptions.push(
+    processAudit,
+    vscode.commands.registerCommand("gitstudio.debug.showProcessAudit", () =>
+      processAudit.show(),
+    ),
+  );
 
   const WALKTHROUGH_ID = "gitstudio.gitstudio#gitstudio.gettingStarted";
   context.subscriptions.push(

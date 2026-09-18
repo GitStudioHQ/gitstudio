@@ -28,16 +28,30 @@ import {
   relTimeISO,
   skeletonList,
   span,
+  copyText,
 } from "../ui";
 import { renderMarkdown } from "../markdown";
 import { highlightCode } from "../highlight";
 import { resolveRelative, wireProseNav } from "../proseNav";
+
+/**
+ * Where a browsed repo's relative images live: raw.githubusercontent.com, at
+ * the ref on screen, beside the document. `../` is resolved here because the
+ * raw host serves nothing for a path that still contains it.
+ */
+function rawImageResolver(fullName: string, ref: string | undefined, baseDir: string) {
+  return (rel: string): string =>
+    `https://raw.githubusercontent.com/${fullName}/${encodeURIComponent(ref ?? "HEAD")}/` +
+    resolveRelative(baseDir, rel.replace(/^\.\//, ""));
+}
 import { openGhRepoInApp, openGhRepoChooseLocation } from "../ghOpen";
 import { openCloneDialog } from "../cloneDialog";
 import { fuzzyScore } from "../commandPalette";
 import { parseRepoRoute, repoRouteId, type RepoRoute } from "../exploreRoutes";
-import { detailPage, propSection, type SectionNav } from "./common";
-import type { GhRepoBranch, GhRepoEntry, GhRepoFile, OrgRepoDetail } from "../../shared/ipc";
+import { detailPage, propSection, propAddBtn, whereChip, type SectionNav } from "./common";
+import { peek } from "../cache";
+import { findLocalCopy, localCopyIndex, middlePath, openLocalCopy } from "../localCopy";
+import type { GhRepoBranch, GhRepoEntry, GhRepoFile, LocalCopy, OrgRepoDetail } from "../../shared/ipc";
 
 // The routing vocabulary is pure and lives in ../exploreRoutes (node-tested);
 // re-exported here so callers have one import site for "the repo page".
@@ -60,36 +74,150 @@ async function mount(
   onBack: () => void,
 ): Promise<void> {
   const { fullName, path, ref, kind } = route;
-  const goto = (o: { path?: string; ref?: string; kind?: "tree" | "blob" }): void =>
+  const goto = (o: { path?: string; ref?: string; kind?: "tree" | "blob" | "commits" }): void =>
     nav("explore", { id: repoRouteId({ fullName, ref, ...o }) });
 
+  // ── do I already have this repository? ──
+  //
+  // Every one of this page's 656 lines used to render the same way whether the
+  // repository was a stranger's or the very one you had open: the same header,
+  // the same rail, the same "Open in GitStudio" primary — which, standing in
+  // the repo you already had open, did literally nothing but toast.
+  //
+  // Answered synchronously first, so the header paints correct rather than
+  // correcting itself under the cursor. Both lists that link here prime this
+  // cache, so it is warm on the normal path; disk then confirms.
+  const key = fullName.toLowerCase();
+  let local: LocalCopy | undefined = localCopyIndex(peek("repos:local", undefined) ?? []).get(key);
+  let dirty = 0;
+
   // ── top bar ──
-  const openBtn = el("button", "btn btn-primary det-split");
-  const openMain = el("span", "det-split-main");
-  openMain.append(glyph("folder-library"), span("Open in GitStudio"));
-  openMain.addEventListener("click", () => openGhRepoInApp(fullName));
-  const openMore = el("span", "det-split-more");
+  // TWO REAL BUTTONS, not one button wrapping two spans.
+  //
+  // It was a <button> whose halves were <span>s carrying the click handlers, so
+  // the button itself had none: focusing it and pressing Enter dispatched a
+  // click on the BUTTON, matched no handler, and did nothing at all. The
+  // primary action on this page was unreachable from the keyboard. Same shape
+  // as `.openin` in the top bar — a group of two buttons sharing an edge.
+  const openBtn = el("div", "det-split");
+  openBtn.setAttribute("role", "group");
+  const openMain = el("button", "btn btn-primary det-split-main") as HTMLButtonElement;
+  const openMore = el("button", "btn btn-primary det-split-more") as HTMLButtonElement;
   openMore.appendChild(glyph("chevron-down"));
-  openMore.title = "More ways to open this repository";
-  openMore.addEventListener("click", (e) => {
-    e.stopPropagation();
-    openMenu(openBtn, [
-      {
-        label: "Choose location…",
-        icon: "folder-opened",
-        onClick: () => openGhRepoChooseLocation(fullName),
-      },
-      {
-        label: "Clone…",
-        icon: "repo-clone",
-        onClick: () =>
-          openCloneDialog((root) => void host.invoke("repo:openPath", root), {
-            url: `https://github.com/${fullName}.git`,
-          }),
-      },
-    ]);
-  });
+  // aria-label, not `title`: a native tooltip fights the dropdown this opens,
+  // hanging a grey box over the menu you just asked for.
+  openMore.setAttribute("aria-haspopup", "menu");
   openBtn.append(openMain, openMore);
+
+  // Where a clone would land, so the button and the progress card that follows
+  // it say the same words. Absent if settings cannot be read — better to drop
+  // the clause than to name a folder we are guessing at.
+  let cloneDir = "";
+  void gget("settings:get", undefined, 60_000)
+    .then((st) => {
+      cloneDir = st.cloneDir ?? "";
+      if (openMain.isConnected) paintOpen();
+    })
+    .catch(() => {});
+
+  /**
+   * ONE label used to cover three different outcomes.
+   *
+   * "Open in GitStudio" downloaded the whole repository into a folder you never
+   * chose when you had no copy; reopened an existing clone when you did; and,
+   * on the repository you already had open, returned early in the main process
+   * without emitting anything at all — a dead click that toasted success.
+   *
+   * Three states, three labels, three handlers. State 3 also takes the local
+   * route instead of an IPC round trip, which is what stops the dead click.
+   */
+  const setMain = (icon: string, label: string, title: string, onClick: () => void): void => {
+    openMain.replaceChildren(glyph(icon), span(label));
+    openMain.title = title;
+    openMain.onclick = onClick;
+    openBtn.setAttribute("aria-label", title);
+  };
+
+  const paintOpen = (): void => {
+    if (!local) {
+      setMain(
+        "cloud-download",
+        "Clone and open",
+        cloneDir
+          ? `Clones ${fullName} into ${cloneDir}, then opens it here.`
+          : `Clones ${fullName} and opens it here.`,
+        () => openGhRepoInApp(fullName),
+      );
+    } else if (local.current) {
+      setMain(
+        dirty ? "request-changes" : "code",
+        dirty ? "Go to the changes" : "Go to the code",
+        `Go to ${local.name} in GitStudio`,
+        () => nav(dirty ? "changes" : "code"),
+      );
+    } else {
+      const elsewhere = local;
+      setMain("folder", "Open this clone", `Open ${middlePath(elsewhere.root)}`, () =>
+        void openLocalCopy(fullName, elsewhere, nav),
+      );
+    }
+    const held = local;
+    openMore.onclick = (e): void => {
+      e.stopPropagation();
+      openMenu(
+        openMore,
+        held
+          ? [
+              // Cloning stays reachable, but BY NAME. An unlabelled "Clone…"
+              // offered on the repository you are standing in is exactly the
+              // ambiguity the open/changes prompt was added to kill.
+              {
+                label: "Open this clone",
+                sub: middlePath(held.root),
+                icon: "repo",
+                onClick: () => void openLocalCopy(fullName, held, nav),
+              },
+              {
+                label: "Show in Finder",
+                icon: "folder-opened",
+                onClick: () => void host.invoke("repos:reveal", held.root),
+              },
+              {
+                label: "Copy clone URL",
+                icon: "copy",
+                onClick: () =>
+                  void copyText(`https://github.com/${fullName}.git`, "Clone URL copied."),
+              },
+              { separator: true },
+              {
+                label: "Clone another copy…",
+                icon: "repo-clone",
+                onClick: () =>
+                  openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+                    url: `https://github.com/${fullName}.git`,
+                  }),
+              },
+            ]
+          : [
+              {
+                label: "Choose location…",
+                icon: "folder-opened",
+                onClick: () => openGhRepoChooseLocation(fullName),
+              },
+              {
+                label: "Clone…",
+                icon: "repo-clone",
+                onClick: () =>
+                  openCloneDialog((root) => void host.invoke("repo:openPath", root), {
+                    url: `https://github.com/${fullName}.git`,
+                  }),
+              },
+            ],
+      );
+    };
+    openMore.setAttribute("aria-label", `More ways to open ${fullName}`);
+  };
+  paintOpen();
 
   const ghBtn = el("button", "mini-btn gh-icon-btn");
   ghBtn.appendChild(glyph("link-external"));
@@ -97,6 +225,15 @@ async function mount(
   ghBtn.setAttribute("aria-label", ghBtn.title);
   ghBtn.addEventListener("click", () =>
     window.open(`https://github.com/${fullName}`, "_blank", "noopener"),
+  );
+
+  // The history of a repository nobody has cloned. Read-only by nature — there
+  // is nothing on disk to check out — so it is a LIST, not the graph.
+  const commitsBtn = el("button", "mini-btn" + (kind === "commits" ? " is-on" : ""));
+  commitsBtn.append(glyph("history"), span("Commits"));
+  commitsBtn.title = "Read this repository's commits";
+  commitsBtn.addEventListener("click", () =>
+    goto(kind === "commits" ? { path: "", kind: "tree" } : { path: "", kind: "commits" }),
   );
 
   const gotoBtn = el("button", "mini-btn");
@@ -128,13 +265,85 @@ async function mount(
 
   // The page had no title at all — the only place the repo was named was 13px
   // of breadcrumb in the toolbar.
+  let whereTag = whereChip(local ? "local" : "remote");
   const { view, main, rail } = detailPage({
-    backLabel: "Explore",
+    // The app calls this view "Search" everywhere else; "Explore" is a name it
+    // no longer uses anywhere the reader can see.
+    backLabel: "Search",
     crumb: fullName,
+    crumbTag: whereTag,
     onBack,
-    actions: [refBtn, gotoBtn, ghBtn, openBtn],
+    actions: [refBtn, commitsBtn, gotoBtn, ghBtn, openBtn],
   });
   wrap.replaceChildren(view);
+
+  // ── Location: the one section that answers "can I write here?" ──
+  //
+  // It is built here rather than inside the repo-detail fetch, and handed to
+  // the rail renderer to keep, because that fetch 404s on exactly the
+  // repositories where the question matters most — a private or org-restricted
+  // one — and its failures are silently swallowed.
+  // A STABLE node the rail keeps across repaints, holding a freshly built
+  // section each time. `det-loc` is a marker for the checks; it needs no CSS.
+  const locRoot = el("div", "det-prop det-loc");
+  const buildLocation = (): void => {
+    const loc = propSection("Location");
+    // A column of facts, not a wrapped row of chips.
+    loc.body.classList.add("det-prop-facts");
+    loc.body.appendChild(whereChip(local ? "local" : "remote"));
+    if (local) {
+      const pathEl = span(middlePath(local.root), "sec-mono");
+      pathEl.title = local.root;
+      loc.body.appendChild(pathEl);
+    }
+    const note = !local
+      ? "Read-only — nothing of this is on your disk."
+      : local.current
+        ? "This is the repository you have open."
+        : dirty
+          ? `${dirty} uncommitted ${dirty === 1 ? "file" : "files"} waiting there.`
+          : "";
+    if (note) loc.body.appendChild(span(note, "det-prop-none"));
+    // Clean vs dirty is ONE rule, stated once: dirty goes to the changes, clean
+    // goes to the code. The rail button, the header primary and the open prompt
+    // all follow it.
+    const held = local;
+    loc.body.appendChild(
+      !held
+        ? propAddBtn("Clone it here", () => openGhRepoChooseLocation(fullName), "repo-clone")
+        : held.current
+          ? propAddBtn(
+              dirty ? "Go to the changes" : "Go to the code",
+              () => nav(dirty ? "changes" : "code"),
+              dirty ? "request-changes" : "code",
+            )
+          : propAddBtn("Open this clone", () => void openLocalCopy(fullName, held, nav), "folder-opened"),
+    );
+    locRoot.className = `${loc.root.className} det-loc`;
+    locRoot.replaceChildren(...loc.root.childNodes);
+  };
+  buildLocation();
+  rail.appendChild(locRoot);
+
+  /** Header tag, Location rail and primary button, all from the same answer. */
+  const repaintWhere = (): void => {
+    const next = whereChip(local ? "local" : "remote");
+    whereTag.replaceWith(next);
+    whereTag = next;
+    buildLocation();
+    paintOpen();
+  };
+
+  // Disk confirms what the cache guessed. Nothing repaints when the answer is
+  // "still no copy" — the page already says so.
+  void (async () => {
+    const found = await findLocalCopy(fullName).catch(() => undefined);
+    if (!view.isConnected) return;
+    if (!found && !local) return;
+    local = found?.copy;
+    dirty = found?.dirty ?? 0;
+    repaintWhere();
+  })();
 
   // ── breadcrumbs: every segment is a routed nav, so ⌘[ walks the trail ──
   if (path) {
@@ -170,9 +379,12 @@ async function mount(
   if (kind === "blob" && path) {
     const fileName = path.split("/").pop() ?? path;
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    pageHead.appendChild(
-      span(dir ? `${fullName} / ${dir}` : fullName, "explore-repo-eyebrow"),
-    );
+    // A blob route three clicks deep was indistinguishable from the Code
+    // view's read-only file over your own checkout. The mark says which world
+    // the file is in before you read a line of it.
+    const eyebrow = el("div", "explore-repo-eyebrow");
+    eyebrow.append(glyph(local ? "folder" : "globe"), span(dir ? `${fullName} / ${dir}` : fullName));
+    pageHead.appendChild(eyebrow);
     h1.appendChild(span(fileName));
   } else {
     h1.append(span(`${ownerName}/`, "explore-repo-owner"), span(repoName ?? fullName));
@@ -189,7 +401,7 @@ async function mount(
     try {
       const d: OrgRepoDetail = await gget("orgs:repoDetail", fullName, 120_000);
       if (!rail.isConnected) return;
-      renderRepoRail(rail, d, fullName, nav);
+      renderRepoRail(rail, d, fullName, nav, locRoot);
       // Name the branch the button is actually on.
       if (d.defaultBranch) defaultBranchName = d.defaultBranch;
       if (!ref && d.defaultBranch) {
@@ -204,7 +416,12 @@ async function mount(
 
   // ── the body: a directory, or a file ──
   try {
-    if (kind === "blob" && path) await renderFile(content, fullName, path, ref, goto);
+    // Passed down explicitly rather than read from a module-level `let`: these
+    // read AFTER an await, so hopping quickly between two repositories would
+    // otherwise let one page answer with the other's copy.
+    if (kind === "commits") await renderCommits(content, fullName, ref, local);
+    else if (kind === "blob" && path)
+      await renderFile(content, fullName, path, ref, goto, local, nav);
     else await renderDir(content, fullName, path, ref, goto);
   } catch (e) {
     if (!content.isConnected) return;
@@ -216,6 +433,69 @@ async function mount(
       ),
     );
   }
+}
+
+/**
+ * The commits on a ref, for a repository you have not cloned.
+ *
+ * Deliberately a plain list and not the commit graph: the API hands back no
+ * lanes and no diffstat, and inventing either would be a drawing of history
+ * rather than history. What it can honestly show is who, what and when — and
+ * the sha, which opens on github.com because there is no local object to read.
+ */
+async function renderCommits(
+  content: HTMLElement,
+  fullName: string,
+  ref: string | undefined,
+  have: LocalCopy | undefined,
+): Promise<void> {
+  const commits = await gget("ghrepo:commits", { fullName, ref }, 60_000);
+  if (!content.isConnected) return;
+  if (!commits.length) {
+    content.replaceChildren(
+      emptyState("No commits", `Nothing has been committed on ${ref ?? "the default branch"} yet.`),
+    );
+    return;
+  }
+  const list = el("div", "explore-commits");
+  for (const c of commits) {
+    const row = el("a", "explore-commit") as HTMLAnchorElement;
+    row.href = `https://github.com/${fullName}/commit/${c.sha}`;
+    row.target = "_blank";
+    row.rel = "noopener";
+    row.title = `Open ${c.shortSha} on GitHub`;
+    const who = el("span", "explore-commit-av");
+    if (c.avatarUrl) {
+      const img = document.createElement("img");
+      img.src = `${c.avatarUrl}${c.avatarUrl.includes("?") ? "&" : "?"}s=40`;
+      img.alt = "";
+      img.setAttribute("aria-hidden", "true");
+      who.appendChild(img);
+    } else {
+      who.textContent = (c.author || "?").slice(0, 1).toUpperCase();
+    }
+    const text = el("span", "explore-commit-text");
+    const subj = el("span", "explore-commit-subject");
+    subj.textContent = c.subject;
+    const meta = el("span", "explore-commit-meta");
+    meta.textContent = c.login ?? c.author;
+    if (c.date) meta.append(span("·", "explore-commit-dot"), span(relTimeISO(c.date)));
+    text.append(subj, meta);
+    const sha = el("span", "explore-commit-sha");
+    sha.textContent = c.shortSha;
+    row.append(who, text, sha);
+    list.appendChild(row);
+  }
+  // Said plainly rather than implied: this is the recent history, not all of it.
+  const note = el("div", "explore-commits-note");
+  note.textContent =
+    commits.length >= 50
+      ? have
+        ? "The 50 most recent commits. Open your copy to read the whole history."
+        : "The 50 most recent commits. Clone the repository to read its whole history."
+      : `${commits.length} commit${commits.length === 1 ? "" : "s"}.`;
+  list.appendChild(note);
+  content.replaceChildren(list);
 }
 
 /** GitHub's 404 on an org repo usually means OAuth-app access is restricted —
@@ -258,7 +538,10 @@ async function renderDir(
     head.append(glyph("book"), span(readme.name));
     const prose = el("div", "gh-body-md");
     try {
-      prose.innerHTML = renderMarkdown(readme.text);
+      // The README sits at the repo root, so its relative images anchor there.
+      prose.innerHTML = renderMarkdown(readme.text, 0, {
+        resolveImage: rawImageResolver(fullName, ref, ""),
+      });
       const [owner, repo] = fullName.split("/", 2);
       // #123 and github.com links resolve against THIS repo; relative links
       // navigate inside the page instead of leaving the app.
@@ -299,6 +582,8 @@ async function renderFile(
   path: string,
   ref: string | undefined,
   goto: (o: { path?: string; kind?: "tree" | "blob" }) => void,
+  have: LocalCopy | undefined,
+  nav: SectionNav,
 ): Promise<void> {
   const file: GhRepoFile = await gget("ghrepo:file", { fullName, path, ref }, 60_000);
   if (!content.isConnected) return;
@@ -309,8 +594,22 @@ async function renderFile(
     content.appendChild(
       emptyState(
         file.binary ? "Binary file" : "File too large to preview",
-        `${name}${file.size ? ` · ${formatBytes(file.size)}` : ""} — open it on GitHub, or clone the repository to read it here.`,
-        { icon: file.binary ? "file-binary" : "file" },
+        `${name}${file.size ? ` · ${formatBytes(file.size)}` : ""} — open it on GitHub, or ` +
+          (have ? "open your copy to read it here." : "clone the repository to read it here."),
+        {
+          icon: file.binary ? "file-binary" : "file",
+          // Advising a clone of something already on disk is advice you cannot
+          // take. With a copy, the way out is one click, not a second download.
+          ...(have
+            ? {
+                action: {
+                  label: "Open your copy",
+                  icon: "repo",
+                  onClick: () => void openLocalCopy(fullName, have, nav),
+                },
+              }
+            : {}),
+        },
       ),
     );
     return;
@@ -320,7 +619,11 @@ async function renderFile(
   if (/\.mdx?$/i.test(name)) {
     const prose = el("div", "gh-body-md explore-file-prose");
     try {
-      prose.innerHTML = renderMarkdown(file.text);
+      // Images anchor at the file's FOLDER — `path` here is the file itself.
+      const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      prose.innerHTML = renderMarkdown(file.text, 0, {
+        resolveImage: rawImageResolver(fullName, ref, dir),
+      });
       const [owner, repo] = fullName.split("/", 2);
       wireProseNav(prose, undefined, { owner, repo }, (rel) => {
         // Against the file's FOLDER, not the file. `resolveRelative` takes a
@@ -359,8 +662,11 @@ function renderRepoRail(
   d: OrgRepoDetail,
   fullName: string,
   nav: SectionNav,
+  locRoot: HTMLElement,
 ): void {
-  rail.replaceChildren();
+  // Location is kept, not rebuilt: it is the one section that must survive the
+  // detail fetch failing, which is exactly what happens on a private repo.
+  rail.replaceChildren(locRoot);
   const about = propSection("About");
   if (d.description) {
     const p = el("div", "det-prop-text");
@@ -482,16 +788,13 @@ async function openGoToFile(
   });
 
   let paths: string[] = [];
-  try {
-    const res = await gget("ghrepo:paths", { fullName, ref }, 300_000);
-    paths = res.paths;
-    note.textContent = res.truncated
-      ? `Searching ${paths.length.toLocaleString()} of ${res.total.toLocaleString()} files — this repository's tree is too large to index fully.`
-      : `${paths.length.toLocaleString()} files`;
-  } catch (e) {
-    note.textContent = cleanErr(e) || "Couldn't list this repository's files.";
-    return;
-  }
+  /** loading · ready · failed. The list, the note and the combobox's own
+   *  aria-expanded all read from this. A failure used to write one line into
+   *  the note and `return` BEFORE the keyboard was wired — leaving a focused,
+   *  live-looking search field where every keystroke, arrow and Enter did
+   *  nothing, and no way back but Escape and reopening. */
+  let state: "loading" | "ready" | "failed" = "loading";
+  let failure = "";
 
   // Which row Enter will open. Without one, ↑/↓ were dead keys and Enter fired
   // the top row while nothing on screen said the top row was special — a picker
@@ -512,6 +815,18 @@ async function openGoToFile(
   };
 
   const render = (): void => {
+    if (state !== "ready") {
+      listEl.replaceChildren();
+      input.removeAttribute("aria-activedescendant");
+      input.setAttribute("aria-expanded", "false");
+      if (state === "failed") {
+        listEl.appendChild(
+          errorState("Couldn't list the files", failure, () => void load()),
+        );
+      }
+      return;
+    }
+    input.setAttribute("aria-expanded", "true");
     const q = input.value.trim();
     const ranked = q
       ? paths
@@ -543,6 +858,34 @@ async function openGoToFile(
     }
     paint();
   };
+  /** Retryable, and safe to lose the race with a dismissal. */
+  const load = async (): Promise<void> => {
+    state = "loading";
+    failure = "";
+    note.textContent = "Loading the file list…";
+    note.removeAttribute("role");
+    note.classList.remove("is-error");
+    render();
+    try {
+      const res = await gget("ghrepo:paths", { fullName, ref }, 300_000);
+      if (!card.isConnected) return;
+      paths = res.paths;
+      state = "ready";
+      note.textContent = res.truncated
+        ? `Searching ${paths.length.toLocaleString()} of ${res.total.toLocaleString()} files — this repository's tree is too large to index fully.`
+        : `${paths.length.toLocaleString()} ${paths.length === 1 ? "file" : "files"}`;
+    } catch (e) {
+      if (!card.isConnected) return;
+      state = "failed";
+      failure = cleanErr(e) || "GitHub couldn't list this repository's files.";
+      note.textContent = failure;
+      note.setAttribute("role", "alert");
+      note.classList.add("is-error");
+    }
+    render();
+    input.focus();
+  };
+
   input.addEventListener("input", render);
   input.addEventListener("keydown", (e) => {
     const rs = rows();
@@ -564,5 +907,5 @@ async function openGoToFile(
       rs[sel]?.click();
     }
   });
-  render();
+  void load();
 }

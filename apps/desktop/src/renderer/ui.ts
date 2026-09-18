@@ -407,8 +407,20 @@ export function avatar(
     img.referrerPolicy = "no-referrer";
     img.style.width = img.style.height = `${size}px`;
     // If the avatar can't load (offline / 404), swap in the initials tile so the
-    // chip never shows a broken-image glyph.
-    img.addEventListener("error", () => img.replaceWith(fallback()));
+    // chip never shows a broken-image glyph — CARRYING whatever title the
+    // caller set after we returned. Gravatar asks d=404 on purpose, so every
+    // author without one takes this path, and the fallback used to reset the
+    // tooltip to a bare "@Name": the tag rows' "Tagged by X — carries its own
+    // message" (the only remaining carrier of the annotated/lightweight
+    // distinction) evaporated for exactly those people.
+    img.addEventListener("error", () => {
+      const f = fallback();
+      if (img.title && img.title !== label) {
+        f.title = img.title;
+        f.setAttribute("aria-label", img.title);
+      }
+      img.replaceWith(f);
+    });
     return img;
   }
   return fallback();
@@ -473,7 +485,11 @@ export function statePill(label: string, kind: string): HTMLElement {
  *  comes straight off the wire type. */
 export function issueStateKind(state: string, stateReason?: string | null): string {
   if (state !== "closed") return "open";
-  return stateReason === "not_planned" ? "not-planned" : "closed";
+  // A completed close is an ACCOMPLISHMENT — GitHub paints it purple, the same
+  // family as a merged PR, NOT the red of a closed-unmerged PR. It gets its own
+  // kind ("completed") so the shared "closed" kind can stay red for PRs; issues
+  // never render as red-closed. not_planned stays gray.
+  return stateReason === "not_planned" ? "not-planned" : "completed";
 }
 
 /** A colored leading state icon for a list row (open=green, closed=red, …). */
@@ -495,6 +511,7 @@ const STATE_WORDS: Record<string, string> = {
   open: "Open",
   "open-pr": "Open",
   closed: "Closed",
+  completed: "Closed",
   "not-planned": "Closed as not planned",
   merged: "Merged",
   draft: "Draft",
@@ -505,6 +522,7 @@ export function stateIconName(kind: string): string {
   switch (kind) {
     case "merged": return "git-merge";
     case "closed": return "issue-closed";
+    case "completed": return "issue-closed";
     // GitHub distinguishes closed-as-completed from closed-as-not-planned:
     // a purple check vs a gray "skip" circle. Same word, different outcome.
     case "not-planned": return "circle-slash";
@@ -736,23 +754,31 @@ export { isBenignError } from "./benignErrors";
  *  node and the lane beneath, so the bar background shows through on any theme),
  *  giving the lines that "open eyelet" look at every tip, not just the centre. */
 export function brandMark(): HTMLElement {
+  // The same mark the VS Code / Cursor extension draws in its activity bar
+  // (media/activitybar.svg) — the isometric commit-cube with faces, the bold
+  // merge-Y, four commit nodes punched with eyelets — here in the brand
+  // colours instead of currentColor, so the desktop and the extension are
+  // recognisably one product.
   const s = el("span", "topbar-mark");
   s.innerHTML =
     '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" aria-hidden="true">' +
-    "<defs><mask id=\"bm-holes\">" +
+    '<defs><mask id="bm-holes">' +
     '<rect x="0" y="0" width="24" height="24" fill="#fff"/>' +
-    '<circle cx="4.05" cy="7.4" r="0.88" fill="#000"/>' +
-    '<circle cx="19.95" cy="7.4" r="0.88" fill="#000"/>' +
-    '<circle cx="12" cy="21.2" r="0.88" fill="#000"/>' +
+    '<circle cx="3.8" cy="7.25" r="0.8" fill="#000"/>' +
+    '<circle cx="20.2" cy="7.25" r="0.8" fill="#000"/>' +
+    '<circle cx="12" cy="21.5" r="0.8" fill="#000"/>' +
     '<circle cx="12" cy="12" r="1" fill="#000"/>' +
     "</mask></defs>" +
     '<g mask="url(#bm-holes)">' +
-    '<path class="bm-cube" d="M12 2.8 L19.95 7.4 L19.95 16.6 L12 21.2 L4.05 16.6 L4.05 7.4 Z" stroke-width="1.4" stroke-linejoin="round"/>' +
-    '<path class="bm-lane" d="M12 12 L4.05 7.4 M12 12 L19.95 7.4 M12 12 L12 21.2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<circle class="bm-node" cx="4.05" cy="7.4" r="2.2"/>' +
-    '<circle class="bm-node" cx="19.95" cy="7.4" r="2.2"/>' +
-    '<circle class="bm-node" cx="12" cy="21.2" r="2.2"/>' +
-    '<circle class="bm-node" cx="12" cy="12" r="2.5"/>' +
+    '<path class="bm-face bm-face-top" d="M12 2.5 L20.2 7.25 L12 12 L3.8 7.25 Z"/>' +
+    '<path class="bm-face bm-face-right" d="M20.2 7.25 L20.2 16.75 L12 21.5 L12 12 Z"/>' +
+    '<path class="bm-face bm-face-left" d="M12 12 L12 21.5 L3.8 16.75 L3.8 7.25 Z"/>' +
+    '<path class="bm-cube" d="M12 2.5 L20.2 7.25 L20.2 16.75 L12 21.5 L3.8 16.75 L3.8 7.25 Z" stroke-width="1.1" stroke-linejoin="round"/>' +
+    '<path class="bm-lane" d="M12 12 L3.8 7.25 M12 12 L20.2 7.25 M12 12 L12 21.5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<circle class="bm-node" cx="3.8" cy="7.25" r="2.2"/>' +
+    '<circle class="bm-node" cx="20.2" cy="7.25" r="2.2"/>' +
+    '<circle class="bm-node" cx="12" cy="21.5" r="2.2"/>' +
+    '<circle class="bm-node" cx="12" cy="12" r="2.6"/>' +
     "</g>" +
     "</svg>";
   return s;
@@ -802,6 +828,10 @@ export interface MenuOpts {
    * was the key that sent the request.
    */
   onClose?: (reason: "escape" | "dismiss" | "action") => void;
+  /** "end" hangs the menu from the trigger's RIGHT edge from the start — for a
+   *  kebab at the right edge of a card, whose menu otherwise opened rightward
+   *  over whatever sits beside the card (the property rail). */
+  align?: "start" | "end";
 }
 
 /** A lightweight popover menu anchored below `anchor`; full keyboard support. */
@@ -826,7 +856,7 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   closeMenu();
   const menu = el("div", "dropdown");
   menu.setAttribute("role", "menu");
-  const rect = anchor.getBoundingClientRect();
+  let rect = anchor.getBoundingClientRect();
   menu.style.left = `${Math.round(rect.left)}px`;
   menu.style.top = `${Math.round(rect.bottom + 5)}px`;
   anchor.setAttribute("aria-haspopup", "true");
@@ -844,6 +874,8 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
     menu.remove();
     document.removeEventListener("mousedown", onDoc, true);
     document.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("scroll", onScroll, true);
+    window.removeEventListener("resize", reanchor);
     anchor.setAttribute("aria-expanded", "false");
     // Don't pull focus back to an anchor that a route change already detached.
     if (restoreFocus && anchor.isConnected) anchor.focus();
@@ -1024,10 +1056,29 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   const GAP = 8;
   menu.style.maxWidth = `${Math.max(160, window.innerWidth - GAP * 2)}px`;
   menu.style.maxHeight = `${Math.max(160, window.innerHeight - GAP * 2)}px`;
+  let hangRight = opts.align === "end";
   const place = (): void => {
-    const m = menu.getBoundingClientRect();
-    if (m.right > window.innerWidth - GAP) {
-      menu.style.left = `${Math.floor(window.innerWidth - m.width - GAP)}px`;
+    // LAYOUT geometry, not getBoundingClientRect: the menu is mid-way through
+    // its entrance (scale .97, 6px lift) when this runs, so a transformed
+    // rect under-reads the width by ~6px and a right-hung menu landed 6px
+    // past its trigger once the animation settled.
+    const m = {
+      left: menu.offsetLeft,
+      right: menu.offsetLeft + menu.offsetWidth,
+      width: menu.offsetWidth,
+      height: menu.offsetHeight,
+      bottom: menu.offsetTop + menu.offsetHeight,
+    };
+    if (hangRight || m.right > window.innerWidth - GAP) {
+      // A menu that would overflow the right edge aligns its RIGHT edge to
+      // the trigger's — the way a menu under a right-side button is expected
+      // to hang — and only then clamps to the window margin. It used to jump
+      // to the window edge regardless of where its trigger was. Sticky across
+      // the second pass: the clamped max-width can rewrap the rows and change
+      // the width, and the second measurement must re-derive left from it.
+      hangRight = true;
+      const toAnchor = Math.floor(rect.right - m.width);
+      menu.style.left = `${Math.max(GAP, Math.min(toAnchor, Math.floor(window.innerWidth - m.width - GAP)))}px`;
     }
     if (m.left < GAP) menu.style.left = `${GAP}px`;
     if (m.bottom > window.innerHeight - GAP) {
@@ -1037,6 +1088,43 @@ export function openMenu(anchor: HTMLElement, items: MenuItem[], opts: MenuOpts 
   };
   place();
   place(); // a clamped max-width can rewrap the rows and change the height
+
+  // A `position: fixed` menu keeps its VIEWPORT coordinates while the surface
+  // it belongs to moves. Scroll the list a row menu was opened from — or resize
+  // the window — and the menu stayed where it was, floating over unrelated
+  // rows, still acting on the row you could no longer see. Re-anchor to the
+  // trigger instead; and once the trigger has scrolled out of sight, close,
+  // which is what a menu whose subject is off screen should do.
+  //
+  // Declared as functions, not consts: `close` removes these listeners and is
+  // defined above them.
+  function reanchor(): void {
+    if (closed) return;
+    if (!anchor.isConnected) return close(false);
+    rect = anchor.getBoundingClientRect();
+    const gone =
+      rect.bottom < 0 ||
+      rect.top > window.innerHeight ||
+      rect.right < 0 ||
+      rect.left > window.innerWidth;
+    if (gone) return close(false);
+    hangRight = opts.align === "end";
+    menu.style.left = `${Math.round(rect.left)}px`;
+    menu.style.top = `${Math.round(rect.bottom + 5)}px`;
+    menu.style.maxWidth = `${Math.max(160, window.innerWidth - GAP * 2)}px`;
+    menu.style.maxHeight = `${Math.max(160, window.innerHeight - GAP * 2)}px`;
+    place();
+    place();
+  }
+  function onScroll(e: Event): void {
+    // The menu's OWN overflow scroll must not move the menu — a long branch
+    // switcher scrolls inside itself, and that is not the page moving.
+    const t = e.target as Node | null;
+    if (t && (t === menu || (t.nodeType === 1 && menu.contains(t)))) return;
+    reanchor();
+  }
+  window.addEventListener("scroll", onScroll, true);
+  window.addEventListener("resize", reanchor);
   document.addEventListener("keydown", onKey, true);
   setTimeout(() => {
     document.addEventListener("mousedown", onDoc, true);

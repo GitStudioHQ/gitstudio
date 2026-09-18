@@ -11,7 +11,7 @@
 // re-render.
 
 import { host } from "../bridge";
-import { peek as cachePeek, gget, bust } from "../cache";
+import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
 import {
   avatar,
   el,
@@ -35,6 +35,7 @@ import {
   facetBar,
   harvestValues,
   segmented,
+  wireToolsWrap,
   type FacetBar,
   type FacetState,
   capNotice,
@@ -104,6 +105,30 @@ let actionsTab: "runs" | "workflows" = "runs";
 let query = "";
 /** Server-side run filters, kept across re-renders (like `query`). */
 const runFacetState: FacetState = {};
+/**
+ * The repository the state above was last used for.
+ *
+ * A workflow-name facet, a branch filter and a search query are all ABOUT one
+ * repository's workflows. Nothing reset them when the open repository changed,
+ * so switching repos landed on Actions filtered by a workflow the new repo
+ * does not have — an empty list with no visible reason for being empty.
+ */
+let stateScope = "";
+
+/** Start clean when the repository under the section has changed. */
+function scopeSectionState(): void {
+  const now = cacheScope();
+  if (now === stateScope) return;
+  stateScope = now;
+  actionsTab = "runs";
+  query = "";
+  for (const k of Object.keys(runFacetState)) delete runFacetState[k];
+  // Run-detail state is keyed by run id, and run ids are per repository.
+  expandedJobs.clear();
+  seededJobs.clear();
+  lastRunDetailId = undefined;
+  lastRunAttempt = 0;
+}
 
 export const renderActions: SectionRender = (wrap, nav, target): void => {
   sectionNav = nav;
@@ -111,6 +136,7 @@ export const renderActions: SectionRender = (wrap, nav, target): void => {
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
+  scopeSectionState();
   const refresh = (): void => {
     bust("actions");
     renderActions(wrap, nav, target);
@@ -188,7 +214,10 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   // This row's control set changes with the tab (Runs has five facets, Workflows
   // none), so it claims its own line and stops moving between them.
   tools.classList.add("gh-tools-own-line");
-  tools.append(seg, facetSlot, secretsBtn, runBtn);
+  const verbs = el("div", "gh-head-verbs");
+  verbs.append(secretsBtn, runBtn);
+  tools.append(seg, facetSlot, verbs);
+  wireToolsWrap(tools);
   header.querySelector(".gh-acct")?.before(tools);
   view.append(header, listEl);
   wrap.replaceChildren(view);
@@ -757,7 +786,7 @@ function buildRunDetail(ctx: RunDetailCtx): void {
     // sha in the app was moved to the commit page for it: pull requests,
     // releases, notifications, ref detail. This one was missed, so the
     // complaint was still one click away from the run page. The commit page
-    // carries a "Show in the graph" item, so the graph stays reachable.
+    // carries a "View in Commits" item, so that view stays reachable.
     commit.title = subject ? `${subject} — open this commit` : "Open this commit";
     commit.addEventListener("click", () => sectionNav?.("commit", { sha: full.headSha }));
     sub.appendChild(commit);

@@ -1,5 +1,26 @@
 #!/usr/bin/env python3
-"""Regenerate the GitStudio mark assets (icon, mark, mono, alt G-monogram).
+"""STALE — do not run this for the app icon. See mkicons.py.
+
+This file still generates the wordmark lockups and the alternate G-monogram,
+and for those it is fine. For the two ICON SVGs it is two revisions behind and
+running it is DESTRUCTIVE:
+
+  * its geometry is the old mark (R=152, rEnd/rHub 23/26, lane stroke 18,
+    tile rx=116) where the shipped one is R=190 / 33.8 / 38 / 28.5 / rx=114;
+  * it re-introduces the `cubeHoles` mask, which punches the node circles
+    straight through the artwork so whatever is behind the icon shows through
+    them — the "light mode lets the gray through" defect that was just fixed by
+    painting opaque cores instead;
+  * it has no light variant at all, so it would undo gitstudio-icon-light.svg;
+  * its PNG export uses cairosvg, which does not render the cube's gradients or
+    the lane stroke-linecaps correctly. That is how the committed PNGs and the
+    SVGs drifted apart in the first place.
+
+To change the icon: edit mkicons.py, run it, then rasterise with
+`./rasterise.sh <svg> <png> <size>` (headless Chrome) and rebuild the dock
+tiles with margined.py. Everything below is kept for the wordmark path only.
+
+Regenerate the GitStudio mark assets (icon, mark, mono, alt G-monogram).
 
 These SVGs are the source of truth for the *mark*. The wordmark lockups
 (gitstudio-wordmark-*.svg) embed the "GitStudio" text outlined from

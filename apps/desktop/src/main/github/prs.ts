@@ -173,9 +173,9 @@ export async function prComment(
 }
 
 /**
- * Submit a review: REQUEST_CHANGES | COMMENT (APPROVE keeps flowing through the
- * existing pr:approve path). GitHub requires a non-empty body for both events
- * here — the renderer enforces that before calling; a 422 surfaces verbatim.
+ * Submit a review: APPROVE | REQUEST_CHANGES | COMMENT. GitHub requires a
+ * non-empty body for the latter two — the renderer's composer enforces that
+ * before calling; a 422 still surfaces verbatim if anything slips past.
  */
 export async function prReview(
   client: GitHubClient,
@@ -187,6 +187,23 @@ export async function prReview(
     await client.requestBody("POST", `/repos/${enc(owner)}/${enc(repo)}/pulls/${req.number}/reviews`, {
       event: req.event,
       ...(req.body ? { body: req.body } : {}),
+      ...(req.commitId ? { commit_id: req.commitId } : {}),
+      // The queued line comments ride the same submission. GitHub's field
+      // names: `start_line` + `line` bound a multi-line comment; `side`
+      // defaults to RIGHT (the head side — the code as proposed).
+      ...(req.comments?.length
+        ? {
+            comments: req.comments.map((c) => ({
+              path: c.path,
+              line: c.line,
+              side: c.side ?? "RIGHT",
+              ...(c.startLine && c.startLine !== c.line
+                ? { start_line: c.startLine, start_side: c.side ?? "RIGHT" }
+                : {}),
+              body: c.body,
+            })),
+          }
+        : {}),
     });
     return { ok: true, changed: false };
   } catch (err) {

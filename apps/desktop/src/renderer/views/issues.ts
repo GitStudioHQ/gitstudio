@@ -8,6 +8,7 @@
 // busts the SWR cache and re-fetches so the UI stays authoritative.
 
 import { host } from "../bridge";
+import type { MenuItem } from "../ui";
 import { createSearchScheduler } from "../searchDebounce";
 import { mdEditor } from "../mdEditor";
 import { peek as cachePeek, gget, bust, cacheScope } from "../cache";
@@ -28,12 +29,14 @@ import {
   issueStateKind,
   stateLead,
   statePill,
+  copyText,
 } from "../ui";
 import { confirmDialog, promptInline, toast, formWithRetry} from "../dialogs";
 import { renderMarkdown } from "../markdown";
 import { wireProseNav } from "../proseNav";
 import { openPeek } from "../peek";
 import { memberCard } from "./orgs";
+import { openExternalItem } from "./notifications";
 import { aiChip, openAssistantTab, streamInto, aiEnabled } from "../aiAssist";
 import {
   associationBadge,
@@ -41,6 +44,7 @@ import {
   facetBar,
   harvestValues,
   segmented,
+  wireToolsWrap,
   swatch,
   type FacetSpec,
   type FacetState,
@@ -79,6 +83,11 @@ import type {
 // ── Section state (module-level so it survives list ⇄ detail round trips) ────
 
 let issueState: "open" | "closed" | "all" = "open";
+/** The list order. "updated" is what the API returns; the rest are re-sorts of
+ *  the loaded page — said honestly by the button, which names the order rather
+ *  than pretending to be a server query. */
+type IssueSort = "updated" | "newest" | "oldest" | "commented" | "reactions";
+let issueSort: IssueSort = "updated";
 /** Client-side facets over the loaded list (shared facetBar vocabulary). */
 const issueFacets: FacetState = {};
 /** The live text query — kept so Back from a detail restores the search. */
@@ -120,6 +129,31 @@ function quoteInto(body: string, author?: string | null): void {
 }
 let serverNote = "";
 /**
+ * The repository the list state above was last used for.
+ *
+ * All of it is ABOUT a repository: a `label:"needs-triage"` query, a state
+ * segment, a sort, a set of facet ticks. Kept at module scope so Back from a
+ * detail restores the search — but nothing reset it when the open repository
+ * changed, so switching repos landed on Issues still filtered by the last
+ * one's search, usually matching nothing, with a header explaining that zero
+ * of zero issues matched a query the screen had typed for you.
+ */
+let stateScope = "";
+
+/** Start clean when the repository under the list has changed. */
+function scopeListState(): void {
+  const now = cacheScope();
+  if (now === stateScope) return;
+  stateScope = now;
+  issueState = "open";
+  issueSort = "updated";
+  for (const k of Object.keys(issueFacets)) delete issueFacets[k];
+  query = "";
+  serverHits = null;
+  serverNote = "";
+}
+
+/**
  * Unsent comment drafts, per issue — navigating away must never eat one.
  *
  * Keyed by REPO and number. Keyed by number alone, a draft written on issue #31
@@ -153,7 +187,7 @@ function commentCard(
     onQuote?: (body: string) => void;
     /** The issue body reacts to the ISSUE, not to a comment — a different
      *  endpoint, so the caller supplies it rather than this inferring it. */
-    onIssueReact?: (content: ReactionContent, on: boolean) => void;
+    onIssueReact?: (content: ReactionContent, on: boolean) => Promise<boolean> | void;
   } = {},
 ): HTMLElement {
   const card = el("div", "gh-comment");
@@ -200,7 +234,7 @@ function commentCard(
         items.push({
           label: "Copy link",
           icon: "link",
-          onClick: () => void navigator.clipboard?.writeText(c.htmlUrl!),
+          onClick: () => void copyText(c.htmlUrl!, "Link copied."),
         });
       }
       // YOUR comment only. These were offered on everyone's: Edit opened the
@@ -221,7 +255,7 @@ function commentCard(
           onClick: () => void deleteComment(c.id, c.reload),
         });
       }
-      openMenu(more, items);
+      openMenu(more, items, { align: "end" });
     });
     hd.appendChild(more);
   }
@@ -242,8 +276,7 @@ function commentCard(
   }
   card.appendChild(bd);
   const react = extra.comment
-    ? (content: ReactionContent, on: boolean) =>
-        void toggleReaction("comment", extra.comment!.id, content, on, extra.comment!.reload)
+    ? (content: ReactionContent, on: boolean) => toggleReaction("comment", extra.comment!.id, content, on)
     : extra.onIssueReact;
   const reactions = reactionRow(extra.reactions, react);
   if (reactions) card.appendChild(reactions);
@@ -305,30 +338,29 @@ async function editComment(
 }
 
 /**
- * Add or remove one of your reactions, then reload so the counts on screen are
- * GitHub's rather than a guess.
+ * Add or remove one of your reactions.
  *
- * No optimistic update. It would be a nicer animation and a worse screen: two
- * people reacting at once, or a POST that fails on a rate limit, would leave a
- * count that is simply wrong and no way for the reader to know. This is a
- * single click on a number nobody is watching change in real time.
+ * Answers whether it STUCK; the strip has already drawn the change and puts
+ * itself back on `false`. It does not reload: refetching the issue and
+ * repainting every comment, the timeline and the rail to move one number by one
+ * is what made a single click read as a whole-screen flash.
  */
 async function toggleReaction(
   subject: "issue" | "comment",
   id: number,
   content: ReactionContent,
   on: boolean,
-  reload: () => void,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const r = await host.invoke("issue:react", { subject, id, content, on });
     if (!r.ok) {
       toast(r.message ?? "Couldn’t change the reaction.", "error");
-      return;
+      return false;
     }
-    reload();
+    return true;
   } catch (e) {
     toast(cleanErr(e) || "Couldn’t change the reaction.", "error");
+    return false;
   }
 }
 
@@ -377,12 +409,15 @@ function timelineEvent(ev: TimelineEvent, nav: SectionNav): HTMLElement {
     locked: "lock",
     unlocked: "unlock",
     referenced: "git-commit",
-    "cross-referenced": "cross-reference",
+    "cross-referenced": "references",
     "marked-duplicate": "copy",
   };
-  const g = glyph(icons[ev.kind] ?? "circle-small");
+  const notPlanned = ev.kind === "closed" && ev.reason === "not_planned";
+  // A not-planned close draws the slash the pill and the list lead draw —
+  // the completed check-circle said the opposite of the text beside it.
+  const g = glyph(notPlanned ? "circle-slash" : (icons[ev.kind] ?? "circle-small"));
   g.classList.add("gh-event-icon");
-  if (ev.kind === "closed") g.classList.add(ev.reason === "not_planned" ? "is-muted" : "is-done");
+  if (ev.kind === "closed") g.classList.add(notPlanned ? "is-muted" : "is-done");
   if (ev.kind === "reopened") g.classList.add("is-open");
   row.appendChild(g);
 
@@ -446,13 +481,40 @@ function timelineEvent(ev: TimelineEvent, nav: SectionNav): HTMLElement {
       add(" mentioned this in ");
       const src = ev.source;
       if (src) {
-        // A link, because the whole value of a cross-reference is going there.
+        // WHICH repository mentioned it. A cross-reference very often comes
+        // from another project, and the label was always a bare "#12" whose
+        // click routed into the repository you were reading — so a mention
+        // from somewhere else opened this repository's issue 12, an unrelated
+        // conversation, with nothing having said otherwise. A foreign one now
+        // names its repository and goes to github.com, which is the only place
+        // that page exists.
+        const here = cachePeek("github:status", undefined)?.repo;
+        const mine = here ? `${here.owner}/${here.repo}` : undefined;
+        const foreign = !!src.repo && !!mine && src.repo !== mine;
+        const label = foreign ? `${src.repo}${src.ref}` : src.ref;
         const link = el("button", "gh-event-link");
-        link.textContent = `${src.ref}${src.title ? ` ${src.title}` : ""}`;
-        link.title = src.title ?? src.ref;
+        link.textContent = `${label}${src.title ? ` ${src.title}` : ""}`;
+        link.title = foreign
+          ? `${src.title ? `${src.title} — ` : ""}read ${label}`
+          : (src.title ?? src.ref);
         link.addEventListener("click", () => {
           const num = Number(src.ref.replace("#", ""));
-          if (Number.isFinite(num)) nav(src.kind === "pr" ? "prs" : "issues", { number: num });
+          if (!Number.isFinite(num)) return;
+          // Another project's thread has no page in this app, but it does have
+          // a reader — the same one the Inbox uses for an item from a
+          // repository you have not opened.
+          if (foreign && src.repo) {
+            const [owner, repo] = src.repo.split("/");
+            void openExternalItem({
+              owner,
+              repo,
+              number: num,
+              kind: src.kind === "pr" ? "pull" : "issue",
+              htmlUrl: src.url ?? `https://github.com/${src.repo}/issues/${num}`,
+            });
+            return;
+          }
+          nav(src.kind === "pr" ? "prs" : "issues", { number: num });
         });
         text.appendChild(link);
       }
@@ -468,16 +530,17 @@ function timelineEvent(ev: TimelineEvent, nav: SectionNav): HTMLElement {
 
 // ── The section view ─────────────────────────────────────────────────────────
 
-/** The section's router, so a detail page nested inside it can leave for
- *  another view — the issue composer is a page of its own now, not a modal. */
-let sectionNav: SectionNav | undefined;
-
 export const renderIssues: SectionRender = (wrap, nav, target) => {
-  sectionNav = nav;
+  // The router is passed DOWN, not parked in a module global. It was: the
+  // global was assigned only by renderIssues, so a detail page opened from
+  // anywhere else — the Inbox, My Work, a deep link — left it undefined and
+  // every Edit button on that page was a dead click with `?.` swallowing it.
+  // `buildDetail` already destructures `nav`; the four readers use that.
   void mount(wrap, nav, target);
 };
 
 async function mount(wrap: HTMLElement, nav: SectionNav, target?: SectionTarget): Promise<void> {
+  scopeListState();
   const refresh = (): void => {
     bust("issue");
     renderIssues(wrap, nav, target);
@@ -505,10 +568,18 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
 
   // Toolbar: state segment · facets · New Issue (search rides in the titlewrap).
   const tools = el("div", "gh-head-tools");
+  // Counts on the tabs, when they are KNOWN — a state whose list is in cache
+  // labels its tab "Closed (45)"; one that has never been fetched stays a bare
+  // word rather than showing a number that is a guess. GitHub can afford the
+  // counts because its page is server-rendered; this app can afford honesty.
+  const countFor = (st: "open" | "closed"): string => {
+    const cached = cachePeek("issue:list", { state: st });
+    return cached ? ` (${cached.length})` : "";
+  };
   const seg = segmented<"open" | "closed" | "all">({
     options: [
-      { value: "open", label: "Open" },
-      { value: "closed", label: "Closed" },
+      { value: "open", label: `Open${countFor("open")}` },
+      { value: "closed", label: `Closed${countFor("closed")}` },
       { value: "all", label: "All" },
     ],
     value: issueState,
@@ -520,11 +591,45 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
   });
 
   const facetSlot = el("div", "gh-facet-slot");
+
+  // The order, named. The list always HAD one (the API's updated-desc) but
+  // nothing said so, and there was no way to ask the questions a sort answers:
+  // what is oldest and still open, what has everyone piled onto.
+  const SORT_LABELS: Record<IssueSort, string> = {
+    updated: "Recently updated",
+    newest: "Newest",
+    oldest: "Oldest",
+    commented: "Most commented",
+    reactions: "Most reactions",
+  };
+  const sortBtn = el("button", "mini-btn gh-sort-btn");
+  const sortLabel = span(SORT_LABELS[issueSort]);
+  sortBtn.append(glyph("sort-precedence"), sortLabel, glyph("chevron-down"));
+  sortBtn.title = "Change the list order";
+  sortBtn.setAttribute("aria-haspopup", "menu");
+  sortBtn.addEventListener("click", () =>
+    openMenu(
+      sortBtn,
+      (Object.keys(SORT_LABELS) as IssueSort[]).map((k) => ({
+        label: SORT_LABELS[k],
+        current: k === issueSort,
+        onClick: () => {
+          issueSort = k;
+          sortLabel.textContent = SORT_LABELS[k];
+          renderList();
+        },
+      })),
+    ),
+  );
+
   const newBtn = el("button", "btn btn-primary gh-new-btn");
   newBtn.append(glyph("add"), span("New issue"));
   newBtn.addEventListener("click", () => nav("issuenew"));
-  tools.append(seg, facetSlot, newBtn);
+  const verbs = el("div", "gh-head-verbs");
+  verbs.append(sortBtn, newBtn);
+  tools.append(seg, facetSlot, verbs);
   header.querySelector(".gh-acct")?.before(tools);
+  wireToolsWrap(tools);
   view.append(header, listEl);
   wrap.replaceChildren(view);
 
@@ -551,7 +656,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       // away; a pill repeating it was the same fact twice on one row. The icon
       // carries the words in its tooltip instead.
       titleSuffix: [],
-      chips: it.labels.map((l) => labelChip(l.name, l.color)),
+      // The milestone rides with the labels — the left-packed cluster — and
+      // NOT the meta columns: those pack right-to-left into aligned columns,
+      // and a variable-width chip in there pushed every avatar on its row out
+      // of the column the other rows kept.
+      chips: [
+        ...it.labels.map((l) => labelChip(l.name, l.color)),
+        ...(it.milestone ? [milestoneChip(it.milestone.title)] : []),
+      ],
       meta,
       // The list arrives sorted by LAST UPDATED, so the date column has to be
       // the updated date. It showed — and its tooltip labelled — the CREATED
@@ -623,6 +735,14 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
     const source = q && serverHits ? serverHits : issues;
     const items = source.filter((it) => passesFacets(it) && (q && !serverHits ? matches(it, q) : true));
     header.setCount?.(items.length, serverHits && q ? undefined : issues.length);
+    // The tab learns its count the moment the list lands, not on the next visit.
+    if (issueState !== "all") {
+      seg.setLabel(issueState, `${issueState === "open" ? "Open" : "Closed"} (${issues.length})`);
+    } else {
+      // All carries both counts — label both tabs so neither grows on the next click.
+      seg.setLabel("open", `Open (${issues.filter((i) => i.state === "open").length})`);
+      seg.setLabel("closed", `Closed (${issues.filter((i) => i.state === "closed").length})`);
+    }
     setSearchNote(serverNote);
     listEl.replaceChildren();
     if (issues.length === 0) {
@@ -672,7 +792,7 @@ async function listPage(wrap: HTMLElement, nav: SectionNav, gate: GhGate): Promi
       );
       return;
     }
-    for (const it of items) listEl.appendChild(buildRow(it));
+    for (const it of sortIssues(items)) listEl.appendChild(buildRow(it));
     const cap = capNotice(issues.length, LIST_CAPS.issues);
     if (cap) listEl.appendChild(cap);
   };
@@ -954,12 +1074,14 @@ function buildDetail(ctx: DetailCtx): void {
 
   const editBtn = el("button", "mini-btn");
   editBtn.append(glyph("edit"), span("Edit"));
-  editBtn.addEventListener("click", () => sectionNav?.("issuenew", { number: it.number }));
+  editBtn.addEventListener("click", () => nav("issuenew", { number: it.number }));
   actions.push(editBtn);
 
   const closing = it.state === "open";
   const stateBtn = el("button", closing ? "btn btn-primary" : "mini-btn");
   stateBtn.append(glyph(closing ? "issue-closed" : "issue-opened"), span(closing ? "Close issue" : "Reopen"));
+  // Close opens a chooser (completed / not planned) — say so, like Merge and Review do.
+  if (closing) stateBtn.appendChild(glyph("chevron-down"));
   if (closing) {
     // WHY it is being closed, not just that it is.
     //
@@ -992,6 +1114,62 @@ function buildDetail(ctx: DetailCtx): void {
   }
   actions.push(stateBtn);
 
+  // The ⋯ menu — the actions an issue HAS that do not deserve a button each.
+  // The issue page had no overflow at all while the PR page did, so half of
+  // GitHub's issue actions had nowhere to live: you could not copy a link,
+  // could not lock a heated thread, could not spin a follow-up out of an old
+  // discussion without leaving the app.
+  const moreBtn = el("button", "mini-btn gh-icon-btn");
+  moreBtn.append(glyph("ellipsis"));
+  moreBtn.title = "More actions";
+  moreBtn.setAttribute("aria-label", "More actions");
+  moreBtn.setAttribute("aria-haspopup", "menu");
+  moreBtn.addEventListener("click", () => {
+    const items: MenuItem[] = [
+      {
+        label: "Copy link",
+        icon: "copy",
+        onClick: () => void copyText(it.htmlUrl, "Copied issue link."),
+      },
+      {
+        label: "Reference in new issue",
+        sub: `Starts one that links #${it.number}`,
+        icon: "issue-draft",
+        onClick: () => nav("issuenew", { seedBody: `Ref #${it.number} — ${it.title}
+
+` }),
+      },
+      { separator: true },
+    ];
+    if (it.locked) {
+      items.push({
+        label: "Unlock conversation",
+        sub: "Everyone can comment again",
+        icon: "unlock",
+        onClick: () => void setLocked(it.number, false, undefined, reload),
+      });
+    } else {
+      // The reason is part of the act, so it is asked in the same menu rather
+      // than behind a second hop — GitHub's own vocabulary, plus "no reason",
+      // because a lock does not owe anyone an explanation.
+      for (const [reason, label] of [
+        [undefined, "Lock conversation"],
+        ["off-topic", "Lock as off-topic"],
+        ["too heated", "Lock as too heated"],
+        ["resolved", "Lock as resolved"],
+        ["spam", "Lock as spam"],
+      ] as const) {
+        items.push({
+          label,
+          icon: "lock",
+          onClick: () => void setLocked(it.number, true, reason, reload),
+        });
+      }
+    }
+    openMenu(moreBtn, items);
+  });
+  actions.push(moreBtn);
+
   // The de-emphasized escape hatch: everything above is doable in-app.
   const openBtn = el("button", "mini-btn gh-icon-btn");
   openBtn.append(glyph("link-external"));
@@ -1020,6 +1198,14 @@ function buildDetail(ctx: DetailCtx): void {
   const h = el("h1", "det-title");
   h.append(span(it.title), span(`  #${it.number}`, "det-title-num"));
   titleRow.appendChild(h);
+  // The same pencil beside the title the PR page has — one edit affordance,
+  // in one place, on both detail pages.
+  const editTitleBtn = el("button", "mini-btn gh-icon-btn det-title-edit");
+  editTitleBtn.append(glyph("pencil"));
+  editTitleBtn.title = "Edit title & description";
+  editTitleBtn.setAttribute("aria-label", "Edit issue title and description");
+  editTitleBtn.addEventListener("click", () => nav("issuenew", { number: it.number }));
+  titleRow.appendChild(editTitleBtn);
   main.appendChild(titleRow);
 
   const sub = el("div", "det-sub");
@@ -1109,7 +1295,105 @@ function buildDetail(ctx: DetailCtx): void {
     about.body.classList.add("det-prop-facts");
     about.body.append(fact("Created", it.createdAt), fact("Updated", it.updatedAt));
 
-    rail.append(assignProp.root, labelProp.root, msProp.root, about.root);
+    // GitHub's rail order, which readers already know: the things you can
+    // EDIT first (assignees, labels, milestone), then the things the issue
+    // has ACCUMULATED (development, participants, lock), then the dates.
+    rail.append(assignProp.root, labelProp.root, msProp.root);
+
+    // ── Development — the pull requests this issue is entangled with ──
+    //
+    // GitHub's rail answers "is anyone fixing this" with a Development section;
+    // ours answered with nothing, and the only trace was a cross-reference
+    // event buried mid-timeline. The events already carry everything needed —
+    // this is a read of data the page had and did not show.
+    //
+    // Keyed by REPOSITORY and number, not by number: `#12` from two different
+    // projects is two different pull requests, and one key meant the second
+    // silently replaced the first — the rail showed one row where two pieces
+    // of work were open.
+    const here = cachePeek("github:status", undefined)?.repo;
+    const mine = here ? `${here.owner}/${here.repo}` : undefined;
+    const linkedPrs = new Map<string, NonNullable<TimelineEvent["source"]>>();
+    for (const ev of d.events ?? []) {
+      if (ev.kind === "cross-referenced" && ev.source?.kind === "pr") {
+        linkedPrs.set(`${ev.source.repo ?? ""}${ev.source.ref}`, ev.source);
+      }
+    }
+    if (linkedPrs.size) {
+      const dev = propSection("Development");
+      for (const src of linkedPrs.values()) {
+        const foreign = !!src.repo && !!mine && src.repo !== mine;
+        const ref = foreign ? `${src.repo}${src.ref}` : src.ref;
+        const row = el("button", "det-dev-pr");
+        const state = src.merged ? "merged" : src.state === "closed" ? "closed" : "open";
+        const ic = glyph(
+          state === "merged" ? "git-merge" : state === "closed" ? "git-pull-request-closed" : "git-pull-request",
+        );
+        ic.classList.add(`is-${state}`);
+        const t = span(src.title ? `${ref} ${src.title}` : ref, "det-dev-title");
+        t.title = src.title ? `${src.title} — ${ref}` : ref;
+        row.append(ic, t);
+        row.setAttribute(
+          "aria-label",
+          `Pull request ${ref}${src.title ? `: ${src.title}` : ""} (${state})`,
+        );
+        const num = Number(src.ref.replace("#", ""));
+        row.addEventListener("click", () => {
+          // A pull request in another project has no page in this app, and
+          // routing by its number alone opened THIS repository's pull request
+          // with the same number. The Inbox's reader can show it in place.
+          if (foreign && src.repo) {
+            const [owner, repo] = src.repo.split("/");
+            void openExternalItem({
+              owner,
+              repo,
+              number: num,
+              kind: "pull",
+              htmlUrl: src.url ?? `https://github.com/${src.repo}/pull/${num}`,
+            });
+            return;
+          }
+          nav("prs", { number: num });
+        });
+        dev.body.appendChild(row);
+      }
+      rail.appendChild(dev.root);
+    }
+
+    // ── Participants — who has been in this conversation ──
+    //
+    // Author, everyone who commented, whoever closed it. Computed from data on
+    // the page, so the count and the faces can never disagree with the thread
+    // below them.
+    const people = new Map<string, string | null | undefined>();
+    if (it.user) people.set(it.user.login, it.user.avatarUrl);
+    for (const cm of d.comments) if (cm.author) people.set(cm.author.login, cm.author.avatarUrl);
+    if (it.closedBy) people.set(it.closedBy.login, it.closedBy.avatarUrl);
+    const parts = propSection(
+      people.size === 1 ? "1 participant" : `${people.size} participants`,
+    );
+    parts.body.appendChild(
+      avatarStack([...people].map(([login, avatarUrl]) => ({ login, avatarUrl })), 8, 22),
+    );
+    rail.appendChild(parts.root);
+
+    // A locked thread says so where the properties live, not only in a
+    // timeline event that may be forty comments up.
+    if (it.locked) {
+      const lock = propSection("Conversation locked");
+      const line = el("div", "det-lock-line");
+      line.append(
+        glyph("lock"),
+        span(
+          it.activeLockReason ? `as ${it.activeLockReason}` : "by a collaborator",
+          "det-lock-why",
+        ),
+      );
+      lock.body.appendChild(line);
+      rail.appendChild(lock.root);
+    }
+
+    rail.appendChild(about.root);
   } else {
     // Drawer: one compact strip under the title.
     const strip = el("div", "det-inline-props");
@@ -1140,8 +1424,7 @@ function buildDetail(ctx: DetailCtx): void {
       association: it.authorAssociation,
       reactions: it.reactions,
       onQuote: (text) => quoteInto(text, it.user?.login),
-      onIssueReact: (content, on) =>
-        void toggleReaction("issue", it.number, content, on, reload),
+      onIssueReact: (content, on) => toggleReaction("issue", it.number, content, on),
     }),
   );
   // Comments and events, in the order they happened.
@@ -1267,6 +1550,49 @@ async function postComment(
     (btn as HTMLButtonElement).disabled = false;
     ta.disabled = false;
   }
+}
+
+/** Lock or unlock the conversation, and say what happened. */
+/** Re-order the loaded page. A copy — the cache's array is shared. */
+function sortIssues(items: IssueInfo[]): IssueInfo[] {
+  const out = [...items];
+  const reactions = (it: IssueInfo): number => it.reactions?.total ?? 0;
+  switch (issueSort) {
+    case "updated":
+      return out; // the API's own order — do not re-sort what is already right
+    case "newest":
+      return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    case "oldest":
+      return out.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+    case "commented":
+      return out.sort((a, b) => b.comments - a.comments);
+    case "reactions":
+      return out.sort((a, b) => reactions(b) - reactions(a));
+  }
+}
+
+/** The release an issue is aimed at, worn beside its labels. */
+function milestoneChip(title: string): HTMLElement {
+  const m = span("", "sec-milestone");
+  m.append(glyph("milestone"), span(title));
+  m.title = `Milestone: ${title}`;
+  return m;
+}
+
+async function setLocked(
+  number: number,
+  locked: boolean,
+  reason: string | undefined,
+  reload: () => void,
+): Promise<void> {
+  const r = await host.invoke("issue:setLocked", { number, locked, reason });
+  if (!r.ok) {
+    toast(r.message ?? `Couldn't ${locked ? "lock" : "unlock"} the conversation.`, "error");
+    return;
+  }
+  toast(locked ? "Conversation locked." : "Conversation unlocked.", "success");
+  bust("issue");
+  reload();
 }
 
 async function changeState(

@@ -20,7 +20,7 @@ import {
   type LogGroup,
   type LogLine,
 } from "./logModel";
-import { el, glyph, span } from "./ui";
+import { el, glyph, span, copyText } from "./ui";
 import { searchField } from "./views/common";
 
 const LINE_H = 20;
@@ -191,7 +191,10 @@ export function createLogPane(o: {
   // button open lit while announcing itself off. setFollow is the only writer;
   // it is called once below, after it is defined, to paint the initial state.
   const copyBtn = toolBtn("copy", "Copy the full log", () => {
-    void Promise.resolve(o.onCopy()).then((t) => navigator.clipboard.writeText(t).catch(() => {}));
+    // Through the app's helper: it confirms, and it falls back to the main
+    // process when the browser refuses the clipboard. Raw, a refused write was
+    // swallowed and copying a long log looked identical to doing nothing.
+    void Promise.resolve(o.onCopy()).then((t) => copyText(t, "Log copied."));
   });
   const dlBtn = o.onDownload ? toolBtn("cloud-download", "Save the full log to Downloads", o.onDownload) : null;
   const expandTitles = o.fill

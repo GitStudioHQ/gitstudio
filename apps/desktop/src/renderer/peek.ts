@@ -8,6 +8,7 @@
 // skeleton until the renderer resolves.
 
 import { registerLayer, holdBackground } from "./overlays";
+import { cleanErr } from "./ui";
 
 function mk(tag: string, cls = ""): HTMLElement {
   const n = document.createElement(tag);
@@ -257,9 +258,9 @@ export function openPeek(card: PeekCard): void {
           if (gen !== renderGen) return;
           body.querySelector(".peek-skel")?.remove();
         })
-        .catch(() => {
+        .catch((e: unknown) => {
           if (gen !== renderGen) return;
-          body.replaceChildren(peekError());
+          body.replaceChildren(peekError(e, renderTop));
         });
     }
     // Focus lands on the card so Esc/Tab work immediately without stealing
@@ -306,12 +307,25 @@ function peekSkeleton(): HTMLElement {
   return wrap;
 }
 
-function peekError(): HTMLElement {
+/**
+ * A peek that could not load.
+ *
+ * It used to say "try again" and offer nothing to try with — the only way out
+ * was Escape and re-opening whatever you had clicked. It also discarded the
+ * error, so it could never say WHY. Both were one argument away.
+ */
+function peekError(e?: unknown, retry?: () => void): HTMLElement {
   const wrap = mk("div", "peek-empty");
   wrap.appendChild(gl("warning"));
   const t = mk("div");
-  t.textContent = "Couldn't load this — try again.";
+  t.textContent = cleanErr(e) || "Couldn't load this.";
   wrap.appendChild(t);
+  if (retry) {
+    const again = mk("button", "btn btn-soft");
+    again.append(gl("sync"), (() => { const s2 = mk("span"); s2.textContent = "Try again"; return s2; })());
+    again.addEventListener("click", retry);
+    wrap.appendChild(again);
+  }
   return wrap;
 }
 

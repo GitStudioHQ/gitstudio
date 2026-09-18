@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { auditSpawn } from "./spawnAudit";
 import { promisify } from "node:util";
 import type { HostGitAdapter } from "@gitstudio/host-bridge/git";
 
@@ -27,11 +28,10 @@ export class NodeGitAdapter implements HostGitAdapter {
 
   async discoverRepoRoot(cwd: string): Promise<string | undefined> {
     try {
-      const { stdout } = await execFileAsync(
-        this.path,
-        ["-C", cwd, "rev-parse", "--show-toplevel"],
-        { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } },
-      );
+      const args = ["-C", cwd, "rev-parse", "--show-toplevel"];
+      const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
+      auditSpawn({ bin: this.path, args, cwd, env });
+      const { stdout } = await execFileAsync(this.path, args, { env });
       const root = stdout.trim();
       return root.length > 0 ? root : undefined;
     } catch {
