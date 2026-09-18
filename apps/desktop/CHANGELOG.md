@@ -9,6 +9,235 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [1.7.0] - 2026-09-18
+
+The redesign wave: full-page details instead of split panes, a Home that is a
+workbench, and repositories understood by the folders they live in.
+
+### Added
+- **Home is a workbench.** The open repository's state (staged/unstaged, commits
+  to push, merged branches to sweep, stashes, last commit) with Push and Fetch
+  on the card; your other repositories with `●3 ↑1 ↓2` working-tree signals;
+  a Needs You card that reaches across every repository.
+- **Repositories destination.** Track many folders; the app learns them from what
+  you open; grouping two levels deep by the folder a repository actually lives in;
+  clone a URL from the same screen; linked worktrees list as checkouts and are
+  never counted as repositories.
+- **Search with a scope** — this machine or GitHub — from the topbar field, ⌘K, or
+  Home. Organizations and Gists live in the GitHub rail group.
+- **Issues and pull requests as full-width lists with full-page details**: real
+  columns, state tabs with counts, label/assignee/milestone/author facets (PRs:
+  base, review state, origin), five sort orders; close with a reason; lock;
+  reference in a new issue; comments edited/deleted/quoted/linked; reactions; the
+  timeline of what happened; linked PRs and participants in the rail.
+- **Pending reviews.** Line comments queue locally and post as ONE review with
+  your verdict — ranges, pending cards in the diff, the queue visible in the
+  composer, the review pinned to the head you read.
+- **Branches as a table** with creator and contributors for local and remote
+  branches, and who cut each tag.
+- **Images** load in issues, PRs and markdown, including private-repository
+  attachments.
+- **Open in your editor**, from the top bar beside Push — and from Home and every
+  repository's menu. The editors on this machine are found on their own: app
+  bundles, the folders their command-line tools live in, Windows install paths,
+  not just PATH (which a Dock-launched app barely has). Each one shows its OWN
+  icon, read from the application itself, so the list is six marks you recognise
+  rather than six copies of a generic glyph. Settings ▸ Editors picks your
+  favourite, decides which ones show, and takes a custom command with `{path}`.
+- **The Assistant grew up.** A centred transcript with the chat's title in the
+  header; an empty state that offers six quick actions as cards saying what each
+  does; Enter sends (Shift+Enter for a new line); every answer copies as Markdown;
+  a failed turn offers Try again; "Jump to latest" when an answer streams below
+  where you are reading; delete a chat from its history menu; the composer says
+  which repository and branch the agent is working in.
+- **A macOS 26 app icon.** The Dock icon is an Icon Composer icon the system
+  renders itself — the size and glass of every other app — instead of a legacy
+  icon Tahoe framed smaller; on macOS 11–15 the tile sits on Apple's icon grid.
+  The in-app mark is the extension's activity-bar mark, in colour.
+
+- **Read any GitHub repository without cloning it** — files, folders, README,
+  branches, go-to-file, and the 50 most recent commits — for your own
+  repositories and for anything you find by searching. The app says plainly
+  which world a repository is in: `on this machine` with a folder, or `on
+  GitHub` with a globe, the same two words on every list, row and page.
+- **The top bar names both repositories.** While you read someone else's code it
+  shows what you are reading, then `WORKING IN` and the clone your controls act
+  on — because Push, Fetch, the branch switcher and Open-in-editor never stopped
+  belonging to the repository you have open.
+- **The details panel folds away** on every page that has one, and the choice is
+  remembered.
+
+### Fixed
+- **Push, Fetch and Open in your editor now say which repository they act on.**
+  They always acted on the clone you have open; while you browsed a different
+  repository on GitHub, nothing on screen said so. "Push 2 commits to
+  origin/main" named neither end.
+- **Clicking a branch in the commit graph highlights it.** It opened the right
+  tab, cleared the filters and scrolled to the right row, then marked that row
+  with a CSS class that had no rule — so nothing happened, ever. The mark now
+  stays until your next click or key press instead of fading in under two
+  seconds, and a tag no longer lands on a branch that happens to share its name.
+  The refs folded behind a row's "+N" pill can be opened too, rather than only
+  read on hover.
+- **Cloning from a browse page lands in the repository it cloned** instead of an
+  empty search screen with the Back button disabled.
+- **Screens use the window.** Every detail page — issue, pull request, run,
+  release, gist, branch, repository — was pinned to an 820px column whatever the
+  window size, leaving most of a large display empty; the column now grows with
+  the window while running text keeps its reading measure. Home, Compare, the
+  project board, the Branches subject column and the Code browser were capped
+  the same way.
+- **Destructive actions ask first.** "Move to Trash…" sent a whole working copy
+  to the Trash on one click, ellipsis and all; "Rebase current onto…" rewrote
+  the current branch's history straight from a menu; and the commit details
+  toolbar ran Checkout, Revert and Reset with none of the confirmations the
+  identical right-click menu has always shown — while its Branch and Tag
+  buttons dispatched with no name at all and came back as an error blaming you
+  for a request the app had failed to build. Both doors now ask the same
+  questions from the same table.
+- **The new-pull-request form stops throwing your description away.** It
+  validated the title and branches *after* the modal had closed, so an empty
+  title discarded however much you had written and complained over an empty
+  screen. It validates before it closes, ⌘Enter submits, and a background
+  navigation can no longer take unsaved text with it.
+- **Requesting reviewers shows them.** Every other rail edit repainted; this one
+  did not, so the people you had just asked stayed invisible and could be asked
+  a second time.
+- **The keyboard reaches the Checks tab.** Its rows were bare divs with a
+  pointer cursor: a failing check's logs could not be opened without a mouse.
+- **Dragging the file-list divider in Changes resizes the file list.** The
+  keyboard and the pointer wrote to two different elements, so the drag moved
+  something other than the column it was dragging.
+- Edit buttons on an issue opened from the Inbox, My Work or a deep link were
+  dead clicks — the page's router was parked in a module global that only one
+  entry point ever set.
+- Every copy action is routed through the app's clipboard helper — Copy path,
+  Copy clone URL, Copy link on a comment, and the job log's Copy. They confirm,
+  and they fall back to the main process when the browser refuses; raw, a
+  refused write was swallowed and copying looked identical to doing nothing.
+- "Reset plan" in the rebase workspace asks first when there is something to
+  lose. Reorders, drops and reworded messages exist nowhere else until the
+  rebase runs, and one click threw all of it away.
+- "Open on remote" on a commit opens the commit. The button was drawn whenever
+  the repository had a remote, emitted an action nothing listened for, and did
+  nothing at all.
+- A peek that fails to load says why, and offers a Try again that works. It used
+  to say "try again" with nothing to try, and discarded the error unread.
+- "Mark all read" says what it does. Its tooltip repeated its own label, and in
+  the bell popover — where the label is hidden — that tooltip is the button's
+  only name. It now says the request marks the whole inbox on GitHub, which is
+  more than the list in front of you shows.
+- Repositories spelled it "organisation" while the rest of the app, the rail and
+  GitHub itself spell it "organization".
+- Go to file counted "1 files".
+- Stashing the whole working tree said "Stashed 0 files."
+- **Light theme is readable.** Borders were within 1.15:1 of the page, which is
+  not a hairline; row hover was 1.04:1, which is no hover at all; state badges
+  had no edge, board status dots were painted over with a wash that made them
+  ghosts, and a dozen labels fell under the contrast minimum because they were
+  dimmed with opacity, which spends contrast on a light ground and keeps it on a
+  dark one. Line numbers in dark were dimmer than any editor renders them.
+- Extension rebase: folding the newest commit into the one below was refused
+  (#27). Extension compare: open diffs collapsed on a timer (#24).
+- The Code page header lines up with the file list and README below it, and the
+  README fills its card instead of stopping four-fifths of the way across.
+- **Reacting no longer reloads the page.** A 👍 on an issue or a pull request
+  refetched the whole thread and repainted every comment, the timeline and the
+  rail to move one number by one — a whole-screen flash on a single click. The
+  strip now updates itself and puts the value back if the request does not stick.
+- The Assistant's composer is one field with the send button inside it, which
+  fixes a focus ring that used to draw a boundary excluding the very button it
+  was meant to contain. The dock chat's Send also stops sitting lit over an
+  empty box.
+- Repositories tells folders from repositories: folder icons carry the accent and
+  repository icons do not (the rule the Code view already used, running backwards
+  here), a repository's name is the largest thing on the page, and its origin sits
+  beside that name instead of ~470px away across an empty row.
+- On GitHub, each owner is a section you can collapse — ⌥-click collapses every
+  owner — and a section head that is pinned to the top now looks pinned.
+- The app icon is redrawn: a bolder cube with real separation between its three
+  faces, heavier graph lines and solid nodes, filling the tile the way Apple's
+  icon grid expects. The old one faded out at Dock size, and the framing left
+  the mark floating in a large empty square. The tile is a neutral grey rather
+  than near-black, so it never glares beside a light Dock.
+- Streaming answers no longer lose the reader partway through a long reply: the
+  throttled Markdown paint scrolled before it grew, so the transcript stopped
+  following after the first big paragraph.
+- List headers are two lines at every width with refresh on the title line;
+  menus hang from the control that opened them; completed issues are purple
+  (the merged family), never the failure red; check rows are clickable only when
+  they link somewhere; the Checks pill agrees with the Checks tab.
+- **Opening a file in a commit no longer throws.** Every click produced seven
+  uncaught errors — `getNavigationTree`, `provideInlayHints`,
+  `getSyntacticDiagnostics` — because the editor loaded four language services
+  that each want their own web worker while the app ships only the base one.
+  The app has never offered IntelliSense, so the services are gone; syntax
+  highlighting and diffing are untouched.
+- **A file diff opens in the panel at the bottom, full width.** In the commit
+  details column it got 571px of a 1600px window — under the threshold where the
+  editor gives up on side-by-side, so every diff quietly opened inline — while
+  the rule that made room for it pinned the graph to a third of the width, below
+  its own breakpoint, so the column header and four columns vanished. Closing
+  the details panel then left a third of the screen blank. Code needs width; the
+  panel's height is the thing you were already able to drag.
+- **The graph and the details column resize freely.** The divider had four
+  pixels of travel on a 1440px window, and none at all at 1280 — a guard meant
+  to protect the graph's columns had collapsed into a lock on exactly the widths
+  most laptops use. The panel now opens to nine tenths of the window instead of
+  stopping at six.
+- **The commit graph keeps its graph and Branch/Tag columns when it narrows.**
+  Below 620px it used to drop the whole column header — labels and resize grips
+  together — while still spending width on Changes and Author. Now the metadata
+  yields first, the header stays at every width, and a branch name is never
+  ellipsised to make room for a column you can read in the panel.
+- **A selected tab, segment, row or menu item answers the pointer.** One cascade
+  mistake repeated eighteen times: the `:hover` rule sat immediately before the
+  `.active` rule at the same weight, so the selected thing was the one element
+  on screen that could not light up. Hovering the branch you are on, in the
+  branch switcher, did nothing at all.
+- **Dropdowns that were not dropdowns.** The two native pickers (a new pull
+  request's branches, a workflow's inputs) had no pointer cursor and no hover
+  state; a pull request's file rows were stuck on the arrow while being
+  perfectly clickable; and the cursor turned back into an arrow as it crossed
+  the second line of a row that was still one click target.
+- **The Output log can be selected and copied**, and there is a Copy button for
+  the whole of it. Its filter and Clear controls no longer sit in the status bar
+  over a closed panel, and they are status-bar sized rather than full app
+  buttons overflowing a 23px strip.
+- **Scope and filter controls sit beside the title they belong to**, on every
+  list, instead of being pushed across the header to huddle against the action
+  buttons.
+- **A segmented control is one control.** There were three implementations at
+  three heights, three corner radii and three weights; the selected one drew a
+  square ring inside a rounded, clipped box, so its corners were sliced flat and
+  its inner edge doubled with the next button's divider. One track, one pill.
+- **The split button is one button.** Three later rules re-rounded and
+  re-shadowed each half, so a control that was flush to the pixel still read as
+  two blocks, and hovering the caret deleted its colour outright.
+- **A reference to another project goes to that project.** "mentioned this in
+  #12" routed into the repository you were reading and opened whatever carried
+  that number there; the Development rail keyed its linked pull requests by
+  number alone, so two from different projects collapsed into one row. Both name
+  their repository now, and open it in the reader the Inbox already uses.
+- **The app icon's nodes are part of the mark.** They were holes punched through
+  the artwork, so the circles showed whatever sat behind the icon — which on a
+  light ground let the grey through and changed the logo's character. The lines
+  and circles are bolder, and the light variant is a genuinely light tile rather
+  than the dark one lightened by fifteen values out of 255. Picking Light or
+  Dark in Settings changes the Dock icon again on macOS 26.
+- **Menus follow the control that opened them** when the list underneath
+  scrolls, instead of floating over unrelated rows; and a menu whose trigger has
+  scrolled out of sight closes.
+- A README fills its card on a repository page instead of stopping 820px in with
+  every heading rule running past it. Issue and pull-request bodies keep their
+  reading measure but sit centred.
+- Issues, pull requests and Actions start clean when you switch repositories,
+  instead of showing the previous one's search, sort and facets.
+- "Create pull request" in Changes reads the branch you are on when you press
+  it, not the one resolved before HEAD had loaded. "Collapse all projects"
+  collapses the folder whose menu you opened, not every folder on the screen.
+  Go to file offers a retry when the listing fails, instead of a dead search box.
+
 ## [1.6.0] - 2026-08-26
 
 ### Added
