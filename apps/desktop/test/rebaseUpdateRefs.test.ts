@@ -706,18 +706,24 @@ function nativeTodo(root: string, base: string): string[] {
     "feature",
     "capturing git's todo must not run the rebase",
   );
-  // `pick <sha> <subject>` — take everything after the sha, not the third
-  // whitespace-separated token. Indexing by token assumed a one-word subject
-  // and a single space, which is true of this fixture and not of git: the
-  // instruction format is configurable, abbreviated commands write `p` instead
-  // of `pick`, and a subject with a space would have silently returned its
-  // first word. The raw todo travels with the failure so a machine whose git
-  // formats this differently says so instead of reporting a bare mismatch.
+  // `pick <sha> <subject>` — or, since git 2.55, `pick <sha> # <subject>`.
+  //
+  // 2.55 comments the subject in the todo so it can hold anything without
+  // confusing the parser. This test passed on git 2.49 here and failed on all
+  // three CI runners, which are on 2.55: the old parse took the third
+  // whitespace-separated token and got "#". That token index was wrong anyway
+  // — the instruction format is configurable, `rebase.abbreviateCommands`
+  // writes `p` for `pick`, and any subject with a space would silently have
+  // become its first word.
+  //
+  // Only the TEST reads this format. rebasePlan.ts writes the todo whole and
+  // git ignores everything after the sha, so the product is unaffected — the
+  // end-to-end rebase tests pass on 2.55.
   const picks = out
     .split(/\r?\n/)
     .map((l) => /^(?:pick|p)\s+(\S+)\s+(.*)$/.exec(l.trim()))
     .filter((m): m is RegExpExecArray => m !== null)
-    .map((m) => m[2].trim());
+    .map((m) => m[2].replace(/^#\s*/, "").trim());
   assert.ok(
     picks.length > 0,
     `git's todo had no pick lines. git ${gitVersion()} wrote:\n${out || "(nothing)"}`,
