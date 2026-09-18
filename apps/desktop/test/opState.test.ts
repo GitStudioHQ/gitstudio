@@ -431,12 +431,21 @@ test("a rebase paused at an edit stop is never reported as nothing to commit", a
     git("commit", "-qm", "the commit to edit");
 
     // `edit` on the only commit — the exact stop the Rebase view produces.
-    const seq = `${root}/seq.sh`;
-    writeFileSync(seq, '#!/bin/sh\nsed -i.bak "s/^pick /edit /" "$1"\n');
-    execFileSync("chmod", ["+x", seq]);
+    // A node sequence editor — `#!/bin/sh`, `chmod` and `sed -i` are all
+    // POSIX-only, and this is the last of the four places that assumed them.
+    const seq = `${root}/seq.cjs`;
+    writeFileSync(
+      seq,
+      'const fs=require("fs");const p=process.argv[2];' +
+        'fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace(/^pick /gm,"edit "));\n',
+    );
     execFileSync("git", ["rebase", "-i", "trunk"], {
       cwd: root,
-      env: { ...process.env, GIT_SEQUENCE_EDITOR: seq, GIT_EDITOR: "true" },
+      env: {
+        ...process.env,
+        GIT_SEQUENCE_EDITOR: `node "${seq.replace(/\\/g, "/")}"`,
+        GIT_EDITOR: "true",
+      },
       stdio: "ignore",
     });
 
