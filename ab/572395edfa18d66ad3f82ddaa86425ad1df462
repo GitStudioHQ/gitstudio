@@ -1,0 +1,40 @@
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_8674c2de817229 12-18
+RELEASING.md
+  s_26f5e669d3043c::t_8885db2b2b1aec 86-106
+apps/desktop/package.json
+  s_26f5e669d3043c::t_3891f4f56544e4 3
+.github/workflows/release-desktop.yml
+  s_26f5e669d3043c::t_b972e5429e55f2 182-232
+scripts/install.sh
+  s_26f5e669d3043c::t_72428b551b3a64 51-55
+  s_26f5e669d3043c::t_2921a3ee6189f4 92-93,95
+  s_26f5e669d3043c::t_d326b4a134ce35 1-50,56-91,94,96-152
+docs/releases/app-v2.0.0.md
+  s_26f5e669d3043c::t_8885db2b2b1aec 1-132
+  s_26f5e669d3043c::t_ce92445576b5d8 133-164
+scripts/install.ps1
+  s_26f5e669d3043c::t_d3e6c3e584e61a 1-80
+README.md
+  s_26f5e669d3043c::t_8885db2b2b1aec 36-55,64-70
+Casks/gitstudio.rb
+  s_26f5e669d3043c::t_aee217bf21b16d 1-55
+package-lock.json
+  s_26f5e669d3043c::t_7edc04bd607e60 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ab572395edfa18d66ad3f82ddaa86425ad1df462",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
