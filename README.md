@@ -67,7 +67,7 @@ it and refuse to install on a mismatch.
 
 The builds are not code-signed yet. Homebrew and `install.sh` clear macOS's
 quarantine flag for you; if you took the `.dmg` and macOS says the app is
-damaged, run `xattr -dr com.apple.quarantine /Applications/GitStudio.app` once.
+damaged, run `xattr -d -r -s com.apple.quarantine /Applications/GitStudio.app` once.
 On Windows, SmartScreen: **More info → Run anyway**.
 
 Every build checks GitHub Releases for a newer version and asks before

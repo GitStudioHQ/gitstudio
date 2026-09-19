@@ -41,9 +41,14 @@ cask "gitstudio" do
   # "unidentified developer" prompt — it gets "is damaged and can't be opened",
   # with no way through. Strip the attribute from what was just installed, which
   # is what a user would otherwise have to do by hand.
+  #
+  # -s matters: Homebrew tags the framework SYMLINKS themselves, and without -s
+  # xattr follows each link and strips its target instead, leaving fourteen
+  # tagged links inside Electron Framework.framework — enough for Gatekeeper to
+  # keep calling the app damaged with every regular file clean.
   postflight do
     system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/GitStudio.app"]
+                   args: ["-d", "-r", "-s", "com.apple.quarantine", "#{appdir}/GitStudio.app"]
   end
 
   zap trash: [
@@ -59,7 +64,12 @@ cask "gitstudio" do
       the quarantine attribute after installing, so it should open normally.
       If macOS still says the app is damaged, run this once:
 
-        xattr -dr com.apple.quarantine /Applications/GitStudio.app
+        xattr -d -r -s com.apple.quarantine /Applications/GitStudio.app
+
+      If it STILL says damaged, macOS is re-scanning that path because an
+      earlier copy there was refused; a fresh path is not scanned:
+
+        brew reinstall --cask --appdir=~/Applications gitstudio
 
       If you already had GitStudio in /Applications from a direct download,
       Homebrew will not overwrite it. Re-run with --force to take it over.

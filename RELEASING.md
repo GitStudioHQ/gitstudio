@@ -118,7 +118,7 @@ that might have been re-run.
 
 **Auto-update:** Windows and Linux update in-app through electron-updater (`latest.yml` / `latest-linux.yml` ship with the release). macOS ships no `latest-mac.yml` (two per-arch runners would clobber each other's, and unsigned builds can't apply Squirrel.Mac updates), so the app polls the GitHub API for a newer `app-v*` release itself, downloads the right `.dmg` into `~/Downloads` on confirmation, and opens it — see `apps/desktop/src/main/autoUpdate.ts`.
 
-> Unsigned builds: Windows shows SmartScreen ("More info → Run anyway"). On macOS a quarantined unsigned app is refused outright on 15+ ("damaged") — the cask and `install.sh` strip the quarantine attribute; a direct `.dmg` download needs `xattr -dr com.apple.quarantine /Applications/GitStudio.app` once. The app's own updater downloads with Node `fetch`, which sets no quarantine, so in-app updates are unaffected. Add the signing secrets above to remove all of this; macOS notarization also needs the Apple secrets.
+> Unsigned builds: Windows shows SmartScreen ("More info → Run anyway"). On macOS a quarantined unsigned app is refused outright on 15+ ("damaged") — the cask and `install.sh` strip the quarantine attribute; a direct `.dmg` download needs `xattr -d -r -s com.apple.quarantine /Applications/GitStudio.app` once. The app's own updater downloads with Node `fetch`, which sets no quarantine, so in-app updates are unaffected. Add the signing secrets above to remove all of this; macOS notarization also needs the Apple secrets.
 
 ---
 

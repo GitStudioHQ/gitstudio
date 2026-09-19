@@ -20,8 +20,9 @@ but they share the same engine, so most Git behaviour lands in both at once.
   it, and a wrapped item's indented second line stays inside the item.
 - **Homebrew installs opened to "GitStudio is damaged"** on macOS 15 and later.
   Homebrew quarantines every download and no longer offers `--no-quarantine`;
-  the cask now strips the attribute after installing, and its caveats say what
-  to run if macOS still refuses.
+  the cask now strips the attribute after installing — from the framework
+  symlinks too, which `xattr -dr` skips — and its caveats say what to run if
+  macOS still refuses.
 
 ## [2.0.0] - 2026-09-18
 
