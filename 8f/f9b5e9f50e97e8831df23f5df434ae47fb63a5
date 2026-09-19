@@ -1,0 +1,25 @@
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_7bc73ae9dc7552 25-29
+RELEASING.md
+  s_26f5e669d3043c::t_7bc73ae9dc7552 96-104
+.github/workflows/release-desktop.yml
+  s_26f5e669d3043c::t_9b5a2ccb482510 217-221,246-272,293
+Casks/gitstudio.rb
+  s_26f5e669d3043c::t_7bc73ae9dc7552 5-8,10-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8ff9b5e9f50e97e8831df23f5df434ae47fb63a5",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
