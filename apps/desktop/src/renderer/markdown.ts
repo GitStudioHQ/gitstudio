@@ -613,17 +613,42 @@ function renderMarkdownBody(src: string, depth = 0): string {
       continue;
     }
 
-    // List block — gather the contiguous run, then build bounded nested HTML.
+    // List block — gather the run, then build bounded nested HTML.
     if (/^(\s*)([-*+]|\d+[.)])\s+/.test(line)) {
       const items: ListItem[] = [];
       let m: RegExpMatchArray | null;
-      while (i < lines.length && (m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/))) {
-        items.push({
-          indent: m[1].replace(/\t/g, "  ").length,
-          ordered: /^\d/.test(m[2]),
-          text: m[3],
-        });
-        i++;
+      while (i < lines.length) {
+        const cur = lines[i];
+        if ((m = cur.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/))) {
+          items.push({
+            indent: m[1].replace(/\t/g, "  ").length,
+            ordered: /^\d/.test(m[2]),
+            text: m[3],
+          });
+          i++;
+          continue;
+        }
+        // A blank line does not end the list when another item follows it. A
+        // "loose" list — blank lines between the items — is how every model
+        // and most people on GitHub write a numbered list, and ending the run
+        // at the blank made it one <ol> per item, each starting again at 1.
+        if (/^\s*$/.test(cur)) {
+          let j = i + 1;
+          while (j < lines.length && /^\s*$/.test(lines[j])) j++;
+          if (j < lines.length && /^(\s*)([-*+]|\d+[.)])\s+/.test(lines[j])) {
+            i = j;
+            continue;
+          }
+          break;
+        }
+        // An indented plain line is the item above it, wrapped. Before this
+        // the second line of a long item fell out of the list as a paragraph.
+        if (/^\s{2,}\S/.test(cur) && !/^\s*(```+|~~~+)/.test(cur)) {
+          items[items.length - 1].text += " " + cur.trim();
+          i++;
+          continue;
+        }
+        break;
       }
       html.push(buildList(items));
       continue;

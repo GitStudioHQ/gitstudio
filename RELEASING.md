@@ -97,7 +97,10 @@ artifact set and nothing to keep in sync by hand:
   `brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio`.
   Homebrew requires `brew trust` for any third-party tap, and refuses to
   overwrite an existing `/Applications/GitStudio.app` without `--force`; both
-  are in the README and the cask's caveats.
+  are in the README and the cask's caveats. The cask's `postflight` strips the
+  quarantine attribute Homebrew puts on every download — Homebrew 5 removed
+  `--no-quarantine`, and on macOS 15+ a quarantined unsigned app opens to
+  "is damaged and can't be opened", not to the unidentified-developer prompt.
   The `finalize-release` job rewrites the cask's `version` and both `sha256`
   values from the assets it just published, attaches the result to the release,
   and opens a one-file PR to land it on `main`. Merge that PR and the tap
@@ -113,9 +116,9 @@ artifact set and nothing to keep in sync by hand:
 assets and hashing them there, rather than trusting a value from a build job
 that might have been re-run.
 
-**Auto-update:** Windows and Linux update in-app (`latest.yml` / `latest-linux.yml` ship with the release). macOS update checks are intentionally disabled in the app (two per-arch runners would clobber each other's `latest-mac.yml`, and unsigned builds can't apply Squirrel.Mac updates) — mac users update via the website/Release page.
+**Auto-update:** Windows and Linux update in-app through electron-updater (`latest.yml` / `latest-linux.yml` ship with the release). macOS ships no `latest-mac.yml` (two per-arch runners would clobber each other's, and unsigned builds can't apply Squirrel.Mac updates), so the app polls the GitHub API for a newer `app-v*` release itself, downloads the right `.dmg` into `~/Downloads` on confirmation, and opens it — see `apps/desktop/src/main/autoUpdate.ts`.
 
-> Unsigned macOS/Windows builds trigger the OS "unidentified developer" prompt. Add the signing secrets above to remove it. macOS notarization also needs the Apple secrets.
+> Unsigned builds: Windows shows SmartScreen ("More info → Run anyway"). On macOS a quarantined unsigned app is refused outright on 15+ ("damaged") — the cask and `install.sh` strip the quarantine attribute; a direct `.dmg` download needs `xattr -dr com.apple.quarantine /Applications/GitStudio.app` once. The app's own updater downloads with Node `fetch`, which sets no quarantine, so in-app updates are unaffected. Add the signing secrets above to remove all of this; macOS notarization also needs the Apple secrets.
 
 ---
 

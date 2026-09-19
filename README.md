@@ -65,10 +65,15 @@ brew install --cask gitstudio             # add --force if you already have GitS
 Every release carries a `SHA256SUMS.txt`; the one-line installers verify against
 it and refuse to install on a mismatch.
 
-Windows and Linux (AppImage) builds check GitHub Releases and update in-app
-(electron-updater); macOS updates are manual until signed builds ship — two
-per-arch runners would clobber each other's `latest-mac.yml`, and Squirrel.Mac
-cannot apply an unsigned update.
+The builds are not code-signed yet. Homebrew and `install.sh` clear macOS's
+quarantine flag for you; if you took the `.dmg` and macOS says the app is
+damaged, run `xattr -dr com.apple.quarantine /Applications/GitStudio.app` once.
+On Windows, SmartScreen: **More info → Run anyway**.
+
+Every build checks GitHub Releases for a newer version and asks before
+downloading. Windows and Linux (AppImage) then update in place; macOS downloads
+the new `.dmg` to your Downloads folder and opens it — one drag to Applications
+(unsigned builds cannot apply a Squirrel.Mac update).
 
 ## The idea
 

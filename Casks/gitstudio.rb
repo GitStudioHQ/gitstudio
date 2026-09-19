@@ -35,6 +35,17 @@ cask "gitstudio" do
 
   app "GitStudio.app"
 
+  # The build is not signed with a Developer ID, and Homebrew quarantines every
+  # download (the --no-quarantine escape hatch was removed in Homebrew 5). On
+  # macOS 15 and later a quarantined ad-hoc-signed app does not get the
+  # "unidentified developer" prompt — it gets "is damaged and can't be opened",
+  # with no way through. Strip the attribute from what was just installed, which
+  # is what a user would otherwise have to do by hand.
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{appdir}/GitStudio.app"]
+  end
+
   zap trash: [
     "~/Library/Application Support/GitStudio",
     "~/Library/Preferences/dev.gitstudio.desktop.plist",
@@ -44,10 +55,11 @@ cask "gitstudio" do
 
   caveats do
     <<~EOS
-      This build is not signed with an Apple Developer ID yet, so the first
-      launch shows the "unidentified developer" prompt. Homebrew clears the
-      quarantine attribute for you, so it should open normally — if macOS
-      still refuses, right-click the app and choose Open once.
+      This build is not signed with an Apple Developer ID yet. The cask clears
+      the quarantine attribute after installing, so it should open normally.
+      If macOS still says the app is damaged, run this once:
+
+        xattr -dr com.apple.quarantine /Applications/GitStudio.app
 
       If you already had GitStudio in /Applications from a direct download,
       Homebrew will not overwrite it. Re-run with --force to take it over.

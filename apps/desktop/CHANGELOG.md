@@ -9,6 +9,20 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Fixed
+
+- **Numbered lists with blank lines between the items** — the way every model
+  writes an answer, and most people write an issue — rendered as one list per
+  item, so the reader saw "1. 1. 1." in the Assistant, in issue and PR threads
+  and in READMEs. A blank line no longer ends a list when another item follows
+  it, and a wrapped item's indented second line stays inside the item.
+- **Homebrew installs opened to "GitStudio is damaged"** on macOS 15 and later.
+  Homebrew quarantines every download and no longer offers `--no-quarantine`;
+  the cask now strips the attribute after installing, and its caveats say what
+  to run if macOS still refuses.
+
 ## [2.0.0] - 2026-09-18
 
 The version number is the honest one: this is not a point release. Split panes

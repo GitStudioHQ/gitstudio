@@ -103,6 +103,25 @@ test("inline code is inert — HTML inside backticks is shown, not run", () => {
   assert.ok(out.includes("alert(1)"), "code-span contents were deleted");
 });
 
+test("a loose list (blank lines between items) is ONE list, not one per item", () => {
+  // The way every model writes a numbered answer. Split at the blanks it
+  // rendered as three <ol>s, and the reader saw "1. 1. 1.".
+  const out = renderMarkdown("1. **first** - one\n\n2. **second** - two\n\n3. third");
+  assert.equal((out.match(/<ol>/g) ?? []).length, 1, out);
+  assert.equal((out.match(/<li>/g) ?? []).length, 3, out);
+  // Bullets too, and a blank line still ENDS the list when prose follows.
+  const two = renderMarkdown("- a\n\n- b\n\nAfter.\n- c");
+  assert.equal((two.match(/<ul>/g) ?? []).length, 2, two);
+  assert.match(two, /<p>After\.<\/p>/);
+});
+
+test("a wrapped item continues on its indented next line", () => {
+  const out = renderMarkdown("- a long item that\n  wraps here\n- next");
+  assert.equal((out.match(/<li>/g) ?? []).length, 2, out);
+  assert.match(out, /<li>a long item that wraps here<\/li>/);
+  assert.ok(!out.includes("<p>wraps"), "the wrapped line fell out of the list");
+});
+
 test("setext rule does not swallow lists, quotes or HTML followed by ---", () => {
   // A list item followed by a horizontal rule stays a list + <hr>.
   const list = renderMarkdown("- item one\n---");
