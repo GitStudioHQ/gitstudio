@@ -22,7 +22,8 @@ but they share the same engine, so most Git behaviour lands in both at once.
   Homebrew quarantines every download and no longer offers `--no-quarantine`;
   the cask now strips the attribute after installing — from the framework
   symlinks too, which `xattr -dr` skips — and its caveats say what to run if
-  macOS still refuses.
+  macOS still refuses. The documented Homebrew install is two commands and no
+  `brew trust`: the fully-qualified cask name is Homebrew's own consent path.
 
 ## [2.0.0] - 2026-09-18
 

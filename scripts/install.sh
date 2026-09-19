@@ -124,7 +124,9 @@ if [ "$plat" = mac ]; then
   # Gatekeeper quarantines anything downloaded; an unsigned build then refuses
   # to open with a message that sounds like corruption. Clearing the attribute
   # is what the manual "right-click ▸ Open" dance does.
-  xattr -dr com.apple.quarantine "$dest" >/dev/null 2>&1 || true
+  # -s: act on symlinks themselves, not their targets — Electron's frameworks
+  # are full of them and a tagged link is enough for Gatekeeper to refuse.
+  xattr -d -r -s com.apple.quarantine "$dest" >/dev/null 2>&1 || true
   say "Installed. Open it from Launchpad, or: open -a GitStudio"
 else
   mkdir -p "${PREFIX}/bin" "${PREFIX}/share/applications" "${PREFIX}/share/icons/hicolor/512x512/apps"

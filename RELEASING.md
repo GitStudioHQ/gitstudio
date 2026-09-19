@@ -95,9 +95,11 @@ artifact set and nothing to keep in sync by hand:
   verification, then runs the NSIS installer (`-Silent` for unattended).
 - **Homebrew** — `Casks/gitstudio.rb`, tapped straight from this repo:
   `brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio`.
-  Homebrew requires `brew trust` for any third-party tap, and refuses to
-  overwrite an existing `/Applications/GitStudio.app` without `--force`; both
-  are in the README and the cask's caveats. The cask's `postflight` strips the
+  Homebrew requires third-party taps to be trusted; the fully-qualified name
+  (`brew install --cask gitstudiohq/gitstudio/gitstudio`) counts as that
+  consent, so the documented install is two commands and no `brew trust`. It
+  refuses to overwrite an existing `/Applications/GitStudio.app` without
+  `--force`; the README and the cask's caveats say so. The cask's `postflight` strips the
   quarantine attribute Homebrew puts on every download — Homebrew 5 removed
   `--no-quarantine`, and on macOS 15+ a quarantined unsigned app opens to
   "is damaged and can't be opened", not to the unidentified-developer prompt.

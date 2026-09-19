@@ -1,7 +1,11 @@
 # GitStudio Desktop — Homebrew cask.
 #
 #   brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio
-#   brew install --cask gitstudio
+#   brew install --cask gitstudiohq/gitstudio/gitstudio
+#
+# The fully-qualified name matters: Homebrew requires third-party taps to be
+# trusted, and a fully-qualified cask on the command line IS the consent
+# (Homebrew::Trust.explicitly_allowed?), so nobody has to learn `brew trust`.
 #
 # Version and checksums are rewritten by .github/workflows/release-desktop.yml
 # on every app-v* tag — the `finalize-release` job reads the real SHA256s off
@@ -46,9 +50,8 @@ cask "gitstudio" do
   # xattr follows each link and strips its target instead, leaving fourteen
   # tagged links inside Electron Framework.framework — enough for Gatekeeper to
   # keep calling the app damaged with every regular file clean.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-d", "-r", "-s", "com.apple.quarantine", "#{appdir}/GitStudio.app"]
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-d", "-r", "-s", "com.apple.quarantine", "{{appdir}}/GitStudio.app"]
   end
 
   zap trash: [
@@ -73,6 +76,9 @@ cask "gitstudio" do
 
       If you already had GitStudio in /Applications from a direct download,
       Homebrew will not overwrite it. Re-run with --force to take it over.
+
+      Prefer the one-line installer, which also verifies the checksum and
+      clears the flag:  curl -fsSL https://gitstudio.dev/install.sh | bash
     EOS
   end
 end
