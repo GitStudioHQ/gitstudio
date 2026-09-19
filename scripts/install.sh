@@ -9,8 +9,8 @@
 #
 # It resolves the newest `app-v*` release, picks the asset for this OS and
 # architecture, verifies it downloaded whole, and installs it where the platform
-# expects. Nothing is installed system-wide on Linux and nothing needs sudo
-# unless you ask for the .deb.
+# expects. Nothing is installed system-wide on Linux and nothing needs sudo; the
+# .deb and .rpm are separate downloads.
 set -euo pipefail
 
 REPO="GitStudioHQ/gitstudio"
@@ -121,11 +121,11 @@ if [ "$plat" = mac ]; then
   say "Installing to ${dest}…"
   rm -rf "$dest"
   cp -R "$app" "/Applications/" || die "could not write to /Applications — try: sudo -v, then re-run"
-  # Gatekeeper quarantines anything downloaded; an unsigned build then refuses
-  # to open with a message that sounds like corruption. Clearing the attribute
-  # is what the manual "right-click ▸ Open" dance does.
-  # -s: act on symlinks themselves, not their targets — Electron's frameworks
-  # are full of them and a tagged link is enough for Gatekeeper to refuse.
+  # Gatekeeper quarantines anything downloaded; on macOS 15+ an unsigned build
+  # is then refused as "damaged", and right-click ▸ Open no longer helps.
+  # Stripping the attribute is the only way through. -s: act on symlinks
+  # themselves, not their targets — Electron's frameworks are full of them and
+  # a tagged link is enough for Gatekeeper to refuse.
   xattr -d -r -s com.apple.quarantine "$dest" >/dev/null 2>&1 || true
   say "Installed. Open it from Launchpad, or: open -a GitStudio"
 else
@@ -133,6 +133,11 @@ else
   bin="${PREFIX}/bin/gitstudio"
   say "Installing to ${bin}…"
   install -m 0755 "${tmp}/${asset}" "$bin"
+  # The launcher icon is inside the AppImage; --appimage-extract needs no FUSE.
+  icon="$(cd "$tmp" && "$bin" --appimage-extract '*.png' >/dev/null 2>&1 && ls squashfs-root/*.png 2>/dev/null | head -n 1 || true)"
+  if [ -n "$icon" ]; then
+    install -m 0644 "${tmp}/${icon}" "${PREFIX}/share/icons/hicolor/512x512/apps/gitstudio.png"
+  fi
   # A .desktop entry so it appears in the launcher like a real application,
   # not only as something you can type.
   cat > "${PREFIX}/share/applications/gitstudio.desktop" <<EOF
@@ -147,6 +152,14 @@ Categories=Development;RevisionControl;
 StartupWMClass=GitStudio
 EOF
   say "Installed. Run: gitstudio"
+  # The AppImage runtime mounts itself with FUSE 2, which Ubuntu 22.04+ and
+  # Debian 12 no longer install by default. Say so now, not at first launch.
+  if ! { ldconfig -p 2>/dev/null || /sbin/ldconfig -p 2>/dev/null; } | grep -q 'libfuse\.so\.2'; then
+    warn "AppImages need libfuse2 and this machine has none:"
+    warn "  Debian/Ubuntu: sudo apt install libfuse2   (libfuse2t64 on Ubuntu 24.04)"
+    warn "  Fedora/RHEL:   sudo dnf install fuse-libs"
+    warn "Or take the .deb/.rpm from https://github.com/${REPO}/releases/latest instead."
+  fi
   case ":${PATH}:" in
     *":${PREFIX}/bin:"*) ;;
     *) warn "${PREFIX}/bin is not on your PATH — add it to your shell profile." ;;

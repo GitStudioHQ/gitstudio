@@ -25,6 +25,17 @@ but they share the same engine, so most Git behaviour lands in both at once.
   macOS still refuses. The documented Homebrew install is two commands and no
   `brew trust`: the fully-qualified cask name is Homebrew's own consent path.
 
+- **`irm https://gitstudio.dev/install.ps1 | iex` died after the download** on
+  Windows PowerShell 5.1 — the shell a fresh Windows machine runs it in — because
+  the installer was started with an empty `-ArgumentList`, which 5.1 rejects. The
+  switch is passed only with `-Silent` now, and a failure `throw`s instead of
+  `exit`ing the caller's session.
+- **`install.sh` on Linux** now says up front when `libfuse2` is missing (the
+  AppImage needs it; Ubuntu 22.04+ and Debian 12 no longer ship it) and installs
+  the launcher icon it used to only make a folder for.
+- **`SHA256SUMS.txt` omitted the `.rpm` and `.tar.gz`**; the release job hashes
+  every format now.
+
 ## [2.0.0] - 2026-09-18
 
 The version number is the honest one: this is not a point release. Split panes

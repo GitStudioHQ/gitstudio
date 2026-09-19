@@ -5,7 +5,7 @@ GitStudio ships two products from this monorepo, each on its own release channel
 | Product | Tag prefix | Workflow | Outputs |
 |---|---|---|---|
 | **VS Code / Cursor extension** (`apps/extension`) | `ext-v*` | `.github/workflows/release.yml` | `.vsix` → VS Code Marketplace + Open VSX + GitHub Release |
-| **Desktop app** (`apps/desktop`, Electron) | `app-v*` | `.github/workflows/release-desktop.yml` | `.dmg` / `.zip` (mac ×2 arch), `.exe` (win), `.AppImage` + `.deb` (linux) → GitHub Release |
+| **Desktop app** (`apps/desktop`, Electron) | `app-v*` | `.github/workflows/release-desktop.yml` | `.dmg` / `.zip` (mac ×2 arch), `.exe` (win), `.AppImage` + `.deb` + `.rpm` + `.tar.gz` (linux) → GitHub Release |
 
 Both release workflows also run typecheck + the full test suite first, so a broken build never publishes. `.github/workflows/ci.yml` runs the same gates on every push/PR to `main` — including the test suite on **ubuntu, macos, and windows**, the same OSes the release matrix builds on.
 

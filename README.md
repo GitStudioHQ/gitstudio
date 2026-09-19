@@ -169,7 +169,7 @@ npm test && npm run check-types && npm run check-purity
 | | |
 |---|---|
 | **Extension** | `gitstudio.gitstudio` (publisher `gitstudio`) — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio) + [Open VSX](https://open-vsx.org/extension/gitstudio/gitstudio) |
-| **Desktop** | [GitHub Releases](https://github.com/GitStudioHQ/gitstudio/releases) — `.dmg` (arm64 + x64), `.exe`, `.AppImage`, `.deb` |
+| **Desktop** | [GitHub Releases](https://github.com/GitStudioHQ/gitstudio/releases) — `.dmg` (arm64 + x64), `.exe`, `.AppImage`, `.deb`, `.rpm`, `.tar.gz` |
 | **Website** | [gitstudio.dev](https://gitstudio.dev) |
 | **License** | **Apache-2.0** |
 | **Sibling product** | [Merge Studio](https://marketplace.visualstudio.com/items?itemName=gitstudio.merge-studio) — `gitstudio.merge-studio`, the original 3-pane merge editor. Shares an engine, not a listing. |

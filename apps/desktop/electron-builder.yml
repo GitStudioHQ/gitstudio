@@ -53,8 +53,9 @@ mac:
   extraResources:
     - from: build/mac/Assets.car
       to: Assets.car
-  # dmg is the human download; zip is REQUIRED for electron-updater to deliver
-  # macOS auto-updates (it can't update from a .dmg).
+  # dmg is the human download and what the in-app updater fetches; zip is kept
+  # as a plain archive download (macOS does not use electron-updater — see
+  # src/main/autoUpdate.ts).
   target:
     - dmg
     - zip

@@ -129,7 +129,8 @@ pinned instead of floating invisibly over the rows sliding beneath it.
 
 If you are on 1.6.0, the app will offer this release on its own: on macOS it
 downloads the right installer to your Downloads folder and opens it; on Windows
-and Linux it downloads in place and restarts into 1.7.0 when you say so.
+and the Linux AppImage it downloads in place and restarts into 2.0.0 when you
+say so.
 
 ## Installing
 
@@ -141,7 +142,7 @@ curl -fsSL https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/
 
 # Homebrew (macOS)
 brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio
-brew install --cask gitstudio
+brew install --cask gitstudiohq/gitstudio/gitstudio   # add --force if you already have GitStudio.app
 ```
 
 ```powershell
@@ -149,9 +150,16 @@ brew install --cask gitstudio
 irm https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install.ps1 | iex
 ```
 
-Or take the `.dmg`, `.exe`, `.AppImage` or `.deb` from the assets below. Every
-release carries a `SHA256SUMS.txt`, and the one-line installers verify against
-it and refuse to install on a mismatch.
+Or take the `.dmg`, `.exe`, `.AppImage`, `.deb`, `.rpm` or `.tar.gz` from the
+assets below. Every release carries a `SHA256SUMS.txt`, and the one-line
+installers verify against it and refuse to install on a mismatch.
+
+The builds are not code-signed yet. Homebrew and `install.sh` clear macOS's
+quarantine flag for you; if you took the `.dmg` and macOS says the app is
+damaged, run `xattr -d -r -s com.apple.quarantine /Applications/GitStudio.app`
+once, before the first launch. On Windows, SmartScreen: **More info → Run
+anyway**. The AppImage needs `libfuse2` (`sudo apt install libfuse2`; the
+`.deb`/`.rpm` do not).
 
 ## Why 2.0
 

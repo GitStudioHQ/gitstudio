@@ -205,7 +205,7 @@ jobs:
           mkdir -p dist-sums && cd dist-sums
           gh release download "${GITHUB_REF_NAME}" \
             --pattern '*.dmg' --pattern '*.zip' --pattern '*.exe' \
-            --pattern '*.AppImage' --pattern '*.deb'
+            --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm' --pattern '*.tar.gz'
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
           gh release upload "${GITHUB_REF_NAME}" SHA256SUMS.txt --clobber

@@ -17,7 +17,9 @@ $repo = 'GitStudioHQ/gitstudio'
 
 function Say  { param($m) Write-Host "▸ $m" -ForegroundColor Magenta }
 function Warn { param($m) Write-Host "! $m" -ForegroundColor Yellow }
-function Die  { param($m) Write-Host "✗ $m" -ForegroundColor Red; exit 1 }
+# `throw`, not `exit`: under `irm | iex` this script runs inside the caller's
+# session, and `exit` would close their window with the message in it.
+function Die  { param($m) Write-Host "✗ $m" -ForegroundColor Red; throw $m }
 
 # TLS 1.2 for Windows PowerShell 5.1, which still defaults lower and then fails
 # against GitHub with an error that reads like a network outage.
@@ -70,9 +72,13 @@ try {
 
   Say 'Running the installer…'
   # /S is NSIS's silent switch; without it the user gets the normal wizard and
-  # can choose the install directory, which is why oneClick is off.
-  $args = if ($Silent) { '/S' } else { '' }
-  $p = Start-Process -FilePath $exe -ArgumentList $args -PassThru -Wait
+  # can choose the install directory, which is why oneClick is off. The switch
+  # is added only when asked for: Windows PowerShell 5.1 — what `irm | iex`
+  # runs in on a fresh machine — validates -ArgumentList as not-empty, so
+  # passing '' died right here, after the download and before the install.
+  $start = @{ FilePath = $exe; PassThru = $true; Wait = $true }
+  if ($Silent) { $start.ArgumentList = '/S' }
+  $p = Start-Process @start
   if ($p.ExitCode -ne 0) { Die "the installer exited with code $($p.ExitCode)" }
   Say 'Installed. Find GitStudio in the Start menu.'
 } finally {
