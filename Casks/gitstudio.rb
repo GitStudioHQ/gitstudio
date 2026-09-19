@@ -17,10 +17,12 @@ cask "gitstudio" do
 
   on_arm do
     sha256 "bb4535913de46de6b568fb2d74fe921a2d32e2e39682cf04860256e37ed769d6"
+
     url "https://github.com/GitStudioHQ/gitstudio/releases/download/app-v#{version}/GitStudio-#{version}-arm64.dmg"
   end
   on_intel do
     sha256 "302d686afa527ee2cdf267279f42329241097666c68865190181c2709d3f80f5"
+
     url "https://github.com/GitStudioHQ/gitstudio/releases/download/app-v#{version}/GitStudio-#{version}-x64.dmg"
   end
 
@@ -37,7 +39,7 @@ cask "gitstudio" do
   end
 
   auto_updates false
-  depends_on macos: :big_sur
+  depends_on :macos
 
   app "GitStudio.app"
 
@@ -58,9 +60,9 @@ cask "gitstudio" do
 
   zap trash: [
     "~/Library/Application Support/GitStudio",
+    "~/Library/Logs/GitStudio",
     "~/Library/Preferences/dev.gitstudio.desktop.plist",
     "~/Library/Saved Application State/dev.gitstudio.desktop.savedState",
-    "~/Library/Logs/GitStudio",
   ]
 
   caveats do
