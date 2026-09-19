@@ -1,15 +1,17 @@
 # GitStudio Desktop — Homebrew cask.
 #
-#   brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio
 #   brew install --cask gitstudiohq/gitstudio/gitstudio
 #
-# The fully-qualified name matters: Homebrew requires third-party taps to be
-# trusted, and a fully-qualified cask on the command line IS the consent
-# (Homebrew::Trust.explicitly_allowed?), so nobody has to learn `brew trust`.
+# One line: Homebrew taps github.com/GitStudioHQ/homebrew-gitstudio by name,
+# and the fully-qualified cask on the command line is the consent Homebrew
+# requires for a third-party tap (Homebrew::Trust.explicitly_allowed?), so
+# nobody has to learn `brew trust`.
 #
-# Version and checksums are rewritten by .github/workflows/release-desktop.yml
-# on every app-v* tag — the `finalize-release` job reads the real SHA256s off
-# the uploaded assets. Do not hand-edit them; they will be overwritten.
+# THIS file is the source of truth. Version and checksums are rewritten by
+# .github/workflows/release-desktop.yml on every app-v* tag — the
+# `finalize-release` job reads the real SHA256s off the uploaded assets — and
+# the result is pushed to the tap repository. Do not hand-edit them; they will
+# be overwritten.
 cask "gitstudio" do
   version "2.0.0"
 

@@ -93,13 +93,15 @@ artifact set and nothing to keep in sync by hand:
   entry.
 - **`irm | iex`** — `scripts/install.ps1` (Windows). Same resolution and
   verification, then runs the NSIS installer (`-Silent` for unattended).
-- **Homebrew** — `Casks/gitstudio.rb`, tapped straight from this repo:
-  `brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio`.
-  Homebrew requires third-party taps to be trusted; the fully-qualified name
-  (`brew install --cask gitstudiohq/gitstudio/gitstudio`) counts as that
-  consent, so the documented install is two commands and no `brew trust`. It
-  refuses to overwrite an existing `/Applications/GitStudio.app` without
-  `--force`; the README and the cask's caveats say so. The cask's `postflight` strips the
+- **Homebrew** — `brew install --cask gitstudiohq/gitstudio/gitstudio`, one
+  line. Homebrew taps [GitStudioHQ/homebrew-gitstudio](https://github.com/GitStudioHQ/homebrew-gitstudio)
+  by name; `Casks/gitstudio.rb` HERE is the source of truth and the
+  `finalize-release` job pushes the stamped copy to the tap over a deploy key
+  (`HOMEBREW_TAP_DEPLOY_KEY` secret; the key is registered on the tap repo
+  with write access). Homebrew requires third-party taps to be trusted; the
+  fully-qualified name counts as that consent, so no `brew trust`. It refuses
+  to overwrite an existing `/Applications/GitStudio.app` without `--force`;
+  the README and the cask's caveats say so. The cask's `postflight` strips the
   quarantine attribute Homebrew puts on every download — Homebrew 5 removed
   `--no-quarantine`, and on macOS 15+ a quarantined unsigned app opens to
   "is damaged and can't be opened", not to the unidentified-developer prompt.

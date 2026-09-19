@@ -141,7 +141,6 @@ Four ways in, all fed by the same release assets:
 curl -fsSL https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install.sh | bash
 
 # Homebrew (macOS)
-brew tap gitstudiohq/gitstudio https://github.com/GitStudioHQ/gitstudio
 brew install --cask gitstudiohq/gitstudio/gitstudio   # add --force if you already have GitStudio.app
 ```
 
