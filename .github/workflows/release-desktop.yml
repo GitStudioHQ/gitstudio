@@ -299,3 +299,42 @@ jobs:
       - name: Publish the release
         shell: bash
         run: gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+
+  # winget. Runs after publish, in THIS workflow, because Microsoft's validation
+  # pipeline downloads the installer anonymously (a draft's assets are not
+  # public) and because a release published with the Actions token never
+  # triggers another workflow. The action drives komac: it re-reads the new
+  # .exe (hash, ProductCode, ARP entries), writes the manifests for
+  # GitStudioHQ.GitStudio, and opens the PR against microsoft/winget-pkgs from
+  # the fork. It can only ADD a version — the first submission (2.0.0,
+  # microsoft/winget-pkgs#437547) had to be opened by hand.
+  winget:
+    needs: finalize-release
+    if: startsWith(github.ref, 'refs/tags/app-v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the token
+        id: token
+        shell: bash
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          if [ -z "${WINGET_TOKEN}" ]; then
+            echo "::warning::WINGET_TOKEN is not set — no winget PR for ${GITHUB_REF_NAME}. Create a CLASSIC personal access token with the public_repo scope on the account that owns the winget-pkgs fork (antonarnaudov) and add it as the WINGET_TOKEN repository secret; fine-grained tokens do not work with the fork step."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+          # PackageVersion is the bare number; the tag carries the app-v prefix.
+          echo "version=${GITHUB_REF_NAME#app-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Submit GitStudioHQ.GitStudio to winget-pkgs
+        if: steps.token.outputs.present == 'true'
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: GitStudioHQ.GitStudio
+          version: ${{ steps.token.outputs.version }}
+          installers-regex: '^GitStudio-Setup-.*\.exe$'
+          release-tag: ${{ github.ref_name }}
+          fork-user: antonarnaudov
+          token: ${{ secrets.WINGET_TOKEN }}

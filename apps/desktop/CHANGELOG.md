@@ -39,6 +39,10 @@ but they share the same engine, so most Git behaviour lands in both at once.
 - **`SHA256SUMS.txt` omitted the `.rpm` and `.tar.gz`**; the release job hashes
   every format now.
 
+- **winget**: `GitStudioHQ.GitStudio` is submitted to the community repository
+  (microsoft/winget-pkgs#437547); once it lands, every later release opens its
+  own update PR from the release workflow.
+
 ## [2.0.0] - 2026-09-18
 
 The version number is the honest one: this is not a point release. Split panes

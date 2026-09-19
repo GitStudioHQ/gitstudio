@@ -83,7 +83,7 @@ A `create-release` job makes the Release once (so the matrix jobs never race eac
 
 Artifact names are pinned in `electron-builder.yml` (no spaces, arch-suffixed) so the website can link them predictably: `https://github.com/GitStudioHQ/gitstudio/releases/download/app-v<version>/<name>`.
 
-**Install channels.** Four, all fed by the same Release assets, so there is one
+**Install channels.** Five, all fed by the same Release assets, so there is one
 artifact set and nothing to keep in sync by hand:
 
 - **`curl | bash`** — `scripts/install.sh` (macOS, Linux). Resolves the newest
@@ -93,6 +93,15 @@ artifact set and nothing to keep in sync by hand:
   entry.
 - **`irm | iex`** — `scripts/install.ps1` (Windows). Same resolution and
   verification, then runs the NSIS installer (`-Silent` for unattended).
+- **winget** — `winget install GitStudioHQ.GitStudio`, once
+  [microsoft/winget-pkgs#437547](https://github.com/microsoft/winget-pkgs/pull/437547)
+  (the 2.0.0 "New package" submission) is merged. Every later `app-v*` tag
+  runs the `winget` job: `vedantmgoyal9/winget-releaser` (komac) re-analyses
+  `GitStudio-Setup-<version>.exe`, writes the manifests and opens the
+  "Update" PR from the `antonarnaudov/winget-pkgs` fork. It needs the
+  `WINGET_TOKEN` secret — a CLASSIC PAT with the `public_repo` scope from that
+  account (fine-grained tokens cannot drive the fork). Without the secret the
+  job warns and skips; the release itself is unaffected.
 - **Homebrew** — `brew install --cask gitstudiohq/gitstudio/gitstudio`, one
   line. Homebrew taps [GitStudioHQ/homebrew-gitstudio](https://github.com/GitStudioHQ/homebrew-gitstudio)
   by name; `Casks/gitstudio.rb` HERE is the source of truth and the

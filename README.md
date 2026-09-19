@@ -51,6 +51,14 @@ irm https://raw.githubusercontent.com/GitStudioHQ/gitstudio/main/scripts/install
 brew install --cask gitstudiohq/gitstudio/gitstudio   # add --force if you already have GitStudio.app
 ```
 
+**winget** (Windows) — once the first submission
+([microsoft/winget-pkgs#437547](https://github.com/microsoft/winget-pkgs/pull/437547))
+is merged:
+
+```powershell
+winget install GitStudioHQ.GitStudio
+```
+
 **Or download it** from the [latest GitHub Release](https://github.com/GitStudioHQ/gitstudio/releases/latest) or [gitstudio.dev](https://gitstudio.dev):
 
 | Platform | Installer |
