@@ -1,0 +1,29 @@
+RELEASING.md
+  s_26f5e669d3043c::t_c78e786d001132 100-103,119,121
+apps/desktop/test/markdown.test.ts
+  s_26f5e669d3043c::t_1399a87ebd666a 106-124
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_3811104bb8e3dd 12-25
+apps/desktop/src/renderer/markdown.ts
+  s_26f5e669d3043c::t_1399a87ebd666a 616,620-651
+README.md
+  s_26f5e669d3043c::t_0ccd0252b22aa7 68-76
+Casks/gitstudio.rb
+  s_26f5e669d3043c::t_bc916749378bbc 38-48,58-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cbe02c8d7f8c877fcdba5d1c7617d25c247da835",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
