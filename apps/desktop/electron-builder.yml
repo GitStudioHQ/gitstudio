@@ -65,6 +65,13 @@ mac:
   hardenedRuntime: true
   gatekeeperAssess: false
 
+# With no Developer ID configured, electron-builder ships the bundle UNSIGNED,
+# and macOS 15+ refuses a quarantined unsigned app as "damaged" with no way
+# through. build/afterPack.js ad-hoc signs it instead, which turns that into
+# the unidentified-developer prompt with an "Open Anyway" in System Settings.
+# A real identity (CSC_LINK) replaces the ad-hoc signature in the sign step.
+afterPack: build/afterPack.js
+
 dmg:
   title: GitStudio ${version}
 

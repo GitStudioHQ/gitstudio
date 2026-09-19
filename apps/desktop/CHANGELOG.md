@@ -9,10 +9,18 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
-## [Unreleased]
+## [2.0.1] - 2026-09-19
 
 ### Fixed
 
+- **A downloaded `.dmg` opened to "GitStudio is damaged"** on macOS 15 and later,
+  with no way through. The shipped bundle had no signature at all — with no
+  Developer ID configured, electron-builder skips signing entirely. The build
+  now ad-hoc signs the bundle (`build/afterPack.js`), so a quarantined copy gets
+  the ordinary "Apple could not verify…" prompt and an **Open Anyway** in
+  System Settings ▸ Privacy & Security instead of a dead end. Homebrew, the
+  one-line installer and the in-app updater were never affected, and a real
+  certificate replaces the ad-hoc signature the moment one is configured.
 - **Numbered lists with blank lines between the items** — the way every model
   writes an answer, and most people write an issue — rendered as one list per
   item, so the reader saw "1. 1. 1." in the Assistant, in issue and PR threads
@@ -27,7 +35,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
   [GitStudioHQ/homebrew-gitstudio](https://github.com/GitStudioHQ/homebrew-gitstudio)
   tap, which the release job updates; no `brew tap` URL and no `brew trust`,
   because the fully-qualified cask name is Homebrew's own consent path.
-
 - **`irm https://gitstudio.dev/install.ps1 | iex` died after the download** on
   Windows PowerShell 5.1 — the shell a fresh Windows machine runs it in — because
   the installer was started with an empty `-ArgumentList`, which 5.1 rejects. The
