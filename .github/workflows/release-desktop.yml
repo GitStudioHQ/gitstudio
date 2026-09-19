@@ -330,6 +330,11 @@ jobs:
 
       - name: Submit GitStudioHQ.GitStudio to winget-pkgs
         if: steps.token.outputs.present == 'true'
+        # Never a reason to call the release red: komac can only ADD a version
+        # to a package that already exists upstream, so until the first
+        # submission (microsoft/winget-pkgs#437547) is merged this step fails
+        # by design, and a transient winget-pkgs outage must not either.
+        continue-on-error: true
         uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: GitStudioHQ.GitStudio
