@@ -10,11 +10,11 @@ cask "gitstudio" do
   version "2.0.0"
 
   on_arm do
-    sha256 "a601478b1ce7526330c6888eaa81dcfbec640ac4457173b90cbf43fedb270177"
+    sha256 "bb4535913de46de6b568fb2d74fe921a2d32e2e39682cf04860256e37ed769d6"
     url "https://github.com/GitStudioHQ/gitstudio/releases/download/app-v#{version}/GitStudio-#{version}-arm64.dmg"
   end
   on_intel do
-    sha256 "ea8fce35fe29f3842459c3d94f12153f0857004514dfeb58b7669f2be2b71f44"
+    sha256 "302d686afa527ee2cdf267279f42329241097666c68865190181c2709d3f80f5"
     url "https://github.com/GitStudioHQ/gitstudio/releases/download/app-v#{version}/GitStudio-#{version}-x64.dmg"
   end
 

@@ -79,7 +79,7 @@ A `create-release` job makes the Release once (so the matrix jobs never race eac
 
 - **macOS** — `GitStudio-1.0.0-arm64.dmg`, `GitStudio-1.0.0-x64.dmg` (+ `.zip`)
 - **Windows** — `GitStudio-Setup-1.0.0.exe` (NSIS, user-choosable install dir)
-- **Linux** — `GitStudio-1.0.0-x86_64.AppImage` (universal), `GitStudio-1.0.0-amd64.deb` (Debian/Ubuntu), `GitStudio-1.0.0-x86_64.rpm` (Fedora/RHEL), `GitStudio-1.0.0.tar.gz` (portable). The rpm target shells out to `rpmbuild`, which the workflow installs on the Linux runner.
+- **Linux** — `GitStudio-1.0.0-x86_64.AppImage` (universal), `GitStudio-1.0.0-amd64.deb` (Debian/Ubuntu), `GitStudio-1.0.0-x86_64.rpm` (Fedora/RHEL), `GitStudio-1.0.0-x64.tar.gz` (portable). The rpm target shells out to `rpmbuild`, which the workflow installs on the Linux runner.
 
 Artifact names are pinned in `electron-builder.yml` (no spaces, arch-suffixed) so the website can link them predictably: `https://github.com/GitStudioHQ/gitstudio/releases/download/app-v<version>/<name>`.
 
