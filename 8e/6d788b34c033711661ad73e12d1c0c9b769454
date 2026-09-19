@@ -1,0 +1,29 @@
+docs/releases/app-v2.0.1.md
+  s_26f5e669d3043c::t_e8ba1292b53e6c 1-55
+apps/desktop/electron-builder.yml
+  s_26f5e669d3043c::t_53e1c22a9e464a 68-74
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_bff6b296c31792 12,16-23
+apps/desktop/package.json
+  s_26f5e669d3043c::t_bff6b296c31792 3
+apps/desktop/build/afterPack.js
+  s_26f5e669d3043c::t_437a8f5f894f13 1-27
+package-lock.json
+  s_26f5e669d3043c::t_4b1a268e16082c 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8e6d788b34c033711661ad73e12d1c0c9b769454",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
