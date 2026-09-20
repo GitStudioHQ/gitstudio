@@ -568,6 +568,12 @@ export class CommitGraph extends LitElement {
       overflow-y: auto;
       scrollbar-width: thin;
     }
+    /* Opening leftwards runs off the pane once the trigger sits within a
+       shell's width of the left edge — a bottom panel with the details pane
+       open (42% of it) leaves a 580–740px graph pane with the trigger at
+       ~235px, and the presets were cut. fitBranchesPopover measures and
+       flips it rightwards; the narrow rule below does the same by width. */
+    .gh-branches-pop.open-right { right: auto; left: 0; }
     .gh-presets {
       display: flex;
       flex-wrap: wrap;
@@ -1841,6 +1847,9 @@ export class CommitGraph extends LitElement {
     if (changed.has("branchesOpen") && this.branchesOpen) {
       (this.renderRoot.querySelector(".gh-pop-filter input") as HTMLInputElement | null)?.focus();
     }
+    // …and on the side of its trigger that has the room — every update while
+    // open, because a tick widens the trigger's label and moves its edges.
+    if (this.branchesOpen) this.fitBranchesPopover();
 
     const scroller = this.scroller;
     if (scroller) {
@@ -2369,6 +2378,23 @@ export class CommitGraph extends LitElement {
     // A fresh open starts with the whole list; the query is not a preference.
     if (this.branchesOpen) this.branchQuery = "";
   };
+
+  /**
+   * The picker is anchored to its trigger's right edge and opens leftwards
+   * (see the CSS); when the trigger sits within a shell's width of the pane's
+   * left edge that runs the presets and the filter box off the pane, so it
+   * opens rightwards instead. Measured, not a width breakpoint: where the
+   * trigger lands depends on the search box and the count beside it.
+   */
+  private fitBranchesPopover(): void {
+    const pop = this.renderRoot.querySelector<HTMLElement>(".gh-branches-pop");
+    const anchor = pop?.parentElement?.getBoundingClientRect();
+    if (!pop || !anchor) return;
+    // Anchored right, the shell's left edge is the anchor's right edge minus
+    // the shell's own width — the same width whichever side it opens on.
+    const overLeft = anchor.right - pop.offsetWidth < this.getBoundingClientRect().left + 6;
+    pop.classList.toggle("open-right", overLeft);
+  }
 
   private closePopovers(): void {
     if (this.columnsOpen || this.scopeOpen || this.branchesOpen) {

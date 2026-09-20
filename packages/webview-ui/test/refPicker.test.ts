@@ -240,3 +240,29 @@ test("the rail's Branches picker: trigger, presets, ticks, keyboard, chips", { s
   const v = await runInChrome(CHROME!, RAIL, MOUNT_RAIL + SCRIPT, { css: CSS_RAIL, width: 320, height: 600 });
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+/**
+ * The picker opens leftwards from its trigger, which is right while the
+ * header has spare width on that side. In the bottom panel with the details
+ * pane open (42% of the panel) the graph pane is 580–740px on a laptop, the
+ * trigger sits ~235px from the left edge, and a 280px shell anchored to its
+ * right edge ran 45px off the pane — the presets and the filter box were cut.
+ * Every width here is inside that band; the shell must stay inside the pane.
+ */
+const FIT_SCRIPT = `
+  const host = el.getBoundingClientRect();
+  $(TRIGGER).click();
+  await settle();
+  const pop = $(POP).getBoundingClientRect();
+  notes.pane = Math.round(host.width); notes.left = Math.round(pop.left - host.left); notes.right = Math.round(pop.right - host.left);
+  expect(pop.left >= host.left, "the picker's left edge is inside the pane (" + Math.round(pop.left - host.left) + "px)");
+  expect(pop.right <= host.right, "and its right edge too (" + Math.round(pop.right - host.left) + "px of " + Math.round(host.width) + ")");
+`;
+
+for (const width of [600, 680, 720]) {
+  test(`the graph's picker stays inside a ${width}px pane`, { skip: !CHROME && "no Chrome on this machine" }, async () => {
+    const css = `#root{height:300px;width:${width}px;display:flex;flex-direction:column} gitstudio-graph{flex:1;min-height:0}`;
+    const v = await runInChrome(CHROME!, GRAPH, MOUNT_GRAPH + FIT_SCRIPT, { css, width: 1100, height: 300 });
+    assert.deepEqual(v.fails, [], v.fails.join("\n"));
+  });
+}
