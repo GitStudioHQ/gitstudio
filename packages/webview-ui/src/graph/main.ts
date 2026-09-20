@@ -297,7 +297,5 @@ function handle(
       graph.status = "error";
       break;
     }
-    case "graphConfig":
-      break;
   }
 }

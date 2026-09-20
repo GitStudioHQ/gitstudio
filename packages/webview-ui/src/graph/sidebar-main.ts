@@ -105,7 +105,6 @@ function start(root: HTMLElement): void {
       // pushes are for the editor-area graph.
       case "commitDetails":
       case "rowStats":
-      case "graphConfig":
         break;
     }
   });

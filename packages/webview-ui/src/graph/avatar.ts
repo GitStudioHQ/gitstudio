@@ -12,6 +12,8 @@
 // md5 is implemented inline (tiny, synchronous, dependency-free) because the
 // virtualizer builds row HTML on the hot path and can't await SubtleCrypto.
 
+import { esc } from "./format";
+
 /* ── Minimal synchronous MD5 (RFC 1321) ─────────────────────────────────────
  * Compact public-domain-style implementation; ASCII/UTF-8 safe for emails.   */
 
@@ -237,4 +239,38 @@ export function authorInitials(name: string, email: string): string {
   const first = [...parts[0]][0] ?? "";
   const last = [...parts[parts.length - 1]][0] ?? "";
   return (first + last).toUpperCase();
+}
+
+/**
+ * One row's avatar markup: a photo layered over a deterministic initials disc.
+ * The disc is the always-visible base; the <img> starts hidden and is revealed
+ * only once it confirms a successful load (each list delegates a capture-phase
+ * `load`/`error` listener on its scroller — inline `onerror` would violate the
+ * page CSP, and one delegated listener is cheaper than per-row JS on the
+ * virtualized hot path). Alt is intentionally empty so a broken image never
+ * flashes alt text over the disc.
+ *
+ * `preloaded` = this exact URL already loaded once. Render it visible
+ * IMMEDIATELY so a row recycled during scroll shows the cached photo instantly
+ * instead of flashing the initials disc while it waits for a fresh load event.
+ * A first-ever load still starts hidden (a 404 stays hidden).
+ */
+export function avatarHtml(
+  author: string,
+  email: string,
+  cx: number,
+  ring: string,
+  resolvedUrl: string,
+  preloaded: boolean,
+): string {
+  const hue = avatarHue(email);
+  const initials = esc(authorInitials(author, email));
+  const cls = preloaded ? "av-img is-loaded" : "av-img";
+  return (
+    `<span class="avatar" style="--gs-av-hue:${hue};--gs-av-x:${cx}px;` +
+    `--gs-av-ring:${esc(ring)}" aria-hidden="true">` +
+    `<span class="fallback">${initials}</span>` +
+    `<img class="${cls}" src="${esc(resolvedUrl)}" alt="" loading="lazy" decoding="async" />` +
+    `</span>`
+  );
 }

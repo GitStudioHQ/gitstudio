@@ -45,11 +45,14 @@ import {
   paletteForTheme,
   observeGraphTheme,
 } from "./lanePalette";
+import { gravatarUrl, avatarHtml } from "./avatar";
+import { esc, relTime, absTime, DAY } from "./format";
 import {
-  gravatarUrl,
-  avatarHue,
-  authorInitials,
-} from "./avatar";
+  type SearchScope,
+  SEARCH_SCOPES,
+  LS_SEARCH_SCOPE,
+  rowMatches,
+} from "./search";
 import { COLUMN_DROP_TAIL_AT, INLINE_LIST_BELOW } from "../limits";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
@@ -178,22 +181,9 @@ function colMax(id: ColumnSpec["id"]): number {
   return COLUMN_BY_ID.get(id)!.max;
 }
 
-
-
 /** localStorage keys (work in both the Electron renderer and VS Code webviews). */
 const LS_COL_WIDTHS = "gitstudio.graph.cols.widths";
 const LS_COL_HIDDEN = "gitstudio.graph.cols.hidden";
-const LS_SEARCH_SCOPE = "gitstudio.graph.search.scope";
-
-/** What the search query matches against. */
-export type SearchScope = "all" | "message" | "author" | "sha" | "refs";
-const SEARCH_SCOPES: ReadonlyArray<{ id: SearchScope; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "message", label: "Message" },
-  { id: "author", label: "Author" },
-  { id: "sha", label: "SHA" },
-  { id: "refs", label: "Branch+Tag" },
-];
 
 export type GraphAction =
   | { type: "select"; sha: string }
@@ -3211,37 +3201,10 @@ export class CommitGraph extends LitElement {
     if (!q) return;
     const scope = this.searchScope;
     for (let i = 0; i < this.rows.length; i++) {
-      if (this.rowMatches(this.rows[i], q, scope)) {
+      if (rowMatches(this.rows[i], q, scope)) {
         this.searchMatches.push(i);
         this.matchSet.add(i);
       }
-    }
-  }
-
-  /** Whether a row matches the lowercased query under the chosen scope. */
-  private rowMatches(r: WireRow, q: string, scope: SearchScope): boolean {
-    switch (scope) {
-      case "message":
-        return r.subject.toLowerCase().includes(q);
-      case "author":
-        return (
-          r.author.toLowerCase().includes(q) ||
-          r.authorEmail.toLowerCase().includes(q)
-        );
-      case "sha":
-        // SHA is prefix-matched against the full sha (so a long paste still hits).
-        return r.sha.toLowerCase().startsWith(q) || r.shortSha.toLowerCase().startsWith(q);
-      case "refs":
-        return r.refs.some((ref) => ref.name.toLowerCase().includes(q));
-      case "all":
-      default:
-        return (
-          r.subject.toLowerCase().includes(q) ||
-          r.author.toLowerCase().includes(q) ||
-          r.authorEmail.toLowerCase().includes(q) ||
-          r.sha.toLowerCase().startsWith(q) ||
-          r.refs.some((ref) => ref.name.toLowerCase().includes(q))
-        );
     }
   }
 
@@ -3747,77 +3710,6 @@ function shaCellHtml(fullSha: string, shortSha: string, isWip: boolean): string 
 }
 
 /**
- * One author avatar cell: a Gravatar image layered over a deterministic
- * initials disc. If the remote image fails (offline / blocked / no Gravatar),
- * a delegated capture-phase `error` listener on the scroller hides the <img>,
- * revealing the colored fallback underneath. (Inline `onerror` would violate
- * the page CSP; a single delegated listener is also cheaper than per-row JS on
- * the virtualized hot path.) Alt is intentionally empty so a broken image never
- * flashes alt text over the disc.
- */
-function avatarHtml(
-  author: string,
-  email: string,
-  cx: number,
-  ring: string,
-  resolvedUrl: string,
-  preloaded: boolean,
-): string {
-  const hue = avatarHue(email);
-  const initials = esc(authorInitials(author, email));
-  const url = esc(resolvedUrl);
-  // `preloaded` = this exact URL already loaded once (tracked in loadedAvatars).
-  // Render it visible IMMEDIATELY so a row recycled during scroll shows the
-  // cached photo instantly instead of flashing the initials disc while it waits
-  // for a fresh load event — the flicker. A first-ever load still starts hidden
-  // and is revealed by onImgLoad, over the disc base (a 404 stays hidden).
-  const cls = preloaded ? "av-img is-loaded" : "av-img";
-  return (
-    `<span class="avatar" style="--gs-av-hue:${hue};--gs-av-x:${cx}px;` +
-    `--gs-av-ring:${esc(ring)}" aria-hidden="true">` +
-    `<span class="fallback">${initials}</span>` +
-    `<img class="${cls}" src="${url}" alt="" loading="lazy" decoding="async" />` +
-    `</span>`
-  );
-}
-
-/** HTML-escape user-controlled text before splicing into innerHTML. */
-function esc(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-const MINUTE = 60;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-const MONTH = 30 * DAY;
-const YEAR = 365 * DAY;
-
-/** Compact relative age, mirroring the extension's relativeTime util. */
-function relTime(epochSeconds: number, now = Date.now() / 1000): string {
-  const delta = Math.floor(now - epochSeconds);
-  if (delta < MINUTE) {
-    return "now";
-  }
-  if (delta < HOUR) {
-    return `${Math.floor(delta / MINUTE)}m`;
-  }
-  if (delta < DAY) {
-    return `${Math.floor(delta / HOUR)}h`;
-  }
-  if (delta < MONTH) {
-    return `${Math.floor(delta / DAY)}d`;
-  }
-  if (delta < YEAR) {
-    return `${Math.floor(delta / MONTH)}mo`;
-  }
-  return `${Math.floor(delta / YEAR)}y`;
-}
-
-/**
  * The DATE cell label: relative while it's still "today news" (now/5m/3h),
  * then a real calendar date — a column of "2y" rows carries no information,
  * while "Jun 12, 2024" places a commit instantly. Year is dropped for the
@@ -3837,15 +3729,6 @@ function dateLabel(epochSeconds: number, now = Date.now() / 1000): string {
     });
   } catch {
     return relTime(epochSeconds, now);
-  }
-}
-
-/** Full local timestamp for the date column's hover tooltip. */
-function absTime(epochSeconds: number): string {
-  try {
-    return new Date(epochSeconds * 1000).toLocaleString();
-  } catch {
-    return "";
   }
 }
 

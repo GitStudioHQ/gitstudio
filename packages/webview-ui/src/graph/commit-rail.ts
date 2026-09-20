@@ -37,8 +37,15 @@ import {
 import type { WireRow, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG } from "./gutter";
 import { paletteForTheme, observeGraphTheme } from "./lanePalette";
-import { gravatarUrl, avatarHue, authorInitials } from "./avatar";
+import { gravatarUrl, avatarHtml } from "./avatar";
 import { RefTip, refTipStyles, tipAriaLabel, tipData } from "./refTip";
+import { esc, relTime, absTime } from "./format";
+import {
+  type SearchScope,
+  SEARCH_SCOPES,
+  LS_SEARCH_SCOPE,
+  rowMatches,
+} from "./search";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -58,23 +65,15 @@ const RAIL_GAP = 8;
 const OVERSCAN = 14;
 /** Trigger a loadMore when within this many rows of the bottom. */
 const LOAD_MORE_THRESHOLD = 60;
+/** Pages a reveal may page in on its own before giving up on a sha that is
+ * further back than that — bounded, so a sha that is not in the log at all
+ * (the host's pages are `--all`; a reflog-only commit never arrives) cannot
+ * walk the whole history. Mirrors the host's own reveal bound. */
+const REVEAL_PAGE_LIMIT = 25;
 /** Ref chips shown on the meta line before collapsing into "+N". */
 const MAX_CHIPS = 2;
 /** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) row. */
 const ZERO_SHA_RE = /^0{40}$/;
-/** Shared with the editor-area graph so the preference follows the user. */
-const LS_SEARCH_SCOPE = "gitstudio.graph.search.scope";
-
-/** What the search query matches against (mirrors the graph's scopes). */
-export type RailSearchScope = "all" | "message" | "author" | "sha" | "refs";
-const SEARCH_SCOPES: ReadonlyArray<{ id: RailSearchScope; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "message", label: "Message" },
-  { id: "author", label: "Author" },
-  { id: "sha", label: "SHA" },
-  { id: "refs", label: "Branch+Tag" },
-];
-
 export type RailAction =
   /** Promote to the editor-area Commit Graph, revealed at this commit. */
   | { type: "open"; sha: string }
@@ -724,7 +723,7 @@ export class CommitRail extends LitElement {
   declare status: "loading" | "ready" | "empty" | "error";
   declare errorMessage: string;
   private declare searchQuery: string;
-  private declare searchScope: RailSearchScope;
+  private declare searchScope: SearchScope;
   private declare scopeOpen: boolean;
   private declare commitMenu: RailMenu | null;
   private declare selectedSha: string;
@@ -785,8 +784,12 @@ export class CommitRail extends LitElement {
   private disposeTheme: (() => void) | undefined;
   private shaToIndex = new Map<string, number>();
   private loadMoreArmed = true;
-  /** Sha to reveal once the virtualizer is live (host reveal can beat it). */
+  /** Sha to reveal once it can land: the virtualizer is not live yet (a host
+   * reveal can beat the first paint), or the row is further back than the
+   * loaded pages and a page is on its way toward it. */
   private pendingReveal: string | undefined;
+  /** Pages requested on behalf of `pendingReveal` (see REVEAL_PAGE_LIMIT). */
+  private revealPages = 0;
   /** Sha currently playing the reveal flash. */
   private flashSha = "";
   private flashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -810,7 +813,7 @@ export class CommitRail extends LitElement {
     try {
       const s = localStorage.getItem(LS_SEARCH_SCOPE);
       if (s && SEARCH_SCOPES.some((x) => x.id === s)) {
-        this.searchScope = s as RailSearchScope;
+        this.searchScope = s as SearchScope;
       }
     } catch {
       /* non-fatal */
@@ -850,13 +853,14 @@ export class CommitRail extends LitElement {
       } else {
         this.virtualizer.setOptions(this.virtualizerOptions());
       }
-      if (this.pendingReveal) {
-        const sha = this.pendingReveal;
-        this.pendingReveal = undefined;
-        this.reveal(sha);
-      } else {
-        this.renderRows();
-      }
+      // A queued reveal used to REPLACE this paint: it re-ran reveal(), which
+      // re-queued a sha that was not loaded without painting — so while it
+      // pended, every reactive update (a page landing, a search keystroke)
+      // skipped renderRows(): the sizer never grew for the new rows and the
+      // near-bottom loadMore trigger never fired. Paint first; landing the
+      // reveal, when it can land, is its own paint on top.
+      this.renderRows();
+      if (this.pendingReveal) this.retryReveal();
     } else {
       this.teardownVirtualizer();
     }
@@ -1260,13 +1264,51 @@ export class CommitRail extends LitElement {
 
   // ── Public host entry points ────────────────────────────────────────────
 
-  /** Select + center a commit (host `revealCommit`), with a landing flash. */
+  /** Select + center a commit (host `revealCommit`, the header's Jump to HEAD),
+   * with a landing flash. A commit further back than the loaded pages is paged
+   * toward (bounded) and lands when its page does. */
   reveal(sha: string): void {
-    const idx = this.shaToIndex.get(sha);
-    if (idx === undefined || !this.virtualizer) {
-      this.pendingReveal = sha;
+    this.pendingReveal = sha;
+    this.revealPages = 0;
+    if (!this.virtualizer) return; // `updated` retries once the list is live
+    this.retryReveal();
+  }
+
+  /**
+   * Land `pendingReveal` if its row is loaded; otherwise page toward it while
+   * pages remain and the bound allows, and drop it when neither does. Dropping
+   * matters: a reveal that could never land — Jump to HEAD with HEAD past the
+   * loaded window, before the rail paged for itself — used to sit in the queue
+   * forever, and the queue hijacked every later update (see `updated`).
+   */
+  private retryReveal(): void {
+    const sha = this.pendingReveal;
+    if (!sha) return;
+    if (this.shaToIndex.has(sha)) {
+      this.pendingReveal = undefined;
+      this.revealPages = 0;
+      this.land(sha);
       return;
     }
+    if (!this.hasMore || this.revealPages >= REVEAL_PAGE_LIMIT) {
+      this.pendingReveal = undefined;
+      this.revealPages = 0;
+      return;
+    }
+    // The same arm the scroll-to-bottom trigger uses, so a page already in
+    // flight is never requested twice; `updated` retries when it lands.
+    if (this.loadMoreArmed) {
+      this.loadMoreArmed = false;
+      this.revealPages++;
+      this.onAction({ type: "loadMore" });
+      this.requestUpdate();
+    }
+  }
+
+  /** The reveal itself: select, flash, centre. `sha` is a loaded row. */
+  private land(sha: string): void {
+    const idx = this.shaToIndex.get(sha);
+    if (idx === undefined || !this.virtualizer) return;
     this.selectedSha = sha;
     this.flashSha = sha;
     if (this.flashTimer) clearTimeout(this.flashTimer);
@@ -1427,7 +1469,7 @@ export class CommitRail extends LitElement {
     this.renderRows();
   }
 
-  private setScope(scope: RailSearchScope): void {
+  private setScope(scope: SearchScope): void {
     this.searchScope = scope;
     this.scopeOpen = false;
     try {
@@ -1688,96 +1730,12 @@ export class CommitRail extends LitElement {
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
-function rowMatches(row: WireRow, q: string, scope: RailSearchScope): boolean {
-  switch (scope) {
-    case "message":
-      return row.subject.toLowerCase().includes(q);
-    case "author":
-      return (
-        row.author.toLowerCase().includes(q) ||
-        row.authorEmail.toLowerCase().includes(q)
-      );
-    case "sha":
-      return row.sha.startsWith(q) || row.shortSha.startsWith(q);
-    case "refs":
-      return row.refs.some((r) => r.name.toLowerCase().includes(q));
-    case "all":
-      return (
-        row.subject.toLowerCase().includes(q) ||
-        row.author.toLowerCase().includes(q) ||
-        row.sha.startsWith(q) ||
-        row.refs.some((r) => r.name.toLowerCase().includes(q))
-      );
-  }
-}
-
 /** "Anton Arnaudov" → "Anton A." — the meta line is 11px; keep it short. */
 function shortAuthor(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length < 2) return name;
   const last = parts[parts.length - 1];
   return `${parts[0]} ${last.charAt(0).toUpperCase()}.`;
-}
-
-/**
- * Mini node avatar markup — the initials disc is the always-visible base, the
- * photo an enhancement revealed on confirmed load (see onImgLoad). `preloaded`
- * = this URL already loaded once, so a recycled row paints it instantly
- * instead of flashing the disc while the cached image re-fires load.
- */
-function avatarHtml(
-  author: string,
-  email: string,
-  cx: number,
-  ring: string,
-  resolvedUrl: string,
-  preloaded: boolean,
-): string {
-  const hue = avatarHue(email);
-  const initials = esc(authorInitials(author, email));
-  const cls = preloaded ? "av-img is-loaded" : "av-img";
-  return (
-    `<span class="avatar" style="--gs-av-hue:${hue};--gs-av-x:${cx}px;` +
-    `--gs-av-ring:${esc(ring)}" aria-hidden="true">` +
-    `<span class="fallback">${initials}</span>` +
-    `<img class="${cls}" src="${esc(resolvedUrl)}" alt="" loading="lazy" decoding="async" />` +
-    `</span>`
-  );
-}
-
-/** HTML-escape user-controlled text before splicing into innerHTML. */
-function esc(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-const MINUTE = 60;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-const MONTH = 30 * DAY;
-const YEAR = 365 * DAY;
-
-/** Compact relative age ("now", "5m", "3h", "2d", "4mo", "1y"). */
-function relTime(epochSeconds: number, now = Date.now() / 1000): string {
-  const delta = Math.floor(now - epochSeconds);
-  if (delta < MINUTE) return "now";
-  if (delta < HOUR) return `${Math.floor(delta / MINUTE)}m`;
-  if (delta < DAY) return `${Math.floor(delta / HOUR)}h`;
-  if (delta < MONTH) return `${Math.floor(delta / DAY)}d`;
-  if (delta < YEAR) return `${Math.floor(delta / MONTH)}mo`;
-  return `${Math.floor(delta / YEAR)}y`;
-}
-
-/** Full local timestamp for the row tooltip. */
-function absTime(epochSeconds: number): string {
-  try {
-    return new Date(epochSeconds * 1000).toLocaleString();
-  } catch {
-    return "";
-  }
 }
 
 if (!customElements.get("gitstudio-commit-rail")) {

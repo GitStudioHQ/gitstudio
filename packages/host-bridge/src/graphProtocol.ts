@@ -80,12 +80,6 @@ export interface GraphAppendMessage {
   hasMore: boolean;
 }
 
-/** Optional palette override pushed by the host (rarely needed). */
-export interface GraphConfigMessage {
-  type: "graphConfig";
-  lanePalette: string[];
-}
-
 /** The selected commit's full details for the docked inspect panel. */
 export interface GraphCommitDetailsMessage {
   type: "commitDetails";
@@ -145,7 +139,6 @@ export interface GraphCommitMenuMessage {
 export type GraphHostMessage =
   | GraphInitMessage
   | GraphAppendMessage
-  | GraphConfigMessage
   | GraphCommitDetailsMessage
   | GraphRowStatsMessage
   | GraphRevealMessage

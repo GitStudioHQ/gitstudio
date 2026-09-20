@@ -22,6 +22,7 @@
 
 import { css } from "lit";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import { esc as escapeTip } from "./format";
 
 /** A ref folded into the "+N" pill. `remotes` mirrors the chip's cloud tail. */
 export interface TipRef {
@@ -333,13 +334,9 @@ export function placeCard(el: HTMLElement, pill: HTMLElement): void {
   el.style.top = `${Math.round(Math.max(GAP, top))}px`;
 }
 
-export function escapeTip(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+/** The package's one HTML escaper (graph/format.ts), under the name the
+ * tip surfaces have always used for it. */
+export { escapeTip };
 
 /** Card styling. Add to a host's `static styles` alongside its own block. */
 export const refTipStyles = css`

@@ -14,6 +14,7 @@ import { LitElement, html, css, nothing } from "lit";
 import { codiconStyles } from "./styles/codicons";
 import { hostTokens } from "./styles/hostTokens";
 import { gravatarUrl, avatarHue, authorInitials } from "./graph/avatar";
+import { absTime } from "./graph/format";
 import type {
   CommitDetailsPayload,
   CommitDetailsActionId,
@@ -1111,9 +1112,6 @@ function relTime(epoch: number, now = Date.now() / 1000): string {
   if (d < MONTH) return `${Math.floor(d / DAY)}d ago`;
   if (d < YEAR) return `${Math.floor(d / MONTH)}mo ago`;
   return `${Math.floor(d / YEAR)}y ago`;
-}
-function absTime(epoch: number): string {
-  try { return new Date(epoch * 1000).toLocaleString(); } catch { return ""; }
 }
 
 if (!customElements.get("gitstudio-commit-details")) {
