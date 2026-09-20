@@ -10,6 +10,7 @@ import {
   parseNumstatZ,
   parseNameStatusZ,
   mergeCommitFiles,
+  parseBatchNumstat,
 } from "../src/CommitDetailsProvider";
 
 // ── Pure parsing (deterministic, no git) ─────────────────────────────────────
@@ -55,6 +56,33 @@ test("mergeCommitFiles: pure rename with no content change defaults to 0/0", () 
   assert.deepEqual(out, [
     { path: "b.ts", oldPath: "a.ts", status: "R", additions: 0, deletions: 0 },
   ]);
+});
+
+test("parseBatchNumstat: one block per sha; binary counts as a file, not lines", () => {
+  const sha1 = "a".repeat(40);
+  const sha2 = "b".repeat(40);
+  const out = parseBatchNumstat(
+    `${sha1}\n\n5\t2\tsrc/a.ts\n-\t-\timg.png\n${sha2}\n\n1\t0\t"odd\\tname.txt"\n`,
+  );
+  assert.deepEqual(out, [
+    { sha: sha1, files: 2, additions: 5, deletions: 2 },
+    { sha: sha2, files: 1, additions: 1, deletions: 0 },
+  ]);
+});
+
+test("parseBatchNumstat: a commit that changed nothing is still answered", () => {
+  const sha1 = "c".repeat(40);
+  const sha2 = "d".repeat(40);
+  const out = parseBatchNumstat(`${sha1}\n${sha2}\n\n3\t3\tx\n`);
+  assert.deepEqual(out, [
+    { sha: sha1, files: 0, additions: 0, deletions: 0 },
+    { sha: sha2, files: 1, additions: 3, deletions: 3 },
+  ]);
+});
+
+test("parseBatchNumstat: stray lines before the first sha are ignored", () => {
+  assert.deepEqual(parseBatchNumstat("warning: something\n1\t1\tx\n"), []);
+  assert.deepEqual(parseBatchNumstat(""), []);
 });
 
 // ── Hermetic integration (real git) ──────────────────────────────────────────
@@ -118,4 +146,57 @@ test("getCommitFiles: root commit (no parent) reports the initial add", async ()
   assert.equal(files[0].path, "a.txt");
   assert.equal(files[0].status, "A");
   assert.equal(files[0].additions, 3);
+});
+
+// The graph's CHANGES column asks for every visible row at once. One spawn
+// must answer with exactly what a per-commit getCommitFiles would have summed:
+// a merge against its first parent only, a root against the empty tree, a
+// binary file counted but not measured — and a sha git cannot find skipped
+// rather than failing the whole window.
+test("getCommitStats: one call answers a root, a plain commit, a merge and a binary", async () => {
+  // A merge whose first-parent delta is ONE file (c.txt from the side branch),
+  // whereas its second-parent delta would be everything main did meanwhile.
+  git(["checkout", "-q", "-b", "side", firstSha]);
+  writeFileSync(join(repo, "c.txt"), "side\n");
+  git(["add", "."]);
+  git(["commit", "-q", "-m", "side"]);
+  git(["checkout", "-q", "main"]);
+  git(["merge", "-q", "--no-ff", "-m", "merge side", "side"]);
+  const mergeSha = git(["rev-parse", "HEAD"]);
+  writeFileSync(join(repo, "blob.bin"), Buffer.from([0, 1, 2, 3, 0, 255]));
+  git(["add", "."]);
+  git(["commit", "-q", "-m", "binary"]);
+  const binSha = git(["rev-parse", "HEAD"]);
+
+  const missing = "f".repeat(40);
+  const stats = await ctx.commitDetails.getCommitStats([
+    binSha,
+    mergeSha,
+    secondSha,
+    firstSha,
+    missing,
+  ]);
+  const bySha = new Map(stats.map((s) => [s.sha, s]));
+  assert.equal(stats.length, 4, "the missing sha is skipped, not fatal");
+  assert.equal(bySha.has(missing), false);
+  assert.deepEqual(bySha.get(firstSha), { sha: firstSha, files: 1, additions: 3, deletions: 0 });
+  assert.deepEqual(bySha.get(secondSha), { sha: secondSha, files: 2, additions: 3, deletions: 1 });
+  assert.deepEqual(bySha.get(mergeSha), { sha: mergeSha, files: 1, additions: 1, deletions: 0 });
+  assert.deepEqual(bySha.get(binSha), { sha: binSha, files: 1, additions: 0, deletions: 0 });
+
+  // The same totals the per-commit path produces, so the two can never
+  // disagree about a row.
+  for (const [sha, parent] of [
+    [secondSha, firstSha],
+    [firstSha, undefined],
+  ] as const) {
+    const files = await ctx.commitDetails.getCommitFiles(sha, parent);
+    const add = files.reduce((n, f) => n + Math.max(0, f.additions), 0);
+    const del = files.reduce((n, f) => n + Math.max(0, f.deletions), 0);
+    assert.deepEqual(bySha.get(sha), { sha, files: files.length, additions: add, deletions: del });
+  }
+});
+
+test("getCommitStats: an empty request spawns nothing and answers nothing", async () => {
+  assert.deepEqual(await ctx.commitDetails.getCommitStats([]), []);
 });

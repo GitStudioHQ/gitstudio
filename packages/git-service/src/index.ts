@@ -26,7 +26,9 @@ export {
   parseNumstatZ,
   parseNameStatusZ,
   mergeCommitFiles,
+  parseBatchNumstat,
 } from "./CommitDetailsProvider";
+export type { CommitStats } from "./CommitDetailsProvider";
 export { RefProvider } from "./RefProvider";
 export { BlameProvider } from "./BlameProvider";
 export type { BlameFileOptions } from "./BlameProvider";

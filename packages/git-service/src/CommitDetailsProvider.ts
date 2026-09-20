@@ -34,6 +34,87 @@ export class CommitDetailsProvider {
     ]);
     return mergeCommitFiles(numstat.stdout, namestatus.stdout);
   }
+
+  /**
+   * Change totals (file count, lines added/deleted) for MANY commits in one
+   * spawn — the data behind a graph's CHANGES column, which asks for every
+   * visible row at once. Per-commit `getCommitFiles` costs two git processes
+   * per row, so a window of sixty rows was a hundred and twenty spawns.
+   *
+   * Same delta as `getCommitFiles`: a merge against its first parent, a root
+   * against the empty tree. Shas git cannot find are skipped, not fatal, so
+   * one commit rewritten away under a live graph does not blank the column.
+   * Order follows the input as far as git honours it; key by sha.
+   */
+  async getCommitStats(
+    shas: readonly string[],
+    opts?: GitRunOptions,
+  ): Promise<CommitStats[]> {
+    if (shas.length === 0) {
+      return [];
+    }
+    // `-m --first-parent` is the portable spelling of "diff a merge against
+    // its first parent only": -m makes merges show a diff at all, and
+    // --first-parent narrows it to one parent on every git since 1.x (the
+    // `--diff-merges=first-parent` alias is 2.31+). No -z: paths are not
+    // parsed here, only counted, and every numstat entry is exactly one line
+    // even with C-quoted names.
+    const r = await this.process.run(
+      [
+        "log",
+        "--no-walk",
+        "--ignore-missing",
+        "-m",
+        "--first-parent",
+        "-M",
+        "--numstat",
+        "--format=%H",
+        ...shas,
+      ],
+      opts,
+    );
+    if (r.code !== 0) {
+      throw new Error(r.stderr.trim() || `git log --numstat exited ${r.code}`);
+    }
+    return parseBatchNumstat(r.stdout);
+  }
+}
+
+/** Change totals for one commit (a graph row's CHANGES cell). */
+export interface CommitStats {
+  sha: string;
+  files: number;
+  additions: number;
+  deletions: number;
+}
+
+/**
+ * Parse `git log --no-walk --numstat --format=%H` output: each commit is its
+ * full sha on a line of its own, then (after a blank line) one numstat line
+ * per file — `<adds>\t<dels>\t<path>`, with `-` for either count on a binary
+ * file, which still counts as a file but adds no lines.
+ */
+export function parseBatchNumstat(stdout: string): CommitStats[] {
+  const out: CommitStats[] = [];
+  let cur: CommitStats | undefined;
+  for (const line of stdout.split("\n")) {
+    if (/^[0-9a-f]{40,64}$/.test(line)) {
+      cur = { sha: line, files: 0, additions: 0, deletions: 0 };
+      out.push(cur);
+      continue;
+    }
+    if (!cur) {
+      continue;
+    }
+    const m = /^(\d+|-)\t(\d+|-)\t/.exec(line);
+    if (!m) {
+      continue;
+    }
+    cur.files += 1;
+    if (m[1] !== "-") cur.additions += Number(m[1]);
+    if (m[2] !== "-") cur.deletions += Number(m[2]);
+  }
+  return out;
 }
 
 interface NumstatEntry {
