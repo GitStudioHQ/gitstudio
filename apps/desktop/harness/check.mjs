@@ -57,6 +57,7 @@ const CASES = [
   ["a-prompt-that-does-not-validate-still-submits", "actions"],
   // Reading a repository — yours or anyone's.
   ["the-code-page-opens-its-commits", "code"],
+  ["the-code-page-counts-its-commits-once", "code"],
   ["a-github-repo-opens-without-cloning", "repositories~click:.gh-seg-btn:nth-child(2)"],
   ["a-cloned-repo-with-changes-asks-what-to-open", "repositories~click:.gh-seg-btn:nth-child(2)"],
   ["a-browsed-repo-shows-its-commits", "repositories~click:.gh-seg-btn:nth-child(2)"],

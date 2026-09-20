@@ -11830,6 +11830,33 @@
       await settle(1500);
       c.ok(!!$("gitstudio-graph"), "the count lands on Commits");
     },
+    /**
+     * The commit count is a walk of the whole history. The Code page is the one
+     * reader that shows it, so it is the one reader that asks for it — and it
+     * asks ONCE: stepping into a folder and back to the root re-renders the bar
+     * from the cache rather than walking the history again. (It used to bypass
+     * the cache, so every return to the root was a fresh `rev-list --count`.)
+     */
+    "the-code-page-counts-its-commits-once": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const asks = () => window.__GS_INVOKED.filter((r) => r.channel === "repo:headCommit");
+      c.eq(asks().length, 1, "the root bar asked for the head commit once");
+      c.ok(asks().every((r) => r.payload && r.payload.count === true), "…and asked for the count");
+      c.match(text(".code-latest-count"), /^\d[\d,]* commits?$/, "the bar shows the count");
+      const folder = $$(".code-row.is-dir").find((r) => !r.classList.contains("code-up"));
+      c.ok(!!folder, "a folder to step into");
+      if (!folder) return;
+      folder.click();
+      await settle(800);
+      c.ok(!$(".code-latest-count"), "a folder listing has no latest-commit bar");
+      const root = $(".code-crumb");
+      c.ok(!!root && !root.classList.contains("is-current"), "the root crumb leads back");
+      root.click();
+      await settle(1200);
+      c.match(text(".code-latest-count"), /^\d[\d,]* commits?$/, "back at the root, the bar is back");
+      c.eq(asks().length, 1, "…served from the cache, not a second history walk");
+    },
     /** A GitHub repository you do NOT have is readable in place. */
     "a-github-repo-opens-without-cloning": async (f) => {
       const c = check(f);

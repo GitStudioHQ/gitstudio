@@ -459,45 +459,17 @@ export class GitBridge {
     if (!ctx) {
       return [];
     }
-    const out: RowStat[] = [];
     // The cap is a runaway guard, not a page size: the graph asks for exactly
     // the rows in view plus its overscan, and a tall window at compact row
     // height passes 60 easily. Truncating there meant the rows past it were
     // never answered — and the client marked them pending regardless, so their
     // CHANGES cells stayed blank. Sized above any real viewport.
-    await Promise.all(
-      shas.slice(0, 250).map(async (sha) => {
-        let record = this.records.get(sha);
-        if (!record) {
-          for await (const c of ctx.log.streamCommits({
-            revRange: sha,
-            maxCount: 1,
-          })) {
-            record = c;
-            break;
-          }
-        }
-        if (!record) {
-          return;
-        }
-        try {
-          const files = await ctx.commitDetails.getCommitFiles(
-            sha,
-            record.parents[0],
-          );
-          let add = 0,
-            del = 0;
-          for (const f of files) {
-            if (f.additions > 0) add += f.additions;
-            if (f.deletions > 0) del += f.deletions;
-          }
-          out.push({ sha, files: files.length, additions: add, deletions: del });
-        } catch {
-          out.push({ sha, files: 0, additions: 0, deletions: 0 });
-        }
-      }),
-    );
-    return out;
+    //
+    // ONE git process for the whole window. This used to run per sha — a
+    // `log -1` for any row the graph accumulator had not seen, then the two
+    // diffs behind `getCommitFiles` — so a scroll through sixty rows was up to
+    // a hundred and eighty spawns, all at once.
+    return ctx.commitDetails.getCommitStats(shas.slice(0, 250));
   }
 
   /** Changed files for a commit via `git show --name-status` (or root-diff). */
@@ -1386,11 +1358,17 @@ export class GitBridge {
    * github.com's order. An empty `path` lists the repo root.
    */
   /**
-   * The tip commit of HEAD plus the total commit count — backs the Code
-   * browser's "latest commit" bar. Two cheap calls (`log -1` + `rev-list
-   * --count`); failures degrade to `undefined` (the bar is simply omitted).
+   * The tip commit of HEAD — and, only when asked, the total commit count that
+   * backs the Code browser's "latest commit" bar. One cheap call (`log -1`);
+   * failures degrade to `undefined` (the bar is simply omitted).
+   *
+   * The count is opt-in because `rev-list --count HEAD` walks the ENTIRE
+   * history, and two of the three readers never look at it: the amend prefill
+   * wants the message, the dashboard wants the subject. Both used to wait for
+   * the walk regardless — on a large, cold repo, ticking Amend paused for a
+   * second before the message appeared, for a number nothing would show.
    */
-  async headCommit(): Promise<HeadCommit | undefined> {
+  async headCommit(opts?: { count?: boolean }): Promise<HeadCommit | undefined> {
     const ctx = this.ctx();
     if (!ctx) {
       return undefined;
@@ -1418,10 +1396,10 @@ export class GitBridge {
       const [sha, shortSha, author, authorEmail, at, subject, message] = r.stdout
         .replace(/\n$/, "")
         .split(SEP);
-      let total = 0;
-      const c = await ctx.process.run(["rev-list", "--count", "HEAD"]);
-      if (c.code === 0) {
-        total = parseInt(c.stdout.trim(), 10) || 0;
+      let total: number | undefined;
+      if (opts?.count) {
+        const c = await ctx.process.run(["rev-list", "--count", "HEAD"]);
+        total = c.code === 0 ? parseInt(c.stdout.trim(), 10) || 0 : 0;
       }
       return {
         sha: sha ?? "",
@@ -1432,7 +1410,7 @@ export class GitBridge {
         subject: subject ?? "",
         // git pads %B with a trailing newline, and --format adds one more.
         message: (message ?? "").replace(/\n+$/, ""),
-        total,
+        ...(total !== undefined ? { total } : {}),
       };
     } catch {
       return undefined;
