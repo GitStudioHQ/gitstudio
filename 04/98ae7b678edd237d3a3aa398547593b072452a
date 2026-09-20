@@ -1,0 +1,74 @@
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_91704ea5e40894 105-108
+  s_26f5e669d3043c::t_95efdee74e05d3 993-999
+  s_26f5e669d3043c::t_003f13c0be8414 2066-2068
+  s_26f5e669d3043c::t_beaf6004605ee7 863-866,868-875
+  s_26f5e669d3043c::t_50d76810dd5e35 1611-1617
+  s_26f5e669d3043c::t_8a6075c8a7bcad 1722,1725,1729-1730
+  s_26f5e669d3043c::t_e97335c1f9b533 2052-2065
+  s_26f5e669d3043c::t_68d898b5f4ae1d 767-770
+  s_26f5e669d3043c::t_e7e80051f4702e 58
+  s_26f5e669d3043c::t_9470a5becd54eb 2004-2005,2013
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_9388160e7b0a2d 1822-1826
+  s_26f5e669d3043c::t_e7e80051f4702e 62
+  s_26f5e669d3043c::t_e2d616f4e7f48f 2501-2503
+  s_26f5e669d3043c::t_ed5372c53e81d0 3861-3873
+  s_26f5e669d3043c::t_292fef322e3ce7 2608,2613
+  s_26f5e669d3043c::t_7be7cdcbf2e402 2552-2558
+  s_26f5e669d3043c::t_2b5e8ce958dbb3 1827-1828,3874-3875
+  s_26f5e669d3043c::t_56316cc346b14b 227-230
+  s_26f5e669d3043c::t_5a5dbb731c6988 1638-1641,1645-1646
+  s_26f5e669d3043c::t_96ba3315c43531 3805-3806,3811,3820
+packages/webview-ui/test/refPicker.test.ts
+  s_26f5e669d3043c::t_5a705c64f0a65d 378-384,386,391-394,396
+  s_26f5e669d3043c::t_3ee0782cd75ca8 289-377,385,387-390,395,397-399
+apps/desktop/src/renderer/contextMenu.ts
+  s_26f5e669d3043c::t_9f41d7d5e756ef 8,73-83,126,202-213
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_90ee660be4dfd2 21-23,55-57
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_4cd8a2f36cd312 37-47,72,83,90
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_4026b6dff24781 30,285-289
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_a7b32076a74743 277-284
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_3464e66811ea7a 129-131
+packages/webview-ui/src/graph/refFilter.ts
+  s_26f5e669d3043c::t_bdbc4d9655e883 11,163-183
+packages/webview-ui/src/graph/sidebar-main.ts
+  s_26f5e669d3043c::t_1ff72736498ab1 66-68
+apps/desktop/src/renderer/renderer.ts
+  s_599ca2ac4f5783::t_f469747d1ba410 7891-7898
+apps/desktop/test/checkoutRequest.test.ts
+  s_599ca2ac4f5783::t_032712f43702b8 120-139
+apps/extension/test/refFilterStore.test.ts
+  s_599ca2ac4f5783::t_c070e69022b1de 155-177
+packages/webview-ui/test/refFilter.test.ts
+  s_599ca2ac4f5783::t_71d9ff990c01ef 8,113-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0498ae7b678edd237d3a3aa398547593b072452a",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_599ca2ac4f5783": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab66b1ad1482062c6",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
