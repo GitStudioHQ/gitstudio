@@ -1,0 +1,32 @@
+packages/host-bridge/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_50021d0feeae43 4
+  s_26f5e669d3043c::t_38393c9a2a4064 109-129
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_bcec7f913c4f58 69
+  s_26f5e669d3043c::t_b425af3a67761e 2582-2583,2585
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_bcec7f913c4f58 65
+  s_26f5e669d3043c::t_9e817a8107ee34 1695-1696,1698
+packages/webview-ui/test/refPicker.test.ts
+  s_26f5e669d3043c::t_18b157b5c0f5dc 245-288
+  s_26f5e669d3043c::t_eb3ad6c0355879 244
+packages/host-bridge/src/graphRefFilter.ts
+  s_26f5e669d3043c::t_6784c24c87dfa5 34-59
+  s_26f5e669d3043c::t_3ac2358a3ca827 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cfd0cf2c6c4b70c995dad3ea22d6f3e61b8b2c8f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
