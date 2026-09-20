@@ -812,7 +812,7 @@ function registerIpc(): void {
   // Code browser (GitHub-style file tree at HEAD).
   handle("repo:tree", (req) => bridge.treeList(req));
   handle("repo:file", (req) => bridge.fileText(req));
-  handle("repo:headCommit", () => bridge.headCommit());
+  handle("repo:headCommit", (opts) => bridge.headCommit(opts || undefined));
 
   // Integrated terminal (PTY) — launches in the active repo's directory.
   handle("terminal:create", async (opts) =>

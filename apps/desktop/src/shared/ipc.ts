@@ -131,8 +131,9 @@ export interface HeadCommit {
    * warning, because that is exactly what the user appears to have typed.
    */
   message: string;
-  /** Total commits reachable from HEAD. */
-  total: number;
+  /** Total commits reachable from HEAD — a full history walk, so present only
+   *  when the request asked for it (`{ count: true }`). */
+  total?: number;
 }
 
 /** A commit's full details for the right-hand details panel. */
@@ -1792,7 +1793,7 @@ export interface IpcChannels {
   // ── Code browser (GitHub-style file tree at HEAD) ──
   "repo:tree": [{ path: string }, TreeEntry[]];
   "repo:file": [{ path: string }, RepoFile | undefined];
-  "repo:headCommit": [void, HeadCommit | undefined];
+  "repo:headCommit": [{ count?: boolean } | void, HeadCommit | undefined];
   // ── GitHub (PRs / Issues / Projects) ──
   "github:status": [void, GitHubStatus];
   "github:connect": [string, { ok: boolean; login?: string; message?: string }];

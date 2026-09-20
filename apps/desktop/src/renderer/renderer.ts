@@ -5512,9 +5512,13 @@ class App {
 
     // The latest-commit bar — repo root only, mirroring github.com's repo page.
     // Best-effort: if it can't be read, the bar is simply omitted.
+    //
+    // The ONE reader that wants the commit count, and it asks for it. Through
+    // the cache, because the count is a full history walk and this ran on
+    // every visit to the root: every mutation busts it, and a return trip
+    // inside the TTL now costs nothing.
     if (!this.codePath) {
-      void host
-        .invoke("repo:headCommit", undefined)
+      void gget("repo:headCommit", { count: true })
         .then((hc) => {
           if (gen !== this.routeGen || !hc) return;
           latest.replaceChildren(this.codeLatestBar(hc));
@@ -5619,10 +5623,15 @@ class App {
       when.title = absTime(hc.date);
     }
 
-    // The history, from the page that shows the files it produced.
+    // The history, from the page that shows the files it produced. The number
+    // is there only when the read asked for it; the door is there regardless.
     const count = el("button", "code-latest-count");
     count.title = "Show this repository's commits";
-    count.append(glyph("history"), span(`${hc.total.toLocaleString()} commit${hc.total === 1 ? "" : "s"}`));
+    const total = hc.total;
+    count.append(
+      glyph("history"),
+      span(total === undefined ? "Commits" : `${total.toLocaleString()} commit${total === 1 ? "" : "s"}`),
+    );
     count.addEventListener("click", () => this.routeView("graph"));
 
     bar.append(av, meta, sha, copy, when, count);
