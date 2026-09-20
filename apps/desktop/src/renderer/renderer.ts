@@ -300,6 +300,19 @@ class App {
   /** Persisted width (px) of the compare file list when the diff is showing. */
   private compareFileListW = 300;
   private compareFilesCollapsed = false;
+  /**
+   * The file whose diff Compare has open — the same job `changesOpenKey` does
+   * for the Changes view.
+   *
+   * `renderCompareFiles` auto-opens the FIRST file, and every refreshAll
+   * rebuilt the view: a .git change (another tool's fetch, or git rewriting
+   * the index under a plain `git status`), ⌘R, a window focus after an edit in
+   * your editor — each one closed the file you were reading and opened the
+   * first one instead (issue #24, the desktop half). The rebuild reopens this
+   * one now, and only when it has genuinely left the comparison does the
+   * selection move.
+   */
+  private compareOpenPath?: string;
   /** The Monaco-backed surface mounted in the current view, disposed on route
    *  change so editors + models + their document.body theme observers don't leak. */
   private activeMonacoView?: { dispose(): void };
@@ -1504,6 +1517,7 @@ class App {
     // time ran `stash drop` against an index that now names a DIFFERENT stash —
     // destroying work the user never chose.
     this.reloadBranchRows = null;
+    this.reloadCompare = null;
     // …and only when the parked DOM shows what THIS route asks for. The slot
     // is content-checked, not just id-checked: a stashed detail must never
     // answer a request for the list, or the screen contradicts the history the
@@ -2398,6 +2412,10 @@ class App {
 
   /** Set while the Branches view is live — see showBranchesView. */
   private reloadBranchRows: (() => Promise<void>) | null = null;
+  /** Set while Compare is live — see showCompareView. Re-runs the comparison
+   *  IN PLACE for refreshAll, so a refresh that changes nothing touches
+   *  nothing on screen. */
+  private reloadCompare: (() => Promise<void>) | null = null;
 
   /** The App-side operations handed to peek cards (peeks.ts). Every mutation a
    *  peek can trigger routes through the same helpers the views use, so toasts,
@@ -4142,6 +4160,7 @@ class App {
   // ── Compare view (base…head, GitHub-style: commits | files master/detail) ────
 
   private async showCompareView(): Promise<void> {
+    const gen = this.routeGen;
     await this.refreshRefs();
     const current = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
     this.compareHead = this.compareHead ?? current ?? "HEAD";
@@ -4454,6 +4473,35 @@ class App {
       renderBody();
     };
     void runCompare();
+
+    // refreshAll's door. It used to routeView(force) this view like any other,
+    // and a comparison of two REFS is rebuilt from scratch by things that
+    // cannot change it: a save in your editor, ⌘R, `git status` in a terminal
+    // rewriting the index, a window focus after either. Every one closed the
+    // diff you were reading (issue #24, on this side of the product). Ask git
+    // again — the cache was just busted, so this is a real read — and if the
+    // answer is the one already on screen, leave the screen alone. Only a
+    // comparison that genuinely changed repaints, and `renderCompareFiles`
+    // then reopens the file you had open.
+    this.reloadCompare = async (): Promise<void> => {
+      if (gen !== this.routeGen) return;
+      // Nothing on screen to keep — an empty pair, an error, a comparison
+      // still loading. The full run already knows what to draw for each.
+      if (!last || !this.compareBase || this.compareBase === this.compareHead) {
+        await runCompare();
+        return;
+      }
+      const res = await gget(
+        "compare:refs",
+        { base: this.compareBase, head: this.compareHead!, mode: this.compareMode },
+        15_000,
+      );
+      if (gen !== this.routeGen) return;
+      if (res && JSON.stringify(res) === JSON.stringify(last)) return;
+      // The fresh answer is cached now, so runCompare paints it straight from
+      // the cache — no loading card in between.
+      await runCompare();
+    };
   }
 
   /** Commits-only view: the commits `compare` adds over `base`. */
@@ -4563,10 +4611,18 @@ class App {
       if (activeRow) activeRow.classList.remove("active");
       activeRow = row;
       row.classList.add("active");
+      this.compareOpenPath = path;
       void this.openCompareFile(diff, path, oldPath);
     };
 
-    res.files.forEach((f, i) => {
+    // Reopen the file that was open, when the comparison still has it; the
+    // first file is for a comparison you have not looked at yet. Everything
+    // below rebuilds the list from scratch — which is what closed the diff
+    // you were reading on every refresh that reached this far.
+    const reopen = res.files.some((f) => f.path === this.compareOpenPath)
+      ? this.compareOpenPath
+      : res.files[0]?.path;
+    res.files.forEach((f) => {
       // Same two-line treatment the Changes list uses: the FILE NAME, then its
       // directory. One path printed whole in a 370px column truncated from the
       // right, which ate the only part that tells two files apart
@@ -4582,7 +4638,7 @@ class App {
       row.title = f.path;
       row.addEventListener("click", () => open(f.path, row, f.oldPath));
       fileScroll.appendChild(row);
-      if (i === 0) open(f.path, row, f.oldPath); // auto-open the first file
+      if (f.path === reopen) open(f.path, row, f.oldPath);
     });
 
     const setCollapsed = (c: boolean): void => {
@@ -8904,6 +8960,11 @@ class App {
     // re-syncs the data without ever tearing the mount down.
     if (this.currentView === "graph" && this.graph) {
       await this.graph.reload();
+    } else if (this.currentView === "compare" && this.reloadCompare) {
+      // Compare too: re-read, and repaint only if the comparison changed. A
+      // rebuild here reset the open file to the first one on every save, ⌘R
+      // and focus — see reloadCompare.
+      await this.reloadCompare();
     } else {
       // Re-route to WHERE YOU ARE, not just to which section you are in. This
       // passed no target, so a refresh while reading PR #106 rebuilt the PR

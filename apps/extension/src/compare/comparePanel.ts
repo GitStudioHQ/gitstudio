@@ -709,6 +709,10 @@ $("expand-all").onclick = () => {
 };
 $("collapse-all").onclick = () => {
   openPaths.clear();
+  // The one open-set change that did not save. The saved state still held
+  // every path, so the next repaint that HAD to happen — a new commit on the
+  // compared branch — re-expanded everything you had just collapsed.
+  saveViewState();
   document.querySelectorAll("#files-list .file.open").forEach((fEl) => fEl.classList.remove("open"));
 };
 

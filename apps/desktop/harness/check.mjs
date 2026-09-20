@@ -443,7 +443,7 @@ const CASES = [
   ["a-recent-repository-can-be-forgotten", "repositories"],
   ["destructive-repository-actions-can-be-undone", "repositories"],
   ["branch-rows-form-columns-and-show-their-people", "branches"],
-  ["an-open-compare-diff-survives-every-refresh-path", "compare"],
+  ["an-open-compare-diff-survives-every-refresh-path", "compare~text:Changed%20files"],
   ["the-rail-click-returns-to-the-list-you-name", "issues~open31"],
   ["a-completed-issue-is-not-painted-as-a-failure", "issues~text:Closed~open19"],
   ["list-headers-keep-refresh-on-the-title-line", "issues"],
