@@ -1505,30 +1505,11 @@ export class CommitViewProvider
         case "fetch":
           result = await entry.ctx.sync.fetch({ prune: pruneOnFetch() });
           break;
-        case "pullFf": {
-          // Fast-forward a NON-checked-out local straight from its upstream:
-          // `git fetch <remote> <remoteBranch>:<localBranch>`. Git refuses
-          // non-ff and the current branch, so the worktree is never touched.
-          const up = (
-            await entry.ctx.process.run([
-              "for-each-ref",
-              "--format=%(upstream:short)",
-              `refs/heads/${ref}`,
-            ])
-          ).stdout.trim();
-          const slash = up.indexOf("/");
-          if (slash <= 0) {
-            result = { ok: false, stderr: `'${ref}' has no upstream to pull from.` };
-            break;
-          }
-          const r = await entry.ctx.process.run([
-            "fetch",
-            up.slice(0, slash),
-            `${up.slice(slash + 1)}:${ref}`,
-          ]);
-          result = { ok: r.code === 0, stderr: r.stderr };
+        case "pullFf":
+          // Fast-forward a NON-checked-out local straight from its upstream;
+          // the worktree is never touched (see SyncOps.pullFastForward).
+          result = await entry.ctx.sync.pullFastForward(ref);
           break;
-        }
         default:
           return;
       }

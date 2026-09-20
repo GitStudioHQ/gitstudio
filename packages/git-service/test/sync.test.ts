@@ -267,3 +267,75 @@ test("fetch({prune}) removes a remote-tracking ref deleted on the remote", async
   assert.ok(pruned.ok, pruned.stderr);
   assert.doesNotMatch(clik(["branch", "-r"]), /origin\/doomed/);
 });
+
+// The branch menu's "Pull N into 'feature'" for a branch that is NOT checked
+// out: a fetch straight into the local ref, never a checkout. The same op was
+// spelled out by hand in both the extension and the desktop bridge; this is
+// its one home.
+test("pullFastForward moves a non-checked-out branch to its upstream, HEAD untouched", async () => {
+  await ctx.branches.checkout("main");
+  // `behind` tracks origin/main from where main is now; then main moves on
+  // and publishes, so origin/main is ahead of `behind` by one.
+  clik(["branch", "--track", "behind", "origin/main"]);
+  const parked = clik(["rev-parse", "behind"]).trim();
+  commitIn(clone, "ff.txt", "advance\n", "advance main");
+  const pushed = await ctx.sync.push();
+  assert.ok(pushed.ok, pushed.stderr);
+  const tip = clik(["rev-parse", "origin/main"]).trim();
+  assert.notEqual(parked, tip);
+
+  const r = await ctx.sync.pullFastForward("behind");
+  assert.ok(r.ok, r.stderr);
+  assert.equal(clik(["rev-parse", "behind"]).trim(), tip);
+  // The worktree never moved: still on main, at main.
+  assert.equal(clik(["rev-parse", "--abbrev-ref", "HEAD"]).trim(), "main");
+  assert.equal(clik(["rev-parse", "HEAD"]).trim(), tip);
+});
+
+test("pullFastForward refuses a diverged branch and the checked-out one", async () => {
+  await ctx.branches.checkout("main");
+  // Diverge `behind` from its upstream with a commit of its own.
+  await ctx.branches.checkout("behind");
+  commitIn(clone, "mine.txt", "local only\n", "diverge");
+  await ctx.branches.checkout("main");
+  commitIn(clone, "ff.txt", "advance again\n", "advance main again");
+  const pushed = await ctx.sync.push();
+  assert.ok(pushed.ok, pushed.stderr);
+  const before = clik(["rev-parse", "behind"]).trim();
+
+  const nonFf = await ctx.sync.pullFastForward("behind");
+  assert.equal(nonFf.ok, false);
+  assert.match(nonFf.stderr, /non-fast-forward|rejected/);
+  assert.equal(clik(["rev-parse", "behind"]).trim(), before, "a refused pull moves nothing");
+
+  // git will not fetch into the branch that is checked out.
+  const current = await ctx.sync.pullFastForward("main");
+  assert.equal(current.ok, false);
+  assert.match(current.stderr, /checked out/);
+});
+
+test("pullFastForward on a branch with no upstream says so", async () => {
+  await ctx.branches.checkout("main");
+  clik(["branch", "lone"]);
+  const r = await ctx.sync.pullFastForward("lone");
+  assert.equal(r.ok, false);
+  assert.match(r.stderr, /'lone' has no upstream/);
+});
+
+// A remote may be named with a slash. Both hand-rolled versions of this op
+// split `%(upstream:short)` ("team/eu/main") on its FIRST slash and fetched
+// from a remote called "team", which does not exist.
+test("pullFastForward resolves a remote whose name contains a slash", async () => {
+  await ctx.branches.checkout("main");
+  clik(["remote", "add", "team/eu", bare]);
+  clik(["fetch", "-q", "team/eu"]);
+  clik(["branch", "--track", "slashed", "team/eu/main"]);
+  clik(["update-ref", "refs/heads/slashed", clik(["rev-parse", "HEAD~1"]).trim()]);
+  const tip = clik(["rev-parse", "team/eu/main"]).trim();
+  assert.notEqual(clik(["rev-parse", "slashed"]).trim(), tip);
+
+  const r = await ctx.sync.pullFastForward("slashed");
+  assert.ok(r.ok, r.stderr);
+  assert.equal(clik(["rev-parse", "slashed"]).trim(), tip);
+  clik(["remote", "remove", "team/eu"]);
+});
