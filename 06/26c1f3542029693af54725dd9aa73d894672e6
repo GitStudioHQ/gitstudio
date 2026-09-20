@@ -1,0 +1,24 @@
+packages/webview-ui/test/refPicker.test.ts
+  s_26f5e669d3043c::t_03c6e73b5ae275 243-268
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_36d2ae21c50e93 1850-1851
+  s_26f5e669d3043c::t_b8ab94bb043594 2382-2398
+  s_26f5e669d3043c::t_a1c1a91b5d86f4 571-576
+  s_26f5e669d3043c::t_14e1507529bc59 1852
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0626c1f3542029693af54725dd9aa73d894672e6",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
