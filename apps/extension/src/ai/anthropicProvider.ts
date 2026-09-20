@@ -36,7 +36,7 @@ export interface AnthropicProviderOptions {
   getKey: () => PromiseLike<string | undefined>;
   /**
    * Cheap "is a key configured?" probe that must NOT read the key itself.
-   * `isAvailable()` runs on every Changes-view state push, so answering it by
+   * `isAvailable()` is re-probed on every settings or key change, so answering it by
    * fetching key material puts the secret store on a hot path. Falls back to
    * `getKey` when not supplied.
    */

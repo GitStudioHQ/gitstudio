@@ -59,8 +59,10 @@ export class CommitDetailsProvider {
    * cannot blank it), renames detected as `-M` detects them. The shas travel
    * on stdin, so no window is too tall for the argv limit.
    *
-   * One unknown object fails the whole batch — git says so and exits — and
-   * that is thrown like any other failed read, for the caller to retry or not.
+   * A sha git cannot find is skipped, not fatal (`--ignore-missing`): a graph
+   * window can hold a commit that a rebase has just rewritten away, and one
+   * such row must not blank the column for the other fifty-nine. The caller
+   * keys the answer by sha and treats an absent one as unknown.
    */
   async getCommitStats(shas: string[], opts?: GitRunOptions): Promise<CommitStat[]> {
     if (shas.length === 0) {
@@ -70,6 +72,7 @@ export class CommitDetailsProvider {
       [
         "log",
         "--no-walk=unsorted",
+        "--ignore-missing",
         "-z",
         "-M",
         "--numstat",

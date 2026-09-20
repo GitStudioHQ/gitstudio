@@ -179,9 +179,10 @@ test("getCommitStats: nothing asked, nothing spawned", async () => {
   assert.equal(spawns.length, 0);
 });
 
-test("getCommitStats: an unknown object fails the read rather than answering zeros", async () => {
-  await assert.rejects(
-    ctx.commitDetails.getCommitStats([shas.root, "d".repeat(40)]),
-    /bad object|not a valid object|unknown revision/i,
-  );
+test("getCommitStats: an unknown object is skipped, not fatal, and never answered as zeros", async () => {
+  // A graph window can hold a commit a rebase just rewrote away; that row must
+  // not blank the column for the others, and must not be reported as "no
+  // changes" either — it is simply absent, for the caller to treat as unknown.
+  const stats = await ctx.commitDetails.getCommitStats([shas.root, "d".repeat(40)]);
+  assert.deepEqual(stats.map((s) => s.sha), [shas.root]);
 });

@@ -342,4 +342,40 @@ export class SyncOps {
     const r = await this.proc.run(args, { signal: opts?.signal });
     return { ok: r.code === 0, stderr: r.stderr };
   }
+
+  /**
+   * Fast-forward a local branch from its upstream WITHOUT checking it out:
+   * `git fetch <remote> <upstream ref>:refs/heads/<branch>`. Git itself
+   * refuses a non-fast-forward and the currently checked-out branch, so the
+   * worktree is never touched — the "Pull into 'feature'" a branch menu
+   * offers for a branch that is not the current one.
+   *
+   * The remote and its ref come from for-each-ref's own atoms rather than
+   * splitting `%(upstream:short)` on its first slash, which misreads a remote
+   * named with a slash ("team/eu/main" is not remote "team"). Both sides of
+   * the refspec are written fully qualified, as every ref this package
+   * writes is.
+   */
+  async pullFastForward(
+    branch: string,
+    opts?: GitRunOptions,
+  ): Promise<SyncOpResult> {
+    const up = await this.proc.run(
+      [
+        "for-each-ref",
+        "--format=%(upstream:remotename)\t%(upstream:remoteref)",
+        `refs/heads/${branch}`,
+      ],
+      opts,
+    );
+    const [remote, remoteRef] = up.stdout.trim().split("\t");
+    if (up.code !== 0 || !remote || !remoteRef) {
+      return { ok: false, stderr: `'${branch}' has no upstream to pull from.` };
+    }
+    const r = await this.proc.run(
+      ["fetch", remote, `${remoteRef}:refs/heads/${branch}`],
+      opts,
+    );
+    return { ok: r.code === 0, stderr: r.stderr };
+  }
 }

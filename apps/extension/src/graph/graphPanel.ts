@@ -50,6 +50,7 @@ const PAGE_SIZE = 500;
 const FIRST_PAGE_SIZE = 150;
 /** Debounce repo-change rebuilds (a rebase touches many refs in a burst). */
 const REFRESH_DEBOUNCE_MS = 300;
+/** Shas per `git log --numstat` spawn when the graph asks for row stats. */
 
 /**
  * The singleton commit-graph panel: one editor-area WebviewPanel that streams
@@ -751,27 +752,6 @@ export class CommitGraphPanel {
 
   // ── Commit interactions ────────────────────────────────────────────────────
 
-  private async openCommit(sha: string): Promise<void> {
-    const record = this.records.get(sha);
-    const subject = record?.subject ?? "(commit)";
-    // A full commit-details panel is M5; for now reveal the commit visibly with
-    // a quick action menu so the gesture does something useful.
-    const choice = await vscode.window.showInformationMessage(
-      `${sha.slice(0, 7)} · ${subject}`,
-      "Copy SHA",
-      "Commit Actions…",
-    );
-    if (choice === "Copy SHA") {
-      await vscode.env.clipboard.writeText(sha);
-      void vscode.window.setStatusBarMessage(
-        `$(check) Copied ${sha.slice(0, 7)}`,
-        2000,
-      );
-    } else if (choice === "Commit Actions…") {
-      this.openCommitMenu(sha, -1, -1);
-    }
-  }
-
   /** Open the commit actions as an IN-GRAPH popover at (x, y) — no native
    *  quick-pick. x < 0 means "position near the selected row" (keyboard menu). */
   private openCommitMenu(sha: string, x: number, y: number): void {
@@ -1140,36 +1120,33 @@ export class CommitGraphPanel {
     if (!active) {
       return;
     }
-    const stats: RowStat[] = [];
-    // Bounded concurrency: a handful at a time keeps the process pool happy.
     // The synthetic WIP node has no real commit to stat.
-    const queue = shas.filter((s) => s !== UNCOMMITTED_SHA).slice(0, 60);
-    await Promise.all(
-      queue.map(async (sha) => {
-        const record = await this.getRecord(active, sha);
-        if (!record) {
-          return;
-        }
-        try {
-          const files = await active.ctx.commitDetails.getCommitFiles(
-            sha,
-            record.parents[0],
-          );
-          let add = 0,
-            del = 0;
-          for (const f of files) {
-            if (f.additions > 0) add += f.additions;
-            if (f.deletions > 0) del += f.deletions;
-          }
-          stats.push({ sha, files: files.length, additions: add, deletions: del });
-        } catch {
-          stats.push({ sha, files: 0, additions: 0, deletions: 0 });
-        }
-      }),
-    );
-    if (stats.length) {
-      this.post({ type: "rowStats", stats });
+    const wanted = shas.filter((s) => s !== UNCOMMITTED_SHA);
+    if (!wanted.length) {
+      return;
     }
+    // One `git log --numstat` answers the whole visible window (the shas go
+    // over stdin, so no window is too tall). The per-sha version spawned two
+    // git processes a row, all sixty at once, and capped there — so on a tall
+    // window the rows past sixty were never answered, stayed pending in the
+    // webview, and kept a blank CHANGES cell for the rest of the session.
+    const bySha = new Map<string, RowStat>();
+    try {
+      for (const s of await active.ctx.commitDetails.getCommitStats(wanted)) {
+        bySha.set(s.sha, s);
+      }
+    } catch {
+      // Answered below as "no stats", as a failed per-sha diff always was.
+    }
+    // Every sha asked for gets an answer. One git could not stat (rewritten
+    // away under a live graph) renders as an empty cell — the same as a
+    // commit that changed nothing — and is not asked about again; one left
+    // unanswered would stay pending and never be asked about again either,
+    // with nothing to show for it.
+    const stats = wanted.map(
+      (sha) => bySha.get(sha) ?? { sha, files: 0, additions: 0, deletions: 0 },
+    );
+    this.post({ type: "rowStats", stats });
   }
 
   /** A CommitRecord from the cache, or streamed on demand if not yet loaded. */

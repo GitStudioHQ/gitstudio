@@ -410,7 +410,9 @@ export function activate(context: vscode.ExtensionContext): void {
       },
       context.globalState,
       {
-        isEnabled: () => brain.isEnabled(),
+        // The cached answer: this runs on every state push, and the probe
+        // behind isEnabled() is re-run by the events that can change it.
+        isEnabled: () => brain.isEnabledCached(),
         draft: (entry) => draftCommitMessage(brain, entry),
       },
     );
