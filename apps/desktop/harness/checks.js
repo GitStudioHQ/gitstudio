@@ -6601,29 +6601,73 @@
       c.ok(!rows.some((t) => /Couldn't reach GitHub/.test(t)), "and no false network shrug");
     },
 
-    // Issue #24's sibling guarantee: the extension's compare panel collapsed
+    // Issue #24, the desktop half. The extension's compare panel collapsed
     // every open diff on each watcher tick (fixed by keying its repaint); the
-    // desktop's Compare already survived, and this keeps it surviving — an
-    // open diff outlives the watcher, a .git change, and a window focus.
+    // desktop's Compare reset to the FIRST file on every refreshAll — a .git
+    // change, ⌘R, a window focus after an edit in your editor — and the old
+    // version of this check passed over it, because it clicked the first file
+    // and asked only whether "a Monaco editor exists", which a rebuild that
+    // auto-opens the first file satisfies. So: the SECOND file, and the same
+    // row ELEMENT must still be the open one — identity proves the DOM was
+    // left alone, not rebuilt into something that looks the same. Then the
+    // comparison really changes, and the open file is reopened; then it leaves
+    // the comparison, and only then does the selection move.
     "an-open-compare-diff-survives-every-refresh-path": async (f) => {
       const c = check(f);
-      await settle(1500);
-      const file = $$(".cmp-file, .dc-file, .sec-row").find((x) => /\.ts|\.css/.test(text(x) || ""));
-      c.ok(!!file, "a file row is on screen");
-      if (!file) return;
-      file.click();
-      await settle(1200);
-      const open = () => !!$(".monaco-editor, .diff-pane, .cmp-diff");
-      c.ok(open(), "its diff opened");
+      await settle(1000);
+      const rows = () => $$(".cmp-filelist .file-row");
+      const active = () => $(".cmp-filelist .file-row.active");
+      c.ok(rows().length >= 3, `there are files to choose between (${rows().length})`);
+      if (rows().length < 3) return;
+      const second = rows()[1];
+      const path = second.title;
+      second.click();
+      await settle(600);
+      c.eq(active()?.title, path, "the second file's diff opened");
+      const stillTheSameRow = (after) =>
+        c.ok(active() === second && second.isConnected, `…and it is the same open row after ${after}`);
       window.__gsEmit("repo:filesChanged", { gitDir: false });
-      await settle(1500);
-      c.ok(open(), "…and survives a working-tree change");
-      window.__gsEmit("repo:filesChanged", { gitDir: true });
-      await settle(1800);
-      c.ok(open(), "…and a .git change");
+      await settle(800);
+      stillTheSameRow("a working-tree change");
       window.dispatchEvent(new Event("focus"));
-      await settle(1500);
-      c.ok(open(), "…and a window focus");
+      await settle(800);
+      stillTheSameRow("a window focus with nothing changed");
+      const before = window.__GS_CALLS["compare:refs"] || 0;
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(1000);
+      stillTheSameRow("a .git change");
+      c.ok((window.__GS_CALLS["compare:refs"] || 0) > before, "and the comparison WAS re-read, not skipped");
+      window.__gsEmit("menu:command", { command: "refresh" });
+      await settle(1000);
+      stillTheSameRow("⌘R");
+      // The reported flow: edit in your editor, alt-tab back. The fingerprint
+      // moved, so this is a full refresh — of a comparison that did not change.
+      const orig = window.gitstudio.invoke.bind(window.gitstudio);
+      let files = null;
+      window.gitstudio.invoke = async (ch, p) => {
+        const r = await orig(ch, p);
+        if (ch === "status" && Array.isArray(r)) return [...r, { path: "notes.txt", status: "?", staged: false }];
+        if (ch === "compare:refs" && r && files) return { ...r, files };
+        return r;
+      };
+      window.dispatchEvent(new Event("focus"));
+      await settle(1200);
+      stillTheSameRow("a window focus after the working tree moved");
+      // Now the comparison genuinely changes: a file lands. The list rebuilds,
+      // with no loading card in between, and the open file is still the open one.
+      files = [{ path: "apps/desktop/src/renderer/renderer.ts", status: "M" }, ...(await orig("compare:refs")).files];
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(1200);
+      c.eq(rows().length, 6, "a changed comparison repaints");
+      c.eq(active()?.title, path, "and reopens the file you had open");
+      // …and when the open file has LEFT the comparison, and only then, the
+      // selection moves — to the first file, as for a comparison never seen.
+      files = files.filter((x) => x.path !== path);
+      window.__gsEmit("repo:filesChanged", { gitDir: true });
+      await settle(1200);
+      c.eq(rows().length, 5, "the file is gone from the list");
+      c.eq(active()?.title, rows()[0]?.title, "and the first file is open instead");
+      window.gitstudio.invoke = orig;
     },
 
     // The branch list is a TABLE now: subject, faces, ↑↓ and time each hold
