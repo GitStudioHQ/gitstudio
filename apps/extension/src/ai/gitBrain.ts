@@ -24,6 +24,11 @@ import { OpenAiProvider, type OpenAiConfig } from "./openAiProvider";
 
 export type ModelTier = "fast" | "mid" | "deep";
 
+/** The slice of `vscode.lm` this file listens to; absent on the 1.74 baseline. */
+interface LmChangeEvents {
+  onDidChangeChatModels?: (listener: () => void) => vscode.Disposable;
+}
+
 /** What every GitBrain provider must implement. */
 export interface GitBrainProvider {
   readonly id: string;
@@ -163,7 +168,7 @@ export class GitBrain implements vscode.Disposable {
     this.anthropic = new AnthropicProvider({
       getKey: () => this.secrets.get(ANTHROPIC_KEY_SECRET),
       // Availability is answered from the filesystem, never by reading key
-      // material — `isEnabled()` runs on every Changes-view state push.
+      // material — `isEnabled()` is re-probed on every settings or key change.
       hasKey: () => this.secrets.has(ANTHROPIC_KEY_SECRET),
       onError,
       models: this.readModelOverrides(),
@@ -184,6 +189,7 @@ export class GitBrain implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (
           e.affectsConfiguration("gitstudio.ai.provider") ||
+          e.affectsConfiguration("gitstudio.ai.cliAgent") ||
           e.affectsConfiguration("gitstudio.ai.anthropicModelFast") ||
           e.affectsConfiguration("gitstudio.ai.anthropicModelMid") ||
           e.affectsConfiguration("gitstudio.ai.anthropicModelDeep") ||
@@ -197,6 +203,14 @@ export class GitBrain implements vscode.Disposable {
       }),
       this.enabledChanged,
     );
+    // Copilot's / Cursor's models can arrive after we activate (their extension
+    // signs in later) — the one availability change no setting or key edit
+    // announces. The event is as new as the `lm` namespace, so it is read the
+    // same guarded way the provider reads `lm` itself.
+    const lm = (vscode as unknown as { lm?: LmChangeEvents }).lm;
+    if (typeof lm?.onDidChangeChatModels === "function") {
+      this.disposables.push(lm.onDidChangeChatModels(() => void this.refreshEnabled()));
+    }
   }
 
   /** Compute and publish `gitstudio.ai.enabled` so menus/buttons show/hide. */
@@ -213,6 +227,23 @@ export class GitBrain implements vscode.Disposable {
       this.lastEnabled = enabled;
       this.enabledChanged.fire(enabled);
     }
+  }
+
+  /**
+   * The availability answer for a hot path: the last probe's result, not a
+   * new probe. `isEnabled()` costs a vscode.lm model query, a key-file stat
+   * or a `which` spawn depending on the provider, and the Changes view asked
+   * it on EVERY state push — a debounced firehose during a rebase or fetch —
+   * for a value that only moves when a setting, a key or the model list
+   * changes, each of which already calls refreshEnabled(). Probes once when
+   * nothing has been recorded yet (a push landing before activation's own
+   * refresh has).
+   */
+  async isEnabledCached(): Promise<boolean> {
+    if (this.lastEnabled === undefined) {
+      await this.refreshEnabled();
+    }
+    return this.lastEnabled ?? false;
   }
 
   private config() {

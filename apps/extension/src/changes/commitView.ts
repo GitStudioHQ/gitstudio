@@ -3,6 +3,7 @@ import type { GitRef } from "@gitstudio/git-service/index";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
+import { slowStateChanged, type SlowState } from "./slowState";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { pruneOnFetch } from "../git/fetchOptions";
 
@@ -279,6 +280,8 @@ export class CommitViewProvider
    * property of the machine, not of the repo, so carrying it across is correct.
    */
   private lastBranchesRoot: string | undefined;
+  /** `JSON.stringify(lastBranches)`, so a re-post can tell whether it changed. */
+  private lastBranchesSig: string | undefined;
   /** Bumped by invalidateRefs so an in-flight listRefs cannot re-cache stale refs. */
   private refsEpoch = 0;
 
@@ -2109,6 +2112,17 @@ export class CommitViewProvider
     // source the built-in SCM view reads) — no git spawn, no LM/keychain probe.
     // Post it FIRST so the file list paints instantly, carrying the last-known
     // AI/branch-menu values so nothing flickers.
+    //
+    // With an upstream the push count IS `ahead` — known now, the same answer
+    // countUnpushed gives below; only a never-pushed branch waits for the
+    // rev-list. Carried here so the common case has nothing left to correct.
+    const sameRepo = this.lastBranchesRoot === active?.root;
+    const sent: SlowState = {
+      aiEnabled: this.lastAiEnabled,
+      branchesSig: sameRepo ? this.lastBranchesSig : undefined,
+      unpushed: upstream ? (ahead ?? 0) : undefined,
+      canPublish: upstream ? true : undefined,
+    };
     const base: StatePayload = {
       type: "state",
       hasRepo,
@@ -2120,24 +2134,29 @@ export class CommitViewProvider
       branch,
       detached,
       // Only when it belongs to the repo now on screen.
-      branches: this.lastBranchesRoot === active?.root ? this.lastBranches : undefined,
+      branches: sameRepo ? this.lastBranches : undefined,
       upstream,
       ahead,
       behind,
+      unpushed: sent.unpushed,
+      canPublish: sent.canPublish,
       repoName,
       lastMessage,
       signoffDefault,
-      aiEnabled: this.lastAiEnabled,
+      aiEnabled: sent.aiEnabled,
       layout,
       busy: this.busy,
     };
     void this.view.webview.postMessage(base);
     this.updateBadge(staged, unstaged, behind);
 
-    // THEN resolve the slower bits — the AI-availability probe (vscode.lm /
-    // keychain) and the branch-menu data (for-each-ref + stash list) — in
-    // parallel, and re-post. The client dedups the (unchanged) file list, so
-    // this only refreshes the ✨ button + branch menu without a re-render.
+    // THEN resolve the slower bits — the AI availability (cached; see
+    // GitBrain.isEnabledCached) and the branch-menu data (for-each-ref + stash
+    // list) — in parallel, and re-post ONLY what they corrected. The client
+    // dedups the (unchanged) file list, so a re-post only refreshes the ✨
+    // button + branch menu without a re-render; but it is still the whole
+    // payload crossing the webview boundary, and during a staging burst or the
+    // onDidChange firehose the answer is the one already on screen.
     const [aiEnabled, branches, pushInfo] = await Promise.all([
       this.generator
         ? this.generator.isEnabled().catch(() => false)
@@ -2147,10 +2166,17 @@ export class CommitViewProvider
         ? this.countUnpushed(active, upstream, ahead)
         : Promise.resolve({ unpushed: 0, canPublish: false }),
     ]);
+    const resolved: SlowState = {
+      aiEnabled,
+      branchesSig: branches ? JSON.stringify(branches) : undefined,
+      unpushed: pushInfo.unpushed,
+      canPublish: pushInfo.canPublish,
+    };
     this.lastAiEnabled = aiEnabled;
     this.lastBranches = branches;
+    this.lastBranchesSig = resolved.branchesSig;
     this.lastBranchesRoot = active?.root;
-    if (!this.view) {
+    if (!this.view || !slowStateChanged(sent, resolved)) {
       return;
     }
     void this.view.webview.postMessage({
