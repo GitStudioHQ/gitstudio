@@ -10,7 +10,7 @@
 // bridges the two — it pages via IPC and feeds the element host messages — so
 // the component itself needs no desktop-specific code.
 
-import type { GitStudioBridge } from "../shared/ipc";
+import type { GitStudioBridge, GraphRefFilter } from "../shared/ipc";
 import type { GraphInitMessage, GraphAppendMessage } from "@gitstudio/host-bridge/graphProtocol";
 import { nextGraphMessage } from "../shared/graphAdapterCore";
 
@@ -59,6 +59,16 @@ export class GraphHostAdapter {
     await this.page(true);
   }
 
+  /**
+   * The Branches picker changed the filter (issue #30). The host remembers it
+   * per repository and rebuilds from page 0; every page loaded so far was
+   * walked under the old filter, so the cursor resets with it.
+   */
+  async setRefFilter(refs: GraphRefFilter): Promise<void> {
+    this.reset();
+    await this.page(true, refs);
+  }
+
   /** Loads the next page (called when the element nears its bottom). */
   async loadMore(): Promise<void> {
     if (this.exhausted) {
@@ -67,14 +77,14 @@ export class GraphHostAdapter {
     await this.page(false);
   }
 
-  private async page(initial: boolean): Promise<void> {
+  private async page(initial: boolean, refs?: GraphRefFilter): Promise<void> {
     if (this.loading) {
       return;
     }
     this.loading = true;
     const myGen = this.gen;
     try {
-      const result = await host.invoke("graph:load", { skip: this.skip });
+      const result = await host.invoke("graph:load", { skip: this.skip, refs });
       if (myGen !== this.gen) {
         return; // reset while we waited — this page belongs to a dead view
       }

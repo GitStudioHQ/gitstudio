@@ -39,6 +39,8 @@ import type {
   WireRow,
   WireRef,
   RowStat,
+  GraphRefEntry,
+  GraphRefFilter,
 } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG, laneCenterX, lastDrawableLane } from "./gutter";
 import {
@@ -206,7 +208,10 @@ export type GraphAction =
    * A drag reordered the rewritable chain. `order` is the WHOLE chain in its
    * new display order — not a delta — so the host never replays the drag.
    */
-  | { type: "reorder"; order: string[] };
+  | { type: "reorder"; order: string[] }
+  /** The Branches picker changed the filter (issue #30): rebuild the graph
+   *  around these fully-qualified refs (null = all), and remember it. */
+  | { type: "setRefFilter"; refs: GraphRefFilter };
 
 /** One item in the in-graph commit actions popover (from the host). */
 export interface CommitMenuItem {
@@ -228,6 +233,8 @@ export class CommitGraph extends LitElement {
     status: { attribute: false },
     errorMessage: { attribute: false },
     head: { attribute: false },
+    refFilter: { attribute: false },
+    refList: { attribute: false },
     palette: { state: true },
     selectedSha: { state: true },
     searchQuery: { state: true },
@@ -1473,6 +1480,10 @@ export class CommitGraph extends LitElement {
   declare errorMessage: string;
   /** Sha of the current HEAD commit. */
   declare head: string;
+  /** The branch filter the rows were built under (issue #30); null = all. */
+  declare refFilter: GraphRefFilter;
+  /** Every ref the Branches picker offers — filtered-out ones included. */
+  declare refList: GraphRefEntry[];
 
   private declare palette: readonly string[];
   private declare selectedSha: string | undefined;
@@ -1610,6 +1621,8 @@ export class CommitGraph extends LitElement {
     this.status = "loading";
     this.errorMessage = "";
     this.head = "";
+    this.refFilter = null;
+    this.refList = [];
     this.palette = paletteForTheme();
     this.selectedSha = undefined;
     this.searchQuery = "";

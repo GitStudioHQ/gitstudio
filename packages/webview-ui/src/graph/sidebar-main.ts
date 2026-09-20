@@ -60,6 +60,9 @@ function start(root: HTMLElement): void {
       case "refresh":
         vscode.postMessage({ type: "refresh" });
         break;
+      case "setRefFilter":
+        vscode.postMessage({ type: "setRefFilter", refs: action.refs });
+        break;
     }
   };
 
@@ -71,6 +74,8 @@ function start(root: HTMLElement): void {
         rail.rows = message.rows;
         rail.totalColumns = message.totalColumns;
         rail.hasMore = message.hasMore;
+        rail.refFilter = message.refFilter ?? null;
+        rail.refList = message.refList ?? [];
         rail.status = message.rows.length === 0 ? "empty" : "ready";
         break;
       case "graphAppend":

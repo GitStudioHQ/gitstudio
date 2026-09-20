@@ -58,6 +58,31 @@ export interface WireSegment {
   color: number;
 }
 
+/**
+ * One entry in the graph's Branches picker (issue #30): EVERY branch and tag
+ * the repository has, whether or not the current filter shows it — a ref that
+ * is filtered out still has to be listed, or it could never be ticked back in.
+ */
+export interface GraphRefEntry {
+  /** Fully-qualified name — what the filter stores and `git log` is handed. */
+  fullName: string;
+  /** Short display name: "main", "origin/main", "v1.2.0". */
+  name: string;
+  kind: "head" | "remoteHead" | "tag";
+  /** The local branch HEAD is on. */
+  isCurrent?: boolean;
+  /** The fully-qualified upstream of a local branch, when it tracks one that
+   *  exists — what the "Current + upstream" preset ticks. */
+  upstream?: string;
+}
+
+/**
+ * The branch filter: the fully-qualified refs the graph is built around, or
+ * null for every branch, tag and remote. Never an empty list — deselecting the
+ * last ref falls back to null, because a graph of nothing is not a graph.
+ */
+export type GraphRefFilter = string[] | null;
+
 // ── Host → webview ──────────────────────────────────────────────────────────
 
 /** Full (re)initialization: replaces the graph with a fresh first page. */
@@ -70,6 +95,10 @@ export interface GraphInitMessage {
   totalColumns: number;
   /** True while more pages remain to be loaded on demand. */
   hasMore: boolean;
+  /** The filter these rows were built under (see GraphRefFilter). */
+  refFilter: GraphRefFilter;
+  /** Every ref the picker can offer — the filtered-out ones included. */
+  refList: GraphRefEntry[];
 }
 
 /** A later page appended to the existing graph (infinite scroll). */
@@ -238,4 +267,11 @@ export type GraphWebviewMessage =
   /** The details pane's "in N branches" row was expanded. Containment is a
    * history walk (`git branch --all --contains`) that can be slow on large
    * repos, so it is never computed up front — only when the user asks. */
-  | { type: "requestContains"; sha: string };
+  | { type: "requestContains"; sha: string }
+  /**
+   * The Branches picker changed the filter (issue #30). The host remembers it
+   * for this repository, rebuilds the graph from the first page around exactly
+   * these refs, and answers with a fresh `graphInit` carrying the filter it
+   * actually applied (refs that no longer exist are dropped on the way).
+   */
+  | { type: "setRefFilter"; refs: GraphRefFilter };

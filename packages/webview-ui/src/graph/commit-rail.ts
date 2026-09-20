@@ -34,7 +34,12 @@ import {
   elementScroll,
   type VirtualItem,
 } from "@tanstack/virtual-core";
-import type { WireRow, WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import type {
+  WireRow,
+  WireRef,
+  GraphRefEntry,
+  GraphRefFilter,
+} from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG } from "./gutter";
 import { paletteForTheme, observeGraphTheme } from "./lanePalette";
 import { gravatarUrl, avatarHtml } from "./avatar";
@@ -81,7 +86,10 @@ export type RailAction =
   | { type: "menuAction"; sha: string; id: string }
   | { type: "copy"; text: string }
   | { type: "loadMore" }
-  | { type: "refresh" };
+  | { type: "refresh" }
+  /** The Branches picker changed the filter (issue #30): rebuild the log
+   *  around these fully-qualified refs (null = all), and remember it. */
+  | { type: "setRefFilter"; refs: GraphRefFilter };
 
 /** One item in the commit actions popover (host-built, same as the graph's). */
 export interface RailMenuItem {
@@ -117,6 +125,8 @@ export class CommitRail extends LitElement {
     hasMore: { attribute: false },
     status: { attribute: false },
     errorMessage: { attribute: false },
+    refFilter: { attribute: false },
+    refList: { attribute: false },
     searchQuery: { state: true },
     searchScope: { state: true },
     scopeOpen: { state: true },
@@ -722,6 +732,10 @@ export class CommitRail extends LitElement {
   declare hasMore: boolean;
   declare status: "loading" | "ready" | "empty" | "error";
   declare errorMessage: string;
+  /** The branch filter the rows were built under (issue #30); null = all. */
+  declare refFilter: GraphRefFilter;
+  /** Every ref the Branches picker offers — filtered-out ones included. */
+  declare refList: GraphRefEntry[];
   private declare searchQuery: string;
   private declare searchScope: SearchScope;
   private declare scopeOpen: boolean;
@@ -805,6 +819,8 @@ export class CommitRail extends LitElement {
     this.hasMore = false;
     this.status = "loading";
     this.errorMessage = "";
+    this.refFilter = null;
+    this.refList = [];
     this.searchQuery = "";
     this.searchScope = "all";
     this.scopeOpen = false;

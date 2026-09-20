@@ -23,6 +23,9 @@ interface Persisted {
     defaultId?: string;
     custom?: Array<{ id: string; name: string; command: string }>;
   };
+  /** The Commit Graph's branch filter (issue #30), per repository root:
+   *  fully-qualified ref names. A repo with no entry shows every branch. */
+  graphRefFilters?: Record<string, string[]>;
 }
 
 export class AppSettings {
@@ -72,6 +75,15 @@ export class AppSettings {
                   .map((c) => ({ id: c.id, name: c.name, command: c.command }))
               : [],
           };
+        }
+        const gf = r.graphRefFilters as Record<string, unknown> | undefined;
+        if (gf && typeof gf === "object" && !Array.isArray(gf)) {
+          data.graphRefFilters = {};
+          for (const [root, refs] of Object.entries(gf)) {
+            if (!Array.isArray(refs)) continue;
+            const names = refs.filter((x): x is string => typeof x === "string" && !!x);
+            if (names.length) data.graphRefFilters[root] = names;
+          }
         }
       }
     } catch {
@@ -159,6 +171,22 @@ export class AppSettings {
       hidden: prefs.hidden.filter((h) => h !== id),
       defaultId: prefs.defaultId === id ? undefined : prefs.defaultId,
     };
+    await this.persist();
+  }
+
+  /** The Commit Graph's branch filter for a repository, or null for all. */
+  graphRefFilter(root: string): string[] | null {
+    const refs = this.data.graphRefFilters?.[root];
+    return refs && refs.length > 0 ? [...refs] : null;
+  }
+
+  /** Remember (or, with null / an empty list, forget) a repository's filter. */
+  async setGraphRefFilter(root: string, refs: string[] | null): Promise<void> {
+    const all = { ...(this.data.graphRefFilters ?? {}) };
+    if (refs && refs.length > 0) all[root] = [...refs];
+    else delete all[root];
+    if (Object.keys(all).length > 0) this.data.graphRefFilters = all;
+    else delete this.data.graphRefFilters;
     await this.persist();
   }
 

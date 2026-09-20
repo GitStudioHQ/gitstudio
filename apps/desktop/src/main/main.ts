@@ -1211,7 +1211,11 @@ async function boot(): Promise<void> {
     defaultCloneDir: managedReposDir(),
     home: app.getPath("home"),
   });
-  bridge = new GitBridge(repos);
+  bridge = new GitBridge(repos, {
+    // The graph's branch filter (issue #30), remembered per repository.
+    get: (root) => appSettings.graphRefFilter(root),
+    set: (root, refs) => appSettings.setGraphRefFilter(root, refs),
+  });
   github = new GitHubBridge(repos);
   // Authenticate ATTACHMENT images from the renderer. A private repository's
   // issue screenshots live at github.com/user-attachments/…, which answers a

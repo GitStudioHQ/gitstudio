@@ -56,6 +56,12 @@ export class GraphMount {
         case "refresh":
           void this.reload();
           break;
+        case "setRefFilter":
+          // Same discipline as a refresh: the rows stay while the filtered
+          // history loads, and a failure lands on the error tile with Retry.
+          this.element.status = "loading";
+          this.adapter.setRefFilter(action.refs).catch((err) => this.renderError(err));
+          break;
         case "requestStats":
           void host
             .invoke("commit:rowStats", action.shas)
@@ -85,6 +91,8 @@ export class GraphMount {
           this.element.rows = message.rows;
           this.element.totalColumns = message.totalColumns;
           this.element.hasMore = message.hasMore;
+          this.element.refFilter = message.refFilter ?? null;
+          this.element.refList = message.refList ?? [];
           if (message.rows.length === 0 && !message.hasMore) {
             // A genuinely empty history gets the crafted tile, not the shared
             // element's bare "No commits yet" — consistent with every other view.

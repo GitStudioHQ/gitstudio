@@ -28,6 +28,8 @@ function page(over: Partial<GraphPage> = {}): GraphPage {
     totalColumns: 1,
     hasMore: true,
     nextSkip: 1,
+    refFilter: null,
+    refList: [],
     ...over,
   };
 }
@@ -40,6 +42,21 @@ test("nextGraphMessage produces graphInit for the first page", () => {
     assert.equal(msg.rows.length, 1);
     assert.equal(msg.hasMore, true);
   }
+});
+
+test("graphInit carries the branch filter and the picker's ref list", () => {
+  // The picker lists EVERY ref, filtered-out ones included — otherwise a ref
+  // could never be ticked back in. Both ride the first page only.
+  const refList = [{ fullName: "refs/heads/main", name: "main", kind: "head" as const, isCurrent: true }];
+  const msg = nextGraphMessage(page({ refFilter: ["refs/heads/main"], refList }), true);
+  if (msg.type === "graphInit") {
+    assert.deepEqual(msg.refFilter, ["refs/heads/main"]);
+    assert.deepEqual(msg.refList, refList);
+  } else {
+    assert.fail("expected graphInit");
+  }
+  const more = nextGraphMessage(page({ refFilter: ["refs/heads/main"], refList }), false);
+  assert.equal("refFilter" in more, false);
 });
 
 test("nextGraphMessage produces graphAppend for later pages", () => {

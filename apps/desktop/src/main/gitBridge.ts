@@ -42,7 +42,10 @@ import type {
   FileDiff,
   GitIdentity,
   GitOpState,
+  GraphLoadRequest,
   GraphPage,
+  GraphRefEntry,
+  GraphRefFilter,
   HeadCommit,
   HeadInfo,
   RefInfo,
@@ -57,8 +60,24 @@ import type {
   CommitBranches,
 } from "../shared/ipc";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import {
+  chipRefsUnderFilter,
+  normalizeRefFilter,
+  refEntries,
+  sameRefFilter,
+} from "@gitstudio/host-bridge/graphRefFilter";
 import type { CommitFileChange } from "@gitstudio/host-bridge/git";
 import type { RepoStore } from "./repoStore";
+
+/**
+ * Where the graph's branch filter (issue #30) is remembered, one selection per
+ * repository — the app settings store in production, a Map in tests. Injected
+ * so the bridge stays Electron-free.
+ */
+export interface GraphRefFilterStore {
+  get(root: string): GraphRefFilter;
+  set(root: string, refs: GraphRefFilter): void | Promise<void>;
+}
 
 /** Commits per graph page — matches the extension's PAGE_SIZE. */
 const PAGE_SIZE = 500;
@@ -163,6 +182,16 @@ export class GitBridge {
   /** Every loaded input commit, so a page append relayouts the full DAG. */
   private loaded: GraphInputCommit[] = [];
   private refsBySha = new Map<string, GitRef[]>();
+  /** Every ref of the last loadRefs, for the picker and for pruning. */
+  private refs: GitRef[] = [];
+  private refList: GraphRefEntry[] = [];
+  /**
+   * The branch filter the accumulated pages were walked with (issue #30) —
+   * pruned against the refs that existed at load time, null for everything.
+   * A request that changes it is a fresh load: the pages so far belong to a
+   * different history.
+   */
+  private refFilter: GraphRefFilter = null;
   private currentHeadSha = "";
   private loadedRoot: string | undefined;
   /** Serializes graph:load so two pages never interleave in the accumulator. */
@@ -170,7 +199,10 @@ export class GitBridge {
   /** Bumped by a fresh load so queued stale pages discard themselves. */
   private graphGen = 0;
 
-  constructor(private readonly repos: RepoStore) {}
+  constructor(
+    private readonly repos: RepoStore,
+    private readonly refFilters?: GraphRefFilterStore,
+  ) {}
 
   private ctx(): GitContext | undefined {
     return this.repos.getContext();
@@ -203,7 +235,7 @@ export class GitBridge {
    *   · the generation lets a page that was already queued when a FRESH load
    *     arrived discard itself instead of appending pre-reload commits.
    */
-  async graphLoad(opts: { skip?: number; maxCount?: number }): Promise<GraphPage> {
+  async graphLoad(opts: GraphLoadRequest): Promise<GraphPage> {
     const run = this.graphChain.then(() => this.graphLoadInner(opts));
     // Never let one failure poison the chain for every later page.
     this.graphChain = run.then(
@@ -213,15 +245,20 @@ export class GitBridge {
     return run;
   }
 
-  private async graphLoadInner(opts: { skip?: number; maxCount?: number }): Promise<GraphPage> {
+  private async graphLoadInner(opts: GraphLoadRequest): Promise<GraphPage> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { rows: [], head: "", totalColumns: 1, hasMore: false, nextSkip: 0 };
+      return { rows: [], head: "", totalColumns: 1, hasMore: false, nextSkip: 0, refFilter: null, refList: [] };
     }
 
     const maxCount = opts.maxCount ?? PAGE_SIZE;
     const skip = opts.skip ?? 0;
-    const fresh = skip === 0 || ctx.root !== this.loadedRoot;
+    // A request that SETS the filter (issue #30) is fresh whatever its skip
+    // says: every page accumulated so far was walked under the old filter, and
+    // appending a page of one history to another is the splice this chain
+    // exists to prevent.
+    const setsFilter = opts.refs !== undefined && !sameRefFilter(opts.refs, this.refFilter);
+    const fresh = skip === 0 || ctx.root !== this.loadedRoot || setsFilter;
 
     if (fresh) {
       // Supersede anything queued behind us: those pages describe the history we
@@ -231,6 +268,14 @@ export class GitBridge {
       this.loaded = [];
       this.loadedRoot = ctx.root;
       await this.loadRefs(ctx);
+      // The filter: the request's, else the one remembered for this repo —
+      // pruned against the refs that exist now (a remembered branch can be
+      // gone), and remembered back when that changed anything.
+      const wanted = opts.refs !== undefined ? opts.refs : (this.refFilters?.get(ctx.root) ?? null);
+      this.refFilter = normalizeRefFilter(wanted, this.refs);
+      if (opts.refs !== undefined || !sameRefFilter(this.refFilter, wanted)) {
+        await this.refFilters?.set(ctx.root, this.refFilter);
+      }
     }
     const gen = this.graphGen;
 
@@ -244,6 +289,8 @@ export class GitBridge {
         totalColumns: 1,
         hasMore: false,
         nextSkip: this.loaded.length,
+        refFilter: this.refFilter,
+        refList: this.refList,
       };
     }
     const before = fresh ? 0 : this.loaded.length;
@@ -254,7 +301,10 @@ export class GitBridge {
     const allRows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      refsBySha: this.refsBySha,
+      // Chips follow the filter: a ref the graph is not built around draws no
+      // chip (the current branch always does). commit:details keeps reading
+      // the full map — it describes the commit.
+      refsBySha: chipRefsUnderFilter(this.refsBySha, this.refFilter),
     });
 
     return {
@@ -263,6 +313,8 @@ export class GitBridge {
       totalColumns: layout.totalColumns,
       hasMore,
       nextSkip: this.loaded.length,
+      refFilter: this.refFilter,
+      refList: this.refList,
     };
   }
 
@@ -274,6 +326,9 @@ export class GitBridge {
     const page: GraphInputCommit[] = [];
     for await (const commit of ctx.log.streamCommits({
       revRange: "--all",
+      // The branch filter: every page of one load walks the same ticked set,
+      // so skip-based paging stays consistent across the load.
+      refs: this.refFilter ?? undefined,
       maxCount,
       skip,
     })) {
@@ -292,6 +347,8 @@ export class GitBridge {
     } catch {
       refs = [];
     }
+    this.refs = refs;
+    this.refList = refEntries(refs);
     for (const ref of refs) {
       if (ref.type === "stash") {
         continue;

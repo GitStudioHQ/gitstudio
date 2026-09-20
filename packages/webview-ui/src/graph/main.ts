@@ -123,6 +123,9 @@ function start(root: HTMLElement): void {
       case "requestStats":
         vscode.postMessage({ type: "requestStats", shas: action.shas });
         break;
+      case "setRefFilter":
+        vscode.postMessage({ type: "setRefFilter", refs: action.refs });
+        break;
     }
   };
 
@@ -232,6 +235,8 @@ function handle(
       graph.rows = message.rows;
       graph.totalColumns = message.totalColumns;
       graph.hasMore = message.hasMore;
+      graph.refFilter = message.refFilter ?? null;
+      graph.refList = message.refList ?? [];
       graph.status = message.rows.length === 0 ? "empty" : "ready";
       break;
     }

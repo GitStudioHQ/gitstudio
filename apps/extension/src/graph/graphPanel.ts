@@ -6,6 +6,8 @@ import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type {
   GraphHostMessage,
   GraphWebviewMessage,
+  GraphRefEntry,
+  GraphRefFilter,
   WireRow,
   WireRef,
   RowStat,
@@ -15,9 +17,16 @@ import type {
   CommitFileChange,
 } from "@gitstudio/host-bridge/commitDetailsProtocol";
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
+import {
+  chipRefsUnderFilter,
+  normalizeRefFilter,
+  refEntries,
+  sameRefFilter,
+} from "@gitstudio/host-bridge/graphRefFilter";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
+import { getRefFilterStore } from "./refFilterStore";
 import { commitMenuItems, refMenuItems, runCommitAction } from "./commitActions";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
@@ -152,6 +161,15 @@ export class CommitGraphPanel {
   /** All loaded input commits (for incremental relayout on append). */
   private loaded: GraphInputCommit[] = [];
   private refsBySha = new Map<string, GitRef[]>();
+  /** Every ref of the last loadRefs, for the picker and for pruning. */
+  private refs: GitRef[] = [];
+  private refList: GraphRefEntry[] = [];
+  /**
+   * The branch filter the loaded pages were walked with (issue #30) — pruned
+   * against the refs that existed at load time, null for everything. Stored
+   * per repository in the RefFilterStore; this is the applied copy.
+   */
+  private refFilter: GraphRefFilter = null;
   private hasAnyRemote = false;
   private currentHeadSha = "";
   private nextSkip = 0;
@@ -196,6 +214,17 @@ export class CommitGraphPanel {
       ),
       this.repos.onDidChange(() => this.scheduleRefresh()),
     );
+    // The branch filter is one selection per repository, shared by every graph
+    // surface in the window. A change made in the Commits sidebar has to reach
+    // the bottom panel too — and the surface that made it reloads through this
+    // same event, so a change has one path to a reload.
+    const store = getRefFilterStore();
+    if (store) {
+      const off = store.onDidChange((root) => {
+        if (root === this.repoRoot && this.ready) void this.loadInitial();
+      });
+      this.disposables.push({ dispose: off });
+    }
   }
 
   // ── Webview messages ───────────────────────────────────────────────────────
@@ -246,6 +275,9 @@ export class CommitGraphPanel {
         break;
       case "detailsVisibility":
         this.detailsVisible = msg.open;
+        break;
+      case "setRefFilter":
+        void this.setRefFilter(msg.refs);
         break;
       case "openInGraph":
         // Sidebar rail → promote into the BOTTOM PANEL graph (the split view
@@ -309,6 +341,9 @@ export class CommitGraphPanel {
       this.records.clear();
       this.loaded = [];
       this.refsBySha.clear();
+      this.refs = [];
+      this.refList = [];
+      this.refFilter = null;
       this.nextSkip = 0;
       this.hasMore = false;
       this.post({
@@ -317,6 +352,8 @@ export class CommitGraphPanel {
         head: "",
         totalColumns: 1,
         hasMore: false,
+        refFilter: null,
+        refList: [],
       });
       return;
     }
@@ -330,13 +367,37 @@ export class CommitGraphPanel {
     this.initialized = false;
 
     try {
-      // Refs (for-each-ref + stash) and the first log page run CONCURRENTLY —
-      // refs no longer block the log spawn. buildRows needs both, but they land
-      // together.
-      const [, page] = await Promise.all([
-        this.loadRefs(active),
-        this.readPage(active, 0, controller.signal, FIRST_PAGE_SIZE),
-      ]);
+      const store = getRefFilterStore();
+      const wanted = store ? store.get(active.root) : this.refFilter;
+      let page: GraphInputCommit[];
+      if (wanted) {
+        // A filter names refs, and a remembered ref can be gone by now. The
+        // ref list is what prunes it, so under a filter the refs come FIRST
+        // and the log walks the pruned set — a page walked against the stored
+        // list and a trigger describing the pruned one would disagree the one
+        // time it matters (every remembered ref deleted: the walk would show
+        // HEAD alone under a label saying "All branches").
+        await this.loadRefs(active);
+        if (controller.signal.aborted) {
+          return;
+        }
+        this.refFilter = normalizeRefFilter(wanted, this.refs);
+        if (store && !sameRefFilter(this.refFilter, wanted)) {
+          // Dropped silently, and forgotten silently: no change event, this
+          // load is already the reload.
+          void store.set(active.root, this.refFilter, { silent: true });
+        }
+        page = await this.readPage(active, 0, controller.signal, FIRST_PAGE_SIZE);
+      } else {
+        this.refFilter = null;
+        // Refs (for-each-ref + stash) and the first log page run CONCURRENTLY —
+        // refs no longer block the log spawn. buildRows needs both, but they
+        // land together.
+        [, page] = await Promise.all([
+          this.loadRefs(active),
+          this.readPage(active, 0, controller.signal, FIRST_PAGE_SIZE),
+        ]);
+      }
       if (controller.signal.aborted) {
         return;
       }
@@ -356,6 +417,8 @@ export class CommitGraphPanel {
         head: this.currentHeadSha,
         totalColumns,
         hasMore: this.hasMore,
+        refFilter: this.refFilter,
+        refList: this.refList,
       });
       // Rows now exist in the webview — reveals can land. Must be set BEFORE
       // the flush below, or the replayed reveal would just re-queue itself.
@@ -392,6 +455,8 @@ export class CommitGraphPanel {
             head: "",
             totalColumns: 1,
             hasMore: false,
+            refFilter: null,
+            refList: [],
           });
         } else {
           this.post({ type: "graphError", message: msg });
@@ -690,6 +755,9 @@ export class CommitGraphPanel {
     const page: GraphInputCommit[] = [];
     for await (const commit of active.ctx.log.streamCommits({
       revRange: "--all",
+      // The branch filter: every page of one load walks the same ticked set,
+      // so skip-based paging stays consistent across the load.
+      refs: this.refFilter ?? undefined,
       maxCount: limit,
       skip,
       signal,
@@ -703,6 +771,27 @@ export class CommitGraphPanel {
     return page;
   }
 
+  /**
+   * The Branches picker changed the filter. Remember it for this repository;
+   * the store's change event is what reloads every surface showing it, this
+   * one included (see the constructor). Without a store — a host constructed
+   * before activation installed one — the selection lives here for the
+   * session and the reload is direct.
+   */
+  private async setRefFilter(refs: GraphRefFilter): Promise<void> {
+    const active = this.repos.getActive();
+    if (!active) {
+      return;
+    }
+    const store = getRefFilterStore();
+    if (store) {
+      await store.set(active.root, refs);
+      return;
+    }
+    this.refFilter = refs && refs.length > 0 ? refs : null;
+    await this.loadInitial();
+  }
+
   private async loadRefs(active: RepoEntry): Promise<void> {
     this.refsBySha.clear();
     this.currentHeadSha = "";
@@ -713,6 +802,8 @@ export class CommitGraphPanel {
     } catch {
       refs = [];
     }
+    this.refs = refs;
+    this.refList = refEntries(refs);
     for (const ref of refs) {
       if (ref.type === "stash") {
         continue;
@@ -745,7 +836,10 @@ export class CommitGraphPanel {
     const rows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      refsBySha: this.refsBySha,
+      // Chips follow the filter: a ref the graph is not built around draws no
+      // chip (the current branch always does). The details pane and the
+      // commit menu keep reading the full map — they describe the commit.
+      refsBySha: chipRefsUnderFilter(this.refsBySha, this.refFilter),
     });
     return { rows, totalColumns: layout.totalColumns };
   }
@@ -1199,6 +1293,8 @@ export class CommitGraphPanel {
     this.disposables.length = 0;
     this.records.clear();
     this.refsBySha.clear();
+    this.refs = [];
+    this.refList = [];
     this.loaded = [];
   }
 }

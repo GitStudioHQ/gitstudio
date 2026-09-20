@@ -5,10 +5,15 @@
 // them through `window.gitstudio`). It is TYPE-ONLY and imports nothing
 // host-specific, so the renderer (browser) and main (Node) bundles both carry it.
 
-import type { WireRow, RowStat } from "@gitstudio/host-bridge/graphProtocol";
+import type {
+  WireRow,
+  RowStat,
+  GraphRefEntry,
+  GraphRefFilter,
+} from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
 
-export type { RowStat, CommitDetailsPayload };
+export type { RowStat, CommitDetailsPayload, GraphRefEntry, GraphRefFilter };
 
 /** A repo the user has opened, surfaced in the "recent" list + sidebar header. */
 export interface RepoInfo {
@@ -57,6 +62,23 @@ export interface GraphPage {
   hasMore: boolean;
   /** Skip cursor for the next page request. */
   nextSkip: number;
+  /** The branch filter these rows were walked with (issue #30); null = all. */
+  refFilter: GraphRefFilter;
+  /** Every ref the Branches picker can offer, filtered-out ones included. */
+  refList: GraphRefEntry[];
+}
+
+/** A `graph:load` request. */
+export interface GraphLoadRequest {
+  skip?: number;
+  maxCount?: number;
+  /**
+   * The branch filter to apply from now on. Omitted (undefined) means "the one
+   * remembered for this repository"; null or a list SETS it — remembered per
+   * repository and, because the pages accumulated so far were walked under a
+   * different filter, always a fresh page 0 whatever `skip` says.
+   */
+  refs?: GraphRefFilter;
 }
 
 /** One changed file in a commit or in the working tree. */
@@ -1639,7 +1661,7 @@ export interface IpcChannels {
   "repo:recent": [void, RepoInfo[]];
   "repo:current": [void, RepoInfo | undefined];
   "repo:close": [void, void];
-  "graph:load": [{ skip?: number; maxCount?: number }, GraphPage];
+  "graph:load": [GraphLoadRequest, GraphPage];
   "refs:list": [void, RefInfo[]];
   /** Branches CONTAINING a commit (reachability), for the details pane's
    *  "in N branches" row. Lazy — it walks history. */

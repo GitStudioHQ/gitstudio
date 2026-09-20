@@ -27,6 +27,8 @@ export function nextGraphMessage(
       head: page.head,
       totalColumns: page.totalColumns,
       hasMore: page.hasMore,
+      refFilter: page.refFilter,
+      refList: page.refList,
     };
   }
   return {
