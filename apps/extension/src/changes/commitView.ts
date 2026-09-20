@@ -180,8 +180,6 @@ interface FromWebview {
   line?: number;
   /** Which staging model the Changes view should present. */
   stagingModel?: "split" | "checkboxes";
-  /** One-letter status of the file a `fileMenu` targets (M/A/D/R/U/!/…). */
-  status?: string;
   message?: string;
   amend?: boolean;
   /** confirmPush: push with --force-with-lease (see confirmPush). */
@@ -189,8 +187,8 @@ interface FromWebview {
   signoff?: boolean;
   author?: string;
   push?: boolean;
-  /** Branch-menu sub-action: checkout | checkoutRemote | new | checkoutRef |
-   *  pull | pullRebase | push | fetch | pullFf | copyName | favorite. */
+  /** Branch-menu sub-action: new | checkoutRef | pull | pullRebase | push |
+   *  fetch | pullFf | copyName | favorite. (Checkouts go via branchRefCommand.) */
   action?: string;
   /** The ref a branch action targets (branch name or "remote/branch"). */
   ref?: string;
@@ -1452,18 +1450,11 @@ export class CommitViewProvider
     }
     let result: { ok: boolean; stderr?: string } = { ok: true };
     try {
+      // Checking out a branch is not an action here: the menu routes every
+      // checkout through branchRefCommand (gitstudio.branch.checkout /
+      // gitstudio.remoteBranch.checkout), which carries the confirm dialogs
+      // and the Undo envelope. See handleBranchRefCommand.
       switch (msg.action) {
-        case "checkout":
-          result = await entry.ctx.branches.checkout(ref);
-          if (result.ok) await this.noteRecentBranch(entry, ref);
-          break;
-        case "checkoutRemote": {
-          // origin/feature → local "feature" tracking the remote (git DWIM).
-          const local = ref.split("/").slice(1).join("/") || ref;
-          result = await entry.ctx.branches.checkout(local);
-          if (result.ok) await this.noteRecentBranch(entry, local);
-          break;
-        }
         // The name/revision comes from the view's own dialog (openRefPrompt),
         // not from vscode.window.showInputBox — the quick-input is a search bar
         // that dies on focus loss and cannot complete over our refs.
@@ -4626,11 +4617,12 @@ export class CommitViewProvider
         closeBranchMenu(); branchPill.focus();
       }
     }
+    // A branch action that closes the menu — except the star, which toggles in
+    // place. The in-place sync actions (fetch/pull/push) post directly from
+    // their own handlers and never come through here.
     function branchAct(action, ref) {
       vscode.postMessage({ type: "branchAction", action: action, ref: ref });
-      // Fetch runs IN PLACE: the menu stays open and the rows' ↑/↓ badges
-      // refresh live when the host pushes the fetched state.
-      if (action !== "favorite" && action !== "fetch") closeBranchMenu();
+      if (action !== "favorite") closeBranchMenu();
     }
     function matchF(s) { return !branchFilter || s.toLowerCase().indexOf(branchFilter) !== -1; }
 
@@ -4687,10 +4679,6 @@ export class CommitViewProvider
     // ── Per-branch action submenu (JetBrains-style) ──────────────────────────
     function subAct(command, refName, refType) {
       vscode.postMessage({ type: "branchRefCommand", command: command, ref: refName, refType: refType });
-      closeBranchMenu();
-    }
-    function plainAct(action, refName) {
-      vscode.postMessage({ type: "branchAction", action: action, ref: refName });
       closeBranchMenu();
     }
     function subItem(list, icon, label, fn, danger) {
@@ -4822,7 +4810,7 @@ export class CommitViewProvider
         subItem(list, "git-merge", "Merge '" + name + "' into '" + cur + "'", () => subAct("gitstudio.branch.merge", name, "tag"));
         subSep(list);
         subItem(list, "cloud-upload", "Push Tag to Remote…", () => subAct("gitstudio.tag.push", name, "tag"));
-        subItem(list, "copy", "Copy Tag Name", () => plainAct("copyName", name));
+        subItem(list, "copy", "Copy Tag Name", () => branchAct("copyName", name));
         subSep(list);
         subItem(list, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true);
       } else if (current) {
@@ -4838,7 +4826,7 @@ export class CommitViewProvider
         subItem(list, "add", "New Branch from '" + name + "'…", () => subAct("gitstudio.branch.new", name, refType));
         subItem(list, "list-tree", "New Worktree from '" + name + "'…", () => subAct("gitstudio.branch.createWorktree", name, refType));
         subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
-        subItem(list, "copy", "Copy Branch Name", () => plainAct("copyName", name));
+        subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
       } else {
         subItem(list, kind === "remote" ? "cloud-download" : "check", "Checkout", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.checkout" : "gitstudio.branch.checkout", name, refType));
@@ -4866,7 +4854,7 @@ export class CommitViewProvider
           subSep(list);
         }
         if (kind === "local") subItem(list, "edit", "Rename…", () => subAct("gitstudio.branch.rename", name, refType));
-        subItem(list, "copy", "Copy Branch Name", () => plainAct("copyName", name));
+        subItem(list, "copy", "Copy Branch Name", () => branchAct("copyName", name));
         subSep(list);
         subItem(list, "trash", "Delete", () =>
           subAct(kind === "remote" ? "gitstudio.remoteBranch.delete" : "gitstudio.branch.delete", name, refType), true);
