@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  chipRefs,
   chipRefsUnderFilter,
   fullRefName,
   normalizeRefFilter,
@@ -103,6 +104,27 @@ test("fullRefName is the inverse of a chip's short name, by kind", () => {
   assert.equal(fullRefName("main", "currentHead"), "refs/heads/main");
   assert.equal(fullRefName("origin/main", "remoteHead"), "refs/remotes/origin/main");
   assert.equal(fullRefName("v1", "tag"), "refs/tags/v1");
+});
+
+test("chipRefs resolves a chip through the list by name and kind, so an ambiguous short name still names its ref", () => {
+  // A branch and a tag both called "release": git shortens them to
+  // "heads/release" and "tags/release", and that is the name on the chip.
+  const list = refEntries([
+    ref("head", "heads/release", { fullName: "refs/heads/release" }),
+    ref("tag", "tags/release", { fullName: "refs/tags/release" }),
+    ref("head", "main", { isCurrent: true }),
+    ref("remote", "origin/main"),
+  ]);
+  assert.deepEqual(chipRefs(list, "heads/release", "head"), ["refs/heads/release"]);
+  assert.deepEqual(chipRefs(list, "tags/release", "tag"), ["refs/tags/release"]);
+  // Kind matters: the same name can be listed under two kinds.
+  const both = refEntries([ref("head", "x"), ref("tag", "x")]);
+  assert.deepEqual(chipRefs(both, "x", "tag"), ["refs/tags/x"]);
+  assert.deepEqual(chipRefs(both, "x", "currentHead"), ["refs/heads/x"]);
+  // The folded remote twins ride along, resolved the same way.
+  assert.deepEqual(chipRefs(list, "main", "currentHead", ["origin"]), ["refs/heads/main", "refs/remotes/origin/main"]);
+  // A chip the list has no entry for still gets fullRefName's answer.
+  assert.deepEqual(chipRefs([], "feature/y", "head", ["origin"]), ["refs/heads/feature/y", "refs/remotes/origin/feature/y"]);
 });
 
 test("sameRefFilter ignores order and tells null from a list", () => {

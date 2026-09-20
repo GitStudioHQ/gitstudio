@@ -66,7 +66,7 @@ import {
   removeRefs,
   toggleRef,
 } from "./refFilter";
-import { fullRefName, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import { chipRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 import { COLUMN_DROP_TAIL_AT, INLINE_LIST_BELOW } from "../limits";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
@@ -2579,9 +2579,10 @@ export class CommitGraph extends LitElement {
     if (!name) return;
     const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
     // The chip and the remote twins folded into it move as one thing — what
-    // you see is "main ☁", and "only this" means what you see.
+    // you see is "main ☁", and "only this" means what you see. Resolved
+    // through the picker's list, not rebuilt from the short name: see chipRefs.
     const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
-    const refs = [fullRefName(name, kind), ...remotes.map((r) => fullRefName(`${r}/${name}`, "remoteHead"))];
+    const refs = chipRefs(this.refList, name, kind, remotes);
     this.columnsOpen = false;
     this.scopeOpen = false;
     this.branchesOpen = false;

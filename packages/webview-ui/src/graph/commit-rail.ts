@@ -62,7 +62,7 @@ import {
   removeRefs,
   toggleRef,
 } from "./refFilter";
-import { fullRefName, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import { chipRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -1692,9 +1692,10 @@ export class CommitRail extends LitElement {
     if (!name) return;
     const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
     // The chip and the remote twins folded into it move as one thing — what
-    // you see is "main ☁", and "only this" means what you see.
+    // you see is "main ☁", and "only this" means what you see. Resolved
+    // through the picker's list, not rebuilt from the short name: see chipRefs.
     const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
-    const refs = [fullRefName(name, kind), ...remotes.map((r) => fullRefName(`${r}/${name}`, "remoteHead"))];
+    const refs = chipRefs(this.refList, name, kind, remotes);
     // Clamped like the commit menu, so it never clips the narrow sidebar.
     const estW = 200;
     const estH = 30 + 4 * 26;

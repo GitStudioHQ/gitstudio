@@ -242,6 +242,51 @@ test("the rail's Branches picker: trigger, presets, ticks, keyboard, chips", { s
 });
 
 /**
+ * A branch and a tag both called "release". git's %(refname:short) hands out
+ * "heads/release" and "tags/release" for them, and that is the name on the
+ * chip — so the chip's shortcut must go through the list the host sent (which
+ * carries the full names) rather than rebuild "refs/heads/heads/release",
+ * a ref that does not exist and that the host would prune to All.
+ */
+const AMBIGUOUS_SCRIPT = `
+  el.rows = [
+    row(0, [ref("main", "currentHead")]),
+    row(1, [ref("heads/release", "head"), ref("tags/release", "tag")]),
+    row(2),
+  ];
+  el.refList = [
+    { fullName: "refs/heads/main", name: "main", kind: "head", isCurrent: true },
+    { fullName: "refs/heads/release", name: "heads/release", kind: "head" },
+    { fullName: "refs/tags/release", name: "tags/release", kind: "tag" },
+  ];
+  await settle();
+  const chipOf = (name) => $$(CHIP).find((c) => c.dataset.ref === name);
+  expect(!!chipOf("heads/release") && !!chipOf("tags/release"), "both chips carry git's disambiguated short names");
+  chipOf("heads/release").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+  await settle();
+  $(CHIP_MENU + " [data-chip-action=only]").click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/release"]),
+    "Show only this branch on the branch chip posts the branch's real full name (" + JSON.stringify(lastFilter()) + ")");
+  chipOf("tags/release").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+  await settle();
+  $(CHIP_MENU + " [data-chip-action=add]").click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/release", "refs/tags/release"]),
+    "Add to filter on the tag chip adds the tag's real full name (" + JSON.stringify(lastFilter()) + ")");
+`;
+
+test("the graph's chip shortcut resolves an ambiguous short name through the ref list", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(CHROME!, GRAPH, MOUNT_GRAPH + AMBIGUOUS_SCRIPT, { css: CSS_GRAPH, width: 1100, height: 700 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("the rail's chip shortcut resolves an ambiguous short name through the ref list", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(CHROME!, RAIL, MOUNT_RAIL + AMBIGUOUS_SCRIPT, { css: CSS_RAIL, width: 320, height: 600 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+/**
  * The picker opens leftwards from its trigger, which is right while the
  * header has spare width on that side. In the bottom panel with the details
  * pane open (42% of the panel) the graph pane is 580–740px on a laptop, the

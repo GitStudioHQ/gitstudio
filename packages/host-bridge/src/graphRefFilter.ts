@@ -31,6 +31,33 @@ export function fullRefName(name: string, kind: WireRef["kind"]): string {
 }
 
 /**
+ * The full names behind a chip and the remote twins folded into it — what
+ * the chip's "Show only this branch" / "Add to filter" shortcut selects.
+ *
+ * A chip's name is `%(refname:short)`, and short is only SHORTEST UNAMBIGUOUS:
+ * the moment a tag and a branch share "release", git hands out
+ * "heads/release" and "tags/release", and rebuilding "refs/heads/heads/release"
+ * from that names a ref that does not exist. Both hosts prune it, so the
+ * shortcut silently showed every branch under a trigger saying "All branches".
+ * The picker's list carries the full name git gave each ref, so the chip is
+ * resolved through it by name AND kind; fullRefName is the fallback for a
+ * chip the list has no entry for.
+ */
+export function chipRefs(
+  refList: readonly GraphRefEntry[],
+  name: string,
+  kind: WireRef["kind"],
+  remotes: readonly string[] = [],
+): string[] {
+  const resolve = (n: string, k: GraphRefEntry["kind"]): string =>
+    refList.find((r) => r.name === n && r.kind === k)?.fullName ?? fullRefName(n, k);
+  return [
+    resolve(name, kind === "currentHead" ? "head" : kind),
+    ...remotes.map((r) => resolve(`${r}/${name}`, "remoteHead")),
+  ];
+}
+
+/**
  * The picker's list: every branch and tag, the stash and a remote's HEAD
  * pointer left out (neither is a thing you tick — the pointer is a copy of the
  * default branch that already sits beside it). A local branch's upstream is
