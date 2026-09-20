@@ -184,6 +184,9 @@ export class GitBridge {
   private refsBySha = new Map<string, GitRef[]>();
   /** Every ref of the last loadRefs, for the picker and for pruning. */
   private refs: GitRef[] = [];
+  /** False when that listing threw or found nothing — then `refs` is not the
+   *  repository's list, and must not prune a stored selection (see below). */
+  private refsListed = false;
   private refList: GraphRefEntry[] = [];
   /**
    * The branch filter the accumulated pages were walked with (issue #30) —
@@ -272,9 +275,22 @@ export class GitBridge {
       // pruned against the refs that exist now (a remembered branch can be
       // gone), and remembered back when that changed anything.
       const wanted = opts.refs !== undefined ? opts.refs : (this.refFilters?.get(ctx.root) ?? null);
-      this.refFilter = normalizeRefFilter(wanted, this.refs);
-      if (opts.refs !== undefined || !sameRefFilter(this.refFilter, wanted)) {
-        await this.refFilters?.set(ctx.root, this.refFilter);
+      if (this.refsListed) {
+        this.refFilter = normalizeRefFilter(wanted, this.refs);
+        if (opts.refs !== undefined || !sameRefFilter(this.refFilter, wanted)) {
+          await this.refFilters?.set(ctx.root, this.refFilter);
+        }
+      } else {
+        // The listing threw or found nothing, so there is no list to prune
+        // against — an empty one prunes EVERY remembered ref, and writing that
+        // back turned one failed for-each-ref into a forgotten selection. The
+        // selection is applied as it is (the walk's --ignore-missing takes a
+        // gone ref) and the store keeps its value for a load that can prune.
+        // Only a request that SETS the filter is remembered, as asked.
+        this.refFilter = wanted && wanted.length > 0 ? wanted : null;
+        if (opts.refs !== undefined) {
+          await this.refFilters?.set(ctx.root, this.refFilter);
+        }
       }
     }
     const gen = this.graphGen;
@@ -348,6 +364,7 @@ export class GitBridge {
       refs = [];
     }
     this.refs = refs;
+    this.refsListed = refs.length > 0;
     this.refList = refEntries(refs);
     for (const ref of refs) {
       if (ref.type === "stash") {

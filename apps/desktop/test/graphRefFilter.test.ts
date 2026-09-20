@@ -157,6 +157,41 @@ test("paging under a filter walks the same set page after page", async () => {
   assert.deepEqual([...shasOf(p1), ...shasOf(p2), ...shasOf(p3)], truth);
 });
 
+test("a prune against a ref listing that failed is not written back", async () => {
+  // One transient for-each-ref failure used to forget the selection for
+  // good: the listing was swallowed into an empty list, every remembered ref
+  // was pruned against it, and the resulting null was persisted.
+  stored.set(repo, ["refs/heads/side"]);
+  const listRefs = ctx.refs.listRefs.bind(ctx.refs);
+  let mode: "throw" | "empty" | "ok" = "throw";
+  (ctx.refs as { listRefs: () => Promise<unknown> }).listRefs = async () => {
+    if (mode === "throw") throw new Error("fatal: unable to read refs");
+    if (mode === "empty") return [];
+    return listRefs();
+  };
+  let page = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual(stored.get(repo), ["refs/heads/side"], "the stored selection survives a listing that threw");
+  assert.deepEqual(page.refFilter, ["refs/heads/side"], "…and is the filter this load applied, as stored");
+  assert.ok(shasOf(page).includes(sideTip), "…and walked");
+
+  mode = "empty";
+  page = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual(stored.get(repo), ["refs/heads/side"], "a listing that found nothing is no list to prune against either");
+  assert.deepEqual(page.refFilter, ["refs/heads/side"]);
+
+  // A request that SETS the filter is still remembered, as asked.
+  page = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"] });
+  assert.deepEqual(stored.get(repo), ["refs/tags/v1"]);
+  assert.deepEqual(page.refFilter, ["refs/tags/v1"]);
+
+  // Once the listing works again, a real prune does its job as before.
+  mode = "ok";
+  stored.set(repo, ["refs/heads/deleted-elsewhere", "refs/heads/side"]);
+  page = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual(stored.get(repo), ["refs/heads/side"]);
+  assert.deepEqual(page.refFilter, ["refs/heads/side"]);
+});
+
 test("AppSettings round-trips a per-repo filter through disk", async () => {
   const d = mkdtempSync(join(tmpdir(), "gitstudio-settings-graph-"));
   const s = await AppSettings.load(d, { defaultCloneDir: "/x", home: "/h" });

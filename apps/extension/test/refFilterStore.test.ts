@@ -106,6 +106,24 @@ test("the graph host routes a filter change through the store, and reloads from 
   assert.match(load, /refFilter: this\.refFilter,\s*refList: this\.refList,/);
 });
 
+test("the graph host never writes back a prune against a ref listing that failed", async () => {
+  // loadRefs swallows a listRefs failure into an empty list. Pruning a stored
+  // selection against THAT drops every ref, and persisting the result turned
+  // one transient for-each-ref failure into a forgotten selection. The write
+  // is gated on the listing having produced a list; a failed one applies the
+  // selection as stored and leaves the store alone.
+  const text = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
+  const refs = text.slice(text.indexOf("private async loadRefs("), text.indexOf("private buildRows("));
+  assert.match(refs, /catch \{\s*refs = \[\];\s*\}\s*this\.refs = refs;\s*this\.refsListed = refs\.length > 0;/);
+  const load = text.slice(text.indexOf("private async loadInitial("), text.indexOf("private async loadMore("));
+  assert.match(
+    load,
+    /if \(this\.refsListed\) \{\s*this\.refFilter = normalizeRefFilter\(wanted, this\.refs\);\s*if \(store && !sameRefFilter\(this\.refFilter, wanted\)\) \{[\s\S]*?void store\.set\(active\.root, this\.refFilter, \{ silent: true \}\);\s*\}\s*\} else \{[\s\S]*?this\.refFilter = wanted;\s*\}/,
+  );
+  // No other write to the store in the load path — the silent one is the only one.
+  assert.equal((load.match(/store\.set\(/g) ?? []).length, 1);
+});
+
 test("the store is installed before the first graph host is built", async () => {
   const text = await readFile(`${SRC}/extension.ts`, "utf8");
   const installed = text.indexOf("setRefFilterStore(new RefFilterStore(context.workspaceState))");
