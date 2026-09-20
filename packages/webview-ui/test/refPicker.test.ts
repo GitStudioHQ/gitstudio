@@ -1,0 +1,242 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
+import { findChrome, runInChrome } from "./headless";
+
+/**
+ * The Branches picker (issue #30) on both commit lists — the editor-area graph
+ * and the sidebar rail. A filter is a host round trip (the element posts
+ * `setRefFilter`, the host answers with a fresh page), so what these pin is
+ * the element's half: the trigger says what the list is built around, the
+ * picker offers every ref the host listed (the filtered-out ones included),
+ * a tick posts the FULLY-QUALIFIED ref, presets tick what they say, the last
+ * untick is All, a chip's own menu narrows to that chip, and the popover is
+ * reachable and dismissable from the keyboard like the scope popover beside
+ * it. Driven in headless Chrome: shadow DOM, Lit's update cycle and focus
+ * are the mechanism, and node cannot fake them.
+ */
+const GRAPH = fileURLToPath(new URL("../src/graph/commit-graph.ts", import.meta.url));
+const RAIL = fileURLToPath(new URL("../src/graph/commit-rail.ts", import.meta.url));
+const CHROME = findChrome();
+
+/** A history whose refs cover every group: the current branch with an
+ *  upstream, a second local, a remote without a local twin, and a tag. */
+const FIXTURE = `
+  const sha = (i) => i.toString(16).padStart(4, "0").repeat(10);
+  const ref = (name, kind) => ({ name, kind });
+  const row = (i, refs) => ({
+    sha: sha(i), shortSha: sha(i).slice(0, 7), column: 0, color: 0, isMerge: false,
+    segments: [{ fromColumn: 0, toColumn: 0, color: 0 }],
+    subject: "commit " + i, author: "Ada Lovelace", authorEmail: "ada@example.com",
+    authorDate: 1700000000 - i * 3600, refs: refs || [],
+  });
+  const rows = [
+    row(0, [ref("main", "currentHead"), ref("origin/main", "remoteHead"), ref("v1", "tag")]),
+    row(1, [ref("feature/x", "head")]),
+    row(2, [ref("origin/feat/line-staging", "remoteHead")]),
+    row(3), row(4), row(5),
+  ];
+  const refList = [
+    { fullName: "refs/heads/main", name: "main", kind: "head", isCurrent: true, upstream: "refs/remotes/origin/main" },
+    { fullName: "refs/heads/feature/x", name: "feature/x", kind: "head" },
+    { fullName: "refs/remotes/origin/main", name: "origin/main", kind: "remoteHead" },
+    { fullName: "refs/remotes/origin/feat/line-staging", name: "origin/feat/line-staging", kind: "remoteHead" },
+    { fullName: "refs/tags/v1", name: "v1", kind: "tag" },
+  ];
+  // Timer-based, never a frame: headless Chrome services no requestAnimationFrame
+  // on an idle page, and a run waiting on one dies at the budget with no verdict.
+  const tick = () => new Promise((r) => setTimeout(r, 30));
+  const actions = [];
+  const filters = () => actions.filter((a) => a.type === "setRefFilter").map((a) => a.refs);
+  const lastFilter = () => filters()[filters().length - 1];
+`;
+
+/** Mount the graph with the fixture; \`el\`, \`$\`, \`$$\` and \`settle\` are the page's vocabulary. */
+const MOUNT_GRAPH = FIXTURE + `
+  const el = document.createElement("gitstudio-graph");
+  el.onAction = (a) => actions.push(a);
+  el.status = "loading";
+  document.getElementById("root").replaceChildren(el);
+  await el.updateComplete;
+  el.head = sha(0); el.rows = rows; el.totalColumns = 1; el.hasMore = false; el.status = "ready";
+  el.refFilter = null; el.refList = refList;
+  await el.updateComplete;
+  await tick();
+  const $ = (sel) => el.shadowRoot.querySelector(sel);
+  const $$ = (sel) => [...el.shadowRoot.querySelectorAll(sel)];
+  const settle = async () => { await el.updateComplete; await tick(); };
+  const TRIGGER = ".gh-branches";
+  const POP = ".gh-branches-pop";
+  const ITEM = ".gh-branches-pop .gh-menuitem";
+  const PRESET = ".gh-branches-pop .gh-preset";
+  const FILTER_INPUT = ".gh-branches-pop .gh-pop-filter input";
+  const CHIP = ".chip[data-ref]";
+  const CHIP_MENU = ".gh-chip-menu";
+  const label = () => ($(TRIGGER + " .lbl") || {}).textContent || "";
+`;
+
+const MOUNT_RAIL = FIXTURE + `
+  const el = document.createElement("gitstudio-commit-rail");
+  el.onAction = (a) => actions.push(a);
+  el.status = "loading";
+  document.getElementById("root").replaceChildren(el);
+  await el.updateComplete;
+  el.head = sha(0); el.rows = rows; el.totalColumns = 1; el.hasMore = false; el.status = "ready";
+  el.refFilter = null; el.refList = refList;
+  await el.updateComplete;
+  await tick();
+  const $ = (sel) => el.shadowRoot.querySelector(sel);
+  const $$ = (sel) => [...el.shadowRoot.querySelectorAll(sel)];
+  const settle = async () => { await el.updateComplete; await tick(); };
+  const TRIGGER = ".ibtn.branches";
+  const POP = ".pop.branches";
+  const ITEM = ".pop.branches .mi";
+  const PRESET = ".pop.branches .preset";
+  const FILTER_INPUT = ".pop.branches .flt input";
+  const CHIP = ".chip[data-ref]";
+  const CHIP_MENU = ".pop.chipmenu";
+  // The rail's trigger is icon-only under All; its accessible name carries the state.
+  const label = () => { const t = $(TRIGGER); return t ? t.getAttribute("aria-label") || "" : ""; };
+`;
+
+const CSS_GRAPH = `#root{height:700px;width:1100px;display:flex;flex-direction:column} gitstudio-graph{flex:1;min-height:0}`;
+const CSS_RAIL = `#root{height:600px;width:320px;display:flex;flex-direction:column} gitstudio-commit-rail{flex:1;min-height:0}`;
+
+/** The same script, run against both elements: the vocabulary above is what differs. */
+const SCRIPT = `
+  // ── The trigger says what the list is built around ──
+  expect(!!$(TRIGGER), "the toolbar has a Branches trigger");
+  expect(/All branches/.test(label()), "with no filter it says All branches (" + label() + ")");
+  expect(!$(POP), "the picker starts closed");
+
+  // ── Opening lists every ref the host offered, grouped, current pinned ──
+  $(TRIGGER).click();
+  await settle();
+  expect(!!$(POP), "clicking the trigger opens the picker");
+  expect($(TRIGGER).getAttribute("aria-expanded") === "true", "the trigger says it is expanded");
+  const items = () => $$(ITEM);
+  expect(items().length === 5, "every ref is listed, filtered-out ones included (" + items().length + ")");
+  expect(items()[0].dataset.ref === "refs/heads/main", "the current branch is pinned first (" + items()[0].dataset.ref + ")");
+  expect(/current/i.test(items()[0].textContent), "and labelled current");
+  const presets = () => $$(PRESET);
+  expect(presets().map((p) => p.textContent.trim()).join("|") === "Current branch|Current + upstream|Local only|All",
+    "the four presets, in order (" + presets().map((p) => p.textContent.trim()).join("|") + ")");
+  expect(items().every((b) => b.getAttribute("aria-checked") === "false"), "nothing is ticked under All");
+  const active = el.shadowRoot.activeElement;
+  expect(!!active && active.matches(FILTER_INPUT), "the filter box takes focus on open");
+
+  // ── A tick posts the FULLY-QUALIFIED ref and narrows to it alone ──
+  items().find((b) => b.dataset.ref === "refs/heads/feature/x").click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/feature/x"]),
+    "ticking from All narrows to that ref alone, by full name (" + JSON.stringify(lastFilter()) + ")");
+  expect(!!$(POP), "the picker stays open for the next tick");
+  expect(/feature\\/x/.test(label()), "the trigger names the filter (" + label() + ")");
+  expect(items().find((b) => b.dataset.ref === "refs/heads/feature/x").getAttribute("aria-checked") === "true",
+    "the row shows its tick without waiting for the host");
+
+  // ── A second tick adds; unticking the last is All ──
+  items().find((b) => b.dataset.ref === "refs/tags/v1").click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/feature/x", "refs/tags/v1"]), "a second tick adds (" + JSON.stringify(lastFilter()) + ")");
+  items().find((b) => b.dataset.ref === "refs/heads/feature/x").click();
+  await settle();
+  items().find((b) => b.dataset.ref === "refs/tags/v1").click();
+  await settle();
+  expect(lastFilter() === null, "unticking the last ref is All again, never an empty list (" + JSON.stringify(lastFilter()) + ")");
+  expect(/All branches/.test(label()), "and the trigger says so (" + label() + ")");
+
+  // ── Presets tick what they say ──
+  presets().find((p) => p.dataset.preset === "currentUpstream").click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/main", "refs/remotes/origin/main"]),
+    "Current + upstream ticks the branch and its upstream (" + JSON.stringify(lastFilter()) + ")");
+  expect(presets().find((p) => p.dataset.preset === "currentUpstream").classList.contains("active"), "the preset the filter IS reads active");
+  presets().find((p) => p.dataset.preset === "local").click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/main", "refs/heads/feature/x"]),
+    "Local only ticks every local branch (" + JSON.stringify(lastFilter()) + ")");
+  presets().find((p) => p.dataset.preset === "all").click();
+  await settle();
+  expect(lastFilter() === null, "All is null");
+
+  // ── The list narrows by typing, case-insensitively ──
+  const box = $(FILTER_INPUT);
+  box.value = "FEAT";
+  box.dispatchEvent(new Event("input", { bubbles: true }));
+  await settle();
+  expect(items().map((b) => b.dataset.ref).join(",") === "refs/heads/feature/x,refs/remotes/origin/feat/line-staging",
+    "typing narrows the list (" + items().map((b) => b.dataset.ref).join(",") + ")");
+
+  // ── ArrowDown from the box lands on the first row ──
+  box.focus();
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, composed: true }));
+  await settle();
+  expect(el.shadowRoot.activeElement === items()[0], "ArrowDown from the filter box lands on the first row");
+
+  // ── Escape closes it and hands focus back to the trigger ──
+  const focused = el.shadowRoot.activeElement || document.activeElement;
+  focused.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+  await settle();
+  expect(!$(POP), "Escape closes the picker");
+  expect(el.shadowRoot.activeElement === $(TRIGGER), "and focus returns to the trigger (" + (el.shadowRoot.activeElement && el.shadowRoot.activeElement.className) + ")");
+
+  // ── A pointer down outside dismisses it, like the scope popover ──
+  $(TRIGGER).click();
+  await settle();
+  expect(!!$(POP), "reopened");
+  expect($(FILTER_INPUT).value === "", "a fresh open starts with the whole list");
+  document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+  await settle();
+  expect(!$(POP), "a pointer down outside closes it");
+
+  // ── A chip's own menu: only this / add / remove ──
+  const chipOf = (name) => $$(CHIP).find((c) => c.dataset.ref === name);
+  expect(!!chipOf("feature/x"), "a ref chip carries its ref name");
+  chipOf("feature/x").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 300, clientY: 200 }));
+  await settle();
+  expect(!!$(CHIP_MENU), "right-clicking a chip opens its own menu");
+  const only = $(CHIP_MENU + " [data-chip-action=only]");
+  expect(!!only, "with Show only this branch");
+  expect(!$(CHIP_MENU + " [data-chip-action=add]") && !$(CHIP_MENU + " [data-chip-action=remove]"),
+    "and no add/remove while the filter is All — there is nothing to add to");
+  only.click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/feature/x"]), "Show only this branch narrows to it (" + JSON.stringify(lastFilter()) + ")");
+  expect(!$(CHIP_MENU), "and the menu closes");
+  // The folded chip: "main" with origin/main folded in moves as one thing.
+  chipOf("main").dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, altKey: true, clientX: 100, clientY: 100 }));
+  await settle();
+  expect(!!$(CHIP_MENU), "alt-click opens the same menu");
+  const add = $(CHIP_MENU + " [data-chip-action=add]");
+  expect(!!add, "with Add to filter, now that a filter is set");
+  add.click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/feature/x", "refs/heads/main", "refs/remotes/origin/main"]),
+    "adding a folded chip adds the branch and its remote twin (" + JSON.stringify(lastFilter()) + ")");
+  chipOf("main").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 100, clientY: 100 }));
+  await settle();
+  const remove = $(CHIP_MENU + " [data-chip-action=remove]");
+  expect(!!remove, "a chip in the filter offers Remove from filter");
+  remove.click();
+  await settle();
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/feature/x"]), "removing takes both back out (" + JSON.stringify(lastFilter()) + ")");
+  // Escape closes the chip menu too.
+  chipOf("v1").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 100, clientY: 100 }));
+  await settle();
+  expect(!!$(CHIP_MENU), "a tag chip has the menu too");
+  document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+  await settle();
+  expect(!$(CHIP_MENU), "Escape closes a chip menu");
+  notes.actions = actions.length;
+`;
+
+test("the graph's Branches picker: trigger, presets, ticks, keyboard, chips", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(CHROME!, GRAPH, MOUNT_GRAPH + SCRIPT, { css: CSS_GRAPH, width: 1100, height: 700 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("the rail's Branches picker: trigger, presets, ticks, keyboard, chips", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(CHROME!, RAIL, MOUNT_RAIL + SCRIPT, { css: CSS_RAIL, width: 320, height: 600 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});

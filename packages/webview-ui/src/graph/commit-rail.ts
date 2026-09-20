@@ -51,6 +51,18 @@ import {
   LS_SEARCH_SCOPE,
   rowMatches,
 } from "./search";
+import {
+  REF_PRESETS,
+  activePreset,
+  addRefs,
+  groupRefs,
+  presetFilter,
+  presetUnavailable,
+  refFilterLabel,
+  removeRefs,
+  toggleRef,
+} from "./refFilter";
+import { fullRefName, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -130,7 +142,10 @@ export class CommitRail extends LitElement {
     searchQuery: { state: true },
     searchScope: { state: true },
     scopeOpen: { state: true },
+    branchesOpen: { state: true },
+    branchQuery: { state: true },
     commitMenu: { state: true },
+    chipMenu: { state: true },
     selectedSha: { state: true },
   };
 
@@ -235,10 +250,30 @@ export class CommitRail extends LitElement {
         transform: translate(5px, -5px);
       }
       .ibtn.scoped { position: relative; }
+      /* ── Branches trigger (issue #30): the filter icon's twin, which grows a
+         label naming the filter once one is set — "main, feature/x" or
+         "3 branches" — so the narrowed log says what it is narrowed to. ── */
+      .ibtn.branches { width: auto; min-width: 20px; padding: 0 4px; gap: 3px; }
+      .ibtn.branches.scoped {
+        padding: 0 6px 0 5px;
+        background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+        color: var(--gs-accent-text);
+      }
+      .ibtn.branches.scoped::after { content: none; }
+      .ibtn.branches .lbl {
+        font-size: 10.5px;
+        font-weight: 550;
+        max-width: 96px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       /* The narrowest sidebars keep search usable: match nav hides, Enter /
-         Shift+Enter still steps through matches. */
+         Shift+Enter still steps through matches. The filter's name goes too;
+         the tint still says a filter is on. */
       @media (max-width: 235px) {
         .search .nav { display: none; }
+        .ibtn.branches .lbl { display: none; }
       }
 
       /* ── Scroller + virtualized rows ───────────────────────────────────── */
@@ -723,6 +758,80 @@ export class CommitRail extends LitElement {
         margin: 4px 6px;
         background: var(--gs-border-soft);
       }
+      /* ── The Branches picker (issue #30) in the same shell: presets, a
+         filter box, and the refs grouped Local / Remote / Tags. ─────────── */
+      /* Never wider than the sidebar it sits in; branchesPopTpl mirrors this. */
+      .pop.branches { width: min(232px, calc(100vw - 8px)); max-width: none; }
+      .pop .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        padding: 1px 4px 6px;
+      }
+      .pop .preset {
+        height: 20px;
+        padding: 0 8px;
+        border: 1px solid var(--gs-border-soft);
+        border-radius: 999px;
+        background: transparent;
+        color: inherit;
+        font-family: inherit;
+        font-size: 10.5px;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .pop .preset:hover { background: var(--gs-hover); }
+      .pop .preset:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+      .pop .preset.active {
+        background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+        border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
+        color: var(--gs-accent-text);
+      }
+      .pop .preset[disabled] { opacity: 0.5; cursor: default; }
+      .pop .preset[disabled]:hover { background: transparent; }
+      .pop .flt {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        margin: 0 4px 4px;
+        padding: 0 6px;
+        border-radius: var(--gs-radius-sm);
+        border: 1px solid var(--gs-border-soft);
+        background: var(--gs-surface);
+      }
+      .pop .flt:focus-within { border-color: var(--gs-accent); }
+      .pop .flt .codicon { font-size: 11px; color: var(--gs-fg-muted); flex: 0 0 auto; }
+      .pop .flt input {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--gs-fg);
+        font-family: inherit;
+        font-size: 12px;
+        padding: 0;
+      }
+      .pop .flt input::placeholder { color: var(--gs-fg-subtle); }
+      .pop .list { max-height: 280px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+      .pop .list .hd { padding-top: 5px; }
+      .pop .mi .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .pop .mi .cur {
+        margin-left: auto;
+        flex: 0 0 auto;
+        font-size: 9.5px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        color: var(--gs-fg-subtle);
+      }
+      .pop .mi .cur + .check { margin-left: 4px; }
+      .pop .hint {
+        padding: 3px 8px 4px;
+        font-size: 10.5px;
+        color: var(--gs-fg-subtle);
+        white-space: normal;
+      }
     `,
   ];
 
@@ -739,7 +848,16 @@ export class CommitRail extends LitElement {
   private declare searchQuery: string;
   private declare searchScope: SearchScope;
   private declare scopeOpen: boolean;
+  /** The Branches picker (issue #30): open, and its list's filter text. */
+  private declare branchesOpen: boolean;
+  private declare branchQuery: string;
   private declare commitMenu: RailMenu | null;
+  /**
+   * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
+   * shortcuts — show only this branch, add it, remove it. `refs` is the chip's
+   * ref plus the remote twins folded into it, so the chip moves as one thing.
+   */
+  private declare chipMenu: { name: string; refs: string[]; x: number; y: number } | null;
   private declare selectedSha: string;
 
   /** Row intents, forwarded to the host by the entry point. */
@@ -824,7 +942,10 @@ export class CommitRail extends LitElement {
     this.searchQuery = "";
     this.searchScope = "all";
     this.scopeOpen = false;
+    this.branchesOpen = false;
+    this.branchQuery = "";
     this.commitMenu = null;
+    this.chipMenu = null;
     this.selectedSha = "";
     try {
       const s = localStorage.getItem(LS_SEARCH_SCOPE);
@@ -861,6 +982,11 @@ export class CommitRail extends LitElement {
       if (this.searchQuery.trim()) this.computeMatches(false);
     }
     this.syncPopoverListener();
+    // The Branches picker opens with its filter box focused — typing is how
+    // you find one ref among hundreds, and the box is where typing goes.
+    if (changed.has("branchesOpen") && this.branchesOpen) {
+      this.renderRoot.querySelector<HTMLInputElement>(".pop .flt input")?.focus();
+    }
 
     const scroller = this.renderRoot.querySelector<HTMLDivElement>(".scroller");
     if (scroller) {
@@ -1125,8 +1251,13 @@ export class CommitRail extends LitElement {
       const tip = esc(
         tipData([{ name: chip.label, kind: chip.kind, remotes: chip.remotes }]),
       );
+      // `data-ref` / `data-kind` / `data-remotes` are what the chip's filter
+      // menu (issue #30) reads: the ref behind the chip, and the folded twins
+      // that move with it as the one thing it looks like.
       out +=
         `<span class="${cls}" title="" data-more="${tip}"` +
+        ` data-ref="${esc(chip.label)}" data-kind="${chip.kind}"` +
+        (chip.remotes.length ? ` data-remotes="${esc(chip.remotes.join(","))}"` : "") +
         ` aria-label="${esc(chip.title)}">` +
         `<span class="codicon codicon-${icon}" aria-hidden="true"></span>` +
         `<span class="name">${esc(chip.label)}</span>${cloud}</span>`;
@@ -1171,7 +1302,23 @@ export class CommitRail extends LitElement {
     this.refTip.hide();
   };
 
+  /** The ref chip under an event, if any — the "+N" pill carries no ref. */
+  private chipFromEvent(e: Event): HTMLElement | null {
+    return (e.composedPath()[0] as HTMLElement | null)?.closest?.(
+      ".chip[data-ref]",
+    ) as HTMLElement | null;
+  }
+
   private onScrollerClick = (e: MouseEvent): void => {
+    // ⌥-click on a ref chip is its filter menu (issue #30) — the same one a
+    // right-click opens, for pointers that have no right button.
+    const chip = e.altKey ? this.chipFromEvent(e) : null;
+    if (chip) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openChipMenu(chip, e.clientX, e.clientY);
+      return;
+    }
     const act = (e.composedPath()[0] as HTMLElement | null)?.closest?.(
       "[data-act]",
     ) as HTMLElement | null;
@@ -1197,6 +1344,14 @@ export class CommitRail extends LitElement {
   };
 
   private onScrollerContextMenu = (e: MouseEvent): void => {
+    // A ref chip has a menu of its own: the branch-filter shortcuts (issue
+    // #30). The row's commit menu is one right-click away, beside the chip.
+    const chip = this.chipFromEvent(e);
+    if (chip) {
+      e.preventDefault();
+      this.openChipMenu(chip, e.clientX, e.clientY);
+      return;
+    }
     const hit = this.rowFromEvent(e);
     if (!hit) return;
     e.preventDefault();
@@ -1345,6 +1500,8 @@ export class CommitRail extends LitElement {
     items: RailMenuItem[],
   ): void {
     this.scopeOpen = false;
+    this.branchesOpen = false;
+    this.chipMenu = null;
     let px = x;
     let py = y;
     if (x < 0 || y < 0) {
@@ -1365,7 +1522,8 @@ export class CommitRail extends LitElement {
   // ── Popover dismissal ───────────────────────────────────────────────────
 
   private syncPopoverListener(): void {
-    const open = this.scopeOpen || this.commitMenu !== null;
+    const open =
+      this.scopeOpen || this.branchesOpen || this.commitMenu !== null || this.chipMenu !== null;
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
     document.removeEventListener("keydown", this.onDocKeyDown, true);
     if (open) {
@@ -1376,12 +1534,30 @@ export class CommitRail extends LitElement {
     }
   }
 
+  /** Every popover, closed — the four share one dismissal contract. */
+  private closePopovers(): void {
+    this.scopeOpen = false;
+    this.branchesOpen = false;
+    this.commitMenu = null;
+    this.chipMenu = null;
+  }
+
   private onDocKeyDown = (e: KeyboardEvent): void => {
     if (e.key !== "Escape") return;
     e.preventDefault();
     e.stopPropagation();
-    this.scopeOpen = false;
-    this.commitMenu = null;
+    // Capture phase at the document: the popover's own Escape handler never
+    // runs while this listener is attached, so focus is handed back here —
+    // to the trigger of an anchored popover, to the list for the commit menu
+    // — or a keyboard user is dropped on <body> with the removed item.
+    const sel = this.branchesOpen ? ".anchor.branches" : this.scopeOpen ? ".search .anchor" : undefined;
+    this.closePopovers();
+    if (sel) {
+      // After the update that removes the popover, not a frame later.
+      void this.updateComplete.then(() => this.renderRoot.querySelector<HTMLElement>(sel)?.focus());
+    } else {
+      this.boundScroller?.focus({ preventScroll: true });
+    }
   };
 
   private onDocPointerDown = (e: Event): void => {
@@ -1393,8 +1569,7 @@ export class CommitRail extends LitElement {
           (n.classList.contains("pop") || n.classList.contains("anchor")),
       );
     if (!inside) {
-      this.scopeOpen = false;
-      this.commitMenu = null;
+      this.closePopovers();
     }
   };
 
@@ -1402,13 +1577,12 @@ export class CommitRail extends LitElement {
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      this.scopeOpen = false;
-      this.commitMenu = null;
+      this.closePopovers();
       this.boundScroller?.focus({ preventScroll: true });
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const items = Array.from(
-        this.renderRoot.querySelectorAll<HTMLElement>(".pop .mi"),
+        this.renderRoot.querySelectorAll<HTMLElement>(".pop .mi:not([disabled])"),
       );
       if (!items.length) return;
       const active = (this.renderRoot as ShadowRoot).activeElement as HTMLElement | null;
@@ -1498,6 +1672,41 @@ export class CommitRail extends LitElement {
     this.focusSearch();
   }
 
+  // ── Branch filter (issue #30) ───────────────────────────────────────────
+
+  /**
+   * Apply a new filter: shown here at once, so the tick and the trigger move
+   * under the pointer, and posted to the host, whose graphInit is the word on
+   * what was actually applied. The picker stays open — one tick is rarely
+   * the whole selection.
+   */
+  private applyRefFilter(refs: GraphRefFilter): void {
+    if (sameRefFilter(refs, this.refFilter)) return;
+    this.refFilter = refs;
+    this.onAction({ type: "setRefFilter", refs });
+  }
+
+  /** Open a chip's own menu at (x, y): the filter shortcuts for that ref. */
+  private openChipMenu(chip: HTMLElement, x: number, y: number): void {
+    const name = chip.dataset.ref;
+    if (!name) return;
+    const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
+    // The chip and the remote twins folded into it move as one thing — what
+    // you see is "main ☁", and "only this" means what you see.
+    const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
+    const refs = [fullRefName(name, kind), ...remotes.map((r) => fullRefName(`${r}/${name}`, "remoteHead"))];
+    // Clamped like the commit menu, so it never clips the narrow sidebar.
+    const estW = 200;
+    const estH = 30 + 4 * 26;
+    this.closePopovers();
+    this.chipMenu = {
+      name,
+      refs,
+      x: Math.max(4, Math.min(x, window.innerWidth - estW - 4)),
+      y: Math.max(4, Math.min(y, window.innerHeight - estH - 4)),
+    };
+  }
+
   // ── Template ────────────────────────────────────────────────────────────
 
   render() {
@@ -1511,7 +1720,9 @@ export class CommitRail extends LitElement {
             ? this.errorTpl()
             : this.listTpl()}
       ${this.scopeOpen ? this.scopePopTpl() : nothing}
+      ${this.branchesOpen ? this.branchesPopTpl() : nothing}
       ${this.commitMenu ? this.menuPopTpl(this.commitMenu) : nothing}
+      ${this.chipMenu ? this.chipMenuTpl(this.chipMenu) : nothing}
     `;
   }
 
@@ -1579,6 +1790,7 @@ export class CommitRail extends LitElement {
                 </button>
               `}
         </span>
+        ${this.branchesTriggerTpl()}
         ${this.head
           ? html`<button
               class="ibtn"
@@ -1603,9 +1815,134 @@ export class CommitRail extends LitElement {
     return SEARCH_SCOPES.find((s) => s.id === this.searchScope)?.label ?? "All";
   }
 
-  private scopePopTpl() {
+  /**
+   * The Branches trigger (issue #30): the filter icon's twin. Icon-only while
+   * every branch shows; once a filter is set it wears the accent wash and
+   * names the filter, so the narrowed log says what it is narrowed to.
+   */
+  private branchesTriggerTpl() {
+    const label = refFilterLabel(this.refFilter, this.refList);
+    const filtered = this.refFilter !== null;
+    return html`
+      <button
+        class="ibtn anchor branches ${filtered ? "scoped" : ""}"
+        title="Branches: ${label}"
+        aria-label="Filter branches: ${label}"
+        aria-haspopup="menu"
+        aria-expanded=${this.branchesOpen ? "true" : "false"}
+        @click=${(e: MouseEvent) => {
+          e.stopPropagation();
+          this.scopeOpen = false;
+          this.branchesOpen = !this.branchesOpen;
+          // A fresh open starts with the whole list; the query is not a preference.
+          if (this.branchesOpen) this.branchQuery = "";
+        }}
+      >
+        <span class="codicon codicon-git-branch"></span>
+        ${filtered ? html`<span class="lbl">${label}</span>` : nothing}
+      </button>
+    `;
+  }
+
+  /** The picker: presets, a filter box, the refs grouped Local / Remote /
+   *  Tags with the current branch pinned first. Same shell as the scope
+   *  popover and the commit menu, anchored under its trigger. */
+  private branchesPopTpl() {
+    const refs = this.refList;
+    const active = activePreset(this.refFilter, refs);
+    const selected = new Set(this.refFilter ?? []);
+    const groups = groupRefs(refs, this.branchQuery);
     const anchor = this.renderRoot
-      .querySelector(".anchor")
+      .querySelector(".anchor.branches")
+      ?.getBoundingClientRect();
+    // Right-aligned under its trigger, clamped inside the sidebar (the CSS
+    // width rule above is the same min()).
+    const W = Math.min(232, window.innerWidth - 8);
+    const x = Math.max(4, Math.min((anchor?.right ?? 200) - W, window.innerWidth - W - 4));
+    const y = (anchor?.bottom ?? 28) + 4;
+    const kindIcon = (k: GraphRefEntry["kind"]) =>
+      k === "tag" ? "tag" : k === "remoteHead" ? "cloud" : "git-branch";
+    const hint = this.refFilter
+      ? `${this.refFilter.length} of ${refs.length} ticked · untick the last for all`
+      : refs.length
+        ? "Showing every branch and tag · tick one to narrow"
+        : "No branches or tags";
+    return html`
+      <div
+        class="pop branches"
+        role="menu"
+        aria-label="Branches"
+        style="left:${x}px;top:${y}px"
+        @keydown=${this.onPopKeyDown}
+      >
+        <div class="hd">Show branches</div>
+        <div class="presets">
+          ${REF_PRESETS.map((p) => {
+            const why = presetUnavailable(p.id, refs);
+            return html`<button
+              class="preset ${active === p.id ? "active" : ""}"
+              type="button"
+              data-preset=${p.id}
+              ?disabled=${!!why}
+              title=${why || p.label}
+              aria-pressed=${active === p.id ? "true" : "false"}
+              @click=${() => {
+                const f = presetFilter(p.id, refs);
+                if (f !== undefined) this.applyRefFilter(f);
+              }}
+            >
+              ${p.label}
+            </button>`;
+          })}
+        </div>
+        <label class="flt">
+          <span class="codicon codicon-search" aria-hidden="true"></span>
+          <input
+            type="text"
+            placeholder="Filter branches…"
+            aria-label="Filter the branch list"
+            .value=${this.branchQuery}
+            @input=${(e: Event) => {
+              this.branchQuery = (e.target as HTMLInputElement).value;
+            }}
+          />
+        </label>
+        <div class="list">
+          ${groups.map(
+            (g) => html`<div class="hd">${g.label}</div>
+              ${g.refs.map(
+                (r) => html`<button
+                  class="mi"
+                  role="menuitemcheckbox"
+                  aria-checked=${selected.has(r.fullName) ? "true" : "false"}
+                  data-ref=${r.fullName}
+                  title=${r.fullName}
+                  @click=${() => this.applyRefFilter(toggleRef(this.refFilter, r.fullName))}
+                >
+                  <span class="codicon codicon-${kindIcon(r.kind)}" aria-hidden="true"></span>
+                  <span class="nm">${r.name}</span>
+                  ${r.isCurrent ? html`<span class="cur">current</span>` : nothing}
+                  ${selected.has(r.fullName)
+                    ? html`<span class="codicon codicon-check check"></span>`
+                    : nothing}
+                </button>`,
+              )}
+              ${g.hidden ? html`<div class="hint">${g.hidden} more — type to narrow</div>` : nothing}`,
+          )}
+          ${groups.length === 0 && refs.length
+            ? html`<div class="hint">No branches match</div>`
+            : nothing}
+        </div>
+        <div class="sep" role="separator"></div>
+        <div class="hint">${hint}</div>
+      </div>
+    `;
+  }
+
+  private scopePopTpl() {
+    // The search box's own trigger: the Branches trigger is an `.anchor` too.
+    const anchor = this.renderRoot
+      .querySelector(".search .anchor")
       ?.getBoundingClientRect();
     const x = Math.max(4, Math.min((anchor?.left ?? 40) - 90, window.innerWidth - 160));
     const y = (anchor?.bottom ?? 28) + 4;
@@ -1633,6 +1970,56 @@ export class CommitRail extends LitElement {
             </button>
           `,
         )}
+      </div>
+    `;
+  }
+
+  /** A ref chip's menu: show only it, add it to / remove it from the filter. */
+  private chipMenuTpl(m: NonNullable<CommitRail["chipMenu"]>) {
+    const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
+    const isOnly = sameRefFilter(m.refs, this.refFilter);
+    const pick = (refs: GraphRefFilter) => {
+      this.chipMenu = null;
+      this.applyRefFilter(refs);
+    };
+    return html`
+      <div
+        class="pop chipmenu"
+        role="menu"
+        aria-label="Filter by ${m.name}"
+        style="left:${m.x}px;top:${m.y}px"
+        @keydown=${this.onPopKeyDown}
+      >
+        <div class="hd">${m.name}</div>
+        <button
+          class="mi"
+          role="menuitem"
+          data-chip-action="only"
+          ?disabled=${isOnly}
+          @click=${() => pick(m.refs)}
+        >
+          <span class="codicon codicon-filter"></span>
+          Show only this branch
+        </button>
+        ${this.refFilter
+          ? html`
+              <button
+                class="mi"
+                role="menuitem"
+                data-chip-action=${inFilter ? "remove" : "add"}
+                @click=${() =>
+                  pick(inFilter ? removeRefs(this.refFilter, m.refs) : addRefs(this.refFilter, m.refs))}
+              >
+                <span class="codicon codicon-${inFilter ? "dash" : "add"}"></span>
+                ${inFilter ? "Remove from filter" : "Add to filter"}
+              </button>
+              <div class="sep" role="separator"></div>
+              <button class="mi" role="menuitem" data-chip-action="all" @click=${() => pick(null)}>
+                <span class="codicon codicon-list-flat"></span>
+                Show all branches
+              </button>
+            `
+          : nothing}
       </div>
     `;
   }

@@ -55,6 +55,18 @@ import {
   LS_SEARCH_SCOPE,
   rowMatches,
 } from "./search";
+import {
+  REF_PRESETS,
+  activePreset,
+  addRefs,
+  groupRefs,
+  presetFilter,
+  presetUnavailable,
+  refFilterLabel,
+  removeRefs,
+  toggleRef,
+} from "./refFilter";
+import { fullRefName, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 import { COLUMN_DROP_TAIL_AT, INLINE_LIST_BELOW } from "../limits";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
@@ -241,7 +253,10 @@ export class CommitGraph extends LitElement {
     searchScope: { state: true },
     columnsOpen: { state: true },
     scopeOpen: { state: true },
+    branchesOpen: { state: true },
+    branchQuery: { state: true },
     commitMenu: { state: true },
+    chipMenu: { state: true },
   };
 
   static styles = [hostTokens, codiconStyles, refTipStyles, authorTipStyles, css`
@@ -343,7 +358,8 @@ export class CommitGraph extends LitElement {
       color: var(--gs-fg-muted);
       flex: 0 0 auto;
     }
-    .gh-input {
+    .gh-input,
+    .gh-pop-filter > input {
       flex: 1 1 auto;
       min-width: 0;
       height: 100%;
@@ -354,7 +370,8 @@ export class CommitGraph extends LitElement {
       font-family: var(--vscode-font-family);
       font-size: 12px;
     }
-    .gh-input::placeholder { color: color-mix(in srgb, var(--vscode-foreground) 42%, transparent); }
+    .gh-input::placeholder,
+    .gh-pop-filter > input::placeholder { color: color-mix(in srgb, var(--vscode-foreground) 42%, transparent); }
     .gh-results {
       flex: 0 0 auto;
       font-size: 11px;
@@ -525,6 +542,88 @@ export class CommitGraph extends LitElement {
     /* The scope popover anchors to the search box's scope button (left-ish). */
     .gh-scope-pop { right: auto; left: 0; }
 
+    /* ── Branches picker (issue #30): the filter trigger + its popover ─────
+       The trigger is the scope button's twin, sized for the toolbar; the
+       popover is the shared shell with a presets row, a filter box and a
+       grouped checkbox list. Everything here is an existing token or mix. */
+    .gh-branches {
+      height: 22px;
+      padding: 0 6px 0 8px;
+      gap: 5px;
+      margin-right: 0;
+      max-width: 240px;
+    }
+    .gh-branches .codicon-git-branch { font-size: 12px; opacity: 0.85; }
+    .gh-branches .lbl {
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* Anchored to the trigger's right edge and opening leftwards, like the
+       Columns popover: the header's spare width is on that side. */
+    .gh-branches-pop { min-width: 268px; max-width: 340px; }
+    .gh-presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 2px 4px 7px;
+    }
+    .gh-preset {
+      height: 22px;
+      padding: 0 9px;
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+      border-radius: 999px;
+      background: transparent;
+      color: inherit;
+      font-family: var(--vscode-font-family);
+      font-size: 11px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .gh-preset:hover { background: var(--gs-hover); }
+    .gh-preset:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+    /* The same wash the scoped trigger and the current-branch pill wear. */
+    .gh-preset.active {
+      background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
+      border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
+      color: var(--gs-accent-text);
+    }
+    .gh-preset[disabled] { opacity: 0.5; cursor: default; }
+    .gh-preset[disabled]:hover { background: transparent; }
+    /* The list's filter box: the search box, one size down. */
+    .gh-pop-filter {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      height: 26px;
+      margin: 0 4px 4px;
+      padding: 0 8px;
+      border-radius: 6px;
+      border: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+      background: color-mix(in srgb, var(--vscode-foreground) 5%, var(--vscode-editor-background));
+    }
+    .gh-pop-filter:focus-within { border-color: var(--vscode-focusBorder); }
+    .gh-pop-filter > .codicon { font-size: 12px; color: var(--gs-fg-muted); flex: 0 0 auto; }
+    .gh-pop-list {
+      max-height: 300px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scrollbar-width: thin;
+    }
+    .gh-pop-list .gh-pop-title { padding-top: 6px; }
+    .gh-menuitem .gh-ref-kind { flex: 0 0 auto; font-size: 12px; opacity: 0.75; }
+    .gh-menuitem .lbl.gh-ref-name {
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* "current", set beside the pinned branch in the muted title colour. */
+    .gh-menuitem .gh-ref-cur {
+      flex: 0 0 auto;
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: color-mix(in srgb, var(--vscode-foreground) 66%, var(--vscode-editor-background));
+    }
+    .gh-menuitem:hover .gh-ref-cur,
+    .gh-menuitem:focus-visible .gh-ref-cur { color: inherit; opacity: 0.8; }
+
     /* Search highlight: matches glow, the rest recede. */
     .row.is-match {
       background: color-mix(in srgb, var(--vscode-charts-yellow, #e2c08d) 12%, transparent);
@@ -540,6 +639,15 @@ export class CommitGraph extends LitElement {
       .gh-search { min-width: 130px; flex-basis: 200px; }
       /* keep the scope trigger icon-only when space is tight */
       .gh-scope > span:not(.codicon) { display: none; }
+      /* The Branches trigger is icon-only here too and sits well left of
+         centre, so its popover opens rightwards — leftwards it would run off
+         the pane. Capped to the pane besides. */
+      .gh-branches-pop {
+        right: auto;
+        left: 0;
+        min-width: min(268px, calc(100cqw - 24px));
+        max-width: calc(100cqw - 24px);
+      }
     }
     @container (max-width: 420px) { .gh-count { display: none; } }
     /* In a genuinely narrow sidebar the "also on origin" cloud tail costs ~14px
@@ -1493,6 +1601,9 @@ export class CommitGraph extends LitElement {
   /** Whether the Columns popover / search-scope popover are open. */
   private declare columnsOpen: boolean;
   private declare scopeOpen: boolean;
+  /** The Branches picker (issue #30): open, and its list's filter text. */
+  private declare branchesOpen: boolean;
+  private declare branchQuery: string;
   /** The open in-graph commit actions popover, or null. Positioned at (x,y). */
   private declare commitMenu: {
     sha: string;
@@ -1500,6 +1611,17 @@ export class CommitGraph extends LitElement {
     y: number;
     title: string;
     items: CommitMenuItem[];
+  } | null;
+  /**
+   * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
+   * shortcuts — show only this branch, add it, remove it. `refs` is the chip's
+   * ref plus the remote twins folded into it, so the chip moves as one thing.
+   */
+  private declare chipMenu: {
+    name: string;
+    refs: string[];
+    x: number;
+    y: number;
   } | null;
   /** Row indices matching the current search, and the cursor into them. */
   private searchMatches: number[] = [];
@@ -1629,7 +1751,10 @@ export class CommitGraph extends LitElement {
     this.searchScope = "all";
     this.columnsOpen = false;
     this.scopeOpen = false;
+    this.branchesOpen = false;
+    this.branchQuery = "";
     this.commitMenu = null;
+    this.chipMenu = null;
   }
 
   connectedCallback(): void {
@@ -1700,6 +1825,11 @@ export class CommitGraph extends LitElement {
     this.applyColumnStyles();
     // A popover being open needs a document-level click-outside/Escape listener.
     this.syncPopoverListener();
+    // The Branches picker opens with its filter box focused: with hundreds of
+    // refs, typing is how you find one, and the box is where typing goes.
+    if (changed.has("branchesOpen") && this.branchesOpen) {
+      (this.renderRoot.querySelector(".gh-pop-filter input") as HTMLInputElement | null)?.focus();
+    }
 
     const scroller = this.scroller;
     if (scroller) {
@@ -2209,22 +2339,37 @@ export class CommitGraph extends LitElement {
   private toggleColumnsPopover = (e?: Event): void => {
     e?.stopPropagation();
     this.scopeOpen = false;
+    this.branchesOpen = false;
     this.columnsOpen = !this.columnsOpen;
   };
 
   private toggleScopePopover = (e?: Event): void => {
     e?.stopPropagation();
     this.columnsOpen = false;
+    this.branchesOpen = false;
     this.scopeOpen = !this.scopeOpen;
   };
 
+  private toggleBranchesPopover = (e?: Event): void => {
+    e?.stopPropagation();
+    this.columnsOpen = false;
+    this.scopeOpen = false;
+    this.branchesOpen = !this.branchesOpen;
+    // A fresh open starts with the whole list; the query is not a preference.
+    if (this.branchesOpen) this.branchQuery = "";
+  };
+
   private closePopovers(): void {
-    if (this.columnsOpen || this.scopeOpen) {
+    if (this.columnsOpen || this.scopeOpen || this.branchesOpen) {
       this.columnsOpen = false;
       this.scopeOpen = false;
+      this.branchesOpen = false;
     }
     if (this.commitMenu) {
       this.commitMenu = null;
+    }
+    if (this.chipMenu) {
+      this.chipMenu = null;
     }
   }
 
@@ -2239,6 +2384,8 @@ export class CommitGraph extends LitElement {
   ): void {
     this.columnsOpen = false;
     this.scopeOpen = false;
+    this.branchesOpen = false;
+    this.chipMenu = null;
     let px = x;
     let py = y;
     if (x < 0 || y < 0) {
@@ -2255,7 +2402,12 @@ export class CommitGraph extends LitElement {
    *  trigger (the filter button / the clicked row), not inside the popover, so
    *  the popover's own keydown handler never sees it (same fix as the rail). */
   private syncPopoverListener(): void {
-    const open = this.columnsOpen || this.scopeOpen || this.commitMenu !== null;
+    const open =
+      this.columnsOpen ||
+      this.scopeOpen ||
+      this.branchesOpen ||
+      this.commitMenu !== null ||
+      this.chipMenu !== null;
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
     document.removeEventListener("keydown", this.onDocKeyDown, true);
     if (open) {
@@ -2268,8 +2420,34 @@ export class CommitGraph extends LitElement {
     if (e.key !== "Escape") return;
     e.preventDefault();
     e.stopPropagation();
+    // This runs at the document in the CAPTURE phase and stops the event
+    // here, so a popover's own Escape handler never sees it — the refocus has
+    // to happen here or nowhere. The item that had focus is about to be
+    // removed with the popover; hand it back to the trigger that opened it,
+    // or a keyboard user is dropped on <body>.
+    const sel = this.popoverTrigger();
     this.closePopovers();
+    if (sel) this.focusAfterUpdate(sel);
   };
+
+  /** Focus `sel` once the pending render has removed the popover — after the
+   *  update, not a frame later, so nothing else can take focus in between. */
+  private focusAfterUpdate(sel: string): void {
+    void this.updateComplete.then(() => {
+      (this.renderRoot.querySelector(sel) as HTMLElement | null)?.focus();
+    });
+  }
+
+  /** The selector of the trigger behind the open anchored popover, if any.
+   *  Each trigger has one of its own: the Branches trigger shares the scope
+   *  button's classes, so a bare ".gh-scope" would find whichever comes first
+   *  in the header, not the one the popover belongs to. */
+  private popoverTrigger(): string | undefined {
+    if (this.columnsOpen) return ".gh-columns-btn";
+    if (this.branchesOpen) return ".gh-branches";
+    if (this.scopeOpen) return ".gh-search .gh-scope";
+    return undefined;
+  }
 
   // A pointerdown anywhere outside an open popover (the event re-targets to the
   // host from outside the shadow root) dismisses it. Clicks inside the shadow
@@ -2298,14 +2476,17 @@ export class CommitGraph extends LitElement {
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      const wasColumns = this.columnsOpen;
+      // Reached only when no document listener is attached (the trigger's own
+      // keydown while its popover is closed); with one open, onDocKeyDown
+      // handles Escape and this never runs. Same outcome either way.
+      const sel = this.popoverTrigger();
       this.closePopovers();
       // Return focus to the trigger so keyboard users aren't stranded.
-      requestAnimationFrame(() => {
-        const sel = wasColumns ? ".gh-columns-btn" : ".gh-scope";
-        (this.renderRoot.querySelector(sel) as HTMLElement | null)?.focus();
-      });
+      if (sel) this.focusAfterUpdate(sel);
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      // The picker's filter box takes its own arrow keys only when there is
+      // nowhere to go; a caret in a one-line input has no use for them, so
+      // ArrowDown from the box lands on the first row, like a quick-pick.
       e.preventDefault();
       const items = Array.from(
         this.renderRoot.querySelectorAll<HTMLElement>(".gh-pop .gh-menuitem:not([disabled])"),
@@ -2335,6 +2516,40 @@ export class CommitGraph extends LitElement {
     requestAnimationFrame(() => {
       (this.renderRoot.querySelector(".gh-input") as HTMLInputElement | null)?.focus();
     });
+  }
+
+  // ── Branch filter (issue #30) ──────────────────────────────────────────────
+
+  /**
+   * Apply a new filter: shown here at once, so the tick and the trigger move
+   * under the pointer, and posted to the host, whose graphInit is the word on
+   * what was actually applied (a ref that vanished is dropped there). The
+   * picker stays open — one tick is rarely the whole selection.
+   */
+  private applyRefFilter(refs: GraphRefFilter): void {
+    if (sameRefFilter(refs, this.refFilter)) return;
+    this.refFilter = refs;
+    this.onAction({ type: "setRefFilter", refs });
+  }
+
+  private onBranchQueryInput = (e: Event): void => {
+    this.branchQuery = (e.target as HTMLInputElement).value;
+  };
+
+  /** Open a chip's own menu at (x, y): the filter shortcuts for that ref. */
+  private openChipMenu(chip: HTMLElement, x: number, y: number): void {
+    const name = chip.dataset.ref;
+    if (!name) return;
+    const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
+    // The chip and the remote twins folded into it move as one thing — what
+    // you see is "main ☁", and "only this" means what you see.
+    const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
+    const refs = [fullRefName(name, kind), ...remotes.map((r) => fullRefName(`${r}/${name}`, "remoteHead"))];
+    this.columnsOpen = false;
+    this.scopeOpen = false;
+    this.branchesOpen = false;
+    this.commitMenu = null;
+    this.chipMenu = { name, refs, x, y };
   }
 
   // ── Click-to-copy the full sha ─────────────────────────────────────────────
@@ -2747,6 +2962,14 @@ export class CommitGraph extends LitElement {
     }
     const chip = target?.closest(".chip[data-ref]") as HTMLElement | null;
     if (chip) {
+      // ⌥-click is the chip's filter menu (issue #30) — the same one a
+      // right-click opens, for pointers that have no right button.
+      if (e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openChipMenu(chip, e.clientX, e.clientY);
+        return;
+      }
       const row = chip.closest(".row") as HTMLElement | null;
       const name = chip.dataset.ref;
       if (name && row?.dataset.sha) {
@@ -2790,6 +3013,14 @@ export class CommitGraph extends LitElement {
   };
 
   private onContextMenu = (e: MouseEvent): void => {
+    // A ref chip has a menu of its own: the branch-filter shortcuts (issue
+    // #30). The row's commit menu is one right-click away, beside the chip.
+    const chip = (e.target as HTMLElement | null)?.closest(".chip[data-ref]") as HTMLElement | null;
+    if (chip) {
+      e.preventDefault();
+      this.openChipMenu(chip, e.clientX, e.clientY);
+      return;
+    }
     const sha = this.rowShaFromEvent(e);
     if (!sha) {
       return;
@@ -3297,6 +3528,7 @@ export class CommitGraph extends LitElement {
       </span>
       ${count ? html`<span class="gh-count">${count}</span>` : nothing}
       <span class="gh-spacer"></span>
+      ${this.branchesControlHtml()}
       <span class="gh-search ${q ? "active" : ""}">
         <span class="codicon codicon-search" aria-hidden="true"></span>
         ${this.scopeControlHtml()}
@@ -3399,6 +3631,171 @@ export class CommitGraph extends LitElement {
           </div>`
         : nothing}
     </span>`;
+  }
+
+  /**
+   * The Branches trigger + picker (issue #30). The trigger says what the graph
+   * is built around ("All branches" / "main, feature/x" / "3 branches"); the
+   * popover is the shared shell with the four presets, a filter box and the
+   * refs grouped Local / Remote / Tags, the current branch pinned first.
+   */
+  private branchesControlHtml() {
+    const refs = this.refList;
+    const label = refFilterLabel(this.refFilter, refs);
+    const filtered = this.refFilter !== null;
+    return html`<span class="gh-anchor">
+      <button
+        class="gh-scope gh-branches ${filtered ? "scoped" : ""}"
+        type="button"
+        title=${`Branches: ${label}`}
+        aria-label=${`Filter branches: ${label}`}
+        aria-haspopup="menu"
+        aria-expanded=${this.branchesOpen ? "true" : "false"}
+        @click=${this.toggleBranchesPopover}
+        @keydown=${this.onPopoverKeyDown}
+      >
+        <span class="codicon codicon-git-branch" aria-hidden="true"></span>
+        <span class="lbl">${label}</span>
+        <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
+      </button>
+      ${this.branchesOpen ? this.branchesPopHtml() : nothing}
+    </span>`;
+  }
+
+  private branchesPopHtml() {
+    const refs = this.refList;
+    const active = activePreset(this.refFilter, refs);
+    const selected = new Set(this.refFilter ?? []);
+    const groups = groupRefs(refs, this.branchQuery);
+    const kindIcon = (k: GraphRefEntry["kind"]) =>
+      k === "tag" ? "tag" : k === "remoteHead" ? "cloud" : "git-branch";
+    const hint = this.refFilter
+      ? `${this.refFilter.length} of ${refs.length} ticked · untick the last for all`
+      : refs.length
+        ? "Showing every branch and tag · tick one to narrow"
+        : "No branches or tags";
+    return html`<div
+      class="gh-pop gh-branches-pop"
+      role="menu"
+      aria-label="Branches"
+      @keydown=${this.onPopoverKeyDown}
+    >
+      <div class="gh-pop-title">Show branches</div>
+      <div class="gh-presets">
+        ${REF_PRESETS.map((p) => {
+          const why = presetUnavailable(p.id, refs);
+          return html`<button
+            class="gh-preset ${active === p.id ? "active" : ""}"
+            type="button"
+            data-preset=${p.id}
+            ?disabled=${!!why}
+            title=${why || p.label}
+            aria-pressed=${active === p.id ? "true" : "false"}
+            @click=${() => {
+              const f = presetFilter(p.id, refs);
+              if (f !== undefined) this.applyRefFilter(f);
+            }}
+          >
+            ${p.label}
+          </button>`;
+        })}
+      </div>
+      <label class="gh-pop-filter">
+        <span class="codicon codicon-search" aria-hidden="true"></span>
+        <input
+          type="text"
+          placeholder="Filter branches…"
+          aria-label="Filter the branch list"
+          .value=${this.branchQuery}
+          @input=${this.onBranchQueryInput}
+        />
+      </label>
+      <div class="gh-pop-list">
+        ${groups.map(
+          (g) => html`<div class="gh-pop-title">${g.label}</div>
+            ${g.refs.map(
+              (r) => html`<button
+                class="gh-menuitem"
+                role="menuitemcheckbox"
+                aria-checked=${selected.has(r.fullName) ? "true" : "false"}
+                data-ref=${r.fullName}
+                title=${r.fullName}
+                @click=${() => this.applyRefFilter(toggleRef(this.refFilter, r.fullName))}
+              >
+                <span class="codicon codicon-check" aria-hidden="true"></span>
+                <span class="codicon codicon-${kindIcon(r.kind)} gh-ref-kind" aria-hidden="true"></span>
+                <span class="lbl gh-ref-name">${r.name}</span>
+                ${r.isCurrent ? html`<span class="gh-ref-cur">current</span>` : nothing}
+              </button>`,
+            )}
+            ${g.hidden
+              ? html`<div class="gh-pop-hint">${g.hidden} more — type to narrow</div>`
+              : nothing}`,
+        )}
+        ${groups.length === 0 && refs.length
+          ? html`<div class="gh-pop-hint">No branches match</div>`
+          : nothing}
+      </div>
+      <div class="gh-pop-sep"></div>
+      <div class="gh-pop-hint">${hint}</div>
+    </div>`;
+  }
+
+  /** A ref chip's menu: show only it, add it to / remove it from the filter. */
+  private renderChipMenu() {
+    const m = this.chipMenu;
+    if (!m) return nothing;
+    const W = 240;
+    const H = 34 + 4 * 28;
+    const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
+    const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
+    const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
+    const isOnly = sameRefFilter(m.refs, this.refFilter);
+    const pick = (refs: GraphRefFilter) => {
+      this.chipMenu = null;
+      this.applyRefFilter(refs);
+    };
+    return html`<div
+      class="gh-pop gh-ctx gh-chip-menu"
+      role="menu"
+      aria-label=${`Filter by ${m.name}`}
+      style="left:${Math.round(left)}px;top:${Math.round(top)}px"
+      @keydown=${this.onPopoverKeyDown}
+    >
+      <div class="gh-pop-title">${m.name}</div>
+      <button
+        class="gh-menuitem"
+        role="menuitem"
+        data-chip-action="only"
+        ?disabled=${isOnly}
+        @click=${() => pick(m.refs)}
+      >
+        <span class="codicon codicon-filter" aria-hidden="true"></span>
+        <span class="lbl">Show only this branch</span>
+      </button>
+      ${this.refFilter
+        ? html`<button
+              class="gh-menuitem"
+              role="menuitem"
+              data-chip-action=${inFilter ? "remove" : "add"}
+              @click=${() =>
+                pick(inFilter ? removeRefs(this.refFilter, m.refs) : addRefs(this.refFilter, m.refs))}
+            >
+              <span class="codicon codicon-${inFilter ? "dash" : "add"}" aria-hidden="true"></span>
+              <span class="lbl">${inFilter ? "Remove from filter" : "Add to filter"}</span>
+            </button>
+            <div class="gh-pop-sep"></div>
+            <button
+              class="gh-menuitem"
+              role="menuitem"
+              data-chip-action="all"
+              @click=${() => pick(null)}
+            >
+              <span class="codicon codicon-list-flat" aria-hidden="true"></span>
+              <span class="lbl">Show all branches</span>
+            </button>`
+        : nothing}
+    </div>`;
   }
 
   /** The "Columns" button + show/hide popover. */
@@ -3508,7 +3905,7 @@ export class CommitGraph extends LitElement {
         <div class="insert-line" hidden></div>
       </div>
       <div class="reftip" role="tooltip" hidden @click=${this.onTipClick}></div>
-      <div class="authortip reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}`;
+      <div class="authortip reftip" role="tooltip" hidden></div>${this.commitMenu ? this.renderCommitMenu() : nothing}${this.chipMenu ? this.renderChipMenu() : nothing}`;
   }
 
   /** The in-graph commit actions popover (fixed at the cursor, clamped). */
@@ -3686,8 +4083,11 @@ function chipHtml(ref: WireRef, remotes: string[] = []): string {
   const tail = tailHtml(remotes);
   const also = remotes.length ? ` · also on ${esc(remotes.join(", "))}` : "";
   const tip = esc(tipData([{ name: ref.name, kind: ref.kind, remotes }]));
+  // `data-remotes` carries the folded twins so the chip's filter menu (issue
+  // #30) can move "main ☁" as the one thing it looks like.
   const attrs = (cls: string, what: string) =>
     `class="${cls}" data-ref="${esc(ref.name)}" data-kind="${ref.kind}" ` +
+    (remotes.length ? `data-remotes="${esc(remotes.join(","))}" ` : "") +
     `data-more="${tip}" role="button" aria-label="${esc(ref.name)} (${what}${also})"`;
   switch (ref.kind) {
     case "currentHead":
