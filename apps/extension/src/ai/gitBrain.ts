@@ -151,6 +151,8 @@ export class GitBrain implements vscode.Disposable {
   private readonly enabledChanged = new vscode.EventEmitter<boolean>();
   readonly onDidChangeEnabled = this.enabledChanged.event;
   private lastEnabled: boolean | undefined;
+  /** When the recorded answer was probed; see isEnabledCached. */
+  private lastProbedAt = 0;
 
   /** GitStudio's own encrypted key store — never the editor's OS keyring. */
   private readonly secrets: SecretStore;
@@ -223,6 +225,7 @@ export class GitBrain implements vscode.Disposable {
     );
     // Notify listeners (the commit composer) so the ✨/plug buttons update the
     // instant a model is connected or disconnected — not on the next git event.
+    this.lastProbedAt = Date.now();
     if (enabled !== this.lastEnabled) {
       this.lastEnabled = enabled;
       this.enabledChanged.fire(enabled);
@@ -238,13 +241,26 @@ export class GitBrain implements vscode.Disposable {
    * changes, each of which already calls refreshEnabled(). Probes once when
    * nothing has been recorded yet (a push landing before activation's own
    * refresh has).
+   *
+   * One thing no event announces: a CLI agent installed AFTER activation
+   * (`brew install claude` while the window is open). So an answer older than
+   * STALE_AFTER is refreshed in the background — the push still gets the last
+   * answer instantly, and the next one sees the new binary. A recorded `true`
+   * never goes stale: a provider does not uninstall itself, and the events
+   * above cover every way it is turned off.
    */
   async isEnabledCached(): Promise<boolean> {
     if (this.lastEnabled === undefined) {
       await this.refreshEnabled();
+    } else if (!this.lastEnabled && Date.now() - this.lastProbedAt > GitBrain.STALE_AFTER) {
+      this.lastProbedAt = Date.now(); // one background probe at a time
+      void this.refreshEnabled();
     }
     return this.lastEnabled ?? false;
   }
+
+  /** How long a recorded "not available" is trusted before a quiet re-probe. */
+  private static readonly STALE_AFTER = 5 * 60_000;
 
   private config() {
     return vscode.workspace.getConfiguration("gitstudio.ai");
