@@ -157,6 +157,18 @@ test("paging under a filter walks the same set page after page", async () => {
   assert.deepEqual([...shasOf(p1), ...shasOf(p2), ...shasOf(p3)], truth);
 });
 
+test("graph:reaches says whether the graph's walk reaches a commit — the reveal asks before saying why", async () => {
+  // Under no filter every commit is reached: the old "further back" sentence
+  // is the true one. Under a filter it is git's answer, without a walk.
+  await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual(await bridge.graphReaches(sideTip), { reached: true });
+  git("checkout", "-q", "side");
+  await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"] });
+  assert.deepEqual(await bridge.graphReaches(mainTip), { reached: false }, "main's last commit is hidden by the filter");
+  assert.deepEqual(await bridge.graphReaches(tagged), { reached: true }, "the ticked tag's commit is in the walk");
+  assert.deepEqual(await bridge.graphReaches(sideTip), { reached: true }, "and so is HEAD's");
+});
+
 test("a prune against a ref listing that failed is not written back", async () => {
   // One transient for-each-ref failure used to forget the selection for
   // good: the listing was swallowed into an empty list, every remembered ref
