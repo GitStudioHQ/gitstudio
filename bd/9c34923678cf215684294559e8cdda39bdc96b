@@ -1,0 +1,23 @@
+packages/git-service/test/logRefs.test.ts
+  s_26f5e669d3043c::t_17f58cc6f494af 1-148
+packages/git-service/src/LogProvider.ts
+  s_26f5e669d3043c::t_8f394c9df9ff49 81-90
+  s_26f5e669d3043c::t_9370a4853052d7 26-36
+  s_26f5e669d3043c::t_eb624c475c9542 80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bd9c34923678cf215684294559e8cdda39bdc96b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
