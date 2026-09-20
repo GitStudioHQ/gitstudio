@@ -558,8 +558,16 @@ export class CommitGraph extends LitElement {
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     /* Anchored to the trigger's right edge and opening leftwards, like the
-       Columns popover: the header's spare width is on that side. */
-    .gh-branches-pop { min-width: 268px; max-width: 340px; }
+       Columns popover: the header's spare width is on that side. Never taller
+       than the pane below the header: the bottom panel can be 200px tall, and
+       a popover that ran off it would leave the Tags group unreachable. */
+    .gh-branches-pop {
+      min-width: 268px;
+      max-width: 340px;
+      max-height: calc(100vh - 54px);
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
     .gh-presets {
       display: flex;
       flex-wrap: wrap;
@@ -602,8 +610,11 @@ export class CommitGraph extends LitElement {
     }
     .gh-pop-filter:focus-within { border-color: var(--vscode-focusBorder); }
     .gh-pop-filter > .codicon { font-size: 12px; color: var(--gs-fg-muted); flex: 0 0 auto; }
+    /* The list scrolls first, so the presets, the box and the hint stay put
+       while the pane has the room (~230px of chrome around the list); below
+       that the shell above scrolls as a whole rather than clipping. */
     .gh-pop-list {
-      max-height: 300px;
+      max-height: max(56px, min(300px, calc(100vh - 230px)));
       overflow-y: auto;
       overflow-x: hidden;
       scrollbar-width: thin;
