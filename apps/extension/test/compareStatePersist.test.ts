@@ -83,6 +83,34 @@ test("saveViewState writes exactly the shape the next boot reads", () => {
   assert.equal(again.showTree, bag.showTree);
 });
 
+test("Collapse all saves the empty set, so the next real repaint does not re-expand", () => {
+  // The one open-set mutation that did not save. Every toggle wrote the set
+  // back; Collapse all cleared the live set and left the saved one holding
+  // every path — so the next repaint that had to happen (a new commit on the
+  // compared branch) reopened everything just collapsed. The REAL handler is
+  // extracted and run against the real boot's set + saver.
+  const { bag, written } = boot({ open: ["src/a.ts", "src/b.ts"] });
+  const start = src.indexOf('$("collapse-all").onclick = () => {');
+  assert.ok(start > 0, "the Collapse all handler exists");
+  const end = src.indexOf("\n};", start);
+  const body = src.slice(start, end + 3);
+  const target: { onclick?: () => void } = {};
+  new Function("$", "document", "openPaths", "saveViewState", body)(
+    () => target,
+    { querySelectorAll: () => [] },
+    bag.openPaths,
+    bag.saveViewState,
+  );
+  assert.ok(target.onclick, "the handler was installed");
+  target.onclick!();
+  assert.equal(bag.openPaths.size, 0, "the live set is empty");
+  assert.deepEqual(
+    (written.at(-1) as { open: string[] } | undefined)?.open,
+    [],
+    "and the SAVED set is too — a later boot starts with nothing open",
+  );
+});
+
 test("a getState that THROWS (restored serialized panel) still boots", () => {
   const start = src.indexOf("const SAVED = (function ()");
   const endAnchor = 'let filter = typeof SAVED.filter === "string" ? SAVED.filter : "";';
