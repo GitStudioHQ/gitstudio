@@ -120,6 +120,26 @@ test("a ticked ref that no longer exists is skipped, not fatal", async () => {
   assert.ok(lastLog().includes("--ignore-missing"));
 });
 
+test("the refs are data: an option-shaped entry cannot widen the walk", async () => {
+  // The selection is read back from storage and spliced into an argv. Both
+  // hosts prune it against the live ref list, so this cannot happen today —
+  // but a literal "--all" that slipped through used to be taken as the option
+  // and swept in refs/notes and refs/stash, the exact thing the "--all"
+  // expansion exists to keep out. Past --end-of-options it is a revision that
+  // does not exist, which --ignore-missing turns into nothing.
+  git("checkout", "-q", "side");
+  git("notes", "add", "-m", "a note", sideTip);
+  const out = await shas(["refs/tags/v1", "--all"]);
+  assert.ok(out.includes(tagged) && out.includes(sideTip), "the real ref and HEAD still walk");
+  assert.ok(!out.includes(mainTip), "main's tip is reachable from neither — a widened walk would have it");
+  assert.ok(!out.includes(git("rev-parse", "refs/notes/commits")), "and the notes commit is not history");
+  const argv = lastLog();
+  const marker = argv.indexOf("--end-of-options");
+  assert.ok(marker > 0, "the argv carries --end-of-options");
+  assert.ok(marker < argv.indexOf("refs/tags/v1"), "…before the first ref");
+  assert.ok(argv.indexOf("--ignore-missing") < marker, "…and after --ignore-missing, which must precede it to apply");
+});
+
 test("an empty refs list is the unfiltered walk", async () => {
   const all = await shas();
   assert.deepEqual(await shas([]), all);

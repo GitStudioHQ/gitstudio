@@ -84,7 +84,21 @@ export class LogProvider {
         // listing and this spawn (or by another tool while the app was closed);
         // git would otherwise refuse the whole log over one gone ref. A missing
         // ref contributes nothing, which is what "gone" should mean here.
-        args.push("--ignore-missing", ...opts.refs, "HEAD");
+        //
+        // `--end-of-options` because the refs are DATA — a selection read back
+        // from storage — spliced into an argv. Both hosts prune it against the
+        // live ref list first, so nothing option-shaped can reach here today;
+        // but a literal "--all" that did would silently widen the walk to the
+        // notes and stash this branch exists to keep out. Past the marker git
+        // reads it as a revision, and --ignore-missing makes a revision that
+        // does not exist contribute nothing. (git ≥ 2.24, 2019.)
+        //
+        // The refs ride on argv rather than `--stdin`: GitProcess.stream has no
+        // stdin — only run() takes an input — and a stdin path is a change to
+        // that primitive, not to this one. The cost is a ceiling on Windows,
+        // whose 32k-character command line gives out around a thousand refs
+        // on "Local only"; not a shape of repository that has been seen yet.
+        args.push("--ignore-missing", "--end-of-options", ...opts.refs, "HEAD");
       } else {
         args.push("--branches", "--tags", "--remotes", "HEAD");
       }
