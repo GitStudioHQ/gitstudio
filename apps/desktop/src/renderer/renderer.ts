@@ -9038,15 +9038,51 @@ class App {
     if (this.currentView === "graph" && this.graph) {
       const found = this.graph.reveal(sha);
       void this.selectCommit(sha);
-      if (!found) {
-        toast(
-          `${sha.slice(0, 7)} is further back than the loaded history — its details are below.`,
-          "info",
-        );
-      }
+      if (!found) this.revealMissed(sha);
       return;
     }
     this.routeView("graph", false, { sha });
+  }
+
+  /**
+   * A reveal found no row. Say why — out loud, because the details pane below
+   * has loaded the commit either way and silence made the list look like it
+   * had ignored the click.
+   *
+   * Under a branch filter (issue #30) the likely reason is the filter itself:
+   * a Branches-view click, a tag in the switcher, a parent chip all land on
+   * commits the ticked refs need not reach, and "further back than the loaded
+   * history" was simply false for those. The host is asked (one rev-list, no
+   * walk); a commit the filter hides is said so, with the way out — which
+   * rebuilds the graph around every branch and replays the reveal.
+   */
+  private revealMissed(sha: string): void {
+    const graph = this.graph;
+    const short = sha.slice(0, 7);
+    const deeper = (): void => {
+      toast(`${short} is further back than the loaded history — its details are below.`, "info");
+    };
+    if (!graph?.refFilter) {
+      deeper();
+      return;
+    }
+    void host.invoke("graph:reaches", { sha }).then(
+      (r) => {
+        // Answered later than asked: the view may have moved on.
+        if (this.currentView !== "graph" || this.graph !== graph) return;
+        // An unshaped answer (a channel that failed to register) reads as
+        // "reached", so the message is the one that was always true.
+        if (r?.reached !== false) {
+          deeper();
+          return;
+        }
+        toast(`${short} is hidden by the branch filter — its details are below.`, "info", undefined, {
+          label: "Show all branches",
+          onClick: () => void graph.setRefFilter(null).then(() => this.revealWhenReady(sha)),
+        });
+      },
+      deeper,
+    );
   }
 
   /** Scroll to + select a commit once the freshly-mounted graph has rows. The
@@ -9067,12 +9103,7 @@ class App {
       // real repository — can never be revealed however long we retry. The
       // details pane below has loaded it either way, so the work is not lost;
       // saying nothing just made the list look like it had ignored the click.
-      if (this.currentView === "graph") {
-        toast(
-          `${sha.slice(0, 7)} is further back than the loaded history — its details are below.`,
-          "info",
-        );
-      }
+      if (this.currentView === "graph") this.revealMissed(sha);
     };
     requestAnimationFrame(tryReveal);
   }
@@ -9285,9 +9316,15 @@ class App {
       const detail = (e as CustomEvent).detail as { id: string; sha: string };
       void this.runDetailsAction(detail.id, detail.sha);
     });
-    // Parent-sha chips: jump the graph to the parent and inspect it.
+    // Parent-sha chips: jump the graph to the parent and inspect it. Through
+    // revealInGraph, so a parent the graph does not have — further back, or
+    // hidden by the branch filter — is said so like every other reveal.
     panel.addEventListener("gs-reveal", (e) => {
       const detail = (e as CustomEvent).detail as { sha: string };
+      if (this.currentView === "graph" && this.graph) {
+        this.revealInGraph(detail.sha);
+        return;
+      }
       this.graph?.reveal(detail.sha);
       void this.selectCommit(detail.sha);
     });

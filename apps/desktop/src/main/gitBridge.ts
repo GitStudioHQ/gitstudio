@@ -334,6 +334,19 @@ export class GitBridge {
     };
   }
 
+  /**
+   * Whether the walk the graph is built on reaches `sha` (issue #30). Under
+   * a branch filter that is git's answer (one rev-list, no walk); with none,
+   * every commit is reached and the question does not arise.
+   */
+  async graphReaches(sha: string): Promise<{ reached: boolean }> {
+    const ctx = this.ctx();
+    if (!ctx || !this.refFilter) {
+      return { reached: true };
+    }
+    return { reached: await ctx.log.walkReaches(sha, this.refFilter) };
+  }
+
   private async readPage(
     ctx: GitContext,
     skip: number,

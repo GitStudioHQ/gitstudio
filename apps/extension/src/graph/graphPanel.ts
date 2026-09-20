@@ -929,22 +929,73 @@ export class CommitGraphPanel {
       this.pendingReveal = sha;
       return;
     }
-    if (!this.records.has(sha) && this.hasMore) {
-      // Promoted from the sidebar rail (its own instance may have paged much
-      // deeper than this fresh panel): page toward the commit first, else the
-      // webview's reveal silently no-ops on a row it doesn't have.
-      void this.pageUntilLoaded(sha).then(() => {
-        this.shown = sha;
-        this.detailsVisible = true;
-        this.post({ type: "revealCommit", sha });
-        void this.pushCommitDetails(sha);
-      });
+    if (!this.records.has(sha)) {
+      void this.revealUnloaded(sha);
       return;
     }
     this.shown = sha;
     this.detailsVisible = true; // revealCommit re-opens the dock webview-side
     this.post({ type: "revealCommit", sha });
     void this.pushCommitDetails(sha);
+  }
+
+  /**
+   * Reveal a commit that is not among the loaded rows.
+   *
+   * Promoted from the sidebar rail (its own instance may have paged much
+   * deeper than this fresh panel): page toward the commit first, else the
+   * webview's reveal silently no-ops on a row it doesn't have.
+   *
+   * Under a branch filter (issue #30) the first question is whether the
+   * commit is in the filtered history AT ALL — a Branches-view click, a PR
+   * link or a parent chip lands on a commit the ticked refs need not reach as
+   * a matter of course now. Paging toward it used to walk up to 25 pages of
+   * the filtered history and then post a reveal the webview no-ops: details
+   * shown, no row selected, not a word. So git is asked first (one rev-list),
+   * and a commit the filter hides is said so, with the way out.
+   */
+  private async revealUnloaded(sha: string): Promise<void> {
+    const active = this.repos.getActive();
+    const filter = this.refFilter;
+    if (active && filter && !(await active.ctx.log.walkReaches(sha, filter))) {
+      // The details still show — the pane describes the commit, whatever the
+      // graph is built around — so the reveal is posted for the dock it
+      // re-opens, not for a row it will not find.
+      this.shown = sha;
+      this.detailsVisible = true;
+      this.post({ type: "revealCommit", sha });
+      void this.pushCommitDetails(sha);
+      this.offerAllBranches(sha, active.root);
+      return;
+    }
+    if (this.hasMore) {
+      await this.pageUntilLoaded(sha);
+    }
+    this.shown = sha;
+    this.detailsVisible = true;
+    this.post({ type: "revealCommit", sha });
+    void this.pushCommitDetails(sha);
+  }
+
+  /**
+   * The branch filter hides the commit that was asked for: say so, and offer
+   * the way out. Taking it forgets the filter for this repository — every
+   * surface showing it reloads through the store — and the reveal is replayed
+   * once the unfiltered first page lands (see loadInitial's pendingReveal).
+   */
+  private offerAllBranches(sha: string, root: string): void {
+    void vscode.window
+      .showInformationMessage(
+        `GitStudio: ${sha.slice(0, 7)} is hidden by the branch filter.`,
+        "Show all branches",
+      )
+      .then((pick) => {
+        if (pick !== "Show all branches" || root !== this.repoRoot) {
+          return;
+        }
+        this.pendingReveal = sha;
+        void this.setRefFilter(null);
+      });
   }
 
   /** Page in more history until `sha` is loaded (bounded so a sha that isn't

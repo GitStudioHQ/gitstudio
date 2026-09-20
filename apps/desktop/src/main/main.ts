@@ -744,6 +744,7 @@ function registerIpc(): void {
   });
 
   handle("graph:load", (opts) => bridge.graphLoad(opts));
+  handle("graph:reaches", (a) => bridge.graphReaches(a.sha));
   handle("refs:list", () => bridge.refsList());
   handle("refs:contains", (a) => bridge.refsContains(a.sha));
   handle("head:get", () => bridge.head());

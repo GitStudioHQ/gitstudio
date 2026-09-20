@@ -1662,6 +1662,13 @@ export interface IpcChannels {
   "repo:current": [void, RepoInfo | undefined];
   "repo:close": [void, void];
   "graph:load": [GraphLoadRequest, GraphPage];
+  /**
+   * Whether the graph's current walk reaches a commit at all (issue #30).
+   * A reveal that finds no row under a branch filter asks this before saying
+   * why: the filter hides the commit, or it is merely further back. Under no
+   * filter every commit is reached.
+   */
+  "graph:reaches": [{ sha: string }, { reached: boolean }];
   "refs:list": [void, RefInfo[]];
   /** Branches CONTAINING a commit (reachability), for the details pane's
    *  "in N branches" row. Lazy — it walks history. */

@@ -131,6 +131,44 @@ export class LogProvider {
       yield record;
     }
   }
+
+  /**
+   * Whether the walk `streamCommits({ revRange: "--all", refs })` makes
+   * would reach `sha` at all — reachable from one of the ticked refs or from
+   * HEAD — without walking it.
+   *
+   * A reveal into a filtered graph (a Branches-view click, a PR link, a
+   * parent chip) lands on a commit the ticked refs need not reach as a matter
+   * of course, and paging toward it walks the whole filtered history to find
+   * nothing. One rev-list answers first: `sha` with every ref negated lists
+   * sha itself when nothing reaches it, and nothing when something does.
+   * A git failure answers true, so the caller falls back to paging — the
+   * behaviour it had before it asked.
+   */
+  async walkReaches(
+    sha: string,
+    refs: readonly string[],
+    opts?: { signal?: AbortSignal },
+  ): Promise<boolean> {
+    const r = await this.proc.run(
+      [
+        "rev-list",
+        "--max-count=1",
+        // A ticked ref can be gone by now (see streamCommits); a gone ref
+        // reaches nothing, which is what its absence should mean here.
+        "--ignore-missing",
+        "--end-of-options",
+        sha,
+        ...refs.map((ref) => `^${ref}`),
+        "^HEAD",
+      ],
+      opts,
+    );
+    if (r.code !== 0) {
+      return true;
+    }
+    return r.stdout.trim() === "";
+  }
 }
 
 function parseRecord(raw: string): CommitRecord | undefined {

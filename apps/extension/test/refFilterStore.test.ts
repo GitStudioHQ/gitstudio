@@ -124,6 +124,34 @@ test("the graph host never writes back a prune against a ref listing that failed
   assert.equal((load.match(/store\.set\(/g) ?? []).length, 1);
 });
 
+test("a reveal into a filtered graph asks git before paging, and says so when the filter hides the commit", async () => {
+  // Revealing a commit the ticked refs cannot reach is the ordinary case once
+  // the graph is filtered (a Branches-view click, a PR link, a parent chip).
+  // Paging toward it walked up to 25 pages of the filtered history and then
+  // posted a reveal the webview no-ops — details shown, no row, not a word.
+  // walkReaches (git-service, real-git tested) is asked first; the hidden
+  // case names the filter and offers the way out, which replays the reveal.
+  const text = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
+  const reveal = text.slice(text.indexOf("  reveal(sha: string): void {"), text.indexOf("private async pageUntilLoaded("));
+  assert.match(
+    reveal,
+    /if \(!this\.records\.has\(sha\)\) \{\s*void this\.revealUnloaded\(sha\);\s*return;\s*\}/,
+    "a commit that is not loaded takes one path, whatever hasMore says",
+  );
+  const unloaded = reveal.slice(reveal.indexOf("private async revealUnloaded("));
+  const ask = unloaded.indexOf("await active.ctx.log.walkReaches(sha, filter)");
+  const page = unloaded.indexOf("await this.pageUntilLoaded(sha)");
+  assert.ok(ask > 0 && page > ask, "git is asked whether the walk reaches the commit before any page is fetched");
+  assert.match(unloaded, /this\.offerAllBranches\(sha, active\.root\);/, "the hidden case is said out loud");
+  const offer = unloaded.slice(unloaded.indexOf("private offerAllBranches("));
+  assert.match(offer, /"Show all branches"/);
+  assert.match(
+    offer,
+    /this\.pendingReveal = sha;\s*void this\.setRefFilter\(null\);/,
+    "taking it forgets the filter through the store's one reload path, and the reveal is replayed after the reload",
+  );
+});
+
 test("the store is installed before the first graph host is built", async () => {
   const text = await readFile(`${SRC}/extension.ts`, "utf8");
   const installed = text.indexOf("setRefFilterStore(new RefFilterStore(context.workspaceState))");

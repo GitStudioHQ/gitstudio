@@ -148,6 +148,27 @@ test("an empty refs list is the unfiltered walk", async () => {
   assert.ok(!argv.includes("--ignore-missing"));
 });
 
+test("walkReaches says whether a filtered walk would reach a commit, without walking it", async () => {
+  // HEAD is on main. A walk of v1 alone (plus HEAD, always) reaches the tagged
+  // commit and main's tip, and not side's.
+  assert.equal(await ctx.log.walkReaches(tagged, ["refs/tags/v1"]), true, "the ticked tag's commit");
+  assert.equal(await ctx.log.walkReaches(mainTip, ["refs/tags/v1"]), true, "HEAD's tip, ticked nowhere");
+  assert.equal(await ctx.log.walkReaches(sideTip, ["refs/tags/v1"]), false, "side's tip is reachable from neither");
+  assert.equal(await ctx.log.walkReaches(sideTip, ["refs/heads/side"]), true, "…until side is ticked");
+  // The answer agrees with the walk itself, both ways.
+  const walked = await shas(["refs/tags/v1"]);
+  for (const c of [tagged, mainTip, sideTip]) {
+    assert.equal(await ctx.log.walkReaches(c, ["refs/tags/v1"]), walked.includes(c), c);
+  }
+  // A ticked ref that is gone reaches nothing and is not fatal; a sha git
+  // cannot resolve answers true, so the caller pages as it always did.
+  assert.equal(await ctx.log.walkReaches(sideTip, ["refs/heads/deleted-elsewhere", "refs/tags/v1"]), false);
+  assert.equal(await ctx.log.walkReaches("0".repeat(40), ["refs/tags/v1"]), true);
+  const argv = spawns.filter((a) => a[0] === "rev-list").at(-1)!;
+  assert.ok(argv.includes("--end-of-options") && argv.includes("--ignore-missing"));
+  assert.ok(argv.indexOf("--end-of-options") < argv.indexOf("^refs/tags/v1"), "the refs are data here too");
+});
+
 test("paging semantics are unchanged under a filter: skip/maxCount walk the filtered list", async () => {
   const truth = await shas(["refs/heads/side"]);
   const page = async (skip: number, n: number): Promise<string[]> => {

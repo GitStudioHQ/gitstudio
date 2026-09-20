@@ -2077,6 +2077,14 @@
       }));
     return { ...graphBase, rows, nextSkip: rows.length, refFilter: filter, refList: list };
   };
+  // A reveal that finds no row under a filter asks whether the walk reaches
+  // the commit at all, before saying why (issue #30) — the same reach model
+  // as graph:load above, so the two cannot disagree about a row.
+  dynamic["graph:reaches"] = (req) => {
+    const only = reachOnly[req && req.sha];
+    const ticked = new Set(graphRefFilter || []);
+    return { reached: !graphRefFilter || !only || only.some((f) => ticked.has(f)) };
+  };
 
   dynamic["commit:details"] = (sha) => commits[String(sha).slice(0, 8)];
   // "did this come from the branch I am on, or was it merged in" — the first

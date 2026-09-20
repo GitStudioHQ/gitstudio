@@ -7657,6 +7657,83 @@
     },
 
     /**
+     * Revealing a commit the branch filter hides SAYS SO, and offers the way out.
+     *
+     * A Branches-view click, a tag in the switcher, a parent chip in the
+     * details pane: each lands on a commit the ticked refs need not reach, as
+     * a matter of course once the graph is filtered (issue #30). The toast for
+     * a missed reveal read "further back than the loaded history", which is
+     * false under a filter and offers nothing. It asks the host whether the
+     * walk reaches the commit at all, names the filter when it does not, and
+     * "Show all branches" rebuilds the graph and lands on the commit. Under no
+     * filter the old sentence is still the true one.
+     */
+    "a-commit-the-filter-hides-says-so-and-offers-every-branch": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const rows = () => [...sr.querySelectorAll(".row")];
+      const hasRow = (sha) => rows().some((r) => r.dataset.sha === sha);
+      const loads = () => window.__GS_GRAPH_LOADS || [];
+      const lastLoad = () => loads()[loads().length - 1] || {};
+      const toasts = () => $$("#toast-stack .toast");
+      const lastToast = () => toasts()[toasts().length - 1];
+      const REMOTE_ONLY = "77aa88b9c0d1e2f3a4b5"; // reachable from origin/chore/dependabot-bump alone
+      const DETAILED = "a1b2c3d4e5f60718293a"; // a row the details fixture can describe
+      const all = rows().length;
+
+      // The reveal is driven from the details pane's parent chip — the one
+      // reveal site that used to say nothing at all when the row was missing.
+      const reveal = async (sha) => {
+        const panel = $(".graph-details gitstudio-commit-details");
+        c.ok(!!panel, "the details pane is showing a commit");
+        panel?.dispatchEvent(new CustomEvent("gs-reveal", { detail: { sha }, bubbles: true, composed: true }));
+        await settle(500);
+      };
+      rows().find((r) => r.dataset.sha === DETAILED)?.click();
+      for (let i = 0; i < 40 && !$(".graph-details gitstudio-commit-details"); i++) await settle(100);
+
+      // ── Under no filter: a commit the graph does not hold is "further back" ──
+      const before = toasts().length;
+      await reveal("f00dbabe1234567890abcdef1234567890abcdef");
+      c.ok(toasts().length > before, "a missed reveal says something");
+      c.match(text(lastToast()?.querySelector(".toast-msg")), /further back than the loaded history/, "…the old sentence, which is true here");
+      c.ok(!lastToast()?.querySelector(".toast-action"), "…and offers no branch change, there being no filter");
+
+      // ── Narrow to the current branch: the remote-only row is gone ──
+      sr.querySelector(".gh-branches")?.click();
+      await settle(300);
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
+      await settle(700);
+      c.ok(!hasRow(REMOTE_ONLY), "the filter dropped the row only the remote reaches");
+      const focused = sr.activeElement || document.activeElement;
+      focused.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(200);
+
+      // ── Revealing it names the filter, not the history's depth ──
+      const seen = toasts().length;
+      await reveal(REMOTE_ONLY);
+      c.ok(toasts().length > seen, "a reveal the filter hides says something");
+      const msg = text(lastToast()?.querySelector(".toast-msg"));
+      c.match(msg, /hidden by the branch filter/, `…and names the filter ("${msg}")`);
+      c.ok(!/further back/.test(msg), "…not the history's depth, which is not the reason");
+      const action = lastToast()?.querySelector(".toast-action");
+      c.eq(text(action), "Show all branches", "…and offers the way out");
+
+      // ── Taking it rebuilds the graph around every branch and lands on the commit ──
+      action?.click();
+      await settle(900);
+      c.eq(lastLoad().refs, null, "Show all branches asked the host for every branch");
+      c.eq(rows().length, all, "every row is back");
+      c.ok(hasRow(REMOTE_ONLY), "the hidden row included");
+      c.eq(sr.querySelector(".row.selected")?.dataset.sha, REMOTE_ONLY, "and it is the selected row — the reveal was replayed");
+      c.eq(text(sr.querySelector(".gh-branches .lbl")), "All branches", "the trigger says so");
+    },
+
+    /**
      * Clearing a search clears the RESULTS, however long its debounce.
      *
      * Explore's code search waits for Enter — `debounceMs: 100_000`, because

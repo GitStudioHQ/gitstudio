@@ -7,6 +7,7 @@
 
 import "@gitstudio/webview-ui/graph/commit-graph";
 import type { CommitGraph, GraphAction } from "@gitstudio/webview-ui/graph/commit-graph";
+import type { GraphRefFilter } from "@gitstudio/host-bridge/graphProtocol";
 import { GraphHostAdapter, host } from "./bridge";
 
 export interface GraphCallbacks {
@@ -57,10 +58,7 @@ export class GraphMount {
           void this.reload();
           break;
         case "setRefFilter":
-          // Same discipline as a refresh: the rows stay while the filtered
-          // history loads, and a failure lands on the error tile with Retry.
-          this.element.status = "loading";
-          this.adapter.setRefFilter(action.refs).catch((err) => this.renderError(err));
+          void this.setRefFilter(action.refs);
           break;
         case "requestStats":
           void host
@@ -215,6 +213,27 @@ export class GraphMount {
    *  pages, and a commit further back cannot be revealed at all. */
   reveal(sha: string): boolean {
     return this.element.reveal(sha);
+  }
+
+  /** The branch filter the loaded rows were built under; null for all. */
+  get refFilter(): GraphRefFilter {
+    return this.element.refFilter;
+  }
+
+  /**
+   * Rebuild the graph around `refs` (issue #30) — the picker's tick, and the
+   * "Show all branches" a hidden reveal offers, through one door. Same
+   * discipline as a refresh: the rows stay while the filtered history loads,
+   * and a failure lands on the error tile with Retry. Resolves once the new
+   * first page is on screen, or the error is.
+   */
+  async setRefFilter(refs: GraphRefFilter): Promise<void> {
+    this.element.status = "loading";
+    try {
+      await this.adapter.setRefFilter(refs);
+    } catch (err) {
+      this.renderError(err);
+    }
   }
 
   /** Detach the Lit element so its disconnectedCallback tears down listeners. */

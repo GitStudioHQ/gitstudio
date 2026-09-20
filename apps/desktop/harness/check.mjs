@@ -507,6 +507,7 @@ const CASES = [
   ["switch-account-starts-the-new-sign-in", "settings"],
   ["the-graph-search-paints-before-it-travels", "graph"],
   ["the-branch-picker-narrows-the-graph-and-all-restores-it", "graph"],
+  ["a-commit-the-filter-hides-says-so-and-offers-every-branch", "graph"],
   ["clearing-a-search-clears-the-results", "explore~type:git"],
   ["a-branch-deep-link-shows-the-branch", "actions~open9094~click:.gh-branch-chip"],
   ["the-logs-states-each-say-the-right-thing", "actions~open9097~click:.gh-job-log"],
