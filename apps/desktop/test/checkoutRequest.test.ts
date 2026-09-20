@@ -117,6 +117,26 @@ test("the ref checkouts pass a kind through", () => {
   }
 });
 
+test("the chip menu's checkout goes through the context menu's door, and is refused where its rows are", () => {
+  // Right-clicking a chip used to open this menu (issue #30 gave the chip a
+  // menu of its own), so the chip's "Checkout <ref>" builds the same row and
+  // sends the same request — ref and kind included.
+  let got: CommitActionRequest | undefined;
+  const menu = new CommitContextMenu((req) => {
+    got = req;
+  });
+  menu.checkoutRef("abc1234", { name: "feature/login", kind: "head" });
+  assert.deepEqual(got, { action: "checkout-ref", sha: "abc1234", name: "feature/login", refKind: "head" });
+  menu.checkoutRef("abc1234", { name: "origin/fix/login", kind: "remote" });
+  assert.equal(got?.refKind, "remote");
+  // What the builder declines, this declines: the branch you are on, and a
+  // remote's HEAD pointer.
+  got = undefined;
+  menu.checkoutRef("abc1234", { name: "main", kind: "head", current: true });
+  menu.checkoutRef("abc1234", { name: "origin/HEAD", kind: "remote" });
+  assert.equal(got, undefined);
+});
+
 test("a remote branch row asks for the remote treatment", () => {
   // The Branches list decides the kind from whether you already have the local
   // branch: yours attaches by name, theirs has to be created.

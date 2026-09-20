@@ -126,6 +126,9 @@ function start(root: HTMLElement): void {
       case "setRefFilter":
         vscode.postMessage({ type: "setRefFilter", refs: action.refs });
         break;
+      case "checkoutRef":
+        vscode.postMessage({ type: "checkoutRef", sha: action.sha, name: action.name, kind: action.kind });
+        break;
     }
   };
 

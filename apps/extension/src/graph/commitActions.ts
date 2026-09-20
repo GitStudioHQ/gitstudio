@@ -35,6 +35,17 @@ export function commitMenuItems(): GraphMenuItem[] {
 const REF_ACTION = "ref:";
 
 /**
+ * The id `runCommitAction` checks a ref out under — what a "Checkout <ref>"
+ * item posts back, and what the chip's own menu asks for (issue #30), so
+ * both doors run the same arm with the same questions. The current branch is
+ * a local head here for the id's shape only; neither menu offers to switch
+ * to where you already are.
+ */
+export function refActionId(kind: WireRef["kind"], name: string): string {
+  return `${REF_ACTION}${kind === "currentHead" ? "head" : kind}:${name}`;
+}
+
+/**
  * "Checkout <branch>" entries for the refs sitting on a commit, shown above the
  * commit actions.
  *
@@ -58,7 +69,7 @@ export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
     }
     if (ref.kind === "head") {
       items.push({
-        id: `${REF_ACTION}head:${ref.name}`,
+        id: refActionId("head", ref.name),
         label: `Checkout ${ref.name}`,
         icon: "git-branch",
       });
@@ -69,14 +80,14 @@ export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
       // a dialog that no longer exists, which is exactly the thing an ellipsis
       // is for. The tag arm below keeps its ellipsis because it still asks.
       items.push({
-        id: `${REF_ACTION}remoteHead:${ref.name}`,
+        id: refActionId("remoteHead", ref.name),
         label: `Checkout ${ref.name}`,
         icon: "cloud",
       });
     } else {
       // Ellipsis: checking out a tag confirms first, because it detaches HEAD.
       items.push({
-        id: `${REF_ACTION}tag:${ref.name}`,
+        id: refActionId("tag", ref.name),
         label: `Checkout ${ref.name}…`,
         icon: "tag",
       });

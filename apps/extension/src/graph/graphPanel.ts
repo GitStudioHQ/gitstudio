@@ -27,7 +27,7 @@ import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { getRefFilterStore } from "./refFilterStore";
-import { commitMenuItems, refMenuItems, runCommitAction } from "./commitActions";
+import { commitMenuItems, refActionId, refMenuItems, runCommitAction } from "./commitActions";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { runRebasePlan, isRebaseInProgress } from "../rebase/rebaseRunner";
@@ -281,6 +281,11 @@ export class CommitGraphPanel {
         break;
       case "setRefFilter":
         void this.setRefFilter(msg.refs);
+        break;
+      case "checkoutRef":
+        // The chip menu's "Checkout <ref>": the same arm, with the same
+        // questions, as the commit menu's item of that name.
+        void this.runCommitMenuAction(msg.sha, refActionId(msg.kind, msg.name));
         break;
       case "openInGraph":
         // Sidebar rail → promote into the BOTTOM PANEL graph (the split view

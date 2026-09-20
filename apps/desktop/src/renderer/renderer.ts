@@ -7888,6 +7888,14 @@ class App {
       // `%(refname:short)` does NOT disambiguate across namespaces) landed on
       // the branch and marked the wrong row without a word.
       onRefClick: (name, kind) => this.routeView("branches", false, { ref: name, refKind: kind }),
+      // The chip menu's "Checkout <ref>" (issue #30): through the context
+      // menu's own door, so it asks what that menu's row of the same name asks.
+      onCheckoutRef: (sha, name, kind) =>
+        this.contextMenu.checkoutRef(sha, {
+          name,
+          kind: kind === "remoteHead" ? "remote" : kind === "tag" ? "tag" : "head",
+          current: kind === "currentHead",
+        }),
       // Show the pane again WITHOUT re-selecting: selectCommit() would call
       // closeGraphDiff() and dispose a diff the user still has open.
       onShowDetails: () => this.setGraphDetailsVisible(true),

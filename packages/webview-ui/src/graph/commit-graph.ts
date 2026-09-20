@@ -59,6 +59,7 @@ import {
   REF_PRESETS,
   activePreset,
   addRefs,
+  chipCheckout,
   groupRefs,
   presetFilter,
   presetUnavailable,
@@ -223,7 +224,10 @@ export type GraphAction =
   | { type: "reorder"; order: string[] }
   /** The Branches picker changed the filter (issue #30): rebuild the graph
    *  around these fully-qualified refs (null = all), and remember it. */
-  | { type: "setRefFilter"; refs: GraphRefFilter };
+  | { type: "setRefFilter"; refs: GraphRefFilter }
+  /** "Checkout <ref>" from a chip's own menu — the host runs it as it runs
+   *  the commit menu's item of the same name (a tag asks first). */
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"] };
 
 /** One item in the in-graph commit actions popover (from the host). */
 export interface CommitMenuItem {
@@ -1631,11 +1635,15 @@ export class CommitGraph extends LitElement {
   } | null;
   /**
    * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
-   * shortcuts — show only this branch, add it, remove it. `refs` is the chip's
-   * ref plus the remote twins folded into it, so the chip moves as one thing.
+   * shortcuts — show only this branch, add it, remove it — and the checkout
+   * the row's commit menu used to offer for that click. `refs` is the chip's
+   * ref plus the remote twins folded into it, so the chip moves as one thing;
+   * `sha` is the row it sits on, for the checkout.
    */
   private declare chipMenu: {
     name: string;
+    kind: WireRef["kind"];
+    sha: string;
     refs: string[];
     x: number;
     y: number;
@@ -1809,6 +1817,13 @@ export class CommitGraph extends LitElement {
     }
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
     document.removeEventListener("keydown", this.onDocKeyDown, true);
+  }
+
+  willUpdate(changed: PropertyValues): void {
+    // An empty filter is All (issue #30): the protocol says a host never sends
+    // one, but a host that did tinted the trigger "scoped" under a label
+    // reading "All branches". Folded here, so every reader sees the same thing.
+    if (changed.has("refFilter") && this.refFilter?.length === 0) this.refFilter = null;
   }
 
   updated(changed: PropertyValues): void {
@@ -2483,6 +2498,9 @@ export class CommitGraph extends LitElement {
     if (this.columnsOpen) return ".gh-columns-btn";
     if (this.branchesOpen) return ".gh-branches";
     if (this.scopeOpen) return ".gh-search .gh-scope";
+    // The commit and chip menus open from a row, and a row's chips are not
+    // focusable: the list takes the keyboard back, as it does in the rail.
+    if (this.commitMenu || this.chipMenu) return ".scroller";
     return undefined;
   }
 
@@ -2531,9 +2549,13 @@ export class CommitGraph extends LitElement {
       if (!items.length) return;
       const root = this.renderRoot as ShadowRoot;
       const active = (root.activeElement ?? null) as HTMLElement | null;
-      let i = items.findIndex((x) => x === active);
-      i = e.key === "ArrowDown" ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
-      items[i]?.focus();
+      const i = items.findIndex((x) => x === active);
+      const n = items.length;
+      // From outside the rows (the filter box, the trigger) ArrowUp lands on
+      // the LAST row: wrapping (i - 1 + n) % n from i = -1 is the second-to-last.
+      const next =
+        i < 0 ? (e.key === "ArrowDown" ? 0 : n - 1) : e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
+      items[next]?.focus();
     }
   };
 
@@ -2583,11 +2605,12 @@ export class CommitGraph extends LitElement {
     // through the picker's list, not rebuilt from the short name: see chipRefs.
     const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
     const refs = chipRefs(this.refList, name, kind, remotes);
+    const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
     this.columnsOpen = false;
     this.scopeOpen = false;
     this.branchesOpen = false;
     this.commitMenu = null;
-    this.chipMenu = { name, refs, x, y };
+    this.chipMenu = { name, kind, sha, refs, x, y };
   }
 
   // ── Click-to-copy the full sha ─────────────────────────────────────────────
@@ -3779,12 +3802,13 @@ export class CommitGraph extends LitElement {
     </div>`;
   }
 
-  /** A ref chip's menu: show only it, add it to / remove it from the filter. */
+  /** A ref chip's menu: show only it, add it to / remove it from the filter,
+   *  and check it out. */
   private renderChipMenu() {
     const m = this.chipMenu;
     if (!m) return nothing;
     const W = 240;
-    const H = 34 + 4 * 28;
+    const H = 34 + 5 * 28;
     const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
     const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
     const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
@@ -3793,6 +3817,7 @@ export class CommitGraph extends LitElement {
       this.chipMenu = null;
       this.applyRefFilter(refs);
     };
+    const checkout = chipCheckout(m);
     return html`<div
       class="gh-pop gh-ctx gh-chip-menu"
       role="menu"
@@ -3831,6 +3856,21 @@ export class CommitGraph extends LitElement {
             >
               <span class="codicon codicon-list-flat" aria-hidden="true"></span>
               <span class="lbl">Show all branches</span>
+            </button>`
+        : nothing}
+      ${checkout
+        ? html`<div class="gh-pop-sep"></div>
+            <button
+              class="gh-menuitem"
+              role="menuitem"
+              data-chip-action="checkout"
+              @click=${() => {
+                this.chipMenu = null;
+                this.onAction({ type: "checkoutRef", sha: m.sha, name: m.name, kind: m.kind });
+              }}
+            >
+              <span class="codicon codicon-${checkout.icon}" aria-hidden="true"></span>
+              <span class="lbl">${checkout.label}</span>
             </button>`
         : nothing}
     </div>`;

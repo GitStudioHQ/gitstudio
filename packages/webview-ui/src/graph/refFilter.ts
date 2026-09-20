@@ -8,7 +8,7 @@
 // there ticks add and remove; unticking the last one is All again, because a
 // graph of nothing is not a graph.
 
-import type { GraphRefEntry, GraphRefFilter } from "@gitstudio/host-bridge/graphProtocol";
+import type { GraphRefEntry, GraphRefFilter, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 
 export type RefPreset = "current" | "currentUpstream" | "local" | "all";
@@ -159,4 +159,25 @@ export function groupRefs(
     out.push({ id, label, refs: list.slice(0, cap), hidden: Math.max(0, list.length - cap) });
   }
   return out;
+}
+
+/**
+ * The "Checkout <ref>" a chip's own menu offers — right-clicking a chip used
+ * to open the row's commit menu, whose first items check out the refs on that
+ * row, and the chip's filter menu took that click. Undefined when there is
+ * nothing to check out: the branch HEAD is on (you are there), and a remote's
+ * HEAD pointer (a copy of its default branch; checking it out detaches, which
+ * is never what anyone means). A tag's label ends in an ellipsis because the
+ * host asks first — a tag detaches too, and that is the one case where it is
+ * what was meant.
+ */
+export function chipCheckout(chip: {
+  name: string;
+  kind: WireRef["kind"];
+  sha: string;
+}): { label: string; icon: string } | undefined {
+  if (!chip.sha || chip.kind === "currentHead" || chip.name.endsWith("/HEAD")) return undefined;
+  if (chip.kind === "tag") return { label: `Checkout ${chip.name}…`, icon: "tag" };
+  if (chip.kind === "remoteHead") return { label: `Checkout ${chip.name}`, icon: "cloud" };
+  return { label: `Checkout ${chip.name}`, icon: "git-branch" };
 }

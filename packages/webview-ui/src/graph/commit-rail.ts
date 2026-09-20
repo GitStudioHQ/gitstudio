@@ -55,6 +55,7 @@ import {
   REF_PRESETS,
   activePreset,
   addRefs,
+  chipCheckout,
   groupRefs,
   presetFilter,
   presetUnavailable,
@@ -101,7 +102,10 @@ export type RailAction =
   | { type: "refresh" }
   /** The Branches picker changed the filter (issue #30): rebuild the log
    *  around these fully-qualified refs (null = all), and remember it. */
-  | { type: "setRefFilter"; refs: GraphRefFilter };
+  | { type: "setRefFilter"; refs: GraphRefFilter }
+  /** "Checkout <ref>" from a chip's own menu — the host runs it as it runs
+   *  the commit menu's item of the same name (a tag asks first). */
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"] };
 
 /** One item in the commit actions popover (host-built, same as the graph's). */
 export interface RailMenuItem {
@@ -760,8 +764,10 @@ export class CommitRail extends LitElement {
       }
       /* ── The Branches picker (issue #30) in the same shell: presets, a
          filter box, and the refs grouped Local / Remote / Tags. ─────────── */
-      /* Never wider than the sidebar it sits in; branchesPopTpl mirrors this. */
-      .pop.branches { width: min(232px, calc(100vw - 8px)); max-width: none; }
+      /* Never wider than the sidebar it sits in; branchesPopTpl mirrors this.
+         border-box, so the width IS the shell: .pop's padding and border on
+         top of a content width overhung a ≤240px sidebar by 6px. */
+      .pop.branches { box-sizing: border-box; width: min(232px, calc(100vw - 8px)); max-width: none; }
       .pop .presets {
         display: flex;
         flex-wrap: wrap;
@@ -854,10 +860,19 @@ export class CommitRail extends LitElement {
   private declare commitMenu: RailMenu | null;
   /**
    * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
-   * shortcuts — show only this branch, add it, remove it. `refs` is the chip's
-   * ref plus the remote twins folded into it, so the chip moves as one thing.
+   * shortcuts — show only this branch, add it, remove it — and the checkout
+   * the row's commit menu used to offer for that click. `refs` is the chip's
+   * ref plus the remote twins folded into it, so the chip moves as one thing;
+   * `sha` is the row it sits on, for the checkout.
    */
-  private declare chipMenu: { name: string; refs: string[]; x: number; y: number } | null;
+  private declare chipMenu: {
+    name: string;
+    kind: WireRef["kind"];
+    sha: string;
+    refs: string[];
+    x: number;
+    y: number;
+  } | null;
   private declare selectedSha: string;
 
   /** Row intents, forwarded to the host by the entry point. */
@@ -973,6 +988,13 @@ export class CommitRail extends LitElement {
     document.removeEventListener("pointerdown", this.onDocPointerDown, true);
     document.removeEventListener("keydown", this.onDocKeyDown, true);
     if (this.flashTimer) clearTimeout(this.flashTimer);
+  }
+
+  willUpdate(changed: Map<PropertyKey, unknown>): void {
+    // An empty filter is All (issue #30): the protocol says a host never sends
+    // one, but a host that did tinted the trigger "scoped" under an accessible
+    // name reading "All branches". Folded here, so every reader sees the same.
+    if (changed.has("refFilter") && this.refFilter?.length === 0) this.refFilter = null;
   }
 
   updated(changed: Map<PropertyKey, unknown>): void {
@@ -1586,12 +1608,13 @@ export class CommitRail extends LitElement {
       );
       if (!items.length) return;
       const active = (this.renderRoot as ShadowRoot).activeElement as HTMLElement | null;
-      let i = items.findIndex((x) => x === active);
-      i =
-        e.key === "ArrowDown"
-          ? (i + 1) % items.length
-          : (i - 1 + items.length) % items.length;
-      items[i]?.focus();
+      const i = items.findIndex((x) => x === active);
+      const n = items.length;
+      // From outside the rows (the filter box, the trigger) ArrowUp lands on
+      // the LAST row: wrapping (i - 1 + n) % n from i = -1 is the second-to-last.
+      const next =
+        i < 0 ? (e.key === "ArrowDown" ? 0 : n - 1) : e.key === "ArrowDown" ? (i + 1) % n : (i - 1 + n) % n;
+      items[next]?.focus();
     }
   };
 
@@ -1696,12 +1719,15 @@ export class CommitRail extends LitElement {
     // through the picker's list, not rebuilt from the short name: see chipRefs.
     const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
     const refs = chipRefs(this.refList, name, kind, remotes);
+    const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
     // Clamped like the commit menu, so it never clips the narrow sidebar.
     const estW = 200;
-    const estH = 30 + 4 * 26;
+    const estH = 30 + 5 * 26;
     this.closePopovers();
     this.chipMenu = {
       name,
+      kind,
+      sha,
       refs,
       x: Math.max(4, Math.min(x, window.innerWidth - estW - 4)),
       y: Math.max(4, Math.min(y, window.innerHeight - estH - 4)),
@@ -1975,7 +2001,8 @@ export class CommitRail extends LitElement {
     `;
   }
 
-  /** A ref chip's menu: show only it, add it to / remove it from the filter. */
+  /** A ref chip's menu: show only it, add it to / remove it from the filter,
+   *  and check it out. */
   private chipMenuTpl(m: NonNullable<CommitRail["chipMenu"]>) {
     const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
     const isOnly = sameRefFilter(m.refs, this.refFilter);
@@ -1983,6 +2010,7 @@ export class CommitRail extends LitElement {
       this.chipMenu = null;
       this.applyRefFilter(refs);
     };
+    const checkout = chipCheckout(m);
     return html`
       <div
         class="pop chipmenu"
@@ -2018,6 +2046,23 @@ export class CommitRail extends LitElement {
               <button class="mi" role="menuitem" data-chip-action="all" @click=${() => pick(null)}>
                 <span class="codicon codicon-list-flat"></span>
                 Show all branches
+              </button>
+            `
+          : nothing}
+        ${checkout
+          ? html`
+              <div class="sep" role="separator"></div>
+              <button
+                class="mi"
+                role="menuitem"
+                data-chip-action="checkout"
+                @click=${() => {
+                  this.chipMenu = null;
+                  this.onAction({ type: "checkoutRef", sha: m.sha, name: m.name, kind: m.kind });
+                }}
+              >
+                <span class="codicon codicon-${checkout.icon}"></span>
+                ${checkout.label}
               </button>
             `
           : nothing}

@@ -5,6 +5,7 @@ import {
   REF_PRESETS,
   activePreset,
   addRefs,
+  chipCheckout,
   groupRefs,
   presetFilter,
   presetUnavailable,
@@ -108,4 +109,19 @@ test("groupRefs caps a group and says how many it left out", () => {
   const [tags] = groupRefs(many, "", 5);
   assert.equal(tags.refs.length, 5);
   assert.equal(tags.hidden, 2);
+});
+
+test("chipCheckout: what a chip's menu offers to check out, and what it declines", () => {
+  // Right-clicking a chip used to open the row's commit menu, whose first
+  // items check out the refs on that row. The chip's filter menu took that
+  // click, so it offers the checkout too — under the same rules.
+  assert.deepEqual(chipCheckout({ name: "feature/x", kind: "head", sha: "abc" }), { label: "Checkout feature/x", icon: "git-branch" });
+  assert.deepEqual(chipCheckout({ name: "origin/feature/x", kind: "remoteHead", sha: "abc" }), { label: "Checkout origin/feature/x", icon: "cloud" });
+  // A tag asks first (it detaches), so its label says so.
+  assert.deepEqual(chipCheckout({ name: "v1", kind: "tag", sha: "abc" }), { label: "Checkout v1…", icon: "tag" });
+  // Nothing to switch to: the branch you are on, and a remote's HEAD pointer.
+  assert.equal(chipCheckout({ name: "main", kind: "currentHead", sha: "abc" }), undefined);
+  assert.equal(chipCheckout({ name: "origin/HEAD", kind: "remoteHead", sha: "abc" }), undefined);
+  // …and a chip whose row is unknown has nothing to run the checkout on.
+  assert.equal(chipCheckout({ name: "feature/x", kind: "head", sha: "" }), undefined);
 });

@@ -274,4 +274,11 @@ export type GraphWebviewMessage =
    * these refs, and answers with a fresh `graphInit` carrying the filter it
    * actually applied (refs that no longer exist are dropped on the way).
    */
-  | { type: "setRefFilter"; refs: GraphRefFilter };
+  | { type: "setRefFilter"; refs: GraphRefFilter }
+  /**
+   * "Checkout <ref>" from a chip's own menu (issue #30). Right-clicking a chip
+   * used to open the row's commit menu, whose first items check out the refs
+   * on that row; the chip's filter menu took that click, so it offers the
+   * checkout too. The host runs it exactly as it runs the commit menu's item.
+   */
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"] };

@@ -152,6 +152,29 @@ test("a reveal into a filtered graph asks git before paging, and says so when th
   );
 });
 
+test("the chip menu's checkout runs the commit menu's own ref-checkout arm", async () => {
+  // Right-clicking a chip used to open the row's commit menu, whose first
+  // items check out the refs on that row. The chip's filter menu took that
+  // click, so it offers the checkout too — and the host must run it through
+  // the same arm (refActionId → runCommitMenuAction), with the same questions,
+  // from both webview entries.
+  const host = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
+  assert.match(host, /case "checkoutRef":[\s\S]*?void this\.runCommitMenuAction\(msg\.sha, refActionId\(msg\.kind, msg\.name\)\);/);
+  const actions = await readFile(`${SRC}/graph/commitActions.ts`, "utf8");
+  assert.match(actions, /export function refActionId\(kind: WireRef\["kind"\], name: string\): string \{\s*return `\$\{REF_ACTION\}\$\{kind === "currentHead" \? "head" : kind\}:\$\{name\}`;/);
+  // …and the menu's own rows are built through it, so there is one id format.
+  assert.equal((actions.match(/refActionId\("(head|remoteHead|tag)", ref\.name\)/g) ?? []).length, 3);
+  const WEBVIEW = fileURLToPath(new URL("../../../packages/webview-ui/src/graph", import.meta.url));
+  for (const entry of ["main.ts", "sidebar-main.ts"]) {
+    const text = await readFile(`${WEBVIEW}/${entry}`, "utf8");
+    assert.match(
+      text,
+      /case "checkoutRef":\s*vscode\.postMessage\(\{ type: "checkoutRef", sha: action\.sha, name: action\.name, kind: action\.kind \}\);/,
+      `${entry} posts the chip menu's checkout to the host`,
+    );
+  }
+});
+
 test("the store is installed before the first graph host is built", async () => {
   const text = await readFile(`${SRC}/extension.ts`, "utf8");
   const installed = text.indexOf("setRefFilterStore(new RefFilterStore(context.workspaceState))");

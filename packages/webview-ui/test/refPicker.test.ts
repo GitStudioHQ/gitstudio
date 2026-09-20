@@ -287,6 +287,117 @@ test("the rail's chip shortcut resolves an ambiguous short name through the ref 
 });
 
 /**
+ * The follow-ups on the picker and the chip menu (issue #30): ArrowUp from
+ * the filter box lands on the LAST row, Escape on a chip menu hands the
+ * keyboard back to the list, an empty filter reads as All everywhere, and a
+ * chip's menu keeps the "Checkout <ref>" the row's commit menu used to offer
+ * for that right-click.
+ */
+const FOLLOWUPS_SCRIPT = `
+  const chipOf = (name) => $$(CHIP).find((c) => c.dataset.ref === name);
+  const openChip = async (name) => {
+    chipOf(name).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+    await settle();
+  };
+  const lastAction = () => actions[actions.length - 1];
+
+  // ── ArrowUp from the filter box lands on the last row ──
+  $(TRIGGER).click();
+  await settle();
+  const items = () => $$(ITEM);
+  const box = $(FILTER_INPUT);
+  box.focus();
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, composed: true }));
+  await settle();
+  expect(el.shadowRoot.activeElement === items()[items().length - 1],
+    "ArrowUp from the filter box lands on the last row (" + (el.shadowRoot.activeElement && el.shadowRoot.activeElement.dataset.ref) + ")");
+  box.focus();
+  box.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, composed: true }));
+  await settle();
+  expect(el.shadowRoot.activeElement === items()[0], "and ArrowDown still lands on the first");
+  document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+  await settle();
+
+  // ── Escape on a chip menu hands the keyboard to the list, not to <body> ──
+  await openChip("feature/x");
+  expect(!!$(CHIP_MENU), "a chip menu is open");
+  (el.shadowRoot.activeElement || document.activeElement).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+  await settle();
+  expect(!$(CHIP_MENU), "Escape closes it");
+  const after = el.shadowRoot.activeElement;
+  expect(!!after && after.classList.contains("scroller"),
+    "and the list has the keyboard (" + (after ? after.className : document.activeElement.tagName) + ")");
+
+  // ── An empty filter is All, wherever it is read ──
+  el.refFilter = [];
+  await settle();
+  expect(/All branches/.test(label()), "an empty filter reads All branches (" + label() + ")");
+  expect(!$(TRIGGER).classList.contains("scoped"), "and the trigger is not tinted as scoped");
+  expect(el.refFilter === null, "it is folded to null at the boundary");
+  await openChip("feature/x");
+  expect(!$(CHIP_MENU + " [data-chip-action=add]") && !$(CHIP_MENU + " [data-chip-action=remove]"),
+    "so a chip menu offers nothing to add to");
+
+  // ── Checkout from the chip menu ──
+  const checkout = $(CHIP_MENU + " [data-chip-action=checkout]");
+  expect(!!checkout, "a branch chip's menu offers a checkout");
+  expect(/^Checkout feature\\/x$/.test(checkout.textContent.trim()), "labelled for the branch (" + checkout.textContent.trim() + ")");
+  checkout.click();
+  await settle();
+  expect(!$(CHIP_MENU), "picking it closes the menu");
+  expect(JSON.stringify(lastAction()) === JSON.stringify({ type: "checkoutRef", sha: sha(1), name: "feature/x", kind: "head" }),
+    "and asks the host to check the ref out, on its row (" + JSON.stringify(lastAction()) + ")");
+  await openChip("v1");
+  expect(/^Checkout v1…$/.test(($(CHIP_MENU + " [data-chip-action=checkout]") || {}).textContent?.trim() || ""),
+    "a tag's checkout says it will ask first");
+  $(CHIP_MENU + " [data-chip-action=checkout]").click();
+  await settle();
+  expect(lastAction().kind === "tag" && lastAction().name === "v1" && lastAction().sha === sha(0), "a tag checkout carries its kind");
+  await openChip("origin/feat/line-staging");
+  expect(/^Checkout origin\\/feat\\/line-staging$/.test(($(CHIP_MENU + " [data-chip-action=checkout]") || {}).textContent?.trim() || ""),
+    "a remote chip offers its checkout");
+  $(CHIP_MENU + " [data-chip-action=checkout]").click();
+  await settle();
+  expect(lastAction().kind === "remoteHead", "…as a remote");
+  await openChip("main");
+  expect(!!$(CHIP_MENU), "the current branch's chip has a menu");
+  expect(!$(CHIP_MENU + " [data-chip-action=checkout]"), "…with no checkout: you are already on it");
+`;
+
+test("the graph's picker and chip menu follow-ups: ArrowUp, Escape, an empty filter, Checkout", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(CHROME!, GRAPH, MOUNT_GRAPH + FOLLOWUPS_SCRIPT, { css: CSS_GRAPH, width: 1100, height: 700 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("the rail's picker and chip menu follow-ups: ArrowUp, Escape, an empty filter, Checkout", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const v = await runInChrome(CHROME!, RAIL, MOUNT_RAIL + FOLLOWUPS_SCRIPT, { css: CSS_RAIL, width: 320, height: 600 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+/**
+ * The rail's picker is sized to the sidebar it sits in: branchesPopTpl places
+ * the shell at x ≤ innerWidth − W − 4 for W = min(232, innerWidth − 8). Its
+ * width rule was a CONTENT width, so .pop's padding and border made the shell
+ * 10px wider than that W, and in a sidebar of 240px or less it overhung the
+ * right edge by 6px. Headless Chrome floors the window at 500px, so the
+ * narrow case cannot be staged here; the invariant it breaks can be — the
+ * rendered shell must be exactly the W the positioning assumes.
+ */
+test("the rail's picker shell is as wide as its positioning assumes", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const script = MOUNT_RAIL + `
+    $(TRIGGER).click();
+    await settle();
+    const pop = $(POP).getBoundingClientRect();
+    const W = Math.min(232, window.innerWidth - 8);
+    notes.width = pop.width; notes.W = W; notes.right = pop.right; notes.innerWidth = window.innerWidth;
+    expect(Math.round(pop.width) === W, "the shell is the W the positioning clamps with (" + pop.width + " vs " + W + ")");
+    expect(pop.right <= window.innerWidth - 4, "so its right edge keeps the 4px margin (" + Math.round(pop.right) + " of " + window.innerWidth + ")");
+  `;
+  const v = await runInChrome(CHROME!, RAIL, script, { css: CSS_RAIL, width: 320, height: 600 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+/**
  * The picker opens leftwards from its trigger, which is right while the
  * header has spare width on that side. In the bottom panel with the details
  * pane open (42% of the panel) the graph pane is 580–740px on a laptop, the

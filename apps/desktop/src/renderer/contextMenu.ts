@@ -5,7 +5,7 @@
 
 import type { CommitActionRequest } from "../shared/ipc";
 import { confirmDialog, promptInline } from "./dialogs";
-import { refMenuItems, type RowRef } from "./refMenuItems";
+import { refMenuItems, type RefMenuItem, type RowRef } from "./refMenuItems";
 import { registerLayer } from "./overlays";
 
 interface MenuItem {
@@ -70,6 +70,17 @@ export function commitActionItem(action: string): MenuItem | undefined {
   return ITEMS.find((i) => i.action === action);
 }
 
+/** A "Checkout <ref>" row, from the shared builder's answer. */
+function refRow(r: RefMenuItem): MenuItem {
+  return {
+    label: r.label,
+    action: "checkout-ref" as const,
+    ref: r.ref,
+    refItem: true,
+    ...(r.confirm ? { confirm: r.confirm } : {}),
+  };
+}
+
 export class CommitContextMenu {
   private menu?: HTMLElement;
   private prevFocus?: HTMLElement | null;
@@ -112,13 +123,7 @@ export class CommitContextMenu {
     menu.appendChild(header);
 
     this.rows = [];
-    const refRows: MenuItem[] = refMenuItems(refs).map((r) => ({
-      label: r.label,
-      action: "checkout-ref" as const,
-      ref: r.ref,
-      refItem: true,
-      ...(r.confirm ? { confirm: r.confirm } : {}),
-    }));
+    const refRows: MenuItem[] = refMenuItems(refs).map(refRow);
     for (const item of [...refRows, ...ITEMS]) {
       const button = document.createElement("button");
       button.className = `ctx-menu-item${item.danger ? " ctx-danger" : ""}`;
@@ -192,6 +197,18 @@ export class CommitContextMenu {
         this.close(false);
         break;
     }
+  }
+
+  /**
+   * Check out one ref from outside the menu — the chip's own menu (issue #30)
+   * offers "Checkout <ref>" too, and right-clicking a chip used to open THIS
+   * menu. The row is built by the same builder, so a tag asks the same
+   * question at either door, and a ref the builder declines (the branch you
+   * are on, a remote's HEAD pointer) is declined here too.
+   */
+  checkoutRef(sha: string, ref: RowRef): void {
+    const row = refMenuItems([ref]).map(refRow)[0];
+    if (row) void this.dispatch(row, sha);
   }
 
   private async dispatch(item: MenuItem, sha: string): Promise<void> {
