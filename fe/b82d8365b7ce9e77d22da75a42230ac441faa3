@@ -1,0 +1,48 @@
+packages/git-service/test/logRefs.test.ts
+  s_26f5e669d3043c::t_4083515ff74bee 151-171
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_efcf559f6a119c 7660-7735
+  s_26f5e669d3043c::t_5a6dd870701811 7659
+apps/extension/test/refFilterStore.test.ts
+  s_26f5e669d3043c::t_56ac56311e4423 127-154
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_097c2f45e4bd37 1665-1671
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_ac53fd54595b1a 218-238
+  s_26f5e669d3043c::t_40c08a67a5ae32 10
+  s_26f5e669d3043c::t_92e012b5a67f14 61
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_9d909ea7e223f3 9319-9321,9324-9327
+  s_26f5e669d3043c::t_8a216a427f9865 9106
+  s_26f5e669d3043c::t_8592e3a165f1dd 9041,9047-9085
+  s_26f5e669d3043c::t_a1430a55eca8b1 9086-9087
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_c69a617968723e 932-933,942-999
+  s_26f5e669d3043c::t_3ed2ce84439a2c 1000
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_a489039581294a 337-349
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_fa5eaf2eb79bd3 510
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_ebda648f252bb1 2080-2087
+packages/git-service/src/LogProvider.ts
+  s_26f5e669d3043c::t_a25b1d7800d834 134-171
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_a94955689c2fbc 747
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "feb82d8365b7ce9e77d22da75a42230ac441faa3",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
