@@ -23,6 +23,17 @@ export interface StreamCommitsOptions {
    * below for why those must not appear as history.
    */
   revRange?: string;
+  /**
+   * Narrow the "--all" traversal to these refs (issue #30's branch filter).
+   *
+   * FULLY-QUALIFIED names — refs/heads/x, refs/remotes/origin/x, refs/tags/t.
+   * A short name is ambiguous the moment a tag shares it with a branch, and
+   * git resolves the ambiguity by its own precedence, not the user's tick.
+   * When non-empty these replace the branches/tags/remotes expansion; HEAD is
+   * always added, so a detached head can never filter itself out of the graph.
+   * Ignored unless `revRange` is "--all".
+   */
+  refs?: string[];
   maxCount?: number;
   skip?: number;
   paths?: string[];
@@ -66,7 +77,17 @@ export class LogProvider {
       // tools, AI assistants. HEAD is listed explicitly because --branches does
       // not cover a DETACHED head, and dropping the commit you are sitting on
       // would be a worse bug than the one being fixed.
-      args.push("--branches", "--tags", "--remotes", "HEAD");
+      if (opts?.refs && opts.refs.length > 0) {
+        // The branch filter: exactly the ticked refs, plus HEAD for the same
+        // reason as above. `--ignore-missing` because the selection is stored
+        // per repository and a branch in it can be deleted between the ref
+        // listing and this spawn (or by another tool while the app was closed);
+        // git would otherwise refuse the whole log over one gone ref. A missing
+        // ref contributes nothing, which is what "gone" should mean here.
+        args.push("--ignore-missing", ...opts.refs, "HEAD");
+      } else {
+        args.push("--branches", "--tags", "--remotes", "HEAD");
+      }
     } else {
       args.push(revRange);
     }
