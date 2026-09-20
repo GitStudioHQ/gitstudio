@@ -1,0 +1,10 @@
+{
+  "name": "gsqa-pylance-driver",
+  "displayName": "gsqa pylance driver",
+  "publisher": "gsqa",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.78.0" },
+  "activationEvents": [],
+  "main": "./ext.js",
+  "contributes": {}
+}

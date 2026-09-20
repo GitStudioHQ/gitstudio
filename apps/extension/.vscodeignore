@@ -2,6 +2,7 @@
 .github/**
 src/**
 test/**
+harness/**
 node_modules/**
 **/*.ts
 **/*.map
