@@ -632,7 +632,14 @@
               refs: [ref("desktop-v1.5.1", "tag")] }),
         row({ sha: "07b8c9d0e1f263748091", subject: "feat(ext): drag a commit in the graph to reorder it", h: 52 }),
         row({ sha: "18c9d0e1f2736485a1b2", subject: "feat(git-service): let a rebase carry other branches with it", h: 70, author: "Mira Holt" }),
-        row({ sha: "29d0e1f2837495b2c3d4", subject: "fix(graph): avatars blur on non-retina displays", h: 96, author: "J. Parks" }),
+        // An old, unmerged remote branch forked from the oldest commit: the one
+        // row that NO local branch reaches, so the branch filter (issue #30)
+        // has a row to drop and not only chips. `reachOnly` below says so.
+        row({ sha: "77aa88b9c0d1e2f3a4b5", subject: "build(deps): bump electron to 33.4.11", h: 90, author: "dependabot[bot]",
+              column: 1, color: 2, segments: [seg(0, 0, 0), seg(1, 1, 2)],
+              refs: [ref("origin/chore/dependabot-bump", "remoteHead")] }),
+        row({ sha: "29d0e1f2837495b2c3d4", subject: "fix(graph): avatars blur on non-retina displays", h: 96, author: "J. Parks",
+              segments: [seg(0, 0, 0), seg(1, 0, 2)] }),
       ];
       return { rows, head: "9f8e7d6c5b4a39281706", totalColumns: 2, hasMore: false, nextSkip: rows.length };
     })(),
@@ -2019,6 +2026,56 @@
     refs: [],
     files: bigFiles,
     hasRemote: true,
+  };
+
+  // The graph's branch filter (issue #30). `graph:load` takes `refs` — the
+  // fully-qualified refs to build the graph around, null for all, omitted for
+  // "whatever is remembered" — and answers with the filter it applied plus the
+  // FULL ref list, filtered-out refs included, or the picker could never tick
+  // one back in. The walk itself is what git does with `git log <refs> HEAD`:
+  // a row that only an unticked ref reaches is gone, and chips follow the
+  // filter (the current branch always keeps its chip). Without this the
+  // picker was a control with no fixture behind it: every tick would have
+  // answered the same ten rows and a check could pass over a dead filter.
+  const graphBase = fixtures["graph:load"];
+  /** sha → the refs that ALONE reach it; every other row is reachable from HEAD. */
+  const reachOnly = { "77aa88b9c0d1e2f3a4b5": ["refs/remotes/origin/chore/dependabot-bump"] };
+  const chipFullName = (chip) =>
+    chip.kind === "tag" ? "refs/tags/" + chip.name
+    : chip.kind === "remoteHead" ? "refs/remotes/" + chip.name
+    : "refs/heads/" + chip.name;
+  const graphRefList = () => {
+    const refs = fixtures["refs:list"];
+    const bySh = new Map(refs.filter((r) => r.type === "remote" && !r.symref).map((r) => [r.name, r.fullName]));
+    return refs
+      .filter((r) => r.type !== "stash" && !(r.type === "remote" && r.symref))
+      .map((r) => {
+        const e = { fullName: r.fullName, name: r.name, kind: r.type === "tag" ? "tag" : r.type === "remote" ? "remoteHead" : "head" };
+        if (r.type === "head" && r.isCurrent) e.isCurrent = true;
+        if (r.type === "head" && r.upstream && bySh.get(r.upstream)) e.upstream = bySh.get(r.upstream);
+        return e;
+      });
+  };
+  /** Remembered for the session, like the app's per-repo setting. */
+  let graphRefFilter = null;
+  window.__GS_GRAPH_LOADS = [];
+  dynamic["graph:load"] = (req) => {
+    const list = graphRefList();
+    const known = new Set(list.map((e) => e.fullName));
+    if (req && req.refs !== undefined) {
+      const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r)) : [];
+      graphRefFilter = kept.length ? kept : null;
+    }
+    window.__GS_GRAPH_LOADS.push({ skip: req && req.skip, refs: req && req.refs, applied: graphRefFilter });
+    const filter = graphRefFilter;
+    const ticked = new Set(filter || []);
+    const rows = graphBase.rows
+      .filter((r) => !filter || !reachOnly[r.sha] || reachOnly[r.sha].some((f) => ticked.has(f)))
+      .map((r) => ({
+        ...r,
+        refs: filter ? r.refs.filter((c) => c.kind === "currentHead" || ticked.has(chipFullName(c))) : r.refs,
+      }));
+    return { ...graphBase, rows, nextSkip: rows.length, refFilter: filter, refList: list };
   };
 
   dynamic["commit:details"] = (sha) => commits[String(sha).slice(0, 8)];

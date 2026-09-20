@@ -7526,6 +7526,137 @@
     },
 
     /**
+     * The Branches picker (issue #30) FILTERS the graph; it does not highlight.
+     *
+     * Search with scope Branch+Tag dims the rows that do not carry a chip, and
+     * the gutter hover focuses one lane while the pointer is on it — neither is
+     * "show me only these branches". The picker is: tick refs and the host
+     * rebuilds the graph from page 0 around exactly those refs plus HEAD, and
+     * the chips follow (an unticked ref draws none; the current branch always
+     * does). Presets tick what they say, All restores everything, Escape hands
+     * focus back to the trigger, and a chip's own menu narrows to that chip.
+     *
+     * The fixture carries one row that only an unmerged remote branch reaches,
+     * so a filter has a ROW to drop and not just chips — without it the check
+     * would pass over a host that re-decorated the chips and walked nothing.
+     */
+    "the-branch-picker-narrows-the-graph-and-all-restores-it": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const rows = () => [...sr.querySelectorAll(".row")];
+      const chips = () => [...sr.querySelectorAll(".chip[data-ref]")];
+      const chip = (name) => chips().find((x) => x.dataset.ref === name);
+      const trigger = () => sr.querySelector(".gh-branches");
+      const label = () => text(trigger()?.querySelector(".lbl"));
+      const pop = () => sr.querySelector(".gh-branches-pop");
+      const loads = () => window.__GS_GRAPH_LOADS || [];
+      const lastLoad = () => loads()[loads().length - 1] || {};
+      const REMOTE_ONLY = "77aa88b9c0d1e2f3a4b5"; // reachable from origin/chore/dependabot-bump alone
+      const hasRow = (sha) => rows().some((r) => r.dataset.sha === sha);
+
+      // ── All: the whole history, every chip ──
+      const all = rows().length;
+      c.ok(all >= 11, `every branch's history is on screen (${all} rows)`);
+      c.ok(hasRow(REMOTE_ONLY), "including the row only an unmerged remote branch reaches");
+      // (the HEAD row's own tag sits behind its "+1" pill; the tagged release
+      // further down has a chip of its own to lose)
+      c.ok(!!chip("desktop-v1.5.1") && !!chip("origin/chore/dependabot-bump"), "with a tag chip and a remote chip to lose");
+      c.ok(!!trigger(), "the toolbar has a Branches trigger");
+      c.eq(label(), "All branches", "which says the graph is unfiltered");
+
+      // ── The picker lists EVERY ref, grouped, the current branch first ──
+      trigger()?.click();
+      await settle(300);
+      c.ok(!!pop(), "clicking it opens the picker");
+      const items = () => [...sr.querySelectorAll(".gh-branches-pop .gh-menuitem[data-ref]")];
+      c.ok(items().length >= 14, `every branch and tag is offered (${items().length})`);
+      c.eq(items()[0]?.dataset.ref, "refs/heads/main", "the current branch is pinned first");
+      c.ok(
+        [...sr.querySelectorAll(".gh-branches-pop .gh-pop-title")].map(text).join("|").includes("Local|Remote|Tags"),
+        "grouped Local / Remote / Tags",
+      );
+      const presets = [...sr.querySelectorAll(".gh-branches-pop .gh-preset")].map(text);
+      c.eq(presets.join("|"), "Current branch|Current + upstream|Local only|All", "the four presets");
+      // The filter box is where typing goes, and it takes focus on open.
+      c.ok(sr.activeElement?.matches(".gh-pop-filter input"), "the filter box has focus");
+
+      // ── Current branch: the graph is REBUILT around main + HEAD ──
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
+      await settle(700);
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["refs/heads/main"]), "the host was asked for exactly main, fully qualified");
+      c.eq(lastLoad().skip, 0, "and from page 0 — the accumulated pages belonged to the old history");
+      c.eq(rows().length, all - 1, "the row only the unticked remote reaches is gone");
+      c.ok(!hasRow(REMOTE_ONLY), "(that one)");
+      c.ok(!!chip("main"), "the current branch keeps its chip");
+      c.ok(!chip("main")?.dataset.remotes, "without its folded origin/main — that ref is not ticked");
+      c.ok(!chip("desktop-v1.5.1") && !sr.querySelector(".chip-tag"), "an unticked tag draws no chip");
+      c.ok(!sr.querySelector(".chip-overflow"), "and nothing is left to fold behind a +N pill");
+      c.ok(!chip("redesign/issues-detail"), "nor does an unticked local branch");
+      c.eq(label(), "main", "the trigger names the filter");
+      c.ok(!!pop(), "and the picker stays open for the next tick");
+      c.eq(
+        sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/heads/main']")?.getAttribute("aria-checked"),
+        "true",
+        "main reads ticked",
+      );
+
+      // ── A tick ADDS: main + a tag ──
+      sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/tags/desktop-v1.5.1']")?.click();
+      await settle(700);
+      c.eq(
+        JSON.stringify(lastLoad().refs),
+        JSON.stringify(["refs/heads/main", "refs/tags/desktop-v1.5.1"]),
+        "ticking a second ref adds it",
+      );
+      c.ok(!!chip("desktop-v1.5.1"), "and its chip comes back");
+      c.eq(label(), "main, desktop-v1.5.1", "two names fit the trigger");
+
+      // ── All restores everything ──
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=all]")?.click();
+      await settle(700);
+      c.eq(lastLoad().refs, null, "All asks for null, never an empty list");
+      c.eq(rows().length, all, "every row is back");
+      c.ok(!!chip("origin/chore/dependabot-bump") && !!sr.querySelector(".chip-overflow"), "and every chip, the +N pill included");
+      c.ok(!!chip("main")?.dataset.remotes, "main folds origin/main again");
+      c.eq(label(), "All branches", "the trigger says so");
+
+      // ── Escape closes it and hands focus back to the trigger ──
+      // Dispatched on the element that HAS the keyboard: on `document` the
+      // handler's e.target.closest() would throw and the check would pass on a
+      // broken build.
+      const focused = sr.activeElement || document.activeElement;
+      focused.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(300);
+      c.ok(!pop(), "Escape closes the picker");
+      c.ok(sr.activeElement === trigger(), `and focus returns to the trigger (${sr.activeElement?.className})`);
+
+      // ── A chip's own menu: show only this branch ──
+      const target = chip("redesign/issues-detail");
+      c.ok(!!target, "a branch chip to right-click");
+      if (!target) return;
+      const r = target.getBoundingClientRect();
+      target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: r.left + 8, clientY: r.top + 8 }));
+      await settle(300);
+      const menu = sr.querySelector(".gh-chip-menu");
+      c.ok(!!menu, "right-clicking a chip opens its filter menu");
+      menu?.querySelector("[data-chip-action=only]")?.click();
+      await settle(700);
+      c.eq(
+        JSON.stringify(lastLoad().refs),
+        JSON.stringify(["refs/heads/redesign/issues-detail"]),
+        "Show only this branch narrows to it",
+      );
+      c.ok(!sr.querySelector(".gh-chip-menu"), "and the menu closes");
+      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !!chip("main") && !chip("desktop-v1.5.1"),
+        "the graph is that branch plus HEAD, chips included");
+      c.eq(label(), "redesign/issues-detail", "the trigger names it");
+    },
+
+    /**
      * Clearing a search clears the RESULTS, however long its debounce.
      *
      * Explore's code search waits for Enter — `debounceMs: 100_000`, because
