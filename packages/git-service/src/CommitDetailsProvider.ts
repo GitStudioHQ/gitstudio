@@ -56,9 +56,10 @@ export class CommitDetailsProvider {
     // `-m --first-parent` is the portable spelling of "diff a merge against
     // its first parent only": -m makes merges show a diff at all, and
     // --first-parent narrows it to one parent on every git since 1.x (the
-    // `--diff-merges=first-parent` alias is 2.31+). No -z: paths are not
-    // parsed here, only counted, and every numstat entry is exactly one line
-    // even with C-quoted names.
+    // `--diff-merges=first-parent` alias is 2.31+; verified on 2.49 that a
+    // user's log.diffMerges=combined does not override it). No -z: paths are
+    // not parsed here, only counted, and every numstat entry is exactly one
+    // line even with C-quoted names.
     const r = await this.process.run(
       [
         "log",
