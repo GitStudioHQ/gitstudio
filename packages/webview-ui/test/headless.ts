@@ -103,7 +103,10 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
         "--hide-scrollbars",
         "--no-sandbox",
         `--window-size=${width},${height}`,
-        "--virtual-time-budget=6000",
+        // Virtual time: Chrome fast-forwards timers, so a generous budget costs
+        // nothing on a page that finishes early — and a paging test on a slow
+        // runner does not run out of it.
+        "--virtual-time-budget=20000",
         "--dump-dom",
         `file://${page}`,
       ],

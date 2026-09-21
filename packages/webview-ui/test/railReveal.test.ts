@@ -32,7 +32,10 @@ const MOUNT = `
   });
   const page1 = Array.from({ length: 150 }, (_, i) => row(i));
   const page2 = Array.from({ length: 200 }, (_, i) => row(150 + i));
-  const raf = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+  // A timer, not a frame: under --virtual-time-budget headless Chrome serviced
+  // no animation frame on the Windows runner, and the page sat at PENDING
+  // until the budget ran out. Nothing the rail does waits on a frame.
+  const raf = () => new Promise((r) => setTimeout(r, 30));
   const rail = document.createElement("gitstudio-commit-rail");
   const actions = [];
   rail.onAction = (a) => actions.push(a);
