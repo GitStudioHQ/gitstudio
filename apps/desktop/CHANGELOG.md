@@ -9,6 +9,32 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [2.0.2] - 2026-09-21
+
+### Added
+- **Filter the Commit Graph by branch.** A **Branches** picker in the Commits
+  toolbar rebuilds the graph around only the refs you tick, instead of every
+  branch, remote and tag at once. Presets for **Current branch**, **Current +
+  upstream**, **Local only** and **All**; a filter box for busy repositories;
+  ref chips follow the selection; right-click (or ⌥-click) a chip for **Show
+  only this branch** / **Add to filter** / **Remove from filter** / **Checkout**.
+  Remembered per repository. Revealing a commit the filter hides says so and
+  offers **Show all branches**. (#30)
+
+### Fixed
+- **Compare lost the file you were reading.** A change under `.git` (another
+  tool's fetch, or git refreshing its index under a plain `git status`), ⌘R, or
+  coming back to the window after editing in your editor rebuilt the Compare
+  view and opened its *first* file. Compare now re-reads the comparison in
+  place: if nothing changed the page is untouched, if it changed the file you
+  had open is reopened, and only when that file left the comparison does the
+  selection move. (#24)
+- **The Commits view's CHANGES column cost up to three git processes per row**
+  and stopped answering past sixty rows; it is one process per visible window
+  now, and every row is answered. The Code view's commit count no longer walks
+  the whole history on every visit.
+
+
 ## [2.0.1] - 2026-09-19
 
 ### Fixed

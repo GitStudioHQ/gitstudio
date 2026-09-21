@@ -4,6 +4,83 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-09-21
+
+### Added
+- **Filter the Commit Graph by branch.** A **Branches** picker in the graph's
+  toolbar — and in the Commits sidebar — rebuilds the graph around only the
+  refs you tick, JetBrains Git Log / Git Graph style, instead of every branch,
+  remote and tag at once. Presets for **Current branch**, **Current + upstream**,
+  **Local only** and **All**; a filter box for busy repositories; ref chips
+  follow the selection; right-click (or ⌥-click) a chip for **Show only this
+  branch** / **Add to filter** / **Remove from filter** / **Checkout**. The
+  selection is remembered per repository. Revealing a commit the filter hides
+  says so and offers **Show all branches**. (#30)
+
+### Fixed
+- **Interactive rebase refused to fold the newest commit into the one before
+  it** — "The top commit has nothing above it to fold into" — while allowing a
+  squash on the oldest commit, which git cannot run. The guard checked the
+  wrong end of a newest-first list. A fold whose target commit is later
+  dropped is now flagged on its row instead of silently orphaned, and the
+  rebase workspace selects commits the way the graph does (`--no-merges
+  --topo-order --cherry-pick --right-only`), so it no longer builds plans git
+  refuses. (#27)
+- **Compare Branches/Tags collapsed every open file diff on its own** — every
+  30 seconds to a couple of minutes, on the Changes view's refresh, or when the
+  window regained focus, with no change to either branch. The panel replaced
+  its whole page on every repository event (vscode.git's periodic status
+  refresh included); it now repaints only when the comparison itself changed,
+  open files, the filter and the layout survive the repaints that do happen,
+  and *Collapse all* sticks. (#24)
+- **Interactive rebase, reword and fold correctness** in the shared rebase
+  runner: a reword entry with an empty sha matched every commit git asked
+  about, so a message could land on the wrong commit; a reword queue left by an
+  aborted rebase could be replayed by the next rebase of the same branch; and
+  a commit whose patch was already upstream wedged the rebase.
+- **Merge editor:** resolving a conflict with no common ancestor (both sides
+  added the file) appended a blank line the accepted side never had.
+- **Commit graph:** typing in the search box moved the selection and re-fetched
+  details on every keystroke (Enter travels now; j/k move); a refresh kept a
+  selection whose row was gone; *Show in graph* on a commit beyond the loaded
+  pages said nothing (it says so now, and the details still load); the CHANGES
+  column's counts line up; the graph|details resizer stopped 60px past the
+  width where columns vanish; the sidebar Commits view's *Jump to HEAD* and
+  reveal now page toward a commit that is not loaded yet instead of doing
+  nothing.
+- **AI results panel:** a Markdown link whose URL contained a quote could
+  inject an attribute into the rendered anchor. Escaped like every other panel.
+- **Crash reports** (anonymous, opt-out) still carried your project path on
+  Windows and in any path with a space in it. The scrubber's last line of
+  defence now holds there too.
+- **Fast-forward pull without checkout** split a remote named with a slash
+  (`team/eu`) at the first slash and fetched from the wrong remote.
+
+### Changed
+- **The graph's CHANGES column costs one git process per visible window**
+  instead of two per row — and every row is answered: the old version capped
+  at sixty rows and left the rest blank for the session.
+- **The Changes view no longer re-checks AI availability on every state push**
+  (a debounced firehose during a rebase or fetch), and no longer re-sends its
+  full state a second time when nothing changed. A CLI agent installed after
+  the window opened is noticed within five minutes.
+- The graph repaints once per selection, not twice; an unstaged file is diffed
+  once, not twice.
+
+## [1.12.1] - 2026-09-04
+
+### Added
+- **Process Audit — a diagnostic for tracing OS password/permission prompts.**
+  A new setting, `gitstudio.debug.logChildProcesses` (off by default), records
+  every child process GitStudio launches — the binary, its full arguments, the
+  working directory, and the environment variables GitStudio adds — to a
+  **GitStudio: Process Audit** output channel (open it from the command palette).
+  It exists for one job: when a macOS/Windows credential or authorization prompt
+  appears while you work, this shows exactly what GitStudio handed the OS at that
+  moment, so a prompt raised by a credential helper, a git hook, or the editor's
+  own updater can be traced to its real source rather than guessed at. It costs
+  nothing when off, and secret-looking values are scrubbed.
+
 ## [1.12.0] - 2026-08-26
 
 ### Added

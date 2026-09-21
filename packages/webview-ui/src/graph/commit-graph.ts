@@ -473,6 +473,15 @@ export class CommitGraph extends LitElement {
       min-width: 214px;
       max-width: min(${CTX_MENU_W}px, calc(100vw - 12px));
     }
+    /* The commit menu's title is "<sha7> · <subject>", and a subject can run
+       to 120 characters: capped at ${CTX_MENU_W}px the title wrapped into a
+       five-line uppercase header. One line, ellipsized — the rail's menu
+       header already reads this way. */
+    .gh-pop.gh-ctx .gh-pop-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .gh-pop.gh-ctx .gh-menuitem .lbl {
       min-width: 0;
       overflow: hidden;
