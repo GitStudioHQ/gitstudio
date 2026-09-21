@@ -1096,7 +1096,11 @@ html.is-mac .topbar { padding-left: 78px; }
   height: 28px;
   margin-bottom: -4px;
   font-size: calc(var(--text-base) - 0.5px);
-  color: color-mix(in srgb, var(--app-muted) 80%, transparent);
+  /* The mute is the token itself: 80% toward transparent measured 3.55:1
+     in light and 4.33:1 in dark, on every scene, because a fade toward
+     transparent spends contrast on a light ground. Plain --app-muted is
+     5.4:1 and 6.1:1; the smaller size still sets the gear apart. */
+  color: var(--app-muted);
 }
 .nav-foot-item .glyph .codicon { font-size: 14px; }
 /* Group divider in the rail (Local views ↑ / GitHub views ↓). */

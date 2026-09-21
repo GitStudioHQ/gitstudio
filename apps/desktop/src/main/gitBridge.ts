@@ -20,6 +20,7 @@ import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
+import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
@@ -2140,14 +2141,32 @@ export class GitBridge {
     if (!name || !safeArg(name)) {
       return UNSAFE_REF_RESULT;
     }
+    if (req.fullName !== undefined && !safeArg(req.fullName)) {
+      return UNSAFE_REF_RESULT;
+    }
     return this.serialize(async () => {
-      const args =
-        req.refKind === "remote"
-          ? (await planRemoteCheckout(ctx.process, name)).args
-          : req.refKind === "tag"
-            ? // A tag is a fixed point, so this one really does detach.
-              ["checkout", "--detach", name]
-            : ["checkout", name];
+      // By the FULL name when the door sent one (the graph's menus do): the
+      // planner reads the namespace and checks a branch out by its name under
+      // refs/heads/, where `name` — git's short form — is "heads/release"
+      // beside a tag of that name, and `git checkout heads/release` detaches
+      // at the branch tip. The Branches view still sends the short name alone,
+      // and keeps the arms it always had.
+      let args: string[];
+      if (req.fullName !== undefined) {
+        const plan = await planRefCheckout(ctx.process, req.fullName);
+        if (!plan) {
+          return UNSAFE_REF_RESULT;
+        }
+        args = plan.args;
+      } else {
+        args =
+          req.refKind === "remote"
+            ? (await planRemoteCheckout(ctx.process, name)).args
+            : req.refKind === "tag"
+              ? // A tag is a fixed point, so this one really does detach.
+                ["checkout", "--detach", name]
+              : ["checkout", name];
+      }
       const r = await ctx.process.run(args);
       if (r.code === 0) {
         return { ok: true, changed: true };

@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
 import type { GitContext } from "@gitstudio/git-service/index";
-import type { GraphMenuItem, WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
 import { pausedForUser } from "../git/pausedForUser";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
+import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
-import { ellipsizeMiddle, resolveCheckoutTarget } from "./checkoutTarget";
+import { ellipsizeMiddle, resolveCheckoutTarget, type MenuRef } from "./checkoutTarget";
 
 /** The commit actions as plain items for the IN-GRAPH popover (no vscode types
  * / codicon markup) — the webview renders these; ids match runCommitAction. */
@@ -37,12 +37,16 @@ const REF_ACTION = "ref:";
 /**
  * The id `runCommitAction` checks a ref out under — what a "Checkout <ref>"
  * item posts back, and what the chip's own menu asks for (issue #30), so
- * both doors run the same arm with the same questions. The current branch is
- * a local head here for the id's shape only; neither menu offers to switch
- * to where you already are.
+ * both doors run the same arm with the same questions.
+ *
+ * It carries the FULL name, never the chip's short one. `%(refname:short)`
+ * is only shortest-unambiguous: with a tag and a branch both called
+ * "release" the branch is "heads/release", and `git checkout heads/release`
+ * detached HEAD at the branch tip under a toast saying it had switched. The
+ * namespace in the full name is also what tells the arm how to check it out.
  */
-export function refActionId(kind: WireRef["kind"], name: string): string {
-  return `${REF_ACTION}${kind === "currentHead" ? "head" : kind}:${name}`;
+export function refActionId(fullName: string): string {
+  return `${REF_ACTION}${fullName}`;
 }
 
 /**
@@ -57,10 +61,10 @@ export function refActionId(kind: WireRef["kind"], name: string): string {
  * Built host-side from the refs the panel already holds rather than from the
  * clicked chip, which is deliberate: a row's local branch and its remote twin
  * render as ONE chip, and any ref that does not fit the column is folded into a
- * "+N" pill, so a chip-driven menu could never reach either. The name rides in
- * the id, so this needs no protocol change.
+ * "+N" pill, so a chip-driven menu could never reach either. The full name
+ * rides in the id, so this needs no protocol change.
  */
-export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
+export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
   const items: GraphMenuItem[] = [];
   for (const ref of refs) {
     // Already on it — offering to switch to where you are is noise.
@@ -69,7 +73,7 @@ export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
     }
     if (ref.kind === "head") {
       items.push({
-        id: refActionId("head", ref.name),
+        id: refActionId(ref.fullName),
         label: `Checkout ${ref.name}`,
         icon: "git-branch",
       });
@@ -80,14 +84,14 @@ export function refMenuItems(refs: readonly WireRef[]): GraphMenuItem[] {
       // a dialog that no longer exists, which is exactly the thing an ellipsis
       // is for. The tag arm below keeps its ellipsis because it still asks.
       items.push({
-        id: refActionId("remoteHead", ref.name),
+        id: refActionId(ref.fullName),
         label: `Checkout ${ref.name}`,
         icon: "cloud",
       });
     } else {
       // Ellipsis: checking out a tag confirms first, because it detaches HEAD.
       items.push({
-        id: refActionId("tag", ref.name),
+        id: refActionId(ref.fullName),
         label: `Checkout ${ref.name}…`,
         icon: "tag",
       });
@@ -120,7 +124,7 @@ interface CommitContext {
    * The refs sitting on this commit, when the caller knows them. Checkout uses
    * them to land you on a BRANCH rather than a detached HEAD — see checkout().
    */
-  readonly refs?: readonly WireRef[];
+  readonly refs?: readonly MenuRef[];
 }
 
 /**
@@ -199,7 +203,7 @@ export async function runCommitAction(
       flash("Copied commit message");
       return false;
     default:
-      // The per-ref checkout items carry their ref name in the id.
+      // The per-ref checkout items carry their ref's FULL name in the id.
       if (id.startsWith(REF_ACTION)) {
         return checkoutRef(id.slice(REF_ACTION.length), ctx, undo);
       }
@@ -210,43 +214,29 @@ export async function runCommitAction(
 // ── Individual actions ───────────────────────────────────────────────────────
 
 /**
- * Check out one of the refs on the row. `rest` is "<kind>:<name>"; a ref name may
- * itself contain ":" only in forms git rejects, but split on the FIRST colon
- * anyway so a odd name can never be silently truncated.
+ * Check out one of the refs on the row, by its FULL name. The namespace says
+ * how: a branch by its name under refs/heads/ (git looks that namespace up
+ * first, so a tag of the same name is only a warning), a remote-tracking
+ * branch straight onto a local one — no name prompt, "Checkout origin/x" does
+ * what it says, the same as clicking a local branch does — and a tag by its
+ * full name, which detaches, so it asks first. The plan is git-service's, so
+ * the desktop's graph menu means the same thing.
  *
- * Each arm mirrors the Branches view (views/branchActions.ts) exactly, so the
+ * The tag question mirrors the Branches view (views/branchActions.ts), so the
  * same operation asks the same question wherever you start it.
  */
 async function checkoutRef(
-  rest: string,
+  fullName: string,
   ctx: GitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
-  const sep = rest.indexOf(":");
-  const kind = sep < 0 ? "" : rest.slice(0, sep);
-  const name = sep < 0 ? "" : rest.slice(sep + 1);
-  if (!name) {
+  const plan = await planRefCheckout(ctx.process, fullName);
+  if (!plan) {
     return false;
   }
-
-  if (kind === "head") {
-    return withUndo(undo, `Checkout ${name}`, () =>
-      runGit(ctx, ["checkout", name], `Switched to ${name}`),
-    );
-  }
-
-  if (kind === "remoteHead") {
-    // Straight to the branch — no name prompt. "Checkout origin/x" now does what
-    // it says, the same as clicking a local branch does.
-    const plan = await planRemoteCheckout(ctx.process, name);
-    return withUndo(undo, plan.undoLabel, () =>
-      runGit(ctx, plan.args, plan.success),
-    );
-  }
-
-  if (kind === "tag") {
+  if (plan.detaches) {
     const ok = await promptConfirm({
-      title: `Check out tag ${name}?`,
+      title: `Check out tag ${fullName.replace(/^refs\/tags\//, "")}?`,
       message:
         "A tag is a fixed point, so you'll be on a detached HEAD — not on any branch. Commits made here belong to nothing until you create a branch for them.",
       confirmLabel: "Checkout",
@@ -254,12 +244,10 @@ async function checkoutRef(
     if (!ok) {
       return false;
     }
-    return withUndo(undo, `Checkout ${name}`, () =>
-      runGit(ctx, ["checkout", "--detach", name], `Checked out ${name}`),
-    );
   }
-
-  return false;
+  return withUndo(undo, plan.undoLabel, () =>
+    runGit(ctx, plan.args, plan.success),
+  );
 }
 
 /**

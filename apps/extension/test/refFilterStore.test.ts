@@ -152,27 +152,54 @@ test("a reveal into a filtered graph asks git before paging, and says so when th
   );
 });
 
-test("the chip menu's checkout runs the commit menu's own ref-checkout arm", async () => {
+test("the chip menu's checkout runs the commit menu's own ref-checkout arm, by the FULL name", async () => {
   // Right-clicking a chip used to open the row's commit menu, whose first
   // items check out the refs on that row. The chip's filter menu took that
   // click, so it offers the checkout too — and the host must run it through
   // the same arm (refActionId → runCommitMenuAction), with the same questions,
-  // from both webview entries.
+  // from both webview entries. By the full name the webview resolved through
+  // the ref list: the chip's own name is git's short form, "heads/release"
+  // beside a tag of that name, and `git checkout heads/release` detaches.
   const host = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
-  assert.match(host, /case "checkoutRef":[\s\S]*?void this\.runCommitMenuAction\(msg\.sha, refActionId\(msg\.kind, msg\.name\)\);/);
+  assert.match(host, /case "checkoutRef":[\s\S]*?void this\.runCommitMenuAction\(msg\.sha, refActionId\(msg\.fullName\)\);/);
+  assert.doesNotMatch(host, /refActionId\(msg\.kind, msg\.name\)/, "the short name never reaches the arm");
   const actions = await readFile(`${SRC}/graph/commitActions.ts`, "utf8");
-  assert.match(actions, /export function refActionId\(kind: WireRef\["kind"\], name: string\): string \{\s*return `\$\{REF_ACTION\}\$\{kind === "currentHead" \? "head" : kind\}:\$\{name\}`;/);
+  assert.match(actions, /export function refActionId\(fullName: string\): string \{\s*return `\$\{REF_ACTION\}\$\{fullName\}`;/);
   // …and the menu's own rows are built through it, so there is one id format.
-  assert.equal((actions.match(/refActionId\("(head|remoteHead|tag)", ref\.name\)/g) ?? []).length, 3);
+  assert.equal((actions.match(/refActionId\(ref\.fullName\)/g) ?? []).length, 3);
+  // The arm itself plans from the full name, through git-service, so the
+  // desktop's graph menu means the same thing.
+  assert.match(actions, /const plan = await planRefCheckout\(ctx\.process, fullName\);/);
+  assert.doesNotMatch(actions, /\["checkout", name\]/, "no arm hands git a bare short name");
   const WEBVIEW = fileURLToPath(new URL("../../../packages/webview-ui/src/graph", import.meta.url));
   for (const entry of ["main.ts", "sidebar-main.ts"]) {
     const text = await readFile(`${WEBVIEW}/${entry}`, "utf8");
     assert.match(
       text,
-      /case "checkoutRef":\s*vscode\.postMessage\(\{ type: "checkoutRef", sha: action\.sha, name: action\.name, kind: action\.kind \}\);/,
-      `${entry} posts the chip menu's checkout to the host`,
+      /case "checkoutRef":\s*vscode\.postMessage\(\{\s*type: "checkoutRef",\s*sha: action\.sha,\s*name: action\.name,\s*kind: action\.kind,\s*fullName: action\.fullName,\s*\}\);/,
+      `${entry} posts the chip menu's checkout to the host, full name included`,
     );
   }
+});
+
+test("a failed stats batch goes back unanswered, and the webview releases it for another try", async () => {
+  // The per-sha stats answered zeros for a failed diff; the one-spawn batch
+  // did the same for the whole window, and a zero is an ANSWER the webview
+  // records and never re-asks — so one transient failure blanked every
+  // visible CHANGES cell for the session. The host posts `unanswered` now,
+  // and the webview routes it to the retry path it already had.
+  const host = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
+  const push = host.slice(host.indexOf("private async pushRowStats("));
+  assert.match(push, /answered = await active\.ctx\.commitDetails\.getCommitStats\(wanted\);/);
+  assert.match(push, /this\.post\(rowStatsReply\(wanted, answered\)\);/, "the reply is built by the pure planner, thrown batch and all");
+  assert.doesNotMatch(push, /files: 0, additions: 0, deletions: 0/, "no zeros are minted in the host for a thrown batch");
+  const WEBVIEW = fileURLToPath(new URL("../../../packages/webview-ui/src/graph", import.meta.url));
+  const main = await readFile(`${WEBVIEW}/main.ts`, "utf8");
+  assert.match(
+    main,
+    /case "rowStats": \{\s*graph\.setRowStats\(message\.stats\);[\s\S]*?if \(message\.unanswered\?\.length\) graph\.failRowStats\(message\.unanswered, false\);/,
+    "the webview releases the unanswered shas WITHOUT recording them",
+  );
 });
 
 test("the store is installed before the first graph host is built", async () => {

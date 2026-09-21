@@ -135,6 +135,10 @@ const MIN_GUTTER_WIDTH = 56;
 const MAX_GUTTER_COLUMNS = 16;
 /** Trigger a loadMore when within this many rows of the bottom. */
 const LOAD_MORE_THRESHOLD = 60;
+/** The widest a cursor-positioned menu (the commit menu, a chip's menu) can
+ *  render — the .gh-ctx max-width, and the W both menus clamp their x with,
+ *  so the shell never runs off the right edge under a long ref name. */
+const CTX_MENU_W = 240;
 /**
  * How many ref chips render inline is decided by WIDTH alone — see refsHtml.
  * There is deliberately no count cap: one used to sit here at 4, applied before
@@ -226,8 +230,11 @@ export type GraphAction =
    *  around these fully-qualified refs (null = all), and remember it. */
   | { type: "setRefFilter"; refs: GraphRefFilter }
   /** "Checkout <ref>" from a chip's own menu — the host runs it as it runs
-   *  the commit menu's item of the same name (a tag asks first). */
-  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"] };
+   *  the commit menu's item of the same name (a tag asks first). `fullName`
+   *  is the ref resolved through the picker's list (chipRefs): the chip's
+   *  own name is git's SHORT form, which names a revision rather than a
+   *  branch the moment a tag shares it. */
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };
 
 /** One item in the in-graph commit actions popover (from the host). */
 export interface CommitMenuItem {
@@ -323,7 +330,10 @@ export class CommitGraph extends LitElement {
       border-radius: 999px;
       font-size: 12px;
       font-weight: 600;
-      color: var(--vscode-textLink-foreground, var(--gs-accent));
+      /* The link blue pulled a step toward the foreground, like .chip-head:
+         on its own accent wash the plain blue was 3.94:1 in light; 15% is
+         4.62:1 there, and still reads as the accent. */
+      color: color-mix(in srgb, var(--vscode-textLink-foreground, var(--gs-accent)) 85%, var(--vscode-foreground));
       background: color-mix(in srgb, var(--gs-accent) 13%, transparent);
       border: 1px solid color-mix(in srgb, var(--gs-accent) 30%, transparent);
     }
@@ -449,8 +459,26 @@ export class CommitGraph extends LitElement {
       .gh-pop { animation: none; }
     }
     /* The commit context popover is positioned at the cursor (fixed), not
-       anchored to a header control. */
-    .gh-pop.gh-ctx { position: fixed; top: auto; right: auto; min-width: 214px; }
+       anchored to a header control. Its max-width is the W the two menus
+       clamp their x with (renderCommitMenu, renderChipMenu), border-box so
+       the rendered shell IS that wide and not that plus padding: a
+       "Checkout origin/<long name>" item is a ref name, and unbounded it
+       widened the menu past the clamp and off the pane. The item's label
+       ellipsizes instead; the row's tooltip and the chip still say it all. */
+    .gh-pop.gh-ctx {
+      position: fixed;
+      top: auto;
+      right: auto;
+      box-sizing: border-box;
+      min-width: 214px;
+      max-width: min(${CTX_MENU_W}px, calc(100vw - 12px));
+    }
+    .gh-pop.gh-ctx .gh-menuitem .lbl {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .gh-menuitem.danger { color: var(--vscode-errorForeground, #e15a5a); }
     .gh-menuitem.danger:hover {
       background: color-mix(in srgb, var(--vscode-errorForeground, #e15a5a) 16%, transparent);
@@ -465,9 +493,10 @@ export class CommitGraph extends LitElement {
       /* Mixed into the BACKGROUND, not into transparent. Mixing toward
          transparent dims correctly over a dark ground and washes out over a
          light one: the same 50% measured 4.11:1 in dark and 2.93:1 in light.
-         Against the background it composites the same way in both — 6.24:1
-         and 4.56:1. */
-      color: color-mix(in srgb, var(--vscode-foreground) 66%, var(--vscode-editor-background));
+         Against the background it composites the same way in both. 66% was
+         4.56:1 on the editor background; the menu's own ground is a 6% wash
+         of it, where that read 4.10:1 in light. 70% is 4.61:1 there. */
+      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
       user-select: none;
     }
     .gh-menuitem {
@@ -509,10 +538,12 @@ export class CommitGraph extends LitElement {
       margin: 4px 4px;
       background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
     }
+    /* The title's mix, for the title's reason: 45% toward transparent read
+       2.51:1 on the light menu. */
     .gh-pop-hint {
       padding: 3px 8px 4px;
       font-size: 10.5px;
-      color: color-mix(in srgb, var(--vscode-foreground) 45%, transparent);
+      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
     }
 
     /* ── Search scope trigger (segmented-style button inside the search box) ── */
@@ -564,7 +595,10 @@ export class CommitGraph extends LitElement {
     /* Anchored to the trigger's right edge and opening leftwards, like the
        Columns popover: the header's spare width is on that side. Never taller
        than the pane below the header: the bottom panel can be 200px tall, and
-       a popover that ran off it would leave the Tags group unreachable. */
+       a popover that ran off it would leave the Tags group unreachable. The
+       two max-heights here are the first paint's; fitBranchesPopover then
+       measures the room the host really has (its bottom, less a dock overlay
+       it publishes as --dock-reserve) and sets both inline. */
     .gh-branches-pop {
       min-width: 268px;
       max-width: 340px;
@@ -942,9 +976,10 @@ export class CommitGraph extends LitElement {
       /* Mixed into the BACKGROUND, not into transparent. Mixing toward
          transparent dims correctly over a dark ground and washes out over a
          light one: the same 50% measured 4.11:1 in dark and 2.93:1 in light.
-         Against the background it composites the same way in both — 6.24:1
-         and 4.56:1. */
-      color: color-mix(in srgb, var(--vscode-foreground) 66%, var(--vscode-editor-background));
+         Against the background it composites the same way in both. 66% was
+         4.56:1 on the editor background, but the header sits on its own 2%
+         wash (above), where it was 4.41:1; 68% is 4.69:1 there, 6.32:1 dark. */
+      color: color-mix(in srgb, var(--vscode-foreground) 68%, var(--vscode-editor-background));
       user-select: none;
     }
     /* Header cells let the right-edge grip escape (overflow:visible); the label
@@ -1298,8 +1333,14 @@ export class CommitGraph extends LitElement {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    /* Remote prefix ("origin/") recedes so the branch name carries the chip. */
-    .chip .rp { opacity: 0.58; }
+    /* Remote prefix ("origin/") recedes so the branch name carries the chip —
+       by WEIGHT, not by ink. It was opacity 0.58, which is a mix toward the
+       chip's own ground, and the arithmetic has no room for that: the remote
+       ink clears AA on the light wash by 0.4 (4.86:1 on rgb 238), so a
+       prefix dimmed by even a tenth is under 4.5 — and the light theme spends
+       contrast faster than dark on every step. Regular against the chip's
+       550 is a step the eye reads at 11px and costs nothing. */
+    .chip .rp { font-weight: 400; }
     /* Cloud tail on a local chip whose remote twin was folded into it. */
     .chip .tail {
       font-size: 10px;
@@ -1327,20 +1368,26 @@ export class CommitGraph extends LitElement {
       background: currentColor;
       box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 35%, transparent);
     }
-    /* local branch = quiet accent wash, accent text + icon. */
+    /* local branch = quiet accent wash, accent text + icon. The ink is the
+       link colour pulled a step toward the foreground: on the wash (not on the
+       bare editor background) the plain link blue measured 4.14:1 in light,
+       and the wash is the pill. 12% clears AA at 4.69:1 and is still the blue. */
     .chip-head {
-      color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+      color: color-mix(in srgb,
+        var(--vscode-textLink-foreground, var(--vscode-focusBorder)) 88%, var(--vscode-foreground));
       border-color: transparent;
       background: color-mix(in srgb,
         var(--vscode-focusBorder) 13%, var(--vscode-editor-background));
     }
-    .chip-head .ico { color: var(--vscode-textLink-foreground, var(--vscode-focusBorder)); }
+    .chip-head .ico { color: inherit; }
     /* remote = the quietest kind. It is context ("this also exists upstream"),
        not a thing you act on, so it gets no hue of its own — just a neutral
        wash and dimmed text. This is what stops a row of refs reading as a row
-       of competing buttons. */
+       of competing buttons. Dimmed, but measured on its own wash rather than
+       on the editor background: the description colour alone is 4.19:1 on the
+       light wash, and 15% toward the foreground makes it 4.86:1 (5.68:1 dark). */
     .chip-remote {
-      color: var(--vscode-descriptionForeground);
+      color: color-mix(in srgb, var(--vscode-descriptionForeground) 85%, var(--vscode-foreground));
       border-color: transparent;
       background: color-mix(in srgb,
         var(--vscode-foreground) 8%, var(--vscode-editor-background));
@@ -1348,13 +1395,15 @@ export class CommitGraph extends LitElement {
     .chip-remote .ico { color: inherit; opacity: 0.8; }
     /* tag = amber text on a bare wash. Uses --gs-amber (the legibility-tuned
        gitDecoration "modified" foreground), NOT raw charts-yellow, which fails
-       AA as small text on light themes. */
+       AA as small text on light themes. Tuned on white, though, and the wash
+       is not white: 4.48:1 on it in light. 6% toward the foreground is
+       4.72:1, and still the amber. */
     .chip-tag {
-      color: var(--gs-amber);
+      color: color-mix(in srgb, var(--gs-amber) 94%, var(--vscode-foreground));
       border-color: transparent;
       background: color-mix(in srgb, var(--gs-amber) 13%, var(--vscode-editor-background));
     }
-    .chip-tag .ico { color: var(--gs-amber); }
+    .chip-tag .ico { color: inherit; }
     /* The "+N" overflow pill must never shrink or ellipsize — it's the count. */
     /* "+2" is a footnote, not a peer of the branch chips — no box, just a quiet
        count so the eye lands on the actual ref names. */
@@ -1864,7 +1913,17 @@ export class CommitGraph extends LitElement {
     }
     // …and on the side of its trigger that has the room — every update while
     // open, because a tick widens the trigger's label and moves its edges.
-    if (this.branchesOpen) this.fitBranchesPopover();
+    // Once more a tick later: in a pane too narrow for its header the header
+    // is still settling when this runs (measured: the trigger 6px further
+    // right one task on), and a shell fitted to the wrong anchor sits 6px
+    // off the pane. Inline styles change no reactive state, so this cannot
+    // loop.
+    if (this.branchesOpen) {
+      this.fitBranchesPopover();
+      setTimeout(() => {
+        if (this.branchesOpen) this.fitBranchesPopover();
+      }, 0);
+    }
 
     const scroller = this.scroller;
     if (scroller) {
@@ -2400,15 +2459,65 @@ export class CommitGraph extends LitElement {
    * left edge that runs the presets and the filter box off the pane, so it
    * opens rightwards instead. Measured, not a width breakpoint: where the
    * trigger lands depends on the search box and the count beside it.
+   *
+   * When NEITHER side has the room — a graph pane at its 320px floor beside
+   * a wide details pane — choosing a side only chooses which edge to run
+   * off, and the host clips the overflow (`overflow: hidden`): the filter
+   * box's end and the CURRENT tag were cut, and the pixels there hit-tested
+   * to the pane behind. So the shell is then pulled back inside the pane by
+   * the overflow, as far as the pane's own left edge allows.
+   *
+   * The height is measured too. The CSS caps the shell at 100vh less the
+   * header, but a host may overlay the bottom of the pane: the desktop's
+   * terminal dock is an overlay footer that shrinks nothing above it, and it
+   * publishes its height as `--dock-reserve`, which inherits into this shadow
+   * root. With the dock expanded the picker's tail — the Tags group, the
+   * "N of M ticked" hint — sat under the terminal, and clicked the terminal.
+   * The list gives its height up first, so the presets, the filter box and
+   * the hint stay put; the shell scrolls as a whole only below that.
    */
   private fitBranchesPopover(): void {
     const pop = this.renderRoot.querySelector<HTMLElement>(".gh-branches-pop");
     const anchor = pop?.parentElement?.getBoundingClientRect();
     if (!pop || !anchor) return;
+    const host = this.getBoundingClientRect();
     // Anchored right, the shell's left edge is the anchor's right edge minus
     // the shell's own width — the same width whichever side it opens on.
-    const overLeft = anchor.right - pop.offsetWidth < this.getBoundingClientRect().left + 6;
+    const overLeft = anchor.right - pop.offsetWidth < host.left + 6;
     pop.classList.toggle("open-right", overLeft);
+    // Then where it actually landed — the narrow-pane CSS rule opens it
+    // rightwards on its own — pulled back inside by any overflow, the pane's
+    // left edge winning when even that is not enough. `right` is released
+    // with it: a shell anchored by both edges would stretch, not move.
+    pop.style.left = "";
+    pop.style.right = "";
+    const r = pop.getBoundingClientRect();
+    let shift = 0;
+    if (r.right > host.right - 6) shift = host.right - 6 - r.right;
+    if (r.left + shift < host.left + 6) shift = host.left + 6 - r.left;
+    if (shift) {
+      pop.style.left = `${Math.round(r.left - anchor.left + shift)}px`;
+      pop.style.right = "auto";
+    }
+
+    const reserve =
+      parseFloat(getComputedStyle(this).getPropertyValue("--dock-reserve")) || 0;
+    // The border-box height the shell may have, top edge to the dock.
+    const room = host.bottom - reserve - r.top - 6;
+    // max-height is a CONTENT height on this content-box shell, so the
+    // border and padding come off first. The list gets what is left after
+    // the presets, the box and the hint: scrollHeight is the shell's content
+    // whatever its clamp, so (room − borders − scrollHeight + list) is the
+    // list height at which the whole shell lands on `room` exactly.
+    const ps = getComputedStyle(pop);
+    const borders = pop.offsetHeight - pop.clientHeight;
+    const pad = parseFloat(ps.paddingTop) + parseFloat(ps.paddingBottom);
+    pop.style.maxHeight = `${Math.max(120, Math.round(room - borders - pad))}px`;
+    const list = pop.querySelector<HTMLElement>(".gh-pop-list");
+    if (list) {
+      const share = room - borders - pop.scrollHeight + list.offsetHeight;
+      list.style.maxHeight = `${Math.max(56, Math.min(300, Math.round(share)))}px`;
+    }
   }
 
   private closePopovers(): void {
@@ -3807,7 +3916,7 @@ export class CommitGraph extends LitElement {
   private renderChipMenu() {
     const m = this.chipMenu;
     if (!m) return nothing;
-    const W = 240;
+    const W = CTX_MENU_W;
     const H = 34 + 5 * 28;
     const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
     const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
@@ -3866,7 +3975,9 @@ export class CommitGraph extends LitElement {
               data-chip-action="checkout"
               @click=${() => {
                 this.chipMenu = null;
-                this.onAction({ type: "checkoutRef", sha: m.sha, name: m.name, kind: m.kind });
+                // refs[0] is the chip's own ref, resolved through the list; the
+                // folded remote twins follow it.
+                this.onAction({ type: "checkoutRef", sha: m.sha, name: m.name, kind: m.kind, fullName: m.refs[0] });
               }}
             >
               <span class="codicon codicon-${checkout.icon}" aria-hidden="true"></span>
@@ -3992,8 +4103,10 @@ export class CommitGraph extends LitElement {
     if (!m) {
       return nothing;
     }
-    // Clamp to the viewport (approx sizes; refined once measured is fine).
-    const W = 220;
+    // Clamp to the viewport. W is the shell's CSS max-width, not a guess:
+    // a host-built "Checkout origin/<long name>" item made the menu wider
+    // than the 220 assumed here, and it ran off the pane.
+    const W = CTX_MENU_W;
     const H = 34 + m.items.length * 28;
     const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
     const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));

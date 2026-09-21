@@ -83,6 +83,7 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
+import type { RowRef } from "./refMenuItems";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
@@ -732,9 +733,12 @@ class App {
     this.terminalDock?.dispose();
     this.terminalDock = undefined;
     // Each repo starts Compare from its own current/main defaults — don't carry
-    // the previous repo's (possibly non-existent) refs over.
+    // the previous repo's (possibly non-existent) refs over. Nor the file that
+    // was open: another repository's comparison that happens to have a
+    // README.md would open it, third in its list, with nothing to say why.
     this.compareBase = undefined;
     this.compareHead = undefined;
+    this.compareOpenPath = undefined;
     const screen = el("div", "screen repo");
     screen.appendChild(this.topbar(info));
     // A left sidebar rail routes the main area; a vertical stack holds the routed
@@ -4611,7 +4615,6 @@ class App {
       if (activeRow) activeRow.classList.remove("active");
       activeRow = row;
       row.classList.add("active");
-      this.compareOpenPath = path;
       void this.openCompareFile(diff, path, oldPath);
     };
 
@@ -4636,7 +4639,15 @@ class App {
       if (cut > 0) meta.appendChild(span(f.path.slice(0, cut), "dc-file-dir"));
       row.append(st, meta);
       row.title = f.path;
-      row.addEventListener("click", () => open(f.path, row, f.oldPath));
+      // "The file you had open" is the one you CLICKED. The auto-opened first
+      // file used to be recorded too, so glancing at any comparison made its
+      // first file the one to reopen — and a later comparison of other refs
+      // that had that path (package.json, CHANGELOG.md) opened it instead of
+      // its own first file, with nothing on screen to say why.
+      row.addEventListener("click", () => {
+        this.compareOpenPath = f.path;
+        open(f.path, row, f.oldPath);
+      });
       fileScroll.appendChild(row);
       if (f.path === reopen) open(f.path, row, f.oldPath);
     });
@@ -7890,11 +7901,12 @@ class App {
       onRefClick: (name, kind) => this.routeView("branches", false, { ref: name, refKind: kind }),
       // The chip menu's "Checkout <ref>" (issue #30): through the context
       // menu's own door, so it asks what that menu's row of the same name asks.
-      onCheckoutRef: (sha, name, kind) =>
+      onCheckoutRef: (sha, name, kind, fullName) =>
         this.contextMenu.checkoutRef(sha, {
           name,
           kind: kind === "remoteHead" ? "remote" : kind === "tag" ? "tag" : "head",
           current: kind === "currentHead",
+          fullName,
         }),
       // Show the pane again WITHOUT re-selecting: selectCommit() would call
       // closeGraphDiff() and dispose a diff the user still has open.
@@ -8798,15 +8810,15 @@ class App {
    * whatever it happens to point to — never what someone means. The sidebar's
    * ref sections filter it out for the same reason.
    */
-  private refsOn(
-    sha: string,
-  ): Array<{ name: string; kind: "head" | "remote" | "tag"; current?: boolean }> {
+  private refsOn(sha: string): RowRef[] {
     return this.refs
       .filter((r) => r.sha === sha && r.type !== "stash" && !r.name.endsWith("/HEAD"))
       .map((r) => ({
         name: r.name,
         kind: r.type === "remote" ? "remote" : r.type === "tag" ? "tag" : "head",
         current: r.isCurrent,
+        // The checkout is planned from this, never from the short name.
+        fullName: r.fullName,
       }));
   }
 

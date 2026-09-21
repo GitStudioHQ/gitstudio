@@ -3843,6 +3843,46 @@
         st.color !== getComputedStyle(document.body).color,
         "and it is not simply the page's body colour",
       );
+      // The remote chip's "origin/" prefix, and the name after it, measured on
+      // the chip's OWN ground. contrast.mjs scored the prefix "on white" at
+      // 2.25:1 because a color-mix ground computes to color(srgb …), which its
+      // parser dropped — so it never saw that the NAME was 4.19:1 on the real
+      // grey either, and no dimming of the prefix could reach AA from there.
+      // Weight recedes the prefix now; the ink clears AA for both.
+      const rgb = (v) => {
+        const m = String(v).match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+        if (m) return [m[1], m[2], m[3]].map((x) => parseFloat(x) * 255);
+        return (String(v).match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+      };
+      const lum = (c3) => {
+        const p = c3.map((v) => {
+          v /= 255;
+          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
+      };
+      const ratio = (a, b2) => {
+        const l1 = lum(a), l2 = lum(b2);
+        return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      };
+      const remote = chips.find((x) => x.classList.contains("chip-remote") && x.querySelector(".rp"));
+      c.ok(!!remote, "a standalone remote chip, with its prefix, is on screen to check");
+      if (!remote) return;
+      const ground = rgb(getComputedStyle(remote).backgroundColor);
+      const rp = remote.querySelector(".rp");
+      // Opacity BETWEEN the text and the chip, folded into the ink: a dimmed
+      // prefix measured by its colour alone scores the same as a full one.
+      let a = 1;
+      for (let n = rp; n && n !== remote; n = n.parentElement) a *= parseFloat(getComputedStyle(n).opacity || "1");
+      const ink = rgb(getComputedStyle(rp).color).map((v, i) => ground[i] + (v - ground[i]) * a);
+      const rpRatio = ratio(ink, ground);
+      c.ok(rpRatio >= 4.5, `the "origin/" prefix reads at AA on the chip's own ground (${rpRatio.toFixed(2)}:1)`);
+      const nmRatio = ratio(rgb(getComputedStyle(remote.querySelector(".nm")).color), ground);
+      c.ok(nmRatio >= 4.5, `and so does the name after it (${nmRatio.toFixed(2)}:1)`);
+      c.ok(
+        parseInt(getComputedStyle(rp).fontWeight, 10) < parseInt(getComputedStyle(remote).fontWeight, 10),
+        "the prefix still recedes — by weight",
+      );
     },
 
     "settings-controls-fit-their-content": (f) => {
@@ -6619,6 +6659,35 @@
       const active = () => $(".cmp-filelist .file-row.active");
       c.ok(rows().length >= 3, `there are files to choose between (${rows().length})`);
       if (rows().length < 3) return;
+      // Nothing has been clicked: the first file is open because it is first.
+      // That is not "the file you had open", so changing the BASE — another
+      // comparison, in which that file happens to sit third — opens the new
+      // comparison's first file, not the one a glance at the old list left
+      // behind. (It was recorded by the auto-open too, and reopened, third in
+      // the list, with nothing on screen to say why.)
+      c.eq(active()?.title, rows()[0]?.title, "the first file is open, unasked");
+      const glanced = rows()[0]?.title;
+      const orig0 = window.gitstudio.invoke.bind(window.gitstudio);
+      window.gitstudio.invoke = async (ch, p) => {
+        const r = await orig0(ch, p);
+        if (ch === "compare:refs" && r) {
+          const [first, ...rest] = r.files;
+          return { ...r, files: [rest[0], rest[1], first, ...rest.slice(2)] };
+        }
+        return r;
+      };
+      $(".compare-bar .ref-pick")?.click();
+      await settle(300);
+      // A base that is neither side today, or the comparison would be the
+      // cached one and nothing would be re-read.
+      const other = $$(".dropdown-item").find((b) => /fix\/log-stream/.test(text(b)));
+      c.ok(!!other, "the base picker offers another branch");
+      other?.click();
+      await settle(1200);
+      c.eq(rows()[2]?.title, glanced, "the glanced-at file is third in the new comparison");
+      c.eq(active()?.title, rows()[0]?.title, "…and the new comparison opens ITS first file");
+      // The rotation stays: every re-read below must answer the SAME list, or
+      // a changed comparison would rebuild the rows the next step holds onto.
       const second = rows()[1];
       const path = second.title;
       second.click();
@@ -7654,6 +7723,92 @@
       c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !!chip("main") && !chip("desktop-v1.5.1"),
         "the graph is that branch plus HEAD, chips included");
       c.eq(label(), "redesign/issues-detail", "the trigger names it");
+
+      // ── A chip's own menu: Checkout, by the ref's FULL name ──
+      // The chip's name is git's short form, which is "heads/release" beside a
+      // tag of that name — and `git checkout heads/release` detaches. The
+      // request the menu builds must carry the full name the ref list holds,
+      // so the main process never has to guess a namespace for it.
+      trigger()?.click();
+      await settle(300);
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=all]")?.click();
+      await settle(700);
+      (sr.activeElement || document.activeElement).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(200);
+      const remote = chip("origin/chore/dependabot-bump");
+      c.ok(!!remote, "a remote chip to check out");
+      if (!remote) return;
+      const rr = remote.getBoundingClientRect();
+      remote.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: rr.left + 8, clientY: rr.top + 8 }));
+      await settle(300);
+      const co = sr.querySelector(".gh-chip-menu [data-chip-action=checkout]");
+      c.ok(!!co, "its menu offers a checkout");
+      co?.click();
+      await settle(500);
+      const sent = window.__GS_INVOKED.filter((r) => r.channel === "commit:action").at(-1);
+      c.eq(sent?.payload?.action, "checkout-ref", "the checkout goes out as a ref checkout");
+      c.eq(sent?.payload?.refKind, "remote", "…as a remote");
+      c.eq(sent?.payload?.fullName, "refs/remotes/origin/chore/dependabot-bump", "…by its full name, never the chip's short one");
+    },
+
+    /**
+     * The Branches picker clears the terminal dock.
+     *
+     * The dock is an overlay footer — it shrinks nothing above it — and the
+     * picker was sized to the viewport, which is the whole window here, so
+     * with the dock expanded its tail (the Tags group, the "N of M ticked"
+     * hint) sat under the terminal: those rows hit-tested to xterm. The dock
+     * publishes its height as `--dock-reserve`, custom properties inherit
+     * through the shadow boundary, and the picker measures the room it
+     * really has. Driven with the dock dragged taller, the way it gets there.
+     */
+    "the-branch-picker-clears-the-dock": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      const body = $(".dock-body");
+      c.ok(!!body, "the dock is expanded");
+      if (!sr || !body) return;
+      // Drag the top edge up a little — through the pointer path, so the
+      // reserve is republished the way a real drag republishes it. The window
+      // is 700px tall here: with the dock at its default the old shell already
+      // ran 190px under it; 60px more leaves the list less than its floor.
+      const grip = $(".dock-resizer");
+      c.ok(!!grip, "the dock offers a resize grip");
+      if (!grip) return;
+      const at = grip.getBoundingClientRect();
+      const opts = { bubbles: true, clientX: at.left + 4, pointerId: 1 };
+      grip.dispatchEvent(new PointerEvent("pointerdown", { ...opts, clientY: at.top + 2 }));
+      window.dispatchEvent(new PointerEvent("pointermove", { ...opts, clientY: at.top - 60 }));
+      window.dispatchEvent(new PointerEvent("pointerup", { ...opts, clientY: at.top - 60 }));
+      await settle(300);
+      const overlayTop = $(".dock-overlay").getBoundingClientRect().top;
+      const reserve = parseFloat(getComputedStyle($(".main-stack")).getPropertyValue("--dock-reserve")) || 0;
+      c.ok(reserve > 300, `the dock is tall enough to be in the way (${Math.round(reserve)}px)`);
+
+      sr.querySelector(".gh-branches")?.click();
+      await settle(400);
+      const pop = sr.querySelector(".gh-branches-pop");
+      c.ok(!!pop, "the picker opens");
+      if (!pop) return;
+      const pr = pop.getBoundingClientRect();
+      c.ok(pr.bottom <= overlayTop, `the shell ends above the dock (${Math.round(pr.bottom)} vs the dock's ${Math.round(overlayTop)})`);
+      const list = pop.querySelector(".gh-pop-list");
+      c.ok(!!list && list.getBoundingClientRect().height >= 56, "the list kept its floor");
+      c.ok(!!list && list.scrollHeight > list.clientHeight, "…and scrolls for the rest");
+      // THE POINT: the tail — scrolled into view where the room is short — is
+      // above the dock, and the pixel where the hint is hit-tests to the
+      // picker, not to the terminal behind it.
+      pop.scrollTop = pop.scrollHeight;
+      await settle(100);
+      const hint = pop.querySelector(".gh-pop-hint");
+      const hr = hint?.getBoundingClientRect();
+      c.ok(!!hr && hr.bottom <= overlayTop, `the hint ends above the dock (${Math.round(hr?.bottom ?? 0)})`);
+      const under = hr ? document.elementsFromPoint(hr.left + 20, hr.bottom - 4) : [];
+      c.ok(under.some((e) => e === host), `the hint is on top (${under.slice(0, 2).map((e) => e.className || e.tagName).join(" > ")})`);
+      c.ok(!under.some((e) => /xterm/.test(String(e.className))), "…not the terminal");
     },
 
     /**
@@ -7695,6 +7850,12 @@
       };
       rows().find((r) => r.dataset.sha === DETAILED)?.click();
       for (let i = 0; i < 40 && !$(".graph-details gitstudio-commit-details"); i++) await settle(100);
+      // The pane's "in N branches" row. It had no fixture, so it answered
+      // undefined and drew nothing — and this check passed over the gap. Its
+      // answer comes from the same reach model as the filter above.
+      await settle(900);
+      const contains = [...($(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelectorAll(".chip-contains") ?? [])].map((x) => text(x));
+      c.ok(contains.includes("main"), `the pane says which branches hold the commit (${contains.join(", ") || "nothing"})`);
 
       // ── Under no filter: a commit the graph does not hold is "further back" ──
       const before = toasts().length;

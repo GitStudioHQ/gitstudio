@@ -18,6 +18,23 @@ test("the tip of one branch checks out as that branch, not as a sha", () => {
   });
 });
 
+test("a branch that collides with a tag checks out by its refs/heads/ name, not its short one", () => {
+  // git names the branch "heads/release" then, and `git checkout
+  // heads/release` is a revision, not a branch: it detaches. The full name is
+  // where the branch's own name still lives.
+  assert.deepEqual(
+    resolveCheckoutTarget([{ name: "heads/release", kind: "head", fullName: "refs/heads/release" }]),
+    { kind: "branch", name: "release" },
+  );
+  const t = resolveCheckoutTarget([
+    { name: "heads/release", kind: "head", fullName: "refs/heads/release" },
+    { name: "main", kind: "head", fullName: "refs/heads/main" },
+  ]);
+  assert.deepEqual(t.kind === "choose" && t.branches, ["release", "main"]);
+  // A caller that knows no full name keeps the name it has.
+  assert.deepEqual(resolveCheckoutTarget([head("release")]), { kind: "branch", name: "release" });
+});
+
 test("a commit with no refs still detaches — that is what was asked for", () => {
   assert.deepEqual(resolveCheckoutTarget([]), { kind: "detach" });
   assert.deepEqual(resolveCheckoutTarget(undefined), { kind: "detach" });

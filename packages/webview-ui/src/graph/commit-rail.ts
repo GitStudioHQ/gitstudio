@@ -90,6 +90,12 @@ const LOAD_MORE_THRESHOLD = 60;
 const REVEAL_PAGE_LIMIT = 25;
 /** Ref chips shown on the meta line before collapsing into "+N". */
 const MAX_CHIPS = 2;
+/** The widest a cursor-positioned .pop can render (its CSS max-width). */
+const POP_MAX_W = 240;
+/** …in this window, so a clamp keeps the shell inside a sidebar narrower
+ *  than that (headless Chrome floors the window at 500px; a real sidebar
+ *  does not). */
+const popMaxWidth = (): number => Math.min(POP_MAX_W, window.innerWidth - 8);
 /** The all-zeros sha marks the synthetic "uncommitted changes" (WIP) row. */
 const ZERO_SHA_RE = /^0{40}$/;
 export type RailAction =
@@ -104,8 +110,11 @@ export type RailAction =
    *  around these fully-qualified refs (null = all), and remember it. */
   | { type: "setRefFilter"; refs: GraphRefFilter }
   /** "Checkout <ref>" from a chip's own menu — the host runs it as it runs
-   *  the commit menu's item of the same name (a tag asks first). */
-  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"] };
+   *  the commit menu's item of the same name (a tag asks first). `fullName`
+   *  is the ref resolved through the picker's list (chipRefs): the chip's
+   *  own name is git's SHORT form, which names a revision rather than a
+   *  branch the moment a tag shares it. */
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };
 
 /** One item in the commit actions popover (host-built, same as the graph's). */
 export interface RailMenuItem {
@@ -708,11 +717,16 @@ export class CommitRail extends LitElement {
       }
 
       /* ── Popovers: search scope + commit actions share the shell ───────── */
+      /* max-width is the W the commit menu and the chip menu clamp their x
+         with (POP_MAX_W), border-box so the rendered shell IS that wide: a
+         "Checkout origin/<long name>" item is a ref name, and unbounded it
+         made the menu 248px in a 240px sidebar, 44px past the edge. */
       .pop {
         position: fixed;
         z-index: 40;
+        box-sizing: border-box;
         min-width: 150px;
-        max-width: 240px;
+        max-width: min(${POP_MAX_W}px, calc(100vw - 8px));
         max-height: calc(100vh - 16px);
         overflow-y: auto;
         padding: 4px;
@@ -1532,8 +1546,9 @@ export class CommitRail extends LitElement {
       px = r ? r.left + 40 : window.innerWidth / 2;
       py = r ? r.bottom - 4 : window.innerHeight / 2;
     }
-    // Clamp so the menu never clips the (narrow) sidebar viewport.
-    const estW = 200;
+    // Clamp so the menu never clips the (narrow) sidebar viewport — with
+    // the width the shell can really reach, not a guess under it.
+    const estW = popMaxWidth();
     const estH =
       items.reduce((n, i) => n + (i.sep ? 9 : 26), 0) + 30;
     px = Math.max(4, Math.min(px, window.innerWidth - estW - 4));
@@ -1721,7 +1736,7 @@ export class CommitRail extends LitElement {
     const refs = chipRefs(this.refList, name, kind, remotes);
     const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
     // Clamped like the commit menu, so it never clips the narrow sidebar.
-    const estW = 200;
+    const estW = popMaxWidth();
     const estH = 30 + 5 * 26;
     this.closePopovers();
     this.chipMenu = {
@@ -2058,11 +2073,13 @@ export class CommitRail extends LitElement {
                 data-chip-action="checkout"
                 @click=${() => {
                   this.chipMenu = null;
-                  this.onAction({ type: "checkoutRef", sha: m.sha, name: m.name, kind: m.kind });
+                  // refs[0] is the chip's own ref, resolved through the list; the
+                  // folded remote twins follow it.
+                  this.onAction({ type: "checkoutRef", sha: m.sha, name: m.name, kind: m.kind, fullName: m.refs[0] });
                 }}
               >
                 <span class="codicon codicon-${checkout.icon}"></span>
-                ${checkout.label}
+                <span class="nm">${checkout.label}</span>
               </button>
             `
           : nothing}
@@ -2099,7 +2116,7 @@ export class CommitRail extends LitElement {
                   ${item.icon
                     ? html`<span class="codicon codicon-${item.icon}"></span>`
                     : html`<span class="codicon"></span>`}
-                  ${item.label}
+                  <span class="nm">${item.label}</span>
                 </button>
               `,
         )}

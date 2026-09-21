@@ -19,8 +19,10 @@ export interface GraphCallbacks {
   /** A branch/remote/tag chip on a row was clicked — navigate to that ref. */
   onRefClick(name: string, kind: string): void;
   /** "Checkout <ref>" from a chip's own menu (issue #30) — the same request,
-   *  with the same questions, as the commit menu's item of that name. */
-  onCheckoutRef(sha: string, name: string, kind: string): void;
+   *  with the same questions, as the commit menu's item of that name.
+   *  `fullName` is the ref as the webview resolved it through the ref list;
+   *  `name` is the chip's short form, for the words only. */
+  onCheckoutRef(sha: string, name: string, kind: string, fullName: string): void;
   /** The history is empty (or stopped being). Lets the shell stand the details
    *  pane down instead of asking you to select a commit that doesn't exist. */
   onEmpty?(empty: boolean): void;
@@ -53,7 +55,7 @@ export class GraphMount {
           cb.onRefClick(action.name, action.kind);
           break;
         case "checkoutRef":
-          cb.onCheckoutRef(action.sha, action.name, action.kind);
+          cb.onCheckoutRef(action.sha, action.name, action.kind, action.fullName);
           break;
         case "loadMore":
           this.adapter.loadMore().catch(() => {

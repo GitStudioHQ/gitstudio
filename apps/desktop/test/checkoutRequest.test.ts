@@ -137,6 +137,31 @@ test("the chip menu's checkout goes through the context menu's door, and is refu
   assert.equal(got, undefined);
 });
 
+test("the chip menu's checkout carries the ref's FULL name when the chip resolved one", () => {
+  // The graph's chips and its ref list carry full names; the request must
+  // too, because `name` is "heads/release" beside a tag of that name and the
+  // main process would otherwise run the detaching `git checkout heads/release`.
+  let got: CommitActionRequest | undefined;
+  const menu = new CommitContextMenu((req) => {
+    got = req;
+  });
+  menu.checkoutRef("abc1234", { name: "heads/release", kind: "head", fullName: "refs/heads/release" });
+  assert.deepEqual(got, {
+    action: "checkout-ref",
+    sha: "abc1234",
+    name: "heads/release",
+    refKind: "head",
+    fullName: "refs/heads/release",
+  });
+  // …and the rows the commit menu builds from the renderer's refs carry it
+  // the same way, through the same dispatch.
+  const req = menuRequestFor({ name: "tags/release", kind: "tag", fullName: "refs/tags/release" } as never);
+  assert.equal(req.fullName, "refs/tags/release");
+  // A row without one sends none — not an undefined-valued key.
+  menu.checkoutRef("abc1234", { name: "feature/login", kind: "head" });
+  assert.equal(got && "fullName" in got, false);
+});
+
 test("a remote branch row asks for the remote treatment", () => {
   // The Branches list decides the kind from whether you already have the local
   // branch: yours attaches by name, theirs has to be created.

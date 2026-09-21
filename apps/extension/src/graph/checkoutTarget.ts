@@ -1,6 +1,14 @@
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 
 /**
+ * A ref on a row as the host holds it: the chip's words plus the full name
+ * git gave it. The full name is what a checkout is planned from — the short
+ * name is "heads/release" the moment a tag shares it, and that names a
+ * revision, not a branch (see git-service's planRefCheckout).
+ */
+export type MenuRef = WireRef & { fullName: string };
+
+/**
  * What "Checkout Commit" should actually do, given the refs on that commit.
  *
  * Pure, and separate from commitActions.ts, so the decision can be tested
@@ -27,7 +35,7 @@ export type CheckoutTarget =
   | { kind: "detach" };
 
 export function resolveCheckoutTarget(
-  refs: readonly WireRef[] = [],
+  refs: readonly (WireRef & { fullName?: string })[] = [],
 ): CheckoutTarget {
   const current = refs.find((r) => r.kind === "currentHead");
   if (current) {
@@ -36,7 +44,13 @@ export function resolveCheckoutTarget(
   // Local branches only. A remote-tracking ref is not somewhere you can sit,
   // and a tag is a fixed point — both detach, so neither belongs here. Those
   // have their own explicit menu entries (see refMenuItems).
-  const locals = refs.filter((r) => r.kind === "head").map((r) => r.name);
+  //
+  // By the name under refs/heads/ when the caller knows it: `git checkout
+  // <that>` lands on the branch even beside a tag of the same name, where
+  // the chip's short name ("heads/release") would detach.
+  const locals = refs
+    .filter((r) => r.kind === "head")
+    .map((r) => (r.fullName?.startsWith("refs/heads/") ? r.fullName.slice("refs/heads/".length) : r.name));
   if (locals.length === 1) {
     return { kind: "branch", name: locals[0] };
   }

@@ -92,6 +92,16 @@ function parseColor(c) {
     if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
     return { r: parseInt(h.substr(0,2),16), g: parseInt(h.substr(2,2),16), b: parseInt(h.substr(4,2),16), a: 1 };
   }
+  // A color-mix() ground COMPUTES to "color(srgb 0.93 0.93 0.94)", not to an
+  // rgb() triple. Unparsed, every chip and popover tinted that way dropped out
+  // of the background walk, so their text was scored against the page — the
+  // remote chip's prefix read 2.25:1 "on white" while the chip is grey, and
+  // the chip's own name, 4.19:1 on that grey, was never reported at all.
+  var s = c.match(/^color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)(?:\\s*\\/\\s*([\\d.]+%?))?\\)/);
+  if (s) {
+    var sa = s[4] === undefined ? 1 : s[4].slice(-1) === "%" ? parseFloat(s[4]) / 100 : parseFloat(s[4]);
+    return { r: parseFloat(s[1]) * 255, g: parseFloat(s[2]) * 255, b: parseFloat(s[3]) * 255, a: sa };
+  }
   return null;
 }
 function over(fg, bg) {

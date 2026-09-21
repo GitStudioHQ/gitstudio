@@ -12,11 +12,15 @@ export interface RowRef {
   kind: "head" | "remote" | "tag";
   /** True for the branch HEAD currently points at. */
   current?: boolean;
+  /** The full name ("refs/heads/main") — what the checkout is planned from,
+   *  because `name` is git's short form and "heads/release" names a revision,
+   *  not a branch, once a tag shares the name. */
+  fullName?: string;
 }
 
 export interface RefMenuItem {
   label: string;
-  ref: { name: string; kind: RowRef["kind"] };
+  ref: { name: string; kind: RowRef["kind"]; fullName?: string };
   /** Present when the action asks something first (and so the label ends "…"). */
   confirm?: string;
 }
@@ -44,16 +48,17 @@ export function refMenuItems(refs: readonly RowRef[]): RefMenuItem[] {
     if (ref.name.endsWith("/HEAD")) {
       continue;
     }
+    const full = ref.fullName ? { fullName: ref.fullName } : {};
     if (ref.kind === "tag") {
       items.push({
         label: `Checkout ${ref.name}…`,
-        ref: { name: ref.name, kind: "tag" },
+        ref: { name: ref.name, kind: "tag", ...full },
         confirm: `Check out tag ${ref.name}? You'll be on a detached HEAD, not on a branch.`,
       });
     } else {
       items.push({
         label: `Checkout ${ref.name}`,
-        ref: { name: ref.name, kind: ref.kind },
+        ref: { name: ref.name, kind: ref.kind, ...full },
       });
     }
   }

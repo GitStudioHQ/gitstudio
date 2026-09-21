@@ -64,7 +64,13 @@ function start(root: HTMLElement): void {
         vscode.postMessage({ type: "setRefFilter", refs: action.refs });
         break;
       case "checkoutRef":
-        vscode.postMessage({ type: "checkoutRef", sha: action.sha, name: action.name, kind: action.kind });
+        vscode.postMessage({
+          type: "checkoutRef",
+          sha: action.sha,
+          name: action.name,
+          kind: action.kind,
+          fullName: action.fullName,
+        });
         break;
     }
   };

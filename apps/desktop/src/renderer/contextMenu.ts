@@ -11,8 +11,9 @@ import { registerLayer } from "./overlays";
 interface MenuItem {
   label: string;
   action: CommitActionRequest["action"];
-  /** For checkout-ref: the ref this item checks out, and its kind. */
-  ref?: { name: string; kind: "head" | "remote" | "tag" };
+  /** For checkout-ref: the ref this item checks out, its kind, and its full
+   *  name when the row knew it (see RowRef.fullName). */
+  ref?: { name: string; kind: "head" | "remote" | "tag"; fullName?: string };
   /** Rendered above the commit-scoped items, with a separator after. */
   refItem?: boolean;
   /** Requires a free-text name (new branch / tag). */
@@ -233,6 +234,7 @@ export class CommitContextMenu {
         sha,
         name: item.ref.name,
         refKind: item.ref.kind,
+        ...(item.ref.fullName ? { fullName: item.ref.fullName } : {}),
       });
       return;
     }

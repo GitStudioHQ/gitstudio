@@ -119,6 +119,14 @@ export interface GraphCommitDetailsMessage {
 export interface GraphRowStatsMessage {
   type: "rowStats";
   stats: RowStat[];
+  /**
+   * Shas the host could not answer THIS time — the whole `git log --numstat`
+   * batch failed — as opposed to a sha git skipped, which is answered with
+   * zeros in `stats` and never asked about again. The webview releases these
+   * without recording them, so the next repaint asks again (see
+   * CommitGraph.failRowStats). Absent when every sha got its answer.
+   */
+  unanswered?: string[];
 }
 
 export interface RowStat {
@@ -280,5 +288,12 @@ export type GraphWebviewMessage =
    * used to open the row's commit menu, whose first items check out the refs
    * on that row; the chip's filter menu took that click, so it offers the
    * checkout too. The host runs it exactly as it runs the commit menu's item.
+   *
+   * `fullName` is what the host checks out; `name` and `kind` are the chip's
+   * words for its messages. A chip's name is `%(refname:short)`, and with a
+   * tag and a branch both called "release" the branch chip reads
+   * "heads/release" — which `git checkout` resolves as a REVISION and detaches
+   * at. The webview resolves the chip through the ref list (chipRefs), where
+   * the full name git gave it lives.
    */
-  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"] };
+  | { type: "checkoutRef"; sha: string; name: string; kind: WireRef["kind"]; fullName: string };

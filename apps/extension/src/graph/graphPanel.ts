@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
-import type { CommitRecord, GitRef } from "@gitstudio/git-service/index";
+import type { CommitRecord, CommitStat, GitRef } from "@gitstudio/git-service/index";
 import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type {
   GraphHostMessage,
@@ -9,8 +9,6 @@ import type {
   GraphRefEntry,
   GraphRefFilter,
   WireRow,
-  WireRef,
-  RowStat,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type {
   CommitDetailsPayload,
@@ -28,6 +26,8 @@ import { getGraphHtml, getNonce } from "./graphHtml";
 import { getAuthorAvatarResolver } from "./authorAvatars";
 import { getRefFilterStore } from "./refFilterStore";
 import { commitMenuItems, refActionId, refMenuItems, runCommitAction } from "./commitActions";
+import type { MenuRef } from "./checkoutTarget";
+import { rowStatsReply } from "./rowStatsReply";
 import { readRewritableChain } from "@gitstudio/git-service/rebaseChain";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import { runRebasePlan, isRebaseInProgress } from "../rebase/rebaseRunner";
@@ -59,7 +59,6 @@ const PAGE_SIZE = 500;
 const FIRST_PAGE_SIZE = 150;
 /** Debounce repo-change rebuilds (a rebase touches many refs in a burst). */
 const REFRESH_DEBOUNCE_MS = 300;
-/** Shas per `git log --numstat` spawn when the graph asks for row stats. */
 
 /**
  * The singleton commit-graph panel: one editor-area WebviewPanel that streams
@@ -284,8 +283,10 @@ export class CommitGraphPanel {
         break;
       case "checkoutRef":
         // The chip menu's "Checkout <ref>": the same arm, with the same
-        // questions, as the commit menu's item of that name.
-        void this.runCommitMenuAction(msg.sha, refActionId(msg.kind, msg.name));
+        // questions, as the commit menu's item of that name — by the full
+        // name the webview resolved through the ref list, never the chip's
+        // short one.
+        void this.runCommitMenuAction(msg.sha, refActionId(msg.fullName));
         break;
       case "openInGraph":
         // Sidebar rail → promote into the BOTTOM PANEL graph (the split view
@@ -1293,23 +1294,18 @@ export class CommitGraphPanel {
     // git processes a row, all sixty at once, and capped there — so on a tall
     // window the rows past sixty were never answered, stayed pending in the
     // webview, and kept a blank CHANGES cell for the rest of the session.
-    const bySha = new Map<string, RowStat>();
+    //
+    // A batch that fails as a whole is handed back UNANSWERED (see
+    // rowStatsReply): the per-sha version answered zeros for a failed diff,
+    // and doing that for the window meant one transient failure — a gc race,
+    // a broken pack — blanked every visible CHANGES cell for the session.
+    let answered: CommitStat[] | undefined;
     try {
-      for (const s of await active.ctx.commitDetails.getCommitStats(wanted)) {
-        bySha.set(s.sha, s);
-      }
+      answered = await active.ctx.commitDetails.getCommitStats(wanted);
     } catch {
-      // Answered below as "no stats", as a failed per-sha diff always was.
+      // Left undefined: the reply says so, and the next repaint asks again.
     }
-    // Every sha asked for gets an answer. One git could not stat (rewritten
-    // away under a live graph) renders as an empty cell — the same as a
-    // commit that changed nothing — and is not asked about again; one left
-    // unanswered would stay pending and never be asked about again either,
-    // with nothing to show for it.
-    const stats = wanted.map(
-      (sha) => bySha.get(sha) ?? { sha, files: 0, additions: 0, deletions: 0 },
-    );
-    this.post({ type: "rowStats", stats });
+    this.post(rowStatsReply(wanted, answered));
   }
 
   /** A CommitRecord from the cache, or streamed on demand if not yet loaded. */
@@ -1335,17 +1331,19 @@ export class CommitGraphPanel {
     return undefined;
   }
 
-  /** Map the GitRefs at a sha to the webview's WireRef chips. */
-  private refsToWire(sha: string): WireRef[] {
+  /** Map the GitRefs at a sha to the webview's WireRef chips — with the
+   *  full name beside each, which is what the menus check a ref out by. */
+  private refsToWire(sha: string): MenuRef[] {
     const refs = this.refsBySha.get(sha) ?? [];
     return refs
       .filter((r) => r.type !== "stash")
-      .map((r): WireRef => {
-        if (r.type === "tag") return { kind: "tag", name: r.name };
-        if (r.type === "remote") return { kind: "remoteHead", name: r.name };
+      .map((r): MenuRef => {
+        const fullName = r.fullName;
+        if (r.type === "tag") return { kind: "tag", name: r.name, fullName };
+        if (r.type === "remote") return { kind: "remoteHead", name: r.name, fullName };
         return r.isCurrent
-          ? { kind: "currentHead", name: r.name }
-          : { kind: "head", name: r.name };
+          ? { kind: "currentHead", name: r.name, fullName }
+          : { kind: "head", name: r.name, fullName };
       });
   }
 

@@ -508,6 +508,7 @@ const CASES = [
   ["the-graph-search-paints-before-it-travels", "graph"],
   ["the-branch-picker-narrows-the-graph-and-all-restores-it", "graph"],
   ["a-commit-the-filter-hides-says-so-and-offers-every-branch", "graph"],
+  ["the-branch-picker-clears-the-dock", "graph~click:.dock-chevron", { height: 700 }],
   ["clearing-a-search-clears-the-results", "explore~type:git"],
   ["a-branch-deep-link-shows-the-branch", "actions~open9094~click:.gh-branch-chip"],
   ["the-logs-states-each-say-the-right-thing", "actions~open9097~click:.gh-job-log"],
@@ -578,6 +579,10 @@ const CASES = [
 
 function run(scene, checkId, opts = {}) {
   const width = opts.width ?? 1600;
+  // The window's height, for the surfaces that meet the bottom of it: the
+  // dock, a footer, a popover sized to the pane. It was fixed at 1000 and a
+  // case's `height` went unread.
+  const height = opts.height ?? 1000;
   const theme = opts.theme ?? "dark";
   const arg = opts.arg ? `&arg=${encodeURIComponent(opts.arg)}` : "";
   // The shim's own scene switches (staging=checkboxes, many=1, ask=1) — a mode
@@ -591,7 +596,7 @@ function run(scene, checkId, opts = {}) {
         "--headless",
         "--disable-gpu",
         "--hide-scrollbars",
-        `--window-size=${width},1000`,
+        `--window-size=${width},${height}`,
         "--virtual-time-budget=12000",
         "--dump-dom",
         url,

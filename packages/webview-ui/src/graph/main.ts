@@ -127,7 +127,13 @@ function start(root: HTMLElement): void {
         vscode.postMessage({ type: "setRefFilter", refs: action.refs });
         break;
       case "checkoutRef":
-        vscode.postMessage({ type: "checkoutRef", sha: action.sha, name: action.name, kind: action.kind });
+        vscode.postMessage({
+          type: "checkoutRef",
+          sha: action.sha,
+          name: action.name,
+          kind: action.kind,
+          fullName: action.fullName,
+        });
         break;
     }
   };
@@ -263,6 +269,9 @@ function handle(
     }
     case "rowStats": {
       graph.setRowStats(message.stats);
+      // A batch the host could not run at all: released, not recorded, so
+      // the next repaint asks again — a zero here would be an answer.
+      if (message.unanswered?.length) graph.failRowStats(message.unanswered, false);
       break;
     }
     case "rebaseChain": {

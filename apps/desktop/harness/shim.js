@@ -2085,6 +2085,33 @@
     const ticked = new Set(graphRefFilter || []);
     return { reached: !graphRefFilter || !only || only.some((f) => ticked.has(f)) };
   };
+  // The details pane's "in N branches" row — the same reach model again, so
+  // the row cannot disagree with the graph it sits beside. A row only the
+  // unmerged remote reaches is in that branch alone; every other row is on
+  // main and its upstream, and the rows below the merged feature lane's tip
+  // (the lane's own two, then the trunk from where it forked) are on that
+  // branch too. Locals first, then remotes, as the real read sorts them.
+  // Without this the row answered undefined and the pane showed nothing.
+  const featureLane = new Set([
+    "b2c3d4e5f6a71829304b", "c3d4e5f6a7b829304c5d", "f6a7b8c9d0e152637f80",
+    "07b8c9d0e1f263748091", "18c9d0e1f2736485a1b2", "29d0e1f2837495b2c3d4",
+  ]);
+  dynamic["refs:contains"] = (req) => {
+    // The pane asks with the details fixture's 40-char sha; the rows carry
+    // the same commits as 20-char prefixes.
+    const sha = String((req && req.sha) || "").slice(0, 20);
+    const only = reachOnly[sha];
+    if (only) return { branches: only.map((f) => f.replace(/^refs\/remotes\//, "")), truncated: false };
+    if (!graphBase.rows.some((r) => r.sha === sha)) return { branches: [], truncated: false };
+    const onLane = featureLane.has(sha);
+    return {
+      branches: [
+        "main", ...(onLane ? ["redesign/issues-detail"] : []),
+        "origin/main", ...(onLane ? ["origin/redesign/issues-detail"] : []),
+      ],
+      truncated: false,
+    };
+  };
 
   dynamic["commit:details"] = (sha) => commits[String(sha).slice(0, 8)];
   // "did this come from the branch I am on, or was it merged in" — the first

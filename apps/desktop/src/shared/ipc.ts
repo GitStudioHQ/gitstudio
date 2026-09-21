@@ -291,6 +291,14 @@ export interface CommitActionRequest {
   name?: string;
   /** For checkout-ref: what kind of ref `name` is. */
   refKind?: "head" | "remote" | "tag";
+  /**
+   * For checkout-ref: the ref's FULL name, when the door knows it (the graph
+   * does — its rows and its ref list carry it). The main process checks out
+   * by this and not by `name`, which is `%(refname:short)`: with a tag and a
+   * branch both called "release" the branch's short name is "heads/release",
+   * and `git checkout heads/release` detaches HEAD at the branch tip.
+   */
+  fullName?: string;
 }
 
 export interface CommitActionResult {

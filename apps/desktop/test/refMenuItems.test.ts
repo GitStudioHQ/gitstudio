@@ -67,6 +67,22 @@ test("a row with no refs adds nothing, leaving the commit actions alone", () => 
   assert.deepEqual(refMenuItems([{ name: "main", kind: "head", current: true }]), []);
 });
 
+test("a row's full name rides on the item, and only when the row had one", () => {
+  // The main process checks out by the full name — the short one is
+  // "heads/release" beside a tag called release, and that detaches. A row
+  // that knows no full name (the Branches view's) sends none, so the arm
+  // keeps the behaviour it had rather than guessing a namespace.
+  const items = refMenuItems([
+    { name: "heads/release", kind: "head", fullName: "refs/heads/release" },
+    { name: "tags/release", kind: "tag", fullName: "refs/tags/release" },
+    { name: "origin/release", kind: "remote" },
+  ]);
+  assert.deepEqual(items[0].ref, { name: "heads/release", kind: "head", fullName: "refs/heads/release" });
+  assert.deepEqual(items[1].ref, { name: "tags/release", kind: "tag", fullName: "refs/tags/release" });
+  assert.deepEqual(items[2].ref, { name: "origin/release", kind: "remote" });
+  assert.equal("fullName" in items[2].ref, false, "no undefined-valued key for a row without one");
+});
+
 test("a local branch literally named like a tag is still treated as a branch", () => {
   // Kind drives behaviour, never the name — a branch called "v1.0" must attach,
   // not detach.

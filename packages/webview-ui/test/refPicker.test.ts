@@ -274,6 +274,23 @@ const AMBIGUOUS_SCRIPT = `
   await settle();
   expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/release", "refs/tags/release"]),
     "Add to filter on the tag chip adds the tag's real full name (" + JSON.stringify(lastFilter()) + ")");
+  // …and so does Checkout. The host used to be handed the chip's name, and
+  // 'git checkout heads/release' DETACHES at the branch tip — the very thing
+  // a "Checkout <branch>" item exists to prevent.
+  const lastAction = () => actions[actions.length - 1];
+  chipOf("heads/release").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+  await settle();
+  $(CHIP_MENU + " [data-chip-action=checkout]").click();
+  await settle();
+  expect(lastAction().type === "checkoutRef" && lastAction().fullName === "refs/heads/release",
+    "Checkout on the branch chip posts the branch's real full name (" + JSON.stringify(lastAction()) + ")");
+  expect(lastAction().name === "heads/release" && lastAction().kind === "head", "…beside the chip's own words");
+  chipOf("tags/release").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 200, clientY: 120 }));
+  await settle();
+  $(CHIP_MENU + " [data-chip-action=checkout]").click();
+  await settle();
+  expect(lastAction().fullName === "refs/tags/release" && lastAction().kind === "tag",
+    "Checkout on the tag chip posts the tag's (" + JSON.stringify(lastAction()) + ")");
 `;
 
 test("the graph's chip shortcut resolves an ambiguous short name through the ref list", { skip: !CHROME && "no Chrome on this machine" }, async () => {
@@ -345,20 +362,22 @@ const FOLLOWUPS_SCRIPT = `
   checkout.click();
   await settle();
   expect(!$(CHIP_MENU), "picking it closes the menu");
-  expect(JSON.stringify(lastAction()) === JSON.stringify({ type: "checkoutRef", sha: sha(1), name: "feature/x", kind: "head" }),
-    "and asks the host to check the ref out, on its row (" + JSON.stringify(lastAction()) + ")");
+  expect(JSON.stringify(lastAction()) === JSON.stringify({ type: "checkoutRef", sha: sha(1), name: "feature/x", kind: "head", fullName: "refs/heads/feature/x" }),
+    "and asks the host to check the ref out, on its row, by its full name (" + JSON.stringify(lastAction()) + ")");
   await openChip("v1");
   expect(/^Checkout v1…$/.test(($(CHIP_MENU + " [data-chip-action=checkout]") || {}).textContent?.trim() || ""),
     "a tag's checkout says it will ask first");
   $(CHIP_MENU + " [data-chip-action=checkout]").click();
   await settle();
   expect(lastAction().kind === "tag" && lastAction().name === "v1" && lastAction().sha === sha(0), "a tag checkout carries its kind");
+  expect(lastAction().fullName === "refs/tags/v1", "…and its full name");
   await openChip("origin/feat/line-staging");
   expect(/^Checkout origin\\/feat\\/line-staging$/.test(($(CHIP_MENU + " [data-chip-action=checkout]") || {}).textContent?.trim() || ""),
     "a remote chip offers its checkout");
   $(CHIP_MENU + " [data-chip-action=checkout]").click();
   await settle();
   expect(lastAction().kind === "remoteHead", "…as a remote");
+  expect(lastAction().fullName === "refs/remotes/origin/feat/line-staging", "…by its full name");
   await openChip("main");
   expect(!!$(CHIP_MENU), "the current branch's chip has a menu");
   expect(!$(CHIP_MENU + " [data-chip-action=checkout]"), "…with no checkout: you are already on it");
@@ -415,10 +434,116 @@ const FIT_SCRIPT = `
   expect(pop.right <= host.right, "and its right edge too (" + Math.round(pop.right - host.left) + "px of " + Math.round(host.width) + ")");
 `;
 
-for (const width of [600, 680, 720]) {
+// …and the panes where NEITHER side has the room: 320px is the desktop
+// resizer's floor for the graph beside a wide details pane. Choosing a side
+// only chose which edge to run off; the shell is pulled back inside now.
+for (const width of [320, 360, 420, 600, 680, 720]) {
   test(`the graph's picker stays inside a ${width}px pane`, { skip: !CHROME && "no Chrome on this machine" }, async () => {
     const css = `#root{height:300px;width:${width}px;display:flex;flex-direction:column} gitstudio-graph{flex:1;min-height:0}`;
     const v = await runInChrome(CHROME!, GRAPH, MOUNT_GRAPH + FIT_SCRIPT, { css, width: 1100, height: 300 });
-    assert.deepEqual(v.fails, [], v.fails.join("\n"));
+    assert.deepEqual(v.fails, [], v.fails.join("\n") + " " + JSON.stringify(v.notes));
   });
 }
+
+/**
+ * A host may overlay the bottom of the pane — the desktop's terminal dock is
+ * an overlay footer that shrinks nothing above it — and says so with
+ * `--dock-reserve`, which inherits into this shadow root. The picker measures
+ * the room it really has: the shell ends above the reserve, the list gives
+ * its height up first (down to its floor), and the tail is still reachable by
+ * scrolling the shell. Without the reserve the shell ran the whole pane.
+ */
+const DOCK_SCRIPT = `
+  const host = el.getBoundingClientRect();
+  document.getElementById("root").style.setProperty("--dock-reserve", "300px");
+  $(TRIGGER).click();
+  await settle();
+  const pop = $(POP);
+  const pr = pop.getBoundingClientRect();
+  const limit = host.bottom - 300;
+  notes.bottom = Math.round(pr.bottom); notes.limit = Math.round(limit); notes.hostBottom = Math.round(host.bottom);
+  expect(pr.bottom <= limit, "the shell ends above the dock's reserve (" + Math.round(pr.bottom) + " of " + Math.round(limit) + ")");
+  const list = $(".gh-pop-list");
+  expect(list.getBoundingClientRect().height >= 56, "the list keeps its floor");
+  expect(list.scrollHeight > list.clientHeight, "…and scrolls for the rest");
+  pop.scrollTop = pop.scrollHeight;
+  await settle();
+  const hint = $(".gh-branches-pop .gh-pop-hint").getBoundingClientRect();
+  expect(hint.bottom <= limit, "scrolled to its tail, the hint is above the reserve too (" + Math.round(hint.bottom) + ")");
+  // Without a reserve the same pane's shell reaches further down.
+  document.getElementById("root").style.removeProperty("--dock-reserve");
+  document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
+  await settle();
+  $(TRIGGER).click();
+  await settle();
+  const free = $(POP).getBoundingClientRect();
+  expect(free.bottom > limit && free.bottom <= host.bottom, "with no reserve the shell uses the pane (" + Math.round(free.bottom) + ")");
+`;
+
+test("the graph's picker clears a host's dock reserve", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const css = `#root{height:560px;width:1100px;display:flex;flex-direction:column} gitstudio-graph{flex:1;min-height:0}`;
+  const v = await runInChrome(CHROME!, GRAPH, MOUNT_GRAPH + DOCK_SCRIPT, { css, width: 1100, height: 600 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+/**
+ * A cursor-positioned menu is never wider than the W its clamp assumes.
+ *
+ * The chip menu's "Checkout <ref>" is a ref name, and the commit menu's
+ * host-built "Checkout origin/…" items are too; unbounded, a long one widened
+ * the rendered menu past the width the x-clamp had allowed for, and in a
+ * 240px sidebar the menu ran 44px off the edge. Headless Chrome floors the
+ * window at 500px, so the edge itself cannot be staged; the invariant it
+ * breaks can be: the rendered shell is at most the W the positioning uses,
+ * and the long label ellipsizes inside it rather than pushing it out.
+ */
+const LONG = "origin/feat/a-rather-long-branch-name-that-goes-on-and-on-and-on";
+const WIDE_SCRIPT = (W: string | number) => `
+  el.rows = [row(0, [ref("main", "currentHead")]), row(1, [ref(${JSON.stringify(LONG)}, "remoteHead")]), row(2)];
+  el.refList = [
+    { fullName: "refs/heads/main", name: "main", kind: "head", isCurrent: true },
+    { fullName: "refs/remotes/" + ${JSON.stringify(LONG)}, name: ${JSON.stringify(LONG)}, kind: "remoteHead" },
+  ];
+  await settle();
+  const W = ${W};
+  const chip = $$(CHIP).find((c) => c.dataset.ref === ${JSON.stringify(LONG)});
+  expect(!!chip, "the long remote chip renders");
+  chip.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: 300, clientY: 120 }));
+  await settle();
+  const menu = $(CHIP_MENU);
+  expect(!!menu, "its menu opens");
+  const mr = menu.getBoundingClientRect();
+  notes.chipMenuWidth = Math.round(mr.width);
+  expect(Math.round(mr.width) <= W, "the chip menu is no wider than the W its clamp assumes (" + Math.round(mr.width) + " of " + W + ")");
+  expect(mr.right <= window.innerWidth - 4, "and inside the window (" + Math.round(mr.right) + ")");
+  const lbl = $(CHIP_MENU + " [data-chip-action=checkout] .lbl, " + CHIP_MENU + " [data-chip-action=checkout] .nm");
+  expect(!!lbl && lbl.scrollWidth > lbl.clientWidth + 1, "the checkout label ellipsizes rather than widening the menu");
+  expect(!!lbl && getComputedStyle(lbl).textOverflow === "ellipsis", "…with an ellipsis");
+  (el.shadowRoot.activeElement || document.activeElement).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+  await settle();
+  // The commit menu, with the host-built item for the same ref.
+  el.showCommitMenu(sha(1), 300, 120, "0001000 · commit 1", [
+    { id: "ref:refs/remotes/" + ${JSON.stringify(LONG)}, label: "Checkout " + ${JSON.stringify(LONG)}, icon: "cloud" },
+    { id: "", label: "", sep: true },
+    { id: "checkout", label: "Checkout Commit", icon: "git-commit" },
+  ]);
+  await settle();
+  const cm = $(COMMIT_MENU);
+  expect(!!cm, "the commit menu opens");
+  const cr = cm.getBoundingClientRect();
+  notes.commitMenuWidth = Math.round(cr.width);
+  expect(Math.round(cr.width) <= W, "the commit menu is no wider than W either (" + Math.round(cr.width) + " of " + W + ")");
+  expect(cr.right <= window.innerWidth - 4, "and inside the window (" + Math.round(cr.right) + ")");
+`;
+
+test("the graph's chip and commit menus stay as wide as their clamp assumes under a long ref", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const script = MOUNT_GRAPH + `const COMMIT_MENU = ".gh-pop.gh-ctx:not(.gh-chip-menu)";` + WIDE_SCRIPT(240);
+  const v = await runInChrome(CHROME!, GRAPH, script, { css: CSS_GRAPH, width: 1100, height: 700 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n") + " " + JSON.stringify(v.notes));
+});
+
+test("the rail's chip and commit menus stay as wide as their clamp assumes under a long ref", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+  const script = MOUNT_RAIL + `const COMMIT_MENU = ".pop:not(.chipmenu):not(.branches)";` + WIDE_SCRIPT("Math.min(240, window.innerWidth - 8)");
+  const v = await runInChrome(CHROME!, RAIL, script, { css: CSS_RAIL, width: 320, height: 600 });
+  assert.deepEqual(v.fails, [], v.fails.join("\n") + " " + JSON.stringify(v.notes));
+});
