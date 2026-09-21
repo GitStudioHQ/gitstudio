@@ -1,0 +1,20 @@
+docs/reviews/2026-09-21-morning-review.md
+  s_26f5e669d3043c::t_a6ce4edf181f8c 1-26,28-67,69-78
+  s_26f5e669d3043c::t_7c1ae7565ec31c 27,68,79-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d9af0b3eefb218112eb214f3c5880820c2e4937c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
