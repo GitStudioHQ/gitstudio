@@ -9113,7 +9113,11 @@ class App {
       // saying nothing just made the list look like it had ignored the click.
       if (this.currentView === "graph") this.revealMissed(sha);
     };
-    requestAnimationFrame(tryReveal);
+    // A TIMER, not requestAnimationFrame (see focusReturn.ts): a frame is not
+    // guaranteed while the window is occluded or minimised, and never comes
+    // under the headless harness — where the reveal "Show all branches"
+    // replays (issue #30) sat unfired behind a frame that was never served.
+    window.setTimeout(tryReveal, 0);
   }
 
   /**
