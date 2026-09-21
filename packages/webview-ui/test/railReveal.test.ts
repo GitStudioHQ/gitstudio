@@ -32,10 +32,23 @@ const MOUNT = `
   });
   const page1 = Array.from({ length: 150 }, (_, i) => row(i));
   const page2 = Array.from({ length: 200 }, (_, i) => row(150 + i));
-  // A timer, not a frame: under --virtual-time-budget headless Chrome serviced
-  // no animation frame on the Windows runner, and the page sat at PENDING
-  // until the budget ran out. Nothing the rail does waits on a frame.
-  const raf = () => new Promise((r) => setTimeout(r, 30));
+  // A frame if one comes, a timer if none does. Under --virtual-time-budget
+  // headless Chrome serviced no animation frame on the Windows runner (the
+  // page sat at PENDING until the budget ran out), while on macOS a bare timer
+  // resolved BEFORE the rendering step the rail's landing rides on. Racing the
+  // two is right on both: the frame wins where frames exist.
+  const raf = () => new Promise((r) => {
+    let done = false;
+    const fin = () => { if (!done) { done = true; setTimeout(r, 0); } };
+    requestAnimationFrame(fin);
+    setTimeout(fin, 50);
+  });
+  // A landing is a paint, not a promise: wait for it, bounded.
+  const until = async (probe, ms = 3000) => {
+    const t0 = Date.now();
+    while (!probe() && Date.now() - t0 < ms) await raf();
+    return probe();
+  };
   const rail = document.createElement("gitstudio-commit-rail");
   const actions = [];
   rail.onAction = (a) => actions.push(a);
@@ -71,7 +84,7 @@ test("a commit further back than the loaded rows is paged toward, and lands when
     await rail.updateComplete;
     expect(loadMores() === before + 1, "reveal of an unloaded sha asks the host for the next page (" + loadMores() + " loadMore actions, was " + before + ")");
     await landPage2(false);
-    const selected = $(".row.selected");
+    const selected = await until(() => $(".row.selected"));
     expect(!!selected, "a row is selected once the page landed");
     expect(selected && selected.dataset.sha === sha(300), "the selected row is the revealed commit (" + (selected && selected.dataset.sha) + ")");
     expect(scroller.scrollTop > 200 * ROW_HEIGHT, "the list scrolled down to it (scrollTop " + scroller.scrollTop + ")");
@@ -93,7 +106,7 @@ test("a reveal that can never land is dropped, and never stops the list painting
     rail.reveal(sha(10));
     await rail.updateComplete;
     await raf();
-    const selected = $(".row.selected");
+    const selected = await until(() => $(".row.selected"));
     expect(selected && selected.dataset.sha === sha(10), "a later reveal of a loaded commit lands (" + (selected && selected.dataset.sha) + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
@@ -146,7 +159,7 @@ test("a reveal issued before the first page exists lands when the list comes up"
     cold.head = sha(0); cold.rows = page1; cold.totalColumns = 1; cold.hasMore = true; cold.status = "ready";
     await cold.updateComplete;
     await raf();
-    const selected = cold.shadowRoot.querySelector(".row.selected");
+    const selected = await until(() => cold.shadowRoot.querySelector(".row.selected"));
     expect(selected && selected.dataset.sha === sha(40), "the queued reveal landed on the first paint (" + (selected && selected.dataset.sha) + ")");
     expect(cold.shadowRoot.querySelector(".scroller").scrollTop > 0, "and the list scrolled to it");
   `);
@@ -160,7 +173,7 @@ test("two reveals racing one page request it once, and the later one wins", { sk
     await rail.updateComplete;
     expect(loadMores() === 1, "one page requested for two reveals (" + loadMores() + ")");
     await landPage2(false);
-    const selected = $(".row.selected");
+    const selected = await until(() => $(".row.selected"));
     expect(selected && selected.dataset.sha === sha(320), "the commit revealed LAST is the one selected (" + (selected && selected.dataset.sha) + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
