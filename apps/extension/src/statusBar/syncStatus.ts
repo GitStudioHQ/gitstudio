@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
+import { askPullMode } from "../git/pullMode";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
@@ -218,7 +219,20 @@ export class SyncStatusItem implements vscode.Disposable {
           );
           break;
         }
-        const pull = await active.ctx.sync.pull();
+        let pull = await active.ctx.sync.pull();
+        // The divergence check above ran against the counts as they were a
+        // moment ago. If the remote moved in between, the pull comes back
+        // `diverged` rather than reconciled — ask the same question the branch
+        // view asks instead of reporting git's fast-forward refusal, which is
+        // advice for a terminal and no more use here than the wall report #12
+        // was.
+        if (pull.diverged) {
+          const mode = await askPullMode(pull.diverged);
+          if (mode === undefined) {
+            return; // backed out — nothing ran, so there is nothing to report
+          }
+          pull = await active.ctx.sync.pull({ mode });
+        }
         if (!pull.ok) {
           if (await this.offerUpstreamRepair(active, pull.stderr)) {
             return;
@@ -226,9 +240,10 @@ export class SyncStatusItem implements vscode.Disposable {
           reportSync(pull, "Pull");
           return;
         }
-        // push-force-reviewed: only reached once the pull above fast-forwarded
-        // us onto the remote tip, so this push is a fast-forward by
-        // construction. The rewrite case returned before ever getting here.
+        // push-force-reviewed: only reached once the pull SUCCEEDED, so the
+        // remote tip is an ancestor of HEAD — by fast-forward, by the merge
+        // commit, or by the rebase. Either way this push is a fast-forward by
+        // construction, and the rewrite case returned before getting here.
         reportSync(await active.ctx.sync.push(), "Push", "Synced");
         break;
       }

@@ -407,6 +407,32 @@ export interface SyncStatus {
   noUpstream: boolean;
 }
 
+/**
+ * How a pull reconciles the commits it brings in with the ones you already
+ * have. Mirrors `PullMode` in git-service, and is passed to git as a flag —
+ * picking one here never writes `pull.rebase` into the user's config.
+ */
+export type PullMode = "merge" | "rebase" | "ff-only";
+
+/**
+ * A pull that stopped because the branch and its upstream have BOTH moved.
+ *
+ * git refuses this outright with a wall of `git config` advice (report #12).
+ * The bridge turns that refusal into a question instead: nothing was changed,
+ * and the renderer asks for a `PullMode` and calls `sync:pull` again with it.
+ */
+export interface PullDivergence {
+  branch: string;
+  upstream: string;
+  ahead: number;
+  behind: number;
+}
+
+/** `sync:pull`'s answer — a CommitActionResult that can ask a question back. */
+export interface PullActionResult extends CommitActionResult {
+  diverged?: PullDivergence;
+}
+
 /** A branch with remote-tracking context, for the Branches manager. */
 export interface BranchInfo {
   name: string;
@@ -1785,7 +1811,13 @@ export interface IpcChannels {
   // ── Sync (control remote changes) ──
   "sync:status": [void, SyncStatus];
   "sync:fetch": [{ prune?: boolean } | void, CommitActionResult];
-  "sync:pull": [void, CommitActionResult];
+  /**
+   * Pull. With no `mode` the bridge decides — and when the branch has diverged
+   * with nothing in the user's config to settle it, it changes NOTHING and
+   * answers `{ ok: false, expected: true, diverged }` so the caller can ask.
+   * Calling again with `mode` passes the flag to git explicitly.
+   */
+  "sync:pull": [{ mode?: PullMode } | void, PullActionResult];
   "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, CommitActionResult];
   /** Push (or publish) ONE named branch, not just the checked-out one. */
   "branch:push": [{ name: string }, CommitActionResult];

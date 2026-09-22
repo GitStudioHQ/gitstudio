@@ -580,6 +580,10 @@ const CASES = [
   ["a-live-turn-shows-its-steps", "assistant~click:.topbar-assistant~click:.assistant-chip", { extra: "ai=1&chat=live" }],
   ["jump-to-latest-appears-when-you-scroll-up", "assistant~click:.topbar-assistant~click:.assistant-chip", { extra: "ai=1&chat=live" }],
   ["a-failed-turn-offers-a-retry", "assistant~click:.topbar-assistant", { extra: "ai=1&fail=ai:chatSend" }],
+  // Pull on a branch that has diverged from its upstream (report #12).
+  ["a-diverged-pull-asks-instead-of-quoting-git", "code", { extra: "diverged=1" }],
+  ["picking-how-to-reconcile-actually-pulls-that-way", "code", { extra: "diverged=1" }],
+  ["cancelling-the-question-pulls-nothing-and-reports-nothing", "code", { extra: "diverged=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {

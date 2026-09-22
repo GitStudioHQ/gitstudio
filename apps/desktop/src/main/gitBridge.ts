@@ -49,6 +49,9 @@ import type {
   GraphRefFilter,
   HeadCommit,
   HeadInfo,
+  PullActionResult,
+  PullDivergence,
+  PullMode,
   RefInfo,
   RepoFile,
   FileHunkWire,
@@ -110,6 +113,24 @@ export function safeArg(v: unknown): v is string {
  */
 export function safePath(v: unknown): v is string {
   return typeof v === "string" && v.length > 0 && !v.includes("\0");
+}
+
+/** "1 commit" / "3 commits" — the main process has no renderer helpers. */
+function commits(n: number): string {
+  return `${n} commit${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The only three reconciliations `sync:pull` accepts.
+ *
+ * `mode` is typed `PullMode` on the channel, but a type is not a check: what
+ * arrives is whatever the renderer sent, and it ends up choosing a command-line
+ * flag. Checking it against this set here — at the boundary, before it can
+ * become an argument — is the same discipline `safeArg` applies to a ref.
+ */
+const PULL_MODES: readonly PullMode[] = ["merge", "rebase", "ff-only"];
+function safePullMode(v: unknown): v is PullMode | undefined {
+  return v === undefined || PULL_MODES.includes(v as PullMode);
 }
 
 /** Standard rejection for an unsafe ref/name reaching a mutation. */
@@ -1711,8 +1732,48 @@ export class GitBridge {
   async syncFetch(opts?: { prune?: boolean }): Promise<CommitActionResult> {
     return this.staged((ctx) => ctx.sync.fetch({ prune: opts?.prune }));
   }
-  async syncPull(): Promise<CommitActionResult> {
-    return this.staged((ctx) => ctx.sync.pull());
+  /**
+   * Pull — and when git cannot reconcile on its own, ASK rather than fail.
+   *
+   * With no `mode`, a diverged branch comes back as `{ ok: false, diverged }`
+   * with nothing changed: `SyncOps.pull` refuses as `--ff-only`, which aborts
+   * before touching the worktree. `expected: true` keeps that out of the crash
+   * reporter — a branch that diverged is a state of the user's repo, not a
+   * defect — and it is the same flag the renderer reads to show the message as
+   * information rather than as a red error.
+   *
+   * Report #12: what reached the user instead was git's own terminal advice,
+   * "You have divergent branches and need to specify how to reconcile them",
+   * followed by three `git config` lines. The mode is passed as a flag on the
+   * one command; the user's config is never written.
+   */
+  async syncPull(opts?: { mode?: PullMode }): Promise<PullActionResult> {
+    if (!safePullMode(opts?.mode)) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: "That isn't a way to reconcile a pull.",
+      };
+    }
+    let diverged: PullDivergence | undefined;
+    const r = await this.staged(async (ctx) => {
+      const out = await ctx.sync.pull({ mode: opts?.mode });
+      if (!out.diverged) {
+        return out;
+      }
+      diverged = out.diverged;
+      const { branch, upstream, ahead, behind } = out.diverged;
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          `'${branch}' and ${upstream} have both moved on — ${commits(ahead)} here, ` +
+          `${commits(behind)} there. Choose how to combine them.`,
+      };
+    });
+    return diverged ? { ...r, diverged } : r;
   }
   /**
    * `force` becomes `--force-with-lease`, never a bare `--force` — the lease
@@ -1731,26 +1792,16 @@ export class GitBridge {
   /** Fast-forward a local branch straight from its upstream WITHOUT checking it
    *  out: `git fetch <remote> <remoteBranch>:<localBranch>`. Git itself refuses
    *  a non-fast-forward and the currently checked-out branch, so the worktree
-   *  is never touched. */
+   *  is never touched.
+   *
+   *  Delegates to `SyncOps.pullFastForward`, which is the SAME op the extension
+   *  calls. This arm used to spell it out again and split `%(upstream:short)`
+   *  on its first slash — so a remote named with one ("team/eu") was read as a
+   *  remote called "team", which does not exist. That bug was fixed in
+   *  git-service and left standing here, forty lines from its own call site. */
   async branchPullFf(name: string): Promise<CommitActionResult> {
     if (!safeArg(name)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) => {
-      const up = await ctx.process.run([
-        "for-each-ref",
-        "--format=%(upstream:short)",
-        `refs/heads/${name}`,
-      ]);
-      const upstream = up.stdout.trim();
-      const slash = upstream.indexOf("/");
-      if (up.code !== 0 || slash <= 0) {
-        return { ok: false, stderr: `'${name}' has no upstream to pull from.` };
-      }
-      return ctx.process.run([
-        "fetch",
-        upstream.slice(0, slash),
-        `${upstream.slice(slash + 1)}:${name}`,
-      ]);
-    });
+    return this.staged((ctx) => ctx.sync.pullFastForward(name));
   }
 
   /**

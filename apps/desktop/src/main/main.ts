@@ -799,7 +799,10 @@ function registerIpc(): void {
   // Sync (control remote changes).
   handle("sync:status", () => bridge.syncStatus());
   handle("sync:fetch", (opts) => bridge.syncFetch(opts || undefined));
-  handle("sync:pull", () => bridge.syncPull());
+  // pull-diverged-reviewed: pure forwarder — the bridge answers a diverged
+  // branch with `{ ok: false, expected, diverged }` and the RENDERER asks; the
+  // chosen mode rides back through opts on the second call.
+  handle("sync:pull", (opts) => bridge.syncPull(opts || undefined));
   // push-force-reviewed: pure forwarder — the renderer decides about force
   // and it rides through in opts.
   handle("sync:push", (opts) => bridge.syncPush(opts || undefined));

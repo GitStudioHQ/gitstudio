@@ -22,6 +22,16 @@ but they share the same engine, so most Git behaviour lands in both at once.
   offers **Show all branches**. (#30)
 
 ### Fixed
+- **Pull failed with git's advice instead of doing something about it.** When
+  your branch and its upstream had both moved on and nothing in your git
+  config said how to reconcile them, Pull came back with git's own note for a
+  terminal — *"You have divergent branches and need to specify how to reconcile
+  them"*, followed by three `git config` commands to run. Pull now says what
+  has happened, in commits ("*'main' and origin/main have both moved on — 2
+  commits here, 3 commits there*"), and offers the choice git is asking for:
+  **Merge**, **Rebase**, or cancel. Each option says what it will do to your
+  history. Nothing is changed while the question is open, and picking one
+  applies to **that pull only** — your `pull.rebase` setting is never written.
 - **Compare lost the file you were reading.** A change under `.git` (another
   tool's fetch, or git refreshing its index under a plain `git status`), ⌘R, or
   coming back to the window after editing in your editor rebuilt the Compare
