@@ -5,8 +5,11 @@ import {
   errorFields,
   githubHttpError,
   graphqlError,
+  keepsPartialData,
   networkError,
+  type GraphqlFailure,
 } from "../src/main/githubErrors";
+import { EMPTY_REPO_MESSAGE } from "../src/shared/githubStates";
 
 // 1.1.1 stopped filing "Not connected to GitHub." as a crash. Its siblings kept
 // arriving: being offline, an expired token, the rate limiter. None of them are
@@ -149,4 +152,137 @@ test("every expected error still reaches the user unchanged", async () => {
   for (const e of cases) {
     assert.equal(e.toString(), `Error: ${e.message}`, "must be indistinguishable on the wire");
   }
+});
+
+// ── Reports #13, #14, #17: three GitHub ANSWERS filed as crashes ─────────────
+
+test("a repository with no commits is a state, whatever status GitHub used", async () => {
+  // The whole reason this one is classified by the MESSAGE. GitHub reports an
+  // empty repository with a different status on every endpoint the browser
+  // touches: the contents API answers 404 (which the policy above deliberately
+  // reports), /commits and /git/trees answer 409. Report #13 is the 404 half,
+  // filed for somebody browsing a repository they had just created.
+  for (const [status, detail] of [
+    [404, "This repository is empty."],
+    [409, "Git Repository is empty."],
+    [409, "This repository is empty."],
+  ] as const) {
+    const e = await githubHttpError(json(status, { message: detail }));
+    assert.equal(isExpectedError(e), true, `HTTP ${status} "${detail}" must not be reported`);
+    // ONE wording, so the renderer has one string to recognise across IPC —
+    // where an error is only ever its message — and the collector one to dedupe.
+    assert.equal(e.message, EMPTY_REPO_MESSAGE);
+  }
+});
+
+test("a 409 that is not an empty repository keeps GitHub's own detail", async () => {
+  const e = await githubHttpError(json(409, { message: "Merge conflict" }));
+  assert.equal(isExpectedError(e), true, "a conflict is the repository's state, not our bug");
+  assert.equal(e.message, "Merge conflict");
+});
+
+test("a 404 that is NOT about emptiness is still reported", async () => {
+  // The empty-repository rule must not swallow the 404 policy whole.
+  const e = await githubHttpError(json(404, { message: "Not Found" }));
+  assert.equal(isExpectedError(e), false);
+});
+
+test("a repository GraphQL cannot resolve is a state, and says so in English", () => {
+  // Reports #14 and #17: the repository behind the open repo's remote was
+  // renamed, deleted, or moved somewhere this account cannot see. Filed as a
+  // crash twice, and shown to the user in GraphQL's own vocabulary.
+  const e = graphqlError({
+    message: "Could not resolve to a Repository with the name 'acme-private/billing-pipeline'.",
+    type: "NOT_FOUND",
+    path: ["repository"],
+  });
+  assert.equal(isExpectedError(e), true);
+  assert.match(e.message, /acme-private\/billing-pipeline/, "it still names the repository");
+  assert.doesNotMatch(e.message, /resolve to a/i, "but not in GraphQL's vocabulary");
+  assert.match(e.message, /renamed or deleted|access/i, "and it says what that might mean");
+  assert.equal(e.toString(), `Error: ${e.message}`, "indistinguishable on the wire");
+});
+
+test("a NOT_FOUND about an id WE sent is still reported", () => {
+  // The other half of the #14/#17 fix, and the one it must not cost us.
+  //
+  // A GraphQL node id is not a name from the user's world — it is a payload
+  // this app built: a project item id, a review thread id, a pull request id,
+  // each carried from a read through the renderer into a mutation. Building
+  // that payload wrong is this codebase's most-repeated defect (issues #12/#19,
+  // plus three more found in a single sweep), and it is exactly the bug the
+  // 404 rule above is deliberately kept loud for. Marking it `expected` would
+  // have turned every one of those into a blue toast and no report.
+  const e = graphqlError({
+    message: "Could not resolve to a node with the global id of 'PRRT_kwDOAbc'.",
+    type: "NOT_FOUND",
+  });
+  assert.equal(isExpectedError(e), false, "a request we built wrong must reach the reporter");
+  assert.equal(
+    e.message,
+    "Could not resolve to a node with the global id of 'PRRT_kwDOAbc'.",
+    "and the user reads GitHub's own sentence, unchanged",
+  );
+});
+
+test("partial GraphQL data is kept only when keeping it cannot lie", () => {
+  const notFound: GraphqlFailure[] = [{ message: "Could not resolve…", type: "NOT_FOUND", path: ["b"] }];
+
+  assert.equal(
+    keepsPartialData({ a: { projects: [] }, b: null }, notFound),
+    true,
+    "one object of several missing must not discard the ones that DID resolve",
+  );
+  assert.equal(
+    keepsPartialData({ repository: null }, notFound),
+    false,
+    "nothing came back, so there is nothing to keep — that one still throws",
+  );
+  // The opposite mistake is worse than the one being fixed: a rate limit or a
+  // denied scope makes the answer INCOMPLETE for a reason that is
+  // indistinguishable from "empty" once it reaches a list. Those keep throwing.
+  for (const type of ["RATE_LIMITED", "FORBIDDEN", undefined]) {
+    assert.equal(
+      keepsPartialData({ a: { projects: [] } }, [{ message: "no", type }]),
+      false,
+      `${type ?? "an untyped error"} must not be laundered into a short list`,
+    );
+  }
+  assert.equal(
+    keepsPartialData({ a: 1 }, [
+      { message: "gone", type: "NOT_FOUND" },
+      { message: "slow down", type: "RATE_LIMITED" },
+    ]),
+    false,
+    "one unsafe error in the array is enough",
+  );
+  assert.equal(keepsPartialData(null, notFound), false);
+  assert.equal(keepsPartialData({ a: 1 }, []), false, "no errors is not the partial path at all");
+});
+
+test("a NOT_FOUND on the object a query READS is not a partial answer", () => {
+  // The trap in "something non-null came back": a single-root query keeps its
+  // root when a NESTED object is missing. `repository{pullRequest(number:999)}`
+  // answers `{ repository: { pullRequest: null } }`, and keeping that let the
+  // review-thread read report "no threads" for a pull request that does not
+  // exist — silently, where the client used to throw and report.
+  assert.equal(
+    keepsPartialData({ repository: { pullRequest: null } }, [
+      { message: "Could not resolve to a PullRequest with the number of 999.", type: "NOT_FOUND", path: ["repository", "pullRequest"] },
+    ]),
+    false,
+    "the pull request IS the answer; without it there is nothing partial to keep",
+  );
+  assert.equal(
+    keepsPartialData({ repository: { projectsV2: { nodes: [{ id: "P_1" }, null] } } }, [
+      { message: "Could not resolve…", type: "NOT_FOUND", path: ["repository", "projectsV2", "nodes", 1] },
+    ]),
+    true,
+    "one element of a list is missing — its siblings are still the answer",
+  );
+  assert.equal(
+    keepsPartialData({ a: { projects: [] } }, [{ message: "Could not resolve…", type: "NOT_FOUND" }]),
+    false,
+    "an error that does not say WHAT is missing cannot be proved partial",
+  );
 });

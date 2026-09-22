@@ -51,6 +51,7 @@ import { parseRepoRoute, repoRouteId, type RepoRoute } from "../exploreRoutes";
 import { detailPage, propSection, propAddBtn, whereChip, type SectionNav } from "./common";
 import { peek } from "../cache";
 import { findLocalCopy, localCopyIndex, middlePath, openLocalCopy } from "../localCopy";
+import { isEmptyRepoMessage } from "../../shared/githubStates";
 import type { GhRepoBranch, GhRepoEntry, GhRepoFile, LocalCopy, OrgRepoDetail } from "../../shared/ipc";
 
 // The routing vocabulary is pure and lives in ../exploreRoutes (node-tested);
@@ -425,6 +426,21 @@ async function mount(
     else await renderDir(content, fullName, path, ref, goto);
   } catch (e) {
     if (!content.isConnected) return;
+    // A repository with no commits is not a failed read — it is what the
+    // repository IS, and every endpoint this page uses says so rather than
+    // answering an empty list (see shared/githubStates). Painting "Couldn't
+    // read this repository" over it accused the app of a fault it did not have
+    // and sent people to github.com to find out we were wrong. Report #13.
+    if (isEmptyRepoMessage(cleanErr(e))) {
+      content.replaceChildren(
+        emptyState(
+          "This repository is empty",
+          `Nothing has been pushed to ${fullName} yet, so there is nothing to read here.`,
+          { icon: "repo" },
+        ),
+      );
+      return;
+    }
     content.replaceChildren(
       errorState(
         "Couldn't read this repository",
@@ -820,8 +836,16 @@ async function openGoToFile(
       input.removeAttribute("aria-activedescendant");
       input.setAttribute("aria-expanded", "false");
       if (state === "failed") {
+        // The third door on to an empty repository, after the page body and
+        // the peek browser. "Couldn't list the files" blames the app for a
+        // repository that simply has none.
         listEl.appendChild(
-          errorState("Couldn't list the files", failure, () => void load()),
+          isEmptyRepoMessage(failure)
+            ? emptyState("This repository is empty", "There are no files to go to yet.", {
+                icon: "repo",
+                anchor: "inline",
+              })
+            : errorState("Couldn't list the files", failure, () => void load()),
         );
       }
       return;

@@ -1026,6 +1026,21 @@
     { fullName: "acme-corp/platform", name: "platform", owner: "acme-corp", ownerType: "Organization", mine: false, description: "Every PDF is just material. Reshape it \u2014 a local-first PDF editor for macOS, Windows and Linux", private: true, fork: false, cloneUrl: "https://github.com/acme-corp/platform.git", sshUrl: "git@github.com:acme-corp/platform.git", defaultBranch: "main", stars: 3, language: "Go", updatedAt: ISO(12) },
   ];
 
+  // ?emptyrepo=1 — a GitHub repository nobody has pushed to yet.
+  //
+  // This state is UNREACHABLE by answering an empty list: GitHub fails every
+  // read of an empty repository instead (the contents API 404s, /commits and
+  // /git/trees 409), all saying "This repository is empty.", which the main
+  // process normalises to that one sentence. So the fixture has to THROW, and
+  // until it did, the surfaces that meet an empty repository had never been
+  // rendered by anything — which is how crash report #13 came to be filed for
+  // a page that simply had nothing to show.
+  const emptyRepo = params.get("emptyrepo") === "1";
+  const ifEmpty = (fn) => (req) => {
+    if (emptyRepo) throw new Error("This repository is empty.");
+    return fn(req);
+  };
+
   const dynamic = {
     // A READ that the fallback used to answer with a mutation shape. Present so
     // the AI-gating path is exercised instead of silently failing open.
@@ -1193,18 +1208,18 @@
       return { ok: true, root, cloned: true };
     },
     // E4: entity pages — remote tree/file/readme at a ref, branches, paths.
-    "ghrepo:commits": ({ ref }) =>
+    "ghrepo:commits": ifEmpty(({ ref }) =>
       [
         { sha: "9f8e7d6c5b4a39281706", shortSha: "9f8e7d6", subject: "release: extension 1.11.1", author: "Anton Arnaudov", login: "antonarnaudov", date: ISO(1) },
         { sha: "18c9d0e7f6a5b4c3d2e1", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", login: "mira-holt", date: ISO(3) },
         { sha: "c3d4e5f60718293a4b5c", shortSha: "c3d4e5f", subject: `actions: stream job logs (${ref ?? "default"})`, author: "Sora Ohta", date: ISO(8) },
-      ],
-    "ghrepo:branches": () => [
+      ]),
+    "ghrepo:branches": ifEmpty(() => [
       { name: "main", sha: "9f8e7d6", protected: true },
       { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
       { name: "fix/log-stream", sha: "b2c3d4e", protected: false },
-    ],
-    "ghrepo:paths": () => ({
+    ]),
+    "ghrepo:paths": ifEmpty(() => ({
       paths: [
         "README.md",
         "package.json",
@@ -1216,8 +1231,8 @@
       ],
       truncated: false,
       total: 7,
-    }),
-    "ghrepo:tree": (req) => {
+    })),
+    "ghrepo:tree": ifEmpty((req) => {
       if (!req.path) {
         return [
           { name: "apps", path: "apps", type: "dir" },
@@ -1229,15 +1244,15 @@
       }
       if (req.path === "apps") return [{ name: "desktop", path: "apps/desktop", type: "dir" }];
       return [{ name: "index.ts", path: req.path + "/index.ts", type: "file", size: 420 }];
-    },
-    "ghrepo:file": (req) => ({
+    }),
+    "ghrepo:file": ifEmpty((req) => ({
       path: req.path,
       text: "export function createLogPane(o: LogPaneOpts): LogPane {\n  const el = document.createElement(\"div\");\n  el.className = \"log-pane\";\n  return { el, append, reset, finish };\n}\n",
       truncated: false,
       binary: false,
       size: 420,
-    }),
-    "ghrepo:readme": () => ({
+    })),
+    "ghrepo:readme": () => (emptyRepo ? undefined : {
       name: "README.md",
       // The shapes a real README carries: a RELATIVE image (must be rewritten
       // to raw.githubusercontent.com or it 404s against the app's own origin)
