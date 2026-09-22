@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
+import type { PullDivergence } from "@gitstudio/git-service/SyncOps";
+import { askPullMode } from "../git/pullMode";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
@@ -1448,7 +1450,9 @@ export class CommitViewProvider
       vscode.window.setStatusBarMessage(`Copied “${ref}”`, 2000);
       return;
     }
-    let result: { ok: boolean; stderr?: string } = { ok: true };
+    // `diverged` is how SyncOps.pull answers "both sides moved and nobody said
+    // how to reconcile them" — a question to ask, not a failure to report.
+    let result: { ok: boolean; stderr?: string; diverged?: PullDivergence } = { ok: true };
     try {
       // Checking out a branch is not an action here: the menu routes every
       // checkout through branchRefCommand (gitstudio.branch.checkout /
@@ -1471,11 +1475,36 @@ export class CommitViewProvider
           result = await entry.ctx.branches.checkout(r, { detach: true });
           break;
         }
-        case "pull":
+        case "pull": {
+          // "Update (pull)" names no reconciliation, so SyncOps decides. It
+          // hands back `diverged` rather than git's "you have divergent
+          // branches" advice when both sides have moved and nothing in the
+          // user's config settles it — and that is a question, so ask it.
           result = await entry.ctx.sync.pull();
+          if (result.diverged) {
+            const mode = await askPullMode(result.diverged);
+            if (mode === undefined) {
+              // Tell the webview the op is over, exactly as the push arm does:
+              // a bare return leaves the ↓ pill disabled, spinning on a pull
+              // that is never coming.
+              void this.view?.webview.postMessage({
+                type: "branchActionDone",
+                action: msg.action,
+              });
+              return;
+            }
+            result = await entry.ctx.sync.pull({ mode });
+          }
+          break;
+        }
+        case "pullMerge":
+          // The menu item says "using Merge", so say it to git too. Leaving the
+          // flag off walked this item into the divergent-branches wall — in the
+          // one state where the user had already answered the question.
+          result = await entry.ctx.sync.pull({ mode: "merge" });
           break;
         case "pullRebase":
-          result = await entry.ctx.sync.pull({ rebase: true });
+          result = await entry.ctx.sync.pull({ mode: "rebase" });
           break;
         case "push": {
           // Same rule as the push modal: a branch that diverged both ways can
@@ -4704,7 +4733,7 @@ export class CommitViewProvider
         const i = b.querySelector(".codicon");
         if (i) i.className = "codicon codicon-loading codicon-modifier-spin";
         b.querySelector("span").textContent = busyLabel;
-        if (action === "pull" || action === "pullRebase") { syncBusy = "pull"; applySyncBusy(); }
+        if (action === "pull" || action === "pullMerge" || action === "pullRebase") { syncBusy = "pull"; applySyncBusy(); }
         else if (action === "push") { syncBusy = "push"; applySyncBusy(); }
         vscode.postMessage({ type: "branchAction", action: action, ref: ref });
       });
@@ -4815,7 +4844,7 @@ export class CommitViewProvider
         subItem(list, "trash", "Delete Tag", () => subAct("gitstudio.tag.delete", name, "tag"), true);
       } else if (current) {
         subItemLive(list, "arrow-down", "Pull using Rebase", "Pulling…", "pullRebase", name);
-        subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pull", name);
+        subItemLive(list, "arrow-down", "Pull using Merge", "Pulling…", "pullMerge", name);
         // Push opens the review modal (see openPushModal) rather than pushing in
         // place, so every push route funnels through the same confirmation.
         subItem(list, "arrow-up", "Push…", () => {
@@ -6887,7 +6916,7 @@ export class CommitViewProvider
       } else if (msg.type === "branchActionDone") {
         // A sync op finished — clear every in-flight face (the fresh counts
         // arrived via the state push the host sent just before this).
-        if (msg.action === "pull" || msg.action === "pullRebase" || msg.action === "push") {
+        if (msg.action === "pull" || msg.action === "pullMerge" || msg.action === "pullRebase" || msg.action === "push") {
           syncBusy = "";
           // Re-derive pill visibility from the last real counts — the busy
           // face force-showed the pill, which must not linger at count 0.
