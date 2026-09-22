@@ -1,4 +1,5 @@
 import type { GitProcess, GitRunOptions } from "./GitProcess";
+import { parseUnmergedPaths } from "./ConflictProvider";
 
 /** How far the branch is ahead of / behind its upstream. */
 export interface AheadBehind {
@@ -41,6 +42,22 @@ export interface PullDivergence {
   behind: number;
 }
 
+/**
+ * A pull that merged or rebased and STOPPED on conflicts.
+ *
+ * Not a failure: it is the pull doing what was asked up to the point where a
+ * person has to choose, and the repository is now mid-merge or mid-rebase. The
+ * caller's job is to say so plainly and send the user to where conflicts are
+ * resolved — never to show git's terminal hint, and never to file a report.
+ */
+export interface PullStop {
+  /** What the repository is in the middle of: a merge to commit, or a rebase
+   *  to continue. */
+  operation: "merge" | "rebase";
+  /** Repo-relative paths left conflicted. Never empty. */
+  conflicted: string[];
+}
+
 export interface PullResult extends SyncOpResult {
   /**
    * Set when the pull stopped because the branch and its upstream have
@@ -48,6 +65,32 @@ export interface PullResult extends SyncOpResult {
    * the caller is expected to ask the user for a `PullMode` and call again.
    */
   diverged?: PullDivergence;
+  /** Set when the merge or rebase the pull ran stopped on conflicts. */
+  stopped?: PullStop;
+  /**
+   * git's stdout on failure. A merge that conflicts explains itself HERE
+   * ("CONFLICT (content): …") and writes nothing to stderr, so a caller that
+   * shows only stderr has nothing to say.
+   */
+  stdout?: string;
+}
+
+/**
+ * What to tell the user when a pull stopped on conflicts — in the app's words,
+ * with the count and the next step, and nothing a terminal would say.
+ *
+ * Lives beside `PullStop`, for the reason `unresolvedConflictsMessage` lives
+ * beside ConflictProvider: the extension and the desktop app describe the same
+ * state, and two copies of the sentence is how they start to disagree.
+ */
+export function pullStoppedMessage(stop: PullStop): string {
+  const n = stop.conflicted.length;
+  const files = n === 1 ? "1 file" : `${n} files`;
+  const next = stop.operation === "rebase" ? "continue the rebase" : "commit the merge";
+  return (
+    `The pull stopped on conflicts in ${files}. Resolve ${n === 1 ? "it" : "them"}, ` +
+    `then ${next} — or abort to go back to where you were.`
+  );
 }
 
 export interface PullOptions extends GitRunOptions {
@@ -78,6 +121,15 @@ const FLAG_FOR_MODE: Record<PullMode, string> = {
   rebase: "--rebase",
   "ff-only": "--ff-only",
 };
+
+/**
+ * `git pull`'s exit status when its merge or rebase STOPPED for the user, and
+ * equally when its fetch failed (builtin/pull.c returns 1 from a failed
+ * `run_fetch`). Every refusal of its own — `--ff-only` on a diverged branch,
+ * "need to specify how to reconcile", "you have unmerged files" — is a `die()`,
+ * which is 128. See `SyncOps.pull`.
+ */
+const GIT_PULL_STOPPED_OR_FETCH_FAILED = 1;
 
 /**
  * Sync operations against the upstream: ahead/behind counts, push, pull, fetch,
@@ -382,6 +434,22 @@ export class SyncOps {
    * - With no mode but `pull.rebase` / `pull.ff` / `branch.<name>.rebase` set,
    *   we get out of the way: the user has already told git what they want, and
    *   a plain `git pull` does it.
+   *
+   * Two failures are answered as facts rather than as git's text:
+   *
+   * - A merge or rebase that STOPPED on conflicts comes back `stopped` (see
+   *   `PullStop`). Recognised the way `pausedForUser` recognises a paused
+   *   cherry-pick — exit 1 AND files left unmerged — never by reading git's
+   *   English. The exit code is what keeps a REFUSAL out: pulling while an
+   *   earlier merge is still unresolved is refused with 128 before anything
+   *   runs, and those conflicts are not this pull's.
+   * - A pull that could not REACH the remote is never a divergence, whatever
+   *   the remote-tracking ref says. git's pull returns 1 when its fetch fails
+   *   and dies (128) on its own refusals, `--ff-only`'s included — and the ref
+   *   a failed fetch leaves behind is from the last fetch that worked, so it
+   *   can show a divergence that asking about would only answer with this same
+   *   transport error. Both codes are pinned against real git in
+   *   test/pullStopped.test.ts.
    */
   async pull(opts?: PullOptions): Promise<PullResult> {
     const mode: PullMode | undefined =
@@ -415,16 +483,56 @@ export class SyncOps {
     if (r.code === 0) {
       return { ok: true, stderr: r.stderr };
     }
+    const failed = { ok: false, stderr: r.stderr, stdout: r.stdout };
+    if (r.code === GIT_PULL_STOPPED_OR_FETCH_FAILED) {
+      // Either the merge/rebase stopped for the user, or the fetch never got
+      // through. Files left unmerged tell the two apart.
+      const stopped = await this.stoppedOnConflicts(mode, signal);
+      return stopped ? { ...failed, stopped } : failed;
+    }
     if (auto) {
-      // The fetch half of `pull --ff-only` already ran, so the counts below are
-      // current. Diverged is a structural fact — both sides have commits the
-      // other does not — never a match on git's advice text.
+      // The fetch half of `pull --ff-only` already ran — and succeeded, or the
+      // exit code above would have said so — so the counts below are current.
+      // Diverged is a structural fact — both sides have commits the other does
+      // not — never a match on git's advice text.
       const d = await this.divergence(signal);
       if (d) {
-        return { ok: false, stderr: r.stderr, diverged: d };
+        return { ...failed, diverged: d };
       }
     }
-    return { ok: false, stderr: r.stderr };
+    return failed;
+  }
+
+  /**
+   * The conflicts a pull that exited 1 left behind, and what is paused over
+   * them — or null when nothing is unmerged (the exit was the fetch failing).
+   *
+   * The operation is read from git's own marker refs, spelled the same in every
+   * locale. With neither present — unconfigured shapes this has not met — it
+   * falls back to what was asked for, which is what git was running.
+   */
+  private async stoppedOnConflicts(
+    mode: PullMode | undefined,
+    signal?: AbortSignal,
+  ): Promise<PullStop | null> {
+    const status = await this.proc.run(["status", "--porcelain=v2", "-z"], { signal });
+    if (status.code !== 0) {
+      return null;
+    }
+    const conflicted = parseUnmergedPaths(status.stdout);
+    if (conflicted.length === 0) {
+      return null;
+    }
+    const has = async (ref: string): Promise<boolean> =>
+      (await this.proc.run(["rev-parse", "--verify", "--quiet", ref], { signal })).code === 0;
+    const operation: PullStop["operation"] = (await has("REBASE_HEAD"))
+      ? "rebase"
+      : (await has("MERGE_HEAD"))
+        ? "merge"
+        : mode === "rebase"
+          ? "rebase"
+          : "merge";
+    return { operation, conflicted };
   }
 
   /**
