@@ -315,6 +315,21 @@ export interface CommitActionResult {
   expected?: boolean;
 }
 
+/**
+ * The plain `{ ok, message }` answer many channels give — plus the `expected`
+ * marker, which every result shape that can be `ok:false` needs.
+ *
+ * The IPC wrapper in main.ts files a crash report for any `ok:false` result
+ * carrying a message, so a shape with nowhere to put `expected` is a shape that
+ * cannot describe an ordinary condition. See CommitActionResult.expected.
+ */
+export interface OkResult {
+  ok: boolean;
+  message?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
+}
+
 /** One tickable change within a file (see hunks:list). */
 export interface FileHunkWire {
   index: number;
@@ -1470,6 +1485,8 @@ export interface CloneResult {
   message?: string;
   /** Machine-readable failure mode (the dialog focuses the right field). */
   code?: "dest-exists" | "bad-name";
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 /** A commit in a PR's Commits tab. */
@@ -1597,6 +1614,8 @@ export interface RebasePlanState {
   updateRefs?: boolean;
   /** Why the plan couldn't be loaded (ok === false). */
   message?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
   /** The base the rebase runs onto, exclusive (or "--root"). */
   base: string;
   branch: string;
@@ -1720,7 +1739,7 @@ export interface IpcChannels {
   "discard:snapshot": [void, { sha?: string }];
   /** Put the named paths back to how they were in a snapshot's tree. Restores
    *  the WORKING TREE only: what was staged stays staged. */
-  "discard:undo": [{ sha: string; paths: string[] }, { ok: boolean; message?: string }];
+  "discard:undo": [{ sha: string; paths: string[] }, OkResult];
   "stageAll": [void, CommitActionResult];
   "unstageAll": [void, CommitActionResult];
   /** The still-unstaged changes within one file, for per-hunk ticks (#20). */
@@ -1833,7 +1852,7 @@ export interface IpcChannels {
   "repo:headCommit": [{ count?: boolean } | void, HeadCommit | undefined];
   // ── GitHub (PRs / Issues / Projects) ──
   "github:status": [void, GitHubStatus];
-  "github:connect": [string, { ok: boolean; login?: string; message?: string }];
+  "github:connect": [string, OkResult & { login?: string }];
   "github:disconnect": [void, void];
   // OAuth Device Flow (the "Sign in with GitHub" path).
   "github:deviceStart": [void, DeviceCodeInfo];
@@ -1851,7 +1870,7 @@ export interface IpcChannels {
   /** Detect again (after installing an editor mid-session). */
   "editors:refresh": [void, EditorsView];
   /** Open a folder (the current repository when `root` is absent). */
-  "editors:open": [{ id: string; root?: string }, { ok: boolean; message?: string }];
+  "editors:open": [{ id: string; root?: string }, OkResult];
   "editors:setShown": [{ id: string; shown: boolean }, EditorsView];
   "editors:setDefault": [{ id: string | null }, EditorsView];
   "editors:addCustom": [{ name: string; command: string }, EditorsView];
@@ -1913,20 +1932,20 @@ export interface IpcChannels {
   "repos:trash": [string, CommitActionResult & { trashed?: string }];
   /** Move a trashed folder back where it came from — the undo of the line
    *  above. Refuses if anything now occupies the destination. */
-  "repos:untrash": [{ from: string; to: string }, { ok: boolean; message?: string }];
+  "repos:untrash": [{ from: string; to: string }, OkResult];
   /** Delete a directory that is EMPTY — nothing else. This exists for exactly
    *  one thing: the clone folder the app made in your home directory and then
    *  gave you no way to get rid of. A non-empty folder is refused, so the
    *  worst case is a folder that stays. */
-  "repos:deleteEmptyFolder": [string, { ok: boolean; message?: string }];
+  "repos:deleteEmptyFolder": [string, OkResult];
   // ── App info + updates ──
   "app:info": [void, { version: string; platform: string }];
   /** Poll the release feed now (the Settings "Check for updates" button). */
   "update:check": [void, UpdateCheckResult];
   /** Start the user-confirmed download; completion arrives as update:ready. */
-  "update:download": [void, { ok: boolean; message?: string }];
+  "update:download": [void, OkResult];
   /** Apply a ready update: restart into it, or open the macOS installer. */
-  "update:install": [void, { ok: boolean; message?: string }];
+  "update:install": [void, OkResult];
   "ssh:keys": [void, SshKey[]];
   /** `state` mirrors GitHub's open|closed|all. Merged PRs come back under
    *  `closed` (they carry `mergedAt`), so the renderer narrows those locally. */
@@ -1961,7 +1980,7 @@ export interface IpcChannels {
   "issue:detail": [number, IssueDetail | undefined];
   "issue:create": [
     { title: string; body?: string; labels?: string[]; assignees?: string[]; milestone?: number },
-    { ok: boolean; number?: number; message?: string },
+    OkResult & { number?: number },
   ];
   "issue:comment": [{ number: number; body: string }, CommitActionResult];
   /** Close or reopen. `reason` is GitHub's `state_reason` and only means
@@ -2082,6 +2101,8 @@ export interface IpcChannels {
       cloned?: boolean;
       message?: string;
       code?: "collision" | "clone-failed" | "open-failed" | "bad-name";
+      /** See CommitActionResult.expected — a condition, not a defect to report. */
+      expected?: boolean;
     },
   ];
   // Gists.
@@ -2119,7 +2140,7 @@ export interface IpcChannels {
   "ai:cancel": [{ requestId: string }, void];
   // MCP "Agent Access": the bundled server's config + one-click install into a client.
   "ai:mcpInfo": [void, McpInfo];
-  "ai:mcpInstall": [McpInstallRequest, { ok: boolean; message: string }];
+  "ai:mcpInstall": [McpInstallRequest, OkResult & { message: string }];
   // ── Assistant chats (persisted; survive refresh + restart) ──
   "ai:chatList": [void, ChatSummary[]];
   "ai:chatCurrent": [void, ChatView | undefined];
@@ -2556,6 +2577,8 @@ export interface AiTestResult {
   message: string;
   /** The model that answered, on success. */
   model?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 /** The input for a one-shot AI task (only the relevant fields are set per task). */
@@ -2583,6 +2606,8 @@ export interface AiDone {
   ok: boolean;
   text?: string;
   message?: string;
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 export interface AgentRunRequest {

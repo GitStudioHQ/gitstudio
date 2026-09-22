@@ -23,7 +23,7 @@ import { app, shell } from "electron";
 import { createWriteStream } from "node:fs";
 import { rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { IpcEvents, UpdateCheckResult } from "../shared/ipc";
+import type { IpcEvents, OkResult, UpdateCheckResult } from "../shared/ipc";
 
 export interface AutoUpdateOptions {
   isDev: boolean;
@@ -35,9 +35,9 @@ export interface UpdateManager {
   /** Poll now. `userInitiated` responses always carry the full status. */
   check(userInitiated?: boolean): Promise<UpdateCheckResult>;
   /** Start the user-confirmed download. */
-  download(): Promise<{ ok: boolean; message?: string }>;
+  download(): Promise<OkResult>;
   /** Apply a ready update: restart into it, or open the downloaded installer. */
-  install(): Promise<{ ok: boolean; message?: string }>;
+  install(): Promise<OkResult>;
 }
 
 /** Where a mac user goes if the in-app download can't find an asset. */
@@ -133,9 +133,15 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
   };
   if (opts.isDev) {
     return {
+      // A dev build having no updater, a user pressing Download with nothing
+      // waiting, a build packaged without electron-updater — every refusal in
+      // this file is a state of the install, not a defect of it. `expected`
+      // keeps them out of the crash reporter (see main/expectedError.ts); the
+      // failures that remain reportable are the ones that actually broke: a
+      // download that died mid-stream, an installer the OS would not open.
       check: async () => disabled,
-      download: async () => ({ ok: false, message: disabled.message }),
-      install: async () => ({ ok: false, message: disabled.message }),
+      download: async () => ({ ok: false, expected: true, message: disabled.message }),
+      install: async () => ({ ok: false, expected: true, message: disabled.message }),
     };
   }
 
@@ -188,13 +194,13 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     }
   };
 
-  const macDownload = async (): Promise<{ ok: boolean; message?: string }> => {
+  const macDownload = async (): Promise<OkResult> => {
     if (state === "ready" && readyPath && availableVersion) {
       send("update:ready", { version: availableVersion, kind: "installer", path: readyPath });
       return { ok: true };
     }
     if (state !== "available" || !availableVersion) {
-      return { ok: false, message: "No update is waiting to download." };
+      return { ok: false, expected: true, message: "No update is waiting to download." };
     }
     if (!macAsset) {
       // The release exists but has no matching mac asset (e.g. a partial
@@ -242,9 +248,9 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     }
   };
 
-  const macInstall = async (): Promise<{ ok: boolean; message?: string }> => {
+  const macInstall = async (): Promise<OkResult> => {
     if (state !== "ready" || !readyPath) {
-      return { ok: false, message: "No downloaded update to open." };
+      return { ok: false, expected: true, message: "No downloaded update to open." };
     }
     const err = await shell.openPath(readyPath);
     if (err) {
@@ -312,17 +318,17 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     }
   };
 
-  const elDownload = async (): Promise<{ ok: boolean; message?: string }> => {
+  const elDownload = async (): Promise<OkResult> => {
     if (state === "ready" && availableVersion) {
       send("update:ready", { version: availableVersion, kind: "restart" });
       return { ok: true };
     }
     if (state !== "available") {
-      return { ok: false, message: "No update is waiting to download." };
+      return { ok: false, expected: true, message: "No update is waiting to download." };
     }
     const u = await getUpdater();
     if (!u) {
-      return { ok: false, message: "Updates aren't available in this build." };
+      return { ok: false, expected: true, message: "Updates aren't available in this build." };
     }
     state = "downloading";
     try {
@@ -335,13 +341,13 @@ export function initAutoUpdate(opts: AutoUpdateOptions): UpdateManager {
     }
   };
 
-  const elInstall = async (): Promise<{ ok: boolean; message?: string }> => {
+  const elInstall = async (): Promise<OkResult> => {
     if (state !== "ready") {
-      return { ok: false, message: "No downloaded update to install." };
+      return { ok: false, expected: true, message: "No downloaded update to install." };
     }
     const u = await getUpdater();
     if (!u) {
-      return { ok: false, message: "Updates aren't available in this build." };
+      return { ok: false, expected: true, message: "Updates aren't available in this build." };
     }
     // Restart straight into the new version.
     setImmediate(() => u.quitAndInstall());

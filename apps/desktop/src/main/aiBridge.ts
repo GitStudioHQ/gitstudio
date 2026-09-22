@@ -395,7 +395,11 @@ export class AiBridge {
     await this.ensureLoaded();
     const conn = this.settings.connections.find((c) => c.id === id);
     if (!conn) {
-      return { ok: false, message: "Connection not found." };
+      // The Settings list and this lookup can disagree for one repaint after a
+      // connection is removed. A stale id is a condition, not a defect, so it
+      // is not crash-reported (see main/expectedError.ts). An unknown PRESET
+      // below is the opposite: only our own table can produce one.
+      return { ok: false, expected: true, message: "Connection not found." };
     }
     // CLI connections: just confirm the binary is installed (don't spend quota).
     if (conn.wire === "cli") {
@@ -407,7 +411,11 @@ export class AiBridge {
       this.cliDetect.set(conn.preset, ok);
       return ok
         ? { ok: true, message: `Found \`${spec.command}\`${version ? ` (${version})` : ""}.` }
-        : { ok: false, message: `\`${spec.command}\` isn't installed or not on PATH. ${spec.install}` };
+        : {
+            ok: false,
+            expected: true,
+            message: `\`${spec.command}\` isn't installed or not on PATH. ${spec.install}`,
+          };
     }
     const provider = this.providerFor(conn);
     try {
@@ -460,11 +468,16 @@ export class AiBridge {
   async runTask(requestId: string, task: AiTaskName, input: AiTaskInput): Promise<AiDone> {
     const resolved = await this.resolveProvider(input.connectionId, task);
     if (!resolved) {
-      return { requestId, ok: false, message: "No AI model is connected. Add one in Settings ▸ AI." };
+      return {
+        requestId,
+        ok: false,
+        expected: true,
+        message: "No AI model is connected. Add one in Settings ▸ AI.",
+      };
     }
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { requestId, ok: false, message: "No repository is open." };
+      return { requestId, ok: false, expected: true, message: "No repository is open." };
     }
     const host = createGitToolHost(ctx);
     const abort = new AbortController();
@@ -479,7 +492,7 @@ export class AiBridge {
         case "commitMessage": {
           const diff = input.diff ?? (await host.diff({ staged: true }));
           if (!diff.trim()) {
-            return { requestId, ok: false, message: "Nothing is staged to summarize." };
+            return { requestId, ok: false, expected: true, message: "Nothing is staged to summarize." };
           }
           const recent = input.commits ?? (await host.log({ limit: 10 })).map((c) => c.subject);
           text = await generateCommitMessage(provider, diff, { recentSubjects: recent, ctx: taskCtx });
@@ -487,13 +500,15 @@ export class AiBridge {
         }
         case "explainDiff": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
-          if (!diff.trim()) return { requestId, ok: false, message: "No changes to explain." };
+          if (!diff.trim())
+            return { requestId, ok: false, expected: true, message: "No changes to explain." };
           text = await explainDiff(provider, diff, taskCtx);
           break;
         }
         case "summarizeChanges": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
-          if (!diff.trim()) return { requestId, ok: false, message: "No changes to summarize." };
+          if (!diff.trim())
+            return { requestId, ok: false, expected: true, message: "No changes to summarize." };
           text = await summarizeChanges(provider, diff, taskCtx);
           break;
         }
@@ -507,14 +522,18 @@ export class AiBridge {
         }
         case "reviewDiff": {
           const diff = input.diff ?? (await this.gatherDiff(host, input));
-          if (!diff.trim()) return { requestId, ok: false, message: "No changes to review." };
+          if (!diff.trim())
+            return { requestId, ok: false, expected: true, message: "No changes to review." };
           text = await reviewDiff(provider, diff, taskCtx);
           break;
         }
         case "explainConflict": {
           const conflict = input.conflict ?? (await this.gatherConflict(input.path));
           if (!conflict) {
-            return { requestId, ok: false, message: "Couldn't read the conflict." };
+            // gatherConflict answers undefined when the path has no :2/:3 stages —
+            // i.e. it is not (or is no longer) conflicted, which is where you
+            // land by resolving it in a terminal while the panel is open.
+            return { requestId, ok: false, expected: true, message: "Couldn't read the conflict." };
           }
           text = await explainConflict(provider, conflict, taskCtx);
           break;
@@ -598,11 +617,16 @@ export class AiBridge {
     const { requestId } = req;
     const resolved = await this.resolveProvider(req.connectionId, "agent");
     if (!resolved) {
-      return { requestId, ok: false, message: "No AI model is connected. Add one in Settings ▸ AI." };
+      return {
+        requestId,
+        ok: false,
+        expected: true,
+        message: "No AI model is connected. Add one in Settings ▸ AI.",
+      };
     }
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { requestId, ok: false, message: "Open a repository first." };
+      return { requestId, ok: false, expected: true, message: "Open a repository first." };
     }
     const host = createGitToolHost(ctx);
     const tools = selectTools({ write: req.allowWrite, destructive: req.allowDestructive });
@@ -734,15 +758,20 @@ export class AiBridge {
     const { chatId, requestId } = req;
     const session = await this.chats.get(chatId);
     if (!session) {
-      return { requestId, ok: false, message: "This chat no longer exists." };
+      return { requestId, ok: false, expected: true, message: "This chat no longer exists." };
     }
     const resolved = await this.resolveProvider(session.connectionId, "agent");
     if (!resolved) {
-      return { requestId, ok: false, message: "No AI model is connected. Add one in Settings ▸ AI." };
+      return {
+        requestId,
+        ok: false,
+        expected: true,
+        message: "No AI model is connected. Add one in Settings ▸ AI.",
+      };
     }
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { requestId, ok: false, message: "Open a repository first." };
+      return { requestId, ok: false, expected: true, message: "Open a repository first." };
     }
     const cfg = this.agentConfig();
     const abort = new AbortController();

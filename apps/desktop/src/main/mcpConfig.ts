@@ -9,7 +9,7 @@ import { app } from "electron";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { McpClientInfo, McpInfo, McpInstallRequest } from "../shared/ipc";
+import type { McpClientInfo, McpInfo, McpInstallRequest, OkResult } from "../shared/ipc";
 
 /** Resolve the bundled gitstudio-mcp entry across dev + packaged layouts. */
 export function resolveMcpBin(): string {
@@ -179,14 +179,23 @@ export function mcpInfo(repoRoot: string | undefined): McpInfo {
 export function installMcp(
   repoRoot: string | undefined,
   req: McpInstallRequest,
-): { ok: boolean; message: string } {
+): OkResult & { message: string } {
   const cfg = clientConfigs().find((c) => c.id === req.client);
+  // An unknown client id can only come from our own list, so it stays
+  // crash-reportable. The two below cannot: a build without the MCP server in
+  // it, and a client config the user has hand-edited into something that is not
+  // JSON, are both states of the machine (see main/expectedError.ts). The
+  // second of these filed report #16.
   if (!cfg) {
     return { ok: false, message: `Unknown client: ${req.client}.` };
   }
   const binPath = resolveMcpBin();
   if (!binPath || !existsSync(binPath)) {
-    return { ok: false, message: "The MCP server isn't built yet (apps/mcp/dist/index.js)." };
+    return {
+      ok: false,
+      expected: true,
+      message: "The MCP server isn't built yet (apps/mcp/dist/index.js).",
+    };
   }
   const entry = { command: "node", args: serverArgs(binPath, repoRoot, req) };
   try {
@@ -197,6 +206,7 @@ export function installMcp(
       // silently erased MCP config is not recoverable.
       return {
         ok: false,
+        expected: true,
         message:
           `${cfg.label}'s config at ${cfg.path} couldn't be read as JSON ` +
           `(${read.reason}). GitStudio won't overwrite it — add the "gitstudio" ` +

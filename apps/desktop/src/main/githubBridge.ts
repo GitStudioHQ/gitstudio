@@ -37,6 +37,7 @@ import type {
   ProjectInfo,
   PullRequest,
   WorkflowRun,
+  OkResult,
 } from "../shared/ipc";
 
 
@@ -166,12 +167,19 @@ export class GitHubBridge {
     return this.secrets().has(TOKEN_SECRET);
   }
 
-  async connect(pat: string): Promise<{ ok: boolean; login?: string; message?: string }> {
+  async connect(pat: string): Promise<OkResult & { login?: string }> {
     this.token = pat.trim();
     this.login = await this.client.currentLogin();
     if (!this.login) {
       this.token = undefined;
-      return { ok: false, message: "That token didn't work — make sure it has 'repo' scope." };
+      // A token the user pasted that GitHub will not accept is an auth state,
+      // not a defect (see main/expectedError.ts) — the sign-in panel already
+      // says so, and this filed a report for every mistyped paste.
+      return {
+        ok: false,
+        expected: true,
+        message: "That token didn't work — make sure it has 'repo' scope.",
+      };
     }
     await this.persistToken(this.token);
     this.loaded = true;
@@ -378,7 +386,7 @@ export class GitHubBridge {
   async prCheckout(n: number): Promise<CommitActionResult> {
     const ctx = this.repos.getContext();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     try {
       const f = await ctx.process.run(["fetch", "origin", `pull/${n}/head:pr/${n}`]);

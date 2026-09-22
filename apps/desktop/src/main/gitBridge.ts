@@ -59,6 +59,7 @@ import type {
   TreeEntry,
   WorktreeInfo,
   CommitBranches,
+  OkResult,
 } from "../shared/ipc";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import {
@@ -702,7 +703,7 @@ export class GitBridge {
   }): Promise<CommitActionResult & { indexText?: string }> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
@@ -897,12 +898,16 @@ export class GitBridge {
    * have restored the file AND staged it, quietly turning an undo into a
    * staging change.
    */
-  async discardUndo(req: { sha: string; paths: string[] }): Promise<{ ok: boolean; message?: string }> {
+  async discardUndo(req: { sha: string; paths: string[] }): Promise<OkResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, message: "No repository is open." };
+    // Having no repo open, and having nothing to put back, are states the user
+    // can simply be in — `expected` keeps them out of the crash reporter (see
+    // main/expectedError.ts). An unusable restore point is NOT one of them: the
+    // sha comes from a snapshot this app made, so a refusal here is our bug.
+    if (!ctx) return { ok: false, expected: true, message: "No repository is open." };
     if (!safeArg(req.sha)) return { ok: false, message: "That restore point is not usable." };
     const paths = req.paths.filter((p) => p);
-    if (!paths.length) return { ok: false, message: "Nothing to restore." };
+    if (!paths.length) return { ok: false, expected: true, message: "Nothing to restore." };
     const r = await ctx.process.run([
       "restore",
       `--source=${req.sha}`,
@@ -1068,10 +1073,10 @@ export class GitBridge {
   async commit(req: { message: string; amend?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     if (!req.message.trim() && !req.amend) {
-      return { ok: false, changed: false, message: "A commit message is required." };
+      return { ok: false, changed: false, expected: true, message: "A commit message is required." };
     }
     // A plain commit does NOT finish a `git am`, it derails it: the session
     // stays open on disk, the remaining patches are never applied, and the
@@ -1229,7 +1234,7 @@ export class GitBridge {
   async hunksStage(req: { path: string; index: number }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     const abs = containedPath(ctx.root, req.path);
     if (!abs) {
@@ -1266,7 +1271,7 @@ export class GitBridge {
   }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     // Every path is proved to be inside the repository before it reaches git,
     // like every other mutating handler here. A stash pathspec is a write.
@@ -1600,13 +1605,17 @@ export class GitBridge {
   async setGitIdentity(req: GitIdentity): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     const name = req.name.trim();
     const email = req.email.trim();
     // A value starting with "-" would be read by `git config` as an option.
+    // The three refusals below are all about what is in the two text fields:
+    // the user is mid-edit, or has typed something git cannot record. None is a
+    // defect, so none is crash-reported (see main/expectedError.ts). A `git
+    // config` that then fails IS reported — that one is news.
     if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
-      return { ok: false, changed: false, message: "Name and email can't start with “-”." };
+      return { ok: false, changed: false, expected: true, message: "Name and email can't start with “-”." };
     }
     // An identity is a PAIR. git refuses to commit without both
     // ("Please tell me who you are"), so a half-filled card is not a saveable
@@ -1614,12 +1623,13 @@ export class GitBridge {
     // clearing one and pressing Save reported "Identity updated" while leaving
     // the old value in ~/.gitconfig, untouched and unmentioned.
     if (!name && !email) {
-      return { ok: false, changed: false, message: "Enter a name and an email to save." };
+      return { ok: false, changed: false, expected: true, message: "Enter a name and an email to save." };
     }
     if (!name || !email) {
       return {
         ok: false,
         changed: false,
+        expected: true,
         message: `Git needs both a name and an email to record a commit. ${
           name ? "Add an email" : "Add a name"
         } to save, or leave the card as it is — nothing has been changed.`,
@@ -2247,7 +2257,7 @@ export class GitBridge {
   ): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     return this.serialize(async () => {
       try {
@@ -2310,7 +2320,7 @@ export class GitBridge {
   async commitAction(req: CommitActionRequest): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { ok: false, changed: false, message: "No repository open." };
+      return { ok: false, changed: false, expected: true, message: "No repository open." };
     }
     if (req.action !== "copy-sha" && !safeArg(req.sha)) {
       return UNSAFE_REF_RESULT;
@@ -2645,7 +2655,7 @@ export class GitBridge {
   }
   async amAbort(): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     const r = await ctx.process.run(["am", "--abort"]);
     if (r.code !== 0) {
       return { ok: false, changed: false, message: r.stderr.trim() || `git am --abort failed (${r.code}).` };
@@ -2736,7 +2746,7 @@ export class GitBridge {
     run: (root: string, opts: ReturnType<RepoStore["runnerOptions"]>) => Promise<RebaseOutcome>,
   ): Promise<CommitActionResult> {
     const root = this.repos.current()?.root;
-    if (!root) return { ok: false, changed: false, message: "No repository open." };
+    if (!root) return { ok: false, changed: false, expected: true, message: "No repository open." };
     return this.serialize(async () => {
       try {
         // The runner spawns git itself, so it has to be told which git and
@@ -2848,7 +2858,7 @@ export class GitBridge {
 
   async stageLines(req: { path: string; lines: number[]; reverse?: boolean }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     // Every other mutating path here proves the path stays inside the repo
     // before touching it (hunksStage, hunksList, conflictResolve). This one
     // wrote to the index from a renderer-supplied path without doing so.
@@ -2859,7 +2869,8 @@ export class GitBridge {
       try {
         const rel = req.path;
         const ranges = linesToRanges(req.lines);
-        if (!ranges.length) return { ok: false, changed: false, message: "No lines selected." };
+        if (!ranges.length)
+          return { ok: false, changed: false, expected: true, message: "No lines selected." };
         // Before reading anything: this path round-trips the file through a
         // string, which destroys a binary and follows a symlink.
         const safe = await lineStageable(ctx, rel);
@@ -2961,7 +2972,7 @@ export class GitBridge {
 
   async conflictResolve(req: { path: string; content: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     return this.serialize(async () => {
       try {
@@ -3036,7 +3047,7 @@ export class GitBridge {
 
   async conflictTakeSide(req: { path: string; side: "ours" | "theirs" }): Promise<CommitActionResult> {
     const ctx = this.ctx();
-    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!ctx) return { ok: false, changed: false, expected: true, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
     const stage = req.side === "ours" ? "2" : "3";
     return this.serialize(async () => {
