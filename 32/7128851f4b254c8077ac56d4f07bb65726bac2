@@ -1,0 +1,26 @@
+apps/desktop/test/githubErrors.test.ts
+  s_26f5e669d3043c::t_0a85b3ff39006f 206-215,217,220-225
+apps/desktop/test/graphqlPartial.test.ts
+  s_26f5e669d3043c::t_51ffff9c0d7d35 17-18,131-214
+apps/desktop/src/main/githubErrors.ts
+  s_26f5e669d3043c::t_e6b312dc2659eb 185-191
+  s_26f5e669d3043c::t_075169174855a9 184
+  s_26f5e669d3043c::t_5a9ea182571265 130-151
+  s_26f5e669d3043c::t_dabb69fe47f415 157-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "327128851f4b254c8077ac56d4f07bb65726bac2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
