@@ -14,8 +14,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GitHubClient } from "../src/main/githubClient";
 import { isExpectedError } from "../src/main/expectedError";
-import { listProjects } from "../src/main/github/projects";
-import { resolveThread } from "../src/main/github/prs";
+import { getProjectBoard, listProjects } from "../src/main/github/projects";
+import { resolveThread, reviewThreads } from "../src/main/github/prs";
 
 /** Answer the next fetch with this GraphQL body, at HTTP 200. */
 function servingGraphql(body: unknown): { client: GitHubClient; restore: () => void } {
@@ -207,6 +207,74 @@ test("a project list with one unreadable repository still renders the readable o
       list.map((p) => p.title),
       ["Roadmap", "Bugs"],
       "one unreadable entry must not take the readable ones down with it",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("a pull request GitHub cannot resolve does not read as 'no review threads'", async () => {
+  // The nested case the partial-data rule first got wrong. The query has one
+  // root, the root resolves, and the object the query exists to read — the
+  // pull request — does not. Keeping that "partial" answer handed reviewThreads
+  // `pullRequest: null`, which it turns into `[]`: a confident empty list, and
+  // no report, for a number the app sent that names nothing. The client used to
+  // throw here, and must still.
+  const { client, restore } = servingGraphql({
+    data: { repository: { pullRequest: null } },
+    errors: [
+      {
+        type: "NOT_FOUND",
+        path: ["repository", "pullRequest"],
+        message: "Could not resolve to a PullRequest with the number of 999.",
+      },
+    ],
+  });
+  try {
+    await assert.rejects(
+      () => reviewThreads(client, "acme", "widgets", 999),
+      (e: unknown) => {
+        assert.equal(isExpectedError(e), false, "a number we sent that resolves to nothing is ours to hear about");
+        assert.match((e as Error).message, /PullRequest with the number of 999/);
+        return true;
+      },
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("a board with one card GitHub cannot resolve still shows the others", async () => {
+  // The "some resolve, one does not" case, on the read that renders it: one
+  // element of a list is missing and its siblings are still the answer.
+  const card = (id: string, n: number, title: string) => ({
+    id,
+    type: "ISSUE",
+    fieldValueByName: { optionId: "o1", name: "Todo" },
+    content: { __typename: "Issue", number: n, title, url: `u${n}`, state: "OPEN", author: { login: "a" } },
+  });
+  const { client, restore } = servingGraphql({
+    data: {
+      node: {
+        field: { id: "F1", name: "Status", options: [{ id: "o1", name: "Todo", color: "GRAY" }] },
+        items: {
+          nodes: [card("I1", 1, "Readable one"), { ...card("I2", 2, "x"), content: null }, card("I3", 3, "Readable two")],
+        },
+      },
+    },
+    errors: [
+      {
+        type: "NOT_FOUND",
+        path: ["node", "items", "nodes", 1, "content"],
+        message: "Could not resolve to a Repository with the name 'acme/moved-away'.",
+      },
+    ],
+  });
+  try {
+    const board = await getProjectBoard(client, "o", "r", "PVT_1");
+    assert.deepEqual(
+      board.items.map((i) => i.title),
+      ["Readable one", "Readable two"],
     );
   } finally {
     restore();

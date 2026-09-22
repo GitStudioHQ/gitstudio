@@ -259,3 +259,30 @@ test("partial GraphQL data is kept only when keeping it cannot lie", () => {
   assert.equal(keepsPartialData(null, notFound), false);
   assert.equal(keepsPartialData({ a: 1 }, []), false, "no errors is not the partial path at all");
 });
+
+test("a NOT_FOUND on the object a query READS is not a partial answer", () => {
+  // The trap in "something non-null came back": a single-root query keeps its
+  // root when a NESTED object is missing. `repository{pullRequest(number:999)}`
+  // answers `{ repository: { pullRequest: null } }`, and keeping that let the
+  // review-thread read report "no threads" for a pull request that does not
+  // exist — silently, where the client used to throw and report.
+  assert.equal(
+    keepsPartialData({ repository: { pullRequest: null } }, [
+      { message: "Could not resolve to a PullRequest with the number of 999.", type: "NOT_FOUND", path: ["repository", "pullRequest"] },
+    ]),
+    false,
+    "the pull request IS the answer; without it there is nothing partial to keep",
+  );
+  assert.equal(
+    keepsPartialData({ repository: { projectsV2: { nodes: [{ id: "P_1" }, null] } } }, [
+      { message: "Could not resolve…", type: "NOT_FOUND", path: ["repository", "projectsV2", "nodes", 1] },
+    ]),
+    true,
+    "one element of a list is missing — its siblings are still the answer",
+  );
+  assert.equal(
+    keepsPartialData({ a: { projects: [] } }, [{ message: "Could not resolve…", type: "NOT_FOUND" }]),
+    false,
+    "an error that does not say WHAT is missing cannot be proved partial",
+  );
+});

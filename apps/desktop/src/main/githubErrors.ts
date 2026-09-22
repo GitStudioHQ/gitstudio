@@ -185,15 +185,41 @@ export function graphqlError(err: GraphqlFailure): Error {
  * Note the asymmetry with `graphqlError`, which only treats a NOT_FOUND as a
  * condition when it NAMES its object. This rule is looser on purpose: keeping
  * partial data is about not discarding what resolved, not about classifying
- * what did not, and `opts.onPartial` hands the caller every error it kept. It
- * is also unreachable today — every query in this app has a single root, so a
- * NOT_FOUND always nulls the whole answer and this returns false. If a
- * multi-root query is ever added, pass `onPartial` and decide there.
+ * what did not, and `opts.onPartial` hands the caller every error it kept.
+ *
+ * "Something non-null came back" is NOT enough on its own, and was the first
+ * version of this rule. A single-root query still has nested objects, and a
+ * NOT_FOUND on one of them leaves the root standing:
+ *
+ *     repository(owner, name) { pullRequest(number: 999) { reviewThreads … } }
+ *       → data: { repository: { pullRequest: null } }, errors: [NOT_FOUND at
+ *         ["repository", "pullRequest"]]
+ *
+ * Keeping that hands the caller `pullRequest: null`, and the caller — which
+ * reads `data?.repository?.pullRequest?.reviewThreads?.nodes ?? []` — says
+ * "no review threads" about a pull request that does not exist. That is the
+ * confident empty answer this rule exists to prevent, and it silenced a
+ * failure the old client reported. So an error only counts as partial when
+ * what it removed is ONE OF SEVERAL:
+ *
+ *   - an element of a list (its path runs through an index) — the other
+ *     cards on a board, the other projects in a list, are still the answer;
+ *   - a whole root field, when another root of the same query resolved.
+ *
+ * A NOT_FOUND anywhere else is the object the query was reading, and it throws.
  */
 export function keepsPartialData(data: unknown, errors: GraphqlFailure[]): boolean {
   if (!errors.length || !errors.every((e) => e.type === "NOT_FOUND")) return false;
   if (typeof data !== "object" || data === null) return false;
-  return Object.values(data as Record<string, unknown>).some((v) => v !== null && v !== undefined);
+  const roots = data as Record<string, unknown>;
+  return errors.every((e) => {
+    const path = e.path ?? [];
+    if (path.some((segment) => typeof segment === "number")) return true;
+    if (path.length === 1) {
+      return Object.entries(roots).some(([key, v]) => key !== path[0] && v !== null && v !== undefined);
+    }
+    return false;
+  });
 }
 
 /**
