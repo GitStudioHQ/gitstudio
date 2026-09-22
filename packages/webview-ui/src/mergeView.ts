@@ -1,27 +1,42 @@
 import * as monaco from "monaco-editor";
 import type { MergeInitPayload } from "@gitstudio/host-bridge/protocol";
-import type { ChangeBlock, LineSpan, MergeModel, Side } from "@gitstudio/engine/types";
-import { blockRole, isEmptySpan, sideBlockSpan } from "@gitstudio/engine/types";
+import type {
+  ChangeBlock,
+  LineSpan,
+  MergeCategory,
+  MergeModel,
+  Side,
+} from "@gitstudio/engine/types";
+import {
+  blockTone,
+  category,
+  isEmptySpan,
+  sideBlockSpan,
+} from "@gitstudio/engine/types";
 import { buildMergeModel } from "@gitstudio/engine/mergeModel";
+import { eolChars, normalizeEol, splitLines } from "@gitstudio/engine/lineDiff";
 import { languageForFile } from "./language";
 import { ensureNativeTheme, nativeFontOptions } from "./theme";
 import { DecorationManager } from "./decorations";
 import {
+  appendIcon,
+  checkIcon,
   chevronDoubleLeft,
   chevronDoubleRight,
   cross,
   iconElement,
   lockIcon,
+  magicWand,
 } from "./icons";
 import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment";
-import { RibbonOverlay } from "./ribbons";
-import { splitLines } from "@gitstudio/engine/lineDiff";
+import { RibbonOverlay, scheduleFrame } from "./ribbons";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
+import { MergeLegend } from "./mergeLegend";
 import {
   emptyCategoryCounts,
+  emptyMergeCounts,
   type AcceptMode,
   type EolMismatchInfo,
-  type MergeCategory,
   type MergeCountsView,
   type MergeRenderInit,
   type MergeRenderOptions,
@@ -38,6 +53,14 @@ type Editor = monaco.editor.IStandaloneCodeEditor;
 // Must fit inside one code line WITH clearance (line height is typically
 // 18-19px) so the icon row never touches the band's frame lines.
 const ACTION_ROW_HEIGHT = 16;
+
+/** How each category is named to a screen reader ("Conflict 2 of 5: …"). */
+const CATEGORY_NAME: Record<MergeCategory, string> = {
+  conflict: "Conflict",
+  same: "Identical change",
+  "yours-only": "Change only in yours",
+  "theirs-only": "Change only in theirs",
+};
 
 /**
  * Per-block runtime state. Each side of a block is processed (applied or
@@ -96,12 +119,15 @@ const SIDE_PANE_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
 
 /**
  * The three-pane JetBrains-style merge surface and its interactions: Left
- * (ours, read-only), Result (editable, seeded with base), Right (theirs,
+ * (Yours, read-only), Result (editable, seeded with base), Right (Theirs,
  * read-only), with gutter ribbons + accept/ignore controls.
  *
- * S0 contract seed: implements the frozen MergeViewApi. The members marked
- * "S0 stub" are placeholders P1 (change colours + merge-view correctness)
- * replaces; everything else is unchanged behaviour.
+ * Blocks are painted by colour CATEGORY (PLAN §3.6): conflict (orange,
+ * framed; ✨ + a wand when both edits apply), identical (violet; one control in
+ * the result margin, or both arrows when only whitespace differs, ≈),
+ * yours-only / theirs-only (green / blue / grey by what the change did, with a
+ * ‹ / › origin badge). An applied or ignored change keeps a dashed outline in
+ * its colour instead of disappearing.
  */
 export class MergeView implements MergeViewApi {
   private editors: Editor[] = [];
@@ -114,10 +140,12 @@ export class MergeView implements MergeViewApi {
   private syncingScroll = false;
   private syncScrollEnabled = true;
   private realignTimer = 0;
-  private buttonsRaf = 0;
+  private cancelButtons?: () => void;
 
   private trackers = new Map<number, string>();
   private blockState = new Map<number, BlockState>();
+  /** Each block's place within its category, for "Conflict 2 of 5". */
+  private ordinals = new Map<number, { index: number; total: number }>();
   private baseLines: string[] = [];
   private oursLines: string[] = [];
   private theirsLines: string[] = [];
@@ -127,8 +155,15 @@ export class MergeView implements MergeViewApi {
   private redoStack: MergeSnapshot[] = [];
   /** Suppresses history capture during programmatic edits and restores. */
   private suppressHistory = false;
+  /** Inside a bulk action: per-block redraws wait for the one at the end. */
+  private batching = false;
   /** State at the last quiet point; becomes an undo entry when typing starts. */
   private stableSnapshot?: MergeSnapshot;
+  /**
+   * The state this merge opened with — after the auto-apply when that is on.
+   * Reset returns here, and `hasProgress` is "the state differs from this".
+   */
+  private baseline?: MergeSnapshot;
   private typingTimer = 0;
   /** Keybindings register into a page-global service — once per view only. */
   private navKeysInstalled = false;
@@ -137,6 +172,8 @@ export class MergeView implements MergeViewApi {
   private gutterB?: HTMLElement;
   private buttonLayerA?: HTMLElement;
   private buttonLayerB?: HTMLElement;
+  /** The result pane's glyph-margin controls (identical accept, wand, badges). */
+  private resultLayer?: HTMLElement;
 
   public left?: Editor;
   public result?: Editor;
@@ -148,7 +185,11 @@ export class MergeView implements MergeViewApi {
     whitespace: "none",
     showInner: true,
   };
+  /** Open with every non-conflicting change applied, as the baseline. */
+  private autoApply = false;
   private largeFile = false;
+  private legend?: MergeLegend;
+  private lastCounts: MergeCountsView = emptyMergeCounts();
 
   /** Notified whenever the resolved/pending counts change. */
   public onCountsChanged?: (counts: MergeCountsView) => void;
@@ -158,42 +199,67 @@ export class MergeView implements MergeViewApi {
   public onLargeFile?: (large: boolean) => void;
   /** Notified whenever the undo/redo stacks change (toolbar state). */
   public onHistoryChanged?: () => void;
-  /** S0 stub: never fired yet — P1 fires it after every (re)build. */
+  /** Fired after EVERY (re)build: the line-ending mismatch, or undefined. */
   public onEolMismatch?: (info: EolMismatchInfo | undefined) => void;
 
   constructor(private readonly container: HTMLElement) {}
 
-  // S0 stub: `init` (the auto-apply baseline) is accepted and ignored — P1.
-  public render(payload: MergeInitPayload, _init?: MergeRenderInit): void {
+  public render(payload: MergeInitPayload, init?: MergeRenderInit): void {
     this.payload = payload;
+    this.autoApply =
+      init?.autoApplyNonConflicting ?? payload.autoApplyNonConflicting ?? false;
     this.clearHistory(); // new inputs — old snapshots reference dead blocks
     this.build(payload);
   }
 
   /**
-   * Re-runs the diff with new whitespace / granularity options. Note: this
-   * recomputes from base, discarding any already-applied accepts (the accepted
-   * text lives only in the result document, which we reseed). The human can
-   * re-apply; preserving in-progress edits across a re-diff is out of scope.
+   * Granularity (`showInner`) only re-decorates: every accept, ignore and
+   * edit stays, and so does the undo history.
+   *
+   * A whitespace change re-diffs, which changes the blocks themselves (a
+   * whitespace-only edit can join a neighbour, a conflict can become an
+   * identical change), so it starts over from the baseline. The shell asks
+   * before that throws work away — it has `hasProgress` for exactly this (D7).
    */
   public setRenderOptions(options: Partial<MergeRenderOptions>): void {
+    const whitespaceChanged =
+      options.whitespace !== undefined &&
+      options.whitespace !== this.renderOptions.whitespace;
     this.renderOptions = { ...this.renderOptions, ...options };
-    // A whitespace change rebuilds the model with different block ids, which
-    // invalidates every snapshot's spans/state.
-    this.clearHistory();
-    if (this.payload) {
-      this.build(this.payload);
+    if (whitespaceChanged) {
+      this.clearHistory();
+      if (this.payload) {
+        this.build(this.payload);
+      }
+      return;
     }
+    this.decorate();
   }
 
-  /** S0 stub: a no-op until P1 makes it re-measure the three editors. */
-  public layout(): void {}
+  /** Re-measures the three editors (container resized, or just became visible). */
+  public layout(): void {
+    for (const editor of this.editors) {
+      editor.layout();
+    }
+    this.ribbons?.scheduleDraw();
+    this.rebuildButtons();
+  }
 
-  /** S0 stub: mounts nothing until P1 builds the legend (mergeLegend.ts). */
-  public attachLegend(_slot: HTMLElement): void {}
+  /**
+   * Mounts the category legend into the shell's slot and keeps it current.
+   * The legend outlives rebuilds (a whitespace change, Reset); a second call
+   * moves it.
+   */
+  public attachLegend(slot: HTMLElement): void {
+    if (!this.legend) {
+      this.legend = new MergeLegend((cat) => this.goToNextChange(cat));
+    }
+    slot.appendChild(this.legend.element);
+    this.legend.update(this.lastCounts);
+  }
 
   private build(payload: MergeInitPayload): void {
-    this.dispose();
+    this.teardown();
 
     const language = languageForFile(payload.fileName);
     const theme = ensureNativeTheme();
@@ -209,19 +275,24 @@ export class MergeView implements MergeViewApi {
     this.gutterB = this.addGutter(grid, 4, "b");
     const rightBody = this.addPane(grid, 5, payload.theirsLabel, true);
 
+    // The merge runs on text with "\n" breaks only (the engine normalises the
+    // same way), so a side that just rewrote its line endings is not a
+    // whole-file conflict. getResultText() writes the model's ending back.
+    const base = normalizeEol(payload.base);
+    const ours = normalizeEol(payload.ours);
+    const theirs = normalizeEol(payload.theirs);
+
     // Result starts as a copy of base so the block trackers (anchored in base
     // coordinates) line up. With no common ancestor (add/add, or a fallback
     // that couldn't recover a base) base is "", so the result starts empty and
     // the user builds it by accepting sides — same as IntelliJ.
-    const resultSeed = payload.base;
-
     this.left = monaco.editor.create(leftBody, {
       ...SHARED_OPTIONS,
       ...SIDE_PANE_OPTIONS,
       ...font,
       theme,
       language,
-      value: payload.ours,
+      value: ours,
       readOnly: true,
       domReadOnly: true,
     });
@@ -230,11 +301,15 @@ export class MergeView implements MergeViewApi {
       ...font,
       theme,
       language,
-      value: resultSeed,
+      value: base,
       readOnly: false,
+      // The result's own margin column holds the controls that act on the
+      // RESULT (accept an identical change, the wand) and the origin badges.
+      glyphMargin: true,
       // IntelliJ's "error stripe": colored change marks beside the scrollbar,
-      // clickable to jump anywhere in the merge.
-      overviewRulerLanes: 1,
+      // clickable to jump anywhere in the merge. Three lanes: conflicts take
+      // the full width, everything else the narrow centre lane.
+      overviewRulerLanes: 3,
       overviewRulerBorder: false,
     });
     this.right = monaco.editor.create(rightBody, {
@@ -243,7 +318,7 @@ export class MergeView implements MergeViewApi {
       ...font,
       theme,
       language,
-      value: payload.theirs,
+      value: theirs,
       readOnly: true,
       domReadOnly: true,
     });
@@ -254,9 +329,9 @@ export class MergeView implements MergeViewApi {
     // ancestor (add/add, or a marker fallback that recovered no base, where
     // payload.base is ""). Guarding this on hasBase used to leave those
     // conflicts as three dead panes showing "0 conflicts".
-    this.baseLines = splitLines(payload.base);
-    this.oursLines = splitLines(payload.ours);
-    this.theirsLines = splitLines(payload.theirs);
+    this.baseLines = splitLines(base);
+    this.oursLines = splitLines(ours);
+    this.theirsLines = splitLines(theirs);
 
     const totalLines =
       this.baseLines.length + this.oursLines.length + this.theirsLines.length;
@@ -266,6 +341,7 @@ export class MergeView implements MergeViewApi {
     this.model = buildMergeModel(payload.base, payload.ours, payload.theirs, {
       whitespace: this.renderOptions.whitespace,
     });
+    this.computeOrdinals();
     this.initBlockState();
     this.installTrackers();
 
@@ -278,6 +354,9 @@ export class MergeView implements MergeViewApi {
 
     this.buttonLayerA = this.addButtonLayer(this.gutterA);
     this.buttonLayerB = this.addButtonLayer(this.gutterB);
+    this.resultLayer = document.createElement("div");
+    this.resultLayer.className = "jb-result-actions";
+    resultBody.appendChild(this.resultLayer);
 
     this.ribbons = new RibbonOverlay(
       this.gutterA,
@@ -293,6 +372,21 @@ export class MergeView implements MergeViewApi {
 
     this.installViewListeners();
     this.installNavigationKeys();
+
+    // The auto-applied state IS the baseline: no undo entry, `hasProgress`
+    // stays false, and Reset comes back here.
+    this.baseline = undefined;
+    if (this.autoApply) {
+      const wasSuppressed = this.suppressHistory;
+      this.suppressHistory = true;
+      try {
+        this.applyAllNonConflicting();
+      } finally {
+        this.suppressHistory = wasSuppressed;
+      }
+    }
+    this.baseline = this.captureSnapshot("Baseline");
+
     this.refresh();
     this.revealFirstPending();
 
@@ -307,6 +401,7 @@ export class MergeView implements MergeViewApi {
     }
     this.stableSnapshot = this.captureSnapshot("Edit result");
     this.onHistoryChanged?.();
+    this.onEolMismatch?.(this.model?.eolMismatch);
   }
 
   /** Opens the merge scrolled to the first pending change, like IntelliJ. */
@@ -384,6 +479,22 @@ export class MergeView implements MergeViewApi {
         doneRight: !block.right,
         applied: false,
       });
+    }
+  }
+
+  /** Numbers every block within its category, in document order. */
+  private computeOrdinals(): void {
+    this.ordinals.clear();
+    const blocks = this.model?.blocks ?? [];
+    const totals = emptyCategoryCounts();
+    for (const block of blocks) {
+      totals[category(block)].total++;
+    }
+    const seen = emptyCategoryCounts();
+    for (const block of blocks) {
+      const cat = category(block);
+      seen[cat].total++;
+      this.ordinals.set(block.id, { index: seen[cat].total, total: totals[cat].total });
     }
   }
 
@@ -475,6 +586,20 @@ export class MergeView implements MergeViewApi {
     return { start, endExclusive };
   }
 
+  /** "yours" / "theirs", plus the side's real name when the host knows it. */
+  private sideWords(side: Side): { role: string; name?: string } {
+    const view = side === "left" ? this.payload?.op?.yours : this.payload?.op?.theirs;
+    const name = view?.name?.trim();
+    return { role: side === "left" ? "yours" : "theirs", name: name || undefined };
+  }
+
+  /** "Conflict 2 of 5", for a control's accessible name. */
+  private blockName(block: ChangeBlock): string {
+    const ordinal = this.ordinals.get(block.id);
+    const name = CATEGORY_NAME[category(block)];
+    return ordinal ? `${name} ${ordinal.index} of ${ordinal.total}` : name;
+  }
+
   // --- interactions ---
 
   public acceptSide(block: ChangeBlock, side: Side, mode: AcceptMode): void {
@@ -487,7 +612,7 @@ export class MergeView implements MergeViewApi {
 
     const append = mode === "append" || (mode === "auto" && state.applied);
     this.pushHistory(
-      `${append ? "Append" : "Accept"} ${side} change #${block.id + 1}`,
+      `${append ? "Append" : "Accept"} ${this.sideWords(side).role}, change ${block.id + 1}`,
     );
     let newText = sideText;
     if (append) {
@@ -507,7 +632,9 @@ export class MergeView implements MergeViewApi {
 
     state.applied = true;
     this.markSideDone(state, block, side);
-    this.refresh();
+    if (!this.batching) {
+      this.refresh();
+    }
   }
 
   /** Re-anchors a block's result tracker onto an explicit span. */
@@ -538,14 +665,60 @@ export class MergeView implements MergeViewApi {
     if (!state || this.isSideDone(block, side)) {
       return;
     }
-    this.pushHistory(`Ignore ${side} change #${block.id + 1}`);
+    this.pushHistory(`Ignore ${this.sideWords(side).role}, change ${block.id + 1}`);
     this.markSideDone(state, block, side);
-    this.refresh();
+    if (!this.batching) {
+      this.refresh();
+    }
+  }
+
+  /**
+   * Whether the wand can still apply both sides of this block: a resolvable
+   * conflict nobody has touched — neither side taken or ignored, and the
+   * result's lines still the base's (so a hand edit is never overwritten).
+   */
+  private isWandable(block: ChangeBlock): boolean {
+    if (!block.resolvable || block.resolvedText === undefined) {
+      return false;
+    }
+    const state = this.blockState.get(block.id);
+    if (!state || state.applied || state.doneLeft || state.doneRight) {
+      return false;
+    }
+    const span = this.currentResultSpan(block);
+    const baseText = this.baseLines
+      .slice(block.baseSpan.start - 1, block.baseSpan.endExclusive - 1)
+      .join("\n");
+    return this.readResultLines(span) === baseText;
+  }
+
+  /** Writes a resolvable conflict's `resolvedText`: both sides' edits, in base order. */
+  private applyBothSides(block: ChangeBlock): void {
+    const state = this.blockState.get(block.id);
+    if (!state || !this.isWandable(block) || block.resolvedText === undefined) {
+      return;
+    }
+    this.pushHistory(`Apply both sides, change ${block.id + 1}`);
+    const span = this.currentResultSpan(block);
+    const text = block.resolvedText;
+    this.replaceResultLines(span, text);
+    this.retrackBlock(block, {
+      start: span.start,
+      endExclusive: span.start + (text.length ? splitLines(text).length : 0),
+    });
+    state.applied = true;
+    state.doneLeft = state.doneRight = true;
+    if (!this.batching) {
+      this.refresh();
+    }
   }
 
   // --- bulk auto-resolve actions ---
 
-  /** Accepts (replace) every left-only / right-only / both-same block. */
+  /**
+   * "Apply non-conflicting changes: All" — every identical and one-sided
+   * block (JetBrains parity: an identical change is non-conflicting).
+   */
   public applyAllNonConflicting(): void {
     this.bulkAccept(
       (block) => {
@@ -556,17 +729,21 @@ export class MergeView implements MergeViewApi {
         return block.left ? "left" : "right";
       },
       false,
-      "Apply all non-conflicting",
+      "Apply non-conflicting changes: all",
     );
   }
 
   /**
-   * Accepts only the non-conflicting changes contributed by one side
-   * (IntelliJ's "Apply non-conflicting changes from the left/right side").
+   * "Apply non-conflicting changes: Yours / Theirs" — that side's one-sided
+   * changes, and the identical ones (taken as that side's version, which
+   * matters only when they differ in whitespace).
    */
   public applyNonConflictingSide(side: Side): void {
     this.bulkAccept(
       (block) => {
+        if (block.kind === "both-same") {
+          return side;
+        }
         if (side === "left" && block.kind === "left-only") {
           return "left";
         }
@@ -576,20 +753,20 @@ export class MergeView implements MergeViewApi {
         return undefined;
       },
       false,
-      `Apply non-conflicting from ${side}`,
+      `Apply non-conflicting changes: ${this.sideWords(side).role}`,
     );
   }
 
   /**
    * Resolves the whole merge as the left version: every block with a left
    * side takes it; right-only blocks are rejected (the base text already
-   * matches the left version there). Mirrors the dialog's "Accept Left".
+   * matches the left version there). Mirrors the dialog's "Accept Yours".
    */
   public acceptAllLeft(): void {
     this.bulkAccept(
       (block) => (block.left ? "left" : undefined),
       true,
-      "Accept all left",
+      "Accept yours everywhere",
     );
   }
 
@@ -598,24 +775,43 @@ export class MergeView implements MergeViewApi {
     this.bulkAccept(
       (block) => (block.right ? "right" : undefined),
       true,
-      "Accept all right",
+      "Accept theirs everywhere",
     );
   }
 
-  /** Auto-accepts every "both-same" block (identical edits on both sides). */
+  /**
+   * The magic wand: applies both sides of every resolvable conflict (their
+   * edits don't overlap). Identical changes are "Apply non-conflicting"'s job.
+   */
   public resolveSimpleConflicts(): void {
-    this.bulkAccept(
-      (block) => (block.kind === "both-same" ? "left" : undefined),
-      false,
-      "Resolve simple conflicts",
-    );
+    if (!this.model) {
+      return;
+    }
+    const targets = this.model.blocks
+      .filter((block) => this.isWandable(block))
+      .sort((a, b) => b.baseSpan.start - a.baseSpan.start);
+    if (targets.length === 0) {
+      return;
+    }
+    this.pushHistory("Resolve simple conflicts");
+    const wasSuppressed = this.suppressHistory;
+    const wasBatching = this.batching;
+    this.suppressHistory = true;
+    this.batching = true;
+    try {
+      for (const block of targets) {
+        this.applyBothSides(block);
+      }
+    } finally {
+      this.suppressHistory = wasSuppressed;
+      this.batching = wasBatching;
+    }
+    this.refresh();
   }
 
-  /** Whether any "both-same" block exists (enables the Magic Wand action). */
+  /** Whether the wand has anything to do (a resolvable conflict is pending). */
   public hasSimpleConflicts(): boolean {
-    return (this.model?.blocks ?? []).some(
-      (block) => block.kind === "both-same" && !this.isResolved(block),
-    );
+    return (this.model?.blocks ?? []).some((block) => this.isWandable(block));
   }
 
   /**
@@ -646,7 +842,9 @@ export class MergeView implements MergeViewApi {
     }
     this.pushHistory(label);
     const wasSuppressed = this.suppressHistory;
+    const wasBatching = this.batching;
     this.suppressHistory = true;
+    this.batching = true;
     try {
       for (const block of blocks) {
         if (this.isResolved(block)) {
@@ -669,29 +867,34 @@ export class MergeView implements MergeViewApi {
       }
     } finally {
       this.suppressHistory = wasSuppressed;
+      this.batching = wasBatching;
     }
-    this.refresh();
+    if (!this.batching) {
+      this.refresh();
+    }
   }
 
-  // --- change navigation (F7 / Shift+F7) ---
+  // --- change navigation (F7 / Shift+F7, legend chips) ---
 
   /**
    * Reveals the next PENDING block below the result caret; wraps around.
-   * S0 stub: `category` is accepted and ignored — P1 filters by it.
+   * With a category, only pending blocks of that category (a legend chip).
    */
-  public goToNextChange(_category?: MergeCategory): void {
-    this.navigate(1);
+  public goToNextChange(cat?: MergeCategory): void {
+    this.navigate(1, cat);
   }
 
-  public goToPrevChange(_category?: MergeCategory): void {
-    this.navigate(-1);
+  public goToPrevChange(cat?: MergeCategory): void {
+    this.navigate(-1, cat);
   }
 
-  private navigate(direction: 1 | -1): void {
+  private navigate(direction: 1 | -1, cat?: MergeCategory): void {
     if (!this.model || !this.result) {
       return;
     }
-    const pending = this.model.blocks.filter((b) => !this.isResolved(b));
+    const pending = this.model.blocks.filter(
+      (b) => !this.isResolved(b) && (!cat || category(b) === cat),
+    );
     if (pending.length === 0) {
       return;
     }
@@ -791,12 +994,7 @@ export class MergeView implements MergeViewApi {
       return;
     }
     this.installAlignment(this.model);
-    this.decorations?.apply(this.model, {
-      resultSpanOf: (block) => this.currentResultSpan(block),
-      isResolved: (block) => this.isResolved(block),
-      isSideDone: (block, side) => this.isSideDone(block, side),
-      showInner: this.renderOptions.showInner && !this.largeFile,
-    });
+    this.decorate();
     this.ribbons?.scheduleDraw();
     this.rebuildButtons();
     this.notifyCounts();
@@ -806,17 +1004,43 @@ export class MergeView implements MergeViewApi {
     this.stableSnapshot = this.captureSnapshot("Edit result");
   }
 
-  /** Coalesces button-layer rebuilds to one per animation frame. */
-  private scheduleButtons(): void {
-    if (this.buttonsRaf) {
+  /** Re-applies the pane decorations (granularity changes need only this). */
+  private decorate(): void {
+    if (!this.model) {
       return;
     }
-    this.buttonsRaf = requestAnimationFrame(() => {
-      this.buttonsRaf = 0;
+    this.decorations?.apply(this.model, {
+      resultSpanOf: (block) => this.currentResultSpan(block),
+      isResolved: (block) => this.isResolved(block),
+      isSideDone: (block, side) => this.isSideDone(block, side),
+      showInner: this.renderOptions.showInner && !this.largeFile,
+    });
+  }
+
+  /** Coalesces button-layer rebuilds to one per frame (or 32 ms, when no frame comes). */
+  private scheduleButtons(): void {
+    if (this.cancelButtons) {
+      return;
+    }
+    this.cancelButtons = scheduleFrame(() => {
+      this.cancelButtons = undefined;
       this.rebuildButtons();
     });
   }
 
+  /**
+   * Rebuilds every control, synchronously. Per category (PLAN §3.6):
+   * - conflict: [✕][»] … [«][✕] on the sides; once one side is applied the
+   *   other's arrow becomes the ⤓ append; a "≠" badge in the result margin,
+   *   or the wand ("Apply both") when the edits don't overlap;
+   * - identical: ONE control in the result margin (accept, with "keep base"
+   *   beside it on hover or focus) and a passive "=" on each side — unless
+   *   only whitespace differs, when both side arrows stay (the pick decides
+   *   whose whitespace wins) under a "≈" badge;
+   * - one-sided: [✕][»] (or [«][✕]) on the changed side and a ‹ / › origin
+   *   badge in the result margin;
+   * - applied / ignored: nothing.
+   */
   private rebuildButtons(): void {
     if (
       !this.model ||
@@ -824,19 +1048,27 @@ export class MergeView implements MergeViewApi {
       !this.result ||
       !this.right ||
       !this.buttonLayerA ||
-      !this.buttonLayerB
+      !this.buttonLayerB ||
+      !this.resultLayer
     ) {
       return;
     }
     this.buttonLayerA.replaceChildren();
     this.buttonLayerB.replaceChildren();
+    this.resultLayer.replaceChildren();
 
-    const height = this.gutterA?.clientHeight ?? 0;
+    // Sit over the result's glyph margin, wherever Monaco put it.
+    const info = this.result.getLayoutInfo();
+    this.resultLayer.style.left = `${Math.round(info.glyphMarginLeft)}px`;
+    this.resultLayer.style.width = `${Math.max(Math.round(info.glyphMarginWidth), 18)}px`;
+
+    const height =
+      this.gutterA?.clientHeight || this.container.clientHeight || 0;
     const lineHeight = this.result.getOption(
       monaco.editor.EditorOption.lineHeight,
     );
 
-    // The icons live in the gutter's rectangular strip, which tracks the
+    // The side icons live in the gutter's rectangular strip, which tracks the
     // SIDE pane's rows — so they anchor to the side editor's geometry, not
     // the result's, and can never drift out of the colored band.
     const place = (editor: Editor, span: LineSpan): number | undefined => {
@@ -856,57 +1088,141 @@ export class MergeView implements MergeViewApi {
       if (this.isResolved(block)) {
         continue;
       }
+      const cat = category(block);
+      const yResult = place(this.result, this.currentResultSpan(block));
+
+      if (cat === "same" && block.exact) {
+        for (const [side, editor, layer] of [
+          ["left", this.left, this.buttonLayerA],
+          ["right", this.right, this.buttonLayerB],
+        ] as const) {
+          const change = side === "left" ? block.left : block.right;
+          const y = change ? place(editor, sideBlockSpan(block, side)) : undefined;
+          if (y !== undefined) {
+            layer.appendChild(
+              this.makeMark(block, "=", "Identical on both sides: accept it in the result", y, side),
+            );
+          }
+        }
+        if (yResult !== undefined) {
+          this.resultLayer.appendChild(this.makeIdenticalControl(block, yResult));
+        }
+        continue;
+      }
+
       if (block.left && !this.isSideDone(block, "left")) {
-        const y = place(this.left, block.left.sideSpan);
+        const y = place(this.left, sideBlockSpan(block, "left"));
         if (y !== undefined) {
           this.buttonLayerA.appendChild(this.makeActions(block, "left", y));
         }
       }
       if (block.right && !this.isSideDone(block, "right")) {
-        const y = place(this.right, block.right.sideSpan);
+        const y = place(this.right, sideBlockSpan(block, "right"));
         if (y !== undefined) {
           this.buttonLayerB.appendChild(this.makeActions(block, "right", y));
         }
       }
+
+      if (yResult === undefined) {
+        continue;
+      }
+      if (cat === "conflict" && this.isWandable(block)) {
+        this.resultLayer.appendChild(this.makeWand(block, yResult));
+      } else if (cat === "conflict") {
+        this.resultLayer.appendChild(
+          this.makeMark(block, "≠", "Conflict: the two sides changed this differently", yResult),
+        );
+      } else if (cat === "same") {
+        this.resultLayer.appendChild(
+          this.makeMark(block, "≈", "Identical except whitespace: either side resolves it", yResult),
+        );
+      } else {
+        const from = cat === "yours-only" ? "left" : "right";
+        const { role, name } = this.sideWords(from);
+        this.resultLayer.appendChild(
+          this.makeMark(
+            block,
+            from === "left" ? "‹" : "›",
+            `Changed only in ${role}${name ? ` (${name})` : ""}`,
+            yResult,
+          ),
+        );
+      }
     }
+  }
+
+  /**
+   * A control that fires on a PRESS for the mouse (so the result editor keeps
+   * its focus and caret) and on a click for the keyboard (Enter / Space fire
+   * no mousedown — the controls used to do nothing for keyboard users).
+   */
+  private makeButton(
+    className: string,
+    icon: string,
+    title: string,
+    label: string,
+    act: (event: MouseEvent) => void,
+  ): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.appendChild(iconElement(icon));
+    button.title = title;
+    button.setAttribute("aria-label", label);
+    button.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      act(event);
+    });
+    button.addEventListener("click", (event) => {
+      if (event.detail === 0) {
+        act(event);
+      }
+    });
+    return button;
   }
 
   private makeActions(block: ChangeBlock, side: Side, y: number): HTMLElement {
     const group = document.createElement("div");
     group.className = "jb-change-actions";
     group.style.top = `${Math.round(y)}px`;
+    const cat = category(block);
+    group.dataset.block = String(block.id);
+    group.dataset.category = cat;
+    group.dataset.side = side;
 
-    const accept = document.createElement("button");
-    accept.type = "button";
-    accept.className = `jb-gutter-btn jb-btn-accept jb-role-${blockRole(block)}`;
-    accept.appendChild(
-      iconElement(side === "left" ? chevronDoubleRight : chevronDoubleLeft),
-    );
-    accept.title =
-      side === "left"
-        ? "Accept left change (Ctrl/⌘-click to append)"
-        : "Accept right change (Ctrl/⌘-click to append)";
-    accept.setAttribute(
-      "aria-label",
-      side === "left" ? "Accept left change" : "Accept right change",
-    );
-    accept.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      const mode: AcceptMode =
-        event.ctrlKey || event.metaKey ? "append" : "auto";
-      this.acceptSide(block, side, mode);
-    });
+    const tone = blockTone(block);
+    const { role, name } = this.sideWords(side);
+    const who = name ? `${role} (${name})` : role;
+    const blockName = this.blockName(block);
+    // The other side of this conflict is already in the result: this one can
+    // only be ADDED after it (JetBrains swaps the arrow for the append icon).
+    const appendNext =
+      cat === "conflict" && (this.blockState.get(block.id)?.applied ?? false);
 
-    const ignore = document.createElement("button");
-    ignore.type = "button";
-    ignore.className = "jb-gutter-btn jb-btn-ignore";
-    ignore.appendChild(iconElement(cross));
-    ignore.title = "Ignore this change";
-    ignore.setAttribute("aria-label", "Ignore this change");
-    ignore.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      this.ignoreSide(block, side);
-    });
+    const accept = this.makeButton(
+      `jb-gutter-btn jb-btn-accept jb-tone-${tone}${appendNext ? " jb-btn-append" : ""}`,
+      appendNext ? appendIcon : side === "left" ? chevronDoubleRight : chevronDoubleLeft,
+      appendNext
+        ? `Add ${who} after the text already in the result`
+        : `Accept ${who} (Ctrl/⌘-click to add it after what is there)`,
+      `${blockName}: ${appendNext ? "append" : "accept"} ${who}`,
+      (event) => {
+        const mode: AcceptMode =
+          event.ctrlKey || event.metaKey ? "append" : "auto";
+        this.acceptSide(block, side, mode);
+      },
+    );
+
+    const ignore = this.makeButton(
+      "jb-gutter-btn jb-btn-ignore",
+      cross,
+      `Ignore ${who} here (keep what the result has)`,
+      `${blockName}: ignore ${who}`,
+      () => this.ignoreSide(block, side),
+    );
 
     // IntelliJ keeps ✕ on the outer edge (next to the side pane) and the
     // apply chevron next to the result column.
@@ -918,34 +1234,139 @@ export class MergeView implements MergeViewApi {
     return group;
   }
 
+  /** The one control of an identical change: accept it, or (secondary) keep base. */
+  private makeIdenticalControl(block: ChangeBlock, y: number): HTMLElement {
+    const group = document.createElement("div");
+    group.className = "jb-result-group jb-identical-control";
+    group.style.top = `${Math.round(y)}px`;
+    group.dataset.block = String(block.id);
+    group.dataset.category = "same";
+    const blockName = this.blockName(block);
+    const accept = this.makeButton(
+      "jb-gutter-btn jb-btn-accept jb-tone-same",
+      checkIcon,
+      "Accept (identical on both sides)",
+      `${blockName}: accept (the same on both sides)`,
+      () => this.acceptSide(block, "left", "replace"),
+    );
+    const keep = this.makeButton(
+      "jb-gutter-btn jb-btn-ignore jb-btn-keep-base",
+      cross,
+      "Keep the base text",
+      `${blockName}: keep the base text`,
+      () => this.ignoreSide(block, "left"),
+    );
+    group.append(accept, keep);
+    return group;
+  }
+
+  /** The wand for one resolvable conflict: apply both sides. */
+  private makeWand(block: ChangeBlock, y: number): HTMLElement {
+    const group = document.createElement("div");
+    group.className = "jb-result-group";
+    group.style.top = `${Math.round(y)}px`;
+    group.dataset.block = String(block.id);
+    group.dataset.category = "conflict";
+    group.appendChild(
+      this.makeButton(
+        "jb-gutter-btn jb-btn-wand jb-tone-conflict",
+        magicWand,
+        "Apply both sides: their edits don't overlap",
+        `${this.blockName(block)}: apply both sides (their edits don't overlap)`,
+        () => this.applyBothSides(block),
+      ),
+    );
+    return group;
+  }
+
+  /** A passive, non-colour cue (=, ≈, ≠, ‹, ›) for a block. */
+  private makeMark(
+    block: ChangeBlock,
+    glyph: string,
+    title: string,
+    y: number,
+    side?: Side,
+  ): HTMLElement {
+    const mark = document.createElement("span");
+    mark.className = `jb-mark jb-tone-${blockTone(block)}`;
+    mark.textContent = glyph;
+    mark.title = title;
+    mark.setAttribute("aria-hidden", "true");
+    mark.style.top = `${Math.round(y)}px`;
+    mark.dataset.block = String(block.id);
+    mark.dataset.category = category(block);
+    if (side) {
+      mark.dataset.side = side;
+    }
+    return mark;
+  }
+
   private notifyCounts(): void {
     if (!this.model) {
       return;
     }
+    const byCategory = emptyCategoryCounts();
     let pending = 0;
     let conflictsPending = 0;
+    let resolvableConflictsPending = 0;
     for (const block of this.model.blocks) {
-      if (!this.isResolved(block)) {
-        pending++;
-        if (block.kind === "conflict") {
-          conflictsPending++;
+      const cat = category(block);
+      byCategory[cat].total++;
+      if (this.isResolved(block)) {
+        continue;
+      }
+      pending++;
+      byCategory[cat].pending++;
+      if (cat === "conflict") {
+        conflictsPending++;
+        if (this.isWandable(block)) {
+          resolvableConflictsPending++;
         }
       }
     }
-    this.onCountsChanged?.({
+    const counts: MergeCountsView = {
       total: this.model.blocks.length,
       pending,
       conflictsPending,
-      // S0 stub: zeroed until P1 classifies blocks by category.
-      byCategory: emptyCategoryCounts(),
-      resolvableConflictsPending: 0,
-      hasProgress: false,
-    });
+      byCategory,
+      resolvableConflictsPending,
+      hasProgress: this.hasProgress(),
+    };
+    this.lastCounts = counts;
+    this.legend?.update(counts);
+    this.onCountsChanged?.(counts);
   }
 
-  /** Current resolved text of the result pane (for write-back). */
+  /** Whether anything differs from the baseline (text, or any block's state). */
+  private hasProgress(): boolean {
+    const baseline = this.baseline;
+    const model = this.result?.getModel();
+    if (!baseline || !model) {
+      return false;
+    }
+    if (model.getValue() !== baseline.resultText) {
+      return true;
+    }
+    for (const [id, state] of this.blockState) {
+      const was = baseline.blockState.get(id);
+      if (
+        !was ||
+        was.doneLeft !== state.doneLeft ||
+        was.doneRight !== state.doneRight ||
+        was.applied !== state.applied
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** The result text to write back, in the model's line ending (Yours'). */
   public getResultText(): string {
-    return this.result?.getModel()?.getValue() ?? "";
+    const text =
+      this.result?.getModel()?.getValue(monaco.editor.EndOfLinePreference.LF) ?? "";
+    const eol = this.model?.eol ?? "LF";
+    return eol === "LF" ? text : text.replace(/\n/g, eolChars(eol));
   }
 
   // --- alignment / scrolling / observers ---
@@ -976,6 +1397,9 @@ export class MergeView implements MergeViewApi {
         this.installAlignment(this.model);
         this.ribbons?.scheduleDraw();
         this.rebuildButtons();
+        // Typing is progress too (the shell asks before a whitespace change
+        // discards it), and it can take a conflict out of the wand's reach.
+        this.notifyCounts();
       }
     }, 120);
   }
@@ -997,11 +1421,13 @@ export class MergeView implements MergeViewApi {
     });
   }
 
-  /** Re-renders from the original payload, discarding all resolutions. */
+  /**
+   * Back to the baseline — the auto-applied state when that was on, else
+   * base. Undoable: block ids are deterministic for the same payload +
+   * options, so pre-reset snapshots stay valid against the rebuilt model.
+   */
   public reset(): void {
     if (this.payload) {
-      // Undoable: block ids are deterministic for the same payload+options,
-      // so pre-reset snapshots stay valid against the rebuilt model.
       this.pushHistory("Reset merge");
       this.build(this.payload);
     }
@@ -1249,6 +1675,7 @@ export class MergeView implements MergeViewApi {
     }
     this.viewSubs.push(
       this.result.onDidScrollChange(() => this.scheduleButtons()),
+      this.result.onDidLayoutChange(() => this.scheduleButtons()),
       this.result.onDidChangeModelContent(() => {
         if (!this.suppressHistory) {
           this.onUserEdit(); // manual typing — make it undoable
@@ -1274,6 +1701,8 @@ export class MergeView implements MergeViewApi {
   private observeTheme(): void {
     this.themeObserver = new MutationObserver(() => {
       monaco.editor.setTheme(ensureNativeTheme());
+      // The ruler colours are read from the live palette at decoration time.
+      this.decorate();
     });
     this.themeObserver.observe(document.body, {
       attributes: true,
@@ -1281,7 +1710,15 @@ export class MergeView implements MergeViewApi {
     });
   }
 
+  /** Tears the view down for good: the editors, and the legend it mounted. */
   public dispose(): void {
+    this.teardown();
+    this.legend?.dispose();
+    this.legend = undefined;
+  }
+
+  /** Releases the editors and overlays — every build starts here. */
+  private teardown(): void {
     if (this.realignTimer) {
       window.clearTimeout(this.realignTimer);
       this.realignTimer = 0;
@@ -1290,10 +1727,8 @@ export class MergeView implements MergeViewApi {
       window.clearTimeout(this.typingTimer);
       this.typingTimer = 0;
     }
-    if (this.buttonsRaf) {
-      cancelAnimationFrame(this.buttonsRaf);
-      this.buttonsRaf = 0;
-    }
+    this.cancelButtons?.();
+    this.cancelButtons = undefined;
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
     this.themeObserver?.disconnect();
@@ -1310,6 +1745,7 @@ export class MergeView implements MergeViewApi {
     this.zoneIds.clear();
     this.trackers.clear();
     this.blockState.clear();
+    this.ordinals.clear();
     for (const editor of this.editors) {
       // `editor.dispose()` ONLY.
       //
@@ -1338,6 +1774,7 @@ export class MergeView implements MergeViewApi {
     this.editors = [];
     this.left = this.result = this.right = undefined;
     this.buttonLayerA = this.buttonLayerB = undefined;
+    this.resultLayer = undefined;
     this.gutterA = this.gutterB = undefined;
   }
 }

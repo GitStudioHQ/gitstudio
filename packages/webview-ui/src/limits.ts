@@ -8,6 +8,14 @@
 export const LARGE_FILE_LINE_THRESHOLD = 20000;
 
 /**
+ * How long an overlay repaint (ribbons, gutter buttons) waits for an animation
+ * frame before it runs anyway. Two frames at 60 Hz: where frames come, the
+ * frame always wins; where none come — headless Chrome under a virtual-time
+ * budget, an occluded or minimised window — the repaint still lands.
+ */
+export const OVERLAY_FALLBACK_MS = 32;
+
+/**
  * Host width at which the commit graph drops its Date and SHA columns.
  *
  * Shared because TWO packages need to agree on it and did not: the desktop

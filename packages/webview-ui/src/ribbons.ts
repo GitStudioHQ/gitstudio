@@ -6,10 +6,41 @@ import type {
   MergeModel,
   Side,
 } from "@gitstudio/engine/types";
-import { blockRole, isEmptySpan } from "@gitstudio/engine/types";
+import { blockTone, isEmptySpan, sideBlockSpan } from "@gitstudio/engine/types";
 import type { DiffEditors, MergeEditors } from "./decorations";
+import { OVERLAY_FALLBACK_MS } from "./limits";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+/**
+ * Runs `fn` on the next animation frame — or after OVERLAY_FALLBACK_MS when no
+ * frame comes. Headless Chrome under a virtual-time budget services no frames
+ * at all, and an occluded or minimised window is served none either; an
+ * overlay repaint that waits on requestAnimationFrame alone then never lands
+ * (the ribbons, the gutter buttons, the conflict frames all stay where they
+ * last were). Whichever fires first runs `fn`, once. Returns a cancel.
+ */
+export function scheduleFrame(fn: () => void, fallbackMs = OVERLAY_FALLBACK_MS): () => void {
+  let done = false;
+  let raf = 0;
+  let timer = 0;
+  const run = (): void => {
+    if (done) {
+      return;
+    }
+    done = true;
+    cancelAnimationFrame(raf);
+    window.clearTimeout(timer);
+    fn();
+  };
+  raf = requestAnimationFrame(run);
+  timer = window.setTimeout(run, fallbackMs);
+  return () => {
+    done = true;
+    cancelAnimationFrame(raf);
+    window.clearTimeout(timer);
+  };
+}
 
 /**
  * Width of the straight, rectangular segment of a merge-gutter band that hugs
@@ -37,9 +68,9 @@ const BEND_RADIUS = 7;
 export interface RibbonOptions {
   /** Current result-pane span for a block (defaults to its base span). */
   resultSpanOf?: (block: ChangeBlock) => LineSpan;
-  /** Fully resolved blocks are not drawn. */
+  /** Fully resolved blocks keep a dashed outline band, never a fill. */
   isResolved?: (block: ChangeBlock) => boolean;
-  /** Already-processed sides of a partially resolved block are not drawn. */
+  /** Already-processed sides get the dashed outline band instead of the fill. */
   isSideDone?: (block: ChangeBlock, side: Side) => boolean;
 }
 
@@ -61,7 +92,7 @@ interface GutterRange {
 export class RibbonOverlay {
   private readonly svg: SVGSVGElement;
   private readonly subs: monaco.IDisposable[] = [];
-  private rafHandle = 0;
+  private cancelDraw?: () => void;
 
   constructor(
     private readonly gutterA: HTMLElement,
@@ -83,13 +114,18 @@ export class RibbonOverlay {
   }
 
   public scheduleDraw(): void {
-    if (this.rafHandle) {
+    if (this.cancelDraw) {
       return;
     }
-    this.rafHandle = requestAnimationFrame(() => {
-      this.rafHandle = 0;
+    this.cancelDraw = scheduleFrame(() => {
+      this.cancelDraw = undefined;
       this.draw();
     });
+  }
+
+  /** The drawing stage (tests read the bands off it). */
+  public get stage(): SVGSVGElement {
+    return this.svg;
   }
 
   private draw(): void {
@@ -115,44 +151,49 @@ export class RibbonOverlay {
     const stageWidth = stageRect.width;
     const height = stageRect.height;
 
+    const stripA: IconStrip = { side: "a", width: MERGE_ICON_STRIP };
+    const stripB: IconStrip = { side: "b", width: MERGE_ICON_STRIP };
     for (const block of model.blocks) {
-      if (this.options.isResolved?.(block)) {
-        continue;
-      }
-      const role = blockRole(block);
+      const tone = blockTone(block);
+      const resolved = this.options.isResolved?.(block) ?? false;
       const resultSpan = this.options.resultSpanOf?.(block) ?? block.baseSpan;
-      const leftPending =
-        !!block.left && !this.options.isSideDone?.(block, "left");
-      const rightPending =
-        !!block.right && !this.options.isSideDone?.(block, "right");
+      const leftDone = resolved || (this.options.isSideDone?.(block, "left") ?? false);
+      const rightDone = resolved || (this.options.isSideDone?.(block, "right") ?? false);
 
-      const sideL =
-        leftPending && block.left
-          ? spanY(this.editors.left, block.left.sideSpan, lineHeight)
-          : undefined;
-      const sideR =
-        rightPending && block.right
-          ? spanY(this.editors.right, block.right.sideSpan, lineHeight)
-          : undefined;
+      // Each side's FULL region (its change plus the passthrough lines of the
+      // block), so the band meets the same rows the pane highlights and the
+      // alignment spacers balance.
+      const regionL = block.left
+        ? spanY(this.editors.left, sideBlockSpan(block, "left"), lineHeight)
+        : undefined;
+      const regionR = block.right
+        ? spanY(this.editors.right, sideBlockSpan(block, "right"), lineHeight)
+        : undefined;
       const result = spanY(this.editors.result, resultSpan, lineHeight);
 
-      if (sideL) {
-        appendRibbon(this.svg, gutterA, height, sideL, result, role, {
-          side: "a",
-          width: MERGE_ICON_STRIP,
-        });
+      // A processed side keeps its band as a dashed outline in the category's
+      // edge colour, so what was applied (or ignored) stays readable.
+      if (regionL) {
+        if (leftDone) {
+          appendAppliedRibbon(this.svg, gutterA, height, regionL, result, tone, stripA);
+        } else {
+          appendRibbon(this.svg, gutterA, height, regionL, result, tone, stripA);
+        }
       }
-      if (sideR) {
-        appendRibbon(this.svg, gutterB, height, result, sideR, role, {
-          side: "b",
-          width: MERGE_ICON_STRIP,
-        });
+      if (regionR) {
+        if (rightDone) {
+          appendAppliedRibbon(this.svg, gutterB, height, result, regionR, tone, stripB);
+        } else {
+          appendRibbon(this.svg, gutterB, height, result, regionR, tone, stripB);
+        }
       }
 
+      const sideL = regionL && !leftDone ? regionL : undefined;
+      const sideR = regionR && !rightDone ? regionR : undefined;
       // Conflict frame: ONE path per edge spanning every covered column, so
       // every bend (strip boundaries AND pane junctions) is an interior
       // vertex and gets rounded — path endpoints can't be.
-      if (role === "conflict" && (sideL || sideR)) {
+      if (tone === "conflict" && !resolved && (sideL || sideR)) {
         appendFrame(this.svg, height, {
           top: framePolyline(
             sideL?.[0],
@@ -176,10 +217,8 @@ export class RibbonOverlay {
   }
 
   public dispose(): void {
-    if (this.rafHandle) {
-      cancelAnimationFrame(this.rafHandle);
-      this.rafHandle = 0;
-    }
+    this.cancelDraw?.();
+    this.cancelDraw = undefined;
     for (const sub of this.subs) {
       sub.dispose();
     }
@@ -195,7 +234,7 @@ export class RibbonOverlay {
 export class DiffRibbonOverlay {
   private readonly svg: SVGSVGElement;
   private readonly subs: monaco.IDisposable[] = [];
-  private rafHandle = 0;
+  private cancelDraw?: () => void;
 
   constructor(
     private readonly gutter: HTMLElement,
@@ -213,11 +252,11 @@ export class DiffRibbonOverlay {
   }
 
   public scheduleDraw(): void {
-    if (this.rafHandle) {
+    if (this.cancelDraw) {
       return;
     }
-    this.rafHandle = requestAnimationFrame(() => {
-      this.rafHandle = 0;
+    this.cancelDraw = scheduleFrame(() => {
+      this.cancelDraw = undefined;
       this.draw();
     });
   }
@@ -250,10 +289,8 @@ export class DiffRibbonOverlay {
   }
 
   public dispose(): void {
-    if (this.rafHandle) {
-      cancelAnimationFrame(this.rafHandle);
-      this.rafHandle = 0;
-    }
+    this.cancelDraw?.();
+    this.cancelDraw = undefined;
     for (const sub of this.subs) {
       sub.dispose();
     }
@@ -295,10 +332,63 @@ function appendRibbon(
   role: string,
   strip?: IconStrip,
 ): void {
+  const band = bandGeometry(gutter, height, a, b, strip);
+  if (!band) {
+    return;
+  }
+  // Band fill: a closed ring of the top run + reversed bottom run, with the
+  // interior bends rounded. The corners at the gutter edges stay sharp —
+  // they must sit flush against the pane line-highlights.
+  const ring = [...band.top, ...band.bottom.slice().reverse()];
+  const d = roundedPath(ring, 0, band.roundable) + " Z";
+
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", d);
+  path.setAttribute("class", `jb-ribbon jb-ribbon-${role}`);
+  target.appendChild(path);
+}
+
+/**
+ * An applied / ignored side's band: no fill, only its top and bottom edges,
+ * dashed in the category's edge colour — the same "processed" mark the panes
+ * draw, so a change you already took stays visible and still reads as what it
+ * was (JetBrains keeps resolved changes outlined the same way).
+ */
+function appendAppliedRibbon(
+  target: SVGElement,
+  gutter: GutterRange,
+  height: number,
+  a: [number, number],
+  b: [number, number],
+  tone: string,
+  strip?: IconStrip,
+): void {
+  const band = bandGeometry(gutter, height, a, b, strip);
+  if (!band) {
+    return;
+  }
+  for (const edge of [band.top, band.bottom]) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", roundedPath(edge, 0.5, band.roundable));
+    path.setAttribute("class", `jb-ribbon-applied jb-ribbon-applied-${tone}`);
+    target.appendChild(path);
+  }
+}
+
+/** The top and bottom runs of a band across one gutter, or undefined when off-screen. */
+function bandGeometry(
+  gutter: GutterRange,
+  height: number,
+  a: [number, number],
+  b: [number, number],
+  strip?: IconStrip,
+):
+  | { top: Array<[number, number]>; bottom: Array<[number, number]>; roundable: (x: number) => boolean }
+  | undefined {
   const [aTop, aBottom] = a;
   const [bTop, bBottom] = b;
   if ((aBottom < 0 && bBottom < 0) || (aTop > height && bTop > height)) {
-    return; // fully outside the viewport
+    return undefined; // fully outside the viewport
   }
 
   const x0 = gutter.left;
@@ -306,30 +396,19 @@ function appendRibbon(
   // x of the strip boundary; degrade to a plain trapezoid when the gutter is
   // too narrow for a meaningful slant region.
   const stripWidth = strip ? Math.min(strip.width, gutter.width - 8) : 0;
-  const topPoints: Array<[number, number]> = [];
-  const bottomPoints: Array<[number, number]> = [];
+  const top: Array<[number, number]> = [];
+  const bottom: Array<[number, number]> = [];
   if (strip && stripWidth > 0 && strip.side === "a") {
-    topPoints.push([x0, aTop], [x0 + stripWidth, aTop], [x1, bTop]);
-    bottomPoints.push([x0, aBottom], [x0 + stripWidth, aBottom], [x1, bBottom]);
+    top.push([x0, aTop], [x0 + stripWidth, aTop], [x1, bTop]);
+    bottom.push([x0, aBottom], [x0 + stripWidth, aBottom], [x1, bBottom]);
   } else if (strip && stripWidth > 0 && strip.side === "b") {
-    topPoints.push([x0, aTop], [x1 - stripWidth, bTop], [x1, bTop]);
-    bottomPoints.push([x0, aBottom], [x1 - stripWidth, bBottom], [x1, bBottom]);
+    top.push([x0, aTop], [x1 - stripWidth, bTop], [x1, bTop]);
+    bottom.push([x0, aBottom], [x1 - stripWidth, bBottom], [x1, bBottom]);
   } else {
-    topPoints.push([x0, aTop], [x1, bTop]);
-    bottomPoints.push([x0, aBottom], [x1, bBottom]);
+    top.push([x0, aTop], [x1, bTop]);
+    bottom.push([x0, aBottom], [x1, bBottom]);
   }
-
-  // Band fill: a closed ring of the top run + reversed bottom run, with the
-  // interior bends rounded. The corners at the gutter edges stay sharp —
-  // they must sit flush against the pane line-highlights.
-  const ring = [...topPoints, ...bottomPoints.slice().reverse()];
-  const d =
-    roundedPath(ring, 0, (x) => x > x0 + 0.5 && x < x1 - 0.5) + " Z";
-
-  const path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", d);
-  path.setAttribute("class", `jb-ribbon jb-ribbon-${role}`);
-  target.appendChild(path);
+  return { top, bottom, roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5 };
 }
 
 /**
