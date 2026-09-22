@@ -22,7 +22,46 @@ export interface PushOptions extends GitRunOptions {
   tags?: boolean;
 }
 
+/**
+ * How a pull reconciles local commits with the ones it brings in — git's own
+ * three answers, passed on the command line so nothing is written to the user's
+ * config. `undefined` means "decide for me", which is what `pull()` does when
+ * the caller has not asked (see below).
+ */
+export type PullMode = "merge" | "rebase" | "ff-only";
+
+/** A branch and its upstream that have BOTH moved since they last agreed. */
+export interface PullDivergence {
+  /** The local branch, short name. */
+  branch: string;
+  /** Its upstream, short name (e.g. "origin/main"). */
+  upstream: string;
+  /** Commits only we have / only they have. Both are > 0 by definition. */
+  ahead: number;
+  behind: number;
+}
+
+export interface PullResult extends SyncOpResult {
+  /**
+   * Set when the pull stopped because the branch and its upstream have
+   * diverged and nobody has said how to reconcile them. NOTHING was changed —
+   * the caller is expected to ask the user for a `PullMode` and call again.
+   */
+  diverged?: PullDivergence;
+}
+
 export interface PullOptions extends GitRunOptions {
+  /**
+   * Explicit reconciliation. Wins over `rebase`, and is always passed to git as
+   * a flag — we never write `pull.rebase` / `pull.ff` into anyone's config.
+   */
+  mode?: PullMode;
+  /**
+   * Legacy spelling of `mode`, kept because the extension's UI is a yes/no
+   * question. `true` → "rebase"; `false` → "merge" (a caller that passed
+   * `false` had ASKED and been told to merge — leaving the flag off instead is
+   * how "Pull using Merge" ended at git's divergent-branches wall).
+   */
   rebase?: boolean;
   remote?: string;
   branch?: string;
@@ -32,6 +71,13 @@ export interface FetchOptions extends GitRunOptions {
   all?: boolean;
   prune?: boolean;
 }
+
+/** The command-line flag for each reconciliation. Never a config write. */
+const FLAG_FOR_MODE: Record<PullMode, string> = {
+  merge: "--no-rebase",
+  rebase: "--rebase",
+  "ff-only": "--ff-only",
+};
 
 /**
  * Sync operations against the upstream: ahead/behind counts, push, pull, fetch,
@@ -314,11 +360,50 @@ export class SyncOps {
     return remote ? { remote, branch } : null;
   }
 
-  /** `git pull [--rebase] [<remote> <branch>]`. */
-  async pull(opts?: PullOptions): Promise<SyncOpResult> {
+  /**
+   * `git pull`, with the reconciliation decided HERE rather than left to git.
+   *
+   * Since 2.27 git refuses a pull outright when the branch has diverged from
+   * its upstream and neither `pull.rebase` nor `pull.ff` is set. What it prints
+   * is advice for a terminal — "You have divergent branches and need to specify
+   * how to reconcile them", then three `git config` lines — and that wall is
+   * exactly what a GitStudio user saw when they pressed Pull (report #12).
+   *
+   * So:
+   *
+   * - `mode` (or the legacy `rebase`) is passed as `--rebase` / `--no-rebase` /
+   *   `--ff-only`. Explicit, one invocation, and **nothing is written to the
+   *   user's git config** — the choice belongs to the press, not to the repo.
+   * - With no mode and no configuration of their own, we pull `--ff-only`,
+   *   which is the one reconciliation that can never surprise anyone. If that
+   *   refuses, we ask git for the ahead/behind counts — a fact, not a parse of
+   *   its English — and hand the caller a `diverged` result to ask about.
+   *   `--ff-only` aborts before touching the worktree, so nothing has changed.
+   * - With no mode but `pull.rebase` / `pull.ff` / `branch.<name>.rebase` set,
+   *   we get out of the way: the user has already told git what they want, and
+   *   a plain `git pull` does it.
+   */
+  async pull(opts?: PullOptions): Promise<PullResult> {
+    const mode: PullMode | undefined =
+      opts?.mode ??
+      (opts?.rebase === true ? "rebase" : opts?.rebase === false ? "merge" : undefined);
+    const signal = opts?.signal;
+
+    // Only the no-mode, no-config case is ours to decide; everything else runs
+    // the pull the caller (or the user's own config) asked for.
+    const auto = mode === undefined && !(await this.reconcileConfigured(signal));
+
     const args = ["pull"];
-    if (opts?.rebase) {
-      args.push("--rebase");
+    // No flag at all ONLY when the user's own config is driving.
+    //
+    // The lookup is guarded rather than indexed blind: `mode` is typed, but a
+    // value crossing a process boundary is only ever as good as the last thing
+    // that checked it, and an unknown key here would push `undefined` into an
+    // argv that is about to be spawned.
+    if (mode !== undefined && Object.hasOwn(FLAG_FOR_MODE, mode)) {
+      args.push(FLAG_FOR_MODE[mode]);
+    } else if (auto) {
+      args.push(FLAG_FOR_MODE["ff-only"]);
     }
     if (opts?.remote) {
       args.push(opts.remote);
@@ -326,8 +411,61 @@ export class SyncOps {
         args.push(opts.branch);
       }
     }
-    const r = await this.proc.run(args, { signal: opts?.signal });
-    return { ok: r.code === 0, stderr: r.stderr };
+    const r = await this.proc.run(args, { signal });
+    if (r.code === 0) {
+      return { ok: true, stderr: r.stderr };
+    }
+    if (auto) {
+      // The fetch half of `pull --ff-only` already ran, so the counts below are
+      // current. Diverged is a structural fact — both sides have commits the
+      // other does not — never a match on git's advice text.
+      const d = await this.divergence(signal);
+      if (d) {
+        return { ok: false, stderr: r.stderr, diverged: d };
+      }
+    }
+    return { ok: false, stderr: r.stderr };
+  }
+
+  /**
+   * Has the user already told git how to reconcile a pull? `pull.rebase` and
+   * `pull.ff` are the global answers, `branch.<name>.rebase` the per-branch one
+   * git honours above them. If any is set we must not second-guess it.
+   */
+  private async reconcileConfigured(signal?: AbortSignal): Promise<boolean> {
+    const keys = ["pull.rebase", "pull.ff"];
+    const head = await this.proc.run(["symbolic-ref", "--quiet", "HEAD"], { signal });
+    const fullRef = head.stdout.trim();
+    if (head.code === 0 && fullRef.startsWith("refs/heads/")) {
+      keys.push(`branch.${fullRef.slice("refs/heads/".length)}.rebase`);
+    }
+    for (const key of keys) {
+      const r = await this.proc.run(["config", "--get", key], { signal });
+      if (r.code === 0 && r.stdout.trim().length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The current branch and its upstream when BOTH have moved — the state git
+   * will not reconcile on its own. Null for every other state, including a
+   * detached HEAD and a branch with no upstream.
+   */
+  async divergence(signal?: AbortSignal): Promise<PullDivergence | null> {
+    const head = await this.proc.run(["symbolic-ref", "--quiet", "HEAD"], { signal });
+    const fullRef = head.stdout.trim();
+    if (head.code !== 0 || !fullRef.startsWith("refs/heads/")) {
+      return null; // detached — there is no branch to reconcile
+    }
+    const branch = fullRef.slice("refs/heads/".length);
+    const upstream = await this.currentUpstream({ signal });
+    if (!upstream) {
+      return null;
+    }
+    const { ahead, behind } = await this.aheadBehind(undefined, { signal });
+    return ahead > 0 && behind > 0 ? { branch, upstream, ahead, behind } : null;
   }
 
   /** `git fetch [--all] [--prune]`. */
