@@ -1313,6 +1313,37 @@
         { sha: "18c9d0e7f6a5b4c3d2e1", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", login: "mira-holt", date: ISO(3) },
         { sha: "c3d4e5f60718293a4b5c", shortSha: "c3d4e5f", subject: `actions: stream job logs (${ref ?? "default"})`, author: "Sora Ohta", date: ISO(8) },
       ]),
+    // Settings ▸ Agent Access. Missing entirely: twelve checks rendered
+    // Settings over a card whose read answered undefined and threw, so the one
+    // card that installs something into another app had never been looked at.
+    // The shape is main/mcpConfig.ts's — the launch is the app's own executable
+    // as Node — and ?mcpmissing=1 is a shipped build without its server.
+    "ai:mcpInfo": () => {
+      const bin = "/Applications/GitStudio.app/Contents/Resources/mcp/gitstudio-mcp.js";
+      const command = "/Applications/GitStudio.app/Contents/MacOS/GitStudio";
+      const env = { ELECTRON_RUN_AS_NODE: "1" };
+      const repoRoot = "/Users/anton/Developer/GitStudioHQ/gitstudio";
+      const args = [bin, "--repo", repoRoot];
+      const missing = params.get("mcpmissing") === "1";
+      return {
+        binPath: bin,
+        command,
+        args,
+        env,
+        configSnippet: JSON.stringify({ mcpServers: { gitstudio: { command, args, env } } }, null, 2),
+        clients: [
+          { id: "claude", label: "Claude Desktop", installed: false, configPath: "~/Library/Application Support/Claude/claude_desktop_config.json" },
+          { id: "cursor", label: "Cursor", installed: true, configPath: "~/.cursor/mcp.json" },
+          { id: "windsurf", label: "Windsurf", installed: false, configPath: "~/.codeium/windsurf/mcp_config.json" },
+          { id: "vscode", label: "VS Code (Copilot)", installed: false, configPath: "~/Library/Application Support/Code/User/mcp.json" },
+        ],
+        repoRoot,
+        available: !missing,
+        ...(missing
+          ? { missing: "This build of GitStudio is missing its MCP server, so Agent Access can't be set up. Reinstalling the app restores it." }
+          : {}),
+      };
+    },
     // NOT ifEmpty: GitHub's `/branches` answers an empty repository with an
     // empty LIST (200, `[]`) — only the content endpoints refuse. Throwing here
     // made the ref switcher reachable only as a failure toast, so a check of

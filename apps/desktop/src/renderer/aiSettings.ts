@@ -432,9 +432,13 @@ export function agentAccessCard(): HTMLElement {
       return;
     }
 
+    // The main process says WHY there is no server, and it depends on the
+    // build: a dev tree has not bundled it yet, a shipped build is broken. This
+    // line used to tell every shipped build's user to "Run `npm run build` in
+    // apps/mcp" — beside an Add button that could not work.
     if (!info.available) {
-      const warn = el("div", "settings-empty");
-      warn.textContent = "The MCP server isn't built yet. Run `npm run build` in apps/mcp.";
+      const warn = el("div", "settings-empty mcp-missing");
+      warn.textContent = info.missing ?? "The MCP server isn't available in this build.";
       body.append(warn);
     }
     if (!info.repoRoot) {
@@ -497,8 +501,13 @@ export function agentAccessCard(): HTMLElement {
       if (cl.installed) n.append(pill("Connected", "is-ready"));
       m.append(n);
       r.append(m);
-      const btn = el("button", "mini-btn");
+      const btn = el("button", "mini-btn") as HTMLButtonElement;
       btn.append(glyph(cl.installed ? "sync" : "add"), span(cl.installed ? "Update" : "Add"));
+      // No server, no install: a button that can only fail is not an offer.
+      if (!info.available) {
+        btn.disabled = true;
+        btn.title = info.missing ?? "The MCP server isn't available in this build.";
+      }
       btn.addEventListener("click", () => void runBusy(btn, async () => {
         try {
           const res = await host.invoke("ai:mcpInstall", {
@@ -506,7 +515,7 @@ export function agentAccessCard(): HTMLElement {
             write: permission !== "read",
             destructive: permission === "destructive",
           });
-          toast(res.message, res.ok ? "success" : "error");
+          toast(res.message, res.ok ? "success" : res.expected ? "info" : "error");
           if (res.ok) void render();
         } catch (e) {
           toast(cleanErr(e), "error");
@@ -537,12 +546,24 @@ export function agentAccessCard(): HTMLElement {
   return card;
 }
 
+/**
+ * The paste-it-yourself config, for the permission picked here.
+ *
+ * The command and env come from the main process, the same values Add writes.
+ * This spelled its own `command: "node"` — the twin of the one the installer
+ * had — so fixing only the installer would have left the snippet launching a
+ * runtime the user may not have.
+ */
 function buildSnippet(info: McpInfo, permission: "read" | "write" | "destructive"): string {
   const args = [info.binPath];
   if (info.repoRoot) args.push("--repo", info.repoRoot);
   if (permission === "destructive") args.push("--allow-destructive");
   else if (permission === "write") args.push("--write");
-  return JSON.stringify({ mcpServers: { gitstudio: { command: "node", args } } }, null, 2);
+  return JSON.stringify(
+    { mcpServers: { gitstudio: { command: info.command, args, env: info.env } } },
+    null,
+    2,
+  );
 }
 
 // ── small helpers ──────────────────────────────────────────────────────────────

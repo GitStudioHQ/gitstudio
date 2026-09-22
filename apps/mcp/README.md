@@ -22,7 +22,11 @@ npm run build --workspace gitstudio-mcp
 ```
 
 Then add it to your MCP client. The desktop app's **Settings ▸ Agent Access**
-card writes this config for you (one click per client), or paste it yourself:
+card writes the config for you (one click per client) — and needs no build or
+Node install: the app ships this server as `resources/mcp/gitstudio-mcp.js`
+(bundled by `apps/desktop/esbuild.js`) and launches it with its own executable
+run as Node (`ELECTRON_RUN_AS_NODE=1`). For a standalone build, paste this
+yourself:
 
 ```json
 {

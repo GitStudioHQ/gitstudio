@@ -234,6 +234,25 @@ async function main() {
     ],
   });
 
+  // The MCP server (apps/mcp), as ONE self-contained file the app ships.
+  //
+  // Settings ▸ Agent Access installs this into Claude Desktop / Cursor / VS
+  // Code / Windsurf, which launch it with the app's own executable as Node
+  // (see main/mcpConfig.ts). electron-builder copies dist/mcp out of the asar
+  // as resources/mcp/ — an MCP client needs a real file path. Built here rather
+  // than by apps/mcp's own script so that every desktop build, the release
+  // workflow's included, has it: nothing ever packaged apps/mcp before, and
+  // every shipped build offered an Add button that could not work (#16).
+  const mcpCtx = await esbuild.context({
+    ...base,
+    tsconfig: path.resolve(__dirname, "../mcp/tsconfig.json"),
+    entryPoints: [path.resolve(__dirname, "../mcp/src/index.ts")],
+    outfile: path.join(distDir, "mcp/gitstudio-mcp.js"),
+    platform: "node",
+    format: "cjs",
+    target: "node20",
+  });
+
   // Monaco's editor worker, bundled standalone; loaded via a blob shim at runtime.
   const workerCtx = await esbuild.context({
     ...base,
@@ -246,7 +265,7 @@ async function main() {
     target: "chrome120",
   });
 
-  const contexts = [mainCtx, preloadCtx, rendererCtx, workerCtx];
+  const contexts = [mainCtx, preloadCtx, rendererCtx, workerCtx, mcpCtx];
 
   if (watch) {
     await Promise.all(contexts.map((c) => c.watch()));
@@ -265,6 +284,7 @@ function reportSizes() {
     "preload/preload.js",
     "renderer/renderer.js",
     "renderer/editor.worker.js",
+    "mcp/gitstudio-mcp.js",
   ];
   console.log("[build] bundle sizes:");
   for (const rel of files) {

@@ -2708,15 +2708,22 @@ export interface McpClientInfo {
 export interface McpInfo {
   /** Absolute path to the bundled gitstudio-mcp entry. */
   binPath: string;
-  /** The command + args to launch it (for a config snippet). */
+  /**
+   * The command + args + env to launch it. The command is the app's OWN
+   * executable run as Node (`env.ELECTRON_RUN_AS_NODE`), never a bare `node`
+   * the user may not have — so every snippet must carry `env` too.
+   */
   command: string;
   args: string[];
+  env: Record<string, string>;
   /** A ready-to-paste JSON snippet for a generic MCP client. */
   configSnippet: string;
   clients: McpClientInfo[];
   repoRoot?: string;
-  /** Whether the bundled server file exists (built) yet. */
+  /** Whether the bundled server file exists. */
   available: boolean;
+  /** When it does not: why, in words for whoever can act on it. */
+  missing?: string;
 }
 
 export interface McpInstallRequest {

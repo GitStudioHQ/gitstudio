@@ -11743,6 +11743,42 @@
      * from the menus and hands "default" to the next shown one; Make default
      * does; a custom editor can be added and removed.
      */
+    /**
+     * Agent Access offers only what can work.
+     *
+     * Every shipped build used to show an enabled "Add" beside "The MCP server
+     * isn't built yet. Run `npm run build` in apps/mcp." — the server was never
+     * packaged, and the snippet below launched it with `node`, a runtime a
+     * desktop user need not have. With the server shipped, Add is live and the
+     * snippet names the app's own executable with ELECTRON_RUN_AS_NODE.
+     */
+    "agent-access-offers-an-add-that-works": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.ok(window.__gsSent(/^ai:mcpInfo$/).length > 0, "the card asked for the server's details");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.eq(adds.length, 4, "one button per client");
+      c.ok(adds.every((b) => !b.disabled), "every Add / Update is live when the server ships");
+      c.ok(!$(".mcp-missing", card), "no 'missing server' line over a server that is there");
+      c.ok(!/npm run build|apps\/mcp/.test(text(card)), "no build instructions for a repository the user lacks");
+      const snippet = JSON.parse(text($(".mcp-snippet-code", card)) || "{}");
+      const entry = (snippet.mcpServers || {}).gitstudio || {};
+      c.ok(entry.command && entry.command !== "node", `the snippet does not launch a bare node (${entry.command})`);
+      c.eq((entry.env || {}).ELECTRON_RUN_AS_NODE, "1", "…it runs the app's own executable as Node");
+    },
+    /** And a build without its server says so, and offers nothing that cannot work. */
+    "agent-access-without-a-server-offers-no-dead-button": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const card = $$(".settings-card").find((k) => /Agent Access/.test(text($$(".settings-card-title", k)[0])));
+      if (!card) return c.ok(false, "Settings has the Agent Access card");
+      c.match(text($(".mcp-missing", card)), /missing its MCP server/, "it says what is wrong");
+      c.ok(!/npm run build|apps\/mcp/.test(text(card)), "…without build instructions for a repository the user lacks");
+      const adds = $$(".mcp-client .mini-btn", card);
+      c.ok(adds.length > 0 && adds.every((b) => b.disabled), "no Add that can only fail");
+    },
     "editors-are-configurable-in-settings": async (f) => {
       const c = check(f);
       await settle(300);
