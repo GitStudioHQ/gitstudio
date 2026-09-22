@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "@gitstudio/git-service/index";
 import { GitBridge } from "../src/main/gitBridge";
+import { refCheckoutRequest } from "../src/renderer/refMenuItems";
 import type { RepoStore } from "../src/main/repoStore";
 import { removeTempRepo } from "./tmpRepo";
 
@@ -94,6 +95,55 @@ test("a tag checkout by full name detaches at the TAG, not at the branch", async
   assert.equal(r.ok, true, r.message);
   assert.equal(symbolicHead(), "", "detached — a tag is a fixed point");
   assert.equal(git("rev-parse", "HEAD"), tagTip);
+});
+
+test("a checkout-ref WITHOUT a full name is refused, and HEAD does not move", async () => {
+  // The Branches view, the branch switcher and the ref page sent the short
+  // name alone, and this arm ran `git checkout heads/release` for them: a
+  // DETACHED HEAD at the branch tip, answered `ok: true`. Every door sends the
+  // full name now, and a request without one is refused rather than guessed
+  // at — so a door that forgets it fails loudly instead of detaching quietly.
+  git("checkout", "-q", "main");
+  const r = await bridge.commitAction({
+    action: "checkout-ref",
+    sha: "heads/release",
+    name: "heads/release",
+    refKind: "head",
+  });
+  assert.equal(r.ok, false, "refused");
+  assert.match(r.message ?? "", /refresh/i, "and says what to do");
+  assert.equal(symbolicHead(), "refs/heads/main", "HEAD did not move — let alone detach");
+});
+
+test("the Branches list carries each branch's full name beside the short one", async () => {
+  const listed = await bridge.branchesList();
+  const release = listed.find((b) => b.fullName === "refs/heads/release");
+  assert.ok(release, "listed by its full name");
+  assert.equal(release.name, "heads/release", "…while the name it shows is git's short form");
+  for (const b of listed) assert.match(b.fullName, /^refs\/heads\//, `${b.name} has a full name`);
+});
+
+test("the request every Branches-view door builds, from that listing, lands ON the branch", async () => {
+  git("checkout", "-q", "main");
+  const release = (await bridge.branchesList()).find((b) => b.name === "heads/release")!;
+  const r = await bridge.commitAction(refCheckoutRequest(release.fullName));
+  assert.equal(r.ok, true, r.message);
+  assert.equal(symbolicHead(), "refs/heads/release", "attached, beside the tag of the same name");
+  assert.equal(git("rev-parse", "HEAD"), branchTip);
+});
+
+test("the remote doors (a remote row, the switcher's remotes) create the local branch tracking it", async () => {
+  git("checkout", "-q", "main");
+  // A remote of this very repository: origin/fix exists, a local fix does not.
+  git("branch", "fix", "refs/heads/release");
+  git("remote", "add", "self", repo);
+  git("fetch", "-q", "self");
+  git("branch", "-q", "-D", "fix");
+  const r = await bridge.commitAction(refCheckoutRequest("refs/remotes/self/fix"));
+  assert.equal(r.ok, true, r.message);
+  assert.equal(symbolicHead(), "refs/heads/fix");
+  assert.equal(git("rev-parse", "--abbrev-ref", "fix@{upstream}"), "self/fix");
+  git("checkout", "-q", "main");
 });
 
 test("a full name outside the three namespaces is refused, not guessed at", async () => {

@@ -19,7 +19,6 @@ import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
-import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
@@ -1937,8 +1936,12 @@ export class GitBridge {
     // blank column — which would take the branch list down with it — so it is
     // asked for separately and the result is optional.
     const base = await this.defaultBranch(ctx);
+    // %(refname) rides beside the short name: the short one is for reading,
+    // and it is "heads/release" the moment a tag shares the name — so a
+    // checkout (or anything else that writes) goes by the full one. First, so
+    // the free-text subject stays the last field.
     const fmt =
-      `%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
+      `%(refname)${SEP}%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
       `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(authorname)${SEP}%(authoremail)${SEP}%(contents:subject)`;
     // No catch-and-return-[]: `for-each-ref` exits 0 with no output in a repo
     // that genuinely has no branches, so a non-zero exit means the read FAILED
@@ -1954,13 +1957,14 @@ export class GitBridge {
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
-      const [name, head, upstream, track, date, authorName, authorEmail, subject] = line.split(SEP);
+      const [fullName, name, head, upstream, track, date, authorName, authorEmail, subject] = line.split(SEP);
       const { ahead, behind, gone } = parseTrack(track ?? "");
       const vs = base ? divergence.get(name) : undefined;
       branches.push({
         ...(vs ? { aheadDefault: vs.ahead, behindDefault: vs.behind, merged: vs.ahead === 0 } : {}),
         ...(base && name === base ? { isDefault: true } : {}),
         name,
+        fullName,
         current: head === "*",
         upstream: upstream || undefined,
         ahead,
@@ -2173,30 +2177,28 @@ export class GitBridge {
     if (req.fullName !== undefined && !safeArg(req.fullName)) {
       return UNSAFE_REF_RESULT;
     }
+    // By the FULL name, from every door. The planner reads the namespace and
+    // checks a branch out by its name under refs/heads/, where `name` — git's
+    // short form — is "heads/release" beside a tag of that name, and
+    // `git checkout heads/release` DETACHES at the branch tip while reporting
+    // success. The Branches view, the branch switcher and the ref page used to
+    // send the short name alone and take exactly that path; a request without
+    // a full name is refused now rather than guessed at, so a door that forgets
+    // it fails loudly instead of detaching quietly.
+    if (req.fullName === undefined) {
+      return {
+        ok: false,
+        changed: false,
+        message: `Couldn't tell which ${name} to check out — refresh and try again.`,
+      };
+    }
+    const fullName = req.fullName;
     return this.serialize(async () => {
-      // By the FULL name when the door sent one (the graph's menus do): the
-      // planner reads the namespace and checks a branch out by its name under
-      // refs/heads/, where `name` — git's short form — is "heads/release"
-      // beside a tag of that name, and `git checkout heads/release` detaches
-      // at the branch tip. The Branches view still sends the short name alone,
-      // and keeps the arms it always had.
-      let args: string[];
-      if (req.fullName !== undefined) {
-        const plan = await planRefCheckout(ctx.process, req.fullName);
-        if (!plan) {
-          return UNSAFE_REF_RESULT;
-        }
-        args = plan.args;
-      } else {
-        args =
-          req.refKind === "remote"
-            ? (await planRemoteCheckout(ctx.process, name)).args
-            : req.refKind === "tag"
-              ? // A tag is a fixed point, so this one really does detach.
-                ["checkout", "--detach", name]
-              : ["checkout", name];
+      const plan = await planRefCheckout(ctx.process, fullName);
+      if (!plan) {
+        return UNSAFE_REF_RESULT;
       }
-      const r = await ctx.process.run(args);
+      const r = await ctx.process.run(plan.args);
       if (r.code === 0) {
         return { ok: true, changed: true };
       }

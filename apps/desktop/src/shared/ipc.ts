@@ -307,11 +307,12 @@ export interface CommitActionRequest {
   /** For checkout-ref: what kind of ref `name` is. */
   refKind?: "head" | "remote" | "tag";
   /**
-   * For checkout-ref: the ref's FULL name, when the door knows it (the graph
-   * does — its rows and its ref list carry it). The main process checks out
-   * by this and not by `name`, which is `%(refname:short)`: with a tag and a
-   * branch both called "release" the branch's short name is "heads/release",
-   * and `git checkout heads/release` detaches HEAD at the branch tip.
+   * For checkout-ref: the ref's FULL name — REQUIRED; the main process
+   * refuses a checkout-ref without one. It checks out by this and not by
+   * `name`, which is `%(refname:short)`: with a tag and a branch both called
+   * "release" the branch's short name is "heads/release", and
+   * `git checkout heads/release` detaches HEAD at the branch tip. Build the
+   * request with refCheckoutRequest (renderer/refMenuItems.ts) where you can.
    */
   fullName?: string;
 }
@@ -409,7 +410,11 @@ export interface SyncStatus {
 
 /** A branch with remote-tracking context, for the Branches manager. */
 export interface BranchInfo {
+  /** `%(refname:short)` — for reading. "heads/release" when a tag shares the name. */
   name: string;
+  /** `%(refname)`, e.g. "refs/heads/release" — what a checkout is planned from
+   *  (planRefCheckout), because the short name then names a revision. */
+  fullName: string;
   current: boolean;
   upstream?: string;
   ahead: number;

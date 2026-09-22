@@ -578,9 +578,10 @@ export class CommitGraph extends LitElement {
     .gh-scope:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
     .gh-scope .codicon-filter { font-size: 11px; opacity: 0.8; }
     .gh-scope .codicon-chevron-down { font-size: 11px; opacity: 0.7; margin-left: -1px; }
+    /* Scoped: the accent wash, and the button's own ink (--gs-fg, from
+       .gh-scope) on it. The accent's link-blue read 4.00:1 there in light. */
     .gh-scope.scoped {
       background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
-      color: var(--gs-accent-text);
     }
     .gh-scope-pop { min-width: 150px; }
     /* The scope popover anchors to the search box's scope button (left-ish). */
@@ -641,11 +642,13 @@ export class CommitGraph extends LitElement {
     }
     .gh-preset:hover { background: var(--gs-hover); }
     .gh-preset:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
-    /* The same wash the scoped trigger and the current-branch pill wear. */
+    /* The same wash the scoped trigger and the current-branch pill wear — and
+       the menu's own ink on it, not the accent's. Link-blue on a violet wash
+       read 3.34:1 in light (link-blue on the bare light menu is only 4.40:1);
+       the wash and its border say "active" on their own. */
     .gh-preset.active {
       background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
       border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
-      color: var(--gs-accent-text);
     }
     .gh-preset[disabled] { opacity: 0.5; cursor: default; }
     .gh-preset[disabled]:hover { background: transparent; }
@@ -677,13 +680,15 @@ export class CommitGraph extends LitElement {
     .gh-menuitem .lbl.gh-ref-name {
       min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    /* "current", set beside the pinned branch in the muted title colour. */
+    /* "current", set beside the pinned branch in the muted title colour —
+       the title's mix, for the title's reason (see .gh-pop-title): 66% was
+       4.10:1 on the light menu's own ground. */
     .gh-menuitem .gh-ref-cur {
       flex: 0 0 auto;
       font-size: 10px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      color: color-mix(in srgb, var(--vscode-foreground) 66%, var(--vscode-editor-background));
+      color: color-mix(in srgb, var(--vscode-foreground) 70%, var(--vscode-editor-background));
     }
     .gh-menuitem:hover .gh-ref-cur,
     .gh-menuitem:focus-visible .gh-ref-cur { color: inherit; opacity: 0.8; }

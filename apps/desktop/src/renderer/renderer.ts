@@ -83,7 +83,7 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
-import type { RowRef } from "./refMenuItems";
+import { refCheckoutRequest, refDisplay, type RowRef } from "./refMenuItems";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
 import { refreshHighlightTheme } from "./highlight";
@@ -2426,7 +2426,7 @@ class App {
    *  cache busting, and refreshes behave identically everywhere. */
   private peekHost(): GitPeekHost {
     return {
-      checkout: (ref) => void this.checkoutRef(ref),
+      checkout: (fullName) => void this.checkoutRef(fullName),
       branchMenu: (b, anchor) => this.openBranchActions(b, anchor),
       compareWith: (head) => {
         const current = this.refs.find((r) => r.type === "head" && r.isCurrent)?.name;
@@ -2499,9 +2499,11 @@ class App {
       ? `Check out your local ${short}`
       : `Create ${short} from ${r.name} and check it out`;
     primary.setAttribute("aria-label", primary.title);
-    primary.addEventListener("click", () =>
-      void this.checkoutRef(mine ? short : r.name, primary, mine ? "head" : "remote"),
-    );
+    // By the REMOTE's full name either way: the planner switches to a local
+    // branch of that name when one exists (planRemoteCheckout) and creates it
+    // tracking the remote when not — which is what `mine` only labels. The
+    // local's short name here was the bug: beside a tag it names a revision.
+    primary.addEventListener("click", () => void this.checkoutRef(r.fullName, primary));
     actions.push(primary);
     const more = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
     more.setAttribute("aria-label", `More actions for ${r.name}`);
@@ -3458,7 +3460,7 @@ class App {
       co.textContent = "Checkout";
       co.setAttribute("aria-label", `Check out ${b.name}`);
       co.title = `Check out ${b.name}`;
-      co.addEventListener("click", () => void this.checkoutRef(b.name, co));
+      co.addEventListener("click", () => void this.checkoutRef(b.fullName, co));
       actions.push(co);
     }
     const moreBtn = el("button", "row-btn lv-menu-btn") as HTMLButtonElement;
@@ -3569,7 +3571,7 @@ class App {
       items.push({
         label: `Checkout ${b.name}`,
         icon: "check",
-        onClick: () => void this.checkoutRef(b.name),
+        onClick: () => void this.checkoutRef(b.fullName),
       });
     }
     // Always offered while an upstream exists (a fetch from this very menu can
@@ -4093,21 +4095,23 @@ class App {
   }
 
   /**
-   * Check out a ref by name, then refresh refs + the view.
+   * Check out a ref by its FULL name, then refresh refs + the view.
    *
-   * `kind` is not decoration: it decides what checking out MEANS. A local head
-   * attaches by name; a remote branch has to create a local tracking branch
-   * (issues #12/#19); a tag genuinely detaches. Sending a name down the plain
-   * `checkout` action instead runs `git checkout origin/foo`, which detaches
-   * HEAD onto the remote-tracking ref — no branch, no upstream, and the next
-   * commit lands where nothing points at it, under a toast saying "Checked out
-   * foo."
+   * The namespace is not decoration: it decides what checking out MEANS. A
+   * local head attaches by name; a remote branch has to create a local
+   * tracking branch (issues #12/#19); a tag genuinely detaches. Sending a name
+   * down the plain `checkout` action instead runs `git checkout origin/foo`,
+   * which detaches HEAD onto the remote-tracking ref — no branch, no upstream,
+   * and the next commit lands where nothing points at it, under a toast
+   * saying "Checked out foo."
+   *
+   * And it is the FULL name (issue #30's follow-up), never `%(refname:short)`:
+   * with a tag of the same name the branch "release" is "heads/release", and
+   * `git checkout heads/release` detached HEAD here too. The request is built
+   * by refCheckoutRequest, the one builder every door uses.
    */
-  private async checkoutRef(
-    ref: string,
-    btn?: HTMLElement,
-    kind: "head" | "remote" | "tag" = "head",
-  ): Promise<void> {
+  private async checkoutRef(fullName: string, btn?: HTMLElement): Promise<void> {
+    const ref = refDisplay(fullName);
     // Checking out is the slowest thing this list does — it rewrites the working
     // tree — and it used to show nothing at all while it ran, so the row looked
     // like it had ignored the click.
@@ -4127,14 +4131,7 @@ class App {
     };
     let result;
     try {
-      result = await host.invoke("commit:action", {
-        action: "checkout-ref",
-        // `sha` is required by the request shape but unused on this path; the
-        // ref travels in `name`, where the kind can be applied to it.
-        sha: ref,
-        name: ref,
-        refKind: kind,
-      } as Parameters<App["runAction"]>[0]);
+      result = await host.invoke("commit:action", refCheckoutRequest(fullName));
     } catch (e) {
       restore();
       toast(cleanErr(e) || "Couldn't check out.", "error");
@@ -9169,7 +9166,7 @@ class App {
               this.revealInGraph(b.sha);
               return;
             }
-            void this.checkoutRef(b.name);
+            void this.checkoutRef(b.fullName);
           },
         });
       }
@@ -9184,7 +9181,7 @@ class App {
           label: b.name,
           icon: "cloud",
           title: `Check out ${b.name} as a local branch`,
-          onClick: () => void this.checkoutRef(b.name, undefined, "remote"),
+          onClick: () => void this.checkoutRef(b.fullName),
         });
       }
     }

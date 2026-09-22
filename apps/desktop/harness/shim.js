@@ -1314,7 +1314,9 @@
     // The folders the Repositories view groups by. The clone folder leads and
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
-    "branches:list": () => branches,
+    // With the full name the real read carries (%(refname)): every checkout
+    // door goes by it, and the main process refuses a checkout without one.
+    "branches:list": () => branches.map((b) => ({ fullName: "refs/heads/" + b.name, ...b })),
     // The per-branch log walk's answer. feat/line-staging is the interesting
     // one: created by one person, carried by three — a number-only "last
     // commit by" could never say that.

@@ -10,6 +10,7 @@ import * as path from "node:path";
 import type { WorktreeEntry, GitRef } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { bareName, shortNameOf, startPointOf } from "./worktreeRefs";
+import { resolveListedRef } from "./refCheckout";
 
 // The Worktrees pillar — also absent from free VS Code. Each row is a linked (or
 // the main) worktree; actions cover open / add / remove / lock / unlock / prune.
@@ -444,16 +445,9 @@ export async function worktreeFromRef(
   // checkout are exact even when git disambiguated the short name: a genuine
   // branch named "heads/x" and a collision-prefixed name are string-identical,
   // so name-based stripping alone would mis-strip one of them.
-  let resolved = ref;
-  if (!ref.fullName) {
-    try {
-      const refs = await a.ctx.refs.listRefs();
-      resolved =
-        refs.find((r) => r.type === ref.type && r.name === ref.name) ?? ref;
-    } catch {
-      // keep the webview ref
-    }
-  }
+  // The same lookup the checkout doors use (refCheckout.ts); unresolved, the
+  // webview's ref is kept and bareName/startPointOf do what they can with it.
+  const resolved: GitRef = (await resolveListedRef(a.ctx, ref)) ?? ref;
 
   const isLocal = resolved.type === "head";
   const mode = await promptPick({

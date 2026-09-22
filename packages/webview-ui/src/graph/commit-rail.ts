@@ -267,10 +267,12 @@ export class CommitRail extends LitElement {
          label naming the filter once one is set — "main, feature/x" or
          "3 branches" — so the narrowed log says what it is narrowed to. ── */
       .ibtn.branches { width: auto; min-width: 20px; padding: 0 4px; gap: 3px; }
+      /* The accent wash with the foreground's ink on it, as the graph's twin
+         does: link-blue on that wash measured 4.00:1 in a light theme. */
       .ibtn.branches.scoped {
         padding: 0 6px 0 5px;
         background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
-        color: var(--gs-accent-text);
+        color: var(--gs-fg);
       }
       .ibtn.branches.scoped::after { content: none; }
       .ibtn.branches .lbl {
@@ -802,10 +804,11 @@ export class CommitRail extends LitElement {
       }
       .pop .preset:hover { background: var(--gs-hover); }
       .pop .preset:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+      /* The menu's own ink on the wash, as the graph's presets: link-blue on
+         it read 3.34:1 in a light theme. The wash says "active". */
       .pop .preset.active {
         background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
         border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
-        color: var(--gs-accent-text);
       }
       .pop .preset[disabled] { opacity: 0.5; cursor: default; }
       .pop .preset[disabled]:hover { background: transparent; }

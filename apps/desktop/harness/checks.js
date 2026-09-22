@@ -2636,6 +2636,11 @@
         activeBefore,
         "and does not navigate you somewhere else while doing it",
       );
+      // By the FULL name: the switcher's rows used to send the short one,
+      // which is "heads/<name>" beside a tag of that name — and checking THAT
+      // out detaches.
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action").at(-1)?.payload;
+      c.eq(sent?.fullName, "refs/heads/fix/log-stream", "the switcher checks out by the branch's full name");
     },
 
     // ── staging keeps your place ────────────────────────────────────────────
@@ -7749,6 +7754,222 @@
       c.eq(sent?.payload?.action, "checkout-ref", "the checkout goes out as a ref checkout");
       c.eq(sent?.payload?.refKind, "remote", "…as a remote");
       c.eq(sent?.payload?.fullName, "refs/remotes/origin/chore/dependabot-bump", "…by its full name, never the chip's short one");
+    },
+
+    /**
+     * The commit-details pane's ref chips are the graph's chip shortcut too
+     * (issue #30: "clicking a ref chip could also be a shortcut: show only
+     * this branch / add this branch to the filter"). The pane has no ref list
+     * and no filter — the graph owns both — so a chip asks the graph, which
+     * opens its OWN menu at the pointer, over the details column, resolved
+     * through the ref list by name and kind.
+     *
+     * And the reload that "Show only" causes is the one the ref list does not
+     * ride on (the renderer says which list it holds; main leaves an unchanged
+     * one on its side of IPC), while the picker still offers every ref.
+     */
+    "a-details-chip-opens-the-graphs-chip-menu": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const loads = () => window.__GS_GRAPH_LOADS || [];
+      const lastLoad = () => loads()[loads().length - 1] || {};
+      // The merge commit's details carry main, origin/main and a tag the ref
+      // list does not have (desktop-v1.6.0).
+      const row = sr.querySelector('.row[data-sha="b2c3d4e5f6a71829304b"]');
+      c.ok(!!row, "a row whose details carry refs");
+      if (!row) return;
+      row.click();
+      await settle(900);
+      const pane = $(".graph-details gitstudio-commit-details");
+      const pr = pane?.shadowRoot;
+      c.ok(!!pr, "the details pane is up");
+      if (!pr) return;
+      const dchip = (name) => pr.querySelector(`.chip[data-ref-menu][data-ref="${name}"]`);
+      const main = dchip("main");
+      c.ok(!!main, "the pane's branch chip is a menu chip — the graph is there to answer it");
+      if (!main) return;
+      c.eq(main.getAttribute("role"), "button", "and a control, focusable");
+      const b = main.getBoundingClientRect();
+      const px = b.left + 6;
+      const py = b.top + 6;
+      main.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, clientX: px, clientY: py }));
+      await settle(300);
+      const menu = sr.querySelector(".gh-chip-menu");
+      c.ok(!!menu, "clicking it opens the GRAPH's chip menu");
+      if (!menu) return;
+      const mb = menu.getBoundingClientRect();
+      const paneBox = pane.getBoundingClientRect();
+      c.ok(mb.left >= paneBox.left - 1, `the menu opens over the details column, at the pointer (${Math.round(mb.left)} vs pane ${Math.round(paneBox.left)})`);
+      c.ok(Math.abs(mb.left - Math.min(px, window.innerWidth - mb.width - 6)) <= 2, `…its left edge at the pointer (${Math.round(mb.left)} vs ${Math.round(px)})`);
+      const hit = document.elementFromPoint(mb.left + mb.width / 2, mb.top + mb.height / 2);
+      c.ok(hit === host, `…and paints ABOVE the pane: the pointer there hits the graph (${hit?.tagName})`);
+      const loadsBefore = loads().length;
+      menu.querySelector("[data-chip-action=only]")?.click();
+      await settle(800);
+      c.ok(loads().length > loadsBefore, "Show only reloaded the graph");
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["refs/heads/main"]), "…around refs/heads/main, the ref the list names");
+      c.eq(lastLoad().sentRefList, false, "the unchanged ref list stayed on main's side of IPC");
+      sr.querySelector(".gh-branches")?.click();
+      await settle(400);
+      const listed = [...sr.querySelectorAll(".gh-branches-pop .gh-menuitem")].map((x) => x.dataset.ref);
+      c.ok(listed.includes("refs/remotes/origin/chore/dependabot-bump"), `the picker still lists a ref the filter hides (${listed.length} listed)`);
+      const focused = sr.activeElement || document.activeElement;
+      focused.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(300);
+
+      // A chip the list does not have: the menu opens, and acts on nothing —
+      // no full name is guessed for it.
+      const tag = $(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelector('.chip[data-ref-menu][data-ref="desktop-v1.6.0"]');
+      c.ok(!!tag, "a tag chip the ref list does not name");
+      if (!tag) return;
+      const tb = tag.getBoundingClientRect();
+      tag.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: tb.left + 6, clientY: tb.top + 6 }));
+      await settle(300);
+      const only = sr.querySelector(".gh-chip-menu [data-chip-action=only]");
+      c.ok(!!only && only.disabled, "its Show only is disabled");
+      c.ok(!sr.querySelector(".gh-chip-menu [data-chip-action=checkout]"), "and it offers no checkout of a ref it cannot name");
+    },
+
+    /**
+     * The OPEN Branches picker reads at AA in light (issue #30). Its active
+     * preset wore the accent's link-blue on the accent's violet wash (3.34:1),
+     * the "current" label a 66% mix meant for white on the menu's grey
+     * (4.10:1), and the scoped trigger link-blue on its wash (4.00:1).
+     * contrast.mjs sweeps these scenes too; this pins the three pairs where
+     * every run of check.mjs sees them — with the popover's fade-in killed
+     * INSIDE the shadow root (a document stylesheet does not reach it, and a
+     * mid-fade popover is what let the sweep call the scene clean).
+     */
+    "the-open-branch-picker-reads-at-aa": async (f) => {
+      const c = check(f);
+      await settle(400);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const kill = document.createElement("style");
+      kill.textContent = "*,*::before,*::after{animation:none!important;transition:none!important}";
+      sr.appendChild(kill);
+      void host.offsetHeight;
+      c.ok(!!sr.querySelector(".gh-branches-pop"), "the picker is open");
+      const parse = (v) => {
+        const s = String(v);
+        let m = s.match(/^rgba?\(([^)]+)\)/);
+        if (m) {
+          const p = m[1].split(",").map(parseFloat);
+          return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+        }
+        m = s.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/);
+        if (m) return { r: m[1] * 255, g: m[2] * 255, b: m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
+        m = s.match(/^oklab\(\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)(?:\s*\/\s*([\d.]+))?\s*\)/);
+        if (m) {
+          const [L, A, B] = [+m[1], +m[2], +m[3]];
+          const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+          const mm = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+          const s3 = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+          const enc = (x) => 255 * (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(0, Math.min(1, x)), 1 / 2.4) - 0.055);
+          return {
+            r: enc(4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s3),
+            g: enc(-1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s3),
+            b: enc(-0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s3),
+            a: m[4] === undefined ? 1 : +m[4],
+          };
+        }
+        return null;
+      };
+      const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });
+      /** What is actually painted behind `el`: every translucent ground up to the page, composited. */
+      const ground = (el) => {
+        const stack = [];
+        for (let n = el; n && n !== document.documentElement; n = n.parentElement || n.parentNode?.host) {
+          const bg = parse(getComputedStyle(n).backgroundColor);
+          if (bg && bg.a > 0) stack.push(bg);
+          if (bg && bg.a >= 1) break;
+        }
+        let acc = parse(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+        for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc);
+        return acc;
+      };
+      const lum = (x) => {
+        const f2 = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        return 0.2126 * f2(x.r) + 0.7152 * f2(x.g) + 0.0722 * f2(x.b);
+      };
+      const ratioOf = (el) => {
+        const g = ground(el);
+        const ink = over(parse(getComputedStyle(el).color), g);
+        const [l1, l2] = [lum(ink), lum(g)];
+        return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      };
+      const measure = (sel, what) => {
+        const el = sr.querySelector(sel);
+        c.ok(!!el, `${what} is on screen`);
+        if (!el) return;
+        const r = ratioOf(el);
+        c.ok(r >= 4.5, `${what} reads at AA (${r.toFixed(2)}:1)`);
+      };
+      measure(".gh-branches-pop .gh-preset.active", "the active preset");
+      measure(".gh-branches-pop .gh-ref-cur", "the current branch's “current” label");
+      if (sr.querySelector(".gh-branches.scoped")) measure(".gh-branches.scoped .lbl", "the scoped trigger's label");
+    },
+
+    /**
+     * Every "check out this branch" door in the Branches view sends the
+     * ref's FULL name. They sent `%(refname:short)` alone, and with a branch
+     * and a tag both called "release" the branch's is "heads/release" —
+     * `git checkout heads/release` DETACHES at the branch tip while reporting
+     * success. The main process now refuses a checkout without a full name, so
+     * a door that forgot it would fail loudly; this pins that none does.
+     */
+    "every-branch-checkout-door-sends-the-full-name": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const lastCheckout = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "checkout-ref").at(-1)?.payload;
+      // ── a local row's own Checkout ──
+      const btn = $$(".row-btn").find((x) => x.textContent.trim() === "Checkout");
+      c.ok(!!btn, "a local branch row offers Checkout");
+      if (!btn) return;
+      const name = (btn.getAttribute("aria-label") || "").replace(/^Check out /, "");
+      btn.click();
+      await settle(700);
+      let p = lastCheckout();
+      c.eq(p?.fullName, `refs/heads/${name}`, "the row's Checkout goes out by the branch's full name");
+      c.eq(p?.refKind, "head", "…as a local branch");
+
+      // ── the row menu's "Checkout <name>" ──
+      const more = $$(".lv-menu-btn").find((x) => /More actions for /.test(x.getAttribute("aria-label") || "") && !/main$/.test(x.getAttribute("aria-label") || ""));
+      c.ok(!!more, "a row's ⋯ menu");
+      if (!more) return;
+      const menuFor = (more.getAttribute("aria-label") || "").replace(/^More actions for /, "");
+      more.click();
+      await settle(400);
+      const item = $$(".dropdown-item").find((x) => (x.textContent || "").includes(`Checkout ${menuFor}`));
+      c.ok(!!item, `the menu offers Checkout ${menuFor}`);
+      if (!item) return;
+      item.click();
+      await settle(700);
+      p = lastCheckout();
+      c.eq(p?.fullName, `refs/heads/${menuFor}`, "the menu's Checkout goes by the full name too");
+
+      // ── the remote tab's rows ──
+      const tab = $$("button, [role=tab]").find((x) => /^Remote/.test((x.textContent || "").trim()));
+      c.ok(!!tab, "a Remote tab");
+      if (!tab) return;
+      tab.click();
+      await settle(700);
+      const remoteBtn = $$(".row-btn").find((x) => /^Check(out| out here)$/.test(x.textContent.trim()) && /origin\//.test(x.title || ""));
+      c.ok(!!remoteBtn, "a remote row offers a checkout");
+      if (!remoteBtn) return;
+      const remoteName = (remoteBtn.title.match(/(origin\/\S+)/) || [])[1] || "";
+      remoteBtn.click();
+      await settle(700);
+      p = lastCheckout();
+      c.ok(!!remoteName && p?.fullName === `refs/remotes/${remoteName}`, `the remote row goes by the REMOTE's full name (${p?.fullName} for ${remoteName})`);
+      c.eq(p?.refKind, "remote", "…so the main process creates or switches to the local branch");
     },
 
     /**

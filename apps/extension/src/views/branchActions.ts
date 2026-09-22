@@ -3,7 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { pausedForUser, type OperationMarker } from "../git/pausedForUser";
-import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
+import { planListedRefCheckout } from "./refCheckout";
 import {
   promptConfirm,
   promptInput,
@@ -103,8 +103,27 @@ export async function checkoutBranch(
   if (!a || !ref) {
     return;
   }
-  const result = await a.ctx.branches.checkout(ref.name);
-  report(result, `Checked out ${ref.name}`, refresh);
+  await runRefCheckout(a, ref, refresh);
+}
+
+/**
+ * Check out `ref` by its FULL name — every checkout door in this file comes
+ * through here. `ref.name` is `%(refname:short)`: beside a tag of the same
+ * name a branch is "heads/release", and `git checkout heads/release` detached
+ * HEAD under a toast saying it had checked the branch out. The Changes view's
+ * branch menu sends a name and a type only; the full name is then looked up
+ * in the ref list, never rebuilt (refCheckout.ts).
+ */
+async function runRefCheckout(a: RepoEntry, ref: GitRef, refresh: () => void): Promise<void> {
+  const plan = await planListedRefCheckout(a.ctx, ref);
+  if (!plan) {
+    void vscode.window.showErrorMessage(
+      `GitStudio: ${ref.name} is not in this repository any more — refresh and try again.`,
+    );
+    return;
+  }
+  const result = await a.ctx.process.run(plan.args);
+  report({ ok: result.code === 0, stderr: result.stderr }, plan.success, refresh);
 }
 
 export async function mergeBranchIntoCurrent(
@@ -505,14 +524,10 @@ export async function checkoutRemoteBranch(
   }
   // Straight to the branch — no name prompt. Renaming is a separate thing you
   // can do afterwards, and "New Branch From Here…" already covers landing on a
-  // different name in one step.
-  const plan = await planRemoteCheckout(a.ctx.process, ref.name);
-  const result = await a.ctx.process.run(plan.args);
-  report(
-    { ok: result.code === 0, stderr: result.stderr },
-    plan.success,
-    refresh,
-  );
+  // different name in one step. planRefCheckout hands a refs/remotes/ name to
+  // planRemoteCheckout, which switches to a local branch of that name or
+  // creates one tracking the remote.
+  await runRefCheckout(a, ref, refresh);
 }
 
 export async function deleteRemoteBranch(
@@ -577,8 +592,9 @@ export async function checkoutTag(
   if (!ok) {
     return;
   }
-  const result = await a.ctx.branches.checkout(ref.name, { detach: true });
-  report(result, `Checked out ${ref.name}`, refresh);
+  // `checkout --detach refs/tags/<name>`: by the full name, the detach lands
+  // on the TAG even where a branch shares the name.
+  await runRefCheckout(a, ref, refresh);
 }
 
 export async function deleteTag(

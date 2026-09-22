@@ -6,6 +6,8 @@
 // equivalent (apps/extension/src/graph/commitActions.ts refMenuItems) so the same
 // right-click means the same thing in both products.
 
+import type { CommitActionRequest } from "../shared/ipc";
+
 /** A ref decoration on a commit row, as the renderer knows it. */
 export interface RowRef {
   name: string;
@@ -63,4 +65,39 @@ export function refMenuItems(refs: readonly RowRef[]): RefMenuItem[] {
     }
   }
   return items;
+}
+
+/**
+ * The request every "check out this ref" door sends — the Branches list's
+ * row button and menu, the branch switcher, the ref page — built from the
+ * ref's FULL name and nothing else.
+ *
+ * Those doors used to send `%(refname:short)` alone, and with a branch and a
+ * tag both called "release" the branch's short name is "heads/release":
+ * `git checkout heads/release` resolves it as a REVISION and detaches HEAD at
+ * the branch tip, while reporting success. The main process plans the
+ * checkout from `fullName` (git-service's planRefCheckout) and refuses a
+ * request without one, so a door cannot quietly fall back to the short name.
+ * `name` and `refKind` are derived from it, for the words only.
+ */
+export function refCheckoutRequest(fullName: string): CommitActionRequest {
+  const refKind: RowRef["kind"] = fullName.startsWith("refs/remotes/")
+    ? "remote"
+    : fullName.startsWith("refs/tags/")
+      ? "tag"
+      : "head";
+  return {
+    action: "checkout-ref",
+    // Required by the request shape, unused on this path: the ref travels
+    // in fullName.
+    sha: fullName,
+    name: refDisplay(fullName),
+    refKind,
+    fullName,
+  };
+}
+
+/** A full name shorn of its namespace, for a toast: never fed back to git. */
+export function refDisplay(fullName: string): string {
+  return fullName.replace(/^refs\/(heads|remotes|tags)\//, "");
 }
