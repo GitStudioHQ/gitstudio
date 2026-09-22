@@ -12713,5 +12713,89 @@
         );
       }
     },
+
+    // ── Pull, when git will not decide on its own ───────────────────────────
+    // Report #12: a user pressed Pull on a diverged branch and what reached
+    // them was git's advice for a terminal — "You have divergent branches and
+    // need to specify how to reconcile them", plus three `git config` lines.
+    // These run on ?diverged=1, the only scene where the top bar's action is
+    // Pull and the pull comes back asking.
+    /** The wall becomes a question, in the app's own words. */
+    "a-diverged-pull-asks-instead-of-quoting-git": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      c.ok(!!main, "the top bar offers a sync action");
+      c.match(text(main), /^Pull 3$/, "…and it is Pull, because the branch is behind");
+      if (!main) return;
+      main.click();
+      await settle(700);
+
+      const card = $(".modal-card");
+      c.ok(!!card, "a diverged pull asks rather than failing");
+      if (!card) return;
+      c.match(text(".modal-title"), /have diverged/, "the title names the state");
+      c.match(text(".modal-title"), /main.*origin\/main/, "…and both refs by name");
+      const hint = text(".modal-message");
+      c.match(hint, /2 commits/, "the hint counts what is ours");
+      c.match(hint, /3 commits/, "…and what is theirs");
+      c.match(hint, /this pull only/, "…and says the choice is not permanent");
+      // The thing the user was handed before, and must never be handed again.
+      const shown = text("#root") + text("#toast-stack");
+      c.ok(!/git config pull\./.test(shown), "no `git config` advice anywhere on screen");
+      c.ok(!/divergent branches/.test(shown), "…and no 'divergent branches' hint");
+
+      const labels = $$(".modal-choice-label").map((e) => text(e));
+      c.ok(labels.includes("Merge"), `merge is offered (${labels.join(" | ")})`);
+      c.ok(labels.includes("Rebase"), "rebase is offered");
+      c.ok(!!$$(".modal-actions button").find((b) => /^Cancel$/.test(text(b))), "…and cancelling");
+      c.ok(
+        $$(".modal-choice-sub").every((e) => (text(e) || "").length > 20),
+        "each option explains what it will do to history",
+      );
+    },
+    /** Picking must reach the REQUEST — a dialog that closes and pulls
+     *  nothing is the failure this whole flow exists to avoid. */
+    "picking-how-to-reconcile-actually-pulls-that-way": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const rebase = $$(".modal-choice").find((r) =>
+        /^Rebase$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      c.ok(!!rebase, "the rebase option is clickable");
+      if (!rebase) return;
+      rebase.click();
+      await settle(900);
+      c.eq(window.__gsPulledWith, "rebase", "the second pull carried the mode that was picked");
+      c.ok(!$(".modal-card"), "the question is gone");
+      c.match(text("#toast-stack"), /rebas/i, "…and the toast says what it actually did");
+    },
+    /** Backing out runs nothing and blames nobody. */
+    "cancelling-the-question-pulls-nothing-and-reports-nothing": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b)));
+      c.ok(!!cancel, "the question can be declined");
+      if (!cancel) return;
+      cancel.click();
+      await settle(700);
+      c.eq(window.__gsPulledWith, null, "no second pull was sent");
+      c.ok(!$(".modal-card"), "the dialog closed");
+      // The bridge's message is for someone who has yet to choose. Showing it
+      // to someone who chose not to would read as an error they caused.
+      c.eq(text("#toast-stack"), "", "nothing is toasted at someone who cancelled");
+      // And the widget is usable again rather than stuck on "Pulling…".
+      const again = $(".topbar-sync .sync-main");
+      c.ok(!!again && !again.disabled, "the Pull button is live again");
+      c.match(text(again), /^Pull 3$/, "…showing what it did before");
+    },
   };
 })();

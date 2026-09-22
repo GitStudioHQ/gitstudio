@@ -83,6 +83,7 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
+import { askPullMode, pullWithChoice, pulledMessage } from "./pullFlow";
 import type { RowRef } from "./refMenuItems";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -128,6 +129,8 @@ import type {
   StashInfo,
   WorktreeInfo,
   SyncStatus,
+  CommitActionResult,
+  PullMode,
 } from "../shared/ipc";
 
 
@@ -3800,14 +3803,27 @@ class App {
       if (lbl) lbl.textContent = "Pulling…";
     }
     try {
-      const r = b.current
-        ? await host.invoke("sync:pull", undefined)
-        : await host.invoke("branch:pullFf", { name: b.name });
+      // The current branch is a real pull, so it can hit the divergence
+      // question — the same one the top bar's Pull asks, through the same
+      // helper. A branch you are NOT standing on fast-forwards or refuses;
+      // there is nothing to reconcile without a worktree to reconcile it in.
+      const out = b.current
+        ? await pullWithChoice({
+            pull: (o) => host.invoke("sync:pull", o),
+            ask: askPullMode,
+          })
+        : {
+            result: await host.invoke("branch:pullFf", { name: b.name }),
+            cancelled: false,
+            mode: undefined,
+          };
+      if (out.cancelled) return; // asked and dismissed — nothing ran
+      const r = out.result;
       if (!r.ok) {
-        toast(r.message || `Couldn't pull ${b.name}.`, "error");
+        toast(r.message || `Couldn't pull ${b.name}.`, r.expected ? "info" : "error");
         return;
       }
-      toast(b.current ? "Pulled successfully." : `Fast-forwarded ${b.name}.`, "success");
+      toast(b.current ? pulledMessage(out.mode) : `Fast-forwarded ${b.name}.`, "success");
       bust();
       await this.updateSync();
       if (b.current) await this.refreshAll();
@@ -8009,21 +8025,37 @@ class App {
       main.disabled = true;
     }
     try {
-      const r =
-        action === "fetch"
-          ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
-          : action === "pull"
-            ? await host.invoke("sync:pull", undefined)
+      // Pull goes through the shared flow: a diverged branch comes back as a
+      // question (merge / rebase / cancel), never as git's config advice.
+      let pulledWith: PullMode | undefined;
+      let r: CommitActionResult;
+      if (action === "pull") {
+        const out = await pullWithChoice({
+          pull: (o) => host.invoke("sync:pull", o),
+          ask: askPullMode,
+        });
+        if (out.cancelled) return; // asked and dismissed — nothing ran
+        r = out.result;
+        pulledWith = out.mode;
+      } else {
+        r =
+          action === "fetch"
+            ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
             : action === "push"
               ? await host.invoke("sync:push", undefined)
               : await host.invoke("sync:push", { setUpstream: true });
+      }
       if (!r.ok) {
         toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
         return;
       }
-      const verb =
-        action === "fetch" ? "Fetched" : action === "pull" ? "Pulled" : action === "publish" ? "Published branch" : "Pushed";
-      toast(`${verb} successfully.`, "success");
+      if (action === "pull") {
+        toast(pulledMessage(pulledWith), "success");
+      } else {
+        const verb =
+          action === "fetch" ? "Fetched" : action === "publish" ? "Published branch" : "Pushed";
+        toast(`${verb} successfully.`, "success");
+      }
       bust(); // a fetch/pull/push changes sync/refs/branches/graph
       await this.updateSync();
       // refreshAll() already re-routes — and it does so WITH the current

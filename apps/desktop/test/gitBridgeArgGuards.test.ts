@@ -42,7 +42,6 @@ const REVIEWED: Record<string, string> = {
   stageAll: "no arguments",
   unstageAll: "no arguments",
   syncFetch: "boolean options only",
-  syncPull: "no arguments",
   syncPush: "boolean options only",
   mergeAbort: "no arguments",
   mergeContinue: "no arguments",
@@ -81,7 +80,11 @@ function mutations(): Array<{ name: string; body: string }> {
       i++;
     }
     const after = SRC.slice(i, i + 60);
-    if (!/^\s*:\s*Promise<CommitActionResult>/.test(after)) continue;
+    // PullActionResult EXTENDS CommitActionResult — it is the same mutation
+    // with one extra field. Matching the base name only silently dropped
+    // `syncPull` out of this census the day it learned to answer a diverged
+    // branch, i.e. the day it started taking a renderer-supplied string.
+    if (!/^\s*:\s*Promise<(?:Commit|Pull)ActionResult>/.test(after)) continue;
     const brace = SRC.indexOf("{", i);
     if (brace < 0) continue;
     let j = brace + 1;
@@ -96,11 +99,18 @@ function mutations(): Array<{ name: string; body: string }> {
   return out;
 }
 
-/** The two shapes of guard used in this file. */
+/** The shapes of guard used in this file. */
 function guards(body: string): boolean {
   // safePath is the pathspec form: it allows a leading dash (legal after `--`)
   // and refuses the two things that actually break a path — empty, and a NUL.
-  return body.includes("safeArg(") || body.includes("safePath(") || body.includes('startsWith("-")');
+  // safePullMode is the allowlist form: the value is not sanitised, it is
+  // checked against the only three things it is allowed to be.
+  return (
+    body.includes("safeArg(") ||
+    body.includes("safePath(") ||
+    body.includes("safePullMode(") ||
+    body.includes('startsWith("-")')
+  );
 }
 
 test("the bridge exposes the mutations we think it does", () => {

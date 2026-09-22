@@ -408,7 +408,13 @@
     // `github:status` is DYNAMIC below, not here: a fixture that never changes
     // cannot express signing out, which is why nothing could see that the
     // top-bar chip kept naming the account you had just left.
-    "sync:status": { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
+    // ?diverged=1 → the branch and its upstream have BOTH moved, which is the
+    // one sync state the widget could not be driven into: with behind: 0 the
+    // top-bar action is Push, so Pull — and the question it now asks — was
+    // unreachable from every scene. See `sync:pull` in `dynamic`.
+    "sync:status": params.get("diverged")
+      ? { branch: "main", upstream: "origin/main", ahead: 2, behind: 3, noUpstream: false }
+      : { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
     // Every KIND of ref, because the Branches view has one screen per kind and
     // the fixture used to hold local heads ONLY — so the remote, tag and stash
     // row shapes were never once rendered, screenshotted or checked.
@@ -1045,6 +1051,27 @@
     // That report's whole value is that it only lists real gaps; one entry on
     // every line trains you to skip it.
     "terminal:resize": () => undefined,
+    // Pull. A MUTATION, so the fallback answered {ok:true} and the diverged
+    // branch — git's "you have divergent branches" refusal, report #12 — could
+    // not happen in a scene at all. With ?diverged=1 the first (mode-less) call
+    // answers the way the bridge does: ok:false, expected, nothing changed, and
+    // a `diverged` fact to ask about. Naming a mode succeeds, and the mode that
+    // was asked for is readable as `window.__gsPulledWith` so a check can prove
+    // the pick reached the REQUEST, not merely that the dialog closed.
+    "sync:pull": (opts) => {
+      const mode = (opts && opts.mode) || null;
+      window.__gsPulledWith = mode;
+      if (!params.get("diverged") || mode) return { ok: true, changed: true };
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message:
+          "'main' and origin/main have both moved on — 2 commits here, 3 commits there. " +
+          "Choose how to combine them.",
+        diverged: { branch: "main", upstream: "origin/main", ahead: 2, behind: 3 },
+      };
+    },
     "appearance:dockIcon": () => undefined,
     // A REAL gap: the run page's Artifacts section read undefined and rendered
     // whatever that produced, unchecked, for as long as this harness has run.
