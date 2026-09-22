@@ -122,6 +122,11 @@ const PAYLOAD_REFUSALS: Record<string, string> = {
   "Unknown task: ${task}": "ai:task names come from our own AiTaskName union.",
   "Unknown local CLI.": "CLI presets come from our own catalog.",
   "Unknown client: ${req.client}.": "MCP client ids come from our own client list.",
+  "No conflicted file was named to explain.":
+    "every Explain door names the file it is showing; a request with no path is ours.",
+  "Couldn't read the conflict.":
+    "said only when the index still has the file unmerged (or cannot say) and git would not hand " +
+    "over its sides — a read that failed, not the user resolving anything.",
 };
 
 async function tsFiles(dir: string): Promise<string[]> {

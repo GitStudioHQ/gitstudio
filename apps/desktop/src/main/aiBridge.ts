@@ -46,7 +46,8 @@ import {
   type GitTool,
   type Provider,
 } from "@gitstudio/ai/index";
-import { createGitToolHost } from "@gitstudio/git-service/index";
+import { createGitToolHost, type GitContext } from "@gitstudio/git-service/index";
+import { parseUnmergedPaths } from "@gitstudio/git-service/ConflictProvider";
 import { mcpInfo, installMcp } from "./mcpConfig";
 import { CliProvider, cliSpecFor, detectCli, withThinking } from "./cliProvider";
 import { ConversationStore, type ChatSession } from "./assistantSessions";
@@ -528,14 +529,13 @@ export class AiBridge {
           break;
         }
         case "explainConflict": {
-          const conflict = input.conflict ?? (await this.gatherConflict(input.path));
-          if (!conflict) {
-            // gatherConflict answers undefined when the path has no :2/:3 stages —
-            // i.e. it is not (or is no longer) conflicted, which is where you
-            // land by resolving it in a terminal while the panel is open.
-            return { requestId, ok: false, expected: true, message: "Couldn't read the conflict." };
+          const got = input.conflict
+            ? { conflict: input.conflict }
+            : await conflictToExplain(ctx, input.path);
+          if ("refusal" in got) {
+            return { requestId, ...got.refusal };
           }
-          text = await explainConflict(provider, conflict, taskCtx);
+          text = await explainConflict(provider, got.conflict, taskCtx);
           break;
         }
         case "changelog": {
@@ -579,24 +579,6 @@ export class AiBridge {
     // Default: the unstaged working-tree diff (fall back to staged if empty).
     const working = await host.diff({ path: input.path });
     return working.trim() ? working : host.diff({ staged: true, path: input.path });
-  }
-
-  private async gatherConflict(path?: string): Promise<{ path: string; base?: string; ours: string; theirs: string } | undefined> {
-    const ctx = this.repos.getContext();
-    if (!ctx || !path) {
-      return undefined;
-    }
-    const read = async (stage: number): Promise<string> => {
-      const r = await ctx.process.run(["show", `:${stage}:${path}`]).catch(() => null);
-      return r && r.code === 0 ? r.stdout : "";
-    };
-    const ours = await read(2);
-    const theirs = await read(3);
-    if (!ours && !theirs) {
-      return undefined;
-    }
-    const base = await read(1);
-    return { path, base: base || undefined, ours, theirs };
   }
 
   cancel(requestId: string): void {
@@ -842,6 +824,66 @@ export class AiBridge {
   dispose(): void {
     this.chats.disposeAll();
   }
+}
+
+/** The three sides of a conflicted file, as `explainConflict` wants them. */
+export interface ConflictSides {
+  path: string;
+  base?: string;
+  ours: string;
+  theirs: string;
+}
+
+/**
+ * The conflict ✨ Explain should explain — or why it cannot, told apart by WHO
+ * is at fault, because that decides whether a crash report is filed.
+ *
+ *   - No path at all. Every door that offers Explain names the file it is
+ *     showing, so a request without one was built wrong by us: REPORTED.
+ *   - The file is not conflicted any more — resolved in a terminal, or in
+ *     another window, while the panel was open. A state: EXPECTED.
+ *   - The file IS still conflicted (or git could not even say), yet its sides
+ *     could not be read. Something failed that we should hear about: REPORTED.
+ *
+ * All three used to be one expected "Couldn't read the conflict.", which kept
+ * the two that are ours out of the reporter along with the one that is not.
+ * Exported for its test.
+ */
+export async function conflictToExplain(
+  ctx: Pick<GitContext, "process">,
+  path: string | undefined,
+): Promise<
+  { conflict: ConflictSides } | { refusal: { ok: false; expected?: true; message: string } }
+> {
+  if (!path) {
+    return { refusal: { ok: false, message: "No conflicted file was named to explain." } };
+  }
+  const read = async (stage: number): Promise<string | undefined> => {
+    const r = await ctx.process.run(["show", `:${stage}:${path}`]).catch(() => null);
+    return r && r.code === 0 ? r.stdout : undefined;
+  };
+  const ours = await read(2);
+  const theirs = await read(3);
+  if (ours !== undefined || theirs !== undefined) {
+    // A modify/delete conflict has only one side; the missing one is empty.
+    const base = await read(1);
+    return { conflict: { path, base: base || undefined, ours: ours ?? "", theirs: theirs ?? "" } };
+  }
+  // Neither side could be read. Ask git whether the file is still unmerged —
+  // the index, not the wording of `git show`'s refusal, is what says so.
+  const status = await ctx.process
+    .run(["status", "--porcelain=v2", "-z", "--", path])
+    .catch(() => null);
+  if (status && status.code === 0 && parseUnmergedPaths(status.stdout).length === 0) {
+    return {
+      refusal: {
+        ok: false,
+        expected: true,
+        message: `${path} isn't conflicted any more — nothing is left to explain.`,
+      },
+    };
+  }
+  return { refusal: { ok: false, message: "Couldn't read the conflict." } };
 }
 
 /** A short, human-readable summary of what a tool call will do, for the confirm UI. */
