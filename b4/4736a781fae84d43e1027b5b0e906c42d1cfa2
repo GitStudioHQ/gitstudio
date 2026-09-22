@@ -1,0 +1,29 @@
+apps/desktop/test/expectedConditions.test.ts
+  s_26f5e669d3043c::t_f8ebf1a58ecd2b 125-129
+apps/desktop/src/main/aiBridge.ts
+  s_26f5e669d3043c::t_5d7a8633c9f34e 880,886
+  s_26f5e669d3043c::t_c361bb7c4d120b 855-857,859
+  s_26f5e669d3043c::t_62f2428319cbdd 536
+  s_26f5e669d3043c::t_7fde471b94a196 532-535,538
+  s_26f5e669d3043c::t_6aa39189a43673 49-50
+  s_26f5e669d3043c::t_5b91710ccf22da 829-854,858,860-879,881-885,887
+  s_26f5e669d3043c::t_1834948bdd0e90 888
+apps/desktop/test/explainConflictRequest.test.ts
+  s_26f5e669d3043c::t_095e4727f1e86c 1-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b44736a781fae84d43e1027b5b0e906c42d1cfa2",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
