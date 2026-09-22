@@ -291,9 +291,9 @@ test("every ok:false that is a condition rather than a defect says so", async ()
     unmarked,
     [],
     "these ok:false results describe a state the user can simply be in, but the IPC wrapper in " +
-      "main.ts will file a crash report for each one. Add `expected: true` to the result (it changes " +
-      "nothing the renderer sees), or list the message in REVIEWED with the reason it is a real " +
-      "failure:\n" +
+      "main.ts will file a crash report for each one. Add `expected: true` to the result (the user " +
+      "reads the same message; it stops being painted red), or list the message in REVIEWED with " +
+      "the reason it is a real failure:\n" +
       unmarked.join("\n"),
   );
 });
@@ -311,7 +311,9 @@ test("the census actually sees the results it claims to check", async () => {
   // the census of exactly the cases it was written for.
   const marked = sites.filter((s) => s.expected).map((s) => plain(s.message));
   assert.ok(
-    marked.filter((m) => /^No repository open\.$/.test(m)).length >= 12,
+    // 13, not 12: twelve in gitBridge and one in githubBridge's prCheckout,
+    // which the first pass of this sweep missed and this census found.
+    marked.filter((m) => /^No repository open\.$/.test(m)).length >= 13,
     "report #15's message is no longer marked expected at every site",
   );
   assert.ok(
