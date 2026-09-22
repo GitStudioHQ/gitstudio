@@ -1,0 +1,45 @@
+packages/git-service/test/logRefs.test.ts
+  s_26f5e669d3043c::t_52078b3a5ffdcc 7-8,13-19,22-41,60,64-66,71-78,99-100,104,108,110,112,117,121-131,158,162-168,171,175-209,215-219,225-228,232,236-244,251
+packages/git-service/test/streamStdin.test.ts
+  s_26f5e669d3043c::t_fc055061e45a24 138
+  s_26f5e669d3043c::t_80e53e40649977 1-118,122-126,128-137,139-181
+  s_26f5e669d3043c::t_dfe0bc2d1b9e73 119-121,127
+packages/git-service/src/LogProvider.ts
+  s_26f5e669d3043c::t_ee10e8a79ac5ac 34-35
+  s_26f5e669d3043c::t_8e88549ef3e767 99-100
+  s_26f5e669d3043c::t_36da11f94556f4 113
+  s_26f5e669d3043c::t_31c7c23010c07f 159-164,168
+  s_26f5e669d3043c::t_289ba559b21942 177-206
+  s_26f5e669d3043c::t_dd3601b0a589c7 62-63
+  s_26f5e669d3043c::t_430ec18181759e 90-92,94-98
+packages/git-service/src/GitProcess.ts
+  s_26f5e669d3043c::t_5398302f861e8f 218
+  s_26f5e669d3043c::t_ddb42f2a8e286c 56-58
+  s_26f5e669d3043c::t_76a811e0866bc2 429
+  s_26f5e669d3043c::t_7ba3e53d0b66fe 78
+  s_26f5e669d3043c::t_4286da4f4bc42e 333
+  s_26f5e669d3043c::t_02e2ae2af2d0f6 451
+  s_26f5e669d3043c::t_1780632bf44952 79-94,96-111
+  s_26f5e669d3043c::t_6b2fe4ad50258c 95
+  s_26f5e669d3043c::t_4b5fcb7c087d67 257
+  s_26f5e669d3043c::t_b09918917681e2 309-318,322
+  s_26f5e669d3043c::t_f043a94eaa8bff 238
+packages/git-service/test/logRefsMany.test.ts
+  s_26f5e669d3043c::t_ef5b68737ffee3 1-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "634ceca2528594830364b94afb200235db821ddd",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
