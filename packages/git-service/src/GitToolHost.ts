@@ -20,6 +20,7 @@ import type {
   ToolWriteResult,
 } from "@gitstudio/ai/gitTools";
 import type { GitContext } from "./GitContext";
+import { planRefCheckout } from "./checkoutRef";
 import { commitBlockerMessage } from "./StagingProvider";
 import { stashBlockerMessage } from "./StashProvider";
 
@@ -293,7 +294,38 @@ class GitContextToolHost implements GitToolHost {
     if (!safe(ref)) {
       return UNSAFE;
     }
+    // git_branches reports `%(refname:short)`, which is "heads/release" when a
+    // tag shares the name — and an agent that hands THAT back to
+    // `git checkout` gets a DETACHED HEAD at the branch tip, reported as
+    // success. So a name that is a local branch's short form (or a full
+    // refs/ name) is checked out by its full name, planned the way every
+    // other checkout door plans it. Anything else — a sha, a tag's short
+    // name, a remote-tracking name — is git's to resolve, as it always was.
+    const fullName = ref.startsWith("refs/") ? ref : await this.localBranchFullName(ref);
+    const plan = fullName ? await planRefCheckout(this.ctx.process, fullName) : undefined;
+    if (plan) {
+      const r = await this.ctx.process.run(plan.args);
+      return r.code === 0 ? { ok: true } : { ok: false, message: r.stderr.trim() || "git reported an error." };
+    }
     return w(await this.ctx.branches.checkout(ref));
+  }
+
+  /** The full name of the local branch git_branches would report as `short`. */
+  private async localBranchFullName(short: string): Promise<string | undefined> {
+    const SEP = "\x1f";
+    const r = await this.ctx.process
+      .run(["for-each-ref", `--format=%(refname:short)${SEP}%(refname)`, "refs/heads"])
+      .catch(() => null);
+    if (!r || r.code !== 0) {
+      return undefined;
+    }
+    for (const line of r.stdout.split("\n")) {
+      const [name, full] = line.split(SEP);
+      if (name === short && full) {
+        return full;
+      }
+    }
+    return undefined;
   }
 
   async stashSave(message?: string, includeUntracked?: boolean): Promise<ToolWriteResult> {

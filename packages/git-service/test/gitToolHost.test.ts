@@ -99,3 +99,32 @@ test("diff returns a unified patch for the staged index", async () => {
   const diff = await host.diff({ staged: true });
   assert.match(diff, /\+three/);
 });
+
+test("checking out a branch git_branches reported as heads/<name> lands ON it, not detached", async () => {
+  // A branch and a tag both called "release", the tag one commit ahead. The
+  // agent reads the branch's name from git_branches — `%(refname:short)`,
+  // which is "heads/release" here — and hands it straight back. As a bare
+  // `git checkout heads/release` that DETACHED at the branch tip, reported ok.
+  const sh = (args: string[]): string =>
+    execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).trim();
+  sh(["stash", "-u", "-q"]);
+  sh(["checkout", "-q", "main"]);
+  sh(["branch", "release"]);
+  const branchTip = sh(["rev-parse", "refs/heads/release"]);
+  sh(["commit", "-q", "--allow-empty", "-m", "ahead of the branch"]);
+  sh(["tag", "release"]);
+  const listed = (await host.branches()).find((b) => b.name === "heads/release");
+  assert.ok(listed, "git_branches reports the branch by git's short form");
+  const r = await host.checkout(listed.name);
+  assert.equal(r.ok, true, r.message);
+  assert.equal(sh(["symbolic-ref", "-q", "HEAD"]), "refs/heads/release", "attached to the branch");
+  assert.equal(sh(["rev-parse", "HEAD"]), branchTip, "at the BRANCH's tip, not the tag's");
+  // A full name works too, and anything that is not a local branch is still
+  // git's to resolve: a tag's short name detaches at the tag, as before.
+  sh(["checkout", "-q", "main"]);
+  assert.equal((await host.checkout("refs/heads/release")).ok, true);
+  assert.equal(sh(["symbolic-ref", "-q", "HEAD"]), "refs/heads/release");
+  assert.equal((await host.checkout("tags/release")).ok, true);
+  assert.equal(sh(["rev-parse", "HEAD"]), sh(["rev-parse", "refs/tags/release^{commit}"]), "a tag still checks out as the tag");
+  sh(["checkout", "-q", "main"]);
+});
