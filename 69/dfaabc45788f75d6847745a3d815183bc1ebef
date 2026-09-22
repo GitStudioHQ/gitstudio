@@ -1,0 +1,89 @@
+apps/desktop/harness/contrast.mjs
+  s_26f5e669d3043c::t_db53e00c556823 360-363
+  s_26f5e669d3043c::t_d386549530e23c 110-143
+  s_26f5e669d3043c::t_d5e31cc0c74751 78-82
+  s_26f5e669d3043c::t_0e424495fec7b8 234,236,238-253
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_cce94b968235ce 581-582
+  s_26f5e669d3043c::t_9f90cec62c7e39 683-684
+  s_26f5e669d3043c::t_8aedb848311064 685,691
+  s_26f5e669d3043c::t_2f292d43423eee 645-648
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_14461482ff85a0 1967
+  s_26f5e669d3043c::t_1e2b0d76866b0c 2180-2195,2197-2199,2201
+  s_26f5e669d3043c::t_3460e6e9202338 1941-1942,1944
+  s_26f5e669d3043c::t_b1500d96cb7ead 1939-1940
+  s_26f5e669d3043c::t_d560da57adef5b 1960
+apps/extension/src/views/refCheckout.ts
+  s_26f5e669d3043c::t_467a67ae1a8ccf 1-38,40,43-66
+  s_26f5e669d3043c::t_da9fbfeffb3840 39,41-42
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_74fc34dcb3d8f1 142-145,147,149,152
+  s_26f5e669d3043c::t_033d64e64f974d 17
+  s_26f5e669d3043c::t_2a6f59434f1837 237,242-244
+  s_26f5e669d3043c::t_37e8f1ded77d3a 246,249-251
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_fc329616cb53de 513-515
+  s_26f5e669d3043c::t_fc5231346d4cf5 512,516
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_fa58dfd9cb35d7 310-315
+  s_26f5e669d3043c::t_933f649a23399e 413,415-417
+apps/extension/test/refCheckout.test.ts
+  s_26f5e669d3043c::t_d644586b5e7306 1-168
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_a1dd55c91e204b 527-530
+  s_26f5e669d3043c::t_75b5247d102718 6
+  s_26f5e669d3043c::t_0fa65f220467b3 106-126
+  s_26f5e669d3043c::t_02245b981e15c2 595-597
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_910c05e05cf615 13
+  s_26f5e669d3043c::t_13f05840b365ed 448-450
+apps/desktop/test/checkoutRefArm.test.ts
+  s_26f5e669d3043c::t_c2fa3f2c290bdf 100-137,139-148
+  s_26f5e669d3043c::t_f2d196a81d9a33 9
+  s_26f5e669d3043c::t_8acfd41d98b6ff 138
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_5fa904da9c64de 86
+  s_26f5e669d3043c::t_b02a5564b5f853 3463
+  s_26f5e669d3043c::t_797dd0e83005fd 4134
+  s_26f5e669d3043c::t_519701ee523c05 9169
+  s_26f5e669d3043c::t_47c4103eaf4217 2429
+  s_26f5e669d3043c::t_fea66cff8cda0d 9184
+  s_26f5e669d3043c::t_85424f46db3492 3574
+  s_26f5e669d3043c::t_259f5fb023a86e 2502-2506
+  s_26f5e669d3043c::t_39f317e631e246 4098-4106,4108-4111,4113-4114
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_8d8a28389b1068 2639-2643
+  s_26f5e669d3043c::t_8ebc7b834de7ad 7760-7837,7920-7974
+  s_26f5e669d3043c::t_9b95a8ec964c2f 7759,7838-7919
+apps/desktop/test/checkoutRequest.test.ts
+  s_26f5e669d3043c::t_4babcd83615a0a 105-106,108-109,111,115-143,145-150
+  s_26f5e669d3043c::t_1e1a7fd872bab5 199-202,204-205,208
+  s_26f5e669d3043c::t_54dc67835721d3 26
+apps/desktop/src/renderer/peeks.ts
+  s_26f5e669d3043c::t_709d0deb1c6c7c 31-34
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_77c5808c6548f9 1317-1319
+apps/desktop/src/renderer/refMenuItems.ts
+  s_26f5e669d3043c::t_268cb30aaacd4d 9-10
+  s_26f5e669d3043c::t_474b2d8eb49c24 69-103
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_ac086a2bfe8629 270-271,275
+  s_26f5e669d3043c::t_6f12c34076f2fd 807-808
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "69dfaabc45788f75d6847745a3d815183bc1ebef",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
