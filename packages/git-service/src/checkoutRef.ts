@@ -25,7 +25,7 @@
  * graph menu and the desktop's graph menu must mean the same thing.
  */
 
-import { type GitRunner, planRemoteCheckout } from "./checkoutRemote";
+import { type GitRunner, localNameFor, planRemoteCheckout } from "./checkoutRemote";
 
 export interface RefCheckoutPlan {
   /** Argv for `ctx.process.run`. */
@@ -54,6 +54,16 @@ export async function planRefCheckout(
 ): Promise<RefCheckoutPlan | undefined> {
   const name = refShortName(fullName);
   if (!name || name === fullName) {
+    return undefined;
+  }
+  // A branch checks out by its SHORT name, bare on argv. Porcelain forbids a
+  // branch name that starts with "-", but `git update-ref refs/heads/-f`
+  // does not and a fetch can bring one in under refs/remotes/ — and planned
+  // bare, "Checkout -f" ran `git checkout -f`, discarding every uncommitted
+  // change. Refused, as a name git itself would not create. (A tag detaches
+  // by its full name, which cannot be read as an option.)
+  const onArgv = fullName.startsWith("refs/remotes/") ? localNameFor(name) : name;
+  if (!fullName.startsWith("refs/tags/") && onArgv.startsWith("-")) {
     return undefined;
   }
   if (fullName.startsWith("refs/heads/")) {

@@ -166,6 +166,41 @@ test("a name outside the three namespaces is refused rather than guessed at", as
   assert.equal(await planRefCheckout(proc, ""), undefined);
 });
 
+test("a branch whose name starts with a dash is refused, never handed to git as an option", async () => {
+  // Porcelain forbids such names, but `git update-ref refs/heads/-f` does
+  // not, and a fetch can bring one in under refs/remotes/. Planned by its
+  // short name, "Checkout -f" ran `git checkout -f` — which throws away every
+  // uncommitted change and says nothing about a branch.
+  const { dir, upstream } = collidingRepo();
+  try {
+    git(dir, "update-ref", "refs/heads/-f", "HEAD");
+    git(dir, "update-ref", "refs/heads/--all", "HEAD");
+    git(dir, "update-ref", "refs/remotes/origin/-f", "HEAD");
+    writeFileSync(join(dir, "f.txt"), "uncommitted work\n");
+    for (const full of ["refs/heads/-f", "refs/heads/--all", "refs/remotes/origin/-f"]) {
+      const p = await plan(dir, full);
+      if (p) git(dir, ...p.args); // what the door would have run
+      assert.equal(p, undefined, `${full} is refused (${JSON.stringify(p?.args)})`);
+    }
+    assert.equal(
+      execFileSync("cat", [join(dir, "f.txt")], { encoding: "utf8" }),
+      "uncommitted work\n",
+      "the working tree is untouched",
+    );
+    assert.equal(symbolicHead(dir), "refs/heads/main", "and HEAD did not move");
+    // A tag of that shape detaches by its full name, which cannot be an option.
+    git(dir, "update-ref", "refs/tags/-f", "HEAD");
+    const t = await plan(dir, "refs/tags/-f");
+    assert.deepEqual(t?.args, ["checkout", "--detach", "refs/tags/-f"]);
+    // Only a LEADING dash: a branch with one further in is an ordinary name.
+    git(dir, "update-ref", "refs/heads/team/-wip", "HEAD");
+    assert.deepEqual((await plan(dir, "refs/heads/team/-wip"))?.args, ["checkout", "team/-wip"]);
+  } finally {
+    removeTempRepo(dir);
+    removeTempRepo(upstream);
+  }
+});
+
 test("refShortName strips exactly one namespace", () => {
   assert.equal(refShortName("refs/heads/release/1.5"), "release/1.5");
   assert.equal(refShortName("refs/remotes/origin/release/1.5"), "origin/release/1.5");
