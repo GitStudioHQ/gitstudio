@@ -4,6 +4,29 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Pull failed with git's advice instead of doing something about it.** When
+  your branch and its upstream had both moved on and nothing in your git config
+  said how to reconcile them, Pull came back with git's own note for a terminal
+  — *"You have divergent branches and need to specify how to reconcile them"*,
+  followed by three `git config` commands to run. Pull now says what has
+  happened, in commits, and offers the choice git is asking for: **Merge**,
+  **Rebase**, or cancel. Nothing is changed while the question is open, and
+  picking one applies to **that pull only** — your `pull.rebase` setting is
+  never written. **Pull using Merge** in the branch menu also passes
+  `--no-rebase` explicitly, so the one item that had already asked you no
+  longer walks into the same wall.
+- **A pull that stopped on conflicts looked like a failure.** *Pull using
+  Rebase* showed git's *"Resolve all conflicts manually… git rebase
+  --continue"* as an error, and *Pull using Merge* a bare "pullMerge failed".
+  Every pull — the branch menu's and the status bar's Sync and Pull — now says
+  how many files conflict and reveals the Changes view, where they wait in
+  their own group. Sync no longer tries to push after a pull that stopped.
+- **Pull asked "Merge or Rebase?" when it could not reach the remote.** It now
+  shows the connection error instead.
+
 ## [1.13.0] - 2026-09-21
 
 ### Added
@@ -20,17 +43,6 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   gains a *Show in Graph* link beside *Copy SHA*. Thanks to @XEGARE. (#28)
 
 ### Fixed
-- **Pull failed with git's advice instead of doing something about it.** When
-  your branch and its upstream had both moved on and nothing in your git config
-  said how to reconcile them, Pull came back with git's own note for a terminal
-  — *"You have divergent branches and need to specify how to reconcile them"*,
-  followed by three `git config` commands to run. Pull now says what has
-  happened, in commits, and offers the choice git is asking for: **Merge**,
-  **Rebase**, or cancel. Nothing is changed while the question is open, and
-  picking one applies to **that pull only** — your `pull.rebase` setting is
-  never written. **Pull using Merge** in the branch menu also passes
-  `--no-rebase` explicitly, so the one item that had already asked you no
-  longer walks into the same wall.
 - **Interactive rebase refused to fold the newest commit into the one before
   it** — "The top commit has nothing above it to fold into" — while allowing a
   squash on the oldest commit, which git cannot run. The guard checked the

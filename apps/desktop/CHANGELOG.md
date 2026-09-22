@@ -9,6 +9,43 @@ The VS Code / Cursor extension has its own changelog at
 separately — desktop releases are tagged `app-v*`, extension releases `ext-v*` —
 but they share the same engine, so most Git behaviour lands in both at once.
 
+## [Unreleased]
+
+### Fixed
+- **Pull failed with git's advice instead of doing something about it.** When
+  your branch and its upstream had both moved on and nothing in your git
+  config said how to reconcile them, Pull came back with git's own note for a
+  terminal — *"You have divergent branches and need to specify how to reconcile
+  them"*, followed by three `git config` commands to run. Pull now says what
+  has happened, in commits ("*'main' and origin/main have both moved on — 2
+  commits here, 3 commits there*"), and offers the choice git is asking for:
+  **Merge**, **Rebase**, or cancel. Each option says what it will do to your
+  history. Nothing is changed while the question is open, and picking one
+  applies to **that pull only** — your `pull.rebase` setting is never written.
+- **A pull that stopped on conflicts looked like a failure.** A merge that
+  conflicted said *"The operation failed."*; a rebase that conflicted showed
+  git's *"Resolve all conflicts manually… git rebase --continue"* in a red
+  error (and sent a crash report). Pull now says how many files conflict and
+  takes you to **Changes**, where the in-progress banner (Abort / Continue)
+  and the merge editor are waiting — from the top bar and from the Branches
+  list alike.
+- **Cancelling the Merge / Rebase question left stale counts.** The pull had
+  already fetched, so the ↓ counts on the top bar and in Branches described a
+  remote that had moved on. They refresh now.
+- **Pull asked "Merge or Rebase?" when it could not reach the remote.** Offline,
+  or with the remote gone, Pull could ask how to combine commits it had never
+  been able to fetch. It now shows the connection error.
+- **Agent Access could never work in a downloaded build.** Settings ▸ Agent
+  Access offered **Add** for Claude Desktop, Cursor, VS Code and Windsurf, but
+  the MCP server was not included in the app — every build said *"Run `npm run
+  build` in apps/mcp"*. The server now ships with the app, and the config it
+  writes starts it with GitStudio itself, so no separate Node install is
+  needed.
+- **An empty GitHub repository still read as broken in two places.** **Go to
+  file** showed its "This repository is empty" note as a red error, and the
+  branch switcher failed with a red toast instead of saying there are no
+  branches yet.
+
 ## [2.0.2] - 2026-09-21
 
 ### Added
@@ -22,16 +59,6 @@ but they share the same engine, so most Git behaviour lands in both at once.
   offers **Show all branches**. (#30)
 
 ### Fixed
-- **Pull failed with git's advice instead of doing something about it.** When
-  your branch and its upstream had both moved on and nothing in your git
-  config said how to reconcile them, Pull came back with git's own note for a
-  terminal — *"You have divergent branches and need to specify how to reconcile
-  them"*, followed by three `git config` commands to run. Pull now says what
-  has happened, in commits ("*'main' and origin/main have both moved on — 2
-  commits here, 3 commits there*"), and offers the choice git is asking for:
-  **Merge**, **Rebase**, or cancel. Each option says what it will do to your
-  history. Nothing is changed while the question is open, and picking one
-  applies to **that pull only** — your `pull.rebase` setting is never written.
 - **Compare lost the file you were reading.** A change under `.git` (another
   tool's fetch, or git refreshing its index under a plain `git status`), ⌘R, or
   coming back to the window after editing in your editor rebuilt the Compare
