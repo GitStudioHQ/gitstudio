@@ -1,0 +1,23 @@
+packages/git-service/src/GitToolHost.ts
+  s_26f5e669d3043c::t_63ec88cebcd5b8 23
+  s_26f5e669d3043c::t_26f66ce78683e4 297-309,313-328
+  s_26f5e669d3043c::t_77c588ad55fceb 329-330
+packages/git-service/test/gitToolHost.test.ts
+  s_26f5e669d3043c::t_31ab98f26f4565 102-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1eb0f1729dee21b53cd2b5a917b92519308043fb",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
