@@ -1,0 +1,46 @@
+apps/desktop/src/renderer/aiSettings.ts
+  s_26f5e669d3043c::t_c4d6cb722b07a9 435-438,440-441
+  s_26f5e669d3043c::t_9a50cab966ce86 504,506-510,518
+  s_26f5e669d3043c::t_8bedee976b4d03 549-556,562-566
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_38fa382204d294 11746-11781
+apps/desktop/src/main/mcpConfig.ts
+  s_26f5e669d3043c::t_05f106909aaaa6 9,14-70,72-100,102-104,106-121
+  s_26f5e669d3043c::t_a90e7dd72d55db 244-252,257-259,263,275-279,281,288,291,293,297,305,309-310,314-316,319-320
+  s_26f5e669d3043c::t_a28c1910293627 317
+  s_26f5e669d3043c::t_5da7b414c2e4e7 253-256,260-262,264-274
+  s_26f5e669d3043c::t_4860735ae82ea5 298
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_faf68d4e337650 2711-2715,2718,2723,2725-2726
+apps/desktop/test/mcpServerShipping.test.ts
+  s_26f5e669d3043c::t_e0c99be40f8caa 1-189
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_a715f83122dbfe 1316-1346
+apps/desktop/esbuild.js
+  s_26f5e669d3043c::t_d3f20bc38f3a95 287
+  s_26f5e669d3043c::t_916b95374a55ab 237-255
+  s_26f5e669d3043c::t_d74fbe390c8a8a 268
+apps/mcp/README.md
+  s_26f5e669d3043c::t_36a363824c39c1 25-29
+apps/desktop/electron-builder.yml
+  s_26f5e669d3043c::t_35ab2559498ff0 22-23,26-37
+  s_26f5e669d3043c::t_d415885fcfe648 38
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_34468695f96d79 574-575
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c7f5064cc646685677380ef5c3c8d46b2240c40e",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
