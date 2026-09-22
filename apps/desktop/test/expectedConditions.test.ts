@@ -252,10 +252,69 @@ function okFalseSites(rel: string, src: string): Site[] {
       file: rel,
       line: src.slice(0, at).split("\n").length,
       message,
-      expected: /(^|[\s,{(])expected\b/.test(body),
+      expected: marksExpected(body),
     });
   }
   return sites;
+}
+
+/**
+ * Whether an object literal (its source, braces included) really carries the
+ * `expected` flag — as one of its OWN properties, with a value that is not
+ * `false`.
+ *
+ * The census used to ask only whether the word "expected" appeared anywhere
+ * in the literal, so it could be satisfied by things that leave the result
+ * reportable at runtime: a comment (`/* not expected *\/`), `expected: false`,
+ * a type in a cast (`...({} as { expected: true })`), or the word inside the
+ * message itself. Each of those put report #15 straight back while the census
+ * stayed green. A conditional (`expected: out.status === "stopped"`) is a
+ * decision the site made, so it counts.
+ */
+function marksExpected(body: string): boolean {
+  return topLevelProps(body).some((p) => /^expected\s*:\s*(?!false\b)\S/.test(p));
+}
+
+/** An object literal's own top-level properties, with comments dropped and
+ *  nested literals, calls, casts and strings kept whole inside theirs. */
+function topLevelProps(body: string): string[] {
+  const inner = body.slice(1, -1);
+  const props: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (let j = 0; j < inner.length; j++) {
+    const ch = inner[j];
+    const next = inner[j + 1];
+    if (ch === "/" && next === "/") {
+      const end = inner.indexOf("\n", j);
+      j = end < 0 ? inner.length : end;
+      cur += " ";
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const end = inner.indexOf("*/", j + 2);
+      j = end < 0 ? inner.length : end + 1;
+      cur += " ";
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      let k = j + 1;
+      while (k < inner.length && inner[k] !== ch) k += inner[k] === "\\" ? 2 : 1;
+      cur += inner.slice(j, k + 1);
+      j = k;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === "," && depth === 0) {
+      props.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) props.push(cur.trim());
+  return props;
 }
 
 /** Strip the quotes/backticks off a message expression, for matching + REVIEWED. */
@@ -320,6 +379,36 @@ test("the census actually sees the results it claims to check", async () => {
     marked.some((m) => /MCP server isn't built yet/.test(m)),
     "report #16's message is no longer marked expected",
   );
+});
+
+test("only a real `expected` property satisfies the census — not a comment, a cast, or `false`", () => {
+  // Each of these compiles, and each leaves the result REPORTABLE at runtime:
+  // the IPC wrapper reads `result.expected === true`, not the source text. A
+  // census that any of them could satisfy would let report #15 come back with
+  // the test still green.
+  const guard = `"No repository open."`;
+  const notMarked: Record<string, string> = {
+    "a block comment": `const r = { ok: false, /* expected: true */ message: ${guard} };`,
+    "a line comment": `const r = {\n  ok: false,\n  // expected — see #15\n  message: ${guard},\n};`,
+    "expected: false": `const r = { ok: false, expected: false, message: ${guard} };`,
+    "a type in a cast": `const r = { ok: false, ...({} as { expected: true }), message: ${guard} };`,
+    "the word in the message": `const r = { ok: false, message: "Not expected: no repository open." };`,
+  };
+  for (const [how, src] of Object.entries(notMarked)) {
+    const [site] = okFalseSites("probe.ts", src);
+    assert.ok(site, `${how}: the census should see this ok:false at all`);
+    assert.equal(site.expected, false, `${how} must not count as \`expected\``);
+  }
+
+  const marked: Record<string, string> = {
+    "expected: true": `const r = { ok: false, expected: true, message: ${guard} };`,
+    "on its own line": `const r = {\n  ok: false,\n  changed: false,\n  expected: true,\n  message: ${guard},\n};`,
+    "a decision the site made": `const r = { ok: false, expected: out.status === "stopped", message: m };`,
+  };
+  for (const [how, src] of Object.entries(marked)) {
+    const [site] = okFalseSites("probe.ts", src);
+    assert.equal(site?.expected, true, `${how} is a real flag`);
+  }
 });
 
 test("a genuine git failure still reports", async () => {
