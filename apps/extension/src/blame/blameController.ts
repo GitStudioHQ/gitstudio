@@ -1058,7 +1058,9 @@ function authorColor(key: string): string {
 
 function hoverMarkdown(commit: BlameCommit): vscode.MarkdownString {
   const md = new vscode.MarkdownString(undefined, true);
-  md.isTrusted = { enabledCommands: ["gitstudio.copyCommitSha"] };
+  md.isTrusted = {
+    enabledCommands: ["gitstudio.copyCommitSha", "gitstudio.revealCommitInGraph"],
+  };
 
   if (commit.sha === UNCOMMITTED_SHA) {
     md.appendMarkdown("$(git-commit) **Uncommitted changes**\n\n");
@@ -1074,10 +1076,11 @@ function hoverMarkdown(commit: BlameCommit): vscode.MarkdownString {
   md.appendMarkdown(
     `$(calendar) ${escapeMarkdown(date.toLocaleString())} (${relativeTime(commit.authorTime)})\n\n`,
   );
-  const copyArg = encodeURIComponent(JSON.stringify(commit.sha));
+  const commitArg = encodeURIComponent(JSON.stringify([commit.sha]));
   md.appendMarkdown(
     `$(git-commit) \`${short(commit.sha)}\` ` +
-      `&nbsp;[$(copy) Copy SHA](command:gitstudio.copyCommitSha?${copyArg})`,
+      `&nbsp;[$(copy) Copy SHA](command:gitstudio.copyCommitSha?${commitArg})` +
+      `&nbsp;[$(eye) Show in Graph](command:gitstudio.revealCommitInGraph?${commitArg})`,
   );
   return md;
 }
