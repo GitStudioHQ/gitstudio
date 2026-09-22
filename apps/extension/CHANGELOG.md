@@ -16,6 +16,8 @@ All notable changes to **GitStudio** are documented here. This project adheres t
   branch** / **Add to filter** / **Remove from filter** / **Checkout**. The
   selection is remembered per repository. Revealing a commit the filter hides
   says so and offers **Show all branches**. (#30)
+- **Show in Graph from the blame hover.** The inline blame hover's commit line
+  gains a *Show in Graph* link beside *Copy SHA*. Thanks to @XEGARE. (#28)
 
 ### Fixed
 - **Interactive rebase refused to fold the newest commit into the one before

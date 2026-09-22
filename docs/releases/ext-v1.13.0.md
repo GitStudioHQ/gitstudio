@@ -23,6 +23,14 @@ Git Log and Git Graph do it.
 Thanks to @PanAndy for the write-up in #30; it read like a spec, and it was
 built as one.
 
+## Show in Graph, from the blame hover
+
+Hover a line's inline blame and the commit line now offers *Show in Graph*
+beside *Copy SHA* — straight from the code you are reading to that commit in
+the graph. Contributed by @XEGARE (#28), and it lands on the reveal path this
+release improved: a commit the branch filter hides says so instead of doing
+nothing.
+
 ## Compare Branches/Tags stops collapsing your diffs
 
 Expanded file diffs in **Compare Branches/Tags…** closed on their own every 30
