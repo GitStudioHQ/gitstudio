@@ -209,11 +209,75 @@ interface Site {
   expected: boolean;
 }
 
+/**
+ * `src` with every comment blanked to spaces — same length, same newlines, so
+ * offsets and line numbers still point into the real file.
+ *
+ * Prose ABOUT a result is not a result. A doc comment reading "answers
+ * `{ ok: false, diverged }`" used to be counted as a site: its innermost
+ * enclosing braces are the whole class body, so the census judged the class —
+ * its first `message:` anywhere, and whether the word "expected" appeared
+ * anywhere in it.
+ */
+function blankComments(src: string): string {
+  const out = src.split("");
+  const blank = (from: number, to: number): void => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  let i = 0;
+  const skipQuoted = (q: string): void => {
+    i++;
+    while (i < src.length && src[i] !== q) i += src[i] === "\\" ? 2 : 1;
+    i++;
+  };
+  const code = (stopAtClose: boolean): void => {
+    let depth = 0;
+    while (i < src.length) {
+      const c = src[i];
+      const n = src[i + 1];
+      if (c === "/" && n === "/") {
+        const e = src.indexOf("\n", i);
+        const end = e < 0 ? src.length : e;
+        blank(i, end);
+        i = end;
+      } else if (c === "/" && n === "*") {
+        const e = src.indexOf("*/", i + 2);
+        const end = e < 0 ? src.length : e + 2;
+        blank(i, end);
+        i = end;
+      } else if (c === '"' || c === "'") {
+        skipQuoted(c);
+      } else if (c === "`") {
+        // A template's text is not code, but each `${…}` inside it is.
+        i++;
+        while (i < src.length && src[i] !== "`") {
+          if (src[i] === "\\") i += 2;
+          else if (src[i] === "$" && src[i + 1] === "{") {
+            i += 2;
+            code(true);
+            i++;
+          } else i++;
+        }
+        i++;
+      } else {
+        if (c === "{") depth++;
+        else if (c === "}") {
+          if (stopAtClose && depth === 0) return;
+          depth--;
+        }
+        i++;
+      }
+    }
+  };
+  code(false);
+  return out.join("");
+}
+
 /** Every object literal in `src` that says `ok: false`, with its message. */
 function okFalseSites(rel: string, src: string): Site[] {
   const spans = braceSpans(src);
   const sites: Site[] = [];
-  for (const m of src.matchAll(/\bok:\s*false\b/g)) {
+  for (const m of blankComments(src).matchAll(/\bok:\s*false\b/g)) {
     const at = m.index;
     // The innermost literal containing this `ok: false`.
     let best: { open: number; close: number } | undefined;
@@ -409,6 +473,17 @@ test("only a real `expected` property satisfies the census — not a comment, a 
     const [site] = okFalseSites("probe.ts", src);
     assert.equal(site?.expected, true, `${how} is a real flag`);
   }
+
+  // And prose ABOUT a result is not a result: this doc comment used to be
+  // counted as a site whose "literal" was the whole class body.
+  const prose =
+    "class A {\n" +
+    "  /** Answers `{ ok: false, diverged }` when both sides have moved. */\n" +
+    "  m() {\n" +
+    '    return { ok: true, message: "No repository open." };\n' +
+    "  }\n" +
+    "}\n";
+  assert.deepEqual(okFalseSites("probe.ts", prose), [], "a comment mentioning ok: false is not a site");
 });
 
 test("a genuine git failure still reports", async () => {
