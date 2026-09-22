@@ -184,8 +184,8 @@ export function installMcp(
   // An unknown client id can only come from our own list, so it stays
   // crash-reportable. The two below cannot: a build without the MCP server in
   // it, and a client config the user has hand-edited into something that is not
-  // JSON, are both states of the machine (see main/expectedError.ts). The
-  // second of these filed report #16.
+  // JSON, are both states of the machine (see main/expectedError.ts). The first
+  // of them filed report #16.
   if (!cfg) {
     return { ok: false, message: `Unknown client: ${req.client}.` };
   }
