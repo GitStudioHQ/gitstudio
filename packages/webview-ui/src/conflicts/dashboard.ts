@@ -1,0 +1,678 @@
+// The conflicts dashboard: every conflicted file of the stopped operation, what
+// can be done to each, and the way out of the operation itself.
+//
+// Ported from Merge Studio's conflictsHtml.ts, where it was an inline <script>
+// inside a template literal — a string to tsc and esbuild, so neither ever saw
+// its code. This is a typed DOM component instead, mounted as-is by the
+// extensions' webview panel (conflicts/main.ts) and natively by the desktop's
+// Changes view. It keeps everything Merge Studio had — the operation chip, the
+// progress bar, the rows with their badges, whole-file Accept Yours / Accept
+// Theirs, Merge…, resolution pills, hold-to-undo, the success card, Close —
+// and adds what issue #12 asked for: the direction bar ("test → onto →
+// master"), the commit being replayed and "commit N of M", and Continue / Skip /
+// Abort, each gated the way git gates it and confirmed inline.
+//
+// The component holds no git state. The host sends a full ConflictsState after
+// every change; the component posts ConflictsActions and nothing else. Every
+// name it shows — a branch, a path, a subject — is written as a text node.
+
+import type {
+  ConflictFileView,
+  ConflictsAction,
+  ConflictsState,
+  OperationView,
+  SideRole,
+} from "@gitstudio/host-bridge/conflictsProtocol";
+import {
+  abortConfirm,
+  abortLabel,
+  appendName,
+  continueBlockedText,
+  directionParts,
+  directionText,
+  hasText,
+  opChipLabel,
+  roleWord,
+  sha7,
+  shapeWord,
+  sideOf,
+  skipConfirm,
+  stepText,
+  willDropText,
+} from "./opText";
+
+export interface DashboardTimers {
+  set(fn: () => void, ms: number): number;
+  clear(id: number): void;
+}
+
+export interface ConflictsDashboardOptions {
+  /** Deliver an action to the host. */
+  post(action: ConflictsAction): void;
+  /** Timers for hold-to-undo (tests pass a fake clock). */
+  timers?: DashboardTimers;
+  /**
+   * Whether this host can close the dashboard. A webview panel can; the
+   * desktop's Changes view hosts it in place and cannot.
+   */
+  closable?: boolean;
+}
+
+const MS_MARK = `<svg class="cd-mark-svg" viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="cd_ms_bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C3343"/><stop offset="1" stop-color="#181C24"/></linearGradient><linearGradient id="cd_ms_res" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9486F6"/><stop offset="1" stop-color="#6B5BE6"/></linearGradient></defs><rect width="256" height="256" rx="52" fill="url(#cd_ms_bg)"/><rect x="100" y="46" width="56" height="166" rx="11" fill="url(#cd_ms_res)" stroke="#AEA6F8" stroke-width="1.5"/><rect x="108" y="116" width="40" height="22" rx="5" fill="#FFFFFF" opacity="0.96"/><path d="M84 116 L102 127 L84 138" fill="none" stroke="#F4F6FA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M172 116 L154 127 L172 138" fill="none" stroke="#F4F6FA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><rect x="32" y="56" width="52" height="146" rx="9" fill="#454F62" stroke="#5A6679" stroke-width="1.5"/><rect x="40" y="116" width="36" height="22" rx="5" fill="#E06A52"/><rect x="172" y="56" width="52" height="146" rx="9" fill="#454F62" stroke="#5A6679" stroke-width="1.5"/><rect x="180" y="116" width="36" height="22" rx="5" fill="#E06A52"/></svg>`;
+
+function codicon(name: string, extra = ""): HTMLElement {
+  const s = document.createElement("span");
+  s.className = `codicon codicon-${name}${extra ? ` ${extra}` : ""}`;
+  s.setAttribute("aria-hidden", "true");
+  return s;
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, text?: string): HTMLElementTagNameMap[K] {
+  const n = document.createElement(tag);
+  n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** What a resolved row's pill says. */
+export function choiceText(choice: ConflictFileView["choice"]): string {
+  return choice === "yours"
+    ? "kept yours"
+    : choice === "theirs"
+      ? "kept theirs"
+      : choice === "merged"
+        ? "merged"
+        : "resolved";
+}
+
+/** The commit card's verb, by operation. */
+function commitVerb(op: OperationView): string {
+  switch (op.kind) {
+    case "rebase":
+    case "rebase-merge-step":
+      return "Replaying";
+    case "cherry-pick":
+      return "Picking";
+    case "revert":
+      return "Reverting";
+    case "am":
+      return "Applying";
+    default:
+      return "Commit";
+  }
+}
+
+export class ConflictsDashboard {
+  readonly element: HTMLElement;
+  private readonly post: (action: ConflictsAction) => void;
+  private readonly timers: DashboardTimers;
+  private readonly closable: boolean;
+  private state?: ConflictsState;
+  /** The inline confirm open in the footer, if any. Survives a state push of the same episode. */
+  private confirming?: "abort" | "skip" | "drop";
+  private episode?: string;
+  /** Rows the reader just acted on, drawn busy until the host's next state. */
+  private localBusy = new Set<string>();
+  /** Cancels for holds in progress, so a re-render or dispose never leaves a timer armed. */
+  private holds = new Set<() => void>();
+  /**
+   * A Continue / Skip / Abort was posted and the host has not answered yet.
+   * The footer stays locked until the next state: two presses must never
+   * become two commands (the desktop's main process QUEUES a second call).
+   */
+  private sent = false;
+
+  constructor(root: HTMLElement, opts: ConflictsDashboardOptions) {
+    this.post = opts.post;
+    this.timers = opts.timers ?? {
+      set: (fn, ms) => window.setTimeout(fn, ms),
+      clear: (id) => window.clearTimeout(id),
+    };
+    this.closable = opts.closable ?? true;
+    this.element = el("div", "cd-dash");
+    this.element.setAttribute("aria-label", "Conflicts");
+    root.replaceChildren(this.element);
+    this.element.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.confirming) {
+        e.stopPropagation();
+        const trigger = triggerKey(this.confirming);
+        this.confirming = undefined;
+        this.rerender(trigger);
+      }
+    });
+    // The host answers with the first full state.
+    this.post({ type: "ready" });
+  }
+
+  /** Paint a full state. Every host re-sends one after each change. */
+  render(state: ConflictsState): void {
+    if (state.op.episode !== this.episode) {
+      // A new stop — a rebase's next commit, or a different operation: the
+      // file list, a half-answered confirm and any row spinner belong to the
+      // one before it.
+      this.episode = state.op.episode;
+      this.confirming = undefined;
+    }
+    this.localBusy.clear();
+    this.sent = false;
+    if (state.busy) this.confirming = undefined;
+    this.state = state;
+    this.paint();
+  }
+
+  dispose(): void {
+    for (const cancel of [...this.holds]) cancel();
+    this.holds.clear();
+    this.element.remove();
+  }
+
+  // ── painting ──
+
+  private rerender(focusKey?: string): void {
+    if (!this.state) return;
+    this.paint(focusKey);
+  }
+
+  private paint(focusKeyOverride?: string): void {
+    const state = this.state;
+    if (!state) return;
+    // Keep the keyboard where it was across a repaint.
+    const focusKey =
+      focusKeyOverride ?? (document.activeElement as HTMLElement | null)?.closest?.("[data-key]")?.getAttribute("data-key") ?? undefined;
+    for (const cancel of [...this.holds]) cancel();
+    this.holds.clear();
+
+    const op = state.op;
+    const files = state.files;
+    const pending = files.filter((f) => f.status !== "resolved").length;
+    const allDone = files.length > 0 && pending === 0;
+    const root = this.element;
+    root.className = "cd-dash" + (state.busy ? " is-busy" : "") + (allDone ? " is-done" : "");
+    root.dataset.kind = op.kind;
+    root.replaceChildren();
+
+    // Header: brand, title, what is in progress, which repository.
+    const head = el("header", "cd-head");
+    const mark = el("span", "cd-mark");
+    if (state.brand.mark === "merge-studio") mark.innerHTML = MS_MARK;
+    else mark.appendChild(codicon("git-merge"));
+    mark.title = state.brand.name;
+    const title = el("h1", "cd-title", "Conflicts");
+    head.append(mark, title);
+    if (!allDone) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
+    if (state.repoName) head.appendChild(el("span", "cd-repo", state.repoName));
+    root.appendChild(head);
+
+    if (op.title) root.appendChild(el("div", "cd-optitle", op.title));
+
+    const dir = directionParts(op);
+    if (dir) {
+      const bar = el("div", "cd-dirbar");
+      bar.setAttribute("role", "group");
+      bar.setAttribute("aria-label", directionText(op));
+      bar.append(this.branchPill(dir.from.role, dir.from.name, dir.from.description));
+      bar.append(el("span", "cd-dir-verb", `→ ${dir.verb} →`));
+      bar.append(this.branchPill(dir.to.role, dir.to.name, dir.to.description));
+      root.appendChild(bar);
+    }
+
+    const step = stepText(op);
+    if (op.commit && (op.commit.sha || op.commit.subject)) {
+      const card = el("div", "cd-commit");
+      card.appendChild(codicon("git-commit"));
+      card.appendChild(el("span", "cd-commit-verb", commitVerb(op)));
+      if (op.commit.sha) card.appendChild(el("code", "cd-sha", sha7(op.commit.sha)));
+      const subject = el("span", "cd-subject", op.commit.subject);
+      subject.title = op.commit.subject;
+      card.appendChild(subject);
+      if (op.commit.author) card.appendChild(el("span", "cd-author", `by ${op.commit.author}`));
+      if (step) card.appendChild(el("span", "cd-step", step));
+      root.appendChild(card);
+    } else if (step) {
+      root.appendChild(el("div", "cd-step cd-step-alone", step));
+    }
+
+    if (op.pause) {
+      const p = el("div", "cd-pause");
+      p.append(codicon("debug-pause"), el("span", "cd-pause-text", op.pause.detail || "Paused"));
+      p.appendChild(
+        el(
+          "span",
+          "cd-pause-sub",
+          op.pause.reason === "exec-failed"
+            ? "A command in the plan failed. Fix what it needs, then continue."
+            : "Nothing to resolve here. Continue when you are ready.",
+        ),
+      );
+      root.appendChild(p);
+    }
+
+    if (op.willDrop) {
+      const w = el("div", "cd-willdrop");
+      w.setAttribute("role", "alert");
+      w.append(codicon("warning"), el("span", "", willDropText(op)));
+      root.appendChild(w);
+    }
+
+    if (state.notice) {
+      const n = el("div", `cd-notice is-${state.notice.kind}`);
+      n.append(
+        codicon(state.notice.kind === "error" ? "error" : state.notice.kind === "warn" ? "warning" : "info"),
+        el("span", "", state.notice.text),
+      );
+      root.appendChild(n);
+    }
+
+    if (state.total > 0) {
+      const row = el("div", "cd-progress");
+      const bar = el("div", "cd-bar");
+      const fill = el("div", "cd-bar-fill");
+      fill.style.width = `${Math.round((state.resolved / state.total) * 100)}%`;
+      bar.appendChild(fill);
+      bar.setAttribute("role", "progressbar");
+      bar.setAttribute("aria-valuemin", "0");
+      bar.setAttribute("aria-valuemax", String(state.total));
+      bar.setAttribute("aria-valuenow", String(state.resolved));
+      bar.setAttribute("aria-label", "Files resolved");
+      row.append(bar, el("span", "cd-progress-label", `${state.resolved} of ${state.total} resolved`));
+      root.appendChild(row);
+    }
+
+    if (allDone) {
+      const done = el("div", "cd-done");
+      done.append(codicon("pass-filled", "cd-done-icon"), el("h2", "cd-done-title", "All conflicts resolved"));
+      done.appendChild(
+        el(
+          "span",
+          "cd-done-note",
+          op.verbs.continue
+            ? `Review below, then ${op.verbs.continue}. Hold Undo on a file to bring its conflict back.`
+            : "Review below. Hold Undo on a file to bring its conflict back.",
+        ),
+      );
+      root.appendChild(done);
+    }
+
+    const list = el("div", "cd-list");
+    list.setAttribute("role", "list");
+    if (files.length === 0 && !op.pause) {
+      list.appendChild(
+        el(
+          "div",
+          "cd-empty",
+          op.kind === "none" ? "No conflicted files." : "No conflicted files at this step.",
+        ),
+      );
+    }
+    for (const f of files) list.appendChild(this.row(f, state));
+    if (files.length > 0 || !op.pause) root.appendChild(list);
+
+    if (state.outcome) {
+      const o = el("div", `cd-outcome is-${state.outcome.kind}`);
+      o.setAttribute("role", "status");
+      o.append(
+        codicon(state.outcome.kind === "done" ? "pass-filled" : state.outcome.kind === "failed" ? "error" : "info"),
+        el("span", "", state.outcome.text),
+      );
+      root.appendChild(o);
+    }
+
+    root.appendChild(this.footer(state, pending, allDone));
+
+    if (focusKey) {
+      const again = root.querySelector<HTMLElement>(`[data-key="${cssEscape(focusKey)}"]`);
+      if (again && !(again as HTMLButtonElement).disabled) again.focus({ preventScroll: true });
+    }
+  }
+
+  private branchPill(role: SideRole, name: string, description: string): HTMLElement {
+    const p = el("span", `cd-branch cd-branch-${role}`);
+    p.appendChild(codicon("git-branch", "cd-branch-ico"));
+    p.appendChild(el("span", "cd-role", role === "yours" ? "YOURS" : "THEIRS"));
+    const n = el("span", "cd-bname");
+    appendName(n, name || roleWord(role));
+    p.appendChild(n);
+    p.title = description || name;
+    return p;
+  }
+
+  private row(f: ConflictFileView, state: ConflictsState): HTMLElement {
+    const busy = f.status === "busy" || this.localBusy.has(f.path);
+    const resolved = f.status === "resolved" && !busy;
+    const row = el("div", "cd-row" + (resolved ? " is-resolved" : busy ? " is-busy" : ""));
+    row.setAttribute("role", "listitem");
+    row.dataset.path = f.path;
+
+    if (busy) {
+      const s = el("span", "cd-spinner");
+      s.setAttribute("aria-label", "Working");
+      row.appendChild(s);
+    } else if (resolved) {
+      const ring = el("span", "cd-check");
+      ring.appendChild(codicon("check"));
+      row.appendChild(ring);
+    } else {
+      row.appendChild(el("span", "cd-dot"));
+    }
+
+    const name = el("span", "cd-file");
+    const slash = f.path.lastIndexOf("/");
+    name.append(
+      el("span", "cd-dir", slash >= 0 ? f.path.slice(0, slash + 1) : ""),
+      el("span", "cd-name", slash >= 0 ? f.path.slice(slash + 1) : f.path),
+    );
+    name.title = f.path;
+    row.appendChild(name);
+
+    if (!resolved && !busy) {
+      const word = f.badge || shapeWord(f.shape);
+      if (word) row.appendChild(el("span", "cd-badge", word));
+    }
+
+    if (resolved) {
+      const pill = el("span", "cd-choice", `✓ ${choiceText(f.choice)}`);
+      const op = state.op;
+      pill.title =
+        f.choice === "yours"
+          ? `Resolved with yours — ${op.yours.description}`
+          : f.choice === "theirs"
+            ? `Resolved with theirs — ${op.theirs.description}`
+            : f.choice === "merged"
+              ? "Resolved in the merge editor"
+              : "Resolved (in an editor, or outside this app)";
+      row.append(pill, this.holdButton(f, state));
+    } else if (!busy) {
+      const disabled = state.busy;
+      if (f.shape === "both-deleted") {
+        row.appendChild(
+          this.button(
+            "Delete the file",
+            "Neither side has this file — delete it and stage the deletion",
+            `delete:${f.path}`,
+            disabled,
+            () => {
+              this.markBusy(f.path);
+              this.post({ type: "delete", path: f.path });
+            },
+            "cd-danger",
+            "trash",
+          ),
+        );
+      } else {
+        for (const role of ["yours", "theirs"] as const) {
+          const side = sideOf(state.op, role);
+          const missing = f.missingRole === role;
+          row.appendChild(
+            this.button(
+              missing ? "Delete the file" : `Accept ${roleWord(role)}`,
+              missing
+                ? `${roleWord(role)}${side.name ? ` (${side.name})` : ""} has no version of this file — accepting it deletes the file`
+                : `Resolve the whole file with ${role}${side.description ? ` — ${side.description}` : side.name ? ` (${side.name})` : ""}`,
+              `accept:${role}:${f.path}`,
+              disabled,
+              () => {
+                this.markBusy(f.path);
+                this.post({ type: "accept", path: f.path, role });
+              },
+              missing ? "cd-danger" : "",
+              missing ? "trash" : "",
+            ),
+          );
+        }
+        if (hasText(f.shape)) {
+          row.appendChild(
+            this.button(
+              "Merge…",
+              "Resolve it change by change in the merge editor",
+              `merge:${f.path}`,
+              disabled,
+              () => this.post({ type: "merge", path: f.path }),
+              "cd-primary",
+            ),
+          );
+        }
+      }
+    }
+    return row;
+  }
+
+  /** Post an operation verb once, and lock the footer until the host answers. */
+  private send(action: ConflictsAction): void {
+    if (this.sent) return;
+    this.sent = true;
+    this.post(action);
+    this.rerender();
+  }
+
+  private markBusy(path: string): void {
+    this.localBusy.add(path);
+    this.rerender();
+  }
+
+  private button(
+    label: string,
+    title: string,
+    key: string,
+    disabled: boolean,
+    onClick: () => void,
+    cls = "",
+    icon = "",
+  ): HTMLButtonElement {
+    const b = el("button", `cd-btn${cls ? ` ${cls}` : ""}`);
+    b.type = "button";
+    if (icon) b.appendChild(codicon(icon));
+    b.appendChild(document.createTextNode(label));
+    b.title = title;
+    b.dataset.key = key;
+    b.disabled = disabled;
+    b.addEventListener("click", () => {
+      if (b.disabled) return;
+      onClick();
+    });
+    return b;
+  }
+
+  /**
+   * Undo a resolved row by HOLDING the button for `holdToUndoMs` — a pointer
+   * press, or Enter / Space held down. A plain click does nothing: bringing a
+   * conflict back is one gesture too many to be an accident.
+   */
+  private holdButton(f: ConflictFileView, state: ConflictsState): HTMLButtonElement {
+    const ms = state.holdToUndoMs;
+    const btn = el("button", "cd-undo-hold");
+    btn.type = "button";
+    btn.dataset.key = `restore:${f.path}`;
+    btn.title = "Hold to bring the conflict back (hold Enter or Space from the keyboard)";
+    btn.setAttribute("aria-label", `Hold to undo the resolution of ${f.path}`);
+    btn.disabled = state.busy;
+    const fill = el("span", "cd-undo-fill");
+    const label = el("span", "cd-undo-label", "Hold to undo");
+    btn.append(fill, label);
+
+    let timer = 0;
+    const reset = (): void => {
+      btn.classList.remove("arming");
+      fill.style.transitionDuration = "180ms";
+      fill.style.width = "0%";
+    };
+    const cancel = (): void => {
+      if (!timer) return;
+      this.timers.clear(timer);
+      timer = 0;
+      this.holds.delete(cancel);
+      reset();
+    };
+    const start = (): void => {
+      if (timer || btn.disabled) return;
+      btn.classList.add("arming");
+      fill.style.transitionDuration = `${ms}ms`;
+      // Force a layout so the sweep starts from 0 even mid-cancel.
+      void fill.offsetWidth;
+      fill.style.width = "100%";
+      this.holds.add(cancel);
+      timer = this.timers.set(() => {
+        timer = 0;
+        this.holds.delete(cancel);
+        this.markBusy(f.path);
+        this.post({ type: "restore", path: f.path });
+      }, ms);
+    };
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      start();
+    });
+    for (const type of ["pointerup", "pointerleave", "pointercancel"] as const) {
+      btn.addEventListener(type, cancel);
+    }
+    btn.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      if (!e.repeat) start();
+    });
+    btn.addEventListener("keyup", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      cancel();
+    });
+    btn.addEventListener("blur", cancel);
+    // The synthetic click a key press produces is not a hold.
+    btn.addEventListener("click", (e) => e.preventDefault());
+    return btn;
+  }
+
+  private footer(state: ConflictsState, pending: number, allDone: boolean): HTMLElement {
+    const op = state.op;
+    const foot = el("footer", "cd-foot");
+
+    if (this.confirming) {
+      foot.appendChild(this.confirmRow(state));
+      return foot;
+    }
+
+    const busy = state.busy || this.sent;
+    const abort = this.button(
+      abortLabel(op),
+      abortConfirm(op).detail,
+      "abort",
+      busy,
+      () => {
+        this.confirming = "abort";
+        this.rerender("confirm-keep");
+      },
+      "cd-danger",
+      "circle-slash",
+    );
+    // Something to end: an operation, or unmerged files to reset.
+    if (op.kind !== "none" || state.total > 0) foot.appendChild(abort);
+
+    foot.appendChild(el("span", "cd-spacer"));
+    if (state.supportLinks?.length) {
+      const support = el("div", "cd-support");
+      for (const link of state.supportLinks) {
+        support.appendChild(
+          this.button(link.label, link.url, `link:${link.url}`, false, () =>
+            this.post({ type: "openExternal", url: link.url }),
+          ),
+        );
+      }
+      foot.append(support, el("span", "cd-spacer"));
+    }
+
+    if (pending > 0) foot.appendChild(el("span", "cd-counter", plural(pending, "conflicting file")));
+
+    if (op.canSkip && op.verbs.skip) {
+      foot.appendChild(
+        this.button(
+          op.verbs.skip,
+          skipConfirm(op).detail,
+          "skip",
+          busy,
+          () => {
+            this.confirming = "skip";
+            this.rerender("confirm-keep");
+          },
+          "",
+          "debug-step-over",
+        ),
+      );
+    }
+
+    if (op.verbs.continue) {
+      const why = op.canContinue ? "" : continueBlockedText(op, pending);
+      const cont = this.button(
+        op.verbs.continue,
+        why || op.title || op.verbs.continue,
+        "continue",
+        busy || !op.canContinue,
+        () => {
+          if (op.willDrop) {
+            this.confirming = "drop";
+            this.rerender("confirm-keep");
+            return;
+          }
+          this.send({ type: "continue" });
+        },
+        "cd-primary",
+        "debug-continue",
+      );
+      if (why) {
+        const reason = el("span", "cd-why", why);
+        reason.id = "cd-why";
+        cont.setAttribute("aria-describedby", reason.id);
+        foot.appendChild(reason);
+      }
+      foot.appendChild(cont);
+    }
+
+    if (this.closable && allDone) {
+      foot.appendChild(
+        this.button("Close", "Close this dashboard", "close", false, () => this.post({ type: "close" }), "cd-primary-quiet"),
+      );
+    }
+    return foot;
+  }
+
+  private confirmRow(state: ConflictsState): HTMLElement {
+    const op = state.op;
+    const which = this.confirming;
+    const ask =
+      which === "abort"
+        ? abortConfirm(op)
+        : which === "skip"
+          ? skipConfirm(op)
+          : { question: "Drop the empty commit?", detail: willDropText(op), confirm: "Drop it and continue" };
+    const row = el("div", "cd-confirm");
+    row.setAttribute("role", "alertdialog");
+    row.setAttribute("aria-label", ask.question);
+    const text = el("div", "cd-confirm-text");
+    text.append(el("strong", "cd-confirm-q", ask.question), el("span", "cd-confirm-d", ask.detail));
+    const keep = this.button("Keep going", "Leave everything as it is", "confirm-keep", false, () => {
+      this.confirming = undefined;
+      this.rerender(which ? triggerKey(which) : undefined);
+    });
+    const go = this.button(ask.confirm, ask.detail, "confirm-go", state.busy || this.sent, () => {
+      this.confirming = undefined;
+      if (which === "abort") this.send({ type: "abort" });
+      else if (which === "skip") this.send({ type: "skip" });
+      else this.send({ type: "continue", confirmDrop: true });
+    }, which === "drop" ? "cd-primary" : "cd-danger");
+    row.append(text, keep, go);
+    return row;
+  }
+}
+
+/** The footer control a confirm returns the keyboard to. */
+function triggerKey(which: "abort" | "skip" | "drop"): string {
+  return which === "drop" ? "continue" : which;
+}
+
+/** CSS.escape where it exists (every browser), a conservative fallback elsewhere. */
+function cssEscape(s: string): string {
+  const css = (globalThis as { CSS?: { escape?: (v: string) => string } }).CSS;
+  return css?.escape ? css.escape(s) : s.replace(/["\\]/g, "\\$&");
+}

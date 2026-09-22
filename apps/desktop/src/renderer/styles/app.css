@@ -206,6 +206,33 @@ body {
   --vscode-charts-red: var(--status-del);
   --vscode-charts-yellow: var(--status-warn);
   --vscode-charts-purple: var(--gs-accent-ink, var(--gs-accent));
+  /* The merge editor's toolbar and bottom bar (shared diff.css + shell.css),
+     which the desktop now mounts instead of its own three buttons. diff.css
+     reads button-background / button-foreground / panel-border /
+     widget-border with NO fallback, so undeclared here Apply was a
+     transparent button on a borderless bar. The rest have fallbacks that were
+     tuned for VS Code, not for this app's surfaces. */
+  --vscode-button-background: var(--gs-accent);
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: color-mix(in srgb, var(--gs-accent) 88%, #ffffff);
+  --vscode-button-border: transparent;
+  --vscode-panel-border: var(--app-border);
+  --vscode-widget-border: var(--app-border);
+  --vscode-widget-shadow: rgba(0, 0, 0, 0.3);
+  --vscode-toolbar-hoverBackground: var(--app-hover);
+  --vscode-editorGroupHeader-tabsBackground: var(--app-panel);
+  --vscode-dropdown-background: var(--app-elevated);
+  --vscode-dropdown-border: var(--app-border);
+  --vscode-dropdown-foreground: var(--vscode-foreground);
+  --vscode-inputOption-activeBackground: var(--accent-soft);
+  --vscode-inputOption-activeBorder: var(--accent-line);
+  --vscode-inputOption-activeForeground: var(--vscode-foreground);
+  --vscode-icon-foreground: var(--vscode-foreground);
+  --vscode-editorWarning-foreground: var(--status-warn);
+  /* "Apply with N unresolved": a warning FILL under white text, darkened from
+     the warn ink so the text clears AA in both themes. */
+  --vscode-statusBarItem-warningBackground: color-mix(in srgb, var(--status-warn) 55%, #3b1d00);
+  --vscode-statusBarItem-warningForeground: #ffffff;
 }
 
 body.vscode-light {

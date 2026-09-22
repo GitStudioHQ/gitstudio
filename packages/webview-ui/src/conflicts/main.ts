@@ -1,8 +1,7 @@
 // Conflicts dashboard webview entry point (browser context).
 //
-// S0 contract seed: a STUB so hosts can wire the bundle before the dashboard
-// exists. P3 owns this file and replaces the body with the ConflictsDashboard
-// component (conflicts/dashboard.ts). The PAGE CONTRACT below is fixed:
+// The PAGE CONTRACT (fixed with the S0 seed; the VS Code host package builds
+// against it):
 //
 // - Bundle: esbuild entry `packages/webview-ui/src/conflicts/main.ts` →
 //   `dist/webview/conflicts.js` (IIFE, browser); its CSS import emits
@@ -15,12 +14,16 @@
 //   re-sends a full state after every change. Every user action is posted as a
 //   ConflictsAction (host-bridge/conflictsProtocol.ts). The page keeps no git
 //   state of its own.
+//
+// The component itself (dashboard.ts) is host-agnostic; the desktop mounts the
+// same class natively in its Changes view.
 
 import "../styles/conflicts.css";
 import type {
   ConflictsAction,
   ConflictsHostMessage,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import { ConflictsDashboard } from "./dashboard";
 
 interface ConflictsVsCodeApi {
   postMessage(message: ConflictsAction): void;
@@ -30,13 +33,19 @@ interface ConflictsVsCodeApi {
 declare function acquireVsCodeApi(): ConflictsVsCodeApi;
 
 const api = acquireVsCodeApi();
+const root = document.getElementById("root");
 
-// S0 STUB: accept state messages and render nothing — P3.
-window.addEventListener("message", (event: MessageEvent) => {
-  const message = event.data as ConflictsHostMessage | undefined;
-  if (message?.type !== "state") {
-    return;
-  }
-});
-
-api.postMessage({ type: "ready" });
+if (root) {
+  // Listen BEFORE the component announces itself: its constructor posts
+  // `ready`, and a host that answers synchronously must not be missed.
+  let dashboard: ConflictsDashboard | undefined;
+  const queued: ConflictsHostMessage[] = [];
+  window.addEventListener("message", (event: MessageEvent) => {
+    const message = event.data as ConflictsHostMessage | undefined;
+    if (message?.type !== "state") return;
+    if (dashboard) dashboard.render(message.state);
+    else queued.push(message);
+  });
+  dashboard = new ConflictsDashboard(root, { post: (action) => api.postMessage(action) });
+  for (const m of queued.splice(0)) dashboard.render(m.state);
+}
