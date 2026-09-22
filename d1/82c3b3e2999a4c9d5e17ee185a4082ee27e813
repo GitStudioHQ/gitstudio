@@ -1,0 +1,58 @@
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_bdf147285fdd9e 3819-3821
+  s_26f5e669d3043c::t_923529fd8b9c6b 86
+  s_26f5e669d3043c::t_f673da267143df 8067-8068,8074-8076,8078,8084-8087
+  s_26f5e669d3043c::t_65a83cd3e9d748 8001-8042,9002
+  s_26f5e669d3043c::t_07b189a227f2d0 9022
+  s_26f5e669d3043c::t_8c1e6e32eb66af 8993-9001
+  s_26f5e669d3043c::t_11bcc807906349 8043,9003
+apps/desktop/test/expectedConditions.test.ts
+  s_26f5e669d3043c::t_c874689572c37f 535-559
+  s_26f5e669d3043c::t_37b4218f594b8b 101-126
+  s_26f5e669d3043c::t_3608adb69bc21a 560-561
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_a90e4ebaf1a2f0 802-805
+apps/desktop/src/renderer/pullFlow.ts
+  s_26f5e669d3043c::t_8b8fae9abee00f 101-141
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_0b208050b06ef6 12769-12771
+  s_26f5e669d3043c::t_39f9040b924c42 12828-12919
+apps/desktop/test/hermeticGit.ts
+  s_26f5e669d3043c::t_f8f455ff4edfcf 1-34
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_b93a022dc9ae4f 1089-1098,1102-1120,1126,1128,1131-1161
+  s_26f5e669d3043c::t_6346d3d5f58a30 396-412
+  s_26f5e669d3043c::t_1275d22251d078 1431-1444
+  s_26f5e669d3043c::t_88dc4b6153e1ed 428-430
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_0e145f4bc074da 587-590
+apps/desktop/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_0d50b219231972 23
+  s_26f5e669d3043c::t_cb5cf39adba576 75,79
+  s_26f5e669d3043c::t_90656c6e1d960c 241,306-344
+  s_26f5e669d3043c::t_d402c8035f5803 12-14
+  s_26f5e669d3043c::t_bef796fbcd6ede 24
+  s_26f5e669d3043c::t_00476653f83a7d 27-32
+  s_26f5e669d3043c::t_c2be8dc0b50f0d 182-187,193-240
+  s_26f5e669d3043c::t_4fecddb0e3c5b0 242,345
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_cf459db8150f8f 27,56,1751-1760,1764-1766,1774,1777-1785,1800
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_cf459db8150f8f 431-443,446
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d182c3b3e2999a4c9d5e17ee185a4082ee27e813",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
