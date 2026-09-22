@@ -24,11 +24,22 @@
  * message, so the noise from a genuinely invisible repo is one issue, not a
  * stream. Reported, on purpose. Revisit if real reports say otherwise.
  *
+ * Two conditions are classified by what GitHub SAYS rather than by its status,
+ * because the status alone is not the same twice:
+ *
+ *   - a repository with no commits ("This repository is empty.") — 404 from the
+ *     contents API, 409 from `/commits` and `/git/trees`;
+ *   - a GraphQL NOT_FOUND, which arrives inside a 200 and names the object it
+ *     could not resolve.
+ *
+ * Both were filed as crashes (reports #13, #14, #17) and neither is a defect.
+ *
  * Nothing here changes what the user sees: an ExpectedError carries the same
  * message and reaches the renderer as the same rejection. Only the reporter
  * treats it differently.
  */
 
+import { EMPTY_REPO_MESSAGE, isEmptyRepoMessage } from "../shared/githubStates";
 import { ExpectedError, isExpectedError } from "./expectedError";
 
 /**
@@ -53,6 +64,15 @@ export async function githubHttpError(res: Response): Promise<Error> {
   } catch {
     /* non-JSON body */
   }
+  // An empty repository, before any status branch can disagree about it.
+  // GitHub answers 404 here from the contents API and 409 from `/commits` and
+  // `/git/trees`, so only the sentence is stable — and under the 404 rule this
+  // read as "a path we built wrong" and was crash-reported (#13) for somebody
+  // browsing a repository they had just created. Normalised to one wording so
+  // the renderer can recognise it across IPC, where an error is its message.
+  if (isEmptyRepoMessage(detail)) {
+    return new ExpectedError(EMPTY_REPO_MESSAGE);
+  }
   // Our own wording, not GitHub's "Bad credentials" — which reads as an
   // accusation rather than "sign in again".
   if (res.status === 401) {
@@ -75,22 +95,84 @@ export async function githubHttpError(res: Response): Promise<Error> {
       detail || `GitHub is having trouble right now (HTTP ${res.status}).`,
     );
   }
+  // 409 is GitHub's answer for "I understood you, and the repository is not in
+  // a state where that can happen": an empty repository (handled above), a
+  // merge that conflicts, a ref that moved under a request. None of them is a
+  // request we built wrong.
+  if (res.status === 409) {
+    return new ExpectedError(detail || "GitHub couldn't apply that to the repository as it stands.");
+  }
   if (res.status === 404) {
     return new Error(detail || "Not found on GitHub.");
   }
   return new Error(detail || `GitHub request failed (HTTP ${res.status}).`);
 }
 
+/** One entry of a GraphQL response's `errors` array, as GitHub sends it. */
+export interface GraphqlFailure {
+  message: string;
+  type?: string;
+  /** The field this error is about — `["repository"]`, `["node", "items"]`. */
+  path?: (string | number)[];
+}
+
+/** `Could not resolve to a Repository with the name 'owner/name'.` → owner/name. */
+function unresolvedName(message: string): string | undefined {
+  return /^Could not resolve to a[n]? \w+ with the name '(.+)'\.?$/.exec(message)?.[1];
+}
+
 /**
  * GraphQL puts its failures in a 200 body, so `githubHttpError` never sees
- * them. Two of the machine-readable `type`s are the same expected conditions —
- * the rate limiter, and a permission the user has not granted.
+ * them. Three of the machine-readable `type`s are expected conditions — the
+ * rate limiter, a permission the user has not granted, and NOT_FOUND.
+ *
+ * NOT_FOUND is the interesting one, because the REST policy above deliberately
+ * REPORTS a 404. The two are not the same answer. A REST 404 could always be a
+ * path we built wrong, which is the bug a crash report is best at catching; a
+ * GraphQL NOT_FOUND names the object it could not resolve, and those names come
+ * from the user's world — the owner/name behind a git remote, a project id kept
+ * from an earlier read — never from a static string we typed. A repository that
+ * was renamed, deleted, or moved into an org this account cannot see is a state
+ * a user is allowed to be in. Reports #14 and #17 were exactly that, and they
+ * also read as GitHub jargon; the wording is replaced with something that says
+ * what happened and what it might mean.
  */
-export function graphqlError(err: { message: string; type?: string }): Error {
+export function graphqlError(err: GraphqlFailure): Error {
   const message = err.message || "GitHub's GraphQL API returned an error.";
+  if (err.type === "NOT_FOUND") {
+    const name = unresolvedName(message);
+    return new ExpectedError(
+      name
+        ? `GitHub couldn't find ${name}. It may have been renamed or deleted, ` +
+          `or this account may not have access to it.`
+        : message,
+    );
+  }
   return err.type === "RATE_LIMITED" || err.type === "FORBIDDEN"
     ? new ExpectedError(message)
     : new Error(message);
+}
+
+/**
+ * Whether a GraphQL 200 that carries BOTH `data` and `errors` should keep its
+ * data instead of throwing.
+ *
+ * GraphQL resolves every field it can and reports the rest, so an `errors`
+ * array is not the same thing as a failed request — and treating it as one
+ * threw away everything that *did* resolve. One unreadable repository named in
+ * a query took the whole answer down with it.
+ *
+ * The rule is deliberately narrow, because the opposite mistake is worse:
+ * laundering a read failure into a confident empty list. Only NOT_FOUND
+ * survives — it means the object genuinely is not there, which is an answer —
+ * and only when something non-null actually came back. A rate limit or a denied
+ * scope means the answer is INCOMPLETE for a reason that would be indis-
+ * tinguishable from "empty" downstream, so those keep throwing.
+ */
+export function keepsPartialData(data: unknown, errors: GraphqlFailure[]): boolean {
+  if (!errors.length || !errors.every((e) => e.type === "NOT_FOUND")) return false;
+  if (typeof data !== "object" || data === null) return false;
+  return Object.values(data as Record<string, unknown>).some((v) => v !== null && v !== undefined);
 }
 
 /**

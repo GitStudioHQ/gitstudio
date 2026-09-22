@@ -1539,6 +1539,34 @@
       const ref = $$(".explore-ref-btn").map((b) => b.textContent.trim())[0] ?? "";
       c.ok(!/default branch/i.test(ref), `the ref switcher should name the branch, got "${ref}"`);
     },
+    /**
+     * A repository with no commits is a STATE, not a broken read.
+     *
+     * GitHub does not answer an empty list for one — it fails every read with
+     * "This repository is empty." (404 from the contents API, 409 from the git
+     * endpoints), so the page's catch was the only thing that ever saw it and
+     * it painted "Couldn't read this repository" over a repository that was
+     * perfectly readable and simply had nothing in it. Crash report #13 is that
+     * error, filed automatically, for a user who had just created a repo.
+     *
+     * Unwritable until now: no fixture could produce a repository whose reads
+     * fail this way, so the whole empty-repository surface was unreachable from
+     * any scene. `?emptyrepo=1` is that switch.
+     */
+    "an-empty-repository-reads-as-empty-not-broken": (f) => {
+      const c = check(f);
+      const body = text(".explore-repo-content");
+      c.ok(!!$(".explore-repo-title"), "the page still stands around it");
+      c.ok(
+        !$(".explore-repo-content .list-error"),
+        "an empty repository must not render as an error state",
+      );
+      c.ok(
+        !/couldn't read|could not read|failed/i.test(body),
+        `it must not blame itself: ${JSON.stringify(body.slice(0, 120))}`,
+      );
+      c.match(text(".explore-repo-content .list-empty-title"), /empty/i, "it says so plainly");
+    },
 
     // ── Organizations ────────────────────────────────────────────────────────
     "orgs-cards-not-clipped": (f) => {

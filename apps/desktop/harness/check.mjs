@@ -201,6 +201,11 @@ const CASES = [
   ["explore-numbers-formatted", "explore~type:git~key:Enter"],
   ["explore-repo-page", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
   ["readme-images-are-anchored-at-their-repository", "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio"],
+  [
+    "an-empty-repository-reads-as-empty-not-broken",
+    "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio",
+    { extra: "emptyrepo=1" },
+  ],
   ["orgs-cards-not-clipped", "orgs"],
   ["orgs-header-order", "orgs"],
   ["actions-segment-does-not-slide", "actions"],

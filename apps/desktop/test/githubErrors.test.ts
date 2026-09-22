@@ -5,8 +5,11 @@ import {
   errorFields,
   githubHttpError,
   graphqlError,
+  keepsPartialData,
   networkError,
+  type GraphqlFailure,
 } from "../src/main/githubErrors";
+import { EMPTY_REPO_MESSAGE } from "../src/shared/githubStates";
 
 // 1.1.1 stopped filing "Not connected to GitHub." as a crash. Its siblings kept
 // arriving: being offline, an expired token, the rate limiter. None of them are
@@ -149,4 +152,97 @@ test("every expected error still reaches the user unchanged", async () => {
   for (const e of cases) {
     assert.equal(e.toString(), `Error: ${e.message}`, "must be indistinguishable on the wire");
   }
+});
+
+// ── Reports #13, #14, #17: three GitHub ANSWERS filed as crashes ─────────────
+
+test("a repository with no commits is a state, whatever status GitHub used", async () => {
+  // The whole reason this one is classified by the MESSAGE. GitHub reports an
+  // empty repository with a different status on every endpoint the browser
+  // touches: the contents API answers 404 (which the policy above deliberately
+  // reports), /commits and /git/trees answer 409. Report #13 is the 404 half,
+  // filed for somebody browsing a repository they had just created.
+  for (const [status, detail] of [
+    [404, "This repository is empty."],
+    [409, "Git Repository is empty."],
+    [409, "This repository is empty."],
+  ] as const) {
+    const e = await githubHttpError(json(status, { message: detail }));
+    assert.equal(isExpectedError(e), true, `HTTP ${status} "${detail}" must not be reported`);
+    // ONE wording, so the renderer has one string to recognise across IPC —
+    // where an error is only ever its message — and the collector one to dedupe.
+    assert.equal(e.message, EMPTY_REPO_MESSAGE);
+  }
+});
+
+test("a 409 that is not an empty repository keeps GitHub's own detail", async () => {
+  const e = await githubHttpError(json(409, { message: "Merge conflict" }));
+  assert.equal(isExpectedError(e), true, "a conflict is the repository's state, not our bug");
+  assert.equal(e.message, "Merge conflict");
+});
+
+test("a 404 that is NOT about emptiness is still reported", async () => {
+  // The empty-repository rule must not swallow the 404 policy whole.
+  const e = await githubHttpError(json(404, { message: "Not Found" }));
+  assert.equal(isExpectedError(e), false);
+});
+
+test("a repository GraphQL cannot resolve is a state, and says so in English", () => {
+  // Reports #14 and #17: the repository behind the open repo's remote was
+  // renamed, deleted, or moved somewhere this account cannot see. Filed as a
+  // crash twice, and shown to the user in GraphQL's own vocabulary.
+  const e = graphqlError({
+    message: "Could not resolve to a Repository with the name 'acme-private/billing-pipeline'.",
+    type: "NOT_FOUND",
+    path: ["repository"],
+  });
+  assert.equal(isExpectedError(e), true);
+  assert.match(e.message, /acme-private\/billing-pipeline/, "it still names the repository");
+  assert.doesNotMatch(e.message, /resolve to a/i, "but not in GraphQL's vocabulary");
+  assert.match(e.message, /renamed or deleted|access/i, "and it says what that might mean");
+  assert.equal(e.toString(), `Error: ${e.message}`, "indistinguishable on the wire");
+});
+
+test("a NOT_FOUND with no name in it still reaches the user unchanged", () => {
+  const e = graphqlError({
+    message: "Could not resolve to a node with the global id of 'X'.",
+    type: "NOT_FOUND",
+  });
+  assert.equal(isExpectedError(e), true);
+  assert.equal(e.message, "Could not resolve to a node with the global id of 'X'.");
+});
+
+test("partial GraphQL data is kept only when keeping it cannot lie", () => {
+  const notFound: GraphqlFailure[] = [{ message: "Could not resolve…", type: "NOT_FOUND", path: ["b"] }];
+
+  assert.equal(
+    keepsPartialData({ a: { projects: [] }, b: null }, notFound),
+    true,
+    "one object of several missing must not discard the ones that DID resolve",
+  );
+  assert.equal(
+    keepsPartialData({ repository: null }, notFound),
+    false,
+    "nothing came back, so there is nothing to keep — that one still throws",
+  );
+  // The opposite mistake is worse than the one being fixed: a rate limit or a
+  // denied scope makes the answer INCOMPLETE for a reason that is
+  // indistinguishable from "empty" once it reaches a list. Those keep throwing.
+  for (const type of ["RATE_LIMITED", "FORBIDDEN", undefined]) {
+    assert.equal(
+      keepsPartialData({ a: { projects: [] } }, [{ message: "no", type }]),
+      false,
+      `${type ?? "an untyped error"} must not be laundered into a short list`,
+    );
+  }
+  assert.equal(
+    keepsPartialData({ a: 1 }, [
+      { message: "gone", type: "NOT_FOUND" },
+      { message: "slow down", type: "RATE_LIMITED" },
+    ]),
+    false,
+    "one unsafe error in the array is enough",
+  );
+  assert.equal(keepsPartialData(null, notFound), false);
+  assert.equal(keepsPartialData({ a: 1 }, []), false, "no errors is not the partial path at all");
 });

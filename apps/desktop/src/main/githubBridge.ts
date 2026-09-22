@@ -34,7 +34,6 @@ import type {
   PrComment,
   PrCommitInfo,
   PrDetail,
-  ProjectInfo,
   PullRequest,
   WorkflowRun,
 } from "../shared/ipc";
@@ -465,11 +464,4 @@ export class GitHubBridge {
     }
   }
 
-  async projectList(): Promise<ProjectInfo[]> {
-    const r = await this.resolveOwnerRepo();
-    if (!r || !this.token) {
-      return [];
-    }
-    return this.client.listProjects(r.owner, r.repo);
-  }
 }
