@@ -1,0 +1,45 @@
+packages/engine/test/alignment.test.ts
+  s_26f5e669d3043c::t_0b939dd967efbb 122-144
+packages/engine/src/lineDiff.ts
+  s_26f5e669d3043c::t_ce209be9dd168e 61-109,115-140,168,179-192,203-295
+  s_26f5e669d3043c::t_cce8a7a3f28eab 4,20-30
+packages/engine/src/mergeModel.ts
+  s_26f5e669d3043c::t_e3b86fe0f9817a 1-9,12-15,20,24-39,47-61,63-78,82,87-88,92-94,97-99,105-113,117-129,160-174,176-178,183,186,198-206,219,222-245,247-262,265,268,271-273,277-311,336-338,342-344
+packages/engine/src/types.ts
+  s_26f5e669d3043c::t_19dda10a815439 70-76,87-114,120,122-125,131-134
+  s_26f5e669d3043c::t_51e9a076bc2fee 5-6,10-41
+  s_26f5e669d3043c::t_4e21dcf43c1e8e 183-187,189-207,211-214
+  s_59c0dd2af30db2::t_716a2111fa59ac 42
+packages/engine/test/eol.test.ts
+  s_26f5e669d3043c::t_ff8d37b2c65037 1-76
+packages/engine/test/whitespaceRule.test.ts
+  s_26f5e669d3043c::t_9774dd16c0c6c6 50-90
+packages/engine/test/mergeCategories.test.ts
+  s_26f5e669d3043c::t_a42ba33ee032b4 1-298
+packages/engine/test/mergeModel.test.ts
+  s_26f5e669d3043c::t_c1396aae8216ab 189-193,200,203-214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f224d11905aa7ca2d2e4a71b4a5ac311bb4a9a9f",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_59c0dd2af30db2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54ca11b6-e37a-494e-95d0-c9e5a1baed9f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
