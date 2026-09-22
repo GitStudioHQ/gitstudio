@@ -144,6 +144,18 @@ async function main() {
     loader: { ".ttf": "dataurl" },
   });
 
+  // The conflicts dashboard (the shared webview-ui ConflictsDashboard). Its
+  // .css import emits dist/webview/conflicts.css alongside the bundle; the
+  // panel (packages/merge-vscode/src/conflictsPanel.ts) links both.
+  const conflictsCtx = await esbuild.context({
+    ...base,
+    entryPoints: [path.resolve(webviewUiSrc, "conflicts/main.ts")],
+    outfile: path.resolve(__dirname, "dist/webview/conflicts.js"),
+    platform: "browser",
+    format: "iife",
+    loader: { ".ttf": "dataurl" },
+  });
+
   const contexts = [
     extensionCtx,
     webviewCtx,
@@ -151,6 +163,7 @@ async function main() {
     graphCtx,
     graphSidebarCtx,
     rebaseCtx,
+    conflictsCtx,
   ];
 
   if (watch) {

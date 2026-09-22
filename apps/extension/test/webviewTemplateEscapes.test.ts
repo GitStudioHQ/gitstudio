@@ -41,6 +41,7 @@ const ROOTS = [
   "../../../packages/host-bridge/src",
   "../../../packages/ai/src",
   "../../../packages/secret-store/src",
+  "../../../packages/merge-vscode/src",
 ].map((r) => fileURLToPath(new URL(r, import.meta.url)));
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));

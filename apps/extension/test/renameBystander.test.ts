@@ -41,10 +41,12 @@ import { fileURLToPath } from "node:url";
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
 const MANIFEST = fileURLToPath(new URL("../package.json", import.meta.url));
 
-/** The surfaces that own the `file:` document they write. */
+/**
+ * The surfaces that own the `file:` document they write. The merge editor and
+ * the diff panel moved to packages/merge-vscode (shared with Merge Studio);
+ * that package's test/guards.test.ts holds them to this same rule.
+ */
 const OWNS_ITS_DOCUMENT = new Set([
-  "merge/mergeEditorProvider.ts",
-  "merge/diffPanel.ts",
   "rebase/rebaseTodoEditor.ts",
 ]);
 

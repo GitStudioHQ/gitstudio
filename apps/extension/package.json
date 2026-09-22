@@ -290,6 +290,58 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "gitstudio.showConflicts",
+        "title": "Resolve Conflicts\u2026",
+        "category": "GitStudio",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "gitstudio.mergeWithJetBrains",
+        "title": "Merge with JetBrains IDE",
+        "category": "GitStudio",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "gitstudio.diffWithJetBrains",
+        "title": "Diff with JetBrains IDE",
+        "category": "GitStudio",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "gitstudio.openDiff",
+        "title": "Open in Embedded Diff",
+        "category": "GitStudio",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "gitstudio.merge.openDemo",
+        "title": "Open Sample Merge",
+        "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.merge.openDemoDiff",
+        "title": "Open Sample Diff",
+        "category": "GitStudio"
+      },
+      {
+        "command": "gitstudio.operation.continue",
+        "title": "Continue Operation",
+        "category": "GitStudio",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "gitstudio.operation.skip",
+        "title": "Skip This Commit",
+        "category": "GitStudio",
+        "icon": "$(debug-step-over)"
+      },
+      {
+        "command": "gitstudio.operation.abort",
+        "title": "Abort Operation",
+        "category": "GitStudio",
+        "icon": "$(stop)"
+      },
+      {
         "command": "gitstudio.stageSelectedLines",
         "title": "Stage Selected Lines",
         "category": "GitStudio",
@@ -1013,7 +1065,60 @@
         "gitstudio.merge.autoOpen": {
           "type": "boolean",
           "default": true,
-          "description": "When a file becomes conflicted (during a merge, rebase, or cherry-pick), automatically open it in the GitStudio 3-pane merge editor."
+          "markdownDescription": "When a merge, rebase, cherry-pick or stash stops on conflicts: show the **Conflicts** dashboard, open a conflicted file in the resolver (the GitStudio merge editor, or your JetBrains IDE) as soon as you switch to it, and take over VS Code's built-in merge editor tab. Off: nothing opens by itself \u2014 use **GitStudio: Resolve Conflicts\u2026**. (This used to open every conflicted file as its own tab.)"
+        },
+        "gitstudio.merge.autoApplyNonConflicting": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open the merge editor with every non-conflicting change already applied (JetBrains' \"apply non-conflicting changes\" on open). Off: they wait for you, one click each or all at once from the toolbar."
+        },
+        "gitstudio.merge.conflictResolver": {
+          "type": "string",
+          "enum": [
+            "embedded",
+            "jetbrains"
+          ],
+          "enumDescriptions": [
+            "The GitStudio 3-pane merge editor.",
+            "The merge window of your installed JetBrains IDE (falls back to the GitStudio editor when none is found)."
+          ],
+          "default": "embedded",
+          "description": "Where a conflicted file opens: the Conflicts dashboard's Merge\u2026, the Changes view and automatic routing."
+        },
+        "gitstudio.merge.diffTool": {
+          "type": "string",
+          "enum": [
+            "embedded",
+            "jetbrains"
+          ],
+          "enumDescriptions": [
+            "GitStudio's own diff.",
+            "The diff window of your installed JetBrains IDE (falls back to GitStudio's diff when none is found)."
+          ],
+          "default": "embedded",
+          "description": "Which diff GitStudio: Compare File\u2026 and Open Changes use."
+        },
+        "gitstudio.merge.preferredIde": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "webstorm",
+            "pycharm",
+            "intellij",
+            "phpstorm",
+            "goland",
+            "clion",
+            "rider",
+            "rubymine",
+            "datagrip"
+          ],
+          "default": "auto",
+          "description": "Which installed JetBrains IDE to hand merges and diffs to. Auto uses the first one found."
+        },
+        "gitstudio.merge.jetbrainsPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a JetBrains IDE launcher, used instead of detection \u2014 for example /Applications/WebStorm.app/Contents/MacOS/webstorm."
         },
         "gitstudio.commit.signoffByDefault": {
           "type": "boolean",
@@ -1355,7 +1460,12 @@
         },
         {
           "command": "gitstudio.resolveInMergeEditor",
-          "when": "gitstudio.hasRepo && resourceScheme == file",
+          "when": "config.git.enabled && !git.missing && resource in git.mergeChanges && git.activeResourceHasMergeConflicts",
+          "group": "navigation@-2"
+        },
+        {
+          "command": "gitstudio.mergeWithJetBrains",
+          "when": "config.git.enabled && !git.missing && resource in git.mergeChanges && git.activeResourceHasMergeConflicts && gitstudio.merge.ideAvailable",
           "group": "navigation@-2"
         },
         {
@@ -1369,11 +1479,28 @@
           "group": "navigation@9"
         }
       ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "gitstudio.showConflicts",
+          "when": "scmProvider == git && scmResourceGroup == merge",
+          "group": "inline"
+        },
+        {
+          "command": "gitstudio.showConflicts",
+          "when": "scmProvider == git && scmResourceGroup == merge",
+          "group": "1_modification@1"
+        }
+      ],
       "scm/resourceState/context": [
         {
           "command": "gitstudio.resolveInMergeEditor",
           "when": "scmProvider == git && scmResourceGroup == merge",
           "group": "navigation@1"
+        },
+        {
+          "command": "gitstudio.mergeWithJetBrains",
+          "when": "scmProvider == git && scmResourceGroup == merge && gitstudio.merge.ideAvailable",
+          "group": "1_modification@2"
         }
       ],
       "scm/inputBox": [
@@ -1386,7 +1513,7 @@
       "explorer/context": [
         {
           "command": "gitstudio.compare",
-          "when": "gitstudio.hasRepo && resourceScheme == file && !explorerResourceIsFolder",
+          "when": "resourceScheme == file && !explorerResourceIsFolder",
           "group": "3_compare@10"
         },
         {
@@ -1512,6 +1639,42 @@
         {
           "command": "gitstudio.compare",
           "when": "gitstudio.hasRepo && resourceScheme == file"
+        },
+        {
+          "command": "gitstudio.showConflicts",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.mergeWithJetBrains",
+          "when": "gitstudio.hasRepo && resourceScheme == file && gitstudio.merge.ideAvailable"
+        },
+        {
+          "command": "gitstudio.diffWithJetBrains",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "gitstudio.openDiff",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "gitstudio.merge.openDemo",
+          "when": "true"
+        },
+        {
+          "command": "gitstudio.merge.openDemoDiff",
+          "when": "true"
+        },
+        {
+          "command": "gitstudio.operation.continue",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.operation.skip",
+          "when": "gitstudio.hasRepo"
+        },
+        {
+          "command": "gitstudio.operation.abort",
+          "when": "gitstudio.hasRepo"
         },
         {
           "command": "gitstudio.stageSelectedLines",
@@ -2214,6 +2377,10 @@
     "workspace"
   ],
   "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "GitStudio runs git, which follows settings the repository itself can set (hooks, filters, fsmonitor), and can launch a JetBrains IDE from gitstudio.merge.jetbrainsPath. It stays off until you trust the workspace."
+    },
     "virtualWorkspaces": {
       "supported": false,
       "description": "GitStudio requires a local git repository on disk."
