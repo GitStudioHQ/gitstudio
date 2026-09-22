@@ -118,7 +118,7 @@ export interface GraphqlFailure {
 
 /** `Could not resolve to a Repository with the name 'owner/name'.` → owner/name. */
 function unresolvedName(message: string): string | undefined {
-  return /^Could not resolve to a[n]? \w+ with the name '(.+)'\.?$/.exec(message)?.[1];
+  return /^Could not resolve to an? \w+ with the name '(.+)'\.?$/.exec(message)?.[1];
 }
 
 /**
@@ -166,8 +166,8 @@ export function graphqlError(err: GraphqlFailure): Error {
  * laundering a read failure into a confident empty list. Only NOT_FOUND
  * survives — it means the object genuinely is not there, which is an answer —
  * and only when something non-null actually came back. A rate limit or a denied
- * scope means the answer is INCOMPLETE for a reason that would be indis-
- * tinguishable from "empty" downstream, so those keep throwing.
+ * scope means the answer is INCOMPLETE for a reason that would look exactly
+ * like "empty" downstream, so those keep throwing.
  */
 export function keepsPartialData(data: unknown, errors: GraphqlFailure[]): boolean {
   if (!errors.length || !errors.every((e) => e.type === "NOT_FOUND")) return false;
