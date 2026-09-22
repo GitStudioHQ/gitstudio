@@ -93,10 +93,14 @@ test("a commit further back than the loaded rows is paged toward, and lands when
     await rail.updateComplete;
     expect(loadMores() === before + 1, "reveal of an unloaded sha asks the host for the next page (" + loadMores() + " loadMore actions, was " + before + ")");
     await landPage2(false);
-    const selected = await until(() => $(".row.selected"));
-    expect(!!selected, "a row is selected once the page landed");
-    expect(selected && selected.dataset.sha === sha(300), "the selected row is the revealed commit (" + (selected && selected.dataset.sha) + ")");
+    // State first — that is the behaviour — then the paint, which needs the
+    // scroll event the window recompute rides on.
+    const landed = await until(() => rail.selectedSha === sha(300));
+    expect(landed, "the revealed commit is the selection (" + rail.selectedSha + ")");
     expect(scroller.scrollTop > 200 * ROW_HEIGHT, "the list scrolled down to it (scrollTop " + scroller.scrollTop + ")");
+    const selected = await until(() => $(".row.selected"));
+    expect(!!selected, "and its row is painted");
+    expect(selected && selected.dataset.sha === sha(300), "the selected row is the revealed commit (" + (selected && selected.dataset.sha) + ")");
     notes.scrollTop = scroller.scrollTop;
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
@@ -168,8 +172,8 @@ test("a reveal issued before the first page exists lands when the list comes up"
     cold.head = sha(0); cold.rows = page1; cold.totalColumns = 1; cold.hasMore = true; cold.status = "ready";
     await cold.updateComplete;
     await raf();
-    const selected = await until(() => cold.shadowRoot.querySelector(".row.selected"));
-    expect(selected && selected.dataset.sha === sha(40), "the queued reveal landed on the first paint (" + (selected && selected.dataset.sha) + ")");
+    const landed = await until(() => cold.selectedSha === sha(40));
+    expect(landed, "the queued reveal landed on the first paint (" + cold.selectedSha + ")");
     expect(cold.shadowRoot.querySelector(".scroller").scrollTop > 0, "and the list scrolled to it");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
@@ -182,8 +186,13 @@ test("two reveals racing one page request it once, and the later one wins", { sk
     await rail.updateComplete;
     expect(loadMores() === 1, "one page requested for two reveals (" + loadMores() + ")");
     await landPage2(false);
-    const selected = await until(() => $(".row.selected"));
-    expect(selected && selected.dataset.sha === sha(320), "the commit revealed LAST is the one selected (" + (selected && selected.dataset.sha) + ")");
+    // The subject here is WHICH reveal wins, not whether its row had painted
+    // by the time we looked: landing a row 320 deep also moves the window, and
+    // that repaint rides on a scroll event the runners deliver at their own
+    // pace. Assert the selection and the scroll — the paint is test 6's job.
+    const landed = await until(() => rail.selectedSha === sha(320));
+    expect(landed, "the commit revealed LAST is the one selected (" + rail.selectedSha + ")");
+    expect(scroller.scrollTop > 200 * ROW_HEIGHT, "and the list scrolled toward it (" + scroller.scrollTop + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
