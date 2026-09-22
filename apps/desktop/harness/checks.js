@@ -12766,7 +12766,9 @@
       c.match(text(".modal-title"), /main.*origin\/main/, "…and both refs by name");
       const hint = text(".modal-message");
       c.match(hint, /2 commits/, "the hint counts what is ours");
-      c.match(hint, /3 commits/, "…and what is theirs");
+      // 5, not the badge's 3: the question quotes what the pull's own fetch
+      // found, not the count painted from an older one.
+      c.match(hint, /5 commits/, "…and what is theirs, as of the fetch this pull just did");
       c.match(hint, /this pull only/, "…and says the choice is not permanent");
       // The thing the user was handed before, and must never be handed again.
       const shown = text("#root") + text("#toast-stack");
@@ -12823,7 +12825,98 @@
       // And the widget is usable again rather than stuck on "Pulling…".
       const again = $(".topbar-sync .sync-main");
       c.ok(!!again && !again.disabled, "the Pull button is live again");
-      c.match(text(again), /^Pull 3$/, "…showing what it did before");
+      // Nothing was merged — but the first pull FETCHED, and found the remote
+      // 5 ahead where the badge said 3. Returning bare left "Pull 3" over a
+      // branch that was now 5 behind until something else happened to refresh.
+      c.match(text(again), /^Pull 5$/, "…showing what the pull's fetch found, not the stale count");
+    },
+
+    // ── A pull that STOPS on conflicts (?diverged=1&pullconflict=1) ─────────
+    // The answer to the divergence question is a merge or a rebase, and either
+    // can stop on conflicts. From this door that used to be report #12 again:
+    // "The operation failed." for a merge, git's "Resolve all conflicts
+    // manually… git rebase --continue" hint in a red toast (and a crash report)
+    // for a rebase.
+    /** Said plainly, in a neutral tone, with the count — and the user is taken
+     *  to Changes, where the paused-operation banner is waiting. */
+    "a-pull-that-stops-on-conflicts-lands-in-changes": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const main = $(".topbar-sync .sync-main");
+      if (!main) return c.ok(false, "no sync action to press");
+      main.click();
+      await settle(700);
+      const merge = $$(".modal-choice").find((r) =>
+        /^Merge$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      if (!merge) return c.ok(false, "no Merge option to pick");
+      merge.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, "merge", "the merge was asked for");
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /stopped on conflicts in 2 files/, "the toast counts the conflicted files");
+      c.match(said, /commit the merge/, "…and names the next step");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      const shown = text("#root") + said;
+      c.ok(!/The operation failed|hint:|git rebase --continue|git add\/rm/.test(shown), "no git terminal advice, no blank failure");
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "the user is taken to Changes");
+      c.match(text(".dc-opbanner"), /merge in progress — 2 files still conflicted/, "…where the paused merge is waiting");
+    },
+    /** The Branches list's ↓ pill is the SECOND door onto the same pull. It
+     *  asks the same question — and a cancel refreshes the row it was pressed
+     *  on, not just the top bar. */
+    "the-branches-pull-pill-asks-and-refreshes-on-cancel": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull (the fixture should make it 3 behind)");
+      const rowOf = (btn) => {
+        let n = btn;
+        for (let i = 0; i < 6 && n; i++, n = n.parentElement) {
+          if (n.querySelector && n.querySelector(".ab-pill.behind")) return n;
+        }
+        return null;
+      };
+      c.match(text(rowOf(pill) && rowOf(pill).querySelector(".ab-pill.behind")), /3/, "precondition: the row says 3 behind");
+      pill.click();
+      await settle(700);
+      c.ok(!!$(".modal-card"), "the pill asks the same question the top bar does");
+      c.match(text(".modal-message"), /5 commits/, "…with the counts the pull's fetch found");
+      const cancel = $$(".modal-actions button").find((b) => /^Cancel$/.test(text(b)));
+      if (!cancel) return c.ok(false, "the question cannot be declined");
+      cancel.click();
+      await settle(1200);
+      c.eq(window.__gsPulledWith, null, "no second pull was sent");
+      c.eq(text("#toast-stack"), "", "nothing is toasted at someone who cancelled");
+      const fresh = $('button[aria-label="Pull main"]');
+      const pillCount = text(fresh && rowOf(fresh) && rowOf(fresh).querySelector(".ab-pill.behind"));
+      c.match(pillCount, /5/, `the row's behind count is the fetched one, not the stale 3 (got "${pillCount}")`);
+      c.match(text(".topbar-sync .sync-main"), /^Pull 5$/, "…and so is the top bar's");
+    },
+    /** And from the pill, a rebase that stops lands in Changes too. */
+    "the-branches-pull-pill-lands-in-changes-when-it-stops": async (f) => {
+      const c = check(f);
+      await settle(900);
+      const pill = $('button[aria-label="Pull main"]');
+      if (!pill) return c.ok(false, "main's row offers no Pull");
+      pill.click();
+      await settle(700);
+      const rebase = $$(".modal-choice").find((r) =>
+        /^Rebase$/.test(text($$(".modal-choice-label", r)[0])),
+      );
+      if (!rebase) return c.ok(false, "no Rebase option to pick");
+      rebase.click();
+      await settle(1200);
+      const toasts = $$("#toast-stack .toast");
+      const said = toasts.map((t) => text(t)).join(" | ");
+      c.match(said, /stopped on conflicts in 2 files/, "the toast counts the conflicted files");
+      c.match(said, /continue the rebase/, "…and names the rebase's next step");
+      c.ok(!toasts.some((t) => t.classList.contains("toast-error")), `nothing is painted as a failure (${said})`);
+      const routes = window.__GS_ROUTES || [];
+      c.eq((routes[routes.length - 1] || {}).view, "changes", "the user is taken to Changes");
+      c.match(text(".dc-opbanner"), /rebase in progress — 2 files still conflicted/, "…where the paused rebase is waiting");
     },
   };
 })();

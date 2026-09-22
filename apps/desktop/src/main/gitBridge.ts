@@ -24,6 +24,7 @@ import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
+import { pullStoppedMessage } from "@gitstudio/git-service/SyncOps";
 import type {
   CommitRecord,
   GitContext,
@@ -52,6 +53,7 @@ import type {
   PullActionResult,
   PullDivergence,
   PullMode,
+  PullStopInfo,
   RefInfo,
   RepoFile,
   FileHunkWire,
@@ -1746,19 +1748,41 @@ export class GitBridge {
    * "You have divergent branches and need to specify how to reconcile them",
    * followed by three `git config` lines. The mode is passed as a flag on the
    * one command; the user's config is never written.
+   *
+   * The answer to that question is a merge or a rebase, and either can STOP on
+   * conflicts — the commonest outcome a diverged branch has. That comes back as
+   * `stopped`, with the count, `changed: true` (the repository is now mid-merge
+   * or mid-rebase) and `expected: true`: the user is at a choice point, not
+   * looking at a defect. Before this, a merge that conflicted said "The
+   * operation failed." (git writes CONFLICT to stdout, and only stderr came
+   * back), and a rebase that conflicted put git's "Resolve all conflicts
+   * manually… git rebase --continue" hint in a red toast and a crash report —
+   * report #12's symptom, reached through the door built to close it.
    */
   async syncPull(opts?: { mode?: PullMode }): Promise<PullActionResult> {
     if (!safePullMode(opts?.mode)) {
+      // Only a malformed renderer request can get here: the mode comes from two
+      // buttons in one dialog. That is our defect, so it REPORTS — marking it
+      // expected would hide the one signal that a door is sending garbage.
       return {
         ok: false,
         changed: false,
-        expected: true,
         message: "That isn't a way to reconcile a pull.",
       };
     }
     let diverged: PullDivergence | undefined;
+    let stopped: PullStopInfo | undefined;
     const r = await this.staged(async (ctx) => {
       const out = await ctx.sync.pull({ mode: opts?.mode });
+      if (out.stopped) {
+        stopped = { operation: out.stopped.operation, conflicts: out.stopped.conflicted.length };
+        return {
+          ok: false,
+          changed: true,
+          expected: true,
+          message: pullStoppedMessage(out.stopped),
+        };
+      }
       if (!out.diverged) {
         return out;
       }
@@ -1773,6 +1797,7 @@ export class GitBridge {
           `${commits(behind)} there. Choose how to combine them.`,
       };
     });
+    if (stopped) return { ...r, stopped };
     return diverged ? { ...r, diverged } : r;
   }
   /**

@@ -9,6 +9,9 @@
 // crash report, because an ok:false result carrying a message is reported
 // unless it is marked expected.
 
+// FIRST: every git below — the fixtures' and the bridge's — reads a pinned,
+// empty config, never the developer's (see the last test in this file).
+import "./hermeticGit";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -17,12 +20,16 @@ import { tmpdir } from "node:os";
 import { removeTempRepo } from "./tmpRepo";
 import { RepoStore } from "../src/main/repoStore";
 import { GitBridge } from "../src/main/gitBridge";
-import { isExpectedError } from "../src/main/expectedError";
-import { pullWithChoice } from "../src/renderer/pullFlow";
+import { isExpectedError, reportableResultMessage } from "../src/main/expectedError";
+import { pullVerdict, pullWithChoice } from "../src/renderer/pullFlow";
 import type { PullActionResult, PullDivergence, PullMode } from "../src/shared/ipc";
 
-/** A clone whose branch and upstream have each gained a commit of their own. */
-function divergedRepo(): {
+/**
+ * A clone whose branch and upstream have each gained a commit of their own.
+ * With `collide`, both commits rewrite the same line of `base.txt`, so either
+ * way of combining them stops on a conflict.
+ */
+function divergedRepo(opts: { collide?: boolean } = {}): {
   work: string;
   git: (...a: string[]) => string;
   cleanup: () => void;
@@ -65,11 +72,11 @@ function divergedRepo(): {
   // Their commit, then ours. Note that nothing is FETCHED here: the clone's
   // origin/main is stale, exactly as it is for a user who has not fetched — so
   // the bridge cannot know about the divergence until its own pull does.
-  writeFileSync(`${seed}/theirs.txt`, "theirs\n");
+  writeFileSync(opts.collide ? `${seed}/base.txt` : `${seed}/theirs.txt`, "theirs\n");
   s("add", ".");
   s("commit", "-qm", "theirs");
   s("push", "-q", "origin", "main");
-  writeFileSync(`${work}/mine.txt`, "mine\n");
+  writeFileSync(opts.collide ? `${work}/base.txt` : `${work}/mine.txt`, "mine\n");
   git("add", ".");
   git("commit", "-qm", "mine");
 
@@ -171,11 +178,66 @@ test("a mode the app does not offer never reaches git", async () => {
     assert.equal(r.ok, false);
     assert.equal(r.changed, false);
     assert.equal(r.diverged, undefined, "a refused request is not a question");
-    assert.equal(r.expected, true, "…and a renderer bug is not a user's crash report");
     assert.equal(git("rev-parse", "HEAD").trim(), head, "nothing ran");
+    // The mode comes from two buttons in one dialog, so only a malformed
+    // renderer request reaches this refusal — OUR defect, not a state the user
+    // is in. It must reach the crash reporter; marking it expected would hide
+    // the one signal that a door is sending garbage.
+    assert.notEqual(r.expected, true, "a renderer bug is ours to hear about");
+    assert.equal(reportableResultMessage(r), r.message, "the IPC wrapper reports it");
   } finally {
     cleanup();
   }
+});
+
+// ── a pull that STOPS on conflicts ──────────────────────────────────────────
+// The answer to the divergence question is a merge or a rebase, and either one
+// can stop on conflicts — the commonest thing a diverged branch does. Before
+// this, the new door re-created report #12's symptom: Merge said "The
+// operation failed." (git writes CONFLICT to stdout, and only stderr came
+// back), and Rebase put git's "Resolve all conflicts manually… git rebase
+// --continue" hint in a red toast and filed a crash report.
+
+for (const mode of ["merge", "rebase"] as const) {
+  test(`a ${mode} that conflicts is a stop with a count, not a failure and not a report`, async () => {
+    const { work, git, cleanup } = divergedRepo({ collide: true });
+    try {
+      const bridge = await bridgeOn(work);
+      assert.ok((await bridge.syncPull()).diverged, "precondition: it asks");
+      const r = await bridge.syncPull({ mode });
+
+      assert.equal(r.ok, false, "the pull did not complete");
+      assert.deepEqual(r.stopped, { operation: mode, conflicts: 1 });
+      assert.equal(r.changed, true, "the repository is now mid-" + mode + " — refresh everything");
+      assert.equal(r.expected, true);
+      assert.equal(reportableResultMessage(r), undefined, "a stop is not crash-report material");
+
+      const msg = r.message ?? "";
+      assert.match(msg, /stopped on conflicts in 1 file/);
+      assert.match(msg, mode === "merge" ? /commit the merge/ : /continue the rebase/);
+      assert.doesNotMatch(msg, /The operation failed/);
+      assert.doesNotMatch(msg, /hint:|Resolve all conflicts manually|git rebase --continue|git add\/rm/);
+
+      // And the repository is exactly where the Changes view can take over.
+      const marker = mode === "merge" ? "MERGE_HEAD" : "REBASE_HEAD";
+      assert.ok(git("rev-parse", "--verify", "--quiet", marker).trim(), `${marker} is set`);
+    } finally {
+      cleanup();
+    }
+  });
+}
+
+// The pull fixtures above depend on git's configuration: SyncOps.pull honours a
+// user's own pull.rebase / pull.ff, which on a developer machine with
+// `pull.rebase=true` turned "it asks" into "it rebased" and failed three of
+// this file's cases for a reason unrelated to the code under test.
+test("the fixtures run against a pinned, empty git config — never the developer's", () => {
+  assert.equal(process.env.GIT_CONFIG_NOSYSTEM, "1", "system config is off");
+  const global = execFileSync("git", ["config", "--global", "--list"], {
+    cwd: tmpdir(),
+    encoding: "utf8",
+  }).trim();
+  assert.equal(global, "", `the global config this process sees must be empty, got:\n${global}`);
 });
 
 // ── the renderer's half, DOM-free ───────────────────────────────────────────
@@ -239,6 +301,46 @@ test("cancelling runs nothing more and is not a failure", async () => {
   // The caller must read `cancelled` and return: toasting `result.message`
   // would show "choose how to combine them" to someone who just chose not to.
   assert.equal(out.result.ok, false);
+});
+
+// ── the verdict both doors settle by ────────────────────────────────────────
+// The top bar and the ↓ pill act on ONE verdict, so a case one of them handles
+// is a case the other handles too.
+
+test("a pull that stopped on conflicts is its own verdict — not a failure", () => {
+  const stopped: PullActionResult = {
+    ok: false,
+    changed: true,
+    expected: true,
+    message: "The pull stopped on conflicts in 2 files. Resolve them, then commit the merge.",
+    stopped: { operation: "merge", conflicts: 2 },
+  };
+  const v = pullVerdict({ result: stopped, cancelled: false, mode: "merge" }, "Pull failed.");
+  assert.equal(v.kind, "stopped", "never the 'failed' arm, which toasts red");
+  assert.match(v.kind === "stopped" ? v.message : "", /2 files/);
+});
+
+test("cancelling is its own verdict, so the door can refresh what the fetch moved", () => {
+  const v = pullVerdict(
+    { result: { ok: false, changed: false, expected: true, diverged: DIVERGED }, cancelled: true },
+    "Pull failed.",
+  );
+  assert.deepEqual(v, { kind: "cancelled" });
+});
+
+test("a real failure keeps its tone, and a pull names what it did", () => {
+  const failed = pullVerdict(
+    { result: { ok: false, changed: false, message: "fatal: unable to access" }, cancelled: false },
+    "Pull failed.",
+  );
+  assert.deepEqual(failed, { kind: "failed", message: "fatal: unable to access", tone: "error" });
+  const quiet = pullVerdict(
+    { result: { ok: false, changed: false, expected: true, message: "No repository open." }, cancelled: false },
+    "Pull failed.",
+  );
+  assert.equal(quiet.kind === "failed" ? quiet.tone : "", "info");
+  const pulled = pullVerdict({ result: { ok: true, changed: true }, cancelled: false, mode: "rebase" }, "x");
+  assert.deepEqual(pulled, { kind: "pulled", message: "Pulled and rebased your commits on top." });
 });
 
 // One retry by construction. A mode-ful pull cannot come back `diverged` — the

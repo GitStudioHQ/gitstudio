@@ -98,3 +98,44 @@ export function pulledMessage(mode: PullMode | undefined): string {
   if (mode === "rebase") return "Pulled and rebased your commits on top.";
   return "Pulled successfully.";
 }
+
+/**
+ * What a door does with a pull's outcome — decided once, here, for both doors
+ * (the top bar's Pull and the Branches list's ↓ pill), so neither can grow a
+ * case the other lacks.
+ */
+export type PullVerdict =
+  /**
+   * Asked, and dismissed. Nothing was merged — but the first, mode-less pull
+   * already FETCHED, so the remote-tracking ref has moved and every ahead /
+   * behind count on screen is stale. The door refreshes them, exactly as a
+   * Fetch would; toasting would read as an error the user caused.
+   */
+  | { kind: "cancelled" }
+  /**
+   * The merge or rebase stopped on conflicts. Not a failure — the pull did
+   * what was asked up to the point where a person has to choose. Said plainly,
+   * with the count, in a neutral tone, and then the door takes the user to
+   * Changes, where the paused-operation banner and the merge editor live.
+   */
+  | { kind: "stopped"; message: string }
+  | { kind: "failed"; message: string; tone: "info" | "error" }
+  | { kind: "pulled"; message: string };
+
+export function pullVerdict(out: PullOutcome, fallback: string): PullVerdict {
+  if (out.cancelled) return { kind: "cancelled" };
+  const r = out.result;
+  if (r.stopped) {
+    const n = r.stopped.conflicts;
+    return {
+      kind: "stopped",
+      message:
+        r.message ||
+        `The pull stopped on conflicts in ${n === 1 ? "1 file" : `${n} files`}. Resolve them in Changes.`,
+    };
+  }
+  if (!r.ok) {
+    return { kind: "failed", message: r.message || fallback, tone: r.expected ? "info" : "error" };
+  }
+  return { kind: "pulled", message: pulledMessage(out.mode) };
+}

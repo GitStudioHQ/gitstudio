@@ -584,6 +584,10 @@ const CASES = [
   ["a-diverged-pull-asks-instead-of-quoting-git", "code", { extra: "diverged=1" }],
   ["picking-how-to-reconcile-actually-pulls-that-way", "code", { extra: "diverged=1" }],
   ["cancelling-the-question-pulls-nothing-and-reports-nothing", "code", { extra: "diverged=1" }],
+  // …and the answer to that question stopping on conflicts, from both doors.
+  ["a-pull-that-stops-on-conflicts-lands-in-changes", "code", { extra: "diverged=1&pullconflict=1" }],
+  ["the-branches-pull-pill-asks-and-refreshes-on-cancel", "branches", { extra: "diverged=1" }],
+  ["the-branches-pull-pill-lands-in-changes-when-it-stops", "branches", { extra: "diverged=1&pullconflict=1" }],
 ];
 
 function run(scene, checkId, opts = {}) {

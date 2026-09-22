@@ -98,6 +98,32 @@ const REVIEWED: Record<string, string> = {
     "same: the clone succeeded, so failing to open it is ours.",
 };
 
+/**
+ * The other side of the line: refusals that only OUR OWN code can cause.
+ *
+ * Each of these answers a request no control in the app can build — a mode
+ * that is not one of the dialog's two buttons, a ref or path the renderer
+ * failed to validate, a task or client id that is not in our own table. When
+ * one fires, a door is sending garbage, and the crash report is the only way we
+ * would ever hear about it. So they are the one place `expected` must NEVER go,
+ * however ordinary the sentence reads: "That isn't a way to reconcile a pull."
+ * was marked expected when it was written, which would have hidden exactly the
+ * renderer bug it exists to catch.
+ *
+ * Key = the message as the census reads it; value = why only a defect reaches it.
+ */
+const PAYLOAD_REFUSALS: Record<string, string> = {
+  "That isn't a way to reconcile a pull.":
+    "sync:pull's mode comes from the divergence dialog's two buttons; anything else is a malformed request.",
+  "That value isn't a valid git reference.":
+    "every ref the renderer sends is one it listed; a dash-led or empty one is a request built wrong.",
+  "That isn't a usable file path.":
+    "every path the renderer sends is one git listed; an empty or NUL-bearing one is a request built wrong.",
+  "Unknown task: ${task}": "ai:task names come from our own AiTaskName union.",
+  "Unknown local CLI.": "CLI presets come from our own catalog.",
+  "Unknown client: ${req.client}.": "MCP client ids come from our own client list.",
+};
+
 async function tsFiles(dir: string): Promise<string[]> {
   const out: string[] = [];
   for (const e of await readdir(dir, { withFileTypes: true })) {
@@ -503,6 +529,33 @@ test("the reviewed list has not gone stale", async () => {
   const messages = new Set((await allSites()).map((s) => plain(s.message)));
   for (const text of Object.keys(REVIEWED)) {
     assert.ok(messages.has(text), `REVIEWED lists a message that no longer exists: ${text}`);
+  }
+});
+
+test("a refusal only a malformed request can produce is never marked expected", async () => {
+  const sites = await allSites();
+  const hidden = sites
+    .filter((s) => s.expected && PAYLOAD_REFUSALS[plain(s.message)])
+    .map((s) => `${s.file}:${s.line}  ${plain(s.message)}`);
+  assert.deepEqual(
+    hidden,
+    [],
+    "these refusals can only be reached by a request our own renderer built wrong, so they must " +
+      "reach the crash reporter — remove `expected` from them:\n" +
+      hidden.join("\n"),
+  );
+  // And the list is about real sites, so it cannot pass by describing nothing.
+  const messages = new Set(sites.map((s) => plain(s.message)));
+  for (const text of Object.keys(PAYLOAD_REFUSALS)) {
+    assert.ok(messages.has(text), `PAYLOAD_REFUSALS lists a message that no longer exists: ${text}`);
+  }
+  // The two lists answer opposite questions; a message on both is a mistake.
+  for (const text of Object.keys(PAYLOAD_REFUSALS)) {
+    assert.ok(!REVIEWED[text], `${text} is on both lists`);
+    assert.ok(
+      !GUARD_CLASSES.some((g) => g.re.test(text)),
+      `${text} reads like a condition to the census's own phrase list — reword it or move it`,
+    );
   }
 });
 

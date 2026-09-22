@@ -393,6 +393,23 @@
   /** Serial for the PTY ids `terminal:create` hands out. */
   let ptySeq = 0;
 
+  /**
+   * What ?diverged=1's pulls have done so far — read by `sync:pull`,
+   * `sync:status`, `branches:list` and `git:opState`, which all describe the
+   * same repository and must move together.
+   */
+  const pullState = {
+    /** The first pull fetched: the remote is further ahead than the badge said. */
+    fetched: false,
+    /** A pull with a mode completed. */
+    done: false,
+    /** A pull with a mode stopped on conflicts (?pullconflict=1). */
+    stopped: null,
+    behind() {
+      return this.fetched ? 5 : 3;
+    },
+  };
+
   const fixtures = {
     // ?norepo=1 → NO repository open, which is the welcome screen: the first
     // thing anyone sees, the only screen shown after closing a repo, and
@@ -408,13 +425,9 @@
     // `github:status` is DYNAMIC below, not here: a fixture that never changes
     // cannot express signing out, which is why nothing could see that the
     // top-bar chip kept naming the account you had just left.
-    // ?diverged=1 → the branch and its upstream have BOTH moved, which is the
-    // one sync state the widget could not be driven into: with behind: 0 the
-    // top-bar action is Push, so Pull — and the question it now asks — was
-    // unreachable from every scene. See `sync:pull` in `dynamic`.
-    "sync:status": params.get("diverged")
-      ? { branch: "main", upstream: "origin/main", ahead: 2, behind: 3, noUpstream: false }
-      : { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
+    // `sync:status` is DYNAMIC below: with ?diverged=1 the pull itself moves
+    // it (its fetch finds more of the remote), and a value captured here could
+    // not show a badge going stale.
     // Every KIND of ref, because the Branches view has one screen per kind and
     // the fixture used to hold local heads ONLY — so the remote, tag and stash
     // row shapes were never once rendered, screenshotted or checked.
@@ -1073,20 +1086,79 @@
     // a `diverged` fact to ask about. Naming a mode succeeds, and the mode that
     // was asked for is readable as `window.__gsPulledWith` so a check can prove
     // the pick reached the REQUEST, not merely that the dialog closed.
+    //
+    // Every git pull FETCHES first, so the first call moves the remote: the
+    // badge was painted from an older fetch (3 behind) and the pull finds 5.
+    // That gap is the only way a check can tell a badge refreshed after the
+    // question was dismissed from one still showing the count before it.
+    //
+    // ?pullconflict=1 → the merge or rebase the user then picks STOPS on
+    // conflicts, answered the way the bridge answers it: ok:false, changed,
+    // expected, and a `stopped` fact with the count. From then on `git:opState`
+    // reports the paused operation, as the real repository would.
     "sync:pull": (opts) => {
       const mode = (opts && opts.mode) || null;
       window.__gsPulledWith = mode;
-      if (!params.get("diverged") || mode) return { ok: true, changed: true };
+      if (!params.get("diverged")) return { ok: true, changed: true };
+      pullState.fetched = true;
+      if (mode && params.get("pullconflict")) {
+        pullState.stopped = { operation: mode, conflicts: 2 };
+        return {
+          ok: false,
+          changed: true,
+          expected: true,
+          message:
+            "The pull stopped on conflicts in 2 files. Resolve them, then " +
+            (mode === "rebase" ? "continue the rebase" : "commit the merge") +
+            " — or abort to go back to where you were.",
+          stopped: pullState.stopped,
+        };
+      }
+      if (mode) {
+        pullState.done = true;
+        return { ok: true, changed: true };
+      }
       return {
         ok: false,
         changed: false,
         expected: true,
         message:
-          "'main' and origin/main have both moved on — 2 commits here, 3 commits there. " +
+          `'main' and origin/main have both moved on — 2 commits here, ${pullState.behind()} commits there. ` +
           "Choose how to combine them.",
-        diverged: { branch: "main", upstream: "origin/main", ahead: 2, behind: 3 },
+        diverged: { branch: "main", upstream: "origin/main", ahead: 2, behind: pullState.behind() },
       };
     },
+    // ?diverged=1 → the branch and its upstream have BOTH moved, which is the
+    // one sync state the widget could not be driven into: with behind: 0 the
+    // top-bar action is Push, so Pull — and the question it now asks — was
+    // unreachable from every scene.
+    "sync:status": () =>
+      params.get("diverged")
+        ? {
+            branch: "main",
+            upstream: "origin/main",
+            ahead: pullState.done ? 3 : 2,
+            behind: pullState.done ? 0 : pullState.behind(),
+            noUpstream: false,
+          }
+        : { branch: "main", upstream: "origin/main", ahead: 2, behind: 0, noUpstream: false },
+    // The paused operation a stopped pull leaves behind, so landing in Changes
+    // shows the banner the real app would; otherwise the ?op= fixture.
+    "git:opState": () =>
+      pullState.stopped
+        ? {
+            merging: pullState.stopped.operation === "merge",
+            rebasing: pullState.stopped.operation === "rebase",
+            amApplying: false,
+            cherryPicking: false,
+            reverting: false,
+            conflicts: pullState.stopped.conflicts,
+            kind: pullState.stopped.operation,
+            canContinue: false,
+            canSkip: false,
+            nothingToCommit: false,
+          }
+        : fixtures["git:opState"],
     "appearance:dockIcon": () => undefined,
     // A REAL gap: the run page's Artifacts section read undefined and rendered
     // whatever that produced, unchecked, for as long as this harness has run.
@@ -1356,7 +1428,20 @@
     // The folders the Repositories view groups by. The clone folder leads and
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
-    "branches:list": () => branches,
+    // ?diverged=1 → main's row carries the same counts as the top bar, and
+    // moves with them when a pull's fetch finds more (see `sync:pull`).
+    "branches:list": () =>
+      params.get("diverged")
+        ? branches.map((b) =>
+            b.current
+              ? {
+                  ...b,
+                  ahead: pullState.done ? 3 : 2,
+                  behind: pullState.done ? 0 : pullState.behind(),
+                }
+              : b,
+          )
+        : branches,
     // The per-branch log walk's answer. feat/line-staging is the interesting
     // one: created by one person, carried by three — a number-only "last
     // commit by" could never say that.

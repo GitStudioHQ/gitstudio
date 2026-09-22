@@ -83,7 +83,7 @@ import { setFocusScope, clearFocusReturn } from "./focusReturn";
 import { closePeek } from "./peek";
 import type { GitPeekHost } from "./peeks";
 import { CommitContextMenu, askForCommitAction, commitActionItem } from "./contextMenu";
-import { askPullMode, pullWithChoice, pulledMessage } from "./pullFlow";
+import { askPullMode, pullWithChoice, pullVerdict, type PullVerdict } from "./pullFlow";
 import type { RowRef } from "./refMenuItems";
 import { wireListNav, commitList, ghHeader, searchField, segmented, secRow, facetBar } from "./views/common";
 import { resolveRelative, wireProseNav } from "./proseNav";
@@ -130,7 +130,6 @@ import type {
   WorktreeInfo,
   SyncStatus,
   CommitActionResult,
-  PullMode,
 } from "../shared/ipc";
 
 
@@ -3817,13 +3816,12 @@ class App {
             cancelled: false,
             mode: undefined,
           };
-      if (out.cancelled) return; // asked and dismissed — nothing ran
-      const r = out.result;
-      if (!r.ok) {
-        toast(r.message || `Couldn't pull ${b.name}.`, r.expected ? "info" : "error");
+      const v = pullVerdict(out, `Couldn't pull ${b.name}.`);
+      if (v.kind !== "pulled") {
+        await this.settleUnpulled(v);
         return;
       }
-      toast(b.current ? pulledMessage(out.mode) : `Fast-forwarded ${b.name}.`, "success");
+      toast(b.current ? v.message : `Fast-forwarded ${b.name}.`, "success");
       bust();
       await this.updateSync();
       if (b.current) await this.refreshAll();
@@ -8003,6 +8001,47 @@ class App {
     this.renderSyncWidget?.(this.syncStatus);
   }
 
+  /**
+   * Every pull outcome that is NOT "it pulled", settled the same way at both
+   * doors — the top bar's Pull and the Branches list's ↓ pill. The caller has
+   * nothing left to do afterwards.
+   */
+  private async settleUnpulled(v: Exclude<PullVerdict, { kind: "pulled" }>): Promise<void> {
+    switch (v.kind) {
+      case "failed":
+        toast(v.message, v.tone);
+        return;
+      case "cancelled":
+        // Nothing was merged, but the first pull already FETCHED: the remote-
+        // tracking ref moved, so the badge and the row counts describe a remote
+        // that is no longer there. Settle it the way Fetch does. Returning bare
+        // left "Pull 3" on screen over a branch that was now 5 behind.
+        bust();
+        await this.updateSync();
+        await this.refreshAll();
+        await this.refreshBranchesSoft();
+        return;
+      case "stopped":
+        // A pull that stopped on conflicts has done its part; the rest is the
+        // user's, and it happens in Changes — the paused-operation banner
+        // (Abort / Continue) and the merge editor are there. Neutral, not red:
+        // nothing failed.
+        toast(v.message, "info");
+        await this.landOnConflicts();
+        return;
+    }
+  }
+
+  /** Take the user to Changes after an operation stopped on conflicts, with
+   *  every other view marked stale (the repository is mid-merge now). */
+  private async landOnConflicts(): Promise<void> {
+    bust();
+    this.invalidateKeptViews();
+    await this.refreshRefs();
+    await this.updateSync();
+    this.routeView("changes", true);
+  }
+
   private async doSync(action: "fetch" | "pull" | "push" | "publish"): Promise<void> {
     if (this.syncing) return; // lock the trigger against double-invocation
     this.syncing = true;
@@ -8026,32 +8065,30 @@ class App {
     }
     try {
       // Pull goes through the shared flow: a diverged branch comes back as a
-      // question (merge / rebase / cancel), never as git's config advice.
-      let pulledWith: PullMode | undefined;
-      let r: CommitActionResult;
+      // question (merge / rebase / cancel), never as git's config advice — and
+      // its answer is settled by the same verdict the Branches ↓ pill uses.
       if (action === "pull") {
         const out = await pullWithChoice({
           pull: (o) => host.invoke("sync:pull", o),
           ask: askPullMode,
         });
-        if (out.cancelled) return; // asked and dismissed — nothing ran
-        r = out.result;
-        pulledWith = out.mode;
+        const v = pullVerdict(out, "Pull failed.");
+        if (v.kind !== "pulled") {
+          await this.settleUnpulled(v);
+          return;
+        }
+        toast(v.message, "success");
       } else {
-        r =
+        const r: CommitActionResult =
           action === "fetch"
             ? await host.invoke("sync:fetch", { prune: this.pruneOnFetchPref })
             : action === "push"
               ? await host.invoke("sync:push", undefined)
               : await host.invoke("sync:push", { setUpstream: true });
-      }
-      if (!r.ok) {
-        toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
-        return;
-      }
-      if (action === "pull") {
-        toast(pulledMessage(pulledWith), "success");
-      } else {
+        if (!r.ok) {
+          toast(r.message ?? `${action} failed.`, r.expected ? "info" : "error");
+          return;
+        }
         const verb =
           action === "fetch" ? "Fetched" : action === "publish" ? "Published branch" : "Pushed";
         toast(`${verb} successfully.`, "success");
@@ -8957,6 +8994,17 @@ class App {
     }
   }
 
+  /** Drop every kept-alive view but a parked Assistant, and mark a parked graph
+   *  dirty — see refreshAll for why each half is what it is. */
+  private invalidateKeptViews(): void {
+    const parkedChat = this.viewCache.get("assistant");
+    this.viewCache.clear();
+    if (parkedChat) this.viewCache.set("assistant", parkedChat);
+    // A parked (kept-alive) graph is now stale too — mark it before ANY early
+    // return in refreshAll, so returning to Commits always re-syncs in place.
+    if (this.graph && this.currentView !== "graph") this.graphDirty = true;
+  }
+
   private async refreshAll(): Promise<void> {
     if (!this.currentRepo) {
       return;
@@ -8975,12 +9023,7 @@ class App {
     // go and read an issue, and the agent's own commit — or any file the build
     // touched — deleted the transcript and the Stop button out from under a run
     // that kept going. Held by identity, so nothing is refetched or rebuilt.
-    const parkedChat = this.viewCache.get("assistant");
-    this.viewCache.clear();
-    if (parkedChat) this.viewCache.set("assistant", parkedChat);
-    // A parked (kept-alive) graph is now stale too — mark it before ANY early
-    // return below, so returning to Commits always re-syncs in place.
-    if (this.graph && this.currentView !== "graph") this.graphDirty = true;
+    this.invalidateKeptViews();
     await this.refreshRefs();
     // Settings shows NOTHING derived from the repo's disk state — and this runs
     // on every window FOCUS. Rebuilding it here destroyed the GitHub device-flow

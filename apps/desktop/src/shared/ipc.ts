@@ -428,9 +428,22 @@ export interface PullDivergence {
   behind: number;
 }
 
-/** `sync:pull`'s answer — a CommitActionResult that can ask a question back. */
+/**
+ * A pull whose merge or rebase STOPPED on conflicts — an outcome, not a
+ * failure. The repository is now mid-merge or mid-rebase, which is exactly what
+ * the Changes view's paused-operation banner and the merge editor are for.
+ */
+export interface PullStopInfo {
+  operation: "merge" | "rebase";
+  /** How many files were left conflicted. Always at least one. */
+  conflicts: number;
+}
+
+/** `sync:pull`'s answer — a CommitActionResult that can ask a question back,
+ *  or say that it stopped for the user to resolve conflicts. */
 export interface PullActionResult extends CommitActionResult {
   diverged?: PullDivergence;
+  stopped?: PullStopInfo;
 }
 
 /** A branch with remote-tracking context, for the Branches manager. */
