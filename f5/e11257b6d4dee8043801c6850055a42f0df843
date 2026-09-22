@@ -1,0 +1,29 @@
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_9e01bfed687238 122-134
+  s_26f5e669d3043c::t_3ea57a8bcc887d 1740-1747
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_83ab84ffad515c 398-403
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_e6441c204419b4 243-246
+apps/desktop/test/gitBridgeArgGuards.test.ts
+  s_26f5e669d3043c::t_84c1638d532b6d 102,106-113
+  s_26f5e669d3043c::t_66e10795c4581f 83-87
+apps/desktop/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_09541c20280e90 160-180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f5e11257b6d4dee8043801c6850055a42f0df843",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
