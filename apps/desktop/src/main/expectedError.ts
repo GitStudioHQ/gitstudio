@@ -33,3 +33,24 @@ export function isExpectedError(err: unknown): boolean {
       (err as { expected?: unknown }).expected === true)
   );
 }
+
+/**
+ * The message an IPC result should be crash-reported with, or undefined when it
+ * should not be reported at all.
+ *
+ * A handler that RETURNS `{ok:false, message}` is the desktop analog of the
+ * extension's showGitError, and reporting it is how we hear about git commands
+ * that failed for a reason worth knowing about. But most `ok:false` results are
+ * not failures at all — no repository open, nothing staged, a feature this
+ * build does not carry — and those say so with `expected`.
+ *
+ * Lives here rather than inline in main.ts's wrapper so the decision is
+ * testable without an Electron app around it. The rule itself is unchanged.
+ */
+export function reportableResultMessage(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  if ((result as { ok?: unknown }).ok !== false) return undefined;
+  if (isExpectedError(result)) return undefined;
+  const message = (result as { message?: unknown }).message;
+  return typeof message === "string" && message.trim() ? message : undefined;
+}

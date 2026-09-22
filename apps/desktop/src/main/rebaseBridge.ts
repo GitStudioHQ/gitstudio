@@ -52,7 +52,9 @@ export class RebaseBridge {
     const root = this.root();
     const ctx = this.repos.getContext();
     if (!root || !ctx) {
-      return { ...empty, message: "Open a repository first." };
+      // Not a defect — the workspace can be asked for a plan before a repository
+      // is open (see main/expectedError.ts).
+      return { ...empty, expected: true, message: "Open a repository first." };
     }
 
     const inProgress = await isRebaseInProgress(root).catch(() => false);

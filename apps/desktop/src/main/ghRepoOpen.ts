@@ -51,6 +51,8 @@ export interface GhOpenResult {
   /** Machine-readable failure mode — the renderer branches on THIS, never on
    *  message text (the old /already exists/i match was a fragile seam). */
   code?: "collision" | "clone-failed" | "open-failed" | "bad-name";
+  /** See CommitActionResult.expected — a condition, not a defect to report. */
+  expected?: boolean;
 }
 
 export async function openGitHubRepo(
@@ -66,7 +68,12 @@ export async function openGitHubRepo(
 ): Promise<GhOpenResult> {
   const [owner, repo] = fullName.split("/", 2);
   if (!owner || !repo) {
-    return { ok: false, code: "bad-name", message: "That doesn't look like an owner/repo name." };
+    return {
+      ok: false,
+      code: "bad-name",
+      expected: true,
+      message: "That doesn't look like an owner/repo name.",
+    };
   }
 
   // 1. An existing clone wins — recents first (where the user actually works),
@@ -98,9 +105,14 @@ export async function openGitHubRepo(
   let name = nameOverride?.trim() || repo;
   if (!nameOverride && existsSync(join(parent, name))) name = `${owner}-${repo}`;
   if (existsSync(join(parent, name))) {
+    // The destination is taken: the sheet offers another folder name and the
+    // user picks one. Not a defect (see main/expectedError.ts). The two
+    // "couldn't be opened" answers below are, and still report — we found or
+    // made a repository and then failed to open it.
     return {
       ok: false,
       code: "collision",
+      expected: true,
       message: `${join(parent, name)} already exists but isn't this repository — pick another destination or folder name.`,
     };
   }
@@ -109,7 +121,15 @@ export async function openGitHubRepo(
     onProgress,
   );
   if (!result.ok || !result.root) {
-    return { ok: false, code: "clone-failed", message: result.message || "The clone failed." };
+    // startClone has already decided whether ITS failure was a condition (a bad
+    // URL, a taken folder) or a real one; carry that verdict rather than
+    // re-filing every clone refusal as a crash.
+    return {
+      ok: false,
+      code: "clone-failed",
+      ...(result.expected ? { expected: true } : {}),
+      message: result.message || "The clone failed.",
+    };
   }
   const info = await repos.open(result.root);
   return info

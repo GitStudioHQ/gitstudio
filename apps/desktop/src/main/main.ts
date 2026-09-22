@@ -44,7 +44,7 @@ import { initAutoUpdate } from "./autoUpdate";
 import { editorsView, openEditor, revealRoot, withIcons } from "./editors";
 import type { UpdateManager } from "./autoUpdate";
 import { ErrorReporter } from "./errorReporter";
-import { isExpectedError } from "./expectedError";
+import { isExpectedError, reportableResultMessage } from "./expectedError";
 import { RepoWatcher } from "./repoWatcher";
 import * as issuesApi from "./github/issues";
 import * as myWorkApi from "./github/myWork";
@@ -565,15 +565,17 @@ function handle<C extends IpcChannel>(
         const result = await fn(payload as IpcRequest<C>, event);
         // A handled failure carrying a message (e.g. a non-zero git command) is
         // the desktop analog of the extension's showGitError — report it too.
-        if (result && typeof result === "object" && (result as { ok?: unknown }).ok === false) {
-          const message = (result as { message?: unknown }).message;
-          // `expected` is the returned-result twin of ExpectedError: some
-          // handlers report "not connected to GitHub" by RETURNING ok:false
-          // rather than throwing, and this branch was reporting exactly the
-          // message the throwing path had just been taught to skip.
-          if (typeof message === "string" && message.trim() && !isExpectedError(result)) {
-            ErrorReporter.current?.captureGitError(actionLabel(channel), message);
-          }
+        //
+        // `expected` is the returned-result twin of ExpectedError: some handlers
+        // report "not connected to GitHub" by RETURNING ok:false rather than
+        // throwing, and this branch was reporting exactly the message the
+        // throwing path had just been taught to skip. The rule lives in
+        // expectedError.ts so it can be tested on its own; test/
+        // expectedConditions.test.ts is the census that keeps the call sites
+        // honest about which of their refusals are conditions.
+        const failure = reportableResultMessage(result);
+        if (failure) {
+          ErrorReporter.current?.captureGitError(actionLabel(channel), failure);
         }
         return result;
       } catch (err) {
@@ -674,8 +676,13 @@ function registerIpc(): void {
   });
   handle("repos:untrash", async ({ from, to }) => {
     try {
-      if (await exists(to)) return { ok: false, message: "Something is there again — not overwriting it." };
-      if (!(await exists(from))) return { ok: false, message: "It is no longer in the Trash." };
+      // Both of these describe the Trash having moved on since the undo toast
+      // was shown — a condition, not a defect, so neither is crash-reported
+      // (see main/expectedError.ts). A rename that THROWS still is.
+      if (await exists(to))
+        return { ok: false, expected: true, message: "Something is there again — not overwriting it." };
+      if (!(await exists(from)))
+        return { ok: false, expected: true, message: "It is no longer in the Trash." };
       await rename(from, to);
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : "Couldn't put it back." };
@@ -694,7 +701,11 @@ function registerIpc(): void {
       // present means the folder is not empty and the answer is no.
       const JUNK = new Set([".DS_Store"]);
       if (entries.some((e) => !JUNK.has(e))) {
-        return { ok: false, message: "That folder isn't empty, so GitStudio won't delete it." };
+        return {
+          ok: false,
+          expected: true,
+          message: "That folder isn't empty, so GitStudio won't delete it.",
+        };
       }
       for (const junk of entries) await rm(join(dir, junk), { force: true });
       await rmdir(dir);
@@ -866,7 +877,7 @@ function registerIpc(): void {
   handle("editors:refresh", () => editorsNow(true));
   handle("editors:open", async ({ id, root }) => {
     const target = root ?? repos.current()?.root;
-    if (!target) return { ok: false, message: "Open a repository first." };
+    if (!target) return { ok: false, expected: true, message: "Open a repository first." };
     return openEditor(id, target, appSettings.editorPrefs());
   });
   handle("editors:setShown", async ({ id, shown }) => {
@@ -906,11 +917,14 @@ function registerIpc(): void {
       ? updates.check(true)
       : { status: "disabled" as const, current: app.getVersion(), message: "Updater not ready." },
   );
+  // `updates` is undefined only before boot finishes wiring it — the user has
+  // pressed a button the window should not have shown yet. Not a defect worth a
+  // crash report (see main/expectedError.ts).
   handle("update:download", async () =>
-    updates ? updates.download() : { ok: false, message: "Updater not ready." },
+    updates ? updates.download() : { ok: false, expected: true, message: "Updater not ready." },
   );
   handle("update:install", async () =>
-    updates ? updates.install() : { ok: false, message: "Updater not ready." },
+    updates ? updates.install() : { ok: false, expected: true, message: "Updater not ready." },
   );
   handle("ssh:keys", () => bridge.sshKeys());
   handle("pr:list", (req) => github.prList(req?.state ?? "open"));
