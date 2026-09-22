@@ -94,6 +94,32 @@ export { TagOps } from "./TagOps";
 export type { TagOpResult, CreateTagOptions } from "./TagOps";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
+export { OperationProvider, noneOperationView } from "./OperationProvider";
+export type {
+  OperationReadOptions,
+  OperationDetection,
+  OperationControlOptions,
+  OperationContinueOptions,
+  OperationSource,
+  OperationControl,
+} from "./OperationProvider";
+export { ConflictOps } from "./ConflictOps";
+export type {
+  ConflictReadOpts,
+  ConflictFileFacts,
+  MergeSides,
+  ReadSidesOptions,
+  ConflictOpResult,
+} from "./ConflictOps";
+export { locateJetBrainsIde } from "./jetbrains/locator";
+export type { LocateJetBrainsOptions } from "./jetbrains/locator";
+export { launchJetBrainsMerge, launchJetBrainsDiff } from "./jetbrains/launcher";
+export type {
+  JetBrainsMergeRequest,
+  JetBrainsDiffRequest,
+  JetBrainsDiffSide,
+  JetBrainsLaunch,
+} from "./jetbrains/launcher";
 export { createGitToolHost } from "./GitToolHost";
 export { NodeGitAdapter } from "./NodeGitAdapter";
 export type { NodeGitAdapterOptions } from "./NodeGitAdapter";

@@ -15,28 +15,29 @@ import {
 } from "./icons";
 import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment";
 import { RibbonOverlay } from "./ribbons";
-import { splitLines, type WhitespaceMode } from "@gitstudio/engine/lineDiff";
+import { splitLines } from "@gitstudio/engine/lineDiff";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
+import {
+  emptyCategoryCounts,
+  type AcceptMode,
+  type EolMismatchInfo,
+  type MergeCategory,
+  type MergeCountsView,
+  type MergeRenderInit,
+  type MergeRenderOptions,
+  type MergeViewApi,
+} from "./mergeViewApi";
+
+// The public types live in the frozen API module; re-exported so existing
+// imports from "./mergeView" keep working.
+export type { AcceptMode, MergeCountsView, MergeRenderOptions } from "./mergeViewApi";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
-
-/**
- * How an accept writes into the result span: "auto" replaces on the first
- * accept and appends once another side has already been applied (IntelliJ's
- * behavior when both sides of a conflict are taken); "append" forces the
- * append; "replace" forces the overwrite (bulk actions).
- */
-type AcceptMode = "auto" | "replace" | "append";
 
 /** Pixel height of the ✕/≫ action row drawn in the gutter strips. */
 // Must fit inside one code line WITH clearance (line height is typically
 // 18-19px) so the icon row never touches the band's frame lines.
 const ACTION_ROW_HEIGHT = 16;
-
-export interface MergeRenderOptions {
-  whitespace: WhitespaceMode;
-  showInner: boolean;
-}
 
 /**
  * Per-block runtime state. Each side of a block is processed (applied or
@@ -63,12 +64,6 @@ interface MergeSnapshot {
   blockState: Map<number, BlockState>;
   /** Live result spans per block id (tracker decoration ids churn). */
   trackerSpans: Map<number, LineSpan>;
-}
-
-export interface MergeCountsView {
-  total: number;
-  pending: number;
-  conflictsPending: number;
 }
 
 const SHARED_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
@@ -103,8 +98,12 @@ const SIDE_PANE_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
  * The three-pane JetBrains-style merge surface and its interactions: Left
  * (ours, read-only), Result (editable, seeded with base), Right (theirs,
  * read-only), with gutter ribbons + accept/ignore controls.
+ *
+ * S0 contract seed: implements the frozen MergeViewApi. The members marked
+ * "S0 stub" are placeholders P1 (change colours + merge-view correctness)
+ * replaces; everything else is unchanged behaviour.
  */
-export class MergeView {
+export class MergeView implements MergeViewApi {
   private editors: Editor[] = [];
   private resizeObserver?: ResizeObserver;
   private themeObserver?: MutationObserver;
@@ -159,10 +158,13 @@ export class MergeView {
   public onLargeFile?: (large: boolean) => void;
   /** Notified whenever the undo/redo stacks change (toolbar state). */
   public onHistoryChanged?: () => void;
+  /** S0 stub: never fired yet — P1 fires it after every (re)build. */
+  public onEolMismatch?: (info: EolMismatchInfo | undefined) => void;
 
   constructor(private readonly container: HTMLElement) {}
 
-  public render(payload: MergeInitPayload): void {
+  // S0 stub: `init` (the auto-apply baseline) is accepted and ignored — P1.
+  public render(payload: MergeInitPayload, _init?: MergeRenderInit): void {
     this.payload = payload;
     this.clearHistory(); // new inputs — old snapshots reference dead blocks
     this.build(payload);
@@ -183,6 +185,12 @@ export class MergeView {
       this.build(this.payload);
     }
   }
+
+  /** S0 stub: a no-op until P1 makes it re-measure the three editors. */
+  public layout(): void {}
+
+  /** S0 stub: mounts nothing until P1 builds the legend (mergeLegend.ts). */
+  public attachLegend(_slot: HTMLElement): void {}
 
   private build(payload: MergeInitPayload): void {
     this.dispose();
@@ -667,12 +675,15 @@ export class MergeView {
 
   // --- change navigation (F7 / Shift+F7) ---
 
-  /** Reveals the next PENDING block below the result caret; wraps around. */
-  public goToNextChange(): void {
+  /**
+   * Reveals the next PENDING block below the result caret; wraps around.
+   * S0 stub: `category` is accepted and ignored — P1 filters by it.
+   */
+  public goToNextChange(_category?: MergeCategory): void {
     this.navigate(1);
   }
 
-  public goToPrevChange(): void {
+  public goToPrevChange(_category?: MergeCategory): void {
     this.navigate(-1);
   }
 
@@ -925,6 +936,10 @@ export class MergeView {
       total: this.model.blocks.length,
       pending,
       conflictsPending,
+      // S0 stub: zeroed until P1 classifies blocks by category.
+      byCategory: emptyCategoryCounts(),
+      resolvableConflictsPending: 0,
+      hasProgress: false,
     });
   }
 

@@ -1,6 +1,11 @@
 // Messaging contract shared between the extension host and the webview.
 // IMPORTANT: this module must stay free of any `vscode` import so the webview
 // bundle (browser context) can import it too.
+//
+// The merge-parity additions (marked "S0") are FROZEN with conflictsProtocol.ts:
+// a change goes through the orchestrator.
+
+import type { ConflictShape, OperationView, SideRole } from "./conflictsProtocol";
 
 export type ConflictType =
   | "content" // both sides modified; real common ancestor (the common case)
@@ -32,6 +37,30 @@ export interface MergeInitPayload {
    * hand this merge to, or absent when none is installed.
    */
   jetbrainsName?: string;
+  /**
+   * S0. The operation this conflict belongs to. When present, the host has
+   * ALREADY mapped the contents through it: `ours` holds the Yours (LEFT)
+   * content = stage `op.yours.stage`, `theirs` holds the Theirs (RIGHT)
+   * content = stage `op.theirs.stage`, and `oursLabel` / `theirsLabel` are
+   * `op.yours.paneTitle` / `op.theirs.paneTitle`. The webview never swaps.
+   * Absent = a host that knows no operation (legacy labels, no op strip, no
+   * Continue / "Cancel <operation>").
+   */
+  op?: OperationView;
+  /**
+   * S0. The host's `autoApplyNonConflicting` setting (default false): open with
+   * every non-conflicting change applied as the view's baseline (no undo entry;
+   * Reset returns to it). `MergeViewApi.render`'s init option wins when given.
+   */
+  autoApplyNonConflicting?: boolean;
+  /**
+   * S0. What kind of conflict this file is. Absent = "text". Anything other
+   * than "text" / "added-both" shows the shared no-text panel (Accept Yours /
+   * Accept Theirs / Delete the file) instead of the three panes.
+   */
+  shape?: ConflictShape;
+  /** S0. modify-delete / added-one-side: the ROLE that has no version of the file. */
+  missingRole?: SideRole;
 }
 
 export interface DiffInitPayload {
@@ -60,7 +89,25 @@ export interface StageBlockRef {
 /** Messages sent from the extension host to the webview. */
 export type HostMessage =
   | ({ type: "init" } & MergeInitPayload)
-  | { type: "applied"; staged: boolean }
+  /**
+   * The result was written (Apply), or a whole side was taken (takeRole /
+   * deleteFile). `staged` is true only when `git add` / `git rm` exited 0;
+   * S0: `message` says why not (or any other plain-words warning).
+   */
+  | { type: "applied"; staged: boolean; message?: string }
+  /**
+   * S0. The operation was re-read — after every applied / takeRole / Continue.
+   * The shell shows the primary "Continue <op>" (op.verbs.continue) once
+   * `remainingConflicts === 0 && op.canContinue`, with the op.willDrop confirm.
+   */
+  | { type: "opChanged"; op: OperationView; remainingConflicts: number }
+  /**
+   * S0. What a continueOperation or cancel{mode:"abort"} did, for the shell's
+   * outcome line (OperationOutcome mapped: ok → done, stopped → stopped, else
+   * failed with git's reason). When a Continue stops on a commit that
+   * conflicts in THIS file again, the host follows with a fresh `init`.
+   */
+  | { type: "outcome"; kind: "done" | "stopped" | "failed"; text: string }
   | ({ type: "diffInit" } & DiffInitPayload)
   // Opaque state the webview persists via setState() so a diff panel can be
   // restored after a window reload. The host owns its shape.
@@ -77,10 +124,32 @@ export type WebviewMessage =
   | { type: "ready" }
   | { type: "resultChanged"; text: string }
   | { type: "apply"; text: string }
-  // Close the merge editor without applying (the dialog's Cancel button).
-  | { type: "cancel" }
+  /**
+   * Close the merge editor without applying (the dialog's Cancel button).
+   * S0 `mode`: "exit" (the default when absent) closes the viewer and keeps
+   * the conflict in the file — the host's exit guard stops it re-opening;
+   * "abort" cancels the whole operation (OperationProvider.abort), posted only
+   * after the shell's own inline confirm — hosts never ask again.
+   */
+  | { type: "cancel"; mode?: "exit" | "abort" }
   // Hand this conflict to the real JetBrains merge window and close the panel.
   | { type: "openInJetBrains" }
+  /**
+   * S0. The shell's "Continue <op>" after Apply. `confirmDrop: true` only after
+   * the user confirmed op.willDrop. Host answers `outcome` then `opChanged`.
+   */
+  | { type: "continueOperation"; confirmDrop?: boolean }
+  /**
+   * S0. Resolve the whole file as that role (the no-text panel's Accept Yours /
+   * Accept Theirs; for the role in `missingRole` this deletes the file).
+   * Host answers `applied` then `opChanged`.
+   */
+  | { type: "takeRole"; role: SideRole }
+  /**
+   * S0. "Delete the file" for a both-deleted (DD) conflict, the one shape with
+   * no role to take. Host answers `applied` then `opChanged`.
+   */
+  | { type: "deleteFile" }
   | { type: "diffChanged"; text: string }
   /** The user toggled a staging tick; the host performs the git write. */
   | { type: "toggleTick"; block: StageBlockRef; staged: boolean };

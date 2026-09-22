@@ -14,6 +14,8 @@ import { BranchOps } from "./BranchOps";
 import { RemoteOps } from "./RemoteOps";
 import { SyncOps } from "./SyncOps";
 import { TagOps } from "./TagOps";
+import { OperationProvider } from "./OperationProvider";
+import { ConflictOps } from "./ConflictOps";
 
 export interface GitContextOptions {
   /** Absolute path to the repo root. */
@@ -49,6 +51,10 @@ export class GitContext {
   readonly remotes: RemoteOps;
   readonly sync: SyncOps;
   readonly tags: TagOps;
+  /** What git is in the middle of: named (view), detected (detect) and driven (continue/skip/abort). */
+  readonly operation: OperationProvider;
+  /** Whole-file conflict actions + the dashboard snapshot, in role terms. */
+  readonly conflictOps: ConflictOps;
 
   constructor(opts: GitContextOptions) {
     this.root = opts.root;
@@ -73,6 +79,19 @@ export class GitContext {
     this.remotes = new RemoteOps(this.process);
     this.sync = new SyncOps(this.process);
     this.tags = new TagOps(this.process);
+    // Construction runs no git. The rebase runner spawns git itself, so it is
+    // told which binary to use and where to report each command (the same
+    // hook the process pool reports to); a host can still override per call.
+    this.operation = new OperationProvider(this.process, opts.root, {
+      gitPath: opts.gitPath,
+      onRun: opts.onRun,
+    });
+    this.conflictOps = new ConflictOps(
+      this.process,
+      opts.root,
+      this.conflict,
+      this.operation,
+    );
   }
 
   dispose(): void {

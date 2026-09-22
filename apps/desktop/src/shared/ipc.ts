@@ -12,8 +12,26 @@ import type {
   GraphRefFilter,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
+import type {
+  ConflictShape,
+  ConflictsSnapshot,
+  JetBrainsIdeInfo,
+  MergeSettings,
+  OperationOutcome,
+  OperationView,
+  SideRole,
+} from "@gitstudio/host-bridge/conflictsProtocol";
 
 export type { RowStat, CommitDetailsPayload, GraphRefEntry, GraphRefFilter };
+export type {
+  ConflictShape,
+  ConflictsSnapshot,
+  JetBrainsIdeInfo,
+  MergeSettings,
+  OperationOutcome,
+  OperationView,
+  SideRole,
+};
 
 /** A repo the user has opened, surfaced in the "recent" list + sidebar header. */
 export interface RepoInfo {
@@ -264,6 +282,20 @@ export interface ConflictModel {
    * that has nothing to take, which `conflictTakeSide` then refuses.
    */
   bothDeleted?: boolean;
+  /**
+   * Merge parity (S0 contract). The operation this conflict belongs to. When
+   * present, the main process has ALREADY mapped the texts through it:
+   * `ours` = the Yours (LEFT) content = stage `op.yours.stage`, `theirs` = the
+   * Theirs (RIGHT) content, and `oursLabel` / `theirsLabel` are
+   * `op.yours.paneTitle` / `op.theirs.paneTitle`. `missingSide` stays in
+   * STAGE terms for `conflict:takeSide`; new code reads `missingRole` and
+   * resolves through `conflict:takeRole`.
+   */
+  op?: OperationView;
+  /** Merge parity (S0). What kind of conflict this is; absent = legacy flags above. */
+  shape?: ConflictShape;
+  /** Merge parity (S0). modify-delete / added-one-side: the ROLE with no version of the file. */
+  missingRole?: SideRole;
 }
 
 /** A git action requested from the graph context menu. */
@@ -2179,6 +2211,33 @@ export interface IpcChannels {
   "am:abort": [void, CommitActionResult];
   "am:skip": [void, CommitActionResult];
   "am:continue": [void, CommitActionResult];
+  // ── Merge parity (S0 contract; FROZEN shapes — handlers land with P2) ──
+  //    Role-based, operation-aware conflict + operation channels, shared in
+  //    meaning with the VS Code host package (ConflictOps / OperationProvider).
+  //    The kind-specific channels above keep working for existing callers.
+  /** The conflicts dashboard's git half: op + this episode's rows. */
+  "conflict:state": [void, ConflictsSnapshot];
+  /** Resolve a whole file as a ROLE (a role with no version of the file deletes it). */
+  "conflict:takeRole": [{ path: string; role: SideRole }, CommitActionResult];
+  /** Hold-to-undo / undo of an Apply: re-create the conflict (`checkout -m`). */
+  "conflict:restore": [{ path: string }, CommitActionResult];
+  /** Resolve a both-deleted (DD) file by deleting it. */
+  "conflict:delete": [{ path: string }, CommitActionResult];
+  /** Continue whatever is stopped; `confirmDrop` only after the user confirmed `op.willDrop`. */
+  "op:continue": [{ confirmDrop?: boolean }, OperationOutcome];
+  "op:skip": [void, OperationOutcome];
+  "op:abort": [void, OperationOutcome];
+  /** The JetBrains IDE the merge settings resolve to, or undefined when none is installed. */
+  "jetbrains:detect": [void, JetBrainsIdeInfo | undefined];
+  /** Open the file's conflict in the IDE's merge window (LOCAL = Yours, REMOTE = Theirs). */
+  "jetbrains:merge": [{ path: string }, CommitActionResult];
+  /** Open HEAD vs the working copy of the file in the IDE's diff window. */
+  "jetbrains:diff": [{ path: string }, CommitActionResult];
+  /** After the IDE merge: stage the file and remove the launch's temp files. */
+  "jetbrains:markResolved": [{ path: string }, CommitActionResult];
+  /** Settings ▸ Merge (persisted by the main process, which also spawns the IDE). */
+  "merge:settings": [void, MergeSettings];
+  "merge:setSettings": [Partial<MergeSettings>, MergeSettings];
   // ── Tag creation (the Branches view's "Create tag here…") ──
   "tag:create": [{ name: string; ref?: string; message?: string }, CommitActionResult];
   /** `git tag -d` — LOCAL only. A tag already pushed survives on the remote,

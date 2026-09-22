@@ -7,6 +7,7 @@ import "./styles/diff.css";
 import { configureMonacoWorkers } from "./monacoEnv";
 import { vscodeApi } from "./vscodeApi";
 import { MergeView, type MergeCountsView } from "./mergeView";
+import { emptyMergeCounts } from "./mergeViewApi";
 import { DiffView } from "./diffView";
 import type {
   DiffInitPayload,
@@ -293,7 +294,7 @@ function startMerge(root: HTMLElement, first: MergeInitPayload & { type: "init" 
 
   const view = new MergeView(content);
 
-  let counts: MergeCountsView = { total: 0, pending: 0, conflictsPending: 0 };
+  let counts: MergeCountsView = emptyMergeCounts();
   view.onCountsChanged = (next) => {
     counts = next;
     updateMergeToolbar(counter, counts);
