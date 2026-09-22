@@ -127,26 +127,39 @@ function unresolvedName(message: string): string | undefined {
  * rate limiter, a permission the user has not granted, and NOT_FOUND.
  *
  * NOT_FOUND is the interesting one, because the REST policy above deliberately
- * REPORTS a 404. The two are not the same answer. A REST 404 could always be a
- * path we built wrong, which is the bug a crash report is best at catching; a
- * GraphQL NOT_FOUND names the object it could not resolve, and those names come
- * from the user's world — the owner/name behind a git remote, a project id kept
- * from an earlier read — never from a static string we typed. A repository that
- * was renamed, deleted, or moved into an org this account cannot see is a state
- * a user is allowed to be in. Reports #14 and #17 were exactly that, and they
- * also read as GitHub jargon; the wording is replaced with something that says
- * what happened and what it might mean.
+ * REPORTS a 404. Which of the two a GraphQL NOT_FOUND is depends on WHAT it
+ * could not resolve, and GitHub says so in the sentence:
+ *
+ *   "Could not resolve to a Repository with the name 'owner/name'."
+ *       — an object named by the USER's world: the owner/name behind a git
+ *         remote. Renamed, deleted, or moved into an org this account cannot
+ *         see are all states a user is allowed to be in. Reports #14 and #17
+ *         were exactly this, and they also read as GitHub jargon, so the
+ *         wording is replaced with something that says what it might mean.
+ *
+ *   "Could not resolve to a node with the global id of '…'."
+ *       — an id WE put in the request. A project item id, a review thread id,
+ *         a pull request id: every one of them travels from a read, through
+ *         the renderer, into a mutation payload, and building that payload
+ *         wrong is this app's most-repeated defect (issues #12/#19, and three
+ *         more found in one sweep). That is precisely the bug a crash report
+ *         is best at catching, and it is the same judgement the REST 404 rule
+ *         above makes about a path we built. Reported, as it was before the
+ *         #14/#17 fix — which never set out to change this case.
+ *
+ * So: expected only when the message NAMES the object. Anything else keeps
+ * GitHub's own wording and keeps reporting.
  */
 export function graphqlError(err: GraphqlFailure): Error {
   const message = err.message || "GitHub's GraphQL API returned an error.";
   if (err.type === "NOT_FOUND") {
     const name = unresolvedName(message);
-    return new ExpectedError(
-      name
-        ? `GitHub couldn't find ${name}. It may have been renamed or deleted, ` +
-          `or this account may not have access to it.`
-        : message,
-    );
+    return name
+      ? new ExpectedError(
+          `GitHub couldn't find ${name}. It may have been renamed or deleted, ` +
+            `or this account may not have access to it.`,
+        )
+      : new Error(message);
   }
   return err.type === "RATE_LIMITED" || err.type === "FORBIDDEN"
     ? new ExpectedError(message)
@@ -168,6 +181,14 @@ export function graphqlError(err: GraphqlFailure): Error {
  * and only when something non-null actually came back. A rate limit or a denied
  * scope means the answer is INCOMPLETE for a reason that would look exactly
  * like "empty" downstream, so those keep throwing.
+ *
+ * Note the asymmetry with `graphqlError`, which only treats a NOT_FOUND as a
+ * condition when it NAMES its object. This rule is looser on purpose: keeping
+ * partial data is about not discarding what resolved, not about classifying
+ * what did not, and `opts.onPartial` hands the caller every error it kept. It
+ * is also unreachable today — every query in this app has a single root, so a
+ * NOT_FOUND always nulls the whole answer and this returns false. If a
+ * multi-root query is ever added, pass `onPartial` and decide there.
  */
 export function keepsPartialData(data: unknown, errors: GraphqlFailure[]): boolean {
   if (!errors.length || !errors.every((e) => e.type === "NOT_FOUND")) return false;

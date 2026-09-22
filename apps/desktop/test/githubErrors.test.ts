@@ -203,13 +203,26 @@ test("a repository GraphQL cannot resolve is a state, and says so in English", (
   assert.equal(e.toString(), `Error: ${e.message}`, "indistinguishable on the wire");
 });
 
-test("a NOT_FOUND with no name in it still reaches the user unchanged", () => {
+test("a NOT_FOUND about an id WE sent is still reported", () => {
+  // The other half of the #14/#17 fix, and the one it must not cost us.
+  //
+  // A GraphQL node id is not a name from the user's world — it is a payload
+  // this app built: a project item id, a review thread id, a pull request id,
+  // each carried from a read through the renderer into a mutation. Building
+  // that payload wrong is this codebase's most-repeated defect (issues #12/#19,
+  // plus three more found in a single sweep), and it is exactly the bug the
+  // 404 rule above is deliberately kept loud for. Marking it `expected` would
+  // have turned every one of those into a blue toast and no report.
   const e = graphqlError({
-    message: "Could not resolve to a node with the global id of 'X'.",
+    message: "Could not resolve to a node with the global id of 'PRRT_kwDOAbc'.",
     type: "NOT_FOUND",
   });
-  assert.equal(isExpectedError(e), true);
-  assert.equal(e.message, "Could not resolve to a node with the global id of 'X'.");
+  assert.equal(isExpectedError(e), false, "a request we built wrong must reach the reporter");
+  assert.equal(
+    e.message,
+    "Could not resolve to a node with the global id of 'PRRT_kwDOAbc'.",
+    "and the user reads GitHub's own sentence, unchanged",
+  );
 });
 
 test("partial GraphQL data is kept only when keeping it cannot lie", () => {
