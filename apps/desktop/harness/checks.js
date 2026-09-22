@@ -1567,6 +1567,86 @@
       );
       c.match(text(".explore-repo-content .list-empty-title"), /empty/i, "it says so plainly");
     },
+    /**
+     * The second door on to an empty repository: Go to file.
+     *
+     * `ghrepo:paths` is the git-trees endpoint, which answers an empty
+     * repository with a 409 "Git Repository is empty." The list already said
+     * so — but the note under it still carried the sentence as an ERROR, red
+     * and announced as an alert, over a repository with nothing wrong in it.
+     */
+    "go-to-file-on-an-empty-repository-is-empty-not-broken": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const btn = $$(".mini-btn").find((b) => /^Go to file$/.test(text(b)));
+      if (!btn) return c.ok(false, "the page offers Go to file");
+      const before = window.__gsSent(/^ghrepo:paths$/).length;
+      btn.click();
+      await settle(900);
+      c.ok(window.__gsSent(/^ghrepo:paths$/).length > before, "the file list was actually asked for");
+      c.ok(!!$(".gotofile-card"), "the picker opened");
+      c.match(text(".gotofile-list .list-empty-title"), /empty/i, "the list says the repository is empty");
+      c.ok(!$(".gotofile-list .list-error"), "…not that listing it failed");
+      const note = $(".gotofile-note");
+      c.ok(!!note && !note.classList.contains("is-error"), "the note under it is not painted as an error");
+      c.ok(!!note && note.getAttribute("role") !== "alert", "…nor announced as one");
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+    },
+    /**
+     * The ref switcher on an empty repository. GitHub's `/branches` answers
+     * an empty LIST for one (200, `[]`) — only the content endpoints refuse —
+     * so the fixture answers exactly that. It used to THROW here too, which
+     * meant this menu could only ever be exercised as a failure toast.
+     */
+    "the-ref-switcher-on-an-empty-repository-says-there-are-no-branches": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const btn = $(".explore-ref-btn");
+      if (!btn) return c.ok(false, "the page offers a ref switcher");
+      const before = window.__gsSent(/^ghrepo:branches$/).length;
+      btn.click();
+      await settle(700);
+      c.ok(window.__gsSent(/^ghrepo:branches$/).length > before, "the branches were actually asked for");
+      c.eq(
+        $$("#toast-stack .toast-error").map((t) => text(t)).join(" | "),
+        "",
+        "no failure is toasted for a repository that simply has no branches",
+      );
+      const items = $$(".dropdown [role='menuitem'], .dropdown .dropdown-item");
+      const said = items.map((i) => text(i)).join(" | ");
+      c.ok(items.length > 0, "a menu opened rather than nothing at all");
+      c.match(said, /no branches yet/i, `it says there are no branches (${said})`);
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await settle(200);
+    },
+    /**
+     * The third door: the peek browser (an org repository's Details ▸ Browse
+     * files). It reads the same contents endpoint, so on an empty repository it
+     * must say the same thing the page does — not "Couldn't read …".
+     */
+    "browsing-an-empty-repository-in-the-peek-is-empty-not-broken": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const more = $(".gh-org-repo .row-more");
+      if (!more) return c.ok(false, "an org repository row offers its menu");
+      more.click();
+      await settle(300);
+      const details = $$(".dropdown-item, .dropdown [role='menuitem']").find((i) => /^Details/.test(text(i)));
+      if (!details) return c.ok(false, "the menu offers Details");
+      details.click();
+      await settle(700);
+      const browse = $$(".peek-act").find((b) => /Browse files/.test(text(b)));
+      if (!browse) return c.ok(false, "the repository peek offers Browse files");
+      const before = window.__gsSent(/^ghrepo:tree$/).length;
+      browse.click();
+      await settle(900);
+      c.ok(window.__gsSent(/^ghrepo:tree$/).length > before, "the listing was actually asked for");
+      const body = text(".peek-body");
+      c.match(body, /is empty — nothing has been pushed/, "the peek says the repository is empty");
+      c.ok(!/couldn't read|failed/i.test(body), `…and does not blame itself: ${JSON.stringify(body.slice(0, 120))}`);
+      c.ok(!$(".peek-body .peek-empty .codicon-warning"), "no warning glyph over an empty repository");
+    },
 
     // ── Organizations ────────────────────────────────────────────────────────
     "orgs-cards-not-clipped": (f) => {

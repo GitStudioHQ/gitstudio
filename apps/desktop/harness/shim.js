@@ -1313,11 +1313,18 @@
         { sha: "18c9d0e7f6a5b4c3d2e1", shortSha: "18c9d0e", subject: "engine: hunk splitting groundwork", author: "Mira Holt", login: "mira-holt", date: ISO(3) },
         { sha: "c3d4e5f60718293a4b5c", shortSha: "c3d4e5f", subject: `actions: stream job logs (${ref ?? "default"})`, author: "Sora Ohta", date: ISO(8) },
       ]),
-    "ghrepo:branches": ifEmpty(() => [
-      { name: "main", sha: "9f8e7d6", protected: true },
-      { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
-      { name: "fix/log-stream", sha: "b2c3d4e", protected: false },
-    ]),
+    // NOT ifEmpty: GitHub's `/branches` answers an empty repository with an
+    // empty LIST (200, `[]`) — only the content endpoints refuse. Throwing here
+    // made the ref switcher reachable only as a failure toast, so a check of
+    // it could pass over the throw instead of the state it was written for.
+    "ghrepo:branches": () =>
+      emptyRepo
+        ? []
+        : [
+            { name: "main", sha: "9f8e7d6", protected: true },
+            { name: "redesign/issues-detail", sha: "a1b2c3d", protected: false },
+            { name: "fix/log-stream", sha: "b2c3d4e", protected: false },
+          ],
     "ghrepo:paths": ifEmpty(() => ({
       paths: [
         "README.md",

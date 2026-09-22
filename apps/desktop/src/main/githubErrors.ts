@@ -39,7 +39,7 @@
  * treats it differently.
  */
 
-import { EMPTY_REPO_MESSAGE, isEmptyRepoMessage } from "../shared/githubStates";
+import { EMPTY_REPO_MESSAGE, isEmptyRepoResponse } from "../shared/githubStates";
 import { ExpectedError, isExpectedError } from "./expectedError";
 
 /**
@@ -66,11 +66,12 @@ export async function githubHttpError(res: Response): Promise<Error> {
   }
   // An empty repository, before any status branch can disagree about it.
   // GitHub answers 404 here from the contents API and 409 from `/commits` and
-  // `/git/trees`, so only the sentence is stable — and under the 404 rule this
-  // read as "a path we built wrong" and was crash-reported (#13) for somebody
-  // browsing a repository they had just created. Normalised to one wording so
-  // the renderer can recognise it across IPC, where an error is its message.
-  if (isEmptyRepoMessage(detail)) {
+  // `/git/trees`, so the sentence is what identifies it — within those two
+  // statuses only (see isEmptyRepoResponse). Under the 404 rule this read as
+  // "a path we built wrong" and was crash-reported (#13) for somebody browsing
+  // a repository they had just created. Normalised to one wording so the
+  // renderer can recognise it across IPC, where an error is its message.
+  if (isEmptyRepoResponse(res.status, detail)) {
     return new ExpectedError(EMPTY_REPO_MESSAGE);
   }
   // Our own wording, not GitHub's "Bad credentials" — which reads as an

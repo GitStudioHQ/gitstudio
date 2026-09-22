@@ -17,11 +17,32 @@
 export const EMPTY_REPO_MESSAGE = "This repository is empty.";
 
 /**
- * True when a GitHub error message says the repository has no commits.
+ * GitHub's own answer for a repository with no commits — and only that answer:
+ * a 404 (the contents API) or a 409 (`/commits`, `/git/trees`) whose whole
+ * message is "This repository is empty." or "Git Repository is empty.".
  *
- * Matches GitHub's own wordings as well as our normalised one, because this is
- * also what the RAW body is tested with before it is normalised.
+ * Classified by the sentence because the status differs per endpoint, but NOT
+ * by the sentence alone. Matching "repository is empty" anywhere in any status
+ * would normalise a 422 validation failure or a 5xx page that happened to
+ * mention one into the benign empty state — hiding a request we built wrong
+ * behind "nothing has been pushed yet".
+ */
+export function isEmptyRepoResponse(status: number, message: string | undefined | null): boolean {
+  return (
+    (status === 404 || status === 409) &&
+    typeof message === "string" &&
+    /^(?:this|git) repository is empty\.?$/i.test(message.trim())
+  );
+}
+
+/**
+ * True when an error the RENDERER received is the main process's normalised
+ * empty-repository answer.
+ *
+ * Exactly that one sentence. Anything else that merely mentions an empty
+ * repository crossed the IPC boundary un-normalised precisely because
+ * `isEmptyRepoResponse` decided it was not one.
  */
 export function isEmptyRepoMessage(message: string | undefined | null): boolean {
-  return typeof message === "string" && /\brepository is empty\b/i.test(message);
+  return typeof message === "string" && message.trim() === EMPTY_REPO_MESSAGE;
 }

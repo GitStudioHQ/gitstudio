@@ -206,6 +206,17 @@ const CASES = [
     "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio",
     { extra: "emptyrepo=1" },
   ],
+  [
+    "go-to-file-on-an-empty-repository-is-empty-not-broken",
+    "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio",
+    { extra: "emptyrepo=1" },
+  ],
+  [
+    "the-ref-switcher-on-an-empty-repository-says-there-are-no-branches",
+    "explore~type:git~key:Enter~text:GitStudioHQ/gitstudio",
+    { extra: "emptyrepo=1" },
+  ],
+  ["browsing-an-empty-repository-in-the-peek-is-empty-not-broken", "orgs", { extra: "emptyrepo=1" }],
   ["orgs-cards-not-clipped", "orgs"],
   ["orgs-header-order", "orgs"],
   ["actions-segment-does-not-slide", "actions"],

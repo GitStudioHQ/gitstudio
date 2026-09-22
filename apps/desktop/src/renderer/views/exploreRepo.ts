@@ -749,7 +749,24 @@ async function openRefMenu(
   try {
     branches = await gget("ghrepo:branches", fullName, 120_000);
   } catch (e) {
-    toast(cleanErr(e) || "Couldn't list branches.", "error");
+    // An empty repository has no branches; that is the answer, not a failure.
+    if (!isEmptyRepoMessage(cleanErr(e))) {
+      toast(cleanErr(e) || "Couldn't list branches.", "error");
+      return;
+    }
+  }
+  // GitHub lists an empty repository's branches as `[]`. An empty menu reads
+  // as a control that did nothing; say what is true instead.
+  if (!branches.length) {
+    openMenu(anchor, [
+      {
+        label: "No branches yet",
+        sub: `nothing has been pushed to ${fullName}`,
+        icon: "info",
+        disabled: true,
+        onClick: () => {},
+      },
+    ]);
     return;
   }
   // The default branch is one of these branches, not a separate thing. Listing
@@ -902,9 +919,15 @@ async function openGoToFile(
       if (!card.isConnected) return;
       state = "failed";
       failure = cleanErr(e) || "GitHub couldn't list this repository's files.";
-      note.textContent = failure;
-      note.setAttribute("role", "alert");
-      note.classList.add("is-error");
+      if (isEmptyRepoMessage(failure)) {
+        // A state, said once in the list above — not an error to paint red and
+        // announce as an alert under it.
+        note.textContent = "0 files";
+      } else {
+        note.textContent = failure;
+        note.setAttribute("role", "alert");
+        note.classList.add("is-error");
+      }
     }
     render();
     input.focus();
