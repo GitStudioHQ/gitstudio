@@ -1,0 +1,24 @@
+apps/desktop/test/mcpServerShipping.test.ts
+  s_26f5e669d3043c::t_56b128ce83788f 153,161
+  s_26f5e669d3043c::t_3f3ba88f5ff165 32
+  s_26f5e669d3043c::t_f94f30e93b33fa 53-71
+  s_26f5e669d3043c::t_d0b626e0e1c1b8 118
+  s_26f5e669d3043c::t_b0b09c4049b0ba 132
+  s_26f5e669d3043c::t_35408e3cd0a32a 205-206,208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ec29f7773c429d3642eb749a53f3afd1d0d34887",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
