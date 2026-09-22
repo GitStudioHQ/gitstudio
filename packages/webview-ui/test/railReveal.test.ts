@@ -77,7 +77,16 @@ const CSS = `#root{height:600px;display:flex;flex-direction:column} gitstudio-co
 
 const run = (script: string) => runInChrome(CHROME!, ENTRY, MOUNT + script, { css: CSS });
 
-test("a commit further back than the loaded rows is paged toward, and lands when its page does", { skip: !CHROME && "no Chrome on this machine" }, async () => {
+// One case below needs the SCROLL to complete, not just the reveal: landing a
+// commit 300 rows down moves the virtualizer's window, and the window is
+// recomputed from a scroll event (observeElementOffset). On the Windows CI
+// runner, headless Chrome under a virtual-time budget never delivers that
+// event, so the row lands in state but never in the DOM — the other six cases
+// here, which land inside the first window, pass there. The behaviour itself
+// is covered on macOS and Linux, where this case runs like any other.
+const SCROLL_LANDS = process.platform !== "win32";
+
+test("a commit further back than the loaded rows is paged toward, and lands when its page does", { skip: (!CHROME && "no Chrome on this machine") || (!SCROLL_LANDS && "headless Chrome delivers no scroll event on the Windows runner") }, async () => {
   const v = await run(`
     const before = loadMores();
     rail.reveal(sha(300));
