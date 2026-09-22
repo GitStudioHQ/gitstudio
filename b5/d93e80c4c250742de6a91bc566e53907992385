@@ -1,0 +1,28 @@
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_601ae5e3d3a492 578-581
+packages/git-service/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_f6e47fdcf7316a 125-126,129-137
+apps/desktop/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_9866c714a8fb1f 1-242
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_241f8f4033ed61 1054-1074
+  s_26f5e669d3043c::t_fa1acc0dc5804e 411-417
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_7d15749eea3b3c 12716-12799
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b5d93e80c4c250742de6a91bc566e53907992385",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
