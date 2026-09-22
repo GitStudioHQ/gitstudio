@@ -10,7 +10,11 @@
 // yet") were both of the second kind, and both arrived as crashes.
 //
 // `expected: true` on the result is how a handler says "this is a condition,
-// not a defect". It changes nothing the renderer sees.
+// not a defect". The renderer shows the same `message` for the same refusal;
+// what it also does, at twenty-odd call sites, is paint that message neutral
+// rather than red — `r.expected ? "info" : "error"`. That is the same
+// judgement said to the user, and the two tests at the bottom of this file pin
+// the line: `expected` may retone a message, and must never swallow one.
 //
 // This is a CENSUS over the main-process source, for the same reason
 // destructiveGuards and gitBridgeArgGuards are: the mechanism is present and
@@ -334,6 +338,62 @@ test("the reviewed list has not gone stale", async () => {
   for (const text of Object.keys(REVIEWED)) {
     assert.ok(messages.has(text), `REVIEWED lists a message that no longer exists: ${text}`);
   }
+});
+
+// ── What `expected` is allowed to change in the renderer ─────────────────────
+
+/**
+ * `expected` is not only the reporter's flag: twenty-odd renderer call sites
+ * read it to pick a toast's TONE (`r.expected ? "info" : "error"`), which is
+ * the same judgement said to the user — a state is not painted red. Marking a
+ * refusal therefore turns its toast neutral, and that is the contract working.
+ *
+ * What it must NEVER do is make the app silent. One call site uses `expected`
+ * to SUPPRESS the toast entirely, and it is reviewed: a cancelled file picker
+ * has nothing to say. A second one, added without noticing, would mean a
+ * handler could be marked here and a user would be told nothing at all about a
+ * command that did not run.
+ */
+const RENDERER = fileURLToPath(new URL("../src/renderer", import.meta.url));
+
+const SUPPRESSING_SITES: Record<string, string> = {
+  "views/releases.ts":
+    "release:uploadAssets marks a cancelled native file picker expected, and a " +
+    "cancelled picker is a non-event — there is nothing to tell the user.",
+};
+
+test("`expected` may retone a message, never swallow it", async () => {
+  const found: string[] = [];
+  for (const file of await tsFiles(RENDERER)) {
+    const rel = relative(RENDERER, file);
+    const lines = (await readFile(file, "utf8")).split("\n");
+    lines.forEach((line, i) => {
+      if (!/!\s*\w+\.expected\b/.test(line)) return;
+      if (SUPPRESSING_SITES[rel]) return;
+      found.push(`${rel}:${i + 1}  ${line.trim().slice(0, 90)}`);
+    });
+  }
+  assert.deepEqual(
+    found,
+    [],
+    "this call site uses `expected` to decide whether to say anything at all. A main-process " +
+      "handler marked `expected` to keep it out of the crash reporter would then refuse a command " +
+      "in total silence. Show the message and let `expected` pick the tone, or add the file to " +
+      "SUPPRESSING_SITES with the reason silence is right:\n" +
+      found.join("\n"),
+  );
+});
+
+test("the renderer still reads `expected` for tone", async () => {
+  // The other direction: if these reads disappear, marking a condition would
+  // start painting it red again and this file's REVIEWED reasoning goes stale.
+  let tone = 0;
+  for (const file of await tsFiles(RENDERER)) {
+    for (const line of (await readFile(file, "utf8")).split("\n")) {
+      if (/\.expected \? "info" : "error"/.test(line)) tone++;
+    }
+  }
+  assert.ok(tone >= 15, `only ${tone} renderer sites tone a toast by \`expected\` — has the shape changed?`);
 });
 
 // ── The wrapper's own rule, tested directly ──────────────────────────────────
