@@ -1,0 +1,29 @@
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_319b9b843005bb 397,404-406
+  s_26f5e669d3043c::t_a93d2344b760fa 25-52,54-64
+  s_26f5e669d3043c::t_3372c3bbe44ee1 363-395,414-468
+  s_26f5e669d3043c::t_83ab84ffad515c 398-403
+  s_26f5e669d3043c::t_690997a17940c3 75-81
+packages/git-service/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_43dfd693453efb 244
+  s_26f5e669d3043c::t_ab1209ce649cba 1-124,127-128,138-233,235-243,245-261,272,274-280
+  s_26f5e669d3043c::t_f6e47fdcf7316a 125-126,129-137
+  s_26f5e669d3043c::t_ea125be29f5b1e 234
+  s_26f5e669d3043c::t_2c0e9520c9b3d7 262-271,273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "339d344b6839b4d73af4e0ff6e4db60b1656130a",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
