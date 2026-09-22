@@ -53,7 +53,9 @@ export interface GitRunOptions {
 export interface GitRunWithInputOptions extends GitRunOptions {
   /**
    * Optional utf8 payload to write to the child's stdin (then end it). Used by
-   * the BlameProvider to feed a dirty editor buffer via `git blame --contents -`.
+   * the BlameProvider to feed a dirty editor buffer via `git blame --contents -`,
+   * and by the graph's branch filter to hand `git log --stdin` its revisions
+   * (see LogProvider.streamCommits).
    */
   input?: string;
 }
@@ -71,6 +73,40 @@ function makeAbortError(): Error {
   const err = new Error("The operation was aborted");
   err.name = "AbortError";
   return err;
+}
+
+/**
+ * Hand a freshly spawned child its stdin — `input` if there is one — and END
+ * it either way. Both run() and stream() come through here, so the two cannot
+ * drift on the three rules:
+ *
+ *   • always end it. Left open, any git command that decides to read stdin
+ *     waits on a pipe nobody will ever write to, and the caller waits on git.
+ *   • a write error is not the caller's error. git may exit without reading
+ *     what it was given — it failed early, or it was killed because the
+ *     consumer went away — and the pending write then fails with EPIPE. With
+ *     no listener that is an uncaught 'error' event, which takes the whole
+ *     host process down over a child that has already finished.
+ *   • node buffers what the pipe cannot take yet, so a payload larger than the
+ *     pipe never blocks the writer. What must not outlive the child is that
+ *     buffer; see dropStdin.
+ */
+function feedStdin(child: ChildProcessWithoutNullStreams, input: string | undefined): void {
+  child.stdin.on("error", () => {});
+  if (input !== undefined) {
+    child.stdin.end(input);
+  } else {
+    child.stdin.end();
+  }
+}
+
+/** Throw away whatever of stdin has not been written yet. Called once the
+ *  child is done with — killed or exited — so a large payload is not held in
+ *  memory, or retried against a pipe nobody reads, after it stopped mattering. */
+function dropStdin(child: ChildProcessWithoutNullStreams): void {
+  if (!child.stdin.destroyed) {
+    child.stdin.destroy();
+  }
 }
 
 /**
@@ -179,7 +215,7 @@ export class GitProcess {
    *
    * When `opts.input` is set, that utf8 payload is written to the child's
    * stdin which is then ended — used to feed dirty buffers to
-   * `git blame --contents -`.
+   * `git blame --contents -`. Without one, stdin is ended empty (feedStdin).
    */
   async run(
     args: string[],
@@ -199,16 +235,7 @@ export class GitProcess {
         const spawned = this.spawnChild(args);
         child = spawned;
 
-        // Feed a dirty buffer via stdin when requested, then close it so git
-        // sees EOF. A broken pipe (git exits before draining) is harmless here.
-        spawned.stdin.on("error", () => {});
-        if (opts?.input !== undefined) {
-          spawned.stdin.end(opts.input);
-        } else {
-          // No payload: end it anyway. Left open, any git command that decides
-          // to read stdin waits on a pipe nobody will ever write to.
-          spawned.stdin.end();
-        }
+        feedStdin(spawned, opts?.input);
 
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];
@@ -227,6 +254,7 @@ export class GitProcess {
           }
           settled = true;
           spawned.kill("SIGTERM");
+          dropStdin(spawned);
           cleanup();
           reject(makeAbortError());
         };
@@ -278,10 +306,20 @@ export class GitProcess {
    * so stdout is never accumulated unbounded. Kills the child and ends the
    * stream on abort (throwing an AbortError). A non-zero exit throws with the
    * collected stderr so callers notice failures.
+   *
+   * `opts.input` is written to the child's stdin, which is then ended — and
+   * ended empty when there is no input, exactly as run() does (feedStdin).
+   * The graph's branch filter hands `git log --stdin` its refs this way,
+   * because on argv a few hundred of them outgrow Windows' command line.
+   *
+   * However the consumer stops — the signal aborts, it breaks out of its
+   * for-await, or it throws — the finally below kills a child that is still
+   * running and drops whatever of stdin is still unwritten, so nothing is left
+   * holding a pipe (or a concurrency slot) for a reader that has gone.
    */
   async *stream(
     args: string[],
-    opts?: GitRunOptions,
+    opts?: GitRunWithInputOptions,
   ): AsyncGenerator<string> {
     const signal = opts?.signal;
     if (signal?.aborted) {
@@ -292,6 +330,7 @@ export class GitProcess {
 
     const startedAt = Date.now();
     const spawned = this.spawnChild(args);
+    feedStdin(spawned, opts?.input);
     const decoder = new TextDecoder("utf8");
 
     // Pull/push queue: producers push chunks (or a terminal marker), the
@@ -387,6 +426,7 @@ export class GitProcess {
       if (spawned.exitCode === null && spawned.signalCode === null) {
         spawned.kill("SIGTERM");
       }
+      dropStdin(spawned);
       this.children.delete(spawned);
       this.release();
       // Report completed streams to the observer, but skip aborts (a superseded
@@ -408,6 +448,7 @@ export class GitProcess {
     this.disposed = true;
     for (const child of this.children) {
       child.kill("SIGTERM");
+      dropStdin(child);
     }
     this.children.clear();
   }
