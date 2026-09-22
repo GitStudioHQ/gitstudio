@@ -186,14 +186,30 @@ test("a conflict with no common ancestor (base='') still conflicts", () => {
   assert.ok(model.counts.conflicts > 0, "expected a conflict, got none");
 });
 
-test("'ignore all whitespace' suppresses whitespace-only side changes", () => {
+test("'ignore all whitespace' keeps a whitespace-only side change, flagged", () => {
+  // This used to pin the DROP: under "all" the change vanished (0 blocks), so
+  // nothing showed it and accepting "everything" kept base's bytes — the
+  // side's edit was lost without a word. It is now a one-sided block marked
+  // whitespaceOnly (painted as a line tint only), still accepted as written.
   const base = lines(["a", "b", "c"]);
   const ours = lines(["a", "  b  ", "c"]); // whitespace-only change
   const theirs = lines(["a", "b", "c"]);
 
   const noisy = buildMergeModel(base, ours, theirs);
   assert.equal(noisy.counts.total, 1);
+  assert.equal(noisy.blocks[0].whitespaceOnly, undefined, "a real change under 'none'");
 
   const clean = buildMergeModel(base, ours, theirs, { whitespace: "all" });
-  assert.equal(clean.counts.total, 0);
+  assert.equal(clean.counts.total, 1);
+  assert.equal(clean.counts.conflicts, 0);
+  const block = clean.blocks[0];
+  assert.equal(block.kind, "left-only");
+  assert.equal(block.whitespaceOnly, true);
+  assert.equal(block.left?.whitespaceOnly, true);
+  assert.deepEqual(block.left?.innerSide, [], "no word-level ranges: line tint only");
+  assert.equal(
+    acceptedText(block, "left", ours.split("\n"), theirs.split("\n")),
+    "  b  ",
+    "accepting Yours writes its bytes",
+  );
 });
