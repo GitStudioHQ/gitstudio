@@ -1892,7 +1892,7 @@ export class CommitRail extends LitElement {
               `}
         </span>
         ${this.branchesTriggerTpl()}
-        ${this.head
+        ${this.headInGraph()
           ? html`<button
               class="ibtn"
               title="Jump to HEAD"
@@ -1910,6 +1910,22 @@ export class CommitRail extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  /**
+   * Whether Jump to HEAD can land. A filter walks an attached HEAD only when
+   * its branch is ticked (issue #30), so under "Show only origin/x" HEAD's
+   * commit is usually not in this history at all — and the jump paged up to
+   * 25 pages of it looking, then dropped the reveal without a word. Shown
+   * with no filter, for a detached HEAD (always walked), when the current
+   * branch is ticked, or when HEAD's commit is on a loaded row anyway.
+   */
+  private headInGraph(): boolean {
+    if (!this.head) return false;
+    if (!this.refFilter) return true;
+    const cur = this.refList.find((r) => r.kind === "head" && r.isCurrent);
+    if (!cur || this.refFilter.includes(cur.fullName)) return true;
+    return this.rows.some((r) => r.sha === this.head);
   }
 
   private scopeLabel(): string {

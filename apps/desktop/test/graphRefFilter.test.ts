@@ -188,6 +188,57 @@ test("the ref list crosses IPC only when the caller does not already hold it", a
   assert.ok(other.refList);
 });
 
+test("a refresh where only a commit moved leaves the list out; a repository switch never shows the old one's refs", async () => {
+  const first = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  const sig = first.refListSig;
+  // A branch MOVES (a commit lands on side): the list names the same refs, so
+  // it stays where it is — and the new commit is in the rows all the same.
+  git("checkout", "-q", "side");
+  const moved = commit("moved.txt", "side moves");
+  git("checkout", "-q", "main");
+  const refresh = await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: sig });
+  assert.equal("refList" in refresh, false, "a commit moving is not a list change");
+  assert.ok(shasOf(refresh).includes(moved), "and the rows have the new commit");
+
+  // Another repository, with its own refs and no remembered filter, while
+  // THIS one is filtered. The caller still holds the first repository's list.
+  stored.set(repo, ["refs/heads/side"]);
+  await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  const heldSig = (await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: "x" })).refListSig;
+  const other = mkdtempSync(join(tmpdir(), "gitstudio-graphfilter-other-"));
+  const otherGit = (...args: string[]) =>
+    execFileSync("git", args, { cwd: other, encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).trim();
+  execFileSync("git", ["-c", "init.defaultBranch=trunk", "init", other], { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  otherGit("config", "user.email", "dev@example.com");
+  otherGit("config", "user.name", "Dev");
+  writeFileSync(join(other, "o.txt"), "o\n");
+  otherGit("add", ".");
+  otherGit("commit", "-q", "-m", "other root");
+  otherGit("tag", "only-here");
+  const otherCtx = new GitContext({ root: other });
+  let current = ctx;
+  const switching = new GitBridge({ getContext: () => current } as unknown as RepoStore, store);
+  try {
+    const a = await switching.graphLoad({ skip: 0, maxCount: 50 });
+    assert.deepEqual(a.refFilter, ["refs/heads/side"], "the first repository's filter applies to it");
+    current = otherCtx;
+    // The renderer asks for page 0 of the new repository, saying which list it holds.
+    const b = await switching.graphLoad({ skip: 0, maxCount: 50, refListSig: heldSig });
+    assert.ok(b.refList, "the new repository's list is sent — the one held names the old one's refs");
+    assert.deepEqual(b.refList!.map((r) => r.fullName).sort(), ["refs/heads/trunk", "refs/tags/only-here"]);
+    assert.equal(b.refFilter, null, "and the old repository's filter does not follow");
+    assert.equal(b.rows.length, 1);
+    // A page from the new repository with a stale cursor is page 0 of it, not an append.
+    current = ctx;
+    const back = await switching.graphLoad({ skip: 1, maxCount: 50, refListSig: b.refListSig });
+    assert.ok(back.refList && back.refList.some((r) => r.fullName === "refs/heads/side"), "switching back resends the first list");
+    assert.deepEqual(back.refFilter, ["refs/heads/side"]);
+  } finally {
+    otherCtx.dispose?.();
+    removeTempRepo(other);
+  }
+});
+
 test("paging under a filter walks the same set page after page", async () => {
   const truth = shasOf(await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/heads/side"] }));
   const fresh = new GitBridge({ getContext: () => ctx } as unknown as RepoStore, store);

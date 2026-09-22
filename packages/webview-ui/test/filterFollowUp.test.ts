@@ -315,6 +315,26 @@ test("the rail's Branches picker fits a short sidebar view: inside it, hint incl
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("the rail offers Jump to HEAD only when HEAD can be in the graph", { skip }, async () => {
+  // A filter walks an attached HEAD only when its branch is ticked, so under
+  // "Show only local-exp" the jump had nothing to land on: it paged through
+  // the filtered history looking, then gave up without a word.
+  const v = await runRail(`
+    const jump = () => $('.ibtn[title="Jump to HEAD"]');
+    expect(!!jump(), "unfiltered: offered");
+    const elsewhere = rows.slice(1).map((r) => ({ ...r, refs: [] }));
+    await host(init({ rows: elsewhere, refFilter: ["refs/heads/local-exp"] }));
+    expect(!jump(), "a filter that leaves HEAD's branch out, HEAD's commit not in its rows: not offered");
+    await host(init({ refFilter: ["refs/heads/local-exp"] }));
+    expect(!!jump(), "…offered again when another ticked ref reaches HEAD's commit (it is on a row)");
+    await host(init({ rows: elsewhere, refFilter: ["refs/heads/main"], refPreset: "current" }));
+    expect(!!jump(), "the current branch ticked: offered");
+    await host(init({ rows: elsewhere, head: sha(9), refFilter: ["refs/heads/local-exp"], refList: listOn("none") }));
+    expect(!!jump(), "detached: HEAD is always walked, offered");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 test("the rail's search box keeps its room when a filter names itself beside it", { skip }, async () => {
   const v = await runRail(
     `
