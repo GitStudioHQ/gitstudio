@@ -1609,11 +1609,12 @@ export class GitBridge {
     }
     const name = req.name.trim();
     const email = req.email.trim();
-    // A value starting with "-" would be read by `git config` as an option.
     // The three refusals below are all about what is in the two text fields:
     // the user is mid-edit, or has typed something git cannot record. None is a
     // defect, so none is crash-reported (see main/expectedError.ts). A `git
     // config` that then fails IS reported — that one is news.
+    //
+    // A value starting with "-" would be read by `git config` as an option.
     if ((name && name.startsWith("-")) || (email && email.startsWith("-"))) {
       return { ok: false, changed: false, expected: true, message: "Name and email can't start with “-”." };
     }
