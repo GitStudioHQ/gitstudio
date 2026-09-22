@@ -270,6 +270,54 @@ test("applied and ignored changes keep their category as a dashed outline; the a
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
+test("one side's 'Apply non-conflicting' takes the identical changes too, in that side's whitespace; controls work from the keyboard", { skip }, async () => {
+  const v = await runMergePage(CHROME!, MOUNT + `
+    view.applyNonConflictingSide("right");
+    const by = counts.byCategory;
+    expect(by.same.pending === 0 && by["theirs-only"].pending === 0 && by["yours-only"].pending === 2 && by.conflict.pending === 2,
+      "Theirs: its own changes and both identical ones: " + JSON.stringify(by));
+    const lines = view.getResultText().split("\\n");
+    expect(lines[8] === "w1 = new   ", "the ≈ change was taken in THEIRS' whitespace: " + JSON.stringify(lines[8]));
+    view.undo();
+    view.applyNonConflictingSide("left");
+    expect(view.getResultText().split("\\n")[8] === "w1 = new", "…and in Yours' from the Yours button: " + JSON.stringify(view.getResultText().split("\\n")[8]));
+    view.undo();
+
+    // Enter / Space on a focused control fire a click with no press first.
+    const accept = document.querySelector('.jb-gutter-a .jb-change-actions[data-block="4"] .jb-btn-accept');
+    accept.focus();
+    accept.click();
+    expect(view.getResultText().split("\\n")[10] === "y1 = yours", "a keyboard click accepts: " + view.getResultText().split("\\n")[10]);
+    // Tab reaches the identical change's accept first; keep-base appears
+    // beside it once focus is inside the control, so Tab reaches it next.
+    const same = document.querySelector('.jb-result-actions [data-block="2"]');
+    const keep = same.querySelector(".jb-btn-keep-base");
+    same.querySelector(".jb-btn-accept").focus();
+    expect(getComputedStyle(keep).visibility === "visible", "keep-base shows once focus is inside its control");
+    keep.focus();
+    expect(document.activeElement === keep, "…and can then take focus itself");
+    keep.click();
+    expect(counts.byCategory.same.pending === 1 && view.getResultText().split("\\n")[6] === "s1 = base", "keep-base settles the identical change on the base text");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
+test("typing is progress, and a hand edit takes a conflict out of the wand's reach", { skip }, async () => {
+  const v = await runMergePage(CHROME!, MOUNT + `
+    expect(counts.hasProgress === false && counts.resolvableConflictsPending === 1, "fresh");
+    // Type into the resolvable conflict's region (result line 4).
+    view.result.setPosition({ lineNumber: 4, column: 1 });
+    view.result.trigger("keyboard", "type", { text: "// " });
+    await sleep(200); // the debounced re-align (120 ms) re-counts
+    expect(counts.hasProgress === true, "typing counts as progress (the shell asks before a whitespace change drops it)");
+    expect(counts.resolvableConflictsPending === 0 && !document.querySelector(".jb-result-actions .jb-btn-wand"),
+      "the wand will not overwrite a hand edit: " + counts.resolvableConflictsPending);
+    view.resolveSimpleConflicts();
+    expect(view.getResultText().split("\\n")[3] === "// r1 = base", "resolveSimpleConflicts leaves the edited region alone: " + view.getResultText().split("\\n")[3]);
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
+
 test("the legend counts what is left per category and jumps to it", { skip }, async () => {
   const v = await runMergePage(CHROME!, MOUNT + `
     view.attachLegend(document.getElementById("slot"));
