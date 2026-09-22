@@ -1,0 +1,111 @@
+packages/merge-vscode/package.json
+  s_26f5e669d3043c::t_dd3247ad1f0bb6 1-22
+packages/merge-vscode/src/args.ts
+  s_26f5e669d3043c::t_20684f75dbba87 1-61
+packages/merge-vscode/src/register.ts
+  s_26f5e669d3043c::t_ed0acbd95d1f1c 1-16,18-61,66-173,175-336
+  s_26f5e669d3043c::t_1bdf840ec567ad 62-65,174
+  s_26f5e669d3043c::t_0dc6e7b1a54f5c 17
+packages/merge-vscode/src/product.ts
+  s_26f5e669d3043c::t_a4474b930f68ab 1-221
+packages/merge-vscode/src/demoContent.ts
+  s_26f5e669d3043c::t_b06fc36c09325e 7-146
+  s_26f5e669d3043c::t_9375ba5bfa5f4a 1-6
+apps/extension/package.json
+  s_26f5e669d3043c::t_acb2845283b27b 2208
+packages/merge-vscode/src/coexistence.ts
+  s_26f5e669d3043c::t_260a80cb073adf 38-39,41
+  s_26f5e669d3043c::t_fd282febd159ee 1-37,40,42-44
+packages/merge-vscode/test/gitWatch.test.ts
+  s_26f5e669d3043c::t_2bf73e6942666b 1-68
+packages/merge-vscode/tsconfig.json
+  s_26f5e669d3043c::t_66cb92d00acd98 1-7
+packages/merge-vscode/test/fixtures.ts
+  s_26f5e669d3043c::t_bb2df3f899c6b0 1-126
+packages/merge-vscode/src/outcome.ts
+  s_26f5e669d3043c::t_1eac2ab9c8f2f8 1-91
+packages/merge-vscode/src/index.ts
+  s_26f5e669d3043c::t_e848f38fc1416b 1-39
+packages/merge-vscode/src/gitWatch.ts
+  s_26f5e669d3043c::t_1f71ef501b7f3b 1-59
+packages/merge-vscode/src/demo.ts
+  s_26f5e669d3043c::t_7bdca19961d050 1-20
+packages/merge-vscode/test/mergeSession.test.ts
+  s_26f5e669d3043c::t_caf7d185aa4bbf 1-357
+packages/merge-vscode/test/outcome.test.ts
+  s_26f5e669d3043c::t_258f471aa638c7 1-41
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_26f5e669d3043c::t_9f229b541ca236 103-138
+  s_26f5e669d3043c::t_5f2bb35f536e9e 1-85,140-197
+  s_26f5e669d3043c::t_6902bceca01de6 139
+  s_26f5e669d3043c::t_788feffc5ab9fe 86-102
+packages/merge-vscode/src/statusItem.ts
+  s_26f5e669d3043c::t_7ce1d9b5379f38 1-39
+packages/merge-vscode/src/autoRoute.ts
+  s_26f5e669d3043c::t_77c8021f0de912 1-151
+packages/merge-vscode/src/contract.ts
+  s_26f5e669d3043c::t_e769f174ddfe4b 1-234
+packages/merge-vscode/test/autoRoute.test.ts
+  s_26f5e669d3043c::t_abcad05d31628c 1-97
+packages/merge-vscode/test/product.test.ts
+  s_26f5e669d3043c::t_545840a3351f38 1-85
+packages/merge-vscode/test/guards.test.ts
+  s_26f5e669d3043c::t_1804f934060ea8 1-114
+packages/merge-vscode/src/autoRouteHost.ts
+  s_26f5e669d3043c::t_e204d9068cd120 1-136
+packages/merge-vscode/test/contract.test.ts
+  s_26f5e669d3043c::t_4257d26c235d9c 1-77
+packages/merge-vscode/src/vscodeGitLocator.ts
+  s_26f5e669d3043c::t_05c65ac46ea3c6 1-197
+packages/merge-vscode/src/host.ts
+  s_26f5e669d3043c::t_20eac355daaa73 1-103
+packages/merge-vscode/src/stageResolved.ts
+  s_26f5e669d3043c::t_d93a8f5cff62cb 1-46
+packages/merge-vscode/src/exitGuard.ts
+  s_26f5e669d3043c::t_7fc3462dc401c5 1-35
+packages/merge-vscode/test/hermetic.ts
+  s_26f5e669d3043c::t_e20706bd68b975 1-24
+packages/merge-vscode/src/mergeSession.ts
+  s_26f5e669d3043c::t_c519673a78793f 1-267
+packages/merge-vscode/src/dashboardController.ts
+  s_26f5e669d3043c::t_2aba6e7193d564 62
+  s_26f5e669d3043c::t_911faacc69c0ec 136-141,143
+  s_26f5e669d3043c::t_2d12acc57252d0 1-61,63-80,86-135,142,144-205
+  s_26f5e669d3043c::t_ca4a7ae9b8f8b7 81-85
+packages/merge-vscode/src/jetbrainsUi.ts
+  s_26f5e669d3043c::t_87742bafa000df 1-266
+packages/merge-vscode/src/payload.ts
+  s_26f5e669d3043c::t_38e96a41116f28 1-153
+packages/merge-vscode/src/diffPanel.ts
+  s_26f5e669d3043c::t_5edb655a0ae223 66,80,463,503
+  s_26f5e669d3043c::t_bd93d599a923e7 284
+  s_26f5e669d3043c::t_2c9529e7ff774c 1-65,67-79,81-283,285-462,464-502,504-505
+packages/merge-vscode/src/webviewHtml.ts
+  s_26f5e669d3043c::t_36f2275c3eab87 1-108
+packages/merge-vscode/test/dashboardController.test.ts
+  s_26f5e669d3043c::t_950ab23ac00360 1-141
+packages/merge-vscode/src/conflictsPanel.ts
+  s_26f5e669d3043c::t_93ec6c8f90179e 112-113,115,120,123-125
+  s_26f5e669d3043c::t_7c01715835268c 31
+  s_26f5e669d3043c::t_cd6bd0073ff193 1-30,32-111,114,116-119,121-122,126-308
+packages/merge-vscode/test/payload.test.ts
+  s_26f5e669d3043c::t_479f4922222204 1-160
+package-lock.json
+  s_26f5e669d3043c::t_7e3a33b48789e5 69,973-976,6240-6259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "daddd85d4a5138fce00803f760d96a6259f40c80",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
