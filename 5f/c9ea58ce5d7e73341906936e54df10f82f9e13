@@ -1,0 +1,44 @@
+apps/extension/src/git/pullMode.ts
+  s_26f5e669d3043c::t_7b46f6c8bf5e36 1-51
+apps/extension/test/pullDivergedCallSites.test.ts
+  s_26f5e669d3043c::t_403c68ae8f696f 75
+  s_26f5e669d3043c::t_a075f44aec9da1 1-47,50-74,76-100
+  s_26f5e669d3043c::t_2e59763f59be27 48-49
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_97dccead6d5ad0 4736,4847,6919
+  s_26f5e669d3043c::t_fd629e7527330b 3
+  s_26f5e669d3043c::t_7f8b28b4c6a5b3 1453-1455
+  s_26f5e669d3043c::t_0ab4b10a614e1e 4
+  s_26f5e669d3043c::t_44943bed4212e7 1478-1482,1484,1486-1504,1507
+  s_26f5e669d3043c::t_a6d47fb630ca7a 1485
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_5397b5c2366a27 222-235
+  s_26f5e669d3043c::t_e6710a1ec9aa71 3
+  s_26f5e669d3043c::t_e6441c204419b4 243-246
+apps/extension/CHANGELOG.md
+  s_df6fe2febbbf1c::t_814fca8cdcd269 23-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5fc9ea58ce5d7e73341906936e54df10f82f9e13",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_df6fe2febbbf1c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa21d5cfb1f056235",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
