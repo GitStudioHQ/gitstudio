@@ -5,6 +5,7 @@ import type { CommitRecord, CommitStat, GitRef } from "@gitstudio/git-service/in
 import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type {
   GraphHostMessage,
+  GraphInitMessage,
   GraphWebviewMessage,
   GraphRefEntry,
   GraphRefFilter,
@@ -18,6 +19,7 @@ import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import {
   chipRefsUnderFilter,
   normalizeRefFilter,
+  RefListCourier,
   refEntries,
   sameRefFilter,
 } from "@gitstudio/host-bridge/graphRefFilter";
@@ -166,6 +168,9 @@ export class CommitGraphPanel {
    *  repository's list, and must not prune a stored selection (see loadInitial). */
   private refsListed = false;
   private refList: GraphRefEntry[] = [];
+  /** Sends the picker's list only when it differs from the one this webview
+   *  already has — see postInit. */
+  private readonly refListCourier = new RefListCourier();
   /**
    * The branch filter the loaded pages were walked with (issue #30) — pruned
    * against the refs that existed at load time, null for everything. Stored
@@ -235,6 +240,9 @@ export class CommitGraphPanel {
     switch (msg.type) {
       case "ready":
         this.ready = true;
+        // A (re)loaded page has no ref list, whatever was sent to the one
+        // before it: the next graphInit carries it whole.
+        this.refListCourier.forget();
         void this.loadInitial();
         break;
       case "loadMore":
@@ -300,6 +308,19 @@ export class CommitGraphPanel {
     void this.webview.postMessage(message);
   }
 
+  /**
+   * Post a graphInit, with the picker's ref list only when it changed.
+   *
+   * The list is every branch and tag — about 1 MB on a repository with ten
+   * thousand tags — and it rode on every graphInit: every debounced refresh,
+   * every filter change, almost always identical. The webview keeps the last
+   * one it was given (applyGraphInitRefs), so an unchanged list is left out.
+   */
+  private postInit(init: Omit<GraphInitMessage, "type" | "refList">, list: GraphRefEntry[]): void {
+    const refList = this.refListCourier.take(list);
+    this.post({ type: "graphInit", ...init, ...(refList ? { refList } : {}) });
+  }
+
   /** Best-effort: resolve real author photos and push them to the webview to
    * replace the Gravatar/initials placeholders. Never blocks or fails the graph
    * — no resolver, no GitHub connection, or a network error just leaves the
@@ -355,15 +376,7 @@ export class CommitGraphPanel {
       this.refFilter = null;
       this.nextSkip = 0;
       this.hasMore = false;
-      this.post({
-        type: "graphInit",
-        rows: [],
-        head: "",
-        totalColumns: 1,
-        hasMore: false,
-        refFilter: null,
-        refList: [],
-      });
+      this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, refFilter: null }, []);
       return;
     }
 
@@ -429,15 +442,16 @@ export class CommitGraphPanel {
       this.injectWipNode(active);
 
       const { rows, totalColumns } = this.buildRows(this.loaded);
-      this.post({
-        type: "graphInit",
-        rows,
-        head: this.currentHeadSha,
-        totalColumns,
-        hasMore: this.hasMore,
-        refFilter: this.refFilter,
-        refList: this.refList,
-      });
+      this.postInit(
+        {
+          rows,
+          head: this.currentHeadSha,
+          totalColumns,
+          hasMore: this.hasMore,
+          refFilter: this.refFilter,
+        },
+        this.refList,
+      );
       // Rows now exist in the webview — reveals can land. Must be set BEFORE
       // the flush below, or the replayed reveal would just re-queue itself.
       this.initialized = true;
@@ -467,15 +481,7 @@ export class CommitGraphPanel {
             msg,
           );
         if (isEmptyRepo) {
-          this.post({
-            type: "graphInit",
-            rows: [],
-            head: "",
-            totalColumns: 1,
-            hasMore: false,
-            refFilter: null,
-            refList: [],
-          });
+          this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, refFilter: null }, []);
         } else {
           this.post({ type: "graphError", message: msg });
         }

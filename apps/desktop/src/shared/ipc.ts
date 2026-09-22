@@ -64,14 +64,29 @@ export interface GraphPage {
   nextSkip: number;
   /** The branch filter these rows were walked with (issue #30); null = all. */
   refFilter: GraphRefFilter;
-  /** Every ref the Branches picker can offer, filtered-out ones included. */
-  refList: GraphRefEntry[];
+  /**
+   * Every ref the Branches picker can offer, filtered-out ones included —
+   * present only when it differs from the list the request said it holds
+   * (`refListSig`). Absent means "yours is current": it is every branch and
+   * tag, a megabyte on a repository with ten thousand tags, and it used to
+   * cross IPC with every page.
+   */
+  refList?: GraphRefEntry[];
+  /** refListSignature() of the list the main process has now — what the
+   *  caller sends back as `refListSig` once it has delivered `refList`. */
+  refListSig: string;
 }
 
 /** A `graph:load` request. */
 export interface GraphLoadRequest {
   skip?: number;
   maxCount?: number;
+  /**
+   * refListSignature() of the ref list the caller already holds (the one it
+   * last handed the graph element). The page leaves `refList` out when the
+   * main process's list still has this signature. Omitted: send it.
+   */
+  refListSig?: string;
   /**
    * The branch filter to apply from now on. Omitted (undefined) means "the one
    * remembered for this repository"; null or a list SETS it — remembered per

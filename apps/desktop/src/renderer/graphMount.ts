@@ -7,7 +7,8 @@
 
 import "@gitstudio/webview-ui/graph/commit-graph";
 import type { CommitGraph, GraphAction } from "@gitstudio/webview-ui/graph/commit-graph";
-import type { GraphRefFilter } from "@gitstudio/host-bridge/graphProtocol";
+import { applyGraphInitRefs } from "@gitstudio/webview-ui/graph/graphInit";
+import type { GraphRefFilter, WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import { GraphHostAdapter, host } from "./bridge";
 
 export interface GraphCallbacks {
@@ -97,8 +98,7 @@ export class GraphMount {
           this.element.rows = message.rows;
           this.element.totalColumns = message.totalColumns;
           this.element.hasMore = message.hasMore;
-          this.element.refFilter = message.refFilter ?? null;
-          this.element.refList = message.refList ?? [];
+          applyGraphInitRefs(this.element, message);
           if (message.rows.length === 0 && !message.hasMore) {
             // A genuinely empty history gets the crafted tile, not the shared
             // element's bare "No commits yet" — consistent with every other view.
@@ -226,6 +226,22 @@ export class GraphMount {
   /** The branch filter the loaded rows were built under; null for all. */
   get refFilter(): GraphRefFilter {
     return this.element.refFilter;
+  }
+
+  /**
+   * Open the graph's own chip menu for a ref chip outside it — the commit
+   * details pane's (issue #30). The graph resolves the chip through its ref
+   * list by name and kind; a pick goes out through the element's onAction
+   * like every other tick, and so does its Checkout.
+   */
+  openRefMenu(
+    ref: { name: string; kind: WireRef["kind"] },
+    x: number,
+    y: number,
+    sha: string,
+    opts?: { opener?: HTMLElement; keyboard?: boolean },
+  ): void {
+    this.element.openRefMenu(ref, x, y, sha, opts);
   }
 
   /**

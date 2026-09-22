@@ -4,7 +4,7 @@
 // filtered row keeps.
 //
 // IMPORTANT: pure. No `vscode`/`node`/`fs` imports — the purity guard depends
-// on it, and the webview imports `fullRefName` for the chip shortcut.
+// on it, and the webview imports `chipRefs` for the chip shortcut.
 
 import type { GraphRefEntry, GraphRefFilter, WireRef } from "./graphProtocol";
 import type { RefLike } from "./graphWire";
@@ -17,31 +17,25 @@ export interface PickerRefLike extends RefLike {
   upstream?: string;
 }
 
-/** The fully-qualified name behind a chip — a chip carries only the short
- *  name and its kind, and the filter stores nothing else. */
-export function fullRefName(name: string, kind: WireRef["kind"]): string {
-  switch (kind) {
-    case "tag":
-      return `refs/tags/${name}`;
-    case "remoteHead":
-      return `refs/remotes/${name}`;
-    default:
-      return `refs/heads/${name}`;
-  }
-}
-
 /**
  * The full names behind a chip and the remote twins folded into it — what
- * the chip's "Show only this branch" / "Add to filter" shortcut selects.
+ * the chip's "Show only this branch" / "Add to filter" shortcut selects, and
+ * `[0]` is what its "Checkout" checks out. Every chip surface resolves through
+ * here: the graph's rows, the rail's, and the commit-details pane's.
  *
  * A chip's name is `%(refname:short)`, and short is only SHORTEST UNAMBIGUOUS:
  * the moment a tag and a branch share "release", git hands out
- * "heads/release" and "tags/release", and rebuilding "refs/heads/heads/release"
- * from that names a ref that does not exist. Both hosts prune it, so the
- * shortcut silently showed every branch under a trigger saying "All branches".
- * The picker's list carries the full name git gave each ref, so the chip is
- * resolved through it by name AND kind; fullRefName is the fallback for a
- * chip the list has no entry for.
+ * "heads/release" and "tags/release". So a full name is never REBUILT from a
+ * chip — "refs/heads/heads/release" names nothing, the hosts pruned it, and
+ * the shortcut silently showed every branch under a trigger saying "All
+ * branches". The picker's list carries the full name git gave each ref; the
+ * chip is looked up there by name AND kind.
+ *
+ * A chip the list has no entry for resolves to NOTHING (`[]`), and its menu
+ * offers no action: guessing a namespace for it is the bug above. The list
+ * and the chips come from the same ref listing, so this is only ever a
+ * moment's disagreement (a details pane read just before a refresh landed);
+ * a twin that is not listed is left out rather than guessed.
  */
 export function chipRefs(
   refList: readonly GraphRefEntry[],
@@ -49,12 +43,14 @@ export function chipRefs(
   kind: WireRef["kind"],
   remotes: readonly string[] = [],
 ): string[] {
-  const resolve = (n: string, k: GraphRefEntry["kind"]): string =>
-    refList.find((r) => r.name === n && r.kind === k)?.fullName ?? fullRefName(n, k);
-  return [
-    resolve(name, kind === "currentHead" ? "head" : kind),
-    ...remotes.map((r) => resolve(`${r}/${name}`, "remoteHead")),
-  ];
+  const resolve = (n: string, k: GraphRefEntry["kind"]): string | undefined =>
+    refList.find((r) => r.name === n && r.kind === k)?.fullName;
+  const own = resolve(name, kind === "currentHead" ? "head" : kind);
+  if (!own) return [];
+  const twins = remotes
+    .map((r) => resolve(`${r}/${name}`, "remoteHead"))
+    .filter((f): f is string => f !== undefined);
+  return [own, ...twins];
 }
 
 /**
@@ -131,6 +127,73 @@ export function chipRefsUnderFilter<R extends RefLike & { fullName: string }>(
     if (kept.length > 0) out.set(sha, kept);
   }
   return out;
+}
+
+/**
+ * A fingerprint of the picker's list, for "has it changed since I last sent
+ * it?" (issue #30).
+ *
+ * The list is every branch and tag, and a graphInit carried the whole of it on
+ * every load — about 1 MB on a repository with ten thousand tags, again on
+ * every debounced refresh, almost always identical to the last one. A host
+ * sends it only when this moves. Every field the webview reads goes in, in
+ * order; a reorder is a change like any other.
+ *
+ * A 53-bit hash rather than the joined string, because the desktop sends it
+ * back across IPC on every page request, and a megabyte of key there would
+ * cost what the whole exercise saves. Computed in one pass with no string
+ * built, so it is cheap next to the for-each-ref that produced the list.
+ */
+export function refListSignature(list: readonly GraphRefEntry[]): string {
+  // cyrb53 (public domain), fed field by field.
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  const feed = (s: string): void => {
+    for (let i = 0; i < s.length; i++) {
+      const ch = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    // A separator no ref name can contain, so "ab"+"c" never hashes as "a"+"bc".
+    h1 = Math.imul(h1 ^ 0x1f, 2654435761);
+    h2 = Math.imul(h2 ^ 0x1f, 1597334677);
+  };
+  for (const r of list) {
+    feed(r.fullName);
+    feed(r.name);
+    feed(r.kind);
+    feed(r.isCurrent ? "*" : "");
+    feed(r.upstream ?? "");
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hash = 4294967296 * (2097151 & h2) + (h1 >>> 0);
+  return `${list.length}:${hash.toString(36)}`;
+}
+
+/**
+ * What a host puts in a graphInit's `refList`: the list when the webview does
+ * not have it yet, nothing when it does. One per webview — `forget()` when
+ * that webview (re)loads, because a fresh page has no list whatever was sent
+ * to the one before it.
+ */
+export class RefListCourier {
+  private sent: string | undefined;
+
+  /** The list to send with this graphInit, or undefined to leave it out. */
+  take(list: GraphRefEntry[]): GraphRefEntry[] | undefined {
+    const sig = refListSignature(list);
+    if (sig === this.sent) return undefined;
+    this.sent = sig;
+    return list;
+  }
+
+  /** The webview lost what it had (it reloaded): send the next list whole. */
+  forget(): void {
+    this.sent = undefined;
+  }
 }
 
 /** Two filters that select the same refs, order aside. */

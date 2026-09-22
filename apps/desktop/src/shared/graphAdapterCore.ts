@@ -28,7 +28,9 @@ export function nextGraphMessage(
       totalColumns: page.totalColumns,
       hasMore: page.hasMore,
       refFilter: page.refFilter,
-      refList: page.refList,
+      // Only when the page carried one: absent means the element's list is
+      // current (the request said which one it holds — see GraphHostAdapter).
+      ...(page.refList ? { refList: page.refList } : {}),
     };
   }
   return {

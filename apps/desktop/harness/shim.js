@@ -2066,7 +2066,18 @@
       const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r)) : [];
       graphRefFilter = kept.length ? kept : null;
     }
-    window.__GS_GRAPH_LOADS.push({ skip: req && req.skip, refs: req && req.refs, applied: graphRefFilter });
+    // The list rides along only when the caller does not already hold it, the
+    // way the main process does it (refListFor): the renderer says which list
+    // it has in `refListSig`. Any stable fingerprint will do here — the real
+    // one is refListSignature's hash; what matters is the comparison.
+    const sig = "shim:" + JSON.stringify(list);
+    const sendList = !req || req.refListSig !== sig;
+    window.__GS_GRAPH_LOADS.push({
+      skip: req && req.skip,
+      refs: req && req.refs,
+      applied: graphRefFilter,
+      sentRefList: sendList,
+    });
     const filter = graphRefFilter;
     const ticked = new Set(filter || []);
     const rows = graphBase.rows
@@ -2075,7 +2086,10 @@
         ...r,
         refs: filter ? r.refs.filter((c) => c.kind === "currentHead" || ticked.has(chipFullName(c))) : r.refs,
       }));
-    return { ...graphBase, rows, nextSkip: rows.length, refFilter: filter, refList: list };
+    const out = { ...graphBase, rows, nextSkip: rows.length, refFilter: filter, refListSig: sig };
+    if (sendList) out.refList = list;
+    else delete out.refList;
+    return out;
   };
   // A reveal that finds no row under a filter asks whether the walk reaches
   // the commit at all, before saying why (issue #30) — the same reach model

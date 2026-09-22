@@ -65,6 +65,7 @@ import {
   chipRefsUnderFilter,
   normalizeRefFilter,
   refEntries,
+  refListSignature,
   sameRefFilter,
 } from "@gitstudio/host-bridge/graphRefFilter";
 import type { CommitFileChange } from "@gitstudio/host-bridge/git";
@@ -189,6 +190,9 @@ export class GitBridge {
    *  repository's list, and must not prune a stored selection (see below). */
   private refsListed = false;
   private refList: GraphRefEntry[] = [];
+  /** refListSignature(refList), computed once per listing — a page request
+   *  compares against it (see graphPage). */
+  private refListSig = refListSignature([]);
   /**
    * The branch filter the accumulated pages were walked with (issue #30) —
    * pruned against the refs that existed at load time, null for everything.
@@ -252,7 +256,17 @@ export class GitBridge {
   private async graphLoadInner(opts: GraphLoadRequest): Promise<GraphPage> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { rows: [], head: "", totalColumns: 1, hasMore: false, nextSkip: 0, refFilter: null, refList: [] };
+      const none = refListSignature([]);
+      return {
+        rows: [],
+        head: "",
+        totalColumns: 1,
+        hasMore: false,
+        nextSkip: 0,
+        refFilter: null,
+        ...(opts.refListSig === none ? {} : { refList: [] }),
+        refListSig: none,
+      };
     }
 
     const maxCount = opts.maxCount ?? PAGE_SIZE;
@@ -307,7 +321,7 @@ export class GitBridge {
         hasMore: false,
         nextSkip: this.loaded.length,
         refFilter: this.refFilter,
-        refList: this.refList,
+        ...this.refListFor(opts),
       };
     }
     const before = fresh ? 0 : this.loaded.length;
@@ -331,8 +345,22 @@ export class GitBridge {
       hasMore,
       nextSkip: this.loaded.length,
       refFilter: this.refFilter,
-      refList: this.refList,
+      ...this.refListFor(opts),
     };
+  }
+
+  /**
+   * The picker's list for this page — only when the caller does not already
+   * hold it (issue #30). It is every branch and tag, about a megabyte on a
+   * repository with ten thousand tags, and it crossed IPC with every page of
+   * every load. The caller says which list it has (`refListSig`, what it last
+   * handed the graph element), so a reloaded renderer — which holds none —
+   * always gets one, whatever this process sent before.
+   */
+  private refListFor(opts: GraphLoadRequest): Pick<GraphPage, "refList" | "refListSig"> {
+    return opts.refListSig === this.refListSig
+      ? { refListSig: this.refListSig }
+      : { refList: this.refList, refListSig: this.refListSig };
   }
 
   /**
@@ -380,6 +408,7 @@ export class GitBridge {
     this.refs = refs;
     this.refsListed = refs.length > 0;
     this.refList = refEntries(refs);
+    this.refListSig = refListSignature(this.refList);
     for (const ref of refs) {
       if (ref.type === "stash") {
         continue;

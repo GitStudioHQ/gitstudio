@@ -40,6 +40,16 @@ export class GraphHostAdapter {
    * duplicated commits.
    */
   private gen = 0;
+  /**
+   * The signature of the ref list this adapter last HANDED the element — what
+   * each request tells the main process it holds, so an unchanged list (every
+   * branch and tag; a megabyte with ten thousand tags) stays on that side of
+   * IPC. Recorded only on delivery: a page dropped as stale delivered
+   * nothing, so the next request still says the old list, and gets the new.
+   * The element and this adapter are made together (GraphMount), so it starts
+   * empty exactly when the element does.
+   */
+  private refListSig: string | undefined;
 
   constructor(
     private readonly onMessage: (msg: GraphInitMessage | GraphAppendMessage) => void,
@@ -84,13 +94,19 @@ export class GraphHostAdapter {
     this.loading = true;
     const myGen = this.gen;
     try {
-      const result = await host.invoke("graph:load", { skip: this.skip, refs });
+      const result = await host.invoke("graph:load", {
+        skip: this.skip,
+        refs,
+        ...(this.refListSig !== undefined ? { refListSig: this.refListSig } : {}),
+      });
       if (myGen !== this.gen) {
         return; // reset while we waited — this page belongs to a dead view
       }
       this.skip = result.nextSkip;
       this.exhausted = !result.hasMore;
       this.onMessage(nextGraphMessage(result, initial));
+      // Only a graphInit carries the list to the element.
+      if (initial && result.refList) this.refListSig = result.refListSig;
     } finally {
       // Only clear the flag we set. A superseded request must not unblock a
       // newer one that is legitimately in flight.

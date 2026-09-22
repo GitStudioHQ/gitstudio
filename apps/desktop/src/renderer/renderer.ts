@@ -105,7 +105,7 @@ import { renderGists } from "./views/gists";
 import { renderRepositories } from "./views/repositories";
 import { renderDashboard } from "./views/dashboard";
 import { renderRebase } from "./views/rebase";
-import type { CommitDetails as CommitDetailsEl } from "@gitstudio/webview-ui/commit-details";
+import type { CommitDetails as CommitDetailsEl, RefMenuRequest } from "@gitstudio/webview-ui/commit-details";
 import type {
   BranchInfo,
   ChangedFile,
@@ -9351,6 +9351,18 @@ class App {
       }
       this.graph?.reveal(detail.sha);
       void this.selectCommit(detail.sha);
+    });
+    // A ref chip in the pane is the same shortcut it is in the graph's rows
+    // (issue #30): its menu is the graph's own — the graph owns the filter and
+    // the ref list the chip is resolved through. Only while there IS a graph
+    // to answer; otherwise the chips stay labels.
+    panel.refMenu = !!this.graph;
+    panel.addEventListener("gs-ref-menu", (e) => {
+      const d = (e as CustomEvent<RefMenuRequest>).detail;
+      this.graph?.openRefMenu({ name: d.name, kind: d.kind }, d.x, d.y, d.sha, {
+        opener: d.opener,
+        keyboard: d.keyboard,
+      });
     });
     // "in N branches" — the same lazy containment query the extension runs.
     // Without this the control would spin forever on desktop.

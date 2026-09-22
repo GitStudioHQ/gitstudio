@@ -103,7 +103,10 @@ test("the graph host routes a filter change through the store, and reloads from 
   // …and loadInitial is the paging reset: skip and the accumulated rows go.
   const load = text.slice(text.indexOf("private async loadInitial("), text.indexOf("private async loadMore("));
   assert.match(load, /this\.loaded = \[\];\s*this\.nextSkip = 0;/);
-  assert.match(load, /refFilter: this\.refFilter,\s*refList: this\.refList,/);
+  // The graphInit carries the applied filter, and the picker's list through
+  // postInit — which leaves it out when the webview already has it
+  // (graphRefListCourier.test.ts).
+  assert.match(load, /this\.postInit\(\s*\{[\s\S]*?refFilter: this\.refFilter,\s*\},\s*this\.refList,\s*\);/);
 });
 
 test("the graph host never writes back a prune against a ref listing that failed", async () => {

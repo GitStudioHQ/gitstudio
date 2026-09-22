@@ -97,8 +97,17 @@ export interface GraphInitMessage {
   hasMore: boolean;
   /** The filter these rows were built under (see GraphRefFilter). */
   refFilter: GraphRefFilter;
-  /** Every ref the picker can offer — the filtered-out ones included. */
-  refList: GraphRefEntry[];
+  /**
+   * Every ref the picker can offer — the filtered-out ones included — sent
+   * only when it CHANGED since this host last sent one to this webview.
+   *
+   * Absent means "unchanged": the webview keeps the list it has. It is every
+   * branch and tag in the repository (about 1 MB with ten thousand tags), and
+   * a refresh or a filter change almost never alters it. A host tracks what it
+   * sent with RefListCourier (graphRefFilter.ts) and starts over when the
+   * webview reloads, so a fresh page always gets one with its first graphInit.
+   */
+  refList?: GraphRefEntry[];
 }
 
 /** A later page appended to the existing graph (infinite scroll). */

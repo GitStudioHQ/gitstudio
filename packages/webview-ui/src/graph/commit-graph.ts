@@ -1695,8 +1695,12 @@ export class CommitGraph extends LitElement {
    * A ref chip's own menu (right-click or ⌥-click on a chip): the filter
    * shortcuts — show only this branch, add it, remove it — and the checkout
    * the row's commit menu used to offer for that click. `refs` is the chip's
-   * ref plus the remote twins folded into it, so the chip moves as one thing;
-   * `sha` is the row it sits on, for the checkout.
+   * ref plus the remote twins folded into it, so the chip moves as one thing
+   * (empty when the ref list has no entry for the chip — see chipRefs);
+   * `sha` is the row it sits on, for the checkout. A menu opened for a chip
+   * OUTSIDE this element (the commit-details pane's, via openRefMenu) keeps
+   * the chip in `opener`, so Escape hands focus back to it rather than to the
+   * list.
    */
   private declare chipMenu: {
     name: string;
@@ -1705,6 +1709,9 @@ export class CommitGraph extends LitElement {
     refs: string[];
     x: number;
     y: number;
+    opener?: HTMLElement;
+    /** Opened from the keyboard: focus its first item once it renders. */
+    focusFirst?: boolean;
   } | null;
   /** Row indices matching the current search, and the cursor into them. */
   private searchMatches: number[] = [];
@@ -1927,6 +1934,12 @@ export class CommitGraph extends LitElement {
     // refs, typing is how you find one, and the box is where typing goes.
     if (changed.has("branchesOpen") && this.branchesOpen) {
       (this.renderRoot.querySelector(".gh-pop-filter input") as HTMLInputElement | null)?.focus();
+    }
+    // A chip menu opened from the keyboard (a details-pane chip, Enter) takes
+    // focus, so the arrows walk it and Escape brings focus back to the chip.
+    if (changed.has("chipMenu") && this.chipMenu?.focusFirst) {
+      const menu = this.renderRoot.querySelector<HTMLElement>(".gh-chip-menu");
+      (menu?.querySelector<HTMLElement>(".gh-menuitem:not([disabled])") ?? menu)?.focus();
     }
     // …and on the side of its trigger that has the room — every update while
     // open, because a tick widens the trigger's label and moves its edges.
@@ -2603,10 +2616,24 @@ export class CommitGraph extends LitElement {
     // to happen here or nowhere. The item that had focus is about to be
     // removed with the popover; hand it back to the trigger that opened it,
     // or a keyboard user is dropped on <body>.
+    this.closeAndRefocus();
+  };
+
+  /** Close the open popover and give focus back to what opened it: the
+   *  trigger in this element, or — for a chip menu opened from outside it
+   *  (openRefMenu) — that chip. */
+  private closeAndRefocus(): void {
+    const opener = this.chipMenu?.opener;
     const sel = this.popoverTrigger();
     this.closePopovers();
-    if (sel) this.focusAfterUpdate(sel);
-  };
+    if (opener) {
+      void this.updateComplete.then(() => {
+        if (opener.isConnected) opener.focus();
+      });
+    } else if (sel) {
+      this.focusAfterUpdate(sel);
+    }
+  }
 
   /** Focus `sel` once the pending render has removed the popover — after the
    *  update, not a frame later, so nothing else can take focus in between. */
@@ -2659,11 +2686,9 @@ export class CommitGraph extends LitElement {
       e.stopPropagation();
       // Reached only when no document listener is attached (the trigger's own
       // keydown while its popover is closed); with one open, onDocKeyDown
-      // handles Escape and this never runs. Same outcome either way.
-      const sel = this.popoverTrigger();
-      this.closePopovers();
-      // Return focus to the trigger so keyboard users aren't stranded.
-      if (sel) this.focusAfterUpdate(sel);
+      // handles Escape and this never runs. Same outcome either way: focus
+      // goes back to the trigger so keyboard users aren't stranded.
+      this.closeAndRefocus();
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       // The picker's filter box takes its own arrow keys only when there is
       // nowhere to go; a caret in a one-line input has no use for them, so
@@ -2727,16 +2752,50 @@ export class CommitGraph extends LitElement {
     if (!name) return;
     const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
     // The chip and the remote twins folded into it move as one thing — what
-    // you see is "main ☁", and "only this" means what you see. Resolved
-    // through the picker's list, not rebuilt from the short name: see chipRefs.
+    // you see is "main ☁", and "only this" means what you see.
     const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
-    const refs = chipRefs(this.refList, name, kind, remotes);
     const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
+    this.showChipMenu({ name, kind, sha, x, y }, remotes);
+  }
+
+  /**
+   * The same chip menu, for a ref chip that lives OUTSIDE the graph — the
+   * commit-details pane beside it (issue #30: "clicking a ref chip could also
+   * be a shortcut"). The pane has no ref list and no filter of its own; the
+   * graph owns both, so the pane asks the graph, and a pick goes through the
+   * one applyRefFilter every other tick goes through.
+   *
+   * `name` and `kind` are the chip's own words, resolved through the ref list
+   * like every chip (chipRefs) — never rebuilt into a full name. `opener`
+   * gets focus back on Escape; `keyboard` focuses the first item, so a menu
+   * opened with Enter can be driven with the arrows.
+   */
+  openRefMenu(
+    ref: { name: string; kind: WireRef["kind"] },
+    x: number,
+    y: number,
+    sha: string,
+    opts: { opener?: HTMLElement; keyboard?: boolean } = {},
+  ): void {
+    if (!ref.name) return;
+    this.showChipMenu(
+      { name: ref.name, kind: ref.kind, sha, x, y, opener: opts.opener, focusFirst: opts.keyboard },
+      [],
+    );
+  }
+
+  private showChipMenu(
+    m: Omit<NonNullable<CommitGraph["chipMenu"]>, "refs">,
+    remotes: readonly string[],
+  ): void {
+    // Resolved through the picker's list, not rebuilt from the short name:
+    // see chipRefs.
+    const refs = chipRefs(this.refList, m.name, m.kind, remotes);
     this.columnsOpen = false;
     this.scopeOpen = false;
     this.branchesOpen = false;
     this.commitMenu = null;
-    this.chipMenu = { name, kind, sha, refs, x, y };
+    this.chipMenu = { ...m, refs };
   }
 
   // ── Click-to-copy the full sha ─────────────────────────────────────────────
@@ -3937,16 +3996,20 @@ export class CommitGraph extends LitElement {
     const H = 34 + 5 * 28;
     const left = Math.max(6, Math.min(m.x, window.innerWidth - W - 6));
     const top = Math.max(6, Math.min(m.y, window.innerHeight - H - 6));
-    const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
-    const isOnly = sameRefFilter(m.refs, this.refFilter);
+    // A chip the ref list has no entry for resolves to nothing (chipRefs):
+    // its menu says so and acts on nothing, rather than guess a full name.
+    const known = m.refs.length > 0;
+    const inFilter = known && !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
+    const isOnly = known && sameRefFilter(m.refs, this.refFilter);
     const pick = (refs: GraphRefFilter) => {
       this.chipMenu = null;
       this.applyRefFilter(refs);
     };
-    const checkout = chipCheckout(m);
+    const checkout = known ? chipCheckout(m) : undefined;
     return html`<div
       class="gh-pop gh-ctx gh-chip-menu"
       role="menu"
+      tabindex="-1"
       aria-label=${`Filter by ${m.name}`}
       style="left:${Math.round(left)}px;top:${Math.round(top)}px"
       @keydown=${this.onPopoverKeyDown}
@@ -3956,7 +4019,7 @@ export class CommitGraph extends LitElement {
         class="gh-menuitem"
         role="menuitem"
         data-chip-action="only"
-        ?disabled=${isOnly}
+        ?disabled=${isOnly || !known}
         @click=${() => pick(m.refs)}
       >
         <span class="codicon codicon-filter" aria-hidden="true"></span>
@@ -3967,6 +4030,7 @@ export class CommitGraph extends LitElement {
               class="gh-menuitem"
               role="menuitem"
               data-chip-action=${inFilter ? "remove" : "add"}
+              ?disabled=${!known}
               @click=${() =>
                 pick(inFilter ? removeRefs(this.refFilter, m.refs) : addRefs(this.refFilter, m.refs))}
             >
@@ -4001,6 +4065,10 @@ export class CommitGraph extends LitElement {
               <span class="lbl">${checkout.label}</span>
             </button>`
         : nothing}
+      ${known
+        ? nothing
+        : html`<div class="gh-pop-sep"></div>
+            <div class="gh-pop-hint">Not in the branch list yet — refresh the graph</div>`}
     </div>`;
   }
 

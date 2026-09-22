@@ -148,6 +148,42 @@ test("chips follow the filter: unticked refs draw none, the current branch alway
   assert.equal(only.refList.find((r) => r.name === "main")?.isCurrent, true);
 });
 
+test("the ref list crosses IPC only when the caller does not already hold it", async () => {
+  // It is every branch and tag — a megabyte on a repository with ten thousand
+  // tags — and it rode on every page of every load. The renderer says which
+  // list it holds; an unchanged one stays in this process.
+  const first = await bridge.graphLoad({ skip: 0, maxCount: 3 });
+  assert.ok(first.refList && first.refList.length === 3, "a caller that holds nothing gets the list");
+  const sig = first.refListSig;
+  assert.equal(typeof sig, "string");
+
+  const refresh = await bridge.graphLoad({ skip: 0, maxCount: 3, refListSig: sig });
+  assert.equal("refList" in refresh, false, "a refresh over the same refs leaves it out");
+  assert.equal(refresh.refListSig, sig);
+
+  const append = await bridge.graphLoad({ skip: refresh.nextSkip, maxCount: 3, refListSig: sig });
+  assert.equal("refList" in append, false, "so does a later page");
+
+  const filtered = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"], refListSig: sig });
+  assert.deepEqual(filtered.refFilter, ["refs/tags/v1"], "a filter change is applied…");
+  assert.equal("refList" in filtered, false, "…and the unchanged list, filtered-out refs and all, stays where it is");
+  assert.equal(filtered.rows.some((r) => r.sha === sideTip), false, "(side really is filtered out)");
+
+  // A branch appears: the list moved, so it is sent, whatever the caller holds.
+  git("branch", "fresh", tagged);
+  const grown = await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: sig });
+  assert.ok(grown.refList?.some((r) => r.fullName === "refs/heads/fresh"), "the new branch reaches the picker");
+  assert.notEqual(grown.refListSig, sig);
+
+  // A renderer that reloaded holds nothing and says so: it gets the list,
+  // whatever this process sent before.
+  const reloaded = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.ok(reloaded.refList && reloaded.refList.length === 4);
+  // …and one holding a list this process never sent (another repository's).
+  const other = await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: "3:not-this-list" });
+  assert.ok(other.refList);
+});
+
 test("paging under a filter walks the same set page after page", async () => {
   const truth = shasOf(await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/heads/side"] }));
   const fresh = new GitBridge({ getContext: () => ctx } as unknown as RepoStore, store);

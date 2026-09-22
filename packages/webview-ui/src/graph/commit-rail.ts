@@ -2027,13 +2027,16 @@ export class CommitRail extends LitElement {
   /** A ref chip's menu: show only it, add it to / remove it from the filter,
    *  and check it out. */
   private chipMenuTpl(m: NonNullable<CommitRail["chipMenu"]>) {
-    const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
-    const isOnly = sameRefFilter(m.refs, this.refFilter);
+    // A chip the ref list has no entry for resolves to nothing (chipRefs):
+    // its menu says so and acts on nothing, rather than guess a full name.
+    const known = m.refs.length > 0;
+    const inFilter = known && !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
+    const isOnly = known && sameRefFilter(m.refs, this.refFilter);
     const pick = (refs: GraphRefFilter) => {
       this.chipMenu = null;
       this.applyRefFilter(refs);
     };
-    const checkout = chipCheckout(m);
+    const checkout = known ? chipCheckout(m) : undefined;
     return html`
       <div
         class="pop chipmenu"
@@ -2047,7 +2050,7 @@ export class CommitRail extends LitElement {
           class="mi"
           role="menuitem"
           data-chip-action="only"
-          ?disabled=${isOnly}
+          ?disabled=${isOnly || !known}
           @click=${() => pick(m.refs)}
         >
           <span class="codicon codicon-filter"></span>
@@ -2059,6 +2062,7 @@ export class CommitRail extends LitElement {
                 class="mi"
                 role="menuitem"
                 data-chip-action=${inFilter ? "remove" : "add"}
+                ?disabled=${!known}
                 @click=${() =>
                   pick(inFilter ? removeRefs(this.refFilter, m.refs) : addRefs(this.refFilter, m.refs))}
               >
@@ -2091,6 +2095,10 @@ export class CommitRail extends LitElement {
               </button>
             `
           : nothing}
+        ${known
+          ? nothing
+          : html`<div class="sep" role="separator"></div>
+              <div class="hint">Not in the branch list yet — refresh</div>`}
       </div>
     `;
   }
