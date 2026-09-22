@@ -19,6 +19,13 @@ re-reads the comparison in place: if nothing changed the page is untouched, if
 it changed the file you had open is reopened, and only when that file has left
 the comparison does the selection move.
 
+## The commit list comes back alive
+
+Scroll the Commits list, look at Changes, come back — and the list was blank:
+the rows were still there, none of them on screen, and scrolling moved the
+scrollbar without moving the list. Coming back re-attaches the view, which had
+torn down the list's virtualizer and never rebuilt it. It rebuilds now.
+
 ## Also
 
 - The Commits view's CHANGES column cost up to three git processes per row and

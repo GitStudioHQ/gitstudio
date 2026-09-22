@@ -29,6 +29,12 @@ but they share the same engine, so most Git behaviour lands in both at once.
   place: if nothing changed the page is untouched, if it changed the file you
   had open is reopened, and only when that file left the comparison does the
   selection move. (#24)
+- **The commit list came back blank from another view.** Scroll the Commits
+  list, look at Changes, come back: the rows were still there, but none of
+  them were on screen, and scrolling moved the scrollbar without moving the
+  list. The view is kept alive and re-parented on the way back, which tore
+  down the list's virtualizer and never rebuilt it. It rebuilds on re-attach
+  now. (The sidebar rail had the same shape and is fixed with it.)
 - **The Commits view's CHANGES column cost up to three git processes per row**
   and stopped answering past sixty rows; it is one process per visible window
   now, and every row is answered. The Code view's commit count no longer walks

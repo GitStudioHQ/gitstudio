@@ -988,6 +988,14 @@ export class CommitRail extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    // Re-attaching asks for a repaint. `disconnectedCallback` tears the
+    // virtualizer down, and only `updated()` builds one — which Lit runs on a
+    // reactive change, not on a reconnect. The desktop keeps this element alive
+    // across view switches and re-parents it (renderer.ts's viewCache), so
+    // without this the list came back with no virtualizer at all: the rows of
+    // the window you last looked at, still at their old offsets, and nothing
+    // ever repainting them. Scrolled down first, that is a blank list.
+    this.requestUpdate();
     this.disposeTheme = observeGraphTheme((palette) => {
       this.palette = palette;
       this.renderRows();
