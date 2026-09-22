@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
-import type { PullDivergence } from "@gitstudio/git-service/SyncOps";
-import { askPullMode } from "../git/pullMode";
+import type { PullResult, PullStop } from "@gitstudio/git-service/SyncOps";
+import { askPullMode, settlePullStop } from "../git/pullMode";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
@@ -1451,8 +1451,12 @@ export class CommitViewProvider
       return;
     }
     // `diverged` is how SyncOps.pull answers "both sides moved and nobody said
-    // how to reconcile them" — a question to ask, not a failure to report.
-    let result: { ok: boolean; stderr?: string; diverged?: PullDivergence } = { ok: true };
+    // how to reconcile them" — a question to ask, not a failure to report —
+    // and `stopped` how it answers "the merge or rebase stopped on conflicts",
+    // an outcome that runPull has already told the user about.
+    let result: { ok: boolean; stderr?: string; stopped?: PullStop } = { ok: true };
+    /** The divergence question was asked and dismissed: nothing merged. */
+    let cancelled = false;
     try {
       // Checking out a branch is not an action here: the menu routes every
       // checkout through branchRefCommand (gitstudio.branch.checkout /
@@ -1475,37 +1479,21 @@ export class CommitViewProvider
           result = await entry.ctx.branches.checkout(r, { detach: true });
           break;
         }
-        case "pull": {
-          // "Update (pull)" names no reconciliation, so SyncOps decides. It
-          // hands back `diverged` rather than git's "you have divergent
-          // branches" advice when both sides have moved and nothing in the
-          // user's config settles it — and that is a question, so ask it.
-          result = await entry.ctx.sync.pull();
-          if (result.diverged) {
-            const mode = await askPullMode(result.diverged);
-            if (mode === undefined) {
-              // Tell the webview the op is over, exactly as the push arm does:
-              // a bare return leaves the ↓ pill disabled, spinning on a pull
-              // that is never coming.
-              void this.view?.webview.postMessage({
-                type: "branchActionDone",
-                action: msg.action,
-              });
-              return;
-            }
-            result = await entry.ctx.sync.pull({ mode });
+        case "pull":
+        case "pullMerge":
+        case "pullRebase": {
+          const pulled = await this.runPull(entry, msg.action);
+          if (pulled === undefined) {
+            // Asked and dismissed. Nothing merged — but the first pull already
+            // FETCHED, so fall through to the refresh below rather than
+            // returning bare: the ↓ pill would otherwise keep spinning, and
+            // then show the count from before the fetch.
+            cancelled = true;
+            break;
           }
+          result = pulled;
           break;
         }
-        case "pullMerge":
-          // The menu item says "using Merge", so say it to git too. Leaving the
-          // flag off walked this item into the divergent-branches wall — in the
-          // one state where the user had already answered the question.
-          result = await entry.ctx.sync.pull({ mode: "merge" });
-          break;
-        case "pullRebase":
-          result = await entry.ctx.sync.pull({ mode: "rebase" });
-          break;
         case "push": {
           // Same rule as the push modal: a branch that diverged both ways can
           // only be pushed with the lease, so ask rather than fail.
@@ -1539,7 +1527,10 @@ export class CommitViewProvider
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
-    if (!result.ok) {
+    if (cancelled || result.stopped) {
+      // Nothing to report: a dismissed question ran nothing, and a stop was
+      // already said, plainly and with its count, by settlePullStop.
+    } else if (!result.ok) {
       void vscode.window.showErrorMessage(
         `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
@@ -1557,6 +1548,40 @@ export class CommitViewProvider
       type: "branchActionDone",
       action: msg.action,
     });
+  }
+
+  /**
+   * The branch view's three pull items, as one operation. `undefined` means
+   * the divergence question was asked and dismissed — nothing merged.
+   *
+   * A stop on conflicts is settled HERE, by the shared settler, so the caller
+   * only has to not call it a failure.
+   */
+  private async runPull(entry: RepoEntry, action: string): Promise<PullResult | undefined> {
+    let r: PullResult;
+    if (action === "pullMerge") {
+      // The menu item says "using Merge", so say it to git too. Leaving the
+      // flag off walked this item into the divergent-branches wall — in the one
+      // state where the user had already answered the question.
+      r = await entry.ctx.sync.pull({ mode: "merge" });
+    } else if (action === "pullRebase") {
+      r = await entry.ctx.sync.pull({ mode: "rebase" });
+    } else {
+      // "Update (pull)" names no reconciliation, so SyncOps decides. It hands
+      // back `diverged` rather than git's "you have divergent branches" advice
+      // when both sides have moved and nothing in the user's config settles it
+      // — and that is a question, so ask it.
+      r = await entry.ctx.sync.pull();
+      if (r.diverged) {
+        const mode = await askPullMode(r.diverged);
+        if (mode === undefined) {
+          return undefined;
+        }
+        r = await entry.ctx.sync.pull({ mode });
+      }
+    }
+    settlePullStop(r);
+    return r;
   }
 
   /**

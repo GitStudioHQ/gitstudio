@@ -1,5 +1,38 @@
-import type { PullDivergence, PullMode } from "@gitstudio/git-service/SyncOps";
+import * as vscode from "vscode";
+import {
+  pullStoppedMessage,
+  type PullDivergence,
+  type PullMode,
+  type PullStop,
+} from "@gitstudio/git-service/SyncOps";
 import { promptPick } from "../ui/dialogs";
+
+/**
+ * A pull whose merge or rebase STOPPED on conflicts — said plainly, with the
+ * count, and the user taken to the Changes view, where the conflicted files
+ * sit in their own group and open in the merge editor.
+ *
+ * Returns true when the result WAS a stop, and the caller must then not report
+ * it as a failure: git's "Resolve all conflicts manually… git rebase
+ * --continue" in an error toast — or, for a merge, which says CONFLICT on
+ * stdout and nothing on stderr, a bare "pull failed" — is report #12's symptom
+ * reached through the door built to close it. A warning, not an error, the
+ * same tone the branch view's merge and rebase use when they hit conflicts:
+ * nothing failed, a person has to choose.
+ *
+ * Shared by every pull door (the branch view's Update / Pull using Merge /
+ * Pull using Rebase and the status bar's Sync and Pull), for the reason
+ * `askPullMode` is: an answer settled inside one door is an answer the next
+ * door gets wrong.
+ */
+export function settlePullStop(result: { stopped?: PullStop }): boolean {
+  if (!result.stopped) {
+    return false;
+  }
+  void vscode.window.showWarningMessage(`GitStudio: ${pullStoppedMessage(result.stopped)}`);
+  void vscode.commands.executeCommand("gitstudio.commit.focus");
+  return true;
+}
 
 /**
  * The choice git itself asks for when a branch and its upstream have both

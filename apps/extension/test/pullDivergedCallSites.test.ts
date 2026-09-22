@@ -98,3 +98,61 @@ test("every pull call site has decided about a diverged branch", async () => {
       unreviewed.join("\n"),
   );
 });
+
+// The second half of the same door. The answer to "merge or rebase?" is a merge
+// or a rebase, and either can STOP on conflicts — so every pull that can merge
+// or rebase must also have decided what a stop looks like. `SyncOps.pull`
+// answers it with a `stopped` fact (operation + conflicted files); a caller
+// that treats it as an ordinary failure puts git's terminal hint ("Resolve all
+// conflicts manually… git rebase --continue") in an error toast — or, for a
+// merge, which says CONFLICT on stdout and nothing on stderr, a bare "pull
+// failed" — which is report #12's symptom reached from the door built to close
+// it. Unlike `diverged`, naming a mode is NOT an exemption: it is precisely the
+// pulls that name one that stop.
+//
+// Evidence: the CODE just after the call (comments do not count — prose about
+// a stop is not handling one) reads `.stopped`, or hands the result to the
+// shared settler (`settlePullStop` in the extension, `pullVerdict` in the
+// desktop renderer, both of which do), or the call carries a
+// `pull-stop-reviewed:` note saying why neither applies.
+const STOP_HANDLED = /\.stopped\b|settlePullStop|pullVerdict/;
+const STOP_EXEMPT = /pull-stop-reviewed:/;
+/** A method DECLARATION (`async syncPull(opts) {`) is not a call site; the
+ *  call inside its body is, and is checked on its own line. */
+const DECLARATION = /^\s*(?:(?:public|private|protected)\s+)?async\s+\w+\s*\(/;
+
+test("every pull call site has decided about a pull that stops on conflicts", async () => {
+  const unhandled: string[] = [];
+  let seen = 0;
+  for (const rel of SCAN) {
+    for (const file of await tsFiles(join(ROOT, rel))) {
+      const lines = (await readFile(file, "utf8")).split("\n");
+      lines.forEach((line, i) => {
+        if (COMMENT.test(line) || DECLARATION.test(line)) return;
+        const call = CALL.exec(line);
+        if (!call && !INVOKE.test(line)) return;
+        // `--ff-only` never merges or rebases, so it cannot stop on conflicts.
+        if (call && /ff-only/.test(call[1])) return;
+        seen++;
+        // Fourteen lines of CODE below the call: a stop is read after the
+        // divergence question has been asked and answered, which sits between.
+        const below: string[] = [];
+        for (let k = i; k < lines.length && below.length < 14; k++) {
+          if (!COMMENT.test(lines[k])) below.push(lines[k]);
+        }
+        if (STOP_HANDLED.test(below.join("\n"))) return;
+        if (STOP_EXEMPT.test(lines.slice(Math.max(0, i - 5), i + 2).join("\n"))) return;
+        unhandled.push(`${relative(ROOT, file)}:${i + 1} — ${line.trim()}`);
+      });
+    }
+  }
+  assert.ok(seen > 5, `the scan found only ${seen} pull call sites — it broke`);
+  assert.equal(
+    unhandled.join("\n"),
+    "",
+    "pull call sites whose merge or rebase can stop on conflicts, with nothing reading " +
+      "`.stopped` (or handing it to settlePullStop / pullVerdict) and no " +
+      "`pull-stop-reviewed:` note:\n" +
+      unhandled.join("\n"),
+  );
+});

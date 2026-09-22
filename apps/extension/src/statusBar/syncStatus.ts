@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
-import { askPullMode } from "../git/pullMode";
+import { askPullMode, settlePullStop } from "../git/pullMode";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 
@@ -233,6 +233,11 @@ export class SyncStatusItem implements vscode.Disposable {
           }
           pull = await active.ctx.sync.pull({ mode });
         }
+        // Stopped on conflicts: said plainly, Changes revealed — and NOTHING is
+        // pushed. The branch is mid-merge or mid-rebase until they are resolved.
+        if (settlePullStop(pull)) {
+          return;
+        }
         if (!pull.ok) {
           if (await this.offerUpstreamRepair(active, pull.stderr)) {
             return;
@@ -252,7 +257,11 @@ export class SyncStatusItem implements vscode.Disposable {
         if (rebase === undefined) {
           return;
         }
-        reportSync(await active.ctx.sync.pull({ rebase }), "Pull", "Pulled");
+        const pulled = await active.ctx.sync.pull({ rebase });
+        if (settlePullStop(pulled)) {
+          return;
+        }
+        reportSync(pulled, "Pull", "Pulled");
         break;
       }
       case "push": {
