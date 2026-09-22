@@ -18,6 +18,9 @@ import type {
 import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
 import {
   chipRefsUnderFilter,
+  filterWalk,
+  type FilterWalk,
+  headInWalk,
   normalizeRefFilter,
   RefListCourier,
   refEntries,
@@ -174,9 +177,14 @@ export class CommitGraphPanel {
   /**
    * The branch filter the loaded pages were walked with (issue #30) — pruned
    * against the refs that existed at load time, null for everything. Stored
-   * per repository in the RefFilterStore; this is the applied copy.
+   * per repository in the RefFilterStore; this is the applied copy, presets
+   * still symbolic ("Current branch" is CURRENT_BRANCH, not a branch name).
    */
   private refFilter: GraphRefFilter = null;
+  /** What that filter walks for this load — resolved against this load's
+   *  ref listing, HEAD only when detached (filterWalk). Every page, the
+   *  chips and a reveal's reach question read this one value. */
+  private walk: FilterWalk = { refs: null, head: true };
   private hasAnyRemote = false;
   private currentHeadSha = "";
   private nextSkip = 0;
@@ -374,6 +382,7 @@ export class CommitGraphPanel {
       this.refs = [];
       this.refList = [];
       this.refFilter = null;
+      this.walk = { refs: null, head: true };
       this.nextSkip = 0;
       this.hasMore = false;
       this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, refFilter: null }, []);
@@ -418,9 +427,13 @@ export class CommitGraphPanel {
           // gone ref); the store keeps its value for a load that can prune.
           this.refFilter = wanted;
         }
+        // Resolved against the listing just read: a preset means the branch
+        // HEAD is on NOW, and an attached HEAD is walked only when ticked.
+        this.walk = filterWalk(this.refFilter, this.refList, this.refs);
         page = await this.readPage(active, 0, controller.signal, FIRST_PAGE_SIZE);
       } else {
         this.refFilter = null;
+        this.walk = { refs: null, head: true };
         // Refs (for-each-ref + stash) and the first log page run CONCURRENTLY —
         // refs no longer block the log spawn. buildRows needs both, but they
         // land together.
@@ -448,7 +461,10 @@ export class CommitGraphPanel {
           head: this.currentHeadSha,
           totalColumns,
           hasMore: this.hasMore,
-          refFilter: this.refFilter,
+          // What the rows were walked from, full names only — the picker
+          // ticks these — and the preset they stand for, when they do.
+          refFilter: this.walk.refs,
+          ...(this.walk.preset ? { refPreset: this.walk.preset } : {}),
         },
         this.refList,
       );
@@ -781,7 +797,8 @@ export class CommitGraphPanel {
       revRange: "--all",
       // The branch filter: every page of one load walks the same ticked set,
       // so skip-based paging stays consistent across the load.
-      refs: this.refFilter ?? undefined,
+      refs: this.walk.refs ?? undefined,
+      head: this.walk.head,
       maxCount: limit,
       skip,
       signal,
@@ -846,6 +863,18 @@ export class CommitGraphPanel {
         this.currentHeadSha = ref.sha;
       }
     }
+    if (!this.currentHeadSha) {
+      // No branch is current: HEAD is detached (or unborn). It still sits on
+      // a commit, and that is what `head` means to the webview — without it
+      // the header read "no commits yet" over a hundred and fifty of them,
+      // and the rail lost its Jump to HEAD. rev-parse prints "HEAD" itself on
+      // an unborn branch, so only a real object name is taken.
+      try {
+        this.currentHeadSha = await active.ctx.refs.headCommit();
+      } catch {
+        /* no HEAD to point at — the header says so */
+      }
+    }
   }
 
   /**
@@ -861,10 +890,11 @@ export class CommitGraphPanel {
     const rows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      // Chips follow the filter: a ref the graph is not built around draws no
-      // chip (the current branch always does). The details pane and the
-      // commit menu keep reading the full map — they describe the commit.
-      refsBySha: chipRefsUnderFilter(this.refsBySha, this.refFilter),
+      // Chips follow the filter: a ref the graph is not walked from draws no
+      // chip — the current branch included, unless it is ticked. The details
+      // pane and the commit menu keep reading the full map — they describe
+      // the commit.
+      refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
     });
     return { rows, totalColumns: layout.totalColumns };
   }
@@ -968,8 +998,8 @@ export class CommitGraphPanel {
    */
   private async revealUnloaded(sha: string): Promise<void> {
     const active = this.repos.getActive();
-    const filter = this.refFilter;
-    if (active && filter && !(await active.ctx.log.walkReaches(sha, filter))) {
+    const walk = this.walk;
+    if (active && walk.refs && !(await active.ctx.log.walkReaches(sha, walk.refs, { head: walk.head }))) {
       // The details still show — the pane describes the commit, whatever the
       // graph is built around — so the reveal is posted for the dock it
       // re-opens, not for a row it will not find.
@@ -1032,6 +1062,12 @@ export class CommitGraphPanel {
     if (!this.currentHeadSha || !active.repo) {
       // No WIP node until vscode.git attaches (it drives the dirty check); the
       // commit history still renders from our git-service in the meantime.
+      return;
+    }
+    if (!headInWalk(this.walk, this.refList, this.records, this.currentHeadSha)) {
+      // A filter that leaves the current branch out (issue #30) walks no
+      // HEAD, and a WIP node parented on a commit the graph does not have
+      // hangs off a lane to nowhere.
       return;
     }
     const st = active.repo.state;

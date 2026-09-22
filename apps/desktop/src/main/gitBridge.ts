@@ -62,6 +62,8 @@ import type {
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import {
   chipRefsUnderFilter,
+  filterWalk,
+  type FilterWalk,
   normalizeRefFilter,
   refEntries,
   refListSignature,
@@ -196,9 +198,14 @@ export class GitBridge {
    * The branch filter the accumulated pages were walked with (issue #30) —
    * pruned against the refs that existed at load time, null for everything.
    * A request that changes it is a fresh load: the pages so far belong to a
-   * different history.
+   * different history. Presets stay symbolic here ("Current branch" is
+   * CURRENT_BRANCH), so a request is compared with what was asked for.
    */
   private refFilter: GraphRefFilter = null;
+  /** What that filter walks for the accumulated pages — resolved against the
+   *  fresh load's listing, HEAD only when detached (filterWalk). Every page,
+   *  the chips and graph:reaches read this one value. */
+  private walk: FilterWalk = { refs: null, head: true };
   private currentHeadSha = "";
   private loadedRoot: string | undefined;
   /** Serializes graph:load so two pages never interleave in the accumulator. */
@@ -306,6 +313,9 @@ export class GitBridge {
           await this.refFilters?.set(ctx.root, this.refFilter);
         }
       }
+      // Resolved against the listing just read: a preset means the branch
+      // HEAD is on NOW, and an attached HEAD is walked only when ticked.
+      this.walk = filterWalk(this.refFilter, this.refList, this.refs);
     }
     const gen = this.graphGen;
 
@@ -319,7 +329,7 @@ export class GitBridge {
         totalColumns: 1,
         hasMore: false,
         nextSkip: this.loaded.length,
-        refFilter: this.refFilter,
+        ...this.filterFields(),
         ...this.refListFor(opts),
       };
     }
@@ -331,10 +341,10 @@ export class GitBridge {
     const allRows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      // Chips follow the filter: a ref the graph is not built around draws no
-      // chip (the current branch always does). commit:details keeps reading
-      // the full map — it describes the commit.
-      refsBySha: chipRefsUnderFilter(this.refsBySha, this.refFilter),
+      // Chips follow the filter: a ref the graph is not walked from draws no
+      // chip — the current branch included, unless it is ticked.
+      // commit:details keeps reading the full map — it describes the commit.
+      refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
     });
 
     return {
@@ -343,8 +353,17 @@ export class GitBridge {
       totalColumns: layout.totalColumns,
       hasMore,
       nextSkip: this.loaded.length,
-      refFilter: this.refFilter,
+      ...this.filterFields(),
       ...this.refListFor(opts),
+    };
+  }
+
+  /** What a page says about the filter: the full names its rows were walked
+   *  from (the picker ticks these) and the preset they stand for, if any. */
+  private filterFields(): Pick<GraphPage, "refFilter" | "refPreset"> {
+    return {
+      refFilter: this.walk.refs,
+      ...(this.walk.preset ? { refPreset: this.walk.preset } : {}),
     };
   }
 
@@ -369,10 +388,11 @@ export class GitBridge {
    */
   async graphReaches(sha: string): Promise<{ reached: boolean }> {
     const ctx = this.ctx();
-    if (!ctx || !this.refFilter) {
+    const walk = this.walk;
+    if (!ctx || !walk.refs) {
       return { reached: true };
     }
-    return { reached: await ctx.log.walkReaches(sha, this.refFilter) };
+    return { reached: await ctx.log.walkReaches(sha, walk.refs, { head: walk.head }) };
   }
 
   private async readPage(
@@ -385,7 +405,8 @@ export class GitBridge {
       revRange: "--all",
       // The branch filter: every page of one load walks the same ticked set,
       // so skip-based paging stays consistent across the load.
-      refs: this.refFilter ?? undefined,
+      refs: this.walk.refs ?? undefined,
+      head: this.walk.head,
       maxCount,
       skip,
     })) {
@@ -420,6 +441,17 @@ export class GitBridge {
       }
       if (ref.type === "head" && ref.isCurrent) {
         this.currentHeadSha = ref.sha;
+      }
+    }
+    if (!this.currentHeadSha) {
+      // No branch is current: HEAD is detached (or unborn). It still sits on
+      // a commit, and that is what a page's `head` means — the graph's "you
+      // are here" and its header's "Detached HEAD at …". The extension had
+      // the same gap (its header read "no commits yet" over the history).
+      try {
+        this.currentHeadSha = await ctx.refs.headCommit();
+      } catch {
+        /* no HEAD to point at */
       }
     }
   }

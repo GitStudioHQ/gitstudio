@@ -7605,10 +7605,13 @@
      * Search with scope Branch+Tag dims the rows that do not carry a chip, and
      * the gutter hover focuses one lane while the pointer is on it — neither is
      * "show me only these branches". The picker is: tick refs and the host
-     * rebuilds the graph from page 0 around exactly those refs plus HEAD, and
-     * the chips follow (an unticked ref draws none; the current branch always
-     * does). Presets tick what they say, All restores everything, Escape hands
-     * focus back to the trigger, and a chip's own menu narrows to that chip.
+     * rebuilds the graph from page 0 around exactly those refs — HEAD only
+     * when detached, so "Show only" another branch is that branch alone (the
+     * released 1.13.0 walked the current branch beside it) — and the chips
+     * follow (an unticked ref draws none, the current branch included).
+     * Presets are sent as what they MEAN ("@current") and come back resolved
+     * and lit, All restores everything, Escape hands focus back to the
+     * trigger, and a chip's own menu narrows to that chip.
      *
      * The fixture carries one row that only an unmerged remote branch reaches,
      * so a filter has a ROW to drop and not just chips — without it the check
@@ -7658,27 +7661,32 @@
       // The filter box is where typing goes, and it takes focus on open.
       c.ok(sr.activeElement?.matches(".gh-pop-filter input"), "the filter box has focus");
 
-      // ── Current branch: the graph is REBUILT around main + HEAD ──
+      // ── Current branch: the graph is REBUILT around the branch HEAD is on ──
       sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
       await settle(700);
-      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["refs/heads/main"]), "the host was asked for exactly main, fully qualified");
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["@current"]), "the host was asked for the PRESET — stored as what it means, so it follows a checkout");
+      c.eq(JSON.stringify(lastLoad().walked), JSON.stringify(["refs/heads/main"]), "…which it resolved to main, fully qualified");
       c.eq(lastLoad().skip, 0, "and from page 0 — the accumulated pages belonged to the old history");
       c.eq(rows().length, all - 1, "the row only the unticked remote reaches is gone");
       c.ok(!hasRow(REMOTE_ONLY), "(that one)");
-      c.ok(!!chip("main"), "the current branch keeps its chip");
+      c.ok(!!chip("main"), "the current branch has its chip — it is what the preset ticks");
       c.ok(!chip("main")?.dataset.remotes, "without its folded origin/main — that ref is not ticked");
       c.ok(!chip("desktop-v1.5.1") && !sr.querySelector(".chip-tag"), "an unticked tag draws no chip");
       c.ok(!sr.querySelector(".chip-overflow"), "and nothing is left to fold behind a +N pill");
       c.ok(!chip("redesign/issues-detail"), "nor does an unticked local branch");
-      c.eq(label(), "main", "the trigger names the filter");
+      c.eq(label(), "main (current)", "the trigger names the preset and the branch it means now");
       c.ok(!!pop(), "and the picker stays open for the next tick");
+      c.ok(
+        sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.classList.contains("active"),
+        "Current branch reads lit after the host's answer",
+      );
       c.eq(
         sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/heads/main']")?.getAttribute("aria-checked"),
         "true",
         "main reads ticked",
       );
 
-      // ── A tick ADDS: main + a tag ──
+      // ── A tick ADDS: main + a tag (and the preset gives way to the list) ──
       sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/tags/desktop-v1.5.1']")?.click();
       await settle(700);
       c.eq(
@@ -7686,6 +7694,7 @@
         JSON.stringify(["refs/heads/main", "refs/tags/desktop-v1.5.1"]),
         "ticking a second ref adds it",
       );
+      c.ok(!sr.querySelector(".gh-branches-pop .gh-preset.active"), "a hand-picked selection lights no preset");
       c.ok(!!chip("desktop-v1.5.1"), "and its chip comes back");
       c.eq(label(), "main, desktop-v1.5.1", "two names fit the trigger");
 
@@ -7725,8 +7734,10 @@
         "Show only this branch narrows to it",
       );
       c.ok(!sr.querySelector(".gh-chip-menu"), "and the menu closes");
-      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !!chip("main") && !chip("desktop-v1.5.1"),
-        "the graph is that branch plus HEAD, chips included");
+      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !chip("desktop-v1.5.1"),
+        "the graph is that branch, chips included");
+      c.ok(!hasRow("9f8e7d6c5b4a39281706") && !chip("main"),
+        "and not the current branch beside it: main's tip is not on it, and main is not ticked");
       c.eq(label(), "redesign/issues-detail", "the trigger names it");
 
       // ── A chip's own menu: Checkout, by the ref's FULL name ──

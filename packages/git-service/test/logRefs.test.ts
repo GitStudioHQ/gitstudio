@@ -9,8 +9,9 @@ import { LogProvider, revisionLines } from "../src/LogProvider";
 import { removeTempRepo } from "./tmpRepo";
 
 // The graph's branch filter (issue #30): `streamCommits({ revRange: "--all",
-// refs })` walks exactly the ticked refs — plus HEAD, which is never optional —
-// instead of every branch, tag and remote. These pin what git is handed (the
+// refs, head })` walks exactly the ticked refs — plus HEAD when `head` says so
+// (the default; hosts pass false for an attached HEAD) — instead of every
+// branch, tag and remote. These pin what git is handed (the
 // contract the hosts rely on) and what a filtered walk returns.
 //
 // The ticked refs travel on STDIN (`git log --stdin`), not argv: Windows caps a
@@ -55,9 +56,9 @@ function commit(file: string, msg: string): string {
   return git("rev-parse", "HEAD");
 }
 
-const shas = async (refs?: string[]): Promise<string[]> => {
+const shas = async (refs?: string[], head?: boolean): Promise<string[]> => {
   const out: string[] = [];
-  for await (const c of log.streamCommits({ revRange: "--all", refs })) out.push(c.sha);
+  for await (const c of log.streamCommits({ revRange: "--all", refs, head })) out.push(c.sha);
   return out;
 };
 
@@ -207,16 +208,87 @@ test("revisionLines keeps exactly the names git allows under refs/", () => {
   assert.equal(revisionLines([...kept, ...dropped]), [...kept, "HEAD"].join("\n") + "\n");
   assert.equal(revisionLines(["refs/heads/x"], "^"), "^refs/heads/x\n^HEAD\n", "a prefix negates every line, HEAD included");
   assert.equal(revisionLines([]), "HEAD\n");
+  assert.equal(revisionLines(["refs/heads/x"], "", false), "refs/heads/x\n", "HEAD only when it is walked");
+  assert.equal(revisionLines(["--all"], "^", false), "", "nothing left is empty, not a lone newline");
 });
 
-test("an empty refs list is the unfiltered walk", async () => {
+test("no refs list is the unfiltered walk, exactly as before the filter existed", async () => {
   const all = await shas();
-  assert.deepEqual(await shas([]), all);
   const { args, input } = lastLog();
-  assert.ok(args.includes("--branches") && args.includes("--tags") && args.includes("--remotes"));
+  assert.deepEqual(
+    args.slice(args.findIndex((a) => a.startsWith("--pretty=")) + 1),
+    ["--branches", "--tags", "--remotes", "HEAD"],
+    "the --all expansion, HEAD on argv, nothing else",
+  );
   assert.ok(!args.includes("--ignore-missing"));
   assert.ok(!args.includes("--stdin"));
   assert.equal(input, undefined, "and nothing on stdin");
+  for (const c of [mainTip, sideTip, tagged]) assert.ok(all.includes(c), c);
+  // `head` means nothing without a filter: the whole graph always walks HEAD.
+  assert.deepEqual(await shas(undefined, false), all);
+  assert.deepEqual(lastLog().args, args);
+});
+
+// ── HEAD under a filter (issue #30, found on the released 1.13.0) ────────────
+// "Show only origin/x" on a busy main showed origin/x plus the whole of main:
+// 463 rows, 372 of them not on the ticked branch, under a trigger that named
+// origin/x alone. An attached HEAD is a branch in the picker like any other;
+// only a detached one needs walking by name.
+
+test("an attached HEAD is not walked when the host says so: only the ticked refs reach git", async () => {
+  const out = await shas(["refs/heads/side"], false);
+  const spawn = lastLog();
+  assert.deepEqual(revisionsOf(spawn), ["refs/heads/side"], "no HEAD line");
+  assert.equal(spawn.input, "refs/heads/side\n");
+  assert.ok(out.includes(sideTip), "the ticked branch is there");
+  assert.ok(!out.includes(mainTip), "and main — where HEAD is — is not, because nobody ticked it");
+});
+
+test("a detached HEAD is still walked, so the commit you are on stays in the graph", async () => {
+  git("checkout", "-q", "--detach", "HEAD~1");
+  const detached = commit("d.txt", "detached work");
+  const out = await shas(["refs/heads/side"], true);
+  assert.ok(out.includes(detached));
+  assert.deepEqual(revisionsOf(lastLog()), ["refs/heads/side", "HEAD"]);
+});
+
+test("a filter that resolves to nothing walks nothing — never the current branch by default", async () => {
+  // `git log --stdin` handed an EMPTY stdin falls back to HEAD. A filter of
+  // only dropped entries, or none at all with HEAD attached, must not.
+  const before = proc.spawns.length;
+  assert.deepEqual(await shas([], false), []);
+  assert.deepEqual(await shas(["--all", "main"], false), []);
+  assert.equal(proc.spawns.length, before, "not even spawned");
+  // With HEAD walked, an empty list is HEAD's history alone.
+  const headOnly = await shas([], true);
+  assert.deepEqual(revisionsOf(lastLog()), ["HEAD"]);
+  assert.ok(headOnly.includes(mainTip) && !headOnly.includes(sideTip));
+  // And walkReaches agrees: an empty walk reaches nothing.
+  assert.equal(await log.walkReaches(mainTip, [], { head: false }), false);
+  assert.equal(await log.walkReaches(mainTip, [], { head: true }), true);
+  assert.equal(await log.walkReaches(sideTip, [], { head: true }), false);
+});
+
+test("walkReaches leaves an attached HEAD out when the walk does", async () => {
+  assert.equal(await log.walkReaches(mainTip, ["refs/heads/side"], { head: false }), false, "main is not in a walk of side");
+  const spawn = proc.spawns.filter((s) => s.args[0] === "rev-list").at(-1)!;
+  assert.equal(spawn.input, "^refs/heads/side\n", "no ^HEAD");
+  assert.equal(await log.walkReaches(sideTip, ["refs/heads/side"], { head: false }), true);
+  // It answers exactly what the walk shows.
+  const walked = await shas(["refs/heads/side"], false);
+  for (const c of [tagged, mainTip, sideTip]) {
+    assert.equal(await log.walkReaches(c, ["refs/heads/side"], { head: false }), walked.includes(c), c);
+  }
+});
+
+test("a branch literally named --all is a plain ref on stdin, and a bare --all is still dropped", async () => {
+  git("update-ref", "refs/heads/--all", tagged);
+  git("notes", "add", "-m", "a note", sideTip);
+  const out = await shas(["refs/heads/--all", "--all"], false);
+  assert.deepEqual(revisionsOf(lastLog()), ["refs/heads/--all"], "the ref, as a ref; the option-shaped entry dropped");
+  assert.ok(out.includes(tagged), "the branch named --all walks its own history");
+  assert.ok(!out.includes(mainTip) && !out.includes(sideTip), "and nothing the real --all would add");
+  assert.ok(!out.includes(git("rev-parse", "refs/notes/commits")));
 });
 
 test("walkReaches says whether a filtered walk would reach a commit, without walking it", async () => {

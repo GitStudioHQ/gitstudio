@@ -7,11 +7,13 @@ import type {
   GraphInitMessage,
   GraphRefEntry,
   GraphRefFilter,
+  RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 
 /** What a graph surface keeps for its Branches picker. */
 export interface RefPickerState {
   refFilter: GraphRefFilter;
+  refPreset?: RefPreset;
   refList: GraphRefEntry[];
 }
 
@@ -26,8 +28,11 @@ export interface RefPickerState {
  */
 export function applyGraphInitRefs(
   target: RefPickerState,
-  message: Pick<GraphInitMessage, "refFilter" | "refList">,
+  message: Pick<GraphInitMessage, "refFilter" | "refPreset" | "refList">,
 ): void {
   target.refFilter = message.refFilter ?? null;
+  // Every graphInit says which preset, if any — absent is "none", unlike the
+  // list: a hand-picked selection after a preset must unlight it.
+  target.refPreset = message.refPreset;
   if (message.refList) target.refList = message.refList;
 }

@@ -29,13 +29,25 @@ export interface StreamCommitsOptions {
    * FULLY-QUALIFIED names — refs/heads/x, refs/remotes/origin/x, refs/tags/t.
    * A short name is ambiguous the moment a tag shares it with a branch, and
    * git resolves the ambiguity by its own precedence, not the user's tick.
-   * When non-empty these replace the branches/tags/remotes expansion; HEAD is
-   * always added, so a detached head can never filter itself out of the graph.
-   * They reach git on stdin, never argv, so their number is unbounded; an
-   * entry that is not a plain refs/… name is dropped (see revisionLines).
-   * Ignored unless `revRange` is "--all".
+   * Present (even empty) these replace the branches/tags/remotes expansion;
+   * absent is the whole graph. HEAD joins them only as `head` says. They
+   * reach git on stdin, never argv, so their number is unbounded; an entry
+   * that is not a plain refs/… name is dropped (see revisionLines). Ignored
+   * unless `revRange` is "--all".
    */
   refs?: string[];
+  /**
+   * Walk HEAD beside `refs` (default true).
+   *
+   * A DETACHED head is on no branch the user can tick, so it has to be walked
+   * explicitly or the commit you are sitting on filters itself out of the
+   * graph. An ATTACHED head is a branch in the picker like any other, and
+   * walking it anyway meant "Show only origin/x" showed origin/x plus the whole
+   * of the current branch's history (on a busy main, 372 of 463 rows were not
+   * on the ticked branch), under a trigger naming origin/x alone. Hosts pass
+   * whether HEAD is detached; a caller that cannot tell keeps the default.
+   */
+  head?: boolean;
   maxCount?: number;
   skip?: number;
   paths?: string[];
@@ -81,9 +93,9 @@ export class LogProvider {
       // tools, AI assistants. HEAD is listed explicitly because --branches does
       // not cover a DETACHED head, and dropping the commit you are sitting on
       // would be a worse bug than the one being fixed.
-      if (opts?.refs && opts.refs.length > 0) {
-        // The branch filter: exactly the ticked refs, plus HEAD for the same
-        // reason as above. `--ignore-missing` because the selection is stored
+      if (opts?.refs !== undefined) {
+        // The branch filter: exactly the ticked refs, plus HEAD when it is
+        // detached (see `head`). `--ignore-missing` because the selection is stored
         // per repository and a branch in it can be deleted between the ref
         // listing and this spawn (or by another tool while the app was closed);
         // git would otherwise refuse the whole log over one gone ref. A missing
@@ -97,7 +109,14 @@ export class LogProvider {
         // fails and the graph shows an error instead of history. stdin has no
         // ceiling, and the argv below is the same length for 3 refs or 30,000.
         args.push("--ignore-missing", "--stdin");
-        input = revisionLines(opts.refs);
+        input = revisionLines(opts.refs, "", opts.head ?? true);
+        if (input === "") {
+          // Nothing to walk: every entry was dropped, or the filter resolved
+          // to no ref at all with HEAD attached. Not a spawn with empty stdin —
+          // `git log --stdin` handed no revision falls back to HEAD, and would
+          // show the current branch under a filter that names nothing of it.
+          return;
+        }
       } else {
         args.push("--branches", "--tags", "--remotes", "HEAD");
       }
@@ -132,9 +151,9 @@ export class LogProvider {
   }
 
   /**
-   * Whether the walk `streamCommits({ revRange: "--all", refs })` makes
-   * would reach `sha` at all — reachable from one of the ticked refs or from
-   * HEAD — without walking it.
+   * Whether the walk `streamCommits({ revRange: "--all", refs, head })` makes
+   * would reach `sha` at all — reachable from one of the ticked refs, or from
+   * HEAD when `head` walks it too (default true, as there) — without walking it.
    *
    * A reveal into a filtered graph (a Branches-view click, a PR link, a
    * parent chip) lands on a commit the ticked refs need not reach as a matter
@@ -147,8 +166,14 @@ export class LogProvider {
   async walkReaches(
     sha: string,
     refs: readonly string[],
-    opts?: { signal?: AbortSignal },
+    opts?: { signal?: AbortSignal; head?: boolean },
   ): Promise<boolean> {
+    const input = revisionLines(refs, "^", opts?.head ?? true);
+    if (input === "") {
+      // The walk is empty (see streamCommits), so it reaches nothing. Asked
+      // anyway, rev-list would list `sha` — the same answer, one spawn later.
+      return false;
+    }
     const r = await this.proc.run(
       [
         "rev-list",
@@ -165,7 +190,7 @@ export class LogProvider {
         "--end-of-options",
         sha,
       ],
-      { ...opts, input: revisionLines(refs, "^") },
+      { signal: opts?.signal, input },
     );
     if (r.code !== 0) {
       return true;
@@ -184,8 +209,9 @@ export class LogProvider {
 const PLAIN_REF = /^refs\/(?!.*\.\.)(?!.*@\{)[^\x00-\x20\x7f~^:?*[\\]+$/;
 
 /**
- * The `--stdin` payload for a set of refs: one revision per line, HEAD last,
- * each optionally negated with `prefix`.
+ * The `--stdin` payload for a set of refs: one revision per line, HEAD last
+ * when `head` walks it, each optionally negated with `prefix`. Empty — not a
+ * lone newline — when nothing is left to walk, so a caller can tell.
  *
  * The refs are DATA — a selection read back from storage — and on stdin a line
  * is not only a revision. A line starting with "-" is a pseudo-option to git ≥
@@ -198,10 +224,10 @@ const PLAIN_REF = /^refs\/(?!.*\.\.)(?!.*@\{)[^\x00-\x20\x7f~^:?*[\\]+$/;
  * Both hosts prune the selection against the live ref list before it gets
  * here, so in practice nothing is dropped; this is the floor under that.
  */
-export function revisionLines(refs: readonly string[], prefix = ""): string {
+export function revisionLines(refs: readonly string[], prefix = "", head = true): string {
   const lines = refs.filter((ref) => PLAIN_REF.test(ref)).map((ref) => prefix + ref);
-  lines.push(`${prefix}HEAD`);
-  return lines.join("\n") + "\n";
+  if (head) lines.push(`${prefix}HEAD`);
+  return lines.length > 0 ? lines.join("\n") + "\n" : "";
 }
 
 function parseRecord(raw: string): CommitRecord | undefined {

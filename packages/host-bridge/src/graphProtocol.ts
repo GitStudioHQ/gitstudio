@@ -78,10 +78,20 @@ export interface GraphRefEntry {
 
 /**
  * The branch filter: the fully-qualified refs the graph is built around, or
- * null for every branch, tag and remote. Never an empty list — deselecting the
- * last ref falls back to null, because a graph of nothing is not a graph.
+ * null for every branch, tag and remote. A selection is never an empty list —
+ * deselecting the last ref falls back to null, because a graph of nothing is
+ * not a graph.
+ *
+ * What is STORED and SENT (setRefFilter) may also hold the presets' symbolic
+ * entries (CURRENT_BRANCH and friends, graphRefFilter.ts), which follow HEAD
+ * rather than name a branch. What a graphInit carries is always resolved: full
+ * names only, the preset beside it in `refPreset`. That one may be EMPTY —
+ * "Current branch" on a detached HEAD walks HEAD alone.
  */
 export type GraphRefFilter = string[] | null;
+
+/** The Branches picker's presets (issue #30). */
+export type RefPreset = "current" | "currentUpstream" | "local" | "all";
 
 // ── Host → webview ──────────────────────────────────────────────────────────
 
@@ -95,8 +105,16 @@ export interface GraphInitMessage {
   totalColumns: number;
   /** True while more pages remain to be loaded on demand. */
   hasMore: boolean;
-  /** The filter these rows were built under (see GraphRefFilter). */
+  /** The filter these rows were built under, RESOLVED to full names (see
+   *  GraphRefFilter) — what the picker ticks. */
   refFilter: GraphRefFilter;
+  /**
+   * The preset the stored filter is, when it is one ("current", …) — so the
+   * picker highlights it and the trigger says "Current branch (main)" after a
+   * branch switch as before it. Absent for a hand-picked selection and for
+   * every branch.
+   */
+  refPreset?: RefPreset;
   /**
    * Every ref the picker can offer — the filtered-out ones included — sent
    * only when it CHANGED since this host last sent one to this webview.

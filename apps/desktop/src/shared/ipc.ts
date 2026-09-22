@@ -10,6 +10,7 @@ import type {
   RowStat,
   GraphRefEntry,
   GraphRefFilter,
+  RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
 
@@ -62,8 +63,11 @@ export interface GraphPage {
   hasMore: boolean;
   /** Skip cursor for the next page request. */
   nextSkip: number;
-  /** The branch filter these rows were walked with (issue #30); null = all. */
+  /** The branch filter these rows were walked with (issue #30), resolved to
+   *  full names — what the picker ticks; null = all. */
   refFilter: GraphRefFilter;
+  /** The preset the stored filter is ("current", …), when it is one. */
+  refPreset?: RefPreset;
   /**
    * Every ref the Branches picker can offer, filtered-out ones included —
    * present only when it differs from the list the request said it holds

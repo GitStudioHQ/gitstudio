@@ -41,6 +41,7 @@ import type {
   RowStat,
   GraphRefEntry,
   GraphRefFilter,
+  RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG, laneCenterX, lastDrawableLane } from "./gutter";
 import {
@@ -63,11 +64,14 @@ import {
   groupRefs,
   presetFilter,
   presetUnavailable,
+  refDisplayName,
+  refFilterHint,
   refFilterLabel,
   removeRefs,
+  scrollKey,
   toggleRef,
 } from "./refFilter";
-import { chipRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import { chipRefs, presetRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
 import { COLUMN_DROP_TAIL_AT, INLINE_LIST_BELOW } from "../limits";
 
 // ── Layout constants (the visual contract; tuned to GitLens proportions) ─────
@@ -215,9 +219,13 @@ export type GraphAction =
   | { type: "open"; sha: string }
   | { type: "context"; sha: string; x: number; y: number }
   | { type: "menuAction"; sha: string; id: string }
-  /** A ref chip (branch / remote / tag label) was clicked — hosts navigate to
-   *  that ref instead of treating the click as a row selection. */
-  | { type: "refClick"; sha: string; name: string; kind: string }
+  /** A ref chip (branch / remote / tag label) was clicked — a host with a
+   *  page for the ref navigates there (the desktop's Branches view); one with
+   *  none opens the chip's own menu at (x, y) through openRefMenu (the
+   *  extension). `remotes` are the twins folded into the chip. Never a row
+   *  selection. x/y are absent from a "+N" card row: that card sits where the
+   *  menu would. */
+  | { type: "refClick"; sha: string; name: string; kind: string; x?: number; y?: number; remotes?: string[] }
   | { type: "loadMore" }
   | { type: "refresh" }
   | { type: "requestStats"; shas: string[] }
@@ -257,6 +265,7 @@ export class CommitGraph extends LitElement {
     errorMessage: { attribute: false },
     head: { attribute: false },
     refFilter: { attribute: false },
+    refPreset: { attribute: false },
     refList: { attribute: false },
     palette: { state: true },
     selectedSha: { state: true },
@@ -1674,6 +1683,9 @@ export class CommitGraph extends LitElement {
   declare head: string;
   /** The branch filter the rows were built under (issue #30); null = all. */
   declare refFilter: GraphRefFilter;
+  /** The preset that filter IS, when the host says so (a graphInit's
+   *  refPreset): lit in the picker, named by the trigger. */
+  declare refPreset: RefPreset | undefined;
   /** Every ref the Branches picker offers — filtered-out ones included. */
   declare refList: GraphRefEntry[];
 
@@ -1827,6 +1839,8 @@ export class CommitGraph extends LitElement {
    *  same nothing, and re-asking on every repaint is a request storm. */
   private readonly statsUnavailable = new Set<string>();
   private loadMoreArmed = true;
+  /** scrollKey of the filter the current rows were built under (see updated). */
+  private rowsKey: string | undefined;
   /** lane color the pointer is hovering, for the focus-dim affordance. */
   private focusColor: number | undefined;
 
@@ -1839,6 +1853,7 @@ export class CommitGraph extends LitElement {
     this.errorMessage = "";
     this.head = "";
     this.refFilter = null;
+    this.refPreset = undefined;
     this.refList = [];
     this.palette = paletteForTheme();
     this.selectedSha = undefined;
@@ -1901,11 +1916,21 @@ export class CommitGraph extends LitElement {
     // An empty filter is All (issue #30): the protocol says a host never sends
     // one, but a host that did tinted the trigger "scoped" under a label
     // reading "All branches". Folded here, so every reader sees the same thing.
-    if (changed.has("refFilter") && this.refFilter?.length === 0) this.refFilter = null;
+    // …unless it is a preset's: "Current branch" on a detached HEAD ticks no
+    // branch and walks HEAD alone, which is not every branch.
+    if (changed.has("refFilter") && this.refFilter?.length === 0 && !this.refPreset) this.refFilter = null;
   }
 
   updated(changed: PropertyValues): void {
     if (changed.has("rows")) {
+      // Rows built under a DIFFERENT filter are a different history, not a
+      // refresh of this one: start at its top. Kept, the old offset opened
+      // the new graph part-way down (Sep 2 instead of HEAD) and, sitting near
+      // the new bottom, chain-loaded every page at once. A refresh under the
+      // same filter keeps its place, as it always has.
+      const key = scrollKey(this.refFilter, this.refPreset);
+      if (this.rowsKey !== undefined && key !== this.rowsKey) this.scrollToTop();
+      this.rowsKey = key;
       this.rebuildIndex();
       // New page arrived: re-arm the loader so the next near-bottom fires.
       this.loadMoreArmed = true;
@@ -1999,6 +2024,19 @@ export class CommitGraph extends LitElement {
     this.virtualizer = v;
     this.cleanupVirtualizer = v._didMount();
     v._willUpdate();
+  }
+
+  /**
+   * Back to the first row, before the paint that follows. The virtualizer
+   * learns its offset from scroll events, which arrive a frame later (and
+   * never in an occluded webview) — it is told now, or it paints the old
+   * window over an empty top.
+   */
+  private scrollToTop(): void {
+    const s = this.boundScroller;
+    if (!s || s.scrollTop === 0) return;
+    s.scrollTop = 0;
+    s.dispatchEvent(new Event("scroll"));
   }
 
   private teardownVirtualizer(): void {
@@ -2741,10 +2779,14 @@ export class CommitGraph extends LitElement {
    * what was actually applied (a ref that vanished is dropped there). The
    * picker stays open — one tick is rarely the whole selection.
    */
-  private applyRefFilter(refs: GraphRefFilter): void {
-    if (sameRefFilter(refs, this.refFilter)) return;
+  private applyRefFilter(refs: GraphRefFilter, preset?: RefPreset): void {
+    const p = preset && preset !== "all" ? preset : undefined;
+    if (sameRefFilter(refs, this.refFilter) && p === this.refPreset) return;
     this.refFilter = refs;
-    this.onAction({ type: "setRefFilter", refs });
+    this.refPreset = p;
+    // A preset goes to the host as what it MEANS (presetRefs), so it is stored
+    // that way and follows a checkout; the ticks above are what it means now.
+    this.onAction({ type: "setRefFilter", refs: p ? presetRefs(p) : refs });
   }
 
   private onBranchQueryInput = (e: Event): void => {
@@ -2780,12 +2822,12 @@ export class CommitGraph extends LitElement {
     x: number,
     y: number,
     sha: string,
-    opts: { opener?: HTMLElement; keyboard?: boolean } = {},
+    opts: { opener?: HTMLElement; keyboard?: boolean; remotes?: readonly string[] } = {},
   ): void {
     if (!ref.name) return;
     this.showChipMenu(
       { name: ref.name, kind: ref.kind, sha, x, y, opener: opts.opener, focusFirst: opts.keyboard },
-      [],
+      opts.remotes ?? [],
     );
   }
 
@@ -3174,7 +3216,13 @@ export class CommitGraph extends LitElement {
     const sha = this.refTip.sha;
     if (!name || !sha) return;
     this.refTip.dismiss();
-    this.onAction({ type: "refClick", sha, name, kind: row.dataset.kind ?? "head" });
+    this.onAction({
+      type: "refClick",
+      sha,
+      name,
+      kind: row.dataset.kind ?? "head",
+      remotes: (row.dataset.remotes ?? "").split(",").filter(Boolean),
+    });
   };
 
   private onClick = (e: MouseEvent): void => {
@@ -3231,6 +3279,9 @@ export class CommitGraph extends LitElement {
           sha: row.dataset.sha,
           name,
           kind: chip.dataset.kind ?? "head",
+          x: e.clientX,
+          y: e.clientY,
+          remotes: (chip.dataset.remotes ?? "").split(",").filter(Boolean),
         });
         return;
       }
@@ -3723,8 +3774,19 @@ export class CommitGraph extends LitElement {
     }
   }
 
-  /** Current branch name, derived from the HEAD row's currentHead ref. */
+  /**
+   * Current branch name: the ref list's current branch, else the HEAD row's
+   * currentHead chip.
+   *
+   * The list first. Under a filter that leaves the current branch out (issue
+   * #30) no row carries its chip — an attached HEAD is walked only when
+   * ticked — and a header read off the rows alone said "Detached HEAD" over a
+   * HEAD that was on main. And the list's full name reads "release" where the
+   * chip says git's "heads/release" beside a tag of that name.
+   */
   private currentBranchName(): string {
+    const cur = this.refList.find((r) => r.kind === "head" && r.isCurrent);
+    if (cur) return refDisplayName(cur.fullName);
     for (const row of this.rows) {
       const ref = row.refs.find((r) => r.kind === "currentHead");
       if (ref) {
@@ -3892,7 +3954,7 @@ export class CommitGraph extends LitElement {
    */
   private branchesControlHtml() {
     const refs = this.refList;
-    const label = refFilterLabel(this.refFilter, refs);
+    const label = refFilterLabel(this.refFilter, refs, this.refPreset);
     const filtered = this.refFilter !== null;
     return html`<span class="gh-anchor">
       <button
@@ -3915,16 +3977,12 @@ export class CommitGraph extends LitElement {
 
   private branchesPopHtml() {
     const refs = this.refList;
-    const active = activePreset(this.refFilter, refs);
+    const active = activePreset(this.refFilter, this.refPreset);
     const selected = new Set(this.refFilter ?? []);
     const groups = groupRefs(refs, this.branchQuery);
     const kindIcon = (k: GraphRefEntry["kind"]) =>
       k === "tag" ? "tag" : k === "remoteHead" ? "cloud" : "git-branch";
-    const hint = this.refFilter
-      ? `${this.refFilter.length} of ${refs.length} ticked · untick the last for all`
-      : refs.length
-        ? "Showing every branch and tag · tick one to narrow"
-        : "No branches or tags";
+    const hint = refFilterHint(this.refFilter, refs, this.refPreset);
     return html`<div
       class="gh-pop gh-branches-pop"
       role="menu"
@@ -3944,7 +4002,7 @@ export class CommitGraph extends LitElement {
             aria-pressed=${active === p.id ? "true" : "false"}
             @click=${() => {
               const f = presetFilter(p.id, refs);
-              if (f !== undefined) this.applyRefFilter(f);
+              if (f !== undefined) this.applyRefFilter(f, p.id);
             }}
           >
             ${p.label}
@@ -3975,7 +4033,7 @@ export class CommitGraph extends LitElement {
               >
                 <span class="codicon codicon-check" aria-hidden="true"></span>
                 <span class="codicon codicon-${kindIcon(r.kind)} gh-ref-kind" aria-hidden="true"></span>
-                <span class="lbl gh-ref-name">${r.name}</span>
+                <span class="lbl gh-ref-name">${refDisplayName(r.fullName)}</span>
                 ${r.isCurrent ? html`<span class="gh-ref-cur">current</span>` : nothing}
               </button>`,
             )}
@@ -4010,16 +4068,19 @@ export class CommitGraph extends LitElement {
       this.chipMenu = null;
       this.applyRefFilter(refs);
     };
-    const checkout = known ? chipCheckout(m) : undefined;
+    // The ref's own name, not git's disambiguated short form ("heads/x"
+    // beside a tag "x"); the chip's words when the list does not know it.
+    const title = known ? refDisplayName(m.refs[0]) : m.name;
+    const checkout = known ? chipCheckout({ ...m, name: title }) : undefined;
     return html`<div
       class="gh-pop gh-ctx gh-chip-menu"
       role="menu"
       tabindex="-1"
-      aria-label=${`Filter by ${m.name}`}
+      aria-label=${`Filter by ${title}`}
       style="left:${Math.round(left)}px;top:${Math.round(top)}px"
       @keydown=${this.onPopoverKeyDown}
     >
-      <div class="gh-pop-title">${m.name}</div>
+      <div class="gh-pop-title">${title}</div>
       <button
         class="gh-menuitem"
         role="menuitem"
@@ -4028,7 +4089,7 @@ export class CommitGraph extends LitElement {
         @click=${() => pick(m.refs)}
       >
         <span class="codicon codicon-filter" aria-hidden="true"></span>
-        <span class="lbl">Show only this branch</span>
+        <span class="lbl">${m.kind === "tag" ? "Show only this tag" : "Show only this branch"}</span>
       </button>
       ${this.refFilter
         ? html`<button

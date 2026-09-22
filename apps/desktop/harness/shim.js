@@ -2031,17 +2031,51 @@
   };
 
   // The graph's branch filter (issue #30). `graph:load` takes `refs` — the
-  // fully-qualified refs to build the graph around, null for all, omitted for
-  // "whatever is remembered" — and answers with the filter it applied plus the
-  // FULL ref list, filtered-out refs included, or the picker could never tick
-  // one back in. The walk itself is what git does with `git log <refs> HEAD`:
-  // a row that only an unticked ref reaches is gone, and chips follow the
-  // filter (the current branch always keeps its chip). Without this the
-  // picker was a control with no fixture behind it: every tick would have
-  // answered the same ten rows and a check could pass over a dead filter.
+  // fully-qualified refs to build the graph around, or a preset's symbols
+  // ("@current" …, which follow HEAD), null for all, omitted for "whatever is
+  // remembered" — and answers with the filter it applied RESOLVED to full
+  // names, the preset it is (refPreset), plus the FULL ref list, filtered-out
+  // refs included, or the picker could never tick one back in. The walk is
+  // what git does with `git log --stdin <refs>`: HEAD joins only when detached
+  // (it is attached here, on main), a row no ticked ref reaches is gone, and
+  // chips follow exactly the ticked refs — the current branch's included.
+  // Without this the picker was a control with no fixture behind it: every
+  // tick would have answered the same ten rows and a check could pass over a
+  // dead filter.
   const graphBase = fixtures["graph:load"];
-  /** sha → the refs that ALONE reach it; every other row is reachable from HEAD. */
+  /** sha → the refs that ALONE reach it; every other row is on main's line. */
   const reachOnly = { "77aa88b9c0d1e2f3a4b5": ["refs/remotes/origin/chore/dependabot-bump"] };
+  const mainLine = new Set(graphBase.rows.map((r) => r.sha).filter((sha) => !reachOnly[sha]));
+  /** What a ref reaches when it is not on main's line: the unmerged remote
+   *  reaches its own commit and the one it forked from; the feature branch its
+   *  lane and the trunk below its fork (featureLane, below). */
+  const reachOf = (full) =>
+    full === "refs/remotes/origin/chore/dependabot-bump"
+      ? new Set(["77aa88b9c0d1e2f3a4b5", "29d0e1f2837495b2c3d4"])
+      : full === "refs/heads/redesign/issues-detail" || full === "refs/remotes/origin/redesign/issues-detail"
+        ? featureLane
+        : mainLine;
+  const PRESETS = { current: ["@current"], currentUpstream: ["@current", "@upstream"], local: ["@local"] };
+  const SYMBOLS = new Set(["@current", "@upstream", "@local"]);
+  /** host-bridge's resolveRefFilter, over the picker's list. */
+  const resolveFilter = (filter, list) => {
+    if (!filter) return null;
+    const cur = list.find((e) => e.kind === "head" && e.isCurrent);
+    const out = [];
+    const add = (f) => { if (f && !out.includes(f)) out.push(f); };
+    for (const f of filter) {
+      if (f === "@current") add(cur && cur.fullName);
+      else if (f === "@upstream") add(cur && cur.upstream);
+      else if (f === "@local") list.filter((e) => e.kind === "head").forEach((e) => add(e.fullName));
+      else add(f);
+    }
+    return out;
+  };
+  const presetOf = (filter) => {
+    if (!filter) return undefined;
+    const key = [...filter].sort().join(",");
+    return Object.keys(PRESETS).find((id) => [...PRESETS[id]].sort().join(",") === key);
+  };
   const chipFullName = (chip) =>
     chip.kind === "tag" ? "refs/tags/" + chip.name
     : chip.kind === "remoteHead" ? "refs/remotes/" + chip.name
@@ -2058,16 +2092,22 @@
         return e;
       });
   };
-  /** Remembered for the session, like the app's per-repo setting. */
+  /** Remembered for the session, like the app's per-repo setting — as
+   *  STORED: a preset stays its symbols, and is resolved per load. */
   let graphRefFilter = null;
+  /** The walk of the last load (resolved), which graph:reaches answers from. */
+  let graphWalk = null;
   window.__GS_GRAPH_LOADS = [];
   dynamic["graph:load"] = (req) => {
     const list = graphRefList();
     const known = new Set(list.map((e) => e.fullName));
     if (req && req.refs !== undefined) {
-      const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r)) : [];
+      const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r) || SYMBOLS.has(r)) : [];
       graphRefFilter = kept.length ? kept : null;
     }
+    const walk = resolveFilter(graphRefFilter, list);
+    graphWalk = walk;
+    const refPreset = presetOf(graphRefFilter);
     // The list rides along only when the caller does not already hold it, the
     // way the main process does it (refListFor): the renderer says which list
     // it has in `refListSig`. Any stable fingerprint will do here — the real
@@ -2078,17 +2118,20 @@
       skip: req && req.skip,
       refs: req && req.refs,
       applied: graphRefFilter,
+      walked: walk,
       sentRefList: sendList,
     });
-    const filter = graphRefFilter;
-    const ticked = new Set(filter || []);
+    const ticked = new Set(walk || []);
+    const reached = new Set();
+    for (const f of walk || []) for (const sha of reachOf(f)) reached.add(sha);
     const rows = graphBase.rows
-      .filter((r) => !filter || !reachOnly[r.sha] || reachOnly[r.sha].some((f) => ticked.has(f)))
+      .filter((r) => !walk || reached.has(r.sha))
       .map((r) => ({
         ...r,
-        refs: filter ? r.refs.filter((c) => c.kind === "currentHead" || ticked.has(chipFullName(c))) : r.refs,
+        refs: walk ? r.refs.filter((c) => ticked.has(chipFullName(c))) : r.refs,
       }));
-    const out = { ...graphBase, rows, nextSkip: rows.length, refFilter: filter, refListSig: sig };
+    const out = { ...graphBase, rows, nextSkip: rows.length, refFilter: walk, refListSig: sig };
+    if (refPreset) out.refPreset = refPreset;
     if (sendList) out.refList = list;
     else delete out.refList;
     return out;
@@ -2097,9 +2140,8 @@
   // the commit at all, before saying why (issue #30) — the same reach model
   // as graph:load above, so the two cannot disagree about a row.
   dynamic["graph:reaches"] = (req) => {
-    const only = reachOnly[req && req.sha];
-    const ticked = new Set(graphRefFilter || []);
-    return { reached: !graphRefFilter || !only || only.some((f) => ticked.has(f)) };
+    if (!graphWalk) return { reached: true };
+    return { reached: graphWalk.some((f) => reachOf(f).has(req && req.sha)) };
   };
   // The details pane's "in N branches" row — the same reach model again, so
   // the row cannot disagree with the graph it sits beside. A row only the

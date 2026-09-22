@@ -3,10 +3,19 @@ import assert from "node:assert/strict";
 import {
   chipRefs,
   chipRefsUnderFilter,
+  CURRENT_BRANCH,
+  CURRENT_UPSTREAM,
+  filterPreset,
+  filterWalk,
+  headInWalk,
+  headIsDetached,
+  LOCAL_BRANCHES,
   normalizeRefFilter,
+  presetRefs,
   RefListCourier,
   refEntries,
   refListSignature,
+  resolveRefFilter,
   sameRefFilter,
   type PickerRefLike,
 } from "../src/graphRefFilter";
@@ -80,7 +89,10 @@ test("normalizeRefFilter survives garbage storage and duplicates", () => {
   assert.equal(normalizeRefFilter("refs/heads/main", REFS), null);
 });
 
-test("chipRefsUnderFilter keeps only ticked refs — and the current branch, always", () => {
+test("chipRefsUnderFilter keeps only the refs the graph was walked from — the current branch included", () => {
+  // An attached HEAD is no longer walked unless it is ticked (a preset or by
+  // hand), so it no longer keeps a chip unless it is: a "main" chip over a
+  // graph of origin/x said main was in a filter that did not name it.
   const main = ref("head", "main", { isCurrent: true });
   const feat = ref("head", "feature/x");
   const remote = ref("remote", "origin/main");
@@ -91,9 +103,99 @@ test("chipRefsUnderFilter keeps only ticked refs — and the current branch, alw
     ["ccc", [tag]],
   ]);
   const out = chipRefsUnderFilter(bySha, ["refs/heads/feature/x"]);
-  assert.deepEqual([...out.keys()], ["aaa", "bbb"], "a row with nothing left has no entry at all");
-  assert.deepEqual(out.get("aaa"), [main], "the current branch keeps its chip; origin/main does not");
+  assert.deepEqual([...out.keys()], ["bbb"], "a row with nothing left has no entry at all — main's included");
   assert.deepEqual(out.get("bbb"), [feat]);
+  const withMain = chipRefsUnderFilter(bySha, ["refs/heads/main", "refs/tags/v1"]);
+  assert.deepEqual(withMain.get("aaa"), [main], "ticked, it keeps its chip; origin/main beside it does not");
+  assert.deepEqual(withMain.get("ccc"), [tag]);
+  assert.equal(chipRefsUnderFilter(bySha, []).size, 0, "a walk of HEAD alone (detached) draws no branch chip");
+});
+
+// ── Presets that follow HEAD (found on the released 1.13.0) ─────────────────
+// "Current branch" was stored as the branch it resolved to at the click. After
+// a checkout the trigger still named the old branch, no preset was lit, and
+// the graph showed the old branch. It is stored as what it means now.
+
+const PRESET_LIST: GraphRefEntry[] = [
+  { fullName: "refs/heads/main", name: "main", kind: "head", isCurrent: true, upstream: "refs/remotes/origin/main" },
+  { fullName: "refs/heads/local-exp", name: "local-exp", kind: "head" },
+  { fullName: "refs/remotes/origin/main", name: "origin/main", kind: "remoteHead" },
+  { fullName: "refs/tags/v1", name: "v1", kind: "tag" },
+];
+const switchedTo = (name: string): GraphRefEntry[] =>
+  PRESET_LIST.map((r) => {
+    const { isCurrent: _drop, ...rest } = r;
+    return r.kind === "head" && r.name === name ? { ...rest, isCurrent: true } : rest;
+  });
+
+test("a preset is stored as what it means, and resolves against the refs of each load", () => {
+  assert.deepEqual(presetRefs("current"), [CURRENT_BRANCH]);
+  assert.deepEqual(presetRefs("currentUpstream"), [CURRENT_BRANCH, CURRENT_UPSTREAM]);
+  assert.deepEqual(presetRefs("local"), [LOCAL_BRANCHES]);
+  assert.equal(presetRefs("all"), null);
+  assert.deepEqual(resolveRefFilter(presetRefs("current"), PRESET_LIST), ["refs/heads/main"]);
+  assert.deepEqual(resolveRefFilter(presetRefs("currentUpstream"), PRESET_LIST), ["refs/heads/main", "refs/remotes/origin/main"]);
+  assert.deepEqual(resolveRefFilter(presetRefs("local"), PRESET_LIST), ["refs/heads/main", "refs/heads/local-exp"]);
+  // …and after `git checkout local-exp`, the SAME stored filter means the new branch.
+  const after = switchedTo("local-exp");
+  assert.deepEqual(resolveRefFilter(presetRefs("current"), after), ["refs/heads/local-exp"]);
+  assert.deepEqual(resolveRefFilter(presetRefs("currentUpstream"), after), ["refs/heads/local-exp"], "no upstream, nothing added");
+  // A branch made after "Local only" was picked is in it.
+  const grown: GraphRefEntry[] = [...PRESET_LIST, { fullName: "refs/heads/new", name: "new", kind: "head" }];
+  assert.ok(resolveRefFilter(presetRefs("local"), grown)!.includes("refs/heads/new"));
+  // Detached: no current branch, so "current" resolves to nothing — the walk
+  // is HEAD alone (see headIsDetached), not every branch.
+  assert.deepEqual(resolveRefFilter(presetRefs("current"), switchedTo("nope")), []);
+  assert.equal(resolveRefFilter(null, PRESET_LIST), null);
+  // Full names pass through; a mix resolves both; duplicates collapse.
+  assert.deepEqual(
+    resolveRefFilter([CURRENT_BRANCH, "refs/tags/v1", "refs/heads/main"], PRESET_LIST),
+    ["refs/heads/main", "refs/tags/v1"],
+  );
+});
+
+test("filterPreset names the preset a stored filter is, and nothing for a hand-picked one", () => {
+  assert.equal(filterPreset(null), "all");
+  assert.equal(filterPreset([CURRENT_BRANCH]), "current");
+  assert.equal(filterPreset([CURRENT_UPSTREAM, CURRENT_BRANCH]), "currentUpstream", "order aside");
+  assert.equal(filterPreset([LOCAL_BRANCHES]), "local");
+  assert.equal(filterPreset(["refs/heads/main"]), undefined, "the branch current WAS is not the current branch");
+  assert.equal(filterPreset([CURRENT_BRANCH, "refs/tags/v1"]), undefined);
+});
+
+test("normalizeRefFilter keeps the preset entries — they name no ref, and are resolved per load", () => {
+  assert.deepEqual(normalizeRefFilter([CURRENT_BRANCH, CURRENT_UPSTREAM], REFS), [CURRENT_BRANCH, CURRENT_UPSTREAM]);
+  assert.deepEqual(normalizeRefFilter([LOCAL_BRANCHES, "refs/heads/deleted"], REFS), [LOCAL_BRANCHES]);
+  assert.equal(normalizeRefFilter(["@nonsense"], REFS), null, "an unknown symbol is garbage like any other");
+});
+
+test("filterWalk: what one load walks — resolved refs, HEAD only when detached, and the preset", () => {
+  const attached = filterWalk([CURRENT_BRANCH], PRESET_LIST, REFS);
+  assert.deepEqual(attached, { refs: ["refs/heads/main"], head: false, preset: "current" });
+  const handPicked = filterWalk(["refs/tags/v1"], PRESET_LIST, REFS);
+  assert.deepEqual(handPicked, { refs: ["refs/tags/v1"], head: false }, "no preset key at all for a hand-picked one");
+  assert.equal(filterWalk(null, PRESET_LIST, REFS).refs, null, "every branch (HEAD is walked by the unfiltered walk itself)");
+  assert.equal("preset" in filterWalk(null, PRESET_LIST, REFS), false, "and All is no preset to light");
+  const detachedRefs = REFS.map((r) => ({ ...r, isCurrent: false }));
+  assert.deepEqual(filterWalk([CURRENT_BRANCH], switchedTo("nope"), detachedRefs), { refs: [], head: true, preset: "current" });
+  // A failed listing resolves no symbol and keeps HEAD walked.
+  assert.deepEqual(filterWalk([CURRENT_BRANCH, "refs/heads/x"], [], []), { refs: ["refs/heads/x"], head: true });
+});
+
+test("headInWalk: the WIP row hangs only off a HEAD the walk has", () => {
+  const none = new Set<string>();
+  assert.equal(headInWalk({ refs: null, head: true }, PRESET_LIST, none, "h"), true, "no filter");
+  assert.equal(headInWalk({ refs: ["refs/tags/v1"], head: true }, PRESET_LIST, none, "h"), true, "detached: HEAD is walked");
+  assert.equal(headInWalk({ refs: ["refs/heads/main"], head: false }, PRESET_LIST, none, "h"), true, "the current branch is ticked");
+  assert.equal(headInWalk({ refs: ["refs/tags/v1"], head: false }, PRESET_LIST, new Set(["h"]), "h"), true, "another ref reaches it, on a loaded row");
+  assert.equal(headInWalk({ refs: ["refs/tags/v1"], head: false }, PRESET_LIST, none, "h"), false, "nothing walks it");
+  assert.equal(headInWalk({ refs: ["refs/tags/v1"], head: false }, PRESET_LIST, new Set([""]), ""), false, "no HEAD sha is no HEAD");
+});
+
+test("headIsDetached: no current branch in the listing (or no listing) keeps HEAD in the walk", () => {
+  assert.equal(headIsDetached(REFS), false);
+  assert.equal(headIsDetached(REFS.map((r) => ({ ...r, isCurrent: false }))), true);
+  assert.equal(headIsDetached([]), true, "a failed listing: keeping HEAD is the safe mistake");
 });
 
 test("chipRefsUnderFilter with no filter is the same map, untouched", () => {

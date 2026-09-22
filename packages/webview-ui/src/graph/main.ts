@@ -13,6 +13,7 @@ import type { CommitDetails, RefMenuRequest } from "../commit-details";
 import type {
   GraphHostMessage,
   GraphWebviewMessage,
+  WireRef,
 } from "@gitstudio/host-bridge/graphProtocol";
 
 interface VsCodeApi {
@@ -123,6 +124,22 @@ function start(root: HTMLElement): void {
         break;
       case "requestStats":
         vscode.postMessage({ type: "requestStats", shas: action.shas });
+        break;
+      case "refClick":
+        // A chip is a link to its ref. The desktop has a page for one (its
+        // Branches view); the extension has none, and dropped the click — a
+        // pointer cursor over a chip that did nothing, while the Commits
+        // rail beside it selected the row. It is the chip's own menu here:
+        // Show only / Add / Remove / Checkout, the same one a right-click or
+        // ⌥-click opens. From a "+N" card row (no pointer position), at the
+        // top-left of the list, clamped in like any menu.
+        graph.openRefMenu(
+          { name: action.name, kind: action.kind as WireRef["kind"] },
+          action.x ?? 24,
+          action.y ?? 48,
+          action.sha,
+          { remotes: action.remotes },
+        );
         break;
       case "setRefFilter":
         vscode.postMessage({ type: "setRefFilter", refs: action.refs });

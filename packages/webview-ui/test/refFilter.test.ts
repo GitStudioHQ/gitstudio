@@ -9,8 +9,10 @@ import {
   groupRefs,
   presetFilter,
   presetUnavailable,
+  refDisplayName,
   refFilterLabel,
   removeRefs,
+  scrollKey,
   toggleRef,
 } from "../src/graph/refFilter";
 
@@ -50,11 +52,49 @@ test("a preset the repository has nothing for is unavailable, and says why", () 
   assert.equal(presetUnavailable("current", REFS), "", "an available preset has no excuse");
 });
 
-test("activePreset recognises a selection whatever its order, and only exact ones", () => {
-  assert.equal(activePreset(null, REFS), "all");
-  assert.equal(activePreset(["refs/remotes/origin/main", "refs/heads/main"], REFS), "currentUpstream");
-  assert.equal(activePreset(["refs/heads/main"], REFS), "current");
-  assert.equal(activePreset(["refs/heads/main", "refs/tags/v1"], REFS), undefined);
+test("activePreset is what the host says the stored filter is — not a guess from the ticks", () => {
+  // It used to compare ticks: a hand-picked [main] lit "Current branch" while
+  // on main, and the preset itself went dark the moment the branch changed
+  // (the stored list still named the old branch). The host resolves presets
+  // per load and says which one the filter is (graphInit.refPreset).
+  assert.equal(activePreset(null), "all");
+  assert.equal(activePreset(["refs/heads/main"], "current"), "current");
+  assert.equal(activePreset(["refs/heads/local-exp"], "current"), "current", "after a checkout, still the preset");
+  assert.equal(activePreset(["refs/heads/main", "refs/remotes/origin/main"], "currentUpstream"), "currentUpstream");
+  assert.equal(activePreset(["refs/heads/main"]), undefined, "a hand-picked branch is not the current-branch preset");
+  assert.equal(activePreset([], "current"), "current", "detached: no ticks, the preset still holds");
+});
+
+test("a preset's trigger says what it stands for NOW, the branch first", () => {
+  assert.equal(refFilterLabel(["refs/heads/main"], REFS, "current"), "main (current)");
+  assert.equal(refFilterLabel(["refs/heads/main", "refs/remotes/origin/main"], REFS, "currentUpstream"), "main + upstream");
+  const switched = REFS.map((r) => ({ ...r, isCurrent: r.name === "feature/x" }));
+  assert.equal(refFilterLabel(["refs/heads/feature/x"], switched, "current"), "feature/x (current)");
+  const detached = REFS.map((r) => ({ ...r, isCurrent: false }));
+  assert.equal(refFilterLabel([], detached, "current"), "Detached HEAD");
+  assert.equal(refFilterLabel(["refs/heads/main", "refs/heads/feature/x"], REFS, "local"), "Local branches");
+});
+
+test("names are shown shorn of their namespace — never git's disambiguated heads/ form", () => {
+  // A branch and a tag both called "release": git lists them as
+  // "heads/release" and "tags/release". The picker groups them under Local
+  // and Tags already; the trigger and rows say "release".
+  const ambiguous: GraphRefEntry[] = [
+    { fullName: "refs/heads/release", name: "heads/release", kind: "head" },
+    { fullName: "refs/tags/release", name: "tags/release", kind: "tag" },
+  ];
+  assert.equal(refFilterLabel(["refs/heads/release"], ambiguous), "release");
+  assert.equal(refDisplayName("refs/heads/release"), "release");
+  assert.equal(refDisplayName("refs/remotes/origin/release"), "origin/release");
+  assert.equal(refDisplayName("refs/heads/heads/x"), "heads/x", "a branch really named heads/x keeps it");
+});
+
+test("scrollKey: a refresh is the same history, a new filter or preset is not", () => {
+  assert.equal(scrollKey(["refs/heads/a", "refs/heads/b"]), scrollKey(["refs/heads/b", "refs/heads/a"]));
+  assert.notEqual(scrollKey(null), scrollKey(["refs/heads/a"]));
+  assert.notEqual(scrollKey(["refs/heads/a"]), scrollKey(["refs/heads/a"], "current"));
+  assert.notEqual(scrollKey(["refs/heads/a"], "current"), scrollKey(["refs/heads/b"], "current"), "a checkout under Current branch");
+  assert.equal(scrollKey(null), scrollKey(null));
 });
 
 test("the trigger label: All, one or two names, then a count", () => {

@@ -162,6 +162,20 @@ export class RefProvider {
     return refs;
   }
 
+  /**
+   * The commit HEAD is on, or "" when there is none (an unborn branch).
+   *
+   * For the graph's "you are here" when no branch is current — a DETACHED
+   * head is on no branch, so a ref listing cannot say where it is. `--verify
+   * --quiet` because a bare `rev-parse HEAD` on an unborn branch prints
+   * "HEAD" back on stdout, which is not an object name.
+   */
+  async headCommit(): Promise<string> {
+    const r = await this.proc.run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+    const sha = r.stdout.trim();
+    return r.code === 0 && /^[0-9a-f]{40,64}$/.test(sha) ? sha : "";
+  }
+
   async getHead(): Promise<RepoHead> {
     // rev-parse and symbolic-ref are independent — run them concurrently.
     const [shaResult, branchResult] = await Promise.all([

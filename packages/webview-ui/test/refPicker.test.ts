@@ -146,16 +146,21 @@ const SCRIPT = `
   expect(lastFilter() === null, "unticking the last ref is All again, never an empty list (" + JSON.stringify(lastFilter()) + ")");
   expect(/All branches/.test(label()), "and the trigger says so (" + label() + ")");
 
-  // ── Presets tick what they say ──
+  // ── Presets tick what they say NOW, and are SENT as what they mean ──
+  // (the host stores "@current", so the preset follows a checkout)
+  const ticked = () => items().filter((b) => b.getAttribute("aria-checked") === "true").map((b) => b.dataset.ref).sort().join(",");
   presets().find((p) => p.dataset.preset === "currentUpstream").click();
   await settle();
-  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/main", "refs/remotes/origin/main"]),
-    "Current + upstream ticks the branch and its upstream (" + JSON.stringify(lastFilter()) + ")");
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["@current", "@upstream"]),
+    "Current + upstream is sent as the preset (" + JSON.stringify(lastFilter()) + ")");
+  expect(ticked() === "refs/heads/main,refs/remotes/origin/main", "and ticks the branch and its upstream at once (" + ticked() + ")");
   expect(presets().find((p) => p.dataset.preset === "currentUpstream").classList.contains("active"), "the preset the filter IS reads active");
+  expect(label().includes("main + upstream"), "the trigger names what it stands for (" + label() + ")");
   presets().find((p) => p.dataset.preset === "local").click();
   await settle();
-  expect(JSON.stringify(lastFilter()) === JSON.stringify(["refs/heads/main", "refs/heads/feature/x"]),
-    "Local only ticks every local branch (" + JSON.stringify(lastFilter()) + ")");
+  expect(JSON.stringify(lastFilter()) === JSON.stringify(["@local"]),
+    "Local only is sent as the preset (" + JSON.stringify(lastFilter()) + ")");
+  expect(ticked() === "refs/heads/feature/x,refs/heads/main", "and ticks every local branch (" + ticked() + ")");
   presets().find((p) => p.dataset.preset === "all").click();
   await settle();
   expect(lastFilter() === null, "All is null");

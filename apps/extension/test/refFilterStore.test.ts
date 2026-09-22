@@ -106,7 +106,35 @@ test("the graph host routes a filter change through the store, and reloads from 
   // The graphInit carries the applied filter, and the picker's list through
   // postInit — which leaves it out when the webview already has it
   // (graphRefListCourier.test.ts).
-  assert.match(load, /this\.postInit\(\s*\{[\s\S]*?refFilter: this\.refFilter,\s*\},\s*this\.refList,\s*\);/);
+  assert.match(
+    load,
+    /this\.postInit\(\s*\{[\s\S]*?refFilter: this\.walk\.refs,\s*\.\.\.\(this\.walk\.preset \? \{ refPreset: this\.walk\.preset \} : \{\}\),\s*\},\s*this\.refList,\s*\);/,
+  );
+});
+
+test("the graph host walks what the filter MEANS for this load — HEAD only when detached (found on 1.13.0)", async () => {
+  // "Show only origin/x" on a busy main listed 463 rows, 372 of them main's:
+  // the walk always added HEAD, and the chips always kept the current branch.
+  // And "Current branch" was stored as the branch it was when clicked. The
+  // walk is now filterWalk's (host-bridge, unit-tested; desktop graphRefFilter
+  // .test.ts drives the same function through a real repository), resolved
+  // against THIS load's listing, and every reader takes it from there.
+  const text = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
+  const load = text.slice(text.indexOf("private async loadInitial("), text.indexOf("private async loadMore("));
+  assert.match(load, /await this\.loadRefs\(active\);[\s\S]*?this\.walk = filterWalk\(this\.refFilter, this\.refList, this\.refs\);\s*page = await this\.readPage\(/,
+    "resolved after the listing, before the first page");
+  assert.match(load, /this\.refFilter = null;\s*this\.walk = \{ refs: null, head: true \};/, "no filter walks everything");
+  const page = text.slice(text.indexOf("private async readPage("), text.indexOf("private async setRefFilter("));
+  assert.match(page, /refs: this\.walk\.refs \?\? undefined,\s*head: this\.walk\.head,/, "every page walks the resolved refs, HEAD as the walk says");
+  const rows = text.slice(text.indexOf("private buildRows("), text.indexOf("// ── Commit interactions"));
+  assert.match(rows, /chipRefsUnderFilter\(this\.refsBySha, this\.walk\.refs\)/, "chips follow the walk, not the stored symbols");
+  assert.doesNotMatch(text, /walkReaches\(sha, filter\)|refs: this\.refFilter \?\? undefined/, "nothing reads the stored filter as if it were refs");
+  // A detached HEAD still has a commit: the header's "you are here".
+  const refs = text.slice(text.indexOf("private async loadRefs("), text.indexOf("private buildRows("));
+  assert.match(refs, /if \(!this\.currentHeadSha\) \{[\s\S]*?this\.currentHeadSha = await active\.ctx\.refs\.headCommit\(\);/);
+  // …and the WIP row hangs only off a HEAD the walk has.
+  const wip = text.slice(text.indexOf("private injectWipNode("), text.indexOf("private async pushCommitDetails("));
+  assert.match(wip, /if \(!headInWalk\(this\.walk, this\.refList, this\.records, this\.currentHeadSha\)\) \{\s*[\s\S]*?return;/);
 });
 
 test("the graph host never writes back a prune against a ref listing that failed", async () => {
@@ -142,7 +170,7 @@ test("a reveal into a filtered graph asks git before paging, and says so when th
     "a commit that is not loaded takes one path, whatever hasMore says",
   );
   const unloaded = reveal.slice(reveal.indexOf("private async revealUnloaded("));
-  const ask = unloaded.indexOf("await active.ctx.log.walkReaches(sha, filter)");
+  const ask = unloaded.indexOf("await active.ctx.log.walkReaches(sha, walk.refs, { head: walk.head })");
   const page = unloaded.indexOf("await this.pageUntilLoaded(sha)");
   assert.ok(ask > 0 && page > ask, "git is asked whether the walk reaches the commit before any page is fetched");
   assert.match(unloaded, /this\.offerAllBranches\(sha, active\.root\);/, "the hidden case is said out loud");
