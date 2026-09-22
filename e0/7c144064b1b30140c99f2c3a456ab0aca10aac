@@ -1,0 +1,111 @@
+packages/host-bridge/src/graphRefFilter.ts
+  s_26f5e669d3043c::t_b922b26144172d 22-24,28-38,46,48-53
+  s_26f5e669d3043c::t_0206712a7b8a3e 132-185,187-189,191-198
+  s_26f5e669d3043c::t_832a989be58944 7
+  s_26f5e669d3043c::t_15c896c5050aeb 47
+  s_26f5e669d3043c::t_d598f7b530db0b 186,190
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_38ab531c3bee3f 2069-2080,2089-2092
+apps/desktop/test/graphAdapterCore.test.ts
+  s_26f5e669d3043c::t_488ca3c68c3cc7 33
+  s_26f5e669d3043c::t_374e9d92c10494 63-72
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_9bbc5a948e3e21 2053,2065
+  s_26f5e669d3043c::t_a3999233f5d21b 2098-2101
+  s_26f5e669d3043c::t_e35f26848c8970 2030-2034,2039
+apps/extension/test/refFilterStore.test.ts
+  s_26f5e669d3043c::t_bb224239a7a59a 106-109
+apps/desktop/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_b19fe82d32fbad 151-186
+packages/host-bridge/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_c3351387cc3678 142-204
+  s_26f5e669d3043c::t_e30c121bc04b6e 121-133
+  s_26f5e669d3043c::t_9830cdcd218f1b 7,9,13
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_6732f2d461ecab 169
+  s_26f5e669d3043c::t_61c363aa71f7a5 259
+  s_26f5e669d3043c::t_b8802dac155c33 166-168,170-176
+  s_26f5e669d3043c::t_5b4e779bbcd863 10
+  s_26f5e669d3043c::t_5e77d2b9b6199a 12
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_d019132eb41fba 10
+  s_26f5e669d3043c::t_2ef1e9690c84ec 11
+  s_26f5e669d3043c::t_e5d9e987132c4c 232-246
+  s_26f5e669d3043c::t_d8561b6daedae4 101
+  s_26f5e669d3043c::t_801c573519c6fe 231
+packages/webview-ui/src/graph/graphInit.ts
+  s_26f5e669d3043c::t_1ad6feecd9e20f 1-31,33
+  s_26f5e669d3043c::t_78b95ac4f4775c 32
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_9667a03360b27a 348,352-363
+  s_26f5e669d3043c::t_d5f8ca1b1068ac 68
+  s_26f5e669d3043c::t_43bbbc8e92e0d7 193-195
+  s_26f5e669d3043c::t_d09097b142fdbb 259-269
+  s_26f5e669d3043c::t_ffde99a63aa69b 324
+  s_26f5e669d3043c::t_9caf732836f821 411
+  s_26f5e669d3043c::t_88e64184297499 364-365
+packages/webview-ui/src/graph/sidebar-main.ts
+  s_26f5e669d3043c::t_2619062f7f9aa9 9
+  s_26f5e669d3043c::t_7942d52ef67084 87
+packages/webview-ui/test/headless.ts
+  s_26f5e669d3043c::t_9d2d427d49d27d 40,42-45,52,57-60
+  s_26f5e669d3043c::t_00ec2bf58393b3 75-84,92-93
+  s_26f5e669d3043c::t_6e99232082e132 86,90
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_0f393d4366a987 2619-2625,2629-2636
+  s_26f5e669d3043c::t_fd882430e991e5 1938-1943
+  s_26f5e669d3043c::t_0f221b2710ef76 1698-1703,1712-1714
+  s_26f5e669d3043c::t_188db614304d3f 2755,2758-2793,2798
+  s_26f5e669d3043c::t_7270023c161440 3999-4003,4008,4012,4022,4033
+  s_26f5e669d3043c::t_53380532c1a3b0 4068-4071
+  s_26f5e669d3043c::t_78b95ac4f4775c 2626
+  s_26f5e669d3043c::t_43d8b0b3051f50 2689-2691
+packages/webview-ui/src/commit-details.ts
+  s_26f5e669d3043c::t_86a6e275f6827b 114
+  s_26f5e669d3043c::t_7f1c0974decce3 65-82,86,90-95
+  s_26f5e669d3043c::t_35b1575625fb16 937-962
+  s_26f5e669d3043c::t_cd36819b0a4914 982-984,989-1017
+  s_26f5e669d3043c::t_8c665be50a2876 558-568
+  s_26f5e669d3043c::t_e8b2f390b236fa 985-988
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_d2e72290a6b2cd 9355-9366
+  s_26f5e669d3043c::t_ed6303d0071e8a 108
+apps/extension/test/graphRefListCourier.test.ts
+  s_26f5e669d3043c::t_29b732d296c592 1-52
+packages/webview-ui/test/detailsChipMenu.test.ts
+  s_26f5e669d3043c::t_98808b894b5a95 1-263
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_de464fe8f11a22 67-77,84-89
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_28915ceabf56ca 445-454
+  s_26f5e669d3043c::t_ac8047e6254ee5 243-245
+  s_26f5e669d3043c::t_2bf0658a6de32d 22
+  s_26f5e669d3043c::t_a4e95f9178eb51 8
+  s_26f5e669d3043c::t_d02bebe6fcb788 171-173
+  s_26f5e669d3043c::t_7b01ac650396e0 311-323
+  s_26f5e669d3043c::t_b9be4c6cab98b4 484
+  s_26f5e669d3043c::t_80fd2e3ce8b976 379
+apps/desktop/src/shared/graphAdapterCore.ts
+  s_26f5e669d3043c::t_75b4fbd3a6257b 31-33
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_875cfbc4d6a949 100-110
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_a945f7994d4943 43-52
+  s_26f5e669d3043c::t_9290259ed182df 97-101,108-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e07c144064b1b30140c99f2c3a456ab0aca10aac",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
