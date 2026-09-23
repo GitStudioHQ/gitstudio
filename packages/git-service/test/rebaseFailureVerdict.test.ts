@@ -102,6 +102,24 @@ test("untracked files alone do not stop a rebase — git does not refuse them ei
   }
 });
 
+test("with rebase.autoStash, uncommitted changes are git's to stash — the run is not refused", async () => {
+  // git stashes around the rebase and puts the edit back. The run worked for
+  // these users before the up-front refusal existed; refusing them now would
+  // be the app saying "commit or stash first" about changes git was about to
+  // stash itself.
+  const { dir, git, plan } = repo();
+  try {
+    git("config", "rebase.autoStash", "true");
+    writeFileSync(join(dir, "one.txt"), "one, edited\n");
+    const out = await runRebasePlan(dir, plan());
+    assert.equal(out.status, "done", JSON.stringify(out));
+    assert.equal(git("log", "-1", "--format=%s"), "two, reworded", "the plan ran");
+    assert.equal(git("diff", "--name-only"), "one.txt", "…and the edit is back where it was");
+  } finally {
+    removeTempRepo(dir);
+  }
+});
+
 test("a rebase already under way is refused as the user's state", async () => {
   const { dir, git, plan } = repo();
   try {

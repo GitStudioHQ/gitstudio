@@ -638,12 +638,20 @@ async function rebaseInProgress(
  * question, asked of porcelain status so no locale can change the answer. A
  * status that cannot be read answers "no": git's own refusal then still stands,
  * and a failure nobody explained is reported rather than excused.
+ *
+ * And "no" when the user has `rebase.autoStash` set: git then stashes the
+ * changes, rebases and puts them back, so there is nothing to refuse — the run
+ * worked for those users before this check existed, and must still.
  */
 async function hasTrackedChanges(
   root: string,
   env: NodeJS.ProcessEnv,
   opts: RebaseRunOptions,
 ): Promise<boolean> {
+  const autoStash = await spawnGit(["config", "--bool", "--get", "rebase.autoStash"], root, env, opts);
+  if (autoStash.code === 0 && autoStash.stdout.trim() === "true") {
+    return false;
+  }
   const { code, stdout } = await spawnGit(
     ["status", "--porcelain=v1", "-z", "--untracked-files=no", "--ignore-submodules=all"],
     root,
