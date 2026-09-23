@@ -134,7 +134,9 @@ export async function planRefCheckout(
     };
   }
   if (fullName.startsWith("refs/remotes/")) {
-    return { ...(await planRemoteCheckout(proc, name)), detaches: false };
+    // Tracked by the FULL name: a local branch called "origin/x" makes the
+    // short one ambiguous (see planRemoteCheckout's trackRef).
+    return { ...(await planRemoteCheckout(proc, name, fullName)), detaches: false };
   }
   return {
     // The full name, so the detach lands on the tag and never on a branch of

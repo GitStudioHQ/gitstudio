@@ -155,6 +155,35 @@ test("a remote branch goes through planRemoteCheckout by its remote-tracking nam
   }
 });
 
+test("a remote branch whose short name a LOCAL branch also has checks out the remote one, tracking it", async () => {
+  // A local branch literally called "origin/fix" (an easy slip: `git checkout
+  // -b origin/fix`) beside refs/remotes/origin/fix. git then shortens the
+  // remote one to "remotes/origin/fix", and a bare "origin/fix" on argv is
+  // ambiguous: `git checkout -b fix --track origin/fix` stopped with "fatal:
+  // ambiguous object name: 'origin/fix'" — from every remote-checkout door in
+  // both products.
+  const { dir, upstream } = collidingRepo();
+  try {
+    git(dir, "branch", "origin/fix", "main");
+    const remoteTip = git(dir, "rev-parse", "refs/remotes/origin/fix").out.trim();
+    assert.notEqual(git(dir, "rev-parse", "refs/heads/origin/fix").out.trim(), remoteTip, "two different commits");
+    const p = await plan(dir, "refs/remotes/origin/fix");
+    assert.ok(p);
+    assert.equal(git(dir, ...p.args).code, 0, `the planned argv must actually work: ${p.args.join(" ")}`);
+    assert.equal(symbolicHead(dir), "refs/heads/fix", "on a local branch named for the remote one");
+    assert.equal(headSha(dir), remoteTip, "at the REMOTE branch's tip, not the local origin/fix");
+    assert.equal(
+      git(dir, "rev-parse", "--symbolic-full-name", "fix@{upstream}").out.trim(),
+      "refs/remotes/origin/fix",
+      "tracking the remote-tracking branch, not the local one",
+    );
+    assert.equal(p.success, "Checked out fix (tracking origin/fix)", "the words stay the short ones");
+  } finally {
+    removeTempRepo(dir);
+    removeTempRepo(upstream);
+  }
+});
+
 test("a name outside the three namespaces is refused rather than guessed at", async () => {
   const proc = { run: async () => ({ code: 1 }) };
   // A short name reaching the planner is the bug this exists to end; giving it
