@@ -174,6 +174,10 @@ gitstudio and exporting again:
      since. Import the squashed diff instead, or a range that starts after it.
    - *Skipped*: a commit that changes only generated files, or whose changes
      gitstudio already has. The rest of the pull request is still imported.
+   - *Could not apply, and nothing of it was changed*: the pull request was
+     made on files gitstudio does not have in that form, most often one opened
+     before the first export, on 0.3.4's layout. Ask the contributor to rebase
+     it onto merge-studio's main.
    - *Stopped on a conflict*: gitstudio changed the same lines since the
      export. The conflict markers are in the files, and the message gives the
      `git add` and `git commit --author=…` lines that finish that commit, and
