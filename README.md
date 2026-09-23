@@ -122,13 +122,20 @@ packages/
   engine/        Pure, unit-tested diff/merge + graph-layout model (no vscode/electron imports).
   git-service/   Thin git layer: log, blame, status, staging, refs, stashes, worktrees, sync…
   host-bridge/   Protocols shared between the hosts (extension / desktop) and their webviews.
-  webview-ui/    Shared webview front-ends: commit graph, diff/merge (Monaco), rebase.
+  webview-ui/    Shared webview front-ends: commit graph, diff/merge (Monaco), conflicts
+                 dashboard, rebase.
+  merge-vscode/  The VS Code side of the merge experience, shared by the extension and
+                 Merge Studio: merge editor, conflicts dashboard, routing, JetBrains hand-off.
   ai/            Host-agnostic AI layer: multi-provider model registry, git AI tasks, agent
                  loop, and the shared git tool catalog that also backs the MCP server.
 apps/
   extension/     The VS Code / Cursor extension.
   desktop/       The Electron desktop app.
   mcp/           gitstudio-mcp — the Model Context Protocol server.
+  merge-studio/  Merge Studio — the merge-only extension, exported to GitStudioHQ/merge-studio.
+scripts/
+  merge-studio/  Export to and import from the merge-studio repository (docs/merge-studio.md).
+  merge-e2e/     The all-cases conflict matrix the merge code is tested against.
 ```
 
 `engine`, `host-bridge`, and `ai` are kept **pure** (no `vscode`/`electron` imports) so they stay portable and testable — enforced by `npm run check-purity`.
@@ -171,6 +178,8 @@ Issues and pull requests are welcome at [GitStudioHQ/gitstudio](https://github.c
 npm test && npm run check-types && npm run check-purity
 ```
 
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest, and [`docs/merge-studio.md`](docs/merge-studio.md) explains how the merge code is shared with Merge Studio and how a pull request opened on its repository comes back here.
+
 ## Facts
 
 | | |
@@ -179,11 +188,11 @@ npm test && npm run check-types && npm run check-purity
 | **Desktop** | [GitHub Releases](https://github.com/GitStudioHQ/gitstudio/releases) — `.dmg` (arm64 + x64), `.exe`, `.AppImage`, `.deb`, `.rpm`, `.tar.gz` |
 | **Website** | [gitstudio.dev](https://gitstudio.dev) |
 | **License** | **Apache-2.0** |
-| **Sibling product** | [Merge Studio](https://marketplace.visualstudio.com/items?itemName=gitstudio.merge-studio) — `gitstudio.merge-studio`, the original 3-pane merge editor. Shares an engine, not a listing. |
+| **Sibling product** | [Merge Studio](https://marketplace.visualstudio.com/items?itemName=gitstudio.merge-studio) — `gitstudio.merge-studio`, the merge-only extension. Built from `apps/merge-studio` and the shared packages here, exported to [GitStudioHQ/merge-studio](https://github.com/GitStudioHQ/merge-studio). Shares its merge editor, not a listing. |
 
 ## Architecture notes
 
-- **One flagship extension, not a swarm** (the GitLens model). It grows pillar by pillar; Merge Studio stays a separate, focused product.
+- **One flagship extension, not a swarm** (the GitLens model). It grows pillar by pillar; Merge Studio stays a separate, focused product, built from the same merge code (see [`docs/merge-studio.md`](docs/merge-studio.md)).
 - **Webview custom editors** for rich UI (merge, graph, rebase), **providers + decorations** for ambient features (blame, history), and a **thin git service** with its own repo discovery (`git rev-parse`, symlink-safe) plus direct `.git` reads where speed matters — the views paint from local git instead of blocking on `vscode.git` activation.
 - **Strict CSP + per-load nonces** on every webview; AI keys live in SecretStorage (extension) / safeStorage (desktop) and never reach a webview.
 - **One core, two hosts.** The desktop app runs `@gitstudio/git-service` unchanged in Electron's main process and renders the same `@gitstudio/webview-ui` components the extension uses — behind the same `@gitstudio/host-bridge` protocol.
