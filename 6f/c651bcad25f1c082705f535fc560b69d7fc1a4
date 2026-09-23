@@ -1,0 +1,25 @@
+packages/git-service/test/pullStopped.test.ts
+  s_26f5e669d3043c::t_15608484bedc3b 277-330
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_15f5880fe460fd 1-2,609,636
+  s_26f5e669d3043c::t_072882d6a1d4c3 655-688
+  s_26f5e669d3043c::t_c292ceb2661990 624-625
+  s_26f5e669d3043c::t_c669c871592770 587-593
+  s_26f5e669d3043c::t_4a9296ff8dc2c6 654
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6fc651bcad25f1c082705f535fc560b69d7fc1a4",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
