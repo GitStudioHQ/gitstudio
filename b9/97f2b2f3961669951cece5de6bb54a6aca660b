@@ -1,0 +1,40 @@
+apps/desktop/test/mergeShellMount.test.ts
+  s_26f5e669d3043c::t_d9d7e3d8cf70d0 1-323,339-435
+  s_26f5e669d3043c::t_4ab699d17bc633 324-338
+apps/desktop/src/renderer/views/mergeSettingsCard.ts
+  s_26f5e669d3043c::t_8cced018cd5faa 1-103,105-187
+  s_26f5e669d3043c::t_5bb64f3da0e0f3 104
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_4ab699d17bc633 36,279-288
+  s_26f5e669d3043c::t_619747ba013ec8 396-397,514-515,518
+  s_26f5e669d3043c::t_d69788051f63b9 1-35,37-278,289-395,398-513,516-517,519-618
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_0a5f5a221e7660 9159-9164,9178,9204-9206,9212-9217,9547-9552,9555-9556,9558,9563-9564,9566-9570,9572-9573,9580,9582-9590,12932-12998
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_d817d0ff0d6919 14-19,39-47,145-147,207-219,4802,6444-6485,6487-6489,6491-6494,6498,6901-6908,6911-6922,6926,6930-7138,8080-8088,8090-8095,8521,8763-8766,9751-9756
+apps/desktop/src/renderer/diffPanel.ts
+  s_26f5e669d3043c::t_8536ed130dbc50 524-535,537,539,542-543,546-550,555-587
+  s_26f5e669d3043c::t_2b96e41cc26f9f 12,22-33,67-72,705,718-722
+  s_26f5e669d3043c::t_1a83162cf23abf 642-650,669-679,683-691
+  s_26f5e669d3043c::t_a5ba4945813817 692-693
+apps/desktop/src/renderer/undo.ts
+  s_26f5e669d3043c::t_7e82cb7ff011e0 25-28,115-148,179-180,204-212,222-237
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_dba0e09c2a3182 721,771-810
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b997f2b2f3961669951cece5de6bb54a6aca660b",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
