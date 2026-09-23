@@ -11,7 +11,7 @@ import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { ExpectedError } from "./expectedError";
 import { join, resolve, sep, dirname } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
@@ -25,6 +25,7 @@ import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStagin
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { pullBlockedMessage, pullStoppedMessage } from "@gitstudio/git-service/SyncOps";
+import { GitProcess } from "@gitstudio/git-service/GitProcess";
 import type {
   CommitRecord,
   GitContext,
@@ -1608,15 +1609,36 @@ export class GitBridge {
 
   // ── Settings: git identity + local SSH keys ─────────────────────────────────
 
+  /**
+   * Where a `git config --global` runs: the open repository when there is one,
+   * and a repository-less git otherwise.
+   *
+   * The identity is the USER's, not the open repository's. This card used to
+   * need a repository anyway: with none open it showed two blank fields over a
+   * perfectly good ~/.gitconfig, and Save answered "No repository open." —
+   * which is report #15, filed from Settings on a machine with no repository
+   * open yet (the very moment a new user sets their name). Marking that answer
+   * `expected` silenced the report and kept the defect; this removes the need
+   * for the answer. The open repository still wins when there is one, so an
+   * `includeIf "gitdir:…"` in the global file reads as it always has.
+   */
+  private globalConfigGit(): Pick<GitProcess, "run"> {
+    const ctx = this.ctx();
+    if (ctx) return ctx.process;
+    // The OS temp dir, not the home dir: a home directory that is itself a
+    // git work tree (dotfiles) would otherwise be discovered, and its own
+    // config or ownership could get in the way of a global read or write.
+    this.globalGit ??= new GitProcess({ cwd: tmpdir(), ...this.repos.runnerOptions?.() });
+    return this.globalGit;
+  }
+  private globalGit: GitProcess | undefined;
+
   /** The global git author identity (`git config --global user.name/email`). */
   async gitIdentity(): Promise<GitIdentity> {
-    const ctx = this.ctx();
-    if (!ctx) {
-      return { name: "", email: "" };
-    }
+    const git = this.globalConfigGit();
     const read = async (key: string): Promise<string> => {
       try {
-        const r = await ctx.process.run(["config", "--global", key]);
+        const r = await git.run(["config", "--global", key]);
         return r.code === 0 ? r.stdout.trim() : "";
       } catch {
         return "";
@@ -1625,12 +1647,9 @@ export class GitBridge {
     return { name: await read("user.name"), email: await read("user.email") };
   }
 
-  /** Set the global git author identity. */
+  /** Set the global git author identity — with or without a repository open. */
   async setGitIdentity(req: GitIdentity): Promise<CommitActionResult> {
-    const ctx = this.ctx();
-    if (!ctx) {
-      return { ok: false, changed: false, expected: true, message: "No repository open." };
-    }
+    const git = this.globalConfigGit();
     const name = req.name.trim();
     const email = req.email.trim();
     // The three refusals below are all about what is in the two text fields:
@@ -1666,7 +1685,7 @@ export class GitBridge {
         ["user.email", email],
       ];
       for (const [key, value] of writes) {
-        const r = await ctx.process.run(["config", "--global", key, value]);
+        const r = await git.run(["config", "--global", key, value]);
         // `git config` exits non-zero WITHOUT throwing (run() resolves with the
         // code) — e.g. a read-only or locked ~/.gitconfig, or a broken include.
         // This used to fall through to "updated ✓" while writing nothing.

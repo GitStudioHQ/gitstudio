@@ -48,6 +48,11 @@ but they share the same engine, so most Git behaviour lands in both at once.
   build` in apps/mcp"*. The server now ships with the app, and the config it
   writes starts it with GitStudio itself, so no separate Node install is
   needed.
+- **Settings ▸ Git Identity needed a repository open.** Your git name and
+  email are global — they belong to you, not to a repository — but with no
+  repository open the card showed two empty fields and **Save identity**
+  answered *"No repository open."*, which is exactly when a new install sets
+  them. The card now reads and saves your global identity either way.
 - **An empty GitHub repository still read as broken in two places.** **Go to
   file** showed its "This repository is empty" note as a red error, and the
   branch switcher failed with a red toast instead of saying there are no

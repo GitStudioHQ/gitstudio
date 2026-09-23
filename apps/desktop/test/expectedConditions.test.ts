@@ -468,9 +468,12 @@ test("the census actually sees the results it claims to check", async () => {
   // the census of exactly the cases it was written for.
   const marked = sites.filter((s) => s.expected).map((s) => plain(s.message));
   assert.ok(
-    // 13, not 12: twelve in gitBridge and one in githubBridge's prCheckout,
-    // which the first pass of this sweep missed and this census found.
-    marked.filter((m) => /^No repository open\.$/.test(m)).length >= 13,
+    // Twelve: eleven in gitBridge and one in githubBridge's prCheckout, which
+    // the first pass of this sweep missed and this census found. There were
+    // thirteen until the identity card stopped needing a repository at all —
+    // #15 was filed from THAT site, and the fix there was to make the request
+    // work, not to keep refusing it quietly (see reportingVerdicts.test.ts).
+    marked.filter((m) => /^No repository open\.$/.test(m)).length >= 12,
     "report #15's message is no longer marked expected at every site",
   );
   assert.ok(
