@@ -21,7 +21,7 @@ OUT="${2:-$HARNESS/out/$SCENE.png}"
 THEME="${3:-dark}"
 EXTRA="${4:-}"
 mkdir -p "$(dirname "$OUT")"
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+"${GS_CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}" \
   --headless --disable-gpu --hide-scrollbars \
   --window-size=1600,1000 --force-device-scale-factor=2 \
   --virtual-time-budget=9000 \
