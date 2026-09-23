@@ -1372,8 +1372,12 @@ export class CommitViewProvider
         ahead: r.ahead,
         behind: r.behind,
       }));
+    // Not a remote's HEAD pointer. git shortens refs/remotes/origin/HEAD to
+    // the bare remote name ("origin"), so the "/HEAD" test never matched it:
+    // the menu listed a remote branch called "origin" whose checkout could
+    // only fail. `symref` is what marks it (the Branches tree's twin).
     const remote = refs
-      .filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"))
+      .filter((r) => r.type === "remote" && !r.symref && !r.name.endsWith("/HEAD"))
       .map((r) => r.name);
     // Tags sorted so "newest" (highest version) floats up — a numeric-aware
     // descending compare puts v1.10 above v1.9 and v2 above v1.
