@@ -1,0 +1,21 @@
+apps/desktop/test/forcePushGuard.test.ts
+  s_26f5e669d3043c::t_1600df706644b4 39-45
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_140bdfe50b8bff 703-705
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7fc7aad7904df5e10a93c9a0819518696b609b65",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
