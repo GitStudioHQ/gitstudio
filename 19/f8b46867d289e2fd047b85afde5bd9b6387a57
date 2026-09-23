@@ -1,0 +1,67 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_20eca98a28c945 13094-13126
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_12046043f9cf0d 609
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_ba3bee0a326066 1776,1788-1799
+  s_26f5e669d3043c::t_7723d61af35c1d 27
+  s_26f5e669d3043c::t_e833e1b8084397 1817
+  s_26f5e669d3043c::t_7e5961071052e7 54
+  s_26f5e669d3043c::t_5b2b0d3c1bfabe 1800-1801
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_de00a02e2ae56b 8051,8055-8056
+  s_26f5e669d3043c::t_0cde924c6be294 8010-8011
+packages/git-service/test/pullStopped.test.ts
+  s_26f5e669d3043c::t_3cdd4e56926fcf 277-284
+  s_26f5e669d3043c::t_5442b96b953d90 33
+  s_26f5e669d3043c::t_3242f91d516fac 184-276
+apps/desktop/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_2b8a671f50a943 230-272
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_304ffed7c4565d 101-112
+  s_26f5e669d3043c::t_6d3ce97d1c2be0 614-646
+  s_26f5e669d3043c::t_55202b8eace2b6 61-100
+  s_26f5e669d3043c::t_37b4793a5ccb52 548-550,552-566
+  s_26f5e669d3043c::t_0a5b3c612845c9 122-123
+  s_26f5e669d3043c::t_d06e7aac9a234a 507-511
+  s_26f5e669d3043c::t_04264e689545c0 613
+apps/desktop/src/renderer/pullFlow.ts
+  s_26f5e669d3043c::t_7f9f9c915cf73b 132-138
+  s_26f5e669d3043c::t_96f2313a25962c 154-159
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_980e26297eba7a 442-452,454-455,459
+apps/extension/src/git/pullMode.ts
+  s_26f5e669d3043c::t_0f3f90012e570d 3
+  s_26f5e669d3043c::t_2b90aace2e0a5c 4
+  s_26f5e669d3043c::t_f0ed818ef97aa7 29-34,36,39
+  s_26f5e669d3043c::t_446c3d19cdb21c 35
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_f02f83c621ca84 1457
+  s_26f5e669d3043c::t_b55b0b96ba72c5 3
+  s_26f5e669d3043c::t_ef7cc9d7135026 1591
+  s_26f5e669d3043c::t_f6c09787f406a3 1460-1461
+  s_26f5e669d3043c::t_a3f33fa8bb65ad 1496-1497
+  s_26f5e669d3043c::t_587161e6b0a9b6 1533-1536
+  s_26f5e669d3043c::t_d7c80f6992e1fa 1561-1563,1565-1568
+apps/extension/test/pullDivergedCallSites.test.ts
+  s_26f5e669d3043c::t_97314d9da20e07 150
+  s_26f5e669d3043c::t_3b3d733b07aeaa 114-116,118-125
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_222a315d6d6f60 1112-1127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "19f8b46867d289e2fd047b85afde5bd9b6387a57",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
