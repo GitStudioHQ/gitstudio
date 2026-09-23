@@ -2587,7 +2587,6 @@ export type AiTaskName =
   | "summarizeChanges"
   | "prDescription"
   | "reviewDiff"
-  | "explainConflict"
   | "changelog"
   | "branchName"
   | "assist";
@@ -2678,7 +2677,6 @@ export interface AiTaskInput {
   head?: string;
   description?: string;
   commits?: string[];
-  conflict?: { path: string; base?: string; ours: string; theirs: string };
   /** Override the connection for this call (else the default/per-task default). */
   connectionId?: string;
 }

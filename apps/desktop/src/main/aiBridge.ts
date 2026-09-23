@@ -29,7 +29,6 @@ import {
   generateChangelog,
   generateCommitMessage,
   generatePrDescription,
-  explainConflict,
   explainDiff,
   isConnectionUsable,
   knownModels,
@@ -46,8 +45,7 @@ import {
   type GitTool,
   type Provider,
 } from "@gitstudio/ai/index";
-import { createGitToolHost, type GitContext } from "@gitstudio/git-service/index";
-import { parseUnmergedPaths } from "@gitstudio/git-service/ConflictProvider";
+import { createGitToolHost } from "@gitstudio/git-service/index";
 import { mcpInfo, installMcp } from "./mcpConfig";
 import { CliProvider, cliSpecFor, detectCli, withThinking } from "./cliProvider";
 import { ConversationStore, type ChatSession } from "./assistantSessions";
@@ -528,16 +526,6 @@ export class AiBridge {
           text = await reviewDiff(provider, diff, taskCtx);
           break;
         }
-        case "explainConflict": {
-          const got = input.conflict
-            ? { conflict: input.conflict }
-            : await conflictToExplain(ctx, input.path);
-          if ("refusal" in got) {
-            return { requestId, ...got.refusal };
-          }
-          text = await explainConflict(provider, got.conflict, taskCtx);
-          break;
-        }
         case "changelog": {
           const base = input.base;
           const range = base ? `${base}..HEAD` : "HEAD";
@@ -824,66 +812,6 @@ export class AiBridge {
   dispose(): void {
     this.chats.disposeAll();
   }
-}
-
-/** The three sides of a conflicted file, as `explainConflict` wants them. */
-export interface ConflictSides {
-  path: string;
-  base?: string;
-  ours: string;
-  theirs: string;
-}
-
-/**
- * The conflict ✨ Explain should explain — or why it cannot, told apart by WHO
- * is at fault, because that decides whether a crash report is filed.
- *
- *   - No path at all. Every door that offers Explain names the file it is
- *     showing, so a request without one was built wrong by us: REPORTED.
- *   - The file is not conflicted any more — resolved in a terminal, or in
- *     another window, while the panel was open. A state: EXPECTED.
- *   - The file IS still conflicted (or git could not even say), yet its sides
- *     could not be read. Something failed that we should hear about: REPORTED.
- *
- * All three used to be one expected "Couldn't read the conflict.", which kept
- * the two that are ours out of the reporter along with the one that is not.
- * Exported for its test.
- */
-export async function conflictToExplain(
-  ctx: Pick<GitContext, "process">,
-  path: string | undefined,
-): Promise<
-  { conflict: ConflictSides } | { refusal: { ok: false; expected?: true; message: string } }
-> {
-  if (!path) {
-    return { refusal: { ok: false, message: "No conflicted file was named to explain." } };
-  }
-  const read = async (stage: number): Promise<string | undefined> => {
-    const r = await ctx.process.run(["show", `:${stage}:${path}`]).catch(() => null);
-    return r && r.code === 0 ? r.stdout : undefined;
-  };
-  const ours = await read(2);
-  const theirs = await read(3);
-  if (ours !== undefined || theirs !== undefined) {
-    // A modify/delete conflict has only one side; the missing one is empty.
-    const base = await read(1);
-    return { conflict: { path, base: base || undefined, ours: ours ?? "", theirs: theirs ?? "" } };
-  }
-  // Neither side could be read. Ask git whether the file is still unmerged —
-  // the index, not the wording of `git show`'s refusal, is what says so.
-  const status = await ctx.process
-    .run(["status", "--porcelain=v2", "-z", "--", path])
-    .catch(() => null);
-  if (status && status.code === 0 && parseUnmergedPaths(status.stdout).length === 0) {
-    return {
-      refusal: {
-        ok: false,
-        expected: true,
-        message: `${path} isn't conflicted any more — nothing is left to explain.`,
-      },
-    };
-  }
-  return { refusal: { ok: false, message: "Couldn't read the conflict." } };
 }
 
 /** A short, human-readable summary of what a tool call will do, for the confirm UI. */

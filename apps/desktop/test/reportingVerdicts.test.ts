@@ -24,7 +24,6 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GitContext } from "@gitstudio/git-service/index";
 import { removeTempRepo } from "./tmpRepo";
 import { HERMETIC_GIT_CONFIG } from "./hermeticGit";
 import { RepoStore } from "../src/main/repoStore";
@@ -33,7 +32,6 @@ import { GitHubClient } from "../src/main/githubClient";
 import { listRepoDir } from "../src/main/github/repoBrowse";
 import { getProjectBoard, listProjects } from "../src/main/github/projects";
 import { installMcp, type McpRuntime } from "../src/main/mcpConfig";
-import { conflictToExplain } from "../src/main/aiBridge";
 import { openGitHubRepo } from "../src/main/ghRepoOpen";
 import { isExpectedError, reportableResultMessage } from "../src/main/expectedError";
 
@@ -252,18 +250,6 @@ test("defect: Agent Access in a shipped build that lost its server, or asked for
     installMcp(undefined, { client: "not-a-client", write: false, destructive: false }, packaged),
   );
   assert.equal(unknown, "Unknown client: not-a-client.");
-});
-
-test("defect: an Explain request that names no file is filed", async () => {
-  const { work } = collidingClone();
-  const ctx = new GitContext({ root: work });
-  try {
-    const got = await conflictToExplain(ctx, undefined);
-    assert.ok("refusal" in got);
-    assert.equal(await filed(async () => ({ requestId: "r1", ...got.refusal })), "No conflicted file was named to explain.");
-  } finally {
-    ctx.dispose();
-  }
 });
 
 test("defect: opening a GitHub repository with a name the renderer built wrong is filed", async () => {
