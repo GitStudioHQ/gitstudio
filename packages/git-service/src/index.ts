@@ -94,7 +94,7 @@ export { TagOps } from "./TagOps";
 export type { TagOpResult, CreateTagOptions } from "./TagOps";
 export { GitContext } from "./GitContext";
 export type { GitContextOptions } from "./GitContext";
-export { OperationProvider, noneOperationView } from "./OperationProvider";
+export { OperationProvider, noneOperationView, kindOf, mergeLabel, shortName } from "./OperationProvider";
 export type {
   OperationReadOptions,
   OperationDetection,
@@ -102,14 +102,25 @@ export type {
   OperationContinueOptions,
   OperationSource,
   OperationControl,
+  OperationMarkers,
+  OperationInspection,
 } from "./OperationProvider";
-export { ConflictOps } from "./ConflictOps";
+export {
+  ConflictOps,
+  CONFLICT_TEXT_CAP_BYTES,
+  parseUnmergedStages,
+  xyFromStages,
+  shapeOfStages,
+  badgeFor,
+  textWriteSafe,
+} from "./ConflictOps";
 export type {
   ConflictReadOpts,
   ConflictFileFacts,
   MergeSides,
   ReadSidesOptions,
   ConflictOpResult,
+  WriteResolutionOptions,
 } from "./ConflictOps";
 export { locateJetBrainsIde } from "./jetbrains/locator";
 export type { LocateJetBrainsOptions } from "./jetbrains/locator";

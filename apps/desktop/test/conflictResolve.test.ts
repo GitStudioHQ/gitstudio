@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, existsSync, mkdirSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdtempSync, existsSync, mkdirSync } from "node:fs";
 import { removeTempRepo } from "./tmpRepo";
 import { tmpdir } from "node:os";
 import { RepoStore } from "../src/main/repoStore";
@@ -115,6 +115,64 @@ test("an ordinary content conflict still resolves to the chosen side", async () 
       /side/,
       "the staged content is the side that was chosen",
     );
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+/**
+ * Merge parity: the ROLE-based twin, `conflict:takeRole`, during a REBASE —
+ * where git's stages are the other way round. The upstream deleted keep.py
+ * and your branch edited it; your branch deleted drop.py and the upstream
+ * edited it. Accept Yours must keep YOUR edit of keep.py and carry out YOUR
+ * deletion of drop.py.
+ */
+test("Accept Yours in a rebase keeps your edit and carries out your deletion", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-md-rebase-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root, encoding: "utf8" });
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
+    mkdirSync(`${root}/app`);
+    writeFileSync(`${root}/app/keep.py`, "print('base')\n");
+    writeFileSync(`${root}/app/drop.py`, "print('base')\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "-qb", "feature");
+    writeFileSync(`${root}/app/keep.py`, "print('mine')\n");
+    execFileSync("git", ["rm", "-q", "app/drop.py"], { cwd: root });
+    git("add", "-A");
+    git("commit", "-qm", "mine");
+    git("checkout", "-q", main);
+    execFileSync("git", ["rm", "-q", "app/keep.py"], { cwd: root });
+    writeFileSync(`${root}/app/drop.py`, "print('upstream')\n");
+    git("add", "-A");
+    git("commit", "-qm", "upstream");
+    git("checkout", "-q", "feature");
+    try {
+      git("rebase", main);
+    } catch {
+      /* conflicts are the point */
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new GitBridge(repos);
+    const keep = await bridge.conflictModel("app/keep.py");
+    assert.equal(keep?.missingRole, "theirs", "the upstream (Theirs, in a rebase) deleted it");
+    assert.equal(keep?.missingSide, "ours", "which is git's stage 2");
+
+    const a = await bridge.conflictTakeRole({ path: "app/keep.py", role: "yours" });
+    assert.equal(a.ok, true, a.message ?? "");
+    assert.equal(readFileSync(`${root}/app/keep.py`, "utf8"), "print('mine')\n", "your edit kept");
+    const b = await bridge.conflictTakeRole({ path: "app/drop.py", role: "yours" });
+    assert.equal(b.ok, true, b.message ?? "");
+    assert.equal(existsSync(`${root}/app/drop.py`), false, "your deletion carried out");
+    assert.equal(git("ls-files", "-u").trim(), "");
   } finally {
     removeTempRepo(root);
   }

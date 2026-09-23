@@ -83,6 +83,29 @@ test("gitPath in the main worktree resolves git's relative answer against the ro
   }
 });
 
+test("the linked worktree's merge is detected, named and listed there — and only there", async () => {
+  // Detection goes through the same --git-path rule, so an operation inside a
+  // linked worktree is visible from it (and the main worktree stays clean).
+  const linked = new GitContext({ root: wt });
+  const main = new GitContext({ root: repo });
+  try {
+    const d = await linked.operation.detect();
+    assert.deepEqual(d, { kind: "merge", unmerged: 1 });
+    const v = await linked.operation.view();
+    assert.equal(v.kind, "merge");
+    assert.equal(v.yours.name, "feature");
+    assert.equal(v.theirs.name, "other");
+    assert.equal(v.title, "Merging other into feature");
+    const snap = await linked.conflictOps.snapshot({ op: v });
+    assert.deepEqual(snap.files.map((f) => f.path), ["f.txt"]);
+    assert.equal((await main.operation.view()).kind, "none");
+    assert.equal((await main.operation.detect()).unmerged, 0);
+  } finally {
+    linked.dispose();
+    main.dispose();
+  }
+});
+
 test("gitPath rejects outside a repository instead of inventing a path", async () => {
   const ctx = new GitContext({ root: dir });
   try {

@@ -151,3 +151,50 @@ test("a text conflict still resolves to the chosen side", async () => {
     removeTempRepo(root);
   }
 });
+
+/**
+ * Merge parity: `conflict:takeRole` goes through the same byte-moving path, and
+ * during a REBASE "Yours" is git's stage 3 — the commit being replayed — so
+ * Accept Yours on a binary must write YOUR bytes, not the upstream's.
+ */
+test("Accept Yours on a binary during a rebase writes your commit's exact bytes", async () => {
+  const root = mkdtempSync(`${tmpdir()}/gs-binrebase-`);
+  try {
+    const git = (...a: string[]): string => execFileSync("git", a, { cwd: root }).toString();
+    git("init", "-q");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
+    writeFileSync(`${root}/logo.png`, binary(1));
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    git("checkout", "-qb", "feature");
+    const mine = binary(77);
+    writeFileSync(`${root}/logo.png`, mine);
+    git("commit", "-qam", "mine");
+    git("checkout", "-q", main);
+    const upstream = binary(150);
+    writeFileSync(`${root}/logo.png`, upstream);
+    git("commit", "-qam", "upstream");
+    git("checkout", "-q", "feature");
+    try {
+      git("rebase", main);
+    } catch {
+      /* expected: this conflicts */
+    }
+
+    const repos = new RepoStore([]);
+    await repos.open(root);
+    const bridge = new GitBridge(repos);
+    const model = await bridge.conflictModel("logo.png");
+    assert.equal(model?.shape, "binary");
+    const r = await bridge.conflictTakeRole({ path: "logo.png", role: "yours" });
+    assert.equal(r.ok, true, r.message ?? "");
+    assert.equal(md5(readFileSync(`${root}/logo.png`)), md5(mine), "YOUR bytes — stage 3 in a rebase");
+    assert.notEqual(md5(readFileSync(`${root}/logo.png`)), md5(upstream));
+  } finally {
+    removeTempRepo(root);
+  }
+});
