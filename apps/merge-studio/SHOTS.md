@@ -23,11 +23,11 @@ that tag.
 | File | Theme | What it shows |
 | --- | --- | --- |
 | `media/screenshots/hero.gif` | dark | ≤ 8 s, 1200 px wide, ≤ 3 MB. A rebase stops → the dashboard reads "Rebasing feature/session-hardening onto main · commit 2 of 3" → Merge… → the wand and one » → Apply → Continue Rebase → "Rebase complete". |
-| `media/screenshots/merge-editor-dark.png` | dark | The sample merge with the legend visible: an orange conflict, a resolvable one with the wand, a violet identical edit, green / blue / grey one-sided changes. |
+| `media/screenshots/merge-editor-dark.png` | dark | The sample merge (*Sample: authorizeRequest.ts*) with the legend visible, in words: Conflicts (orange; one the wand resolves), Same on both sides (violet), Only in Yours / Only in Theirs (green, blue and grey). |
 | `media/screenshots/merge-editor-light.png` | light | The same, in Light Modern (the README's colour section uses this one). |
 | `media/screenshots/dashboard-rebase.png` | dark | The dashboard mid-rebase: YOURS test → onto → THEIRS master, "commit 1 of 1", the commit card, rows with Accept Yours / Accept Theirs / Merge…, Continue Rebase disabled with its reason. |
 | `media/screenshots/dashboard-done.png` | dark | Every file resolved: the success card, pills "kept yours · test", Continue Rebase enabled. |
-| `media/screenshots/legend.png` | dark | A tight crop of the legend (also the walkthrough's "Read the colours" media). |
+| `media/screenshots/legend.png` | dark | A tight crop of the legend, "Conflicts · Same on both sides · Only in Yours · Only in Theirs" (also the walkthrough's "Read the colours" media). |
 | `media/screenshots/no-text-panel.png` | dark | A modify/delete file: the panel with Keep yours / Keep theirs / Delete the file. |
 | `media/screenshots/diff.png` | dark | The side-by-side diff of the sample diff. |
 
@@ -40,7 +40,7 @@ package.json with an image object — `{"dark": …, "light": …, "hc": …,
 | Step | Placeholder | Capture |
 | --- | --- | --- |
 | Resolve a sample conflict | `media/walkthrough/sample-merge.svg` | The sample merge, fresh (nothing resolved), toolbar and bottom bar in frame. |
-| Read the colours | `media/walkthrough/legend.svg` | The legend plus one block of each colour. |
+| Read the colours | `media/walkthrough/legend.svg` | The legend, in words, plus one block of each colour. |
 | Rebase without swapping sides | `media/walkthrough/rebase-sides.svg` | The op strip and pane titles mid-rebase: YOURS test on the left, THEIRS master on the right. |
 | Finish the whole operation from the dashboard | `media/walkthrough/dashboard.svg` | The dashboard footer: Continue Rebase, Skip this commit, Abort Rebase. |
 | Choose your merge editor | `media/walkthrough/choose-editor.svg` | The first-conflict notification with Turn them off / Not now / Don't ask again. |

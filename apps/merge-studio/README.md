@@ -29,13 +29,15 @@ During a rebase git swaps its own words: `--ours` is the branch you are rebasing
 
 ## Every change, colour-coded
 
-| Mark | Colour | Meaning |
+The legend above the panes names each kind of change in words, with its
+colour and how many are left: **Conflicts · Same on both sides · Only in
+Yours · Only in Theirs**.
+
+| Colour | In the legend | Meaning |
 | --- | --- | --- |
-| ≠ | orange | A real conflict: both sides changed the same lines differently. |
-| ✨ | orange, with the wand | A conflict Merge Studio can solve: both sides' edits touch but don't overlap. The wand applies both. |
-| = | violet | Both sides made the same edit. |
-| ‹ › | green / blue / grey | A change only one side made: inserted, changed or deleted. ‹ is yours, › is theirs. |
-| dashed outline | the change's colour | Already applied to the result. |
+| orange | Conflicts | A real conflict: both sides changed the same lines differently. When the two edits touch but don't overlap, the wand on the toolbar applies both. |
+| violet | Same on both sides | Both sides made the same edit. |
+| green, blue, grey | Only in Yours / Only in Theirs | A change only one side made: green for lines it inserted, blue for lines it changed, grey for lines it deleted. |
 
 <p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The three-pane merge editor in a light theme: YOURS on the left, the result in the middle, THEIRS on the right; an orange conflict, a violet identical edit, and green, blue and grey one-sided changes, with the legend above."></p>
 
@@ -61,7 +63,7 @@ The dashboard opens the moment a merge, rebase, cherry-pick or revert stops on c
 
 ## Try it in 30 seconds
 
-Run **Merge Studio: Open Sample Merge** from the Command Palette. A ready-made conflict opens in the three panes; nothing in your repository is touched. **Merge Studio: Open Sample Diff** does the same for the diff, and **Merge Studio: Open Getting Started** walks through both.
+Run **Merge Studio: Open Sample Merge** from the Command Palette. A rebase stop opens in the three panes, *Sample: authorizeRequest.ts*: commit 2 of 3 of feature/session-hardening onto main, with every kind of change in it (conflicts, one of them the wand resolves; changes made the same on both sides; changes only in yours and only in theirs). Nothing in your repository is touched: Apply says what it would do in a real conflict, and Cancel closes the sample. **Merge Studio: Open Sample Diff** does the same for the diff, and **Merge Studio: Open Getting Started** walks through both.
 
 ## Keyboard
 

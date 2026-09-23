@@ -8,13 +8,14 @@
 
 - **Continue, Skip and Abort** in the Conflicts dashboard, for merge, rebase, cherry-pick, revert and git am. Continue says why when it can't run yet, and asks before git drops a commit your resolution left empty.
 - **Where you are**: "Rebasing test onto master · commit 2 of 3" and the commit being replayed, in the dashboard and above the merge editor.
-- **Every kind of change has its own colour**, with a legend: real conflicts, edits both sides made identically, and changes only one side made.
+- **Every kind of change has its own colour**, with a legend that names each in words: Conflicts (orange), Same on both sides (violet), Only in Yours and Only in Theirs (green for inserted lines, blue for changed ones, grey for deleted ones).
 - The wand applies both sides of a conflict whose edits don't overlap.
 - `jbMerge.autoApplyNonConflicting` applies every non-conflicting change when a file opens (off unless you turn it on).
 - Binary files, and files deleted or added on one side, open a panel with the choices that make sense: keep yours, keep theirs, or delete the file.
 - **Stage Changes with Ticks**: stage a changed file one change at a time.
 - **Merge Studio: Continue / Skip / Abort Operation** in the Command Palette.
 - **Merge Studio: Restore VS Code's Merge Editor** puts back what the first-conflict question turned off.
+- **A new sample merge** (*Merge Studio: Open Sample Merge*): a rebase stop on *Sample: authorizeRequest.ts* — commit 2 of 3 of feature/session-hardening onto main — with every kind of change the legend names, both branch names, the step and the commit. Apply says what a real Apply does; Cancel closes it; running it again starts it over. The sample diff gains a deleted line and a whitespace-only change.
 
 ### Changed
 
@@ -38,6 +39,17 @@
 
 - Accept Yours / Accept Theirs no longer deletes a file when git fails for another reason, such as a locked index.
 - Accepting one side of a conflict where both sides added the file no longer adds a blank line (shared with GitStudio).
+- **An unfinished merge is never saved without its conflict markers.** Every change in the merge editor goes into the file's editor buffer, and autosave (or Save) wrote it: one accepted change put the original text over every conflict you had not touched yet, with no markers, so `git add` or a later Continue could commit half a merge. Every conflict still open is now written with its markers, named after the two sides; Apply writes the finished result.
+- **A file already resolved is not overwritten when the merge editor opens.** If it has no conflict markers left (you fixed it by hand, or git rerere did), the merge editor leaves it alone, says so, and asks before Apply replaces it.
+- **Edits made outside the merge editor are not written over without asking** — a second tab on the same file, a formatter, a checkout in the terminal.
+- No notification after Apply: it covered Apply and Continue in the editor's corner, and the editor already says "Merge applied and staged". Hold Undo on the file's row in the dashboard to bring the conflict back.
+- **Accept Theirs on a submodule conflict recorded yours.** Taking a side of a submodule now records that side's commit (the submodule's own checkout is left for you to update), and Hold Undo brings a submodule or a symbolic link conflict back.
+- A submodule conflict is called a submodule, not a "Conflicted binary file", and its row names the commit each side points it at; a symbolic link is called one too.
+- **The merge result keeps its line endings.** With Yours in CRLF and Theirs in LF, the editor said the result keeps CRLF but saved LF, changing every line of your file.
+- A refresh of the dashboard no longer cancels a Hold Undo you are in the middle of.
+- After Continue finishes the operation, the dashboard says so ("Rebase complete") without a red "Unmerged files" label over an empty list, and its Close button is a secondary one beside Continue.
+- Skipping the last patch of a git am said "All patches applied"; it now says the patch was skipped.
+- Delete and Abort buttons are readable in light themes (Light Modern's red was below the contrast they need).
 
 Thanks to the reporter of #12.
 

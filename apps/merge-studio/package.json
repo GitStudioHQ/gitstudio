@@ -184,7 +184,7 @@
           {
             "id": "mergeStudio.tryMerge",
             "title": "Resolve a sample conflict",
-            "description": "A ready-made conflict, no setup needed. Take a change with » or «, or edit the result yourself, then press Apply.\n[Open sample merge](command:jbMerge.openDemo)",
+            "description": "A ready-made rebase stop, no setup needed, with every kind of change in it. Take a change with the arrows beside it, or edit the result yourself, then press Apply to see what a real Apply does.\n[Open sample merge](command:jbMerge.openDemo)",
             "media": {
               "svg": "media/walkthrough/sample-merge.svg",
               "altText": "The sample merge in Merge Studio: yours on the left, the result in the middle, theirs on the right."
@@ -196,10 +196,10 @@
           {
             "id": "mergeStudio.readColours",
             "title": "Read the colours",
-            "description": "Orange ≠ is a real conflict. The wand marks the ones Merge Studio can solve for you. Violet = means both sides made the same edit. Green, blue and grey are one-sided inserts, changes and deletes; ‹ and › say which side made them. Dashed means already applied.",
+            "description": "The legend names every kind of change in words: Conflicts, Same on both sides, Only in Yours, Only in Theirs. Orange is a real conflict, and the wand on the toolbar resolves the ones whose edits don't overlap. Violet means both sides made the same edit. Green, blue and grey are changes only one side made: inserted, changed and deleted lines.",
             "media": {
               "svg": "media/walkthrough/legend.svg",
-              "altText": "The legend: conflicts in orange, identical edits in violet, one-sided inserts, changes and deletes in green, blue and grey."
+              "altText": "The legend, in words: Conflicts in orange, Same on both sides in violet, Only in Yours and Only in Theirs in green, blue and grey."
             },
             "completionEvents": [
               "onStepSelected"

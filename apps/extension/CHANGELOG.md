@@ -33,6 +33,11 @@ does, the other does. (merge-studio#12)
   palette commands: *Open in Embedded Diff*, *Merge / Diff with JetBrains
   IDE*, *Open Sample Merge*, *Open Sample Diff*, *Continue / Skip / Abort
   Operation*.
+- **A sample merge that shows everything** (*Open Sample Merge*): a rebase
+  stop on *Sample: authorizeRequest.ts* with every kind of change the
+  legend names in words — Conflicts, Same on both sides, Only in Yours, Only
+  in Theirs — both branch names, the step and the commit. It touches no
+  repository: *Apply* says what a real Apply does and *Cancel* closes it.
 
 ### Changed
 - **During a rebase, Yours is your commit, on the left** — the side
@@ -63,7 +68,8 @@ does, the other does. (merge-studio#12)
 - `gitstudio.merge.jetbrainsPath` is a **user** setting only: a workspace's own
   settings cannot name the program GitStudio launches.
 - Continue / Skip / Abort say what they do per operation — "All patches
-  applied.", "Stash apply cancelled — the stash is still in your list." — in
+  applied.", "Last patch skipped — the series is finished, without it.",
+  "Stash apply cancelled — the stash is still in your list." — in
   the same words as the Conflicts dashboard, and cancelling unmerged files
   with no operation now warns that anything staged is discarded too.
 - Opening a conflict in the JetBrains IDE while the merge editor holds
@@ -74,10 +80,44 @@ does, the other does. (merge-studio#12)
 - *Apply* said "resolved file saved and staged" even when `git add` failed
   (for example on a stale `index.lock`); it now says the file is saved but
   not staged, and why.
-- *Apply* in the merge editor can be undone in one step: its message offers
-  **Undo**, which brings the conflict back while git is still stopped there.
-  GitStudio's Undo history cannot record a change while files are unmerged,
-  so before this an Apply could not be undone at all.
+- *Apply* in the merge editor can be undone: hold **Undo** on the file's row
+  in the Conflicts dashboard to bring the conflict back while git is still
+  stopped there. GitStudio's Undo history cannot record a change while files
+  are unmerged, so before this an Apply could not be undone at all. (Apply no
+  longer raises a notification: it covered Apply and Continue in the merge
+  editor's corner, which already says "Merge applied and staged".)
+- **An unfinished merge is never saved without its conflict markers.** The
+  merge editor keeps the file's editor buffer in step with the result, and
+  autosave (or Save) wrote it: one accepted change put the original text over
+  every conflict not yet touched, with no markers, so `git add` or a later
+  Continue could commit half a merge. Every conflict still open is written
+  with its markers, named after the two sides; *Apply* writes the finished
+  result. Opening the merge editor writes nothing.
+- **A file already resolved is not overwritten when the merge editor opens.**
+  With no conflict markers left in it (fixed by hand, or by git rerere), the
+  merge editor leaves the file alone, says so, and asks before *Apply*
+  replaces it.
+- **Edits made outside the merge editor are not written over without
+  asking**: a second tab on the same file, a formatter, a checkout in the
+  terminal.
+- **Accept Theirs on a submodule conflict recorded yours.** Taking a side of
+  a submodule now records that side's commit (its checkout is left for you to
+  update), and holding Undo brings a submodule or a symbolic-link conflict
+  back. A submodule conflict is called a submodule — not a "Conflicted binary
+  file" — and its row names the commit each side points it at.
+- **The merge result keeps its line endings**: with Yours in CRLF and Theirs in
+  LF the editor said the result keeps CRLF, then saved LF.
+- A refresh of the Conflicts dashboard no longer cancels a Hold Undo in
+  progress, and after Continue finishes the operation the dashboard says
+  "Rebase complete" without a red "Unmerged files" label over an empty list.
+  Its Close button is a secondary one beside Continue.
+- **Abort Rebase during `git am`** (the command, the rebase todo's Abort and
+  the Interactive Rebase panel's) ran `git rebase --abort`, which git refuses
+  there; it now ends the patch series with `git am --abort`.
+- Skipping the last patch of a `git am` said "All patches applied"; it now
+  says the patch was skipped.
+- Delete and Abort buttons are readable in light themes (Light Modern's red
+  was below the contrast they need).
 - *Pull* from the Changes view's branch menu reported a pull that stopped on
   conflicts as a failure; it now says so and offers *Resolve Conflicts…*.
 - A file deleted on both sides opens the Conflicts dashboard (where *Delete the

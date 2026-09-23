@@ -115,6 +115,26 @@ but they share the same engine, so most Git behaviour lands in both at once.
   Exit viewer or Apply puts it back on that file's row; answering one of the
   editor's questions returns it to the button that asked. It was left on
   nothing, and Tab started again from the top bar.
+- **Apply asks before writing over something the merge editor did not make.**
+  A file already resolved when it opened (no conflict markers left — fixed by
+  hand, or by git rerere) says so beside its name, and Apply asks before
+  replacing that resolution with the Result; a file changed on disk since the
+  editor opened (another editor, a checkout in a terminal) is not overwritten
+  without asking either.
+- **A submodule conflict is called a submodule**, not a "Conflicted binary
+  file": the panel says what a gitlink is and that its checkout is left
+  alone, and the dashboard row names the commit each side points it at. A
+  symbolic link is called one too.
+- **The top-bar chip says "Ready to continue"** when every conflict is
+  resolved, instead of "Merging · paused".
+- **The Rebase view names its verbs** ("Continue Rebase", "Abort Rebase"), and
+  when one ends the rebase the keyboard stays in the view instead of falling
+  to the top of the window.
+- Skipping the last patch of a `git am` said "All patches applied"; it now
+  says the patch was skipped.
+- The dashboard's finished card had Close and Continue as two identical
+  primary buttons; Close is secondary. Delete and Abort buttons are readable
+  in the light theme.
 
 ## [2.0.2] - 2026-09-21
 
