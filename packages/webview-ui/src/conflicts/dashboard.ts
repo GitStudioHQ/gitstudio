@@ -402,6 +402,11 @@ export class ConflictsDashboard {
       if (word) row.appendChild(el("span", "cd-badge", word));
     }
 
+    // The row's buttons move as ONE group: when the row is too narrow for
+    // them beside the name, they wrap to a line of their own, right-aligned,
+    // instead of splitting across two lines.
+    const actions = el("span", "cd-actions");
+
     if (resolved) {
       const pill = el("span", "cd-choice", `✓ ${choiceText(f.choice)}`);
       const op = state.op;
@@ -413,11 +418,12 @@ export class ConflictsDashboard {
             : f.choice === "merged"
               ? "Resolved in the merge editor"
               : "Resolved (in an editor, or outside this app)";
-      row.append(pill, this.holdButton(f, state));
+      row.appendChild(pill);
+      actions.appendChild(this.holdButton(f, state));
     } else if (!busy) {
       const disabled = state.busy;
       if (f.shape === "both-deleted") {
-        row.appendChild(
+        actions.appendChild(
           this.button(
             "Delete the file",
             "Neither side has this file — delete it and stage the deletion",
@@ -435,7 +441,7 @@ export class ConflictsDashboard {
         for (const role of ["yours", "theirs"] as const) {
           const side = sideOf(state.op, role);
           const missing = f.missingRole === role;
-          row.appendChild(
+          actions.appendChild(
             this.button(
               missing ? "Delete the file" : `Accept ${roleWord(role)}`,
               missing
@@ -453,7 +459,7 @@ export class ConflictsDashboard {
           );
         }
         if (hasText(f.shape)) {
-          row.appendChild(
+          actions.appendChild(
             this.button(
               "Merge…",
               "Resolve it change by change in the merge editor",
@@ -466,6 +472,7 @@ export class ConflictsDashboard {
         }
       }
     }
+    if (actions.childElementCount) row.appendChild(actions);
     return row;
   }
 

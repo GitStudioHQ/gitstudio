@@ -354,6 +354,10 @@ test("in a narrow pane every row keeps its file name, and its buttons stay in th
         const bb = b.getBoundingClientRect();
         expect(bb.left >= box.left - 1 && bb.right <= box.right + 1, r.dataset.path + ": " + b.textContent.trim() + " stays in its row (" + Math.round(bb.left) + "–" + Math.round(bb.right) + " in " + Math.round(box.left) + "–" + Math.round(box.right) + ")");
       }
+      // …and together: a wrapped row put Accept Yours and Accept Theirs on
+      // one line and Merge… alone on the next, flush left.
+      const tops = new Set([...r.querySelectorAll("button")].map((b) => Math.round(b.getBoundingClientRect().top)));
+      expect(tops.size <= 1, r.dataset.path + ": its buttons share one line (" + [...tops].join(", ") + ")");
     }
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));

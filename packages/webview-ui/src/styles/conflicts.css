@@ -299,8 +299,8 @@
    desktop never has — there the dashboard is one pane of the window, 443px at
    a 1000px window — so a row with a badge and two or three buttons squeezed
    its file name to nothing and pushed its last button out of the row. The
-   name keeps at least 10em; the buttons move to a line of their own,
-   right-aligned. */
+   name keeps at least 10em; the buttons (one .cd-actions group) move to a
+   line of their own, together and right-aligned. */
 .cd-row {
   display: flex;
   flex-wrap: wrap;
@@ -311,7 +311,16 @@
   padding: 7px 14px;
   border-bottom: 1px solid var(--cd-line);
 }
-.cd-row > button:first-of-type { margin-left: auto; }
+.cd-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin-left: auto;
+}
 .cd-row:last-child { border-bottom: none; }
 .cd-row:hover { background: var(--gs-hover); }
 .cd-row.is-resolved { background: color-mix(in srgb, var(--cd-ok) 6%, transparent); }
