@@ -1,0 +1,37 @@
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_e967032a6461be 7010-7011
+  s_26f5e669d3043c::t_50c0d37287c3ec 164-168
+  s_26f5e669d3043c::t_b30bae8e413edd 243-249
+  s_26f5e669d3043c::t_ff353bd0516254 7007-7009,7012-7016
+  s_26f5e669d3043c::t_17ad0e5a9be6cf 8965
+  s_26f5e669d3043c::t_49a145a291d13f 7055,7070-7088,7099,7101,7106-7115
+  s_26f5e669d3043c::t_aed3613b62d6a3 7017
+apps/desktop/test/mergeShellMount.test.ts
+  s_26f5e669d3043c::t_68d6d9892dc26e 297-338
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_396b5db6eb5f66 396-397
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_7644288693bb4a 4928-4988
+apps/desktop/src/renderer/diffPanel.ts
+  s_26f5e669d3043c::t_22d4f3740f2e8f 39-40
+  s_26f5e669d3043c::t_89829f91437d80 611-616
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_06f0688a1710d0 364-367
+  s_26f5e669d3043c::t_a1427e68acd0fd 252-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ea9aefb844d4644a0fd2885829f4b1c26d622ca1",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
