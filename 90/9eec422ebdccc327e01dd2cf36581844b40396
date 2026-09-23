@@ -1,0 +1,86 @@
+packages/git-service/test/operationControl.test.ts
+  s_26f5e669d3043c::t_9431a8b16b1760 368,576-578
+scripts/merge-e2e/cases.ts
+  s_26f5e669d3043c::t_2595f54550d2e5 310,316
+  s_26f5e669d3043c::t_13069ca33a07a4 125,223
+packages/webview-ui/test/conflictsDashboard.test.ts
+  s_26f5e669d3043c::t_077d3d1f9b62f1 112,114
+  s_26f5e669d3043c::t_b1fdbb6dbe5af1 105-111,113,115-126,432-480
+  s_26f5e669d3043c::t_93e1e496667a29 481
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_43303c75a30fd2 409
+apps/desktop/src/renderer/mergeParity.ts
+  s_26f5e669d3043c::t_8c2f42e08c4424 673-679
+  s_26f5e669d3043c::t_faa65fb79f2424 29,105,108-110,125
+  s_26f5e669d3043c::t_4ba2b0aaa4075c 189
+packages/merge-vscode/test/outcome.test.ts
+  s_26f5e669d3043c::t_0182ca1354010d 52,65
+packages/webview-ui/src/conflicts/dashboard.ts
+  s_26f5e669d3043c::t_c4a672bcadf1bd 692-694
+  s_26f5e669d3043c::t_75b336e4db99eb 457,463-465
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_a2bb515fd3a444 78,725-741,743,755-756,758-759,761-762,774,805-806
+packages/merge-vscode/src/payload.ts
+  s_26f5e669d3043c::t_faa65fb79f2424 18,109,126-129,132
+packages/webview-ui/src/conflicts/opText.ts
+  s_26f5e669d3043c::t_75b336e4db99eb 226-229
+packages/webview-ui/src/noTextPanel.ts
+  s_26f5e669d3043c::t_75b336e4db99eb 2-4,21,32-33,66,68-88,143-151,206-210
+packages/webview-ui/src/styles/conflicts.css
+  s_26f5e669d3043c::t_c4a672bcadf1bd 24,414,419
+packages/engine/src/conflict/conflictType.ts
+  s_26f5e669d3043c::t_5f84e4584d5438 1-36
+packages/git-service/src/OperationProvider.ts
+  s_26f5e669d3043c::t_4ba2b0aaa4075c 1194-1200
+packages/webview-ui/test/mergeShell.test.ts
+  s_26f5e669d3043c::t_b1fdbb6dbe5af1 67-73,75,77-88,314-322
+  s_26f5e669d3043c::t_077d3d1f9b62f1 74,76
+  s_26f5e669d3043c::t_d20eba2803cde8 323-326
+packages/git-service/src/ConflictOps.ts
+  s_26f5e669d3043c::t_50d5263b7a284c 61-62,221,509-510,517-522,529,531,734-744
+  s_26f5e669d3043c::t_024e3a7e6af91a 745
+packages/host-bridge/src/protocol.ts
+  s_26f5e669d3043c::t_faa65fb79f2424 10-13,19-21
+packages/git-service/test/conflictLinks.test.ts
+  s_26f5e669d3043c::t_b09572c45a06f7 82-91
+packages/host-bridge/src/conflictsProtocol.ts
+  s_26f5e669d3043c::t_50d5263b7a284c 201-202,211-212,234-235
+packages/merge-vscode/src/outcome.ts
+  s_26f5e669d3043c::t_4ba2b0aaa4075c 93,106
+apps/desktop/test/mergeShellMount.test.ts
+  s_26f5e669d3043c::t_3f18c2f613ac00 589-593
+packages/merge-vscode/test/driveVerb.test.ts
+  s_26f5e669d3043c::t_0182ca1354010d 60
+packages/webview-ui/src/styles/tokens.css
+  s_26f5e669d3043c::t_c4a672bcadf1bd 112-114,157-167
+packages/webview-ui/test/noTextPanel.test.ts
+  s_26f5e669d3043c::t_3deadf4d3ab274 1-37
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_43303c75a30fd2 4634-4659
+packages/git-service/test/conflictOps.test.ts
+  s_26f5e669d3043c::t_b09572c45a06f7 118
+scripts/merge-e2e/matrix.test.ts
+  s_26f5e669d3043c::t_2595f54550d2e5 90
+scripts/merge-e2e/README.md
+  s_26f5e669d3043c::t_7f81f3a4907b89 59
+scripts/merge-e2e/oracle.ts
+  s_26f5e669d3043c::t_56c7f81e791937 65
+scripts/merge-e2e/oracle.json
+  s_26f5e669d3043c::t_3c47ecd0bbe7f8 6,20,41,51,66,87,97,112,133,143,161,182,192,210,231,241,259,280,290,308,329,339,357,378,388,406,427,437,455,476,486,504,525,535,553,574,584,600,621,631,647,668,678,694,715,725,742,763,773,790,811,821,838,859,869,885,906,916,932,953,963,979,1000,1010,1027,1048,1058,1075,1096,1106,1123,1144,1154,1169,1190,1200,1215,1236,1246,1261,1282,1292,1310,1331,1341,1359,1380,1390,1408,1429,1439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "909eec422ebdccc327e01dd2cf36581844b40396",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
