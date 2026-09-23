@@ -678,23 +678,48 @@ export class SyncOps {
    * to the remote, so it is satisfied either way.
    *
    * What an amend and a rebase keep, and a colleague's commit does not, is the
-   * AUTHOR and the AUTHOR DATE. So: true only when every commit the upstream
-   * has that HEAD lacks reappears, by author and author date, among the commits
-   * HEAD has that the upstream lacks. One commit there that we did not rewrite
-   * — somebody else's, or a merge — and it is a divergence. Errs toward false,
-   * which asks merge-or-rebase and loses nothing.
+   * AUTHOR and the AUTHOR DATE; what they change is the COMMITTER date, to the
+   * moment of the rewrite. So: true only when every commit the upstream has
+   * that HEAD lacks is matched, one to one, by a commit HEAD has that the
+   * upstream lacks, with the same author and author date and committed LATER
+   * than the one it replaces. One commit there that we did not rewrite —
+   * somebody else's, or a merge — and it is a divergence.
+   *
+   * One to one, and "later", because author + author date is only to the
+   * second: two clones committing as the same person in the same second (a
+   * script, or a fast hand on two machines) look identical by it, and a set
+   * match let one fresh commit of ours "account for" two of theirs. Errs toward
+   * false, which asks merge-or-rebase and loses nothing.
    */
   async rewroteUpstream(signal?: AbortSignal): Promise<boolean> {
-    const identity = ["--format=%an%x00%ae%x00%ad", "--date=raw"];
-    const theirs = await this.proc.run(["log", ...identity, "HEAD..@{upstream}", "--"], { signal });
-    const ours = await this.proc.run(["log", ...identity, "@{upstream}..HEAD", "--"], { signal });
+    const fmt = ["--format=%an%x00%ae%x00%ad%x00%ct", "--date=raw"];
+    const theirs = await this.proc.run(["log", ...fmt, "HEAD..@{upstream}", "--"], { signal });
+    const ours = await this.proc.run(["log", ...fmt, "@{upstream}..HEAD", "--"], { signal });
     if (theirs.code !== 0 || ours.code !== 0) {
       return false;
     }
-    const lines = (s: string): string[] => s.split("\n").filter((l) => l.length > 0);
-    const replaced = lines(theirs.stdout);
-    const rewritten = new Set(lines(ours.stdout));
-    return replaced.length > 0 && replaced.every((c) => rewritten.has(c));
+    const parse = (s: string): { who: string; committed: number }[] =>
+      s
+        .split("\n")
+        .filter((l) => l.length > 0)
+        .map((l) => {
+          const cut = l.lastIndexOf("\0");
+          return { who: l.slice(0, cut), committed: Number(l.slice(cut + 1)) };
+        });
+    const replaced = parse(theirs.stdout);
+    const rewrites = parse(ours.stdout);
+    if (replaced.length === 0) {
+      return false;
+    }
+    const used = new Set<number>();
+    return replaced.every((old) => {
+      const i = rewrites.findIndex(
+        (c, k) => !used.has(k) && c.who === old.who && c.committed > old.committed,
+      );
+      if (i < 0) return false;
+      used.add(i);
+      return true;
+    });
   }
 
   /**

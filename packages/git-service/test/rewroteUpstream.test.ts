@@ -15,10 +15,11 @@
 // commits: accepting the offer removed both from the remote.
 //
 // `rewroteUpstream` tells the two apart by what an amend and a rebase keep and
-// a colleague's commit does not: the AUTHOR and the AUTHOR DATE. Every commit
-// only the upstream has must reappear, by that identity, among the commits
-// only we have. One the remote has that we did not rewrite — somebody else's —
-// and it is a divergence.
+// a colleague's commit does not — the AUTHOR and the AUTHOR DATE — and what
+// they change: the committer date. Every commit only the upstream has must be
+// matched, one to one, by a commit only we have with the same author and
+// author date, committed later. One the remote has that we did not rewrite —
+// somebody else's — and it is a divergence.
 
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -54,10 +55,17 @@ function identify(dir: string, name: string, email: string): void {
 
 /** A commit with a fixed author date, so "same author date" is a fact the test
  *  controls rather than a race against the clock. */
-function commitAt(cwd: string, file: string, content: string, msg: string, when: string): void {
+function commitAt(
+  cwd: string,
+  file: string,
+  content: string,
+  msg: string,
+  authored: string,
+  committed: string = authored,
+): void {
   writeFileSync(join(cwd, file), content);
   git(cwd, ["add", file]);
-  git(cwd, ["commit", "-q", "-m", msg], { GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when });
+  git(cwd, ["commit", "-q", "-m", msg], { GIT_AUTHOR_DATE: authored, GIT_COMMITTER_DATE: committed });
 }
 
 /** Me with a clone and two pushed commits; a colleague with a clone of their own. */
@@ -91,10 +99,11 @@ test("amending a pushed commit is a rewrite", async () => {
 test("rewording two pushed commits in a rebase is a rewrite", async () => {
   const { mine, ctx } = pushedWork();
   // An interactive reword, done non-interactively: reset and re-commit both
-  // with their original author dates, as `rebase -i` keeps them.
+  // with their original author dates, as `rebase -i` keeps them — and a new
+  // committer date, as it sets them.
   git(mine, ["reset", "-q", "--hard", "HEAD~2"]);
-  commitAt(mine, "a.txt", "a\n", "first, reworded", "1700000100 +0000");
-  commitAt(mine, "b.txt", "b\n", "second, reworded", "1700000200 +0000");
+  commitAt(mine, "a.txt", "a\n", "first, reworded", "1700000100 +0000", "1700009000 +0000");
+  commitAt(mine, "b.txt", "b\n", "second, reworded", "1700000200 +0000", "1700009001 +0000");
   const ab = await ctx.sync.aheadBehind();
   assert.deepEqual([ab.ahead, ab.behind], [2, 2], "precondition: ahead AND behind");
   assert.equal(await ctx.sync.rewroteUpstream(), true);
@@ -121,6 +130,34 @@ test("an amend AND a colleague's push on top of the old commit is not a rewrite"
   const ab = await ctx.sync.aheadBehind();
   assert.deepEqual([ab.ahead, ab.behind], [1, 2], "precondition: ahead AND behind");
   assert.equal(await ctx.sync.rewroteUpstream(), false);
+});
+
+test("the same author committing in the same second on two machines is not a rewrite", async () => {
+  // Author + author date is only to the second. Found by replaying Sync on a
+  // scripted repository where both clones commit as one person: two of their
+  // commits and one of ours shared the identity, and a set match let the one
+  // account for both. A rewrite is committed AFTER what it replaces, and each
+  // replaced commit needs its own.
+  const { mine, theirs, ctx } = pushedWork();
+  identify(theirs, "Me", "me@example.com");
+  commitAt(theirs, "c.txt", "c\n", "from the laptop", "1700000500 +0000");
+  commitAt(theirs, "e.txt", "e\n", "from the laptop, again", "1700000500 +0000");
+  git(theirs, ["push", "-q", "origin", "main"]);
+  commitAt(mine, "d.txt", "d\n", "from the desktop", "1700000500 +0000");
+  git(mine, ["fetch", "-q"]);
+  const ab = await ctx.sync.aheadBehind();
+  assert.deepEqual([ab.ahead, ab.behind], [1, 2], "precondition: ahead AND behind");
+  assert.equal(await ctx.sync.rewroteUpstream(), false);
+});
+
+test("…nor is one fresh commit that happens to match one of theirs", async () => {
+  const { mine, theirs, ctx } = pushedWork();
+  identify(theirs, "Me", "me@example.com");
+  commitAt(theirs, "c.txt", "c\n", "from the laptop", "1700000500 +0000");
+  git(theirs, ["push", "-q", "origin", "main"]);
+  commitAt(mine, "d.txt", "d\n", "from the desktop", "1700000500 +0000");
+  git(mine, ["fetch", "-q"]);
+  assert.equal(await ctx.sync.rewroteUpstream(), false, "not committed after it, so not a rewrite of it");
 });
 
 test("nothing to compare is not a rewrite", async () => {
