@@ -37,6 +37,45 @@ export function rebaseApplyStop(): Stopped {
   return { r, sha };
 }
 
+/**
+ * `git rebase -i` on test (T1 adds g, T2 and T3 both edit line 3), reordered
+ * to pick T1, T3, T2 against the SAME base: T1 is fast-forwarded without being
+ * replayed (git's skip_unnecessary_picks — recorded only in `done`), and T3
+ * stops, conflicted, on top of it. The everyday `rebase -i` / `--keep-base`
+ * shape: HEAD at the stop is an original commit, not onto and not rewritten.
+ */
+export function rebaseSkippedPicksStop(): Stopped {
+  const r = makeRepo("rebase-skipped");
+  r.write("f.txt", FIVE);
+  const base = r.commitAll("base");
+  r.git("checkout", "-q", "-b", "test");
+  r.write("g.txt", "g\n");
+  const t1 = r.commitAll("T1 add g");
+  r.write("f.txt", edit(FIVE, { three: "three-a" }));
+  const t2 = r.commitAll("T2 line 3 a");
+  r.write("f.txt", edit(FIVE, { three: "three-b" }));
+  const t3 = r.commitAll("T3 line 3 b");
+  // Swap the 2nd and 3rd todo lines.
+  const body = `const L=t.split("\\n");const x=L[1];L[1]=L[2];L[2]=x;t=L.join("\\n")`;
+  r.gitEnv({ GIT_SEQUENCE_EDITOR: seqEditor(r, body) }, "rebase", "-i", base);
+  return { r, sha: { base, t1, t2, t3 } };
+}
+
+/** On master: `git revert A C` — A conflicts (B changed its line since), C is queued. */
+export function revertRangeStop(): Stopped {
+  const r = makeRepo("revert-range");
+  r.write("f.txt", FIVE);
+  const base = r.commitAll("base");
+  r.write("f.txt", edit(FIVE, { three: "three-A" }));
+  const a = r.commitAll("A line 3");
+  r.write("f.txt", edit(FIVE, { three: "three-B" }));
+  const b = r.commitAll("B line 3 again");
+  r.write("h.txt", "h\n");
+  const c = r.commitAll("C add h");
+  r.tryGit("revert", "--no-edit", a, c);
+  return { r, sha: { base, a, b, c } };
+}
+
 /** `rebase --rebase-merges` stopped while re-creating `Merge branch 'side' into feat`. */
 export function rebaseMergeStepStop(): Stopped {
   const r = makeRepo("rebase-merges");

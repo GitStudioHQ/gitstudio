@@ -206,6 +206,32 @@ test("rebase × an unstaged change to a tracked file: Continue explains, instead
     assert.equal((await ctx.operation.view()).canContinue, true, "and it clears once the change is gone");
   }));
 
+test("rebase -i × a fast-forwarded first pick, then an emptied one: the drop still needs a confirm", () =>
+  withStop(S.rebaseSkippedPicksStop, async ({ r, sha }) => {
+    const ctx = r.ctx();
+    const v0 = await ctx.operation.view();
+    assert.equal(v0.kind, "rebase");
+    assert.equal(v0.commit?.sha, sha.t3, "stopped on T3, reordered before T2");
+    assert.equal(r.sha("HEAD"), sha.t1, "T1 was fast-forwarded, not replayed");
+    // Keep HEAD's side (git's stage 2): T3's change is gone from the result.
+    assert.equal((await ctx.conflictOps.takeRole("f.txt", "theirs")).ok, true);
+    const v = await ctx.operation.view();
+    assert.equal(v.canContinue, true);
+    assert.deepEqual(
+      v.willDrop,
+      { sha: sha.t3, subject: "T3 line 3 b", branch: "test" },
+      "HEAD is where the rebase put it (a skipped pick), so git WILL drop T3 on Continue",
+    );
+    assert.equal((await ctx.operation.continue()).refused, "confirm-drop");
+    assert.equal(r.exists(".git/rebase-merge"), true, "nothing ran");
+    const out = await ctx.operation.continue({ confirmDrop: true });
+    assert.equal(out.ok, true, out.message);
+    assert.deepEqual(r.git("log", "--format=%s", `${sha.base}..test`).trim().split("\n"), [
+      "T2 line 3 a",
+      "T1 add g",
+    ], "the drop the user confirmed");
+  }));
+
 // ── rebase, apply backend ───────────────────────────────────────────────────
 
 test("rebase (apply backend) × conflicted: named as a rebase with a Skip verb, not yet allowed", () =>

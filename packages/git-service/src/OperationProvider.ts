@@ -214,7 +214,8 @@ export class OperationProvider implements OperationSource, OperationControl {
       const dir = backend === "apply" ? paths["rebase-apply"] : paths["rebase-merge"];
       const r = await this.rebaseFacts(dir, backend ?? "merge", kind, unmerged.length, signal);
       Object.assign(facts, r.facts);
-      headIsRebases = !!headSha && r.written.has(headSha);
+      // By prefix: a `done` line may carry an abbreviated id.
+      headIsRebases = !!headSha && [...r.written].some((w) => headSha.startsWith(w));
       episode = `${kind}:${r.origHead ?? ""}:${r.position}:${r.rebaseHead ?? "-"}`;
     } else if (kind === "cherry-pick" || kind === "revert") {
       const head = await this.revParse(kind === "cherry-pick" ? "CHERRY_PICK_HEAD" : "REVERT_HEAD", signal);
@@ -681,6 +682,17 @@ export class OperationProvider implements OperationSource, OperationControl {
     if (backend === "merge") {
       const doneLines = todoCommands(done);
       const todoLines = todoCommands(todo);
+      // A pick the sequencer FAST-FORWARDED keeps its own sha and is recorded
+      // nowhere else: `rebase -i` / `--keep-base` skips every leading pick
+      // whose parent is already where it is going (skip_unnecessary_picks),
+      // moves HEAD onto the last of them, and writes those lines straight to
+      // `done` — not to rewritten-list, and `onto` still names the old base.
+      // Without these, HEAD at the first real stop looked like a hand commit,
+      // and an emptied pick there was dropped with no warning at all.
+      for (const l of doneLines) {
+        const sha = pickedCommit(l);
+        if (sha) written.add(sha);
+      }
       // Counted from the commands themselves, never msgnum/end: those count
       // exec, label and update-ref lines too (extra.out read 3/4 for 2/3).
       const n = doneLines.filter((l) => PICK_LIKE.test(l)).length;
@@ -1040,6 +1052,19 @@ export function mergeLabel(line: string): string | undefined {
     labels.push(w);
   }
   return labels.length ? labels.join(", ") : undefined;
+}
+
+/**
+ * The original commit a replaying todo line names — `pick <sha> …`,
+ * `fixup -C <sha> …`, `merge -C <sha> <label> …` — or undefined for any
+ * other line (exec, label, reset, update-ref, a merge with no -C). At least 7
+ * hex digits, so a prefix match can never be a coincidence of two characters.
+ */
+export function pickedCommit(line: string): string | undefined {
+  const m = /^(?:p|pick|r|reword|e|edit|s|squash|f|fixup|m|merge)\s+(?:-[cC]\s+)?([0-9a-f]{7,64})(?:\s|$)/.exec(
+    line.trim(),
+  );
+  return m?.[1];
 }
 
 /** refs/heads/x → x, refs/remotes/origin/x → origin/x, refs/tags/v1 → v1. Display only. */
