@@ -3,6 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GitRef, GitRefType } from "@gitstudio/host-bridge/git";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { pausedForUser, type OperationMarker } from "../git/pausedForUser";
+import { notifyPaused } from "../git/pauseNotice";
 import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
 import {
   promptConfirm,
@@ -888,9 +889,7 @@ async function reportMergeLike(
     return;
   }
   if (await pausedForUser(ctx.process, result.code, marker)) {
-    void vscode.window.showWarningMessage(
-      `${verb} hit conflicts. Resolve them, then continue or abort.`,
-    );
+    notifyPaused(`${verb} hit conflicts. Resolve them, then continue or abort.`);
     refresh();
     return;
   }

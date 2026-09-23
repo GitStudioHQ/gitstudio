@@ -46,13 +46,8 @@ import { registerTimelineProvider } from "./history/timelineApi";
 import { showLineHistory } from "./history/lineHistory";
 import { RevisionNavigator } from "./history/revisionNavigation";
 import { showReflog } from "./history/reflog";
-import { MergeEditorProvider } from "./merge/mergeEditorProvider";
-import { DiffPanel, compareCommand, stageWithTicksCommand } from "./merge/diffPanel";
+import { registerGitStudioMerge } from "./merge/gitstudioMerge";
 import { StagedGutter } from "./changes/stagedGutter";
-import {
-  AutoOpenConflicts,
-  resolveInMergeEditor,
-} from "./merge/autoOpenConflicts";
 import { CommitViewProvider } from "./changes/commitView";
 import {
   stageSelectedLines,
@@ -264,10 +259,6 @@ export function activate(context: vscode.ExtensionContext): void {
         void showLineHistory(repos);
       }),
       vscode.commands.registerCommand(
-        "gitstudio.openChanges",
-        (resource?: vscode.Uri) => void navigator.openChanges(resource),
-      ),
-      vscode.commands.registerCommand(
         "gitstudio.openFileAtRevision",
         (resource?: vscode.Uri) =>
           void navigator.openFileAtRevision(resource),
@@ -298,26 +289,18 @@ export function activate(context: vscode.ExtensionContext): void {
       log("native Timeline integration skipped (proposed API unavailable)");
     }
 
-    // Rich 3-pane merge + side-by-side diff (M6). The custom editor and the
-    // diff-panel serializer must be registered for the webview tabs to resolve;
-    // auto-open routes new conflicts into the merge editor (respecting the
-    // gitstudio.merge.autoOpen setting).
-    const autoOpen = new AutoOpenConflicts(context, repos);
-    context.subscriptions.push(
-      MergeEditorProvider.register(context, repos),
-      DiffPanel.register(context, repos),
-      autoOpen,
-      vscode.commands.registerCommand(
-        "gitstudio.resolveInMergeEditor",
-        (arg?: vscode.Uri | { resourceUri?: vscode.Uri }) =>
-          void resolveInMergeEditor(repos, arg),
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.compare",
-        (resource?: vscode.Uri) =>
-          void compareCommand(context, repos, resource),
-      ),
-    );
+    // The merge experience GitStudio shares with Merge Studio
+    // (@gitstudio/merge-vscode): the 3-pane merge editor, the Conflicts
+    // dashboard, automatic routing (gitstudio.merge.autoOpen), the status item,
+    // the JetBrains hand-off, the embedded diff, and the commands resolve /
+    // compare / openChanges / stageWithTicks / operation.continue|skip|abort.
+    // `stagingRefresh` is declared further down; it is only called after
+    // activation, from a user action.
+    const merge = registerGitStudioMerge(context, repos, {
+      openChangesNative: (uri) => navigator.openChanges(uri),
+      refresh: () => stagingRefresh.refresh(),
+    });
+    context.subscriptions.push(merge);
 
     // GitBrain — the optional bring-your-own-key AI layer (M10). It is OFF until
     // configured: with no provider, `gitstudio.ai.enabled` stays false, the ✨
@@ -422,6 +405,7 @@ export function activate(context: vscode.ExtensionContext): void {
         isEnabled: () => brain.isEnabledCached(),
         draft: (entry) => draftCommitMessage(brain, entry),
       },
+      merge.changesHooks,
     );
     context.subscriptions.push(commitProvider, revisionContent);
 
@@ -485,11 +469,6 @@ export function activate(context: vscode.ExtensionContext): void {
               : editor.selection.active.line;
           void stagedGutter.toggleAtLine(editor.document, line);
         },
-      ),
-      vscode.commands.registerCommand(
-        "gitstudio.stageWithTicks",
-        (resource?: vscode.Uri | { resourceUri?: vscode.Uri }) =>
-          void stageWithTicksCommand(context, repos, resource, stagingRefresh),
       ),
       vscode.commands.registerCommand("gitstudio.stageSelectedLines", () =>
         stageSelectedLines(repos, stagingRefresh),

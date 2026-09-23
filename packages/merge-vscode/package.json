@@ -1,0 +1,22 @@
+{
+  "name": "@gitstudio/merge-vscode",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The VS Code host glue for the merge experience GitStudio and Merge Studio share: merge editor, conflicts dashboard, routing, JetBrains hand-off and the diff panel, parameterised by a MergeProduct.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "tsx --import ./test/hermetic.ts --test \"test/**/*.test.ts\"",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@gitstudio/engine": "*",
+    "@gitstudio/git-service": "*",
+    "@gitstudio/host-bridge": "*"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.78.0"
+  }
+}

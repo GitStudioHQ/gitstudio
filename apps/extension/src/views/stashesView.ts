@@ -3,6 +3,8 @@ import { describeStashScope, listForHint, type StashRequest } from "./stashScope
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { promptConfirm, promptInput, promptPickMany } from "../ui/dialogs";
+import { stoppedByThisCommand } from "../git/pausedForUser";
+import { detectOperation, notifyPaused } from "../git/pauseNotice";
 
 // The Stashes pillar — genuinely absent from free VS Code, so GitStudio makes it
 // first-class. The list + row actions live in a branded webview
@@ -271,8 +273,9 @@ export async function applyStash(
   if (!a || !ref) {
     return;
   }
+  const before = await detectOperation(a.ctx);
   const result = await a.ctx.stashes.apply(ref);
-  reportStashOp(result, "Applied stash", refresh);
+  reportStashOp(result, "Applied stash", refresh, !result.ok && stoppedByThisCommand(before, await detectOperation(a.ctx)));
 }
 
 /** Apply then drop a stash (routed through Undo). */
@@ -286,11 +289,12 @@ export async function popStash(
     return;
   }
   const ledger = repos.getUndoLedger();
+  const before = await detectOperation(a.ctx);
   const run = () => a.ctx.stashes.pop(ref);
   const result = ledger
     ? await ledger.runWithUndo(a, `Pop ${ref}`, run)
     : await run();
-  reportStashOp(result, "Popped stash", refresh);
+  reportStashOp(result, "Popped stash", refresh, !result.ok && stoppedByThisCommand(before, await detectOperation(a.ctx)));
 }
 
 /** Confirm + drop a stash (routed through Undo). */
@@ -347,13 +351,22 @@ export async function branchFromStash(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * `paused`: the apply stopped on conflicts (decided from what git wrote, not
+ * from its prose). That is not a failure — git kept the stash and left the
+ * files for the user, and the Conflicts dashboard resolves them or cancels.
+ */
 function reportStashOp(
   result: { ok: boolean; stderr: string },
   success: string,
   refresh: () => void,
+  paused = false,
 ): void {
   if (result.ok) {
     flash(success);
+    refresh();
+  } else if (paused) {
+    notifyPaused("The stash hit conflicts. Resolve them, or cancel to put the files back — the stash is kept.");
     refresh();
   } else {
     void vscode.window.showErrorMessage(

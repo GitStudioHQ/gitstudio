@@ -3,6 +3,8 @@ import { promptConfirm, promptPick } from "../ui/dialogs";
 import type { GitContext, Snapshot } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { relativeTime } from "../util/relativeTime";
+import { pausedForUser } from "../git/pausedForUser";
+import { notifyPaused } from "../git/pauseNotice";
 
 // The universal Undo envelope — GitStudio's flagship trust feature.
 //
@@ -272,12 +274,11 @@ export class UndoLedger {
     // Ask git whether the revert PAUSED rather than reading its prose — the same
     // locale trap as the graph's cherry-pick/revert: on a translated git the
     // English test misses and a routine "resolve this" reads as a hard failure.
-    // Exit 1 + REVERT_HEAD means paused; 128 means git refused outright.
-    const paused =
-      result.code === 1 &&
-      (await active.ctx.process.run(["rev-parse", "--verify", "--quiet", "REVERT_HEAD"])).code === 0;
+    // Exit 1 + REVERT_HEAD means paused; 128 means git refused outright —
+    // the one shared test (git/pausedForUser.ts), not a second copy of it.
+    const paused = await pausedForUser(active.ctx.process, result.code, "REVERT_HEAD");
     if (paused) {
-      void vscode.window.showWarningMessage(
+      notifyPaused(
         `Revert of "${entry.label}" needs a decision — resolve any conflicts ` +
           `and continue, or abort the revert.`,
       );

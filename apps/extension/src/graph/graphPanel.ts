@@ -36,6 +36,7 @@ import { openRevisionDiff } from "../history/revisionContentProvider";
 import { commitWebUrl } from "../util/remoteUrl";
 import { relativePath, statusLetter } from "../changes/changesView";
 import type { Change } from "../git/git";
+import { notifyPaused } from "../git/pauseNotice";
 
 /** git's canonical empty-tree object — the "parent" of a root commit's diff. */
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
@@ -700,7 +701,7 @@ export class CommitGraphPanel {
     } else if (outcome.status === "stopped") {
       // Reordering can genuinely conflict — two commits touching the same lines
       // in the other order. git leaves the rebase open for the user to finish.
-      void vscode.window.showWarningMessage(
+      notifyPaused(
         outcome.reason === "conflict"
           ? "GitStudio: reordering hit a conflict — resolve it, then continue or abort the rebase."
           : "GitStudio: the rebase stopped and needs you — continue or abort it.",

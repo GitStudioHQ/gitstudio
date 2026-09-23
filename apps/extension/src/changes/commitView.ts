@@ -48,6 +48,9 @@ import {
   type CompareFile,
 } from "../compare/refCompare";
 import { toRevisionUri } from "../history/revisionContentProvider";
+import { operationBanner, type OperationBannerData } from "./operationBanner";
+import { stoppedByThisCommand, type DetectedOperation } from "../git/pausedForUser";
+import { detectOperation, notifyPaused } from "../git/pauseNotice";
 
 // The unified Commit window: ONE WebviewView ("Commit", viewId gitstudio.commit)
 // that renders BOTH the commit message box AND the working-tree changes —
@@ -123,6 +126,12 @@ interface StatePayload {
   aiEnabled: boolean;
   layout: "tree" | "list";
   busy: boolean;
+  /**
+   * A stopped merge / rebase / cherry-pick / revert / am / stash, or unmerged
+   * files: the banner above the lists (Resolve Conflicts…, Continue, Skip,
+   * Abort). Absent when nothing is in progress.
+   */
+  operation?: OperationBannerData;
 }
 
 interface FromWebview {
@@ -161,7 +170,11 @@ interface FromWebview {
     | "openPushFileDiff"
     | "openFolder"
     | "openGraph"
+    | "resolveConflicts"
+    | "operation"
     | "dialogResult";
+  /** operation: which verb the banner's button asked for. */
+  verb?: "continue" | "skip" | "abort";
   /** Correlation id for a `dialogResult` reply (see DialogHost below). */
   dialogId?: string;
   /** The dialog's answer: text, a choice id, checked ids, or "ok". */
@@ -207,6 +220,21 @@ interface FromWebview {
 export interface CommitMessageGenerator {
   isEnabled(): Promise<boolean>;
   draft(entry: RepoEntry): Promise<string | null>;
+}
+
+/**
+ * The Changes view's doors into the shared merge experience
+ * (@gitstudio/merge-vscode): a conflicted row opens in the resolver instead of
+ * a two-way diff, and the operation banner's buttons run the same Continue /
+ * Skip / Abort as the palette and the dashboard (one confirm, one set of words).
+ */
+export interface ChangesMergeHooks {
+  /** Open one conflicted file in the configured resolver. */
+  openConflict(uri: vscode.Uri): Promise<void>;
+  /** Open the Conflicts dashboard for this repository. */
+  showConflicts(root: string): Promise<void>;
+  /** Continue / Skip / Abort the operation stopped in this repository. */
+  operationVerb(verb: "continue" | "skip" | "abort", root: string): Promise<void>;
 }
 
 /**
@@ -280,6 +308,10 @@ export class CommitViewProvider
   private lastBranchesRoot: string | undefined;
   /** `JSON.stringify(lastBranches)`, so a re-post can tell whether it changed. */
   private lastBranchesSig: string | undefined;
+  /** The operation banner last read for `lastBranchesRoot` (carried by the instant first post). */
+  private lastOperation: OperationBannerData | undefined;
+  /** The conflicted paths last pushed, and for which repository — a row click routes on them. */
+  private lastMergePaths: { root: string; paths: Set<string> } | undefined;
   /** Bumped by invalidateRefs so an in-flight listRefs cannot re-cache stale refs. */
   private refsEpoch = 0;
 
@@ -305,6 +337,8 @@ export class CommitViewProvider
     private readonly memento: vscode.Memento,
     /** Optional GitBrain hook for the "Generate message" sparkle button. */
     private readonly generator?: CommitMessageGenerator,
+    /** The merge experience's doors (conflicted rows, the operation banner). */
+    private readonly merge?: ChangesMergeHooks,
   ) {
     this.disposables.push(this.repos.onDidChange(() => void this.pushState()));
     // The staging model is a setting, and the toolbar toggle is a shortcut to
@@ -639,6 +673,28 @@ export class CommitViewProvider
       case "openGraph":
         await vscode.commands.executeCommand("gitstudio.showCommitGraph");
         return;
+      case "resolveConflicts": {
+        const entry = this.repos.getActive();
+        if (entry) {
+          await this.merge?.showConflicts(entry.root);
+        }
+        return;
+      }
+      case "operation": {
+        const entry = this.repos.getActive();
+        try {
+          if (entry && msg.verb && this.merge) {
+            await this.merge.operationVerb(msg.verb, entry.root);
+          }
+        } finally {
+          // Whatever happened (done, stopped again, refused, or the user backed
+          // out of the confirm): release the banner's buttons, which lock on
+          // click, and repaint from git.
+          void this.view?.webview.postMessage({ type: "operationDone" });
+          await this.refreshFromDisk();
+        }
+        return;
+      }
       case "generateMessage":
         await this.doGenerate();
         return;
@@ -863,6 +919,16 @@ export class CommitViewProvider
   }
 
   private doOpenDiff(path: string, staged: boolean, line?: number): void {
+    const conflicted = this.repos.getActive();
+    if (!staged && conflicted && path && this.merge && this.isConflictRow(conflicted, path)) {
+      // A conflicted file opens where it can be RESOLVED — the merge editor or
+      // the JetBrains IDE, per gitstudio.merge.conflictResolver — not a
+      // working-tree-vs-HEAD diff full of conflict markers.
+      void this.merge.openConflict(
+        vscode.Uri.joinPath(vscode.Uri.file(conflicted.root), ...path.split("/")),
+      );
+      return;
+    }
     if (typeof line === "number" && line >= 0) {
       // Opening at a specific change: reveal it once the diff editor exists.
       // Fire-and-forget so the diff still opens if the reveal cannot land.
@@ -901,6 +967,27 @@ export class CommitViewProvider
     void openChangeDiff(
       new ChangeFileNode(kind, active.root, { uri } as unknown as Change),
     );
+  }
+
+  /** Is `path` one of the repository's unmerged files (vscode.git's merge group, or our last read)? */
+  private isConflictRow(entry: RepoEntry, path: string): boolean {
+    if (entry.repo) {
+      return findIn(entry.repo.state.mergeChanges, entry.root, path) !== undefined;
+    }
+    return this.lastMergePaths?.root === entry.root && this.lastMergePaths.paths.has(path);
+  }
+
+  /** The banner for the repository's stopped operation, or undefined (never throws). */
+  private async readOperation(entry: RepoEntry): Promise<OperationBannerData | undefined> {
+    try {
+      const detected = await entry.ctx.operation.detect();
+      if (detected.kind === "none" && detected.unmerged === 0) {
+        return undefined;
+      }
+      return operationBanner(await entry.ctx.operation.view(), detected);
+    } catch {
+      return undefined;
+    }
   }
 
   /** Open the working-tree file (from the in-sidebar file actions menu). */
@@ -1449,6 +1536,11 @@ export class CommitViewProvider
       return;
     }
     let result: { ok: boolean; stderr?: string } = { ok: true };
+    // A pull can stop on conflicts. What git was doing BEFORE it ran, so a
+    // failed pull that left git stopped reads as "paused for you" (with the
+    // dashboard one click away), not as an error — the status bar's Pull
+    // twin (statusBar/syncStatus.ts) decides it the same way.
+    let before: DetectedOperation | undefined;
     try {
       // Checking out a branch is not an action here: the menu routes every
       // checkout through branchRefCommand (gitstudio.branch.checkout /
@@ -1472,9 +1564,11 @@ export class CommitViewProvider
           break;
         }
         case "pull":
+          before = await detectOperation(entry.ctx);
           result = await entry.ctx.sync.pull();
           break;
         case "pullRebase":
+          before = await detectOperation(entry.ctx);
           result = await entry.ctx.sync.pull({ rebase: true });
           break;
         case "push": {
@@ -1510,7 +1604,9 @@ export class CommitViewProvider
     } catch (err) {
       result = { ok: false, stderr: err instanceof Error ? err.message : String(err) };
     }
-    if (!result.ok) {
+    if (!result.ok && before && stoppedByThisCommand(before, await detectOperation(entry.ctx))) {
+      notifyPaused("Pull hit conflicts. Resolve them, then continue or abort.");
+    } else if (!result.ok) {
       void vscode.window.showErrorMessage(
         `GitStudio: ${msg.action} failed${result.stderr ? ` — ${result.stderr.trim()}` : ""}`,
       );
@@ -2087,6 +2183,9 @@ export class CommitViewProvider
       }
     }
 
+    this.lastMergePaths = active
+      ? { root: active.root, paths: new Set(merge.map((e) => e.path)) }
+      : undefined;
     const stagedCount = staged.length;
     const repoName = active
       ? active.root.split(/[\\/]/).filter(Boolean).pop()
@@ -2126,6 +2225,7 @@ export class CommitViewProvider
       detached,
       // Only when it belongs to the repo now on screen.
       branches: sameRepo ? this.lastBranches : undefined,
+      operation: sameRepo ? this.lastOperation : undefined,
       upstream,
       ahead,
       behind,
@@ -2148,7 +2248,7 @@ export class CommitViewProvider
     // button + branch menu without a re-render; but it is still the whole
     // payload crossing the webview boundary, and during a staging burst or the
     // onDidChange firehose the answer is the one already on screen.
-    const [aiEnabled, branches, pushInfo] = await Promise.all([
+    const [aiEnabled, branches, pushInfo, operation] = await Promise.all([
       this.generator
         ? this.generator.isEnabled().catch(() => false)
         : Promise.resolve(false),
@@ -2156,6 +2256,7 @@ export class CommitViewProvider
       active
         ? this.countUnpushed(active, upstream, ahead)
         : Promise.resolve({ unpushed: 0, canPublish: false }),
+      active ? this.readOperation(active) : Promise.resolve(undefined),
     ]);
     const resolved: SlowState = {
       aiEnabled,
@@ -2167,7 +2268,9 @@ export class CommitViewProvider
     this.lastBranches = branches;
     this.lastBranchesSig = resolved.branchesSig;
     this.lastBranchesRoot = active?.root;
-    if (!this.view || !slowStateChanged(sent, resolved)) {
+    this.lastOperation = operation;
+    const operationChanged = JSON.stringify(operation) !== JSON.stringify(base.operation);
+    if (!this.view || (!slowStateChanged(sent, resolved) && !operationChanged)) {
       return;
     }
     void this.view.webview.postMessage({
@@ -2176,6 +2279,7 @@ export class CommitViewProvider
       branches,
       unpushed: pushInfo.unpushed,
       canPublish: pushInfo.canPublish,
+      operation,
     });
   }
 
@@ -3682,6 +3786,38 @@ export class CommitViewProvider
     .pm-btn .codicon { font-size: 13px; }
     .pm-btn .codicon-modifier-spin { animation: codicon-spin 1s steps(12) infinite; }
     .pm-empty-note { padding: 14px 10px; text-align: center; color: var(--gs-fg-muted); font-size: 12px; }
+
+    /* ---- Operation banner: a stopped merge / rebase / cherry-pick ------- */
+    .op-banner {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 0 2px 10px;
+      padding: 8px 10px;
+      border-radius: var(--gs-radius-sm);
+      border: 1px solid color-mix(in srgb, var(--gs-status-conflict) 45%, transparent);
+      background: color-mix(in srgb, var(--gs-status-conflict) 9%, transparent);
+    }
+    .op-banner[hidden] { display: none; }
+    .op-title {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .op-title .codicon { flex: 0 0 auto; margin-top: 1px; color: var(--gs-status-conflict); }
+    .op-direction,
+    .op-note {
+      font-size: 11.5px;
+      line-height: 1.35;
+      color: var(--gs-fg);
+      overflow-wrap: anywhere;
+    }
+    .op-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .op-actions button.gs-commit { flex: 0 1 auto; height: 24px; padding: 0 10px; font-size: 12px; }
   </style>
 </head>
 <body class="layout-list">
@@ -3711,6 +3847,8 @@ export class CommitViewProvider
       </span>
     </span>
   </header>
+
+  <div class="op-banner" id="op-banner" role="status" hidden></div>
 
   <div class="composer">
   <div class="message-wrap">
@@ -6785,6 +6923,83 @@ export class CommitViewProvider
       return b;
     }
 
+    // ---- Operation banner ------------------------------------------------
+    // A stopped merge / rebase / cherry-pick / revert / am / stash apply, as
+    // the host read it from git (OperationProvider, never git's prose). Every
+    // string is set as TEXT: branch names and commit subjects are user data.
+    // Continue / Skip / Abort lock ALL the banner's buttons on click, until the
+    // host says the verb finished ("operationDone") — a second click while its
+    // confirm is up must not start a second one.
+    const opBanner = $("op-banner");
+    let opLocked = false;
+    let lastOp = null;
+    let lastOpSig = "";
+    function opButton(label, cls, onClick, tip, locks) {
+      const b = el("button", "gs-commit " + cls);
+      b.type = "button";
+      b.textContent = label;
+      if (tip) b.title = tip;
+      b.addEventListener("click", function () {
+        if (opLocked) return;
+        if (locks) {
+          opLocked = true;
+          opBanner.querySelectorAll("button").forEach(function (x) { x.disabled = true; });
+        }
+        onClick();
+      });
+      return b;
+    }
+    function renderOpBanner(op, force) {
+      const sig = JSON.stringify(op || null);
+      if (!force && sig === lastOpSig) return;
+      lastOpSig = sig;
+      lastOp = op || null;
+      opBanner.textContent = "";
+      if (!op) { opBanner.hidden = true; return; }
+      const title = el("div", "op-title");
+      title.appendChild(el("i", "codicon codicon-" + (op.conflicts > 0 ? "warning" : "debug-pause")));
+      const titleText = el("span");
+      titleText.textContent = op.title;
+      title.appendChild(titleText);
+      opBanner.appendChild(title);
+      if (op.direction) {
+        const d = el("div", "op-direction");
+        d.textContent = op.direction;
+        opBanner.appendChild(d);
+      }
+      if (op.note) {
+        const n = el("div", "op-note");
+        n.textContent = op.note;
+        opBanner.appendChild(n);
+      }
+      const acts = el("div", "op-actions");
+      if (op.conflicts > 0) {
+        acts.appendChild(opButton("Resolve Conflicts…", "primary", function () {
+          vscode.postMessage({ type: "resolveConflicts" });
+        }, "", false));
+      }
+      if (op.continueLabel) {
+        const c = opButton(op.continueLabel, op.conflicts > 0 ? "split" : "primary", function () {
+          vscode.postMessage({ type: "operation", verb: "continue" });
+        }, op.continueBlocked || "", true);
+        c.disabled = !op.canContinue;
+        acts.appendChild(c);
+      }
+      if (op.skipLabel) {
+        acts.appendChild(opButton(op.skipLabel, "split", function () {
+          vscode.postMessage({ type: "operation", verb: "skip" });
+        }, "", true));
+      }
+      acts.appendChild(opButton(op.abortLabel, "split", function () {
+        vscode.postMessage({ type: "operation", verb: "abort" });
+      }, "", true));
+      opBanner.appendChild(acts);
+      if (opLocked) {
+        opBanner.querySelectorAll("button").forEach(function (x) { x.disabled = true; });
+      }
+      opBanner.hidden = false;
+    }
+
     // ---- Host messages ---------------------------------------------------
     window.addEventListener("message", (event) => {
       const msg = event.data;
@@ -6842,6 +7057,7 @@ export class CommitViewProvider
         setBusy(!!msg.busy);
         document.body.classList.toggle("no-repo", !msg.hasRepo);
         renderHeader(msg);
+        renderOpBanner(msg.hasRepo ? msg.operation : undefined);
         generateBtn.classList.toggle("visible", !!msg.aiEnabled);
         reviewBtn.classList.toggle("visible", !!msg.aiEnabled);
         connectAiBtn.classList.toggle("visible", !msg.aiEnabled);
@@ -6914,6 +7130,9 @@ export class CommitViewProvider
         clearCommitBusy();
       } else if (msg.type === "generateDone") {
         setGenerating(false);
+      } else if (msg.type === "operationDone") {
+        opLocked = false;
+        renderOpBanner(lastOp, true);
       } else if (msg.type === "clear") {
         message.value = "";
         amend.checked = false;

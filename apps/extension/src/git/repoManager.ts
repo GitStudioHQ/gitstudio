@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "node:path";
 import { GitContext, GitProcess } from "@gitstudio/git-service/index";
+import { gitWatchTargets } from "@gitstudio/merge-vscode/gitWatch";
 import type { API, Repository } from "./git";
 import { getBuiltInGitApi } from "./builtInGit";
 import { isSamePathOrInside } from "../util/repoScope";
@@ -202,29 +203,45 @@ export class RepoManager implements vscode.Disposable {
     return "git";
   }
 
-  /** Instant-refresh watchers on `.git` op-state + ref files (vscode.git's
+  /** Instant-refresh watchers on git's op-state + ref files (vscode.git's
    * status scan can lag a branch switch/merge). Works without vscode.git, so
-   * eager bindings get them too. (Mirrors merge-studio's op-state-watcher.) */
-  private makeGitWatchers(rootUri: vscode.Uri): vscode.Disposable[] {
+   * eager bindings get them too.
+   *
+   * WHERE is asked of git (`rev-parse --git-path`, via gitWatchTargets), never
+   * assumed to be `<root>/.git`: in a linked worktree that path is a FILE, so
+   * the old watchers never fired there — a conflict in a worktree surfaced only
+   * when vscode.git's own poll caught up. The watchers attach once git has
+   * answered (the returned array is the binding's, filled in place). */
+  private makeGitWatchers(ctx: GitContext): vscode.Disposable[] {
     const disposables: vscode.Disposable[] = [];
-    const gitDir = vscode.Uri.joinPath(rootUri, ".git");
-    const opStateWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(
-        gitDir,
-        "{HEAD,MERGE_HEAD,CHERRY_PICK_HEAD,REVERT_HEAD,rebase-merge,rebase-apply}",
-      ),
-    );
-    const refsWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(gitDir, "refs/**"),
-    );
+    void this.watchGitDirs(ctx, disposables);
+    return disposables;
+  }
+
+  private async watchGitDirs(ctx: GitContext, into: vscode.Disposable[]): Promise<void> {
+    let targets;
+    try {
+      targets = await gitWatchTargets(ctx.operation);
+    } catch {
+      return; // not a repository any more; vscode.git's events still arrive
+    }
+    // The repository may have closed while git answered.
+    if (![...this.bindings.values()].some((b) => b.disposables === into)) {
+      return;
+    }
     const poke = () => this.scheduleRefresh();
-    for (const watcher of [opStateWatcher, refsWatcher]) {
+    for (const [dir, glob] of [
+      [targets.gitDir, targets.opStateGlob],
+      [targets.commonDir, targets.refsGlob],
+    ] as const) {
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(dir), glob),
+      );
       watcher.onDidCreate(poke);
       watcher.onDidChange(poke);
       watcher.onDidDelete(poke);
-      disposables.push(watcher);
+      into.push(watcher);
     }
-    return disposables;
   }
 
   /** A git-service-only binding (no vscode.git Repository yet). */
@@ -234,7 +251,7 @@ export class RepoManager implements vscode.Disposable {
     }
     const ctx = new GitContext({ root, gitPath: this.gitPath() });
     const entry: RepoEntry = { root, ctx };
-    const disposables = this.makeGitWatchers(vscode.Uri.file(root));
+    const disposables = this.makeGitWatchers(ctx);
     this.bindings.set(root, { entry, disposables });
   }
 
@@ -263,7 +280,7 @@ export class RepoManager implements vscode.Disposable {
     // Fresh binding for a repo vscode.git found that we didn't eagerly discover.
     const ctx = new GitContext({ root, gitPath: this.gitPath() });
     const entry: RepoEntry = { root, repo, ctx };
-    const disposables = this.makeGitWatchers(repo.rootUri);
+    const disposables = this.makeGitWatchers(ctx);
     disposables.push(repo.state.onDidChange(() => this.scheduleRefresh()));
     this.bindings.set(root, { entry, disposables });
 
