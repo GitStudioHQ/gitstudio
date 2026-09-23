@@ -8,7 +8,7 @@
 // has open (the other is diffPanel.ts): it owns the document it edits.
 
 import * as vscode from "vscode";
-import type { WebviewMessage } from "@gitstudio/host-bridge/protocol";
+import type { HostMessage, WebviewMessage } from "@gitstudio/host-bridge/protocol";
 import { locate } from "./args";
 import { closeMergeEditorTabs, fileUri, type MergeHostCore } from "./host";
 import type { JetBrainsUi } from "./jetbrainsUi";
@@ -46,12 +46,46 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     };
     webview.html = mergeWebviewHtml(webview, host.context.extensionUri);
 
-    const target = locate(host.product.locator, document.uri);
-    const repo = target?.repo;
     let disposed = false;
-    const session = new MergeSession({
+    // The repository is looked up per message, never once here: VS Code
+    // restores an open merge editor on reload and resolves it the moment the
+    // extension activates, before its repositories have been discovered. A
+    // lookup made now would leave this editor "outside any repository" for
+    // good — sides read from the markers (no rebase swap) and an Apply that
+    // saves without staging.
+    const sessionNow = (): MergeSession => {
+      const target = locate(host.product.locator, document.uri);
+      return this.session(document, target?.repo, target?.rel, {
+        post: (message) => {
+          if (!disposed) {
+            void webview.postMessage(message);
+          }
+        },
+      });
+    };
+
+    const sub = webview.onDidReceiveMessage((raw: unknown) => {
+      void this.handle(raw as WebviewMessage | undefined, sessionNow(), document, panel).catch((error) => {
+        void host.notify("error", error instanceof Error ? error.message : String(error));
+      });
+    });
+    panel.onDidDispose(() => {
+      disposed = true;
+      sub.dispose();
+    });
+  }
+
+  /** One message's conversation with git, for the repository the file is in now. */
+  private session(
+    document: vscode.TextDocument,
+    repo: MergeRepo | undefined,
+    rel: string | undefined,
+    io: { post(message: HostMessage): void },
+  ): MergeSession {
+    const { host } = this;
+    return new MergeSession({
       git: repo?.ctx,
-      rel: target?.rel,
+      rel,
       fileName: document.uri.fsPath,
       workingText: () => document.getText(),
       diskText: async () =>
@@ -62,11 +96,7 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           throw new Error("the editor did not save the file");
         }
       },
-      post: (message) => {
-        if (!disposed) {
-          void webview.postMessage(message);
-        }
-      },
+      post: io.post,
       settings: () => host.settings(),
       jetbrainsName: () => this.jetbrains.cachedName(),
       withUndo:
@@ -91,16 +121,6 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       },
       beforeAbort: repo ? () => saveConflictedDocuments(repo) : undefined,
       afterAbort: () => closeMergeEditorTabs(host.product.viewTypes.mergeEditor),
-    });
-
-    const sub = webview.onDidReceiveMessage((raw: unknown) => {
-      void this.handle(raw as WebviewMessage | undefined, session, document, panel).catch((error) => {
-        void host.notify("error", error instanceof Error ? error.message : String(error));
-      });
-    });
-    panel.onDidDispose(() => {
-      disposed = true;
-      sub.dispose();
     });
   }
 
