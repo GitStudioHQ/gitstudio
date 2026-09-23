@@ -50,11 +50,25 @@ does, the other does. (merge-studio#12)
   diff full of conflict markers.
 - The merge editor's title-bar actions show only on a file with merge
   conflicts.
-- The first time a conflict appears, GitStudio asks — in its own dialog —
-  whether to turn off VS Code's built-in merge editor and conflict
-  highlights, which compete with it.
-- GitStudio declares that it stays off in Restricted Mode (untrusted
-  workspaces), so a workspace can never supply the IDE launcher path.
+- The first time a conflict appears, GitStudio asks — in a notification,
+  never a modal — whether to turn off VS Code's built-in merge editor and
+  conflict highlights, which compete with it: *Turn them off*, *Not now* (asked
+  again next time) or *Don't ask again*. Nothing is remembered until you
+  answer, the values it changes are saved first, and *GitStudio: Restore VS
+  Code's Merge Editor* puts them back (it is also offered when you turn
+  `gitstudio.merge.autoOpen` off).
+- **Compare File… → HEAD now opens an editable diff with staging ticks.**
+  The right side is the file on disk: you can edit it there, and tick changes
+  to stage them. It used to be a read-only view.
+- `gitstudio.merge.jetbrainsPath` is a **user** setting only: a workspace's own
+  settings cannot name the program GitStudio launches.
+- Continue / Skip / Abort say what they do per operation — "All patches
+  applied.", "Stash apply cancelled — the stash is still in your list." — in
+  the same words as the Conflicts dashboard, and cancelling unmerged files
+  with no operation now warns that anything staged is discarded too.
+- Opening a conflict in the JetBrains IDE while the merge editor holds
+  unapplied work asks first: the IDE starts the merge over, so that work is
+  discarded — never left behind to be saved over the IDE's result.
 
 ### Fixed
 - *Apply* said "resolved file saved and staged" even when `git add` failed
@@ -66,6 +80,12 @@ does, the other does. (merge-studio#12)
   so before this an Apply could not be undone at all.
 - *Pull* from the Changes view's branch menu reported a pull that stopped on
   conflicts as a failure; it now says so and offers *Resolve Conflicts…*.
+- A file deleted on both sides opens the Conflicts dashboard (where *Delete the
+  file* settles it) instead of a text editor on a file that does not exist.
+- *Skip* in the rebase workspace reported its outcome twice.
+- The JetBrains hand-off passes the same checks as *Apply*: a file that is not
+  UTF-8, or one reached through a symlinked folder, is refused instead of
+  being handed over and saved back damaged or outside the repository.
 - Conflicts in a **linked worktree** were noticed late: GitStudio watched
   `<worktree>/.git`, which is a file there. It now asks git where the
   operation files are.

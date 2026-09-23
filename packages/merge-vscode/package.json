@@ -14,7 +14,8 @@
   "dependencies": {
     "@gitstudio/engine": "*",
     "@gitstudio/git-service": "*",
-    "@gitstudio/host-bridge": "*"
+    "@gitstudio/host-bridge": "*",
+    "@gitstudio/webview-ui": "*"
   },
   "devDependencies": {
     "@types/vscode": "1.78.0"

@@ -149,3 +149,21 @@ export function mergeTabResult<U>(input: unknown): U | undefined {
   const i = input as { input1?: U; input2?: U; result?: U };
   return i.result && i.input1 && i.input2 ? i.result : undefined;
 }
+
+/**
+ * Where an EXPLICIT open goes — a Changes row, the SCM row's Resolve — as
+ * opposed to the automatic routes above.
+ *
+ * A file with no working copy (both sides deleted it) has no text to open: a
+ * text editor on it simply failed. Its resolution — "Delete the file" — lives
+ * in the conflicts dashboard, so that is where it goes.
+ */
+export function decideExplicitOpen(i: {
+  onDisk: boolean;
+  resolver: MergeSettings["conflictResolver"];
+  ideAvailable: boolean;
+}): "dashboard" | "jetbrains" | "embedded" | "embedded-fallback" {
+  if (!i.onDisk) return "dashboard";
+  if (i.resolver === "jetbrains") return i.ideAvailable ? "jetbrains" : "embedded-fallback";
+  return "embedded";
+}

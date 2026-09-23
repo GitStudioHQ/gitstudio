@@ -239,7 +239,13 @@ const workspace = {
     },
     update: async (key, value) => {
       const full = section ? `${section}.${key}` : key;
-      stub.config[full] = value;
+      if (value === undefined) delete stub.config[full];
+      else stub.config[full] = value;
+    },
+    // Every stored value is a USER (global) value in this stand-in.
+    inspect: (key) => {
+      const full = section ? `${section}.${key}` : key;
+      return { key: full, globalValue: stub.config[full] };
     },
   }),
   onDidChangeConfiguration: stub.onDidChangeConfiguration.event,

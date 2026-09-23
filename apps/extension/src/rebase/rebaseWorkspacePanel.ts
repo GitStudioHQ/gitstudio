@@ -263,6 +263,9 @@ export class RebaseWorkspacePanel {
       toRebaseOutcome(
         (await vscode.commands.executeCommand("gitstudio.operation.skip", {
           root: this.repoRoot(),
+          // This panel's stop banner reports the outcome; the command would
+          // toast it too, and one Skip was said twice.
+          quiet: true,
         })) as OperationOutcome | undefined,
       ),
     );

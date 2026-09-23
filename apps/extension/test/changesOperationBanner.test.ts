@@ -3,6 +3,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { operationBanner, type BannerView } from "../src/changes/operationBanner";
+import {
+  abortLabel,
+  continueBlockedText,
+  opChipLabel,
+  willDropText,
+} from "@gitstudio/webview-ui/conflicts/opText";
 
 // The Changes view's operation banner (PLAN §3.7 W15, matrix row 38): what is
 // stopped, and Continue / Skip / Abort with the operation's own verbs, plus
@@ -17,9 +23,10 @@ import { operationBanner, type BannerView } from "../src/changes/operationBanner
 function view(over: Partial<BannerView> = {}): BannerView {
   return {
     kind: "rebase",
+    episode: "rebase:1a2b3c4",
     title: "Rebasing test onto master · commit 1 of 3: 1a2b3c4 test change",
-    yours: { name: "test" },
-    theirs: { name: "master" },
+    yours: { role: "yours", stage: 3, name: "test", paneTitle: "Rebasing 1a2b3c4 from test", description: "" },
+    theirs: { role: "theirs", stage: 2, name: "master", paneTitle: "Already rebased commits and commits from master", description: "" },
     direction: { from: "yours", verb: "onto", to: "theirs" },
     verbs: { continue: "Continue Rebase", skip: "Skip this commit", abort: "Abort Rebase" },
     canContinue: false,
@@ -60,7 +67,7 @@ test("an emptied commit: the banner says git will leave it out", () => {
     view({ canContinue: true, willDrop: { sha: "9f8e7d6c5b", subject: "T3", branch: "test" } }),
     { kind: "rebase", unmerged: 0 },
   )!;
-  assert.match(b.note ?? "", /leaves 9f8e7d6 “T3” out of test/);
+  assert.match(b.note ?? "", /9f8e7d6 “T3” with no changes, so continuing drops it from test/);
 });
 
 test("where git allows Skip, the banner offers it with git's own verb", () => {
@@ -77,12 +84,37 @@ test("a deliberate pause explains itself; a stash offers Cancel only; unmerged f
   )!;
   assert.equal(stash.title, "Applying a stash");
   assert.equal(stash.continueLabel, undefined);
-  assert.equal(stash.abortLabel, "Cancel");
+  assert.equal(stash.abortLabel, "Cancel the stash apply", "a bare Cancel says what it cancels");
   const none = operationBanner(
     view({ kind: "none", title: "", direction: undefined, verbs: { abort: "Cancel" } }),
     { kind: "none", unmerged: 3 },
   )!;
-  assert.equal(none.title, "Unresolved conflicts");
+  assert.equal(none.title, "Unmerged files");
+});
+
+// ── One vocabulary (P3 → P4) ────────────────────────────────────────────────
+//
+// The dashboard, the merge shell and the desktop's Changes view phrase a
+// stopped operation through ONE module (webview-ui conflicts/opText). The
+// extension's banner had its own sentences for the same states, so the same
+// stop read differently here and one click away in the dashboard.
+
+test("the banner says what the dashboard says, from the same phrasing module", () => {
+  const stash = view({ kind: "stash", title: "", direction: undefined, verbs: { abort: "Cancel" } });
+  const s = operationBanner(stash, { kind: "stash", unmerged: 1 })!;
+  assert.equal(s.title, opChipLabel(stash));
+  assert.equal(s.abortLabel, abortLabel(stash), "a bare \"Cancel\" says what it cancels");
+  assert.equal(s.abortLabel, "Cancel the stash apply");
+  const none = view({ kind: "none", title: "", direction: undefined, verbs: { abort: "Cancel" } });
+  const n = operationBanner(none, { kind: "none", unmerged: 3 })!;
+  assert.equal(n.title, opChipLabel(none));
+  assert.equal(n.abortLabel, abortLabel(none));
+  const drop = view({ canContinue: true, willDrop: { sha: "9f8e7d6c5b", subject: "T3", branch: "test" } });
+  assert.equal(operationBanner(drop, { kind: "rebase", unmerged: 0 })!.note, willDropText(drop));
+  const emptied = view({ canSkip: true, canContinue: false });
+  const e = operationBanner(emptied, { kind: "rebase", unmerged: 0 })!;
+  assert.equal(e.continueBlocked, continueBlockedText(emptied, 0), "an emptied stop's disabled Continue says why");
+  assert.ok(e.continueBlocked, "…and it does say something");
 });
 
 // ── The renderer, executed from the shipped script ───────────────────────────

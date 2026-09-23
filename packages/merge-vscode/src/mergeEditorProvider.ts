@@ -157,12 +157,44 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
           await this.exitViewer(document, panel);
         }
         break;
-      case "openInJetBrains":
+      case "openInJetBrains": {
         // Hand the conflict to the IDE and close this panel, so the two do
-        // not fight over the file.
+        // not fight over the file. The IDE starts the merge over from the
+        // three versions, so progress made here cannot travel with it — and
+        // left in a dirty document with no editor, it stopped following the
+        // file and VS Code later offered to save it over the IDE's result.
+        // So: ask, and on yes put the document back to git's file first —
+        // written through this editor's own document (never a "revert", which
+        // could take another extension's edits with it), from the bytes on
+        // disk, so what is saved is exactly what git left.
+        if (document.isDirty) {
+          const ide = (await this.jetbrains.detect())?.name ?? this.jetbrains.cachedName() ?? "the JetBrains IDE";
+          const name = document.uri.fsPath.split(/[\\/]/).pop() ?? document.uri.fsPath;
+          const go = await this.host.product.ask({
+            title: `Open ${name} in ${ide}?`,
+            message:
+              `${ide} starts this merge over from the three versions. What you have resolved here is not ` +
+              `carried over, and is discarded.`,
+            confirmLabel: `Open in ${ide}`,
+            danger: true,
+          });
+          if (!go) {
+            break;
+          }
+          let onDisk: string;
+          try {
+            onDisk = new TextDecoder("utf-8", { fatal: true }).decode(await vscode.workspace.fs.readFile(document.uri));
+          } catch {
+            void this.host.notify("warn", `${name} isn't UTF-8 text, so it can't be handed to ${ide} from here.`);
+            break;
+          }
+          await syncDocument(document, onDisk);
+          await document.save();
+        }
         void this.jetbrains.merge(document.uri);
         panel.dispose();
         break;
+      }
       default:
         break;
     }

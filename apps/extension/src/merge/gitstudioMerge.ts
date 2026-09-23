@@ -49,10 +49,9 @@ export function registerGitStudioMerge(
     commands: GITSTUDIO_MERGE_COMMANDS,
     ideAvailableContextKey: GITSTUDIO_IDE_CONTEXT_KEY,
     statusItemId: "gitstudio.conflicts",
+    // Asked (non-modally) the first time a conflict appears, so someone who
+    // never merges is never asked about merge tools.
     coexistencePromptKey: "gitstudio.merge.coexistencePromptShown",
-    // Asked the first time a conflict appears, so someone who never merges is
-    // never asked about merge tools.
-    coexistencePromptAt: "first-conflict",
     locator,
     ask: (spec) =>
       promptConfirm({

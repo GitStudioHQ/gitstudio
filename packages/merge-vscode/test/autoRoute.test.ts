@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   decideActiveEditorRoute,
+  decideExplicitOpen,
   decideMergeTabReroute,
   mergeTabResult,
   type ActiveEditorInput,
@@ -94,4 +97,26 @@ test("exit guard: suppress, query, clear", () => {
   g.clear("file:///r/a.txt");
   assert.equal(g.isSuppressed("file:///r/a.txt"), false);
   assert.equal(g.size, 0);
+});
+
+// An EXPLICIT open (a Changes row, the SCM row's Resolve) of a file with no
+// working copy — both sides deleted it — opened a text editor on a file that
+// does not exist, and failed. Its resolution ("Delete the file") lives in the
+// dashboard, so that is where it goes.
+test("an explicit open of a file with no working copy goes to the dashboard", () => {
+  assert.equal(decideExplicitOpen({ onDisk: false, resolver: "embedded", ideAvailable: false }), "dashboard");
+  assert.equal(decideExplicitOpen({ onDisk: false, resolver: "jetbrains", ideAvailable: true }), "dashboard");
+  assert.equal(decideExplicitOpen({ onDisk: true, resolver: "embedded", ideAvailable: true }), "embedded");
+  assert.equal(decideExplicitOpen({ onDisk: true, resolver: "jetbrains", ideAvailable: true }), "jetbrains");
+  assert.equal(decideExplicitOpen({ onDisk: true, resolver: "jetbrains", ideAvailable: false }), "embedded-fallback");
+});
+
+test("register.ts routes an explicit open through decideExplicitOpen, with the file's existence", () => {
+  const src = readFileSync(join(__dirname, "../src/register.ts"), "utf8");
+  const at = src.indexOf("const openConflict = async");
+  assert.ok(at > 0);
+  const body = src.slice(at, at + 1400);
+  assert.match(body, /decideExplicitOpen\(/);
+  assert.match(body, /fs\.stat\(uri\)/);
+  assert.match(body, /showConflicts\(/);
 });

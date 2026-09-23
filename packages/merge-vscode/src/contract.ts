@@ -27,6 +27,7 @@ export const COMMAND_TITLES: Record<CommandRole, string> = {
   operationContinue: "Continue Operation",
   operationSkip: "Skip This Commit",
   operationAbort: "Abort Operation",
+  restoreBuiltInMergeEditor: "Restore VS Code's Merge Editor",
 };
 
 /**
@@ -62,6 +63,12 @@ export const MERGE_SETTINGS_SPEC: ReadonlyArray<{
   type: "boolean" | "string";
   default: boolean | string;
   enum?: readonly string[];
+  /**
+   * "machine": settable in user settings only — never by a workspace's own
+   * .vscode/settings.json, which the repository supplies. For the one value
+   * the product SPAWNS (as VS Code's own git.path).
+   */
+  scope?: "machine";
 }> = [
   { key: "autoOpen", type: "boolean", default: true },
   // D3, orchestrator override: OFF by default, as JetBrains ships it.
@@ -74,7 +81,7 @@ export const MERGE_SETTINGS_SPEC: ReadonlyArray<{
     default: "auto",
     enum: ["auto", ...JETBRAINS_IDES.map((i) => i.id)],
   },
-  { key: "jetbrainsPath", type: "string", default: "" },
+  { key: "jetbrainsPath", type: "string", default: "", scope: "machine" },
 ];
 
 /** When-clause pieces the merge menus are gated on. `IDE` is replaced by the product's context key. */
@@ -197,7 +204,7 @@ export function checkManifest(
   const props = configurationProperties(manifest.contributes?.configuration);
   for (const spec of MERGE_SETTINGS_SPEC) {
     const key = `${section}.${spec.key}`;
-    const p = props[key] as { type?: string; default?: unknown; enum?: unknown[] } | undefined;
+    const p = props[key] as { type?: string; default?: unknown; enum?: unknown[]; scope?: string } | undefined;
     if (!p) {
       problems.push(`setting ${key} is not contributed`);
       continue;
@@ -210,6 +217,9 @@ export function checkManifest(
     }
     if (spec.enum && JSON.stringify(p.enum) !== JSON.stringify(spec.enum)) {
       problems.push(`setting ${key} enum is ${JSON.stringify(p.enum)}, expected ${JSON.stringify(spec.enum)}`);
+    }
+    if (spec.scope && p.scope !== spec.scope) {
+      problems.push(`setting ${key} has scope ${JSON.stringify(p.scope)}, expected "${spec.scope}" (a workspace must not set it)`);
     }
   }
   return problems;

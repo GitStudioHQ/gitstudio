@@ -342,6 +342,12 @@
         "icon": "$(stop)"
       },
       {
+        "command": "gitstudio.merge.restoreBuiltInMergeEditor",
+        "title": "Restore VS Code's Merge Editor",
+        "category": "GitStudio",
+        "icon": "$(discard)"
+      },
+      {
         "command": "gitstudio.stageSelectedLines",
         "title": "Stage Selected Lines",
         "category": "GitStudio",
@@ -1118,7 +1124,8 @@
         "gitstudio.merge.jetbrainsPath": {
           "type": "string",
           "default": "",
-          "description": "Path to a JetBrains IDE launcher, used instead of detection \u2014 for example /Applications/WebStorm.app/Contents/MacOS/webstorm."
+          "scope": "machine",
+          "description": "Path to a JetBrains IDE launcher, used instead of detection \u2014 for example /Applications/WebStorm.app/Contents/MacOS/webstorm. User settings only: a workspace cannot set the program GitStudio launches."
         },
         "gitstudio.commit.signoffByDefault": {
           "type": "boolean",
@@ -2377,10 +2384,6 @@
     "workspace"
   ],
   "capabilities": {
-    "untrustedWorkspaces": {
-      "supported": false,
-      "description": "GitStudio runs git, which follows settings the repository itself can set (hooks, filters, fsmonitor), and can launch a JetBrains IDE from gitstudio.merge.jetbrainsPath. It stays off until you trust the workspace."
-    },
     "virtualWorkspaces": {
       "supported": false,
       "description": "GitStudio requires a local git repository on disk."

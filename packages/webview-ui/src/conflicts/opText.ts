@@ -132,11 +132,17 @@ export function abortConfirm(op: OperationView): { question: string; detail: str
     };
   }
   if (op.kind === "none") {
+    // `git reset --merge`: it resets the INDEX too, so anything staged goes
+    // with it — including work staged before the conflict (a `cherry-pick -n`
+    // or `checkout -m` stops with the user's own staged changes in the index).
+    // Only changes that were never staged survive.
     return {
       question: "Reset the conflicted files?",
       detail:
-        "Every unmerged file goes back to its last committed version. Conflicts you have resolved are " +
-        "discarded — they were never committed, so nothing can bring them back.",
+        "Every unmerged file goes back to its last committed version, and so does everything that is " +
+        "staged — including changes you staged before the conflict. Conflicts you have resolved are " +
+        "discarded too; none of it was committed, so nothing can bring it back. Changes you never " +
+        "staged are kept.",
       confirm: abortLabel(op),
     };
   }

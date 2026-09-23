@@ -46,6 +46,8 @@ export interface MergeCommandIds {
   operationContinue: string;
   operationSkip: string;
   operationAbort: string;
+  /** Put back VS Code's own merge editor and conflict highlights (coexistence.ts). */
+  restoreBuiltInMergeEditor: string;
 }
 
 /** The webview view types a product contributes. */
@@ -115,14 +117,12 @@ export interface MergeProduct {
   readonly ideAvailableContextKey: string;
   /** Status-bar item id ("⚠ Resolve Conflicts"). */
   readonly statusItemId: string;
-  /** globalState key remembering that the coexistence question was asked. */
-  readonly coexistencePromptKey: string;
   /**
-   * When to ask about VS Code's built-in merge UI. Merge Studio asks at first
-   * activation (it is a merge tool); GitStudio asks the first time a conflict
-   * actually appears, so a user who never merges is never asked.
+   * globalState key remembering the ANSWER to the question about VS Code's
+   * built-in merge UI (coexistence.ts). Both products ask at the first
+   * conflict, non-modally; there is no activation-time question any more.
    */
-  readonly coexistencePromptAt: "activation" | "first-conflict";
+  readonly coexistencePromptKey: string;
   /** The dashboard's support-link slot (Merge Studio's "Report an issue" / "Rate"). */
   readonly supportLinks?: { label: string; url: string }[];
   readonly locator: RepoLocator;

@@ -294,8 +294,18 @@ export function activate(context: vscode.ExtensionContext): void {
     // dashboard, automatic routing (gitstudio.merge.autoOpen), the status item,
     // the JetBrains hand-off, the embedded diff, and the commands resolve /
     // compare / openChanges / stageWithTicks / operation.continue|skip|abort.
-    // `stagingRefresh` is declared further down; it is only called after
-    // activation, from a user action.
+    //
+    // Its refresh hook reaches `stagingRefresh`, so that binding is declared
+    // HERE, before the hook exists. It used to be declared ~140 lines down: a
+    // temporal dead zone that held only while nothing called the hook first,
+    // and that threw for the rest of the session if activation failed in
+    // between. What a refresh does is filled in once its pieces exist.
+    let runStagingRefresh: (() => void) | undefined;
+    const stagingRefresh: StagingRefresh = {
+      refresh() {
+        runStagingRefresh?.();
+      },
+    };
     const merge = registerGitStudioMerge(context, repos, {
       openChangesNative: (uri) => navigator.openChanges(uri),
       refresh: () => stagingRefresh.refresh(),
@@ -425,24 +435,23 @@ export function activate(context: vscode.ExtensionContext): void {
     // After any staging op (line/hunk staging): re-push the commit webview's
     // state and invalidate open diffs. The webview owns the change lists now.
     // Staging state in VS Code's own gutter, and the status-bar counts. Both are
-    // constructed before stagingRefresh, which closes over them: declaring them
-    // after it would leave a temporal dead zone that any refresh fired during
-    // activation would fall into.
+    // constructed before runStagingRefresh (what stagingRefresh runs), which
+    // closes over them: declaring them after it would leave a temporal dead
+    // zone that any refresh fired during activation would fall into.
     const stagedGutter = new StagedGutter(context, repos, (uri) =>
       blame.ownsGutterStrip(uri),
     );
     const statusCluster = new StatusCluster(repos);
 
-    const stagingRefresh: StagingRefresh = {
-      refresh() {
-        revisionContent.notifyChanged();
-        commitProvider.requestState();
-        stagedGutter.refreshAll();
-        statusCluster.refresh();
-        // Nudge vscode.git to re-scan so the groups update promptly.
-        const active = repos.getActive();
-        void active?.repo?.status?.();
-      },
+    // What `stagingRefresh` (declared above, before the merge hook) does.
+    runStagingRefresh = () => {
+      revisionContent.notifyChanged();
+      commitProvider.requestState();
+      stagedGutter.refreshAll();
+      statusCluster.refresh();
+      // Nudge vscode.git to re-scan so the groups update promptly.
+      const active = repos.getActive();
+      void active?.repo?.status?.();
     };
 
     context.subscriptions.push(

@@ -20,6 +20,7 @@ export const GITSTUDIO_MERGE_COMMANDS: MergeCommandIds = {
   operationContinue: "gitstudio.operation.continue",
   operationSkip: "gitstudio.operation.skip",
   operationAbort: "gitstudio.operation.abort",
+  restoreBuiltInMergeEditor: "gitstudio.merge.restoreBuiltInMergeEditor",
 };
 
 export const GITSTUDIO_MERGE_VIEW_TYPES: MergeViewTypes = {

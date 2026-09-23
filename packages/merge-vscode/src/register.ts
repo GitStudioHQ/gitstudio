@@ -14,9 +14,10 @@
 
 import * as vscode from "vscode";
 import type { OperationOutcome, OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
-import { targetUri } from "./args";
+import { locate, targetUri } from "./args";
+import { decideExplicitOpen } from "./autoRoute";
 import { registerAutoRoute } from "./autoRouteHost";
-import { maybeOfferCoexistence } from "./coexistence";
+import { maybeOfferCoexistence, offerRestoreAfterAutoOpenOff, restoreBuiltIns } from "./coexistence";
 import { ConflictsDashboard } from "./conflictsPanel";
 import { openDemoMerge } from "./demo";
 import { DiffCommands, DiffPanel } from "./diffPanel";
@@ -24,13 +25,18 @@ import { ExitGuard } from "./exitGuard";
 import { closeMergeEditorTabs, createHostCore, type MergeHostCore } from "./host";
 import { JetBrainsUi } from "./jetbrainsUi";
 import { MergeEditorProvider, saveConflictedDocuments } from "./mergeEditorProvider";
-import { operationNoun, outcomeLine, type OperationVerb } from "./outcome";
+import { continueRefusal, outcomeLine, verbConfirm, type OperationVerb } from "./outcome";
 import type { MergeProduct, MergeRepo } from "./product";
 import { ConflictStatusItem } from "./statusItem";
 
 export interface OperationVerbOptions {
   /** The repository to act on; default: the one with an operation in progress. */
   repo?: MergeRepo;
+  /**
+   * The caller reports the outcome itself (the rebase workspace's stop
+   * banner): no toast, or one Skip is said twice. The confirm still asks.
+   */
+  quiet?: boolean;
 }
 
 export interface MergeExperience extends vscode.Disposable {
@@ -65,11 +71,25 @@ export function registerMergeExperience(
   const diffs: DiffCommands = new DiffCommands(host, jetbrains);
 
   const openConflict = async (uri: vscode.Uri): Promise<void> => {
-    if (host.settings().conflictResolver === "jetbrains") {
-      if (await jetbrains.detect()) {
-        await jetbrains.merge(uri);
-        return;
-      }
+    const resolver = host.settings().conflictResolver;
+    const route = decideExplicitOpen({
+      onDisk: await vscode.workspace.fs.stat(uri).then(
+        () => true,
+        () => false,
+      ),
+      resolver,
+      ideAvailable: resolver === "jetbrains" ? Boolean(await jetbrains.detect()) : false,
+    });
+    if (route === "dashboard") {
+      // Deleted on both sides: no file to open; the dashboard offers "Delete the file".
+      await showConflicts(locate(product.locator, uri)?.repo);
+      return;
+    }
+    if (route === "jetbrains") {
+      await jetbrains.merge(uri);
+      return;
+    }
+    if (route === "embedded-fallback") {
       jetbrains.notifyEmbeddedFallback();
     }
     await openEmbedded(uri);
@@ -107,7 +127,7 @@ export function registerMergeExperience(
       return undefined;
     }
     const view = await repo.ctx.operation.view();
-    const outcome = await driveVerb(host, repo, view, verb);
+    const outcome = await driveVerb(host, repo, view, verb, { quiet: opts.quiet });
     if (outcome) {
       scheduleScan();
     }
@@ -116,6 +136,8 @@ export function registerMergeExperience(
 
   // ── The watcher: status item, dashboard auto-show, first-conflict question ──
   let scanning = false;
+  /** Whether the last scan saw conflicts (the coexistence question waits for new ones). */
+  let hadConflicts = false;
   let scanQueued = false;
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
   const scan = async (): Promise<void> => {
@@ -133,9 +155,13 @@ export function registerMergeExperience(
         );
         const total = detections.reduce((n, d) => n + d.unmerged, 0);
         status.update(total, host.defers());
-        if (total > 0 && product.coexistencePromptAt === "first-conflict" && host.settings().autoOpen) {
+        // The coexistence question, in both products: at the FIRST conflict of
+        // a run (conflicts appearing after none), never at activation. A
+        // "Not now" is asked again at the next run, not at every scan.
+        if (total > 0 && !hadConflicts && host.settings().autoOpen) {
           void maybeOfferCoexistence(host);
         }
+        hadConflicts = total > 0;
         const withConflicts = repos.filter((_, i) => detections[i].unmerged > 0);
         const active = product.locator.active();
         const target =
@@ -170,6 +196,9 @@ export function registerMergeExperience(
       if (event.affectsConfiguration(product.settingsSection)) {
         scheduleScan();
       }
+      if (event.affectsConfiguration(`${product.settingsSection}.autoOpen`)) {
+        void offerRestoreAfterAutoOpenOff(host);
+      }
     }),
     new vscode.Disposable(() => scanTimer && clearTimeout(scanTimer)),
   );
@@ -202,18 +231,17 @@ export function registerMergeExperience(
   reg(c.openDemo, () => openDemoMerge(host));
   reg(c.openDemoDiff, () => diffs.openDemoDiff());
   const verbArg = (arg: unknown): OperationVerbOptions => {
-    const root = (arg as { root?: unknown } | undefined)?.root;
+    const a = arg as { root?: unknown; quiet?: unknown } | undefined;
+    const root = a?.root;
     const repo = typeof root === "string" ? product.locator.all().find((r) => r.root === root) : undefined;
-    return repo ? { repo } : {};
+    return { ...(repo ? { repo } : {}), ...(a?.quiet === true ? { quiet: true } : {}) };
   };
   reg(c.operationContinue, (arg) => runOperationVerb("continue", verbArg(arg)));
   reg(c.operationSkip, (arg) => runOperationVerb("skip", verbArg(arg)));
   reg(c.operationAbort, (arg) => runOperationVerb("abort", verbArg(arg)));
+  reg(c.restoreBuiltInMergeEditor, () => restoreBuiltIns(host));
 
   void jetbrains.refreshContext();
-  if (product.coexistencePromptAt === "activation") {
-    void maybeOfferCoexistence(host);
-  }
   void scan();
 
   return {
@@ -236,23 +264,23 @@ export function registerMergeExperience(
  * confirm (GitStudio: its in-view dialog), then git runs and the result is
  * said in plain words. Undefined when nothing ran.
  */
-async function driveVerb(
+export async function driveVerb(
   host: MergeHostCore,
   repo: MergeRepo,
   view: OperationView,
   verb: OperationVerb,
+  opts: { quiet?: boolean } = {},
 ): Promise<OperationOutcome | undefined> {
   const { product } = host;
-  const noun = operationNoun(view.kind);
   const op = repo.ctx.operation;
   let outcome: OperationOutcome;
   if (verb === "continue") {
-    if (!view.verbs.continue) {
-      void host.notify("info", view.kind === "none" ? "nothing is in progress." : `${noun} has nothing to continue.`);
-      return undefined;
-    }
-    if (!view.canContinue) {
-      void host.notify("warn", view.continueBlocked || `git can't continue the ${noun.toLowerCase()} yet.`);
+    // Per operation, in one place (outcome.ts): the old sentences were built
+    // from a noun, and for `git am` read "git can't continue the applying
+    // patches yet".
+    const refusal = continueRefusal(view);
+    if (refusal) {
+      void host.notify(view.verbs.continue && !view.canContinue ? "warn" : "info", refusal);
       return undefined;
     }
     let confirmDrop = false;
@@ -274,15 +302,7 @@ async function driveVerb(
       void host.notify("info", "there is nothing git can skip here.");
       return undefined;
     }
-    const what = view.commit?.sha
-      ? `${view.commit.sha.slice(0, 7)} “${view.commit.subject}”`
-      : "this commit";
-    const ok = await product.ask({
-      title: `${view.verbs.skip}?`,
-      message: `Git leaves ${what} out and moves on to the next one.`,
-      confirmLabel: view.verbs.skip,
-      danger: true,
-    });
+    const ok = await product.ask({ ...verbConfirm(view, "skip"), danger: true });
     if (!ok) {
       return undefined;
     }
@@ -292,15 +312,9 @@ async function driveVerb(
       void host.notify("info", "nothing is in progress.");
       return undefined;
     }
-    const ok = await product.ask({
-      title: `${view.verbs.abort}?`,
-      message:
-        view.kind === "none"
-          ? "The conflicted files go back to how they were before git stopped. Conflict resolutions you made are lost."
-          : `The repository goes back to where it was before the ${noun.toLowerCase()} started. Conflict resolutions you made are lost.`,
-      confirmLabel: view.verbs.abort,
-      danger: true,
-    });
+    // The dashboard's own words, per operation — for "none" (reset --merge)
+    // they include that staged work goes too.
+    const ok = await product.ask({ ...verbConfirm(view, "abort"), danger: true });
     if (!ok) {
       return undefined;
     }
@@ -311,7 +325,9 @@ async function driveVerb(
     }
   }
   const line = outcomeLine(outcome, verb, view);
-  if (line.kind === "done") {
+  if (opts.quiet) {
+    // The caller says what happened (see OperationVerbOptions.quiet).
+  } else if (line.kind === "done") {
     void host.notify("info", line.text);
   } else if (line.kind === "stopped") {
     const resolve = "Resolve Conflicts…";

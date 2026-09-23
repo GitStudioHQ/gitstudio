@@ -31,7 +31,10 @@ function conforming() {
       },
       configuration: {
         properties: Object.fromEntries(
-          MERGE_SETTINGS_SPEC.map((s) => [`p.merge.${s.key}`, { type: s.type, default: s.default, ...(s.enum ? { enum: s.enum } : {}) }]),
+          MERGE_SETTINGS_SPEC.map((s) => [
+            `p.merge.${s.key}`,
+            { type: s.type, default: s.default, ...(s.enum ? { enum: s.enum } : {}), ...(s.scope ? { scope: s.scope } : {}) },
+          ]),
         ),
       },
     },
@@ -40,6 +43,14 @@ function conforming() {
 
 test("a conforming manifest has no problems", () => {
   assert.deepEqual(checkManifest(conforming(), ids, IDE, "p.merge"), []);
+});
+
+test("a launcher path a workspace could set is reported (it names a program the product spawns)", () => {
+  const m = conforming();
+  const props = m.contributes.configuration.properties as Record<string, { scope?: string }>;
+  delete props["p.merge.jetbrainsPath"].scope;
+  const problems = checkManifest(m, ids, IDE, "p.merge");
+  assert.ok(problems.some((p) => /p\.merge\.jetbrainsPath.*scope/.test(p)), problems.join("\n"));
 });
 
 test("an ungated editor-title merge action is reported (the GitStudio 1.13 manifest's defect)", () => {

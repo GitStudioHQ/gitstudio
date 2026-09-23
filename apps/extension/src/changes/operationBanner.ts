@@ -4,22 +4,21 @@
 // OperationProvider (view + detect), never from git's prose. vscode-free, so
 // the banner's content is unit-tested; the webview only renders it.
 
-/** Structural slices of OperationView / OperationDetection (no import needed). */
-export interface BannerView {
-  kind: string;
-  title: string;
-  step?: { n: number; m: number; unit: string };
-  commit?: { sha: string; subject: string };
-  yours: { name: string };
-  theirs: { name: string };
-  direction?: { from: "yours" | "theirs"; verb: string; to: "yours" | "theirs" };
-  verbs: { continue?: string; skip?: string; abort: string };
-  canContinue: boolean;
-  canSkip: boolean;
-  continueBlocked?: string;
-  willDrop?: { sha: string; subject: string; branch: string };
-  pause?: { detail: string };
-}
+//
+// Its WORDS come from the phrasing module the dashboard, the merge shell and
+// the desktop use (webview-ui conflicts/opText), so the same stop reads the
+// same here and one click away in the dashboard.
+
+import type { OperationView } from "@gitstudio/host-bridge/conflictsProtocol";
+import {
+  abortLabel,
+  continueBlockedText,
+  opChipLabel,
+  willDropText,
+} from "@gitstudio/webview-ui/conflicts/opText";
+
+/** The operation the banner describes (OperationProvider.view()). */
+export type BannerView = OperationView;
 
 export interface OperationBannerData {
   kind: string;
@@ -39,17 +38,6 @@ export interface OperationBannerData {
   abortLabel: string;
 }
 
-const FALLBACK_TITLES: Record<string, string> = {
-  merge: "Merge in progress",
-  rebase: "Rebase in progress",
-  "rebase-merge-step": "Rebase in progress",
-  "cherry-pick": "Cherry-pick in progress",
-  revert: "Revert in progress",
-  am: "Applying patches (git am)",
-  stash: "Applying a stash",
-  none: "Unresolved conflicts",
-};
-
 /**
  * The banner for the repository's state, or undefined when nothing is stopped
  * and nothing is unmerged.
@@ -62,7 +50,7 @@ export function operationBanner(
     return undefined;
   }
   const conflicts = detected.unmerged;
-  let title = view.title || FALLBACK_TITLES[view.kind] || "Operation in progress";
+  let title = view.title || opChipLabel(view);
   if (!view.title && view.step) {
     title += ` · ${view.step.unit} ${view.step.n} of ${view.step.m}`;
   }
@@ -78,9 +66,9 @@ export function operationBanner(
   } else if (conflicts > 0) {
     note = conflicts === 1 ? "1 file has conflicts to resolve." : `${conflicts} files have conflicts to resolve.`;
   } else if (view.willDrop) {
-    note = `Continuing leaves ${view.willDrop.sha.slice(0, 7)} “${view.willDrop.subject}” out of ${view.willDrop.branch}: your resolution left it with no changes.`;
-  } else if (!view.canContinue && view.continueBlocked) {
-    note = view.continueBlocked;
+    note = willDropText(view);
+  } else if (!view.canContinue && view.verbs.continue && continueBlockedText(view, conflicts)) {
+    note = continueBlockedText(view, conflicts);
   } else if (view.canContinue && view.verbs.continue) {
     note = "Every conflict is resolved.";
   }
@@ -90,12 +78,16 @@ export function operationBanner(
     title,
     conflicts,
     canContinue: view.canContinue,
-    abortLabel: view.verbs.abort,
+    // A bare "Cancel" (stash / none) says what it cancels.
+    abortLabel: abortLabel(view),
   };
   if (direction) banner.direction = direction;
   if (note) banner.note = note;
   if (view.verbs.continue) banner.continueLabel = view.verbs.continue;
-  if (!view.canContinue && view.continueBlocked) banner.continueBlocked = view.continueBlocked;
+  // The reason is also given when git sent none — an emptied stop's disabled
+  // Continue otherwise said nothing about why.
+  const blocked = !view.canContinue ? continueBlockedText(view, conflicts) : "";
+  if (view.verbs.continue && blocked) banner.continueBlocked = blocked;
   // Skip is shown only where git names it as the way out.
   if (view.canSkip && view.verbs.skip) banner.skipLabel = view.verbs.skip;
   return banner;

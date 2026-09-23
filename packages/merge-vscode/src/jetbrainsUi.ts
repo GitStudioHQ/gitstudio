@@ -109,6 +109,7 @@ export class JetBrainsUi implements vscode.Disposable {
     let yours: string;
     let theirs: string;
     let base: string | undefined;
+    let outputPath = uri.fsPath;
     if (target) {
       const sides = await target.repo.ctx.conflictOps.readSides(target.rel, { workingText: text });
       if (sides.source === "none") {
@@ -120,9 +121,23 @@ export class JetBrainsUi implements vscode.Disposable {
         await this.openEmbedded(uri);
         return;
       }
-      yours = sides.yours;
-      theirs = sides.theirs;
-      base = sides.hasBase ? sides.base : undefined;
+      // The IDE WRITES its result into the file, so the hand-off passes the
+      // guards the embedded Apply passes (ConflictOps.externalMergeInput): the
+      // realpath check (a symlinked folder must not carry the write outside the
+      // repository) and text-only (the sides travel as strings — a Latin-1
+      // file would reach the IDE as U+FFFD and be saved that way).
+      const input = await target.repo.ctx.conflictOps.externalMergeInput(target.rel, {
+        workingText: text,
+        op: sides.op,
+      });
+      if (!input.ok) {
+        void this.host.notify("warn", input.result.message ?? `${baseName(uri)} can't be merged in the IDE.`);
+        return;
+      }
+      outputPath = input.abs;
+      yours = input.sides.yours;
+      theirs = input.sides.theirs;
+      base = input.sides.hasBase ? input.sides.base : undefined;
     } else {
       const parsed = markersOnlyPayload({ fileName: uri.fsPath, workingText: text, autoApplyNonConflicting: false });
       if (parsed.source === "none") {
@@ -134,7 +149,7 @@ export class JetBrainsUi implements vscode.Disposable {
       base = parsed.hasBase ? parsed.base : undefined;
     }
 
-    const launch = await launchJetBrainsMerge({ ide, outputPath: uri.fsPath, yours, theirs, base });
+    const launch = await launchJetBrainsMerge({ ide, outputPath, yours, theirs, base });
     if (!launch.ok) {
       await launch.dispose();
       void this.host.notify("error", launch.message ?? `couldn't launch ${ide.name}.`);

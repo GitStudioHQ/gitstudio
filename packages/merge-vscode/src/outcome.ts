@@ -9,6 +9,7 @@ import type {
   OperationOutcome,
   OperationView,
 } from "@gitstudio/host-bridge/conflictsProtocol";
+import { abortConfirm, opNoun, skipConfirm } from "@gitstudio/webview-ui/conflicts/opText";
 
 export type OperationVerb = "continue" | "skip" | "abort";
 
@@ -17,7 +18,11 @@ export interface OutcomeLine {
   text: string;
 }
 
-/** The operation's noun for sentences ("Rebase complete", "Cherry-pick aborted"). */
+/**
+ * The operation's name at the START of a sentence ("Rebase complete",
+ * "Cherry-pick cancelled"). For `am`, a stash apply and "none" there is no
+ * such noun — doneText says those per operation instead.
+ */
 export function operationNoun(kind: OperationKind): string {
   switch (kind) {
     case "merge":
@@ -48,21 +53,58 @@ export function outcomeLine(
   verb: OperationVerb,
   before: Pick<OperationView, "kind">,
 ): OutcomeLine {
-  const noun = operationNoun(before.kind);
   if (outcome.ok) {
-    const text =
-      outcome.message ||
-      (verb === "abort"
-        ? `${noun} cancelled — the repository is back where it was before.`
-        : verb === "skip"
-          ? `${noun}: skipped.`
-          : `${noun} complete.`);
-    return { kind: "done", text };
+    return { kind: "done", text: outcome.message || doneText(before.kind, verb) };
   }
   if (outcome.stopped) {
     return { kind: "stopped", text: outcome.message || stoppedText(outcome.view) };
   }
   return { kind: "failed", text: outcome.message || refusedText(outcome, verb) };
+}
+
+/**
+ * The question a Skip or an Abort asks first, in the SAME words the
+ * conflicts dashboard and the merge shell use (webview-ui conflicts/opText) —
+ * one vocabulary per operation, including what an abort of "none" (reset
+ * --merge) costs: staged work too.
+ */
+export function verbConfirm(
+  view: OperationView,
+  verb: "skip" | "abort",
+): { title: string; message: string; confirmLabel: string } {
+  const c = verb === "skip" ? skipConfirm(view) : abortConfirm(view);
+  return { title: c.question, message: c.detail, confirmLabel: c.confirm };
+}
+
+/** Why Continue cannot run right now, or undefined when it can. */
+export function continueRefusal(view: OperationView): string | undefined {
+  if (view.kind === "none" || view.kind === "stash") return "Nothing is in progress.";
+  if (!view.verbs.continue) return `There is nothing to continue in the ${opNoun(view.kind)}.`;
+  if (!view.canContinue) return view.continueBlocked || `git can't continue the ${opNoun(view.kind)} yet.`;
+  return undefined;
+}
+
+/** A finished verb, said per operation (never "the applying patches"). */
+function doneText(kind: OperationKind, verb: OperationVerb): string {
+  if (kind === "am") {
+    return verb === "continue"
+      ? "All patches applied."
+      : verb === "skip"
+        ? "Patch skipped — the series carried on."
+        : "Patch series abandoned — the branch is back where it was before it started.";
+  }
+  if (kind === "stash") {
+    return "Stash apply cancelled — the files are back as they were, and the stash is still in your list.";
+  }
+  if (kind === "none") {
+    return "The conflicted files are back to their last committed versions.";
+  }
+  const noun = operationNoun(kind);
+  return verb === "abort"
+    ? `${noun} cancelled — the repository is back where it was before.`
+    : verb === "skip"
+      ? `Commit skipped — the ${opNoun(kind)} carried on.`
+      : `${noun} complete.`;
 }
 
 function stoppedText(view: OperationView): string {
