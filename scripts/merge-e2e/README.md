@@ -10,10 +10,14 @@ npx tsx scripts/merge-e2e/oracle.ts                        # regenerate oracle.j
 npx tsx scripts/merge-e2e/oracle.ts --check                # fail if oracle.json is stale
 npx tsx --test scripts/merge-e2e/matrix.test.ts            # completeness + staleness (~80 s)
 
-# see any file of any scenario, in the real merge view
+# see any file of any scenario, in the real merge view (--steps presses gutter controls, a shot after each)
 export GS_CHROME=~/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell
 npx tsx scripts/merge-e2e/render.ts --scenario rebase.diff3 --file stress/userService.js \
-    --host both --theme dark,light --out-dir /tmp/shots
+    --host both --theme dark,light --out-dir /tmp/shots --steps accept-yours,ignore-theirs
+
+# every band edge of every block on one device row, in pane, ribbon and result
+npx tsx scripts/merge-e2e/alignment.ts --scenarios issue12-exact.diff3 --hosts ext --dpr 2
+npx tsx --test scripts/merge-e2e/alignment.test.ts            # the whole matrix, both hosts, 1x and 2x
 ```
 
 ## Files
@@ -26,6 +30,8 @@ npx tsx scripts/merge-e2e/render.ts --scenario rebase.diff3 --file stress/userSe
 | `completeness.ts` | Holds an oracle to `cases.ts`, in both directions. |
 | `matrix.test.ts` | Builds the matrix, checks it, requires `oracle.json` to match, and proves the checker fails on a shrunken matrix. |
 | `render.ts`, `cdp.ts`, `themes.ts` | Headless render of the real merge view: the extension's webview (VS Code Dark+ / Light+ / HC dark / HC light token values) and the desktop renderer (dark / light). |
+| `alignment.ts` | Walks every file of every scenario in the real view, as it opens, half handled, and resolved, and measures what the browser PAINTS: every ribbon end must meet its pane's band on the same device row (±0 at 1x and 2x), on the pixel grid, with no gap. |
+| `alignment.test.ts` | Runs it over the whole matrix in both hosts at both scales, requires every block side of oracle.json to have been measured, and proves the check fails on the pre-fix build (562966a, the owner's offset dashed lines). |
 
 ## One convention
 

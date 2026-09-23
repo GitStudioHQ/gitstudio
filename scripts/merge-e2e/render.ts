@@ -16,6 +16,8 @@
 //   --out-dir <dir>         default: $TMPDIR/gs-merge-e2e-shots
 //   --width/--height/--scale  default 1600 × 1000 CSS px at 2×
 //   --no-build              desktop: reuse the renderer already in apps/desktop/dist
+//   --steps a,b             after the first shot, press these controls in turn, a shot after each:
+//                           accept-yours | ignore-theirs | accept-theirs | ignore-yours | legend-key
 //
 // The content is REAL: the repository fixtures.sh stopped mid-operation, read
 // through the same code the products run —
@@ -41,7 +43,12 @@ import { BODY_CLASS, VSCODE_THEME_NAMES, VSCODE_THEMES, type VsCodeTheme } from 
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
-const WEBVIEW_ENTRY = join(REPO, "packages/webview-ui/src/main.ts");
+/**
+ * The extension webview entry to bundle. GS_MERGE_WEBVIEW_ENTRY points it at
+ * another build's copy (alignment.test.ts renders the pre-fix merge view that
+ * way, to prove its measurement fails on it).
+ */
+const WEBVIEW_ENTRY = process.env.GS_MERGE_WEBVIEW_ENTRY || join(REPO, "packages/webview-ui/src/main.ts");
 const DESKTOP = join(REPO, "apps/desktop");
 
 export type Host = "ext" | "desktop";
@@ -177,36 +184,50 @@ function desktopHarness(noBuild: boolean): Promise<string> {
   return desktopPageDir;
 }
 
+/** One page per scenario repository, its fixture holding every file's model, read once. */
+const desktopFixtures = new Map<string, Promise<string>>();
+
+function desktopFixture(dir: string, root: string): Promise<string> {
+  let made = desktopFixtures.get(root);
+  if (made) return made;
+  made = (async () => {
+    const ctx = new GitContext({ root });
+    try {
+      const op = await ctx.operation.view();
+      const [snap, facts] = await Promise.all([ctx.conflictOps.snapshot({ op }), ctx.conflictOps.conflictFiles({ op })]);
+      const xy = new Map(facts.map((f) => [f.path, f.xy]));
+      const bridge = await desktopBridge(root);
+      const models: Record<string, unknown> = {};
+      for (const f of snap.files) models[f.path] = await bridge.conflictModel(f.path);
+      const n = pageSeq++;
+      writeFileSync(
+        join(dir, `merge-e2e-fixture-${n}.js`),
+        `window.__GS_MERGE_FIXTURE = ${JSON.stringify({
+          op,
+          files: snap.files.map((f) => ({ ...f, xy: xy.get(f.path) })),
+          models,
+        })};\n`,
+      );
+      const html = readFileSync(join(dir, "harness.html"), "utf8").replace(
+        `<script src="./shim.js"></script>`,
+        `<script src="./merge-e2e-fixture-${n}.js"></script>\n    <script src="./shim.js"></script>`,
+      );
+      if (!html.includes(`merge-e2e-fixture-${n}.js`))
+        throw new Error("harness.html has no shim.js script to put the fixture before");
+      writeFileSync(join(dir, `merge-e2e-${n}.html`), html);
+      return join(dir, `merge-e2e-${n}.html`);
+    } finally {
+      ctx.dispose();
+    }
+  })();
+  desktopFixtures.set(root, made);
+  return made;
+}
+
 async function desktopPage(root: string, theme: "dark" | "light", noBuild: boolean): Promise<string> {
   const dir = await desktopHarness(noBuild);
-  const ctx = new GitContext({ root });
-  try {
-    const op = await ctx.operation.view();
-    const [snap, facts] = await Promise.all([ctx.conflictOps.snapshot({ op }), ctx.conflictOps.conflictFiles({ op })]);
-    const xy = new Map(facts.map((f) => [f.path, f.xy]));
-    const bridge = await desktopBridge(root);
-    const models: Record<string, unknown> = {};
-    for (const f of snap.files) models[f.path] = await bridge.conflictModel(f.path);
-    const n = pageSeq++;
-    writeFileSync(
-      join(dir, `merge-e2e-fixture-${n}.js`),
-      `window.__GS_MERGE_FIXTURE = ${JSON.stringify({
-        op,
-        files: snap.files.map((f) => ({ ...f, xy: xy.get(f.path) })),
-        models,
-      })};\n`,
-    );
-    const html = readFileSync(join(dir, "harness.html"), "utf8").replace(
-      `<script src="./shim.js"></script>`,
-      `<script src="./merge-e2e-fixture-${n}.js"></script>\n    <script src="./shim.js"></script>`,
-    );
-    if (!html.includes(`merge-e2e-fixture-${n}.js`))
-      throw new Error("harness.html has no shim.js script to put the fixture before");
-    writeFileSync(join(dir, `merge-e2e-${n}.html`), html);
-    return `${pathToFileURL(join(dir, `merge-e2e-${n}.html`)).href}?scene=changes&theme=${theme}`;
-  } finally {
-    ctx.dispose();
-  }
+  const page = await desktopFixture(dir, root);
+  return `${pathToFileURL(page).href}?scene=changes&theme=${theme}`;
 }
 
 // ── Driving and reading the page ─────────────────────────────────────────────
@@ -233,6 +254,89 @@ const READ_VIEW = `(() => {
   };
 })()`;
 
+export function slug(s: string): string {
+  return s.replace(/[^A-Za-z0-9._-]+/g, "_");
+}
+
+/**
+ * Gestures a shot can take after the view settles, each through the real
+ * control a user presses (the gutter buttons act on a primary-button press).
+ * Each targets the FIRST block still offering that control, a conflict when
+ * there is one.
+ */
+export const STEPS: Record<string, string> = {
+  "accept-yours": pressFirst(".jb-gutter-a .jb-change-actions", ".jb-btn-accept"),
+  "ignore-theirs": pressFirst(".jb-gutter-b .jb-change-actions", ".jb-btn-ignore"),
+  "accept-theirs": pressFirst(".jb-gutter-b .jb-change-actions", ".jb-btn-accept"),
+  "ignore-yours": pressFirst(".jb-gutter-a .jb-change-actions", ".jb-btn-ignore"),
+  // The legend's "?" key, open.
+  "legend-key": `(() => {
+    const b = document.querySelector(".jb-legend-help");
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`,
+};
+
+function pressFirst(group: string, button: string): string {
+  return `(() => {
+    const groups = [...document.querySelectorAll(${JSON.stringify(group)})];
+    const g = groups.find((e) => e.dataset.category === "conflict") || groups[0];
+    const b = g && g.querySelector(${JSON.stringify(button)});
+    if (!b) return false;
+    b.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+    return true;
+  })()`;
+}
+
+export interface OpenSpec {
+  host: Host;
+  /** The scenario repository (a built matrix's `<target>/<op>/<style>`). */
+  root: string;
+  file: string;
+  theme: string;
+  width?: number;
+  height?: number;
+  scale?: number;
+  noBuild?: boolean;
+}
+
+/** Opens one file of one scenario in the real merge view and waits for it to paint. */
+export async function openMerge(browser: Browser, o: OpenSpec): Promise<{ page: Page; failure?: string }> {
+  if (o.host === "ext" && !(o.theme in VSCODE_THEMES)) throw new Error(`unknown theme ${o.theme}`);
+  const url =
+    o.host === "ext"
+      ? await extensionPage(o.root, o.file, o.theme as VsCodeTheme)
+      : await desktopPage(o.root, o.theme as "dark" | "light", !!o.noBuild);
+  const page = await browser.newPage(o.width ?? 1600, o.height ?? 1000, o.scale ?? 2);
+  await browser.goto(page, url);
+  if (o.host === "desktop") {
+    const sel = JSON.stringify(`button.file-row[data-path="${o.file.replace(/(["\\])/g, "\\$1")}"]`);
+    await page.waitFor(`document.querySelector(${sel})`, 30_000, `the Changes row for ${o.file}`);
+    await page.eval(`document.querySelector(${sel}).click()`);
+  }
+  let failure: string | undefined;
+  try {
+    await settleMerge(page);
+  } catch (e) {
+    failure = e instanceof Error ? e.message : String(e);
+  }
+  return { page, failure };
+}
+
+/** Takes one of STEPS; false when the view offered no such control. */
+export async function step(page: Page, name: string): Promise<boolean> {
+  const js = STEPS[name];
+  if (!js) throw new Error(`unknown step ${name} (known: ${Object.keys(STEPS).join(", ")})`);
+  const done = await page.eval<boolean>(js);
+  await new Promise((r) => setTimeout(r, 500));
+  return done;
+}
+
+export async function readView(page: Page): Promise<Shot["seen"]> {
+  return (await page.eval<Shot["seen"]>(READ_VIEW)) ?? { panes: [], legend: {} };
+}
+
 export interface RenderOptions {
   scenario: string;
   files: string[];
@@ -244,10 +348,10 @@ export interface RenderOptions {
   height?: number;
   scale?: number;
   noBuild?: boolean;
-}
-
-function slug(s: string): string {
-  return s.replace(/[^A-Za-z0-9._-]+/g, "_");
+  /** Gestures to take after the first shot, in turn, with a shot after each. */
+  steps?: string[];
+  /** A shot's file name; default `<host>-<scenario>-<theme>-<file>[+<step>…].png`. */
+  name?: (s: { host: Host; scenario: string; file: string; theme: string; steps: string[] }) => string;
 }
 
 /** Render every file × theme × host of one scenario; returns what each shot showed. */
@@ -266,43 +370,46 @@ export async function renderMerge(o: RenderOptions): Promise<Shot[]> {
   mkdirSync(o.outDir, { recursive: true });
   const width = o.width ?? 1600;
   const height = o.height ?? 1000;
+  const name =
+    o.name ??
+    ((s) => `${s.host}-${s.scenario}-${s.theme}-${slug(s.file)}${s.steps.map((x) => `+${x}`).join("")}.png`);
   const browser = await Browser.launch({ width, height });
   const shots: Shot[] = [];
   try {
     for (const host of o.hosts) {
       for (const theme of o.themes) {
         if (host === "desktop" && theme !== "dark" && theme !== "light") continue;
-        if (host === "ext" && !(theme in VSCODE_THEMES)) throw new Error(`unknown theme ${theme}`);
         for (const file of o.files) {
-          const url =
-            host === "ext"
-              ? await extensionPage(root, file, theme as VsCodeTheme)
-              : await desktopPage(root, theme as "dark" | "light", !!o.noBuild);
-          const page = await browser.newPage(width, height, o.scale ?? 2);
-          await browser.goto(page, url);
-          if (host === "desktop") {
-            const sel = JSON.stringify(`button.file-row[data-path="${file.replace(/(["\\])/g, "\\$1")}"]`);
-            await page.waitFor(`document.querySelector(${sel})`, 30_000, `the Changes row for ${file}`);
-            await page.eval(`document.querySelector(${sel}).click()`);
-          }
-          let failure: string | undefined;
-          try {
-            await settleMerge(page);
-          } catch (e) {
-            failure = e instanceof Error ? e.message : String(e);
-          }
-          const out = join(o.outDir, `${host}-${o.scenario}-${theme}-${slug(file)}.png`);
-          writeFileSync(out, await page.screenshot());
-          const seen = (await page.eval<Shot["seen"]>(READ_VIEW)) ?? { panes: [], legend: {} };
-          shots.push({
+          const { page, failure } = await openMerge(browser, {
             host,
-            scenario: o.scenario,
+            root,
             file,
             theme,
-            out,
-            seen,
-            errors: [...(failure ? [failure] : []), ...page.errors],
+            width,
+            height,
+            scale: o.scale,
+            noBuild: o.noBuild,
           });
+          const taken: string[] = [];
+          const shoot = async (extra: string[]) => {
+            const out = join(o.outDir, name({ host, scenario: o.scenario, file, theme, steps: [...taken] }));
+            writeFileSync(out, await page.screenshot());
+            shots.push({
+              host,
+              scenario: o.scenario,
+              file,
+              theme,
+              out,
+              seen: await readView(page),
+              errors: [...(failure ? [failure] : []), ...extra, ...page.errors],
+            });
+          };
+          await shoot([]);
+          for (const s of o.steps ?? []) {
+            const done = await step(page, s);
+            taken.push(s);
+            await shoot(done ? [] : [`step ${s}: the view offered no such control`]);
+          }
           await browser.closePage(page);
         }
       }
@@ -335,7 +442,7 @@ async function main(): Promise<void> {
     process.stderr.write(
       readFileSync(fileURLToPath(import.meta.url), "utf8")
         .split("\n")
-        .slice(1, 20)
+        .slice(1, 22)
         .join("\n") + "\n",
     );
     process.exit(2);
@@ -352,6 +459,7 @@ async function main(): Promise<void> {
     height: flag("height") ? Number(flag("height")) : undefined,
     scale: flag("scale") ? Number(flag("scale")) : undefined,
     noBuild: argv.includes("--no-build"),
+    steps: list(flag("steps"), []),
   });
   for (const s of shots) process.stdout.write(JSON.stringify(s) + "\n");
   process.exit(shots.some((s) => s.errors.length > 0) ? 1 : 0);
