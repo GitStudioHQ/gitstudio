@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C3343"/><stop offset="1" stop-color="#181C24"/></linearGradient>
+    <linearGradient id="res" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9486F6"/><stop offset="1" stop-color="#6B5BE6"/></linearGradient>
+    <linearGradient id="cs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/><stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+    <linearGradient id="ts" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.06"/><stop offset="0.4" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+    <radialGradient id="gl" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#8E82F2" stop-opacity="0.55"/><stop offset="1" stop-color="#6B5BE6" stop-opacity="0"/></radialGradient>
+    <radialGradient id="sh" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#0C0E13" stop-opacity="0.55"/><stop offset="1" stop-color="#0C0E13" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
+  <rect x="1" y="1" width="254" height="254" rx="51" fill="url(#ts)"/>
+  <ellipse cx="128" cy="214" rx="46" ry="14" fill="url(#sh)"/>
+  <ellipse cx="128" cy="128" rx="58" ry="92" fill="url(#gl)"/>
+
+  <!-- CENTER result column -->
+  <rect x="100" y="46" width="56" height="166" rx="11" fill="url(#res)" stroke="#AEA6F8" stroke-width="1.5"/>
+  <rect x="101.5" y="47.5" width="53" height="60" rx="9" fill="url(#cs)"/>
+  <rect x="110" y="72" width="36" height="6" rx="3" fill="#FFFFFF" opacity="0.9"/>
+  <rect x="110" y="170" width="28" height="6" rx="3" fill="#FFFFFF" opacity="0.6"/>
+  <rect x="108" y="116" width="40" height="22" rx="5" fill="#FFFFFF" opacity="0.96"/>
+
+  <!-- ACCEPT arrows: from each editor edge, stepping onto the result -->
+  <path d="M84 116 L102 127 L84 138" fill="none" stroke="#F4F6FA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M172 116 L154 127 L172 138" fill="none" stroke="#F4F6FA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- LEFT editor (yours) — on top of the arrow's tail -->
+  <g>
+    <rect x="32" y="56" width="52" height="146" rx="9" fill="#454F62" stroke="#5A6679" stroke-width="1.5"/>
+    <rect x="33.5" y="57.5" width="49" height="60" rx="8" fill="url(#cs)"/>
+    <rect x="42" y="80" width="30" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="42" y="170" width="24" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="40" y="116" width="36" height="22" rx="5" fill="#E06A52"/>
+  </g>
+  <!-- RIGHT editor (theirs) -->
+  <g>
+    <rect x="172" y="56" width="52" height="146" rx="9" fill="#454F62" stroke="#5A6679" stroke-width="1.5"/>
+    <rect x="173.5" y="57.5" width="49" height="60" rx="8" fill="url(#cs)"/>
+    <rect x="184" y="80" width="30" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="184" y="170" width="24" height="6" rx="3" fill="#AEB6C2" opacity="0.7"/>
+    <rect x="180" y="116" width="36" height="22" rx="5" fill="#E06A52"/>
+  </g>
+  <rect x="2.25" y="2.25" width="251.5" height="251.5" rx="50.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1.5"/>
+</svg>

@@ -1,0 +1,34 @@
+.vscode/**
+.vscode-test/**
+.github/**
+.claude/**
+node_modules/**
+src/**
+test/**
+vendor/**
+scripts/**
+docs/**
+brand-assets/**
+test-fixtures/**
+test-harness/**
+**/*.ts
+**/*.map
+**/*.vsix
+**/.DS_Store
+esbuild.js
+tsconfig.json
+package-lock.json
+.gitignore
+.vscodeignore
+.editorconfig
+CONTRIBUTING.md
+RELEASING.md
+SHOTS.md
+VENDORED_FROM.json
+# Store artwork is served from GitHub: the release passes --baseImagesUrl, so
+# vsce rewrites the README's relative image links and none of these ship.
+# The walkthrough's own media (media/walkthrough/**) and the icon DO ship.
+media/*.svg
+media/banner.png
+media/screenshots/**
+media/kept-for-reference/**

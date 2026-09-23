@@ -1,0 +1,144 @@
+<h1 align="center">Merge Studio</h1>
+
+<p align="center">
+  <b>Resolve Git conflicts the JetBrains way, without leaving VS Code or Cursor.</b>
+</p>
+
+<p align="center">
+  <a href="https://open-vsx.org/extension/gitstudio/merge-studio"><img src="https://img.shields.io/open-vsx/v/gitstudio/merge-studio?label=Open%20VSX&logo=eclipseide&logoColor=white&color=C160EF" alt="Open VSX version"></a>
+  <a href="https://github.com/GitStudioHQ/merge-studio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/GitStudioHQ/merge-studio/ci.yml?branch=main&label=build&logo=githubactions&logoColor=white" alt="CI build status"></a>
+  <a href="NOTICE"><img src="https://img.shields.io/badge/license-MIT%20%2B%20Apache--2.0-44a248" alt="License: MIT, with Apache-2.0 shared packages"></a>
+</p>
+
+<p align="center">
+  <img src="media/screenshots/hero.gif" alt="A rebase stops on a conflict; the Conflicts dashboard reads Rebasing feature/session-hardening onto main, commit 2 of 3; Merge… opens the three panes; the wand and one arrow resolve it; Apply, then Continue Rebase, and the rebase completes." width="1200">
+</p>
+
+## Why Merge Studio
+
+- **Yours, the result and theirs, side by side.** VS Code's built-in merge editor stacks Incoming and Current above the result. Merge Studio puts your side on the left, the file you will commit in the middle, and theirs on the right, joined by ribbons you click to take a change.
+- **One dashboard for the whole merge or rebase.** Every conflicted file, what happened to it, and **Continue**, **Skip** and **Abort** for the operation itself.
+- **Every kind of change in its own colour**, with a legend, so a real conflict never hides among changes only one side made.
+- **Undo for every pick.** Step back through a named history, or hold Undo on a resolved file to get its conflict back.
+
+## Rebases: which side is yours?
+
+During a rebase git swaps its own words: `--ours` is the branch you are rebasing onto, and `--theirs` is your commit. Merge Studio does not. **Yours** (left) is always your work, the commit being replayed, and **Theirs** (right) is the branch it is landing on. The header says which: *Rebasing test onto master · commit 1 of 3*.
+
+<p align="center"><img src="media/screenshots/dashboard-rebase.png" alt="The Conflicts dashboard mid-rebase: YOURS test, onto, THEIRS master; commit 1 of 1; the file list with Accept Yours, Accept Theirs and Merge…; Continue Rebase, Skip this commit and Abort Rebase."></p>
+
+## Every change, colour-coded
+
+| Mark | Colour | Meaning |
+| --- | --- | --- |
+| ≠ | orange | A real conflict: both sides changed the same lines differently. |
+| ✨ | orange, with the wand | A conflict Merge Studio can solve: both sides' edits touch but don't overlap. The wand applies both. |
+| = | violet | Both sides made the same edit. |
+| ‹ › | green / blue / grey | A change only one side made: inserted, changed or deleted. ‹ is yours, › is theirs. |
+| dashed outline | the change's colour | Already applied to the result. |
+
+<p align="center"><img src="media/screenshots/merge-editor-light.png" alt="The three-pane merge editor in a light theme: YOURS on the left, the result in the middle, THEIRS on the right; an orange conflict, a violet identical edit, and green, blue and grey one-sided changes, with the legend above."></p>
+
+## The Conflicts dashboard
+
+<p align="center"><img src="media/screenshots/dashboard-done.png" alt="The Conflicts dashboard with every file resolved and Continue Rebase ready."></p>
+
+The dashboard opens the moment a merge, rebase, cherry-pick or revert stops on conflicts.
+
+- Every conflicted file with **Accept Yours**, **Accept Theirs** and **Merge…**, and a badge for the tricky cases (deleted in theirs, added by both, …) named after the side, not git's stage number.
+- A direction bar with both names (*test → onto → master*), the step (*commit 2 of 3*) and the commit being replayed.
+- **Continue**, **Skip** (where git allows it) and **Abort**, each with a confirm that says what it will do. Continue says why when it can't run yet, and warns before git drops a commit your resolution emptied.
+- Resolved files stay in the list, labelled with how they were settled. **Hold Undo** on one to restore its original conflict.
+- Binary files, and files deleted or added on one side, get a panel that says what happened and offers the choices that make sense: keep yours, keep theirs, or delete the file.
+
+## Side-by-side diff
+
+<p align="center"><img src="media/screenshots/diff.png" alt="The side-by-side diff: line-aligned panes with highlights on exactly what changed."></p>
+
+- **Compare in Merge Studio**: select two files in the Explorer, or compare one file with its last commit.
+- **Open Changes in Merge Studio** from a changed file's title bar, and **Stage Changes with Ticks** to stage it one change at a time.
+- The same ribbons, colours and navigation as the merge editor, re-diffed live as you edit.
+
+## Try it in 30 seconds
+
+Run **Merge Studio: Open Sample Merge** from the Command Palette. A ready-made conflict opens in the three panes; nothing in your repository is touched. **Merge Studio: Open Sample Diff** does the same for the diff, and **Merge Studio: Open Getting Started** walks through both.
+
+## Keyboard
+
+| Key | Does |
+| --- | --- |
+| F7 / Shift+F7 | Next / previous change |
+| Cmd+Z / Shift+Cmd+Z (Ctrl on Windows and Linux) | Undo / redo a merge action |
+| Enter or Space on a focused gutter button | Take that change (» or «), or ignore it (✕) |
+
+## Settings
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `jbMerge.autoOpen` | `true` | Open conflicted files in Merge Studio and show the Conflicts dashboard when an operation stops. |
+| `jbMerge.autoApplyNonConflicting` | `false` | When a file opens, apply every change only one side made, and every edit both sides made identically. Conflicts are never applied automatically. |
+| `jbMerge.conflictResolver` | `embedded` | Where conflicted files open: `embedded` (Merge Studio) or `jetbrains` (an installed JetBrains IDE). |
+| `jbMerge.diffTool` | `embedded` | Which diff Compare and Open Changes use: `embedded` or `jetbrains`. |
+| `jbMerge.preferredIde` | `auto` | Which installed JetBrains IDE to hand merges and diffs to. |
+| `jbMerge.jetbrainsPath` | `""` | A JetBrains IDE launcher to use instead of detection. User settings only. |
+
+## Using GitStudio too?
+
+[GitStudio](https://marketplace.visualstudio.com/items?itemName=gitstudio.gitstudio), the full Git GUI for VS Code and Cursor, ships this same merge editor and Conflicts dashboard. With both installed, GitStudio opens conflicts automatically and Merge Studio stays quiet. Its commands (Resolve Conflicts…, Open Sample Merge, Compare) still work and open the same screens. To let Merge Studio do it instead, set `gitstudio.merge.autoOpen` to `false`.
+
+Want only a merge tool? Use Merge Studio. Want the commit graph, blame, staging and interactive rebase too? Use GitStudio.
+
+## Open in a JetBrains IDE
+
+Prefer to resolve in a JetBrains IDE? Set `jbMerge.conflictResolver` to `jetbrains` (or `jbMerge.diffTool` for diffs) and Merge Studio hands the file to your installed IntelliJ IDEA, WebStorm, PyCharm, PhpStorm, GoLand, CLion, Rider, RubyMine or DataGrip, with your side as the IDE's left side. IDEs in the usual install folders on macOS, Windows and Linux are found automatically, including JetBrains Toolbox installs. Anywhere else, put the IDE's launcher on your `PATH` or set `jbMerge.jetbrainsPath`.
+
+## Install
+
+**VS Code**: search **Merge Studio** in the Extensions view, or:
+
+```bash
+code --install-extension gitstudio.merge-studio
+```
+
+**Cursor, VSCodium, Windsurf, Gitpod**: from the [Open VSX Registry](https://open-vsx.org/extension/gitstudio/merge-studio):
+
+```bash
+cursor --install-extension gitstudio.merge-studio
+```
+
+Requires VS Code 1.82 (August 2023) or newer, **git**, and VS Code's built-in Git extension turned on. Cursor, Windsurf and VSCodium already meet this.
+
+## FAQ
+
+**Which side is mine in a rebase?** Yours, on the left: the commit being replayed from your branch. See [Rebases: which side is yours?](#rebases-which-side-is-yours)
+
+**VS Code's own merge editor still opens.** At your first conflict Merge Studio offers to turn off VS Code's merge editor and its conflict highlights. You can do it later from **Settings** (`git.mergeEditor`, `merge-conflict.codeLens.enabled`, `merge-conflict.decorators.enabled`), and put them back with **Merge Studio: Restore VS Code's Merge Editor**.
+
+**How do I stop files opening by themselves?** Set `jbMerge.autoOpen` to `false`. **Merge Studio: Resolve Conflicts…** still opens the dashboard when you want it.
+
+**What about binary or deleted files?** They open a panel instead of a text merge: keep yours, keep theirs, or delete the file.
+
+**Does it work in a git worktree?** Yes. Merge Studio watches the worktree's own git directory.
+
+## Known limitations
+
+- Merge Studio needs a local repository on disk; virtual workspaces are not supported.
+- In Restricted Mode a workspace cannot set `jbMerge.jetbrainsPath`.
+- One Conflicts dashboard at a time: with conflicts in two repositories, it shows the active one.
+
+## Feedback and support
+
+Found a bug, or a merge that went wrong? [Open an issue](https://github.com/GitStudioHQ/merge-studio/issues). The dashboard's **Report a problem** link fills in your Merge Studio and editor versions for you.
+
+Merge Studio is free. If it saves you a bad merge:
+
+- [Sponsor on GitHub](https://github.com/sponsors/antonarnaudov): recurring support
+- [Buy me a coffee](https://checkout.revolut.com/pay/7a6070ab-99ba-4170-a125-c5911b1a5c1d): a one-off tip
+
+## License
+
+Merge Studio's own files are [MIT](LICENSE). It bundles GitStudio's shared merge packages, which are [Apache-2.0](LICENSE-APACHE); see [NOTICE](NOTICE). The source is developed in [GitStudioHQ/gitstudio](https://github.com/GitStudioHQ/gitstudio) (`apps/merge-studio`, with the shared `packages/*`); see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+<sub>JetBrains, IntelliJ IDEA, WebStorm, PyCharm, PhpStorm, GoLand, CLion, Rider, RubyMine and DataGrip are trademarks of JetBrains s.r.o. Merge Studio is an independent project and is not affiliated with, or endorsed by, JetBrains.</sub>
