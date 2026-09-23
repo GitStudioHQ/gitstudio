@@ -27,6 +27,8 @@ import {
 } from "./icons";
 import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment";
 import { RibbonOverlay, lineTopY, scheduleFrame } from "./ribbons";
+import { OverviewMap } from "./overviewMap";
+import { preparedFrom, seedResult, type ResultSeed } from "./seedResult";
 import { lineDocOf, planLineWrite } from "./lineEdits";
 import { LARGE_FILE_LINE_THRESHOLD } from "./limits";
 import { MergeLegend, type LegendDetail } from "./mergeLegend";
@@ -39,6 +41,7 @@ import {
   type MergeRenderInit,
   type MergeRenderOptions,
   type MergeViewApi,
+  type SeedInfo,
 } from "./mergeViewApi";
 
 // The public types live in the frozen API module; re-exported so existing
@@ -115,9 +118,12 @@ const SHARED_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
   smoothScrolling: false,
 };
 
-/** Side panes lean on sync-scroll; hiding their vertical bars keeps the
- * change bands visually continuous across the gutter strips. */
-const SIDE_PANE_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
+/** Every pane leans on sync-scroll; hiding their vertical bars keeps the
+ * change bands continuous across the gutter strips. The Result's too: its bar
+ * and overview ruler sat on the Result|gutter seam and cut every band there.
+ * The merge's scrollbar is its overview strip, at the view's right edge
+ * (overviewMap.ts). */
+const PANE_SCROLL_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {
   scrollbar: { useShadows: false, vertical: "hidden", horizontal: "auto" },
 };
 
@@ -192,11 +198,8 @@ export class MergeView implements MergeViewApi {
   private gutterB?: HTMLElement;
   private buttonLayerA?: HTMLElement;
   private buttonLayerB?: HTMLElement;
-  /**
-   * Whether the result's overview ruler carries change marks: only while the
-   * document is taller than the pane (see DecorationOptions.rulerMarks).
-   */
-  private rulerMarks = false;
+  /** The overview strip at the view's right edge (overviewMap.ts). */
+  private map?: OverviewMap;
 
   public left?: Editor;
   public result?: Editor;
@@ -224,6 +227,10 @@ export class MergeView implements MergeViewApi {
   public onHistoryChanged?: () => void;
   /** Fired after EVERY (re)build: the line-ending mismatch, or undefined. */
   public onEolMismatch?: (info: EolMismatchInfo | undefined) => void;
+  /** Fired after EVERY (re)build: what the Result was seeded with from the file, or undefined. */
+  public onSeeded?: (info: SeedInfo | undefined) => void;
+  /** The file's own text the Result started from (seedResult.ts), when it did. */
+  private seed?: ResultSeed;
 
   constructor(private readonly container: HTMLElement) {}
 
@@ -311,7 +318,7 @@ export class MergeView implements MergeViewApi {
     // the user builds it by accepting sides — same as IntelliJ.
     this.left = monaco.editor.create(leftBody, {
       ...SHARED_OPTIONS,
-      ...SIDE_PANE_OPTIONS,
+      ...PANE_SCROLL_OPTIONS,
       ...font,
       theme,
       language,
@@ -321,19 +328,16 @@ export class MergeView implements MergeViewApi {
     });
     this.result = monaco.editor.create(resultBody, {
       ...SHARED_OPTIONS,
+      ...PANE_SCROLL_OPTIONS,
       ...font,
       theme,
       language,
       value: base,
       readOnly: false,
-      // IntelliJ's "error stripe": thin change marks in the right lane beside
-      // the scrollbar, clickable to jump anywhere in a long merge.
-      overviewRulerLanes: 3,
-      overviewRulerBorder: false,
     });
     this.right = monaco.editor.create(rightBody, {
       ...SHARED_OPTIONS,
-      ...SIDE_PANE_OPTIONS,
+      ...PANE_SCROLL_OPTIONS,
       ...font,
       theme,
       language,
@@ -364,7 +368,15 @@ export class MergeView implements MergeViewApi {
     });
     this.computeOrdinals();
     this.initBlockState();
-    this.installTrackers();
+    // POLISH A1.2: a file already resolved outside the editor — by hand, by
+    // git rerere, or by git's own merge outside its markers — seeds the
+    // Result with what it has there (seedResult.ts). Every change stays
+    // pending, holding the file's text the way a hand edit would.
+    this.seed = this.seedFromFile(payload, base, ours, theirs);
+    if (this.seed) {
+      this.result.getModel()?.setValue(this.seed.text);
+    }
+    this.installTrackers(this.seed?.spans);
 
     this.decorations = new DecorationManager({
       left: this.left,
@@ -387,6 +399,11 @@ export class MergeView implements MergeViewApi {
         isSideDone: (block, side) => this.isSideDone(block, side),
       },
     );
+    // IntelliJ's "error stripe", at the view's right edge — never on a seam.
+    this.map = new OverviewMap(grid, 6, this.result, () => this.model, {
+      resultSpanOf: (block) => this.currentResultSpan(block),
+      isResolved: (block) => this.isResolved(block),
+    });
 
     this.installViewListeners();
     this.installNavigationKeys();
@@ -420,6 +437,28 @@ export class MergeView implements MergeViewApi {
     this.stableSnapshot = this.captureSnapshot("Edit result");
     this.onHistoryChanged?.();
     this.onEolMismatch?.(this.model?.eolMismatch);
+    this.onSeeded?.(this.seed ? { kind: this.seed.kind, changes: this.seed.changes } : undefined);
+  }
+
+  /**
+   * The seed for this build, or undefined to start from base: only a file git
+   * holds the three versions of (the stages), whose text says something
+   * base and git's markers do not.
+   */
+  private seedFromFile(payload: MergeInitPayload, base: string, ours: string, theirs: string): ResultSeed | undefined {
+    if (!this.model || payload.source !== "git-stages") {
+      return undefined;
+    }
+    const working = normalizeEol(payload.result ?? "");
+    if (working === "" || working === base) {
+      return undefined;
+    }
+    try {
+      return seedResult(preparedFrom(this.model, base, ours, theirs), working);
+    } catch {
+      // A file that cannot be read against the merge starts from base, as before.
+      return undefined;
+    }
   }
 
   /** Opens the merge scrolled to the first pending change, like IntelliJ. */
@@ -516,14 +555,16 @@ export class MergeView implements MergeViewApi {
     }
   }
 
-  private installTrackers(): void {
+  /** One tracker per block, on its base span — or on `spans` (a seeded Result). */
+  private installTrackers(spans?: ReadonlyMap<number, LineSpan>): void {
     const model = this.result?.getModel();
     if (!model || !this.model) {
       return;
     }
+    const at = (block: ChangeBlock): LineSpan => spans?.get(block.id) ?? block.baseSpan;
     const specs: monaco.editor.IModelDeltaDecoration[] = this.model.blocks.map(
       (block) => ({
-        range: this.trackerRange(model, block.baseSpan),
+        range: this.trackerRange(model, at(block)),
         options: {
           stickiness:
             monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
@@ -533,7 +574,7 @@ export class MergeView implements MergeViewApi {
     const ids = model.deltaDecorations([], specs);
     this.model.blocks.forEach((block, index) => {
       this.trackers.set(block.id, ids[index]);
-      this.noteEof(block, block.baseSpan, model);
+      this.noteEof(block, at(block), model);
     });
   }
 
@@ -1081,30 +1122,19 @@ export class MergeView implements MergeViewApi {
     if (!this.model) {
       return;
     }
-    this.rulerMarks = this.documentOverflows();
     this.decorations?.apply(this.model, {
       resultSpanOf: (block) => this.currentResultSpan(block),
       isResolved: (block) => this.isResolved(block),
       isSideDone: (block, side) => this.isSideDone(block, side),
       isApplied: (block) => this.blockState.get(block.id)?.applied ?? false,
       showInner: this.renderOptions.showInner && !this.largeFile,
-      rulerMarks: this.rulerMarks,
     });
+    this.map?.scheduleDraw();
   }
 
-  /** Whether the result is taller than its pane — only then do ruler marks find anything. */
-  private documentOverflows(): boolean {
-    if (!this.result) {
-      return false;
-    }
-    return this.result.getContentHeight() > this.result.getLayoutInfo().height;
-  }
-
-  /** Re-decorates when the result starts or stops fitting its pane (typing, accepts, a resize). */
-  private syncRulerMarks(): void {
-    if (this.model && this.documentOverflows() !== this.rulerMarks) {
-      this.decorate();
-    }
+  /** The overview strip (tests read its marks). */
+  public get overview(): OverviewMap | undefined {
+    return this.map;
   }
 
   /** Coalesces button-layer rebuilds to one per frame (or 32 ms, when no frame comes). */
@@ -1372,6 +1402,75 @@ export class MergeView implements MergeViewApi {
     const text =
       this.result?.getModel()?.getValue(monaco.editor.EndOfLinePreference.LF) ?? "";
     const eol = this.model?.eol ?? "LF";
+    return eol === "LF" ? text : text.replace(/\n/g, eolChars(eol));
+  }
+
+  /**
+   * The Result with every change the editor has NOT settled put back to its
+   * base lines (POLISH A1.1), in the model's line ending:
+   *
+   * - a conflict with one side taken, or one side ignored, and the other still
+   *   to decide. Its Result holds that side's text, which reads exactly like a
+   *   conflict settled as that side — and the host's document rule wrote it to
+   *   the file as settled, no markers, one accept after opening;
+   * - a region seeded from the file (seedResult.ts) that nothing has touched
+   *   since: the host keeps the file's own lines there.
+   *
+   * What the host writes to the file before Apply is built from THIS text
+   * (documentSync.ts); Apply still writes getResultText().
+   */
+  public getUnsettledText(): string {
+    const model = this.result?.getModel();
+    if (!model || !this.model) {
+      return this.getResultText();
+    }
+    const lines = model.getValue(monaco.editor.EndOfLinePreference.LF).split("\n");
+    const edits: Array<{ from: number; to: number; lines: string[] }> = [];
+    const covered = new Set<number>();
+    const byId = new Map(this.model.blocks.map((b) => [b.id, b]));
+    for (const region of this.seed?.regions ?? []) {
+      const blocks = region.blockIds.map((id) => byId.get(id)).filter((b): b is ChangeBlock => !!b);
+      if (blocks.length === 0 || blocks.some((b) => this.isResolved(b) || (this.blockState.get(b.id)?.applied ?? false))) {
+        continue;
+      }
+      const spans = blocks.map((b) => this.currentResultSpan(b));
+      const from = Math.min(...spans.map((s) => s.start)) - 1;
+      const to = Math.max(...spans.map((s) => s.endExclusive)) - 1;
+      const now = lines.slice(from, to);
+      if (now.length !== region.lines.length || now.some((l, i) => l !== region.lines[i])) {
+        continue;
+      }
+      edits.push({ from, to, lines: this.baseLines.slice(region.baseFrom, region.baseTo) });
+      for (const b of blocks) covered.add(b.id);
+    }
+    for (const block of this.model.blocks) {
+      if (covered.has(block.id) || category(block) !== "conflict" || this.isResolved(block)) {
+        continue;
+      }
+      const state = this.blockState.get(block.id);
+      if (!state || (!state.applied && !state.doneLeft && !state.doneRight)) {
+        continue;
+      }
+      if (state.applied || this.halfDone(block)) {
+        const span = this.currentResultSpan(block);
+        edits.push({
+          from: span.start - 1,
+          to: span.endExclusive - 1,
+          lines: this.baseLines.slice(block.baseSpan.start - 1, block.baseSpan.endExclusive - 1),
+        });
+      }
+    }
+    edits.sort((a, b) => b.from - a.from || b.to - a.to);
+    let lastFrom = Infinity;
+    for (const edit of edits) {
+      if (edit.to > lastFrom) {
+        continue; // overlapping: never guess
+      }
+      lines.splice(edit.from, edit.to - edit.from, ...edit.lines);
+      lastFrom = edit.from;
+    }
+    const text = lines.join("\n");
+    const eol = this.model.eol ?? "LF";
     return eol === "LF" ? text : text.replace(/\n/g, eolChars(eol));
   }
 
@@ -1696,11 +1795,7 @@ export class MergeView implements MergeViewApi {
     }
     this.viewSubs.push(
       this.result.onDidScrollChange(() => this.scheduleButtons()),
-      this.result.onDidLayoutChange(() => {
-        this.scheduleButtons();
-        this.syncRulerMarks();
-      }),
-      this.result.onDidContentSizeChange(() => this.syncRulerMarks()),
+      this.result.onDidLayoutChange(() => this.scheduleButtons()),
       this.result.onDidChangeModelContent(() => {
         if (!this.suppressHistory) {
           this.onUserEdit(); // manual typing — make it undoable
@@ -1713,6 +1808,7 @@ export class MergeView implements MergeViewApi {
           }
         }
         this.ribbons?.scheduleDraw();
+        this.map?.scheduleDraw();
         this.scheduleButtons();
         this.scheduleRealign();
         this.onResultChanged?.();
@@ -1733,8 +1829,10 @@ export class MergeView implements MergeViewApi {
   private observeTheme(): void {
     this.themeObserver = new MutationObserver(() => {
       monaco.editor.setTheme(ensureNativeTheme());
-      // The ruler colours are read from the live palette at decoration time.
+      // The map's colours are read from the live palette as it draws, and a
+      // high contrast theme draws points twice as thick (mergePointPx).
       this.decorate();
+      this.ribbons?.scheduleDraw();
     });
     this.themeObserver.observe(document.body, {
       attributes: true,
@@ -1767,6 +1865,8 @@ export class MergeView implements MergeViewApi {
     this.themeObserver = undefined;
     this.ribbons?.dispose();
     this.ribbons = undefined;
+    this.map?.dispose();
+    this.map = undefined;
     this.decorations?.clear();
     this.decorations = undefined;
     this.model = undefined;

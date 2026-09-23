@@ -6,29 +6,58 @@
 // by an inline script, and reported the way the desktop harness reports —
 // the verdict JSON in `<title>`, read back from `--dump-dom`.
 //
-// Chrome is found through GS_CHROME, the desktop harness's path, or PATH; a
-// machine with none SKIPS these checks rather than failing them, and says so.
+// Chrome is found through GS_CHROME, Playwright's windowless
+// chrome-headless-shell, or a Linux / Windows install; a machine with none
+// SKIPS these checks rather than failing them, and says so.
+//
+// Never the desktop Chrome on a Mac (/Applications/Google Chrome.app): a run
+// that fell back to it opened and closed it on the owner's screen a thousand
+// times a pass, and he uninstalled it thinking it was broken. GS_CHROME
+// pointing at it is refused too, the way scripts/merge-e2e/cdp.ts refuses it.
 
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-const CANDIDATES = [
-  process.env.GS_CHROME,
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/usr/bin/google-chrome",
-  "/usr/bin/google-chrome-stable",
-  "/usr/bin/chromium",
-  "/usr/bin/chromium-browser",
-  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-].filter((p): p is string => !!p);
+/** Playwright's cached chrome-headless-shell builds, newest first. */
+function playwrightShells(): string[] {
+  const out: string[] = [];
+  for (const cache of [join(homedir(), "Library/Caches/ms-playwright"), join(homedir(), ".cache/ms-playwright")]) {
+    let dirs: string[];
+    try {
+      dirs = readdirSync(cache).filter((d) => d.startsWith("chromium_headless_shell-")).sort().reverse();
+    } catch {
+      continue;
+    }
+    for (const d of dirs) {
+      for (const sub of ["chrome-headless-shell-mac-arm64", "chrome-headless-shell-mac-x64", "chrome-headless-shell-linux64"]) {
+        out.push(join(cache, d, sub, "chrome-headless-shell"));
+      }
+    }
+  }
+  return out;
+}
+
+const DESKTOP_CHROME = /Google Chrome\.app/;
+
+function candidates(): string[] {
+  return [
+    process.env.GS_CHROME,
+    ...playwrightShells(),
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  ].filter((p): p is string => !!p && !DESKTOP_CHROME.test(p));
+}
 
 /** The Chrome binary to drive, or undefined when this machine has none. */
 export function findChrome(): string | undefined {
-  return CANDIDATES.find((p) => existsSync(p));
+  return candidates().find((p) => existsSync(p));
 }
 
 export interface Verdict {

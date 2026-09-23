@@ -15,7 +15,12 @@
  *          this half is in);
  * - half:  the result of a conflict with one side taken and the other still to
  *          decide — the tint at under half strength, between its done lines;
- * - ruler: the overview-ruler mark, at reduced strength.
+ * - point: an insertion or deletion point's line, and the ribbon's end at it —
+ *          the tint at a higher strength (the edge colour in high contrast), so
+ *          the line and the band that ends at it are one colour;
+ * - ruler: the 2-way diff's overview-ruler mark, at reduced strength.
+ * The merge's overview strip (overviewMap.ts) marks each category in its
+ * opaque edge colour — the legend's own dots.
  * And one neutral colour, --jb-settled: the faint line a RESOLVED change keeps
  * in the result only — no colour of its own, nothing across the gutters.
  *
@@ -83,6 +88,9 @@
   --jb-done-modified: rgba(74,159,245,.5);   --jb-ruler-modified: rgba(74,159,245,.6);   --jb-half-modified: rgba(40,150,245,.10);
   --jb-done-inserted: rgba(98,179,74,.5);    --jb-ruler-inserted: rgba(98,179,74,.6);    --jb-half-inserted: rgba(80,180,40,.07);
   --jb-done-deleted:  rgba(139,148,158,.5);  --jb-ruler-deleted:  rgba(139,148,158,.6);  --jb-half-deleted:  rgba(139,148,158,.09);
+  --jb-point-conflict: rgba(240,105,100,.62); --jb-point-same: rgba(160,134,247,.6);
+  --jb-point-modified: rgba(74,159,245,.62);  --jb-point-inserted: rgba(98,179,74,.62);
+  --jb-point-deleted:  rgba(139,148,158,.62);
   --jb-settled: rgba(204,204,204,.24);
 }
 body.vscode-light, body.vscode-high-contrast-light {
@@ -96,7 +104,18 @@ body.vscode-light, body.vscode-high-contrast-light {
   --jb-done-modified: rgba(9,105,218,.45);   --jb-ruler-modified: rgba(9,105,218,.55);   --jb-half-modified: rgba(64,128,255,.10);
   --jb-done-inserted: rgba(26,127,55,.45);   --jb-ruler-inserted: rgba(26,127,55,.55);   --jb-half-inserted: rgba(80,180,40,.07);
   --jb-done-deleted:  rgba(89,99,110,.45);   --jb-ruler-deleted:  rgba(89,99,110,.55);   --jb-half-deleted:  rgba(110,118,129,.10);
+  --jb-point-conflict: rgba(240,75,70,.62);  --jb-point-same: rgba(130,80,223,.55);
+  --jb-point-modified: rgba(9,105,218,.55);  --jb-point-inserted: rgba(26,127,55,.55);
+  --jb-point-deleted:  rgba(89,99,110,.55);
   --jb-settled: rgba(0,0,0,.17);
+}
+/* High contrast: every edge is solid, points too — in the edge colour, 2px
+ * (mergePointPx in ribbons.ts). Declared on body, where the edge colours of
+ * both high contrast themes are. */
+body.vscode-high-contrast {
+  --jb-point-conflict: var(--jb-edge-conflict); --jb-point-same: var(--jb-edge-same);
+  --jb-point-modified: var(--jb-edge-modified); --jb-point-inserted: var(--jb-edge-inserted);
+  --jb-point-deleted: var(--jb-edge-deleted);
 }
 
 /* ── Bands ─────────────────────────────────────────────────────────────────────
@@ -115,11 +134,16 @@ body.vscode-light, body.vscode-high-contrast-light {
  * strength. (Two classes, so it outranks the tone's own tint.) */
 .jb-half.jb-half { background-color: var(--jb-tone-half); }
 
-.jb-frame-inserted, .jb-point-inserted { --jb-e: var(--jb-edge-inserted); }
-.jb-frame-deleted, .jb-point-deleted { --jb-e: var(--jb-edge-deleted); }
-.jb-frame-modified, .jb-point-modified { --jb-e: var(--jb-edge-modified); }
-.jb-frame-same, .jb-point-same { --jb-e: var(--jb-edge-same); }
-.jb-frame-conflict, .jb-point-conflict { --jb-e: var(--jb-edge-conflict); }
+.jb-frame-inserted { --jb-e: var(--jb-edge-inserted); }
+.jb-frame-deleted { --jb-e: var(--jb-edge-deleted); }
+.jb-frame-modified { --jb-e: var(--jb-edge-modified); }
+.jb-frame-same { --jb-e: var(--jb-edge-same); }
+.jb-frame-conflict { --jb-e: var(--jb-edge-conflict); }
+.jb-point-inserted { --jb-e: var(--jb-point-inserted); }
+.jb-point-deleted { --jb-e: var(--jb-point-deleted); }
+.jb-point-modified { --jb-e: var(--jb-point-modified); }
+.jb-point-same { --jb-e: var(--jb-point-same); }
+.jb-point-conflict { --jb-e: var(--jb-point-conflict); }
 .jb-done-inserted { --jb-e: var(--jb-done-inserted); }
 .jb-done-deleted { --jb-e: var(--jb-done-deleted); }
 .jb-done-modified { --jb-e: var(--jb-done-modified); }
@@ -151,13 +175,17 @@ body.vscode-light, body.vscode-high-contrast-light {
 body.vscode-high-contrast .jb-frame.jb-edge-top { border-top: 1px solid var(--jb-e); }
 body.vscode-high-contrast .jb-frame.jb-edge-bottom { border-bottom: 1px solid var(--jb-e); }
 
-/* An insertion or deletion POINT (an empty span): a 2px line (POINT_PX in
- * ribbons.ts) on the line after the boundary — or, for the point after an
- * unterminated last line, on that line's bottom rows (decorations.ts
- * pastEnd). Pending in the edge colour; handled or resolved, faint. The
- * ribbon's end at a point covers exactly these two rows. */
-.jb-point { border-top: 2px solid var(--jb-e); }
-.jb-point.jb-point-after { border-top: 0; border-bottom: 2px solid var(--jb-e); }
+/* An insertion or deletion POINT (an empty span): a 1px line (2px in high
+ * contrast: mergePointPx in ribbons.ts) on the line after the boundary — or,
+ * for the point after an unterminated last line, on that line's bottom rows
+ * (decorations.ts pastEnd). Pending in the point colour, which the ribbon's
+ * end shares; handled or resolved, faint. The ribbon's end at a point covers
+ * exactly these rows. It was 2px of the full edge colour: a bright wire
+ * across the Result that the ribbons ended at in a dull tint. */
+.jb-point { border-top: 1px solid var(--jb-e); }
+.jb-point.jb-point-after { border-top: 0; border-bottom: 1px solid var(--jb-e); }
+body.vscode-high-contrast .jb-point { border-top-width: 2px; }
+body.vscode-high-contrast .jb-point.jb-point-after { border-top-width: 0; border-bottom-width: 2px; }
 
 /* Character-level overlays (Monaco inlineClassName decorations). */
 .jb-inner-inserted { background-color: var(--jb-inner-inserted); border-radius: 2px; }
@@ -294,9 +322,11 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
  * the editors it draws for, and the 42px action row overflowed a 40px gutter
  * onto the result pane. One grid now, used by all three products.
  *
- * Merge: ours | gutter | result | gutter | theirs. Each 64px gutter is a 46px
- * rectangular icon strip hugging its side pane (MERGE_ICON_STRIP, ribbons.ts)
- * plus an 18px slant zone. Diff: left | 44px transfer gutter | right.
+ * Merge: ours | gutter | result | gutter | theirs | overview. Each 64px gutter
+ * is a 46px rectangular icon strip hugging its side pane (MERGE_ICON_STRIP,
+ * ribbons.ts) plus an 18px slant zone; the overview strip (overviewMap.ts) is
+ * the view's scrollbar, at its right edge — no pane has one of its own, so
+ * nothing sits on a seam. Diff: left | 44px transfer gutter | right.
  * Without a grid the panes (which set grid-column/row inline) collapse to
  * stacked blocks and the editors get zero height — a blank diff. */
 .jb-merge-grid,
@@ -312,7 +342,7 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
   overflow: hidden;
 }
 .jb-merge-grid {
-  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr) 64px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr) 64px minmax(0, 1fr) 14px;
 }
 .jb-diff-grid {
   grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
@@ -369,6 +399,47 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
   border-right: 1px solid var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.16));
 }
 .jb-button-layer { position: absolute; inset: 0; pointer-events: none; }
+
+/* The overview strip: every pending change as an OPAQUE mark in its category's
+ * edge colour (the legend's dots), the view's extent behind the marks and
+ * outlined above them, so no mark is ever blended. Empty while the whole
+ * Result fits its pane. Its colours are declared on the strip itself, so they
+ * resolve against the theme the body carries. */
+.jb-map-head {
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.2)));
+  background: var(--vscode-editor-background);
+}
+.jb-map {
+  --jb-map-conflict: var(--jb-edge-conflict);
+  --jb-map-same: var(--jb-edge-same);
+  --jb-map-modified: var(--jb-edge-modified);
+  --jb-map-inserted: var(--jb-edge-inserted);
+  --jb-map-deleted: var(--jb-edge-deleted);
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-left: 1px solid var(--vscode-editorOverviewRuler-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.16)));
+  background: var(--vscode-editorOverviewRuler-background, var(--vscode-editor-background));
+  user-select: none;
+}
+.jb-map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; }
+.jb-map-thumb,
+.jb-map-view { position: absolute; left: 0; right: 0; }
+.jb-map-thumb { z-index: 0; background: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)); }
+.jb-map:hover .jb-map-thumb { background: var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7)); }
+.jb-map.is-dragging .jb-map-thumb { background: var(--vscode-scrollbarSlider-activeBackground, rgba(191, 191, 191, 0.4)); }
+.jb-map-view {
+  z-index: 2;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--vscode-foreground) 70%, transparent);
+}
+.jb-map-thumb[hidden],
+.jb-map-view[hidden] { display: none; }
 
 /* SVG icon plumbing (toolbar + gutter). */
 .jb-svg {
@@ -713,7 +784,8 @@ body.vscode-high-contrast .jb-ribbon-frame-conflict { stroke: var(--jb-edge-conf
 .jb-sample-half { background: var(--jb-half-conflict); border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
 .jb-sample-done { border-top: 1px solid var(--jb-done-conflict); border-bottom: 1px solid var(--jb-done-conflict); }
 .jb-sample-settled { border-top: 1px solid var(--jb-settled); border-bottom: 1px solid var(--jb-settled); }
-.jb-sample-point { border-top: 2px solid var(--jb-edge-inserted); height: 6px; }
+.jb-sample-point { border-top: 1px solid var(--jb-point-inserted); height: 6px; }
+body.vscode-high-contrast .jb-sample-point { border-top: 2px solid var(--jb-edge-inserted); }
 .jb-sample-ws { background: var(--jb-line-modified); border-left: 2px dotted var(--jb-edge-modified); }
 .jb-legend-pop {
   /* Fixed: the legend sits in a toolbar that scrolls sideways (overflow-x),

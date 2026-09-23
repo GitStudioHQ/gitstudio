@@ -43,13 +43,6 @@ export interface DecorationOptions {
   isApplied?: (block: ChangeBlock) => boolean;
   /** When false, character-level inner decorations are skipped (line-only). */
   showInner?: boolean;
-  /**
-   * Whether pending blocks mark the result's overview ruler. The view turns it
-   * off while the whole document fits the viewport: a ruler maps the document
-   * onto its full height, so in a short file one line's mark is a big block
-   * beside the text — and there is nothing off-screen for it to find.
-   */
-  rulerMarks?: boolean;
 }
 
 /**
@@ -71,7 +64,10 @@ export interface DecorationOptions {
  *   half strength (`jb-half`) between the same faint lines — no longer the
  *   open question, not settled either; the pending side keeps its full band;
  * - resolved: nothing in the side panes, and in the result one neutral faint
- *   line top and bottom (`jb-settled`) — done, and quiet;
+ *   line top and bottom (`jb-settled`) — done, and quiet — while anything is
+ *   still to resolve; once EVERY change is, nothing at all (JetBrains shows
+ *   nothing once resolved: a finished file ruled with a dozen grey lines read
+ *   as still marked up);
  * - whitespace-only: line tint only, never a word tint, plus a dotted left
  *   edge (`jb-ws`).
  *
@@ -81,6 +77,10 @@ export interface DecorationOptions {
  * Tones: a conflict is red, a change made the same on both sides violet, and
  * a one-sided change is coloured by what it did (green inserted, blue
  * modified, grey deleted).
+ *
+ * No overview-ruler marks: the Result's ruler and scrollbar sat on the
+ * Result|gutter seam and cut every band there. The merge's one overview is
+ * its own strip at the view's right edge (overviewMap.ts).
  */
 export class DecorationManager {
   private collections: Collection[] = [];
@@ -93,7 +93,8 @@ export class DecorationManager {
     const result: Deco[] = [];
     const right: Deco[] = [];
     const showInner = options.showInner ?? true;
-    const palette = options.rulerMarks === false ? undefined : rulerPalette();
+    // Every change settled: the result carries no marks at all.
+    const allResolved = model.blocks.every((block) => options.isResolved?.(block) ?? false);
 
     for (const block of model.blocks) {
       const tone = blockTone(block);
@@ -107,16 +108,12 @@ export class DecorationManager {
       const span = options.resultSpanOf?.(block) ?? block.baseSpan;
       if (resolved) {
         // Settled: one neutral faint line in the result, nothing in the side
-        // panes — and nothing across the gutters (ribbons.ts).
-        pushSettled(result, this.editors.result, span, cat);
+        // panes — and nothing across the gutters (ribbons.ts). Nothing at all
+        // once the whole file is.
+        if (!allResolved) pushSettled(result, this.editors.result, span, cat);
         continue;
       }
-      pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, palette && {
-        color: palette[tone],
-        // A thin mark in the right lane: findable from the scrollbar,
-        // never a block beside the text.
-        position: monaco.editor.OverviewRulerLane.Right,
-      }, half);
+      pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, half);
       if (showInner && !half && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
         // Word ranges are in BASE coordinates; the result is base while the
         // block is untouched, but blocks above may have changed height.
@@ -211,9 +208,9 @@ export class DiffDecorationManager {
 
 /**
  * Resolves the tone -> stripe colour map from the live CSS palette, for the
- * IntelliJ-style overview-ruler ("error stripe") marks: `--jb-ruler-<tone>`,
- * the category colour at reduced strength — a thin mark to find a change by,
- * not a block to read.
+ * 2-way diff's IntelliJ-style overview-ruler ("error stripe") marks:
+ * `--jb-ruler-<tone>`, the category colour at reduced strength — a thin mark
+ * to find a change by, not a block to read.
  */
 function rulerPalette(): Record<BlockTone, string> {
   // Resolved through a probe's computed `color`, not the raw custom-property
@@ -254,9 +251,9 @@ function pastEnd(editor: Editor, line: number): boolean {
 }
 
 /**
- * An insertion or deletion POINT: a POINT_PX line on the line after the
- * boundary (its top rows), or on the last line's bottom rows for the point
- * after it. The ribbon's end at a point is exactly those rows (ribbons.ts).
+ * An insertion or deletion POINT: a line (mergePointPx, ribbons.ts) on the
+ * line after the boundary (its top rows), or on the last line's bottom rows
+ * for the point after it. The ribbon's end at a point is exactly those rows.
  */
 function pushPoint(
   target: Deco[],
@@ -264,7 +261,6 @@ function pushPoint(
   span: LineSpan,
   className: string,
   cat: MergeCategory,
-  ruler?: monaco.editor.IModelDecorationOverviewRulerOptions,
 ): void {
   const line = clampLine(editor, span.start);
   const classes = `${className} jb-point${pastEnd(editor, span.start) ? " jb-point-after" : ""}`;
@@ -275,7 +271,6 @@ function pushPoint(
       className: `${classes} jb-cat-${cat}`,
       // The line-number margin too, so the mark runs across the whole pane.
       marginClassName: classes,
-      overviewRuler: ruler,
     },
   });
 }
@@ -294,11 +289,10 @@ function pushPending(
   tone: BlockTone,
   cat: MergeCategory,
   whitespaceOnly: boolean,
-  ruler?: monaco.editor.IModelDecorationOverviewRulerOptions,
   half = false,
 ): void {
   if (isEmptySpan(span)) {
-    pushPoint(target, editor, span, `jb-point-${tone}`, cat, ruler);
+    pushPoint(target, editor, span, `jb-point-${tone}`, cat);
     return;
   }
   const last = span.endExclusive - 1;
@@ -311,7 +305,6 @@ function pushPending(
       // Tint the line-number margin too, like IntelliJ, so the change
       // band runs uninterrupted across the pane.
       marginClassName: `jb-line-${tone}${halfClass}`,
-      overviewRuler: ruler,
     },
   });
   if (half) {

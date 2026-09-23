@@ -163,12 +163,8 @@
      #A1260D only gets darker). */
   --gs-danger: color-mix(in srgb, var(--vscode-errorForeground, #e51400) 60%, var(--vscode-foreground, #000000));
 }
-/* The merge shell sets its own danger ink on .ms-shell (shell.css); on a light
-   theme it takes the darkened one, so the no-text panel's Delete the file
-   clears AA too. */
-.vscode-light .ms-shell {
-  --ms-danger: var(--gs-danger);
-}
+/* The merge shell's danger ink (.ms-shell's --ms-danger, shell.css) IS this
+   one, so on a light theme the no-text panel's Delete the file clears AA too. */
 :root {
   --gs-hover-strong: color-mix(in srgb, var(--gs-fg) 12%, var(--gs-hover));
 }

@@ -18,7 +18,17 @@ import type {
   SideRole,
 } from "@gitstudio/host-bridge/conflictsProtocol";
 import { otherRole, roleWord, sideName, sideOf } from "./conflicts/opText";
-import { binaryIcon, checkIcon, commitIcon, glyphEl, removedIcon, trashIcon, warningIcon } from "./shellIcons";
+import {
+  binaryIcon,
+  checkIcon,
+  commitIcon,
+  glyphEl,
+  newFileIcon,
+  removedIcon,
+  symlinkIcon,
+  trashIcon,
+  warningIcon,
+} from "./shellIcons";
 
 export interface NoTextPanelInput {
   path: string;
@@ -83,8 +93,8 @@ export function describeNoText(input: NoTextPanelInput): { title: string; detail
       return {
         title: "Conflicted symbolic link",
         detail:
-          `${path} is a symbolic link, and ${name("yours")} and ${name("theirs")} point it at different targets. ` +
-          `A link has no lines to merge: accept the side whose target you want.`,
+          `${path} is a symbolic link, so there is no line-by-line merge: ${name("yours")} and ` +
+          `${name("theirs")} point it at different targets. Accept the side whose target you want.`,
       };
     case "binary":
       return {
@@ -132,6 +142,30 @@ export function describeNoText(input: NoTextPanelInput): { title: string; detail
   }
 }
 
+/**
+ * The panel's mark, per shape: a commit for a submodule, a link for a link, a
+ * binary file, a warning for a file too large to read, a NEW file for one
+ * added on one side only — and the removal mark only where something was
+ * removed. "Added on one side only" wore the minus of "changed on one side,
+ * deleted on the other", which on an added file says the opposite.
+ */
+export function noTextIcon(shape: ConflictShape): string {
+  switch (shape) {
+    case "submodule":
+      return commitIcon;
+    case "symlink":
+      return symlinkIcon;
+    case "binary":
+      return binaryIcon;
+    case "too-large":
+      return warningIcon;
+    case "added-one-side":
+      return newFileIcon;
+    default:
+      return removedIcon;
+  }
+}
+
 export function buildNoTextPanel(input: NoTextPanelInput, handlers: NoTextPanelHandlers): NoTextPanel {
   const panel = document.createElement("div");
   panel.className = "ms-notext";
@@ -139,17 +173,7 @@ export function buildNoTextPanel(input: NoTextPanelInput, handlers: NoTextPanelH
 
   const badge = document.createElement("div");
   badge.className = "ms-notext-badge";
-  badge.appendChild(
-    glyphEl(
-      input.shape === "submodule"
-        ? commitIcon
-        : input.shape === "binary" || input.shape === "symlink"
-          ? binaryIcon
-          : input.shape === "too-large"
-            ? warningIcon
-            : removedIcon,
-    ),
-  );
+  badge.appendChild(glyphEl(noTextIcon(input.shape)));
   const { title, detail } = describeNoText(input);
   const h = document.createElement("div");
   h.className = "ms-notext-title";

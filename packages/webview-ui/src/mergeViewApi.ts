@@ -103,6 +103,18 @@ export interface EolMismatchInfo {
   result: LineEnding;
 }
 
+/**
+ * The Result started from the file's own text rather than base (POLISH A1.2):
+ * the file was already resolved outside the editor — "working": no conflict
+ * markers left, by hand or by git rerere; "markers": some regions settled
+ * outside git's markers, by hand or by git's own merge. `changes` of the
+ * merge's changes hold the file's text; they stay pending.
+ */
+export interface SeedInfo {
+  kind: "working" | "markers";
+  changes: number;
+}
+
 /** Undo / redo labels, oldest first — indices align with `undoTo()`. */
 export interface MergeHistoryView {
   undo: string[];
@@ -124,6 +136,12 @@ export interface MergeViewApi {
    * agree — so the shell can clear a stale notice.
    */
   onEolMismatch?: (info: EolMismatchInfo | undefined) => void;
+  /**
+   * Fired after EVERY (re)build: what the Result was seeded with from the
+   * file (SeedInfo), or `undefined` when it started from base — so the shell
+   * can say so, and clear a stale strip.
+   */
+  onSeeded?: (info: SeedInfo | undefined) => void;
 
   /** Builds the three panes for a text conflict (never called for a no-text shape). */
   render(payload: MergeInitPayload, init?: MergeRenderInit): void;
@@ -167,6 +185,13 @@ export interface MergeViewApi {
 
   /** The result text to write back, in the model's line ending. */
   getResultText(): string;
+  /**
+   * The Result with every change the editor has not settled put back to base
+   * (a conflict with one side in and the other still to decide; a region
+   * seeded from the file and untouched since) — what the host marks up for
+   * the file before Apply (POLISH A1.1). Absent: the host uses the Result.
+   */
+  getUnsettledText?(): string;
 
   /** Back to the baseline (the auto-applied one when that was on). Undoable. */
   reset(): void;

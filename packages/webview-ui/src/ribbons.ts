@@ -55,12 +55,29 @@ export const MERGE_ICON_STRIP = 46;
 export const DIFF_ICON_STRIP = 24;
 
 /**
- * How tall an insertion or deletion POINT is drawn, in CSS px: the pane's
- * marker line (`jb-point` in diff.css, `jb-marker-*` in the 2-way diff) and
- * the ribbon's end at that point are both exactly this, on the same rows —
- * the line below the boundary, or above it for the point after the last line.
+ * How tall the 2-way diff draws an insertion or deletion POINT, in CSS px: its
+ * marker line (`jb-marker-*` in diff.css) and the ribbon's end at that point
+ * are both exactly this, on the same rows — the line below the boundary, or
+ * above it for the point after the last line.
  */
 export const POINT_PX = 2;
+
+/**
+ * The merge's POINT line, in CSS px: 1, and 2 in a high contrast theme (where
+ * every edge is a solid line in the edge colour). The pane's line (`jb-point`
+ * in diff.css) and the ribbon's end are both exactly this, on the same rows.
+ * It was 2px of the full-strength edge colour everywhere — a bright wire
+ * across the Result that the ribbons, in their tint, ended at as a dull strip.
+ * Now the line and the ribbon's end are one colour (`--jb-point-<tone>`: the
+ * tint at a higher strength), and the ribbon eases from it to the band's tint
+ * across the gutter's slant (RibbonOverlay).
+ */
+export function mergePointPx(): number {
+  return document.body.classList.contains("vscode-high-contrast") ? 2 : 1;
+}
+
+/** Gradient ids, unique on the page (a page may hold more than one stage). */
+let gradientSeq = 0;
 
 /** Which edge of the gutter carries the rectangular icon segment. */
 type StripSide = "a" | "b";
@@ -160,7 +177,7 @@ class Frame {
    * deletion point) is POINT_PX tall: below the boundary, or above it for the
    * point after the last line — exactly the rows the pane's marker paints.
    */
-  band(editor: monaco.editor.IStandaloneCodeEditor, span: LineSpan, lineHeight: number): Band {
+  band(editor: monaco.editor.IStandaloneCodeEditor, span: LineSpan, lineHeight: number, pointPx = POINT_PX): Band {
     const top = editor.getContainerDomNode().getBoundingClientRect().top;
     const [y0, y1] = spanY(editor, span, lineHeight);
     const a = this.snap(top + y0) - this.originY;
@@ -168,7 +185,7 @@ class Frame {
       return [a, this.snap(top + y1) - this.originY];
     }
     const count = editor.getModel()?.getLineCount() ?? 1;
-    return span.start > count ? [a - POINT_PX, a] : [a, a + POINT_PX];
+    return span.start > count ? [a - pointPx, a] : [a, a + pointPx];
   }
 }
 
@@ -187,6 +204,11 @@ class Frame {
  * draws nothing across the gutters at all: it is done, and the result alone
  * keeps a faint line for it. High contrast themes add a solid edge to pending
  * bands too (the `jb-ribbon-frame` paths; diff.css shows them only there).
+ *
+ * A band that ends at a POINT (an insertion or deletion point, in the result
+ * or in a side pane) meets a line in `--jb-point-<tone>`, and so its ribbon's
+ * end is that colour too: flat at the point, easing to the band's tint across
+ * the gutter's slant — never a bright line ending in a dull strip.
  */
 export class RibbonOverlay {
   private readonly svg: SVGSVGElement;
@@ -239,6 +261,9 @@ export class RibbonOverlay {
     const gutterB = frame.gutter(this.gutterB);
     const stripA: IconStrip = { side: "a", width: MERGE_ICON_STRIP };
     const stripB: IconStrip = { side: "b", width: MERGE_ICON_STRIP };
+    const pointPx = mergePointPx();
+    const defs = document.createElementNS(SVG_NS, "defs");
+    this.svg.appendChild(defs);
 
     // A pane's edge line is a 1px border (diff.css).
     const line = 1;
@@ -250,7 +275,7 @@ export class RibbonOverlay {
       }
       const tone = blockTone(block);
       const resultSpan = this.options.resultSpanOf?.(block) ?? block.baseSpan;
-      const result = frame.band(this.editors.result, resultSpan, lineHeight);
+      const result = frame.band(this.editors.result, resultSpan, lineHeight, pointPx);
 
       // Each side's FULL region (its change plus the passthrough lines of the
       // block), so the band meets the same rows the pane highlights and the
@@ -260,7 +285,8 @@ export class RibbonOverlay {
           continue;
         }
         const editor = side === "left" ? this.editors.left : this.editors.right;
-        const region = frame.band(editor, sideBlockSpan(block, side), lineHeight);
+        const sideSpan = sideBlockSpan(block, side);
+        const region = frame.band(editor, sideSpan, lineHeight, pointPx);
         const done = this.options.isSideDone?.(block, side) ?? false;
         const [gutter, a, b, strip] =
           side === "left"
@@ -275,8 +301,16 @@ export class RibbonOverlay {
           appendEdges(this.svg, geometry, "jb-ribbon-line-base", data, line);
           appendEdges(this.svg, geometry, `jb-ribbon-done jb-ribbon-done-${tone}`, data, line);
         } else {
+          // Ending at a point (at most one end does): that end in the point's
+          // colour, easing to the tint across the slant.
+          const resultPoint = isEmptySpan(resultSpan);
+          const sidePoint = !resultPoint && isEmptySpan(sideSpan);
+          const style =
+            resultPoint || sidePoint
+              ? `fill:${pointGradient(defs, geometry, side, resultPoint, tone)}`
+              : undefined;
           appendBand(this.svg, geometry, "jb-ribbon-base", data);
-          appendBand(this.svg, geometry, `jb-ribbon jb-ribbon-${tone}`, data);
+          appendBand(this.svg, geometry, `jb-ribbon jb-ribbon-${tone}`, data, style);
           appendEdges(this.svg, geometry, `jb-ribbon-frame jb-ribbon-frame-${tone}`, data, line);
         }
       }
@@ -401,6 +435,8 @@ interface BandGeometry {
   top: Array<[number, number]>;
   bottom: Array<[number, number]>;
   roundable: (x: number) => boolean;
+  /** Where the band slants, [left, right] on the stage: between the icon strip and the far pane. */
+  slant: [number, number];
 }
 
 /**
@@ -443,15 +479,61 @@ function bandGeometry(
   };
   // The corners at the gutter edges stay sharp: they sit flush against the
   // panes' line highlights.
-  return { top: run(aTop, bTop), bottom: run(aBottom, bBottom), roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5 };
+  const slant: [number, number] =
+    strip && stripWidth > 0 ? (strip.side === "a" ? [x0 + stripWidth, x1] : [x0, x1 - stripWidth]) : [x0, x1];
+  return {
+    top: run(aTop, bTop),
+    bottom: run(aBottom, bBottom),
+    roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5,
+    slant,
+  };
+}
+
+/**
+ * The fill of a band that ends at a point: `--jb-point-<tone>` at the point's
+ * end, `--jb-line-<tone>` at the other, easing between them across the slant
+ * (a gradient pads its end colours beyond its ends, so the flat strip and the
+ * overlap into each pane take the colour of the end they belong to). The
+ * result sits at gutter A's right edge and gutter B's left edge.
+ */
+function pointGradient(
+  defs: SVGElement,
+  g: BandGeometry,
+  side: Side,
+  resultPoint: boolean,
+  tone: string,
+): string {
+  const point = `var(--jb-point-${tone})`;
+  const tint = `var(--jb-line-${tone})`;
+  // Colour at the slant's left and right ends.
+  const resultOnRight = side === "left";
+  const atResult = resultPoint ? point : tint;
+  const atSide = resultPoint ? tint : point;
+  const [from, to] = resultOnRight ? [atSide, atResult] : [atResult, atSide];
+  const id = `jb-point-grad-${++gradientSeq}`;
+  const grad = document.createElementNS(SVG_NS, "linearGradient");
+  grad.setAttribute("id", id);
+  grad.setAttribute("gradientUnits", "userSpaceOnUse");
+  grad.setAttribute("x1", fmt(g.slant[0]));
+  grad.setAttribute("x2", fmt(g.slant[1]));
+  grad.setAttribute("y1", "0");
+  grad.setAttribute("y2", "0");
+  for (const [offset, colour] of [["0", from], ["1", to]] as const) {
+    const stop = document.createElementNS(SVG_NS, "stop");
+    stop.setAttribute("offset", offset);
+    stop.setAttribute("style", `stop-color:${colour}`);
+    grad.appendChild(stop);
+  }
+  defs.appendChild(grad);
+  return `url(#${id})`;
 }
 
 type PathData = Record<string, string>;
 
 /** A filled band: a closed ring of the top run and the reversed bottom run. */
-function appendBand(target: SVGElement, g: BandGeometry, className: string, data: PathData): void {
+function appendBand(target: SVGElement, g: BandGeometry, className: string, data: PathData, style?: string): void {
   const ring = [...g.top, ...g.bottom.slice().reverse()];
-  appendPath(target, roundedPath(ring, 0, g.roundable) + " Z", className, data);
+  appendPath(target, roundedPath(ring, 0, g.roundable) + " Z", className, data, style);
 }
 
 /**
