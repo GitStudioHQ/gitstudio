@@ -134,6 +134,8 @@ export class ConflictsDashboard {
     };
     this.closable = opts.closable ?? true;
     this.element = el("div", "cd-dash");
+    // A label on a plain div is ignored; as a region it is a landmark.
+    this.element.setAttribute("role", "region");
     this.element.setAttribute("aria-label", "Conflicts");
     root.replaceChildren(this.element);
     this.element.addEventListener("keydown", (e) => {

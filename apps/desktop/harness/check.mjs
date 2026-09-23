@@ -48,6 +48,9 @@ const CASES = [
   // The top bar, with room and without it.
   ["the-top-bar-never-sacrifices-the-branch", "code", { width: 1600 }],
   ["the-top-bar-never-sacrifices-the-branch", "code", { width: 820 }],
+  // …and with an operation stopped, when the bar carries one more chip.
+  ["the-top-bar-never-sacrifices-the-branch", "code", { width: 820, extra: "op=rebase&conflicts=2" }],
+  ["the-top-bar-never-sacrifices-the-branch", "code", { width: 1600, extra: "op=rebase&conflicts=2" }],
   // Creating and editing a branch.
   ["a-new-branch-says-where-it-starts", "branches"],
   ["a-branch-name-git-would-refuse-is-caught-before-git", "branches"],

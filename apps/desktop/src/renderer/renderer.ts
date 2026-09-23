@@ -7128,7 +7128,7 @@ class App {
       const was = chip.hidden;
       chip.hidden = !ind;
       if (ind) {
-        chip.replaceChildren(glyph("git-merge"), span(ind.label));
+        chip.replaceChildren(glyph("git-merge"), span(ind.label, "topbar-opchip-label"));
         chip.title = ind.title;
         chip.setAttribute("aria-label", ind.title);
       }
