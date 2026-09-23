@@ -215,8 +215,10 @@ test("aborting forgets the messages that were abandoned with it", async () => {
     }));
     assert.equal((await rebase.apply({ base: "trunk", rows })).status, "stopped");
 
-    // The user changes their mind and aborts — discarding that draft.
-    const ab = await bridge.rebaseAbort();
+    // The user changes their mind and aborts — discarding that draft. Through
+    // op:abort, the one abort the app offers: OperationProvider.abort runs
+    // the rebase's through the runner, which forgets the queue.
+    const ab = await bridge.opAbort();
     assert.equal(ab.ok, true, `abort succeeds (${ab.message ?? ""})`);
     const after = queuePresent(root);
     assert.ok(

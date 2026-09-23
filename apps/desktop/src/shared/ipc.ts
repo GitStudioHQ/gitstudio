@@ -2199,7 +2199,6 @@ export interface IpcChannels {
   "git:opState": [void, GitOpState];
   "merge:abort": [void, CommitActionResult];
   "merge:continue": [void, CommitActionResult];
-  "rebase:abort": [void, CommitActionResult];
   "rebase:continue": [void, CommitActionResult];
   "rebase:skip": [void, CommitActionResult];
   "cherryPick:abort": [void, CommitActionResult];

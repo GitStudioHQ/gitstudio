@@ -1155,7 +1155,6 @@ function registerIpc(): void {
   handle("am:abort", () => bridge.amAbort());
   handle("am:skip", () => bridge.amSkip());
   handle("am:continue", () => bridge.amContinue());
-  handle("rebase:abort", () => bridge.rebaseAbort());
   handle("rebase:continue", () => bridge.rebaseContinue());
   handle("rebase:skip", () => bridge.rebaseSkip());
   // Merge parity: role-based conflicts, the operation, the JetBrains hand-off
