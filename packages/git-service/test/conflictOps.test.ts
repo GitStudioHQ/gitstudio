@@ -357,6 +357,40 @@ test("a glob-shaped file name touches only itself (pathspecs are literal)", asyn
   }
 });
 
+test("a glob-shaped name the index no longer holds (a race) still reaches no other file", async () => {
+  // git reads a pathspec literally only while the index has that exact path;
+  // once it is gone (resolved or removed between our listing and the write),
+  // `checkout --theirs -- '[ab].txt'` globs and resolves a.txt and b.txt
+  // instead (verified, scratchpad p2/exp5.sh). The listing below claims
+  // '[ab].txt' is conflicted while the index has no such entry.
+  const r = merged("glob-race", (repo, side) => {
+    repo.write("a.txt", `${side} a\n`);
+    repo.write("b.txt", `${side} b\n`);
+  });
+  try {
+    const real = new GitProcess({ cwd: r.root });
+    const stale = {
+      run: async (args: string[], opts?: { signal?: AbortSignal; input?: string }) => {
+        const res = await real.run(args, opts);
+        if (args.join(" ") === "ls-files -u -z") {
+          const fake = ["1", "2", "3"].map((s) => `100644 ${"e".repeat(40)} ${s}\t[ab].txt`).join("\u0000");
+          return { ...res, stdout: `${fake}\u0000${res.stdout}` };
+        }
+        return res;
+      },
+    } as unknown as GitProcess;
+    const ctx = r.ctx();
+    const ops = new ConflictOps(stale, r.root, ctx.conflict, ctx.operation);
+    await ops.takeStage("[ab].txt", 3);
+    assert.equal(porcelainXY(r).get("a.txt"), "UU", "a.txt was not resolved by a pattern");
+    assert.equal(porcelainXY(r).get("b.txt"), "UU");
+    assert.match(r.read("a.txt"), /^<{7} /m, "and its markers are still there");
+    real.dispose();
+  } finally {
+    r.cleanup();
+  }
+});
+
 test("a path that escapes the repository, or reaches outside through a symlinked folder, is refused", async () => {
   const r = manyShapes();
   const outside = mkdtempSync(join(tmpdir(), "gs-op-outside-"));
