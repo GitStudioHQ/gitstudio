@@ -1,0 +1,30 @@
+scripts/merge-studio/import.mjs
+  s_26f5e669d3043c::t_b20ad8915ed772 557
+  s_26f5e669d3043c::t_6d5fc5c815786c 861-866,869
+scripts/merge-studio/test/docs.test.mjs
+  s_26f5e669d3043c::t_61d0200c33c35b 110-128
+docs/merge-studio.md
+  s_26f5e669d3043c::t_ed84cb82039bdb 74-75,81-85
+apps/merge-studio/RELEASING.md
+  s_26f5e669d3043c::t_faa6e378016c3b 125-126,129-132
+  s_26f5e669d3043c::t_a79c324a38430a 181-183
+  s_26f5e669d3043c::t_e34092ead47b14 133
+scripts/merge-studio/test/import.test.mjs
+  s_26f5e669d3043c::t_65b328212d08a5 733-773
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e1c734aafdf640893cd3f4ce5d8c5afcbd64fc75",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
