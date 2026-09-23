@@ -81,11 +81,13 @@ files, which the export never writes or removes: `release.yml`, `SECURITY.md`,
    makes one GitStudio commit for each commit of the pull request, with the
    contributor as author and an
    `Imported-from: GitStudioHQ/merge-studio#<n> / <sha>` trailer. It maps
-   `vendor/gitstudio/<package>/src/**` to `packages/<package>/src/**` and the
-   files at merge-studio's root to `apps/merge-studio/**`, leaves out what the
-   export generates, refuses what is merge-studio's own, and finishes by
-   exporting the result and comparing it with the contributor's files
-   ("identical", or "merged" where GitStudio had changed the same file since).
+   `vendor/gitstudio/<package>/src/**` to `packages/<package>/src/**`,
+   `.github/workflows/ci.yml` to `scripts/merge-studio/merge-studio-ci.yml`,
+   and the files at merge-studio's root to `apps/merge-studio/**`. It leaves
+   out what the export generates, refuses what is merge-studio's own, and
+   finishes by exporting the result and comparing it with the contributor's
+   files ("identical", or "merged" where GitStudio had changed the same file
+   since).
    `RELEASING.md` says what each answer means and how to finish a conflict.
 3. **GitStudio's CI checks it.** Push the branch and open a pull request on
    gitstudio. Its CI type-checks and tests every workspace on Linux, macOS
