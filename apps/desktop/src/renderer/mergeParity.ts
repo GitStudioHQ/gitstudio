@@ -284,6 +284,13 @@ export class DesktopMergeAdapter {
           const r = await exclusive(() => invoke("conflict:resolve", { path, content: message.text }));
           if (!r) return;
           if (!r.ok) {
+            // `applied` means the result was WRITTEN (protocol.ts). A refusal
+            // (expected: no longer conflicted, not UTF-8 text, deleted on both
+            // sides) writes nothing — say it failed, and leave Apply live.
+            if (r.expected) {
+              deliver({ type: "outcome", kind: "failed", text: r.message || `Nothing was written to ${path}.` });
+              return;
+            }
             deliver({ type: "applied", staged: false, message: r.message || `Couldn't save the merge of ${path}.` });
             return;
           }

@@ -220,6 +220,20 @@ test("a failed write is said, never reported as staged", async () => {
   assert.equal(r.undos.length, 0, "and no undo for a change that did not happen");
 });
 
+test("an Apply the main process refuses before writing anything is a failure, not an Apply", async () => {
+  // `applied` means "the result was written" (protocol.ts). A refusal — the
+  // file is no longer conflicted, isn't UTF-8 text, was deleted on both sides
+  // — writes nothing, and delivered as `applied{staged:false}` the shell
+  // said "Merge applied" above a note saying nothing was written, and spent
+  // its Apply button.
+  const why = "src/app.ts is no longer conflicted — nothing was written, so a resolution made elsewhere stays as it is.";
+  const r = adapterRig({ "conflict:resolve": { ok: false, changed: false, expected: true, message: why } });
+  await r.adapter.handle({ type: "apply", text: "x" });
+  assert.deepEqual(r.delivered, [{ type: "outcome", kind: "failed", text: why }]);
+  assert.deepEqual(r.log, [], "nothing to repaint");
+  assert.equal(r.undos.length, 0, "and no undo for a change that did not happen");
+});
+
 test("whole-file resolutions go by ROLE when the operation is known, by stage only when it is not", async () => {
   const withOp = adapterRig({ "conflict:takeRole": OK, "conflict:state": snapshot() });
   await withOp.adapter.handle({ type: "takeRole", role: "yours" });

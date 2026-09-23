@@ -398,6 +398,11 @@
     changedFiles.push({ path: "packages/engine/src/spacing.ts", status: "M", staged: false });
     changedFiles.push({ path: "packages/engine/src/spacing-inner.ts", status: "M", staged: false });
   }
+  // ?difftool=jetbrains (Settings ▸ Merge shows diffs in the IDE) adds a
+  // changed BINARY, the one kind of file the IDE route must not take.
+  if (params.get("difftool")) {
+    changedFiles.push({ path: "brand/logo.png", status: "M", staged: false });
+  }
 
 
   // ── Merge parity: a stopped operation, its conflicts, and every verb on them ──
@@ -517,7 +522,7 @@
       settings: {
         autoApplyNonConflicting: false,
         conflictResolver: params.get("resolver") === "jetbrains" ? "jetbrains" : "embedded",
-        diffTool: "embedded", preferredIde: "auto", jetbrainsPath: "",
+        diffTool: params.get("difftool") === "jetbrains" ? "jetbrains" : "embedded", preferredIde: "auto", jetbrainsPath: "",
       },
     };
     const pending = () => state.files.filter((f) => f.status !== "resolved").length;
@@ -2434,9 +2439,18 @@
   };
   const IDE = { id: "webstorm", name: "WebStorm", command: "/Applications/WebStorm.app/Contents/MacOS/webstorm" };
   dynamic["jetbrains:detect"] = () => (params.get("noide") === "1" ? undefined : IDE);
-  dynamic["jetbrains:merge"] = () =>
+  dynamic["jetbrains:merge"] = (req) => {
+    if (params.get("noide") === "1") return { ok: false, changed: false, message: "No JetBrains IDE was found.", expected: true };
+    // As the main process does (ConflictOps.externalMergeInput): the IDE merges
+    // LINES, so a binary, a deleted side or a file too large to read is refused.
+    const f = req && mp.file(req.path);
+    if (f && f.shape !== "text" && f.shape !== "added-both") {
+      return { ok: false, changed: false, expected: true, message: `${req.path} has no text to merge line by line — use Accept Yours or Accept Theirs.` };
+    }
+    return { ok: true, changed: false };
+  };
+  dynamic["jetbrains:diff"] = () =>
     params.get("noide") === "1" ? { ok: false, changed: false, message: "No JetBrains IDE was found.", expected: true } : { ok: true, changed: false };
-  dynamic["jetbrains:diff"] = dynamic["jetbrains:merge"];
   dynamic["jetbrains:markResolved"] = (req) => resolveRow(req && req.path, "merged");
   dynamic["merge:settings"] = () => ({ ...mp.state.settings });
   dynamic["merge:setSettings"] = (patch) => {

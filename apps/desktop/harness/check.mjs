@@ -391,6 +391,13 @@ const CASES = [
   ["a-launcher-path-that-is-not-an-ide-is-refused-and-says-so", "settings"],
   ["a-conflict-git-could-not-read-says-so", "changes", { extra: "opctx=reporter&fail=conflict:model" }],
   ["the-ide-route-hands-over-and-marks-resolved", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
+  ["the-ide-route-leaves-a-conflict-with-no-text-to-the-panel", "changes", { extra: "opctx=merge&resolver=jetbrains" }],
+  ["the-ide-diff-route-leaves-a-binary-to-the-built-in-pane", "changes", { extra: "difftool=jetbrains" }],
+  ["the-keyboard-comes-back-to-the-dashboard-after-the-merge-editor", "changes", { extra: "opctx=merge" }],
+  // A 1000px window: the merge editor and the dashboard are one 443px pane.
+  ["the-merge-editors-actions-stay-on-screen-in-a-narrow-window", "changes", { width: 1000, extra: "opctx=merge" }],
+  ["the-merge-editors-actions-stay-on-screen-in-a-narrow-window", "changes", { width: 1000, extra: "opctx=merge", theme: "light" }],
+  ["the-dashboard-keeps-every-file-name-in-a-narrow-window", "changes", { width: 1000, extra: "opctx=merge" }],
   ["a-stopped-operation-shows-from-every-view", "issues", { extra: "op=rebase&conflicts=2" }],
   ["a-stopped-operation-shows-from-every-view", "issues", { arg: "none" }],
   ["the-rebase-view-offers-skip-where-git-does", "rebase", { extra: "rebasing=1&op=rebase&apply=1&skip=1", arg: "yes" }],

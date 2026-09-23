@@ -40,11 +40,13 @@ import { GraphMount } from "./graphMount";
 import { DiffPanel, type ConflictHandlers } from "./diffPanel";
 import {
   DesktopConflicts,
+  conflictShape,
   detectJetBrains,
   loadMergeSettings,
   opIndicator,
   stripText,
 } from "./mergeParity";
+import { hasText } from "@gitstudio/webview-ui/conflicts/opText";
 import { mergeSettingsCard } from "./views/mergeSettingsCard";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
@@ -229,6 +231,8 @@ class App {
   private changesPanel?: { root: string; surface: HTMLElement; panel: DiffPanel };
   /** The conflicts dashboard in that surface, kept with it (its inline confirms are its state). */
   private changesDash?: ConflictsDashboard;
+  /** The file whose row gets the keyboard when the dashboard comes back from the merge editor. */
+  private changesDashFocus?: { path: string; at: number };
   /** The top-bar chip naming a stopped operation. */
   private opChipEl?: HTMLButtonElement;
   /** The repo changed while the graph was parked — reload in place on return. */
@@ -6971,10 +6975,12 @@ class App {
           // Resolved: back to the dashboard, which shows the file done and —
           // once nothing is left — the way to continue.
           onResolved: () => {
+            this.returnKeyboardToDashboard(path);
             this.changesOpenKey = undefined;
             void this.repaintChanges();
           },
           onExit: () => {
+            this.returnKeyboardToDashboard(path);
             if (this.changesShowConflicts) this.changesShowConflicts();
             else diffPanel.showEmpty("Select a file to view its diff.");
           },
@@ -7009,6 +7015,12 @@ class App {
     const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
     if (gen !== this.diffGen) return true;
     if (settings.conflictResolver !== "jetbrains") return false;
+    // The IDE merges LINES. A binary, a deleted side, a file too large to read
+    // whole: the main process refuses to hand those over (externalMergeInput),
+    // so asking only put up an error toast — again on every repaint the
+    // repository watcher set off while the file stayed open. The built-in
+    // panel resolves them.
+    if (!hasText(conflictShape(model))) return false;
     // Already handed over and still waiting (the view repainted around it):
     // do not launch the IDE again. Every repaint used to open another merge
     // window — and the main process removed the previous window's LOCAL /
@@ -7060,6 +7072,11 @@ class App {
     const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
     if (gen !== this.diffGen) return true;
     if (settings.diffTool !== "jetbrains" || !ide) return false;
+    // The sibling of resolveInIde's rule: the IDE diffs TEXT. The main process
+    // hands it HEAD's side as a decoded string, so a binary arrived as U+FFFD
+    // soup beside the real file — a diff of damage, not of the change. The
+    // built-in pane says what happened to a binary instead.
+    if (diff.binary) return false;
     // Already open in the IDE (the view repainted around the pane): not again.
     const tag = `ide-diff:${diff.path}`;
     if (panel.shows(tag)) return true;
@@ -7080,6 +7097,34 @@ class App {
 
   /** Say it once per session: a JetBrains resolver setting with no IDE to hand to. */
   private static noIdeSaid = false;
+
+  /**
+   * The merge editor is about to go (Exit viewer, or the file was resolved)
+   * and the dashboard to come back in its place. The editor takes the focused
+   * button with it, and the dashboard is rebuilt without the keyboard — so it
+   * landed on <body> and a keyboard user started over from the top bar. Ask
+   * the next dashboard paint to put it on this file's row instead; only when
+   * the keyboard was IN the editor (or already nowhere), and only for a
+   * moment, so a later repaint never pulls focus from wherever it has gone.
+   */
+  private returnKeyboardToDashboard(path: string): void {
+    const active = document.activeElement as HTMLElement | null;
+    const inEditor = !active || active === document.body || !!active.closest(".merge-wrap, .ms-shell");
+    this.changesDashFocus = inEditor ? { path, at: Date.now() } : undefined;
+  }
+
+  /** A dashboard just painted: honour a pending `returnKeyboardToDashboard`. */
+  private settleDashboardFocus(dash: ConflictsDashboard): void {
+    const want = this.changesDashFocus;
+    if (!want) return;
+    const active = document.activeElement as HTMLElement | null;
+    const lost = !active || active === document.body || dash.element.contains(active);
+    if (Date.now() - want.at > 5000 || !lost) {
+      this.changesDashFocus = undefined;
+      return;
+    }
+    if (dash.focusFile(want.path)) this.changesDashFocus = undefined;
+  }
 
   /** The app-lifetime conflicts controller (see `conflictsCtl`). */
   private conflicts(): DesktopConflicts {
@@ -7137,7 +7182,10 @@ class App {
       strip.hidden = false;
     };
     const render = (state: ConflictsState): void => {
-      if (dash?.element.isConnected) dash.render(state);
+      if (dash?.element.isConnected) {
+        dash.render(state);
+        this.settleDashboardFocus(dash);
+      }
       paintStrip();
     };
     const handle = ctl.attach(render);
