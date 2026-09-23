@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { locateJetBrainsIde } from "../src/jetbrains/locator";
-import { launchJetBrainsDiff, launchJetBrainsMerge } from "../src/jetbrains/launcher";
+import { launchJetBrainsDiff, launchJetBrainsMerge, windowsCmdLine } from "../src/jetbrains/launcher";
 import { reporterRepo } from "./opRepo";
 
 // W5 (PLAN §3.5): the JetBrains hand-off. The locator is Merge Studio's plus
@@ -144,6 +144,76 @@ test("Linux: Toolbox scripts and a tarball under /opt", async () => {
     ...fs(["/opt/pycharm-2024.1/bin/pycharm.sh"], { "/opt": ["pycharm-2023.2", "pycharm-2024.1"] }),
   });
   assert.equal(opt?.command, "/opt/pycharm-2024.1/bin/pycharm.sh");
+});
+
+test("an explicit path to an install FOLDER is looked inside, on every platform", async () => {
+  // Only a FILE counted, so pointing the setting at the IDE's folder — the
+  // natural thing to pick in a folder chooser — was silently ignored and a
+  // different IDE opened.
+  const linux = await locateJetBrainsIde({
+    platform: "linux",
+    env: {},
+    homeDir: "/home/dev",
+    explicitPath: "/opt/idea-IU-2024.2",
+    ...fs(["/opt/idea-IU-2024.2/bin/idea.sh", "/home/dev/.local/share/JetBrains/Toolbox/scripts/webstorm"]),
+  });
+  assert.deepEqual(linux, { id: "custom", name: "IntelliJ IDEA", command: "/opt/idea-IU-2024.2/bin/idea.sh" });
+  const win = await locateJetBrainsIde({
+    platform: "win32",
+    env: {},
+    homeDir: "C:\\Users\\dev",
+    explicitPath: "C:\\Tools\\PyCharm 2024.1\\",
+    ...fs(["C:\\Tools\\PyCharm 2024.1\\bin\\pycharm64.exe"]),
+  });
+  assert.equal(win?.command, "C:\\Tools\\PyCharm 2024.1\\bin\\pycharm64.exe");
+  const mac = await locateJetBrainsIde({
+    platform: "darwin",
+    env: {},
+    homeDir: "/Users/dev",
+    // A bundle chosen without its ".app" suffix showing (Finder hides it).
+    explicitPath: "/Users/dev/Applications/Rider",
+    ...fs(["/Users/dev/Applications/Rider/Contents/MacOS/rider"]),
+  });
+  assert.equal(mac?.command, "/Users/dev/Applications/Rider/Contents/MacOS/rider");
+});
+
+test("Linux: a snap install's launcher names are found in /snap/bin", async () => {
+  for (const [bin, id] of [
+    ["pycharm-professional", "pycharm"],
+    ["pycharm-community", "pycharm"],
+    ["intellij-idea-ultimate", "intellij"],
+    ["intellij-idea-community", "intellij"],
+  ] as const) {
+    const hit = await locateJetBrainsIde({ platform: "linux", env: {}, homeDir: "/home/dev", ...fs([`/snap/bin/${bin}`]) });
+    assert.equal(hit?.id, id, bin);
+    assert.equal(hit?.command, `/snap/bin/${bin}`);
+  }
+});
+
+test("Windows: a .cmd launcher's command line leaves no %VAR% or metacharacter for cmd to act on", () => {
+  // cmd.exe expands %VAR% even INSIDE double quotes, so quoting each argument
+  // (what the launcher did) let a file named `%PATH%.txt` reach the IDE as
+  // the contents of PATH — and `&` inside a name could start a second command.
+  const line = windowsCmdLine("C:\\Users\\dev\\AppData\\Local\\JetBrains\\Toolbox\\scripts\\webstorm.cmd", [
+    "merge",
+    "C:\\repo\\%PATH%.txt",
+    "C:\\repo\\a & calc.txt",
+    'C:\\repo\\say "hi".txt',
+    "C:\\dir with space\\",
+  ]);
+  assert.equal(line.file.toLowerCase().endsWith("cmd.exe"), true);
+  assert.deepEqual(line.args.slice(0, 3), ["/d", "/s", "/c"]);
+  // `/s /c "<line>"`: cmd strips exactly the outer pair of quotes.
+  assert.ok(line.args[3].startsWith('"') && line.args[3].endsWith('"'));
+  const cmd = line.args[3].slice(1, -1);
+  // Every metacharacter carries a caret, so cmd never sees a live % or &.
+  assert.doesNotMatch(cmd.replace(/\^./g, ""), /[%&"|<>^]/, cmd);
+  assert.match(cmd, /\^%PATH\^%/, "the % signs are escaped, not merely quoted");
+  assert.match(cmd, /\^&/);
+  // The quote inside a name is backslash-escaped for the program's own parser.
+  assert.match(cmd, /say\^ \\\^"hi\\\^"/);
+  // A trailing backslash is doubled so it cannot escape the closing quote.
+  assert.match(cmd, /space\\\\\^"/);
 });
 
 test("nothing installed: undefined", async () => {

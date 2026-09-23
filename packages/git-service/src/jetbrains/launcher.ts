@@ -104,10 +104,10 @@ function launch(ide: JetBrainsIdeInfo, args: string[], dir: string | undefined):
   const dispose = once(async () => {
     if (dir) await removeDir(dir);
   });
-  // Toolbox's Windows launchers are .cmd scripts, which need a shell — and a
-  // shell splits unquoted arguments at spaces, so quote every one.
+  // Toolbox's Windows launchers are .cmd scripts, which only cmd.exe can run —
+  // through a command line cmd cannot reinterpret (see windowsCmdLine).
   const script = process.platform === "win32" && /\.(cmd|bat)$/i.test(ide.command);
-  const argv = script ? args.map((a) => `"${a.replace(/"/g, '""')}"`) : args;
+  const run = script ? windowsCmdLine(ide.command, args) : { file: ide.command, args };
   return new Promise((resolveLaunch) => {
     let settled = false;
     const settle = (value: JetBrainsLaunch): void => {
@@ -116,11 +116,11 @@ function launch(ide: JetBrainsIdeInfo, args: string[], dir: string | undefined):
       resolveLaunch(value);
     };
     try {
-      const child = spawn(script ? `"${ide.command}"` : ide.command, argv, {
+      const child = spawn(run.file, run.args, {
         detached: true,
         stdio: "ignore",
-        shell: script,
         windowsHide: true,
+        ...(script ? { windowsVerbatimArguments: true } : {}),
       });
       child.once("error", (err) => {
         void dispose();
@@ -135,6 +135,33 @@ function launch(ide: JetBrainsIdeInfo, args: string[], dir: string | undefined):
       settle({ ...refused(ide, err), dispose });
     }
   });
+}
+
+/** Everything cmd.exe acts on outside a quoted region. */
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/**
+ * The command line that runs a .cmd / .bat launcher (JetBrains Toolbox's
+ * Windows scripts) through cmd.exe without cmd reinterpreting any argument.
+ *
+ * Quoting each argument is not enough: cmd expands `%VAR%` even inside double
+ * quotes, so a file named `%PATH%.txt` reached the IDE as the contents of
+ * PATH. The approach is cross-spawn's (the npm ecosystem's), after
+ * https://qntm.org/cmd: quote each argument for the PROGRAM's own parser
+ * (backslashes before a quote doubled, the quote backslash-escaped), then put
+ * a caret before every cmd metacharacter — the quotes included, so cmd never
+ * enters a quoted region and every `%`, `&`, `|` … is taken literally. Run as
+ * `cmd /d /s /c "<line>"` with verbatim arguments, so Node adds no quoting of
+ * its own.
+ */
+export function windowsCmdLine(command: string, args: string[]): { file: string; args: string[] } {
+  const arg = (a: string): string => {
+    let s = a.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
+    s = `"${s}"`;
+    return s.replace(CMD_META, "^$1");
+  };
+  const line = [command.replace(CMD_META, "^$1"), ...args.map(arg)].join(" ");
+  return { file: process.env.comspec || "cmd.exe", args: ["/d", "/s", "/c", `"${line}"`] };
 }
 
 function refused(ide: JetBrainsIdeInfo, err: unknown): JetBrainsLaunch {

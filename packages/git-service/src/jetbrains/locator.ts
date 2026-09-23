@@ -45,6 +45,11 @@ interface IdeSpec {
   apps: string[];
   /** Windows install-folder prefixes under %ProgramFiles%\JetBrains ("WebStorm 2024.1"). */
   winDirs: string[];
+  /**
+   * Launcher names a snap install puts in /snap/bin when they differ from
+   * `bin` (the edition is part of the snap's name).
+   */
+  snap?: string[];
 }
 
 const SPECS: Record<JetBrainsIdeId, IdeSpec> = {
@@ -54,12 +59,14 @@ const SPECS: Record<JetBrainsIdeId, IdeSpec> = {
     bin: "pycharm",
     apps: ["PyCharm", "PyCharm Professional", "PyCharm Professional Edition", "PyCharm Community", "PyCharm Community Edition", "PyCharm CE"],
     winDirs: ["PyCharm"],
+    snap: ["pycharm-professional", "pycharm-community", "pycharm-educational"],
   },
   intellij: {
     id: "intellij",
     bin: "idea",
     apps: ["IntelliJ IDEA", "IntelliJ IDEA Ultimate", "IntelliJ IDEA Community Edition", "IntelliJ IDEA CE"],
     winDirs: ["IntelliJ IDEA"],
+    snap: ["intellij-idea-ultimate", "intellij-idea-community", "intellij-idea-educational"],
   },
   phpstorm: { id: "phpstorm", bin: "phpstorm", apps: ["PhpStorm"], winDirs: ["PhpStorm"] },
   goland: { id: "goland", bin: "goland", apps: ["GoLand"], winDirs: ["GoLand"] },
@@ -84,7 +91,9 @@ export async function locateJetBrainsIde(
   const explicit = opts.explicitPath?.trim();
   if (explicit) {
     const cmd = resolveExplicit(explicit, platform, exists, j);
-    if (cmd) return { id: "custom", name: nameFromPath(explicit), command: cmd };
+    // Named from the launcher found (`idea.sh` is IntelliJ IDEA even inside
+    // a folder called "idea-IU-2024.2"), else from what was chosen.
+    if (cmd) return { id: "custom", name: knownName(cmd) ?? nameFromPath(explicit), command: cmd };
   }
 
   // 2. The preferred IDE first, then the default order.
@@ -107,7 +116,13 @@ export async function locateJetBrainsIde(
   return undefined;
 }
 
-/** A path the user typed: a launcher, or (macOS) an .app bundle we look inside. */
+/**
+ * A path the user chose: a launcher, or an install FOLDER we look inside — a
+ * macOS bundle (`Contents/MacOS/<bin>`, with or without its ".app" showing),
+ * or a Linux / Windows install (`bin/<bin>.sh`, `bin/<bin>64.exe`, …).
+ * Picking the IDE's folder in a folder chooser is the natural thing to do;
+ * only a FILE used to count, so that choice was silently ignored.
+ */
 function resolveExplicit(
   p: string,
   platform: NodeJS.Platform,
@@ -115,23 +130,40 @@ function resolveExplicit(
   j: (...parts: string[]) => string,
 ): string | undefined {
   if (exists(p)) return p;
-  if (platform === "darwin" && /\.app\/?$/i.test(p)) {
-    const bundle = p.replace(/\/$/, "");
-    for (const spec of Object.values(SPECS)) {
-      const inner = j(bundle, "Contents", "MacOS", spec.bin);
-      if (exists(inner)) return inner;
+  const dir = p.replace(/[\\/]+$/, "");
+  if (!dir) return undefined;
+  for (const spec of Object.values(SPECS)) {
+    const inner =
+      platform === "darwin"
+        ? [j(dir, "Contents", "MacOS", spec.bin)]
+        : platform === "win32"
+          ? [j(dir, "bin", `${spec.bin}64.exe`), j(dir, "bin", `${spec.bin}.exe`), j(dir, "bin", `${spec.bin}.cmd`)]
+          : [j(dir, "bin", `${spec.bin}.sh`), j(dir, "bin", spec.bin)];
+    for (const candidate of inner) {
+      if (exists(candidate)) return candidate;
     }
   }
   return undefined;
 }
 
 function nameFromPath(p: string): string {
+  return knownName(p) ?? (cleanBase(p) || "JetBrains IDE");
+}
+
+function cleanBase(p: string): string {
   const base = p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
-  const clean = base.replace(/\.(app|exe|cmd|bat|sh)$/i, "").replace(/64$/, "");
-  const known = JETBRAINS_IDES.find(
-    (i) => i.name.toLowerCase() === clean.toLowerCase() || SPECS[i.id].bin === clean.toLowerCase(),
-  );
-  return known?.name ?? (clean || "JetBrains IDE");
+  return base.replace(/\.(app|exe|cmd|bat|sh)$/i, "").replace(/64$/, "");
+}
+
+/** The product name when the path's last part names a known IDE or launcher. */
+function knownName(p: string): string | undefined {
+  const clean = cleanBase(p).toLowerCase();
+  return JETBRAINS_IDES.find(
+    (i) =>
+      i.name.toLowerCase() === clean ||
+      SPECS[i.id].bin === clean ||
+      (SPECS[i.id].snap ?? []).includes(clean),
+  )?.name;
 }
 
 /** PATH plus the folders a GUI app's minimal PATH leaves out (Toolbox scripts first). */
@@ -167,10 +199,14 @@ function findCli(
   j: (...parts: string[]) => string,
 ): string | undefined {
   const exts = platform === "win32" ? [".cmd", ".exe", ".bat"] : [""];
+  // A snap's launcher carries the edition in its name ("pycharm-professional").
+  const names = platform === "linux" ? [spec.bin, ...(spec.snap ?? [])] : [spec.bin];
   for (const dir of dirs) {
-    for (const ext of exts) {
-      const p = j(dir, spec.bin + ext);
-      if (exists(p)) return p;
+    for (const name of names) {
+      for (const ext of exts) {
+        const p = j(dir, name + ext);
+        if (exists(p)) return p;
+      }
     }
   }
   return undefined;
