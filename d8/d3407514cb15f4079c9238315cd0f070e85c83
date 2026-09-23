@@ -1,0 +1,434 @@
+apps/desktop/test/inTheWayDoors.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-356
+apps/extension/src/views/branchesView.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 3,47-58,63,114,191-195
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_b434bcf5ec7573 14569
+  s_26f5e669d3043c::t_24f8c5b01f0dda 14510-14513
+  s_26f5e669d3043c::t_bf73f8f537ce12 14427
+  s_26f5e669d3043c::t_41669db91cc6a4 1557-1664,2762-2766,8710-8716,8766,8769-8770,8774,8779,8781-8784,8791,8799,8839-8842,8872-9087,9218-9246,9619-9623,9650-9657,10187-10189,10201-10211,13017-13086,13644-13808,14330-14426,14428-14450,14457-14509,14514-14568,14570-15016
+  s_26f5e669d3043c::t_effb9cd93c6062 14451-14456
+packages/git-service/src/SyncOps.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 2-4,22-27,29-36,41-254,256-266,277-312,395,462-496,628-693,695-704,712-1122
+packages/git-service/test/logRefsMany.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-156
+packages/host-bridge/src/git.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 83-86,88-89
+packages/git-service/test/branchFullNames.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-267
+packages/git-service/src/BranchOps.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 45-74,143-148,194-195,201-215,217-227,235-238,240-269,289-290,292,298-303,309
+apps/desktop/src/renderer/inTheWayAsk.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-64
+apps/desktop/src/main/expectedError.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 36-56
+apps/desktop/harness/contrast.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 80-84,112-145,236,238,240-255,362-365
+packages/git-service/test/changesInTheWay.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-534
+packages/webview-ui/test/search.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 21
+apps/desktop/electron-builder.yml
+  s_26f5e669d3043c::t_41669db91cc6a4 22-23,26-37
+  s_26f5e669d3043c::t_900fa08e6fef05 38
+apps/desktop/test/branchListCollisions.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-134
+apps/extension/src/git/pullMode.ts
+  s_26f5e669d3043c::t_e35102ad48a928 52-66
+  s_26f5e669d3043c::t_45de9724a99261 13
+  s_26f5e669d3043c::t_41669db91cc6a4 1-12,14-51,67-173
+packages/git-service/test/pullStopped.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-479
+packages/webview-ui/src/commit-details.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 18,66-85,89,93-98,117,561-571,940-969,989-1024
+  s_26f5e669d3043c::t_6e7a353e60c867 1025
+packages/webview-ui/test/refLayout.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 18-20,26-57
+packages/webview-ui/src/graph/sidebar-main.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 9,87
+apps/desktop/src/renderer/peeks.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 31-34
+apps/desktop/test/checkoutRefArm.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 9,100-147
+  s_26f5e669d3043c::t_7149e6cf4a7d47 148
+apps/desktop/test/identityIpc.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 4,57-66,69-80
+apps/extension/test/syncLabel.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-80
+apps/desktop/test/graphAdapterCore.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 33,63-70
+  s_26f5e669d3043c::t_57d4f55a86daba 71-72
+packages/host-bridge/test/scrub.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 244-269
+packages/git-service/test/forceIfIncludes.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-230
+packages/git-service/test/gitToolHost.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 102-160
+packages/webview-ui/src/graph/commit-graph.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 44,67-68,71,74,222-239,279,522-527,574,600-601,664-667,702-703,709,1695-1697,1724-1729,1732-1733,1735-1736,1742-1744,1855-1856,1869,1932-1934,1939-1946,1981-1986,2042-2054,2675-2682,2685-2692,2745-2747,2795-2797,2799-2802,2815-2818,2820-2856,2861,3183,3200-3201,3204,3238-3246,3302,3304-3307,3800-3809,3811-3812,3816,3980,4003,4008,4028,4059,4085-4089,4094-4098,4102-4103,4107,4112,4116,4123,4158-4161,4409,4411,4414-4415,4419,4447-4449,4452-4457,4459-4461
+apps/desktop/test/refMenuItems.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 17-28
+packages/webview-ui/test/detailsChipMenu.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-273
+apps/desktop/src/renderer/graphMount.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 10-11,101,231-255
+  s_26f5e669d3043c::t_4b8faef9dcdea4 256
+apps/desktop/src/shared/graphAdapterCore.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 31-34
+packages/git-service/test/checkoutRef.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 7,158-186,198-232,239-278
+apps/desktop/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 9,17-18,89,102,134,141,143-144,155-241,260-334
+apps/extension/test/inTheWayStateTable.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-266
+apps/desktop/harness/perf.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 25,168,175,186
+apps/desktop/harness/fit.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 11-16,83-87,89,91-101,104-108,118-119,121-137,162,166-173,181-184,186-189,227-231,234-249,251,261-262,269-273,285-299
+apps/desktop/test/inTheWayCensus.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-350
+packages/git-service/src/index.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 85,90
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 25,49,481-484,595-605,706-712,731-735,829-833,837,849,911,951-953,955,958
+packages/git-service/src/checkoutRef.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 28,46-104,118-127,137-139
+packages/git-service/src/rebaseInProgress.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-48
+apps/extension/test/refFilterStore.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 5,46-48,103,107-138,174,180-185,188-189,208-210,246,248-250,252,254-343
+apps/desktop/src/main/github/prs.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 24,33,359-361,368,373,375,391-395,410,413-434
+packages/git-service/src/checkoutRemote.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 60-67,88
+packages/host-bridge/src/graphProtocol.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 12-18,20-26,94-102,106-108,121-122,124-141
+packages/webview-ui/src/graph/refLayout.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 2,15-17,20-22,34-39,43-49,53,55-56,62-64,66-67,70,72-73,75,83
+packages/webview-ui/test/chipLabels.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-164
+apps/desktop/src/renderer/aiSettings.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 435-438,440-441,501-505,507-511,513-522,530,541-544,564-571,577-581
+apps/extension/src/graph/refFilterStore.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 2-4,6-21,23,26-29,38-61,64-66,68-86,95-96,100,108-114,121-122,127-162
+packages/git-service/test/logRefs.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 7-8,12-20,23-42,59,61,65-67,72-79,100-101,105,109,111,113,118,122-132,159,163-169,172,176-212,215,217-291,297-300,304,308-316,323
+apps/desktop/src/main/github/projects.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 16-17,78-82,92,95-96,108,127,155,168-177,193
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 16,62,64-69,217-232,589-593,606-610,626-627,647-651,672-711,726,734,745
+apps/desktop/src/renderer/refMenuItems.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 9-10,54-56,59,61,65,72-106
+apps/mcp/README.md
+  s_26f5e669d3043c::t_41669db91cc6a4 25-29
+apps/desktop/esbuild.js
+  s_26f5e669d3043c::t_41669db91cc6a4 237-255,268,287
+packages/git-service/test/rebasePlan.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 126-151
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 58-59,104-108,130,156,537-540,1979,2080-2083,2087,2098-2101,2175,2281,2313,2319-2321,2333,2514,2575-2577,2579,2586,2588-2592,2595,2642,2660-2662,2666-2670,2673,2687,2695,2721,2725,2888-2890,2944-2949,2951,2970,2973,2981-2982,2987-2988,3001-3002,3094-3095,3263,3265,3270,3424-3430,3438,3447,3450,3510,3515,3536,3543-3545,3554,3556-3557,3563-3564,3570-3572,3576,3583-3584,3593,3609,3612,3615,3631-3634,3643,3647-3654,3685-3686,3692,3694,3702,3718,3720-3722,3725,3735,3737,3743-3744,3752,3760,3766-3770,3781,3783,3807,3811-3817,3820,3827,3835,3844,3855,3868,3871-3872,3896,3906-3907,3932,3934-3948,3951,3957,3973-3974,4008-4012,4016,4020,4022,4024,4029,4032-4033,4043,4047,4051,4058,4069,4103-4112,4150,4174-4178,4197,4206,4222-4223,4253,4255-4266,4268-4269,4289,4296-4302,4309-4311,8071-8072,8081-8096,8425-8475,8478-8495,8518-8532,8536-8542,9197-9200,9461-9471,9490,9638,9644-9676,9727-9731,9736,9740,9746,9758,9760-9761,9771,9775,9777,9929-9940,10261-10263,10265-10270
+  s_26f5e669d3043c::t_f8664355ef00b4 8476-8477
+apps/desktop/test/branchPush.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 77,113,151,184,210
+apps/desktop/test/rewordAcrossStop.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 228,346
+packages/webview-ui/test/refFilter.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 12,15,55-97
+packages/webview-ui/src/graph/refTip.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 29,31-36,39,71-78,85,91-94,97-98,312,327-331,333
+apps/desktop/src/renderer/styles/app.css
+  s_26f5e669d3043c::t_41669db91cc6a4 8341-8348,11257-11261
+  s_26f5e669d3043c::t_06d4e5103d053d 11262
+packages/host-bridge/test/graphRefFilter.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 6-12,14-15,17-20,22-23,26,96-99,110,112-202,210,212-213,217,221-283,292-354
+apps/desktop/harness/validate.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 22,89,92,95
+apps/desktop/harness/affordance.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 15-21,114-136,145-149,159-174,180-185,202-207,210-217,275-312,336-339,342,344,346-347,351,356-360,363-378,382-383,402-404,418-427,430
+packages/git-service/test/streamStdin.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-181
+apps/desktop/test/detailsRefs.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-77
+packages/git-service/src/LogProvider.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 32-36,39-50,74-75,96-98,102-104,106-119,132,154-156,169,171-176,184-189,193,202-230
+  s_26f5e669d3043c::t_52dabb0786b6bc 231-232
+apps/desktop/src/main/inTheWay.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-169
+apps/desktop/test/rebaseApplyReporting.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-153
+apps/desktop/test/repoNotice.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-109
+packages/webview-ui/src/styles/tokens.css
+  s_26f5e669d3043c::t_41669db91cc6a4 61-63
+apps/desktop/test/expectedConditions.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-99,104-597
+  s_26f5e669d3043c::t_762f092e3ee48e 100-103
+apps/desktop/test/silentGitFailure.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-118
+apps/desktop/src/main/githubErrors.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 27-36,42,67-76,99-105,112-124,127-152,154,156-169,174-259
+  s_26f5e669d3043c::t_9a203c54c13abd 260
+apps/extension/src/views/stashesView.ts
+  s_26f5e669d3043c::t_1edb0286a5a255 7
+  s_26f5e669d3043c::t_44362415872800 280
+  s_26f5e669d3043c::t_df3269767bb9e5 299,302-313,321-327
+  s_26f5e669d3043c::t_41669db91cc6a4 5,278-279,295-296,300-301,314-320
+apps/desktop/src/main/github/issues.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 39,503,505-508,510,533,639,642
+apps/extension/src/git/inTheWay.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-150
+apps/extension/src/rebase/rebaseRunner.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 6,10,17-22,30-43,45-48,52-55
+apps/extension/src/views/refCheckout.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-97
+apps/extension/test/worktreeRefs.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 7,44-50,62-101
+apps/extension/src/statusBar/syncStatus.ts
+  s_26f5e669d3043c::t_3ce6e1866ea2d8 265-267
+  s_26f5e669d3043c::t_41669db91cc6a4 3-4,9-10,82-83,201-205,218-244,246-253,258-262,269-299,307-310,315-326,329-339,341-354,368-372,423-426,502-504,506,557-559
+apps/extension/src/statusBar/syncLabel.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-18
+apps/extension/src/extension.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 33,168-172,174-176
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 2,26-39,70-72,474-475,478,482-484,502-503,527,538-539,546,548
+apps/desktop/harness/profile.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 1-21
+packages/git-service/src/RefProvider.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 67-79,178-191,193-201,204,209,211-213,231,245,277-280,283
+packages/git-service/test/pullUserStates.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-225
+packages/git-service/test/rewroteUpstream.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-166
+apps/desktop/src/renderer/branchRequests.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-62
+apps/desktop/test/forcePushTable.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-153
+apps/desktop/src/main/githubBridge.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 25,40,170,175-182,386,389-395,402-410,412-413
+apps/desktop/test/branchFullNames.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-229
+apps/desktop/src/main/aiBridge.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 397-401,413-417,470-475,479,494,502-503,509-510,524-525,590-595,599,731,735-740,744
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 569-572
+apps/desktop/test/inTheWayStateTable.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-361
+apps/extension/test/refCheckout.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-239
+apps/desktop/src/main/autoUpdate.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 26,38,40,136-141,143-144,197,203,251,253,321,327,331,344,346,350
+apps/extension/CHANGELOG.md
+  s_26f5e669d3043c::t_a333e0af797e6e 193-206
+  s_26f5e669d3043c::t_2bf24351966810 176-177
+  s_26f5e669d3043c::t_ff7c4fbf3e4351 152-154
+  s_26f5e669d3043c::t_41669db91cc6a4 137-151,155-175,178-192,207-211
+apps/extension/test/pullDivergedCallSites.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-305
+apps/extension/test/vscodeStub.cjs
+  s_26f5e669d3043c::t_41669db91cc6a4 1-74
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_b8e70ea2fbfb0a 583-613,615
+  s_26f5e669d3043c::t_979bb42e400a77 1528-1529
+  s_26f5e669d3043c::t_f52184b11fbb9e 2951
+  s_26f5e669d3043c::t_58ce04695c2d3f 2928
+  s_26f5e669d3043c::t_4e9bbf49960c8e 1449-1452
+  s_26f5e669d3043c::t_41669db91cc6a4 321-346,643-659,675-677,685-687,821-823,847-852,901-912,1290-1364,1384-1448,1453-1527,1678,1683-1739,1751-1752,1764-1765,1771-1772,1849-1864,1901-1905,1914-1925,1927-1929,1931-1948,1951-1953,1969-1982,2323-2324,2349-2350,2358,2407-2429,2567,2597-2599,2640-2650,2652,2654-2684,2701-2702,2704-2705,2711,2714-2732,2734,2737,2739-2743,2749-2750,2768-2770,2772-2775,2777-2778,3343-3357,3367
+apps/desktop/test/graphqlPartial.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-377
+apps/extension/src/pr/checkoutPr.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 4,46-57
+apps/desktop/src/renderer/pullFlow.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-128,130-178
+  s_26f5e669d3043c::t_ef3453cbdb395c 129
+apps/extension/src/changes/commitView.ts
+  s_26f5e669d3043c::t_0f8c7f4c194c59 1671
+  s_26f5e669d3043c::t_41669db91cc6a4 3-5,7,1465-1468,1470,1546-1549,1557-1560,1573-1574,1582-1592,1596-1597,1599-1609,1611,1613-1624,1627-1632,1643-1650,1667-1670,1693-1737,1805-1806,1863-1876,1983,2001,2011-2013,2027,2039-2041,2157-2158,4974,5085,6157,7235
+  s_26f5e669d3043c::t_f7adbb3db94eaa 1552-1554
+packages/webview-ui/src/graph/commit-rail.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 42,63-64,67,70-71,144-148,152-153,166,205-208,211,286-288,292,298,759-761,767,808-813,834-835,868-870,879,881-884,889,903-905,923,925-926,991-992,1015,1065-1067,1072-1078,1265,1295-1301,1303-1318,1345,1347-1350,1353-1356,1368-1370,1373,1412-1416,1786-1788,1790-1801,1810-1814,1822,1915,1935-1950,1961,1989,2000-2007,2010,2016,2032,2064,2121-2125,2130-2134,2139,2143,2148,2152,2160,2193-2196
+packages/webview-ui/src/graph/main.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 10,12,16,128-143,183-193,276
+apps/desktop/test/gitBridgeArgGuards.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 83-88,103,107-120
+apps/desktop/test/githubErrors.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 8,10,12,156-324
+apps/desktop/test/checkoutRequest.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 26,105-106,108-109,111,115-143,145-150,199-202,204-208,211
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 12,447-458,462-463,465,470,473-474,480,489-492,507
+packages/git-service/src/RebaseRunner.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 71-96,379,383-394,633-662
+  s_26f5e669d3043c::t_7fdc04b09f50aa 663
+packages/host-bridge/test/graphWire.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 64-67,76-93,97
+packages/webview-ui/test/filterFollowUp.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-366
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 8,18,21-23,25,27-28,30,41,178-180,184-185,188-191,243-244,256-258,324-336,390,393,435-437,441,463-475,505,710-716,812-813,878-889,905-909,1013-1014,1036-1046,1049-1061,1063-1071,1098-1103,1407-1413,1415
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 24-25,27,32,35-37,41-47,73-79,95,100-101,104,158-175,183-207,226-246,311-313,318-319,322-325,392-402,443-445,459-460,471-474,483-493,497-510,518-519,522,535-536,558,573-583,591,594,599,641-643,646,667-670,678-679,707-712,896,1080,1082-1086,1089,1255,1258,1346-1353,1355-1357,1359-1360,1362-1364,1428,1465,1778-1801,1804,1807,1816,1818,1821-1825,1828,1836,1842,1854,1908-1909,1924-2030,2033-2037,2041-2073,2079-2095,2121-2125,2127-2131,2135,2197-2199,2206-2207,2227-2230,2233,2270-2277,2279,2295-2296,2298,2301-2303,2305,2308,2354,2359-2371,2444-2447,2475,2477-2480,2488,2490,2493,2529-2543,2550-2565,2567-2569,2571-2577,2579,2584,2590-2591,2651-2653,2667-2669,2674,2681,2694-2695,2722-2723,2740,2758-2775,2780-2781,2786,2792-2793,2796,2805-2829,2832-2838,2841-2849,2852-2856,3042,3140,3252,3263-3264,3377,3402,3833-3876
+  s_26f5e669d3043c::t_b4d7c78a17fa2f 3458,3475,3489,3595,3630,3658
+  s_26f5e669d3043c::t_ef6eae0fe64594 3877
+apps/desktop/test/hermeticGit.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-34
+apps/extension/test/graphRefListCourier.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-52
+apps/extension/test/opInProgress.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 91-101,260-291
+  s_26f5e669d3043c::t_d2ca5fcc96c0a4 292
+apps/extension/test/operationChecks.test.ts
+  s_26f5e669d3043c::t_d64387dd1494b0 113-121,123-124,128
+packages/git-service/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-280
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 13,84-85,87-99,106-111,346-351,354-365,380-423,503-526,528-577,580,582-584,586-587,589-591,1211-1224,1679-1680,1808-1809,1870-1877,1901-1903,1943,1953-1954,1989-2001,2032,2039,2043-2044,2065,2083,2145,2150,2156,2158,2164,2193,2249,2314-2315,2353,2380-2391,2463,2692-2698,2834-2835,2862-2863,2914-2918,2924-2928,2931,2936-2938,2940-2941
+  s_26f5e669d3043c::t_56552bb0c8483c 527
+apps/desktop/test/mcpTranslocation.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-175
+packages/webview-ui/src/graph/graphInit.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-38
+packages/webview-ui/test/popoverContrast.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-260
+apps/desktop/src/renderer/repoBrowser.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 19,250-260
+apps/desktop/src/renderer/optionLikeRename.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-66
+packages/git-service/src/GitToolHost.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 23-24,298-318,322-339,378-384
+packages/git-service/src/GitProcess.ts
+  s_26f5e669d3043c::t_1bcdf87e2a87f2 97
+  s_26f5e669d3043c::t_41669db91cc6a4 57-59,98-130,237,257,276,331-340,344,355,457,479
+apps/extension/test/paneRefs.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-62
+apps/desktop/src/main/repoNotice.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-113
+apps/desktop/src/main/editors.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 24,430,439-448
+apps/desktop/CHANGELOG.md
+  s_26f5e669d3043c::t_902932df03b55d 152
+  s_26f5e669d3043c::t_41669db91cc6a4 138-151,153-241
+packages/host-bridge/src/graphRefFilter.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 7,9,22-24,26-37,41-42,44-57,92-277,284-286,297,305-308,313,315-316,319,325-390
+  s_26f5e669d3043c::t_c4b2e45718b6b1 391
+apps/desktop/src/renderer/branchCreate.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 76-79,81-85
+apps/extension/src/git/pausedForUser.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 15-22,65-71
+  s_26f5e669d3043c::t_7885be8f09d081 72
+apps/extension/src/views/optionLikeBranch.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-70
+packages/host-bridge/src/scrub.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 79-99
+apps/desktop/src/renderer/views/projects.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 29,31,57-58,60,63,70-71,73-76,80,82-88,187-189
+packages/git-service/src/rebasePlan.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 73-83,131,136
+apps/extension/src/views/worktreeRefs.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 2,28-31,33-53,56-57,61,63,65,67,72-73,76-77,79
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 16,207-215,877
+apps/extension/test/checkoutCommitOptionLike.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-135
+apps/desktop/harness/probe.mjs
+  s_26f5e669d3043c::t_41669db91cc6a4 30,99,106,117
+apps/extension/test/pushForceCallSites.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 72-205
+apps/desktop/test/aiTaskDoors.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-90
+apps/desktop/test/mergeReport.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 50,72,100
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 7,9-11,72-73,83,94,101,239-245,262,325-341,383,427-437,541-548,642-662
+  s_59c0dd2af30db2::t_b5b0c2fa3b6b9b 663
+packages/git-service/test/pushLease.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-151
+packages/git-service/src/changesInTheWay.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-751
+apps/extension/test/branchesTreeLabels.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-141
+apps/desktop/src/renderer/views/exploreRepo.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 54,429-443,752-769,856-858,860-865,922-930
+apps/desktop/src/renderer/views/prs.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 74,1484,1486-1487,1573,1596,1620-1628,1641-1644,1726-1727,2047-2049,2051
+apps/desktop/src/shared/githubStates.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-48
+packages/git-service/test/pullStashRetry.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-204
+apps/desktop/src/renderer/bridge.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 13,23-94,114-123,168-172,179-180
+apps/desktop/src/main/ghRepoOpen.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 54-55,71-81,113-116,120,129-137
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 7-11,111-180,189-190,193-197,199,207-220,224,238-243,246,248-249,255-265,269,283-289,292-294,296,298,302,305,310,417-423,427,434-436,439,446,448,458-466,478-479,482,485,497,499,511,518-520,529-533,535,538-539,547-548,557,561-570,572-574,604-614,656-659,671,678,682-687,690,727-729,741-744,748,755-758,770-773,777,781-784,1004-1019
+  s_26f5e669d3043c::t_9f609be9a6f27d 1020
+apps/desktop/test/mcpServerShipping.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-209
+packages/webview-ui/src/graph/refFilter.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 11-12,14,24-30,67-78,81-90,94-98,100-111,113,118-138
+  s_26f5e669d3043c::t_baf1dcb0de30d2 139
+apps/desktop/test/reportingVerdicts.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-449
+apps/desktop/test/pullDiverged.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-455
+apps/desktop/src/main/mcpConfig.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 9,11-69,72-100,102-104,106-174,287-288,291,294-298,301-311,313-368,371,373,377-378,385-386,388-390,394-405,407-408,417
+apps/desktop/test/branchSweep.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 20,28-29,34,41-53,101,123
+packages/git-service/test/rebaseFailureVerdict.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-177
+apps/desktop/src/renderer/dialogs.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 44-47,65-66,68,73,95,582-599,666
+packages/host-bridge/src/graphWire.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 34-35,78-81,83,91,93
+apps/desktop/harness/shot.sh
+  s_26f5e669d3043c::t_41669db91cc6a4 26-29,31
+packages/webview-ui/test/headless.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 40,42-45,52,57-60,89-98,100,104,106-107,136-139,152
+apps/extension/test/rebaseFailureCallSites.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-102
+apps/desktop/src/main/githubClient.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 8-14,221-233,257,259-260,263-274,423-427
+apps/desktop/src/renderer/views/common.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1677-1695
+apps/desktop/src/main/github/actions.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 469-472
+packages/webview-ui/test/refPicker.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 26-36,159-161,164-166,168,171-173
+packages/webview-ui/src/styles/hostTokens.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 25-37
+apps/desktop/src/main/cloneBridge.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 67-72,75,79,82,86-91,95,99-104,125
+apps/extension/test/inTheWayCallSites.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-165
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 17-19,144-147,149,151,154,239,244-246,248,251-253,258-260,263-264,266-268,275-278,280,294,335-337
+apps/desktop/test/forcePushGuard.test.ts
+  s_26f5e669d3043c::t_41669db91cc6a4 1-166
+apps/desktop/harness/README.md
+  s_26f5e669d3043c::t_41669db91cc6a4 54-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d8d3407514cb15f4079c9238315cd0f070e85c83",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_59c0dd2af30db2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54ca11b6-e37a-494e-95d0-c9e5a1baed9f",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
