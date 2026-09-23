@@ -1,4 +1,5 @@
 import { runRebasePlan, isRebaseInProgress } from "@gitstudio/git-service/RebaseRunner";
+import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
 import { buildRebasePlan } from "@gitstudio/git-service/rebasePlan";
 import type { RepoStore } from "./repoStore";
 import type {
@@ -21,6 +22,20 @@ const MAX_PLAN_COMMITS = 200;
 /** Todo verbs we will ever emit. NOT "exec" — that runs an arbitrary shell
  *  command, and nothing in the UI offers it. */
 const TODO_ACTIONS = new Set(["pick", "reword", "edit", "squash", "fixup", "drop"]);
+
+/**
+ * The runner's outcome on the wire. A failure carries `ok: false` — and
+ * `expected` when the runner judged it the user's state — so main.ts's
+ * `handle()` applies the one report rule to it (`reportableResultMessage`,
+ * the IPC face of `reportableRebaseFailure`). As a bare `{status}` it was
+ * never seen, and a genuine rebase failure was never filed.
+ */
+function onTheWire(o: RebaseOutcome): RebaseOutcomeWire {
+  if (o.status !== "failed") return o;
+  return o.expected
+    ? { status: "failed", ok: false, expected: true, message: o.message }
+    : { status: "failed", ok: false, message: o.message };
+}
 
 /** A todo entry is one line; a newline in the subject would start a new
  *  instruction. Collapse all control characters to spaces. */
@@ -456,13 +471,17 @@ export class RebaseBridge {
 
   /** Validate the composed plan, then run it non-interactively. */
   async apply(req: RebaseApplyRequest): Promise<RebaseOutcomeWire> {
+    // Every failure below says `ok: false`, and `expected` only when it is the
+    // user's state — see onTheWire.
     const root = this.root();
     if (!root) {
-      return { status: "failed", message: "Open a repository first." };
+      return { status: "failed", ok: false, expected: true, message: "Open a repository first." };
     }
     const rows = req.rows ?? [];
     if (!rows.length) {
-      return { status: "failed", message: "Nothing to rebase." };
+      // The view only offers Start rebase over the commits it drew, so a plan
+      // with no rows is a request we built wrong — reported.
+      return { status: "failed", ok: false, message: "The rebase plan had no commits in it." };
     }
     // The plan describes a branch tip. If the tip has moved since — a commit
     // made in a terminal, a pull, an amend — the rows no longer cover the
@@ -480,6 +499,8 @@ export class RebaseBridge {
       if (now && now !== req.headSha) {
         return {
           status: "failed",
+          ok: false,
+          expected: true,
           message:
             "The branch has moved since this plan was built — something committed, pulled or amended " +
             "while it was open. Reload the plan and try again.",
@@ -503,6 +524,7 @@ export class RebaseBridge {
     if (carried === null) {
       return {
         status: "failed",
+        ok: false,
         message:
           "Couldn't read the full commit range, so the plan can't be applied safely. Pick a nearer base and try again.",
       };
@@ -513,16 +535,17 @@ export class RebaseBridge {
     const updateRefs = req.updateRefs ?? (await this.repoUpdateRefs());
     const built = buildRebasePlan(fullRows, { updateRefs });
     if (!built.ok) {
-      return { status: "failed", message: built.message };
+      // The plan builder says which refusals are the plan the user composed.
+      return onTheWire({ status: "failed", message: built.message, ...(built.expected ? { expected: true } : {}) });
     }
     const { todo, rewords } = built;
 
     try {
       // Same options as every other git command here: the app's git, and the
       // observer that feeds the Output tab.
-      return await runRebasePlan(root, { base: req.base, todo, rewords }, this.repos.runnerOptions());
+      return onTheWire(await runRebasePlan(root, { base: req.base, todo, rewords }, this.repos.runnerOptions()));
     } catch (err) {
-      return { status: "failed", message: err instanceof Error ? err.message : String(err) };
+      return { status: "failed", ok: false, message: err instanceof Error ? err.message : String(err) };
     }
   }
 

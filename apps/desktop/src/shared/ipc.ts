@@ -1728,6 +1728,14 @@ export interface RebaseOutcomeWire {
   status: "done" | "stopped" | "failed";
   reason?: "conflict" | "edit" | "unknown";
   message?: string;
+  /**
+   * Set on every `failed` outcome, so the IPC wrapper's report rule
+   * (`reportableResultMessage`) judges a failed rebase like any other failed
+   * result. Without it a genuine failure was never filed.
+   */
+  ok?: false;
+  /** A failure that is a state of the user's repository — shown, not filed. */
+  expected?: true;
 }
 
 /**

@@ -70,7 +70,17 @@ export type RebasePlanResult =
        */
       rewords: Array<{ sha: string; message: string }>;
     }
-  | { ok: false; message: string };
+  | {
+      ok: false;
+      message: string;
+      /**
+       * The plan the USER composed cannot be run — a fold with nothing below
+       * it, every commit dropped — so this is shown and never crash-reported.
+       * Unset for a request a host built wrong (no rows, an action or a sha no
+       * UI offers), which is exactly what a report is for.
+       */
+      expected?: true;
+    };
 
 /** Actions we will write into a todo file. Anything else is a caller bug. */
 const TODO_ACTIONS = new Set(["pick", "reword", "edit", "squash", "fixup", "drop"]);
@@ -118,11 +128,12 @@ export function buildRebasePlan(
   if (firstKept && (firstKept.action === "squash" || firstKept.action === "fixup")) {
     return {
       ok: false,
+      expected: true,
       message: `The oldest commit can't be "${firstKept.action}" — there's nothing older for it to fold into.`,
     };
   }
   if (!plan.some((r) => r.action !== "drop")) {
-    return { ok: false, message: "Dropping every commit would erase the whole range." };
+    return { ok: false, expected: true, message: "Dropping every commit would erase the whole range." };
   }
 
   // This string becomes a script git RUNS. TypeScript's union is erased at

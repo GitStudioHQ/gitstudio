@@ -131,6 +131,9 @@ const PAYLOAD_REFUSALS: Record<string, string> = {
   "Couldn't read the conflict.":
     "said only when the index still has the file unmerged (or cannot say) and git would not hand " +
     "over its sides — a read that failed, not the user resolving anything.",
+  "The rebase plan had no commits in it.":
+    "rebase:apply's rows are the commits the Rebase view drew, and it offers Start rebase only over " +
+    "them; a plan with no rows at all is a request built wrong.",
 };
 
 async function tsFiles(dir: string): Promise<string[]> {
