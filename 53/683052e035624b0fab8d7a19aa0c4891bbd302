@@ -1,0 +1,58 @@
+packages/git-service/test/rebaseFailureVerdict.test.ts
+  s_26f5e669d3043c::t_fb5321c5b21585 84
+  s_26f5e669d3043c::t_d27ba88faca06a 1-83,85-159
+apps/desktop/src/main/rebaseBridge.ts
+  s_26f5e669d3043c::t_ae1004f4c93c30 538-539,546,548
+  s_26f5e669d3043c::t_4f0e3061a936be 474-475,478,482-483
+  s_26f5e669d3043c::t_3222e3030e2a22 502-503
+  s_26f5e669d3043c::t_79e9e8842fdb5e 2
+  s_26f5e669d3043c::t_8d169e2f56abf0 26-39
+  s_26f5e669d3043c::t_02d26969f8720f 484
+  s_26f5e669d3043c::t_366827c211e27d 527
+apps/extension/test/rebaseFailureCallSites.test.ts
+  s_26f5e669d3043c::t_b42f6aebf8bc66 1-102
+apps/desktop/src/renderer/views/rebase.ts
+  s_26f5e669d3043c::t_b962e4e99e3b47 565-568
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_14d1447c6a2368 1731-1738
+apps/extension/src/rebase/rebaseRunner.ts
+  s_26f5e669d3043c::t_a1e8de38690dfb 7,11,18-23,31-44,46-49,53-56
+apps/extension/src/rebase/rebaseWorkspacePanel.ts
+  s_26f5e669d3043c::t_10357b4aa3d59d 775
+  s_26f5e669d3043c::t_a640529c985807 13
+  s_26f5e669d3043c::t_a717a360275ed7 179-187
+apps/extension/src/graph/graphPanel.ts
+  s_26f5e669d3043c::t_2d6e652c1b7481 33
+  s_26f5e669d3043c::t_8acab7f1448e16 683-689
+packages/git-service/src/rebasePlan.ts
+  s_26f5e669d3043c::t_eb88ed588eaafe 73-83
+  s_26f5e669d3043c::t_53a73a6043ac30 131,136
+packages/git-service/src/RebaseRunner.ts
+  s_26f5e669d3043c::t_a5c5ff78fa2e7e 71-96,394,633
+  s_26f5e669d3043c::t_692d5f6543e43f 379,383-392
+  s_26f5e669d3043c::t_5d106eda7a0837 634-655
+  s_26f5e669d3043c::t_e136b66ff44610 393
+packages/git-service/test/rebasePlan.test.ts
+  s_26f5e669d3043c::t_b14b16f8a94d41 126-151
+apps/desktop/test/expectedConditions.test.ts
+  s_26f5e669d3043c::t_809d7751d166af 134
+  s_26f5e669d3043c::t_d6aa3a48ab123f 135-136
+apps/desktop/test/rebaseApplyReporting.test.ts
+  s_26f5e669d3043c::t_5c0c93c89db27e 1-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "53683052e035624b0fab8d7a19aa0c4891bbd302",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
