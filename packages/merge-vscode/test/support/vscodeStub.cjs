@@ -64,6 +64,9 @@ class Uri {
     const m = /^([a-z][\w+.-]*):\/\/(.*)$/i.exec(s);
     return m ? new Uri(m[1], m[2]) : new Uri("file", s);
   }
+  static from(parts) {
+    return new Uri(parts.scheme, parts.path ?? "");
+  }
 }
 
 class ThemeColor {
@@ -284,6 +287,7 @@ const workspace = {
     stub.watchers.push(w);
     return w;
   },
+  registerFileSystemProvider: () => new Disposable(),
   applyEdit: async (edit) => {
     stub.applied.push(edit);
     return true;
@@ -310,6 +314,12 @@ module.exports = {
   WorkspaceEdit,
   TextEdit,
   EndOfLine,
+  FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
+  FileChangeType: { Changed: 1, Created: 2, Deleted: 3 },
+  FileSystemError: {
+    FileNotFound: (uri) => new Error(`FileNotFound: ${uri}`),
+    FileExists: (uri) => new Error(`FileExists: ${uri}`),
+  },
   ViewColumn: { Active: -1, Beside: -2, One: 1, Two: 2 },
   StatusBarAlignment: { Left: 1, Right: 2 },
   ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },

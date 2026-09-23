@@ -11,6 +11,8 @@ import * as vscode from "vscode";
 import { detectEol } from "@gitstudio/engine/lineDiff";
 import type { HostMessage, WebviewMessage } from "@gitstudio/host-bridge/protocol";
 import { locate } from "./args";
+import { sampleScheme } from "./demo";
+import { DEMO_MERGE, sampleAnswer } from "./demoContent";
 import { baseName, ForeignEdits, ResultMirror } from "./documentSync";
 import { closeMergeEditorTabs, fileUri, type MergeHostCore } from "./host";
 import type { JetBrainsUi } from "./jetbrainsUi";
@@ -47,6 +49,23 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
       localResourceRoots: [vscode.Uri.joinPath(host.context.extensionUri, "dist")],
     };
     webview.html = mergeWebviewHtml(webview, host.context.extensionUri);
+
+    // The walkthrough's sample (demo.ts): answered from demoContent.ts, with
+    // no repository, no document writes and no git.
+    if (document.uri.scheme === sampleScheme(host.product)) {
+      panel.title = DEMO_MERGE.title;
+      const sampleSub = webview.onDidReceiveMessage((raw: unknown) => {
+        const answer = sampleAnswer(raw as WebviewMessage | undefined, host.settings());
+        for (const message of answer.post) {
+          void webview.postMessage(message);
+        }
+        if (answer.close) {
+          panel.dispose();
+        }
+      });
+      panel.onDidDispose(() => sampleSub.dispose());
+      return;
+    }
 
     let disposed = false;
     // What this editor writes into the document before Apply, and whether

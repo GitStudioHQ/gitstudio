@@ -25,7 +25,7 @@ import {
   syncedKeys,
 } from "./coexistence";
 import { ConflictsDashboard } from "./conflictsPanel";
-import { openDemoMerge } from "./demo";
+import { openDemoMerge, SampleFileSystem } from "./demo";
 import { DiffCommands, DiffPanel } from "./diffPanel";
 import { ExitGuard } from "./exitGuard";
 import { closeMergeEditorTabs, createHostCore, type MergeHostCore } from "./host";
@@ -199,7 +199,9 @@ export function registerMergeExperience(
     }, 120);
   };
 
+  const sample = SampleFileSystem.register(host);
   disposables.push(
+    sample.disposable,
     MergeEditorProvider.register(host, jetbrains),
     DiffPanel.register(host),
     jetbrains,
@@ -243,7 +245,7 @@ export function registerMergeExperience(
   reg(c.openDiff, (clicked, selected) => diffs.openDiff(clicked, selected));
   reg(c.openChanges, (arg) => diffs.openChanges(arg));
   reg(c.stageWithTicks, (arg) => diffs.stageWithTicks(arg));
-  reg(c.openDemo, () => openDemoMerge(host));
+  reg(c.openDemo, () => openDemoMerge(host, sample.fs));
   reg(c.openDemoDiff, () => diffs.openDemoDiff());
   const verbArg = (arg: unknown): OperationVerbOptions => {
     const a = arg as { root?: unknown; quiet?: unknown } | undefined;
