@@ -4,6 +4,70 @@ All notable changes to **GitStudio** are documented here. This project adheres t
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+GitStudio and Merge Studio now share one merge experience — the same merge
+editor, Conflicts dashboard, routing and JetBrains hand-off — so what one
+does, the other does. (merge-studio#12)
+
+### Added
+- **Conflicts dashboard.** *GitStudio: Resolve Conflicts…* — also a button on
+  the Source Control view's *Merge Changes* header, a **⚠ Resolve Conflicts**
+  item in the status bar, and a button on every "git stopped for you" message
+  — lists each conflicted file with **Accept Yours**, **Accept Theirs** and
+  **Merge…**, hold-to-undo, and **Continue / Skip / Abort** for the operation,
+  named in your branch names ("test → onto → master", "commit 2 of 3").
+- **Continue, Skip and Abort in the Changes view.** When a merge, rebase,
+  cherry-pick, revert, `git am` or stash apply stops, a banner above your
+  changes says what stopped and offers the next step. Continue is disabled —
+  with the reason — until git can continue; Skip appears only where git
+  offers it. The rebase workspace's stop banner gains Skip too.
+- **JetBrains IDE hand-off.** New settings `gitstudio.merge.conflictResolver`
+  and `gitstudio.merge.diffTool` send merges and diffs to your installed
+  JetBrains IDE (`preferredIde`, `jetbrainsPath`); its menus appear only when
+  an IDE is found, and *Mark Resolved & Stage* stages the result.
+- **`gitstudio.merge.autoApplyNonConflicting`** (off by default, as in
+  JetBrains IDEs): open the merge editor with every non-conflicting change
+  already applied.
+- *Compare File…* diffs two files selected in the Explorer directly. New
+  palette commands: *Open in Embedded Diff*, *Merge / Diff with JetBrains
+  IDE*, *Open Sample Merge*, *Open Sample Diff*, *Continue / Skip / Abort
+  Operation*.
+
+### Changed
+- **During a rebase, Yours is your commit, on the left** — the side
+  *Accept Yours* keeps. Pane titles name the real branches ("Rebasing 1a2b3c4
+  from test" / "Already rebased commits and commits from master"). Before,
+  the left pane held the branch you were rebasing onto, so *Accept Yours*
+  could silently drop your only commit on Continue.
+- **`gitstudio.merge.autoOpen` has a new meaning.** It no longer opens every
+  conflicted file as its own tab. When an operation stops it shows the
+  Conflicts dashboard, opens a conflicted file in the resolver when you
+  switch to it, and takes over VS Code's built-in merge editor tab. Choosing
+  *Exit viewer* keeps a file out of the merge editor until its conflict is
+  gone.
+- A conflicted file in the Changes view opens in the merge editor, not in a
+  diff full of conflict markers.
+- The merge editor's title-bar actions show only on a file with merge
+  conflicts.
+- The first time a conflict appears, GitStudio asks — in its own dialog —
+  whether to turn off VS Code's built-in merge editor and conflict
+  highlights, which compete with it.
+- GitStudio declares that it stays off in Restricted Mode (untrusted
+  workspaces), so a workspace can never supply the IDE launcher path.
+
+### Fixed
+- *Apply* said "resolved file saved and staged" even when `git add` failed
+  (for example on a stale `index.lock`); it now says the file is saved but
+  not staged, and why.
+- Conflicts in a **linked worktree** were noticed late: GitStudio watched
+  `<worktree>/.git`, which is a file there. It now asks git where the
+  operation files are.
+- On a non-English git, "a rebase is already in progress" and "pull hit
+  conflicts" were never detected (they matched git's English messages); they
+  now read the state git writes. A stash apply or pop that conflicts is no
+  longer reported as an error.
+
 ## [1.13.0] - 2026-09-21
 
 ### Added
