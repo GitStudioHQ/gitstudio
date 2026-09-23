@@ -3066,22 +3066,16 @@ export class GitBridge {
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, message: "No repository open." };
     if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
-    const abs = containedPath(ctx.root, req.path);
-    if (!abs) return UNSAFE_PATH_RESULT;
+    if (!containedPath(ctx.root, req.path)) return UNSAFE_PATH_RESULT;
     const ide = await this.jetbrainsDetect();
     if (!ide) return noIde();
-    const sides = await ctx.conflictOps.readSides(req.path);
-    if (sides.source === "none") {
-      return { ok: false, changed: false, expected: true, message: `${req.path} has no conflict to merge.` };
-    }
-    if (sides.shape !== "text" && sides.shape !== "added-both") {
-      return {
-        ok: false,
-        changed: false,
-        expected: true,
-        message: `${req.path} has no text to merge line by line — accept one side instead.`,
-      };
-    }
+    // The IDE writes its result to the real file, so the hand-off passes the
+    // same guards as the embedded Apply (ConflictOps.writeResolution): the
+    // realpath containment check, and text-only — the sides travel as strings,
+    // so a non-UTF-8 file would come back from the IDE as U+FFFD.
+    const input = await ctx.conflictOps.externalMergeInput(req.path);
+    if (!input.ok) return input.result;
+    const { abs, sides } = input;
     const key = `${ctx.root}\0${req.path}`;
     await this.ideLaunches.get(key)?.dispose();
     const launch = await launchJetBrainsMerge({

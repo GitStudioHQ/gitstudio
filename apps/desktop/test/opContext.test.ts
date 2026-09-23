@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -354,5 +354,55 @@ test("jetbrains:merge refuses a file with no text to merge, and a path outside t
   } finally {
     removeTempRepo(r.root);
     rmSync(ide.dir, { recursive: true, force: true });
+  }
+});
+
+test("jetbrains:merge passes the Apply's guards: no non-UTF-8 text, no folder that leads outside", { skip: posixOnly }, async () => {
+  // The IDE writes its result to the real file — the same write the embedded
+  // Apply (conflict:resolve) guards. Two twins it lacked: the sides travel as
+  // strings (a Latin-1 file reached the IDE as U+FFFD and was saved that way),
+  // and only a lexical containment check stood between the output path and a
+  // conflicted folder since replaced by a link to somewhere else.
+  const r = repo("jb-guards");
+  const ide = fakeIde();
+  const outside = mkdtempSync(join(tmpdir(), "gs-opctx-outside-"));
+  try {
+    const put = (rel: string, data: string | Buffer): void => {
+      mkdirSync(join(r.root, rel, ".."), { recursive: true });
+      writeFileSync(join(r.root, rel), data);
+    };
+    const latin1 = (s: string): Buffer => Buffer.from(s, "latin1");
+    put("menu.txt", latin1("café\nthé\n"));
+    put("sub/f.txt", "one\ntwo\nthree\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    r.git("checkout", "-q", "-b", "side");
+    put("menu.txt", latin1("café side\nthé\n"));
+    put("sub/f.txt", "one\ntwo\nthree-side\n");
+    r.git("commit", "-qam", "side");
+    r.git("checkout", "-q", "main");
+    put("menu.txt", latin1("café main\nthé\n"));
+    put("sub/f.txt", "one\ntwo\nthree-main\n");
+    r.git("commit", "-qam", "main");
+    r.tryGit("merge", "side");
+    writeFileSync(join(outside, "f.txt"), "OUTSIDE\n");
+    rmSync(join(r.root, "sub"), { recursive: true, force: true });
+    symlinkSync(outside, join(r.root, "sub"));
+
+    const b = await bridgeFor(r.root, { ...DEFAULT_MERGE_SETTINGS, jetbrainsPath: ide.command });
+    const menu = await b.jetbrainsMerge({ path: "menu.txt" });
+    assert.equal(menu.ok, false);
+    assert.equal(menu.expected, true);
+    assert.match(menu.message ?? "", /isn't UTF-8 text/);
+    const linked = await b.jetbrainsMerge({ path: "sub/f.txt" });
+    assert.equal(linked.ok, false);
+    assert.match(linked.message ?? "", /resolves outside the repository/);
+    await new Promise((res) => setTimeout(res, 100));
+    assert.equal(existsSync(ide.log), false, "the IDE was never launched");
+    assert.equal(readFileSync(join(outside, "f.txt"), "utf8"), "OUTSIDE\n");
+  } finally {
+    removeTempRepo(r.root);
+    rmSync(ide.dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });

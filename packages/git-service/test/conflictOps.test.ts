@@ -459,6 +459,75 @@ test("the symlinked-folder guard holds even when the conflict listing is wrong",
   }
 });
 
+// ── externalMergeInput (the JetBrains hand-off) ─────────────────────────────
+
+test("externalMergeInput: a text conflict goes out role-mapped, with the real file as the output", async () => {
+  const r = manyShapes();
+  try {
+    const ctx = r.ctx();
+    const out = await ctx.conflictOps.externalMergeInput("both.txt");
+    assert.equal(out.ok, true);
+    if (!out.ok) return;
+    assert.equal(out.abs, join(r.root, "both.txt"));
+    assert.equal(out.sides.yours.split("\n")[2], "three-master", "a merge's Yours is stage 2");
+    assert.equal(out.sides.theirs.split("\n")[2], "three-side");
+    for (const p of ["art.bin", "link", "keep.txt", "big.txt"]) {
+      const no = await ctx.conflictOps.externalMergeInput(p);
+      assert.equal(no.ok, false, p);
+      if (!no.ok) assert.match(no.result.message ?? "", /no text to merge line by line/, p);
+    }
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("externalMergeInput refuses a conflicted folder that now leads outside the repository", async () => {
+  // The index still lists sub/f.txt — the listing is TRUE — but `sub` was
+  // replaced by a link to somewhere else. The IDE writes its result to
+  // <repo>/sub/f.txt, which would land in that other folder.
+  const r = merged("jb-linked-dir", (repo, side) =>
+    repo.write("sub/f.txt", side === "base" ? FIVE : edit(FIVE, { three: `three-${side}` })),
+  );
+  const outside = mkdtempSync(join(tmpdir(), "gs-op-jb-outside-"));
+  try {
+    writeFileSync(join(outside, "f.txt"), "OUTSIDE\n");
+    rmSync(join(r.root, "sub"), { recursive: true, force: true });
+    symlinkSync(outside, join(r.root, "sub"));
+    assert.match(r.git("ls-files", "-u"), /sub\/f\.txt/, "still unmerged in the index");
+    const ctx = r.ctx();
+    const out = await ctx.conflictOps.externalMergeInput("sub/f.txt");
+    assert.equal(out.ok, false);
+    if (!out.ok) assert.match(out.result.message ?? "", /resolves outside the repository/);
+    const apply = await ctx.conflictOps.writeResolution("sub/f.txt", "PWNED\n");
+    assert.equal(apply.ok, false, "the twin refuses the same path");
+    assert.equal(readFileSync(join(outside, "f.txt"), "utf8"), "OUTSIDE\n");
+  } finally {
+    r.cleanup();
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("externalMergeInput refuses a text file that isn't UTF-8 — the tool would save U+FFFD", async () => {
+  const latin1 = (s: string): Buffer => Buffer.from(s, "latin1");
+  const r = merged("jb-latin1", (repo, side) =>
+    repo.write("menu.txt", latin1(side === "base" ? "café\nthé\n" : `café ${side}\nthé\n`)),
+  );
+  try {
+    assert.match(r.git("ls-files", "-u"), /menu\.txt/);
+    const ctx = r.ctx();
+    const facts = await ctx.conflictOps.fileFacts("menu.txt");
+    assert.equal(facts?.shape, "text", "git calls it text: no NUL byte");
+    const out = await ctx.conflictOps.externalMergeInput("menu.txt");
+    assert.equal(out.ok, false);
+    if (!out.ok) {
+      assert.equal(out.result.expected, true);
+      assert.match(out.result.message ?? "", /isn't UTF-8 text/);
+    }
+  } finally {
+    r.cleanup();
+  }
+});
+
 // ── restore (hold-to-undo) ──────────────────────────────────────────────────
 
 test("restore brings a text conflict back with its markers", async () => {

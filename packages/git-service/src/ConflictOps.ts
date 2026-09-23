@@ -389,6 +389,44 @@ export class ConflictOps {
   }
 
   /**
+   * What a hand-off to an EXTERNAL merge tool (a JetBrains IDE's merge
+   * window) needs, behind the same guards as `writeResolution` — because the
+   * tool writes its result to the real file, this is a write too:
+   *
+   * - the path guard, symlinked parents included (the IDE would otherwise
+   *   write through a symlinked folder to a file outside the repository);
+   * - text only: the sides travel as JavaScript strings into the tool's
+   *   LOCAL / REMOTE / BASE files, so a non-UTF-8 file would reach the tool
+   *   as U+FFFD and come back that way in the result it saves; a symlink,
+   *   a binary or a side with no file has no line merge to make at all.
+   *
+   * `abs` is the file the tool writes; `sides` are already role-mapped
+   * (LOCAL = `yours`).
+   */
+  async externalMergeInput(
+    path: string,
+    opts?: ReadSidesOptions & { takeSideAdvice?: string },
+  ): Promise<{ ok: true; abs: string; sides: MergeSides } | { ok: false; result: ConflictOpResult }> {
+    const guard = await this.guardPath(path);
+    if (!guard.ok) return guard;
+    const way = opts?.takeSideAdvice ?? "accept one side instead";
+    const sides = await this.readSides(path, opts);
+    if (sides.source === "none") {
+      return { ok: false, result: refuse(`${path} has no conflict to merge.`) };
+    }
+    if (sides.shape !== "text" && sides.shape !== "added-both") {
+      return { ok: false, result: refuse(`${path} has no text to merge line by line — ${way}.`) };
+    }
+    const safe = await textWriteSafe(guard.abs, (what) =>
+      what === "symlink"
+        ? `${path} is a symbolic link, so there is no text to merge line by line — ${way}.`
+        : `${path} isn't UTF-8 text. The merge tool would get its bytes rewritten as text and save them that way — ${way}.`,
+    );
+    if (!safe.ok) return { ok: false, result: refuse(safe.why) };
+    return { ok: true, abs: guard.abs, sides };
+  }
+
+  /**
    * Record how a path was resolved outside takeRole (the merge editor's Apply
    * = "merged"), for the snapshot's row pills.
    */
