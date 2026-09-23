@@ -1,0 +1,168 @@
+apps/extension/src/graph/commitActions.ts
+  s_26f5e669d3043c::t_c3ba1e2556c608 7-8
+  s_26f5e669d3043c::t_c2d2f08d39c653 234-238,240
+  s_26f5e669d3043c::t_dc54dbab8612b1 239
+packages/git-service/src/BranchOps.ts
+  s_26f5e669d3043c::t_e6d33dc5b6dda9 201-215,224-227,233-259
+  s_26f5e669d3043c::t_333e0242f7f185 143-148
+  s_26f5e669d3043c::t_aafcde15b82474 45-74
+  s_26f5e669d3043c::t_33c96824d30ca3 279-280,282
+  s_26f5e669d3043c::t_f02816447144f7 194-195
+  s_26f5e669d3043c::t_cf2372f9817bd3 288-293,299
+  s_26f5e669d3043c::t_8475587baa2cf7 260-261
+apps/desktop/test/rewordAcrossStop.test.ts
+  s_26f5e669d3043c::t_c602af6ee0510a 228,346
+apps/desktop/test/mergeReport.test.ts
+  s_26f5e669d3043c::t_c602af6ee0510a 50,72,100
+apps/extension/src/views/branchActions.ts
+  s_26f5e669d3043c::t_183617ae65325d 225-226,229-233,235-236,242-244,248
+  s_26f5e669d3043c::t_b3f3fe21f9106a 713-716,720,727-730
+  s_26f5e669d3043c::t_1c9b488d0f93f1 643,650,654-659,662
+  s_26f5e669d3043c::t_19c222b4cda156 437-445,457-458,461,464
+  s_26f5e669d3043c::t_381c9af4f39062 164-168
+  s_26f5e669d3043c::t_02305e038098d3 396-402,406,413-414,418,425,427
+  s_26f5e669d3043c::t_db7b4ebaa12d10 262-268,271-273,275,277,281,284,289
+  s_26f5e669d3043c::t_f51291eb2da7c8 490,497-499,508-512,514,517-518,526-527
+  s_26f5e669d3043c::t_50ef8cac9621e0 6-9
+  s_26f5e669d3043c::t_fc331cc56a04f0 184-189,192,194,202-206,211
+  s_26f5e669d3043c::t_22a3b46dc9c7bc 742-745,749,753-756
+  s_26f5e669d3043c::t_5eb73d14a23b4a 476,478
+  s_26f5e669d3043c::t_4ce7a513ad1d3b 121-128,134-163,169-175
+  s_26f5e669d3043c::t_a05dba45a0b0d0 536,540-549,551-553
+  s_26f5e669d3043c::t_26c99465fc1133 207,415
+apps/desktop/src/main/main.ts
+  s_26f5e669d3043c::t_535c7d0a75d1d0 795,807
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_fc2e37de0dde78 3887-3891,3895,3899,3901,3903,3908,3911-3912
+  s_26f5e669d3043c::t_f1e089fc9a02c1 3171,3173,3178
+  s_26f5e669d3043c::t_caf30f1f562fb5 3785,3795-3796
+  s_26f5e669d3043c::t_08b0f4f1904f5a 3821,3825,3827,3830,3836
+  s_26f5e669d3043c::t_f6f6d75af28b6e 3003,3852-3853
+  s_26f5e669d3043c::t_4decf9f461b46d 2854-2858
+  s_26f5e669d3043c::t_2f3c3e8313e911 2883,2891-2892,2897-2898
+  s_26f5e669d3043c::t_4c94791b85bbf3 3948
+  s_26f5e669d3043c::t_71d872b397cca5 4052-4056
+  s_26f5e669d3043c::t_d82ce69b37de21 2600
+  s_26f5e669d3043c::t_072c0a5c3f538e 2861
+  s_26f5e669d3043c::t_f5f4b02be5aaa6 3596
+  s_26f5e669d3043c::t_cacc5c7bc390cf 3986-3991
+  s_26f5e669d3043c::t_14db36a072ff36 4075,4084
+  s_26f5e669d3043c::t_c6ccf83f565523 3532-3535
+  s_26f5e669d3043c::t_76ddffdb361254 2880
+  s_26f5e669d3043c::t_66126aa6d8c8c0 3644,3652,3658-3662,3673,3675
+  s_26f5e669d3043c::t_e909163de711b8 3757,3760-3761
+  s_26f5e669d3043c::t_33dc31ea9e67ca 3922,3926,3930,3937
+  s_26f5e669d3043c::t_c2396a7f91349e 9722-9727
+  s_26f5e669d3043c::t_ce5111abec6c5a 3612,3614-3615,3618
+  s_26f5e669d3043c::t_fffbe6444f63ce 3628,3630,3636
+  s_26f5e669d3043c::t_d14be53feccf3c 4181-4182
+  s_26f5e669d3043c::t_07e44706bcf605 2581-2583
+  s_26f5e669d3043c::t_c6cc2df6839430 3699
+  s_26f5e669d3043c::t_8ddf0e1d922857 3586
+  s_26f5e669d3043c::t_851f16110bf6e2 87-88
+  s_26f5e669d3043c::t_f3e07b168fd0d3 3579-3580
+  s_26f5e669d3043c::t_94dc4f94b55000 1903,2094,2859,3002,3351,3513
+packages/git-service/test/gitToolHost.test.ts
+  s_26f5e669d3043c::t_17f0fdbca972a3 131,147-160
+  s_26f5e669d3043c::t_30b6257d2bfe41 132-146
+apps/desktop/src/renderer/optionLikeRename.ts
+  s_26f5e669d3043c::t_f9a39787a60753 1-66
+apps/desktop/src/renderer/branchRequests.ts
+  s_26f5e669d3043c::t_c5a1eedad180df 1-31
+packages/git-service/src/GitToolHost.ts
+  s_26f5e669d3043c::t_7ea178ce068dd5 23
+  s_26f5e669d3043c::t_b89d992cb90d93 24
+  s_26f5e669d3043c::t_c8e025d2f9e599 306-313
+  s_26f5e669d3043c::t_70abdeeacdedc1 378-384
+apps/desktop/test/branchSweep.test.ts
+  s_26f5e669d3043c::t_cc5c4a4212430d 20
+  s_26f5e669d3043c::t_af4f0977ce7751 28-29,34,41-51
+  s_26f5e669d3043c::t_e39c96ffda2f2a 123
+  s_26f5e669d3043c::t_6d2234d8ed4483 101
+  s_26f5e669d3043c::t_358b39aa44cca8 52-53
+apps/extension/test/refCheckout.test.ts
+  s_26f5e669d3043c::t_cf936237e2553e 9
+  s_26f5e669d3043c::t_c410cb7b2b0197 208
+  s_26f5e669d3043c::t_f5daffdbbe5280 165,169-207,209-239
+apps/desktop/test/branchFullNames.test.ts
+  s_26f5e669d3043c::t_2eb9601cbfd450 143-147
+  s_26f5e669d3043c::t_f783868984d594 1-142,148-215
+apps/desktop/test/branchPush.test.ts
+  s_26f5e669d3043c::t_c602af6ee0510a 77,113,151,184,210
+apps/desktop/src/renderer/views/refDetail.ts
+  s_26f5e669d3043c::t_62d8965e085805 271-274,276
+  s_26f5e669d3043c::t_9e4a791e19c687 18-19
+  s_26f5e669d3043c::t_ff5fb9d9edca87 262-263
+  s_26f5e669d3043c::t_6e3cf07ab09250 290
+apps/desktop/test/gitBridgeArgGuards.test.ts
+  s_26f5e669d3043c::t_93e58327009485 103-113
+apps/extension/src/views/worktreesView.ts
+  s_26f5e669d3043c::t_fe6395ec499f6e 12
+  s_26f5e669d3043c::t_7822e7cbdc27d8 447
+  s_26f5e669d3043c::t_57ef13be9e05d0 462-463,465,470,473-474,480,489-492
+  s_26f5e669d3043c::t_1ac0072f066f9d 507
+  s_26f5e669d3043c::t_8fadf625365277 448-459
+packages/git-service/test/checkoutRef.test.ts
+  s_26f5e669d3043c::t_a21e55b7719546 7
+  s_26f5e669d3043c::t_fc0ed6e908d92c 210-249
+packages/git-service/test/branchFullNames.test.ts
+  s_26f5e669d3043c::t_707f4ee4de48c7 1-209,213-252
+  s_26f5e669d3043c::t_bd4820639159da 210-212
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_4634b6d8db1543 1428-1430
+  s_26f5e669d3043c::t_4d8942f6d7beb2 1853-1867
+  s_26f5e669d3043c::t_41df7eefed1a64 312-319
+  s_26f5e669d3043c::t_4dd9fce48b0795 1364-1368
+  s_26f5e669d3043c::t_e34d9ebc7a2a25 1410-1427
+  s_26f5e669d3043c::t_b2d028c5b341e5 1392-1394
+apps/extension/src/views/optionLikeBranch.ts
+  s_26f5e669d3043c::t_51d855837ba270 29-31,38,44
+  s_26f5e669d3043c::t_e1b02c0f980690 56,60,66,68-69
+  s_26f5e669d3043c::t_767b8da095254f 1-28,32-37,39-43,45-55,57-59,61-65,67,70
+apps/extension/src/views/refCheckout.ts
+  s_26f5e669d3043c::t_669d09548e2047 15-20
+  s_26f5e669d3043c::t_e84aa61847014f 68-90,92-96
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_af1f9cd99617b4 1860-1864,1869
+  s_26f5e669d3043c::t_2ad2ba5dfa6870 124-148
+  s_26f5e669d3043c::t_57147a5e5d78f7 1810-1815,1820,1827-1828,1832
+  s_26f5e669d3043c::t_954213078bcd45 2190,2192-2195,2203,2205,2208
+  s_26f5e669d3043c::t_d849ab5e66791e 22-23
+  s_26f5e669d3043c::t_21517be27aa80a 2244-2258
+  s_26f5e669d3043c::t_ad17a0b7bc50a1 2475-2509
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_793509f0e90b71 57-59
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_a91f62be30dcad 1802-1804
+  s_26f5e669d3043c::t_f305c8c65a7511 2181-2190
+  s_26f5e669d3043c::t_b9d9ddb02e4837 336-342
+  s_26f5e669d3043c::t_f2189227b7d9d9 1842,1846-1847
+apps/extension/test/worktreeRefs.test.ts
+  s_26f5e669d3043c::t_2112e3b4920dec 7
+  s_26f5e669d3043c::t_e5bfe74e7e6674 44-50
+  s_26f5e669d3043c::t_e97a982ba0782e 62-101
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_6d60b18b012c3f 12427-12500
+apps/extension/src/views/worktreeRefs.ts
+  s_26f5e669d3043c::t_26c99465fc1133 44
+  s_26f5e669d3043c::t_c0efb2f4d15cf6 2,28-31,33-43,45-53,56-57,61,63,65,67,72-73,76-77,79
+packages/git-service/src/checkoutRef.ts
+  s_26f5e669d3043c::t_0ef74e48431487 46-104
+  s_26f5e669d3043c::t_d9fc90c6bac805 123-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "93bbbe2c2efcc3a58c493635020740e493fd1493",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
