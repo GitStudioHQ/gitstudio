@@ -1,0 +1,25 @@
+scripts/merge-e2e/alignment.ts
+  s_26f5e669d3043c::t_b8fe5c59204c34 293,396,401
+  s_26f5e669d3043c::t_65ab89940924d0 445-452
+  s_26f5e669d3043c::t_8cc05a2911f248 437-442,453-455
+  s_26f5e669d3043c::t_ca344cbaf2357c 388-394
+  s_26f5e669d3043c::t_dd99a055cbd469 470-473
+scripts/merge-e2e/cdp.ts
+  s_26f5e669d3043c::t_cedf5429331629 157,233-247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c29a946979199fd284e5de6b5cf3b63cf5dc132c",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
