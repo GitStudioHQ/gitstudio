@@ -152,6 +152,27 @@ const UNSAFE_PATH_RESULT: CommitActionResult = {
 };
 
 /**
+ * Did a failed git command DECLINE — explain itself on stdout alone — rather
+ * than fail?
+ *
+ * The one rule staged(), commitAction and checkoutRef share for a failure that
+ * wrote nothing to stderr. git declining on stdout ("nothing to commit, working
+ * tree clean" from a revert already made, a merge's CONFLICT report) is a state
+ * of the user's repository, so it is `expected`: shown, not crash-reported.
+ *
+ * Silence on BOTH streams is not. git speaks when it refuses — a hook that
+ * rejects a merge, a rebase or a ref update still gets "ref updates aborted by
+ * hook" or "The pre-rebase hook refused to rebase." (checked against real git)
+ * — so a failure with nothing on either stream is a process that died, a git
+ * that is not git, or something we did. All three sites used to mark it
+ * expected, which silenced the one report that could tell us, and painted
+ * "The operation failed." in the neutral tone of a state the user is in.
+ */
+function declinedOnStdout(stdout: string, stderr: string): boolean {
+  return stderr.trim() === "" && stdout.trim() !== "";
+}
+
+/**
  * Resolves a renderer-supplied repo-relative path and REFUSES anything that
  * escapes the repository root ("../../…" or an absolute path). safeArg alone
  * only blocks option injection — without this containment check a hostile
@@ -2319,7 +2340,7 @@ export class GitBridge {
         ok: false,
         changed: false,
         message: stderr || r.stdout.trim() || "The checkout failed.",
-        ...(stderr ? {} : { expected: true }),
+        ...(declinedOnStdout(r.stdout, stderr) ? { expected: true } : {}),
       };
     });
   }
@@ -2368,7 +2389,9 @@ export class GitBridge {
    * git DECLINING to do something, not GitStudio failing at it — a state of the
    * user's repo. Without this, teaching these paths to speak would have turned
    * every "nothing to do" into a crash report, which is exactly the trap the
-   * commit fix fell into first.
+   * commit fix fell into first. A failure with NOTHING on either stream is not
+   * that — git always says why it declines — so it is reported, under the plain
+   * "The operation failed." (see declinedOnStdout).
    */
   private async staged(
     op: (
@@ -2432,7 +2455,7 @@ export class GitBridge {
           // stderr and the file it stopped on, plus what to do next, on stdout
           // — and showing only stderr threw away the half that helps.
           message: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || "The operation failed.",
-          ...(stderr && !ordinary ? {} : { expected: true }),
+          ...(ordinary || declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
         };
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
@@ -2472,7 +2495,8 @@ export class GitBridge {
           // Same stdout fallback and same `expected` rule as staged(): reverting
           // a commit that is already reverted exits non-zero with stderr EMPTY
           // and "nothing to commit, working tree clean" on stdout, which used to
-          // arrive as a blank toast. It is git declining, not us failing.
+          // arrive as a blank toast. It is git declining, not us failing — but
+          // only when stdout says so; silence on both is reported.
           const stderr = result.stderr.trim();
           const stdout = result.stdout.trim();
           const conflicts = await this.conflictExplains(ctx);
@@ -2483,7 +2507,7 @@ export class GitBridge {
             ok: false,
             changed: false,
             message: stderr || stdout || "The operation failed.",
-            ...(stderr ? {} : { expected: true }),
+            ...(declinedOnStdout(stdout, stderr) ? { expected: true } : {}),
           };
         }
         return { ok: true, changed: true };
