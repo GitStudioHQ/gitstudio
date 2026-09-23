@@ -1,0 +1,26 @@
+packages/merge-vscode/test/mergeEditorProvider.test.ts
+  s_26f5e669d3043c::t_12e107eb4ff6a5 175-226
+packages/merge-vscode/test/support/useVscodeStub.ts
+  s_26f5e669d3043c::t_fd8363c8455a6e 56-57
+packages/merge-vscode/src/mergeEditorProvider.ts
+  s_26f5e669d3043c::t_2a1c5092deaca5 11,95,140,237-260
+  s_26f5e669d3043c::t_a0c420d698f407 261-263
+packages/merge-vscode/test/support/vscodeStub.cjs
+  s_26f5e669d3043c::t_fd8363c8455a6e 99-115,138-139,141,287-290,311-312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f84212b2a3184a59c69b2f5df0c768ce25bb5e4a",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
