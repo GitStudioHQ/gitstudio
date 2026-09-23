@@ -2333,7 +2333,10 @@ export interface IpcEvents {
       | "palette"
       /** ⌘Z. The renderer decides: its own undo stack if anything is on it,
        *  otherwise the text undo the keystroke used to mean. */
-      | "undo";
+      | "undo"
+      /** ⇧⌘Z (Ctrl+Y on Windows). The merge editor's redo while focus is in
+       *  it, otherwise the text redo the role used to perform. */
+      | "redo";
   };
   /** A chunk of PTY output for a terminal session. */
   "terminal:data": TerminalData;

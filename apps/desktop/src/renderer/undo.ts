@@ -222,10 +222,9 @@ export async function undoOrText(): Promise<void> {
 
 /**
  * ⇧⌘Z, decided the same way: the merge editor's redo while focus is inside
- * it, the text redo otherwise. The Edit menu's Redo is still Electron's
- * `role: "redo"` (the main process owns that menu), so today the merge editor
- * gets its redo from the key alone; this is the renderer half for the day the
- * menu sends `menu:command { command: "redo" }` the way it sends undo.
+ * it, the text redo otherwise. The Edit menu's Redo sends
+ * `menu:command { command: "redo" }` the way Undo sends undo — it used to be
+ * Electron's `role: "redo"`, a text redo underneath the merge's history.
  */
 export function redoOrText(): void {
   const merge = mergeHistoryFor(document.activeElement);

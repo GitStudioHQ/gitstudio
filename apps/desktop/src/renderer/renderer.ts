@@ -19,7 +19,7 @@ import { ConflictsDashboard } from "@gitstudio/webview-ui/conflicts/dashboard";
 import type { ConflictsState } from "@gitstudio/host-bridge/conflictsProtocol";
 import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
-import { clearUndo, didUndoable, installUndoKey, undoOrText } from "./undo";
+import { clearUndo, didUndoable, installUndoKey, redoOrText, undoOrText } from "./undo";
 import { renderCommit } from "./views/commit";
 import { renderJobLog } from "./views/jobLog";
 import { renderReleaseCompose } from "./views/releaseCompose";
@@ -8828,6 +8828,7 @@ class App {
       else if (msg.command === "toggleSidebar") this.toggleRail();
       else if (msg.command === "palette") this.openPalette();
       else if (msg.command === "undo") void undoOrText();
+      else if (msg.command === "redo") redoOrText();
     });
     // App updates: the main process polls; the USER decides. Nothing downloads
     // or installs without a confirm here.

@@ -4480,11 +4480,24 @@
         "the Edit menu's Undo did not pop the app's own stack (no other file was brought back)",
       );
       c.ok(!!$(".ms-shell") && document.activeElement && $(".ms-shell").contains(document.activeElement), "and the merge editor still has the keyboard");
+      // The Edit menu's REDO, too: it was Electron's role (a text redo), so
+      // ⇧⌘Z from the menu redid typing under the merge's own history.
+      await settle(500);
+      window.__gsEmit("menu:command", { command: "redo" });
+      await settle(300);
+      c.eq(counter(), "All changes have been processed", "the Edit menu's Redo, with focus in the merge editor, redoes the MERGE action");
+      await settle(500);
+      window.__gsEmit("menu:command", { command: "undo" });
+      await settle(300);
+      c.eq(counter(), start, "(back to the start for the next step)");
       $(".dc-message")?.focus();
       await settle(500);
       window.__gsEmit("menu:command", { command: "undo" });
       await settle(300);
       c.eq(counter(), start, "outside it, the menu's Undo leaves the merge alone");
+      window.__gsEmit("menu:command", { command: "redo" });
+      await settle(300);
+      c.eq(counter(), start, "…and so does the menu's Redo");
     },
 
     /** The legend chips count what the view counts (P1's legend; the shell provides the slot). */
