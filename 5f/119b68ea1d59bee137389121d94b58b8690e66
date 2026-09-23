@@ -1,0 +1,41 @@
+packages/git-service/src/jetbrains/launcher.ts
+  s_26f5e669d3043c::t_6c127a45f0b641 140-156,158-164
+  s_26f5e669d3043c::t_a73c29b5af052c 107-108,110,119,123
+  s_26f5e669d3043c::t_4eb8334d8f0de5 157
+  s_59c0dd2af30db2::t_ffc8c212e35042 165-166
+packages/git-service/src/jetbrains/locator.ts
+  s_26f5e669d3043c::t_ec9af20c11b69e 202-203,205-209
+  s_26f5e669d3043c::t_2646b534914b8a 94-96
+  s_26f5e669d3043c::t_c5226a89768a0a 48-52,62,69
+  s_26f5e669d3043c::t_23e7f6e5878229 150-153,155-166
+  s_26f5e669d3043c::t_d1ecc774fca7fe 119-125,133-143
+packages/git-service/test/jetbrains.test.ts
+  s_26f5e669d3043c::t_57536879c7a9d0 206-208
+  s_26f5e669d3043c::t_045ec2e6804522 149-205,209-217
+  s_26f5e669d3043c::t_20de44b4e3a3d7 7
+  s_26f5e669d3043c::t_2db347d69960e1 218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "5f119b68ea1d59bee137389121d94b58b8690e66",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    },
+    "s_59c0dd2af30db2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54ca11b6-e37a-494e-95d0-c9e5a1baed9f",
+        "model": "unknown"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
