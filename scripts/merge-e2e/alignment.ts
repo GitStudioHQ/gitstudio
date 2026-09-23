@@ -33,14 +33,18 @@
 // - where a band meets the RESULT, the result's colour must say the state: the
 //   same tint as the ribbon while the change is open, a different one once one
 //   side of the conflict is in (the owner: "after Accept Yours the result still
-//   wears the full conflict look").
+//   wears the full conflict look") — and a TAKEN side's muted ribbon (its
+//   trace, data-state "took") continues into the Result on its own colour.
 //
 // THE PIXELS (every viewport with a filled band on screen) — the model above
 // cannot see a column of the gutter's border showing between a ribbon and its
 // pane (the critic found one at the gutter|result seams: a half-CSS-pixel
 // hairline across every band, at fractional pane widths). So text, line
-// numbers, controls and scrollbars are hidden for a moment and the seams are
-// photographed, in device pixels:
+// numbers and controls are hidden for a moment and the seams are
+// photographed, in device pixels — with every vertical scrollbar and overview
+// ruler LEFT ON: the Result's once sat on the Result|gutter seam and cut every
+// band there (the critic's "solid block beside the result"), so a bar or a
+// ruler on a seam must fail here:
 // - inside every band, every column across the seam is the ribbon's colour or
 //   the pane band's — never a third (the gutter's border, the background);
 // - where the ribbon is flat (the icon strip beside a side pane), the band's
@@ -48,12 +52,14 @@
 //   and so are a handled side's outline rows.
 //
 // Each file is walked through, page by page, in three states: as it opens;
-// half handled — Yours taken on conflicts (Theirs left pending), one-sided
-// and identical changes taken or ignored, each through its gutter control
-// (handled sides, pending halves and resolved blocks side by side); and
-// everything resolved (the bottom bar's Accept Yours), where nothing may be
-// drawn across the gutters or in the side panes any more. Coverage is checked
-// against oracle.json: every block's every side must have been measured.
+// half handled — Yours taken on conflicts (Theirs left pending), BOTH sides
+// taken on every other conflict, one-sided and identical changes taken or
+// ignored, each through its gutter control (taken sides' muted ribbons,
+// pending halves and resolved blocks side by side); and everything resolved
+// (the bottom bar's Accept Yours: the rest of the conflicts settled as Yours,
+// Theirs discarded), where only the traces of taken sides may cross the
+// gutters and nothing may look open any more. Coverage is checked against
+// oracle.json: every block's every side must have been measured.
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -148,8 +154,9 @@ const PROBE = (state: string) => `(() => {
   const stage = grid.querySelector(".jb-ribbon-stage");
   const sr = stage.getBoundingClientRect();
   // (The "applied" names are the rejected builds' dashed style: kept so the
-  // proof that this fails on them can still read what they drew.)
-  const TONE = /jb-(?:ribbon-(?:done-|frame-|applied-)?|line-|applied-|point-|marker-|frame-|done-)(inserted|deleted|modified|same|conflict)(?![\\w-])/;
+  // proof that this fails on them can still read what they drew. "trace" is a
+  // settled side's muted band and ribbon, "cap" a band's end at a point.)
+  const TONE = /jb-(?:ribbon-(?:done-|frame-|applied-|trace-|cap-trace-|cap-)?|line-|applied-|point-|marker-|frame-|done-|trace-)(inserted|deleted|modified|same|conflict)(?![\\w-])/;
   const alpha = (c) => {
     if (!c || c === "none" || c === "transparent") return 0;
     let m = /rgba?\\(([^)]*)\\)/.exec(c);
@@ -209,14 +216,19 @@ const PROBE = (state: string) => `(() => {
   const seen = new Set();
   let checked = 0;
   const paths = [...stage.querySelectorAll("path")];
+  const painted = (p) => { const cs = getComputedStyle(p); return (cs.fill !== "none" && alpha(cs.fill) > 0) || (cs.stroke !== "none" && alpha(cs.stroke) > 0); };
   if (STATE === "resolve") {
-    // Everything is settled: nothing across the gutters, nothing in the side panes.
-    const drawn = paths.filter((p) => { const cs = getComputedStyle(p); return (cs.fill !== "none" && alpha(cs.fill) > 0) || (cs.stroke !== "none" && alpha(cs.stroke) > 0); });
-    if (drawn.length) mismatches.push({ seam: "gutters", tone: "?", kind: "state", problem: "a resolved change still draws across a gutter (" + drawn.length + " paths)", ribbon: [0, 0], pane: [] });
-    const side = [bodies[0], bodies[2]].flatMap((b) => [...b.querySelectorAll(".view-overlays div, .margin-view-overlays div")].filter((el) => TONE.test(typeof el.className === "string" ? el.className : "")));
-    if (side.length) mismatches.push({ seam: "side panes", tone: "?", kind: "state", problem: "a resolved change still marks a side pane (" + side.length + " overlays)", ribbon: [0, 0], pane: [] });
+    // Everything is settled. Only the TRACE of a side that was taken may cross
+    // a gutter (its muted ribbon, data-state "took"); a discarded side draws
+    // none, and nothing may still look open — in a gutter or in a side pane.
+    const drawn = paths.filter((p) => painted(p) && !/jb-ribbon-base|jb-ribbon-line-base/.test(p.getAttribute("class") || "") && p.dataset.state !== "took");
+    if (drawn.length) mismatches.push({ seam: "gutters", tone: "?", kind: "state", problem: "a resolved change still draws across a gutter something other than the trace of a side it took (" + drawn.length + " paths)", ribbon: [0, 0], pane: [] });
+    const open = [bodies[0], bodies[1], bodies[2]].flatMap((b) => [...b.querySelectorAll(".view-overlays div, .margin-view-overlays div")].filter((el) => /(^|\\s)jb-line-(inserted|deleted|modified|same|conflict)(\\s|$)/.test(typeof el.className === "string" ? el.className : "")));
+    if (open.length) mismatches.push({ seam: "panes", tone: "?", kind: "state", problem: "a resolved change still wears an open band (" + open.length + " overlays)", ribbon: [0, 0], pane: [] });
   }
-  const doneBlocks = new Set(paths.filter((p) => p.dataset.state === "done").map((p) => p.dataset.block));
+  // Blocks with a side in while the other is still to decide: from the
+  // ribbons' own phase, or (older builds) a handled side's "done" outline.
+  const doneBlocks = new Set(paths.filter((p) => p.dataset.state === "done" || p.dataset.phase === "half").map((p) => p.dataset.block));
   for (const path of paths) {
     const cs = getComputedStyle(path);
     const cls = path.getAttribute("class") || "";
@@ -268,13 +280,20 @@ const PROBE = (state: string) => `(() => {
           // the ribbon reaches over the pane's first device column.
           const reach = s.paneEdge === "right" ? Math.min(...xs) <= pane.right - 1 + 0.02 : Math.max(...xs) >= pane.left + 1 - 0.02;
           if (!reach) report("the ribbon stops short of the pane (pane edge " + (s.paneEdge === "right" ? pane.right : pane.left) + ", ribbon " + xs.map((x) => x.toFixed(2)).join("/") + ")", [t, b], []);
-          // Where it meets the RESULT, the result's colour says the state.
-          if (s.body === bodies[1]) {
+          // Where it meets the RESULT, the result's colour says the state. A
+          // taken side's trace continues into the Result on its own muted
+          // colour; an open band keeps its tint there while its change is
+          // open, and meets a different one once a side of it is in.
+          if (s.body === bodies[1] && !/jb-ribbon-cap/.test(cls)) {
             const fills0 = over.filter((p) => p.kind === "fill");
             const paneColor = fills0.length ? fills0[0].color : "";
-            const half = doneBlocks.has(block);
-            if (half && paneColor === cs.fill) report("one side of this conflict is in, but the result wears the open conflict's tint (" + paneColor + ")", [t, b], [], "state");
-            if (!half && paneColor && paneColor !== cs.fill) report("the band changes colour where it meets the result (" + cs.fill + " → " + paneColor + ")", [t, b], [], "state");
+            if (path.dataset.state === "took") {
+              if (paneColor && paneColor !== cs.fill) report("the trace of a taken side changes colour where it meets the result (" + cs.fill + " → " + paneColor + ")", [t, b], [], "state");
+            } else {
+              const half = doneBlocks.has(block);
+              if (half && paneColor === cs.fill) report("one side of this conflict is in, but the result wears the open conflict's tint (" + paneColor + ")", [t, b], [], "state");
+              if (!half && paneColor && paneColor !== cs.fill) report("the band changes colour where it meets the result (" + cs.fill + " → " + paneColor + ")", [t, b], [], "state");
+            }
           }
           // For the pixels: the rows where the band is on screen, and where
           // the whole stretch 8 device px into the gutter is inside it (the
@@ -326,8 +345,11 @@ const PIXEL_MODE = (on: boolean) => `(() => {
   if (!s) {
     s = document.createElement("style");
     s.id = "gs-align-pixels";
+    // Vertical scrollbars and overview rulers stay: one on a seam is a defect
+    // (the Result's cut every band there). A horizontal bar only ever lies
+    // along a pane's bottom edge, never across a seam, and is hidden.
     s.textContent = ".gs-align-pixels .view-lines, .gs-align-pixels .line-numbers, .gs-align-pixels .jb-button-layer, " +
-      ".gs-align-pixels .decorationsOverviewRuler, .gs-align-pixels .scrollbar, .gs-align-pixels .cursors-layer, " +
+      ".gs-align-pixels .scrollbar.horizontal, .gs-align-pixels .cursors-layer, " +
       ".gs-align-pixels .view-zones, .gs-align-pixels .margin-view-zones { visibility: hidden !important; }";
     document.head.appendChild(s);
   }
@@ -338,7 +360,8 @@ const PIXEL_MODE = (on: boolean) => `(() => {
 
 /**
  * The half-handled state: on screen, take Yours on each conflict (so Theirs
- * stays pending), take every Yours-only and identical change, ignore every
+ * stays pending) — and on every other conflict take Theirs after it too (both
+ * sides' traces) — take every Yours-only and identical change, ignore every
  * Theirs-only one — each through its own gutter control. Only controls on
  * screen exist, so the walk presses a page's worth at a time, every page.
  */
@@ -348,7 +371,17 @@ const PRESS_HALF = `(async () => {
     document.querySelector('.jb-gutter-a .jb-change-actions:not([data-category="theirs-only"]) .jb-btn-accept') ||
     document.querySelector('.jb-gutter-b .jb-change-actions[data-category="theirs-only"] .jb-btn-ignore');
   let n = 0;
-  for (let b = pick(); b && n < 5000; b = pick()) { press(b); n++; }
+  for (let b = pick(); b && n < 5000; b = pick()) {
+    const group = b.closest(".jb-change-actions");
+    const id = group && group.dataset.block;
+    const both = group && group.dataset.category === "conflict" && Number(id) % 2 === 1;
+    press(b);
+    n++;
+    if (both) {
+      const theirs = document.querySelector('.jb-gutter-b .jb-change-actions[data-block="' + id + '"] .jb-btn-accept');
+      if (theirs) { press(theirs); n++; }
+    }
+  }
   if (n) await new Promise((r) => setTimeout(r, 250));
   return n;
 })()`;

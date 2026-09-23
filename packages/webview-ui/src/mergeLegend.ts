@@ -1,12 +1,16 @@
 // The merge view's colour legend: it explains the COLOURS the panes show, in
 // words, each beside a solid dot of that colour —
 //
-//   ● Conflicts 6 you choose · ● Same on both sides 1 same result either way ·
-//   ● Changed ● Added ● Removed on one side 5 safe to take   (?)
+//   ● Conflicts 6 you choose · ● Changed ● Added ● Removed on one side 5 safe
+//   to take · Same on both sides 1 either arrow takes it   (?)
 //
 // — with a count of what is still to do, and a "?" key for the MARKS (a
-// point line, a dotted edge, a handled side's outline, a settled change).
-// Clicking an item goes to the next change of that kind.
+// point line, a dotted edge, a taken side's muted band, a discarded side's
+// outline). Clicking an item goes to the next change of that kind.
+//
+// A change made the same on both sides has no colour of its own: it is
+// green, blue or grey like any other, on BOTH sides, and either arrow takes
+// it. Its item is a count in words, with no dot.
 //
 // Organised by colour, not by the engine's categories: the bands of a change
 // made on one side are blue, green or grey by what it did, so a legend that
@@ -31,7 +35,7 @@ import { iconElement, questionIcon } from "./icons";
 /** One legend item: the categories it counts, and the colours it names. */
 export type LegendItem = "conflict" | "same" | "one-sided";
 
-export const LEGEND_ITEMS: readonly LegendItem[] = ["conflict", "same", "one-sided"];
+export const LEGEND_ITEMS: readonly LegendItem[] = ["conflict", "one-sided", "same"];
 
 /** The categories a legend item counts (and jumps between). */
 export const LEGEND_CATEGORIES: Record<LegendItem, readonly MergeCategory[]> = {
@@ -68,9 +72,10 @@ const WORDS: Record<LegendItem, ItemWords> = {
     many: "conflicts",
   },
   same: {
-    dots: [{ tone: "same" }],
+    // No dot: it has no colour of its own (it is coloured on both sides).
+    dots: [],
     label: "Same on both sides",
-    note: "same result either way",
+    note: "either arrow takes it",
     one: "change made the same on both sides",
     many: "changes made the same on both sides",
   },
@@ -103,14 +108,16 @@ interface KeyRow {
 }
 
 const KEY: KeyRow[] = [
-  { dots: ["conflict"], text: "Red: a conflict. Both sides changed these lines, differently — you choose: accept one side, both, or edit the result." },
-  { dots: ["same"], text: "Violet: both sides made the same change. Either side gives the same result." },
-  { dots: ["modified", "inserted", "deleted"], text: "Blue, green, grey: lines changed, added or removed on one side only. Safe to take." },
+  { dots: ["conflict"], text: "Conflict (red): both sides changed these lines, differently — you choose: accept one side, both, or edit the result." },
+  {
+    dots: ["modified", "inserted", "deleted"],
+    text: "Changed, Added, Removed (blue, green, grey): on one side only, safe to take. Coloured on both sides: the same change on both sides — either arrow takes it.",
+  },
   { sample: "point", text: "A line between two rows: lines were added or removed at that point." },
   { sample: "ws", text: "A dotted left edge: only whitespace changed." },
-  { sample: "half", text: "Pale red between two faint lines: a conflict with one side taken, the other still to decide." },
-  { sample: "done", text: "A faint outline, no colour: that side is already accepted or ignored." },
-  { sample: "settled", text: "A faint grey line in the result: that change is resolved." },
+  { sample: "half", text: "A paler band between two faint lines, in the Result: a conflict with one side in, the other still to decide." },
+  { sample: "trace", text: "A paler band, linked to the Result: the side you took. A settled Result keeps it too." },
+  { sample: "done", text: "An outline with no link: the side you discarded." },
 ];
 
 function dot(tone: string): HTMLElement {
@@ -269,13 +276,15 @@ export class MergeLegend {
             : `${plural(pending, words.one, words.many)} left${pending < total ? ` of ${total}` : ""}`;
       if (item === "conflict") {
         if (half) text += ` (${half})`;
-        const k = counts.resolvableConflictsPending;
+        // Only ever said when there is something for the wand to do: never
+        // "0 can be resolved", nor any count of nothing.
+        const k = Math.min(counts.resolvableConflictsPending, pending);
         if (k > 0) {
           text += `; ${k === pending ? (k === 1 ? "it" : "all") : k} can be resolved automatically (Resolve simple conflicts)`;
         }
         if (pending > 0) text += ". Both sides changed these lines, differently: you choose";
       } else if (item === "same" && pending > 0) {
-        text += ". Both sides made this change: either side gives the same result";
+        text += ". Coloured on both sides: both made this change, and either arrow takes it";
       } else if (item === "one-sided" && pending > 0) {
         const y = counts.byCategory["yours-only"].pending;
         const t = counts.byCategory["theirs-only"].pending;

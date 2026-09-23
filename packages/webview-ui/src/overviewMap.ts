@@ -1,6 +1,7 @@
 import * as monaco from "monaco-editor";
-import type { BlockTone, ChangeBlock, LineSpan, MergeModel } from "@gitstudio/engine/types";
-import { blockTone, isEmptySpan } from "@gitstudio/engine/types";
+import type { ChangeBlock, LineSpan, MergeModel } from "@gitstudio/engine/types";
+import { isEmptySpan } from "@gitstudio/engine/types";
+import { PAINT_TONES, paintTone, type PaintTone } from "./paint";
 import { scheduleFrame } from "./ribbons";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
@@ -37,7 +38,7 @@ export interface OverviewMapOptions {
 /** One mark as drawn, in CSS px from the strip's top (tests read these). */
 export interface OverviewMark {
   block: number;
-  tone: BlockTone;
+  tone: PaintTone;
   top: number;
   height: number;
 }
@@ -50,7 +51,7 @@ const MIN_THUMB = 20;
 const MARK_INSET = 3;
 
 /** Drawn first to last: a conflict is never hidden under another category. */
-const TONE_ORDER: readonly BlockTone[] = ["deleted", "inserted", "modified", "same", "conflict"];
+const TONE_ORDER: readonly PaintTone[] = PAINT_TONES;
 
 export class OverviewMap {
   /** The strip, in the grid's last column (editor row). */
@@ -178,7 +179,7 @@ export class OverviewMap {
       const y = isEmptySpan(span) ? y0 * scale - h / 2 : y0 * scale;
       this.marks.push({
         block: block.id,
-        tone: blockTone(block),
+        tone: paintTone(block),
         top: Math.min(Math.max(0, y), height - h),
         height: h,
       });
@@ -214,11 +215,11 @@ export class OverviewMap {
   }
 
   /** The categories' opaque colours, resolved from the live theme (`--jb-map-<tone>`). */
-  private palette(): Record<BlockTone, string> {
+  private palette(): Record<PaintTone, string> {
     const probe = document.createElement("span");
     probe.style.display = "none";
     this.element.appendChild(probe);
-    const read = (tone: BlockTone): string => {
+    const read = (tone: PaintTone): string => {
       probe.style.color = `var(--jb-map-${tone})`;
       return getComputedStyle(probe).color;
     };
@@ -226,7 +227,6 @@ export class OverviewMap {
       inserted: read("inserted"),
       deleted: read("deleted"),
       modified: read("modified"),
-      same: read("same"),
       conflict: read("conflict"),
     };
     probe.remove();

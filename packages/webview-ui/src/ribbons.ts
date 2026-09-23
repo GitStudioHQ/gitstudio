@@ -6,9 +6,10 @@ import type {
   MergeModel,
   Side,
 } from "@gitstudio/engine/types";
-import { blockTone, isEmptySpan, sideBlockSpan } from "@gitstudio/engine/types";
+import { isEmptySpan, sideBlockSpan } from "@gitstudio/engine/types";
 import type { DiffEditors, MergeEditors } from "./decorations";
 import { OVERLAY_FALLBACK_MS } from "./limits";
+import { paintTone, type SideFate } from "./paint";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -69,15 +70,20 @@ export const POINT_PX = 2;
  * It was 2px of the full-strength edge colour everywhere — a bright wire
  * across the Result that the ribbons, in their tint, ended at as a dull strip.
  * Now the line and the ribbon's end are one colour (`--jb-point-<tone>`: the
- * tint at a higher strength), and the ribbon eases from it to the band's tint
- * across the gutter's slant (RibbonOverlay).
+ * tint at a higher strength): the ribbon's end at a point is capped in it
+ * (RibbonOverlay's `jb-ribbon-cap`).
  */
 export function mergePointPx(): number {
   return document.body.classList.contains("vscode-high-contrast") ? 2 : 1;
 }
 
-/** Gradient ids, unique on the page (a page may hold more than one stage). */
-let gradientSeq = 0;
+/**
+ * How far a point's cap runs into the gutter from its seam, in CSS px, where
+ * the band slants (at the Result): the pane's point line carries on into the
+ * ribbon's end in its own colour. Beside a side pane the band is flat across
+ * the whole icon strip, and so is its cap.
+ */
+const CAP_PX = 2;
 
 /** Which edge of the gutter carries the rectangular icon segment. */
 type StripSide = "a" | "b";
@@ -93,10 +99,15 @@ const BEND_RADIUS = 7;
 export interface RibbonOptions {
   /** Current result-pane span for a block (defaults to its base span). */
   resultSpanOf?: (block: ChangeBlock) => LineSpan;
-  /** A fully resolved block draws nothing across the gutters. */
+  /** Whether every side of a block is settled. */
   isResolved?: (block: ChangeBlock) => boolean;
-  /** A handled (applied or ignored) side of a pending block keeps only a faint outline, never a fill. */
+  /** Whether a side has been handled (taken or discarded). */
   isSideDone?: (block: ChangeBlock, side: Side) => boolean;
+  /**
+   * What became of a side: a TAKEN side keeps its ribbon, muted; a DISCARDED
+   * side draws none. Without it, every handled side counts as taken.
+   */
+  sideFate?: (block: ChangeBlock, side: Side) => SideFate;
 }
 
 /** A gutter's horizontal extent on the stage, snapped as its box is painted. */
@@ -198,17 +209,21 @@ class Frame {
  * polygon FILLED with the same tint across the gutter, and the tint in the
  * result — every edge on the same row (see Frame), and each end two
  * device pixels INTO the pane it meets, so no column of the gutter's border
- * can show between them at any zoom. A HANDLED side of a conflict whose other
- * side is still pending is calm: no fill, only a faint line on the band's own
- * first and last rows — the rows the panes draw theirs on. A RESOLVED change
- * draws nothing across the gutters at all: it is done, and the result alone
- * keeps a faint line for it. High contrast themes add a solid edge to pending
- * bands too (the `jb-ribbon-frame` paths; diff.css shows them only there).
+ * can show between them at any zoom. A side that was TAKEN keeps its ribbon,
+ * muted (`jb-ribbon-trace`, the muted tint its pane and the Result wear) —
+ * the trace of where the Result's text came from, half done or resolved. A
+ * side that was DISCARDED draws none: its pane keeps an outline, and nothing
+ * joins it to the Result. High contrast themes add a solid edge to every
+ * band (the `jb-ribbon-frame` paths; diff.css shows them only there).
  *
  * A band that ends at a POINT (an insertion or deletion point, in the result
- * or in a side pane) meets a line in `--jb-point-<tone>`, and so its ribbon's
- * end is that colour too: flat at the point, easing to the band's tint across
- * the gutter's slant — never a bright line ending in a dull strip.
+ * or in a side pane) meets a line in the point's colour, and so its ribbon's
+ * end is that colour too — a cap on the point's own rows (`jb-ribbon-cap`),
+ * never a bright line ending in a dull strip.
+ *
+ * Every path says what it draws: `data-block`, `data-side`, `data-tone`,
+ * `data-state` ("pending" / "took") and `data-phase` — whether its change is
+ * "open", "half" (one side in) or "resolved".
  */
 export class RibbonOverlay {
   private readonly svg: SVGSVGElement;
@@ -262,56 +277,69 @@ export class RibbonOverlay {
     const stripA: IconStrip = { side: "a", width: MERGE_ICON_STRIP };
     const stripB: IconStrip = { side: "b", width: MERGE_ICON_STRIP };
     const pointPx = mergePointPx();
-    const defs = document.createElementNS(SVG_NS, "defs");
-    this.svg.appendChild(defs);
 
     // A pane's edge line is a 1px border (diff.css).
     const line = 1;
 
     for (const block of model.blocks) {
-      if (this.options.isResolved?.(block) ?? false) {
-        // Settled: nothing across the gutters (the result keeps a faint line).
-        continue;
-      }
-      const tone = blockTone(block);
+      const tone = paintTone(block);
+      const resolved = this.options.isResolved?.(block) ?? false;
+      const fateOf = (side: Side): SideFate => {
+        if (this.options.sideFate) return this.options.sideFate(block, side);
+        return (this.options.isSideDone?.(block, side) ?? false) ? "took" : "pending";
+      };
+      const present = (["left", "right"] as const).filter((s) => (s === "left" ? block.left : block.right));
+      const fates = new Map(present.map((s) => [s, fateOf(s)] as const));
+      const phase = resolved ? "resolved" : [...fates.values()].some((f) => f !== "pending") ? "half" : "open";
       const resultSpan = this.options.resultSpanOf?.(block) ?? block.baseSpan;
       const result = frame.band(this.editors.result, resultSpan, lineHeight, pointPx);
 
       // Each side's FULL region (its change plus the passthrough lines of the
       // block), so the band meets the same rows the pane highlights and the
       // alignment spacers balance.
-      for (const side of ["left", "right"] as const) {
-        if (!(side === "left" ? block.left : block.right)) {
+      for (const side of present) {
+        const fate = fates.get(side)!;
+        if (fate === "discarded") {
+          // Set aside: nothing joins it to the Result any more.
           continue;
         }
         const editor = side === "left" ? this.editors.left : this.editors.right;
         const sideSpan = sideBlockSpan(block, side);
         const region = frame.band(editor, sideSpan, lineHeight, pointPx);
-        const done = this.options.isSideDone?.(block, side) ?? false;
         const [gutter, a, b, strip] =
           side === "left"
             ? [gutterA, region, result, stripA]
             : [gutterB, result, region, stripB];
-        const geometry = bandGeometry(gutter, frame.height, a, b, frame.reach(gutter), strip);
+        const reach = frame.reach(gutter);
+        const geometry = bandGeometry(gutter, frame.height, a, b, reach, strip);
         if (!geometry) {
           continue;
         }
-        const data = { block: String(block.id), side, tone, state: done ? "done" : "pending" };
-        if (done) {
-          appendEdges(this.svg, geometry, "jb-ribbon-line-base", data, line);
-          appendEdges(this.svg, geometry, `jb-ribbon-done jb-ribbon-done-${tone}`, data, line);
-        } else {
-          // Ending at a point (at most one end does): that end in the point's
-          // colour, easing to the tint across the slant.
-          const resultPoint = isEmptySpan(resultSpan);
-          const sidePoint = !resultPoint && isEmptySpan(sideSpan);
-          const style =
-            resultPoint || sidePoint
-              ? `fill:${pointGradient(defs, geometry, side, resultPoint, tone)}`
-              : undefined;
-          appendBand(this.svg, geometry, "jb-ribbon-base", data);
-          appendBand(this.svg, geometry, `jb-ribbon jb-ribbon-${tone}`, data, style);
-          appendEdges(this.svg, geometry, `jb-ribbon-frame jb-ribbon-frame-${tone}`, data, line);
+        const took = fate === "took";
+        const data = { block: String(block.id), side, tone, state: took ? "took" : "pending", phase };
+        appendBand(this.svg, geometry, "jb-ribbon-base", data);
+        appendBand(this.svg, geometry, took ? `jb-ribbon-trace jb-ribbon-trace-${tone}` : `jb-ribbon jb-ribbon-${tone}`, data);
+        appendEdges(
+          this.svg,
+          geometry,
+          took ? `jb-ribbon-frame jb-ribbon-trace-edge-${tone}` : `jb-ribbon-frame jb-ribbon-frame-${tone}`,
+          data,
+          line,
+        );
+        // An end at a POINT is capped in the colour of the point's own line,
+        // on its rows: the pane's line carries on into the ribbon. An open
+        // point is drawn in the point colour; a settled one (a taken side, or
+        // the Result once a side of the change is in) in the faint outline
+        // colour.
+        const openCap = `jb-ribbon-cap jb-ribbon-cap-${tone}`;
+        const settledCap = `jb-ribbon-cap jb-ribbon-cap-trace-${tone}`;
+        const sideAt: "a" | "b" = side === "left" ? "a" : "b";
+        const resultAt: "a" | "b" = side === "left" ? "b" : "a";
+        if (isEmptySpan(sideSpan)) {
+          appendCap(this.svg, gutter, reach, region, sideAt, true, took ? settledCap : openCap, data);
+        }
+        if (isEmptySpan(resultSpan)) {
+          appendCap(this.svg, gutter, reach, result, resultAt, false, phase === "open" ? openCap : settledCap, data);
         }
       }
     }
@@ -435,8 +463,6 @@ interface BandGeometry {
   top: Array<[number, number]>;
   bottom: Array<[number, number]>;
   roundable: (x: number) => boolean;
-  /** Where the band slants, [left, right] on the stage: between the icon strip and the far pane. */
-  slant: [number, number];
 }
 
 /**
@@ -479,53 +505,7 @@ function bandGeometry(
   };
   // The corners at the gutter edges stay sharp: they sit flush against the
   // panes' line highlights.
-  const slant: [number, number] =
-    strip && stripWidth > 0 ? (strip.side === "a" ? [x0 + stripWidth, x1] : [x0, x1 - stripWidth]) : [x0, x1];
-  return {
-    top: run(aTop, bTop),
-    bottom: run(aBottom, bBottom),
-    roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5,
-    slant,
-  };
-}
-
-/**
- * The fill of a band that ends at a point: `--jb-point-<tone>` at the point's
- * end, `--jb-line-<tone>` at the other, easing between them across the slant
- * (a gradient pads its end colours beyond its ends, so the flat strip and the
- * overlap into each pane take the colour of the end they belong to). The
- * result sits at gutter A's right edge and gutter B's left edge.
- */
-function pointGradient(
-  defs: SVGElement,
-  g: BandGeometry,
-  side: Side,
-  resultPoint: boolean,
-  tone: string,
-): string {
-  const point = `var(--jb-point-${tone})`;
-  const tint = `var(--jb-line-${tone})`;
-  // Colour at the slant's left and right ends.
-  const resultOnRight = side === "left";
-  const atResult = resultPoint ? point : tint;
-  const atSide = resultPoint ? tint : point;
-  const [from, to] = resultOnRight ? [atSide, atResult] : [atResult, atSide];
-  const id = `jb-point-grad-${++gradientSeq}`;
-  const grad = document.createElementNS(SVG_NS, "linearGradient");
-  grad.setAttribute("id", id);
-  grad.setAttribute("gradientUnits", "userSpaceOnUse");
-  grad.setAttribute("x1", fmt(g.slant[0]));
-  grad.setAttribute("x2", fmt(g.slant[1]));
-  grad.setAttribute("y1", "0");
-  grad.setAttribute("y2", "0");
-  for (const [offset, colour] of [["0", from], ["1", to]] as const) {
-    const stop = document.createElementNS(SVG_NS, "stop");
-    stop.setAttribute("offset", offset);
-    stop.setAttribute("style", `stop-color:${colour}`);
-    grad.appendChild(stop);
-  }
-  defs.appendChild(grad);
-  return `url(#${id})`;
+  return { top: run(aTop, bTop), bottom: run(aBottom, bBottom), roundable: (x) => x > x0 + 0.5 && x < x1 - 0.5 };
 }
 
 type PathData = Record<string, string>;
@@ -534,6 +514,34 @@ type PathData = Record<string, string>;
 function appendBand(target: SVGElement, g: BandGeometry, className: string, data: PathData, style?: string): void {
   const ring = [...g.top, ...g.bottom.slice().reverse()];
   appendPath(target, roundedPath(ring, 0, g.roundable) + " Z", className, data, style);
+}
+
+/**
+ * The cap on a band's end at a POINT: the point's own rows (`rows`, a
+ * mergePointPx-tall band), from the overlap inside the pane to CAP_PX into
+ * the gutter — or across the whole icon strip beside a side pane, where the
+ * band is flat — in the point's colour. `end` is the gutter edge it sits at
+ * ("a" its left, "b" its right).
+ */
+function appendCap(
+  target: SVGElement,
+  gutter: GutterRange,
+  reach: { left: number; right: number },
+  rows: Band,
+  end: "a" | "b",
+  flat: boolean,
+  className: string,
+  data: PathData,
+): void {
+  const width = gutter.right - gutter.left;
+  const run = flat ? Math.max(0, Math.min(MERGE_ICON_STRIP, width - 8)) : CAP_PX;
+  // Through the seam itself, as every band's edge runs (a vertex exactly on
+  // the gutter's edge, where the browser paints it), then on into the pane.
+  const xs = end === "a" ? [reach.left, gutter.left, gutter.left + run] : [gutter.right - run, gutter.right, reach.right];
+  const [y0, y1] = rows;
+  const top = xs.map((x) => `${fmt(x)} ${fmt(y0)}`);
+  const bottom = xs.slice().reverse().map((x) => `${fmt(x)} ${fmt(y1)}`);
+  appendPath(target, `M ${top.join(" L ")} L ${bottom.join(" L ")} Z`, className, data);
 }
 
 /**

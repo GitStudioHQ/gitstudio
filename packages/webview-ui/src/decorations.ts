@@ -1,6 +1,5 @@
 import * as monaco from "monaco-editor";
 import type {
-  BlockTone,
   ChangeBlock,
   ChangeRole,
   DiffModel,
@@ -12,11 +11,11 @@ import type {
   SideChange,
 } from "@gitstudio/engine/types";
 import {
-  blockTone,
   category,
   isEmptySpan,
   sideBlockSpan,
 } from "@gitstudio/engine/types";
+import { paintTone, type PaintTone, type SideFate } from "./paint";
 
 type Editor = monaco.editor.IStandaloneCodeEditor;
 type Deco = monaco.editor.IModelDeltaDecoration;
@@ -35,6 +34,13 @@ export interface DecorationOptions {
   isResolved?: (block: ChangeBlock) => boolean;
   /** Whether one side of a block has been handled — applied or ignored (that side is then calm). */
   isSideDone?: (block: ChangeBlock, side: Side) => boolean;
+  /**
+   * What became of a handled side: taken into the Result, or discarded. A
+   * view that does not say treats every handled side as taken.
+   */
+  sideFate?: (block: ChangeBlock, side: Side) => SideFate;
+  /** The words a settled side, or a settled Result, says on hover ("Took Yours (test)"). */
+  traceWords?: (block: ChangeBlock) => { left?: string; right?: string; result?: string };
   /**
    * Whether a side's text has been written into the result for this block.
    * The result then no longer holds the base text the word ranges were
@@ -58,25 +64,33 @@ export interface DecorationOptions {
  *   granularity allows, a POINT_PX line for an insertion/deletion point
  *   (`jb-point`), and `jb-frame` edge lines that only high contrast themes
  *   draw (solid, 1px, on the band's first and last pixel row);
- * - half done — a conflict with one side taken or ignored and the other still
- *   to decide: the handled side is calm (no fill, a faint 1px line on its
- *   band's first and last row, `jb-done`); the RESULT drops to a tint under
- *   half strength (`jb-half`) between the same faint lines — no longer the
- *   open question, not settled either; the pending side keeps its full band;
- * - resolved: nothing in the side panes, and in the result one neutral faint
- *   line top and bottom (`jb-settled`) — done, and quiet — while anything is
- *   still to resolve; once EVERY change is, nothing at all (JetBrains shows
- *   nothing once resolved: a finished file ruled with a dozen grey lines read
- *   as still marked up);
+ * - a handled side leaves a TRACE of what happened to it (the owner: a
+ *   resolved conflict must still show which side was chosen, which was
+ *   discarded, or that both went in):
+ *   - taken (`jb-trace-<tone>`): its band stays, muted — the tint at about
+ *     half strength, no word tints — and its ribbon to the Result stays too,
+ *     muted (ribbons.ts);
+ *   - discarded (`jb-done`): an outline only, a faint 1px line on the band's
+ *     first and last row, and no ribbon;
+ * - half done — a conflict with one side in and the other still to decide:
+ *   the RESULT is the muted tint between two faint lines (`jb-half`) — no
+ *   longer the open question, not settled either; the pending side keeps its
+ *   full band;
+ * - resolved: the RESULT keeps a muted band in the colour of what went in
+ *   (`jb-trace-<tone>`, no lines: calmer than anything still open), or, when
+ *   nothing was taken, only its outline (`jb-done`);
  * - whitespace-only: line tint only, never a word tint, plus a dotted left
  *   edge (`jb-ws`).
+ *
+ * A settled side or Result says what happened in words, on hover ("Took
+ * Yours (test)", "Discarded Theirs (master)", "Took both").
  *
  * Every block decoration also carries `jb-cat-<category>` so a reader (or a
  * test) can tell the four categories apart without decoding colours.
  *
- * Tones: a conflict is red, a change made the same on both sides violet, and
- * a one-sided change is coloured by what it did (green inserted, blue
- * modified, grey deleted).
+ * Tones (paint.ts): a conflict is red; every other change is coloured by what
+ * it did — green inserted, blue modified, grey deleted — whether one side
+ * made it or both made it alike (then it is coloured on both sides).
  *
  * No overview-ruler marks: the Result's ruler and scrollbar sat on the
  * Result|gutter seam and cut every band there. The merge's one overview is
@@ -93,33 +107,40 @@ export class DecorationManager {
     const result: Deco[] = [];
     const right: Deco[] = [];
     const showInner = options.showInner ?? true;
-    // Every change settled: the result carries no marks at all.
-    const allResolved = model.blocks.every((block) => options.isResolved?.(block) ?? false);
 
     for (const block of model.blocks) {
-      const tone = blockTone(block);
+      const tone = paintTone(block);
       const cat = category(block);
       const resolved = options.isResolved?.(block) ?? false;
-      const sideDone = (side: Side): boolean =>
-        !!(side === "left" ? block.left : block.right) && (options.isSideDone?.(block, side) ?? false);
+      const fate = (side: Side): SideFate | undefined => {
+        if (!(side === "left" ? block.left : block.right)) return undefined;
+        if (options.sideFate) return options.sideFate(block, side);
+        return (options.isSideDone?.(block, side) ?? false) ? "took" : "pending";
+      };
+      const fates = { left: fate("left"), right: fate("right") };
+      const handled = (f: SideFate | undefined): boolean => f === "took" || f === "discarded";
       // A side of its own is in while the change is not: half done.
-      const half = !resolved && (sideDone("left") || sideDone("right"));
+      const half = !resolved && (handled(fates.left) || handled(fates.right));
+      const words = resolved || half ? options.traceWords?.(block) : undefined;
 
       const span = options.resultSpanOf?.(block) ?? block.baseSpan;
       if (resolved) {
-        // Settled: one neutral faint line in the result, nothing in the side
-        // panes — and nothing across the gutters (ribbons.ts). Nothing at all
-        // once the whole file is.
-        if (!allResolved) pushSettled(result, this.editors.result, span, cat);
-        continue;
-      }
-      pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, half);
-      if (showInner && !half && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
-        // Word ranges are in BASE coordinates; the result is base while the
-        // block is untouched, but blocks above may have changed height.
-        const shift = span.start - block.baseSpan.start;
-        pushInner(result, block.left?.innerBase, tone, shift);
-        pushInner(result, block.right?.innerBase, tone, shift);
+        // Settled: the Result keeps a muted band in the colour of what went
+        // in — or only its outline when nothing did.
+        if (fates.left === "took" || fates.right === "took") {
+          pushTrace(result, this.editors.result, span, tone, cat, words?.result);
+        } else {
+          pushDone(result, this.editors.result, span, tone, cat, words?.result);
+        }
+      } else {
+        pushPending(result, this.editors.result, span, tone, cat, !!block.whitespaceOnly, half);
+        if (showInner && !half && !block.whitespaceOnly && !(options.isApplied?.(block) ?? false)) {
+          // Word ranges are in BASE coordinates; the result is base while the
+          // block is untouched, but blocks above may have changed height.
+          const shift = span.start - block.baseSpan.start;
+          pushInner(result, block.left?.innerBase, tone, shift);
+          pushInner(result, block.right?.innerBase, tone, shift);
+        }
       }
       for (const [side, editor, target] of [
         ["left", this.editors.left, left],
@@ -133,8 +154,13 @@ export class DecorationManager {
         // lines — which is what accepting it writes, and what the ribbons and
         // the alignment spacers measure.
         const region = sideBlockSpan(block, side);
-        if (sideDone(side)) {
-          pushDone(target, editor, region, tone, cat);
+        const f = fates[side];
+        if (f === "took") {
+          pushTrace(target, editor, region, tone, cat, words?.[side]);
+          continue;
+        }
+        if (f === "discarded") {
+          pushDone(target, editor, region, tone, cat, words?.[side]);
           continue;
         }
         pushPending(target, editor, region, tone, cat, !!change.whitespaceOnly);
@@ -212,7 +238,7 @@ export class DiffDecorationManager {
  * `--jb-ruler-<tone>`, the category colour at reduced strength — a thin mark
  * to find a change by, not a block to read.
  */
-function rulerPalette(): Record<BlockTone, string> {
+function rulerPalette(): Record<PaintTone, string> {
   // Resolved through a probe's computed `color`, not the raw custom-property
   // text: the browser's canonical "rgba(63, 185, 80, 0.6)" is the one form
   // every colour consumer (Monaco's own parser included) reads.
@@ -227,7 +253,6 @@ function rulerPalette(): Record<BlockTone, string> {
     inserted: read("--jb-ruler-inserted"),
     deleted: read("--jb-ruler-deleted"),
     modified: read("--jb-ruler-modified"),
-    same: read("--jb-ruler-same"),
     conflict: read("--jb-ruler-conflict"),
   };
   probe.remove();
@@ -250,6 +275,11 @@ function pastEnd(editor: Editor, line: number): boolean {
   return line > (editor.getModel()?.getLineCount() ?? 1);
 }
 
+/** A hover's words, as Monaco takes them (plain text: markdown's marks escaped). */
+function hoverOf(words: string | undefined): monaco.IMarkdownString | undefined {
+  return words ? { value: words.replace(/[\\`*_{}[\]()#+\-.!<>|]/g, "\\$&") } : undefined;
+}
+
 /**
  * An insertion or deletion POINT: a line (mergePointPx, ribbons.ts) on the
  * line after the boundary (its top rows), or on the last line's bottom rows
@@ -261,6 +291,7 @@ function pushPoint(
   span: LineSpan,
   className: string,
   cat: MergeCategory,
+  hover?: string,
 ): void {
   const line = clampLine(editor, span.start);
   const classes = `${className} jb-point${pastEnd(editor, span.start) ? " jb-point-after" : ""}`;
@@ -271,6 +302,7 @@ function pushPoint(
       className: `${classes} jb-cat-${cat}`,
       // The line-number margin too, so the mark runs across the whole pane.
       marginClassName: classes,
+      hoverMessage: hoverOf(hover),
     },
   });
 }
@@ -279,20 +311,21 @@ function pushPoint(
  * A pending block's region in one pane: the tint, and the edge lines a high
  * contrast theme draws. An empty region (an insertion or deletion point) is a
  * point line instead. `half`: the result of a conflict with one side in — the
- * tint under half strength (`jb-half`), between the handled side's faint
- * lines; the ribbon of its pending side still meets it on the same rows.
+ * muted tint (`jb-half`) between two faint lines; the ribbon of its pending
+ * side still meets it on the same rows, and the muted ribbon of the side that
+ * is in continues into it.
  */
 function pushPending(
   target: Deco[],
   editor: Editor,
   span: LineSpan,
-  tone: BlockTone,
+  tone: PaintTone,
   cat: MergeCategory,
   whitespaceOnly: boolean,
   half = false,
 ): void {
   if (isEmptySpan(span)) {
-    pushPoint(target, editor, span, `jb-point-${tone}`, cat);
+    pushPoint(target, editor, span, half ? `jb-done jb-done-${tone}` : `jb-point-${tone}`, cat);
     return;
   }
   const last = span.endExclusive - 1;
@@ -315,35 +348,56 @@ function pushPending(
 }
 
 /**
- * A resolved change, in the result: one neutral faint line on its first and
- * last pixel row (an empty region: a faint point line). It is settled and
- * says so without a colour of its own.
+ * A side that was TAKEN (in its own pane), or a settled Result that holds
+ * what was taken: the band stays, muted (`jb-trace-<tone>`: the tint at about
+ * half strength, no word tints, no lines) — calmer than anything still open,
+ * and joined to the Result by its muted ribbon (ribbons.ts). High contrast
+ * adds a faint solid edge (`jb-trace-edge`), so it never rests on a tint
+ * alone. An empty region (a deletion taken) keeps a faint point line.
  */
-function pushSettled(target: Deco[], editor: Editor, span: LineSpan, cat: MergeCategory): void {
+function pushTrace(
+  target: Deco[],
+  editor: Editor,
+  span: LineSpan,
+  tone: PaintTone,
+  cat: MergeCategory,
+  hover?: string,
+): void {
   if (isEmptySpan(span)) {
-    pushPoint(target, editor, span, "jb-settled", cat);
+    pushPoint(target, editor, span, `jb-done jb-done-${tone}`, cat, hover);
     return;
   }
-  pushEdges(target, span, "jb-settled", cat);
+  target.push({
+    range: new monaco.Range(span.start, 1, span.endExclusive - 1, 1),
+    options: {
+      isWholeLine: true,
+      className: `jb-trace jb-trace-${tone} jb-cat-${cat}`,
+      marginClassName: `jb-trace jb-trace-${tone}`,
+      hoverMessage: hoverOf(hover),
+    },
+  });
+  pushEdges(target, span, `jb-frame jb-trace-edge jb-trace-edge-${tone}`);
 }
 
 /**
- * A handled side while the other side of its conflict is still to decide:
- * calm. No fill — a faint 1px line on the region's first and last pixel row;
- * an empty region keeps its point line, faint.
+ * A side that was DISCARDED — or a settled Result that took nothing (it keeps
+ * the original): an outline only. No fill — a faint 1px line on the region's
+ * first and last pixel row, and no ribbon; an empty region keeps its point
+ * line, faint.
  */
 function pushDone(
   target: Deco[],
   editor: Editor,
   span: LineSpan,
-  tone: BlockTone,
+  tone: PaintTone,
   cat: MergeCategory,
+  hover?: string,
 ): void {
   if (isEmptySpan(span)) {
-    pushPoint(target, editor, span, `jb-done jb-done-${tone}`, cat);
+    pushPoint(target, editor, span, `jb-done jb-done-${tone}`, cat, hover);
     return;
   }
-  pushEdges(target, span, `jb-done jb-done-${tone}`, cat);
+  pushEdges(target, span, `jb-done jb-done-${tone}`, cat, hover);
 }
 
 /**
@@ -351,9 +405,10 @@ function pushDone(
  * once PER LINE, so a border on the range's own class would rule every line;
  * the edges go on the first line (`jb-edge-top`) and the last
  * (`jb-edge-bottom`) only — both on a one-line region. The margin carries
- * them too, so an edge runs across the line numbers as well.
+ * them too, so an edge runs across the line numbers as well. A hover names
+ * what an outline stands for, on every line between its edges.
  */
-function pushEdges(target: Deco[], span: LineSpan, className: string, cat?: MergeCategory): void {
+function pushEdges(target: Deco[], span: LineSpan, className: string, cat?: MergeCategory, hover?: string): void {
   const last = span.endExclusive - 1;
   const catClass = cat ? ` jb-cat-${cat}` : "";
   const edge = (line: number, edges: string) => {
@@ -366,6 +421,12 @@ function pushEdges(target: Deco[], span: LineSpan, className: string, cat?: Merg
       },
     });
   };
+  if (hover) {
+    target.push({
+      range: new monaco.Range(span.start, 1, last, 1),
+      options: { isWholeLine: true, hoverMessage: hoverOf(hover) },
+    });
+  }
   if (last === span.start) {
     edge(span.start, "jb-edge-top jb-edge-bottom");
     return;
@@ -409,7 +470,7 @@ function pushLine(
 function pushInner(
   target: Deco[],
   inners: InnerRange[] | undefined,
-  tone: ChangeRole | BlockTone,
+  tone: ChangeRole | PaintTone,
   lineShift = 0,
 ): void {
   for (const inner of inners ?? []) {

@@ -8,11 +8,11 @@ import type {
   Side,
 } from "@gitstudio/engine/types";
 import {
-  blockTone,
   category,
   isEmptySpan,
   sideBlockSpan,
 } from "@gitstudio/engine/types";
+import { fateWords, paintTone, type SideFate } from "./paint";
 import { buildMergeModel } from "@gitstudio/engine/mergeModel";
 import { eolChars, normalizeEol, splitLines } from "@gitstudio/engine/lineDiff";
 import { languageForFile } from "./language";
@@ -26,7 +26,7 @@ import {
   lockIcon,
 } from "./icons";
 import { computeAlignmentZones, type Spacer } from "@gitstudio/engine/alignment";
-import { RibbonOverlay, lineTopY, scheduleFrame } from "./ribbons";
+import { MERGE_ICON_STRIP, RibbonOverlay, lineTopY, scheduleFrame, spanY } from "./ribbons";
 import { OverviewMap } from "./overviewMap";
 import { preparedFrom, seedResult, type ResultSeed } from "./seedResult";
 import { lineDocOf, planLineWrite } from "./lineEdits";
@@ -69,6 +69,17 @@ const CATEGORY_WORDS: Record<MergeCategory, string> = {
   "theirs-only": "this change",
 };
 
+/** How a screen reader names a block before its place in its category ("Conflict 2 of 5"). */
+const CATEGORY_NOUNS: Record<MergeCategory, string> = {
+  conflict: "Conflict",
+  same: "Change made the same on both sides",
+  "yours-only": "Change",
+  "theirs-only": "Change",
+};
+
+/** What a change made the same on both sides says on either of its arrows. */
+const SAME_ARROW_WORDS = "Same change on both sides — either arrow takes it";
+
 /**
  * Per-block runtime state. Each side of a block is processed (applied or
  * ignored) independently, like IntelliJ's merge gutter: a conflict stays
@@ -78,6 +89,14 @@ const CATEGORY_WORDS: Record<MergeCategory, string> = {
 interface BlockState {
   doneLeft: boolean;
   doneRight: boolean;
+  /**
+   * Which handled sides went INTO the Result (accepted, added after, the
+   * wand, a whole-file Accept) — the rest were discarded. What the traces
+   * show: a taken side keeps its muted band and ribbon, a discarded one an
+   * outline (paint.ts SideFate).
+   */
+  tookLeft: boolean;
+  tookRight: boolean;
   /** Whether some side's text has already been applied into the result. */
   applied: boolean;
 }
@@ -132,16 +151,18 @@ const PANE_SCROLL_OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = 
  * (Yours, read-only), Result (editable, seeded with base), Right (Theirs,
  * read-only), with gutter ribbons + accept/ignore controls.
  *
- * Blocks are painted by colour CATEGORY (PLAN §3.6): conflict (red), the same
- * change on both sides (violet), yours-only / theirs-only (green / blue / grey
- * by what the change did). Every change is one continuous band — side pane,
- * filled ribbon, result — and its controls are the ones JetBrains and VS Code
- * users already know: an arrow toward the result to accept a side, × to
- * ignore it, each with its action in words. Once one side of a conflict is in,
- * that side goes calm (a faint outline on the same rows), the result drops to a
- * paler tint between the same lines, and only the side still to decide keeps
- * its full band; a resolved change leaves the side panes and gutters, and the
- * result keeps one neutral faint line for it.
+ * Blocks are painted (paint.ts): a conflict red; every other change green /
+ * blue / grey by what it did — on one side, or on BOTH sides when both made
+ * the same change (either arrow takes that one, for both). Every change is one
+ * continuous band — side pane, filled ribbon, result — and its controls are
+ * the ones JetBrains and VS Code users already know: an arrow toward the
+ * result to accept a side, × to ignore it, each with its action in words.
+ * A handled side leaves a trace of what happened to it: a TAKEN side keeps its
+ * band and its ribbon to the Result, muted; a DISCARDED side keeps an outline
+ * and no ribbon. While a conflict's other side is still to decide, the Result
+ * is muted between two faint lines; once settled, the Result keeps a muted
+ * band in the colour of what went in — calm, and still saying where it came
+ * from ("Took Yours", "Discarded Theirs", "Took both", in words on hover).
  */
 export class MergeView implements MergeViewApi {
   private editors: Editor[] = [];
@@ -397,6 +418,7 @@ export class MergeView implements MergeViewApi {
         resultSpanOf: (block) => this.currentResultSpan(block),
         isResolved: (block) => this.isResolved(block),
         isSideDone: (block, side) => this.isSideDone(block, side),
+        sideFate: (block, side) => this.sideFate(block, side),
       },
     );
     // IntelliJ's "error stripe", at the view's right edge — never on a seam.
@@ -534,6 +556,8 @@ export class MergeView implements MergeViewApi {
       this.blockState.set(block.id, {
         doneLeft: !block.left,
         doneRight: !block.right,
+        tookLeft: false,
+        tookRight: false,
         applied: false,
       });
     }
@@ -627,16 +651,49 @@ export class MergeView implements MergeViewApi {
     return side === "left" ? state.doneLeft : state.doneRight;
   }
 
-  /** Marks one side processed; "both-same" sides always resolve together. */
-  private markSideDone(state: BlockState, block: ChangeBlock, side: Side): void {
+  /**
+   * Marks one side processed — `took` when its text went into the Result,
+   * else discarded. A change made the same on both sides is ONE change: either
+   * side settles both, the same way (either arrow takes it, either × sets it
+   * aside).
+   */
+  private markSideDone(state: BlockState, block: ChangeBlock, side: Side, took: boolean): void {
     if (side === "left") {
       state.doneLeft = true;
+      state.tookLeft = took;
     } else {
       state.doneRight = true;
+      state.tookRight = took;
     }
     if (block.kind === "both-same") {
       state.doneLeft = state.doneRight = true;
+      state.tookLeft = state.tookRight = took;
     }
+  }
+
+  /** What became of one side: still to decide, taken into the Result, or discarded. */
+  private sideFate(block: ChangeBlock, side: Side): SideFate {
+    const state = this.blockState.get(block.id);
+    if (!state) {
+      return "pending";
+    }
+    const done = side === "left" ? state.doneLeft : state.doneRight;
+    if (!done) {
+      return "pending";
+    }
+    return (side === "left" ? state.tookLeft : state.tookRight) ? "took" : "discarded";
+  }
+
+  /** A handled block's traces in words: each side's, and the Result's once settled. */
+  private traceWords(block: ChangeBlock): { left?: string; right?: string; result?: string } {
+    return fateWords(
+      block,
+      {
+        left: block.left ? this.sideFate(block, "left") : undefined,
+        right: block.right ? this.sideFate(block, "right") : undefined,
+      },
+      { left: this.sideTitle("left"), right: this.sideTitle("right") },
+    );
   }
 
   /** The block's live span in the result document, tracked through edits. */
@@ -717,17 +774,18 @@ export class MergeView implements MergeViewApi {
     this.retrackBlock(block, this.replaceResultLines(span, lines));
 
     state.applied = true;
-    this.markSideDone(state, block, side);
+    this.markSideDone(state, block, side, true);
     // JetBrains (MergeConflictModel.replaceChange): taking one side of a
     // conflict resolves the whole conflict when the other side has no lines
-    // in it — there is nothing left to add after it.
+    // in it — there is nothing left to add after it (that side is discarded).
     const other: Side = side === "left" ? "right" : "left";
     if (
       category(block) === "conflict" &&
       (other === "left" ? block.left : block.right) &&
+      !this.isSideDone(block, other) &&
       isEmptySpan(sideBlockSpan(block, other))
     ) {
-      this.markSideDone(state, block, other);
+      this.markSideDone(state, block, other, false);
     }
     if (!this.batching) {
       this.refresh();
@@ -764,7 +822,7 @@ export class MergeView implements MergeViewApi {
       return;
     }
     this.pushHistory(`Ignore ${this.sideWords(side).role}, change ${block.id + 1}`);
-    this.markSideDone(state, block, side);
+    this.markSideDone(state, block, side, false);
     if (!this.batching) {
       this.refresh();
     }
@@ -809,6 +867,8 @@ export class MergeView implements MergeViewApi {
     this.retrackBlock(block, this.replaceResultLines(span, splitLines(block.resolvedText)));
     state.applied = true;
     state.doneLeft = state.doneRight = true;
+    // Both sides' edits went in.
+    state.tookLeft = state.tookRight = true;
     if (!this.batching) {
       this.refresh();
     }
@@ -959,8 +1019,9 @@ export class MergeView implements MergeViewApi {
           this.acceptSide(block, side, "replace");
         }
         // The bulk action settles the whole block: any other pending side is
-        // considered processed (accepted-side blocks already hold the chosen
-        // version; unchosen blocks keep base, i.e. the chosen side's text).
+        // considered processed — set aside (accepted-side blocks already hold
+        // the chosen version; unchosen blocks keep base, i.e. the chosen
+        // side's text).
         const state = this.blockState.get(block.id);
         if (state) {
           state.doneLeft = state.doneRight = true;
@@ -1126,6 +1187,8 @@ export class MergeView implements MergeViewApi {
       resultSpanOf: (block) => this.currentResultSpan(block),
       isResolved: (block) => this.isResolved(block),
       isSideDone: (block, side) => this.isSideDone(block, side),
+      sideFate: (block, side) => this.sideFate(block, side),
+      traceWords: (block) => this.traceWords(block),
       isApplied: (block) => this.blockState.get(block.id)?.applied ?? false,
       showInner: this.renderOptions.showInner && !this.largeFile,
     });
@@ -1193,22 +1256,70 @@ export class MergeView implements MergeViewApi {
     };
 
     for (const block of this.model.blocks) {
-      if (this.isResolved(block)) {
-        continue;
-      }
-      if (block.left && !this.isSideDone(block, "left")) {
-        const y = place(this.left, sideBlockSpan(block, "left"));
-        if (y !== undefined) {
-          this.buttonLayerA.appendChild(this.makeActions(block, "left", y));
+      const words = this.isResolved(block) || this.halfDone(block) ? this.traceWords(block) : undefined;
+      for (const [side, editor, layer] of [
+        ["left", this.left, this.buttonLayerA],
+        ["right", this.right, this.buttonLayerB],
+      ] as const) {
+        if (!(side === "left" ? block.left : block.right)) {
+          continue;
         }
-      }
-      if (block.right && !this.isSideDone(block, "right")) {
-        const y = place(this.right, sideBlockSpan(block, "right"));
-        if (y !== undefined) {
-          this.buttonLayerB.appendChild(this.makeActions(block, "right", y));
+        const span = sideBlockSpan(block, side);
+        if (!this.isSideDone(block, side)) {
+          const y = place(editor, span);
+          if (y !== undefined) {
+            layer.appendChild(this.makeActions(block, side, y));
+          }
+          continue;
+        }
+        // A handled side has no controls, only its trace — and the trace's
+        // words, for a pointer (a tooltip) and a screen reader.
+        const said = words?.[side];
+        if (said) {
+          const note = this.makeTraceNote(block, side, editor, span, lineHeight, height, said);
+          if (note) {
+            layer.appendChild(note);
+          }
         }
       }
     }
+  }
+
+  /**
+   * What a handled side says, where its controls were: a quiet element over
+   * its band in the gutter's icon strip, with the words as its tooltip and
+   * its accessible name ("Conflict 2 of 5: Took Yours (test)"). Nothing to
+   * see — the trace is the band itself — nothing to press.
+   */
+  private makeTraceNote(
+    block: ChangeBlock,
+    side: Side,
+    editor: Editor,
+    span: LineSpan,
+    lineHeight: number,
+    height: number,
+    words: string,
+  ): HTMLElement | undefined {
+    const [y0, y1] = spanY(editor, span, lineHeight);
+    const top = isEmptySpan(span) ? y0 - 3 : y0;
+    const bottom = isEmptySpan(span) ? y0 + 3 : y1;
+    if (bottom < 0 || top > height) {
+      return undefined;
+    }
+    const note = document.createElement("span");
+    note.className = `jb-trace-note jb-trace-note-${side}`;
+    note.dataset.block = String(block.id);
+    note.dataset.side = side;
+    note.dataset.fate = this.sideFate(block, side);
+    note.style.top = `${Math.round(top)}px`;
+    note.style.height = `${Math.max(6, Math.round(bottom - top))}px`;
+    note.style.width = `${MERGE_ICON_STRIP}px`;
+    const ordinal = this.ordinals.get(block.id);
+    const where = ordinal && ordinal.total > 1 ? ` ${ordinal.index} of ${ordinal.total}` : "";
+    note.title = words;
+    note.setAttribute("role", "img");
+    note.setAttribute("aria-label", `${CATEGORY_NOUNS[category(block)]}${where}: ${words}`);
+    return note;
   }
 
   /**
@@ -1253,7 +1364,7 @@ export class MergeView implements MergeViewApi {
     group.dataset.category = cat;
     group.dataset.side = side;
 
-    const tone = blockTone(block);
+    const tone = paintTone(block);
     const who = this.sideTitle(side);
     const other = this.sideTitle(side === "left" ? "right" : "left");
     const what = CATEGORY_WORDS[cat];
@@ -1265,18 +1376,21 @@ export class MergeView implements MergeViewApi {
     const state = this.blockState.get(block.id);
     const addAfter = cat === "conflict" && (state?.applied ?? false);
     const otherIn = cat === "conflict" && this.halfDone(block) !== undefined;
+    // The same change on both sides is one change, coloured on both sides:
+    // either arrow takes it, either × sets it aside — for both.
+    const same = cat === "same";
 
-    const acceptWords = addAfter ? `Add ${who} after ${other}` : `Accept ${who} for ${what}`;
+    const acceptWords = addAfter ? `Add ${who} after ${other}` : same ? SAME_ARROW_WORDS : `Accept ${who} for ${what}`;
     const accept = this.makeButton(
       `jb-gutter-btn jb-btn-accept jb-tone-${tone}`,
       side === "left" ? chevronDoubleRight : chevronDoubleLeft,
-      addAfter
+      addAfter || same
         ? acceptWords
         : `${acceptWords}\nCtrl/⌘-click: add it after what the result has`,
       `${acceptWords}${ordinal}`,
       (event) => {
         const mode: AcceptMode =
-          event.ctrlKey || event.metaKey ? "append" : "auto";
+          (event.ctrlKey || event.metaKey) && !same ? "append" : "auto";
         this.acceptSide(block, side, mode);
       },
     );
@@ -1285,7 +1399,9 @@ export class MergeView implements MergeViewApi {
       ? addAfter
         ? `Discard ${who}: keep ${other} as the result`
         : `Discard ${who} too: the result keeps what it has`
-      : `Ignore ${who} for ${what}`;
+      : same
+        ? "Discard this change on both sides"
+        : `Ignore ${who} for ${what}`;
     const ignore = this.makeButton(
       "jb-gutter-btn jb-btn-ignore",
       cross,
@@ -1389,6 +1505,8 @@ export class MergeView implements MergeViewApi {
         !was ||
         was.doneLeft !== state.doneLeft ||
         was.doneRight !== state.doneRight ||
+        was.tookLeft !== state.tookLeft ||
+        was.tookRight !== state.tookRight ||
         was.applied !== state.applied
       ) {
         return true;
@@ -1695,6 +1813,8 @@ export class MergeView implements MergeViewApi {
         if (live && saved) {
           live.doneLeft = saved.doneLeft;
           live.doneRight = saved.doneRight;
+          live.tookLeft = saved.tookLeft;
+          live.tookRight = saved.tookRight;
           live.applied = saved.applied;
         }
       }

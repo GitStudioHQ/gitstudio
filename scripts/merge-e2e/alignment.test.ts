@@ -33,9 +33,11 @@ const list = (v: string | undefined) => (v ? v.split(",").map((s) => s.trim()).f
 const BEFORE = "562966a";
 /** The previous round, whose seams and half-done look the critic rejected. */
 const ROUND1 = "9f77171";
+/** The redesign as merged: the Result's overview ruler and scrollbar sat on the Result|gutter seam. */
+const SEAM_RULER = "6b793ed";
 
 /** Runs alignment.ts on another build's webview (its source at `rev`), one scenario, the extension only. */
-function runOnBuild(rev: string, scenario: string, dprs: string): { status: number | null; out: string } {
+function runOnBuild(rev: string, scenario: string, dprs: string, extra: string[] = []): { status: number | null; out: string } {
   const dir = mkdtempSync(join(tmpdir(), "gs-merge-align-before-"));
   try {
     const tar = join(dir, "src.tar");
@@ -54,6 +56,7 @@ function runOnBuild(rev: string, scenario: string, dprs: string): { status: numb
         "ext",
         "--dpr",
         dprs,
+        ...extra,
         ...(process.env.GS_ALIGN_TARGET ? ["--target", process.env.GS_ALIGN_TARGET] : []),
       ],
       {
@@ -131,7 +134,18 @@ test(`the measurement FAILS on ${ROUND1}'s merge view — the critic's hairline,
   assert.match(out, /the ribbon stops short of the pane/);
   // After Accept Yours the result still wore the open conflict's tint.
   assert.match(out, /\[half\] one side of this conflict is in, but the result wears the open conflict's tint/);
-  // And a resolved change still drew outlines across the gutters and the side panes.
-  assert.match(out, /\[resolve\] a resolved change still draws across a gutter/);
-  assert.match(out, /\[resolve\] a resolved change still marks a side pane/);
+  // And a resolved change drew outlines across the gutters — wires that were
+  // no side's trace. (Its outlines in the side panes are no longer a fault:
+  // the owner wants a discarded side to keep one.)
+  assert.match(out, /\[resolve\] a resolved change still draws across a gutter something other than the trace of a side it took/);
+});
+
+test(`the measurement FAILS on ${SEAM_RULER}'s merge view — the Result's overview ruler and scrollbar cut every band at its seam`, { timeout: 20 * 60_000 }, () => {
+  // The critic: in a file taller than the pane the Result's ruler lane and
+  // slider sat exactly on the Result|gutter seam — in the 1201-change load
+  // file one solid bar the height of the pane, in blended colours. The seams'
+  // pixels are now read with rulers and vertical bars left on, so it fails.
+  const { status, out } = runOnBuild(SEAM_RULER, "rebase.diff3", "1", ["--files", "load/bigService.js"]);
+  assert.equal(status, 1, `that build must fail the check:\n${out.slice(-3000)}`);
+  assert.match(out, /pixels at result\|gutter: \[open\] a column of another colour crosses the band at the seam/);
 });

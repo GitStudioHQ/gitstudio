@@ -75,29 +75,36 @@ const MOUNT = `
   const press = (el) => el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
   const TINT = {
     conflict: "rgba(240, 105, 100, 0.24)",
-    same: "rgba(140, 100, 250, 0.18)",
     modified: "rgba(40, 150, 245, 0.28)",
     inserted: "rgba(80, 180, 40, 0.14)",
     deleted: "rgba(139, 148, 158, 0.22)",
   };
-  /** A conflict with one side in: its result, at under half strength. */
-  const HALF_CONFLICT = "rgba(240, 105, 100, 0.1)";
-  /** A resolved change's one neutral line, in the result only. */
-  const SETTLED = "rgba(204, 204, 204, 0.24)";
+  /** A settled change's trace — a taken side, its ribbon, the Result (and a half-done Result). */
+  const MUTED = {
+    conflict: "rgba(240, 105, 100, 0.12)",
+    modified: "rgba(40, 150, 245, 0.13)",
+    inserted: "rgba(80, 180, 40, 0.08)",
+    deleted: "rgba(139, 148, 158, 0.11)",
+  };
   const EDGE = {
     conflict: "rgb(240, 104, 106)",
-    same: "rgb(160, 134, 247)",
     modified: "rgb(74, 159, 245)",
     inserted: "rgb(98, 179, 74)",
     deleted: "rgb(139, 148, 158)",
   };
   const DONE = {
     conflict: "rgba(240, 104, 106, 0.5)",
-    same: "rgba(160, 134, 247, 0.5)",
     modified: "rgba(74, 159, 245, 0.5)",
     inserted: "rgba(98, 179, 74, 0.5)",
     deleted: "rgba(139, 148, 158, 0.5)",
   };
+  /** An insertion or deletion point's line (and a ribbon's end at it). */
+  const POINT = { inserted: "rgba(98, 179, 74, 0.62)", deleted: "rgba(139, 148, 158, 0.62)" };
+  /** Monaco's hover words for a decoration on a line (markdown's escapes undone). */
+  const hoverOn = (pane, line) => panes[pane].getModel().getAllDecorations()
+    .filter((d) => d.options.hoverMessage && d.range.startLineNumber <= line && line <= d.range.endLineNumber)
+    .map((d) => d.options.hoverMessage.value.replace(/\\\\(.)/g, "$1"));
+  const note = (layer, block) => document.querySelector(".jb-gutter-" + layer + ' .jb-trace-note[data-block="' + block + '"]');
 `;
 
 test("every category is classified, painted and given its own controls — before any paint", { skip }, async () => {
@@ -121,27 +128,29 @@ test("every category is classified, painted and given its own controls — befor
       const w = [...want].sort();
       expect(JSON.stringify(got) === JSON.stringify(w), pane + " pane decorations\\n   got  " + JSON.stringify(got) + "\\n   want " + JSON.stringify(w));
     };
+    // A change made the same on both sides is painted by what it did (here a
+    // change: blue) on BOTH sides and in the result — no colour of its own.
     expectPane("left", [
       "2:jb-line-conflict jb-cat-conflict",
       "4-5:jb-line-conflict jb-cat-conflict",
-      "7:jb-line-same jb-cat-same",
-      "9:jb-line-same jb-cat-same",
+      "7:jb-line-modified jb-cat-same",
+      "9:jb-line-modified jb-cat-same",
       "11:jb-line-modified jb-cat-yours-only",
       "16:jb-line-modified jb-cat-yours-only jb-ws",
     ]);
     expectPane("right", [
       "2:jb-line-conflict jb-cat-conflict",
       "4-5:jb-line-conflict jb-cat-conflict",
-      "7:jb-line-same jb-cat-same",
-      "9:jb-line-same jb-cat-same",
+      "7:jb-line-modified jb-cat-same",
+      "9:jb-line-modified jb-cat-same",
       "13:jb-line-inserted jb-cat-theirs-only",
       "15:jb-point-deleted jb-point jb-cat-theirs-only",
     ]);
     expectPane("result", [
       "2:jb-line-conflict jb-cat-conflict",
       "4-5:jb-line-conflict jb-cat-conflict",
-      "7:jb-line-same jb-cat-same",
-      "9:jb-line-same jb-cat-same",
+      "7:jb-line-modified jb-cat-same",
+      "9:jb-line-modified jb-cat-same",
       "11:jb-line-modified jb-cat-yours-only",
       "13:jb-point-inserted jb-point jb-cat-theirs-only",
       "14:jb-line-deleted jb-cat-theirs-only",
@@ -168,7 +177,9 @@ test("every category is classified, painted and given its own controls — befor
       ["a", 0, ".jb-btn-accept", "Accept Yours (test) for this conflict", " (1 of 2)"],
       ["a", 0, ".jb-btn-ignore", "Ignore Yours (test) for this conflict", " (1 of 2)"],
       ["b", 1, ".jb-btn-accept", "Accept Theirs (master) for this conflict", " (2 of 2)"],
-      ["a", 2, ".jb-btn-accept", "Accept Yours (test) for this change, made the same on both sides", " (1 of 2)"],
+      ["a", 2, ".jb-btn-accept", "Same change on both sides — either arrow takes it", " (1 of 2)"],
+      ["b", 2, ".jb-btn-accept", "Same change on both sides — either arrow takes it", " (1 of 2)"],
+      ["b", 3, ".jb-btn-ignore", "Discard this change on both sides", " (2 of 2)"],
       ["a", 4, ".jb-btn-accept", "Accept Yours (test) for this change", " (1 of 2)"],
       ["b", 6, ".jb-btn-ignore", "Ignore Theirs (master) for this change", " (2 of 2)"],
     ];
@@ -188,12 +199,14 @@ test("every category is classified, painted and given its own controls — befor
     // ── computed styles of the classes the decorations actually carry ──
     const bgOf = (pane, cls) => probe(pane, cls).bg;
     expect(bgOf("left", "jb-line-conflict jb-cat-conflict") === TINT.conflict, "conflict tint (red): " + bgOf("left", "jb-line-conflict jb-cat-conflict"));
-    expect(bgOf("left", "jb-line-same jb-cat-same") === TINT.same, "identical tint (violet): " + bgOf("left", "jb-line-same jb-cat-same"));
+    expect(bgOf("left", "jb-line-modified jb-cat-same") === TINT.modified && bgOf("right", "jb-line-modified jb-cat-same") === TINT.modified,
+      "the same change on both sides: the changed tint (blue), on both sides: " + bgOf("left", "jb-line-modified jb-cat-same"));
+    expect(bgOf("left", "jb-line-same") === "rgba(0, 0, 0, 0)" && bgOf("left", "jb-dot-same") === "rgba(0, 0, 0, 0)", "no violet left to paint with: " + bgOf("left", "jb-line-same"));
     expect(bgOf("left", "jb-line-modified jb-cat-yours-only") === TINT.modified, "Yours-only modified tint (blue)");
     expect(bgOf("right", "jb-line-inserted jb-cat-theirs-only") === TINT.inserted, "Theirs-only insertion tint (green)");
     expect(bgOf("result", "jb-line-deleted jb-cat-theirs-only") === TINT.deleted, "Theirs-only deletion tint (grey)");
     const point = probe("result", "jb-point-inserted jb-point jb-cat-theirs-only");
-    expect(point.bt === "solid" && point.btw === "2px" && point.btc === EDGE.inserted && point.bg === "rgba(0, 0, 0, 0)", "an insertion point is a 2px line in the edge colour: " + JSON.stringify(point));
+    expect(point.bt === "solid" && point.btw === "1px" && point.btc === POINT.inserted && point.bg === "rgba(0, 0, 0, 0)", "an insertion point is a 1px line in the point colour (the tint, stronger), not a bright wire: " + JSON.stringify(point));
     const ws = probe("left", "jb-line-modified jb-cat-yours-only jb-ws");
     expect(ws.bl === "dotted" && ws.blc === EDGE.modified && ws.bg === TINT.modified, "whitespace-only: tint + dotted edge: " + JSON.stringify(ws));
     const frame = probe("left", "jb-frame jb-frame-conflict jb-edge-top jb-edge-bottom");
@@ -201,20 +214,28 @@ test("every category is classified, painted and given its own controls — befor
     // If Monaco painted (it may not, headless), the real overlay agrees.
     const painted = document.querySelector(".view-overlays .jb-cat-same");
     notes.monacoPainted = !!painted;
-    if (painted) expect(getComputedStyle(painted).backgroundColor === TINT.same, "the painted identical line is violet: " + getComputedStyle(painted).backgroundColor);
+    if (painted) expect(getComputedStyle(painted).backgroundColor === TINT.modified, "the painted identical line is the changed blue: " + getComputedStyle(painted).backgroundColor);
 
-    // ── the overview ruler: nothing while the whole document fits the pane ──
+    // ── no overview ruler and no scrollbar on the Result|gutter seam ──
     const ruler = () => view.result.getModel().getAllDecorations().filter((d) => d.options.overviewRuler);
-    expect(ruler().length === 0, "a document that fits its pane marks no overview ruler (a mark would be a block beside the text): " + ruler().length);
+    const rb = document.querySelectorAll(".jb-pane-body")[1];
+    const vbar = rb.querySelector(".scrollbar.vertical");
+    const barShown = !!vbar && getComputedStyle(vbar).display !== "none" && getComputedStyle(vbar).visibility !== "hidden" && getComputedStyle(vbar).opacity !== "0";
+    expect(ruler().length === 0 && view.result.getOption(W.monaco.editor.EditorOption.overviewRulerLanes) === 0 && !barShown,
+      "the Result draws no ruler marks, has no ruler lanes, and no vertical bar on its seam: " + JSON.stringify([ruler().length, barShown, vbar && vbar.className]));
 
     // ── the ribbons, after the 32 ms overlay timer (no frame needed) ──
     await sleep(60);
     const stage = document.querySelector(".jb-ribbon-stage");
     const count = (cls) => stage.querySelectorAll("path." + cls).length;
-    const ribbons = { conflict: count("jb-ribbon-conflict"), same: count("jb-ribbon-same"), modified: count("jb-ribbon-modified"), inserted: count("jb-ribbon-inserted"), deleted: count("jb-ribbon-deleted"), base: count("jb-ribbon-base"), frame: count("jb-ribbon-frame"), done: count("jb-ribbon-done") };
-    expect(JSON.stringify(ribbons) === JSON.stringify({ conflict: 4, same: 4, modified: 2, inserted: 1, deleted: 1, base: 12, frame: 24, done: 0 }), "ribbons per category: " + JSON.stringify(ribbons));
-    const sameBand = stage.querySelector('path.jb-ribbon-same[data-block="2"][data-side="left"]');
-    expect(sameBand && getComputedStyle(sameBand).fill === TINT.same, "a band is FILLED with the tint it connects: " + (sameBand && getComputedStyle(sameBand).fill));
+    const ribbons = { conflict: count("jb-ribbon-conflict"), same: count("jb-ribbon-same"), modified: count("jb-ribbon-modified"), inserted: count("jb-ribbon-inserted"), deleted: count("jb-ribbon-deleted"), base: count("jb-ribbon-base"), frame: count("jb-ribbon-frame"), trace: count("jb-ribbon-trace"), cap: count("jb-ribbon-cap") };
+    expect(JSON.stringify(ribbons) === JSON.stringify({ conflict: 4, same: 0, modified: 6, inserted: 1, deleted: 1, base: 12, frame: 24, trace: 0, cap: 2 }), "ribbons per colour (the same change's in blue, both sides): " + JSON.stringify(ribbons));
+    const sameBand = stage.querySelector('path.jb-ribbon-modified[data-block="2"][data-side="left"]');
+    expect(sameBand && getComputedStyle(sameBand).fill === TINT.modified, "a band is FILLED with the tint it connects: " + (sameBand && getComputedStyle(sameBand).fill));
+    expect(sameBand && sameBand.dataset.state === "pending" && sameBand.dataset.phase === "open" && sameBand.dataset.tone === "modified", "and says what it draws: " + JSON.stringify(sameBand && sameBand.dataset));
+    // A band that ends at a point is capped in that point's colour.
+    const caps = [...stage.querySelectorAll("path.jb-ribbon-cap")].map((p) => p.dataset.block + ":" + getComputedStyle(p).fill).sort();
+    expect(JSON.stringify(caps) === JSON.stringify(["5:" + POINT.inserted, "6:" + POINT.deleted]), "the insertion and the deletion end in their point colour: " + JSON.stringify(caps));
     const base = stage.querySelector('path.jb-ribbon-base[data-block="2"][data-side="left"]');
     expect(base && getComputedStyle(base).fill === "rgb(30, 30, 30)", "…over the editor background, so no gutter border shows through: " + (base && getComputedStyle(base).fill));
     const edge = stage.querySelector("path.jb-ribbon-frame");
@@ -243,7 +264,11 @@ test("high contrast draws a solid edge on every pending band, on the band's own 
   }
 });
 
-test("a resolved change is calm — nothing in the side panes or gutters, one neutral line in the result; a half-done conflict says so; JetBrains' rules for what is resolved", { skip }, async () => {
+test("a settled change keeps a TRACE: a taken side its muted band and ribbon, a discarded side an outline and no ribbon, the Result muted — each said in words; JetBrains' rules for what is resolved", { skip }, async () => {
+  // The owner: "the red conflicts don't show which one you chose and which
+  // one got canceled, or if both got merged — some sort of trace with the
+  // lines should remain there, not just the gray lines disconnected from the
+  // panes". It replaced "resolved = one neutral line in the result".
   const v = await runMergePage(CHROME!, MOUNT + `
     // "Apply non-conflicting changes: All" takes identical AND one-sided changes.
     view.applyAllNonConflicting();
@@ -255,43 +280,59 @@ test("a resolved change is calm — nothing in the side panes or gutters, one ne
     expect(result[6] === "s1 = same" && result[8] === "w1 = new" && result[10] === "y1 = yours" && result[12] === "t0 = theirs" && result[14] === "keep7" && result[15] === "    ws1 = base",
       "the result took each change as written: " + JSON.stringify(result));
 
-    // A resolved change: the side panes let it go; the result keeps one
-    // neutral faint line top and bottom, whatever its category was.
-    const has = (pane, line, cls) => catDecos(pane).some((d) => d.startsWith(line + ":") && d.includes(cls));
-    for (const pane of ["left", "right"]) {
-      expect(!catDecos(pane).some((d) => /^(7|9|11|13|15|16):/.test(d)), pane + ": no resolved change is marked at all: " + JSON.stringify(catDecos(pane)));
-    }
-    expect(has("result", 7, "jb-settled jb-edge-top jb-edge-bottom") && has("result", 11, "jb-settled") && has("result", 13, "jb-settled"),
-      "the result: a settled line for each: " + JSON.stringify(catDecos("result")));
-    expect(!catDecos("result").some((d) => /jb-done-(same|modified|inserted|deleted)/.test(d)), "…in no category colour: " + JSON.stringify(catDecos("result")));
-    expect(catDecos("result").filter((d) => d.includes("jb-line-conflict")).length === 2, "the conflicts are still pending");
+    // Every side that went in keeps its band, muted, in its pane; the Result
+    // keeps a muted band in the colour of what went in; a deletion taken
+    // keeps its point line, faint.
+    const has = (pane, line, cls) => catDecos(pane).some((d) => (d.startsWith(line + ":") || d.startsWith(line + "-")) && d.includes(cls));
+    const want = [
+      ["left", 7, "jb-trace jb-trace-modified jb-cat-same"], ["right", 7, "jb-trace jb-trace-modified jb-cat-same"],
+      ["left", 9, "jb-trace jb-trace-modified jb-cat-same"], ["right", 9, "jb-trace jb-trace-modified jb-cat-same"],
+      ["left", 11, "jb-trace jb-trace-modified jb-cat-yours-only"], ["left", 16, "jb-trace jb-trace-modified jb-cat-yours-only"],
+      ["right", 13, "jb-trace jb-trace-inserted jb-cat-theirs-only"], ["right", 15, "jb-done jb-done-deleted jb-point"],
+      ["result", 7, "jb-trace jb-trace-modified"], ["result", 9, "jb-trace jb-trace-modified"], ["result", 11, "jb-trace jb-trace-modified"],
+      ["result", 13, "jb-trace jb-trace-inserted"], ["result", 15, "jb-done jb-done-deleted jb-point"], ["result", 16, "jb-trace jb-trace-modified"],
+    ];
+    for (const [pane, line, cls] of want) expect(has(pane, line, cls), pane + " " + line + ": " + cls + " — " + JSON.stringify(catDecos(pane)));
+    expect(!["left", "right", "result"].some((p) => catDecos(p).some((d) => /^(7|9|11|13|16):jb-line-/.test(d))), "…and nothing settled still wears an open band");
+    expect(!catDecos("result").some((d) => /jb-settled/.test(d)), "no neutral grey lines disconnected from the panes");
+    const trace = probe("left", "jb-trace jb-trace-modified jb-cat-yours-only");
+    expect(trace.bg === MUTED.modified && trace.bt === "none" && trace.bb === "none", "a trace is the muted tint, no lines: " + JSON.stringify(trace));
+    expect(trace.bg !== TINT.modified, "…calmer than the open band (" + TINT.modified + ")");
+    expect(probe("left", "jb-frame jb-trace-edge jb-trace-edge-modified jb-edge-top").bt === "none", "its edge draws only in high contrast");
 
-    const settled = probe("result", "jb-settled jb-edge-top jb-edge-bottom jb-cat-same");
-    expect(settled.bt === "solid" && settled.btw === "1px" && settled.bb === "solid" && settled.bbw === "1px" && settled.btc === SETTLED && settled.bg === "rgba(0, 0, 0, 0)",
-      "settled = a faint 1px solid neutral line top and bottom, no background: " + JSON.stringify(settled));
-    const top = probe("result", "jb-settled jb-edge-top jb-cat-theirs-only");
-    expect(top.bt === "solid" && top.bb === "none", "the first line of a region keeps only its top edge: " + JSON.stringify(top));
+    // In words, where the controls were (a tooltip, an accessible name) and on hover.
+    expect(note("a", 4) && note("a", 4).title === "Took Yours (test)" && note("a", 4).getAttribute("aria-label") === "Change 1 of 2: Took Yours (test)",
+      "a taken one-sided change says so: " + (note("a", 4) && note("a", 4).getAttribute("aria-label")));
+    expect(note("a", 2) && note("b", 2) && note("b", 2).title === "Took the change (the same on both sides)", "the same change: taken on both sides, in words: " + (note("b", 2) && note("b", 2).title));
+    expect(hoverOn("result", 11).includes("Took Yours (test)"), "the Result says it on hover: " + JSON.stringify(hoverOn("result", 11)));
+    expect(!document.querySelector(".jb-trace-note[data-block='0']"), "an open conflict has controls, not a trace note");
 
-    // Controls: a resolved change has none left.
+    // Controls: a settled change has none left.
     expect(JSON.stringify(groupsIn(layerA())) === "[0,1]" && JSON.stringify(groupsIn(layerB())) === "[0,1]", "only the conflicts keep controls: " + JSON.stringify([groupsIn(layerA()), groupsIn(layerB())]));
 
     await sleep(60);
     const stage = document.querySelector(".jb-ribbon-stage");
-    expect(stage.querySelectorAll('path[data-block="2"], path[data-block="4"], path[data-block="5"], path[data-block="6"]').length === 0,
-      "resolved changes draw nothing across the gutters — no outlines, no wires: " + stage.querySelectorAll('path[data-block="2"]').length);
+    const ribbon = (block, side) => stage.querySelector('path.jb-ribbon-trace[data-block="' + block + '"][data-side="' + side + '"]');
+    for (const [block, side, tone] of [[2, "left", "modified"], [2, "right", "modified"], [4, "left", "modified"], [5, "right", "inserted"], [6, "right", "deleted"]]) {
+      const p = ribbon(block, side);
+      expect(p && p.dataset.state === "took" && p.dataset.phase === "resolved" && getComputedStyle(p).fill === MUTED[tone],
+        "a taken side's ribbon to the Result stays, muted: " + block + "/" + side + " " + (p && [p.dataset.state, p.dataset.phase, getComputedStyle(p).fill].join(" ")));
+    }
+    expect(!stage.querySelector('path.jb-ribbon-modified[data-block="2"], path.jb-ribbon-inserted[data-block="5"]'), "…and no open band for them");
 
     // Take Yours in the first conflict (JetBrains: that side is resolved; the
     // conflict is not until Theirs is dealt with).
-    const resultBg = () => probe("result", classesOn("result", 2).split(" ").filter((c) => /^jb-(line|half)/.test(c)).join(" ")).bg;
+    const resultBg = () => probe("result", classesOn("result", 2).split(" ").filter((c) => /^jb-(line|half|trace)/.test(c)).join(" ")).bg;
     const openBg = resultBg();
     expect(openBg === TINT.conflict, "open: the result wears the conflict tint (" + openBg + ")");
     press(document.querySelector('.jb-gutter-a .jb-change-actions[data-block="0"] .jb-btn-accept'));
-    expect(has("left", 2, "jb-done-conflict"), "Yours' half is calm now: its faint outline");
+    expect(has("left", 2, "jb-trace jb-trace-conflict"), "Yours, taken: its band stays, muted");
     expect(has("right", 2, "jb-line-conflict") && !has("right", 2, "jb-half"), "Theirs' half keeps the full tint — it is still to decide");
-    expect(has("result", 2, "jb-line-conflict jb-half") && has("result", 2, "jb-done-conflict jb-edge-top"), "the result: the half-done look — a paler tint between the done lines: " + JSON.stringify(catDecos("result")));
+    expect(has("result", 2, "jb-line-conflict jb-half") && has("result", 2, "jb-done-conflict jb-edge-top"), "the result: the half-done look — the muted tint between two faint lines: " + JSON.stringify(catDecos("result")));
     const halfBg = resultBg();
-    expect(halfBg === HALF_CONFLICT && halfBg !== openBg, "…and it LOOKS different from the open conflict: " + openBg + " → " + halfBg);
+    expect(halfBg === MUTED.conflict && halfBg !== openBg, "…and it LOOKS different from the open conflict: " + openBg + " → " + halfBg);
     expect(!/jb-inner-/.test(classesOn("result", 2)), "the result holds Yours' text now, so the BASE word ranges are not drawn on it: " + classesOn("result", 2));
+    expect(note("a", 0) && note("a", 0).getAttribute("aria-label") === "Conflict 1 of 2: Took Yours (test)", "Yours says it was taken: " + (note("a", 0) && note("a", 0).getAttribute("aria-label")));
     const next = document.querySelector('.jb-gutter-b .jb-change-actions[data-block="0"] .jb-btn-accept');
     expect(next && next.querySelector(".codicon-arrow-left") && !next.querySelector(".codicon-insert"), "Theirs' control stays the same arrow");
     expect(next && next.title === "Add Theirs (master) after Yours (test)", "…and says in words what it now does: " + JSON.stringify(next && next.title));
@@ -300,20 +341,41 @@ test("a resolved change is calm — nothing in the side panes or gutters, one ne
     expect(discard && discard.title === "Discard Theirs (master): keep Yours (test) as the result", "its × says what it now does: " + JSON.stringify(discard && discard.title));
     expect(!document.querySelector('.jb-gutter-a .jb-change-actions[data-block="0"]'), "Yours' controls for it are gone");
     await sleep(60);
-    expect(stage.querySelector('path.jb-ribbon-done-conflict[data-block="0"][data-side="left"]') && stage.querySelector('path.jb-ribbon-conflict[data-block="0"][data-side="right"]'),
-      "the handled half's ribbon is an outline, the pending half's a filled band");
-    for (const p of stage.querySelectorAll('path.jb-ribbon-done-conflict[data-block="0"]')) {
-      const cs = getComputedStyle(p);
-      expect(cs.fill === "none" && cs.strokeDasharray === "none" && cs.stroke === DONE.conflict && cs.strokeWidth === "1px", "…solid, faint, never dashed: " + [cs.fill, cs.strokeDasharray, cs.stroke, cs.strokeWidth].join(" | "));
-    }
-    // Ignoring Yours instead leaves the result as it was, and says so.
+    const took0 = stage.querySelector('path.jb-ribbon-trace-conflict[data-block="0"][data-side="left"]');
+    const open0 = stage.querySelector('path.jb-ribbon-conflict[data-block="0"][data-side="right"]');
+    expect(took0 && took0.dataset.phase === "half" && getComputedStyle(took0).fill === MUTED.conflict && open0 && getComputedStyle(open0).fill === TINT.conflict,
+      "the taken half's ribbon is muted and meets the muted Result on its own colour; the pending half's is the open band");
+
+    // …then discard Theirs: settled as Yours. Yours keeps its trace, Theirs an outline and no ribbon.
+    press(discard);
+    expect(has("result", 2, "jb-trace jb-trace-conflict") && !has("result", 2, "jb-half"), "the Result: a muted band in the colour of what went in");
+    expect(has("right", 2, "jb-done jb-done-conflict jb-edge-top") && !has("right", 2, "jb-line-conflict") && !has("right", 2, "jb-trace"), "Theirs, discarded: an outline only");
+    await sleep(60);
+    expect(stage.querySelector('path.jb-ribbon-trace-conflict[data-block="0"][data-side="left"]') && !stage.querySelector('path[data-block="0"][data-side="right"]'),
+      "Yours' ribbon stays, Theirs has none");
+    expect(note("b", 0) && note("b", 0).getAttribute("aria-label") === "Conflict 1 of 2: Discarded Theirs (master)", "and says so: " + (note("b", 0) && note("b", 0).getAttribute("aria-label")));
+    expect(hoverOn("result", 2).includes("Took Yours (test)") && hoverOn("right", 2).includes("Discarded Theirs (master)"), "…on hover too: " + JSON.stringify([hoverOn("result", 2), hoverOn("right", 2)]));
+
+    // Both taken: both keep their bands and ribbons, muted; the Result says "Took both".
     view.undo();
+    press(document.querySelector('.jb-gutter-b .jb-change-actions[data-block="0"] .jb-btn-accept'));
+    expect(counts.byCategory.conflict.pending === 1 && has("left", 2, "jb-trace-conflict") && has("right", 2, "jb-trace-conflict") && has("result", 2, "jb-trace-conflict"),
+      "both sides and the Result keep the muted trace: " + JSON.stringify([catDecos("left"), catDecos("right")].map((d) => d.filter((x) => x.startsWith("2:")))));
+    await sleep(60);
+    expect(stage.querySelectorAll('path.jb-ribbon-trace-conflict[data-block="0"]').length === 2, "…and both ribbons");
+    expect(hoverOn("result", 2).includes("Took both") && note("b", 0).title === "Took Theirs (master)", "Took both, in words: " + JSON.stringify(hoverOn("result", 2)));
+    view.undo();
+    view.undo();
+
+    // Ignoring Yours instead leaves the result as it was, and says so.
     press(document.querySelector('.jb-gutter-a .jb-change-actions[data-block="0"] .jb-btn-ignore'));
     const discard2 = document.querySelector('.jb-gutter-b .jb-change-actions[data-block="0"] .jb-btn-ignore');
     const accept2 = document.querySelector('.jb-gutter-b .jb-change-actions[data-block="0"] .jb-btn-accept');
     expect(accept2 && accept2.title.startsWith("Accept Theirs (master) for this conflict"), "with Yours ignored, Theirs' arrow still ACCEPTS: " + JSON.stringify(accept2 && accept2.title));
     expect(discard2 && discard2.title === "Discard Theirs (master) too: the result keeps what it has", "…and its × discards it too: " + JSON.stringify(discard2 && discard2.title));
-    expect(has("result", 2, "jb-half"), "…and the result has the half-done look");
+    expect(has("result", 2, "jb-half") && has("left", 2, "jb-done jb-done-conflict"), "…the result has the half-done look, and Yours an outline");
+    await sleep(60);
+    expect(!stage.querySelector('path[data-block="0"][data-side="left"]'), "an ignored side draws no ribbon");
     view.undo();
 
     // The toolbar wand writes both sides' edits for the resolvable conflict.
@@ -321,19 +383,21 @@ test("a resolved change is calm — nothing in the side panes or gutters, one ne
     view.resolveSimpleConflicts();
     const lines = view.getResultText().split("\\n");
     expect(lines.slice(3, 5).join("\\n") === expected && expected === "r1 = yours\\nr2 = theirs", "the wand applied both edits: " + JSON.stringify(lines.slice(3, 5)));
-    expect(has("result", 4, "jb-settled"), "…and the conflict is settled now");
+    expect(has("result", 4, "jb-trace-conflict") && has("left", 4, "jb-trace-conflict") && has("right", 4, "jb-trace-conflict"), "…and the conflict is settled, both sides taken");
     expect(counts.byCategory.conflict.pending === 1 && counts.resolvableConflictsPending === 0, "one conflict left, none resolvable: " + JSON.stringify(counts.byCategory.conflict));
     view.undo();
     expect(counts.resolvableConflictsPending === 1, "undo brings the resolvable conflict back");
     expect(view.hasSimpleConflicts() === true, "…and the toolbar wand has work again");
 
     // JetBrains (MergeConflictModel.replaceChange): taking one side of a
-    // conflict whose other side has NO lines in it resolves the conflict.
+    // conflict whose other side has NO lines in it resolves the conflict —
+    // that side is set aside.
     view.render(W.payload({ base: "a\\nb\\nc", ours: "a\\nB\\nc", theirs: "a\\nc", result: "a\\nb\\nc" }));
     const conflict = view.model.blocks[0];
     expect(W.category(conflict) === "conflict", "modified in Yours, deleted in Theirs: a conflict (" + W.category(conflict) + ")");
     view.acceptSide(conflict, "left", "auto");
     expect(counts.pending === 0 && view.getResultText() === "a\\nB\\nc", "accepting Yours resolves it — there is nothing of Theirs to add after it (" + counts.pending + " pending)");
+    expect(view.sideFate(conflict, "right") === "discarded", "Theirs' deletion is the side set aside (" + view.sideFate(conflict, "right") + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
@@ -395,20 +459,21 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     const chip = (item) => document.querySelector('#slot .jb-legend-chip[data-category="' + item + '"]');
     const text = (item) => chip(item) && chip(item).textContent.replace(/\\s+/g, " ").trim();
     expect(text("conflict") === "Conflicts2you choose", "conflict item: " + JSON.stringify(text("conflict")));
-    expect(text("same") === "Same on both sides2same result either way", "identical item: " + JSON.stringify(text("same")));
+    expect(text("same") === "Same on both sides2either arrow takes it", "identical item: " + JSON.stringify(text("same")));
     // A one-sided change is blue, green or grey by what it did: the item names
     // each colour, so the legend explains what the panes show.
     expect(text("one-sided") === "ChangedAddedRemovedon one side4safe to take", "one-sided item: " + JSON.stringify(text("one-sided")));
     const shown = (el) => getComputedStyle(el).display !== "none";
     const visible = [...legend.children].filter((e) => !e.classList.contains("jb-legend-pop") && shown(e));
     const line = visible.map((e) => e.classList.contains("jb-legend-help") ? "?" : [...e.querySelectorAll(":scope > span, :scope > .jb-legend-kind")].map((s) => s.textContent.trim()).filter(Boolean).join(" ") || e.textContent.trim()).join(" ");
-    expect(line === "Conflicts 2 you choose · Same on both sides 2 same result either way · Changed Added Removed on one side 4 safe to take ?", "the legend reads as words: " + JSON.stringify(line));
+    expect(line === "Conflicts 2 you choose · Changed Added Removed on one side 4 safe to take · Same on both sides 2 either arrow takes it ?", "the legend reads as words: " + JSON.stringify(line));
     expect(!/[≠≈‹›✨✓=]/.test(legend.textContent), "no symbols of our own anywhere in it: " + JSON.stringify(legend.textContent));
     // Solid round dots, one per colour, in the colours the panes use — no box
     // that reads as a checkbox waiting for a tick.
     const dots = (item) => [...chip(item).querySelectorAll(".jb-legend-dot")].map((d) => { const cs = getComputedStyle(d); return cs.backgroundColor + "|" + cs.borderRadius + "|" + cs.borderTopStyle; });
     expect(JSON.stringify(dots("conflict")) === JSON.stringify([EDGE.conflict + "|50%|none"]), "a red dot for conflicts: " + JSON.stringify(dots("conflict")));
-    expect(JSON.stringify(dots("same")) === JSON.stringify([EDGE.same + "|50%|none"]), "a violet dot: " + JSON.stringify(dots("same")));
+    expect(dots("same").length === 0, "the same change on both sides has no colour of its own, so no dot: " + JSON.stringify(dots("same")));
+    expect(/Coloured on both sides/.test(chip("same").title) && /either arrow takes it/.test(chip("same").title), "its tooltip says how it looks and what either arrow does: " + chip("same").title);
     expect(JSON.stringify(dots("one-sided")) === JSON.stringify([EDGE.modified, EDGE.inserted, EDGE.deleted].map((c) => c + "|50%|none")), "blue, green, grey dots: " + JSON.stringify(dots("one-sided")));
     expect(!legend.querySelector(".jb-legend-swatch"), "no square swatches");
     expect(chip("conflict").getAttribute("aria-label") === "Conflicts: 2 conflicts left; 1 can be resolved automatically (Resolve simple conflicts). Both sides changed these lines, differently: you choose. Go to the next one.", "item name: " + chip("conflict").getAttribute("aria-label"));
@@ -429,11 +494,19 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     view.undo();
     view.undo();
 
+    // Never a count of nothing: "(0 resolvable)", "0 can be resolved".
+    const words = () => [...legend.querySelectorAll(".jb-legend-chip")].map((c) => c.textContent + " " + c.title + " " + c.getAttribute("aria-label")).join(" | ");
+    const zero = () => /\\b0 (can be resolved|resolvable)|\\b0 conflicts? (can|resolv)|no conflicts? can be resolved/i.test(words());
+    expect(!zero(), "fresh: no count of nothing: " + words());
     view.applyAllNonConflicting();
-    expect(text("same") === "Same on both sides0" && chip("same").disabled, "a colour with nothing left reads 0, asks nothing, and cannot be clicked: " + JSON.stringify(text("same")));
+    expect(text("same") === "Same on both sides0" && chip("same").disabled, "an item with nothing left reads 0, asks nothing, and cannot be clicked: " + JSON.stringify(text("same")));
     expect(/can be resolved automatically/.test(chip("conflict").title), "the conflict item says the wand has work: " + chip("conflict").title);
     view.resolveSimpleConflicts();
     expect(!/automatically/.test(chip("conflict").title), "…and stops saying so when it has none: " + chip("conflict").title);
+    expect(!zero(), "…never saying it has none: " + words());
+    press(document.querySelector('.jb-gutter-a .jb-change-actions[data-block="0"] .jb-btn-accept'));
+    press(document.querySelector('.jb-gutter-b .jb-change-actions[data-block="0"] .jb-btn-ignore'));
+    expect(!zero(), "…not even with every conflict settled: " + words());
 
     // The key explains every colour and line, in words.
     const help = document.querySelector("#slot .jb-legend-help");
@@ -441,10 +514,11 @@ test("the legend explains the COLOURS in words — a solid dot, the name, how ma
     const pop = document.querySelector("#slot .jb-legend-pop");
     expect(!pop.hidden && help.getAttribute("aria-expanded") === "true", "the key opens");
     const key = pop.textContent;
-    for (const phrase of ["Red: a conflict", "Violet", "same change", "whitespace", "already accepted or ignored", "added", "removed", "changed", "added or removed at that point", "one side taken, the other still to decide", "resolved"]) {
-      expect(key.includes(phrase), "the key explains " + phrase);
+    for (const phrase of ["Conflict (red)", "you choose", "Changed, Added, Removed (blue, green, grey)", "Coloured on both sides: the same change on both sides — either arrow takes it", "whitespace", "added or removed at that point", "one side in, the other still to decide", "the side you took", "the side you discarded"]) {
+      expect(key.includes(phrase), "the key explains " + phrase + ": " + key);
     }
     expect(!/[≠≈‹›✨✓]/.test(key) && !/[Dd]ashed/.test(key), "…with no symbols of our own and no dashed style: " + key);
+    expect(!/[Vv]iolet|grey line/.test(key), "…and no violet, no disconnected grey line: " + key);
     expect(getComputedStyle(pop).display !== "none", "…and is on screen, not just un-hidden: " + getComputedStyle(pop).display);
     help.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     // The popover and the chips set their own display, which beats the hidden
@@ -479,7 +553,7 @@ test("granularity only re-decorates and keeps every accept; a whitespace change 
     expect(counts.hasProgress === true && counts.byCategory["yours-only"].pending === 1, "the accept is kept: " + JSON.stringify(counts.byCategory["yours-only"]));
     expect(view.canUndo() && view.getHistory().undo.length === 1, "and so is the history: " + JSON.stringify(view.getHistory()));
     expect(!/jb-inner-/.test(classesOn("left", 2)), "word tints are gone: " + classesOn("left", 2));
-    expect(/jb-settled/.test(classesOn("result", 11)) && !/jb-(line|done)-/.test(classesOn("left", 11)), "the accepted change is still settled: " + classesOn("result", 11));
+    expect(/jb-trace-modified/.test(classesOn("result", 11)) && /jb-trace-modified/.test(classesOn("left", 11)) && !/jb-line-/.test(classesOn("left", 11)), "the accepted change is still settled, its trace kept: " + classesOn("result", 11));
     view.setRenderOptions({ showInner: true });
     expect(/jb-inner-conflict/.test(classesOn("left", 2)) && view.getResultText() === before, "and back, still with the work");
 
@@ -491,24 +565,43 @@ test("granularity only re-decorates and keeps every accept; a whitespace change 
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
 
-test("the overview ruler: thin right-lane marks at reduced strength, only while the document is taller than its pane", { skip }, async () => {
+test("the overview strip: at the view's right edge, never on a seam; opaque marks in the legend's colours; nothing while the Result fits", { skip }, async () => {
+  // The critic: the Result's own ruler and scrollbar sat exactly on the
+  // Result|Theirs seam and cut every band there — in a dense file one solid
+  // bar the height of the pane, in blended colours no legend names.
   const v = await runMergePage(CHROME!, MOUNT + `
-    const marks = () => view.result.getModel().getAllDecorations().filter((d) => d.options.overviewRuler).map((d) => d.options.overviewRuler);
-    expect(marks().length === 0, "600px of pane, 17 lines: no marks (" + marks().length + ")");
+    const map = view.overview;
+    const strip = document.querySelector(".jb-map");
+    const grid = document.querySelector(".jb-merge-grid");
+    const bodies = [...grid.querySelectorAll(".jb-pane-body")];
+    expect(!!map && !!strip, "the view has one overview strip");
+    const s = strip.getBoundingClientRect(), g = grid.getBoundingClientRect(), theirs = bodies[2].getBoundingClientRect();
+    expect(Math.abs(s.right - g.right) < 0.5 && s.left >= theirs.right - 0.5, "it is the view's right edge, beyond Theirs: " + JSON.stringify([s.left, s.right, theirs.right, g.right]));
+    const gB = grid.querySelector(".jb-gutter-b").getBoundingClientRect();
+    expect(Math.abs(bodies[1].getBoundingClientRect().right - gB.left) < 0.5, "nothing between the Result and its gutter");
+    expect(map.drawn.length === 0 && strip.classList.contains("is-empty"), "600px of pane, 17 lines: no marks (" + map.drawn.length + ")");
     host.style.height = "140px";
     view.layout();
-    await sleep(60);
-    const m = marks();
-    expect(m.length === 8, "a pane shorter than the document: every pending block marks the ruler (" + m.length + ")");
-    expect(m.every((r) => r.position === W.monaco.editor.OverviewRulerLane.Right), "…in the thin right lane, never the full width: " + JSON.stringify(m.map((r) => r.position)));
-    const conflictMark = m.find((r) => /255|240/.test(r.color));
-    expect(conflictMark && conflictMark.color === "rgba(240, 104, 106, 0.6)", "…at reduced strength: " + (conflictMark && conflictMark.color));
+    await sleep(80);
+    map.draw();
+    const m = map.drawn;
+    expect(m.length === 8 && !strip.classList.contains("is-empty"), "a pane shorter than the document: every pending change has a mark (" + m.length + ")");
+    expect(m.every((x) => ["conflict", "modified", "inserted", "deleted"].includes(x.tone)), "…in the paint's colours — no violet: " + JSON.stringify(m.map((x) => x.tone)));
+    expect(m.filter((x) => x.block === 2 || x.block === 3).every((x) => x.tone === "modified"), "the same change on both sides is marked by what it did");
+    // Opaque: the canvas pixel under a conflict mark is the conflict's edge colour, unblended.
+    const canvas = strip.querySelector("canvas");
+    const dpr = window.devicePixelRatio || 1;
+    const c = m.find((x) => x.tone === "conflict");
+    const px = canvas.getContext("2d").getImageData(Math.floor(canvas.width / 2), Math.floor((c.top + c.height / 2) * dpr), 1, 1).data;
+    expect(px[3] === 255 && px[0] === 240 && px[1] === 104 && px[2] === 106, "a conflict mark is the legend's own red, opaque: " + [...px].join(","));
     view.applyAllNonConflicting();
-    expect(marks().length === 2, "a resolved block leaves the ruler: " + marks().length);
+    map.draw();
+    expect(map.drawn.length === 2, "a settled change leaves the strip: " + map.drawn.length);
     host.style.height = "600px";
     view.layout();
-    await sleep(60);
-    expect(marks().length === 0, "and when it fits again, the marks go (" + marks().length + ")");
+    await sleep(80);
+    map.draw();
+    expect(map.drawn.length === 0, "and when it fits again, the marks go (" + map.drawn.length + ")");
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
