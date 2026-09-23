@@ -211,7 +211,10 @@ export class ConflictsDashboard {
     mark.title = state.brand.name;
     const title = el("h1", "cd-title", "Conflicts");
     head.append(mark, title);
-    if (!allDone) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
+    // Nothing in progress and nothing unmerged (our own Continue just ended the
+    // operation, and the page stays to say so): no chip — "Unmerged files"
+    // over "No conflicted files" would contradict itself.
+    if (!allDone && (op.kind !== "none" || pending > 0)) head.appendChild(el("span", "cd-chip", opChipLabel(op)));
     if (state.repoName) head.appendChild(el("span", "cd-repo", state.repoName));
     root.appendChild(head);
 

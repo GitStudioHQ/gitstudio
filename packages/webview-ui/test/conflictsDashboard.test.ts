@@ -322,3 +322,20 @@ test("a new stop resets a half-answered confirm, and a host that cannot close of
   `);
   assert.deepEqual(v.fails, [], v.fails.join("\n"));
 });
+
+test("once our Continue ends the operation, the header says nothing is in progress — no 'Unmerged files' alarm over 'No conflicted files'", { skip }, async () => {
+  // Real VS Code, the reporter's rebase: Continue Rebase on the dashboard, and
+  // the dashboard stays to say "Rebase complete" — with the next episode (kind
+  // none, no rows) under a red UNMERGED FILES chip.
+  const v = await run(`
+    const d = mount({ closable: true });
+    d.render(state(OPS.rebase, [row("f.txt", { status: "resolved", choice: "yours" })]));
+    const none = base({ kind: "none", title: "", yours: side("yours", 2, "test"), theirs: side("theirs", 3, ""), verbs: { abort: "Cancel" }, episode: "none" });
+    d.render(state(none, [], { outcome: { kind: "done", text: "Rebase complete" } }));
+    expect(!$(".cd-chip"), "no operation chip once nothing is in progress (" + text(".cd-chip") + ")");
+    expect(/Rebase complete/.test(text(".cd-dash") || ""), "the outcome is said");
+    d.render(state(none, [row("x.txt")]));
+    expect(text(".cd-chip") === "Unmerged files", "with nothing in progress but a file still unmerged, the chip still says so (" + text(".cd-chip") + ")");
+  `);
+  assert.deepEqual(v.fails, [], v.fails.join("\n"));
+});
