@@ -317,9 +317,9 @@ test("pulling again mid-rebase names the rebase — conflicted or already resolv
   const conflicted = await ctx.sync.pull();
   assert.deepEqual(conflicted.blocked, { operation: "rebase", conflicted: 1 });
 
-  // Resolved, not continued: nothing is unmerged and HEAD is detached, so git
-  // no longer refuses up front — it fetches and then fails with exit 1 ("You
-  // are not currently on a branch"). Still the paused rebase's doing.
+  // Resolved, not continued: nothing is unmerged and HEAD is detached — git
+  // itself would fetch and then fail with exit 1 ("You are not currently on a
+  // branch"). Still the paused rebase's doing, and the pull is not run over it.
   writeFileSync(join(clone, "shared.txt"), "one\nBOTH\nthree\n");
   gitIn(clone, ["add", "shared.txt"]);
   for (const mode of [undefined, "merge", "rebase"] as const) {

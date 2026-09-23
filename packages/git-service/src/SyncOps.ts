@@ -112,12 +112,15 @@ export interface PullStop {
 
 /**
  * A pull that never started, because an operation is still paused in the
- * repository — most often the very merge or rebase an earlier pull stopped on.
+ * repository — most often the very merge or rebase an earlier pull stopped on,
+ * or a cherry-pick, a revert or a `git am` waiting for the user.
  *
- * git refuses that pull before it fetches anything ("Pulling is not possible
- * because you have unmerged files", "You have not concluded your merge") or,
- * mid-rebase, fails on the detached HEAD. Like `PullStop` it is a state, not a
- * defect: the caller says what is paused and sends the user to finish it.
+ * It is not run over one (see pausedByOperation): git refuses most such pulls
+ * ("Pulling is not possible because you have unmerged files", "You have not
+ * concluded your merge", a paused rebase's detached HEAD), and some it runs,
+ * ending the operation or moving HEAD out from under it. Like `PullStop` it
+ * is a state, not a defect: the caller says what is paused and sends the user
+ * to finish it.
  */
 export interface PullBlock {
   /** What is paused. Absent when files are unmerged with no operation marker
@@ -658,11 +661,12 @@ export class SyncOps {
    *   can show a divergence that asking about would only answer with this same
    *   transport error. Both codes are pinned against real git in
    *   test/pullStopped.test.ts.
-   * - A pull that could not START because a merge or rebase is still paused —
-   *   the state a stop leaves the user in, with the branch still ahead and
-   *   behind — comes back `blocked` (see `PullBlock`), and is checked before
-   *   the divergence: git refused without fetching, so there is nothing new to
-   *   ask about, and any answer would be refused the same way.
+   * - A pull over an operation still stopped — a merge or rebase a stop left
+   *   the user in, with the branch still ahead and behind, or a cherry-pick,
+   *   a revert, a `git am` — is not run at all and comes back `blocked` (see
+   *   `PullBlock` and pausedByOperation): running it can end the operation or
+   *   move HEAD out from under it, and any answer to "merge or rebase?" would
+   *   meet the same stop.
    * - A pull refused because the user's uncommitted work is in its way comes
    *   back `dirty` (see `PullDirty`) — work in progress, not a failure.
    * - `pull.ff=only` in the user's config is treated as the auto case above:
@@ -728,11 +732,10 @@ export class SyncOps {
         return { ...failed, stopped };
       }
     }
-    // An operation still paused from before — typically the merge or rebase an
-    // earlier pull stopped on, which is exactly where that stop sent the user.
-    // Checked BEFORE the divergence below: git refused without fetching, so the
-    // counts are the ones that made the first pull ask, and asking again would
-    // offer a choice git is going to refuse whatever the answer.
+    // An operation stopped while the pull ran (asked before it too, above: a
+    // stop is never pulled over). Checked BEFORE the divergence below: asking
+    // "merge or rebase?" then would offer a choice the stop refuses whatever
+    // the answer.
     const blocked = await this.pausedByOperation(signal);
     if (blocked) {
       return { ...failed, blocked };

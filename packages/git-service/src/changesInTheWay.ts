@@ -161,11 +161,10 @@ export function changesInTheWayMessage(v: ChangesInTheWay): string {
  * instead, naming the operation — and only when nothing happened; a command
  * that stopped on conflicts of its own is git's outcome, as ever.
  *
- * A checkout is not run at all over a stopped operation: `git switch` refuses
- * it there, and `git checkout` does not — it quietly ENDS a stopped merge,
- * cherry-pick or revert (their *_HEAD removed, the resolution carried to the
- * other branch) and moves HEAD out from under a rebase or an am, whose
- * Continue then commits onto the branch just checked out.
+ * A command that would END the stopped operation, or move HEAD out from under
+ * it, is not run over one at all (endsOrMoves): a checkout — `git switch`
+ * refuses it there, `git checkout` quietly ends a stopped merge, cherry-pick
+ * or revert — a merge, a rebase, and a pick anywhere but a plain rebase stop.
  */
 export async function runApplying(
   proc: GitProcess,
