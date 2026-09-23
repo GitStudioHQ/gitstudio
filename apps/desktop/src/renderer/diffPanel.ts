@@ -9,6 +9,7 @@ import { DiffView } from "@gitstudio/webview-ui/diffView";
 import type { TickRow } from "@gitstudio/webview-ui/stageTicks";
 import { selectedLineNumbers } from "./selectionLines";
 import { MergeView } from "@gitstudio/webview-ui/mergeView";
+import { MergeShell } from "@gitstudio/webview-ui/mergeShell";
 import { languageForFile } from "@gitstudio/webview-ui/language";
 import { ignoreTrimWhitespaceFor } from "@gitstudio/engine/lineDiff";
 import { ensureNativeTheme, nativeFontOptions } from "@gitstudio/webview-ui/theme";
@@ -18,6 +19,18 @@ import { bootMonaco } from "./monacoBoot";
 import { host } from "./bridge";
 import { toast } from "./dialogs";
 import { el, span, glyph } from "./ui";
+import { didUndoable, registerMergeHistory } from "./undo";
+import { DesktopMergeAdapter, detectJetBrains, loadMergeSettings, mergePayload } from "./mergeParity";
+
+/** What the Changes view does when the merge shell resolves, exits, or moves the operation. */
+export interface ConflictHandlers {
+  /** The file was resolved (Apply, a whole side taken, deleted) or brought back. */
+  onResolved?: () => void;
+  /** Exit viewer: leave the conflict in the file and go back to the conflicts dashboard. */
+  onExit?: () => void;
+  /** Continue / Abort ran from the editor: refresh everything, say what happened. */
+  onOperationChanged?: (outcome: { kind: "done" | "stopped" | "failed"; text: string }) => void;
+}
 
 /** How the diff renders: unified single column, or the 2-pane split view. */
 type DiffMode = "inline" | "split";
@@ -49,37 +62,14 @@ let workerDiffBroken = false;
  * the 3-pane MergeView depending on whether the opened file is conflicted,
  * disposing the previous view so Monaco editors never leak.
  */
-/** Wire one conflict-bar button: disable while it runs, toast the outcome, and
- *  tell the caller to repaint when it worked. */
-function mergeRun(
-  btn: HTMLButtonElement,
-  op: () => Promise<{ ok: boolean; message?: string }>,
-  okMsg: string,
-  onResolved?: () => void,
-): void {
-  btn.addEventListener("click", () => {
-    void (async () => {
-      btn.disabled = true;
-      try {
-        const r = await op();
-        if (r.ok) {
-          toast(okMsg, "success");
-          onResolved?.();
-        } else {
-          toast(r.message || "Could not resolve the conflict.", "error");
-        }
-      } catch (err) {
-        toast(String(err), "error");
-      } finally {
-        btn.disabled = false;
-      }
-    })();
-  });
-}
-
 export class DiffPanel {
   private diff?: DiffView;
-  private merge?: MergeView;
+  /** The shared merge shell, while a conflicted file is open. */
+  private shell?: MergeShell;
+  /** Drops the shell from ⌘Z routing (undo.ts) when it goes away. */
+  private unregisterMergeUndo?: () => void;
+  /** Bumped on every render: a merge mount that resolves late must not land on a newer file. */
+  private mountGen = 0;
   /** Inline (unified) mode: Monaco's native diff editor + its two models. */
   private inline?: monaco.editor.IStandaloneDiffEditor;
   private inlineModels: monaco.editor.ITextModel[] = [];
@@ -531,219 +521,71 @@ export class DiffPanel {
   }
 
   /**
-   * Renders the 3-pane merge for a conflicted file via the engine merge model,
-   * with a resolution action bar — "Take ours/theirs" (whole-file, via git
-   * stages) and "Mark resolved" (writes the edited result + `git add`). The
-   * merge editor was previously display-only; this is the write-back path.
-   * `onResolved` fires after a successful resolve so the caller can refresh.
+   * Opens a conflicted file in the SHARED merge shell — the same toolbar,
+   * operation strip, no-text panel and bottom bar the extension and Merge
+   * Studio mount — wired to the main process by DesktopMergeAdapter.
+   *
+   * This replaces the desktop's own three-button bar ("Take ours / Take theirs
+   * / Mark resolved"), which offered different moves, different words and a
+   * different Apply rule from the other two products for the same conflict:
+   * a hard gate where they confirm, stage labels where they name the branches,
+   * and no way to continue or cancel the operation from the file.
+   *
+   * Auto-applying the non-conflicting changes is Settings ▸ Merge's
+   * `autoApplyNonConflicting`, OFF by default; it used to be unconditional.
    */
-  showMerge(
-    model: ConflictModel,
-    onResolved?: () => void,
-    /** This file has no text to merge — a binary, or a side that does not
-     *  exist. The take-side buttons still apply; the three-pane editor does
-     *  not, and mounting it over decoded bytes is how a conflicted PNG offered
-     *  you a line-by-line merge of two walls of U+FFFD. */
-    opts: { noText?: "binary" | "modify-delete" | "too-large" | "both-deleted" } = {},
-  ): void {
+  showConflict(model: ConflictModel, handlers: ConflictHandlers = {}): void {
     this.teardown();
+    const gen = ++this.mountGen;
 
     const wrap = el("div", "merge-wrap");
+    // The path, as the diff view shows it. The extension names the file on its
+    // editor tab; a pane in the middle of the Changes view has no tab.
     const bar = el("div", "merge-bar");
     const title = el("div", "merge-bar-title");
-    title.append(glyph("git-merge"), span(model.path, "merge-bar-path"));
-    const actions = el("div", "merge-bar-actions");
-    // NAMED FOR THE OPERATION. "ours" and "theirs" are git's index stages, and
-    // which of YOUR work each holds is inverted during a rebase — so a button
-    // reading "Take ours" handed you the branch you were rebasing ONTO and
-    // discarded the commit being replayed. The model carries labels the main
-    // process derives from the operation actually in progress; use them.
-    // A MODIFY/DELETE conflict has a side with no file at all, and taking that
-    // side does not replace the file — it removes it. The button read "Take
-    // <side>" with the tooltip "Replace the file with …", which is the wrong
-    // verb for the only irreversible thing on this bar.
-    const deletes = (side: "ours" | "theirs"): boolean => model.missingSide === side;
-    const sideBtn = (side: "ours" | "theirs", icon: string, label: string): HTMLButtonElement => {
-      const b = el("button", "mini-btn" + (deletes(side) ? " is-danger" : "")) as HTMLButtonElement;
-      b.append(glyph(deletes(side) ? "trash" : icon), span(deletes(side) ? "Delete the file" : `Take ${label}`));
-      b.title = deletes(side)
-        ? `“${label}” has no version of this file — taking that side removes it and stages the deletion`
-        : `Replace the file with “${label}” and stage it`;
-      return b;
-    };
-    const ours = sideBtn("ours", "arrow-left", model.oursLabel);
-    const theirs = sideBtn("theirs", "arrow-right", model.theirsLabel);
-    const resolve = el("button", "btn btn-primary mini-btn merge-resolve") as HTMLButtonElement;
-    resolve.append(glyph("check"), span("Mark resolved"));
-    // Armed only once the merge has actually been made — see syncResolve below.
-    resolve.disabled = true;
-    resolve.title = "Work through the conflicts first";
-    actions.append(ours, theirs, resolve);
-    bar.append(title, actions);
-
+    const path = span("", "merge-bar-path");
+    path.appendChild(span(model.path, "merge-bar-path-text"));
+    path.title = model.path;
+    title.append(glyph("git-merge"), path);
+    bar.append(title);
     const surface = el("div", "merge-surface");
     wrap.append(bar, surface);
     this.container.replaceChildren(wrap);
 
-    if (opts.noText) {
-      // No merge editor at all — an explanation, and the two side buttons in
-      // the bar above it, which are the only moves that make sense here.
-      resolve.remove();
-      const note = el("div", "merge-notext list-empty is-none");
-      const badge = el("div", "list-empty-badge");
-      badge.appendChild(
-        glyph(
-          opts.noText === "binary"
-            ? "file-binary"
-            : opts.noText === "too-large"
-              ? "warning"
-              : "diff-removed",
-        ),
-      );
-      const h = el("div", "list-empty-title");
-      const d = el("div", "list-empty-desc");
-      if (opts.noText === "binary") {
-        h.textContent = "Conflicted binary file";
-        d.textContent =
-          `${model.path} is binary, so there is no line-by-line merge to make. Take one side, or ` +
-          `replace the file yourself and stage it.`;
-      } else if (opts.noText === "too-large") {
-        h.textContent = "Too large to merge here";
-        d.textContent =
-          `${model.path} is larger than this app reads in one go, so only part of it is available — ` +
-          `and saving a merge built from part of a file would delete the rest. Take one side, or ` +
-          `resolve it in an editor and stage it.`;
-      } else if (opts.noText === "both-deleted") {
-        // Git's DD. Neither side has the file, so neither "Take" button has
-        // anything to take — `conflictTakeSide` refuses both, and the panel
-        // used to offer them anyway by drawing this as a modify/delete.
-        ours.remove();
-        theirs.remove();
-        h.textContent = "Deleted on both sides";
-        d.textContent =
-          `${model.path} was deleted in “${model.oursLabel}” and in “${model.theirsLabel}”. There is ` +
-          `nothing to choose between — the file is going either way. Discard it to accept the ` +
-          `deletion and settle the conflict.`;
-      } else if (!model.hasBase) {
-        // ADDED on one side, with no common ancestor — git's UA / AU. Nothing
-        // was DELETED here: there is no base, so the file simply does not exist
-        // on the other side and never did. Telling the modify/delete story
-        // ("deleted in X") describes a deletion that never happened, about a
-        // file that has no history to have been deleted from.
-        const addedIn = model.missingSide === "ours" ? model.theirsLabel : model.oursLabel;
-        const absent = model.missingSide === "ours" ? model.oursLabel : model.theirsLabel;
-        h.textContent = "Added on one side only";
-        d.textContent =
-          `${model.path} is new in “${addedIn}” and does not exist in “${absent}” — there is no ` +
-          `earlier version behind either. Keep the new file, or leave it out.`;
-      } else {
-        // `missingSide` says WHICH side has no file. The note used to print
-        // both readings and then "— or the other way round", which is the app
-        // declining to answer the only question the reader has, about a state
-        // where one of the two buttons below DELETES their file.
-        const goneSide = model.missingSide === "ours" ? model.oursLabel : model.theirsLabel;
-        const keptSide = model.missingSide === "ours" ? model.theirsLabel : model.oursLabel;
-        h.textContent = "Changed on one side, deleted on the other";
-        d.textContent =
-          `${model.path} was edited in “${keptSide}” and deleted in “${goneSide}”. There is nothing ` +
-          `to merge line by line: keep the edited file, or accept the deletion.`;
-      }
-      note.append(badge, h, d);
-      surface.appendChild(note);
-      this.wireSides(ours, theirs, model, onResolved);
-      return;
-    }
-
-    this.merge = new MergeView(surface);
-    // How much of the merge is still undone. The result pane is deliberately
-    // SEEDED WITH THE BASE — the block trackers are anchored in base
-    // coordinates and you build the answer by accepting sides, as IntelliJ does
-    // — which means "Mark resolved" pressed before accepting anything writes
-    // the BASE over the file and stages it: both sides' work discarded, under a
-    // toast reading "Resolved and staged." Nothing recovers that.
-    let pending = Number.POSITIVE_INFINITY;
-    const syncResolve = (): void => {
-      const blocked = pending > 0;
-      resolve.disabled = blocked;
-      resolve.title = blocked
-        ? pending === Number.POSITIVE_INFINITY
-          ? "Work through the conflicts first"
-          : `${pending} conflict${pending === 1 ? "" : "s"} still to settle — the result would not be your merge`
-        : "Save your merged result and stage the file as resolved";
-    };
-    this.merge.onCountsChanged = (counts) => {
-      // EVERY pending block, not only the conflicting ones.
-      //
-      // The result pane is seeded with the BASE, so a block nobody has accepted
-      // still holds the base's version of those lines — conflicting or not.
-      // Gating on `conflictsPending` therefore unlocked the button while
-      // auto-mergeable hunks were still sitting at base, and saving wrote the
-      // pre-merge original over both sides' work in every one of them. The
-      // gate that was added to stop exactly this counted the wrong thing.
-      pending = counts.pending;
-      syncResolve();
-    };
-    this.merge.render({
-      fileName: model.path,
-      conflictType: "content",
-      source: "git-stages",
-      hasBase: model.hasBase,
-      oursLabel: model.oursLabel,
-      theirsLabel: model.theirsLabel,
-      base: model.base,
-      ours: model.ours,
-      theirs: model.theirs,
-      result: model.result,
+    void Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]).then(([settings, ide]) => {
+      if (gen !== this.mountGen) return;
+      let shell: MergeShell | undefined;
+      const adapter = new DesktopMergeAdapter(model, {
+        invoke: host.invoke,
+        deliver: (message) => shell?.handle(message),
+        onResolved: () => handlers.onResolved?.(),
+        onExit: () => handlers.onExit?.(),
+        onOperationChanged: (outcome) => handlers.onOperationChanged?.(outcome),
+        undoable: didUndoable,
+        notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
+      });
+      shell = new MergeShell(surface, mergePayload(model, settings, ide), {
+        adapter,
+        createView: (container) => new MergeView(container),
+        // Outside the merge surface ⌘Z is the app's own undo; inside it, the
+        // shell takes it (and undo.ts routes the Edit menu's copy here).
+        windowUndoKeys: false,
+      });
+      this.shell = shell;
+      const live = shell;
+      this.unregisterMergeUndo = registerMergeHistory({
+        root: live.element,
+        undo: () => live.undo(),
+        redo: () => live.redo(),
+      });
+      // The surface has no height until the flex layout settles. A frame is
+      // not guaranteed (an occluded window, a headless run), so measure now
+      // and once more on a timer.
+      live.layout();
+      window.setTimeout(() => {
+        if (this.shell === live) live.layout();
+      }, 60);
     });
-    // Start from git's own auto-merge, the way the worktree already has.
-    //
-    // Without this the correctness fix above is unusable: a file with one true
-    // conflict and forty hunks git merged cleanly would need forty gestures to
-    // redo work git had already done. Seeding them makes `pending` equal
-    // `conflictsPending` by construction, so the stricter gate is invisible in
-    // the ordinary case and only bites when a block really is unresolved.
-    this.merge.applyAllNonConflicting();
-    // Paint the button's initial state. `onCountsChanged` fires on the first
-    // model build, but a merge view that fails to mount at all (a cold or
-    // broken Monaco worker) never emits it — and the button must stay closed in
-    // that case, not open by default.
-    syncResolve();
-    // The surface starts at 0 height until Monaco lays out — nudge it.
-    requestAnimationFrame(() => (this.merge as { layout?: () => void } | undefined)?.layout?.());
-
-    this.wireSides(ours, theirs, model, onResolved);
-    mergeRun(
-      resolve,
-      () =>
-        host.invoke("conflict:resolve", {
-          path: model.path,
-          content: this.merge?.getResultText() ?? model.result,
-        }),
-      "Resolved and staged.",
-      onResolved,
-    );
-  }
-
-  /** "Take <side>" on both merge layouts — the three-pane editor and the
-   *  no-text one, which has the same two moves available and nothing else. */
-  private wireSides(
-    ours: HTMLButtonElement,
-    theirs: HTMLButtonElement,
-    model: ConflictModel,
-    onResolved?: () => void,
-  ): void {
-    mergeRun(
-      ours,
-      () => host.invoke("conflict:takeSide", { path: model.path, side: "ours" }),
-      `Took “${model.oursLabel}”.`,
-      onResolved,
-    );
-    mergeRun(
-      theirs,
-      () => host.invoke("conflict:takeSide", { path: model.path, side: "theirs" }),
-      `Took “${model.theirsLabel}”.`,
-      onResolved,
-    );
   }
 
   /** The 1-based line numbers currently selected in the working (right) editor —
@@ -797,7 +639,15 @@ export class DiffPanel {
    * failed" all looked identical, so a failure read as an instruction. It now
    * takes a title and picks its icon from the KIND of nothing it is showing.
    */
-  showEmpty(text: string, opts: { title?: string; kind?: "waiting" | "none" | "error" } = {}): void {
+  showEmpty(
+    text: string,
+    opts: {
+      title?: string;
+      kind?: "waiting" | "none" | "error";
+      /** Buttons under the explanation (an IDE hand-off's "Mark resolved"). */
+      actions?: Array<{ label: string; icon?: string; primary?: boolean; onClick: () => void }>;
+    } = {},
+  ): void {
     this.teardown();
     const kind = opts.kind ?? "waiting";
     const icon = kind === "error" ? "warning" : kind === "none" ? "check-all" : "git-compare";
@@ -816,7 +666,29 @@ export class DiffPanel {
     t.className = "list-empty-desc";
     t.textContent = text;
     empty.append(badge, h, t);
+    if (opts.actions?.length) {
+      const row = el("div", "diff-empty-actions");
+      for (const a of opts.actions) {
+        const b = el("button", a.primary ? "btn btn-primary mini-btn" : "mini-btn") as HTMLButtonElement;
+        if (a.icon) b.appendChild(glyph(a.icon));
+        b.appendChild(span(a.label));
+        b.addEventListener("click", a.onClick);
+        row.appendChild(b);
+      }
+      empty.appendChild(row);
+    }
     this.container.replaceChildren(empty);
+  }
+
+  /**
+   * Hand the surface to another component (the conflicts dashboard): tear
+   * down whatever editor was here and return an empty host element for it.
+   */
+  showHost(className: string): HTMLElement {
+    this.teardown();
+    const hostEl = el("div", className);
+    this.container.replaceChildren(hostEl);
+    return hostEl;
   }
 
   /**
@@ -830,7 +702,7 @@ export class DiffPanel {
   layout(): void {
     this.diff?.layout?.();
     this.inline?.layout();
-    (this.merge as { layout?: () => void } | undefined)?.layout?.();
+    this.shell?.layout();
   }
 
   dispose(): void {
@@ -843,8 +715,11 @@ export class DiffPanel {
     this.inlineWatchdog = undefined;
     this.diff?.dispose();
     this.diff = undefined;
-    this.merge?.dispose();
-    this.merge = undefined;
+    this.mountGen++;
+    this.unregisterMergeUndo?.();
+    this.unregisterMergeUndo = undefined;
+    this.shell?.dispose();
+    this.shell = undefined;
     this.inline?.dispose();
     this.inline = undefined;
     // Monaco models are not owned by the editor that used them: leaving these

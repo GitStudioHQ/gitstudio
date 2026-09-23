@@ -718,7 +718,7 @@ function baseBar(state: RebasePlanState, wrap: HTMLElement, nav: (v: string) => 
   return bar;
 }
 
-/** Shown when git is mid-rebase: the only useful actions are continue/abort. */
+/** Shown when git is mid-rebase: continue, abort — and skip, where git itself names it as the way out. */
 function inProgressCard(reload: () => void): HTMLElement {
   const card = el("div", "rb-inprogress");
   const head = el("div", "rb-inprogress-head");
@@ -768,7 +768,46 @@ function inProgressCard(reload: () => void): HTMLElement {
       reload();
     })();
   });
-  btns.append(cont, abort);
+  // Skip, ONLY where git offers it. The Changes view's banner had it; this
+  // view, which says "a rebase is in progress" in so many words, did not — so
+  // an apply-backend rebase stopped on an emptied patch had no way forward
+  // from here: Continue is refused on an empty patch, and Skip was not on
+  // screen. The main process decides whether it is safe (`canSkip`): on the
+  // merge backend `rebase --skip` hard-resets a deliberate pause, so it is not
+  // offered there.
+  const skip = el("button", "rb-btn") as HTMLButtonElement;
+  skip.append(glyph("debug-step-over"), span("Skip this commit"));
+  skip.title = "Leave out the commit git is stuck on and carry on with the rest";
+  skip.hidden = true;
+  skip.addEventListener("click", () => {
+    void (async () => {
+      if (skip.disabled) return;
+      skip.disabled = true;
+      const ok = await confirmDialog({
+        title: "Skip this commit?",
+        message: "The commit git is stuck on is left out of the rebase and the rest carries on. It cannot be undone from here.",
+        confirmLabel: "Skip commit",
+        danger: true,
+      });
+      if (!ok) {
+        skip.disabled = false;
+        return;
+      }
+      const r = await host.invoke("rebase:skip", undefined);
+      if (r.ok) toast(r.message || "Skipped. The rebase carried on.", "success");
+      else toast(r.message || "Couldn't skip that commit.", r.expected ? "info" : "error", 6000);
+      reload();
+    })();
+  });
+  void host
+    .invoke("git:opState", undefined)
+    .then((op) => {
+      skip.hidden = !(op && op.kind === "rebase" && op.canSkip);
+    })
+    .catch(() => {
+      /* no state: offer nothing git might refuse */
+    });
+  btns.append(cont, skip, abort);
   card.append(head, body, btns);
   return card;
 }

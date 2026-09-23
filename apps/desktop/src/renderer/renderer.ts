@@ -11,6 +11,12 @@
 // palette + gutter chrome, and the graph host-page frame. The renderer carries
 // the same look as the extension because it ships the same CSS.
 import "@gitstudio/webview-ui/styles/diff.css";
+// The merge shell's chrome and the conflicts dashboard — the same stylesheets
+// the extensions ship, scoped to their own roots.
+import "@gitstudio/webview-ui/styles/shell.css";
+import "@gitstudio/webview-ui/styles/conflicts.css";
+import { ConflictsDashboard } from "@gitstudio/webview-ui/conflicts/dashboard";
+import type { ConflictsState } from "@gitstudio/host-bridge/conflictsProtocol";
 import { clickIntent, parseRowKey, rangeBetween, reconcile, rowKey, selectionEntries, selectionPaths } from "./selection";
 import { installNavStack } from "./navStack";
 import { clearUndo, didUndoable, installUndoKey, undoOrText } from "./undo";
@@ -30,7 +36,15 @@ import { host } from "./bridge";
 import { applyTheme, followSystemTheme, resolveTheme } from "./desktopTheme";
 import type { AppTheme, ThemeMode, LogoMode } from "./desktopTheme";
 import { GraphMount } from "./graphMount";
-import { DiffPanel } from "./diffPanel";
+import { DiffPanel, type ConflictHandlers } from "./diffPanel";
+import {
+  DesktopConflicts,
+  detectJetBrains,
+  loadMergeSettings,
+  opIndicator,
+  stripText,
+} from "./mergeParity";
+import { mergeSettingsCard } from "./views/mergeSettingsCard";
 import { ReadonlyFileView } from "./readonlyFileView";
 import { renderMarkdown } from "./markdown";
 import { renderAssistant, seedAssistantGoal } from "./assistant";
@@ -128,6 +142,9 @@ import type {
   StashInfo,
   WorktreeInfo,
   SyncStatus,
+  ConflictModel,
+  FileDiff,
+  GitOpState,
 } from "../shared/ipc";
 
 
@@ -187,6 +204,19 @@ class App {
    */
   private changesOpenKey?: string;
   private changesScroll = 0;
+  /**
+   * The conflicts dashboard's controller. App-lifetime, not view-lifetime: the
+   * Changes view is rebuilt on every repaint, and the outcome of a Continue,
+   * the busy lock and a verb still in flight have to survive that. Dropped on
+   * a repository switch.
+   */
+  private conflictsCtl?: DesktopConflicts;
+  /** Back to the dashboard from a file (set by the live Changes view). */
+  private changesShowConflicts?: () => void;
+  /** Open a conflicted file from the dashboard's Merge… (set by the live Changes view). */
+  private changesOpenMerge?: (path: string) => void;
+  /** The top-bar chip naming a stopped operation. */
+  private opChipEl?: HTMLButtonElement;
   /** The repo changed while the graph was parked — reload in place on return. */
   private graphDirty = false;
   private diffSurfaceEl?: HTMLElement;
@@ -4769,6 +4799,7 @@ class App {
       this.settingsAccountCard(),
       this.settingsRepositoriesCard(),
       editorsCard(),
+      mergeSettingsCard(),
       aiModelsCard(),
       agentAccessCard(),
       this.settingsIdentityCard(),
@@ -6410,204 +6441,61 @@ class App {
     }
     branchSummary.textContent = `· ${sumBits.join(" · ")}`;
 
-    // Mid-operation banner: a merge/rebase/cherry-pick/revert in progress gets an
-    // Abort / Continue affordance (Continue is gated on zero remaining conflicts).
-    void host.invoke("git:opState", undefined).then((op) => {
-      if (this.currentView !== "changes") return;
-      // The host decides WHAT is in progress and WHAT its buttons can do. This
-      // used to re-derive both from five booleans, and got each wrong in turn:
-      // "merging first" named a rebase stopped on a merge step a merge (whose
-      // Abort discards the resolution), and the Skip/Continue choice came out
-      // wrong in both directions in consecutive commits.
-      const kind = op.kind;
-      if (!kind) return;
-      const label = kind === "am" ? "patch series (git am)" : kind;
-      const banner = el("div", "dc-opbanner");
-      const txt = el("div", "dc-opbanner-text");
-      txt.append(
-        glyph("warning"),
-        span(
-          op.conflicts > 0
-            ? `${label} in progress — ${op.conflicts} file${op.conflicts === 1 ? "" : "s"} still conflicted`
-            : op.canSkip && !op.canContinue
-              // Zero conflicts does not mean "ready to continue": an empty
-              // patch, or one that would not apply, leaves nothing to record
-              // and git refuses. Saying "resolve and continue" there sent the
-              // user at a button that could never work.
-              ? kind === "am"
-                ? `${label} in progress — git couldn't apply this patch`
-                : `${label} in progress — nothing left to commit, this one is already on the branch`
-              : `${label} in progress — resolve and continue`,
-          "dc-opbanner-strong",
-        ),
-      );
-      const acts = el("div", "dc-opbanner-actions");
-      const abort = el("button", "mini-btn") as HTMLButtonElement;
-      abort.append(glyph("discard"), span("Abort"));
-      const cont = el("button", "btn btn-primary mini-btn") as HTMLButtonElement;
-      cont.append(glyph("check"), span("Continue"));
-      cont.disabled = !op.canContinue;
-      type OpChannel =
-        | "merge:abort" | "merge:continue"
-        | "rebase:abort" | "rebase:continue" | "rebase:skip"
-        | "cherryPick:abort" | "cherryPick:continue" | "cherryPick:skip"
-        | "revert:abort" | "revert:continue" | "revert:skip"
-        | "am:abort" | "am:continue" | "am:skip";
-      const family =
-        kind === "rebase" ? "rebase"
-        : kind === "cherry-pick" ? "cherryPick"
-        : kind === "revert" ? "revert"
-        : kind === "am" ? "am"
-        : "merge";
-      const buttons: HTMLButtonElement[] = [];
-      /** Ask, with the trigger held down for the whole dialog.
-       *
-       *  A confirm that leaves its own button live stacks one dialog per click:
-       *  three impatient presses of Abort opened three modals, and dismissing
-       *  them one at a time then fired the command once per Yes. `runOp`
-       *  already locks the banner, but only once it starts — the window
-       *  between the click and the answer belonged to nobody. */
-      const askThen = (
-        btn: HTMLButtonElement,
-        opts: Parameters<typeof confirmDialog>[0],
-        go: () => void,
-      ): void => {
-        if (btn.disabled) return;
-        btn.disabled = true;
-        void confirmDialog(opts).then((yes) => {
-          btn.disabled = false;
-          if (yes) go();
-        });
-      };
-      const runOp = async (ch: OpChannel): Promise<void> => {
-        // Disabled for the whole round trip, and deliberately NOT restored:
-        // the repaint below rebuilds the banner with fresh buttons. Restoring
-        // in a `finally` is not enough — the invoke takes ~10ms and the repaint
-        // lands a fresh enabled button within ~15ms, so the guard would be
-        // narrower than a double-click. These controls discard patches one
-        // press at a time, and `serialize()` QUEUES a second call rather than
-        // dropping it, so two clicks really did throw away two patches.
-        for (const b of buttons) b.disabled = true;
-        try {
-          const r = await host.invoke(ch, undefined);
-          // A failure here is ALWAYS shown as a failure, whatever `expected`
-          // says. That flag has one job — keep an ordinary condition out of the
-          // crash reports — and it was doing a second one badly: the sequencer
-          // verbs are marked expected wholesale, so "I could not take the index
-          // lock" arrived in the same calm blue as "stopped on the next patch",
-          // and those are not the same news. Every failure of one of these
-          // buttons means the operation did not finish, which is worth red even
-          // when the reason is routine.
-          //
-          // A message on SUCCESS is the opposite case — a caveat, not a
-          // failure. `git am --abort` exits 0 while declining to rewind a HEAD
-          // that has moved.
-          if (!r.ok) toast(r.message || "Operation failed.", "error");
-          else toast(r.message || "Done.", r.message ? "info" : "success");
-        } catch (e) {
-          toast(cleanErr(e) || "Operation failed.", "error");
-        }
-        bust();
-        await this.refreshRefs();
-        await this.updateSync();
-        if (this.currentView === "changes") void this.showChangesView();
-      };
-      abort.addEventListener("click", () => {
-        // EVERY abort asks now, not only `am`.
-        //
-        // The old reasoning was that the other aborts "return you to a commit
-        // still in the reflog", so nothing is lost. That is true of the
-        // COMMITS and false of the thing that actually costs time: the conflict
-        // resolutions. Working through eight conflicted files by hand and then
-        // pressing Abort — one click, no confirm, right beside Continue —
-        // throws all of that away, and none of it was ever committed, so the
-        // reflog has no copy of it. It is the most expensive irreversible click
-        // in the app and was the only one that did not ask.
-        const ASK: Record<string, { title: string; message: string; confirmLabel: string }> = {
-          am: {
-            title: "Abandon this patch series?",
-            message:
-              "git has applied part of the series already. Abandoning it discards those patches, and " +
-              "the patch files themselves are usually not something the app can replay.",
-            confirmLabel: "Abandon series",
-          },
-          merge: {
-            title: "Abandon this merge?",
-            message:
-              "Your branch goes back to where it was before the merge. Any conflicts you have already " +
-              "resolved are discarded with it — those were never committed, so nothing can bring them back.",
-            confirmLabel: "Abandon merge",
-          },
-          rebase: {
-            title: "Abandon this rebase?",
-            message:
-              "Your branch goes back to where it was before the rebase. Any conflicts you have already " +
-              "resolved are discarded with it — those were never committed, so nothing can bring them back.",
-            confirmLabel: "Abandon rebase",
-          },
-          "cherry-pick": {
-            title: "Abandon this cherry-pick?",
-            message:
-              "The commit is not applied, and any conflicts you have already resolved are discarded — " +
-              "those were never committed, so nothing can bring them back.",
-            confirmLabel: "Abandon cherry-pick",
-          },
-          revert: {
-            title: "Abandon this revert?",
-            message:
-              "The revert is not applied, and any conflicts you have already resolved are discarded — " +
-              "those were never committed, so nothing can bring them back.",
-            confirmLabel: "Abandon revert",
-          },
-        };
-        const ask = ASK[kind] ?? {
-          title: "Abandon this operation?",
-          message:
-            "Any conflicts you have already resolved are discarded. Those were never committed, so " +
-            "nothing can bring them back.",
-          confirmLabel: "Abandon",
-        };
-        askThen(abort, { ...ask, danger: true }, () =>
-          runOp(`${kind === "am" ? "am" : family}:abort` as OpChannel),
-        );
-      });
-      cont.addEventListener("click", () => void runOp(`${family}:continue` as OpChannel));
-      if (op.canSkip) {
-        const skip = el("button", "mini-btn") as HTMLButtonElement;
-        skip.append(glyph("arrow-right"), span(kind === "am" ? "Skip this patch" : "Skip this commit"));
-        skip.title =
-          kind === "am"
-            ? "Drop the patch git is stuck on and carry on with the rest of the series"
-            : "Drop this commit and carry on with the rest";
-        // Skipping discards work — a patch, or a commit — and cannot be undone
-        // from inside the app. It asks, and it is never the primary button.
-        skip.addEventListener("click", () => {
-          askThen(
-            skip,
-            {
-              title: kind === "am" ? "Skip this patch?" : "Skip this commit?",
-              message:
-                kind === "am"
-                  ? "The patch git is stuck on is dropped and the rest of the series carries on. The app cannot replay it."
-                  : "This commit is dropped from the rebase and the rest carries on.",
-              confirmLabel: kind === "am" ? "Skip patch" : "Skip commit",
-              danger: true,
-            },
-            () => runOp(`${family}:skip` as OpChannel),
-          );
-        });
-        acts.append(abort, skip, cont);
-        buttons.push(abort, skip, cont);
-      } else {
-        acts.append(abort, cont);
-        buttons.push(abort, cont);
+    // Mid-operation: the conflicts dashboard — the component the extension and
+    // Merge Studio mount too — where the banner used to be. It fills the diff
+    // surface while no file is open; with a file open, a strip across the top
+    // names the operation and leads back to it.
+    //
+    // The banner's two guards carry over, moved to where they now belong:
+    // every destructive verb confirms (inline, in the dashboard), and a verb in
+    // flight locks every control — `exclusive()` in mergeParity is ONE lock for
+    // the dashboard and the merge editor, because the main process queues a
+    // second call rather than dropping it.
+    const deselectRows = (): void => {
+      lists.querySelectorAll(".file-row.active").forEach((n) => n.classList.remove("active"));
+      openFile = null;
+      this.changesOpenKey = undefined;
+      stageLinesBtn.disabled = true;
+      wsBtn.disabled = true;
+    };
+    const openConflictRow = (path: string): void => {
+      const rows = [...lists.querySelectorAll<HTMLElement>(".dc-file")].filter((r) => r.dataset.path === path);
+      const row = rows.find((r) => r.dataset.kind === "unstaged") ?? rows[0];
+      const f = row ? (row.dataset.kind === "staged" ? staged : unstaged).find((x) => x.path === path) : undefined;
+      if (row && f) {
+        selectRow(row, f);
+        row.scrollIntoView({ block: "nearest" });
+        return;
       }
-      banner.append(txt, acts);
-      wrap.insertBefore(banner, wrap.firstChild);
-    });
+      // Not in the list — a file deleted on both sides has no working copy to
+      // list. Open it all the same.
+      deselectRows();
+      void this.openWorkingFile(diffPanel, path);
+    };
+    let conflictsUi: { fileOpened(): void } | undefined;
+    void host
+      .invoke("git:opState", undefined)
+      .then((op) => {
+        this.syncOpIndicators(op);
+        if (this.currentView !== "changes" || !wrap.isConnected) return;
+        // The host decides WHAT is in progress; nothing here re-derives it.
+        if (!op || (!op.kind && op.conflicts === 0)) {
+          this.changesShowConflicts = undefined;
+          this.changesOpenMerge = undefined;
+          return;
+        }
+        conflictsUi = this.mountChangesConflicts(wrap, diffPanel, {
+          openMerge: openConflictRow,
+          deselect: deselectRows,
+        });
+      })
+      .catch(() => {
+        /* no operation state: the list itself still works */
+      });
 
     /** Select a row and open its diff — the one path a click and a restore share. */
     const selectRow = (row: HTMLElement, f: ChangedFile): void => {
+      conflictsUi?.fileOpened();
       lists.querySelectorAll(".file-row.active").forEach((n) => n.classList.remove("active"));
       row.classList.add("active");
       openFile = { path: f.path, staged: !!f.staged };
@@ -7010,29 +6898,242 @@ class App {
       const model = await host.invoke("conflict:model", path);
       if (gen !== this.diffGen) return;
       if (model) {
-        // A conflicted BINARY, or a modify/delete, has no line-by-line merge to
-        // make — the three-pane editor was mounted over decoded bytes, or over
-        // one deliberately blank pane that never said the file had been deleted
-        // on that side.
-        diffPanel.showMerge(
-          model,
-          () => {
+        // The shared merge shell decides between the three-pane editor and the
+        // no-text panel (a binary, a deleted side, a file too large to read
+        // whole) from the model's shape — never a text merge over bytes.
+        const handlers: ConflictHandlers = {
+          // Resolved: back to the dashboard, which shows the file done and —
+          // once nothing is left — the way to continue.
+          onResolved: () => {
+            this.changesOpenKey = undefined;
             void this.repaintChanges();
           },
-          { noText: model.binary
-              ? "binary"
-              : model.truncated
-                ? "too-large"
-                : model.bothDeleted
-                  ? "both-deleted"
-                  : model.missingSide
-                    ? "modify-delete"
-                    : undefined },
-        );
+          onExit: () => {
+            if (this.changesShowConflicts) this.changesShowConflicts();
+            else diffPanel.showEmpty("Select a file to view its diff.");
+          },
+          onOperationChanged: (outcome) => {
+            this.changesOpenKey = undefined;
+            this.conflicts().setOutcome(outcome);
+            void this.afterOperationVerb(outcome);
+          },
+        };
+        if (await this.resolveInIde(diffPanel, model, gen, handlers)) return;
+        diffPanel.showConflict(model, handlers);
         return;
       }
     }
+    if (await this.diffInIde(diffPanel, diff, gen)) return;
     diffPanel.showDiff(diff);
+  }
+
+  /**
+   * Settings ▸ Merge ▸ "Resolve conflicts with: JetBrains IDE": hand the file
+   * to the IDE's merge window, and say so in the pane — with the one action
+   * that finishes the job from here (stage it) and the way back to the
+   * built-in editor. False when the setting is off, no IDE is found, or the
+   * IDE would not open; the caller then uses the built-in editor.
+   */
+  private async resolveInIde(
+    panel: DiffPanel,
+    model: ConflictModel,
+    gen: number,
+    handlers: ConflictHandlers,
+  ): Promise<boolean> {
+    const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
+    if (gen !== this.diffGen) return true;
+    if (settings.conflictResolver !== "jetbrains") return false;
+    if (!ide) {
+      if (!App.noIdeSaid) {
+        App.noIdeSaid = true;
+        toast("No JetBrains IDE was found, so conflicts open in GitStudio's merge editor.", "info");
+      }
+      return false;
+    }
+    const r = await host.invoke("jetbrains:merge", { path: model.path });
+    if (gen !== this.diffGen) return true;
+    if (!r.ok) {
+      toast(r.message || `Couldn't open ${ide.name}. Using GitStudio's merge editor instead.`, "error");
+      return false;
+    }
+    const markResolved = async (): Promise<void> => {
+      const m = await host.invoke("jetbrains:markResolved", { path: model.path });
+      if (!m.ok) {
+        toast(m.message || `Couldn't stage ${model.path}.`, "error");
+        return;
+      }
+      toast(`Resolved ${model.path}.`, "success");
+      handlers.onResolved?.();
+    };
+    panel.showEmpty(
+      `${model.path} is open in ${ide.name}'s merge window. Save the merge there, then mark it resolved here to stage it.`,
+      {
+        title: `Resolving in ${ide.name}`,
+        kind: "waiting",
+        actions: [
+          { label: "Mark resolved", icon: "check", primary: true, onClick: () => void markResolved() },
+          { label: "Resolve here instead", icon: "git-merge", onClick: () => panel.showConflict(model, handlers) },
+        ],
+      },
+    );
+    return true;
+  }
+
+  /**
+   * Settings ▸ Merge ▸ "Show diffs with: JetBrains IDE": open HEAD vs the
+   * working copy in the IDE's diff window, and leave a way to see it here.
+   */
+  private async diffInIde(panel: DiffPanel, diff: FileDiff, gen: number): Promise<boolean> {
+    const [settings, ide] = await Promise.all([loadMergeSettings(host.invoke), detectJetBrains(host.invoke)]);
+    if (gen !== this.diffGen) return true;
+    if (settings.diffTool !== "jetbrains" || !ide) return false;
+    const r = await host.invoke("jetbrains:diff", { path: diff.path });
+    if (gen !== this.diffGen) return true;
+    if (!r.ok) {
+      toast(r.message || `Couldn't open ${ide.name}.`, "error");
+      return false;
+    }
+    panel.showEmpty(`${diff.path} is open in ${ide.name}'s diff window.`, {
+      title: `Opened in ${ide.name}`,
+      kind: "none",
+      actions: [{ label: "Show the diff here", icon: "diff", onClick: () => panel.showDiff(diff) }],
+    });
+    return true;
+  }
+
+  /** Say it once per session: a JetBrains resolver setting with no IDE to hand to. */
+  private static noIdeSaid = false;
+
+  /** The app-lifetime conflicts controller (see `conflictsCtl`). */
+  private conflicts(): DesktopConflicts {
+    this.conflictsCtl ??= new DesktopConflicts({
+      invoke: host.invoke,
+      openMerge: (path) => this.changesOpenMerge?.(path),
+      onFileChanged: () => void this.repaintChanges(),
+      onOperationChanged: (outcome) => void this.afterOperationVerb(outcome),
+      notify: (message, kind, action) => toast(message, kind, action ? 8000 : undefined, action),
+      undoable: didUndoable,
+    });
+    return this.conflictsCtl;
+  }
+
+  /**
+   * Mount the conflicts dashboard into the Changes view: the strip across the
+   * top, and the dashboard itself in the diff surface while no file is open.
+   * Returns the hook `selectRow` calls when a file takes the surface over.
+   */
+  private mountChangesConflicts(
+    wrap: HTMLElement,
+    diffPanel: DiffPanel,
+    hooks: { openMerge(path: string): void; deselect(): void },
+  ): { fileOpened(): void } {
+    const ctl = this.conflicts();
+    const strip = el("div", "dc-opstrip");
+    strip.hidden = true;
+    strip.setAttribute("role", "status");
+    const chip = span("", "dc-opstrip-chip");
+    const title = span("", "dc-opstrip-title");
+    const count = span("", "dc-opstrip-count");
+    const back = el("button", "mini-btn dc-opstrip-back") as HTMLButtonElement;
+    back.append(glyph("git-merge"), span("Show conflicts"));
+    back.title = "Back to the conflicted files, and the way to continue or abort";
+    strip.append(glyph("warning"), chip, title, count, back);
+    wrap.insertBefore(strip, wrap.firstChild);
+
+    let dash: ConflictsDashboard | undefined;
+    const paintStrip = (): void => {
+      const s = ctl.current();
+      const covered = !dash || !dash.element.isConnected;
+      if (!s || !covered) {
+        strip.hidden = true;
+        return;
+      }
+      const t = stripText(s);
+      chip.textContent = t.chip;
+      title.textContent = t.title;
+      title.title = t.title;
+      count.textContent = t.pending
+        ? `${t.pending} file${t.pending === 1 ? "" : "s"} still conflicted`
+        : s.op.canContinue && s.op.verbs.continue
+          ? `Ready: ${s.op.verbs.continue}`
+          : "";
+      strip.hidden = false;
+    };
+    const render = (state: ConflictsState): void => {
+      if (dash?.element.isConnected) dash.render(state);
+      paintStrip();
+    };
+    const handle = ctl.attach(render);
+    const show = (): void => {
+      if (!wrap.isConnected) return;
+      hooks.deselect();
+      const hostEl = diffPanel.showHost("dc-conflicts");
+      // The dashboard announces itself (`ready`); the controller answers with
+      // the state, asynchronously, by which time `dash` is assigned.
+      dash = new ConflictsDashboard(hostEl, { post: handle, closable: false });
+      strip.hidden = true;
+    };
+    back.addEventListener("click", show);
+    this.changesShowConflicts = show;
+    this.changesOpenMerge = hooks.openMerge;
+    if (this.changesOpenKey === undefined) show();
+    else void ctl.refresh();
+    return {
+      fileOpened: () => {
+        // The file replaces the dashboard in the surface: the strip carries
+        // the operation until it comes back.
+        window.setTimeout(paintStrip, 0);
+      },
+    };
+  }
+
+  /** After Continue / Skip / Abort — from the dashboard or the merge editor. */
+  private async afterOperationVerb(outcome: { kind: "done" | "stopped" | "failed"; text: string }): Promise<void> {
+    // A failure is always shown as one; a stop is news, not an error.
+    toast(outcome.text, outcome.kind === "done" ? "success" : outcome.kind === "failed" ? "error" : "info");
+    bust();
+    await this.refreshRefs();
+    await this.updateSync();
+    if (this.currentView === "changes") void this.showChangesView();
+  }
+
+  /**
+   * The Changes rail item's badge and the top-bar chip: an operation stopped
+   * for you is visible from every view, not only from Changes.
+   */
+  private syncOpIndicators(op: GitOpState | undefined): void {
+    const ind = opIndicator(op);
+    const item = this.railEl?.querySelector<HTMLElement>('.nav-item[data-view="changes"]');
+    if (item) {
+      item.dataset.baseTitle ??= item.title;
+      item.dataset.baseLabel ??= item.getAttribute("aria-label") ?? "Changes";
+      let badge = item.querySelector<HTMLElement>(".nav-badge");
+      if (ind) {
+        if (!badge) {
+          badge = span("", "nav-badge");
+          badge.setAttribute("aria-hidden", "true");
+          item.appendChild(badge);
+        }
+        badge.textContent = ind.badge;
+        item.title = `${item.dataset.baseTitle} — ${ind.title}`;
+        item.setAttribute("aria-label", `${item.dataset.baseLabel} — ${ind.title}`);
+      } else {
+        badge?.remove();
+        item.title = item.dataset.baseTitle;
+        item.setAttribute("aria-label", item.dataset.baseLabel);
+      }
+    }
+    const chip = this.opChipEl;
+    if (chip) {
+      const was = chip.hidden;
+      chip.hidden = !ind;
+      if (ind) {
+        chip.replaceChildren(glyph("git-merge"), span(ind.label, "topbar-opchip-label"));
+        chip.title = ind.title;
+        chip.setAttribute("aria-label", ind.title);
+      }
+      if (was !== chip.hidden) this.fitTopbar?.();
+    }
   }
 
   /** Selection helpers — see selectedRows for why the key is kind:path. */
@@ -7976,7 +8077,22 @@ class App {
     return wrap;
   }
 
+  /** The top-bar chip for a stopped operation — hidden until one exists. */
+  private buildOpChip(): HTMLElement {
+    const chip = el("button", "topbar-opchip") as HTMLButtonElement;
+    chip.hidden = true;
+    chip.addEventListener("click", () => this.routeView("changes"));
+    this.opChipEl = chip;
+    return chip;
+  }
+
   private async updateSync(): Promise<void> {
+    // The operation chip and badge ride along: every path that refreshes the
+    // branch's sync state is a path that can have started or ended one.
+    void host
+      .invoke("git:opState", undefined)
+      .then((op) => this.syncOpIndicators(op))
+      .catch(() => {});
     // Paint instantly from the last-known sync state, then refresh.
     const cached = peek("sync:status", undefined);
     if (cached) {
@@ -8402,7 +8518,7 @@ class App {
     syncWhere();
     this.syncWhereChip = syncWhere;
     if (info) {
-      left.append(branchSwitch, this.buildSyncWidget());
+      left.append(branchSwitch, this.buildSyncWidget(), this.buildOpChip());
       // Beside Push, not inside the Code page: opening the repository in your
       // editor is something you do from wherever you happen to be.
       const openIn = openInButton({
@@ -8644,6 +8760,10 @@ class App {
       // brand-new branch in the wrong place — the one outcome an undo must
       // never produce — so switching repositories drops them.
       clearUndo();
+      // A stopped operation belongs to its repository too.
+      this.conflictsCtl = undefined;
+      this.changesShowConflicts = undefined;
+      this.changesOpenMerge = undefined;
       // Closing the repository keeps the shell and lands on Home, rather than
       // dropping you onto a separate card with no navigation on it.
       this.showRepoScreen(info);
@@ -9628,16 +9748,12 @@ class App {
       const model = await host.invoke("conflict:model", file.path);
       if (gen !== this.diffGen || panel !== this.diffPanel) return;
       if (model) {
-        panel.showMerge(model, undefined, {
-          noText: model.binary
-              ? "binary"
-              : model.truncated
-                ? "too-large"
-                : model.bothDeleted
-                  ? "both-deleted"
-                  : model.missingSide
-                    ? "modify-delete"
-                    : undefined,
+        // The same shell as the Changes view; the dock has no dashboard to go
+        // back to, so resolving or exiting just repaints what is around it.
+        panel.showConflict(model, {
+          onResolved: () => void this.refreshAll(),
+          onExit: () => panel.showEmpty("Select a file to view its diff."),
+          onOperationChanged: (outcome) => void this.afterOperationVerb(outcome),
         });
         return;
       }

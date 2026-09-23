@@ -1,0 +1,322 @@
+/* The merge shell's own chrome: the operation strip, notices, the confirms,
+ * the Cancel popover, the no-text panel and the bottom-bar status line.
+ *
+ * The toolbar and bottom bar themselves (.jb-toolbar, .jb-toolbar-btn,
+ * .jb-bottom-bar) are styled in diff.css, next to the grid they frame. This
+ * file only adds what the shell introduced, and speaks the same vocabulary:
+ * --gs-* tokens (tokens.css) and --vscode-* names with a fallback, so the
+ * extension, Merge Studio and the desktop paint it from their own themes.
+ *
+ * NB: never write a star-slash pair inside a comment here — a selector glob
+ * closes it early and silently eats the next rule. */
+
+@import "./tokens.css";
+
+/* The hidden attribute always wins over a display rule below. */
+.ms-shell [hidden],
+.ms-shell[hidden] {
+  display: none !important;
+}
+
+.ms-shell {
+  /* Role inks for the YOURS / THEIRS pills, theme-native. The name itself is
+     drawn in the foreground colour; only the small role word is tinted, and
+     that word is mixed toward the foreground so it clears AA on both grounds. */
+  --ms-yours: var(--vscode-charts-blue, #3794ff);
+  --ms-theirs: var(--vscode-charts-purple, #b180d7);
+  --ms-danger: var(--vscode-errorForeground, #f14c4c);
+  --ms-warn: var(--vscode-editorWarning-foreground, var(--gs-amber));
+  --ms-ok: var(--gs-status-added);
+  /* Secondary text, a step toward the foreground. The theme's own muted ink
+     sits right at the AA line on a white editor and falls under it on the
+     tinted grounds this chrome lives on (4.44:1 on a light widget background,
+     in VS Code's light themes as well as the desktop's). Mixing toward the
+     foreground darkens it in light and lightens it in dark. */
+  --ms-muted: color-mix(in srgb, var(--gs-fg-muted) 78%, var(--gs-fg));
+  position: relative;
+}
+
+/* Codepoints for the shell's own glyphs (shellIcons.ts). The font itself is
+   declared once in diff.css; a glyph with no codepoint is an empty box. */
+.codicon-debug-continue::before { content: "\eacf"; }
+.codicon-debug-step-over::before { content: "\ead6"; }
+.codicon-circle-slash::before { content: "\eabd"; }
+.codicon-check::before { content: "\eab2"; }
+.codicon-warning::before { content: "\ea6c"; }
+.codicon-info::before { content: "\ea74"; }
+.codicon-trash::before { content: "\ea81"; }
+.codicon-file-binary::before { content: "\eae8"; }
+.codicon-diff-removed::before { content: "\eadf"; }
+.codicon-git-commit::before { content: "\eafc"; }
+.codicon-git-merge::before { content: "\eafe"; }
+.codicon-debug-pause::before { content: "\ead1"; }
+.codicon-error::before { content: "\ea87"; }
+
+/* ── Operation strip ─────────────────────────────────────────────────────── */
+.ms-opstrip {
+  display: flex;
+  align-items: center;
+  gap: var(--gs-space-2);
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 3px var(--gs-space-3);
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary);
+  color: var(--gs-fg);
+  background: var(--vscode-editorWidget-background, var(--gs-surface));
+  border-bottom: 1px solid var(--vscode-panel-border, var(--gs-border));
+  overflow: hidden;
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+.ms-op-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ms-op-verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ms-muted);
+  white-space: nowrap;
+}
+.ms-op-verb .codicon { font-size: 12px; }
+.ms-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  max-width: 320px;
+  padding: 1px 9px;
+  border-radius: var(--gs-radius-pill);
+  border: 1px solid transparent;
+  line-height: 18px;
+}
+.ms-pill-yours {
+  border-color: color-mix(in srgb, var(--ms-yours) 55%, transparent);
+  background: color-mix(in srgb, var(--ms-yours) 12%, transparent);
+}
+.ms-pill-theirs {
+  border-color: color-mix(in srgb, var(--ms-theirs) 55%, transparent);
+  background: color-mix(in srgb, var(--ms-theirs) 13%, transparent);
+}
+.ms-pill-role {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.ms-pill-yours .ms-pill-role { color: color-mix(in srgb, var(--ms-yours) 62%, var(--gs-fg)); }
+.ms-pill-theirs .ms-pill-role { color: color-mix(in srgb, var(--ms-theirs) 62%, var(--gs-fg)); }
+.ms-pill-name {
+  min-width: 0;
+  font-family: var(--gs-font-mono);
+  font-weight: 600;
+  color: var(--gs-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ms-op-title {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gs-fg);
+}
+.ms-op-step,
+.ms-op-commit,
+.ms-op-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ms-muted);
+}
+.ms-op-commit code {
+  font-family: var(--gs-font-mono);
+  color: var(--gs-fg);
+}
+.ms-op-note { font-style: italic; }
+
+/* ── Outcome line and notices ─────────────────────────────────────────────── */
+.ms-outcome,
+.ms-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px var(--gs-space-3);
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary);
+  color: var(--gs-fg);
+  border-bottom: 1px solid var(--vscode-panel-border, var(--gs-border));
+}
+.ms-notices { display: flex; flex-direction: column; flex: 0 0 auto; }
+.ms-notice.is-warn .codicon,
+.ms-outcome.is-stopped .codicon { color: var(--ms-warn); }
+.ms-notice.is-info .codicon { color: var(--ms-muted); }
+.ms-outcome.is-done { background: color-mix(in srgb, var(--ms-ok) 10%, transparent); }
+.ms-outcome.is-done .codicon { color: var(--ms-ok); }
+.ms-outcome.is-failed { background: color-mix(in srgb, var(--ms-danger) 10%, transparent); }
+.ms-outcome.is-failed .codicon { color: var(--ms-danger); }
+
+/* ── Inline confirms (whitespace, drop) ───────────────────────────────────── */
+.ms-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--gs-space-2);
+  flex: 0 0 auto;
+  padding: 5px var(--gs-space-3);
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary);
+  color: var(--gs-fg);
+  background: color-mix(in srgb, var(--ms-warn) 12%, var(--vscode-editor-background, transparent));
+  border-bottom: 1px solid color-mix(in srgb, var(--ms-warn) 45%, transparent);
+}
+.ms-confirm-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ms-confirm-text .codicon { color: var(--ms-warn); flex: 0 0 auto; }
+.jb-toolbar-btn.ms-danger {
+  color: var(--ms-danger);
+  border-color: color-mix(in srgb, var(--ms-danger) 60%, transparent);
+}
+.jb-toolbar-btn.ms-danger:not([disabled]):hover {
+  background: color-mix(in srgb, var(--ms-danger) 14%, transparent);
+}
+.jb-toolbar-btn .jb-svg .codicon { font-size: 14px; }
+
+/* The legend lives here once the view mounts one; empty, it takes no room. */
+.ms-legend-slot { flex: 0 0 auto; }
+.ms-legend-slot:empty { display: none; }
+
+/* ── Bottom bar status and the Cancel popover ─────────────────────────────── */
+.ms-bottom-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: var(--gs-space-2);
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary);
+  color: var(--gs-fg);
+  overflow: hidden;
+}
+.ms-bottom-note > .ms-confirm-text { white-space: normal; }
+.ms-bottom-note.is-warn > .jb-svg .codicon { color: var(--ms-warn); }
+.ms-bottom-note.is-info > .jb-svg .codicon { color: var(--ms-muted); }
+.ms-bottom-note.ms-drop-confirm {
+  padding: 3px 6px;
+  border-radius: var(--gs-radius);
+  background: color-mix(in srgb, var(--ms-warn) 12%, transparent);
+}
+.ms-cancel-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.ms-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 1000; /* above Monaco's widgets, like the history popover */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 300px;
+  padding: 10px;
+  border-radius: var(--gs-radius);
+  border: 1px solid var(--vscode-editorWidget-border, var(--gs-border));
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--gs-fg);
+  box-shadow: 0 6px 20px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.35));
+  font-family: var(--gs-font-ui);
+  font-size: var(--gs-text-secondary);
+  white-space: normal;
+}
+.ms-pop .jb-toolbar-btn { justify-content: flex-start; height: 28px; }
+.ms-pop-hint,
+.ms-pop-detail { color: var(--ms-muted); line-height: 1.45; }
+.ms-pop-question { font-weight: var(--gs-weight-emphasis); }
+.ms-pop-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+.ms-pop-actions .jb-toolbar-btn { justify-content: center; }
+
+.jb-toolbar-btn.ms-continue { gap: 6px; }
+
+/* ── The no-text panel ────────────────────────────────────────────────────── */
+.ms-notext {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gs-space-2);
+  height: 100%;
+  padding: var(--gs-space-4) 10%;
+  text-align: center;
+  font-family: var(--gs-font-ui);
+  color: var(--gs-fg);
+  background: var(--vscode-editor-background, transparent);
+}
+.ms-notext-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--ms-muted);
+  background: var(--gs-surface-2);
+}
+.ms-notext-badge .codicon { font-size: 22px; }
+.ms-notext-title { font-size: var(--gs-text-base); font-weight: var(--gs-weight-emphasis); }
+.ms-notext-desc {
+  max-width: 520px;
+  font-size: var(--gs-text-secondary);
+  line-height: 1.5;
+  color: var(--ms-muted);
+}
+.ms-notext-actions { display: flex; gap: var(--gs-space-2); margin-top: var(--gs-space-2); flex-wrap: wrap; justify-content: center; }
+.ms-notext-actions .jb-toolbar-btn { height: 28px; }
+.ms-notext-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--gs-space-2);
+  font-size: var(--gs-text-secondary);
+}
+.ms-notext-done .codicon { color: var(--ms-ok); }
+.ms-notext-done.is-warn .codicon { color: var(--ms-warn); }
+
+@media (max-width: 800px) {
+  .ms-opstrip { padding: 3px 6px; }
+  .ms-op-title { flex-basis: 140px; }
+  .ms-pill { max-width: 200px; }
+}
+
+/* The toolbar collapses by the width of the SHELL, not of the window. diff.css
+   drops its "Apply non-conflicting changes:" caption at a viewport width, which
+   is right in an editor webview (the viewport is the panel) and wrong in the
+   desktop, where the shell is one pane of a wider window: there the toolbar ran
+   past its edge, and with its scrollbar hidden the counter was simply gone. */
+.ms-shell {
+  container-type: inline-size;
+  container-name: ms-shell;
+}
+@container ms-shell (max-width: 1180px) {
+  .jb-toolbar .jb-toolbar-label { display: none; }
+}
+@container ms-shell (max-width: 960px) {
+  .jb-toolbar { padding: 0 4px; gap: 1px; }
+  .jb-toolbar .jb-sep { margin: 0 2px; }
+  .jb-toolbar .jb-toolbar-btn { padding: 0 6px; }
+  .jb-toolbar .jb-toolbar-btn.jb-icon { padding: 0; }
+  .jb-bottom-bar { padding: 0 6px; }
+}

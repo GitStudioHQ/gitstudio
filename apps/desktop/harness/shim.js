@@ -8,8 +8,17 @@
   const ISO = (h) => new Date(now - h * 3600e3).toISOString();
 
   const params = new URLSearchParams(location.search);
+  // A scene may carry its own switches after a "|": `changes|opctx=merge`.
+  // contrast.mjs, fit.mjs and affordance.mjs pass only `scene` and `theme`, so
+  // without this the surfaces that exist only under a switch — the conflicts
+  // dashboard, the merge editor — were unreachable from every sweep.
+  const rawScene = params.get("scene") || "issues";
+  const bar = rawScene.indexOf("|");
+  if (bar >= 0) {
+    for (const [k, v] of new URLSearchParams(rawScene.slice(bar + 1))) params.set(k, v);
+  }
   // Steps separated by "~" (not ".") so CSS selectors in click: steps survive.
-  const scene = (params.get("scene") || "issues").split("~");
+  const scene = (bar >= 0 ? rawScene.slice(0, bar) : rawScene).split("~");
   const view = scene[0];
   const steps = scene.slice(1);
   const theme = params.get("theme") || "dark";
@@ -390,6 +399,172 @@
     changedFiles.push({ path: "packages/engine/src/spacing-inner.ts", status: "M", staged: false });
   }
 
+
+  // ── Merge parity: a stopped operation, its conflicts, and every verb on them ──
+  //
+  // ONE stateful fixture behind the thirteen merge-parity channels
+  // (conflict:state|takeRole|restore|delete, op:continue|skip|abort,
+  // jetbrains:detect|merge|diff|markResolved, merge:settings|setSettings), plus
+  // git:opState, status, file:diff and conflict:model derived from it — so a
+  // Continue that finishes really does make the banner, the badge and the list
+  // agree that nothing is in progress any more. Every one of them is answered:
+  // a READ with no fixture answers undefined, and a check that touches it then
+  // passes over a throw.
+  //
+  //   ?op=merge|rebase|cherry-pick|revert|am   what is stopped (with &conflicts=N files)
+  //   &skip=1                                  the emptied-commit shape: nothing to commit
+  //   &apply=1                                 a rebase on the APPLY backend (Skip allowed)
+  //   ?opctx=reporter|three|merge|am           the issue #12 scenes, with real names:
+  //     reporter  `git checkout test; git rebase master`, one conflicting commit
+  //     three     a 3-commit rebase where every commit conflicts
+  //     merge     feature/login into main: a text file, a binary, a modify/delete
+  //     am        `git am` stopped on patch 2 of 5
+  //   &willdrop=1                              the resolution emptied the commit
+  //   &noide=1                                 no JetBrains IDE on this machine
+  //   &resolver=jetbrains                      Settings ▸ Merge resolves in the IDE
+  const mp = (() => {
+    const opParam = params.get("op") || "";
+    const ctx = params.get("opctx") || "";
+    const emptied = params.get("skip") === "1";
+    const apply = params.get("apply") === "1";
+    const side = (role, stage, name, paneTitle, description) => ({ role, stage, name, paneTitle, description });
+    const SHA = {
+      t1: "1a2b3c4d5e6f708192a3b4c5d6e7f80912a3b4c5",
+      t2: "2b3c4d5e6f708192a3b4c5d6e7f80912a3b4c5d6",
+      t3: "3c4d5e6f708192a3b4c5d6e7f80912a3b4c5d6e7",
+      cp: "4d5e6f708192a3b4c5d6e7f80912a3b4c5d6e7f8",
+      rv: "5e6f708192a3b4c5d6e7f80912a3b4c5d6e7f809",
+    };
+    const NONE = {
+      kind: "none", title: "", yours: side("yours", 2, "main", "Current (main)", "main"),
+      theirs: side("theirs", 3, "incoming", "Incoming", "the incoming side"),
+      verbs: { abort: "Cancel" }, canContinue: false, canSkip: false, episode: "none",
+    };
+    const VERBS = {
+      merge: { continue: "Continue Merge", abort: "Abort Merge" },
+      rebase: { continue: "Continue Rebase", skip: "Skip this commit", abort: "Abort Rebase" },
+      "cherry-pick": { continue: "Continue Cherry-pick", skip: "Skip", abort: "Abort Cherry-pick" },
+      revert: { continue: "Continue Revert", skip: "Skip", abort: "Abort Revert" },
+      am: { continue: "Continue (git am)", skip: "Skip patch", abort: "Abort (git am)" },
+    };
+    const SUBJECTS = ["test change", "second change", "third change"];
+    const rebaseStep = (n, m) => ({
+      kind: "rebase", backend: apply ? "apply" : "merge",
+      title: `Rebasing test onto master · commit ${n} of ${m}: ${[SHA.t1, SHA.t2, SHA.t3][n - 1].slice(0, 7)} ${SUBJECTS[n - 1]}`,
+      direction: { from: "yours", verb: "onto", to: "theirs" },
+      step: { n, m, unit: "commit" },
+      commit: { sha: [SHA.t1, SHA.t2, SHA.t3][n - 1], subject: SUBJECTS[n - 1], author: "Kittymeow" },
+      yours: side("yours", 3, "test", `Rebasing ${[SHA.t1, SHA.t2, SHA.t3][n - 1].slice(0, 7)} from test`,
+        `Your commit ${[SHA.t1, SHA.t2, SHA.t3][n - 1].slice(0, 7)} “${SUBJECTS[n - 1]}” from test`),
+      theirs: side("theirs", 2, "master", "Already rebased commits and commits from master",
+        "master, with the commits already rebased onto it"),
+      verbs: VERBS.rebase, episode: `rebase:${[SHA.t1, SHA.t2, SHA.t3][n - 1].slice(0, 7)}`,
+    });
+    const views = {
+      merge: () => ({
+        kind: "merge", title: "Merging feature/login into main",
+        direction: { from: "theirs", verb: "into", to: "yours" },
+        yours: side("yours", 2, "main", "Changes from main", "main — the branch you are on"),
+        theirs: side("theirs", 3, "feature/login", "Changes from feature/login", "feature/login — the branch being merged in"),
+        verbs: VERBS.merge, episode: "merge:9f8e7d6",
+      }),
+      rebase: () => rebaseStep(1, 1),
+      "cherry-pick": () => ({
+        kind: "cherry-pick", title: `Cherry-picking ${SHA.cp.slice(0, 7)} fix typo onto main · 2 more queued`,
+        direction: { from: "theirs", verb: "onto", to: "yours" }, queued: 2,
+        commit: { sha: SHA.cp, subject: "fix typo" },
+        yours: side("yours", 2, "main", "Changes from main", "main"),
+        theirs: side("theirs", 3, SHA.cp.slice(0, 7), `Changes from cherry-pick ${SHA.cp.slice(0, 7)} fix typo`, `the commit ${SHA.cp.slice(0, 7)} “fix typo”`),
+        verbs: VERBS["cherry-pick"], episode: `cherry-pick:${SHA.cp.slice(0, 7)}`,
+      }),
+      revert: () => ({
+        kind: "revert", title: `Reverting ${SHA.rv.slice(0, 7)} add flag on main`,
+        direction: { from: "theirs", verb: "on", to: "yours" },
+        commit: { sha: SHA.rv, subject: "add flag" },
+        yours: side("yours", 2, "main", "Changes from main", "main"),
+        theirs: side("theirs", 3, `undo of ${SHA.rv.slice(0, 7)}`, `Undo of ${SHA.rv.slice(0, 7)} add flag`, `the undo of ${SHA.rv.slice(0, 7)} “add flag”`),
+        verbs: VERBS.revert, episode: `revert:${SHA.rv.slice(0, 7)}`,
+      }),
+      am: () => ({
+        kind: "am", title: "Applying patch 2 of 5: docs: explain the flag (by Bo Lind) onto main",
+        direction: { from: "theirs", verb: "onto", to: "yours" },
+        step: { n: 2, m: 5, unit: "patch" }, commit: { sha: "", subject: "docs: explain the flag", author: "Bo Lind" },
+        yours: side("yours", 2, "main", "Changes from main", "main"),
+        theirs: side("theirs", 3, "patch 2/5", "Patch 2/5: docs: explain the flag", "patch 2 of 5 “docs: explain the flag”"),
+        verbs: VERBS.am, episode: "am:2",
+      }),
+    };
+    const kind = ctx === "reporter" || ctx === "three" ? "rebase" : ctx === "merge" ? "merge" : ctx === "am" ? "am" : opParam;
+    const POOL = ["src/app.ts", "src/util.ts", "README.md", "package.json", "src/cli.ts"];
+    const filesFor = () => {
+      if (ctx === "reporter") return [{ path: "file.txt", shape: "text" }];
+      if (ctx === "three") return [{ path: "src/app.ts", shape: "text" }];
+      if (ctx === "merge") {
+        return [
+          { path: "src/app.ts", shape: "text" },
+          { path: "assets/logo.png", shape: "binary" },
+          { path: "docs/notes.md", shape: "modify-delete", missingRole: "theirs", badge: "deleted in theirs (feature/login)" },
+        ];
+      }
+      if (ctx === "am") return [{ path: "README.md", shape: "text" }];
+      const n = Math.max(0, Number(params.get("conflicts") || 0) || 0);
+      return POOL.slice(0, n).map((path) => ({ path, shape: "text" }));
+    };
+    const state = {
+      step: 1,
+      op: kind && (views[kind] || ctx) ? (ctx === "three" ? rebaseStep(1, 3) : views[kind]()) : NONE,
+      files: kind ? filesFor().map((f) => ({ ...f, status: "pending" })) : [],
+      settings: {
+        autoApplyNonConflicting: false,
+        conflictResolver: params.get("resolver") === "jetbrains" ? "jetbrains" : "embedded",
+        diffTool: "embedded", preferredIde: "auto", jetbrainsPath: "",
+      },
+    };
+    const pending = () => state.files.filter((f) => f.status !== "resolved").length;
+    /** The OperationView as the host would report it NOW — capability decided here, like P2's provider. */
+    const view = () => {
+      const op = state.op;
+      if (op.kind === "none") return { ...op, title: pending() ? "Unmerged files on main" : "" };
+      const p = pending();
+      const canContinue = p === 0 && !emptied && !!op.verbs.continue;
+      const canSkip =
+        op.kind === "cherry-pick" || op.kind === "revert" || op.kind === "am"
+          ? true
+          : op.kind === "rebase" && apply && emptied;
+      const out = { ...op, canContinue, canSkip };
+      if (emptied && p === 0) out.continueBlocked = "Nothing is left to commit at this step: skip it, or abort.";
+      if (params.get("willdrop") === "1" && op.kind === "rebase" && p === 0) {
+        out.willDrop = { sha: op.commit.sha, subject: op.commit.subject, branch: "test" };
+      }
+      return out;
+    };
+    const conflictedPaths = () => new Set(state.files.filter((f) => f.status !== "resolved").map((f) => f.path));
+    return {
+      state, view, pending, NONE, rebaseStep, conflictedPaths,
+      file: (path) => state.files.find((f) => f.path === path),
+      isConflicted: (path) => conflictedPaths().has(path),
+      opKind: () => {
+        const k = state.op.kind;
+        return k === "rebase-merge-step" ? "rebase" : k === "none" || k === "stash" ? null : k;
+      },
+      emptied,
+    };
+  })();
+
+  /** The conflicted rows the Changes list shows, from the fixture's live state. */
+  const syncConflictRows = () => {
+    changedFiles = changedFiles.filter((f) => !f.fromMp);
+    for (const f of mp.state.files) {
+      if (f.status === "resolved") {
+        changedFiles.push({ path: f.path, status: f.choice === "deleted" ? "D" : "M", staged: true, fromMp: true });
+      } else {
+        const code = f.shape === "modify-delete" ? "UD" : f.shape === "both-deleted" ? "DD" : f.shape === "added-one-side" ? "AU" : "UU";
+        changedFiles.push({ path: f.path, status: "U", staged: false, conflicted: true, conflictKind: code, fromMp: true });
+      }
+    }
+  };
+  syncConflictRows();
+
   /** Serial for the PTY ids `terminal:create` hands out. */
   let ptySeq = 0;
 
@@ -496,7 +671,9 @@
       ok: true,
       base: "origin/main",
       branch: "feat/line-staging",
-      inProgress: false,
+      // `?rebasing=1`: a rebase is already stopped — the in-progress card, with
+      // its Continue / Skip / Abort, instead of the planner.
+      inProgress: params.get("rebasing") === "1",
       baseCommit: { shortSha: "9f8e7d6", subject: "release: extension 1.11.1" },
       // NEWEST FIRST, the order `loadCommits` returns (`git log --topo-order`,
       // no --reverse) and the order the hint bar promises. Listed oldest-first
@@ -521,38 +698,10 @@
     // NOTE: `status` lives in `dynamic` (below) rather than here, because a
     // discard replaces the array and a value captured at map-build time would
     // keep answering with the pre-discard list.
-    // `?op=merge|rebase|cherry-pick|revert` puts the Changes banner on screen.
-    // Without a fixture the banner NEVER rendered in the harness, which is why
-    // no check could see that its Abort ran `git merge --abort` on every one of
-    // the four operations it names.
-    // `?op=merge|rebase|cherry-pick|revert|am` puts the Changes banner on
-    // screen, `&conflicts=N` gives it conflicts, `&skip=1` puts it in the
-    // "nothing left to commit" shape where Skip is the way out.
-    //
-    // The whole GitOpState shape, `kind`/`canContinue`/`canSkip` included: the
-    // host decides those now, and a fixture that returns only the old booleans
-    // makes the banner render NOTHING — which is exactly what this fixture's
-    // own check caught when the banner was rewritten.
-    "git:opState": (() => {
-      const op = params.get("op") || "";
-      const conflicts = Number(params.get("conflicts") || 0) || 0;
-      const emptied = params.get("skip") === "1";
-      // Mirrors gitBridge's own rules: there is no `merge --skip`, and a rebase
-      // only offers Skip on the apply backend's emptied patch.
-      const canSkip = emptied && (op === "cherry-pick" || op === "revert" || op === "am");
-      return {
-        merging: op === "merge",
-        rebasing: op === "rebase",
-        amApplying: op === "am",
-        cherryPicking: op === "cherry-pick",
-        reverting: op === "revert",
-        conflicts,
-        kind: op || null,
-        canContinue: !!op && conflicts === 0 && !emptied,
-        canSkip,
-        nothingToCommit: emptied,
-      };
-    })(),
+    // `git:opState` lives in `dynamic` now, derived from the merge-parity
+    // fixture (`mp`): a Continue that finishes has to make the badge, the chip
+    // and the dashboard agree that nothing is in progress — a value captured
+    // here at map-build time kept answering "rebase in progress" forever.
     "diff:files": changedFiles,
     "notifications:unreadCount": 3,
     "notifications:list": notifications,
@@ -2190,6 +2339,159 @@
       // the staging ticks need to say whether each change is already staged.
       indexText: `// ${name}\nexport function render(list) {\n  return list.map(row);\n}\n`,
     };
+  };
+
+  // ── Merge parity channels (see the `mp` fixture above) ──
+  dynamic["git:opState"] = () => {
+    const k = mp.opKind();
+    const v = mp.view();
+    const conflicts = mp.pending();
+    return {
+      merging: k === "merge",
+      rebasing: k === "rebase",
+      amApplying: k === "am",
+      cherryPicking: k === "cherry-pick",
+      reverting: k === "revert",
+      conflicts,
+      kind: k,
+      canContinue: !!k && v.canContinue,
+      canSkip: !!k && v.canSkip,
+      nothingToCommit: mp.emptied && conflicts === 0,
+    };
+  };
+  dynamic["conflict:state"] = () => {
+    const files = mp.state.files.map(({ path, status, choice, badge, shape, missingRole }) => {
+      const row = { path, status, shape };
+      if (choice && choice !== "deleted") row.choice = choice;
+      if (badge && status !== "resolved") row.badge = badge;
+      if (missingRole) row.missingRole = missingRole;
+      return row;
+    });
+    return {
+      repoName: "gitstudio",
+      op: mp.view(),
+      files,
+      total: files.length,
+      resolved: files.filter((f) => f.status === "resolved").length,
+    };
+  };
+  const resolveRow = (path, choice) => {
+    const f = mp.file(path);
+    if (!f) return { ok: false, changed: false, message: `${path} is not conflicted.`, expected: true };
+    f.status = "resolved";
+    f.choice = choice;
+    syncConflictRows();
+    return { ok: true, changed: true };
+  };
+  dynamic["conflict:takeRole"] = (req) => resolveRow(req && req.path, req && req.role);
+  dynamic["conflict:delete"] = (req) => resolveRow(req && req.path, "deleted");
+  dynamic["conflict:resolve"] = (req) => resolveRow(req && req.path, "merged");
+  dynamic["conflict:restore"] = (req) => {
+    const f = mp.file(req && req.path);
+    if (!f) return { ok: false, changed: false, message: "Nothing to restore.", expected: true };
+    f.status = "pending";
+    delete f.choice;
+    syncConflictRows();
+    return { ok: true, changed: true };
+  };
+  /** Continue / Skip: the next stop of a three-commit rebase, or the end. */
+  const advance = (verb) => {
+    const st = mp.state;
+    if (st.op.kind === "rebase" && st.op.step && st.step < st.op.step.m) {
+      st.step += 1;
+      st.op = mp.rebaseStep(st.step, st.op.step.m);
+      st.files = [{ path: "src/app.ts", shape: "text", status: "pending" }];
+      syncConflictRows();
+      return { ok: false, stopped: true, expected: true, view: mp.view(), remainingConflicts: mp.pending() };
+    }
+    const noun = { merge: "Merge", rebase: "Rebase", "cherry-pick": "Cherry-pick", revert: "Revert", am: "Patch series" }[st.op.kind] || "Merge";
+    st.op = mp.NONE;
+    st.files = [];
+    syncConflictRows();
+    return { ok: true, view: mp.view(), remainingConflicts: 0, message: verb === "skip" ? "Skipped. Nothing else was left." : `${noun} complete.` };
+  };
+  dynamic["op:continue"] = (req) => {
+    const v = mp.view();
+    if (mp.pending() > 0 || !v.canContinue) {
+      return { ok: false, refused: "blocked", expected: true, view: v, remainingConflicts: mp.pending(),
+        message: v.continueBlocked || "Resolve every conflicted file first." };
+    }
+    if (v.willDrop && !(req && req.confirmDrop)) {
+      return { ok: false, refused: "confirm-drop", expected: true, view: v, remainingConflicts: 0 };
+    }
+    return advance("continue");
+  };
+  dynamic["op:skip"] = () => {
+    const v = mp.view();
+    if (!v.canSkip) return { ok: false, refused: "not-allowed", expected: true, view: v, remainingConflicts: mp.pending() };
+    return advance("skip");
+  };
+  dynamic["op:abort"] = () => {
+    mp.state.op = mp.NONE;
+    mp.state.files = [];
+    syncConflictRows();
+    return { ok: true, view: mp.view(), remainingConflicts: 0 };
+  };
+  const IDE = { id: "webstorm", name: "WebStorm", command: "/Applications/WebStorm.app/Contents/MacOS/webstorm" };
+  dynamic["jetbrains:detect"] = () => (params.get("noide") === "1" ? undefined : IDE);
+  dynamic["jetbrains:merge"] = () =>
+    params.get("noide") === "1" ? { ok: false, changed: false, message: "No JetBrains IDE was found.", expected: true } : { ok: true, changed: false };
+  dynamic["jetbrains:diff"] = dynamic["jetbrains:merge"];
+  dynamic["jetbrains:markResolved"] = (req) => resolveRow(req && req.path, "merged");
+  dynamic["merge:settings"] = () => ({ ...mp.state.settings });
+  dynamic["merge:setSettings"] = (patch) => {
+    Object.assign(mp.state.settings, patch || {});
+    return { ...mp.state.settings };
+  };
+  // The rebase view's own Skip (views/rebase.ts), answered like the host would.
+  dynamic["rebase:skip"] = () => {
+    const r = dynamic["op:skip"]();
+    return { ok: r.ok || !!r.stopped, changed: true, message: r.message, expected: r.expected };
+  };
+  // The legacy stage-based take (a model with no operation): stage 2 is "yours".
+  dynamic["conflict:takeSide"] = (req) => resolveRow(req && req.path, req && req.side === "ours" ? "yours" : "theirs");
+
+  /** The three sides of a conflicted file, mapped by ROLE the way P2's conflictModel does. */
+  dynamic["conflict:model"] = (path) => {
+    const f = mp.file(path);
+    if (!f) return undefined;
+    const op = mp.view();
+    const base = {
+      path, hasBase: f.shape !== "added-one-side" && f.shape !== "added-both",
+      oursLabel: op.yours.paneTitle, theirsLabel: op.theirs.paneTitle,
+      op, shape: f.shape, missingRole: f.missingRole,
+    };
+    if (f.shape === "binary") return { ...base, base: "", ours: "", theirs: "", result: "", binary: true };
+    if (f.shape === "modify-delete") {
+      const kept = "# Notes\n\nKeep the flag documented.\n";
+      return { ...base, base: "# Notes\n", ours: f.missingRole === "yours" ? "" : kept, theirs: f.missingRole === "theirs" ? "" : kept, result: kept, missingSide: f.missingRole === "theirs" ? "theirs" : "ours" };
+    }
+    if (path === "file.txt") {
+      // The reporter's file: line 3 changed on both branches. Yours is TEST.
+      return {
+        ...base,
+        base: "one\ntwo\nthree\nfour\n",
+        ours: "one\ntwo\nthree-test\nfour\n",
+        theirs: "one\ntwo\nthree-master\nfour\n",
+        result: "one\ntwo\n<<<<<<< HEAD\nthree-master\n||||||| base\nthree\n=======\nthree-test\n>>>>>>> 1a2b3c4 (test change)\nfour\n",
+      };
+    }
+    const stamp = op.step ? ` step ${op.step.n}` : "";
+    return {
+      ...base,
+      base: "export function render(list) {\n  return list.map(row);\n}\n\nexport const limit = 10;\n",
+      ours: `export function render(list, opts) {\n  return list.map((r) => row(r, opts));\n}\n\nexport const limit = 10; // yours${stamp}\n`,
+      theirs: "export function render(list) {\n  return list.filter(Boolean).map(row);\n}\n\nexport const limit = 20;\n",
+      result: "export function render(list) {\n  return list.map(row);\n}\n\nexport const limit = 10;\n",
+    };
+  };
+  const plainFileDiff = dynamic["file:diff"];
+  dynamic["file:diff"] = (req) => {
+    const path = req && req.path;
+    if (path && mp.isConflicted(path)) {
+      return { path, leftLabel: `HEAD ${path}`, rightLabel: `Working Tree ${path}`, leftText: "x\n", rightText: "y\n", conflicted: true };
+    }
+    return plainFileDiff(req);
   };
 
   dynamic["compare:fileDiff"] = (req) => {
