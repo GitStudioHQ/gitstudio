@@ -6,6 +6,7 @@
 
 import "../styles/graph-sidebar.css";
 import "./commit-rail";
+import { applyGraphInitRefs } from "./graphInit";
 import type { CommitRail, RailAction } from "./commit-rail";
 import type {
   GraphHostMessage,
@@ -83,8 +84,7 @@ function start(root: HTMLElement): void {
         rail.rows = message.rows;
         rail.totalColumns = message.totalColumns;
         rail.hasMore = message.hasMore;
-        rail.refFilter = message.refFilter ?? null;
-        rail.refList = message.refList ?? [];
+        applyGraphInitRefs(rail, message);
         rail.status = message.rows.length === 0 ? "empty" : "ready";
         break;
       case "graphAppend":

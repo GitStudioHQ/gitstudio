@@ -106,11 +106,17 @@ function guards(body: string): boolean {
   // and refuses the two things that actually break a path — empty, and a NUL.
   // safePullMode is the allowlist form: the value is not sanitised, it is
   // checked against the only three things it is allowed to be.
+  // isFullRef / localBranchOf are the branch ops' form (issue #30's
+  // follow-up): they accept only a FULL ref name, which starts with "refs/"
+  // and so can never be read as an option; the name derived from one goes
+  // after `--` (BranchOps) or into a refs/heads/ refspec.
   return (
     body.includes("safeArg(") ||
     body.includes("safePath(") ||
     body.includes("safePullMode(") ||
-    body.includes('startsWith("-")')
+    body.includes('startsWith("-")') ||
+    body.includes("isFullRef(") ||
+    body.includes("localBranchOf(")
   );
 }
 

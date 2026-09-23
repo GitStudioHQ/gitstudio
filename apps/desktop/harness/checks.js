@@ -2744,6 +2744,11 @@
         activeBefore,
         "and does not navigate you somewhere else while doing it",
       );
+      // By the FULL name: the switcher's rows used to send the short one,
+      // which is "heads/<name>" beside a tag of that name — and checking THAT
+      // out detaches.
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action").at(-1)?.payload;
+      c.eq(sent?.fullName, "refs/heads/fix/log-stream", "the switcher checks out by the branch's full name");
     },
 
     // ── staging keeps your place ────────────────────────────────────────────
@@ -7708,10 +7713,13 @@
      * Search with scope Branch+Tag dims the rows that do not carry a chip, and
      * the gutter hover focuses one lane while the pointer is on it — neither is
      * "show me only these branches". The picker is: tick refs and the host
-     * rebuilds the graph from page 0 around exactly those refs plus HEAD, and
-     * the chips follow (an unticked ref draws none; the current branch always
-     * does). Presets tick what they say, All restores everything, Escape hands
-     * focus back to the trigger, and a chip's own menu narrows to that chip.
+     * rebuilds the graph from page 0 around exactly those refs — HEAD only
+     * when detached, so "Show only" another branch is that branch alone (the
+     * released 1.13.0 walked the current branch beside it) — and the chips
+     * follow (an unticked ref draws none, the current branch included).
+     * Presets are sent as what they MEAN ("@current") and come back resolved
+     * and lit, All restores everything, Escape hands focus back to the
+     * trigger, and a chip's own menu narrows to that chip.
      *
      * The fixture carries one row that only an unmerged remote branch reaches,
      * so a filter has a ROW to drop and not just chips — without it the check
@@ -7761,27 +7769,32 @@
       // The filter box is where typing goes, and it takes focus on open.
       c.ok(sr.activeElement?.matches(".gh-pop-filter input"), "the filter box has focus");
 
-      // ── Current branch: the graph is REBUILT around main + HEAD ──
+      // ── Current branch: the graph is REBUILT around the branch HEAD is on ──
       sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
       await settle(700);
-      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["refs/heads/main"]), "the host was asked for exactly main, fully qualified");
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["@current"]), "the host was asked for the PRESET — stored as what it means, so it follows a checkout");
+      c.eq(JSON.stringify(lastLoad().walked), JSON.stringify(["refs/heads/main"]), "…which it resolved to main, fully qualified");
       c.eq(lastLoad().skip, 0, "and from page 0 — the accumulated pages belonged to the old history");
       c.eq(rows().length, all - 1, "the row only the unticked remote reaches is gone");
       c.ok(!hasRow(REMOTE_ONLY), "(that one)");
-      c.ok(!!chip("main"), "the current branch keeps its chip");
+      c.ok(!!chip("main"), "the current branch has its chip — it is what the preset ticks");
       c.ok(!chip("main")?.dataset.remotes, "without its folded origin/main — that ref is not ticked");
       c.ok(!chip("desktop-v1.5.1") && !sr.querySelector(".chip-tag"), "an unticked tag draws no chip");
       c.ok(!sr.querySelector(".chip-overflow"), "and nothing is left to fold behind a +N pill");
       c.ok(!chip("redesign/issues-detail"), "nor does an unticked local branch");
-      c.eq(label(), "main", "the trigger names the filter");
+      c.eq(label(), "main (current)", "the trigger names the preset and the branch it means now");
       c.ok(!!pop(), "and the picker stays open for the next tick");
+      c.ok(
+        sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.classList.contains("active"),
+        "Current branch reads lit after the host's answer",
+      );
       c.eq(
         sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/heads/main']")?.getAttribute("aria-checked"),
         "true",
         "main reads ticked",
       );
 
-      // ── A tick ADDS: main + a tag ──
+      // ── A tick ADDS: main + a tag (and the preset gives way to the list) ──
       sr.querySelector(".gh-branches-pop .gh-menuitem[data-ref='refs/tags/desktop-v1.5.1']")?.click();
       await settle(700);
       c.eq(
@@ -7789,6 +7802,7 @@
         JSON.stringify(["refs/heads/main", "refs/tags/desktop-v1.5.1"]),
         "ticking a second ref adds it",
       );
+      c.ok(!sr.querySelector(".gh-branches-pop .gh-preset.active"), "a hand-picked selection lights no preset");
       c.ok(!!chip("desktop-v1.5.1"), "and its chip comes back");
       c.eq(label(), "main, desktop-v1.5.1", "two names fit the trigger");
 
@@ -7828,8 +7842,10 @@
         "Show only this branch narrows to it",
       );
       c.ok(!sr.querySelector(".gh-chip-menu"), "and the menu closes");
-      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !!chip("main") && !chip("desktop-v1.5.1"),
-        "the graph is that branch plus HEAD, chips included");
+      c.ok(!hasRow(REMOTE_ONLY) && !!chip("redesign/issues-detail") && !chip("desktop-v1.5.1"),
+        "the graph is that branch, chips included");
+      c.ok(!hasRow("9f8e7d6c5b4a39281706") && !chip("main"),
+        "and not the current branch beside it: main's tip is not on it, and main is not ticked");
       c.eq(label(), "redesign/issues-detail", "the trigger names it");
 
       // ── A chip's own menu: Checkout, by the ref's FULL name ──
@@ -7857,6 +7873,222 @@
       c.eq(sent?.payload?.action, "checkout-ref", "the checkout goes out as a ref checkout");
       c.eq(sent?.payload?.refKind, "remote", "…as a remote");
       c.eq(sent?.payload?.fullName, "refs/remotes/origin/chore/dependabot-bump", "…by its full name, never the chip's short one");
+    },
+
+    /**
+     * The commit-details pane's ref chips are the graph's chip shortcut too
+     * (issue #30: "clicking a ref chip could also be a shortcut: show only
+     * this branch / add this branch to the filter"). The pane has no ref list
+     * and no filter — the graph owns both — so a chip asks the graph, which
+     * opens its OWN menu at the pointer, over the details column, resolved
+     * through the ref list by name and kind.
+     *
+     * And the reload that "Show only" causes is the one the ref list does not
+     * ride on (the renderer says which list it holds; main leaves an unchanged
+     * one on its side of IPC), while the picker still offers every ref.
+     */
+    "a-details-chip-opens-the-graphs-chip-menu": async (f) => {
+      const c = check(f);
+      await settle(600);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const loads = () => window.__GS_GRAPH_LOADS || [];
+      const lastLoad = () => loads()[loads().length - 1] || {};
+      // The merge commit's details carry main, origin/main and a tag the ref
+      // list does not have (desktop-v1.6.0).
+      const row = sr.querySelector('.row[data-sha="b2c3d4e5f6a71829304b"]');
+      c.ok(!!row, "a row whose details carry refs");
+      if (!row) return;
+      row.click();
+      await settle(900);
+      const pane = $(".graph-details gitstudio-commit-details");
+      const pr = pane?.shadowRoot;
+      c.ok(!!pr, "the details pane is up");
+      if (!pr) return;
+      const dchip = (name) => pr.querySelector(`.chip[data-ref-menu][data-ref="${name}"]`);
+      const main = dchip("main");
+      c.ok(!!main, "the pane's branch chip is a menu chip — the graph is there to answer it");
+      if (!main) return;
+      c.eq(main.getAttribute("role"), "button", "and a control, focusable");
+      const b = main.getBoundingClientRect();
+      const px = b.left + 6;
+      const py = b.top + 6;
+      main.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, clientX: px, clientY: py }));
+      await settle(300);
+      const menu = sr.querySelector(".gh-chip-menu");
+      c.ok(!!menu, "clicking it opens the GRAPH's chip menu");
+      if (!menu) return;
+      const mb = menu.getBoundingClientRect();
+      const paneBox = pane.getBoundingClientRect();
+      c.ok(mb.left >= paneBox.left - 1, `the menu opens over the details column, at the pointer (${Math.round(mb.left)} vs pane ${Math.round(paneBox.left)})`);
+      c.ok(Math.abs(mb.left - Math.min(px, window.innerWidth - mb.width - 6)) <= 2, `…its left edge at the pointer (${Math.round(mb.left)} vs ${Math.round(px)})`);
+      const hit = document.elementFromPoint(mb.left + mb.width / 2, mb.top + mb.height / 2);
+      c.ok(hit === host, `…and paints ABOVE the pane: the pointer there hits the graph (${hit?.tagName})`);
+      const loadsBefore = loads().length;
+      menu.querySelector("[data-chip-action=only]")?.click();
+      await settle(800);
+      c.ok(loads().length > loadsBefore, "Show only reloaded the graph");
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["refs/heads/main"]), "…around refs/heads/main, the ref the list names");
+      c.eq(lastLoad().sentRefList, false, "the unchanged ref list stayed on main's side of IPC");
+      sr.querySelector(".gh-branches")?.click();
+      await settle(400);
+      const listed = [...sr.querySelectorAll(".gh-branches-pop .gh-menuitem")].map((x) => x.dataset.ref);
+      c.ok(listed.includes("refs/remotes/origin/chore/dependabot-bump"), `the picker still lists a ref the filter hides (${listed.length} listed)`);
+      const focused = sr.activeElement || document.activeElement;
+      focused.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(300);
+
+      // A chip the list does not have: the menu opens, and acts on nothing —
+      // no full name is guessed for it.
+      const tag = $(".graph-details gitstudio-commit-details")?.shadowRoot?.querySelector('.chip[data-ref-menu][data-ref="desktop-v1.6.0"]');
+      c.ok(!!tag, "a tag chip the ref list does not name");
+      if (!tag) return;
+      const tb = tag.getBoundingClientRect();
+      tag.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true, clientX: tb.left + 6, clientY: tb.top + 6 }));
+      await settle(300);
+      const only = sr.querySelector(".gh-chip-menu [data-chip-action=only]");
+      c.ok(!!only && only.disabled, "its Show only is disabled");
+      c.ok(!sr.querySelector(".gh-chip-menu [data-chip-action=checkout]"), "and it offers no checkout of a ref it cannot name");
+    },
+
+    /**
+     * The OPEN Branches picker reads at AA in light (issue #30). Its active
+     * preset wore the accent's link-blue on the accent's violet wash (3.34:1),
+     * the "current" label a 66% mix meant for white on the menu's grey
+     * (4.10:1), and the scoped trigger link-blue on its wash (4.00:1).
+     * contrast.mjs sweeps these scenes too; this pins the three pairs where
+     * every run of check.mjs sees them — with the popover's fade-in killed
+     * INSIDE the shadow root (a document stylesheet does not reach it, and a
+     * mid-fade popover is what let the sweep call the scene clean).
+     */
+    "the-open-branch-picker-reads-at-aa": async (f) => {
+      const c = check(f);
+      await settle(400);
+      const host = $("gitstudio-graph");
+      const sr = host?.shadowRoot;
+      c.ok(!!sr, "the graph is mounted");
+      if (!sr) return;
+      const kill = document.createElement("style");
+      kill.textContent = "*,*::before,*::after{animation:none!important;transition:none!important}";
+      sr.appendChild(kill);
+      void host.offsetHeight;
+      c.ok(!!sr.querySelector(".gh-branches-pop"), "the picker is open");
+      const parse = (v) => {
+        const s = String(v);
+        let m = s.match(/^rgba?\(([^)]+)\)/);
+        if (m) {
+          const p = m[1].split(",").map(parseFloat);
+          return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+        }
+        m = s.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/);
+        if (m) return { r: m[1] * 255, g: m[2] * 255, b: m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
+        m = s.match(/^oklab\(\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)(?:\s*\/\s*([\d.]+))?\s*\)/);
+        if (m) {
+          const [L, A, B] = [+m[1], +m[2], +m[3]];
+          const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+          const mm = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+          const s3 = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+          const enc = (x) => 255 * (x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(0, Math.min(1, x)), 1 / 2.4) - 0.055);
+          return {
+            r: enc(4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s3),
+            g: enc(-1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s3),
+            b: enc(-0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s3),
+            a: m[4] === undefined ? 1 : +m[4],
+          };
+        }
+        return null;
+      };
+      const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });
+      /** What is actually painted behind `el`: every translucent ground up to the page, composited. */
+      const ground = (el) => {
+        const stack = [];
+        for (let n = el; n && n !== document.documentElement; n = n.parentElement || n.parentNode?.host) {
+          const bg = parse(getComputedStyle(n).backgroundColor);
+          if (bg && bg.a > 0) stack.push(bg);
+          if (bg && bg.a >= 1) break;
+        }
+        let acc = parse(getComputedStyle(document.body).backgroundColor) || { r: 255, g: 255, b: 255, a: 1 };
+        for (let i = stack.length - 1; i >= 0; i--) acc = over(stack[i], acc);
+        return acc;
+      };
+      const lum = (x) => {
+        const f2 = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+        return 0.2126 * f2(x.r) + 0.7152 * f2(x.g) + 0.0722 * f2(x.b);
+      };
+      const ratioOf = (el) => {
+        const g = ground(el);
+        const ink = over(parse(getComputedStyle(el).color), g);
+        const [l1, l2] = [lum(ink), lum(g)];
+        return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      };
+      const measure = (sel, what) => {
+        const el = sr.querySelector(sel);
+        c.ok(!!el, `${what} is on screen`);
+        if (!el) return;
+        const r = ratioOf(el);
+        c.ok(r >= 4.5, `${what} reads at AA (${r.toFixed(2)}:1)`);
+      };
+      measure(".gh-branches-pop .gh-preset.active", "the active preset");
+      measure(".gh-branches-pop .gh-ref-cur", "the current branch's “current” label");
+      if (sr.querySelector(".gh-branches.scoped")) measure(".gh-branches.scoped .lbl", "the scoped trigger's label");
+    },
+
+    /**
+     * Every "check out this branch" door in the Branches view sends the
+     * ref's FULL name. They sent `%(refname:short)` alone, and with a branch
+     * and a tag both called "release" the branch's is "heads/release" —
+     * `git checkout heads/release` DETACHES at the branch tip while reporting
+     * success. The main process now refuses a checkout without a full name, so
+     * a door that forgot it would fail loudly; this pins that none does.
+     */
+    "every-branch-checkout-door-sends-the-full-name": async (f) => {
+      const c = check(f);
+      await settle(500);
+      const lastCheckout = () =>
+        (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action" && r.payload?.action === "checkout-ref").at(-1)?.payload;
+      // ── a local row's own Checkout ──
+      const btn = $$(".row-btn").find((x) => x.textContent.trim() === "Checkout");
+      c.ok(!!btn, "a local branch row offers Checkout");
+      if (!btn) return;
+      const name = (btn.getAttribute("aria-label") || "").replace(/^Check out /, "");
+      btn.click();
+      await settle(700);
+      let p = lastCheckout();
+      c.eq(p?.fullName, `refs/heads/${name}`, "the row's Checkout goes out by the branch's full name");
+      c.eq(p?.refKind, "head", "…as a local branch");
+
+      // ── the row menu's "Checkout <name>" ──
+      const more = $$(".lv-menu-btn").find((x) => /More actions for /.test(x.getAttribute("aria-label") || "") && !/main$/.test(x.getAttribute("aria-label") || ""));
+      c.ok(!!more, "a row's ⋯ menu");
+      if (!more) return;
+      const menuFor = (more.getAttribute("aria-label") || "").replace(/^More actions for /, "");
+      more.click();
+      await settle(400);
+      const item = $$(".dropdown-item").find((x) => (x.textContent || "").includes(`Checkout ${menuFor}`));
+      c.ok(!!item, `the menu offers Checkout ${menuFor}`);
+      if (!item) return;
+      item.click();
+      await settle(700);
+      p = lastCheckout();
+      c.eq(p?.fullName, `refs/heads/${menuFor}`, "the menu's Checkout goes by the full name too");
+
+      // ── the remote tab's rows ──
+      const tab = $$("button, [role=tab]").find((x) => /^Remote/.test((x.textContent || "").trim()));
+      c.ok(!!tab, "a Remote tab");
+      if (!tab) return;
+      tab.click();
+      await settle(700);
+      const remoteBtn = $$(".row-btn").find((x) => /^Check(out| out here)$/.test(x.textContent.trim()) && /origin\//.test(x.title || ""));
+      c.ok(!!remoteBtn, "a remote row offers a checkout");
+      if (!remoteBtn) return;
+      const remoteName = (remoteBtn.title.match(/(origin\/\S+)/) || [])[1] || "";
+      remoteBtn.click();
+      await settle(700);
+      p = lastCheckout();
+      c.ok(!!remoteName && p?.fullName === `refs/remotes/${remoteName}`, `the remote row goes by the REMOTE's full name (${p?.fullName} for ${remoteName})`);
+      c.eq(p?.refKind, "remote", "…so the main process creates or switches to the local branch");
     },
 
     /**
@@ -7989,8 +8221,35 @@
       const msg = text(lastToast()?.querySelector(".toast-msg"));
       c.match(msg, /hidden by the branch filter/, `…and names the filter ("${msg}")`);
       c.ok(!/further back/.test(msg), "…not the history's depth, which is not the reason");
-      const action = lastToast()?.querySelector(".toast-action");
-      c.eq(text(action), "Show all branches", "…and offers the way out");
+      // Two ways in, the one that KEEPS the selection first (issue #30's
+      // follow-up): add the branch that contains the commit — found by full
+      // name through the ref list — and only then "Show all branches".
+      const labels = [...(lastToast()?.querySelectorAll(".toast-action") ?? [])].map((b) => text(b));
+      c.eq(labels.join(" | "), "Add origin/chore/dependabot-bump to the filter | Show all branches", "…and offers the way in, add first");
+
+      // ── Adding keeps the preset (as its symbol) and adds the one branch ──
+      lastToast()?.querySelector(".toast-action")?.click();
+      await settle(900);
+      c.eq(JSON.stringify(lastLoad().refs), JSON.stringify(["@current", "refs/remotes/origin/chore/dependabot-bump"]),
+        "the filter is the preset PLUS the branch — a mix that still follows a checkout");
+      c.ok(hasRow(REMOTE_ONLY), "the hidden row is shown");
+      c.ok(text(sr.querySelector(".gh-branches .lbl")) !== "All branches", "…and the graph is still filtered, not every branch");
+      c.eq(sr.querySelector(".row.selected")?.dataset.sha, REMOTE_ONLY, "and it is the selected row — the reveal was replayed");
+
+      // ── Narrow again; this time take "Show all branches" ──
+      sr.querySelector(".gh-branches")?.click();
+      await settle(300);
+      sr.querySelector(".gh-branches-pop .gh-preset[data-preset=current]")?.click();
+      await settle(700);
+      const f2 = sr.activeElement || document.activeElement;
+      f2.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
+      await settle(200);
+      c.ok(!hasRow(REMOTE_ONLY), "narrowed again, the row is gone");
+      rows().find((r) => r.dataset.sha === DETAILED)?.click();
+      for (let i = 0; i < 40 && !$(".graph-details gitstudio-commit-details"); i++) await settle(100);
+      await reveal(REMOTE_ONLY);
+      const action = [...(lastToast()?.querySelectorAll(".toast-action") ?? [])].find((b) => text(b) === "Show all branches");
+      c.ok(!!action, "Show all branches is still offered");
 
       // ── Taking it rebuilds the graph around every branch and lands on the commit ──
       action?.click();
@@ -12406,6 +12665,153 @@
       await settle(900);
       c.ok((window.__GS_ROUTES || []).length > routesBefore, "precondition: the refresh re-routed underneath");
       c.ok(/on origin too\?$/.test(text(".modal-title")), "the question is still there after the refresh");
+    },
+    /**
+     * A branch named "-f" (update-ref makes one; porcelain never would) is
+     * refused at checkout — git would read it as an option. The refusal used
+     * to read "That value isn't a valid git reference", about a branch the
+     * list had just shown. It says what is true now, and its "Rename…" renames
+     * the branch by its FULL name.
+     */
+    "a-branch-named-like-an-option-says-why-and-offers-the-rename": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const kebab = $$(".lv-menu-btn").find((b) => (b.getAttribute("aria-label") || "") === "More actions for -f");
+      c.ok(!!kebab, "the -f branch is listed with its menu");
+      if (!kebab) return;
+      kebab.click();
+      await settle(350);
+      const co = $$(".dropdown-item").find((r) => /^Checkout -f$/.test((text(r) || "").trim()));
+      c.ok(!!co, "its menu offers Checkout -f");
+      if (!co) return;
+      co.click();
+      await settle(600);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "commit:action").at(-1);
+      c.eq(sent?.payload?.fullName, "refs/heads/-f", "the checkout goes out by full name");
+      const msg = text("#toast-stack") || "";
+      c.match(msg, /can't safely check out a branch whose name starts with "-"/, "the toast says WHY");
+      c.ok(!/isn't a valid git reference|not in this repository/i.test(msg), "…and not the untrue refusal");
+      const act = $$(".toast-action").find((b) => /^Rename/.test(text(b) || ""));
+      c.ok(!!act, "…and offers the rename");
+      if (!act) return;
+      act.click();
+      await settle(400);
+      const input = $(".modal-input");
+      const ok = $(".modal-ok");
+      c.ok(!!input && !!ok, "the rename asks for a name");
+      if (!input || !ok) return;
+      c.eq(input.value, "f", "…suggesting the name without its dash");
+      input.value = "fixed-f";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle(200);
+      ok.click();
+      await settle(600);
+      const rn = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:rename").at(-1);
+      c.eq(rn?.payload?.fullName, "refs/heads/-f", "renamed by its FULL name");
+      c.eq(rn?.payload?.to, "fixed-f", "…to the name given");
+      c.match(text("#toast-stack") || "", /Renamed -f to fixed-f/, "and the rename is reported");
+    },
+    /**
+     * The branch row's own actions reach the main process by FULL name
+     * (issue #30's follow-up): %(refname:short) is "heads/x" beside a tag
+     * "x", which git's branch commands cannot find and `git merge` records.
+     */
+    "branch-actions-go-by-full-name": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const open = async (name) => {
+        const kebab = $$(".lv-menu-btn").find((b) => (b.getAttribute("aria-label") || "") === `More actions for ${name}`);
+        if (!kebab) return false;
+        kebab.click();
+        await settle(350);
+        return true;
+      };
+      const last = (ch) => (window.__GS_INVOKED || []).filter((r) => r.channel === ch).at(-1);
+      c.ok(await open("feat/line-staging"), "a branch's menu opens");
+      const merge = $$(".dropdown-item").find((r) => /^Merge feat\/line-staging into current/.test(text(r) || ""));
+      c.ok(!!merge, "it offers Merge");
+      merge?.click();
+      await settle(500);
+      c.eq(last("branch:merge")?.payload?.fullName, "refs/heads/feat/line-staging", "merge goes by full name");
+      c.eq(last("branch:merge")?.payload?.name, undefined, "…and never by the short one");
+      c.ok(await open("feat/line-staging"), "the menu opens again");
+      const push = $$(".dropdown-item").find((r) => /^Push/.test(text(r) || ""));
+      push?.click();
+      await settle(500);
+      c.eq(last("branch:push")?.payload?.fullName, "refs/heads/feat/line-staging", "push goes by full name");
+    },
+    /**
+     * The Branches view names every ref by its OWN name when git's short names
+     * are ambiguous (issue #30's follow-up; ?collide=1). git lists a branch
+     * beside a tag of its name as "heads/release", the default branch beside a
+     * tag "main" as "heads/main", and a remote-tracking branch beside a LOCAL
+     * "origin/sl" as "remotes/origin/sl". The rows printed those, the default
+     * branch lost its pill, origin/release said "no local copy" of a branch
+     * that was right there, and "Delete remote branch" split
+     * "remotes/origin/sl" into a remote called "remotes".
+     */
+    "the-branch-list-names-refs-by-their-own-names": async (f) => {
+      const c = check(f);
+      await settle(1500);
+      const row = (ref) => $(`.sec-row[data-ref="${ref}"]`);
+      const title = (ref) => text(row(ref)?.querySelector(".sec-row-title")) || "";
+      c.eq(title("heads/release"), "release", "a branch beside a tag of its name reads as itself");
+      c.eq(title("heads/main"), "main", "…and so does the default branch beside a tag \"main\"");
+      c.ok(!!row("heads/main")?.querySelector(".ab-pill.default"), "which is still marked the default branch");
+      c.eq(title("heads/origin/sl"), "origin/sl", "a local branch named like a remote one keeps its name");
+      c.ok(
+        !$$(".sec-row .sec-row-title").some((t) => /^(heads|tags|remotes)\//.test(text(t) || "")),
+        "no row reads as git's disambiguated short form",
+      );
+      c.ok(
+        !!$$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for release"),
+        "the row's controls name it the same way",
+      );
+
+      // Remotes: origin/release HAS a local copy; origin/sl is on "origin".
+      $$(".gh-seg-btn")[1]?.click();
+      await settle(500);
+      const rel = row("origin/release");
+      c.ok(!!rel, "origin/release is listed");
+      c.ok(!rel?.querySelector(".ab-pill.unpublished"), "…and not as having no local copy");
+      c.ok(
+        $$(".row-btn", rel || document.createElement("div")).some((b) => text(b) === "Checkout"),
+        `…its button checks out the local one (${$$(".row-btn", rel || document.createElement("div")).map((b) => text(b)).join(", ")})`,
+      );
+      const sl = row("remotes/origin/sl");
+      c.eq(text(sl?.querySelector(".sec-row-title")), "sl", "origin/sl reads as sl");
+      c.eq(text(sl?.querySelector(".br-remote")), "origin", "…on origin, not on a remote called \"remotes\"");
+
+      // Tags: the tag "release" reads as itself too.
+      $$(".gh-seg-btn")[2]?.click();
+      await settle(500);
+      c.eq(title("tags/release"), "release", "a tag beside a branch of its name reads as itself");
+
+      // "Delete remote branch" on sl splits its upstream by the FULL name.
+      $$(".gh-seg-btn")[0]?.click();
+      await settle(500);
+      const kebab = $$(".lv-menu-btn").find((b) => b.getAttribute("aria-label") === "More actions for sl");
+      c.ok(!!kebab, "sl has its menu");
+      kebab?.click();
+      await settle(350);
+      const del = $$(".dropdown-item").find((i) => /^Delete remote branch/.test(text(i) || ""));
+      c.match(text(del) || "", /\(origin\/sl\)/, "the item names the upstream as origin/sl");
+      del?.click();
+      await settle(400);
+      $$("button").find((b) => /delete remote branch/i.test(text(b) || "") && b.closest(".modal-card"))?.click();
+      await settle(700);
+      const sent = (window.__GS_INVOKED || []).filter((r) => r.channel === "branch:deleteRemote").at(-1)?.payload;
+      c.eq(sent?.remote, "origin", "the delete goes to origin");
+      c.eq(sent?.name, "sl", "…for the branch sl");
+    },
+    /** The branch switcher names refs by their own names too (?collide=1). */
+    "the-branch-switcher-names-refs-by-their-own-names": async (f) => {
+      const c = check(f);
+      const items = $$(".dropdown-item").map((i) => text(i.querySelector(".dropdown-label") || i) || "");
+      c.ok(items.length > 5, `the switcher opened (${items.length} rows)`);
+      c.ok(items.some((t) => /^release\b/.test(t)), `the branch release is listed as "release" (${items.join(" | ")})`);
+      c.ok(items.some((t) => /^origin\/sl\b/.test(t)), "the remote origin/sl is listed as \"origin/sl\"");
+      c.ok(!items.some((t) => /^(heads|tags|remotes)\//.test(t)), "no row reads as git's disambiguated short form");
     },
     /** An unpublished branch has no remote to reconcile, so it must not ask. */
     "renaming-an-unpublished-branch-asks-nothing": async (f) => {

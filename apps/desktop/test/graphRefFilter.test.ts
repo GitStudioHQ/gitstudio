@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitContext } from "@gitstudio/git-service/index";
 import { GitBridge, type GraphRefFilterStore } from "../src/main/gitBridge";
+import { CURRENT_BRANCH, CURRENT_UPSTREAM, LOCAL_BRANCHES } from "@gitstudio/host-bridge/graphRefFilter";
 import type { RepoStore } from "../src/main/repoStore";
 import { AppSettings } from "../src/main/appSettings";
 import { removeTempRepo } from "./tmpRepo";
@@ -13,7 +14,8 @@ import { removeTempRepo } from "./tmpRepo";
 // The Commit Graph's branch filter (issue #30) on the desktop host. graph:load
 // is a stateful, skip-paged accumulator; a filter change has to reset it, be
 // remembered per repository, prune refs that are gone, and re-decorate the
-// chips so only the ticked refs (and the current branch) draw one.
+// chips so only the ticked refs draw one. An attached HEAD is a branch like
+// any other: walked, and chipped, only when ticked (a preset or by hand).
 
 let repo: string;
 let ctx: GitContext;
@@ -84,7 +86,7 @@ test("THE RESET: a request that sets the filter is page 0, whatever skip it carr
   const shas = shasOf(filtered);
   assert.equal(new Set(shas).size, shas.length, "no page-0 rows spliced in twice");
   assert.ok(shas.includes(sideTip), "the ticked branch is walked");
-  assert.ok(shas.includes(mainTip), "HEAD always is");
+  assert.ok(!shas.includes(mainTip), "HEAD is attached to main, which nobody ticked");
   // The whole filtered history, from its top: exactly what a fresh bridge
   // walks for the same filter from skip 0 — not four rows short of it.
   const fresh = new GitBridge({ getContext: () => ctx } as unknown as RepoStore, store);
@@ -97,7 +99,7 @@ test("a filtered walk excludes history only the unticked refs reach", async () =
   const page = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"] });
   const shas = shasOf(page);
   assert.ok(shas.includes(tagged));
-  assert.ok(shas.includes(sideTip), "HEAD is on side");
+  assert.ok(!shas.includes(sideTip), "HEAD is on side, and side is not ticked");
   assert.ok(!shas.includes(mainTip), "main's last commit is reachable from neither v1 nor HEAD");
 });
 
@@ -129,15 +131,17 @@ test("a remembered selection that is entirely gone falls back to All, and says s
   assert.ok(shasOf(page).includes(sideTip), "…and every branch is walked");
 });
 
-test("chips follow the filter: unticked refs draw none, the current branch always does", async () => {
+test("chips follow the filter: unticked refs draw none — the current branch included", async () => {
   const all = await bridge.graphLoad({ skip: 0, maxCount: 50 });
   const chipsAt = (p: typeof all, sha: string) => p.rows.find((r) => r.sha === sha)?.refs.map((r) => r.name) ?? [];
   assert.deepEqual(chipsAt(all, sideTip), ["side"]);
   assert.deepEqual(chipsAt(all, tagged), ["v1"]);
 
   const only = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"] });
-  assert.deepEqual(chipsAt(only, mainTip), ["main"], "the current branch keeps its chip");
+  assert.equal(only.rows.some((r) => r.sha === mainTip), false, "main (HEAD's branch, unticked) is not walked");
   assert.deepEqual(chipsAt(only, tagged), ["v1"], "the ticked tag keeps its chip");
+  const withMain = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1", "refs/heads/main"] });
+  assert.deepEqual(chipsAt(withMain, mainTip), ["main"], "ticked, the current branch has its chip");
   assert.equal(only.rows.some((r) => r.sha === sideTip), false, "side is not even in the walk");
 
   // The picker still lists everything — a filtered-out ref must be tickable.
@@ -146,6 +150,93 @@ test("chips follow the filter: unticked refs draw none, the current branch alway
     ["refs/heads/main", "refs/heads/side", "refs/tags/v1"],
   );
   assert.equal(only.refList.find((r) => r.name === "main")?.isCurrent, true);
+});
+
+test("the ref list crosses IPC only when the caller does not already hold it", async () => {
+  // It is every branch and tag — a megabyte on a repository with ten thousand
+  // tags — and it rode on every page of every load. The renderer says which
+  // list it holds; an unchanged one stays in this process.
+  const first = await bridge.graphLoad({ skip: 0, maxCount: 3 });
+  assert.ok(first.refList && first.refList.length === 3, "a caller that holds nothing gets the list");
+  const sig = first.refListSig;
+  assert.equal(typeof sig, "string");
+
+  const refresh = await bridge.graphLoad({ skip: 0, maxCount: 3, refListSig: sig });
+  assert.equal("refList" in refresh, false, "a refresh over the same refs leaves it out");
+  assert.equal(refresh.refListSig, sig);
+
+  const append = await bridge.graphLoad({ skip: refresh.nextSkip, maxCount: 3, refListSig: sig });
+  assert.equal("refList" in append, false, "so does a later page");
+
+  const filtered = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"], refListSig: sig });
+  assert.deepEqual(filtered.refFilter, ["refs/tags/v1"], "a filter change is applied…");
+  assert.equal("refList" in filtered, false, "…and the unchanged list, filtered-out refs and all, stays where it is");
+  assert.equal(filtered.rows.some((r) => r.sha === sideTip), false, "(side really is filtered out)");
+
+  // A branch appears: the list moved, so it is sent, whatever the caller holds.
+  git("branch", "fresh", tagged);
+  const grown = await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: sig });
+  assert.ok(grown.refList?.some((r) => r.fullName === "refs/heads/fresh"), "the new branch reaches the picker");
+  assert.notEqual(grown.refListSig, sig);
+
+  // A renderer that reloaded holds nothing and says so: it gets the list,
+  // whatever this process sent before.
+  const reloaded = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.ok(reloaded.refList && reloaded.refList.length === 4);
+  // …and one holding a list this process never sent (another repository's).
+  const other = await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: "3:not-this-list" });
+  assert.ok(other.refList);
+});
+
+test("a refresh where only a commit moved leaves the list out; a repository switch never shows the old one's refs", async () => {
+  const first = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  const sig = first.refListSig;
+  // A branch MOVES (a commit lands on side): the list names the same refs, so
+  // it stays where it is — and the new commit is in the rows all the same.
+  git("checkout", "-q", "side");
+  const moved = commit("moved.txt", "side moves");
+  git("checkout", "-q", "main");
+  const refresh = await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: sig });
+  assert.equal("refList" in refresh, false, "a commit moving is not a list change");
+  assert.ok(shasOf(refresh).includes(moved), "and the rows have the new commit");
+
+  // Another repository, with its own refs and no remembered filter, while
+  // THIS one is filtered. The caller still holds the first repository's list.
+  stored.set(repo, ["refs/heads/side"]);
+  await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  const heldSig = (await bridge.graphLoad({ skip: 0, maxCount: 50, refListSig: "x" })).refListSig;
+  const other = mkdtempSync(join(tmpdir(), "gitstudio-graphfilter-other-"));
+  const otherGit = (...args: string[]) =>
+    execFileSync("git", args, { cwd: other, encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }).trim();
+  execFileSync("git", ["-c", "init.defaultBranch=trunk", "init", other], { env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  otherGit("config", "user.email", "dev@example.com");
+  otherGit("config", "user.name", "Dev");
+  writeFileSync(join(other, "o.txt"), "o\n");
+  otherGit("add", ".");
+  otherGit("commit", "-q", "-m", "other root");
+  otherGit("tag", "only-here");
+  const otherCtx = new GitContext({ root: other });
+  let current = ctx;
+  const switching = new GitBridge({ getContext: () => current } as unknown as RepoStore, store);
+  try {
+    const a = await switching.graphLoad({ skip: 0, maxCount: 50 });
+    assert.deepEqual(a.refFilter, ["refs/heads/side"], "the first repository's filter applies to it");
+    current = otherCtx;
+    // The renderer asks for page 0 of the new repository, saying which list it holds.
+    const b = await switching.graphLoad({ skip: 0, maxCount: 50, refListSig: heldSig });
+    assert.ok(b.refList, "the new repository's list is sent — the one held names the old one's refs");
+    assert.deepEqual(b.refList!.map((r) => r.fullName).sort(), ["refs/heads/trunk", "refs/tags/only-here"]);
+    assert.equal(b.refFilter, null, "and the old repository's filter does not follow");
+    assert.equal(b.rows.length, 1);
+    // A page from the new repository with a stale cursor is page 0 of it, not an append.
+    current = ctx;
+    const back = await switching.graphLoad({ skip: 1, maxCount: 50, refListSig: b.refListSig });
+    assert.ok(back.refList && back.refList.some((r) => r.fullName === "refs/heads/side"), "switching back resends the first list");
+    assert.deepEqual(back.refFilter, ["refs/heads/side"]);
+  } finally {
+    otherCtx.dispose?.();
+    removeTempRepo(other);
+  }
 });
 
 test("paging under a filter walks the same set page after page", async () => {
@@ -166,7 +257,81 @@ test("graph:reaches says whether the graph's walk reaches a commit — the revea
   await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"] });
   assert.deepEqual(await bridge.graphReaches(mainTip), { reached: false }, "main's last commit is hidden by the filter");
   assert.deepEqual(await bridge.graphReaches(tagged), { reached: true }, "the ticked tag's commit is in the walk");
-  assert.deepEqual(await bridge.graphReaches(sideTip), { reached: true }, "and so is HEAD's");
+  assert.deepEqual(await bridge.graphReaches(sideTip), { reached: false }, "HEAD's is not: side is attached and unticked");
+  // Detached, HEAD is walked by name, and reached.
+  git("checkout", "-q", "--detach", "side");
+  await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/tags/v1"] });
+  assert.deepEqual(await bridge.graphReaches(sideTip), { reached: true }, "a detached HEAD is in the walk");
+});
+
+// ── Found on the released 1.13.0 ────────────────────────────────────────────
+
+test("Show only another branch shows that branch — not the current branch's history beside it", async () => {
+  // The report: on main (374 commits), "Show only origin/claude/ai-mcp-desktop"
+  // listed 463 rows, 372 of them main's, under a trigger naming the one branch.
+  const page = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/heads/side"] });
+  const shas = shasOf(page);
+  const truth = git("rev-list", "refs/heads/side").split("\n");
+  assert.deepEqual([...shas].sort(), [...truth].sort(), "exactly `git rev-list side`");
+  assert.equal(page.head, mainTip, "the header still knows where HEAD is");
+  assert.deepEqual(page.refFilter, ["refs/heads/side"]);
+  assert.equal(page.refPreset, undefined, "a hand-picked selection is no preset");
+});
+
+test("Current branch follows HEAD: stored as the preset, resolved on every load", async () => {
+  await bridge.graphLoad({ skip: 0, maxCount: 50, refs: [CURRENT_BRANCH] });
+  assert.deepEqual(stored.get(repo), [CURRENT_BRANCH], "stored as what it means, not as main");
+  let page = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual(page.refFilter, ["refs/heads/main"], "resolved: the picker ticks main");
+  assert.equal(page.refPreset, "current", "…and lights the preset");
+  assert.ok(shasOf(page).includes(mainTip) && !shasOf(page).includes(sideTip));
+  // The report: switch branch, and the filter went on naming the old one.
+  git("checkout", "-q", "side");
+  page = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual(page.refFilter, ["refs/heads/side"], "the same stored filter now means side");
+  assert.equal(page.refPreset, "current");
+  assert.deepEqual([...shasOf(page)].sort(), git("rev-list", "side").split("\n").sort());
+  assert.deepEqual(stored.get(repo), [CURRENT_BRANCH], "nothing was rewritten to a branch name");
+  // A reload that re-sends the same preset is not a filter change (no reset
+  // of a skip-paged load): the stored symbol is what it compares with.
+  const p1 = await bridge.graphLoad({ skip: 0, maxCount: 2 });
+  const p2 = await bridge.graphLoad({ skip: p1.nextSkip, maxCount: 2, refs: [CURRENT_BRANCH] });
+  assert.equal(p2.nextSkip, 4, "the same preset appended the next page");
+  // Detached: there is no current branch, so the preset walks HEAD alone.
+  git("checkout", "-q", "--detach", "HEAD~1");
+  page = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual(page.refFilter, [], "no branch to tick");
+  assert.equal(page.refPreset, "current");
+  assert.deepEqual([...shasOf(page)].sort(), git("rev-list", "HEAD").split("\n").sort());
+});
+
+test("Local only follows the branches that exist, and Current + upstream the upstream", async () => {
+  await bridge.graphLoad({ skip: 0, maxCount: 50, refs: [LOCAL_BRANCHES] });
+  git("branch", "late", tagged);
+  const page = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.deepEqual([...(page.refFilter ?? [])].sort(), ["refs/heads/late", "refs/heads/main", "refs/heads/side"]);
+  assert.equal(page.refPreset, "local");
+  // A tracked branch brings its upstream; the preset reads back as itself.
+  git("update-ref", "refs/remotes/origin/main", tagged);
+  git("config", "remote.origin.url", repo);
+  git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*");
+  git("config", "branch.main.remote", "origin");
+  git("config", "branch.main.merge", "refs/heads/main");
+  const up = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: [CURRENT_BRANCH, CURRENT_UPSTREAM] });
+  assert.deepEqual(up.refFilter, ["refs/heads/main", "refs/remotes/origin/main"]);
+  assert.equal(up.refPreset, "currentUpstream");
+});
+
+test("a detached HEAD is still HEAD: every page names its commit", async () => {
+  // The report: detached at main~3, the header read "no commits yet" over the
+  // history, and the rail lost Jump to HEAD — `head` was "".
+  git("checkout", "-q", "--detach", "HEAD~3");
+  const at = git("rev-parse", "HEAD");
+  const all = await bridge.graphLoad({ skip: 0, maxCount: 50 });
+  assert.equal(all.head, at);
+  const filtered = await bridge.graphLoad({ skip: 0, maxCount: 50, refs: ["refs/heads/side"] });
+  assert.equal(filtered.head, at);
+  assert.ok(shasOf(filtered).includes(at), "and a filter keeps the commit you are on");
 });
 
 test("a prune against a ref listing that failed is not written back", async () => {

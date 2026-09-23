@@ -158,7 +158,7 @@ test("a branch checkout — even of a branch that shares its name with a tag —
   writeFileSync(join(dir, "a.txt"), LINES("mine", 4));
   const { bridge } = await bridgeOn(dir);
   for (const req of [
-    { action: "checkout-ref" as const, sha: "feature", name: "feature", refKind: "head" as const },
+    { action: "checkout-ref" as const, sha: "feature", name: "feature", fullName: "refs/heads/feature", refKind: "head" as const },
     { action: "checkout-ref" as const, sha: "feature", name: "heads/feature", fullName: "refs/heads/feature", refKind: "head" as const },
   ]) {
     const r = await bridge.commitAction(req);
@@ -199,9 +199,9 @@ test("Merge over an edit to a file the incoming side changes: asked, then merged
   const { dir, root, git } = repo();
   writeFileSync(join(dir, "a.txt"), LINES("mine", 4));
   const { bridge } = await bridgeOn(dir);
-  const r = await bridge.branchMerge({ name: "feature" });
+  const r = await bridge.branchMerge({ fullName: "refs/heads/feature" });
   assertAsked(r, "merge", ["a.txt"], root, "merge");
-  const again = await bridge.branchMerge({ name: "feature", stashFirst: root });
+  const again = await bridge.branchMerge({ fullName: "refs/heads/feature", stashFirst: root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("rev-list", "--parents", "-n", "1", "HEAD").trim().split(" ").length, 3, "a merge commit");
   assert.equal(read(dir, "a.txt"), LINES("feature", 0).replace("line 4\n", "mine\n"));
@@ -213,10 +213,10 @@ test("Rebase onto, over ANY tracked change, says so in the rebase's own words �
   writeFileSync(join(dir, "b.txt"), LINES("main", 0).replace("line 5\n", "staged\n"));
   git("add", "b.txt");
   const { bridge } = await bridgeOn(dir);
-  const r = await bridge.branchRebase({ onto: "feature" });
+  const r = await bridge.branchRebase({ fullName: "refs/heads/feature" });
   assertAsked(r, "rebase", ["b.txt"], root, "rebase");
   assert.match(r.message ?? "", /^A rebase needs a clean working tree/);
-  const again = await bridge.branchRebase({ onto: "feature", stashFirst: root });
+  const again = await bridge.branchRebase({ fullName: "refs/heads/feature", stashFirst: root });
   assert.equal(again.ok, true, again.message);
   assert.equal(git("log", "--format=%s", "-4").trim(), "main changes b\nfeature adds c\nfeature changes a\nbase");
   assert.equal(git("status", "--porcelain").trim(), "M  b.txt", "staged, as it was");
@@ -308,7 +308,7 @@ test("a Stash & Retry is refused in any other repository — nothing is stashed 
   const { bridge } = await bridgeOn(dir);
   for (const r of [
     await bridge.commitAction({ action: "revert", sha: head, stashFirst: "/somewhere/else" }),
-    await bridge.branchMerge({ name: "feature", stashFirst: "/somewhere/else" }),
+    await bridge.branchMerge({ fullName: "refs/heads/feature", stashFirst: "/somewhere/else" }),
     await bridge.syncPull({ stashFirst: "/somewhere/else" }),
   ]) {
     assert.equal(r.ok, false);
@@ -349,7 +349,7 @@ test("a failure that is NOT the user's work in the way still reports, and asks n
   assert.equal(missing.ok, false);
   assert.equal(missing.inTheWay, undefined, "not blamed on the user's edit");
   assert.ok(filed(missing), "a pick of a commit git cannot read is reported");
-  const nowhere = await bridge.branchMerge({ name: "no-such-branch" });
+  const nowhere = await bridge.branchMerge({ fullName: "refs/heads/no-such-branch" });
   assert.equal(nowhere.inTheWay, undefined);
   assert.ok(filed(nowhere), "a merge of a branch that does not exist is reported");
   assert.equal(stashes(git), "");

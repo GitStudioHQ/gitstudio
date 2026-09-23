@@ -30,8 +30,11 @@ import { fileURLToPath } from "node:url";
 // The rule, per code line in apps/extension/src:
 //   · no direct `branches.checkout(` / `branches.merge(` / `branches.rebaseOnto(`
 //     / `branches.checkoutNew(` / `stashes.apply(` / `stashes.pop(` /
-//     `sync.pull(`, and no `process.run(plan.args` — those run git past the
-//     door;
+//     `sync.pull(`, and no `process.run(plan.args` (nor `c.plan.args` — a
+//     plan by any name) — those run git past the door;
+//   · BranchOps' merge argv (`branches.mergeArgs(`, which carries the
+//     message a full-name merge records) is handed to the door the same way
+//     a literal argv is;
 //   · an argv that starts a cherry-pick, revert, merge, rebase, checkout or
 //     switch (not its --abort / --continue / --skip / --quit, and not
 //     `checkout --`, which restores files), or a stash apply / pop, is handed
@@ -43,9 +46,10 @@ const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const SRC = join(ROOT, "apps/extension/src");
 const COMMENT = /^\s*(?:\/\/|\*|\/\*)/;
 const DIRECT =
-  /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop)|sync\.pull)\(|process\.run\(\s*plan\.args/;
+  /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop)|sync\.pull)\(|process\.run\(\s*(?:[\w.]+\.)?plan\.args/;
 const ARGV = /\[\s*"(cherry-pick|revert|merge|rebase|checkout|switch)"(?:\s*,\s*"([^"]*)")?/;
 const STASH_ARGV = /\[\s*"stash"\s*,\s*"(?:apply|pop)"/;
+const BUILT_ARGV = /\bbranches\.mergeArgs\(/;
 const NOT_APPLYING = /^--(?:abort|continue|skip|quit)?$/;
 const ARGV_CONTEXT = /\b(?:run|runGit|args|checkoutOp|runCheckout|applyOrAsk)\b/;
 const ROUTED = /\b(?:applyOrAsk|runCheckout|checkoutOp)\(/;
@@ -80,10 +84,11 @@ async function census(): Promise<{ doors: number; bypass: string[] }> {
       }
       const argv = ARGV.exec(line);
       const stash = STASH_ARGV.test(line);
-      if (!stash && (!argv || NOT_APPLYING.test(argv[2] ?? "x"))) return;
+      const built = BUILT_ARGV.test(line);
+      if (!built && !stash && (!argv || NOT_APPLYING.test(argv[2] ?? "x"))) return;
       // An argv handed to git — a `run(`, an `args`, a door — not a list of
       // words that happens to start with one (`["merge", "squash", "rebase"]`).
-      if (!ARGV_CONTEXT.test(line)) return;
+      if (!built && !ARGV_CONTEXT.test(line)) return;
       doors++;
       const around = lines.slice(Math.max(0, i - 8), i + 14).join("\n");
       if (ROUTED.test(around) || reviewed) return;
@@ -111,10 +116,8 @@ test("every door that applies commits hands the door its own op", async () => {
     "views/branchActions.ts": [
       /kind:\s*"merge"/,
       /kind:\s*"rebase"/,
-      /checkoutOp\(\["checkout", ref\.name\]\)/,
-      /checkoutOp\(plan\.args\)/,
+      /async function runRefCheckout\([\s\S]*?applyOrAsk\(a\.ctx, checkoutOp\(plan\.args\)\)/,
       /checkoutOp\(\["checkout", "-b"/,
-      /checkoutOp\(\["checkout", "--detach"/,
     ],
     "views/stashesView.ts": [/kind:\s*"stash",\s*stash:\s*ref\s*\}/, /kind:\s*"stash",\s*stash:\s*ref,\s*pop:\s*true/],
     "changes/commitView.ts": [/checkoutOp\(\["checkout", "--detach", r\]\)/, /pullOrAsk\(entry\.ctx/],

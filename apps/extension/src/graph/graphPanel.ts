@@ -5,6 +5,7 @@ import type { CommitRecord, CommitStat, GitRef } from "@gitstudio/git-service/in
 import { UNCOMMITTED_SHA } from "@gitstudio/git-service/index";
 import type {
   GraphHostMessage,
+  GraphInitMessage,
   GraphWebviewMessage,
   GraphRefEntry,
   GraphRefFilter,
@@ -14,12 +15,19 @@ import type {
   CommitDetailsPayload,
   CommitFileChange,
 } from "@gitstudio/host-bridge/commitDetailsProtocol";
-import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
+import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import {
   chipRefsUnderFilter,
+  filterWalk,
+  type FilterWalk,
+  headInWalk,
   normalizeRefFilter,
+  RefListCourier,
   refEntries,
+  refLabel,
+  revealCandidate,
   sameRefFilter,
+  withRef,
 } from "@gitstudio/host-bridge/graphRefFilter";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import { getGraphHtml, getNonce } from "./graphHtml";
@@ -166,12 +174,20 @@ export class CommitGraphPanel {
    *  repository's list, and must not prune a stored selection (see loadInitial). */
   private refsListed = false;
   private refList: GraphRefEntry[] = [];
+  /** Sends the picker's list only when it differs from the one this webview
+   *  already has — see postInit. */
+  private readonly refListCourier = new RefListCourier();
   /**
    * The branch filter the loaded pages were walked with (issue #30) — pruned
    * against the refs that existed at load time, null for everything. Stored
-   * per repository in the RefFilterStore; this is the applied copy.
+   * per repository in the RefFilterStore; this is the applied copy, presets
+   * still symbolic ("Current branch" is CURRENT_BRANCH, not a branch name).
    */
   private refFilter: GraphRefFilter = null;
+  /** What that filter walks for this load — resolved against this load's
+   *  ref listing, HEAD only when detached (filterWalk). Every page, the
+   *  chips and a reveal's reach question read this one value. */
+  private walk: FilterWalk = { refs: null, head: true };
   private hasAnyRemote = false;
   private currentHeadSha = "";
   private nextSkip = 0;
@@ -223,7 +239,8 @@ export class CommitGraphPanel {
     const store = getRefFilterStore();
     if (store) {
       const off = store.onDidChange((root) => {
-        if (root === this.repoRoot && this.ready) void this.loadInitial();
+        // The same REPOSITORY, however its root was reached (sameRepo).
+        if (store.sameRepo(root, this.repoRoot) && this.ready) void this.loadInitial();
       });
       this.disposables.push({ dispose: off });
     }
@@ -235,6 +252,9 @@ export class CommitGraphPanel {
     switch (msg.type) {
       case "ready":
         this.ready = true;
+        // A (re)loaded page has no ref list, whatever was sent to the one
+        // before it: the next graphInit carries it whole.
+        this.refListCourier.forget();
         void this.loadInitial();
         break;
       case "loadMore":
@@ -300,6 +320,19 @@ export class CommitGraphPanel {
     void this.webview.postMessage(message);
   }
 
+  /**
+   * Post a graphInit, with the picker's ref list only when it changed.
+   *
+   * The list is every branch and tag — about 1 MB on a repository with ten
+   * thousand tags — and it rode on every graphInit: every debounced refresh,
+   * every filter change, almost always identical. The webview keeps the last
+   * one it was given (applyGraphInitRefs), so an unchanged list is left out.
+   */
+  private postInit(init: Omit<GraphInitMessage, "type" | "refList">, list: GraphRefEntry[]): void {
+    const refList = this.refListCourier.take(list);
+    this.post({ type: "graphInit", ...init, ...(refList ? { refList } : {}) });
+  }
+
   /** Best-effort: resolve real author photos and push them to the webview to
    * replace the Gravatar/initials placeholders. Never blocks or fails the graph
    * — no resolver, no GitHub connection, or a network error just leaves the
@@ -353,17 +386,10 @@ export class CommitGraphPanel {
       this.refs = [];
       this.refList = [];
       this.refFilter = null;
+      this.walk = { refs: null, head: true };
       this.nextSkip = 0;
       this.hasMore = false;
-      this.post({
-        type: "graphInit",
-        rows: [],
-        head: "",
-        totalColumns: 1,
-        hasMore: false,
-        refFilter: null,
-        refList: [],
-      });
+      this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, refFilter: null }, []);
       return;
     }
 
@@ -405,9 +431,13 @@ export class CommitGraphPanel {
           // gone ref); the store keeps its value for a load that can prune.
           this.refFilter = wanted;
         }
+        // Resolved against the listing just read: a preset means the branch
+        // HEAD is on NOW, and an attached HEAD is walked only when ticked.
+        this.walk = filterWalk(this.refFilter, this.refList, this.refs);
         page = await this.readPage(active, 0, controller.signal, FIRST_PAGE_SIZE);
       } else {
         this.refFilter = null;
+        this.walk = { refs: null, head: true };
         // Refs (for-each-ref + stash) and the first log page run CONCURRENTLY —
         // refs no longer block the log spawn. buildRows needs both, but they
         // land together.
@@ -429,15 +459,19 @@ export class CommitGraphPanel {
       this.injectWipNode(active);
 
       const { rows, totalColumns } = this.buildRows(this.loaded);
-      this.post({
-        type: "graphInit",
-        rows,
-        head: this.currentHeadSha,
-        totalColumns,
-        hasMore: this.hasMore,
-        refFilter: this.refFilter,
-        refList: this.refList,
-      });
+      this.postInit(
+        {
+          rows,
+          head: this.currentHeadSha,
+          totalColumns,
+          hasMore: this.hasMore,
+          // What the rows were walked from, full names only — the picker
+          // ticks these — and the preset they stand for, when they do.
+          refFilter: this.walk.refs,
+          ...(this.walk.preset ? { refPreset: this.walk.preset } : {}),
+        },
+        this.refList,
+      );
       // Rows now exist in the webview — reveals can land. Must be set BEFORE
       // the flush below, or the replayed reveal would just re-queue itself.
       this.initialized = true;
@@ -467,15 +501,7 @@ export class CommitGraphPanel {
             msg,
           );
         if (isEmptyRepo) {
-          this.post({
-            type: "graphInit",
-            rows: [],
-            head: "",
-            totalColumns: 1,
-            hasMore: false,
-            refFilter: null,
-            refList: [],
-          });
+          this.postInit({ rows: [], head: "", totalColumns: 1, hasMore: false, refFilter: null }, []);
         } else {
           this.post({ type: "graphError", message: msg });
         }
@@ -782,7 +808,8 @@ export class CommitGraphPanel {
       revRange: "--all",
       // The branch filter: every page of one load walks the same ticked set,
       // so skip-based paging stays consistent across the load.
-      refs: this.refFilter ?? undefined,
+      refs: this.walk.refs ?? undefined,
+      head: this.walk.head,
       maxCount: limit,
       skip,
       signal,
@@ -847,6 +874,18 @@ export class CommitGraphPanel {
         this.currentHeadSha = ref.sha;
       }
     }
+    if (!this.currentHeadSha) {
+      // No branch is current: HEAD is detached (or unborn). It still sits on
+      // a commit, and that is what `head` means to the webview — without it
+      // the header read "no commits yet" over a hundred and fifty of them,
+      // and the rail lost its Jump to HEAD. rev-parse prints "HEAD" itself on
+      // an unborn branch, so only a real object name is taken.
+      try {
+        this.currentHeadSha = await active.ctx.refs.headCommit();
+      } catch {
+        /* no HEAD to point at — the header says so */
+      }
+    }
   }
 
   /**
@@ -862,10 +901,11 @@ export class CommitGraphPanel {
     const rows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      // Chips follow the filter: a ref the graph is not built around draws no
-      // chip (the current branch always does). The details pane and the
-      // commit menu keep reading the full map — they describe the commit.
-      refsBySha: chipRefsUnderFilter(this.refsBySha, this.refFilter),
+      // Chips follow the filter: a ref the graph is not walked from draws no
+      // chip — the current branch included, unless it is ticked. The details
+      // pane and the commit menu keep reading the full map — they describe
+      // the commit.
+      refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
     });
     return { rows, totalColumns: layout.totalColumns };
   }
@@ -969,8 +1009,8 @@ export class CommitGraphPanel {
    */
   private async revealUnloaded(sha: string): Promise<void> {
     const active = this.repos.getActive();
-    const filter = this.refFilter;
-    if (active && filter && !(await active.ctx.log.walkReaches(sha, filter))) {
+    const walk = this.walk;
+    if (active && walk.refs && !(await active.ctx.log.walkReaches(sha, walk.refs, { head: walk.head }))) {
       // The details still show — the pane describes the commit, whatever the
       // graph is built around — so the reveal is posted for the dock it
       // re-opens, not for a row it will not find.
@@ -992,23 +1032,42 @@ export class CommitGraphPanel {
 
   /**
    * The branch filter hides the commit that was asked for: say so, and offer
-   * the way out. Taking it forgets the filter for this repository — every
-   * surface showing it reloads through the store — and the reveal is replayed
-   * once the unfiltered first page lands (see loadInitial's pendingReveal).
+   * the way in. FIRST, to add a branch that contains it — the rest of the
+   * selection stays; "Show all branches" (second) throws the whole selection
+   * away to see one commit.
+   *
+   * The branch comes from containingBranches by FULL name, mapped through the
+   * picker's list (revealCandidate), and is added to the filter as STORED
+   * (withRef) — a preset stays its symbol, so "Current branch" + the added
+   * branch still follows a checkout; resolveRefFilter reads the mix. Either
+   * pick goes through the store — every surface showing the repository
+   * reloads — and the reveal is replayed once the new first page lands (see
+   * loadInitial's pendingReveal).
    */
   private offerAllBranches(sha: string, root: string): void {
-    void vscode.window
-      .showInformationMessage(
+    void (async () => {
+      const active = this.repos.getActive();
+      let add: GraphRefEntry | undefined;
+      try {
+        const contains = active ? await active.ctx.refs.containingBranches(sha) : undefined;
+        add = revealCandidate(contains?.refs ?? [], this.refList);
+      } catch {
+        add = undefined; // the offer below still has its way out
+      }
+      if (root !== this.repoRoot) return;
+      const ADD = add ? `Add ${refLabel(add.fullName)} to the filter` : undefined;
+      const ALL = "Show all branches";
+      const pick = await vscode.window.showInformationMessage(
         `GitStudio: ${sha.slice(0, 7)} is hidden by the branch filter.`,
-        "Show all branches",
-      )
-      .then((pick) => {
-        if (pick !== "Show all branches" || root !== this.repoRoot) {
-          return;
-        }
-        this.pendingReveal = sha;
-        void this.setRefFilter(null);
-      });
+        ...(ADD ? [ADD] : []),
+        ALL,
+      );
+      if (!pick || root !== this.repoRoot) {
+        return;
+      }
+      this.pendingReveal = sha;
+      void this.setRefFilter(pick === ADD && add ? withRef(this.refFilter, add.fullName) : null);
+    })();
   }
 
   /** Page in more history until `sha` is loaded (bounded so a sha that isn't
@@ -1033,6 +1092,12 @@ export class CommitGraphPanel {
     if (!this.currentHeadSha || !active.repo) {
       // No WIP node until vscode.git attaches (it drives the dirty check); the
       // commit history still renders from our git-service in the meantime.
+      return;
+    }
+    if (!headInWalk(this.walk, this.refList, this.records, this.currentHeadSha)) {
+      // A filter that leaves the current branch out (issue #30) walks no
+      // HEAD, and a WIP node parented on a commit the graph does not have
+      // hangs off a lane to nowhere.
       return;
     }
     const st = active.repo.state;
@@ -1338,20 +1403,15 @@ export class CommitGraphPanel {
     return undefined;
   }
 
-  /** Map the GitRefs at a sha to the webview's WireRef chips — with the
-   *  full name beside each, which is what the menus check a ref out by. */
+  /** The GitRefs at a sha as the webview's WireRef chips — the graph row's
+   *  own (wireRefs), with the full name beside each, which is what the menus
+   *  check a ref out by and the details pane's chip menu resolves by. A copy
+   *  of that mapping kept refs/remotes/origin/HEAD, which the graph draws no
+   *  chip for: the row menu offered "Checkout origin/HEAD" ("fatal: 'HEAD' is
+   *  not a valid branch name") and the pane an origin/HEAD chip whose menu
+   *  could never act. */
   private refsToWire(sha: string): MenuRef[] {
-    const refs = this.refsBySha.get(sha) ?? [];
-    return refs
-      .filter((r) => r.type !== "stash")
-      .map((r): MenuRef => {
-        const fullName = r.fullName;
-        if (r.type === "tag") return { kind: "tag", name: r.name, fullName };
-        if (r.type === "remote") return { kind: "remoteHead", name: r.name, fullName };
-        return r.isCurrent
-          ? { kind: "currentHead", name: r.name, fullName }
-          : { kind: "head", name: r.name, fullName };
-      });
+    return wireRefs(this.refsBySha.get(sha));
   }
 
   dispose(): void {

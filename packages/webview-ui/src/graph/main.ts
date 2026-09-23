@@ -7,11 +7,13 @@
 import "../styles/graph.css";
 import "./commit-graph";
 import "../commit-details";
+import { applyGraphInitRefs } from "./graphInit";
 import type { CommitGraph, GraphAction } from "./commit-graph";
-import type { CommitDetails } from "../commit-details";
+import type { CommitDetails, RefMenuRequest } from "../commit-details";
 import type {
   GraphHostMessage,
   GraphWebviewMessage,
+  WireRef,
 } from "@gitstudio/host-bridge/graphProtocol";
 
 interface VsCodeApi {
@@ -123,6 +125,22 @@ function start(root: HTMLElement): void {
       case "requestStats":
         vscode.postMessage({ type: "requestStats", shas: action.shas });
         break;
+      case "refClick":
+        // A chip is a link to its ref. The desktop has a page for one (its
+        // Branches view); the extension has none, and dropped the click — a
+        // pointer cursor over a chip that did nothing, while the Commits
+        // rail beside it selected the row. It is the chip's own menu here:
+        // Show only / Add / Remove / Checkout, the same one a right-click or
+        // ⌥-click opens. From a "+N" card row (no pointer position), at the
+        // top-left of the list, clamped in like any menu.
+        graph.openRefMenu(
+          { name: action.name, fullName: action.fullName, kind: action.kind as WireRef["kind"] },
+          action.x ?? 24,
+          action.y ?? 48,
+          action.sha,
+          { twins: action.twins },
+        );
+        break;
       case "setRefFilter":
         vscode.postMessage({ type: "setRefFilter", refs: action.refs });
         break;
@@ -161,6 +179,17 @@ function start(root: HTMLElement): void {
     graph.reveal(d.sha);
     openDetails();
     vscode.postMessage({ type: "selectCommit", sha: d.sha });
+  });
+  // A ref chip in the pane is the same shortcut it is in the graph's rows
+  // (issue #30): its menu is the graph's own, which owns the filter and the
+  // ref list the chip is resolved through.
+  details.refMenu = true;
+  details.addEventListener("gs-ref-menu", (e) => {
+    const d = (e as CustomEvent<RefMenuRequest>).detail;
+    graph.openRefMenu({ name: d.name, fullName: d.fullName, kind: d.kind }, d.x, d.y, d.sha, {
+      opener: d.opener,
+      keyboard: d.keyboard,
+    });
   });
   // "in N branches" — a history walk, so it is only requested on demand.
   details.addEventListener("gs-contains", (e) => {
@@ -244,8 +273,7 @@ function handle(
       graph.rows = message.rows;
       graph.totalColumns = message.totalColumns;
       graph.hasMore = message.hasMore;
-      graph.refFilter = message.refFilter ?? null;
-      graph.refList = message.refList ?? [];
+      applyGraphInitRefs(graph, message);
       graph.status = message.rows.length === 0 ? "empty" : "ready";
       break;
     }

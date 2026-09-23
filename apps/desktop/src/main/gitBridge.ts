@@ -18,11 +18,12 @@ import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
 import { computeHunks, applySelectedChanges } from "@gitstudio/engine/staging/applyLineChanges";
 import type { LineRange, Hunk } from "@gitstudio/engine/staging/applyLineChanges";
-import { buildWireRows } from "@gitstudio/host-bridge/graphWire";
+import { buildWireRows, wireRefs } from "@gitstudio/host-bridge/graphWire";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
-import { planRemoteCheckout } from "@gitstudio/git-service/checkoutRemote";
-import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { branchNameOf, remoteBranchOf } from "@gitstudio/git-service/BranchOps";
+import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
@@ -80,8 +81,11 @@ import type {
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import {
   chipRefsUnderFilter,
+  filterWalk,
+  type FilterWalk,
   normalizeRefFilter,
   refEntries,
+  refListSignature,
   sameRefFilter,
 } from "@gitstudio/host-bridge/graphRefFilter";
 import type { CommitFileChange } from "@gitstudio/host-bridge/git";
@@ -152,6 +156,31 @@ const UNSAFE_REF_RESULT: CommitActionResult = {
   changed: false,
   message: "That value isn't a valid git reference.",
 };
+
+/**
+ * A FULL ref name in one of `namespaces` — what every branch op now requires
+ * (see branchMerge). Full names start with "refs/", so they can never be read
+ * as an option; a NUL is the only other hazard on argv.
+ */
+export function isFullRef(v: unknown, namespaces: readonly string[]): v is string {
+  if (typeof v !== "string" || v.includes("\0")) return false;
+  return namespaces.some((ns) => v.startsWith(`refs/${ns}/`) && v.length > `refs/${ns}/`.length);
+}
+
+/** The name `git branch` takes for the local branch `fullName` (the part
+ *  under refs/heads/), or undefined when `fullName` is not one. */
+export function localBranchOf(fullName: unknown): string | undefined {
+  return isFullRef(fullName, ["heads"]) ? branchNameOf(fullName) : undefined;
+}
+
+/** A branch op that arrived without a full name — refused, not guessed at. */
+function notABranch(what: string): CommitActionResult {
+  return {
+    ok: false,
+    changed: false,
+    message: `Couldn't tell which branch to ${what} — refresh and try again.`,
+  };
+}
 
 /** Standard rejection for an unusable path reaching a mutation. */
 const UNSAFE_PATH_RESULT: CommitActionResult = {
@@ -245,13 +274,21 @@ export class GitBridge {
    *  repository's list, and must not prune a stored selection (see below). */
   private refsListed = false;
   private refList: GraphRefEntry[] = [];
+  /** refListSignature(refList), computed once per listing — a page request
+   *  compares against it (see graphPage). */
+  private refListSig = refListSignature([]);
   /**
    * The branch filter the accumulated pages were walked with (issue #30) —
    * pruned against the refs that existed at load time, null for everything.
    * A request that changes it is a fresh load: the pages so far belong to a
-   * different history.
+   * different history. Presets stay symbolic here ("Current branch" is
+   * CURRENT_BRANCH), so a request is compared with what was asked for.
    */
   private refFilter: GraphRefFilter = null;
+  /** What that filter walks for the accumulated pages — resolved against the
+   *  fresh load's listing, HEAD only when detached (filterWalk). Every page,
+   *  the chips and graph:reaches read this one value. */
+  private walk: FilterWalk = { refs: null, head: true };
   private currentHeadSha = "";
   private loadedRoot: string | undefined;
   /** Serializes graph:load so two pages never interleave in the accumulator. */
@@ -308,7 +345,17 @@ export class GitBridge {
   private async graphLoadInner(opts: GraphLoadRequest): Promise<GraphPage> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { rows: [], head: "", totalColumns: 1, hasMore: false, nextSkip: 0, refFilter: null, refList: [] };
+      const none = refListSignature([]);
+      return {
+        rows: [],
+        head: "",
+        totalColumns: 1,
+        hasMore: false,
+        nextSkip: 0,
+        refFilter: null,
+        ...(opts.refListSig === none ? {} : { refList: [] }),
+        refListSig: none,
+      };
     }
 
     const maxCount = opts.maxCount ?? PAGE_SIZE;
@@ -349,6 +396,9 @@ export class GitBridge {
           await this.refFilters?.set(ctx.root, this.refFilter);
         }
       }
+      // Resolved against the listing just read: a preset means the branch
+      // HEAD is on NOW, and an attached HEAD is walked only when ticked.
+      this.walk = filterWalk(this.refFilter, this.refList, this.refs);
     }
     const gen = this.graphGen;
 
@@ -362,8 +412,8 @@ export class GitBridge {
         totalColumns: 1,
         hasMore: false,
         nextSkip: this.loaded.length,
-        refFilter: this.refFilter,
-        refList: this.refList,
+        ...this.filterFields(),
+        ...this.refListFor(opts),
       };
     }
     const before = fresh ? 0 : this.loaded.length;
@@ -374,10 +424,10 @@ export class GitBridge {
     const allRows = buildWireRows({
       rows: layout.rows,
       records: this.records,
-      // Chips follow the filter: a ref the graph is not built around draws no
-      // chip (the current branch always does). commit:details keeps reading
-      // the full map — it describes the commit.
-      refsBySha: chipRefsUnderFilter(this.refsBySha, this.refFilter),
+      // Chips follow the filter: a ref the graph is not walked from draws no
+      // chip — the current branch included, unless it is ticked.
+      // commit:details keeps reading the full map — it describes the commit.
+      refsBySha: chipRefsUnderFilter(this.refsBySha, this.walk.refs),
     });
 
     return {
@@ -386,9 +436,32 @@ export class GitBridge {
       totalColumns: layout.totalColumns,
       hasMore,
       nextSkip: this.loaded.length,
-      refFilter: this.refFilter,
-      refList: this.refList,
+      ...this.filterFields(),
+      ...this.refListFor(opts),
     };
+  }
+
+  /** What a page says about the filter: the full names its rows were walked
+   *  from (the picker ticks these) and the preset they stand for, if any. */
+  private filterFields(): Pick<GraphPage, "refFilter" | "refPreset"> {
+    return {
+      refFilter: this.walk.refs,
+      ...(this.walk.preset ? { refPreset: this.walk.preset } : {}),
+    };
+  }
+
+  /**
+   * The picker's list for this page — only when the caller does not already
+   * hold it (issue #30). It is every branch and tag, about a megabyte on a
+   * repository with ten thousand tags, and it crossed IPC with every page of
+   * every load. The caller says which list it has (`refListSig`, what it last
+   * handed the graph element), so a reloaded renderer — which holds none —
+   * always gets one, whatever this process sent before.
+   */
+  private refListFor(opts: GraphLoadRequest): Pick<GraphPage, "refList" | "refListSig"> {
+    return opts.refListSig === this.refListSig
+      ? { refListSig: this.refListSig }
+      : { refList: this.refList, refListSig: this.refListSig };
   }
 
   /**
@@ -398,10 +471,11 @@ export class GitBridge {
    */
   async graphReaches(sha: string): Promise<{ reached: boolean }> {
     const ctx = this.ctx();
-    if (!ctx || !this.refFilter) {
+    const walk = this.walk;
+    if (!ctx || !walk.refs) {
       return { reached: true };
     }
-    return { reached: await ctx.log.walkReaches(sha, this.refFilter) };
+    return { reached: await ctx.log.walkReaches(sha, walk.refs, { head: walk.head }) };
   }
 
   private async readPage(
@@ -414,7 +488,8 @@ export class GitBridge {
       revRange: "--all",
       // The branch filter: every page of one load walks the same ticked set,
       // so skip-based paging stays consistent across the load.
-      refs: this.refFilter ?? undefined,
+      refs: this.walk.refs ?? undefined,
+      head: this.walk.head,
       maxCount,
       skip,
     })) {
@@ -436,6 +511,7 @@ export class GitBridge {
     this.refs = refs;
     this.refsListed = refs.length > 0;
     this.refList = refEntries(refs);
+    this.refListSig = refListSignature(this.refList);
     for (const ref of refs) {
       if (ref.type === "stash") {
         continue;
@@ -450,6 +526,17 @@ export class GitBridge {
         this.currentHeadSha = ref.sha;
       }
     }
+    if (!this.currentHeadSha) {
+      // No branch is current: HEAD is detached (or unborn). It still sits on
+      // a commit, and that is what a page's `head` means — the graph's "you
+      // are here" and its header's "Detached HEAD at …". The extension had
+      // the same gap (its header read "no commits yet" over the history).
+      try {
+        this.currentHeadSha = await ctx.refs.headCommit();
+      } catch {
+        /* no HEAD to point at */
+      }
+    }
   }
 
   // ── Refs / HEAD ────────────────────────────────────────────────────────────
@@ -457,15 +544,15 @@ export class GitBridge {
   /** Branches containing `sha`. Best-effort: never throws at the renderer. */
   async refsContains(
     sha: string,
-  ): Promise<{ branches: string[]; truncated: boolean }> {
+  ): Promise<{ branches: string[]; refs: string[]; truncated: boolean }> {
     const ctx = this.ctx();
     if (!ctx) {
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
     try {
       return await ctx.refs.containingBranches(sha);
     } catch {
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
   }
 
@@ -507,9 +594,12 @@ export class GitBridge {
     }
     try {
       const h = await ctx.refs.getHead();
+      // The plain name ("release"), never git's "heads/release" beside a tag
+      // of that name: the top bar shows it, and the PR composer and the
+      // workflow dispatch hand it to GitHub, which has no "heads/" anything.
       return h.detached
         ? { detached: true, sha: h.sha }
-        : { detached: false, branch: h.branch, sha: h.sha };
+        : { detached: false, branch: headBranchName(h), sha: h.sha };
     } catch {
       return undefined;
     }
@@ -530,7 +620,10 @@ export class GitBridge {
     if (!ctx || !safeArg(sha)) return { branches: [], onCurrent: false };
     const [contains, head] = await Promise.all([
       ctx.process.run(["branch", "--contains", sha, "--format=%(refname)"]),
-      ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
+      // FULL, like the list it is compared with: `--short` is "heads/release"
+      // beside a tag "release", which never equalled the list's "release", so
+      // the current branch was not recognised as containing the commit.
+      ctx.process.run(["symbolic-ref", "--quiet", "HEAD"]),
     ]);
     if (contains.code !== 0) return { branches: [], onCurrent: false };
     const branches = contains.stdout
@@ -538,7 +631,8 @@ export class GitBridge {
       .map((l) => l.trim())
       .filter((l) => l.startsWith("refs/heads/"))
       .map((l) => l.slice("refs/heads/".length));
-    const current = head.code === 0 ? head.stdout.trim() || undefined : undefined;
+    const headRef = head.code === 0 ? head.stdout.trim() : "";
+    const current = headRef.startsWith("refs/heads/") ? headRef.slice("refs/heads/".length) || undefined : undefined;
     const onCurrent = !!current && branches.includes(current);
     // HEAD's own branch first — it is the one the reader is oriented by.
     branches.sort((a, b) => (a === current ? -1 : b === current ? 1 : a.localeCompare(b)));
@@ -566,15 +660,12 @@ export class GitBridge {
     } catch {
       files = [];
     }
-    const refs: WireRef[] = (this.refsBySha.get(sha) ?? [])
-      .filter((r) => r.type !== "stash")
-      .map((r): WireRef => {
-        if (r.type === "tag") return { kind: "tag", name: r.name };
-        if (r.type === "remote") return { kind: "remoteHead", name: r.name };
-        return r.isCurrent
-          ? { kind: "currentHead", name: r.name }
-          : { kind: "head", name: r.name };
-      });
+    // The graph row's own chips (wireRefs), full names and all (issue #30's
+    // follow-up): the pane labels its chips by the full name, and its chip
+    // menu resolves them through the graph's ref list. A copy of that mapping
+    // kept refs/remotes/origin/HEAD, which the graph draws no chip for and the
+    // list leaves out — an "origin/HEAD" chip whose menu could never act.
+    const refs: WireRef[] = wireRefs(this.refsBySha.get(sha));
     const hasRemote = [...this.refsBySha.values()].some((list) =>
       list.some((r) => r.type === "remote"),
     );
@@ -1781,7 +1872,8 @@ export class GitBridge {
     let branch: string | undefined;
     try {
       const h = await ctx.refs.getHead();
-      branch = h.detached ? undefined : h.branch;
+      // Shown in the sync widget: the plain name, never "heads/release".
+      branch = headBranchName(h);
     } catch {
       branch = undefined;
     }
@@ -1953,13 +2045,20 @@ export class GitBridge {
    *  a non-fast-forward and the currently checked-out branch, so the worktree
    *  is never touched.
    *
-   *  Delegates to `SyncOps.pullFastForward`, which is the SAME op the extension
-   *  calls. This arm used to spell it out again and split `%(upstream:short)`
-   *  on its first slash — so a remote named with one ("team/eu") was read as a
-   *  remote called "team", which does not exist. That bug was fixed in
-   *  git-service and left standing here, forty lines from its own call site. */
-  async branchPullFf(name: string): Promise<CommitActionResult> {
-    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+   *  By FULL name: "heads/release" (the short name beside a tag "release")
+   *  made this `fetch origin release:heads/release` — which CREATES a branch
+   *  called heads/release and leaves the real one where it was.
+   *
+   *  Delegates to `SyncOps.pullFastForward` with the name under refs/heads/,
+   *  which is the SAME op the extension calls. It reads the upstream through
+   *  for-each-ref's own remote atoms and writes both sides of the refspec
+   *  fully qualified — this arm used to spell it out again and split
+   *  `%(upstream:short)` on its first slash, so a remote named with one
+   *  ("team/eu") was read as a remote called "team", and "remotes/origin/x"
+   *  (beside a local branch "origin/x") as a remote called "remotes". */
+  async branchPullFf(fullName: string): Promise<CommitActionResult> {
+    const name = localBranchOf(fullName);
+    if (!name) return notABranch("pull into");
     return this.staged((ctx) => ctx.sync.pullFastForward(name));
   }
 
@@ -1986,21 +2085,21 @@ export class GitBridge {
     );
   }
 
-  async branchPush(name: string): Promise<CommitActionResult> {
-    if (!safeArg(name)) return UNSAFE_REF_RESULT;
+  async branchPush(fullName: string): Promise<CommitActionResult> {
+    // By FULL name: SyncOps qualifies the name it is handed as refs/heads/<name>,
+    // and the short "heads/release" became refs/heads/heads/release — nothing.
+    const name = localBranchOf(fullName);
+    if (!name) return notABranch("push");
     return this.staged(async (ctx) => {
-      const up = await ctx.process.run([
-        "for-each-ref",
-        "--format=%(upstream:short)",
-        `refs/heads/${name}`,
-      ]);
-      const upstream = up.code === 0 ? up.stdout.trim() : "";
-      const slash = upstream.indexOf("/");
-      if (slash > 0) {
+      // The upstream by its FULL name, as branchPullFf reads it: the short one
+      // is "remotes/origin/x" beside a local branch called "origin/x".
+      const up = await ctx.process.run(["for-each-ref", "--format=%(upstream)", fullName]);
+      const tracked = up.code === 0 ? remoteBranchOf(up.stdout.trim()) : undefined;
+      if (tracked) {
         // Tracked: push it to the remote it already tracks.
         // push-force-reviewed: a named OTHER branch, not the checked-out
         // one; see the extension's branchActions for the same reasoning.
-        return ctx.sync.push({ remote: upstream.slice(0, slash), branch: name });
+        return ctx.sync.push({ remote: tracked.remote, branch: name });
       }
       // Unpublished: pick a remote and set upstream. Prefer origin, else the
       // only remote; with several non-origin remotes there is no safe guess.
@@ -2062,15 +2161,17 @@ export class GitBridge {
       /* fall through */
     }
     try {
-      const h = await ctx.refs.getHead();
-      return h.detached ? undefined : h.branch;
+      // The name under refs/heads/ — git's `--short` is "heads/x" beside a
+      // tag "x", and this is compared with names and qualified as refs/heads/.
+      return headBranchName(await ctx.refs.getHead());
     } catch {
       return undefined;
     }
   }
 
   /**
-   * How far each local branch is ahead of and behind `base`.
+   * How far each local branch is ahead of and behind the local branch `base`
+   * (a name under refs/heads/), keyed by each branch's FULL name.
    *
    * Asked for in its own `for-each-ref` because `%(ahead-behind:)` needs git
    * >= 2.41: an older git does not recognise the atom and fails the WHOLE read,
@@ -2090,9 +2191,13 @@ export class GitBridge {
       // spawn THROW — a throw this function's catch would swallow whole. The
       // repo's scan flags that shape by name, and it is right to.
       const US = "\x1f";
+      // Measured against the BRANCH, by its full name, and keyed by each
+      // branch's full name. A bare "main" is a revision, and git resolves a
+      // revision to refs/tags/ before refs/heads/: beside a tag called
+      // "main" every branch's "merged" was measured against the TAG.
       const r = await ctx.process.run([
         "for-each-ref",
-        `--format=%(refname:short)${US}%(ahead-behind:${base})`,
+        `--format=%(refname)${US}%(ahead-behind:refs/heads/${base})`,
         "refs/heads",
       ]);
       if (r.code !== 0) return out;
@@ -2129,8 +2234,16 @@ export class GitBridge {
     // blank column — which would take the branch list down with it — so it is
     // asked for separately and the result is optional.
     const base = await this.defaultBranch(ctx);
+    // %(refname) rides beside the short name: the short one is for reading,
+    // and it is "heads/release" the moment a tag shares the name — so a
+    // checkout (or anything else that writes) goes by the full one. First, so
+    // the free-text subject stays the last field.
+    // %(upstream) beside %(upstream:short) for the same reason: the short one
+    // is "remotes/origin/x" beside a local branch called "origin/x", and
+    // everything that SPLITS an upstream into remote and branch goes by the
+    // full one (upstreamRef).
     const fmt =
-      `%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}` +
+      `%(refname)${SEP}%(refname:short)${SEP}%(HEAD)${SEP}%(upstream:short)${SEP}%(upstream)${SEP}` +
       `%(upstream:track)${SEP}%(committerdate:unix)${SEP}%(authorname)${SEP}%(authoremail)${SEP}%(contents:subject)`;
     // No catch-and-return-[]: `for-each-ref` exits 0 with no output in a repo
     // that genuinely has no branches, so a non-zero exit means the read FAILED
@@ -2146,15 +2259,20 @@ export class GitBridge {
     const branches: BranchInfo[] = [];
     for (const line of out.split("\n")) {
       if (!line.trim()) continue;
-      const [name, head, upstream, track, date, authorName, authorEmail, subject] = line.split(SEP);
+      const [fullName, name, head, upstream, upstreamRef, track, date, authorName, authorEmail, subject] =
+        line.split(SEP);
       const { ahead, behind, gone } = parseTrack(track ?? "");
-      const vs = base ? divergence.get(name) : undefined;
+      const vs = base ? divergence.get(fullName) : undefined;
       branches.push({
         ...(vs ? { aheadDefault: vs.ahead, behindDefault: vs.behind, merged: vs.ahead === 0 } : {}),
-        ...(base && name === base ? { isDefault: true } : {}),
+        // By the name under refs/heads/: beside a tag "main" git lists the
+        // default branch as "heads/main", which never equalled "main".
+        ...(base && branchNameOf(fullName) === base ? { isDefault: true } : {}),
         name,
+        fullName,
         current: head === "*",
         upstream: upstream || undefined,
+        ...(upstreamRef ? { upstreamRef } : {}),
         ahead,
         behind,
         ...(gone ? { gone: true } : {}),
@@ -2290,7 +2408,10 @@ export class GitBridge {
             "--reverse",
             `--format=%aN${US}%aE`,
             "--max-count=200",
-            `${base}..${name}`,
+            // The base BRANCH by its full name — a bare "main" is the tag
+            // beside a tag of that name (see divergenceFrom). `name` is
+            // %(refname:short), unambiguous by construction.
+            `refs/heads/${base}..${name}`,
             "--",
           ]);
           if (r.code !== 0) return;
@@ -2318,9 +2439,12 @@ export class GitBridge {
   }
 
   async branchDelete(
-    req: { name: string; force?: boolean },
+    req: { fullName: string; force?: boolean },
   ): Promise<CommitActionResult & { was?: string; upstream?: string }> {
-    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
+    // By FULL name — see the branch ops below. `git branch -d heads/release`
+    // (the short name beside a tag "release") finds no branch at all.
+    const name = localBranchOf(req.fullName);
+    if (!name) return notABranch("delete");
     // Read the tip and the tracking config FIRST. After the delete both are
     // gone, and an undo that re-creates the branch at HEAD instead of where it
     // was is not an undo — it is a new branch wearing the old name.
@@ -2328,12 +2452,12 @@ export class GitBridge {
     let was: string | undefined;
     let upstream: string | undefined;
     if (ctx) {
-      const tip = await ctx.process.run(["rev-parse", "--verify", `refs/heads/${req.name}`]);
+      const tip = await ctx.process.run(["rev-parse", "--verify", req.fullName]);
       if (tip.code === 0) was = tip.stdout.trim() || undefined;
-      const up = await ctx.branches.upstreamOf(req.name);
+      const up = await ctx.branches.upstreamOf(name);
       if (up) upstream = `${up.remote}/${up.branch}`;
     }
-    const r = await this.staged((c) => c.branches.delete(req.name, { force: req.force }));
+    const r = await this.staged((c) => c.branches.delete(name, { force: req.force }));
     return r.ok ? { ...r, was, upstream } : r;
   }
 
@@ -2369,39 +2493,52 @@ export class GitBridge {
     req: CommitActionRequest,
   ): Promise<CommitActionResult> {
     const name = req.name;
+    // A branch whose NAME starts with "-" is refused — git would read it as an
+    // option, and `git checkout -f` throws away every uncommitted change. It
+    // was refused as "That value isn't a valid git reference", about a branch
+    // the list had just shown. Say what is true, and hand the renderer what it
+    // needs to offer the rename (by the FULL name) that fixes it.
+    const refusal = req.fullName !== undefined && safePath(req.fullName) ? optionLikeCheckout(req.fullName) : undefined;
+    if (refusal && req.fullName) {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: refusal.message,
+        optionLike: { fullName: req.fullName, name: refusal.name, local: refusal.local },
+      };
+    }
     if (!name || !safeArg(name)) {
       return UNSAFE_REF_RESULT;
     }
     if (req.fullName !== undefined && !safeArg(req.fullName)) {
       return UNSAFE_REF_RESULT;
     }
+    // By the FULL name, from every door. The planner reads the namespace and
+    // checks a branch out by its name under refs/heads/, where `name` — git's
+    // short form — is "heads/release" beside a tag of that name, and
+    // `git checkout heads/release` DETACHES at the branch tip while reporting
+    // success. The Branches view, the branch switcher and the ref page used to
+    // send the short name alone and take exactly that path; a request without
+    // a full name is refused now rather than guessed at, so a door that forgets
+    // it fails loudly instead of detaching quietly.
+    if (req.fullName === undefined) {
+      return {
+        ok: false,
+        changed: false,
+        message: `Couldn't tell which ${name} to check out — refresh and try again.`,
+      };
+    }
+    const fullName = req.fullName;
     return this.serialize(async () => {
-      // By the FULL name when the door sent one (the graph's menus do): the
-      // planner reads the namespace and checks a branch out by its name under
-      // refs/heads/, where `name` — git's short form — is "heads/release"
-      // beside a tag of that name, and `git checkout heads/release` detaches
-      // at the branch tip. The Branches view still sends the short name alone,
-      // and keeps the arms it always had.
-      let args: string[];
-      if (req.fullName !== undefined) {
-        const plan = await planRefCheckout(ctx.process, req.fullName);
-        if (!plan) {
-          return UNSAFE_REF_RESULT;
-        }
-        args = plan.args;
-      } else {
-        args =
-          req.refKind === "remote"
-            ? (await planRemoteCheckout(ctx.process, name)).args
-            : req.refKind === "tag"
-              ? // A tag is a fixed point, so this one really does detach.
-                ["checkout", "--detach", name]
-              : ["checkout", name];
+      const plan = await planRefCheckout(ctx.process, fullName);
+      if (!plan) {
+        return UNSAFE_REF_RESULT;
       }
       // Through the one door for commit-applying commands: a switch refused
       // over uncommitted work in its way answers which files, `expected`, and
       // the renderer offers Stash & Retry.
-      const applied = await applyForDoor(ctx, checkoutOp(args), req.stashFirst);
+      const applied = await applyForDoor(ctx, checkoutOp(plan.args), req.stashFirst);
       if ("answer" in applied) return applied.answer;
       const r = applied.result;
       const withNote = applied.stashNote ? { stashNote: applied.stashNote } : {};
@@ -2621,39 +2758,58 @@ export class GitBridge {
 
   // ── Branch ops (merge / rebase / rename / upstream) ─────────────────────────
 
-  /**
-   * Merge and rebase run through the one door for commit-applying commands
-   * (main/inTheWay.ts): refused over the user's uncommitted work, they answer
-   * which files are in the way, `expected`, and the renderer offers Stash &
-   * Retry — they used to answer git's "would be overwritten by merge" /
-   * "cannot rebase: You have unstaged changes" in red, and file it.
-   */
-  async branchMerge(req: { name: string; noFf?: boolean; stashFirst?: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name)) return UNSAFE_REF_RESULT;
-    // The argv BranchOps.merge runs.
-    const args = ["merge", ...(req.noFf ? ["--no-ff"] : []), req.name];
+  // Every branch op below takes the branch by its FULL name (issue #30's
+  // follow-up), and refuses a request without one — the same contract as
+  // checkout-ref: a door that forgets it fails loudly instead of acting on
+  // the wrong ref. The renderer used to send `%(refname:short)`, which beside
+  // a tag of the same name is "heads/release": `git branch -m/-d` find no
+  // such branch, `git merge` recorded "Merge branch 'heads/release'", and a
+  // bare "release" would have been the TAG.
+  //
+  // Merge and rebase run through the one door for commit-applying commands
+  // (main/inTheWay.ts): refused over the user's uncommitted work, they answer
+  // which files are in the way, `expected`, and the renderer offers Stash &
+  // Retry — they used to answer git's "would be overwritten by merge" /
+  // "cannot rebase: You have unstaged changes" in red, and file it.
+
+  async branchMerge(req: { fullName: string; noFf?: boolean; stashFirst?: string }): Promise<CommitActionResult> {
+    if (!isFullRef(req.fullName, ["heads", "remotes"])) return notABranch("merge");
+    const fullName = req.fullName;
+    return this.staged(async (ctx) => {
+      // The argv BranchOps.merge runs — which records "Merge branch
+      // 'release'" for a full name.
+      const args = await ctx.branches.mergeArgs(fullName, { noFf: req.noFf });
+      return stagedFrom(
+        await applyForDoor(ctx, { kind: "merge", target: fullName, noFf: req.noFf, args }, req.stashFirst),
+      );
+    });
+  }
+
+  async branchRebase(req: { fullName: string; stashFirst?: string }): Promise<CommitActionResult> {
+    if (!isFullRef(req.fullName, ["heads", "remotes", "tags"])) return notABranch("rebase onto");
+    const onto = req.fullName;
     return this.staged(async (ctx) =>
-      stagedFrom(await applyForDoor(ctx, { kind: "merge", target: req.name, noFf: req.noFf, args }, req.stashFirst)),
+      // The argv BranchOps.rebaseOnto runs.
+      stagedFrom(await applyForDoor(ctx, { kind: "rebase", onto, args: ["rebase", onto] }, req.stashFirst)),
     );
   }
 
-  async branchRebase(req: { onto: string; stashFirst?: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.onto)) return UNSAFE_REF_RESULT;
-    return this.staged(async (ctx) =>
-      stagedFrom(
-        await applyForDoor(ctx, { kind: "rebase", onto: req.onto, args: ["rebase", req.onto] }, req.stashFirst),
-      ),
-    );
+  async branchRename(req: { fullName: string; to: string }): Promise<CommitActionResult> {
+    const from = localBranchOf(req.fullName);
+    if (!from) return notABranch("rename");
+    // `to` is a NEW name, typed: one that starts with "-" is still refused.
+    // `from` may be one (a branch update-ref made) — BranchOps puts it after
+    // `--`, and renaming such a branch away is exactly what a refused
+    // checkout offers (see checkoutRef).
+    if (!safeArg(req.to)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.rename(from, req.to));
   }
 
-  async branchRename(req: { from: string; to: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.from) || !safeArg(req.to)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.rename(req.from, req.to));
-  }
-
-  async branchSetUpstream(req: { name: string; upstream: string }): Promise<CommitActionResult> {
-    if (!safeArg(req.name) || !safeArg(req.upstream)) return UNSAFE_REF_RESULT;
-    return this.staged((ctx) => ctx.branches.setUpstream(req.name, req.upstream));
+  async branchSetUpstream(req: { fullName: string; upstream: string }): Promise<CommitActionResult> {
+    const name = localBranchOf(req.fullName);
+    if (!name) return notABranch("set the upstream of");
+    if (!safeArg(req.upstream)) return UNSAFE_REF_RESULT;
+    return this.staged((ctx) => ctx.branches.setUpstream(name, req.upstream));
   }
 
   async branchDeleteRemote(

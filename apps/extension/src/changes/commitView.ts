@@ -4,6 +4,7 @@ import { pushUnseenMessage, type PullResult } from "@gitstudio/git-service/SyncO
 import { askPullMode, settlePullDetached, settlePullStop, settlePushUnseen } from "../git/pullMode";
 import { applyOrAsk, checkoutOp, pullOrAsk } from "../git/inTheWay";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
+import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
@@ -1374,8 +1375,12 @@ export class CommitViewProvider
         ahead: r.ahead,
         behind: r.behind,
       }));
+    // Not a remote's HEAD pointer. git shortens refs/remotes/origin/HEAD to
+    // the bare remote name ("origin"), so the "/HEAD" test never matched it:
+    // the menu listed a remote branch called "origin" whose checkout could
+    // only fail. `symref` is what marks it (the Branches tree's twin).
     const remote = refs
-      .filter((r) => r.type === "remote" && !r.name.endsWith("/HEAD"))
+      .filter((r) => r.type === "remote" && !r.symref && !r.name.endsWith("/HEAD"))
       .map((r) => r.name);
     // Tags sorted so "newest" (highest version) floats up — a numeric-aware
     // descending compare puts v1.10 above v1.9 and v2 above v1.
@@ -1701,7 +1706,8 @@ export class CommitViewProvider
     files: CompareFile[];
   } | null> {
     const head = await entry.ctx.refs.getHead();
-    const branch = head.detached ? head.sha.slice(0, 12) : (head.branch ?? "HEAD");
+    // Named by the part under refs/heads/ — never git's "heads/release".
+    const branch = head.detached ? head.sha.slice(0, 12) : (headBranchName(head) ?? "HEAD");
     const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
     let remotes: Array<{ name: string }> = [];
     try {
@@ -1906,7 +1912,9 @@ export class CommitViewProvider
         const remotes = await entry.ctx.remotes.list();
         const remote =
           remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
-        const branch = head.branch;
+        // Published as refs/heads/<branch> (SyncOps) — the name under
+        // refs/heads/, not "heads/release", which named nothing there.
+        const branch = headBranchName(head);
         if (!remote || !branch) {
           result = { ok: false, stderr: "No remote is configured to publish to." };
         } else {

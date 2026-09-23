@@ -80,7 +80,13 @@ export interface GitRef {
 
 export interface RepoHead {
   detached: boolean;
+  /** git's `symbolic-ref --short`: shortest UNAMBIGUOUS, so "heads/release"
+   *  beside a tag "release" — a revision git resolves, not a name to show or
+   *  to build a refspec from. For those, see `fullName` (and git-service's
+   *  headBranchName). */
   branch?: string;
+  /** The branch's full name, "refs/heads/release", when HEAD is on one. */
+  fullName?: string;
   sha: string;
 }
 

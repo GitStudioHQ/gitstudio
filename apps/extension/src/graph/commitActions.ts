@@ -5,7 +5,9 @@ import { ErrorReporter } from "../reporting/errorReporter";
 import { pausedForUser } from "../git/pausedForUser";
 import { applyOrAsk, checkoutOp } from "../git/inTheWay";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
-import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
+import { explainOptionLikeCheckout } from "../views/optionLikeBranch";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
 import { ellipsizeMiddle, resolveCheckoutTarget, type MenuRef } from "./checkoutTarget";
 
@@ -66,6 +68,8 @@ export function refActionId(fullName: string): string {
  * rides in the id, so this needs no protocol change.
  */
 export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
+  // Labelled by the full name shorn (refLabel) — "Checkout release", never
+  // git's "heads/release" beside a tag of that name, as the chips say it.
   const items: GraphMenuItem[] = [];
   for (const ref of refs) {
     // Already on it — offering to switch to where you are is noise.
@@ -75,7 +79,7 @@ export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
     if (ref.kind === "head") {
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${ref.name}`,
+        label: `Checkout ${refLabel(ref.fullName)}`,
         icon: "git-branch",
       });
     } else if (ref.kind === "remoteHead") {
@@ -86,14 +90,14 @@ export function refMenuItems(refs: readonly MenuRef[]): GraphMenuItem[] {
       // is for. The tag arm below keeps its ellipsis because it still asks.
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${ref.name}`,
+        label: `Checkout ${refLabel(ref.fullName)}`,
         icon: "cloud",
       });
     } else {
       // Ellipsis: checking out a tag confirms first, because it detaches HEAD.
       items.push({
         id: refActionId(ref.fullName),
-        label: `Checkout ${ref.name}…`,
+        label: `Checkout ${refLabel(ref.fullName)}…`,
         icon: "tag",
       });
     }
@@ -231,6 +235,13 @@ async function checkoutRef(
   ctx: GitContext,
   undo?: UndoRunner,
 ): Promise<boolean> {
+  // A branch whose name starts with "-" is refused by the planner — git
+  // would read it as an option — and this arm used to return in SILENCE,
+  // from both the row's menu and the chip's. Say why, and offer the rename.
+  const refusal = optionLikeCheckout(fullName);
+  if (refusal) {
+    return explainOptionLikeCheckout(ctx, refusal, fullName, () => undefined);
+  }
   const plan = await planRefCheckout(ctx.process, fullName);
   if (!plan) {
     return false;
@@ -310,10 +321,23 @@ async function checkout(
     if (picked === DETACH_CHOICE) {
       return detachAt(ctx, commit, undo);
     }
-    // Choosing a name IS the confirmation — do not ask twice.
-    return withUndo(undo, `Checkout ${picked}`, () =>
-      runCheckout(ctx, ["checkout", picked], `Switched to ${picked}`),
-    );
+    // Choosing a name IS the confirmation — do not ask twice. The switch goes
+    // through the ref arm, by the branch's FULL name, never `git checkout
+    // <picked>` bare: a branch called "-f" (update-ref and a fetch make one;
+    // porcelain never would) made that `git checkout -f`, which threw away
+    // every uncommitted change, stayed put, and toasted "Switched to -f". The
+    // arm refuses an option-like name, says why and offers the rename, and
+    // plans every other branch exactly as this did (`git checkout <name>`).
+    const fullName = commit.refs?.find(
+      (r) => r.kind === "head" && r.fullName === `refs/heads/${picked}`,
+    )?.fullName;
+    if (!fullName) {
+      void vscode.window.showErrorMessage(
+        `GitStudio: ${picked} is not a branch on this commit any more — refresh and try again.`,
+      );
+      return false;
+    }
+    return checkoutRef(fullName, ctx, undo);
   }
 
   return detachHere(ctx, commit, undo);

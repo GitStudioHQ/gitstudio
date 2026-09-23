@@ -309,6 +309,32 @@
     if (m) { m.merged = true; m.aheadDefault = 0; m.behindDefault = 0; }
   }
 
+  // ?dashbranch=1 → a branch named "-f", which porcelain never makes but
+  // `git update-ref refs/heads/-f` does. Its checkout is refused (git would
+  // read "-f" as an option) — and the refusal has to say THAT, and offer the
+  // rename, rather than "That value isn't a valid git reference".
+  if (params.get("dashbranch")) {
+    branches.push({ name: "-f", current: false, aheadDefault: 1, behindDefault: 0, upstream: undefined, ahead: 0, behind: 0, subject: "made by update-ref", date: S(3) });
+  }
+
+  // ?collide=1 → git's SHORT names stop being names (issue #30's follow-up),
+  // with the values git really prints: a tag "main" beside the default branch
+  // (listed "heads/main"), a branch and a tag "release" ("heads/release" /
+  // "tags/release"), and a LOCAL branch "origin/sl" beside the remote-tracking
+  // origin/sl ("heads/origin/sl" / "remotes/origin/sl"), which a local "sl"
+  // tracks. HEAD is on a feature branch, so main is the default and not the
+  // current one. Every label must still be the ref's own name.
+  if (params.get("collide")) {
+    for (const b of branches) b.current = b.name === "redesign/issues-detail";
+    const m = branches.find((b) => b.name === "main");
+    if (m) Object.assign(m, { name: "heads/main", fullName: "refs/heads/main", upstreamRef: "refs/remotes/origin/main" });
+    branches.push(
+      { name: "heads/release", fullName: "refs/heads/release", current: false, aheadDefault: 1, behindDefault: 0, upstream: "origin/release", upstreamRef: "refs/remotes/origin/release", ahead: 0, behind: 0, subject: "release work", date: S(5) },
+      { name: "sl", fullName: "refs/heads/sl", current: false, aheadDefault: 1, behindDefault: 0, upstream: "remotes/origin/sl", upstreamRef: "refs/remotes/origin/sl", ahead: 0, behind: 1, subject: "sl one", date: S(6) },
+      { name: "heads/origin/sl", fullName: "refs/heads/origin/sl", current: false, aheadDefault: 2, behindDefault: 0, upstream: undefined, ahead: 0, behind: 0, subject: "a branch named like a remote one", date: S(7) },
+    );
+  }
+
   const workflows = [
     { id: 1, name: "Desktop CI", path: ".github/workflows/desktop.yml", state: "active", htmlUrl: "" },
     { id: 2, name: "Extension CI", path: ".github/workflows/extension.yml", state: "active", htmlUrl: "" },
@@ -435,7 +461,9 @@
       ...branches.map((b) => ({
         type: "head",
         name: b.name,
-        fullName: "refs/heads/" + b.name,
+        // A branch git lists under a disambiguated short name (?collide=1)
+        // carries its own full name; every other one is refs/heads/<name>.
+        fullName: b.fullName ?? "refs/heads/" + b.name,
         sha: "abc123",
         isCurrent: b.current,
         upstream: b.upstream,
@@ -621,7 +649,12 @@
     // second lane still open, ref chips on the tips, and a tagged release.
     "graph:load": (() => {
       const seg = (from, to, color) => ({ fromColumn: from, toColumn: to, color });
-      const ref = (name, kind) => ({ name, kind });
+      // As wireRefs sends them: git's short name AND the full name.
+      const ref = (name, kind) => ({
+        name,
+        kind,
+        fullName: kind === "tag" ? "refs/tags/" + name : kind === "remoteHead" ? "refs/remotes/" + name : "refs/heads/" + name,
+      });
       const row = (o) => ({
         sha: o.sha,
         shortSha: o.sha.slice(0, 7),
@@ -669,6 +702,18 @@
     "ssh:keys": [],
     // (the real fixture is above — an empty array here shadowed it)
   };
+
+  // ?collide=1 (see the branches above): the refs git lists beside them, under
+  // the short names git gives them — the tags "main" and "release", the
+  // remote-tracking origin/release, and origin/sl beside a LOCAL "origin/sl".
+  if (params.get("collide")) {
+    fixtures["refs:list"].push(
+      { type: "remote", name: "origin/release", fullName: "refs/remotes/origin/release", sha: "b1c2d3e", isCurrent: false, date: S(5), subject: "release work" },
+      { type: "remote", name: "remotes/origin/sl", fullName: "refs/remotes/origin/sl", sha: "c2d3e4f", isCurrent: false, date: S(6), subject: "sl two" },
+      { type: "tag", name: "tags/release", fullName: "refs/tags/release", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(50), subject: "an old release" },
+      { type: "tag", name: "tags/main", fullName: "refs/tags/main", sha: "9f8e7d6", isCurrent: false, objectType: "commit", date: S(60), subject: "a tag named like the default branch" },
+    );
+  }
 
   // E1: mutable settings so the Repositories card + destination sheet are
   // exercisable in the harness (Change… picks a canned folder).
@@ -1617,20 +1662,22 @@
     // The folders the Repositories view groups by. The clone folder leads and
     // cannot be untracked; ~/Code is the "I keep work here too" case; the last
     // is the one that has gone missing, which the row has to say out loud.
+    // With the full name the real read carries (%(refname)): every checkout
+    // door goes by it, and the main process refuses a checkout without one.
     // ?diverged=1 → main's row carries the same counts as the top bar, and
     // moves with them when a pull's fetch finds more (see `sync:pull`).
     "branches:list": () =>
-      params.get("diverged")
-        ? branches.map((b) =>
-            b.current
-              ? {
-                  ...b,
-                  ahead: pullState.done ? 3 : 2,
-                  behind: pullState.done ? 0 : pullState.behind(),
-                }
-              : b,
-          )
-        : branches,
+      branches
+        .map((b) => ({ fullName: "refs/heads/" + b.name, ...b }))
+        .map((b) =>
+          params.get("diverged") && b.current
+            ? {
+                ...b,
+                ahead: pullState.done ? 3 : 2,
+                behind: pullState.done ? 0 : pullState.behind(),
+              }
+            : b,
+        ),
     // The per-branch log walk's answer. feat/line-staging is the interesting
     // one: created by one person, carried by three — a number-only "last
     // commit by" could never say that.
@@ -1667,7 +1714,11 @@
     // Branch delete returns the tip it deleted, which is the whole reason the
     // delete can be undone — `?nowas=1` is the case where the tip could not be
     // read and no undo may be offered.
-    "branch:delete": ({ name }) => {
+    // Branch ops take the branch by its FULL name (issue #30's follow-up), as
+    // the main process does — and refuse one without it, as it does.
+    "branch:delete": ({ fullName }) => {
+      const name = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!name) return { ok: false, changed: false, message: "Couldn't tell which branch to delete — refresh and try again." };
       const hit = branches.find((b) => b.name === name);
       if (!hit) return { ok: false, changed: false, message: "no such branch" };
       deletedBranches.set(name, hit);
@@ -1695,8 +1746,16 @@
     },
     // A merge or a rebase from the Branches view. MUTATIONS with no fixture,
     // so both answered the fallback's {ok:true} and no refusal could happen.
-    "branch:merge": (req) => throughTheDoor(req, "merge", () => ({ ok: true, changed: true })),
-    "branch:rebase": (req) => throughTheDoor(req, "rebase", () => ({ ok: true, changed: true })),
+    // By FULL name, as main takes them — anything else is refused as main
+    // refuses it — and through the door.
+    "branch:merge": (req) =>
+      typeof req?.fullName === "string" && /^refs\/(heads|remotes)\/./.test(req.fullName)
+        ? throughTheDoor(req, "merge", () => ({ ok: true, changed: true }))
+        : { ok: false, changed: false, message: "Couldn't tell which branch to merge — refresh and try again." },
+    "branch:rebase": (req) =>
+      typeof req?.fullName === "string" && /^refs\/(heads|remotes|tags)\/./.test(req.fullName)
+        ? throughTheDoor(req, "rebase", () => ({ ok: true, changed: true }))
+        : { ok: false, changed: false, message: "Couldn't tell which branch to rebase onto — refresh and try again." },
     // Apply / pop from the stash list or a stash's page: the ref, or — sent
     // again after Stash & Retry — `{ ref, stashFirst }`.
     "stash:apply": (req) => throughTheDoor(req, "stash", () => ({ ok: true, changed: true })),
@@ -1705,7 +1764,9 @@
     "pr:checkout": (req) => throughTheDoor(req, "checkout", () => ({ ok: true, changed: true })),
     // A rename carries the tracking over UNCHANGED, exactly as `git branch -m`
     // does — which is the whole reason the reconcile question exists.
-    "branch:rename": ({ from, to }) => {
+    "branch:rename": ({ fullName, to }) => {
+      const from = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!from) return { ok: false, changed: false, message: "Couldn't tell which branch to rename — refresh and try again." };
       const hit = branches.find((b) => b.name === from);
       if (!hit) return { ok: false, changed: false, message: "no such branch" };
       if (branches.some((b) => b.name === to)) {
@@ -1721,7 +1782,20 @@
       branches = branches.map((b) => (b.name === name ? { ...b, upstream: `${remote}/${name}` } : b));
       return { ok: true, changed: true };
     },
-    "branch:setUpstream": ({ name, upstream }) => {
+    // Push / pull (merge and rebase are above, at the door): nothing to model
+    // beyond the contract — a full name is taken, anything else is refused as
+    // main refuses it.
+    "branch:push": ({ fullName }) =>
+      typeof fullName === "string" && fullName.startsWith("refs/heads/")
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to push — refresh and try again." },
+    "branch:pullFf": ({ fullName }) =>
+      typeof fullName === "string" && fullName.startsWith("refs/heads/")
+        ? { ok: true, changed: true }
+        : { ok: false, changed: false, message: "Couldn't tell which branch to pull into — refresh and try again." },
+    "branch:setUpstream": ({ fullName, upstream }) => {
+      const name = typeof fullName === "string" && fullName.startsWith("refs/heads/") ? fullName.slice(11) : undefined;
+      if (!name) return { ok: false, changed: false, message: "Couldn't tell which branch to set the upstream of — refresh and try again." };
       branches = branches.map((b) => (b.name === name ? { ...b, upstream } : b));
       return { ok: true, changed: true };
     },
@@ -2150,6 +2224,19 @@
     // A checkout, a cherry-pick or a revert goes through the door (see
     // throughTheDoor): ?intheway=1 refuses it over uncommitted work first.
     "commit:action": (req) => {
+      // What the main process answers for a branch named like an option
+      // (gitBridge.checkoutRef, via git-service's optionLikeCheckout) — before
+      // anything runs, so before the door too.
+      if (req?.action === "checkout-ref" && typeof req.fullName === "string" && /^refs\/heads\/-/.test(req.fullName)) {
+        const name = req.fullName.slice(11);
+        return {
+          ok: false,
+          changed: false,
+          expected: true,
+          message: `Git can't safely check out a branch whose name starts with "-": "${name}" would be read as an option. Rename it, then check it out.`,
+          optionLike: { fullName: req.fullName, name, local: true },
+        };
+      }
       const done = () => ({ ok: true, changed: true, message: `${req?.action ?? "action"} ok` });
       const kind = { checkout: "checkout", "checkout-ref": "checkout", "cherry-pick": "cherry-pick", revert: "revert" }[
         req?.action
@@ -2293,7 +2380,7 @@
       body:
         "The split view could not show a body, a timeline and a rail at once on\n" +
         "a 13\" screen, so all three were cropped.\n\nCloses #31.",
-      refs: [{ name: "redesign/wave-2", kind: "currentHead" }],
+      refs: [{ name: "redesign/wave-2", fullName: "refs/heads/redesign/wave-2", kind: "currentHead" }],
       files: commitFiles([
         ["M", "apps/desktop/src/renderer/views/issues.ts", 402, 260],
         ["A", "apps/desktop/src/renderer/views/common.ts", 188, 0],
@@ -2323,9 +2410,9 @@
       subject: "Merge branch 'main' into redesign/wave-2",
       body: "",
       refs: [
-        { name: "main", kind: "head" },
-        { name: "origin/main", kind: "remoteHead" },
-        { name: "desktop-v1.6.0", kind: "tag" },
+        { name: "main", fullName: "refs/heads/main", kind: "head" },
+        { name: "origin/main", fullName: "refs/remotes/origin/main", kind: "remoteHead" },
+        { name: "desktop-v1.6.0", fullName: "refs/tags/desktop-v1.6.0", kind: "tag" },
       ],
       files: commitFiles([["M", "apps/desktop/src/renderer/renderer.ts", 14, 2]]),
       hasRemote: true,
@@ -2366,17 +2453,51 @@
   };
 
   // The graph's branch filter (issue #30). `graph:load` takes `refs` — the
-  // fully-qualified refs to build the graph around, null for all, omitted for
-  // "whatever is remembered" — and answers with the filter it applied plus the
-  // FULL ref list, filtered-out refs included, or the picker could never tick
-  // one back in. The walk itself is what git does with `git log <refs> HEAD`:
-  // a row that only an unticked ref reaches is gone, and chips follow the
-  // filter (the current branch always keeps its chip). Without this the
-  // picker was a control with no fixture behind it: every tick would have
-  // answered the same ten rows and a check could pass over a dead filter.
+  // fully-qualified refs to build the graph around, or a preset's symbols
+  // ("@current" …, which follow HEAD), null for all, omitted for "whatever is
+  // remembered" — and answers with the filter it applied RESOLVED to full
+  // names, the preset it is (refPreset), plus the FULL ref list, filtered-out
+  // refs included, or the picker could never tick one back in. The walk is
+  // what git does with `git log --stdin <refs>`: HEAD joins only when detached
+  // (it is attached here, on main), a row no ticked ref reaches is gone, and
+  // chips follow exactly the ticked refs — the current branch's included.
+  // Without this the picker was a control with no fixture behind it: every
+  // tick would have answered the same ten rows and a check could pass over a
+  // dead filter.
   const graphBase = fixtures["graph:load"];
-  /** sha → the refs that ALONE reach it; every other row is reachable from HEAD. */
+  /** sha → the refs that ALONE reach it; every other row is on main's line. */
   const reachOnly = { "77aa88b9c0d1e2f3a4b5": ["refs/remotes/origin/chore/dependabot-bump"] };
+  const mainLine = new Set(graphBase.rows.map((r) => r.sha).filter((sha) => !reachOnly[sha]));
+  /** What a ref reaches when it is not on main's line: the unmerged remote
+   *  reaches its own commit and the one it forked from; the feature branch its
+   *  lane and the trunk below its fork (featureLane, below). */
+  const reachOf = (full) =>
+    full === "refs/remotes/origin/chore/dependabot-bump"
+      ? new Set(["77aa88b9c0d1e2f3a4b5", "29d0e1f2837495b2c3d4"])
+      : full === "refs/heads/redesign/issues-detail" || full === "refs/remotes/origin/redesign/issues-detail"
+        ? featureLane
+        : mainLine;
+  const PRESETS = { current: ["@current"], currentUpstream: ["@current", "@upstream"], local: ["@local"] };
+  const SYMBOLS = new Set(["@current", "@upstream", "@local"]);
+  /** host-bridge's resolveRefFilter, over the picker's list. */
+  const resolveFilter = (filter, list) => {
+    if (!filter) return null;
+    const cur = list.find((e) => e.kind === "head" && e.isCurrent);
+    const out = [];
+    const add = (f) => { if (f && !out.includes(f)) out.push(f); };
+    for (const f of filter) {
+      if (f === "@current") add(cur && cur.fullName);
+      else if (f === "@upstream") add(cur && cur.upstream);
+      else if (f === "@local") list.filter((e) => e.kind === "head").forEach((e) => add(e.fullName));
+      else add(f);
+    }
+    return out;
+  };
+  const presetOf = (filter) => {
+    if (!filter) return undefined;
+    const key = [...filter].sort().join(",");
+    return Object.keys(PRESETS).find((id) => [...PRESETS[id]].sort().join(",") === key);
+  };
   const chipFullName = (chip) =>
     chip.kind === "tag" ? "refs/tags/" + chip.name
     : chip.kind === "remoteHead" ? "refs/remotes/" + chip.name
@@ -2393,34 +2514,56 @@
         return e;
       });
   };
-  /** Remembered for the session, like the app's per-repo setting. */
+  /** Remembered for the session, like the app's per-repo setting — as
+   *  STORED: a preset stays its symbols, and is resolved per load. */
   let graphRefFilter = null;
+  /** The walk of the last load (resolved), which graph:reaches answers from. */
+  let graphWalk = null;
   window.__GS_GRAPH_LOADS = [];
   dynamic["graph:load"] = (req) => {
     const list = graphRefList();
     const known = new Set(list.map((e) => e.fullName));
     if (req && req.refs !== undefined) {
-      const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r)) : [];
+      const kept = Array.isArray(req.refs) ? req.refs.filter((r) => known.has(r) || SYMBOLS.has(r)) : [];
       graphRefFilter = kept.length ? kept : null;
     }
-    window.__GS_GRAPH_LOADS.push({ skip: req && req.skip, refs: req && req.refs, applied: graphRefFilter });
-    const filter = graphRefFilter;
-    const ticked = new Set(filter || []);
+    const walk = resolveFilter(graphRefFilter, list);
+    graphWalk = walk;
+    const refPreset = presetOf(graphRefFilter);
+    // The list rides along only when the caller does not already hold it, the
+    // way the main process does it (refListFor): the renderer says which list
+    // it has in `refListSig`. Any stable fingerprint will do here — the real
+    // one is refListSignature's hash; what matters is the comparison.
+    const sig = "shim:" + JSON.stringify(list);
+    const sendList = !req || req.refListSig !== sig;
+    window.__GS_GRAPH_LOADS.push({
+      skip: req && req.skip,
+      refs: req && req.refs,
+      applied: graphRefFilter,
+      walked: walk,
+      sentRefList: sendList,
+    });
+    const ticked = new Set(walk || []);
+    const reached = new Set();
+    for (const f of walk || []) for (const sha of reachOf(f)) reached.add(sha);
     const rows = graphBase.rows
-      .filter((r) => !filter || !reachOnly[r.sha] || reachOnly[r.sha].some((f) => ticked.has(f)))
+      .filter((r) => !walk || reached.has(r.sha))
       .map((r) => ({
         ...r,
-        refs: filter ? r.refs.filter((c) => c.kind === "currentHead" || ticked.has(chipFullName(c))) : r.refs,
+        refs: walk ? r.refs.filter((c) => ticked.has(chipFullName(c))) : r.refs,
       }));
-    return { ...graphBase, rows, nextSkip: rows.length, refFilter: filter, refList: list };
+    const out = { ...graphBase, rows, nextSkip: rows.length, refFilter: walk, refListSig: sig };
+    if (refPreset) out.refPreset = refPreset;
+    if (sendList) out.refList = list;
+    else delete out.refList;
+    return out;
   };
   // A reveal that finds no row under a filter asks whether the walk reaches
   // the commit at all, before saying why (issue #30) — the same reach model
   // as graph:load above, so the two cannot disagree about a row.
   dynamic["graph:reaches"] = (req) => {
-    const only = reachOnly[req && req.sha];
-    const ticked = new Set(graphRefFilter || []);
-    return { reached: !graphRefFilter || !only || only.some((f) => ticked.has(f)) };
+    if (!graphWalk) return { reached: true };
+    return { reached: graphWalk.some((f) => reachOf(f).has(req && req.sha)) };
   };
   // The details pane's "in N branches" row — the same reach model again, so
   // the row cannot disagree with the graph it sits beside. A row only the
@@ -2438,14 +2581,17 @@
     // the same commits as 20-char prefixes.
     const sha = String((req && req.sha) || "").slice(0, 20);
     const only = reachOnly[sha];
-    if (only) return { branches: only.map((f) => f.replace(/^refs\/remotes\//, "")), truncated: false };
-    if (!graphBase.rows.some((r) => r.sha === sha)) return { branches: [], truncated: false };
+    // `refs`: the same branches by full name, as RefProvider answers.
+    if (only) return { branches: only.map((f) => f.replace(/^refs\/(heads|remotes)\//, "")), refs: [...only], truncated: false };
+    if (!graphBase.rows.some((r) => r.sha === sha)) return { branches: [], refs: [], truncated: false };
     const onLane = featureLane.has(sha);
+    const branches = [
+      "main", ...(onLane ? ["redesign/issues-detail"] : []),
+      "origin/main", ...(onLane ? ["origin/redesign/issues-detail"] : []),
+    ];
     return {
-      branches: [
-        "main", ...(onLane ? ["redesign/issues-detail"] : []),
-        "origin/main", ...(onLane ? ["origin/redesign/issues-detail"] : []),
-      ],
+      branches,
+      refs: branches.map((b) => (b.startsWith("origin/") ? "refs/remotes/" : "refs/heads/") + b),
       truncated: false,
     };
   };

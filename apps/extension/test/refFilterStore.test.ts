@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { RefFilterStore, type RefFilterMemento } from "../src/graph/refFilterStore";
+import { RefFilterStore, realpathRoot, type RefFilterMemento } from "../src/graph/refFilterStore";
 
 // The Commit Graph's branch filter (issue #30) in the extension: one selection
 // per repository in workspaceState, shared by the bottom panel, the Commits
@@ -43,8 +43,9 @@ test("set remembers per repository, and null forgets only that repository", asyn
   assert.equal(s.get("/repo/a"), null);
   assert.deepEqual(s.get("/repo/b"), ["refs/tags/v1"]);
   // What is on disk is one record under one key — a stale root costs a line,
-  // not a key namespace.
-  assert.deepEqual(m.data, { "gitstudio.graph.refFilter": { "/repo/b": ["refs/tags/v1"] } });
+  // not a key namespace. All is kept as a null entry: a CHOICE, which the
+  // migration from an old workspace must not overwrite (see below).
+  assert.deepEqual(m.data, { "gitstudio.graph.refFilter": { "/repo/a": null, "/repo/b": ["refs/tags/v1"] } });
 });
 
 test("an empty list is the same as forgetting: a filter of nothing never exists", async () => {
@@ -99,11 +100,42 @@ test("the graph host routes a filter change through the store, and reloads from 
   const fn = text.slice(text.indexOf("private async setRefFilter("), text.indexOf("private async loadRefs("));
   assert.match(fn, /await store\.set\(active\.root, refs\);\s*return;/);
   const ctor = text.slice(text.indexOf("private constructor("), text.indexOf("// ── Webview messages"));
-  assert.match(ctor, /store\.onDidChange\(\(root\) => \{\s*if \(root === this\.repoRoot && this\.ready\) void this\.loadInitial\(\);/);
+  assert.match(ctor, /store\.onDidChange\(\(root\) => \{[\s\S]*?if \(store\.sameRepo\(root, this\.repoRoot\) && this\.ready\) void this\.loadInitial\(\);/);
   // …and loadInitial is the paging reset: skip and the accumulated rows go.
   const load = text.slice(text.indexOf("private async loadInitial("), text.indexOf("private async loadMore("));
   assert.match(load, /this\.loaded = \[\];\s*this\.nextSkip = 0;/);
-  assert.match(load, /refFilter: this\.refFilter,\s*refList: this\.refList,/);
+  // The graphInit carries the applied filter, and the picker's list through
+  // postInit — which leaves it out when the webview already has it
+  // (graphRefListCourier.test.ts).
+  assert.match(
+    load,
+    /this\.postInit\(\s*\{[\s\S]*?refFilter: this\.walk\.refs,\s*\.\.\.\(this\.walk\.preset \? \{ refPreset: this\.walk\.preset \} : \{\}\),\s*\},\s*this\.refList,\s*\);/,
+  );
+});
+
+test("the graph host walks what the filter MEANS for this load — HEAD only when detached (found on 1.13.0)", async () => {
+  // "Show only origin/x" on a busy main listed 463 rows, 372 of them main's:
+  // the walk always added HEAD, and the chips always kept the current branch.
+  // And "Current branch" was stored as the branch it was when clicked. The
+  // walk is now filterWalk's (host-bridge, unit-tested; desktop graphRefFilter
+  // .test.ts drives the same function through a real repository), resolved
+  // against THIS load's listing, and every reader takes it from there.
+  const text = await readFile(`${SRC}/graph/graphPanel.ts`, "utf8");
+  const load = text.slice(text.indexOf("private async loadInitial("), text.indexOf("private async loadMore("));
+  assert.match(load, /await this\.loadRefs\(active\);[\s\S]*?this\.walk = filterWalk\(this\.refFilter, this\.refList, this\.refs\);\s*page = await this\.readPage\(/,
+    "resolved after the listing, before the first page");
+  assert.match(load, /this\.refFilter = null;\s*this\.walk = \{ refs: null, head: true \};/, "no filter walks everything");
+  const page = text.slice(text.indexOf("private async readPage("), text.indexOf("private async setRefFilter("));
+  assert.match(page, /refs: this\.walk\.refs \?\? undefined,\s*head: this\.walk\.head,/, "every page walks the resolved refs, HEAD as the walk says");
+  const rows = text.slice(text.indexOf("private buildRows("), text.indexOf("// ── Commit interactions"));
+  assert.match(rows, /chipRefsUnderFilter\(this\.refsBySha, this\.walk\.refs\)/, "chips follow the walk, not the stored symbols");
+  assert.doesNotMatch(text, /walkReaches\(sha, filter\)|refs: this\.refFilter \?\? undefined/, "nothing reads the stored filter as if it were refs");
+  // A detached HEAD still has a commit: the header's "you are here".
+  const refs = text.slice(text.indexOf("private async loadRefs("), text.indexOf("private buildRows("));
+  assert.match(refs, /if \(!this\.currentHeadSha\) \{[\s\S]*?this\.currentHeadSha = await active\.ctx\.refs\.headCommit\(\);/);
+  // …and the WIP row hangs only off a HEAD the walk has.
+  const wip = text.slice(text.indexOf("private injectWipNode("), text.indexOf("private async pushCommitDetails("));
+  assert.match(wip, /if \(!headInWalk\(this\.walk, this\.refList, this\.records, this\.currentHeadSha\)\) \{\s*[\s\S]*?return;/);
 });
 
 test("the graph host never writes back a prune against a ref listing that failed", async () => {
@@ -139,16 +171,22 @@ test("a reveal into a filtered graph asks git before paging, and says so when th
     "a commit that is not loaded takes one path, whatever hasMore says",
   );
   const unloaded = reveal.slice(reveal.indexOf("private async revealUnloaded("));
-  const ask = unloaded.indexOf("await active.ctx.log.walkReaches(sha, filter)");
+  const ask = unloaded.indexOf("await active.ctx.log.walkReaches(sha, walk.refs, { head: walk.head })");
   const page = unloaded.indexOf("await this.pageUntilLoaded(sha)");
   assert.ok(ask > 0 && page > ask, "git is asked whether the walk reaches the commit before any page is fetched");
   assert.match(unloaded, /this\.offerAllBranches\(sha, active\.root\);/, "the hidden case is said out loud");
   const offer = unloaded.slice(unloaded.indexOf("private offerAllBranches("));
   assert.match(offer, /"Show all branches"/);
+  // Issue #30's follow-up: FIRST offer to add a branch that contains the
+  // commit — found by full name through the ref list — keeping the rest of
+  // the selection AS STORED (a preset stays its symbol); "Show all branches"
+  // second. Both go through the store's one reload path and replay the reveal.
+  assert.match(offer, /const contains = active \? await active\.ctx\.refs\.containingBranches\(sha\) : undefined;\s*add = revealCandidate\(contains\?\.refs \?\? \[\], this\.refList\);/);
+  assert.match(offer, /showInformationMessage\(\s*`GitStudio: \$\{sha\.slice\(0, 7\)\} is hidden by the branch filter\.`,\s*\.\.\.\(ADD \? \[ADD\] : \[\]\),\s*ALL,\s*\)/, "add first, all second");
   assert.match(
     offer,
-    /this\.pendingReveal = sha;\s*void this\.setRefFilter\(null\);/,
-    "taking it forgets the filter through the store's one reload path, and the reveal is replayed after the reload",
+    /this\.pendingReveal = sha;\s*void this\.setRefFilter\(pick === ADD && add \? withRef\(this\.refFilter, add\.fullName\) : null\);/,
+    "the stored filter plus the branch, or every branch — then the reveal is replayed after the reload",
   );
 });
 
@@ -167,6 +205,9 @@ test("the chip menu's checkout runs the commit menu's own ref-checkout arm, by t
   assert.match(actions, /export function refActionId\(fullName: string\): string \{\s*return `\$\{REF_ACTION\}\$\{fullName\}`;/);
   // …and the menu's own rows are built through it, so there is one id format.
   assert.equal((actions.match(/refActionId\(ref\.fullName\)/g) ?? []).length, 3);
+  // …labelled by the full name shorn, never git's "heads/release" (#30).
+  assert.equal((actions.match(/label: `Checkout \$\{refLabel\(ref\.fullName\)\}…?`/g) ?? []).length, 3);
+  assert.doesNotMatch(actions, /label: `Checkout \$\{ref\.name\}/);
   // The arm itself plans from the full name, through git-service, so the
   // desktop's graph menu means the same thing.
   assert.match(actions, /const plan = await planRefCheckout\(ctx\.process, fullName\);/);
@@ -202,10 +243,102 @@ test("a failed stats batch goes back unanswered, and the webview releases it for
   );
 });
 
-test("the store is installed before the first graph host is built", async () => {
+test("the store is installed before the first graph host is built — global, real-path keyed, migrating", async () => {
   const text = await readFile(`${SRC}/extension.ts`, "utf8");
-  const installed = text.indexOf("setRefFilterStore(new RefFilterStore(context.workspaceState))");
+  const installed = text.search(
+    /setRefFilterStore\(\s*new RefFilterStore\(context\.globalState, \{ canonical: realpathRoot, legacy: context\.workspaceState \}\),\s*\)/,
+  );
   const firstHost = text.indexOf("new CommitPanelViewProvider(");
-  assert.ok(installed > 0, "the store is installed from workspaceState");
+  assert.ok(installed > 0, "the store lives in globalState, keyed by real path, carrying workspaceState over");
   assert.ok(firstHost > installed, "…before any graph host exists to miss it");
+  assert.doesNotMatch(text, /new RefFilterStore\(context\.workspaceState\)/, "no longer per workspace");
+});
+
+// ── One repository, one selection (the follow-up to #30) ────────────────────
+
+test("the same repository reached by two roots is ONE selection — as in the desktop app", async () => {
+  // The desktop keeps its filters in app-wide settings keyed by the roots its
+  // repo manager hands out, which are realpath'd. The extension kept them in
+  // workspaceState keyed by the root as opened: a folder window and a
+  // .code-workspace window (two workspaceStates), or /tmp/r and
+  // /private/tmp/r, were separate selections for one repository.
+  const global = memento();
+  const canonical = (r: string) => r.replace(/^\/tmp\//, "/private/tmp/");
+  const inFolder = new RefFilterStore(global, { canonical });
+  const inWorkspace = new RefFilterStore(global, { canonical });
+  await inFolder.set("/tmp/r", ["refs/heads/main"]);
+  assert.deepEqual(inWorkspace.get("/private/tmp/r"), ["refs/heads/main"], "another window, another path, the same selection");
+  assert.equal(inFolder.sameRepo("/tmp/r", "/private/tmp/r"), true);
+  assert.equal(inFolder.sameRepo("/tmp/r", "/tmp/other"), false);
+  assert.deepEqual(global.data, { "gitstudio.graph.refFilter": { "/private/tmp/r": ["refs/heads/main"] } }, "stored once, under the real path");
+});
+
+test("a selection remembered per workspace is carried over once, and then forgotten there", async () => {
+  const global = memento();
+  const legacy = memento({ "gitstudio.graph.refFilter": { "/tmp/r": ["refs/heads/dev"], "/repo/b": ["@current"], "/repo/junk": "main" } });
+  const canonical = (r: string) => r.replace(/^\/tmp\//, "/private/tmp/");
+  const s = new RefFilterStore(global, { canonical, legacy });
+  await s.migrated;
+  assert.deepEqual(s.get("/private/tmp/r"), ["refs/heads/dev"], "re-keyed by its real path");
+  assert.deepEqual(s.get("/repo/b"), ["@current"], "presets travel as they are");
+  assert.equal(s.get("/repo/junk"), null, "garbage stays behind");
+  assert.equal(legacy.data["gitstudio.graph.refFilter"], undefined, "the workspace's record is gone — once means once");
+  // A second workspace opening the same repository with ITS old selection
+  // does not roll back the one already carried over (or chosen since).
+  const legacy2 = memento({ "gitstudio.graph.refFilter": { "/private/tmp/r": ["refs/heads/other"] } });
+  const s2 = new RefFilterStore(global, { canonical, legacy: legacy2 });
+  await s2.migrated;
+  assert.deepEqual(s2.get("/tmp/r"), ["refs/heads/dev"], "the global selection stands");
+  assert.equal(legacy2.data["gitstudio.graph.refFilter"], undefined);
+  // Nothing to carry: nothing written.
+  const quiet = memento();
+  const before = global.writes;
+  await new RefFilterStore(global, { canonical, legacy: quiet }).migrated;
+  assert.equal(global.writes, before);
+  assert.equal(quiet.writes, 0);
+});
+
+test("All chosen after the upgrade is not rolled back by an older workspace's selection", async () => {
+  // The migration keeps a global selection over a workspace's old one — the
+  // global one is the newer word. But All was stored as NO entry, so a
+  // repository set back to every branch after the upgrade looked like one
+  // never touched, and the next old workspace to open carried its stale
+  // selection over it: the graph narrowed itself again, in every window.
+  const global = memento();
+  const canonical = (r: string) => r;
+  const since = new RefFilterStore(global, { canonical });
+  await since.set("/repo/r", ["refs/heads/x"]);
+  await since.set("/repo/r", null);
+  const old = memento({ "gitstudio.graph.refFilter": { "/repo/r": ["refs/heads/stale"], "/repo/other": ["refs/heads/y"] } });
+  const opened = new RefFilterStore(global, { canonical, legacy: old });
+  await opened.migrated;
+  assert.equal(opened.get("/repo/r"), null, "All — the newer choice — stands");
+  assert.equal(since.get("/repo/r"), null);
+  assert.deepEqual(opened.get("/repo/other"), ["refs/heads/y"], "a repository with no newer word still carries over");
+  assert.equal(old.data["gitstudio.graph.refFilter"], undefined, "and the old record is gone, as before");
+  // A prune to nothing (every remembered ref deleted) is a choice of All too.
+  await since.set("/repo/other", [], { silent: true });
+  const again = new RefFilterStore(global, {
+    canonical,
+    legacy: memento({ "gitstudio.graph.refFilter": { "/repo/other": ["refs/heads/y"] } }),
+  });
+  await again.migrated;
+  assert.equal(again.get("/repo/other"), null);
+});
+
+test("realpathRoot resolves a symlinked root to the repository's real path", async () => {
+  const { mkdtempSync, mkdirSync, symlinkSync, realpathSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const base = mkdtempSync(join(tmpdir(), "gs-rf-"));
+  const real = join(base, "repo");
+  mkdirSync(real);
+  const link = join(base, "link");
+  symlinkSync(real, link);
+  assert.equal(realpathRoot(link), realpathSync.native(real));
+  assert.equal(realpathRoot(real), realpathSync.native(real));
+  assert.equal(realpathRoot(join(base, "gone")), join(base, "gone"), "an unresolvable root is its own key");
+  const store = new RefFilterStore(memento(), { canonical: realpathRoot });
+  await store.set(link, ["refs/heads/main"]);
+  assert.deepEqual(store.get(real), ["refs/heads/main"]);
 });

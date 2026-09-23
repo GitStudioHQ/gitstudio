@@ -61,10 +61,10 @@ test("buildWireRows tolerates a missing commit record", () => {
 
 test("wireRefs orders chips currentHead, head, remoteHead, tag", () => {
   const refs: RefLike[] = [
-    { type: "tag", name: "v1.0", isCurrent: false },
-    { type: "remote", name: "origin/main", isCurrent: false },
-    { type: "head", name: "feature", isCurrent: false },
-    { type: "head", name: "main", isCurrent: true },
+    { type: "tag", name: "v1.0", fullName: "refs/tags/v1.0", isCurrent: false },
+    { type: "remote", name: "origin/main", fullName: "refs/remotes/origin/main", isCurrent: false },
+    { type: "head", name: "feature", fullName: "refs/heads/feature", isCurrent: false },
+    { type: "head", name: "main", fullName: "refs/heads/main", isCurrent: true },
   ];
   const chips = wireRefs(refs);
   assert.deepEqual(
@@ -73,10 +73,28 @@ test("wireRefs orders chips currentHead, head, remoteHead, tag", () => {
   );
 });
 
+test("wireRefs carries every chip's FULL name — a branch beside a tag of its name is still refs/heads/<name>", () => {
+  // git lists them "heads/release" and "tags/release"; the chip is labelled,
+  // folded and resolved by the full name (issue #30's follow-up).
+  const chips = wireRefs([
+    { type: "head", name: "heads/release", fullName: "refs/heads/release", isCurrent: true },
+    { type: "remote", name: "origin/release", fullName: "refs/remotes/origin/release", isCurrent: false },
+    { type: "tag", name: "tags/release", fullName: "refs/tags/release", isCurrent: false },
+  ]);
+  assert.deepEqual(
+    chips.map((c) => [c.kind, c.name, c.fullName]),
+    [
+      ["currentHead", "heads/release", "refs/heads/release"],
+      ["remoteHead", "origin/release", "refs/remotes/origin/release"],
+      ["tag", "tags/release", "refs/tags/release"],
+    ],
+  );
+});
+
 test("wireRefs drops stash refs and handles empty input", () => {
   assert.deepEqual(wireRefs(undefined), []);
   assert.deepEqual(
-    wireRefs([{ type: "stash", name: "stash@{0}", isCurrent: false }]),
+    wireRefs([{ type: "stash", name: "stash@{0}", fullName: "refs/stash", isCurrent: false }]),
     [],
   );
 });

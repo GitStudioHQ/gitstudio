@@ -64,6 +64,19 @@ function refTypeFromFullName(fullName: string): GitRefType | undefined {
   return undefined;
 }
 
+/**
+ * The branch HEAD is on, as a person reads it and as `git branch` / a
+ * refs/heads/ refspec / `branch.<name>.*` take it: the name under refs/heads/
+ * ("release"), never git's disambiguated "heads/release" (RepoHead.branch).
+ * Undefined when detached. Falls back to `branch` for a head read without a
+ * full name.
+ */
+export function headBranchName(head: RepoHead): string | undefined {
+  if (head.detached) return undefined;
+  if (head.fullName?.startsWith("refs/heads/")) return head.fullName.slice("refs/heads/".length) || head.branch;
+  return head.branch;
+}
+
 /** Lists branches, remote branches, tags, and stashes; reads HEAD. */
 export class RefProvider {
   constructor(private proc: GitProcess) {}
@@ -162,17 +175,42 @@ export class RefProvider {
     return refs;
   }
 
+  /**
+   * The commit HEAD is on, or "" when there is none (an unborn branch).
+   *
+   * For the graph's "you are here" when no branch is current — a DETACHED
+   * head is on no branch, so a ref listing cannot say where it is. `--verify
+   * --quiet` because a bare `rev-parse HEAD` on an unborn branch prints
+   * "HEAD" back on stdout, which is not an object name.
+   */
+  async headCommit(): Promise<string> {
+    const r = await this.proc.run(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+    const sha = r.stdout.trim();
+    return r.code === 0 && /^[0-9a-f]{40,64}$/.test(sha) ? sha : "";
+  }
+
   async getHead(): Promise<RepoHead> {
-    // rev-parse and symbolic-ref are independent — run them concurrently.
-    const [shaResult, branchResult] = await Promise.all([
+    // rev-parse and the two symbolic-ref reads are independent — run them
+    // concurrently.
+    //
+    // BOTH names of the branch. `--short` is git's shortest UNAMBIGUOUS form,
+    // "heads/release" beside a tag "release": right to hand back to git as a
+    // revision (the compare panel does), wrong to show a person or to build a
+    // refs/heads/ refspec from. The full name is what those derive the plain
+    // name from (issue #30's follow-up: the status bar read "heads/release").
+    const [shaResult, branchResult, fullResult] = await Promise.all([
       this.proc.run(["rev-parse", "HEAD"]),
       this.proc.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
+      this.proc.run(["symbolic-ref", "--quiet", "HEAD"]),
     ]);
     const sha = shaResult.stdout.trim();
     const branch = branchResult.stdout.trim();
     const detached = branchResult.code !== 0 || branch.length === 0;
+    const full = fullResult.code === 0 ? fullResult.stdout.trim() : "";
 
-    return detached ? { detached: true, sha } : { detached: false, branch, sha };
+    return detached
+      ? { detached: true, sha }
+      : { detached: false, branch, sha, ...(full.startsWith("refs/heads/") ? { fullName: full } : {}) };
   }
 
   /**
@@ -190,7 +228,7 @@ export class RefProvider {
   async containingBranches(
     sha: string,
     opts?: { limit?: number; signal?: AbortSignal },
-  ): Promise<{ branches: string[]; truncated: boolean }> {
+  ): Promise<{ branches: string[]; refs: string[]; truncated: boolean }> {
     const limit = opts?.limit ?? CONTAINS_LIMIT;
     // FULL refnames, not %(refname:short). The short form is ambiguous here:
     // a local "feature/x" and a remote "origin/x" are both "a/b", so splitting
@@ -204,7 +242,7 @@ export class RefProvider {
     if (result.code !== 0) {
       // Unknown sha, or a repo with no branches — report "none" rather than
       // surfacing a git error for what is an optional, informational query.
-      return { branches: [], truncated: false };
+      return { branches: [], refs: [], truncated: false };
     }
     const seen = new Set<string>();
     const locals: string[] = [];
@@ -236,8 +274,13 @@ export class RefProvider {
     locals.sort();
     remotes.sort();
     const all = [...locals, ...remotes];
+    // The same list by FULL name, in the same order — what a caller maps
+    // through a ref list (the graph's "Add <branch> to the filter"). Each is
+    // the prefix this loop stripped, put back: exact, not a guess.
+    const full = [...locals.map((n) => `refs/heads/${n}`), ...remotes.map((n) => `refs/remotes/${n}`)];
     return {
       branches: all.slice(0, limit),
+      refs: full.slice(0, limit),
       truncated: all.length > limit,
     };
   }

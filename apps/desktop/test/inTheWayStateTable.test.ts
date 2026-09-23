@@ -156,9 +156,9 @@ function run(bridge: GitBridge, door: Door, git: (...a: string[]) => string, sta
     case "cherry-pick":
       return bridge.commitAction({ action: "cherry-pick", sha: git("rev-parse", "feature").trim(), ...sf });
     case "merge":
-      return bridge.branchMerge({ name: "feature", ...sf });
+      return bridge.branchMerge({ fullName: "refs/heads/feature", ...sf });
     case "rebase":
-      return bridge.branchRebase({ onto: "feature", ...sf });
+      return bridge.branchRebase({ fullName: "refs/heads/feature", ...sf });
     case "checkout":
       return bridge.commitAction({
         action: "checkout-ref",

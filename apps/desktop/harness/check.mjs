@@ -57,6 +57,12 @@ const CASES = [
   ["renaming-a-published-branch-offers-to-rename-it-on-the-remote", "branches"],
   ["the-rename-question-outlives-the-refresh-the-rename-causes", "branches"],
   ["renaming-an-unpublished-branch-asks-nothing", "branches"],
+  // Branch ops by FULL name, and a branch named like an option (issue #30's follow-up).
+  ["branch-actions-go-by-full-name", "branches"],
+  ["a-branch-named-like-an-option-says-why-and-offers-the-rename", "branches", { extra: "dashbranch=1" }],
+  // git's short names when they collide: every label is still the ref's own name.
+  ["the-branch-list-names-refs-by-their-own-names", "branches", { extra: "collide=1" }],
+  ["the-branch-switcher-names-refs-by-their-own-names", "code~click:.topbar-branch", { extra: "collide=1" }],
   ["a-prompt-that-does-not-validate-still-submits", "actions"],
   // Reading a repository — yours or anyone's.
   ["the-code-page-opens-its-commits", "code"],
@@ -528,6 +534,11 @@ const CASES = [
   ["the-branch-picker-narrows-the-graph-and-all-restores-it", "graph"],
   ["a-commit-the-filter-hides-says-so-and-offers-every-branch", "graph"],
   ["the-branch-picker-clears-the-dock", "graph~click:.dock-chevron", { height: 700 }],
+  ["a-details-chip-opens-the-graphs-chip-menu", "graph"],
+  ["the-open-branch-picker-reads-at-aa", "graph~click:.gh-branches", { theme: "light" }],
+  ["the-open-branch-picker-reads-at-aa", "graph~click:.gh-branches~click:.gh-preset%5Bdata-preset%3Dlocal%5D", { theme: "light" }],
+  ["the-open-branch-picker-reads-at-aa", "graph~click:.gh-branches~click:.gh-preset%5Bdata-preset%3Dlocal%5D"],
+  ["every-branch-checkout-door-sends-the-full-name", "branches"],
   ["clearing-a-search-clears-the-results", "explore~type:git"],
   ["a-branch-deep-link-shows-the-branch", "actions~open9094~click:.gh-branch-chip"],
   ["the-logs-states-each-say-the-right-thing", "actions~open9097~click:.gh-job-log"],

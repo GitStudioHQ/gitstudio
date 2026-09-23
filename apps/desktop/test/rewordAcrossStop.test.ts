@@ -225,7 +225,7 @@ test("aborting forgets the messages that were abandoned with it", async () => {
     );
 
     // Now an ORDINARY rebase of the same branch, with no reword asked for.
-    const again = await bridge.branchRebase({ onto: "trunk" });
+    const again = await bridge.branchRebase({ fullName: "refs/heads/trunk" });
     assert.equal(again.ok, false, "it conflicts, as before");
     writeFileSync(`${root}/shared.txt`, "resolved\n");
     git("add", "shared.txt");
@@ -343,7 +343,7 @@ test("a rebase aborted outside the app takes its messages with it", async () => 
     assert.ok(!left.staging && !left.inRebase, "git took the queue with its own state");
 
     // The same branch, the same base, so the OLD stamp would have matched.
-    const again = await bridge.branchRebase({ onto: "trunk" });
+    const again = await bridge.branchRebase({ fullName: "refs/heads/trunk" });
     assert.equal(again.ok, false, "it conflicts on the same commit, as before");
     writeFileSync(`${root}/shared.txt`, "resolved\n");
     git("add", "shared.txt");

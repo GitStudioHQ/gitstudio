@@ -39,6 +39,7 @@ import type {
   WireRef,
   GraphRefEntry,
   GraphRefFilter,
+  RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import { renderRowGutterSVG } from "./gutter";
 import { paletteForTheme, observeGraphTheme } from "./lanePalette";
@@ -59,11 +60,15 @@ import {
   groupRefs,
   presetFilter,
   presetUnavailable,
+  refDisplayName,
+  refFilterHint,
   refFilterLabel,
   removeRefs,
+  scrollKey,
   toggleRef,
 } from "./refFilter";
-import { chipRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import { chipRefs, presetRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import { chipLabel, foldRefs } from "./refLayout";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -136,9 +141,16 @@ interface RailMenu {
 /** A folded, render-ready ref chip (remote twins folded into their local). */
 interface ChipView {
   kind: WireRef["kind"];
+  /** git's short name (data-ref), never shown. */
+  name: string;
+  /** The ref's full name — what the chip's menu resolves by. */
+  fullName: string;
+  /** What the chip says: the full name shorn ("release"). */
   label: string;
   /** The folded remote names ("origin", …) — shown as a cloud tail. */
   remotes: string[];
+  /** Those twins' full names. */
+  twins: string[];
   title: string;
 }
 
@@ -151,6 +163,7 @@ export class CommitRail extends LitElement {
     status: { attribute: false },
     errorMessage: { attribute: false },
     refFilter: { attribute: false },
+    refPreset: { attribute: false },
     refList: { attribute: false },
     searchQuery: { state: true },
     searchScope: { state: true },
@@ -189,9 +202,13 @@ export class CommitRail extends LitElement {
         padding: 4px 6px 4px 8px;
         flex: 0 0 auto;
       }
+      /* The search box keeps room for its placeholder: a filter's label beside
+         it squeezed it to 60px ("Search cor") in a 299px sidebar. The
+         Branches trigger's label gives way first; its tint and title keep
+         saying what the filter is. */
       .search {
         flex: 1 1 auto;
-        min-width: 0;
+        min-width: min(140px, 55%);
         display: flex;
         align-items: center;
         gap: 4px;
@@ -266,16 +283,19 @@ export class CommitRail extends LitElement {
       /* ── Branches trigger (issue #30): the filter icon's twin, which grows a
          label naming the filter once one is set — "main, feature/x" or
          "3 branches" — so the narrowed log says what it is narrowed to. ── */
-      .ibtn.branches { width: auto; min-width: 20px; padding: 0 4px; gap: 3px; }
+      .ibtn.branches { width: auto; min-width: 20px; padding: 0 4px; gap: 3px; flex: 0 1 auto; }
+      /* The accent wash with the foreground's ink on it, as the graph's twin
+         does: link-blue on that wash measured 4.00:1 in a light theme. */
       .ibtn.branches.scoped {
         padding: 0 6px 0 5px;
         background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
-        color: var(--gs-accent-text);
+        color: var(--gs-fg);
       }
       .ibtn.branches.scoped::after { content: none; }
       .ibtn.branches .lbl {
         font-size: 10.5px;
         font-weight: 550;
+        min-width: 0;
         max-width: 96px;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -736,12 +756,15 @@ export class CommitRail extends LitElement {
         color: var(--vscode-menu-foreground, var(--gs-fg));
         box-shadow: var(--gs-shadow-2);
       }
+      /* The popovers' muted text (.hd, .cur, .hint): --gs-menu-muted, AA on
+         the menu's own ground in Light+ and Dark+ (popoverContrast.test.ts).
+         It was --gs-fg-subtle — 50% toward transparent — at 2.17:1 in Light+. */
       .pop .hd {
         padding: 3px 8px 5px;
         font-size: 10px;
         letter-spacing: 0.4px;
         text-transform: uppercase;
-        color: var(--gs-fg-subtle);
+        color: var(--gs-menu-muted);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -782,6 +805,12 @@ export class CommitRail extends LitElement {
          border-box, so the width IS the shell: .pop's padding and border on
          top of a content width overhung a ≤240px sidebar by 6px. */
       .pop.branches { box-sizing: border-box; width: min(232px, calc(100vw - 8px)); max-width: none; }
+      /* A column whose list is the one part that gives up height, so the
+         presets, the box and the hint stay in view in a short sidebar view
+         (branchesPopTpl sets the max-height from where it opens). Below a
+         usable list the whole shell scrolls rather than clipping. */
+      .pop.branches { display: flex; flex-direction: column; overflow-y: auto; }
+      .pop.branches > * { flex: 0 0 auto; }
       .pop .presets {
         display: flex;
         flex-wrap: wrap;
@@ -802,10 +831,11 @@ export class CommitRail extends LitElement {
       }
       .pop .preset:hover { background: var(--gs-hover); }
       .pop .preset:focus-visible { outline: 1px solid var(--gs-accent); outline-offset: 1px; }
+      /* The menu's own ink on the wash, as the graph's presets: link-blue on
+         it read 3.34:1 in a light theme. The wash says "active". */
       .pop .preset.active {
         background: color-mix(in srgb, var(--gs-accent) 22%, transparent);
         border-color: color-mix(in srgb, var(--gs-accent) 30%, transparent);
-        color: var(--gs-accent-text);
       }
       .pop .preset[disabled] { opacity: 0.5; cursor: default; }
       .pop .preset[disabled]:hover { background: transparent; }
@@ -835,6 +865,9 @@ export class CommitRail extends LitElement {
       }
       .pop .flt input::placeholder { color: var(--gs-fg-subtle); }
       .pop .list { max-height: 280px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+      /* Not a fixed cap here: 280px was taller than the whole shell in a
+         240px view, so the list scrolled inside a shell that scrolled too. */
+      .pop.branches > .list { flex: 1 1 auto; min-height: 52px; max-height: none; }
       .pop .list .hd { padding-top: 5px; }
       .pop .mi .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
       .pop .mi .cur {
@@ -843,13 +876,17 @@ export class CommitRail extends LitElement {
         font-size: 9.5px;
         letter-spacing: 0.4px;
         text-transform: uppercase;
-        color: var(--gs-fg-subtle);
+        color: var(--gs-menu-muted);
       }
+      /* On the selection wash the item takes the selection's ink; "current"
+         follows it rather than sitting grey on blue. */
+      .pop .mi:hover .cur,
+      .pop .mi:focus-visible .cur { color: inherit; opacity: 0.85; }
       .pop .mi .cur + .check { margin-left: 4px; }
       .pop .hint {
         padding: 3px 8px 4px;
         font-size: 10.5px;
-        color: var(--gs-fg-subtle);
+        color: var(--gs-menu-muted);
         white-space: normal;
       }
     `,
@@ -863,6 +900,9 @@ export class CommitRail extends LitElement {
   declare errorMessage: string;
   /** The branch filter the rows were built under (issue #30); null = all. */
   declare refFilter: GraphRefFilter;
+  /** The preset that filter IS, when the host says so (a graphInit's
+   *  refPreset): lit in the picker, named by the trigger. */
+  declare refPreset: RefPreset | undefined;
   /** Every ref the Branches picker offers — filtered-out ones included. */
   declare refList: GraphRefEntry[];
   private declare searchQuery: string;
@@ -880,7 +920,10 @@ export class CommitRail extends LitElement {
    * `sha` is the row it sits on, for the checkout.
    */
   private declare chipMenu: {
+    /** git's short name, for the host's checkout request only. */
     name: string;
+    /** The chip's full name: what it resolves by and is titled by. */
+    fullName: string;
     kind: WireRef["kind"];
     sha: string;
     refs: string[];
@@ -945,6 +988,8 @@ export class CommitRail extends LitElement {
   private disposeTheme: (() => void) | undefined;
   private shaToIndex = new Map<string, number>();
   private loadMoreArmed = true;
+  /** scrollKey of the filter the current rows were built under (see updated). */
+  private rowsKey: string | undefined;
   /** Sha to reveal once it can land: the virtualizer is not live yet (a host
    * reveal can beat the first paint), or the row is further back than the
    * loaded pages and a page is on its way toward it. */
@@ -967,6 +1012,7 @@ export class CommitRail extends LitElement {
     this.status = "loading";
     this.errorMessage = "";
     this.refFilter = null;
+    this.refPreset = undefined;
     this.refList = [];
     this.searchQuery = "";
     this.searchScope = "all";
@@ -1016,11 +1062,20 @@ export class CommitRail extends LitElement {
     // An empty filter is All (issue #30): the protocol says a host never sends
     // one, but a host that did tinted the trigger "scoped" under an accessible
     // name reading "All branches". Folded here, so every reader sees the same.
-    if (changed.has("refFilter") && this.refFilter?.length === 0) this.refFilter = null;
+    // …unless it is a preset's: "Current branch" on a detached HEAD ticks no
+    // branch and walks HEAD alone, which is not every branch.
+    if (changed.has("refFilter") && this.refFilter?.length === 0 && !this.refPreset) this.refFilter = null;
   }
 
   updated(changed: Map<PropertyKey, unknown>): void {
     if (changed.has("rows")) {
+      // Rows built under a DIFFERENT filter are a different history, not a
+      // refresh of this one: start at its top. The graph does the same (its
+      // twin in commit-graph.ts); a refresh under the same filter keeps its
+      // place.
+      const key = scrollKey(this.refFilter, this.refPreset);
+      if (this.rowsKey !== undefined && key !== this.rowsKey) this.scrollToTop();
+      this.rowsKey = key;
       this.rebuildIndex();
       this.loadMoreArmed = true;
       if (this.searchQuery.trim()) this.computeMatches(false);
@@ -1207,7 +1262,7 @@ export class CommitRail extends LitElement {
     const age = isWip ? "now" : esc(relTime(row.authorDate));
 
     const tipRefs = row.refs.length
-      ? `\n${row.refs.map((r) => r.name).join(", ")}`
+      ? `\n${row.refs.map((r) => chipLabel(r)).join(", ")}`
       : "";
     const tip = isWip
       ? "Uncommitted changes — open in the Commit Graph for details"
@@ -1237,36 +1292,30 @@ export class CommitRail extends LitElement {
     );
   }
 
-  /** Meta-line ref chips: remote twins fold into locals, capped at 2 + "+N". */
+  /** Meta-line ref chips: remote twins fold into locals, capped at 2 + "+N".
+   *
+   *  Folded and labelled by the graph's own rule (foldRefs): by FULL name, so
+   *  a branch beside a tag of its name reads "release", not git's
+   *  "heads/release", and still takes its origin twin in. This used to be a
+   *  second copy of the fold, over the SHORT names, and it drifted the way
+   *  copies do. Locals first, then remotes and tags — the rail's order. */
   private chipsHtml(refs: WireRef[]): string {
-    const locals = new Map<string, ChipView>();
-    const chips: ChipView[] = [];
-    for (const ref of refs) {
-      if (ref.kind === "head" || ref.kind === "currentHead") {
-        const chip: ChipView = {
-          kind: ref.kind,
-          label: ref.name,
-          remotes: [],
-          title: ref.name,
-        };
-        locals.set(ref.name, chip);
-        chips.push(chip);
-      }
-    }
-    for (const ref of refs) {
-      if (ref.kind === "remoteHead") {
-        const slash = ref.name.indexOf("/");
-        const local = slash > 0 ? locals.get(ref.name.slice(slash + 1)) : undefined;
-        if (local) {
-          local.remotes.push(ref.name.slice(0, slash));
-          local.title += `, ${ref.name}`;
-          continue;
-        }
-        chips.push({ kind: ref.kind, label: ref.name, remotes: [], title: ref.name });
-      } else if (ref.kind === "tag") {
-        chips.push({ kind: ref.kind, label: ref.name, remotes: [], title: `tag: ${ref.name}` });
-      }
-    }
+    const folded = foldRefs(refs);
+    const chips: ChipView[] = [
+      ...folded.filter((e) => e.ref.kind === "head" || e.ref.kind === "currentHead"),
+      ...folded.filter((e) => e.ref.kind === "remoteHead" || e.ref.kind === "tag"),
+    ].map((e) => ({
+      kind: e.ref.kind,
+      name: e.ref.name,
+      fullName: e.ref.fullName ?? "",
+      label: e.label,
+      remotes: e.remotes,
+      twins: e.twins,
+      title:
+        e.ref.kind === "tag"
+          ? `tag: ${e.label}`
+          : [e.label, ...e.twins.map((t) => refDisplayName(t))].join(", "),
+    }));
 
     const visible = chips.slice(0, MAX_CHIPS);
     const rest = chips.slice(MAX_CHIPS);
@@ -1293,15 +1342,18 @@ export class CommitRail extends LitElement {
       // the only way to opt one out — without it the row's slow native tooltip
       // is what you get, which is exactly what it looked like before.
       const tip = esc(
-        tipData([{ name: chip.label, kind: chip.kind, remotes: chip.remotes }]),
+        tipData([{ name: chip.name, label: chip.label, fullName: chip.fullName, kind: chip.kind, remotes: chip.remotes, twins: chip.twins }]),
       );
-      // `data-ref` / `data-kind` / `data-remotes` are what the chip's filter
-      // menu (issue #30) reads: the ref behind the chip, and the folded twins
-      // that move with it as the one thing it looks like.
+      // `data-full` / `data-twins` are what the chip's filter menu (issue #30)
+      // resolves by: the ref behind the chip and the folded twins that move
+      // with it as the one thing it looks like, all by FULL name. `data-ref`
+      // is git's short name, as the graph's chips carry it.
       out +=
         `<span class="${cls}" title="" data-more="${tip}"` +
-        ` data-ref="${esc(chip.label)}" data-kind="${chip.kind}"` +
-        (chip.remotes.length ? ` data-remotes="${esc(chip.remotes.join(","))}"` : "") +
+        ` data-ref="${esc(chip.name)}" data-full="${esc(chip.fullName)}" data-kind="${chip.kind}"` +
+        (chip.remotes.length
+          ? ` data-remotes="${esc(chip.remotes.join(","))}" data-twins="${esc(chip.twins.join(","))}"`
+          : "") +
         ` aria-label="${esc(chip.title)}">` +
         `<span class="codicon codicon-${icon}" aria-hidden="true"></span>` +
         `<span class="name">${esc(chip.label)}</span>${cloud}</span>`;
@@ -1313,9 +1365,12 @@ export class CommitRail extends LitElement {
       // produced the row's, a second later. An empty title is the only way to
       // opt a descendant out. The card in refTip.ts renders from `data-more`.
       const hidden = rest.map((c) => ({
-        name: c.label,
+        name: c.name,
+        label: c.label,
+        fullName: c.fullName,
         kind: c.kind,
         remotes: c.remotes,
+        twins: c.twins,
       }));
       out +=
         `<span class="chip more" title="" data-more="${esc(tipData(hidden))}"` +
@@ -1354,9 +1409,11 @@ export class CommitRail extends LitElement {
   }
 
   private onScrollerClick = (e: MouseEvent): void => {
-    // ⌥-click on a ref chip is its filter menu (issue #30) — the same one a
-    // right-click opens, for pointers that have no right button.
-    const chip = e.altKey ? this.chipFromEvent(e) : null;
+    // A click on a ref chip is its filter menu (issue #30) — the same one a
+    // right-click or ⌥-click opens. It used to select the row here and do
+    // nothing at all in the editor-area graph, so the two lists disagreed
+    // about the most natural gesture; both open the menu now.
+    const chip = this.chipFromEvent(e);
     if (chip) {
       e.preventDefault();
       e.stopPropagation();
@@ -1726,10 +1783,22 @@ export class CommitRail extends LitElement {
    * what was actually applied. The picker stays open — one tick is rarely
    * the whole selection.
    */
-  private applyRefFilter(refs: GraphRefFilter): void {
-    if (sameRefFilter(refs, this.refFilter)) return;
+  private applyRefFilter(refs: GraphRefFilter, preset?: RefPreset): void {
+    const p = preset && preset !== "all" ? preset : undefined;
+    if (sameRefFilter(refs, this.refFilter) && p === this.refPreset) return;
     this.refFilter = refs;
-    this.onAction({ type: "setRefFilter", refs });
+    this.refPreset = p;
+    // A preset goes to the host as what it MEANS (presetRefs), so it is stored
+    // that way and follows a checkout; the ticks above are what it means now.
+    this.onAction({ type: "setRefFilter", refs: p ? presetRefs(p) : refs });
+  }
+
+  /** Back to the first row, before the paint — see the graph's twin. */
+  private scrollToTop(): void {
+    const s = this.boundScroller;
+    if (!s || s.scrollTop === 0) return;
+    s.scrollTop = 0;
+    s.dispatchEvent(new Event("scroll"));
   }
 
   /** Open a chip's own menu at (x, y): the filter shortcuts for that ref. */
@@ -1738,10 +1807,11 @@ export class CommitRail extends LitElement {
     if (!name) return;
     const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
     // The chip and the remote twins folded into it move as one thing — what
-    // you see is "main ☁", and "only this" means what you see. Resolved
-    // through the picker's list, not rebuilt from the short name: see chipRefs.
-    const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
-    const refs = chipRefs(this.refList, name, kind, remotes);
+    // you see is "main ☁", and "only this" means what you see. Both by FULL
+    // name, resolved through the picker's list: see chipRefs.
+    const fullName = chip.dataset.full ?? "";
+    const twins = (chip.dataset.twins ?? "").split(",").filter(Boolean);
+    const refs = chipRefs(this.refList, fullName, twins);
     const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
     // Clamped like the commit menu, so it never clips the narrow sidebar.
     const estW = popMaxWidth();
@@ -1749,6 +1819,7 @@ export class CommitRail extends LitElement {
     this.closePopovers();
     this.chipMenu = {
       name,
+      fullName,
       kind,
       sha,
       refs,
@@ -1841,7 +1912,7 @@ export class CommitRail extends LitElement {
               `}
         </span>
         ${this.branchesTriggerTpl()}
-        ${this.head
+        ${this.headInGraph()
           ? html`<button
               class="ibtn"
               title="Jump to HEAD"
@@ -1861,6 +1932,22 @@ export class CommitRail extends LitElement {
     `;
   }
 
+  /**
+   * Whether Jump to HEAD can land. A filter walks an attached HEAD only when
+   * its branch is ticked (issue #30), so under "Show only origin/x" HEAD's
+   * commit is usually not in this history at all — and the jump paged up to
+   * 25 pages of it looking, then dropped the reveal without a word. Shown
+   * with no filter, for a detached HEAD (always walked), when the current
+   * branch is ticked, or when HEAD's commit is on a loaded row anyway.
+   */
+  private headInGraph(): boolean {
+    if (!this.head) return false;
+    if (!this.refFilter) return true;
+    const cur = this.refList.find((r) => r.kind === "head" && r.isCurrent);
+    if (!cur || this.refFilter.includes(cur.fullName)) return true;
+    return this.rows.some((r) => r.sha === this.head);
+  }
+
   private scopeLabel(): string {
     return SEARCH_SCOPES.find((s) => s.id === this.searchScope)?.label ?? "All";
   }
@@ -1871,7 +1958,7 @@ export class CommitRail extends LitElement {
    * names the filter, so the narrowed log says what it is narrowed to.
    */
   private branchesTriggerTpl() {
-    const label = refFilterLabel(this.refFilter, this.refList);
+    const label = refFilterLabel(this.refFilter, this.refList, this.refPreset);
     const filtered = this.refFilter !== null;
     return html`
       <button
@@ -1899,7 +1986,7 @@ export class CommitRail extends LitElement {
    *  popover and the commit menu, anchored under its trigger. */
   private branchesPopTpl() {
     const refs = this.refList;
-    const active = activePreset(this.refFilter, refs);
+    const active = activePreset(this.refFilter, this.refPreset);
     const selected = new Set(this.refFilter ?? []);
     const groups = groupRefs(refs, this.branchQuery);
     const anchor = this.renderRoot
@@ -1910,19 +1997,23 @@ export class CommitRail extends LitElement {
     const W = Math.min(232, window.innerWidth - 8);
     const x = Math.max(4, Math.min((anchor?.right ?? 200) - W, window.innerWidth - W - 4));
     const y = (anchor?.bottom ?? 28) + 4;
+    // Never past the bottom of the view it opens in. The default sidebar gives
+    // the Commits view about 240px under an expanded Changes view, and the
+    // shell's old cap (100vh less 16px) ignored its own top: it ran 15px off
+    // the view, the hint below the list was never reachable, and a click on
+    // the last visible row landed outside the webview. The list gives up its
+    // height first (.pop.branches is a column and .list the only part that
+    // shrinks); below a usable list the shell scrolls as a whole.
+    const maxH = Math.max(120, Math.floor(window.innerHeight - y - 8));
     const kindIcon = (k: GraphRefEntry["kind"]) =>
       k === "tag" ? "tag" : k === "remoteHead" ? "cloud" : "git-branch";
-    const hint = this.refFilter
-      ? `${this.refFilter.length} of ${refs.length} ticked · untick the last for all`
-      : refs.length
-        ? "Showing every branch and tag · tick one to narrow"
-        : "No branches or tags";
+    const hint = refFilterHint(this.refFilter, refs, this.refPreset);
     return html`
       <div
         class="pop branches"
         role="menu"
         aria-label="Branches"
-        style="left:${x}px;top:${y}px"
+        style="left:${x}px;top:${y}px;max-height:${maxH}px"
         @keydown=${this.onPopKeyDown}
       >
         <div class="hd">Show branches</div>
@@ -1938,7 +2029,7 @@ export class CommitRail extends LitElement {
               aria-pressed=${active === p.id ? "true" : "false"}
               @click=${() => {
                 const f = presetFilter(p.id, refs);
-                if (f !== undefined) this.applyRefFilter(f);
+                if (f !== undefined) this.applyRefFilter(f, p.id);
               }}
             >
               ${p.label}
@@ -1970,7 +2061,7 @@ export class CommitRail extends LitElement {
                   @click=${() => this.applyRefFilter(toggleRef(this.refFilter, r.fullName))}
                 >
                   <span class="codicon codicon-${kindIcon(r.kind)}" aria-hidden="true"></span>
-                  <span class="nm">${r.name}</span>
+                  <span class="nm">${refDisplayName(r.fullName)}</span>
                   ${r.isCurrent ? html`<span class="cur">current</span>` : nothing}
                   ${selected.has(r.fullName)
                     ? html`<span class="codicon codicon-check check"></span>`
@@ -2027,31 +2118,38 @@ export class CommitRail extends LitElement {
   /** A ref chip's menu: show only it, add it to / remove it from the filter,
    *  and check it out. */
   private chipMenuTpl(m: NonNullable<CommitRail["chipMenu"]>) {
-    const inFilter = !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
-    const isOnly = sameRefFilter(m.refs, this.refFilter);
+    // A chip the ref list has no entry for resolves to nothing (chipRefs):
+    // its menu says so and acts on nothing, rather than guess a full name.
+    const known = m.refs.length > 0;
+    const inFilter = known && !!this.refFilter && m.refs.every((r) => this.refFilter!.includes(r));
+    const isOnly = known && sameRefFilter(m.refs, this.refFilter);
     const pick = (refs: GraphRefFilter) => {
       this.chipMenu = null;
       this.applyRefFilter(refs);
     };
-    const checkout = chipCheckout(m);
+    // The ref's own name, not git's disambiguated short form ("heads/x"
+    // beside a tag "x") — the chip's full name, shorn, even when the list
+    // does not know it.
+    const title = refDisplayName(known ? m.refs[0] : m.fullName || m.name);
+    const checkout = known ? chipCheckout({ ...m, name: title }) : undefined;
     return html`
       <div
         class="pop chipmenu"
         role="menu"
-        aria-label="Filter by ${m.name}"
+        aria-label="Filter by ${title}"
         style="left:${m.x}px;top:${m.y}px"
         @keydown=${this.onPopKeyDown}
       >
-        <div class="hd">${m.name}</div>
+        <div class="hd">${title}</div>
         <button
           class="mi"
           role="menuitem"
           data-chip-action="only"
-          ?disabled=${isOnly}
+          ?disabled=${isOnly || !known}
           @click=${() => pick(m.refs)}
         >
           <span class="codicon codicon-filter"></span>
-          Show only this branch
+          ${m.kind === "tag" ? "Show only this tag" : "Show only this branch"}
         </button>
         ${this.refFilter
           ? html`
@@ -2059,6 +2157,7 @@ export class CommitRail extends LitElement {
                 class="mi"
                 role="menuitem"
                 data-chip-action=${inFilter ? "remove" : "add"}
+                ?disabled=${!known}
                 @click=${() =>
                   pick(inFilter ? removeRefs(this.refFilter, m.refs) : addRefs(this.refFilter, m.refs))}
               >
@@ -2091,6 +2190,10 @@ export class CommitRail extends LitElement {
               </button>
             `
           : nothing}
+        ${known
+          ? nothing
+          : html`<div class="sep" role="separator"></div>
+              <div class="hint">Not in the branch list yet — refresh</div>`}
       </div>
     `;
   }

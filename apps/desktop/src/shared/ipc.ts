@@ -10,6 +10,7 @@ import type {
   RowStat,
   GraphRefEntry,
   GraphRefFilter,
+  RefPreset,
 } from "@gitstudio/host-bridge/graphProtocol";
 import type { CommitDetailsPayload } from "@gitstudio/host-bridge/commitDetailsProtocol";
 
@@ -62,16 +63,34 @@ export interface GraphPage {
   hasMore: boolean;
   /** Skip cursor for the next page request. */
   nextSkip: number;
-  /** The branch filter these rows were walked with (issue #30); null = all. */
+  /** The branch filter these rows were walked with (issue #30), resolved to
+   *  full names — what the picker ticks; null = all. */
   refFilter: GraphRefFilter;
-  /** Every ref the Branches picker can offer, filtered-out ones included. */
-  refList: GraphRefEntry[];
+  /** The preset the stored filter is ("current", …), when it is one. */
+  refPreset?: RefPreset;
+  /**
+   * Every ref the Branches picker can offer, filtered-out ones included —
+   * present only when it differs from the list the request said it holds
+   * (`refListSig`). Absent means "yours is current": it is every branch and
+   * tag, a megabyte on a repository with ten thousand tags, and it used to
+   * cross IPC with every page.
+   */
+  refList?: GraphRefEntry[];
+  /** refListSignature() of the list the main process has now — what the
+   *  caller sends back as `refListSig` once it has delivered `refList`. */
+  refListSig: string;
 }
 
 /** A `graph:load` request. */
 export interface GraphLoadRequest {
   skip?: number;
   maxCount?: number;
+  /**
+   * refListSignature() of the ref list the caller already holds (the one it
+   * last handed the graph element). The page leaves `refList` out when the
+   * main process's list still has this signature. Omitted: send it.
+   */
+  refListSig?: string;
   /**
    * The branch filter to apply from now on. Omitted (undefined) means "the one
    * remembered for this repository"; null or a list SETS it — remembered per
@@ -292,11 +311,12 @@ export interface CommitActionRequest {
   /** For checkout-ref: what kind of ref `name` is. */
   refKind?: "head" | "remote" | "tag";
   /**
-   * For checkout-ref: the ref's FULL name, when the door knows it (the graph
-   * does — its rows and its ref list carry it). The main process checks out
-   * by this and not by `name`, which is `%(refname:short)`: with a tag and a
-   * branch both called "release" the branch's short name is "heads/release",
-   * and `git checkout heads/release` detaches HEAD at the branch tip.
+   * For checkout-ref: the ref's FULL name — REQUIRED; the main process
+   * refuses a checkout-ref without one. It checks out by this and not by
+   * `name`, which is `%(refname:short)`: with a tag and a branch both called
+   * "release" the branch's short name is "heads/release", and
+   * `git checkout heads/release` detaches HEAD at the branch tip. Build the
+   * request with refCheckoutRequest (renderer/refMenuItems.ts) where you can.
    */
   fullName?: string;
   /** See StashFirst: this request again, after the user chose Stash & Retry. */
@@ -338,6 +358,13 @@ export interface CommitActionResult {
   /** The renderer asked about changes in the way and the user cancelled:
    *  nothing ran, nothing failed, nothing to say. Never sent by main. */
   cancelled?: true;
+  /**
+   * A checkout-ref refused because the branch's NAME reads as an option
+   * ("-f": `git checkout -f` would discard every uncommitted change). `message`
+   * says so; this is what a door needs to offer the fix — a rename by
+   * `fullName` (branch:rename), which only a LOCAL branch can take.
+   */
+  optionLike?: { fullName: string; name: string; local: boolean };
 }
 
 /** See CommitActionResult.inTheWay. */
@@ -518,9 +545,18 @@ export interface PushActionResult extends CommitActionResult {
 
 /** A branch with remote-tracking context, for the Branches manager. */
 export interface BranchInfo {
+  /** `%(refname:short)` — for reading. "heads/release" when a tag shares the name. */
   name: string;
+  /** `%(refname)`, e.g. "refs/heads/release" — what a checkout is planned from
+   *  (planRefCheckout), because the short name then names a revision. */
+  fullName: string;
   current: boolean;
+  /** `%(upstream:short)` — for reading. "remotes/origin/x" beside a local
+   *  branch called "origin/x". */
   upstream?: string;
+  /** `%(upstream)`, e.g. "refs/remotes/origin/x" — what an upstream is SPLIT
+   *  into remote and branch by (upstreamParts), never the short one. */
+  upstreamRef?: string;
   ahead: number;
   behind: number;
   /**
@@ -1830,7 +1866,9 @@ export interface IpcChannels {
   "refs:list": [void, RefInfo[]];
   /** Branches CONTAINING a commit (reachability), for the details pane's
    *  "in N branches" row. Lazy — it walks history. */
-  "refs:contains": [{ sha: string }, { branches: string[]; truncated: boolean }];
+  /** `refs` is `branches` by full name, same order — what the graph maps
+   *  through its ref list to offer "Add <branch> to the filter". */
+  "refs:contains": [{ sha: string }, { branches: string[]; refs: string[]; truncated: boolean }];
   "head:get": [void, HeadInfo | undefined];
   "status": [void, ChangedFile[]];
   "commit:details": [string, CommitDetailsPayload | undefined];
@@ -1926,8 +1964,9 @@ export interface IpcChannels {
    */
   "sync:pull": [({ mode?: PullMode } & StashFirst) | void, PullActionResult];
   "sync:push": [{ setUpstream?: boolean; force?: boolean } | void, PushActionResult];
-  /** Push (or publish) ONE named branch, not just the checked-out one. */
-  "branch:push": [{ name: string }, CommitActionResult];
+  /** Push (or publish) ONE named branch, not just the checked-out one — by
+   *  its FULL name (see the branch ops below). */
+  "branch:push": [{ fullName: string }, CommitActionResult];
   /**
    * Publish a branch UNDER ITS OWN NAME and track it.
    *
@@ -1965,12 +2004,12 @@ export interface IpcChannels {
    *  it tracked, both read BEFORE the delete — git prints the sha and throws
    *  the tracking config away, and undo needs both. */
   "branch:delete": [
-    { name: string; force?: boolean },
+    { fullName: string; force?: boolean },
     CommitActionResult & { was?: string; upstream?: string },
   ];
   /** Fast-forward a local branch straight from its upstream WITHOUT checking
-   *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`). */
-  "branch:pullFf": [{ name: string }, CommitActionResult];
+   *  it out (`git fetch <remote> <remoteBranch>:<localBranch>`) — by FULL name. */
+  "branch:pullFf": [{ fullName: string }, CommitActionResult];
   // ── Compare (base…head) ──
   "compare:refs": [{ base: string; head: string; mode?: CompareMode }, CompareResult | undefined];
   /**
@@ -2306,10 +2345,18 @@ export interface IpcChannels {
     CommitActionResult & { indexText?: string },
   ];
   // ── Branch ops (engine-backed: merge / rebase / rename / upstream) ──
-  "branch:merge": [{ name: string; noFf?: boolean } & StashFirst, CommitActionResult];
-  "branch:rebase": [{ onto: string } & StashFirst, CommitActionResult];
-  "branch:rename": [{ from: string; to: string }, CommitActionResult];
-  "branch:setUpstream": [{ name: string; upstream: string }, CommitActionResult];
+  // Every one takes the branch by its FULL name (BranchInfo.fullName,
+  // "refs/heads/release") and the main process REFUSES one without it —
+  // `%(refname:short)` is "heads/release" beside a tag "release", which
+  // `git branch -m/-d` do not find, `git merge` records verbatim, and whose
+  // bare form "release" is the TAG. Build them with branchRequests.ts.
+  // Merge and rebase go through the changes-in-the-way door: sent again with
+  // `stashFirst` after a Stash & Retry.
+  "branch:merge": [{ fullName: string; noFf?: boolean } & StashFirst, CommitActionResult];
+  "branch:rebase": [{ fullName: string } & StashFirst, CommitActionResult];
+  /** Rename the local branch `fullName` to the NEW name `to` (a plain name). */
+  "branch:rename": [{ fullName: string; to: string }, CommitActionResult];
+  "branch:setUpstream": [{ fullName: string; upstream: string }, CommitActionResult];
   /** Delete a branch ON the remote. `was` is the commit the remote-tracking
    *  ref named just before, which is the only thing that makes this reversible
    *  — the push that deletes it also removes the local copy of that ref. */

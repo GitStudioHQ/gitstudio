@@ -9,8 +9,21 @@ import type { CommitDetailsPayload } from "./commitDetailsProtocol";
 
 /** A ref decoration attached to a commit (a branch tip, remote, or tag). */
 export interface WireRef {
-  /** Display name, e.g. "main", "origin/main", "v1.2.0". */
+  /**
+   * git's `%(refname:short)`: "main", "origin/main", "v1.2.0" — but only
+   * SHORTEST UNAMBIGUOUS, so beside a tag "release" the branch is
+   * "heads/release" and the tag "tags/release". Kept for the hosts that look a
+   * ref up by the name git lists it under (the desktop's Branches view). Never
+   * the chip's label, and never a key: see `fullName`.
+   */
   name: string;
+  /**
+   * The full name, "refs/heads/release" (issue #30's follow-up). What a chip is
+   * LABELLED by (shorn of its namespace: "release"), what twins fold by
+   * (refs/remotes/<remote>/<branch> onto refs/heads/<branch>), and what a chip
+   * resolves to in the picker's list.
+   */
+  fullName: string;
   /**
    * - `currentHead`: the local branch HEAD currently points at (filled accent).
    * - `head`: another local branch.
@@ -78,10 +91,20 @@ export interface GraphRefEntry {
 
 /**
  * The branch filter: the fully-qualified refs the graph is built around, or
- * null for every branch, tag and remote. Never an empty list — deselecting the
- * last ref falls back to null, because a graph of nothing is not a graph.
+ * null for every branch, tag and remote. A selection is never an empty list —
+ * deselecting the last ref falls back to null, because a graph of nothing is
+ * not a graph.
+ *
+ * What is STORED and SENT (setRefFilter) may also hold the presets' symbolic
+ * entries (CURRENT_BRANCH and friends, graphRefFilter.ts), which follow HEAD
+ * rather than name a branch. What a graphInit carries is always resolved: full
+ * names only, the preset beside it in `refPreset`. That one may be EMPTY —
+ * "Current branch" on a detached HEAD walks HEAD alone.
  */
 export type GraphRefFilter = string[] | null;
+
+/** The Branches picker's presets (issue #30). */
+export type RefPreset = "current" | "currentUpstream" | "local" | "all";
 
 // ── Host → webview ──────────────────────────────────────────────────────────
 
@@ -95,10 +118,27 @@ export interface GraphInitMessage {
   totalColumns: number;
   /** True while more pages remain to be loaded on demand. */
   hasMore: boolean;
-  /** The filter these rows were built under (see GraphRefFilter). */
+  /** The filter these rows were built under, RESOLVED to full names (see
+   *  GraphRefFilter) — what the picker ticks. */
   refFilter: GraphRefFilter;
-  /** Every ref the picker can offer — the filtered-out ones included. */
-  refList: GraphRefEntry[];
+  /**
+   * The preset the stored filter is, when it is one ("current", …) — so the
+   * picker highlights it and the trigger says "Current branch (main)" after a
+   * branch switch as before it. Absent for a hand-picked selection and for
+   * every branch.
+   */
+  refPreset?: RefPreset;
+  /**
+   * Every ref the picker can offer — the filtered-out ones included — sent
+   * only when it CHANGED since this host last sent one to this webview.
+   *
+   * Absent means "unchanged": the webview keeps the list it has. It is every
+   * branch and tag in the repository (about 1 MB with ten thousand tags), and
+   * a refresh or a filter change almost never alters it. A host tracks what it
+   * sent with RefListCourier (graphRefFilter.ts) and starts over when the
+   * webview reloads, so a fresh page always gets one with its first graphInit.
+   */
+  refList?: GraphRefEntry[];
 }
 
 /** A later page appended to the existing graph (infinite scroll). */

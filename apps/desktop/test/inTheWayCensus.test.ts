@@ -106,8 +106,15 @@ async function retryChannels(): Promise<Set<string>> {
 }
 
 test("every main-process command that applies commits goes through the door", async () => {
-  const DIRECT = /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop)|sync\.pull)\(/;
+  // A checkout PLANNED by git-service (planRefCheckout / planRemoteCheckout)
+  // is an argv too, just not a literal one: run straight off the plan, it
+  // skips the door as surely as `["checkout", …]` would.
+  const DIRECT =
+    /\b(?:branches\.(?:checkout|checkoutNew|merge|rebaseOnto)|stashes\.(?:apply|pop)|sync\.pull)\(|process\.run\(\s*(?:[\w.]+\.)?plan\.args/;
   const ARGV = /\[\s*"(cherry-pick|revert|merge|rebase|checkout)"(?:\s*,\s*"([^"]*)")?/;
+  // …and so is BranchOps' merge argv (the message a full-name merge records
+  // comes with it): built for the door, it must be run BY the door.
+  const BUILT_ARGV = /\bbranches\.mergeArgs\(/;
   const NOT_APPLYING = /^--(?:abort|continue|skip|quit|ours|theirs|merge)?$/;
   const ARGV_CONTEXT = /\b(?:run|runResult|args|checkoutOp|applyForDoor)\b/;
   const ROUTED = /\b(?:applyForDoor|pullForDoor|checkoutOp)\(/;
@@ -124,6 +131,12 @@ test("every main-process command that applies commits goes through the door", as
       if (DIRECT.test(line)) {
         doors++;
         if (!reviewed) bypass.push(where);
+        return;
+      }
+      if (BUILT_ARGV.test(line)) {
+        doors++;
+        if (ROUTED.test(lines.slice(Math.max(0, i - 8), i + 14).join("\n")) || reviewed) return;
+        bypass.push(where);
         return;
       }
       const argv = ARGV.exec(line);
@@ -298,7 +311,7 @@ test("bridge.ts: a refusal asks once, and Stash & Retry sends the same request a
 test("bridge.ts: Cancel runs nothing more and hands the door `cancelled`", async () => {
   const b = await bridgeWith(door());
   b.answer(false);
-  const r = await b.host.invoke("branch:merge", { name: "feature" });
+  const r = await b.host.invoke("branch:merge", { fullName: "refs/heads/feature" });
   assert.deepEqual(r, { ok: false, changed: false, expected: true, cancelled: true });
   assert.equal(b.sent.length, 1);
 });

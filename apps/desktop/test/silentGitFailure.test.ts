@@ -33,6 +33,7 @@ function bridgeAnswering(out: Out): GitBridge {
     branches: {
       rename: async () => failed,
       merge: async () => failed,
+      mergeArgs: async (ref: string) => ["merge", ref],
       rebaseOnto: async () => failed,
       setUpstream: async () => failed,
     },
@@ -47,8 +48,8 @@ const SILENT: Out = { code: 1, stdout: "", stderr: "" };
 test("a working-tree mutation git fails in silence is reported, in a plain sentence", async () => {
   const bridge = bridgeAnswering(SILENT);
   for (const [name, run] of [
-    ["branch rename", () => bridge.branchRename({ from: "topic", to: "topic-2" })],
-    ["branch merge", () => bridge.branchMerge({ name: "topic" })],
+    ["branch rename", () => bridge.branchRename({ fullName: "refs/heads/topic", to: "topic-2" })],
+    ["branch merge", () => bridge.branchMerge({ fullName: "refs/heads/topic" })],
     ["stash drop", () => bridge.stashDrop("stash@{0}")],
   ] as const) {
     const r = await run();
@@ -74,6 +75,7 @@ test("a checkout git fails in silence is reported too", async () => {
     action: "checkout-ref",
     sha: "a".repeat(40),
     name: "topic",
+    fullName: "refs/heads/topic",
     refKind: "local",
   });
   assert.equal(r.ok, false);
@@ -89,12 +91,13 @@ test("git declining on stdout alone is still a state, not a report — at all th
     stdout: "On branch main\nnothing to commit, working tree clean",
     stderr: "",
   });
-  const staged = await bridge.branchRename({ from: "topic", to: "topic-2" });
+  const staged = await bridge.branchRename({ fullName: "refs/heads/topic", to: "topic-2" });
   const menu = await bridge.commitAction({ action: "revert", sha: "a".repeat(40) });
   const checkout = await bridge.commitAction({
     action: "checkout-ref",
     sha: "a".repeat(40),
     name: "topic",
+    fullName: "refs/heads/topic",
     refKind: "local",
   });
   for (const [name, r] of [
@@ -110,6 +113,6 @@ test("git declining on stdout alone is still a state, not a report — at all th
 
 test("…and a failure git explains on stderr is still reported, as it always was", async () => {
   const bridge = bridgeAnswering({ code: 128, stdout: "", stderr: "fatal: something only we could cause" });
-  const r = await bridge.branchRename({ from: "topic", to: "topic-2" });
+  const r = await bridge.branchRename({ fullName: "refs/heads/topic", to: "topic-2" });
   assert.equal(reportableResultMessage(r), "fatal: something only we could cause");
 });

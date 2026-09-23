@@ -1,4 +1,5 @@
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 
 /**
  * How the Branch/Tag column decides what to draw and how wide to be.
@@ -11,8 +12,14 @@ import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 
 export interface ChipEntry {
   ref: WireRef;
+  /** What the chip SAYS: its full name shorn of the namespace ("release"),
+   *  never git's disambiguated short form ("heads/release"). */
+  label: string;
   /** Remote names ("origin") whose same-named branch was merged into this chip. */
   remotes: string[];
+  /** Those remote twins' FULL names ("refs/remotes/origin/release") — what
+   *  the chip's menu moves along with it (chipRefs). */
+  twins: string[];
 }
 
 /** Smallest cap a single ref chip is ever held to, however narrow the track. */
@@ -24,31 +31,48 @@ export const REFS_PADDING = 18;
 /** Width the fold reserves for a "+N" pill before it stops adding chips. */
 export const OVERFLOW_PILL_WIDTH = 40;
 
+/** A chip's label: the ref's full name shorn of its namespace (refLabel). A
+ *  ref from a host that sent no full name keeps the name it was given. */
+export function chipLabel(ref: Pick<WireRef, "name" | "fullName">): string {
+  return ref.fullName ? refLabel(ref.fullName) : ref.name;
+}
+
 /**
  * Fold remote-tracking twins into their same-named local chip — GitKraken
  * style, so the common local+remote row is one chip and not two.
+ *
+ * By FULL name (issue #30's follow-up): refs/remotes/<remote>/<branch> folds
+ * into refs/heads/<branch>. It used to split the SHORT names, and beside a tag
+ * of the same name the branch's short name is "heads/release" — so its twin
+ * was sought as "origin/heads/release", never found, and the row drew two
+ * chips where it meant one. The remote is the first segment after
+ * refs/remotes/ (a branch may contain slashes; a remote rarely does).
  */
 export function foldRefs(refs: WireRef[]): ChipEntry[] {
   const locals = new Map<string, ChipEntry>();
+  const entry = (ref: WireRef): ChipEntry => ({ ref, label: chipLabel(ref), remotes: [], twins: [] });
   for (const ref of refs) {
-    if (ref.kind === "head" || ref.kind === "currentHead") {
-      locals.set(ref.name, { ref, remotes: [] });
+    if ((ref.kind === "head" || ref.kind === "currentHead") && ref.fullName?.startsWith("refs/heads/")) {
+      locals.set(ref.fullName.slice("refs/heads/".length), entry(ref));
     }
   }
   const entries: ChipEntry[] = [];
   for (const ref of refs) {
     if (ref.kind === "remoteHead") {
-      const slash = ref.name.indexOf("/");
-      const local = slash > 0 ? locals.get(ref.name.slice(slash + 1)) : undefined;
+      const rest = ref.fullName?.startsWith("refs/remotes/") ? ref.fullName.slice("refs/remotes/".length) : "";
+      const slash = rest.indexOf("/");
+      const local = slash > 0 ? locals.get(rest.slice(slash + 1)) : undefined;
       if (local) {
-        local.remotes.push(ref.name.slice(0, slash));
+        local.remotes.push(rest.slice(0, slash));
+        local.twins.push(ref.fullName);
         continue;
       }
-      entries.push({ ref, remotes: [] });
+      entries.push(entry(ref));
     } else if (ref.kind === "head" || ref.kind === "currentHead") {
-      entries.push(locals.get(ref.name)!);
+      const key = ref.fullName?.startsWith("refs/heads/") ? ref.fullName.slice("refs/heads/".length) : undefined;
+      entries.push((key !== undefined && locals.get(key)) || entry(ref));
     } else {
-      entries.push({ ref, remotes: [] });
+      entries.push(entry(ref));
     }
   }
   return entries;
@@ -56,7 +80,7 @@ export function foldRefs(refs: WireRef[]): ChipEntry[] {
 
 /** Estimated rendered width of one chip, held to `cap`. */
 export function estimateChipWidth(entry: ChipEntry, cap = CHIP_BASE_CAP): number {
-  const w = 16 + 14 + entry.ref.name.length * 6.1 + (entry.remotes.length ? 14 : 0);
+  const w = 16 + 14 + entry.label.length * 6.1 + (entry.remotes.length ? 14 : 0);
   return Math.max(44, Math.min(cap, Math.ceil(w)));
 }
 
