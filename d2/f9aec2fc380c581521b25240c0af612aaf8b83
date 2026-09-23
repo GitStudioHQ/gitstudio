@@ -1,0 +1,20 @@
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_331b2b560b3d68 13130
+  s_26f5e669d3043c::t_c5ef494e7102d0 13110-13114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d2f9aec2fc380c581521b25240c0af612aaf8b83",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
