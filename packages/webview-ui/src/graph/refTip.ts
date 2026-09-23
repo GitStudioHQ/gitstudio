@@ -26,9 +26,17 @@ import { esc as escapeTip } from "./format";
 
 /** A ref folded into the "+N" pill. `remotes` mirrors the chip's cloud tail. */
 export interface TipRef {
+  /** git's short name — what a row's click hands the host (refClick). */
   name: string;
+  /** What the card SAYS: the full name shorn ("release", never git's
+   *  "heads/release"). Falls back to `name`. */
+  label?: string;
+  /** The ref's full name, and its folded twins' — what a row's click
+   *  resolves by (chipRefs). */
+  fullName?: string;
   kind: WireRef["kind"];
   remotes?: string[];
+  twins?: string[];
 }
 
 /** How each ref kind reads in the card (and in the pill's aria-label). */
@@ -60,21 +68,34 @@ const GAP = 6;
 /** Serialize the hidden refs for the pill's `data-more` attribute. */
 export function tipData(refs: TipRef[]): string {
   return JSON.stringify(
-    refs.map((r) => (r.remotes?.length ? { n: r.name, k: r.kind, r: r.remotes } : { n: r.name, k: r.kind })),
+    refs.map((r) => {
+      const w: WireTipRef = { n: r.name, k: r.kind };
+      if (r.label && r.label !== r.name) w.l = r.label;
+      if (r.fullName) w.f = r.fullName;
+      if (r.remotes?.length) w.r = r.remotes;
+      if (r.twins?.length) w.t = r.twins;
+      return w;
+    }),
   );
 }
 
 /** The pill's screen-reader text — the card is pointer-only. */
 export function tipAriaLabel(refs: TipRef[]): string {
   return `${refs.length} more: ${refs
-    .map((r) => `${r.name} (${REF_KIND_LABEL[r.kind]})`)
+    .map((r) => `${r.label ?? r.name} (${REF_KIND_LABEL[r.kind]})`)
     .join(", ")}`;
 }
 
 interface WireTipRef {
   n: string;
+  /** label, when it differs from `n` */
+  l?: string;
+  /** full name */
+  f?: string;
   k: WireRef["kind"];
   r?: string[];
+  /** the folded twins' full names */
+  t?: string[];
 }
 
 /**
@@ -288,7 +309,7 @@ function parse(raw: string | undefined): TipRef[] {
   }
   try {
     const parsed = JSON.parse(raw) as WireTipRef[];
-    return parsed.map((r) => ({ name: r.n, kind: r.k, remotes: r.r }));
+    return parsed.map((r) => ({ name: r.n, label: r.l ?? r.n, fullName: r.f, kind: r.k, remotes: r.r, twins: r.t }));
   } catch {
     return [];
   }
@@ -303,9 +324,13 @@ function rowHtml(ref: TipRef): string {
   // that is most of them.
   return (
     `<div class="tip-row tip-${ref.kind}" role="link" tabindex="0"` +
-    ` data-ref="${escapeTip(ref.name)}" data-kind="${escapeTip(ref.kind)}">` +
+    ` data-ref="${escapeTip(ref.name)}" data-kind="${escapeTip(ref.kind)}"` +
+    (ref.fullName ? ` data-full="${escapeTip(ref.fullName)}"` : "") +
+    (ref.remotes?.length ? ` data-remotes="${escapeTip(ref.remotes.join(","))}"` : "") +
+    (ref.twins?.length ? ` data-twins="${escapeTip(ref.twins.join(","))}"` : "") +
+    `>` +
     `<span class="codicon codicon-${KIND_ICON[ref.kind]}" aria-hidden="true"></span>` +
-    `<span class="tip-name">${escapeTip(ref.name)}</span>` +
+    `<span class="tip-name">${escapeTip(ref.label ?? ref.name)}</span>` +
     `<span class="tip-kind">${REF_KIND_LABEL[ref.kind]}</span>` +
     `${also}</div>`
   );

@@ -9389,7 +9389,7 @@ class App {
     panel.refMenu = !!this.graph;
     panel.addEventListener("gs-ref-menu", (e) => {
       const d = (e as CustomEvent<RefMenuRequest>).detail;
-      this.graph?.openRefMenu({ name: d.name, kind: d.kind }, d.x, d.y, d.sha, {
+      this.graph?.openRefMenu({ name: d.name, fullName: d.fullName, kind: d.kind }, d.x, d.y, d.sha, {
         opener: d.opener,
         keyboard: d.keyboard,
       });

@@ -231,11 +231,11 @@ export class GraphMount {
   /**
    * Open the graph's own chip menu for a ref chip outside it — the commit
    * details pane's (issue #30). The graph resolves the chip through its ref
-   * list by name and kind; a pick goes out through the element's onAction
+   * list by its full name; a pick goes out through the element's onAction
    * like every other tick, and so does its Checkout.
    */
   openRefMenu(
-    ref: { name: string; kind: WireRef["kind"] },
+    ref: { name: string; fullName: string; kind: WireRef["kind"] },
     x: number,
     y: number,
     sha: string,

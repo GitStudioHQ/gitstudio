@@ -23,7 +23,17 @@ const CHROME = findChrome();
  *  upstream, a second local, a remote without a local twin, and a tag. */
 const FIXTURE = `
   const sha = (i) => i.toString(16).padStart(4, "0").repeat(10);
-  const ref = (name, kind) => ({ name, kind });
+  // A chip as a host sends it: git's short name AND the full name (issue
+  // #30's follow-up). The short name of a branch beside a tag of its name is
+  // "heads/<name>", of the tag "tags/<name>" — the full name is what git has.
+  const ref = (name, kind) => ({
+    name,
+    kind,
+    fullName:
+      kind === "tag" ? "refs/tags/" + (name.startsWith("tags/") ? name.slice(5) : name)
+      : kind === "remoteHead" ? "refs/remotes/" + name
+      : "refs/heads/" + (name.startsWith("heads/") ? name.slice(6) : name),
+  });
   const row = (i, refs) => ({
     sha: sha(i), shortSha: sha(i).slice(0, 7), column: 0, color: 0, isMerge: false,
     segments: [{ fromColumn: 0, toColumn: 0, color: 0 }],

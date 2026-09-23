@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { headBranchName } from "@gitstudio/git-service/RefProvider";
+import { syncBranchLabel } from "./syncLabel";
 
 // A compact left status-bar segment for the active repo's sync state:
 //   $(git-branch) <branch> $(arrow-down)<behind> $(arrow-up)<ahead>
@@ -73,9 +75,8 @@ export class SyncStatusItem implements vscode.Disposable {
     }
     try {
       const head = await active.ctx.refs.getHead();
-      const branch = head.detached
-        ? `${head.sha.slice(0, 7)} (detached)`
-        : head.branch ?? `${head.sha.slice(0, 7)} (detached)`;
+      // The plain name ("release"), never git's "heads/release" — see syncLabel.
+      const branch = syncBranchLabel(head);
       const upstream = await active.ctx.sync.currentUpstream();
       const counts = await active.ctx.sync.aheadBehind();
 
@@ -296,10 +297,12 @@ export class SyncStatusItem implements vscode.Disposable {
       return false;
     }
     const head = await active.ctx.refs.getHead();
-    if (head.detached || !head.branch) {
+    // The name under refs/heads/: it is shown, and republished as a
+    // refs/heads/<branch> refspec — "heads/release" was neither.
+    const branch = headBranchName(head);
+    if (!branch) {
       return false;
     }
-    const branch = head.branch;
     const upstream = (await active.ctx.sync.currentUpstream()) ?? "its upstream";
     const choice = await promptPick({
       title: `"${branch}" tracks ${upstream}, which no longer exists`,
@@ -446,7 +449,9 @@ export class SyncStatusItem implements vscode.Disposable {
       );
       return undefined;
     }
-    return head.branch;
+    // Published as refs/heads/<name>:refs/heads/<name> (SyncOps): the name
+    // under refs/heads/, never "heads/release".
+    return headBranchName(head);
   }
 
   private async pickRemote(active: RepoEntry): Promise<string | undefined> {

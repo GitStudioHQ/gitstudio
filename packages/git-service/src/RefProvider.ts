@@ -64,6 +64,19 @@ function refTypeFromFullName(fullName: string): GitRefType | undefined {
   return undefined;
 }
 
+/**
+ * The branch HEAD is on, as a person reads it and as `git branch` / a
+ * refs/heads/ refspec / `branch.<name>.*` take it: the name under refs/heads/
+ * ("release"), never git's disambiguated "heads/release" (RepoHead.branch).
+ * Undefined when detached. Falls back to `branch` for a head read without a
+ * full name.
+ */
+export function headBranchName(head: RepoHead): string | undefined {
+  if (head.detached) return undefined;
+  if (head.fullName?.startsWith("refs/heads/")) return head.fullName.slice("refs/heads/".length) || head.branch;
+  return head.branch;
+}
+
 /** Lists branches, remote branches, tags, and stashes; reads HEAD. */
 export class RefProvider {
   constructor(private proc: GitProcess) {}
@@ -177,16 +190,27 @@ export class RefProvider {
   }
 
   async getHead(): Promise<RepoHead> {
-    // rev-parse and symbolic-ref are independent — run them concurrently.
-    const [shaResult, branchResult] = await Promise.all([
+    // rev-parse and the two symbolic-ref reads are independent — run them
+    // concurrently.
+    //
+    // BOTH names of the branch. `--short` is git's shortest UNAMBIGUOUS form,
+    // "heads/release" beside a tag "release": right to hand back to git as a
+    // revision (the compare panel does), wrong to show a person or to build a
+    // refs/heads/ refspec from. The full name is what those derive the plain
+    // name from (issue #30's follow-up: the status bar read "heads/release").
+    const [shaResult, branchResult, fullResult] = await Promise.all([
       this.proc.run(["rev-parse", "HEAD"]),
       this.proc.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
+      this.proc.run(["symbolic-ref", "--quiet", "HEAD"]),
     ]);
     const sha = shaResult.stdout.trim();
     const branch = branchResult.stdout.trim();
     const detached = branchResult.code !== 0 || branch.length === 0;
+    const full = fullResult.code === 0 ? fullResult.stdout.trim() : "";
 
-    return detached ? { detached: true, sha } : { detached: false, branch, sha };
+    return detached
+      ? { detached: true, sha }
+      : { detached: false, branch, sha, ...(full.startsWith("refs/heads/") ? { fullName: full } : {}) };
   }
 
   /**

@@ -23,34 +23,38 @@ export interface PickerRefLike extends RefLike {
  * `[0]` is what its "Checkout" checks out. Every chip surface resolves through
  * here: the graph's rows, the rail's, and the commit-details pane's.
  *
- * A chip's name is `%(refname:short)`, and short is only SHORTEST UNAMBIGUOUS:
- * the moment a tag and a branch share "release", git hands out
- * "heads/release" and "tags/release". So a full name is never REBUILT from a
- * chip — "refs/heads/heads/release" names nothing, the hosts pruned it, and
- * the shortcut silently showed every branch under a trigger saying "All
- * branches". The picker's list carries the full name git gave each ref; the
- * chip is looked up there by name AND kind.
+ * By FULL name (issue #30's follow-up). A chip carries the full name git gave
+ * its ref (WireRef.fullName), and so does every twin folded into it
+ * (foldRefs); each is looked up in the picker's list as it is. It used to be
+ * looked up by `%(refname:short)` and kind — and short is only SHORTEST
+ * UNAMBIGUOUS, "heads/release" beside a tag "release", whose twin was then
+ * sought as "origin/heads/release" and never found.
  *
  * A chip the list has no entry for resolves to NOTHING (`[]`), and its menu
- * offers no action: guessing a namespace for it is the bug above. The list
- * and the chips come from the same ref listing, so this is only ever a
- * moment's disagreement (a details pane read just before a refresh landed);
- * a twin that is not listed is left out rather than guessed.
+ * offers no action: the list is the word on what exists. The list and the
+ * chips come from the same ref listing, so this is only ever a moment's
+ * disagreement (a details pane read just before a refresh landed); a twin
+ * that is not listed is left out.
  */
 export function chipRefs(
   refList: readonly GraphRefEntry[],
-  name: string,
-  kind: WireRef["kind"],
-  remotes: readonly string[] = [],
+  fullName: string,
+  twins: readonly string[] = [],
 ): string[] {
-  const resolve = (n: string, k: GraphRefEntry["kind"]): string | undefined =>
-    refList.find((r) => r.name === n && r.kind === k)?.fullName;
-  const own = resolve(name, kind === "currentHead" ? "head" : kind);
-  if (!own) return [];
-  const twins = remotes
-    .map((r) => resolve(`${r}/${name}`, "remoteHead"))
-    .filter((f): f is string => f !== undefined);
-  return [own, ...twins];
+  const listed = (f: string): boolean => refList.some((r) => r.fullName === f);
+  if (!fullName || !listed(fullName)) return [];
+  return [fullName, ...twins.filter((t) => t !== fullName && listed(t))];
+}
+
+/**
+ * How a ref is NAMED on screen: its full name shorn of the namespace —
+ * "main", "origin/main", "v1.2.0". Never `%(refname:short)`, which is git's
+ * shortest UNAMBIGUOUS form: a branch sharing its name with a tag is
+ * "heads/release", under a chip that already says it is a branch. A branch
+ * really called "heads/x" keeps its name (refs/heads/heads/x → "heads/x").
+ */
+export function refLabel(fullName: string): string {
+  return fullName.replace(/^refs\/(heads|remotes|tags)\//, "");
 }
 
 /**

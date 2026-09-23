@@ -222,10 +222,21 @@ export type GraphAction =
   /** A ref chip (branch / remote / tag label) was clicked — a host with a
    *  page for the ref navigates there (the desktop's Branches view); one with
    *  none opens the chip's own menu at (x, y) through openRefMenu (the
-   *  extension). `remotes` are the twins folded into the chip. Never a row
-   *  selection. x/y are absent from a "+N" card row: that card sits where the
-   *  menu would. */
-  | { type: "refClick"; sha: string; name: string; kind: string; x?: number; y?: number; remotes?: string[] }
+   *  extension). `remotes` are the twins folded into the chip, `twins` their
+   *  full names; `name` is git's short form (what the desktop's Branches view
+   *  lists), `fullName` the ref's full name. Never a row selection. x/y are
+   *  absent from a "+N" card row: that card sits where the menu would. */
+  | {
+      type: "refClick";
+      sha: string;
+      name: string;
+      fullName: string;
+      kind: string;
+      x?: number;
+      y?: number;
+      remotes?: string[];
+      twins?: string[];
+    }
   | { type: "loadMore" }
   | { type: "refresh" }
   | { type: "requestStats"; shas: string[] }
@@ -1720,7 +1731,11 @@ export class CommitGraph extends LitElement {
    * list.
    */
   private declare chipMenu: {
+    /** git's short name, as the chip carries it — for the host's checkout
+     *  request, never for display (see fullName). */
     name: string;
+    /** The chip's full name: what it resolves by and is titled by. */
+    fullName: string;
     kind: WireRef["kind"];
     sha: string;
     refs: string[];
@@ -2799,10 +2814,12 @@ export class CommitGraph extends LitElement {
     if (!name) return;
     const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
     // The chip and the remote twins folded into it move as one thing — what
-    // you see is "main ☁", and "only this" means what you see.
-    const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
+    // you see is "main ☁", and "only this" means what you see. Both by FULL
+    // name, as the chip carries them (foldRefs).
+    const fullName = chip.dataset.full ?? "";
+    const twins = (chip.dataset.twins ?? "").split(",").filter(Boolean);
     const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
-    this.showChipMenu({ name, kind, sha, x, y }, remotes);
+    this.showChipMenu({ name, fullName, kind, sha, x, y }, twins);
   }
 
   /**
@@ -2812,32 +2829,33 @@ export class CommitGraph extends LitElement {
    * graph owns both, so the pane asks the graph, and a pick goes through the
    * one applyRefFilter every other tick goes through.
    *
-   * `name` and `kind` are the chip's own words, resolved through the ref list
-   * like every chip (chipRefs) — never rebuilt into a full name. `opener`
-   * gets focus back on Escape; `keyboard` focuses the first item, so a menu
-   * opened with Enter can be driven with the arrows.
+   * `fullName` is the chip's ref as git named it in full (WireRef.fullName),
+   * resolved through the ref list like every chip (chipRefs); `name` is git's
+   * short form, carried for the host's checkout request only. `twins` are the
+   * full names of remote twins folded into the chip. `opener` gets focus back
+   * on Escape; `keyboard` focuses the first item, so a menu opened with Enter
+   * can be driven with the arrows.
    */
   openRefMenu(
-    ref: { name: string; kind: WireRef["kind"] },
+    ref: { name: string; fullName: string; kind: WireRef["kind"] },
     x: number,
     y: number,
     sha: string,
-    opts: { opener?: HTMLElement; keyboard?: boolean; remotes?: readonly string[] } = {},
+    opts: { opener?: HTMLElement; keyboard?: boolean; twins?: readonly string[] } = {},
   ): void {
-    if (!ref.name) return;
+    if (!ref.name && !ref.fullName) return;
     this.showChipMenu(
-      { name: ref.name, kind: ref.kind, sha, x, y, opener: opts.opener, focusFirst: opts.keyboard },
-      opts.remotes ?? [],
+      { name: ref.name, fullName: ref.fullName, kind: ref.kind, sha, x, y, opener: opts.opener, focusFirst: opts.keyboard },
+      opts.twins ?? [],
     );
   }
 
   private showChipMenu(
     m: Omit<NonNullable<CommitGraph["chipMenu"]>, "refs">,
-    remotes: readonly string[],
+    twins: readonly string[],
   ): void {
-    // Resolved through the picker's list, not rebuilt from the short name:
-    // see chipRefs.
-    const refs = chipRefs(this.refList, m.name, m.kind, remotes);
+    // Resolved through the picker's list by FULL name: see chipRefs.
+    const refs = chipRefs(this.refList, m.fullName, twins);
     this.columnsOpen = false;
     this.scopeOpen = false;
     this.branchesOpen = false;
@@ -3164,7 +3182,7 @@ export class CommitGraph extends LitElement {
     const { shown, overflow: rest } = fitRefs(entries, this.refsBudget());
     let out = "";
     for (const entry of entries.slice(0, shown)) {
-      out += chipHtml(entry.ref, entry.remotes);
+      out += chipHtml(entry);
     }
     // The "+N" pill is UNCONDITIONAL whenever anything was dropped.
     //
@@ -3181,8 +3199,11 @@ export class CommitGraph extends LitElement {
       // affordance that reveals what the column could not fit.
       const hidden = rest.map((e) => ({
         name: e.ref.name,
+        label: e.label,
+        fullName: e.ref.fullName,
         kind: e.ref.kind,
         remotes: e.remotes,
+        twins: e.twins,
       }));
       out +=
         `<span class="chip chip-overflow" data-more="${esc(tipData(hidden))}"` +
@@ -3220,8 +3241,10 @@ export class CommitGraph extends LitElement {
       type: "refClick",
       sha,
       name,
+      fullName: row.dataset.full ?? "",
       kind: row.dataset.kind ?? "head",
       remotes: (row.dataset.remotes ?? "").split(",").filter(Boolean),
+      twins: (row.dataset.twins ?? "").split(",").filter(Boolean),
     });
   };
 
@@ -3278,10 +3301,12 @@ export class CommitGraph extends LitElement {
           type: "refClick",
           sha: row.dataset.sha,
           name,
+          fullName: chip.dataset.full ?? "",
           kind: chip.dataset.kind ?? "head",
           x: e.clientX,
           y: e.clientY,
           remotes: (chip.dataset.remotes ?? "").split(",").filter(Boolean),
+          twins: (chip.dataset.twins ?? "").split(",").filter(Boolean),
         });
         return;
       }
@@ -3790,7 +3815,7 @@ export class CommitGraph extends LitElement {
     for (const row of this.rows) {
       const ref = row.refs.find((r) => r.kind === "currentHead");
       if (ref) {
-        return ref.name;
+        return ref.fullName ? refDisplayName(ref.fullName) : ref.name;
       }
     }
     return "";
@@ -4069,8 +4094,9 @@ export class CommitGraph extends LitElement {
       this.applyRefFilter(refs);
     };
     // The ref's own name, not git's disambiguated short form ("heads/x"
-    // beside a tag "x"); the chip's words when the list does not know it.
-    const title = known ? refDisplayName(m.refs[0]) : m.name;
+    // beside a tag "x") — the chip's full name, shorn, even when the list
+    // does not know it.
+    const title = refDisplayName(known ? m.refs[0] : m.fullName || m.name);
     const checkout = known ? chipCheckout({ ...m, name: title }) : undefined;
     return html`<div
       class="gh-pop gh-ctx gh-chip-menu"
@@ -4382,17 +4408,17 @@ function tailHtml(remotes: string[]): string {
 }
 
 /** Chip label; a remote chip's "origin/" prefix is visually muted. */
-function refNameHtml(ref: WireRef): string {
+function refNameHtml(ref: WireRef, label: string): string {
   if (ref.kind === "remoteHead") {
-    const i = ref.name.indexOf("/");
+    const i = label.indexOf("/");
     if (i > 0) {
       return (
-        `<span class="nm"><span class="rp">${esc(ref.name.slice(0, i + 1))}</span>` +
-        `${esc(ref.name.slice(i + 1))}</span>`
+        `<span class="nm"><span class="rp">${esc(label.slice(0, i + 1))}</span>` +
+        `${esc(label.slice(i + 1))}</span>`
       );
     }
   }
-  return `<span class="nm">${esc(ref.name)}</span>`;
+  return `<span class="nm">${esc(label)}</span>`;
 }
 
 /**
@@ -4420,17 +4446,21 @@ function refNameHtml(ref: WireRef): string {
  * `aria-label` carries what the title used to say, so nothing is lost to
  * assistive tech.
  */
-function chipHtml(ref: WireRef, remotes: string[] = []): string {
-  const nm = refNameHtml(ref);
+function chipHtml(entry: ChipEntry): string {
+  const { ref, label, remotes, twins } = entry;
+  const nm = refNameHtml(ref, label);
   const tail = tailHtml(remotes);
   const also = remotes.length ? ` · also on ${esc(remotes.join(", "))}` : "";
-  const tip = esc(tipData([{ name: ref.name, kind: ref.kind, remotes }]));
-  // `data-remotes` carries the folded twins so the chip's filter menu (issue
-  // #30) can move "main ☁" as the one thing it looks like.
+  const tip = esc(tipData([{ name: ref.name, label, fullName: ref.fullName, kind: ref.kind, remotes, twins }]));
+  // `data-full` / `data-twins` are what the chip's filter menu (issue #30)
+  // resolves by: the chip's own full name and the folded twins', so "main ☁"
+  // moves as the one thing it looks like. `data-ref` stays git's short name —
+  // the name the desktop's Branches view lists the ref under — and the label
+  // is the full name shorn (never "heads/release").
   const attrs = (cls: string, what: string) =>
-    `class="${cls}" data-ref="${esc(ref.name)}" data-kind="${ref.kind}" ` +
-    (remotes.length ? `data-remotes="${esc(remotes.join(","))}" ` : "") +
-    `data-more="${tip}" role="button" aria-label="${esc(ref.name)} (${what}${also})"`;
+    `class="${cls}" data-ref="${esc(ref.name)}" data-full="${esc(ref.fullName ?? "")}" data-kind="${ref.kind}" ` +
+    (remotes.length ? `data-remotes="${esc(remotes.join(","))}" data-twins="${esc(twins.join(","))}" ` : "") +
+    `data-more="${tip}" role="button" aria-label="${esc(label)} (${what}${also})"`;
   switch (ref.kind) {
     case "currentHead":
       // No leading dot: the filled accent already marks the current branch, and

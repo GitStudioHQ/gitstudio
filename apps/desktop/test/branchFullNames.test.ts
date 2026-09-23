@@ -201,6 +201,20 @@ test("a branch named like an option: checkout says WHY and hands back the rename
   assert.equal(rr.optionLike?.local, false);
 });
 
+test("on a branch beside a tag of its name, HEAD reads 'release' — the top bar, the sync widget, the details pane", async () => {
+  git("checkout", "-q", "release");
+  assert.equal(git("symbolic-ref", "--short", "HEAD"), "heads/release", "git's own short form");
+  const head = await bridge.head();
+  assert.equal(head?.branch, "release", "the top bar / PR composer / dispatch get the plain name");
+  const sync = await bridge.syncStatus();
+  assert.equal(sync.branch, "release", "the sync widget too");
+  // "in N branches": HEAD's branch is recognised as containing its own tip.
+  const contains = await bridge.commitBranches(releaseTip);
+  assert.equal(contains.current, "release");
+  assert.equal(contains.onCurrent, true, "the short form never matched the list's plain names");
+  git("checkout", "-q", "main");
+});
+
 test("every renderer door sends branch ops by FULL name (source census)", () => {
   // The renderer's doors live in DOM code that cannot run here; the types
   // make `fullName` required, and this pins that it is the BRANCH's.

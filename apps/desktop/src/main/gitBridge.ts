@@ -21,6 +21,7 @@ import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
 import { stashBlockerMessage } from "@gitstudio/git-service/StashProvider";
 import { optionLikeCheckout, planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { branchNameOf } from "@gitstudio/git-service/BranchOps";
+import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listUnstagedHunks, stageHunks } from "@gitstudio/git-service/hunkStaging";
 import { setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
@@ -537,9 +538,12 @@ export class GitBridge {
     }
     try {
       const h = await ctx.refs.getHead();
+      // The plain name ("release"), never git's "heads/release" beside a tag
+      // of that name: the top bar shows it, and the PR composer and the
+      // workflow dispatch hand it to GitHub, which has no "heads/" anything.
       return h.detached
         ? { detached: true, sha: h.sha }
-        : { detached: false, branch: h.branch, sha: h.sha };
+        : { detached: false, branch: headBranchName(h), sha: h.sha };
     } catch {
       return undefined;
     }
@@ -560,7 +564,10 @@ export class GitBridge {
     if (!ctx || !safeArg(sha)) return { branches: [], onCurrent: false };
     const [contains, head] = await Promise.all([
       ctx.process.run(["branch", "--contains", sha, "--format=%(refname)"]),
-      ctx.process.run(["symbolic-ref", "--quiet", "--short", "HEAD"]),
+      // FULL, like the list it is compared with: `--short` is "heads/release"
+      // beside a tag "release", which never equalled the list's "release", so
+      // the current branch was not recognised as containing the commit.
+      ctx.process.run(["symbolic-ref", "--quiet", "HEAD"]),
     ]);
     if (contains.code !== 0) return { branches: [], onCurrent: false };
     const branches = contains.stdout
@@ -568,7 +575,8 @@ export class GitBridge {
       .map((l) => l.trim())
       .filter((l) => l.startsWith("refs/heads/"))
       .map((l) => l.slice("refs/heads/".length));
-    const current = head.code === 0 ? head.stdout.trim() || undefined : undefined;
+    const headRef = head.code === 0 ? head.stdout.trim() : "";
+    const current = headRef.startsWith("refs/heads/") ? headRef.slice("refs/heads/".length) || undefined : undefined;
     const onCurrent = !!current && branches.includes(current);
     // HEAD's own branch first — it is the one the reader is oriented by.
     branches.sort((a, b) => (a === current ? -1 : b === current ? 1 : a.localeCompare(b)));
@@ -599,11 +607,14 @@ export class GitBridge {
     const refs: WireRef[] = (this.refsBySha.get(sha) ?? [])
       .filter((r) => r.type !== "stash")
       .map((r): WireRef => {
-        if (r.type === "tag") return { kind: "tag", name: r.name };
-        if (r.type === "remote") return { kind: "remoteHead", name: r.name };
+        // The full name rides along (issue #30's follow-up): the pane labels
+        // its chips by it, and its chip menu resolves by it.
+        const fullName = r.fullName;
+        if (r.type === "tag") return { kind: "tag", name: r.name, fullName };
+        if (r.type === "remote") return { kind: "remoteHead", name: r.name, fullName };
         return r.isCurrent
-          ? { kind: "currentHead", name: r.name }
-          : { kind: "head", name: r.name };
+          ? { kind: "currentHead", name: r.name, fullName }
+          : { kind: "head", name: r.name, fullName };
       });
     const hasRemote = [...this.refsBySha.values()].some((list) =>
       list.some((r) => r.type === "remote"),
@@ -1771,7 +1782,8 @@ export class GitBridge {
     let branch: string | undefined;
     try {
       const h = await ctx.refs.getHead();
-      branch = h.detached ? undefined : h.branch;
+      // Shown in the sync widget: the plain name, never "heads/release".
+      branch = headBranchName(h);
     } catch {
       branch = undefined;
     }

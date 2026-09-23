@@ -9,6 +9,7 @@
 // graph of nothing is not a graph.
 
 import type { GraphRefEntry, GraphRefFilter, RefPreset, WireRef } from "@gitstudio/host-bridge/graphProtocol";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 
 export type { RefPreset };
 
@@ -84,7 +85,9 @@ export function activePreset(filter: GraphRefFilter, preset?: RefPreset): RefPre
  * listed as "heads/release" — under a heading that already says Local.
  */
 export function refDisplayName(fullName: string): string {
-  return fullName.replace(/^refs\/(heads|remotes|tags)\//, "");
+  // One rule for every surface that names a ref — the chips, the picker, the
+  // trigger — so they cannot drift: host-bridge's refLabel.
+  return refLabel(fullName);
 }
 
 /**

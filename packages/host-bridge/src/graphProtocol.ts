@@ -9,8 +9,21 @@ import type { CommitDetailsPayload } from "./commitDetailsProtocol";
 
 /** A ref decoration attached to a commit (a branch tip, remote, or tag). */
 export interface WireRef {
-  /** Display name, e.g. "main", "origin/main", "v1.2.0". */
+  /**
+   * git's `%(refname:short)`: "main", "origin/main", "v1.2.0" — but only
+   * SHORTEST UNAMBIGUOUS, so beside a tag "release" the branch is
+   * "heads/release" and the tag "tags/release". Kept for the hosts that look a
+   * ref up by the name git lists it under (the desktop's Branches view). Never
+   * the chip's label, and never a key: see `fullName`.
+   */
   name: string;
+  /**
+   * The full name, "refs/heads/release" (issue #30's follow-up). What a chip is
+   * LABELLED by (shorn of its namespace: "release"), what twins fold by
+   * (refs/remotes/<remote>/<branch> onto refs/heads/<branch>), and what a chip
+   * resolves to in the picker's list.
+   */
+  fullName: string;
   /**
    * - `currentHead`: the local branch HEAD currently points at (filled accent).
    * - `head`: another local branch.

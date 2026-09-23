@@ -68,6 +68,7 @@ import {
   toggleRef,
 } from "./refFilter";
 import { chipRefs, presetRefs, sameRefFilter } from "@gitstudio/host-bridge/graphRefFilter";
+import { chipLabel, foldRefs } from "./refLayout";
 
 // ── Layout constants (the sidebar's visual contract) ────────────────────────
 const ROW_HEIGHT = 40;
@@ -140,9 +141,16 @@ interface RailMenu {
 /** A folded, render-ready ref chip (remote twins folded into their local). */
 interface ChipView {
   kind: WireRef["kind"];
+  /** git's short name (data-ref), never shown. */
+  name: string;
+  /** The ref's full name — what the chip's menu resolves by. */
+  fullName: string;
+  /** What the chip says: the full name shorn ("release"). */
   label: string;
   /** The folded remote names ("origin", …) — shown as a cloud tail. */
   remotes: string[];
+  /** Those twins' full names. */
+  twins: string[];
   title: string;
 }
 
@@ -905,7 +913,10 @@ export class CommitRail extends LitElement {
    * `sha` is the row it sits on, for the checkout.
    */
   private declare chipMenu: {
+    /** git's short name, for the host's checkout request only. */
     name: string;
+    /** The chip's full name: what it resolves by and is titled by. */
+    fullName: string;
     kind: WireRef["kind"];
     sha: string;
     refs: string[];
@@ -1244,7 +1255,7 @@ export class CommitRail extends LitElement {
     const age = isWip ? "now" : esc(relTime(row.authorDate));
 
     const tipRefs = row.refs.length
-      ? `\n${row.refs.map((r) => r.name).join(", ")}`
+      ? `\n${row.refs.map((r) => chipLabel(r)).join(", ")}`
       : "";
     const tip = isWip
       ? "Uncommitted changes — open in the Commit Graph for details"
@@ -1274,36 +1285,30 @@ export class CommitRail extends LitElement {
     );
   }
 
-  /** Meta-line ref chips: remote twins fold into locals, capped at 2 + "+N". */
+  /** Meta-line ref chips: remote twins fold into locals, capped at 2 + "+N".
+   *
+   *  Folded and labelled by the graph's own rule (foldRefs): by FULL name, so
+   *  a branch beside a tag of its name reads "release", not git's
+   *  "heads/release", and still takes its origin twin in. This used to be a
+   *  second copy of the fold, over the SHORT names, and it drifted the way
+   *  copies do. Locals first, then remotes and tags — the rail's order. */
   private chipsHtml(refs: WireRef[]): string {
-    const locals = new Map<string, ChipView>();
-    const chips: ChipView[] = [];
-    for (const ref of refs) {
-      if (ref.kind === "head" || ref.kind === "currentHead") {
-        const chip: ChipView = {
-          kind: ref.kind,
-          label: ref.name,
-          remotes: [],
-          title: ref.name,
-        };
-        locals.set(ref.name, chip);
-        chips.push(chip);
-      }
-    }
-    for (const ref of refs) {
-      if (ref.kind === "remoteHead") {
-        const slash = ref.name.indexOf("/");
-        const local = slash > 0 ? locals.get(ref.name.slice(slash + 1)) : undefined;
-        if (local) {
-          local.remotes.push(ref.name.slice(0, slash));
-          local.title += `, ${ref.name}`;
-          continue;
-        }
-        chips.push({ kind: ref.kind, label: ref.name, remotes: [], title: ref.name });
-      } else if (ref.kind === "tag") {
-        chips.push({ kind: ref.kind, label: ref.name, remotes: [], title: `tag: ${ref.name}` });
-      }
-    }
+    const folded = foldRefs(refs);
+    const chips: ChipView[] = [
+      ...folded.filter((e) => e.ref.kind === "head" || e.ref.kind === "currentHead"),
+      ...folded.filter((e) => e.ref.kind === "remoteHead" || e.ref.kind === "tag"),
+    ].map((e) => ({
+      kind: e.ref.kind,
+      name: e.ref.name,
+      fullName: e.ref.fullName ?? "",
+      label: e.label,
+      remotes: e.remotes,
+      twins: e.twins,
+      title:
+        e.ref.kind === "tag"
+          ? `tag: ${e.label}`
+          : [e.label, ...e.twins.map((t) => refDisplayName(t))].join(", "),
+    }));
 
     const visible = chips.slice(0, MAX_CHIPS);
     const rest = chips.slice(MAX_CHIPS);
@@ -1330,15 +1335,18 @@ export class CommitRail extends LitElement {
       // the only way to opt one out — without it the row's slow native tooltip
       // is what you get, which is exactly what it looked like before.
       const tip = esc(
-        tipData([{ name: chip.label, kind: chip.kind, remotes: chip.remotes }]),
+        tipData([{ name: chip.name, label: chip.label, fullName: chip.fullName, kind: chip.kind, remotes: chip.remotes, twins: chip.twins }]),
       );
-      // `data-ref` / `data-kind` / `data-remotes` are what the chip's filter
-      // menu (issue #30) reads: the ref behind the chip, and the folded twins
-      // that move with it as the one thing it looks like.
+      // `data-full` / `data-twins` are what the chip's filter menu (issue #30)
+      // resolves by: the ref behind the chip and the folded twins that move
+      // with it as the one thing it looks like, all by FULL name. `data-ref`
+      // is git's short name, as the graph's chips carry it.
       out +=
         `<span class="${cls}" title="" data-more="${tip}"` +
-        ` data-ref="${esc(chip.label)}" data-kind="${chip.kind}"` +
-        (chip.remotes.length ? ` data-remotes="${esc(chip.remotes.join(","))}"` : "") +
+        ` data-ref="${esc(chip.name)}" data-full="${esc(chip.fullName)}" data-kind="${chip.kind}"` +
+        (chip.remotes.length
+          ? ` data-remotes="${esc(chip.remotes.join(","))}" data-twins="${esc(chip.twins.join(","))}"`
+          : "") +
         ` aria-label="${esc(chip.title)}">` +
         `<span class="codicon codicon-${icon}" aria-hidden="true"></span>` +
         `<span class="name">${esc(chip.label)}</span>${cloud}</span>`;
@@ -1350,9 +1358,12 @@ export class CommitRail extends LitElement {
       // produced the row's, a second later. An empty title is the only way to
       // opt a descendant out. The card in refTip.ts renders from `data-more`.
       const hidden = rest.map((c) => ({
-        name: c.label,
+        name: c.name,
+        label: c.label,
+        fullName: c.fullName,
         kind: c.kind,
         remotes: c.remotes,
+        twins: c.twins,
       }));
       out +=
         `<span class="chip more" title="" data-more="${esc(tipData(hidden))}"` +
@@ -1789,10 +1800,11 @@ export class CommitRail extends LitElement {
     if (!name) return;
     const kind = (chip.dataset.kind ?? "head") as WireRef["kind"];
     // The chip and the remote twins folded into it move as one thing — what
-    // you see is "main ☁", and "only this" means what you see. Resolved
-    // through the picker's list, not rebuilt from the short name: see chipRefs.
-    const remotes = (chip.dataset.remotes ?? "").split(",").filter(Boolean);
-    const refs = chipRefs(this.refList, name, kind, remotes);
+    // you see is "main ☁", and "only this" means what you see. Both by FULL
+    // name, resolved through the picker's list: see chipRefs.
+    const fullName = chip.dataset.full ?? "";
+    const twins = (chip.dataset.twins ?? "").split(",").filter(Boolean);
+    const refs = chipRefs(this.refList, fullName, twins);
     const sha = (chip.closest(".row") as HTMLElement | null)?.dataset.sha ?? "";
     // Clamped like the commit menu, so it never clips the narrow sidebar.
     const estW = popMaxWidth();
@@ -1800,6 +1812,7 @@ export class CommitRail extends LitElement {
     this.closePopovers();
     this.chipMenu = {
       name,
+      fullName,
       kind,
       sha,
       refs,
@@ -2108,8 +2121,9 @@ export class CommitRail extends LitElement {
       this.applyRefFilter(refs);
     };
     // The ref's own name, not git's disambiguated short form ("heads/x"
-    // beside a tag "x"); the chip's words when the list does not know it.
-    const title = known ? refDisplayName(m.refs[0]) : m.name;
+    // beside a tag "x") — the chip's full name, shorn, even when the list
+    // does not know it.
+    const title = refDisplayName(known ? m.refs[0] : m.fullName || m.name);
     const checkout = known ? chipCheckout({ ...m, name: title }) : undefined;
     return html`
       <div

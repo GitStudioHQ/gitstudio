@@ -608,7 +608,12 @@
     // second lane still open, ref chips on the tips, and a tagged release.
     "graph:load": (() => {
       const seg = (from, to, color) => ({ fromColumn: from, toColumn: to, color });
-      const ref = (name, kind) => ({ name, kind });
+      // As wireRefs sends them: git's short name AND the full name.
+      const ref = (name, kind) => ({
+        name,
+        kind,
+        fullName: kind === "tag" ? "refs/tags/" + name : kind === "remoteHead" ? "refs/remotes/" + name : "refs/heads/" + name,
+      });
       const row = (o) => ({
         sha: o.sha,
         shortSha: o.sha.slice(0, 7),
@@ -2002,7 +2007,7 @@
       body:
         "The split view could not show a body, a timeline and a rail at once on\n" +
         "a 13\" screen, so all three were cropped.\n\nCloses #31.",
-      refs: [{ name: "redesign/wave-2", kind: "currentHead" }],
+      refs: [{ name: "redesign/wave-2", fullName: "refs/heads/redesign/wave-2", kind: "currentHead" }],
       files: commitFiles([
         ["M", "apps/desktop/src/renderer/views/issues.ts", 402, 260],
         ["A", "apps/desktop/src/renderer/views/common.ts", 188, 0],
@@ -2032,9 +2037,9 @@
       subject: "Merge branch 'main' into redesign/wave-2",
       body: "",
       refs: [
-        { name: "main", kind: "head" },
-        { name: "origin/main", kind: "remoteHead" },
-        { name: "desktop-v1.6.0", kind: "tag" },
+        { name: "main", fullName: "refs/heads/main", kind: "head" },
+        { name: "origin/main", fullName: "refs/remotes/origin/main", kind: "remoteHead" },
+        { name: "desktop-v1.6.0", fullName: "refs/tags/desktop-v1.6.0", kind: "tag" },
       ],
       files: commitFiles([["M", "apps/desktop/src/renderer/renderer.ts", 14, 2]]),
       hasRemote: true,

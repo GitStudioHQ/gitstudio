@@ -15,6 +15,7 @@ import { codiconStyles } from "./styles/codicons";
 import { hostTokens } from "./styles/hostTokens";
 import { gravatarUrl, avatarHue, authorInitials } from "./graph/avatar";
 import { absTime } from "./graph/format";
+import { refLabel } from "@gitstudio/host-bridge/graphRefFilter";
 import type {
   CommitDetailsPayload,
   CommitDetailsActionId,
@@ -65,13 +66,15 @@ const WIP_ACTIONS: ActionDef[] = [
 /**
  * `gs-ref-menu`'s detail: a ref chip asked for its menu (issue #30). The
  * host hands it to the graph beside the pane (CommitGraph.openRefMenu), which
- * owns the filter and resolves the chip through its ref list. `name`/`kind`
- * are the chip's own words — never a full name; `opener` gets focus back when
- * the menu is dismissed; `keyboard` says it was opened with a key, so the menu
- * takes focus.
+ * owns the filter and resolves the chip through its ref list — by `fullName`,
+ * the ref's full name as the host sent it (WireRef.fullName). `name` is git's
+ * short form, carried for the host's checkout request only. `opener` gets
+ * focus back when the menu is dismissed; `keyboard` says it was opened with a
+ * key, so the menu takes focus.
  */
 export interface RefMenuRequest {
   name: string;
+  fullName: string;
   kind: WireRef["kind"];
   sha: string;
   x: number;
@@ -934,10 +937,13 @@ export class CommitDetails extends LitElement {
         : "chip-head";
       const icon =
         r.kind === "tag" ? "tag" : r.kind === "remoteHead" ? "cloud" : "git-branch";
+      // Labelled by the full name shorn ("release"), never git's
+      // disambiguated short form ("heads/release" beside a tag "release").
+      const label = r.fullName ? refLabel(r.fullName) : r.name;
       const body = html`<span class="codicon codicon-${icon}"></span
-        ><span class="chip-name">${r.name}</span>`;
+        ><span class="chip-name">${label}</span>`;
       if (!this.refMenu) {
-        return html`<span class="chip ${cls}" title=${r.name}>${body}</span>`;
+        return html`<span class="chip ${cls}" title=${label}>${body}</span>`;
       }
       // With a graph beside the pane, a chip is the same shortcut it is in
       // the graph's rows (issue #30): its menu shows only this branch, adds it
@@ -948,11 +954,12 @@ export class CommitDetails extends LitElement {
         class="chip ${cls}"
         data-ref-menu
         data-ref=${r.name}
+        data-full=${r.fullName ?? ""}
         data-kind=${r.kind}
         role="button"
         tabindex="0"
         aria-haspopup="menu"
-        title=${`${r.name} — filter the graph by it, or check it out`}
+        title=${`${label} — filter the graph by it, or check it out`}
         @click=${(e: MouseEvent) => this.onRefChipClick(r, e)}
         @contextmenu=${(e: MouseEvent) => {
           e.preventDefault();
@@ -1005,14 +1012,15 @@ export class CommitDetails extends LitElement {
   /**
    * Ask the host for this chip's menu — `gs-ref-menu`, answered by the graph
    * (CommitGraph.openRefMenu), which resolves the chip through its ref list by
-   * name and kind. The pane sends the chip's own words and never a full name:
-   * a chip's name is git's SHORT form, "heads/release" beside a tag of that
-   * name, and nothing here can tell what it stands for.
+   * the FULL name the host sent with it (WireRef.fullName). The short name is
+   * git's "heads/release" beside a tag of that name, which names nothing the
+   * list can be searched for.
    */
   private askRefMenu(r: WireRef, chip: HTMLElement, x: number, y: number, keyboard: boolean): void {
     const sha = this.details?.sha;
     if (!sha) return;
-    this.emit("gs-ref-menu", { name: r.name, kind: r.kind, sha, x, y, keyboard, opener: chip });
+    const detail: RefMenuRequest = { name: r.name, fullName: r.fullName ?? "", kind: r.kind, sha, x, y, keyboard, opener: chip };
+    this.emit("gs-ref-menu", detail);
   }
 
   /**

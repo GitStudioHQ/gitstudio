@@ -14,6 +14,7 @@ import {
   presetRefs,
   RefListCourier,
   refEntries,
+  refLabel,
   refListSignature,
   resolveRefFilter,
   sameRefFilter,
@@ -203,36 +204,46 @@ test("chipRefsUnderFilter with no filter is the same map, untouched", () => {
   assert.equal(chipRefsUnderFilter(bySha, null), bySha);
 });
 
-test("chipRefs resolves a chip through the list by name and kind, so an ambiguous short name still names its ref", () => {
+test("chipRefs resolves a chip by its FULL name, so a branch beside a tag of its name still names its ref", () => {
   // A branch and a tag both called "release": git shortens them to
-  // "heads/release" and "tags/release", and that is the name on the chip.
+  // "heads/release" and "tags/release" — but the chip carries its full name
+  // (WireRef.fullName), and so do the twins folded into it.
   const list = refEntries([
     ref("head", "heads/release", { fullName: "refs/heads/release" }),
     ref("tag", "tags/release", { fullName: "refs/tags/release" }),
+    ref("remote", "origin/release", { fullName: "refs/remotes/origin/release" }),
     ref("head", "main", { isCurrent: true }),
     ref("remote", "origin/main"),
   ]);
-  assert.deepEqual(chipRefs(list, "heads/release", "head"), ["refs/heads/release"]);
-  assert.deepEqual(chipRefs(list, "tags/release", "tag"), ["refs/tags/release"]);
-  // Kind matters: the same name can be listed under two kinds.
-  const both = refEntries([ref("head", "x"), ref("tag", "x")]);
-  assert.deepEqual(chipRefs(both, "x", "tag"), ["refs/tags/x"]);
-  assert.deepEqual(chipRefs(both, "x", "currentHead"), ["refs/heads/x"]);
-  // The folded remote twins ride along, resolved the same way.
-  assert.deepEqual(chipRefs(list, "main", "currentHead", ["origin"]), ["refs/heads/main", "refs/remotes/origin/main"]);
+  assert.deepEqual(chipRefs(list, "refs/heads/release"), ["refs/heads/release"]);
+  assert.deepEqual(chipRefs(list, "refs/tags/release"), ["refs/tags/release"]);
+  // The twin of a branch listed as "heads/release" is origin/release — by
+  // full name it rides along; by short name it was sought as
+  // "origin/heads/release" and never found.
+  assert.deepEqual(chipRefs(list, "refs/heads/release", ["refs/remotes/origin/release"]), [
+    "refs/heads/release",
+    "refs/remotes/origin/release",
+  ]);
+  assert.deepEqual(chipRefs(list, "refs/heads/main", ["refs/remotes/origin/main"]), ["refs/heads/main", "refs/remotes/origin/main"]);
 });
 
-test("chipRefs never REBUILDS a full name from a chip: a chip the list does not have resolves to nothing", () => {
-  // "heads/release" rebuilt is refs/heads/heads/release — a ref that does not
-  // exist, which the host prunes, and the "only this" shortcut then showed
-  // every branch. Nothing guessed is better than that.
-  assert.deepEqual(chipRefs([], "heads/release", "head"), []);
-  assert.deepEqual(chipRefs([], "feature/y", "head", ["origin"]), [], "twins are not reached for an unknown chip either");
+test("chipRefs resolves only what the list has: an unknown chip is nothing, an unknown twin is left out", () => {
+  assert.deepEqual(chipRefs([], "refs/heads/release"), []);
+  assert.deepEqual(chipRefs([], "refs/heads/feature/y", ["refs/remotes/origin/feature/y"]), [], "twins are not reached for an unknown chip either");
   const list = refEntries([ref("head", "main", { isCurrent: true })]);
-  assert.deepEqual(chipRefs(list, "main", "tag"), [], "the right name under the wrong kind is not a match");
+  // A short name is not a full name, whatever it looks like.
+  assert.deepEqual(chipRefs(list, "main"), [], "the short name resolves to nothing");
+  assert.deepEqual(chipRefs(list, ""), []);
   // A twin the list does not have is left out, never guessed; the chip's own
   // ref stays first, because a checkout takes refs[0].
-  assert.deepEqual(chipRefs(list, "main", "currentHead", ["origin", "upstream"]), ["refs/heads/main"]);
+  assert.deepEqual(chipRefs(list, "refs/heads/main", ["refs/remotes/origin/main", "refs/remotes/upstream/main"]), ["refs/heads/main"]);
+});
+
+test("refLabel names a ref by its full name shorn — never git's disambiguated short form", () => {
+  assert.equal(refLabel("refs/heads/release"), "release");
+  assert.equal(refLabel("refs/tags/release"), "release");
+  assert.equal(refLabel("refs/remotes/origin/release"), "origin/release");
+  assert.equal(refLabel("refs/heads/heads/x"), "heads/x", "a branch really called heads/x keeps its name");
 });
 
 test("sameRefFilter ignores order and tells null from a list", () => {

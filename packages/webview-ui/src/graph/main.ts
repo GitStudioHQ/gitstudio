@@ -134,11 +134,11 @@ function start(root: HTMLElement): void {
         // ⌥-click opens. From a "+N" card row (no pointer position), at the
         // top-left of the list, clamped in like any menu.
         graph.openRefMenu(
-          { name: action.name, kind: action.kind as WireRef["kind"] },
+          { name: action.name, fullName: action.fullName, kind: action.kind as WireRef["kind"] },
           action.x ?? 24,
           action.y ?? 48,
           action.sha,
-          { remotes: action.remotes },
+          { twins: action.twins },
         );
         break;
       case "setRefFilter":
@@ -186,7 +186,7 @@ function start(root: HTMLElement): void {
   details.refMenu = true;
   details.addEventListener("gs-ref-menu", (e) => {
     const d = (e as CustomEvent<RefMenuRequest>).detail;
-    graph.openRefMenu({ name: d.name, kind: d.kind }, d.x, d.y, d.sha, {
+    graph.openRefMenu({ name: d.name, fullName: d.fullName, kind: d.kind }, d.x, d.y, d.sha, {
       opener: d.opener,
       keyboard: d.keyboard,
     });

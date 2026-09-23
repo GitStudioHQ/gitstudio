@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { GitRef } from "@gitstudio/git-service/index";
 import { commitBlockerMessage } from "@gitstudio/git-service/StagingProvider";
+import { headBranchName } from "@gitstudio/git-service/RefProvider";
 import { listChangeBlocks, setBlockStaged } from "@gitstudio/git-service/blockStaging";
 import { isWorkingTreeFileOf } from "../util/repoScope";
 import { slowStateChanged, type SlowState } from "./slowState";
@@ -1597,7 +1598,8 @@ export class CommitViewProvider
     files: CompareFile[];
   } | null> {
     const head = await entry.ctx.refs.getHead();
-    const branch = head.detached ? head.sha.slice(0, 12) : (head.branch ?? "HEAD");
+    // Named by the part under refs/heads/ — never git's "heads/release".
+    const branch = head.detached ? head.sha.slice(0, 12) : (headBranchName(head) ?? "HEAD");
     const upstream = head.detached ? null : await entry.ctx.sync.currentUpstream();
     let remotes: Array<{ name: string }> = [];
     try {
@@ -1789,7 +1791,9 @@ export class CommitViewProvider
         const remotes = await entry.ctx.remotes.list();
         const remote =
           remotes.find((r) => r.name === "origin")?.name ?? remotes[0]?.name;
-        const branch = head.branch;
+        // Published as refs/heads/<branch> (SyncOps) — the name under
+        // refs/heads/, not "heads/release", which named nothing there.
+        const branch = headBranchName(head);
         if (!remote || !branch) {
           result = { ok: false, stderr: "No remote is configured to publish to." };
         } else {

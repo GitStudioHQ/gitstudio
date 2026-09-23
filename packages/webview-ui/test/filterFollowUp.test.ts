@@ -39,7 +39,17 @@ const PRELUDE = `
 /** Shared fixture: 400 rows (enough to scroll), a branch/tag name collision. */
 const FIXTURE = `
   const sha = (i) => i.toString(16).padStart(4, "0").repeat(10);
-  const ref = (name, kind) => ({ name, kind });
+  // A chip as a host sends it: git's short name AND the full name (issue
+  // #30's follow-up). The short name of a branch beside a tag of its name is
+  // "heads/<name>", of the tag "tags/<name>" — the full name is what git has.
+  const ref = (name, kind) => ({
+    name,
+    kind,
+    fullName:
+      kind === "tag" ? "refs/tags/" + (name.startsWith("tags/") ? name.slice(5) : name)
+      : kind === "remoteHead" ? "refs/remotes/" + name
+      : "refs/heads/" + (name.startsWith("heads/") ? name.slice(6) : name),
+  });
   const row = (i, refs) => ({
     sha: sha(i), shortSha: sha(i).slice(0, 7), column: 0, color: 0, isMerge: false,
     segments: [{ fromColumn: 0, toColumn: 0, color: 0 }],
@@ -240,8 +250,11 @@ const CHIP_CLICK = `
   const only = m && m.querySelector("[data-chip-action=only]");
   only && only.click();
   await el.updateComplete;
-  expect(JSON.stringify(last("setRefFilter") && last("setRefFilter").refs) === JSON.stringify(["refs/heads/release"]),
-    "Show only takes the branch by its full name (" + JSON.stringify(last("setRefFilter") && last("setRefFilter").refs) + ")");
+  // …with its origin twin: folded by FULL name, "heads/release" is the
+  // branch refs/heads/release and origin/release is its twin (it used to be
+  // sought as "origin/heads/release", never found, and left behind).
+  expect(JSON.stringify(last("setRefFilter") && last("setRefFilter").refs) === JSON.stringify(["refs/heads/release", "refs/remotes/origin/release"]),
+    "Show only takes the branch and its twin by full name (" + JSON.stringify(last("setRefFilter") && last("setRefFilter").refs) + ")");
   // The folded chip ("main" with origin/main in it) moves as one thing.
   const mc = chip("main");
   const mb = mc.getBoundingClientRect();
@@ -251,7 +264,7 @@ const CHIP_CLICK = `
   expect(!!add, "under a filter the clicked chip offers Add to filter");
   add && add.click();
   await el.updateComplete;
-  expect(JSON.stringify(last("setRefFilter").refs) === JSON.stringify(["refs/heads/release", "refs/heads/main", "refs/remotes/origin/main"]),
+  expect(JSON.stringify(last("setRefFilter").refs) === JSON.stringify(["refs/heads/release", "refs/remotes/origin/release", "refs/heads/main", "refs/remotes/origin/main"]),
     "adding the folded chip adds the branch and its remote twin (" + JSON.stringify(last("setRefFilter").refs) + ")");
   // A tag chip's menu says tag.
   const t = chip("tags/release");

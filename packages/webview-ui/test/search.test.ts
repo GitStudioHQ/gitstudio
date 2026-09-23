@@ -18,7 +18,7 @@ const row: WireRow = {
   author: "Mira Holt",
   authorEmail: "mira@example.com",
   authorDate: 1700000000,
-  refs: [{ name: "origin/feature/search", kind: "remoteHead" }],
+  refs: [{ name: "origin/feature/search", fullName: "refs/remotes/origin/feature/search", kind: "remoteHead" }],
 };
 
 test("All matches the author email, not only the name", () => {
