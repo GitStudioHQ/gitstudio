@@ -1,0 +1,27 @@
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_e4d40d3afe77fc 2458
+  s_26f5e669d3043c::t_57ee6f13a2d1db 2498-2499
+  s_26f5e669d3043c::t_563585c7134175 2392-2394
+  s_26f5e669d3043c::t_56745f96e28bd8 155-174
+  s_26f5e669d3043c::t_698411a274bd47 2510
+  s_26f5e669d3043c::t_264cb97d3b79bf 2343
+  s_26f5e669d3043c::t_cc4c8e1223cb3b 154
+apps/desktop/test/silentGitFailure.test.ts
+  s_26f5e669d3043c::t_a4507af6693b73 1-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b06f1f9d9f62121b132d6103529fad377a10b810",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
