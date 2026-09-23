@@ -1,0 +1,62 @@
+apps/desktop/harness/shim.js
+  s_26f5e669d3043c::t_9b9c88fd8886c4 685-696
+  s_26f5e669d3043c::t_55ec9374fa37c5 320-337
+  s_26f5e669d3043c::t_1c002a4bfffb88 445-447
+apps/desktop/harness/checks.js
+  s_26f5e669d3043c::t_ff4a8cef35e3f1 12528-12600
+apps/desktop/src/renderer/branchRequests.ts
+  s_26f5e669d3043c::t_d44c01380b8483 26-56
+apps/desktop/harness/check.mjs
+  s_26f5e669d3043c::t_0165d542c974b1 60-62
+apps/desktop/test/branchListCollisions.test.ts
+  s_26f5e669d3043c::t_b614204b821f73 1-81,83-134
+  s_26f5e669d3043c::t_c029f0b9f07077 82
+apps/desktop/src/shared/ipc.ts
+  s_26f5e669d3043c::t_8bffc6ec379e3e 430-431,433-435
+apps/desktop/src/main/gitBridge.ts
+  s_26f5e669d3043c::t_ac7ec423081024 2173-2176
+  s_26f5e669d3043c::t_dca6d73a6e1e37 1823-1828,1833
+  s_26f5e669d3043c::t_37b58832af747a 2034-2035,2037,2040-2042,2047
+  s_26f5e669d3043c::t_087c09e172f22a 23
+  s_26f5e669d3043c::t_d2bb434380e1b9 1866-1870,1874
+  s_26f5e669d3043c::t_e811daf9677e87 1945-1946
+  s_26f5e669d3043c::t_dc5b1afb4e3f16 1966-1969,1972
+  s_26f5e669d3043c::t_0294cf56a826c2 1936-1938
+  s_26f5e669d3043c::t_5920655c1b69a3 2013-2016,2018
+apps/desktop/src/renderer/renderer.ts
+  s_26f5e669d3043c::t_e0de6b41bd5690 88
+  s_26f5e669d3043c::t_17dc8444cb27ba 2500-2502
+  s_26f5e669d3043c::t_08f0e129a7fdc6 3513
+  s_26f5e669d3043c::t_00e619aed2531a 2206,2238,2258
+  s_26f5e669d3043c::t_1ebbe3a828e51c 3370
+  s_26f5e669d3043c::t_8b41707ae00417 9240-9244
+  s_26f5e669d3043c::t_f0795448e6cd50 3529,3532,3535
+  s_26f5e669d3043c::t_31877bbdff557f 2585-2587,2591-2592,2598,2620,2646,2650
+  s_26f5e669d3043c::t_44f74ed06453dc 3456,3463-3465
+  s_26f5e669d3043c::t_4cc69dd3931a4e 2244-2246
+  s_26f5e669d3043c::t_f0eed7ee7b3944 3430,3435
+  s_26f5e669d3043c::t_5068f6990a772c 3474,3476-3477,3483-3484,3490-3491,3496
+  s_26f5e669d3043c::t_af4f942564acbf 3344-3350,3358,3367
+  s_26f5e669d3043c::t_0d371b41764f1b 3722-3728,3731,3738,3746,3755,3766
+  s_26f5e669d3043c::t_d9c75d27baf740 4004-4007,4012-4013
+  s_26f5e669d3043c::t_cd086488791627 2504,2511,2520,2567
+  s_26f5e669d3043c::t_5e85877959f44a 3503-3504
+  s_26f5e669d3043c::t_1b32f2657b5f53 9249,9253,9271,9273,9284,9288,9290
+  s_26f5e669d3043c::t_0ee274f1469343 2005-2008,2012,2023-2026
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "dbe04ccab17f99b855e32d5cbc475ca4fe377578",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
