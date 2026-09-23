@@ -700,7 +700,9 @@ export class SyncOps {
    * second: two clones committing as the same person in the same second (a
    * script, or a fast hand on two machines) look identical by it, and a set
    * match let one fresh commit of ours "account for" two of theirs. Errs toward
-   * false, which asks merge-or-rebase and loses nothing.
+   * false, which asks merge-or-rebase and loses nothing — including for an
+   * amend made within the same second as the commit it replaces, which no
+   * timestamp can tell from a fresh commit.
    */
   async rewroteUpstream(signal?: AbortSignal): Promise<boolean> {
     const fmt = ["--format=%an%x00%ae%x00%ad%x00%ct", "--date=raw"];

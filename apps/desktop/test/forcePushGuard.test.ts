@@ -36,7 +36,13 @@ function setup(): { work: string; other: string; remote: string; cleanup: () => 
   }
   writeFileSync(`${work}/a.txt`, "a\n");
   execFileSync("git", ["add", "."], { cwd: work });
-  execFileSync("git", ["commit", "-qm", "mine, pushed"], { cwd: work });
+  // Dated in the past: a rewrite is recognised by being committed LATER than
+  // what it replaces (see SyncOps.rewroteUpstream), and an amend in the same
+  // second as the commit would otherwise make this test race the clock.
+  execFileSync("git", ["commit", "-qm", "mine, pushed"], {
+    cwd: work,
+    env: { ...process.env, GIT_AUTHOR_DATE: "1700000000 +0000", GIT_COMMITTER_DATE: "1700000000 +0000" },
+  });
   execFileSync("git", ["push", "-q", "-u", "origin", "main"], { cwd: work });
   execFileSync("git", ["clone", "-q", remote, other]);
   for (const [k, v] of [
