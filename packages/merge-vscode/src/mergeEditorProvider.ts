@@ -345,11 +345,22 @@ export class MergeEditorProvider implements vscode.CustomTextEditorProvider {
     const ours = document.isDirty && !sync.edits.changed && !sync.edits.keeping;
     try {
       if (ours) {
-        // "Revert and Close" acts on the ACTIVE editor: make sure that is this one.
+        // "Revert and Close" acts on the ACTIVE editor: this one — Close was
+        // pressed in it. Should it not be, it is brought forward; and should
+        // it still not be, another editor is NEVER reverted in its place: the
+        // document gets the file's own bytes back instead, so anything that
+        // saves it later writes the file exactly as it is.
         if (panel.active === false) {
           panel.reveal(panel.viewColumn, false);
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
-        await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+        if (panel.active !== false) {
+          await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
+        } else {
+          const onDisk = new TextDecoder("utf-8").decode(await vscode.workspace.fs.readFile(document.uri));
+          sync.edits.expect(onDisk);
+          await syncDocument(document, onDisk);
+        }
       }
     } finally {
       panel.dispose();

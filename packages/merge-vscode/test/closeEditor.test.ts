@@ -178,6 +178,45 @@ test("Close with nothing unsaved just closes the tab — nothing to revert", asy
   assert.equal(stub.panels[0].disposed, true);
 });
 
+test("Close never reverts ANOTHER editor: when this one cannot be made the active one, the document gets the file's own bytes back instead", async () => {
+  // "Revert and Close" acts on whatever editor is active. Should the merge
+  // editor not be (and not become so), reverting would throw away another
+  // file's unsaved work.
+  const provider = new MergeEditorProvider(host(fakeRepoLocator()), noIde);
+  const onDisk = "<<<<<<< a\nx\n=======\ny\n>>>>>>> b\n";
+  let text = onDisk;
+  const doc = {
+    uri: vscode.Uri.file("/r/a.txt"),
+    getText: () => text,
+    get lineCount() {
+      return text.split("\n").length;
+    },
+    isDirty: true,
+    save: async () => {
+      throw new Error("never saved");
+    },
+  };
+  const fs = vscode.workspace.fs as unknown as { readFile: (uri: vscode.Uri) => Promise<Uint8Array> };
+  const readFile = fs.readFile;
+  fs.readFile = async () => new TextEncoder().encode(onDisk);
+  try {
+    const panel = vscode.window.createWebviewPanel("test.mergeEditor", "a.txt", vscode.ViewColumn.Active, {});
+    (stub.panels[0] as unknown as { active: boolean }).active = false;
+    await provider.resolveCustomTextEditor(doc as unknown as vscode.TextDocument, panel, {} as vscode.CancellationToken);
+    text = "one\ntwo\n"; // the editor's own mirrored work, unsaved
+    stub.panels[0].receive({ type: "cancel", mode: "exit" });
+    await new Promise((r) => setTimeout(r, 120));
+    await settle();
+    assert.equal(stub.panels[0].revealed.length, 1, "it tried to bring itself forward first");
+    assert.deepEqual(stub.commands, [], "no revert: the active editor is someone else's");
+    const put = stub.applied[stub.applied.length - 1]?.edits.find((e: { text?: string }) => e.text !== undefined)?.text;
+    assert.equal(put, onDisk, "the document holds the file as it is on disk");
+    assert.equal(stub.panels[0].disposed, true);
+  } finally {
+    fs.readFile = readFile;
+  }
+});
+
 test("Close after an edit made OUTSIDE the editor leaves that edit to its owner: only the tab closes", async () => {
   const provider = new MergeEditorProvider(host(fakeRepoLocator()), noIde);
   let text = "<<<<<<< a\nx\n=======\ny\n>>>>>>> b\n";
