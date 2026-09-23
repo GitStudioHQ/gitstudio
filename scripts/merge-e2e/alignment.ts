@@ -290,7 +290,7 @@ const PROBE = (state: string) => `(() => {
           // them, which is exactly what the pixels are then asked about.
           const xs8 = [5, 6, 7, 8].map((k) => (s.gutterDir > 0 ? Math.round(sx) + k : Math.round(sx) - 1 - k));
           const top0 = Math.ceil(Math.max(t, pane.top)) + 1, bottom0 = Math.floor(Math.min(b, pane.bottom)) - 1;
-          const rowIn = (y) => y >= top0 && y + 1 <= bottom0 && xs8.every((x) => inFill(x + 0.05, y - 0.95) && inFill(x + 0.95, y - 0.95) && inFill(x + 0.05, y + 1.95) && inFill(x + 0.95, y + 1.95));
+          const rowIn = (y) => y >= top0 && y + 1 <= bottom0 && xs8.every((x) => inFill(x - 0.95, y - 1.95) && inFill(x + 1.95, y - 1.95) && inFill(x - 0.95, y + 2.95) && inFill(x + 1.95, y + 2.95));
           let topIn = NaN, bottomIn = NaN;
           const midRow = Math.floor((top0 + bottom0) / 2);
           if (bottom0 - top0 >= 6 && rowIn(midRow)) {
@@ -385,14 +385,20 @@ async function checkPixels(page: Page, r: ViewportReport, state: string): Promis
   const at = (img: Image, x: number, dx: number, y: number) => pixel(img, 12 + dx, y - y0);
   const rows = (img: Image) => img.height;
   // The ribbon's colour, the pane band's, or a mix of the two (the antialiased
-  // column where one ends over the other) — never a third colour.
+  // column where one ends over the other) — never a third colour. Within 6
+  // levels a channel: where a ribbon's end is antialiased over the pane's own
+  // band (its base, then its tint, each covering part of that one column) the
+  // column comes out a few levels darker — measured 4 at most, on the desktop
+  // at 1.5x — while the hairline this exists to catch, the gutter's border
+  // showing through, is 20 or more levels off in every theme.
+  const TOL = 6;
   const between = (c: RGB, a: RGB, b: RGB): boolean => {
-    if (same(c, a, 3) || same(c, b, 3)) return true;
+    if (same(c, a, TOL) || same(c, b, TOL)) return true;
     const span = [0, 1, 2].map((i) => b[i] - a[i]);
     const len2 = span.reduce((s, v) => s + v * v, 0);
     if (len2 === 0) return false;
     const t = Math.max(0, Math.min(1, [0, 1, 2].reduce((s, i) => s + (c[i] - a[i]) * span[i], 0) / len2));
-    return same(c, [0, 1, 2].map((i) => a[i] + t * span[i]) as RGB, 3);
+    return same(c, [0, 1, 2].map((i) => a[i] + t * span[i]) as RGB, TOL);
   };
   // At a fractional scale an edge on half a device pixel is antialiased, and
   // an SVG edge and a box edge cover that half row differently (measured: a
@@ -428,9 +434,25 @@ async function checkPixels(page: Page, r: ViewportReport, state: string): Promis
     }
     // The flat side: the band's first and last painted rows, gutter vs pane.
     if (f.flat && f.top > y0 + 4 && f.bottom < r.paneBottom - 4 && f.bottom - f.top >= 3) {
+      // The band's colour is the one most of its rows wear — not simply its
+      // middle row's, which can be where two of the pane's lines meet: on half
+      // a device row at 1.5x, each line's overlay covering half of it, a row a
+      // level or two off the band's own colour. The middle row's colour wins a
+      // tie: a point's thin end, antialiased over three rows at 1.5x, has no
+      // two rows alike.
       const mid = Math.floor((f.top + f.bottom) / 2);
       const edges = (dx: number): [number, number] => {
-        const band = at(img, f.x, dx, mid);
+        const tally = new Map<string, { c: RGB; n: number }>();
+        for (let y = f.top; y < f.bottom; y++) {
+          const c = at(img, f.x, dx, y);
+          const k = hex(c);
+          const e = tally.get(k);
+          if (e) e.n++;
+          else tally.set(k, { c, n: 1 });
+        }
+        const most = [...tally.values()].sort((a, b) => b.n - a.n)[0];
+        const middle = at(img, f.x, dx, mid);
+        const band = (tally.get(hex(middle))?.n ?? 0) === most.n ? middle : most.c;
         let first = NaN;
         let last = NaN;
         for (let y = f.top - 3; y <= f.bottom + 2; y++) {
@@ -445,7 +467,10 @@ async function checkPixels(page: Page, r: ViewportReport, state: string): Promis
       const p = edges(-8 * f.gutterDir);
       checked++;
       if (Math.abs(g[0] - p[0]) > slack || Math.abs(g[1] - p[1]) > slack) {
-        report(`the band is painted on rows ${g[0]}–${g[1]} in the gutter and ${p[0]}–${p[1]} in the pane`, [f.top, f.bottom]);
+        // A short band's rows, colour by colour, gutter over pane.
+        const dump = (dx: number) => Array.from({ length: f.bottom - f.top + 6 }, (_, i) => hex(at(img, f.x, dx, f.top - 3 + i))).join(" ");
+        const colours = f.bottom - f.top <= 12 ? ` (rows ${f.top - 3}–${f.bottom + 2}: gutter ${dump(8 * f.gutterDir)}; pane ${dump(-8 * f.gutterDir)})` : "";
+        report(`the band is painted on rows ${g[0]}–${g[1]} in the gutter and ${p[0]}–${p[1]} in the pane${colours}`, [f.top, f.bottom]);
       }
     }
   }

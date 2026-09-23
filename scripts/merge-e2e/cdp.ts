@@ -154,7 +154,7 @@ export class Browser {
       } catch {
         /* gone */
       }
-      rmSync(profile, { recursive: true, force: true });
+      removeProfile(profile);
     };
     process.once("exit", cleanup);
     const url = await new Promise<string>((resolve, reject) => {
@@ -230,6 +230,20 @@ export class Browser {
     } catch {
       /* gone */
     }
-    rmSync(this.profile, { recursive: true, force: true });
+    removeProfile(this.profile);
+  }
+}
+
+/**
+ * Removes a browser profile. A killed Chrome's helpers can still be writing
+ * its cache as it goes (ENOTEMPTY): retried, and a profile left behind in the
+ * temp directory is no reason to fail a measurement that has already run —
+ * this also runs on process exit, where a throw turns exit 0 into 1.
+ */
+function removeProfile(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch {
+    /* left in the temp directory */
   }
 }
