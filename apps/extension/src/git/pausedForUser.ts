@@ -61,3 +61,96 @@ export async function pausedForUser(
   const r = await proc.run(["rev-parse", "--verify", "--quiet", marker]);
   return r.code === 0;
 }
+
+// ── After the pause: say so, and offer the way through ──────────────────────
+//
+// The toasts that report "paused" used to have no buttons (PLAN matrix row
+// 13): the user was told to resolve conflicts and continue with nothing to
+// click. They now offer "Resolve Conflicts…", which opens the Conflicts
+// dashboard — the rows, Accept Yours / Theirs, Merge…, and Continue / Skip /
+// Abort. The UI is a parameter so this module stays free of `vscode` (its
+// tests run against real git under plain node).
+
+/** The one label every "paused" toast offers. */
+export const RESOLVE_CONFLICTS_ACTION = "Resolve Conflicts…";
+
+/** The command that opens the Conflicts dashboard. */
+export const SHOW_CONFLICTS_COMMAND = "gitstudio.showConflicts";
+
+/** The two VS Code calls a pause notice makes. */
+export interface PauseNoticeUi {
+  showWarningMessage(message: string, ...actions: string[]): PromiseLike<string | undefined>;
+  executeCommand(command: string): PromiseLike<unknown>;
+}
+
+/** Tell the user git stopped for them, with the dashboard one click away. */
+export async function announcePause(ui: PauseNoticeUi, message: string): Promise<void> {
+  const choice = await ui.showWarningMessage(message, RESOLVE_CONFLICTS_ACTION);
+  if (choice === RESOLVE_CONFLICTS_ACTION) {
+    await ui.executeCommand(SHOW_CONFLICTS_COMMAND);
+  }
+}
+
+// ── Locale-free "is something in progress?" ──────────────────────────────────
+//
+// Three places answered this by matching `git status` / stderr prose against
+// English regexes ("rebase in progress", /conflict/i), which a non-English git
+// never prints. The answer now comes from OperationProvider.detect(), which
+// reads the files git writes (MERGE_HEAD, rebase-merge/, rebase-apply/…).
+
+/** What OperationProvider.detect() reports (structurally; no git-service import needed). */
+export interface DetectedOperation {
+  kind: string;
+  unmerged: number;
+}
+
+/** The operation's name for a sentence ("a rebase"). */
+function operationPhrase(kind: string): string {
+  switch (kind) {
+    case "merge":
+      return "a merge";
+    case "rebase":
+    case "rebase-merge-step":
+      return "a rebase";
+    case "cherry-pick":
+      return "a cherry-pick";
+    case "revert":
+      return "a revert";
+    case "am":
+      return "applying patches (git am)";
+    case "stash":
+      return "applying a stash";
+    default:
+      return "an operation";
+  }
+}
+
+/**
+ * Why a new rebase must not start now, or undefined when nothing is in the
+ * way. Any stopped operation blocks it — git would refuse, or stack the new
+ * rebase on top of a half-finished one.
+ */
+export function operationInProgressMessage(d: DetectedOperation): string | undefined {
+  if (d.kind !== "none") {
+    return `${capitalise(operationPhrase(d.kind))} is already in progress — continue or abort it first.`;
+  }
+  if (d.unmerged > 0) {
+    return "There are unresolved conflicts — resolve them or cancel first.";
+  }
+  return undefined;
+}
+
+/**
+ * Did THIS command leave git stopped on conflicts? Only a change counts: an
+ * operation (or unmerged files) that was already there before the command ran
+ * is why git refused, not something the command started.
+ */
+export function stoppedByThisCommand(before: DetectedOperation, after: DetectedOperation): boolean {
+  const started = before.kind === "none" && after.kind !== "none";
+  const newConflicts = before.unmerged === 0 && after.unmerged > 0;
+  return started || newConflicts;
+}
+
+function capitalise(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}

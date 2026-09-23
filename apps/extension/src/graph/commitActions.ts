@@ -3,6 +3,7 @@ import type { GitContext } from "@gitstudio/git-service/index";
 import type { GraphMenuItem } from "@gitstudio/host-bridge/graphProtocol";
 import { ErrorReporter } from "../reporting/errorReporter";
 import { pausedForUser } from "../git/pausedForUser";
+import { notifyPaused } from "../git/pauseNotice";
 import { unresolvedConflictsMessage } from "@gitstudio/git-service/ConflictProvider";
 import { planRefCheckout } from "@gitstudio/git-service/checkoutRef";
 import { promptConfirm, promptInput, promptPick } from "../ui/dialogs";
@@ -413,7 +414,7 @@ async function cherryPick(
     // routine "this is already applied" was shown as a failure AND filed as a
     // crash report. The marker file says the same thing in every language.
     if (await pausedForUser(ctx.process, result.code, "CHERRY_PICK_HEAD")) {
-      void vscode.window.showWarningMessage(
+      notifyPaused(
         `Cherry-pick of ${short(commit.sha)} needs a decision — resolve any ` +
           `conflicts and continue, skip this commit, or abort.`,
       );
@@ -511,7 +512,7 @@ async function revert(
     // Same locale-independent test as cherryPick: REVERT_HEAD means git stopped
     // to ask, not that the revert failed.
     if (await pausedForUser(ctx.process, result.code, "REVERT_HEAD")) {
-      void vscode.window.showWarningMessage(
+      notifyPaused(
         `Revert of ${short(commit.sha)} needs a decision — resolve any ` +
           `conflicts and continue, or abort the revert.`,
       );

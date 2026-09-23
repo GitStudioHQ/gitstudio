@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { MergeProduct, MergeRepo, RepoLocator } from "@gitstudio/merge-vscode/product";
 import { registerMergeExperience, type MergeExperience } from "@gitstudio/merge-vscode/register";
+import type { ChangesMergeHooks } from "../changes/commitView";
 import type { RepoEntry, RepoManager } from "../git/repoManager";
 import { promptConfirm, promptPick } from "../ui/dialogs";
 import { isSamePathOrInside } from "../util/repoScope";
@@ -28,11 +29,16 @@ export interface GitStudioMergeHooks {
   refresh(): void;
 }
 
+/** The experience, plus the Changes view's doors into it. */
+export interface GitStudioMerge extends MergeExperience {
+  readonly changesHooks: ChangesMergeHooks;
+}
+
 export function registerGitStudioMerge(
   context: vscode.ExtensionContext,
   repos: RepoManager,
   hooks: GitStudioMergeHooks,
-): MergeExperience {
+): GitStudioMerge {
   const locator = repoManagerLocator(repos);
   const product: MergeProduct = {
     key: "gitstudio",
@@ -64,7 +70,16 @@ export function registerGitStudioMerge(
     compareSingle: (uri) => compareSingle(uri),
     onRepositoryChanged: () => hooks.refresh(),
   };
-  return registerMergeExperience(context, product);
+  const experience = registerMergeExperience(context, product);
+  const byRoot = (root: string) => locator.all().find((r) => r.root === root);
+  const changesHooks: ChangesMergeHooks = {
+    openConflict: (uri) => experience.openConflict(uri),
+    showConflicts: (root) => experience.showConflicts(byRoot(root)),
+    operationVerb: async (verb, root) => {
+      await experience.runOperationVerb(verb, { repo: byRoot(root) });
+    },
+  };
+  return Object.assign(experience, { changesHooks });
 }
 
 /**
@@ -106,21 +121,21 @@ async function compareSingle(left: vscode.Uri): Promise<void> {
  * dashboard, not a new one.
  */
 export function repoManagerLocator(repos: RepoManager): RepoLocator {
-  const cache = new Map<string, { entry: RepoEntry; repo: MergeRepo }>();
+  const cache = new Map<string, { repo: MergeRepo; follow(entry: RepoEntry): void }>();
   const wrap = (entry: RepoEntry): MergeRepo => {
     const hit = cache.get(entry.root);
-    if (hit && hit.entry.ctx === entry.ctx) {
-      hit.entry = entry;
+    if (hit && hit.repo.ctx === entry.ctx) {
+      hit.follow(entry);
       return hit.repo;
     }
-    const slot = { entry, repo: undefined as unknown as MergeRepo };
-    slot.repo = {
+    let current = entry;
+    const repo: MergeRepo = {
       root: entry.root,
       ctx: entry.ctx,
-      poke: () => slot.entry.repo?.status?.(),
+      poke: () => current.repo?.status?.(),
     };
-    cache.set(entry.root, slot);
-    return slot.repo;
+    cache.set(entry.root, { repo, follow: (next) => (current = next) });
+    return repo;
   };
   return {
     all: () => repos.getAll().map(wrap),

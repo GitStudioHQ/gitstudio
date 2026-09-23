@@ -4,6 +4,8 @@ import { promptRevision } from "../ui/refPrompt";
 import type { GitContext } from "@gitstudio/git-service/index";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { UndoLedger } from "../undo/undoLedger";
+import { operationInProgressMessage } from "../git/pausedForUser";
+import { detectOperation } from "../git/pauseNotice";
 
 // Launching & aborting interactive rebases.
 //
@@ -38,10 +40,9 @@ export async function startInteractiveRebase(
     return;
   }
 
-  if (await isRebaseInProgress(active.ctx)) {
-    void vscode.window.showWarningMessage(
-      "A rebase is already in progress. Continue or abort it first.",
-    );
+  const blocked = operationInProgressMessage(await detectOperation(active.ctx));
+  if (blocked) {
+    void vscode.window.showWarningMessage(blocked);
     return;
   }
 
@@ -142,24 +143,6 @@ function launchRebaseTerminal(active: RepoEntry, base: string): void {
   terminal.show(true);
   // -i forces the sequence editor; the trailing message nudges the user.
   terminal.sendText(`git rebase -i ${baseArg}`, true);
-}
-
-async function isRebaseInProgress(ctx: GitContext): Promise<boolean> {
-  // rebase-merge (interactive) or rebase-apply (am) dir present under .git.
-  const result = await ctx.process.run([
-    "rev-parse",
-    "--git-path",
-    "rebase-merge",
-  ]);
-  if (result.code !== 0) {
-    return false;
-  }
-  // `git rev-parse --git-path` prints the path whether or not it exists; test
-  // existence via `status` instead (cheap and robust).
-  const status = await ctx.process.run(["status"]);
-  return /rebase in progress|interactive rebase in progress/i.test(
-    status.stdout,
-  );
 }
 
 async function isDirty(ctx: GitContext): Promise<boolean> {

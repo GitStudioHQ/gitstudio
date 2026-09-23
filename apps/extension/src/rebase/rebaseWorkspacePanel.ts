@@ -5,6 +5,9 @@ import { promptRevision } from "../ui/refPrompt";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
 import type { UndoLedger } from "../undo/undoLedger";
 import { getNonce } from "../webview/html";
+import { operationInProgressMessage } from "../git/pausedForUser";
+import { detectOperation } from "../git/pauseNotice";
+import type { OperationOutcome } from "@gitstudio/host-bridge/conflictsProtocol";
 import { relativeTime } from "../util/relativeTime";
 import {
   runRebasePlan,
@@ -25,10 +28,21 @@ interface RebaseCommit {
 
 type PlanRow = { sha: string; action: string; subject: string; message?: string };
 
+/** What the stop banner can offer at the stop git is at (from OperationProvider). */
+interface StopInfo {
+  /** git names Skip as a way out here (e.g. an emptied commit on the apply backend). */
+  canSkip: boolean;
+  skipLabel?: string;
+  /** Unmerged files at this stop — the banner offers the Conflicts dashboard. */
+  conflicts: number;
+}
+
 type FromWebview =
   | { type: "apply"; rows: PlanRow[] }
   | { type: "cancel" }
   | { type: "continue" }
+  | { type: "skip" }
+  | { type: "resolveConflicts" }
   | { type: "abort" };
 
 /**
@@ -52,11 +66,12 @@ export class RebaseWorkspacePanel {
       void vscode.window.showInformationMessage("GitStudio: no active repository.");
       return;
     }
-    // A rebase already running? Send them to resolve it, don't stack a new one.
-    if (await isRebaseInProgress(active)) {
-      void vscode.window.showWarningMessage(
-        "A rebase is already in progress — continue or abort it first.",
-      );
+    // Anything already stopped (a rebase, a merge, a cherry-pick…)? Send them
+    // to finish it, don't stack a new one. Asked of the files git writes, not
+    // of `git status` prose, which a non-English git words differently.
+    const blocked = operationInProgressMessage(await detectOperation(active.ctx));
+    if (blocked) {
+      void vscode.window.showWarningMessage(blocked);
       return;
     }
     const base = await resolveBase(active, sha);
@@ -152,6 +167,12 @@ export class RebaseWorkspacePanel {
       case "continue":
         await this.finish(() => continueRebase(this.repoRoot()));
         return;
+      case "skip":
+        await this.skip();
+        return;
+      case "resolveConflicts":
+        await vscode.commands.executeCommand("gitstudio.showConflicts");
+        return;
       case "abort": {
         const ok = await abortRebaseAt(this.repoRoot());
         this.post({ type: "aborted", ok });
@@ -198,7 +219,8 @@ export class RebaseWorkspacePanel {
     if (this.disposed) {
       return;
     }
-    this.post({ type: "result", outcome });
+    const stop = outcome.status === "stopped" ? await this.stopInfo() : undefined;
+    this.post({ type: "result", outcome, stop });
     if (outcome.status === "done") {
       const entry = this.repos.getActive();
       void entry?.repo?.status?.();
@@ -215,6 +237,35 @@ export class RebaseWorkspacePanel {
 
   private repoRoot(): string {
     return this.repos.getActive()?.root ?? "";
+  }
+
+  /**
+   * What the stop banner may offer where the rebase stopped: Skip only where
+   * it is named as the way out (OperationProvider decides — never a skip over
+   * a deliberate pause), and the Conflicts dashboard while files are unmerged.
+   */
+  private async stopInfo(): Promise<StopInfo> {
+    const ctx = this.repos.getActive()?.ctx;
+    if (!ctx) {
+      return { canSkip: false, conflicts: 0 };
+    }
+    try {
+      const [view, detected] = await Promise.all([ctx.operation.view(), detectOperation(ctx)]);
+      return { canSkip: view.canSkip, skipLabel: view.verbs.skip, conflicts: detected.unmerged };
+    } catch {
+      return { canSkip: false, conflicts: 0 };
+    }
+  }
+
+  /** Skip through the shared operation verb — its confirm, its words, one implementation. */
+  private async skip(): Promise<void> {
+    await this.finish(async () =>
+      toRebaseOutcome(
+        (await vscode.commands.executeCommand("gitstudio.operation.skip", {
+          root: this.repoRoot(),
+        })) as OperationOutcome | undefined,
+      ),
+    );
   }
 
   private post(msg: unknown): void {
@@ -404,9 +455,19 @@ async function loadBaseCommit(
   return { shortSha, subject: subject ?? "" };
 }
 
-async function isRebaseInProgress(active: RepoEntry): Promise<boolean> {
-  const status = await active.ctx.process.run(["status"]);
-  return /rebase in progress|interactive rebase in progress/i.test(status.stdout);
+
+/** A Skip's OperationOutcome in the panel's terms. Undefined = nothing ran (cancelled). */
+export function toRebaseOutcome(o: OperationOutcome | undefined): RebaseOutcome {
+  if (!o) {
+    return { status: "stopped", reason: "unknown", message: "" };
+  }
+  if (o.ok) {
+    return { status: "done" };
+  }
+  if (o.stopped) {
+    return { status: "stopped", reason: o.view.pause ? "edit" : "conflict", message: o.message ?? "" };
+  }
+  return { status: "failed", message: o.message || o.view.continueBlocked || "Git refused to skip." };
 }
 
 // ── Webview CSS ─────────────────────────────────────────────────────────────
@@ -725,17 +786,31 @@ function flashBanner(text, kind) {
   clearTimeout(bannerTimer);
   if (kind !== "err") bannerTimer = setTimeout(() => { b.hidden = true; }, 4000);
 }
-function showStopBanner(text) {
+// The stop banner. "stop" says what git allows at this stop (the host asks
+// OperationProvider): Skip only where git names it as the way out, and the
+// Conflicts dashboard while files are unmerged. Labels are set as TEXT.
+function textButton(cls, label) { const n = el("button", cls); n.textContent = label; return n; }
+function showStopBanner(text, stop) {
   const b = $("rb-banner");
   b.className = "rb-banner warn";
   b.innerHTML = '<i class="codicon codicon-debug-pause"></i>';
   b.appendChild(document.createTextNode(text));
   const acts = el("span", "b-actions");
-  const cont = el("button", "rb-btn primary", "Continue"); cont.addEventListener("click", () => { setBusy(true); vscode.postMessage({ type: "continue" }); });
-  const abort = el("button", "rb-btn secondary", "Abort"); abort.addEventListener("click", () => vscode.postMessage({ type: "abort" }));
-  acts.appendChild(cont); acts.appendChild(abort); b.appendChild(acts);
+  if (stop && stop.conflicts > 0) {
+    const resolve = textButton("rb-btn secondary", "Resolve Conflicts…"); resolve.addEventListener("click", () => vscode.postMessage({ type: "resolveConflicts" }));
+    acts.appendChild(resolve);
+  }
+  const cont = textButton("rb-btn primary", "Continue"); cont.addEventListener("click", () => { setBusy(true); vscode.postMessage({ type: "continue" }); });
+  acts.appendChild(cont);
+  if (stop && stop.canSkip) {
+    const skip = textButton("rb-btn secondary", stop.skipLabel || "Skip this commit"); skip.addEventListener("click", () => { setBusy(true); vscode.postMessage({ type: "skip" }); });
+    acts.appendChild(skip);
+  }
+  const abort = textButton("rb-btn secondary", "Abort"); abort.addEventListener("click", () => vscode.postMessage({ type: "abort" }));
+  acts.appendChild(abort); b.appendChild(acts);
   b.hidden = false;
 }
+let lastStopText = "";
 
 function setBusy(on, label) {
   busy = on;
@@ -762,7 +837,15 @@ window.addEventListener("message", (e) => {
     const o = msg.outcome;
     if (o.status === "done") { setBusy(true, "Done"); return; }
     setBusy(false, "Start Rebase");
-    if (o.status === "stopped") showStopBanner((o.reason === "conflict" ? "Rebase paused on a conflict — resolve the files, then Continue. " : o.reason === "edit" ? "Rebase paused to edit a commit — amend in your working tree, then Continue. " : "Rebase paused. ") + (o.message || ""));
+    if (o.status === "stopped") {
+      // A Skip the user backed out of reports "stopped" with nothing new: keep
+      // the explanation already on screen.
+      const text = o.reason === "unknown" && !o.message && lastStopText
+        ? lastStopText
+        : (o.reason === "conflict" ? "Rebase paused on a conflict — resolve the files, then Continue. " : o.reason === "edit" ? "Rebase paused to edit a commit — amend in your working tree, then Continue. " : "Rebase paused. ") + (o.message || "");
+      lastStopText = text;
+      showStopBanner(text, msg.stop);
+    }
     else flashBanner(o.message || "Rebase failed.", "err");
   } else if (msg.type === "aborted") {
     if (!msg.ok) flashBanner("Couldn't abort the rebase.", "err");

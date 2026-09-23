@@ -405,6 +405,7 @@ export function activate(context: vscode.ExtensionContext): void {
         isEnabled: () => brain.isEnabledCached(),
         draft: (entry) => draftCommitMessage(brain, entry),
       },
+      merge.changesHooks,
     );
     context.subscriptions.push(commitProvider, revisionContent);
 

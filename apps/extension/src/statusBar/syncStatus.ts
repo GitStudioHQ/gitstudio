@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import { promptPick } from "../ui/dialogs";
 import { pruneOnFetch } from "../git/fetchOptions";
 import type { RepoManager, RepoEntry } from "../git/repoManager";
+import { stoppedByThisCommand } from "../git/pausedForUser";
+import { detectOperation, notifyPaused } from "../git/pauseNotice";
 
 // A compact left status-bar segment for the active repo's sync state:
 //   $(git-branch) <branch> $(arrow-down)<behind> $(arrow-up)<ahead>
@@ -218,12 +220,13 @@ export class SyncStatusItem implements vscode.Disposable {
           );
           break;
         }
+        const before = await detectOperation(active.ctx);
         const pull = await active.ctx.sync.pull();
         if (!pull.ok) {
           if (await this.offerUpstreamRepair(active, pull.stderr)) {
             return;
           }
-          reportSync(pull, "Pull");
+          reportSync(pull, "Pull", undefined, stoppedByThisCommand(before, await detectOperation(active.ctx)));
           return;
         }
         // push-force-reviewed: only reached once the pull above fast-forwarded
@@ -237,7 +240,14 @@ export class SyncStatusItem implements vscode.Disposable {
         if (rebase === undefined) {
           return;
         }
-        reportSync(await active.ctx.sync.pull({ rebase }), "Pull", "Pulled");
+        const before = await detectOperation(active.ctx);
+        const pulled = await active.ctx.sync.pull({ rebase });
+        reportSync(
+          pulled,
+          "Pull",
+          "Pulled",
+          !pulled.ok && stoppedByThisCommand(before, await detectOperation(active.ctx)),
+        );
         break;
       }
       case "push": {
@@ -484,10 +494,17 @@ export class SyncStatusItem implements vscode.Disposable {
 }
 
 
+/**
+ * Report a sync verb. `paused`: git stopped on conflicts BECAUSE of this verb —
+ * decided by the caller from what git wrote (OperationProvider.detect before
+ * and after), never from stderr prose. The old `/conflict/i` test only ever
+ * matched an English git.
+ */
 function reportSync(
   result: { ok: boolean; stderr: string },
   verb: string,
   success?: string,
+  paused = false,
 ): void {
   if (result.ok) {
     void vscode.window.setStatusBarMessage(
@@ -496,14 +513,12 @@ function reportSync(
     );
     return;
   }
-  const stderr = result.stderr.trim();
-  if (/conflict/i.test(stderr)) {
-    void vscode.window.showWarningMessage(
-      `${verb} hit conflicts. Resolve them, then continue.`,
-    );
-  } else {
-    void vscode.window.showErrorMessage(
-      stderr ? `${verb} failed: ${stderr}` : `${verb} failed`,
-    );
+  if (paused) {
+    notifyPaused(`${verb} hit conflicts. Resolve them, then continue or abort.`);
+    return;
   }
+  const stderr = result.stderr.trim();
+  void vscode.window.showErrorMessage(
+    stderr ? `${verb} failed: ${stderr}` : `${verb} failed`,
+  );
 }
