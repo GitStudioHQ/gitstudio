@@ -411,6 +411,40 @@ test("a path that escapes the repository, or reaches outside through a symlinked
   }
 });
 
+test("the symlinked-folder guard holds even when the conflict listing is wrong", async () => {
+  // git never lists a path beyond a symlink, so the listing check alone would
+  // refuse dir/x.txt — until the listing is stale or unreadable (writeResolution
+  // proceeds on an unreadable one, so a hand merge can still be saved). The
+  // realpath guard is what stops the write landing outside the repository.
+  const r = manyShapes();
+  const outside = mkdtempSync(join(tmpdir(), "gs-op-outside2-"));
+  try {
+    writeFileSync(join(outside, "x.txt"), "OUTSIDE\n");
+    symlinkSync(outside, join(r.root, "dir"));
+    const real = new GitProcess({ cwd: r.root });
+    const lying = {
+      run: async (args: string[], opts?: { signal?: AbortSignal; input?: string }) => {
+        const res = await real.run(args, opts);
+        if (args.join(" ") === "ls-files -u -z") {
+          const fake = ["1", "2", "3"].map((s) => `100644 ${"e".repeat(40)} ${s}\tdir/x.txt`).join("\u0000");
+          return { ...res, stdout: `${fake}\u0000${res.stdout}` };
+        }
+        return res;
+      },
+    } as unknown as GitProcess;
+    const ctx = r.ctx();
+    const ops = new ConflictOps(lying, r.root, ctx.conflict, ctx.operation);
+    const out = await ops.writeResolution("dir/x.txt", "PWNED\n");
+    assert.equal(out.ok, false);
+    assert.match(out.message ?? "", /resolves outside the repository/);
+    assert.equal(readFileSync(join(outside, "x.txt"), "utf8"), "OUTSIDE\n", "nothing was written outside");
+    real.dispose();
+  } finally {
+    r.cleanup();
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 // ── restore (hold-to-undo) ──────────────────────────────────────────────────
 
 test("restore brings a text conflict back with its markers", async () => {
