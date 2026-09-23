@@ -484,7 +484,10 @@ export class ConflictOps {
     const base = resolve(this.root);
     const abs = resolve(base, rel);
     if (abs === base || !abs.startsWith(base + sep)) {
-      return { ok: false, result: { ok: false, changed: false, message: "That path is outside the repository." } };
+      return {
+        ok: false,
+        result: { ok: false, changed: false, message: "That path escapes the repository — nothing was changed." },
+      };
     }
     const realRoot = await realpath(base).catch(() => base);
     // The nearest directory that exists: a side that deleted a whole folder

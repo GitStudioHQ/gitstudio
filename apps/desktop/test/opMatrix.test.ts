@@ -471,3 +471,185 @@ test("unstaging everything mid-merge leaves the merge in progress", async () => 
     removeTempRepo(r.root);
   }
 });
+
+// ── Merge parity: the same table through the role-based `op:*` channels ─────
+//
+// The capability table now lives in the shared OperationProvider; `opState`
+// adapts it (the cells above stay exactly as they were) and `op:*` drives it.
+// These cells cover what the move added: the operations the banner could not
+// see (a stash re-apply), the gates it lacked (staged markers, an unstaged
+// change a rebase refuses), and each verb's effect on the repository.
+
+test("am: op:abort runs `am --abort` — never `rebase --abort`, which git refuses here", async () => {
+  const r = repo("am-abort");
+  try {
+    writeFileSync(`${r.root}/f.txt`, "base\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const main = r.git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    r.git("checkout", "-qb", "series");
+    writeFileSync(`${r.root}/f.txt`, "from patch one\n");
+    r.git("commit", "-qam", "patch one");
+    writeFileSync(`${r.root}/series.patch`, r.git("format-patch", "-1", "--stdout"));
+    r.git("checkout", "-q", main);
+    writeFileSync(`${r.root}/f.txt`, "diverged\n");
+    r.git("commit", "-qam", "diverged");
+    const before = r.git("rev-parse", "HEAD").trim();
+    r.tryGit("am", "-3", "series.patch");
+
+    const b = await r.bridge();
+    const st = await b.opState();
+    assert.equal(st.kind, "am");
+    assert.equal(st.conflicts, 1);
+    assert.equal(st.canSkip, true);
+    const out = await b.opAbort();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(existsSync(`${r.root}/.git/rebase-apply`), false, "the am session is over");
+    assert.equal(r.git("rev-parse", "HEAD").trim(), before);
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
+test("a rebase stopped inside a merge step: op:abort ends the REBASE", async () => {
+  const r = repo("mergestep-abort");
+  try {
+    writeFileSync(`${r.root}/f.txt`, "base\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const main = r.git("rev-parse", "--abbrev-ref", "HEAD").trim();
+    r.git("branch", "trunk");
+    r.git("checkout", "-qb", "topic");
+    writeFileSync(`${r.root}/f.txt`, "topic\n");
+    r.git("commit", "-qam", "topic change");
+    r.git("checkout", "-q", main);
+    writeFileSync(`${r.root}/g.txt`, "mainline\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "mainline change");
+    r.git("merge", "-q", "--no-ff", "-m", "merge topic", "topic");
+    r.git("checkout", "-q", "trunk");
+    writeFileSync(`${r.root}/f.txt`, "trunk moved\n");
+    r.git("commit", "-qam", "trunk moves");
+    r.git("checkout", "-q", main);
+    const tip = r.git("rev-parse", "HEAD").trim();
+    r.tryGit("rebase", "--rebase-merges", "trunk");
+
+    const b = await r.bridge();
+    const snap = await b.conflictState();
+    assert.notEqual(snap.op.kind, "none", "the fixture stops");
+    assert.equal((await b.opState()).kind, "rebase", "a rebase, whatever else is set");
+    const out = await b.opAbort();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(existsSync(`${r.root}/.git/rebase-merge`), false);
+    assert.equal(existsSync(`${r.root}/.git/MERGE_HEAD`), false);
+    assert.equal(r.git("rev-parse", "HEAD").trim(), tip, "back where it started");
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
+test("merge with conflict markers staged: Continue is not offered, and op:continue says which file", async () => {
+  const r = repo("markers");
+  try {
+    diverge(r);
+    r.tryGit("merge", "side");
+    r.git("add", "f.txt"); // markers and all
+    const b = await r.bridge();
+    const st = await b.opState();
+    assert.equal(st.conflicts, 0, "git thinks it is resolved");
+    assert.equal(st.canContinue, false, "the app does not");
+    const out = await b.opContinue({});
+    assert.equal(out.refused, "blocked");
+    assert.equal(out.message, "f.txt still has conflict markers staged");
+    assert.equal(existsSync(`${r.root}/.git/MERGE_HEAD`), true, "nothing was committed");
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
+test("rebase with an unstaged change to a tracked file: Continue is not offered, and the real reason is given", async () => {
+  const r = repo("unstaged");
+  try {
+    const { main } = diverge(r);
+    r.git("checkout", "-q", "side");
+    r.tryGit("rebase", main);
+    const b = await r.bridge();
+    await b.conflictTakeRole({ path: "f.txt", role: "yours" });
+    // A tracked file that exists at this point of the rebase (base's f.txt is
+    // the only one), edited and not staged.
+    writeFileSync(`${r.root}/f.txt`, "an edit nobody staged\n");
+    const st = await b.opState();
+    assert.equal(st.canContinue, false);
+    const out = await b.opContinue({});
+    assert.equal(out.refused, "blocked");
+    assert.match(out.message ?? "", /^f\.txt has changes that aren't staged/);
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
+test("rebase (merge backend) resolved to its base's side: legacy Continue unchanged, op:continue asks first", async () => {
+  const r = repo("willdrop");
+  try {
+    const { main } = diverge(r);
+    r.git("checkout", "-q", "side");
+    r.tryGit("rebase", main);
+    const b = await r.bridge();
+    resolveKeepingOurs(r);
+    const st = await b.opState();
+    assert.equal(st.canContinue, true, "the capability the banner reads is unchanged");
+    const asked = await b.opContinue({});
+    assert.equal(asked.refused, "confirm-drop", "but the role-based Continue will not drop a commit unasked");
+    assert.equal(asked.view.willDrop?.subject, "their change");
+    const out = await b.opContinue({ confirmDrop: true });
+    assert.equal(out.ok, true, out.message);
+    assert.equal((await b.opState()).kind, null);
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
+test("stash pop: no banner kind (byte-compatible), but conflict:state names it and op:abort keeps the stash", async () => {
+  const r = repo("stash");
+  try {
+    writeFileSync(`${r.root}/f.txt`, "base\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    writeFileSync(`${r.root}/f.txt`, "stashed\n");
+    r.git("stash", "-q");
+    writeFileSync(`${r.root}/f.txt`, "committed\n");
+    r.git("commit", "-qam", "committed");
+    r.tryGit("stash", "pop");
+    const b = await r.bridge();
+    const st = await b.opState();
+    assert.equal(st.kind, null, "GitOpState has no stash kind — unchanged");
+    assert.equal(st.conflicts, 1);
+    const snap = await b.conflictState();
+    assert.equal(snap.op.kind, "stash");
+    assert.equal(snap.op.yours.stage, 3, "your stashed changes are Yours");
+    const out = await b.opAbort();
+    assert.equal(out.ok, true, out.message);
+    assert.equal(r.git("ls-files", "-u").trim(), "");
+    assert.equal(r.git("stash", "list").trim().split("\n").length, 1, "the stash entry is kept");
+    assert.equal(readFileSync(`${r.root}/f.txt`, "utf8"), "committed\n");
+  } finally {
+    removeTempRepo(r.root);
+  }
+});
+
+test("op:* with nothing stopped are refused as conditions, not crashes", async () => {
+  const r = repo("idle");
+  try {
+    writeFileSync(`${r.root}/f.txt`, "base\n");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const b = await r.bridge();
+    for (const out of [await b.opContinue({}), await b.opSkip(), await b.opAbort()]) {
+      assert.equal(out.ok, false);
+      assert.equal(out.refused, "not-allowed");
+      assert.equal(out.expected, true);
+    }
+  } finally {
+    removeTempRepo(r.root);
+  }
+});

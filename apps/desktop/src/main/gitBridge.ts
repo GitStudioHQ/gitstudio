@@ -6,11 +6,21 @@
 // graphPanel performs (now factored into @gitstudio/host-bridge/graphWire and
 // shared by both hosts).
 
-import { readFile, readdir, writeFile, stat, lstat, readlink, realpath } from "node:fs/promises";
+import { readFile, readdir, writeFile, lstat, readlink } from "node:fs/promises";
 import { continueRebase, skipRebase, abortRebase } from "@gitstudio/git-service/RebaseRunner";
 import type { RebaseOutcome } from "@gitstudio/git-service/RebaseRunner";
+import { textWriteSafe } from "@gitstudio/git-service/ConflictOps";
+import { noneOperationView } from "@gitstudio/git-service/OperationProvider";
+import { locateJetBrainsIde } from "@gitstudio/git-service/jetbrains/locator";
+import {
+  launchJetBrainsDiff,
+  launchJetBrainsMerge,
+  type JetBrainsLaunch,
+} from "@gitstudio/git-service/jetbrains/launcher";
+import { DEFAULT_MERGE_SETTINGS } from "@gitstudio/host-bridge/conflictsProtocol";
+import { stageOf } from "@gitstudio/engine/conflict/sides";
 import { ExpectedError } from "./expectedError";
-import { join, resolve, sep, dirname } from "node:path";
+import { basename, extname, join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { computeGraphLayout } from "@gitstudio/engine/graph/layout";
 import type { GraphInputCommit } from "@gitstudio/engine/graph/layout";
@@ -59,6 +69,11 @@ import type {
   TreeEntry,
   WorktreeInfo,
   CommitBranches,
+  ConflictsSnapshot,
+  JetBrainsIdeInfo,
+  MergeSettings,
+  OperationOutcome,
+  SideRole,
 } from "../shared/ipc";
 import type { WireRef } from "@gitstudio/host-bridge/graphProtocol";
 import {
@@ -124,6 +139,17 @@ const UNSAFE_PATH_RESULT: CommitActionResult = {
   changed: false,
   message: "That isn't a usable file path.",
 };
+
+/** The JetBrains channels' answer when no IDE is installed — a state, not a crash. */
+function noIde(): CommitActionResult {
+  return {
+    ok: false,
+    changed: false,
+    expected: true,
+    message:
+      "No JetBrains IDE was found. Install one (WebStorm, PyCharm, IntelliJ IDEA…) or set its path in Settings ▸ Merge.",
+  };
+}
 
 /**
  * Resolves a renderer-supplied repo-relative path and REFUSES anything that
@@ -202,10 +228,18 @@ export class GitBridge {
   private graphChain: Promise<unknown> = Promise.resolve();
   /** Bumped by a fresh load so queued stale pages discard themselves. */
   private graphGen = 0;
+  /**
+   * JetBrains merge windows still open, by repo root + path: their LOCAL /
+   * REMOTE / BASE temp files are removed by "Mark resolved" (or when the same
+   * file is handed over again).
+   */
+  private readonly ideLaunches = new Map<string, JetBrainsLaunch>();
 
   constructor(
     private readonly repos: RepoStore,
     private readonly refFilters?: GraphRefFilterStore,
+    /** Settings ▸ Merge — the main process's own copy (it spawns jetbrainsPath). */
+    private readonly mergeSettings?: { get(): MergeSettings },
   ) {}
 
   private ctx(): GitContext | undefined {
@@ -729,7 +763,24 @@ export class GitBridge {
     });
   }
 
-  /** The three sides of a conflicted file for the shared 3-pane MergeView. */
+  /**
+   * The three sides of a conflicted file for the shared 3-pane MergeView,
+   * ALREADY mapped to roles (the S0 contract, decision D1): `ours` is the
+   * Yours content — stage `op.yours.stage`, which during a rebase is git's
+   * stage 3, your own commit — and is drawn on the left; `theirs` is the
+   * Theirs content; the labels are the operation's pane titles, with real
+   * branch names ("Rebasing 89876df from test").
+   *
+   * This used to read stage 2 as "ours" whatever the operation and only swap
+   * the WORDS (`sideLabels`), so during a rebase the left pane was the branch
+   * being rebased onto — and "Take ours" + Continue silently dropped the
+   * user's commit (issue #12). The mapping now lives in ONE place
+   * (`describeSides`, applied by `ConflictOps.readSides`) shared with both
+   * extensions.
+   *
+   * `missingSide` stays in STAGE terms for the legacy `conflict:takeSide`;
+   * `missingRole` is the same fact for `conflict:takeRole`.
+   */
   async conflictModel(path: string): Promise<ConflictModel | undefined> {
     const ctx = this.ctx();
     if (!ctx) {
@@ -737,77 +788,49 @@ export class GitBridge {
     }
     const work = await readWorking(ctx, path);
     const workingText = work.text;
-    const versions = await ctx.conflict.getConflictVersions(path, { workingText });
-    // WHICH STAGES the index actually holds. `git ls-files -u` lists one row
-    // per stage: 1 = the merge base, 2 = "ours", 3 = "theirs". A MODIFY/DELETE
-    // conflict — one side changed the file, the other removed it — has only
-    // one of 2 and 3, and the missing one comes back from `getConflictVersions`
-    // as an empty string. That is indistinguishable from a side that emptied
-    // the file, so the three-pane editor drew it as an ordinary content merge
-    // with one blank pane and never said the word "deleted" anywhere.
-    // `-z` and an exact path comparison, NOT a pathspec — the convention this
-    // file writes down at length in `conflictTakeSide`. A pathspec is
-    // glob-capable and environment-steerable, so a filename containing `*` or
-    // `[` would read another file's stages; and without `-z`, `core.quotePath`
-    // C-quotes every non-ASCII path while the renderer sends the raw one.
-    const staged = await ctx.process.run(["ls-files", "-u", "-z"]);
-    const stages = new Set(
-      staged.code === 0
-        ? staged.stdout
-            .split("\0")
-            .map((rec) => /^\d{6} [0-9a-f]+ (\d)\t([\s\S]*)$/.exec(rec))
-            .filter((m): m is RegExpExecArray => !!m && m[2] === path)
-            .map((m) => m[1])
-        : [],
-    );
-    // BOTH sides deleted it — git's `DD`. Listed with stage 1 and neither 2 nor
-    // 3. It fell into the first arm below and was reported as "ours is
-    // missing", which drew it as a modify/delete and offered a "Take theirs"
-    // button for a side that has nothing to take — `conflictTakeSide` then
-    // refuses it, correctly, with a message the panel had already contradicted.
-    const bothDeleted = stages.size > 0 && !stages.has("2") && !stages.has("3");
-    const missingSide = bothDeleted
-      ? undefined
-      : stages.size > 0 && !stages.has("2")
-        ? ("ours" as const)
-        : stages.size > 0 && !stages.has("3")
-          ? ("theirs" as const)
-          : undefined;
-    // A conflicted BINARY has no line-by-line merge to make. The panel opened
-    // the three-pane text editor over whatever the bytes decoded to.
-    // The working copy was CAPPED, so `result` — the text the merge editor
-    // seeds its result pane with, and the text "Mark resolved" writes back to
-    // the file — is only the first 512KB of it. Resolving would have truncated
-    // the file to the cap and staged that as the answer, silently deleting
-    // everything past it. There is no text merge to be had here.
-    const truncated = work.truncated === true;
+    // Which stages exist (from `ls-files -u -z`, never a failed read: a
+    // MODIFY/DELETE side and a side that EMPTIED the file are both ""), the
+    // shape, and the role mapping — one read.
+    const sides = await ctx.conflictOps.readSides(path, { workingText });
+    const op = sides.op;
+    // A conflicted BINARY has no line-by-line merge to make. The working copy
+    // was also CAPPED, so `result` — the text "Mark resolved" writes back — is
+    // only the first 512KB of it: resolving would truncate the file. The
+    // shape says both; the legacy flags stay for the current renderer.
+    const truncated = work.truncated === true || sides.shape === "too-large";
     const binary =
+      sides.shape === "binary" ||
       work.binary === true ||
-      versions.ours.includes("\0") ||
-      versions.theirs.includes("\0") ||
-      replacementRatio(versions.ours) > 0.3 ||
-      replacementRatio(versions.theirs) > 0.3;
-    // WHICH operation, because it decides what the two sides MEAN. During a
-    // rebase git replays your commits onto the upstream, so stage 2 ("ours") is
-    // the UPSTREAM and stage 3 ("theirs") is the commit of yours being replayed
-    // — the exact opposite of a merge, and the opposite of what the hardcoded
-    // labels asserted. Someone taking "your version" out of a rebase conflict
-    // was discarding their own work and keeping the branch they were rebasing
-    // onto, with the button, its tooltip and the toast all agreeing it had done
-    // the other thing.
-    const op = await this.opState();
+      sides.yours.includes("\0") ||
+      sides.theirs.includes("\0") ||
+      replacementRatio(sides.yours) > 0.3 ||
+      replacementRatio(sides.theirs) > 0.3;
+    let shape = sides.shape;
+    if (shape === "text" || shape === "added-both") {
+      if (binary) shape = "binary";
+      else if (truncated) shape = "too-large";
+    }
+    const missingSide = sides.missingRole
+      ? stageOf(op, sides.missingRole) === 2
+        ? ("ours" as const)
+        : ("theirs" as const)
+      : undefined;
     return {
       path,
-      hasBase: versions.hasBase,
-      base: versions.base,
-      ours: versions.ours,
-      theirs: versions.theirs,
+      hasBase: sides.hasBase,
+      base: sides.base,
+      ours: sides.yours,
+      theirs: sides.theirs,
       result: workingText,
+      oursLabel: op.yours.paneTitle,
+      theirsLabel: op.theirs.paneTitle,
       ...(binary ? { binary: true } : {}),
       ...(truncated ? { truncated: true } : {}),
       ...(missingSide ? { missingSide } : {}),
-      ...(bothDeleted ? { bothDeleted: true } : {}),
-      ...sideLabels(op.kind),
+      ...(sides.shape === "both-deleted" ? { bothDeleted: true } : {}),
+      op,
+      shape,
+      ...(sides.missingRole ? { missingRole: sides.missingRole } : {}),
     };
   }
 
@@ -2451,126 +2474,48 @@ export class GitBridge {
       canSkip: false,
     };
     if (!ctx) return empty;
-    const present = async (gitPath: string): Promise<boolean> => {
-      try {
-        const r = await ctx.process.run(["rev-parse", "--git-path", gitPath]);
-        if (r.code !== 0) return false;
-        // resolve(), NOT join(). Inside a linked worktree git answers with an
-        // ABSOLUTE path (…/main-repo/.git/worktrees/<wt>/MERGE_HEAD), and
-        // path.join concatenates it onto the root to produce a path that cannot
-        // exist — so an in-progress merge or rebase in a worktree was never
-        // detected and the Abort/Continue banner never appeared, stranding the
-        // user with no in-app way out. resolve() returns an absolute second
-        // argument unchanged and still joins a relative one.
-        await stat(resolve(ctx.root, r.stdout.trim()));
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    let conflicts = 0;
-    try {
-      conflicts = (await ctx.conflict.listConflicts()).length;
-    } catch {
-      conflicts = 0;
-    }
-    const [merging, rebaseM, rebaseA, amMarker, cherryPicking, reverting] = await Promise.all([
-      present("MERGE_HEAD"),
-      present("rebase-merge"),
-      present("rebase-apply"),
-      // `git am` uses the SAME rebase-apply directory. git tells them apart by
-      // a marker inside it — `applying` for am, `rebasing` for a rebase on the
-      // apply backend — and they are mutually exclusive.
-      present("rebase-apply/applying"),
-      present("CHERRY_PICK_HEAD"),
-      present("REVERT_HEAD"),
-    ]);
-    const rebasing = rebaseM || (rebaseA && !amMarker);
-    const amApplying = rebaseA && amMarker;
-
-    // ONE name for what is in progress, decided HERE.
+    // A thin adapter over the shared OperationProvider: the capability table
+    // this method used to own (which operation, what Continue and Skip can do)
+    // is decided THERE now, once, for the desktop and both extensions — with
+    // the same rules it had here (see OperationProvider.inspect and the state
+    // table in packages/git-service/test/operationControl.test.ts), plus the
+    // gates it lacked: staged conflict markers, and the unstaged change
+    // `rebase --continue` refuses with a misleading message.
     //
-    // The renderer used to re-derive this from five booleans, and got the
-    // precedence wrong in a way that destroyed work: `rebase --rebase-merges`
-    // stopping on a `merge` step leaves MERGE_HEAD *and* `rebase-merge/`, and
-    // "merging first" named it a merge — so Abort ran `git merge --abort`,
-    // which throws away a hand resolution and leaves the rebase running. A
-    // rebase that stops inside a merge step is still a rebase, and only git's
-    // rebase verbs can end it.
-    const kind: GitOpState["kind"] = rebasing
-      ? "rebase"
-      : amApplying
-        ? "am"
-        : cherryPicking
-          ? "cherry-pick"
-          : reverting
-            ? "revert"
-            : merging
-              ? "merge"
-              : null;
-
-    // Is there anything left to record? `diff --cached --quiet HEAD` exiting 0
-    // means the index matches HEAD. Asked only while something is stopped, so
-    // the ordinary refresh path pays nothing for it.
-    const indexMatchesHead =
-      kind !== null &&
-      conflicts === 0 &&
-      (await ctx.process.run(["diff", "--cached", "--quiet", "HEAD"])).code === 0;
-
-    // What the two forward buttons can actually DO, decided here rather than
-    // guessed by the renderer from the booleans above. `skipping` was re-derived
-    // there and came out wrong in BOTH directions in consecutive commits: once
-    // offering a hard-resetting Skip at a pause the user asked for, then
-    // removing the only Skip that could finish an apply-backend rebase.
-    // Both FALSE when nothing is in progress. `conflicts === 0` is true of an
-    // ordinary clean repo, and defaulting `canContinue` from it made the field
-    // claim a Continue was possible with no operation to continue — inert
-    // today, because the banner returns early on a null kind, but a field that
-    // is wrong in a state nobody reads is a field the next caller will trust.
-    let canContinue = kind !== null && conflicts === 0;
-    let canSkip = false;
-    if (kind === "merge") {
-      // git allows an EMPTY merge commit, so `commit --no-edit` finishes one
-      // whose result matches HEAD. There is no `git merge --skip`.
-      canSkip = false;
-    } else if (kind === "rebase") {
-      if (rebaseM) {
-        // The MERGE backend never offers Skip, for two reasons that point the
-        // same way. Its `--continue` auto-drops a commit that conflict
-        // resolution emptied, so Skip is not needed. And a deliberate pause —
-        // `edit`, `break` — can ONLY happen here: `git rebase -i --apply` is
-        // refused outright ("apply options and merge options cannot be used
-        // together") and `-i` writes `rebase-merge/` even under
-        // `rebase.backend = apply`. At such a pause the index equals HEAD and
-        // nothing is conflicted, indistinguishable from an empty patch, and
-        // `rebase --skip` HARD-RESETS the working tree: it discards the amend
-        // the pause existed to make, and in git's split-a-commit flow the
-        // commit being split with it.
-        canSkip = false;
-      } else {
-        // The APPLY backend refuses `--continue` on an emptied patch and names
-        // `--skip` itself. This is the one place a rebase Skip is correct, and
-        // removing it left the operation with no way to finish at all.
-        canContinue = conflicts === 0 && !indexMatchesHead;
-        canSkip = conflicts === 0 && indexMatchesHead;
-      }
-    } else if (kind === "cherry-pick" || kind === "revert" || kind === "am") {
-      // The sequencer refuses to record an empty patch and names `--skip`.
-      canContinue = conflicts === 0 && !indexMatchesHead;
-      canSkip = true;
+    // The IPC shape is unchanged, byte for byte: the raw marker booleans are
+    // still the raw files, and `kind` keeps its five values — a
+    // `--rebase-merges` merge step is a "rebase" (only rebase verbs end it),
+    // and a stash re-apply is no operation at all to the banner.
+    let ins;
+    try {
+      ins = await ctx.operation.inspect();
+    } catch {
+      return empty;
     }
-
+    const m = ins.markers;
+    const v = ins.view;
+    const kind: GitOpState["kind"] =
+      v.kind === "rebase" || v.kind === "rebase-merge-step"
+        ? "rebase"
+        : v.kind === "am" || v.kind === "cherry-pick" || v.kind === "revert" || v.kind === "merge"
+          ? v.kind
+          : null;
+    const conflicts = ins.unmerged.length;
     return {
-      merging,
-      rebasing,
-      amApplying,
-      cherryPicking,
-      reverting,
+      merging: m.mergeHead,
+      // `git am` shares rebase-apply/ — git marks it `applying`.
+      rebasing: m.rebaseMerge || (m.rebaseApply && !m.applying),
+      amApplying: m.rebaseApply && m.applying,
+      cherryPicking: m.cherryPickHead,
+      reverting: m.revertHead,
       conflicts,
       kind,
-      canContinue,
-      canSkip,
-      nothingToCommit: indexMatchesHead,
+      // Both false when nothing is stopped — a field that is wrong in a state
+      // nobody reads is a field the next caller will trust.
+      canContinue: kind !== null && v.canContinue,
+      canSkip: kind !== null && v.canSkip,
+      // The raw fact ("the index equals HEAD"), asked only while stopped.
+      nothingToCommit: kind !== null && conflicts === 0 && ins.indexMatchesHead,
     };
   }
 
@@ -2601,21 +2546,13 @@ export class GitBridge {
     });
   }
 
-  /** Is a `git am` stopped mid-series? The `applying` marker is git's own way
-   *  of telling an am from a rebase inside the shared `rebase-apply/`. */
+  /** Is a `git am` stopped mid-series? The provider tells an am from a rebase
+   *  by git's own `applying` marker inside the shared `rebase-apply/`, found
+   *  through --git-path (so a linked worktree's is found too). */
   private async amInProgress(): Promise<boolean> {
     const ctx = this.ctx();
     if (!ctx) return false;
-    const r = await ctx.process.run(["rev-parse", "--git-path", "rebase-apply/applying"]);
-    if (r.code !== 0) return false;
-    try {
-      // resolve(), not join() — inside a linked worktree git answers with an
-      // absolute path. Same reasoning as `opState`'s own probe.
-      await stat(resolve(ctx.root, r.stdout.trim()));
-      return true;
-    } catch {
-      return false;
-    }
+    return (await ctx.operation.detect().catch(() => ({ kind: "none" }))).kind === "am";
   }
   /**
    * Finishing, and abandoning, a part-applied patch series.
@@ -2666,8 +2603,15 @@ export class GitBridge {
   mergeAbort(): Promise<CommitActionResult> {
     return this.runResult(["merge", "--abort"]);
   }
+  /**
+   * `--cleanup=strip`: a plain `commit --no-edit` keeps git's "# Conflicts:"
+   * block in the merge commit's message (git-semantics continue.out: "Merge
+   * branch 'test'||# Conflicts:|#	f.txt"). `merge --continue` is not the
+   * answer either — it takes no arguments, and an inherited GIT_EDITOR beats
+   * `-c core.editor`. Same command as OperationProvider.continue for a merge.
+   */
   mergeContinue(): Promise<CommitActionResult> {
-    return this.runResult(["commit", "--no-edit"]);
+    return this.runResult(["commit", "--no-edit", "--cleanup=strip"]);
   }
   /**
    * Cherry-pick and revert abort and continue THEMSELVES.
@@ -2959,191 +2903,246 @@ export class GitBridge {
     }
   }
 
+  /**
+   * "Mark resolved" (the merge view's Apply): save the hand-merged text and
+   * stage it. The guarded write lives in ConflictOps.writeResolution, shared
+   * with `conflictTakeSide`'s path guard — the two used to have half of the
+   * guards each (this one the symlink / outside-the-repo checks, that one the
+   * "is it still conflicted?" verdict; memory: fix-both-siblings). Now both:
+   * a symlink or a non-UTF-8 file is refused (writeFile would follow the link
+   * or rewrite bytes as U+FFFD), a path reached through a symlinked folder is
+   * refused, a both-deleted file is not resurrected, and a file resolved
+   * elsewhere in the meantime is not overwritten.
+   */
   async conflictResolve(req: { path: string; content: string }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
+    if (typeof req.content !== "string") return { ok: false, changed: false, message: "Nothing to save." };
     return this.serialize(async () => {
       try {
-        const abs = containedPath(ctx.root, req.path);
-        if (!abs) return { ok: false, changed: false, message: "Path escapes the repository." };
-        // The merge view's "Mark resolved" hands back a JavaScript string, and
-        // `writeFile` follows symlinks. So on a conflicted symlink this opened
-        // the LINK'S TARGET — a file that may be nowhere near the repository —
-        // and overwrote it, while the link git actually tracks kept its old
-        // value; and on a conflicted binary it wrote back the U+FFFD wreckage
-        // of a UTF-8 round trip. Both reported "Resolved and staged."
-        //
-        // Take ours / Take theirs is the way through both: `git checkout
-        // --ours/--theirs` never decodes and never follows.
-        const safe = await textWriteSafe(abs, req.path, (what) =>
-          what === "symlink"
-            ? `${req.path} is a symbolic link. Saving text here would overwrite whatever it points at, not the link — use Take ours or Take theirs.`
-            : `${req.path} isn't UTF-8 text. Saving it as text would rewrite the bytes it can't represent — use Take ours or Take theirs.`,
-        );
-        if (!safe.ok) return { ok: false, changed: false, expected: true, message: safe.why };
-        // A BOTH-DELETED (DD) conflict has no side that still has the file, so
-        // there is nothing to write back: saving text here CREATES it, staged
-        // as an addition nobody asked for, and Discard afterwards reports
-        // success having changed nothing. Both sides agree it is gone.
-        //
-        // Asked with the same shape of probe `conflictTakeSide` uses — and
-        // refused only on the POSITIVE signal (listed, stage 1, no 2 or 3).
-        // "Mark resolved" is the only way to commit a hand-merged result, so a
-        // blanket refusal on an unreadable listing would take that away, unlike
-        // take-a-side where refusing is the safe default.
-        const stages = await ctx.process.run(["ls-files", "-u", "-z"]);
-        if (stages.code === 0) {
-          const mine = stages.stdout
-            .split("\0")
-            .map((rec) => /^\d{6} [0-9a-f]+ (\d)\t([\s\S]*)$/.exec(rec))
-            .filter((m): m is RegExpExecArray => !!m && m[2] === req.path)
-            .map((m) => m[1]);
-          if (mine.length && !mine.includes("2") && !mine.includes("3")) {
-            return {
-              ok: false,
-              changed: false,
-              expected: true,
-              message: `Both sides deleted ${req.path}. There is nothing to merge — use Discard to accept the deletion.`,
-            };
-          }
-        }
-        // A containment check that resolves SYMLINKS, not just "..". The one
-        // above is purely lexical, so a repo-relative path whose PARENT is a
-        // symlink pointing outside still lands outside. Both sides are
-        // realpath'd — on macOS the repo root itself is usually under a
-        // symlinked /tmp, so realpathing only the child refuses every
-        // legitimate file.
-        const realRoot = await realpath(ctx.root).catch(() => ctx.root);
-        const realDir = await realpath(dirname(abs)).catch(() => undefined);
-        if (!realDir || (realDir !== realRoot && !realDir.startsWith(realRoot + sep))) {
-          return {
-            ok: false,
-            changed: false,
-            expected: true,
-            message: `${req.path} resolves outside the repository — nothing was written.`,
-          };
-        }
-        await writeFile(abs, req.content, "utf8");
-        const r = await ctx.process.run(["add", "--", req.path]);
-        if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
-        return { ok: true, changed: true };
+        // The advice names the buttons this renderer shows today.
+        return await ctx.conflictOps.writeResolution(req.path, req.content, {
+          takeSideAdvice: "use Take ours or Take theirs",
+        });
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
       }
     });
   }
 
+  /**
+   * Take one of git's STAGES wholesale — the legacy `conflict:takeSide`, kept
+   * for the renderer until it moves to `conflict:takeRole`. Same code path as
+   * takeRole (ConflictOps.takeStage): `ls-files -u -z` decides whether the
+   * side exists (never a failed checkout), a missing side's answer is to
+   * delete the file, git moves the bytes, pathspecs are literal, and the path
+   * guard refuses anything outside the repository.
+   */
   async conflictTakeSide(req: { path: string; side: "ours" | "theirs" }): Promise<CommitActionResult> {
     const ctx = this.ctx();
     if (!ctx) return { ok: false, changed: false, message: "No repository open." };
     if (!safePath(req.path)) return UNSAFE_PATH_RESULT;
-    const stage = req.side === "ours" ? "2" : "3";
+    if (req.side !== "ours" && req.side !== "theirs") return UNSAFE_PATH_RESULT;
     return this.serialize(async () => {
       try {
-        // A modify/delete conflict has only TWO stages: the base, and whichever
-        // side kept the file. Asking for the missing one is not an error — that
-        // side's answer IS "delete it" — but `git show :3:path` exits non-zero
-        // and the user got a raw `fatal: path ... does not exist` for pressing a
-        // button the app itself offered. Taking a side that deleted the file
-        // means removing the file.
-        // `-z`, ALWAYS. Without it `ls-files` honours `core.quotePath`, which
-        // defaults to true, so it C-QUOTES every path outside ASCII:
-        // `"caf\303\251.txt"`, quotes and octal escapes included. The renderer
-        // sends the RAW path (it comes from `status --porcelain=v2 -z`), so an
-        // exact comparison against the quoted form never matches — and "no
-        // stages found" fell into the branch that runs `git rm`. Verified: a
-        // merge conflicting six files, "Take ours" on each, four of six DELETED
-        // and the deletions staged, every one reported ok:true. The convention
-        // is written down forty lines above this, at `fileDiff`'s own listing.
-        //
-        // The path is compared HERE rather than passed as a pathspec: this
-        // answer decides between writing a file and deleting one, and a
-        // pathspec is glob-capable with environment-steerable precedence
-        // (`GIT_GLOB_PATHSPECS`, `GIT_LITERAL_PATHSPECS`). `:(literal)` is not
-        // the escape hatch it looks like — under `GIT_LITERAL_PATHSPECS=1` the
-        // magic prefix becomes part of the filename and matches nothing.
-        //
-        // The list is bounded by the number of conflicts, which is small.
-        const unmerged = await ctx.process.run(["ls-files", "-u", "-z"]);
-        if (unmerged.code !== 0) {
-          return {
-            ok: false,
-            changed: false,
-            expected: true,
-            message: `Couldn't read the conflict state for ${req.path}. Nothing was changed.`,
-          };
-        }
-        {
-          // `[\s\S]` for the path, not `.`: with `-z` a path containing a
-          // NEWLINE arrives raw, and `.` will not cross it — which would drop
-          // that file straight back into the delete branch.
-          const rows = unmerged.stdout
-            .split("\0")
-            .map((rec) => /^\d{6} [0-9a-f]+ (\d)\t([\s\S]*)$/.exec(rec))
-            .filter((m): m is RegExpExecArray => !!m);
-          const present = new Set(rows.filter((m) => m[2] === req.path).map((m) => m[1]));
-          // DELETE only when git says this path really has no such side. A
-          // modify/delete conflict always lists the path with stage 1 plus one
-          // of 2 or 3, so "listed, but not the side you asked for" is the only
-          // safe reading of an absent stage. "Not listed at all" means the
-          // parse failed or the path moved, and answering that with `git rm`
-          // makes destruction the default outcome of not understanding the
-          // input — which is exactly how the C-quoting bug destroyed files.
-          // The verdict gates BOTH outcomes. This used to sit inside an
-          // `if (stdout.trim())`, so an empty listing — the file is no longer
-          // conflicted, because a watcher tick or another window resolved it —
-          // skipped the probe entirely and fell through to a precondition-free
-          // `git checkout --ours/--theirs`, which happily overwrites a file
-          // that has no conflict left and reports "Took your version."
-          if (!present.size) {
-            return {
-              ok: false,
-              changed: false,
-              expected: true,
-              message: `${req.path} is no longer conflicted — nothing was changed.`,
-            };
-          }
-          if (!present.has(stage)) {
-            const rm = await ctx.process.run(["rm", "-f", "--", req.path]);
-            if (rm.code !== 0) {
-              return { ok: false, changed: false, message: rm.stderr.trim() || "Couldn't delete the file." };
-            }
-            return { ok: true, changed: true };
-          }
-        }
-        // Let GIT write the bytes. This used to `git show :N:path`, take the
-        // stdout as a STRING and write it back as UTF-8 — and `GitProcess.run`
-        // decodes stdout with `Buffer.concat(...).toString("utf8")`, which is
-        // lossy for anything that is not UTF-8 text. So resolving a conflicted
-        // PNG, PDF or any binary asset wrote mangled bytes over it and STAGED
-        // them, then reported success: verified on a real 512×512 PNG, whose
-        // header came back `efbfbd504e470d0a` instead of `89504e470d0a1a0a`,
-        // 36,078 bytes in and 67,288 bytes out. Take-ours/take-theirs is the
-        // only resolution the app offers for a binary conflict, so this was the
-        // only path available, and it destroyed the file.
-        //
-        // `checkout --ours/--theirs` never decodes anything.
-        const co = await ctx.process.run([
-          "checkout",
-          req.side === "ours" ? "--ours" : "--theirs",
-          "--",
-          req.path,
-        ]);
-        if (co.code !== 0) {
-          return {
-            ok: false,
-            changed: false,
-            message: co.stderr.trim() || `Couldn't take the ${req.side === "ours" ? "current" : "incoming"} version.`,
-          };
-        }
-        const r = await ctx.process.run(["add", "--", req.path]);
-        if (r.code !== 0) return { ok: false, changed: false, message: r.stderr.trim() };
-        return { ok: true, changed: true };
+        return await ctx.conflictOps.takeStage(req.path, req.side === "ours" ? 2 : 3);
       } catch (err) {
         return { ok: false, changed: false, message: String(err) };
       }
     });
+  }
+
+  // ── Merge parity: role-based conflicts and the operation (S0 channels) ─────
+
+  /** `conflict:state` — the conflicts dashboard's git half. */
+  async conflictState(): Promise<ConflictsSnapshot> {
+    const ctx = this.ctx();
+    if (!ctx) return { repoName: "", op: noneOperationView(""), files: [], total: 0, resolved: 0 };
+    return ctx.conflictOps.snapshot();
+  }
+
+  /** `conflict:takeRole` — Accept Yours / Accept Theirs (a role with no file deletes it). */
+  async conflictTakeRole(req: { path: string; role: SideRole }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    if (req.role !== "yours" && req.role !== "theirs") {
+      return { ok: false, changed: false, message: "Choose Yours or Theirs." };
+    }
+    return this.serialize(async () => {
+      try {
+        return await ctx.conflictOps.takeRole(req.path, req.role);
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
+  }
+
+  /** `conflict:restore` — hold-to-undo / undo of an Apply: the conflict comes back. */
+  async conflictRestore(req: { path: string }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    return this.serialize(async () => {
+      try {
+        return await ctx.conflictOps.restore(req.path);
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
+  }
+
+  /** `conflict:delete` — the one resolution of a file deleted on both sides. */
+  async conflictDelete(req: { path: string }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    return this.serialize(async () => {
+      try {
+        return await ctx.conflictOps.deleteFile(req.path);
+      } catch (err) {
+        return { ok: false, changed: false, message: String(err) };
+      }
+    });
+  }
+
+  /**
+   * `op:continue` / `op:skip` / `op:abort` — whatever is stopped, through the
+   * shared provider's gates. Serialized with every other mutation, and the
+   * rebase verbs run through the RebaseRunner with this app's git and Output
+   * hook (the reword queue survives a Continue).
+   */
+  opContinue(req?: { confirmDrop?: boolean }): Promise<OperationOutcome> {
+    return this.opVerb((ctx, runner) =>
+      ctx.operation.continue({ confirmDrop: req?.confirmDrop === true, runner }),
+    );
+  }
+
+  opSkip(): Promise<OperationOutcome> {
+    return this.opVerb((ctx, runner) => ctx.operation.skip({ runner }));
+  }
+
+  opAbort(): Promise<OperationOutcome> {
+    return this.opVerb((ctx, runner) => ctx.operation.abort({ runner }));
+  }
+
+  private async opVerb(
+    run: (ctx: GitContext, runner: ReturnType<RepoStore["runnerOptions"]>) => Promise<OperationOutcome>,
+  ): Promise<OperationOutcome> {
+    const ctx = this.ctx();
+    if (!ctx) {
+      return {
+        ok: false,
+        refused: "not-allowed",
+        expected: true,
+        message: "No repository open.",
+        view: noneOperationView(""),
+        remainingConflicts: 0,
+      };
+    }
+    return this.serialize(() => run(ctx, this.repos.runnerOptions()));
+  }
+
+  // ── JetBrains hand-off (Settings ▸ Merge) ───────────────────────────────────
+
+  private settings(): MergeSettings {
+    return this.mergeSettings?.get() ?? { ...DEFAULT_MERGE_SETTINGS };
+  }
+
+  /** `jetbrains:detect` — the IDE the merge settings resolve to, if one is installed. */
+  async jetbrainsDetect(): Promise<JetBrainsIdeInfo | undefined> {
+    const s = this.settings();
+    return locateJetBrainsIde({ preferred: s.preferredIde, explicitPath: s.jetbrainsPath });
+  }
+
+  /**
+   * `jetbrains:merge` — the conflict in the IDE's three-way merge window, with
+   * LOCAL = the YOURS content and REMOTE = the THEIRS content after the role
+   * mapping (so a rebase's own commit is on the left there too), BASE when
+   * there is one, and the real file as the output.
+   */
+  async jetbrainsMerge(req: { path: string }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    const abs = containedPath(ctx.root, req.path);
+    if (!abs) return UNSAFE_PATH_RESULT;
+    const ide = await this.jetbrainsDetect();
+    if (!ide) return noIde();
+    const sides = await ctx.conflictOps.readSides(req.path);
+    if (sides.source === "none") {
+      return { ok: false, changed: false, expected: true, message: `${req.path} has no conflict to merge.` };
+    }
+    if (sides.shape !== "text" && sides.shape !== "added-both") {
+      return {
+        ok: false,
+        changed: false,
+        expected: true,
+        message: `${req.path} has no text to merge line by line — accept one side instead.`,
+      };
+    }
+    const key = `${ctx.root}\0${req.path}`;
+    await this.ideLaunches.get(key)?.dispose();
+    const launch = await launchJetBrainsMerge({
+      ide,
+      outputPath: abs,
+      yours: sides.yours,
+      theirs: sides.theirs,
+      ...(sides.hasBase ? { base: sides.base } : {}),
+    });
+    if (!launch.ok) {
+      return { ok: false, changed: false, expected: true, message: launch.message ?? `Couldn't open ${ide.name}.` };
+    }
+    this.ideLaunches.set(key, launch);
+    return {
+      ok: true,
+      changed: false,
+      message: `Opened ${req.path} in ${ide.name}. Merge it there, then mark it resolved.`,
+    };
+  }
+
+  /** `jetbrains:diff` — HEAD against the working copy in the IDE's diff window. */
+  async jetbrainsDiff(req: { path: string }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safePath(req?.path)) return UNSAFE_PATH_RESULT;
+    const abs = containedPath(ctx.root, req.path);
+    if (!abs) return UNSAFE_PATH_RESULT;
+    const ide = await this.jetbrainsDetect();
+    if (!ide) return noIde();
+    const head = await ctx.conflict.getHeadVersion(req.path).catch(() => "");
+    const ext = extname(req.path);
+    const launch = await launchJetBrainsDiff({
+      ide,
+      left: { text: head, name: `${basename(req.path, ext)}.HEAD${ext}` },
+      right: { path: abs },
+    });
+    if (!launch.ok) {
+      return { ok: false, changed: false, expected: true, message: launch.message ?? `Couldn't open ${ide.name}.` };
+    }
+    // The IDE reads the HEAD copy as it opens; give it a minute, then tidy up.
+    setTimeout(() => void launch.dispose(), 60_000).unref?.();
+    return { ok: true, changed: false };
+  }
+
+  /**
+   * `jetbrains:markResolved` — after merging in the IDE: stage the file (the
+   * same marker guard as Stage: a file still carrying conflict markers is
+   * refused, not settled) and remove the launch's temp files.
+   */
+  async jetbrainsMarkResolved(req: { path: string }): Promise<CommitActionResult> {
+    const ctx = this.ctx();
+    if (!ctx) return { ok: false, changed: false, message: "No repository open." };
+    if (!safePath(req?.path) || !containedPath(ctx.root, req.path)) return UNSAFE_PATH_RESULT;
+    const out = await this.stage(req.path);
+    if (out.ok) {
+      ctx.conflictOps.noteChoice(req.path, "merged");
+      const key = `${ctx.root}\0${req.path}`;
+      await this.ideLaunches.get(key)?.dispose();
+      this.ideLaunches.delete(key);
+    }
+    return out;
   }
 }
 
@@ -3224,48 +3223,16 @@ function toOriginalRanges(ranges: LineRange[], hunks: Hunk[]): LineRange[] {
  * invariant is "cheap enough to repaint ticks", so it passes NUL-free Latin-1
  * (still destroyed) and REFUSES a 25,000-line text file that stages correctly
  * today. This asks the exact question instead — do the bytes survive the round
- * trip this code is about to perform.
+ * trip this code is about to perform. (`textWriteSafe` is the same question
+ * the conflict write-back asks — one copy, in ConflictOps.)
  */
-/**
- * The two kinds of file that a text write-back destroys, asked once.
- *
- * A symlink, because `writeFile` FOLLOWS it: the app opens the link's target
- * and overwrites whatever is there — a file that may be nowhere near the
- * repository — while the link itself, which is what git tracks, is untouched.
- * And a non-UTF-8 file, because the content has been round-tripped through a
- * JavaScript string by the time it gets here, and every byte that is not valid
- * UTF-8 came back as U+FFFD.
- *
- * Shared because it was answered separately in two places and only one of them
- * was ever right. `conflictTakeSide` was fixed to let git move the bytes;
- * `conflictResolve`, forty lines below it, still wrote a JS string through
- * `writeFile` and reported "Resolved and staged." over a corrupted PNG and an
- * obliterated file outside the repo. `caller` supplies wording that names a
- * control the user can actually see from where they are.
- */
-async function textWriteSafe(
-  abs: string,
-  rel: string,
-  advice: (what: "symlink" | "binary") => string,
-): Promise<{ ok: true } | { ok: false; why: string }> {
-  const st = await lstat(abs).catch(() => undefined);
-  if (st?.isSymbolicLink()) return { ok: false, why: advice("symlink") };
-  if (st?.isFile()) {
-    const bytes = await readFile(abs).catch(() => undefined);
-    if (bytes && Buffer.compare(Buffer.from(bytes.toString("utf8"), "utf8"), bytes) !== 0) {
-      return { ok: false, why: advice("binary") };
-    }
-  }
-  return { ok: true };
-}
-
 async function lineStageable(
   ctx: GitContext,
   rel: string,
 ): Promise<{ ok: true } | { ok: false; why: string }> {
   const abs = containedPath(ctx.root, rel);
   if (!abs) return { ok: false, why: "That path is outside the repository." };
-  const safe = await textWriteSafe(abs, rel, (what) =>
+  const safe = await textWriteSafe(abs, (what) =>
     what === "symlink"
       ? `${rel} is a symbolic link — stage it whole. Staging part of one would write a file's contents into the link.`
       : `${rel} isn't UTF-8 text — stage it whole. Staging part of it would rewrite the bytes it can't represent.`,
@@ -3562,58 +3529,6 @@ async function readWorking(
  * reads as up to date with a remote that no longer exists. It is also exactly
  * the signal that the branch is finished and safe to delete.
  */
-/**
- * What the two conflict sides ARE, named for the operation in progress.
- *
- * Git's stage 2 is "ours" and stage 3 is "theirs" — but which of YOUR work each
- * one holds depends on the operation, and for a rebase it is inverted:
- *
- *   merge / cherry-pick / revert  ours = HEAD, your branch
- *                                 theirs = the change being brought in
- *   rebase / am                   ours = the UPSTREAM you are replaying onto
- *                                 theirs = YOUR commit being replayed
- *
- * The labels were hardcoded to the merge reading, so in a rebase the button
- * offering "your version" handed you the branch you were rebasing onto and
- * discarded the commit you were replaying — with the tooltip and the success
- * toast both agreeing it had done the opposite.
- */
-export function sideLabels(kind: GitOpState["kind"]): {
-  oursLabel: string;
-  theirsLabel: string;
-} {
-  if (kind === "rebase") {
-    return {
-      oursLabel: "Upstream (what you're rebasing onto)",
-      theirsLabel: "Your commit (being replayed)",
-    };
-  }
-  // `am` reads like a MERGE, not like a rebase — verified against real git.
-  //
-  // A rebase inverts the sides because it checks the upstream out first and
-  // replays your commits onto it, so stage 2 is the upstream. `git am` does
-  // nothing of the kind: it applies a mailbox patch onto the branch you are
-  // standing on, so stage 2 is YOUR branch and stage 3 is the patch. Lumping
-  // the two together — which this function did, in the same change that fixed
-  // the rebase labels — put the identical lie on the identical buttons, one
-  // operation over: "Take Upstream" handed you your own branch, and "Take Your
-  // commit (being replayed)" handed you someone else's mailed patch.
-  //
-  // `opState` never confuses the two: a rebase on the apply backend uses the
-  // same `rebase-apply/` directory but writes `rebasing`, not `applying`, and
-  // is reported as "rebase".
-  if (kind === "am") {
-    return {
-      oursLabel: "Your branch",
-      theirsLabel: "The patch being applied",
-    };
-  }
-  return {
-    oursLabel: "Current change (your branch)",
-    theirsLabel: "Incoming change",
-  };
-}
-
 export function parseTrack(track: string): { ahead: number; behind: number; gone: boolean } {
   const a = track.match(/ahead (\d+)/);
   const b = track.match(/behind (\d+)/);

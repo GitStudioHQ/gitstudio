@@ -29,6 +29,7 @@ import { AiBridge } from "./aiBridge";
 import { TerminalBridge } from "./terminalBridge";
 import { pickCloneDir, startClone, listGhRepos, killActiveClones } from "./cloneBridge";
 import { AppSettings } from "./appSettings";
+import { MergeSettingsStore } from "./mergeSettings";
 import {
   visibleRepoFolders,
   realOrResolve,
@@ -78,6 +79,7 @@ let mainWindow: BrowserWindow | undefined;
 let updates: UpdateManager | undefined;
 let repos: RepoStore;
 let appSettings: AppSettings;
+let mergeSettings: MergeSettingsStore;
 const localRepos = new LocalRepoScanner();
 let bridge: GitBridge;
 let github: GitHubBridge;
@@ -548,6 +550,21 @@ function actionLabel(channel: string): string {
     "pr:checkout": "Checkout PR",
     "git:identity": "Read identity",
     "git:setIdentity": "Set identity",
+    "conflict:state": "Read conflicts",
+    "conflict:takeRole": "Accept a side",
+    "conflict:restore": "Undo resolution",
+    "conflict:delete": "Delete conflicted file",
+    "conflict:resolve": "Apply merge",
+    "conflict:takeSide": "Take a side",
+    "op:continue": "Continue operation",
+    "op:skip": "Skip commit",
+    "op:abort": "Abort operation",
+    "jetbrains:detect": "Find JetBrains IDE",
+    "jetbrains:merge": "Merge in JetBrains IDE",
+    "jetbrains:diff": "Diff in JetBrains IDE",
+    "jetbrains:markResolved": "Mark resolved",
+    "merge:settings": "Read merge settings",
+    "merge:setSettings": "Save merge settings",
   };
   if (NAMES[channel]) return NAMES[channel];
   // "branch:rename" → "Branch rename" — readable even for unmapped channels.
@@ -1132,6 +1149,22 @@ function registerIpc(): void {
   handle("rebase:abort", () => bridge.rebaseAbort());
   handle("rebase:continue", () => bridge.rebaseContinue());
   handle("rebase:skip", () => bridge.rebaseSkip());
+  // Merge parity: role-based conflicts, the operation, the JetBrains hand-off
+  // and Settings ▸ Merge — the same meaning as the VS Code hosts, through the
+  // same shared OperationProvider / ConflictOps.
+  handle("conflict:state", () => bridge.conflictState());
+  handle("conflict:takeRole", (req) => bridge.conflictTakeRole(req));
+  handle("conflict:restore", (req) => bridge.conflictRestore(req));
+  handle("conflict:delete", (req) => bridge.conflictDelete(req));
+  handle("op:continue", (req) => bridge.opContinue(req ?? {}));
+  handle("op:skip", () => bridge.opSkip());
+  handle("op:abort", () => bridge.opAbort());
+  handle("jetbrains:detect", () => bridge.jetbrainsDetect());
+  handle("jetbrains:merge", (req) => bridge.jetbrainsMerge(req));
+  handle("jetbrains:diff", (req) => bridge.jetbrainsDiff(req));
+  handle("jetbrains:markResolved", (req) => bridge.jetbrainsMarkResolved(req));
+  handle("merge:settings", async () => mergeSettings.get());
+  handle("merge:setSettings", (patch) => mergeSettings.update(patch));
   handle("tag:create", (req) => bridge.tagCreate(req));
   handle("tag:delete", (name) => bridge.tagDelete(name));
   handle("tag:restore", (req) => bridge.tagRestore(req));
@@ -1212,11 +1245,18 @@ async function boot(): Promise<void> {
     defaultCloneDir: managedReposDir(),
     home: app.getPath("home"),
   });
-  bridge = new GitBridge(repos, {
-    // The graph's branch filter (issue #30), remembered per repository.
-    get: (root) => appSettings.graphRefFilter(root),
-    set: (root, refs) => appSettings.setGraphRefFilter(root, refs),
-  });
+  // Settings ▸ Merge live HERE, not in the renderer: jetbrainsPath is an
+  // executable this process spawns.
+  mergeSettings = await MergeSettingsStore.load(app.getPath("userData"));
+  bridge = new GitBridge(
+    repos,
+    {
+      // The graph's branch filter (issue #30), remembered per repository.
+      get: (root) => appSettings.graphRefFilter(root),
+      set: (root, refs) => appSettings.setGraphRefFilter(root, refs),
+    },
+    mergeSettings,
+  );
   github = new GitHubBridge(repos);
   // Authenticate ATTACHMENT images from the renderer. A private repository's
   // issue screenshots live at github.com/user-attachments/…, which answers a

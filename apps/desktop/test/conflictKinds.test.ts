@@ -81,6 +81,11 @@ test("a modify/delete conflict says WHICH side has no file", async () => {
     // that emptied the file, since both give an empty string.
     assert.equal(m!.missingSide, "theirs", "the deleted side is named");
     assert.notEqual(m!.binary, true, "and it is not mistaken for a binary");
+    // Merge parity: the same fact as a shape and a ROLE (a merge is not
+    // swapped, so stage 3's side is Theirs).
+    assert.equal(m!.shape, "modify-delete");
+    assert.equal(m!.missingRole, "theirs");
+    assert.equal(m!.op?.kind, "merge");
   } finally {
     removeTempRepo(root);
   }
@@ -117,6 +122,8 @@ test("the other direction is named the other way round", async () => {
     const b = await bridge(root);
     const m = await b.conflictModel("f.txt");
     assert.equal(m?.missingSide, "ours", "the side that deleted it is the one named");
+    assert.equal(m?.missingRole, "yours", "in a merge, stage 2's side is Yours");
+    assert.equal(m?.shape, "modify-delete");
   } finally {
     removeTempRepo(root);
   }
@@ -131,6 +138,7 @@ test("a conflicted binary is reported as binary", async () => {
     const m = await b.conflictModel("art.png");
     assert.ok(m, "there is a model");
     assert.equal(m!.binary, true, "so the renderer can refuse the text merge");
+    assert.equal(m!.shape, "binary");
   } finally {
     removeTempRepo(root);
   }
@@ -146,6 +154,8 @@ test("an ordinary content conflict is neither", async () => {
     assert.notEqual(m!.binary, true);
     assert.equal(m!.missingSide, undefined);
     assert.ok(m!.ours.length > 0 && m!.theirs.length > 0, "both sides have text to merge");
+    assert.equal(m!.shape, "text");
+    assert.equal(m!.missingRole, undefined);
   } finally {
     removeTempRepo(root);
   }
@@ -214,6 +224,7 @@ test("a conflicted file over the read cap refuses the text merge", async () => {
     assert.ok(m, "there is a model");
     assert.ok(m!.result.length <= CAP + 4096, "the working copy really was capped");
     assert.equal(m!.truncated, true, "and the model says so, so the panel can refuse");
+    assert.equal(m!.shape, "too-large");
   } finally {
     removeTempRepo(root);
   }
@@ -265,6 +276,8 @@ test("a both-sides-deleted conflict is its own state, not a modify/delete", asyn
     assert.ok(m, "there is a model");
     assert.equal(m!.bothDeleted, true, "it is reported as deleted on both sides");
     assert.equal(m!.missingSide, undefined, "and NOT as one side missing");
+    assert.equal(m!.shape, "both-deleted");
+    assert.equal(m!.missingRole, undefined);
   } finally {
     removeTempRepo(root);
   }
@@ -311,6 +324,49 @@ test("an added-on-one-side conflict has no common version behind it", async () =
     // The decisive property: no common ancestor. The renderer branches on it
     // to stop telling a deletion story about a file that was only ever added.
     assert.equal(m.hasBase, false, "there is no version behind either side");
+  } finally {
+    removeTempRepo(root);
+  }
+});
+
+test("added on one side only (rename/rename's AU and UA): a shape of its own, with the ROLE that lacks it", async () => {
+  // A one-sided add usually merges cleanly; both sides renaming the same file
+  // differently is what leaves git's AU / UA behind (and DD on the original).
+  const root = mkdtempSync(join(tmpdir(), "gs-conflict-auua-"));
+  const git = (...a: string[]): string => {
+    try {
+      return execFileSync("git", a, { cwd: root, encoding: "utf8" });
+    } catch (e) {
+      return String((e as { stdout?: Buffer }).stdout ?? "");
+    }
+  };
+  try {
+    execFileSync("git", ["-c", "init.defaultBranch=main", "init", root]);
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    git("config", "gc.auto", "0");
+    git("config", "core.autocrlf", "false");
+    writeFileSync(join(root, "doomed.txt"), "contents\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("checkout", "-q", "-b", "side");
+    git("mv", "doomed.txt", "theirs.txt");
+    git("commit", "-qm", "they rename it");
+    git("checkout", "-q", "main");
+    git("mv", "doomed.txt", "ours.txt");
+    git("commit", "-qm", "we rename it");
+    git("merge", "side");
+    assert.match(git("status", "--porcelain"), /^UA theirs\.txt$/m, "the fixture really is UA");
+
+    const b = await bridge(root);
+    const theirs = await b.conflictModel("theirs.txt");
+    assert.equal(theirs?.shape, "added-one-side", "not a modify/delete — nothing was deleted");
+    assert.equal(theirs?.missingRole, "yours", "main never had it under that name");
+    assert.equal(theirs?.missingSide, "ours");
+    assert.equal(theirs?.hasBase, false);
+    const ours = await b.conflictModel("ours.txt");
+    assert.equal(ours?.shape, "added-one-side");
+    assert.equal(ours?.missingRole, "theirs");
   } finally {
     removeTempRepo(root);
   }
