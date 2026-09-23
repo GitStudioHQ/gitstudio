@@ -63,7 +63,8 @@ test("no operation state is read from git's English prose", async () => {
 test("git's operation files are never watched at a literal <root>/.git", async () => {
   // In a linked worktree <root>/.git is a FILE; the watchers resolve
   // `rev-parse --git-path` instead (merge-vscode gitWatch.ts).
-  const hits = await census(/joinPath\([^)]*["'`]\.git["'`]\)/);
+  // Any joinPath whose arguments end in ".git" (nested calls included).
+  const hits = await census(/joinPath\(.*["'`]\.git["'`]\s*\)/);
   assert.deepEqual(hits, [], hits.join("\n"));
 });
 
