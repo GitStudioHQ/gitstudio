@@ -11,7 +11,7 @@
 
 import { build } from "esbuild";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -55,6 +55,20 @@ function bundle(entry: string): Promise<string> {
     bundles.set(entry, b);
   }
   return b;
+}
+
+/**
+ * The page <title> as --dump-dom serialised it, back to the JSON the page
+ * wrote. Each entity is decoded exactly once, `&amp;` LAST: decoding it first
+ * turned the text "&lt;" (serialised "&amp;lt;") into "<".
+ */
+export function decodeVerdictTitle(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 /**
@@ -112,6 +126,9 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
       ],
       { maxBuffer: 64 * 1024 * 1024, timeout: 60_000, killSignal: "SIGKILL" },
       (err, stdout) => {
+        // The page is read; its directory goes now, whatever the verdict. It
+        // used to stay — hundreds a night in $TMPDIR on a nearly full disk.
+        rmSync(dir, { recursive: true, force: true });
         if (err && !stdout) return res({ fails: [`chrome failed: ${err.message}`] });
         const m = /<title>CHECK ([\s\S]*?)<\/title>/.exec(stdout);
         if (!m) {
@@ -119,13 +136,7 @@ window.addEventListener("unhandledrejection", (e) => window.verdict({ fails: ["r
           return res({ fails: [`no verdict (title was ${JSON.stringify(t?.[1] ?? "")})`] });
         }
         try {
-          const decoded = m[1]
-            .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&#39;/g, "'");
-          res(JSON.parse(decoded));
+          res(JSON.parse(decodeVerdictTitle(m[1])));
         } catch {
           res({ fails: [`unparseable verdict: ${m[1].slice(0, 200)}`] });
         }

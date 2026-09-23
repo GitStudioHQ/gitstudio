@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Verdict } from "../headless";
+import { decodeVerdictTitle, type Verdict } from "../headless";
 
 export { findChrome } from "../headless";
 export type { Verdict } from "../headless";
@@ -157,13 +157,8 @@ window.addEventListener("unhandledrejection", (e) => {
           return res({ fails: [`no verdict (title was ${JSON.stringify(t?.[1] ?? "")})`] });
         }
         try {
-          const decoded = m[1]
-            .replace(/&quot;/g, '"')
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&#39;/g, "'");
-          res(JSON.parse(decoded));
+          // One decoder for both harnesses (it decodes &amp; last).
+          res(JSON.parse(decodeVerdictTitle(m[1])));
         } catch {
           res({ fails: [`unparseable verdict: ${m[1].slice(0, 200)}`] });
         }

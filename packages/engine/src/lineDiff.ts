@@ -160,6 +160,10 @@ export function diffSide(
     ...BASE_DIFF_OPTIONS,
     ignoreTrimWhitespace: ignoreTrimWhitespaceFor(whitespace),
   };
+  // `innerLineBudget`: above it, no character-level ranges (see DiffOptions).
+  const overBudget =
+    options.innerLineBudget !== undefined &&
+    baseLines.length + sideLines.length > options.innerLineBudget;
 
   const { changes } = linesDiffComputers
     .getDefault()
@@ -179,9 +183,12 @@ export function diffSide(
     // Under "all" the diff ran on NORMALISED lines (runs collapsed, ends
     // trimmed), so its character ranges index into strings the editor never
     // shows — every word highlight landed on the wrong columns. Re-derive them
-    // from the ORIGINAL lines of the change.
-    const inners =
-      whitespace === "all"
+    // from the ORIGINAL lines of the change. Over the budget, none at all: the
+    // views do not draw word ranges on a large file, and "all" would pay for
+    // them twice.
+    const inners = overBudget
+      ? []
+      : whitespace === "all"
         ? innerOnOriginals(baseLines, sideLines, baseSpan, sideSpan)
         : (change.innerChanges ?? []).map((inner) => ({
             base: toInnerRange(inner.originalRange),

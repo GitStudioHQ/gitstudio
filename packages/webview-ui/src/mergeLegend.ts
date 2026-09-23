@@ -208,11 +208,17 @@ export class MergeLegend {
       return;
     }
     // Fixed, not absolute: the legend lives in a toolbar that scrolls
-    // sideways, which would clip an absolutely positioned popover.
-    const rect = this.helpButton.getBoundingClientRect();
-    this.pop.style.top = `${Math.round(rect.bottom + 4)}px`;
-    const width = this.pop.offsetWidth || 320;
-    this.pop.style.left = `${Math.round(Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)))}px`;
+    // sideways, which would clip an absolutely positioned popover. And
+    // because it is fixed, it is placed again whenever the window resizes or
+    // anything scrolls while it is open — placed once, it floated away from
+    // the button it belongs to.
+    const place = (): void => {
+      const rect = this.helpButton.getBoundingClientRect();
+      this.pop.style.top = `${Math.round(rect.bottom + 4)}px`;
+      const width = this.pop.offsetWidth || 320;
+      this.pop.style.left = `${Math.round(Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)))}px`;
+    };
+    place();
     const onDown = (event: MouseEvent) => {
       if (!this.element.contains(event.target as Node)) {
         this.setOpen(false);
@@ -227,9 +233,14 @@ export class MergeLegend {
     };
     document.addEventListener("mousedown", onDown, true);
     document.addEventListener("keydown", onKey, true);
+    window.addEventListener("resize", place);
+    // Capture: a scroll of ANY ancestor (the toolbar's own overflow) moves the button.
+    document.addEventListener("scroll", place, true);
     this.closeListeners = () => {
       document.removeEventListener("mousedown", onDown, true);
       document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", place);
+      document.removeEventListener("scroll", place, true);
     };
   }
 }
