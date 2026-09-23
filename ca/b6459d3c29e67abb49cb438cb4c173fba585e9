@@ -1,0 +1,113 @@
+packages/webview-ui/src/conflicts/dashboard.ts
+  s_26f5e669d3043c::t_e417ffadb5026d 222-225
+  s_26f5e669d3043c::t_89d9891716c5ee 226,322-323,333,595-601,603
+packages/webview-ui/test/conflictsDashboard.test.ts
+  s_26f5e669d3043c::t_20469aec4d5a3b 368
+  s_26f5e669d3043c::t_79fcf438c0562b 369-408
+apps/extension/package.json
+  s_26f5e669d3043c::t_a008991dd57c13 1074
+apps/merge-studio/.vscodeignore
+  s_26f5e669d3043c::t_8c6f4c7ea2fc29 1-34
+apps/merge-studio/CHANGELOG.md
+  s_26f5e669d3043c::t_b05b1edb2ea35f 1-165
+apps/merge-studio/CONTRIBUTING.md
+  s_26f5e669d3043c::t_914a11e785fb3c 1-53
+apps/merge-studio/LICENSE
+  s_26f5e669d3043c::t_993a4965971abd 1-21
+apps/merge-studio/LICENSE-APACHE
+  s_26f5e669d3043c::t_03ca1f4003aa20 1-201
+apps/merge-studio/NOTICE
+  s_26f5e669d3043c::t_0d738fba0d84fd 1-34
+apps/merge-studio/README.md
+  s_26f5e669d3043c::t_c09d3d2f7ace87 1-144
+apps/merge-studio/RELEASING.md
+  s_26f5e669d3043c::t_a92ce550b89241 1-241
+apps/merge-studio/SHOTS.md
+  s_26f5e669d3043c::t_266419f10f4dac 1-51
+apps/merge-studio/esbuild.js
+  s_26f5e669d3043c::t_a9309ef478cf80 1-149
+apps/merge-studio/media/banner.svg
+  s_26f5e669d3043c::t_d1210310130c9d 1-281
+apps/merge-studio/media/icon.svg
+  s_26f5e669d3043c::t_8570bfd8c23887 1-43
+apps/merge-studio/media/walkthrough/choose-editor.svg
+  s_26f5e669d3043c::t_d8cad8e1b7ee8d 1-12
+apps/merge-studio/media/walkthrough/dashboard.svg
+  s_26f5e669d3043c::t_34de1bddc6105a 1-12
+apps/merge-studio/media/walkthrough/diff.svg
+  s_26f5e669d3043c::t_b216a49b39d610 1-12
+apps/merge-studio/media/walkthrough/gitstudio.svg
+  s_26f5e669d3043c::t_f49d3feda23089 1-12
+apps/merge-studio/media/walkthrough/jetbrains.svg
+  s_26f5e669d3043c::t_377db1eb3b528c 1-12
+apps/merge-studio/media/walkthrough/legend.svg
+  s_26f5e669d3043c::t_0b79cc60b3e8f0 1-12
+apps/merge-studio/media/walkthrough/rebase-sides.svg
+  s_26f5e669d3043c::t_12e7e8d06289ac 1-12
+apps/merge-studio/media/walkthrough/sample-merge.svg
+  s_26f5e669d3043c::t_a0dda24aa1ad1a 1-12
+apps/merge-studio/package.json
+  s_26f5e669d3043c::t_53cd293f885b37 1-528
+apps/merge-studio/src/extension.ts
+  s_26f5e669d3043c::t_34a3067be4cf3a 1-174
+apps/merge-studio/src/ids.ts
+  s_26f5e669d3043c::t_0acdd17947fd8f 1-83
+apps/merge-studio/src/lateLocator.ts
+  s_26f5e669d3043c::t_78b6dd7dfb42c0 1-70
+apps/merge-studio/src/links.ts
+  s_26f5e669d3043c::t_ca563c19d1e8a7 1-63
+apps/merge-studio/src/msProduct.ts
+  s_26f5e669d3043c::t_131c8efcb7e519 1-57
+apps/merge-studio/src/shell.ts
+  s_26f5e669d3043c::t_2908ff12c93afc 1-137
+apps/merge-studio/test/manifest.test.ts
+  s_26f5e669d3043c::t_77c9d008f1be45 1-254
+apps/merge-studio/test/parity.test.ts
+  s_26f5e669d3043c::t_89a6f4003e6970 1-265
+apps/merge-studio/test/shell.test.ts
+  s_26f5e669d3043c::t_54fea192ba824b 1-262
+apps/merge-studio/tsconfig.json
+  s_26f5e669d3043c::t_846cd4eb0a0e30 1-7
+package-lock.json
+  s_26f5e669d3043c::t_e136bb37e6a67f 122-152,4560-4563
+packages/host-bridge/src/conflictsProtocol.ts
+  s_26f5e669d3043c::t_eeb13773894c34 266-270
+packages/merge-vscode/src/coexistence.ts
+  s_26f5e669d3043c::t_2c5eee03e22f2c 21-22,26,40-58,114-157
+packages/merge-vscode/src/index.ts
+  s_26f5e669d3043c::t_08b13aeccaa4fa 12-13,19
+packages/merge-vscode/src/product.ts
+  s_26f5e669d3043c::t_08213a74bf01b5 105-114,136-140,154-167,219-244,248-249,252
+packages/merge-vscode/src/register.ts
+  s_26f5e669d3043c::t_b24bd5d6aaea27 20-26,68-69,165-171,173-177
+packages/merge-vscode/test/coexistence.test.ts
+  s_26f5e669d3043c::t_a576e0c6d36458 7-13,30-34,54,102-103,158-227
+packages/merge-vscode/test/product.test.ts
+  s_26f5e669d3043c::t_9f9d0767f85ea6 6-7,63-98
+packages/merge-vscode/test/registerDeferral.test.ts
+  s_26f5e669d3043c::t_3b4f59388ca69a 1-137
+scripts/merge-studio/check-parity.mjs
+  s_26f5e669d3043c::t_506801851e8589 1-170
+scripts/merge-studio/export.mjs
+  s_26f5e669d3043c::t_121ae676b77492 1-316
+scripts/merge-studio/test/checkParity.test.mjs
+  s_26f5e669d3043c::t_0775c0a7386ba5 1-133
+scripts/merge-studio/test/export.test.mjs
+  s_26f5e669d3043c::t_ee37c0e94067ab 1-185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cab6459d3c29e67abb49cb438cb4c173fba585e9",
+  "prompts": {},
+  "sessions": {
+    "s_26f5e669d3043c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84d5bd8e-bf89-4d7c-9932-e410f3e06481",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Anton Arnaudov <anton.arnaudov.me@gmail.com>"
+    }
+  }
+}
