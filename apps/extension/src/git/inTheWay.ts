@@ -4,14 +4,17 @@ import type { GitRunResult } from "@gitstudio/git-service/GitProcess";
 import type { PullMode, PullResult } from "@gitstudio/git-service/SyncOps";
 import {
   changesInTheWayMessage,
+  operationInTheWayMessage,
   runApplying,
   stashAndRetry,
   stashAndRetryPull,
   stashRetryNote,
   type ApplyOp,
   type ChangesInTheWay,
+  type OperationInTheWay,
 } from "@gitstudio/git-service/changesInTheWay";
 import { promptPick } from "../ui/dialogs";
+import { notifyPaused } from "./pauseNotice";
 
 /**
  * Every extension door that applies commits — the graph's Cherry-Pick, Revert
@@ -36,13 +39,17 @@ export interface Applied {
   result: GitRunResult;
   /** Asked, and the user cancelled — nothing ran. Not a failure; say nothing. */
   cancelled?: true;
-  /** Already said here (the stash failed, or it is still in the way). The
-   *  caller reports nothing more. */
+  /** Already said here (the stash failed, it is still in the way, or git is
+   *  stopped in an operation that refused it). The caller reports nothing
+   *  more. */
   settled?: true;
 }
 
 export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied> {
   const first = await runApplying(ctx.process, op);
+  if (first.blocked) {
+    return sayBlocked(first.result, first.blocked);
+  }
   if (first.result.code === 0 || !first.inTheWay) {
     return { result: first.result };
   }
@@ -50,6 +57,9 @@ export async function applyOrAsk(ctx: GitContext, op: ApplyOp): Promise<Applied>
     return { result: first.result, cancelled: true };
   }
   const out = await stashAndRetry(ctx.process, op);
+  if (out.blocked) {
+    return sayBlocked(out.result, out.blocked);
+  }
   if (out.stashFailed) {
     void vscode.window.showWarningMessage(
       `GitStudio: couldn't stash your changes, so nothing ran — ${out.stashFailed}`,
@@ -117,6 +127,26 @@ export async function pullOrAsk(ctx: GitContext, mode?: PullMode): Promise<PullR
     void vscode.window.showWarningMessage(`GitStudio: ${note}`);
   }
   return out.pulled;
+}
+
+/**
+ * Refused because git is already stopped — a merge, a rebase, a cherry-pick, a
+ * revert or a `git am` waiting, or files left unmerged. The user's state, and
+ * their stop's files are never offered to a stash: said in the engine's words
+ * (what is stopped, what is left, finish or abort it first) and never filed.
+ * With files left to resolve it is a pause like every other, through
+ * notifyPaused — Resolve Conflicts… opens the dashboard, where the stop's own
+ * Continue / Skip / Abort are; with none left, a plain warning, as
+ * settlePullStop says a pull blocked the same way.
+ */
+function sayBlocked(result: GitRunResult, blocked: OperationInTheWay): Applied {
+  const message = `GitStudio: ${operationInTheWayMessage(blocked)}`;
+  if (blocked.unmerged > 0) {
+    notifyPaused(message);
+  } else {
+    void vscode.window.showWarningMessage(message);
+  }
+  return { result, settled: true };
 }
 
 /** The question itself: which changes are in the way, and the two answers. */

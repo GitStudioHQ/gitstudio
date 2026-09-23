@@ -2,6 +2,7 @@ import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseUnmergedPaths } from "./ConflictProvider";
 import { rebaseInProgress } from "./rebaseInProgress";
 import { parseV2 } from "./StatusProvider";
+import { operationInTheWayMessage, stoppedIn, type StoppedOperation } from "./stoppedOperation";
 
 /** How far the branch is ahead of / behind its upstream. */
 export interface AheadBehind {
@@ -121,7 +122,7 @@ export interface PullStop {
 export interface PullBlock {
   /** What is paused. Absent when files are unmerged with no operation marker
    *  (a conflicted `stash pop`, say). */
-  operation?: "merge" | "rebase" | "cherry-pick" | "revert";
+  operation?: StoppedOperation;
   /** Files still unmerged. 0 once every conflict is resolved but the operation
    *  has not been committed or continued. */
   conflicted: number;
@@ -166,20 +167,14 @@ export function pullDirtyMessage(d: PullDirty): string {
  * app's words rather than git's `git add/rm` hint.
  */
 export function pullBlockedMessage(block: PullBlock): string {
-  const n = block.conflicted;
-  const files = n === 1 ? "1 file" : `${n} files`;
-  if (!block.operation) {
-    return `${files} ${n === 1 ? "is" : "are"} still conflicted. Resolve ${n === 1 ? "it" : "them"} before pulling again.`;
-  }
-  const op = block.operation;
-  const finish = op === "merge" ? "commit" : "continue";
-  if (n === 0) {
-    return `A ${op} is still in progress. ${finish === "commit" ? "Commit" : "Continue"} it — or abort it — before pulling again.`;
-  }
-  return (
-    `A ${op} is still in progress, with ${files} still conflicted. ` +
-    `Resolve ${n === 1 ? "it" : "them"} and ${finish} the ${op} — or abort it — before pulling again.`
-  );
+  // The sentence every door refused over a stop says (stoppedOperation.ts),
+  // before "pulling again" — one copy, so the pull and the doors cannot
+  // start to disagree about the same stop.
+  return operationInTheWayMessage({
+    kind: "pull",
+    unmerged: block.conflicted,
+    ...(block.operation ? { operation: block.operation } : {}),
+  });
 }
 
 /**
@@ -680,6 +675,15 @@ export class SyncOps {
       (opts?.rebase === true ? "rebase" : opts?.rebase === false ? "merge" : undefined);
     const signal = opts?.signal;
 
+    // An operation still stopped — typically the merge or rebase an earlier
+    // pull stopped on — is what is in the way, and the pull is not run over it
+    // at all: running it can end the operation or move HEAD out from under it
+    // (see pausedByOperation). Nothing is fetched.
+    const paused = await this.pausedByOperation(signal);
+    if (paused) {
+      return { ok: false, stderr: "", blocked: paused };
+    }
+
     // Only the no-mode, no-config case is ours to decide; everything else runs
     // the pull the caller (or the user's own config) asked for.
     const auto = mode === undefined && !(await this.reconcileConfigured(signal));
@@ -801,38 +805,36 @@ export class SyncOps {
   }
 
   /**
-   * The paused operation a FAILED pull ran into, or null when nothing is.
+   * The stopped operation a pull must not run over, or null when nothing is.
    *
-   * Mirrors what actually stops git's pull, and nothing more: an unmerged index
-   * and MERGE_HEAD are refused up front (builtin/pull.c), and a rebase that is
-   * still paused (its state directory — see rebaseInProgress) leaves HEAD
-   * detached, which fails every pull.
-   * A CHERRY_PICK_HEAD or REVERT_HEAD with nothing unmerged does NOT stop git
-   * pull, so on its own it is never blamed — a failure then is some other
-   * failure, and keeps its own message (and keeps reporting). Those two only
-   * NAME the operation when files are unmerged.
+   * Any operation git is stopped in — a merge, a rebase, a cherry-pick, a
+   * revert, a `git am` — or files left unmerged. Read by the operation core
+   * (stoppedIn: the files git writes, `git am` included), and asked BEFORE
+   * the pull runs, because running it can end the operation or move HEAD out
+   * from under it, and git does not always refuse (pinned against git 2.49
+   * in test/operationInTheWay.test.ts):
+   *
+   *   · a merging pull refused over a stopped revert's staged resolution
+   *     removes REVERT_HEAD on its way out — the revert ENDED by a pull that
+   *     never merged;
+   *   · a rebasing pull over a clean tree runs under a stopped revert or
+   *     cherry-pick, and a fast-forward carries a staged resolution under a
+   *     stopped am or revert: HEAD moves out from under the operation, whose
+   *     Continue then commits on top of whatever the pull brought.
+   *
+   * And where git does refuse — "You have not concluded your merge /
+   * cherry-pick", "Pulling is not possible because you have unmerged files",
+   * a paused rebase's detached HEAD, "cannot pull with rebase: Your index
+   * contains uncommitted changes" over a staged resolution — that refusal
+   * went out as git's text, or came back `dirty`, and Stash & Retry stashed the
+   * resolution OUT of the operation. The operation is what is in the way.
    */
   private async pausedByOperation(signal?: AbortSignal): Promise<PullBlock | null> {
-    const status = await this.proc.run(["status", "--porcelain=v2", "-z"], { signal });
-    const conflicted = status.code === 0 ? parseUnmergedPaths(status.stdout).length : 0;
-    const has = async (ref: string): Promise<boolean> =>
-      (await this.proc.run(["rev-parse", "--verify", "--quiet", ref], { signal })).code === 0;
-    if (await this.rebaseInProgress(signal)) {
-      return { operation: "rebase", conflicted };
-    }
-    if (await has("MERGE_HEAD")) {
-      return { operation: "merge", conflicted };
-    }
-    if (conflicted === 0) {
+    const stop = await stoppedIn(this.proc, signal);
+    if (!stop) {
       return null;
     }
-    if (await has("CHERRY_PICK_HEAD")) {
-      return { operation: "cherry-pick", conflicted };
-    }
-    if (await has("REVERT_HEAD")) {
-      return { operation: "revert", conflicted };
-    }
-    return { conflicted };
+    return stop.operation ? { operation: stop.operation, conflicted: stop.unmerged } : { conflicted: stop.unmerged };
   }
 
   /**

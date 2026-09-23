@@ -329,11 +329,16 @@ test("pulling again mid-rebase names the rebase — conflicted or already resolv
   }
 });
 
-test("a pull that fails for some OTHER reason is not blamed on a finished cherry-pick's marker", async () => {
-  // CHERRY_PICK_HEAD with nothing unmerged does not stop git pull (it checks
-  // only the index and MERGE_HEAD) — so a failure then is its own failure and
-  // must keep its own message, and keep reporting. See unresolvedConflictsMessage
-  // for the report that marker-based matching once silenced.
+test("a stopped cherry-pick with nothing unmerged blocks the pull before it runs — and a failure once it is finished is its own", async () => {
+  // CHERRY_PICK_HEAD with nothing unmerged is a cherry-pick still in progress
+  // (git status: "You are currently cherry-picking"), and git's own merge
+  // refuses over it ("You have not concluded your cherry-pick"). The pull is
+  // not run over it at all — running one over a stopped revert ENDED the
+  // revert (test/operationInTheWay.test.ts) — so nothing is fetched and the
+  // cherry-pick is what is said. The pull's own failure is not silenced: once
+  // the cherry-pick is finished it comes back as itself, and keeps reporting.
+  // (See unresolvedConflictsMessage for the report marker-based matching once
+  // silenced: a pick's OWN failure, which the pick's door still reports.)
   const { clone, ctx } = collidingClone();
   const gone = join(tmpdir(), `gitstudio-stop-gone-cp-${process.pid}-${Date.now()}.git`);
   gitIn(clone, ["remote", "set-url", "origin", gone]);
@@ -341,8 +346,12 @@ test("a pull that fails for some OTHER reason is not blamed on a finished cherry
   gitIn(clone, ["update-ref", "CHERRY_PICK_HEAD", head]);
   const r = await ctx.sync.pull();
   assert.equal(r.ok, false);
-  assert.equal(r.blocked, undefined);
-  assert.match(r.stderr, /does not appear to be a git repository|Could not read from remote/i);
+  assert.deepEqual(r.blocked, { operation: "cherry-pick", conflicted: 0 });
+  gitIn(clone, ["update-ref", "-d", "CHERRY_PICK_HEAD"]);
+  const after = await ctx.sync.pull();
+  assert.equal(after.ok, false);
+  assert.equal(after.blocked, undefined);
+  assert.match(after.stderr, /does not appear to be a git repository|Could not read from remote/i);
 });
 
 test("the block is described in the app's words: what is paused, and the two ways out", () => {

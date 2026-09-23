@@ -2,7 +2,14 @@ import type { GitProcess, GitRunOptions, GitRunResult } from "./GitProcess";
 import { rebaseInProgress } from "./rebaseInProgress";
 import { StashProvider } from "./StashProvider";
 import { parseV2 } from "./StatusProvider";
+import { pick, sameStop, stoppedIn, type OperationInTheWay, type StoppedHere } from "./stoppedOperation";
 import type { PullDirty, PullResult } from "./SyncOps";
+
+export {
+  operationInTheWayMessage,
+  type OperationInTheWay,
+  type StoppedOperation,
+} from "./stoppedOperation";
 
 // A command that applies commits to the working tree — revert, cherry-pick,
 // merge, rebase, a branch checkout, a stash apply or pop — REFUSES when the
@@ -134,14 +141,49 @@ export function changesInTheWayMessage(v: ChangesInTheWay): string {
  * Run `op`, and when it is refused over the user's uncommitted work, say which
  * of it is in the way. `inTheWay` is set only when NOTHING happened — the
  * command is safe to run again once those paths are out of the way.
+ *
+ * When git is ALREADY stopped — a merge, a rebase, a cherry-pick, a revert or
+ * a `git am` waiting for the user, or files left unmerged — the uncommitted
+ * files are that operation's (its conflicts, or the resolution staged for its
+ * Continue), never the user's work in the way: stashing them would take them
+ * out of the operation. A command git refuses there comes back `blocked`
+ * instead, naming the operation — and only when nothing happened; a command
+ * that stopped on conflicts of its own is git's outcome, as ever.
+ *
+ * A checkout is not run at all over a stopped operation: `git switch` refuses
+ * it there, and `git checkout` does not — it quietly ENDS a stopped merge,
+ * cherry-pick or revert (their *_HEAD removed, the resolution carried to the
+ * other branch) and moves HEAD out from under a rebase or an am, whose
+ * Continue then commits onto the branch just checked out.
  */
 export async function runApplying(
   proc: GitProcess,
   op: ApplyOp,
   opts?: GitRunOptions,
-): Promise<{ result: GitRunResult; inTheWay?: ChangesInTheWay }> {
+): Promise<{ result: GitRunResult; inTheWay?: ChangesInTheWay; blocked?: OperationInTheWay }> {
   const signal = opts?.signal;
   const before = await where(proc, signal);
+  const stop = await stoppedIn(proc, signal);
+  if (stop) {
+    const blocked: OperationInTheWay = { kind: op.kind, ...pick(stop) };
+    if (endsOrMoves(op.kind, stop)) {
+      return { result: { code: 1, stdout: "", stderr: "" }, blocked };
+    }
+    // Asked before git runs: whether the stop has anything uncommitted — its
+    // conflicts, or the resolution staged for its Continue.
+    const busy = stop.unmerged > 0 || (await touchedTree(proc, signal));
+    const result = await proc.run(applyArgs(op), { signal });
+    if (result.code === 0) {
+      return { result };
+    }
+    // Refused over the stop's own files: HEAD where it was, and the same stop.
+    // A rebase paused at an `edit` with a clean tree lets a pick run, so a
+    // pick that fails there failed for its own reason, and is reported.
+    if (busy && (await where(proc, signal)) === before && sameStop(await stoppedIn(proc, signal), stop)) {
+      return { result, blocked };
+    }
+    return { result };
+  }
   // A stash made with -u is asked about BEFORE git runs: its refusal is the
   // one here that is not "nothing happened" (see untrackedStashAhead).
   const ahead = op.kind === "stash" ? await untrackedStashAhead(proc, op.stash, signal) : null;
@@ -160,6 +202,48 @@ export async function runApplying(
   }
   const inTheWay = await changesInTheWay(proc, op, before, signal);
   return inTheWay ? { result, inTheWay } : { result };
+}
+
+/**
+ * Would running this command over this stop END the operation, or move HEAD
+ * out from under it? Then it is refused before git runs. What git itself does
+ * there, pinned against git 2.49 in test/operationInTheWay.test.ts:
+ *
+ *   checkout     ENDS a stopped merge, cherry-pick or revert (their *_HEAD
+ *                removed, the resolution carried to the other branch), and
+ *                moves HEAD out from under a rebase or an am. `git switch`
+ *                refuses all five, which is the rule taken here.
+ *   merge        a fast-forward moves HEAD out from under a stopped rebase;
+ *                refused over a stopped revert's staged resolution, git's
+ *                failure path removes REVERT_HEAD — the revert ENDED by a
+ *                merge that never ran.
+ *   rebase       over a clean tree it runs under a stopped cherry-pick (or
+ *                merge, or revert) and moves HEAD out from under it.
+ *   cherry-pick, a pick over a stopped merge commits UNDER it, and the merge
+ *   revert       then records it in its own first parent. At a plain rebase
+ *                stop — an `edit`, say — picking a commit in is ordinary git,
+ *                and runs (a rebase's merge step is a merge: refused).
+ *   stash        applies into the working tree and touches no operation file:
+ *                git decides, and a refusal over the stop's files is `blocked`.
+ */
+function endsOrMoves(kind: ApplyOp["kind"], stop: StoppedHere): boolean {
+  if (!stop.operation) return false; // files unmerged, no operation: git refuses these itself
+  switch (kind) {
+    case "checkout":
+    case "merge":
+    case "rebase":
+      return true;
+    case "cherry-pick":
+    case "revert":
+      return stop.operation !== "rebase" || stop.mergeStep === true;
+    case "stash":
+      return false;
+  }
+}
+
+/** Does any tracked file differ from HEAD — in the index or the working tree? */
+async function touchedTree(proc: GitProcess, signal?: AbortSignal): Promise<boolean> {
+  return (await proc.run(["diff", "--quiet", "HEAD", "--"], { signal })).code !== 0;
 }
 
 /** The user's work as `git status` sees it, both halves of a rename by name. */
@@ -238,14 +322,10 @@ async function changesInTheWay(
   before: string,
   signal?: AbortSignal,
 ): Promise<ChangesInTheWay | null> {
-  // Nothing happened: HEAD and its branch where they were, nothing paused.
+  // Nothing happened: HEAD and its branch where they were, nothing paused —
+  // by the operation core's reading, which knows a `git am` too.
   if ((await where(proc, signal)) !== before) return null;
-  const has = async (ref: string): Promise<boolean> =>
-    (await proc.run(["rev-parse", "--verify", "--quiet", ref], { signal })).code === 0;
-  for (const marker of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"]) {
-    if (await has(marker)) return null;
-  }
-  if (await rebaseInProgress(proc, signal)) return null;
+  if (await stoppedIn(proc, signal)) return null;
   // git stashes around these by itself when told to, so a refusal then is
   // some other refusal.
   if (op.kind === "merge" && (await configTrue(proc, "merge.autoStash", signal))) return null;
@@ -408,6 +488,8 @@ export interface StashRetryOutcome {
   stashGone?: true;
   /** Still refused over uncommitted work — the stash did not cover it. */
   inTheWay?: ChangesInTheWay;
+  /** Refused because git is stopped in an operation — nothing was stashed. */
+  blocked?: OperationInTheWay;
 }
 
 /** The message a stash-and-retry's stash carries, so it can be found again. */
@@ -458,8 +540,12 @@ export async function stashAndRetry(
   }
 
   // Asked again rather than trusted from the first refusal: the tree may have
-  // changed since the question was put.
+  // changed since the question was put — an operation stopped since is said
+  // as blocked, and nothing of it is stashed.
   const first = await runApplying(proc, op, opts);
+  if (first.blocked) {
+    return { result: first.result, blocked: first.blocked };
+  }
   if (first.result.code === 0 || !first.inTheWay) {
     return { result: first.result };
   }

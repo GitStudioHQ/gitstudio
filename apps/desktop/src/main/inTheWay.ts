@@ -27,6 +27,7 @@ import type { GitRunResult } from "@gitstudio/git-service/GitProcess";
 import type { PullMode, PullResult } from "@gitstudio/git-service/SyncOps";
 import {
   changesInTheWayMessage,
+  operationInTheWayMessage,
   pullInTheWayMessage,
   runApplying,
   stashAndRetry,
@@ -34,6 +35,7 @@ import {
   stashRetryNote,
   type ApplyOp,
   type ChangesInTheWay,
+  type OperationInTheWay,
   type StashRetryOutcome,
 } from "@gitstudio/git-service/changesInTheWay";
 import type { CommitActionResult } from "../shared/ipc";
@@ -55,6 +57,9 @@ export async function applyForDoor(
     const refused = retryRefused(ctx, stashFirst);
     if (refused) return { answer: refused };
     const out = await stashAndRetry(ctx.process, op);
+    if (out.blocked) {
+      return { answer: blockedAnswer(out.blocked) };
+    }
     if (out.stashFailed) {
       return { answer: stashFailedAnswer(out) };
     }
@@ -64,8 +69,22 @@ export async function applyForDoor(
     const note = stashRetryNote(out);
     return note ? { result: out.result, stashNote: note } : { result: out.result };
   }
-  const { result, inTheWay } = await runApplying(ctx.process, op);
+  const { result, inTheWay, blocked } = await runApplying(ctx.process, op);
+  if (blocked) return { answer: blockedAnswer(blocked) };
   return inTheWay ? { answer: inTheWayAnswer(ctx, inTheWay) } : { result };
+}
+
+/**
+ * Refused because git is already stopped — a merge, a rebase, a cherry-pick,
+ * a revert or a `git am` waiting, or files left unmerged. The user's state:
+ * said in the engine's words (what is stopped, what is left, finish or abort
+ * it first), `expected`, and never offered to Stash & Retry — the stop's
+ * files are its own. It used to be git's text ("Merging is not possible
+ * because you have unmerged files", "You have not concluded your merge", "It
+ * seems that there is already a rebase-merge directory"), and filed.
+ */
+function blockedAnswer(b: OperationInTheWay): CommitActionResult {
+  return { ok: false, changed: false, expected: true, message: operationInTheWayMessage(b) };
 }
 
 /** What the pull's door gets back: a final answer, or the pull's own result. */

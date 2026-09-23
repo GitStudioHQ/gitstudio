@@ -204,6 +204,20 @@ does, the other does. (merge-studio#12)
   **Cancel**. Stash & Retry puts your changes back as they were, staged ones
   staged; when they can't simply come back, it says which stash they are in.
   Nothing is sent as a crash report.
+- **Commands pressed while a merge, rebase, cherry-pick, revert or `git am`
+  was stopped showed git's refusal — and some changed the stop.** Merge,
+  Rebase onto, Checkout, Cherry-Pick, Revert and the Stashes view's Apply and
+  Pop, pressed while an operation was waiting for you, showed git's *"Merging
+  is not possible because you have unmerged files"*, *"You have not concluded
+  your merge"* or *"It seems that there is already a rebase-merge directory"*
+  in red — and Cherry-Pick and Revert over a resolved stop sent a crash
+  report. During a `git am` — and for a pull with rebase during a cherry-pick
+  or revert — your resolved files were offered to **Stash & Retry**, which
+  took them out of the operation. And a checkout quietly ended a stopped
+  merge, cherry-pick or revert. Each now says what is in progress — finish it
+  or abort it first — with **Resolve Conflicts…** while files are left to
+  resolve; a checkout, merge, rebase or pull is not run over a stopped
+  operation at all.
 - **With `pull.ff only` in your git config, a diverged branch got git's
   advice.** That setting is one git's own advice suggests, and Sync and Update
   then showed *"Diverging branches can't be fast-forwarded"* and its hints as

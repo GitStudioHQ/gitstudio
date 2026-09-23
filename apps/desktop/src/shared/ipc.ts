@@ -538,7 +538,7 @@ export interface PullStopInfo {
  * still ahead and behind and Pull is still offered. Nothing ran.
  */
 export interface PullBlockInfo {
-  operation?: "merge" | "rebase" | "cherry-pick" | "revert";
+  operation?: "merge" | "rebase" | "cherry-pick" | "revert" | "am";
   /** Files still conflicted; 0 when resolved but not yet committed/continued. */
   conflicts: number;
 }
