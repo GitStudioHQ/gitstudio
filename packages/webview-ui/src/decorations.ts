@@ -198,15 +198,26 @@ export class DiffDecorationManager {
  * are the ones measured to stand off the editor background (≥ 3:1).
  */
 function rulerPalette(): Record<BlockTone, string> {
-  const styles = getComputedStyle(document.body);
-  const read = (name: string) => styles.getPropertyValue(name).trim();
-  return {
+  // Resolved through a probe's computed `color`, not the raw custom-property
+  // text: the tokens are written "rgba(63,185,80,.90)" / "#1a7f37", and the
+  // browser's canonical "rgba(63, 185, 80, 0.9)" is the one form every
+  // colour consumer (Monaco's own parser included) reads.
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const read = (name: string) => {
+    probe.style.color = `var(${name})`;
+    return getComputedStyle(probe).color;
+  };
+  const palette = {
     inserted: read("--jb-edge-inserted"),
     deleted: read("--jb-edge-deleted"),
     modified: read("--jb-edge-modified"),
     same: read("--jb-edge-same"),
     conflict: read("--jb-edge-conflict"),
   };
+  probe.remove();
+  return palette;
 }
 
 /** The line a decoration for a (possibly empty) span sits on, inside the document. */

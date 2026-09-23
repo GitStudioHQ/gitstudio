@@ -139,6 +139,16 @@ test("every category is classified, painted and given its own controls — befor
     expect(/jb-inner-conflict/.test(classesOn("left", 2)), "the conflict carries word tints (" + classesOn("left", 2) + ")");
     expect(!/jb-inner-/.test(classesOn("left", 16)), "the whitespace-only change has no word tint (" + classesOn("left", 16) + ")");
     expect(/jb-frame-conflict/.test(classesOn("result", 2)), "pending blocks carry the high-contrast frame edges");
+    // The error stripe: each pending block marks the result's ruler in its
+    // EDGE colour; conflicts take the full width, the rest the centre lane.
+    const ruler = view.result.getModel().getAllDecorations()
+      .filter((d) => d.options.overviewRuler && (d.options.className || "").includes("jb-cat-"))
+      .map((d) => (d.options.className.match(/jb-cat-[a-z-]+/) || [""])[0] + "@" + d.options.overviewRuler.position + "=" + d.options.overviewRuler.color);
+    const lane = (cat) => ruler.filter((r) => r.startsWith("jb-cat-" + cat + "@"));
+    expect(ruler.length === 8, "every pending block marks the ruler: " + JSON.stringify(ruler));
+    expect(lane("conflict").every((r) => r.includes("@7=")) && lane("conflict").length === 2, "conflicts use the full lane: " + JSON.stringify(lane("conflict")));
+    expect(lane("same").every((r) => r.includes("@2=")) && lane("yours-only").every((r) => r.includes("@2=")), "the others the centre lane: " + JSON.stringify(ruler));
+    expect(lane("same")[0] && lane("same")[0].endsWith("=" + EDGE.same), "in the category's edge colour: " + lane("same")[0]);
 
     // ── the controls, per category ──
     const A = groupsIn(layerA()), B = groupsIn(layerB());
