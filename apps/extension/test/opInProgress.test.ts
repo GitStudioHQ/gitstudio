@@ -88,7 +88,17 @@ function pausedForUser(
   code: number,
   marker: OperationMarker,
 ): Promise<boolean> {
-  return isPaused({ run: async (args) => git(cwd, ...args) }, code, marker);
+  return isPaused(
+    {
+      cwd,
+      run: async (args) => {
+        const r = git(cwd, ...args);
+        return { code: r.code, stdout: r.out };
+      },
+    },
+    code,
+    marker,
+  );
 }
 
 function repo(): string {
@@ -246,6 +256,39 @@ function diverged(): string {
   git(dir, "commit", "-qm", "main edit");
   return dir;
 }
+
+test("a rebase refused over a dirty tree is not a pause, even where an OLD rebase left REBASE_HEAD", async () => {
+  // git leaves REBASE_HEAD behind when a STOPPED rebase finishes (--continue,
+  // --skip to the end, --quit — checked against git 2.49). A clean rebase never
+  // writes it, which is why the test above could not see this: from the first
+  // finished conflict on, "cannot rebase: You have unstaged changes" (exit 1,
+  // nothing paused) read as "Rebase hit conflicts. Resolve them, then continue
+  // or abort", and git's real reason never reached the user.
+  const dir = diverged();
+  try {
+    git(dir, "checkout", "-qb", "topic", "main");
+    assert.equal(git(dir, "rebase", "side").code, 1, "precondition: the rebase stops on the conflict");
+    writeFileSync(join(dir, "f.txt"), "BOTH\n");
+    git(dir, "add", "f.txt");
+    assert.equal(git(dir, "-c", "core.editor=true", "rebase", "--continue").code, 0, "precondition: …and finishes");
+    assert.equal(
+      git(dir, "rev-parse", "--verify", "--quiet", "REBASE_HEAD").code,
+      0,
+      "precondition: git left REBASE_HEAD behind",
+    );
+
+    writeFileSync(join(dir, "f.txt"), "uncommitted\n");
+    const dirty = git(dir, "rebase", "main");
+    assert.equal(dirty.code, 1, "a refusal that exits 1");
+    assert.equal(
+      await pausedForUser(dir, dirty.code, "REBASE_HEAD"),
+      false,
+      "nothing is paused — the leftover ref must not say otherwise",
+    );
+  } finally {
+    cleanup(dir);
+  }
+});
 
 test("a conflicting merge reads as paused, not failed", async () => {
   const dir = diverged();

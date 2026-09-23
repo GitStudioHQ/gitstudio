@@ -1,7 +1,6 @@
-import { existsSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
 import type { GitProcess, GitRunOptions } from "./GitProcess";
 import { parseUnmergedPaths } from "./ConflictProvider";
+import { rebaseInProgress } from "./rebaseInProgress";
 
 /** How far the branch is ahead of / behind its upstream. */
 export interface AheadBehind {
@@ -651,39 +650,9 @@ export class SyncOps {
     return { conflicted };
   }
 
-  /**
-   * Is a rebase in progress — paused on a conflict, an `edit`, or a `break`?
-   *
-   * Answered by git's state directory (`rebase-merge`, or `rebase-apply` without
-   * the `applying` marker that makes it a `git am`), which git creates when a
-   * rebase starts and deletes when it ends, however it ends. REBASE_HEAD cannot
-   * answer it: git leaves that ref behind after --continue, --skip and --quit
-   * (checked against git 2.49), so every repository that ever finished a
-   * stopped rebase carries one. The same rule RebaseRunner's rebaseStateDir
-   * uses.
-   */
-  private async rebaseInProgress(signal?: AbortSignal): Promise<boolean> {
-    for (const dir of ["rebase-merge", "rebase-apply"]) {
-      const r = await this.proc.run(["rev-parse", "--git-path", dir], { signal });
-      if (r.code !== 0) {
-        continue;
-      }
-      // resolve(), not join(): inside a linked worktree git answers with an
-      // ABSOLUTE path, and a relative one is relative to the repository root.
-      const at = resolve(this.proc.cwd, r.stdout.trim());
-      try {
-        if (!statSync(at).isDirectory()) {
-          continue;
-        }
-      } catch {
-        continue;
-      }
-      if (dir === "rebase-apply" && existsSync(join(at, "applying"))) {
-        continue; // a `git am`, not a rebase
-      }
-      return true;
-    }
-    return false;
+  /** See ./rebaseInProgress — the state directory, never REBASE_HEAD. */
+  private rebaseInProgress(signal?: AbortSignal): Promise<boolean> {
+    return rebaseInProgress(this.proc, signal);
   }
 
   /**

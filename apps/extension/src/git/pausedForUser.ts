@@ -12,10 +12,14 @@
  * rebase from the branch list — and a second copy is how the fix rots.
  */
 
-/** All this needs from a GitContext: the ability to run a git command. */
-export interface GitRunner {
-  run(args: string[]): Promise<{ code: number }>;
-}
+import {
+  rebaseInProgress,
+  type RebaseStateRunner,
+} from "@gitstudio/git-service/rebaseInProgress";
+
+/** All this needs from a GitContext: run a git command, in a known directory
+ *  (a rebase's state is a directory git resolves relative to it). */
+export type GitRunner = RebaseStateRunner;
 
 /**
  * The ref git leaves behind while an operation is paused mid-flight. One per
@@ -57,6 +61,14 @@ export async function pausedForUser(
 ): Promise<boolean> {
   if (code !== 1) {
     return false;
+  }
+  // A rebase is the one operation whose marker ref OUTLIVES it: git leaves
+  // REBASE_HEAD behind when a stopped rebase finishes, so from the first
+  // finished conflict on, a rebase REFUSED over a dirty tree (exit 1, nothing
+  // paused) read as a pause and git's reason never reached the user. Its state
+  // directory has exactly its lifetime — see rebaseInProgress.
+  if (marker === "REBASE_HEAD") {
+    return rebaseInProgress(proc);
   }
   const r = await proc.run(["rev-parse", "--verify", "--quiet", marker]);
   return r.code === 0;
